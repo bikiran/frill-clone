@@ -295,8 +295,14 @@ export default function PublicForm() {
             <h1 style={{ fontSize: 24, fontWeight: 800, color: '#0d0d0d', marginBottom: (form.end_actions || []).length > 0 ? 28 : 0 }}>{form.thank_you_message || 'Thanks for completing this form!'}</h1>
             {(form.end_actions || []).length > 0 && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxWidth: 320, margin: '0 auto' }}>
-                {(form.end_actions || []).map((a: any, i: number) => (
-                  <a key={i} href={a.url || '#'} target="_blank" rel="noopener"
+                {(form.end_actions || []).map((a: any, i: number) => {
+                  // An action with no URL (e.g. the seeded "Visit our board")
+                  // must not render a dead href="#" — that just reloads the form.
+                  // Fall back to the public board at the subdomain root.
+                  const href = a.url && a.url !== '#' ? a.url : '/'
+                  const external = /^https?:\/\//i.test(href)
+                  return (
+                  <a key={i} href={href} target={external ? '_blank' : undefined} rel={external ? 'noopener' : undefined}
                     style={{
                       display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
                       padding: '13px 20px', borderRadius: 12, fontSize: 14, fontWeight: 700, textDecoration: 'none',
@@ -309,7 +315,8 @@ export default function PublicForm() {
                     {(a.type === 'website' || a.type === 'custom') && <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>}
                     {a.label}
                   </a>
-                ))}
+                  )
+                })}
               </div>
             )}
           </div>
