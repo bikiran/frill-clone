@@ -87,6 +87,28 @@ export async function POST(req: NextRequest) {
           } catch (e) { console.error('[webhook] save_card failed', e) }
         }
 
+        // Form payment (no conversation) — confirm the chat_payments row through
+        // the shared helper, which is null-safe on conversation_id. The form's
+        // return page also verifies, so whichever wins confirms exactly once.
+        if (meta.kind === 'form_payment') {
+          const { data: pay } = await (supabase as any).from('chat_payments')
+            .select('id, company_id, conversation_id, message_id, amount_cents').eq('stripe_session_id', session.id).maybeSingle()
+          let cardBrand: string | null = null, cardLast4: string | null = null
+          try {
+            const piId = typeof session.payment_intent === 'string' ? session.payment_intent : session.payment_intent?.id
+            if (piId) {
+              const acctOpt: any = event.account ? { stripeAccount: event.account } : undefined
+              const pi: any = await stripe.paymentIntents.retrieve(piId, { expand: ['latest_charge'] }, acctOpt)
+              const card = pi?.latest_charge?.payment_method_details?.card || null
+              cardBrand = card?.brand || null; cardLast4 = card?.last4 || null
+            }
+          } catch {}
+          if (pay) {
+            await confirmChatPayment(supabase, pay, { receiptUrl: session.receipt_url || null, paymentIntent: (typeof session.payment_intent === 'string' ? session.payment_intent : session.payment_intent?.id) || null, cardBrand, cardLast4 })
+          }
+          break
+        }
+
         // In-chat payment (on a connected account) — mark paid + confirm in chat
         if (meta.kind === 'chat_payment' && meta.conversationId) {
           const receiptUrl = session.receipt_url || null

@@ -48,6 +48,8 @@ export default function FormResults() {
     if (a === undefined || a === null || a === '') return ''
     if (Array.isArray(a)) return a.map((x, i) => `${i + 1}. ${typeof x === 'object' ? JSON.stringify(x) : x}`).join('; ')
     if (typeof a === 'object') {
+      if (a.status === 'paid' && a.amount_cents != null) return `Paid ${fmtMoney(a.amount_cents, a.currency)}`
+      if (a.starts_at) return new Date(a.starts_at).toLocaleString()
       if (a.url) return (a.name || a.url)
       return Object.entries(a).map(([k, v]) => `${k}: ${v}`).join('; ')
     }
@@ -241,11 +243,18 @@ export default function FormResults() {
     return { type: 'text', samples: answers.slice(0, 5).map((a: any) => typeof a === 'object' ? JSON.stringify(a) : String(a)), total: answers.length }
   }
 
+  const fmtMoney = (cents: number, currency?: string) => {
+    try { return new Intl.NumberFormat(undefined, { style: 'currency', currency: (currency || 'aud').toUpperCase() }).format((cents || 0) / 100) }
+    catch { return `$${((cents || 0) / 100).toFixed(2)}` }
+  }
+
   // A compact one-line preview of any answer shape (for the response cards).
   const previewAnswer = (a: any): string => {
     if (a === undefined || a === null || a === '') return '—'
     if (Array.isArray(a)) return a.join(', ')
     if (typeof a === 'object') {
+      if (a.status === 'paid' && a.amount_cents != null) return `Paid ${fmtMoney(a.amount_cents, a.currency)}`
+      if (a.starts_at) return new Date(a.starts_at).toLocaleString()
       if (a.name) return a.name
       if (a.url) return a.url.split('/').pop() || 'file'
       return Object.entries(a).map(([k, v]) => `${k}: ${v}`).join(', ')
@@ -260,6 +269,10 @@ export default function FormResults() {
   const renderAnswer = (answer: any) => {
     const P = ({ children }: { children: any }) => <p className="text-sm" style={{ color: 'var(--ink)' }}>{children}</p>
     if (answer === undefined || answer === null || answer === '') return <P>—</P>
+    // Payment answer
+    if (typeof answer === 'object' && answer.status === 'paid' && answer.amount_cents != null) {
+      return <p className="text-sm font-semibold" style={{ color: '#047857' }}>✓ Paid — {fmtMoney(answer.amount_cents, answer.currency)}</p>
+    }
     // Matrix (or any plain object without a url)
     if (typeof answer === 'object' && !Array.isArray(answer) && !answer.url) {
       const entries = Object.entries(answer)
