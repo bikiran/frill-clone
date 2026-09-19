@@ -74,8 +74,16 @@ export function metaLoginUrl(state: string, scope: string = META_SCOPES, configI
     state,
     response_type: 'code',
   })
-  if (configId) p.set('config_id', configId)     // Facebook Login for Business
-  else p.set('scope', scope)                      // classic scope-based login
+  if (configId) {
+    // Facebook Login for Business. With a config_id, Facebook otherwise uses the
+    // configuration's DEFAULT response type — so to get an auth `code` back we
+    // must explicitly opt in with override_default_response_type=true. Without
+    // it the callback can arrive with no `code` (the "no_code" / generic error).
+    p.set('config_id', configId)
+    p.set('override_default_response_type', 'true')
+  } else {
+    p.set('scope', scope)                          // classic scope-based login
+  }
   return `https://www.facebook.com/v25.0/dialog/oauth?${p.toString()}`
 }
 
