@@ -237,6 +237,21 @@ export async function POST(req: NextRequest) {
           // identity. Tag which workspace this call belongs to so the mobile app
           // can switch into the right one before ringing (multi-workspace routing).
           `<Parameter name="companyId" value="${xmlEscape(companyId)}"/>` +
+          // Who is calling, in words. Android draws the ongoing-call
+          // notification from a name the Voice SDK holds, and for an incoming
+          // call the only thing it has is the caller id — so a saved contact
+          // still showed as a bare number there while every other surface in
+          // the app showed the name. This is the one channel that reaches the
+          // SDK's own record.
+          //
+          // Always sent, falling back to the number, because the app's template
+          // substitutes whatever arrives and an absent parameter would leave
+          // the placeholder itself on screen.
+          //
+          // $ and \\ are stripped: the SDK substitutes with String.replaceAll,
+          // where both are special in the replacement and a name containing one
+          // would mangle the result or throw.
+          `<Parameter name="callerName" value="${xmlEscape(String(callerName || from || '').replace(/[$\\]/g, ' ').trim())}"/>` +
         `</Client>`
       )
     }).join('')
