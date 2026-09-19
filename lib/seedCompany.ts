@@ -153,7 +153,7 @@ export async function seedCompanyData(companyId: string, companyName: string) {
       is_published: true,
       show_confetti: true,
       theme: { color: '#ff7a6b' },
-      end_actions: [{ type: 'website', label: 'Visit our board', url: '' }],
+      end_actions: [{ type: 'website', label: 'Visit our board', url: '/' }],
       questions: [
         {
           id: 'q1', type: 'nps', title: 'How likely are you to recommend us to a friend?',
