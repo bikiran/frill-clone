@@ -692,6 +692,10 @@ export default function InboxPage() {
     date: '', time_window: '', address: '', notes: '', location_id: '', notify: true,
   })
   const [outletsForSchedule, setOutletsForSchedule] = useState<any[]>([])
+  // "Schedule message" — send the composed reply at a future time (cron delivers).
+  const [showScheduleMsg, setShowScheduleMsg] = useState(false)
+  const [scheduleMsgAt, setScheduleMsgAt] = useState('')
+  const [schedulingMsg, setSchedulingMsg] = useState(false)
 
   useEffect(() => {
     if (!companyId) return
@@ -715,6 +719,49 @@ export default function InboxPage() {
       notify: true,
     })
     setShowSchedule(true)
+  }
+
+  // Schedule the currently-composed reply to be sent later. Defaults to one hour
+  // from now; the /api/cron/send-scheduled worker delivers it on the
+  // conversation's channel when the time arrives.
+  const openScheduleMsg = () => {
+    if (!reply.trim()) { showToast('Type a message first, then schedule it.'); return }
+    const t = new Date(Date.now() + 60 * 60 * 1000)
+    // datetime-local wants local wall-clock, so offset out the timezone.
+    const local = new Date(t.getTime() - t.getTimezoneOffset() * 60000).toISOString().slice(0, 16)
+    setScheduleMsgAt(local)
+    setShowScheduleMsg(true)
+  }
+
+  const scheduleMessage = async () => {
+    if (!selected || !user || schedulingMsg) return
+    const content = reply.trim()
+    if (!content) { showToast('Type a message first.'); return }
+    const when = scheduleMsgAt ? new Date(scheduleMsgAt) : null
+    if (!when || isNaN(when.getTime())) { showToast('Pick a valid date and time.'); return }
+    if (when.getTime() < Date.now() + 30000) { showToast('Pick a time in the future.'); return }
+    setSchedulingMsg(true)
+    try {
+      const { error } = await (supabase as any).from('scheduled_messages').insert({
+        company_id: companyId,
+        conversation_id: selected.id,
+        contact_id: (selected as any).contact_id || contact?.id || null,
+        message: content,
+        scheduled_for: when.toISOString(),
+        channel: sendChannel !== 'auto' ? sendChannel : ((selected as any).channel || 'chat'),
+        status: 'pending',
+        type: 'message',
+        created_by: user.id,
+      })
+      if (error) throw error
+      setShowScheduleMsg(false)
+      setReply(''); setReplyTo(null); draft.discard()
+      showToast(`Message scheduled for ${when.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}`)
+    } catch (e: any) {
+      showToast('Could not schedule: ' + (e?.message || 'error'))
+    } finally {
+      setSchedulingMsg(false)
+    }
   }
 
   const saveSchedule = async () => {
@@ -5758,6 +5805,33 @@ export default function InboxPage() {
       )}
 
       {/* Schedule a delivery */}
+      {showScheduleMsg && selected && (
+        <div onClick={() => setShowScheduleMsg(false)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 320, padding: 20 }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ width: 420, maxWidth: '95vw', background: '#fff', borderRadius: 18, padding: 24 }}>
+            <h3 style={{ margin: '0 0 4px', fontSize: 18, fontWeight: 800, color: 'var(--ink)' }}>Schedule message</h3>
+            <p style={{ margin: '0 0 16px', fontSize: 13, color: 'var(--slate)', lineHeight: 1.5 }}>
+              Sends your reply automatically at the chosen time, on this conversation&rsquo;s channel.
+            </p>
+            <div style={{ fontSize: 13, color: 'var(--ink)', background: 'var(--canvas)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px', marginBottom: 14, maxHeight: 90, overflowY: 'auto', whiteSpace: 'pre-wrap' }}>
+              {reply.trim() || <span style={{ color: 'var(--slate)' }}>No message typed.</span>}
+            </div>
+            <label style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: 'var(--ink)', marginBottom: 6 }}>Send at</label>
+            <input type="datetime-local" value={scheduleMsgAt} onChange={e => setScheduleMsgAt(e.target.value)}
+              style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 14, marginBottom: 18 }} />
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button type="button" onClick={() => setShowScheduleMsg(false)}
+                style={{ padding: '10px 16px', borderRadius: 10, border: '1px solid var(--border)', background: '#fff', color: 'var(--slate)', fontSize: 13.5, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
+              <button type="button" onClick={scheduleMessage} disabled={schedulingMsg || !reply.trim()}
+                style={{ padding: '10px 18px', borderRadius: 10, border: 'none', background: 'var(--coral)', color: '#fff', fontSize: 13.5, fontWeight: 700, cursor: (schedulingMsg || !reply.trim()) ? 'default' : 'pointer', opacity: (schedulingMsg || !reply.trim()) ? 0.6 : 1 }}>
+                {schedulingMsg ? 'Scheduling…' : 'Schedule'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showSchedule && selected && (
         <div onClick={() => setShowSchedule(false)}
           style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 320, padding: 20 }}>
@@ -8953,6 +9027,12 @@ export default function InboxPage() {
 
                     {showChannelMenu && (
                       <div style={{ position: 'absolute', bottom: '120%', right: 0, width: 190, background: '#fff', borderRadius: 12, border: '1px solid var(--border)', boxShadow: '0 12px 32px rgba(0,0,0,0.14)', zIndex: 60, overflow: 'hidden', padding: '4px 0' }}>
+                        <button type="button" onClick={() => { setShowChannelMenu(false); openScheduleMsg() }}
+                          style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '9px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)', fontWeight: 600 }}>
+                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg>
+                          Schedule message
+                        </button>
+                        <div style={{ height: 1, background: 'var(--border)', margin: '4px 0' }} />
                         <p style={{ margin: 0, padding: '6px 14px 4px', fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--slate)' }}>Send via</p>
                         {([
                           ['auto', 'Automatic', true],
