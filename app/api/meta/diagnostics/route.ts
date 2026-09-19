@@ -79,14 +79,49 @@ export async function GET(req: NextRequest) {
 
   // 2) Live read of the Page's own feed (needs pages_read_engagement on a Page
   // token) — this is where #10 shows up. Report ok / the real Graph error.
+  let firstPostId: string | null = null
   try {
     const r = await fetch(`${GRAPH}/${channel.page_id}/feed?fields=id&limit=1&access_token=${encodeURIComponent(token)}`)
     const d = await r.json()
+    firstPostId = d?.data?.[0]?.id || null
     result.probes.readFeed = r.ok
       ? { ok: true, count: (d.data || []).length }
       : { ok: false, code: d?.error?.code, message: d?.error?.message }
   } catch (e: any) {
     result.probes.readFeed = { ok: false, message: e?.message }
+  }
+
+  // 3) Does Facebook actually return the COMMENTER'S identity? Read a real
+  // comment's `from` node and report exactly what came back — this is the
+  // definitive test for the "Facebook user" / no-avatar problem. Since 2018,
+  // Facebook only returns a commenter's name/id/photo when the token has
+  // pages_read_engagement AND (for people who never used your app) the app is
+  // approved & Live. If `from` comes back empty here, the name genuinely isn't
+  // available from the API — it's not a rendering bug on our side.
+  try {
+    if (firstPostId) {
+      const r = await fetch(`${GRAPH}/${firstPostId}/comments?fields=id,from{id,name,picture},message&limit=1&access_token=${encodeURIComponent(token)}`)
+      const d = await r.json()
+      if (!r.ok) {
+        result.probes.commentAuthor = { ok: false, code: d?.error?.code, message: d?.error?.message }
+      } else {
+        const c = d?.data?.[0]
+        result.probes.commentAuthor = {
+          ok: true,
+          hasComment: !!c,
+          fromPresent: !!c?.from,
+          hasName: !!c?.from?.name,
+          hasId: !!c?.from?.id,
+          hasPhoto: !!c?.from?.picture?.data?.url,
+          // A sample so you can see it with your own eyes (name only, no token).
+          sampleName: c?.from?.name || null,
+        }
+      }
+    } else {
+      result.probes.commentAuthor = { ok: false, message: 'No page posts to sample a comment from.' }
+    }
+  } catch (e: any) {
+    result.probes.commentAuthor = { ok: false, message: e?.message }
   }
 
   return NextResponse.json(result)
