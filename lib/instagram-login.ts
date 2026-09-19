@@ -195,6 +195,19 @@ export async function hideInstagramComment(token: string, commentId: string, hid
   }
 }
 
+// Fetch a single comment's author + text on an Instagram-Login account. The
+// real-time `comments` webhook payload often omits the commenter's username, so
+// we hydrate it from the Graph API (graph.instagram.com) with the account token.
+export async function fetchInstagramComment(commentId: string, token: string): Promise<{ name?: string; message?: string } | null> {
+  try {
+    const p = new URLSearchParams({ fields: 'from,username,text', access_token: token })
+    const res = await fetch(`${IG_GRAPH_V}/${commentId}?${p.toString()}`)
+    if (!res.ok) return null
+    const d = await res.json()
+    return { name: d.from?.username || d.username || undefined, message: d.text || undefined }
+  } catch { return null }
+}
+
 // Look up a DM sender's profile (name, avatar) on an Instagram-Login account.
 export async function fetchInstagramUserProfile(igsid: string, token: string): Promise<{ name?: string; avatar?: string }> {
   try {
