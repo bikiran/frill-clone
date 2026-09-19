@@ -266,9 +266,29 @@ export default function FormResults() {
   // Full answer rendering in the response modal — handles text, media URLs,
   // signatures (data URLs), uploads ({url,name}), ranking (arrays) and matrix
   // (objects) without ever dumping "[object Object]" or a raw base64 string.
-  const renderAnswer = (answer: any) => {
+  const renderAnswer = (answer: any, q?: any) => {
     const P = ({ children }: { children: any }) => <p className="text-sm" style={{ color: 'var(--ink)' }}>{children}</p>
-    if (answer === undefined || answer === null || answer === '') return <P>—</P>
+    if (answer === undefined || answer === null || answer === '') return <p className="text-sm italic" style={{ color: '#c0c4cc' }}>No answer</p>
+
+    // Rating → stars + score; NPS / opinion scale → score out of max with a chip.
+    if (q?.type === 'rating') {
+      const n = Number(answer) || 0
+      return (
+        <div className="flex items-center gap-2">
+          <div className="flex gap-0.5">{[1, 2, 3, 4, 5].map(i => (
+            <svg key={i} width="16" height="16" viewBox="0 0 24 24" fill={i <= n ? themeColor : 'none'} stroke={themeColor} strokeWidth="1.5"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+          ))}</div>
+          <span className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>{n}/5</span>
+        </div>
+      )
+    }
+    if (q?.type === 'nps' || q?.type === 'opinion_scale') {
+      const max = q.type === 'nps' ? 10 : 7
+      const n = Number(answer) || 0
+      const tone = q.type === 'nps' ? (n >= 9 ? '#16a34a' : n >= 7 ? '#d97706' : '#dc2626') : themeColor
+      return <span className="inline-flex items-center justify-center text-sm font-bold px-2.5 py-1 rounded-lg" style={{ background: `${tone}18`, color: tone }}>{n} / {max}</span>
+    }
+
     // Payment answer
     if (typeof answer === 'object' && answer.status === 'paid' && answer.amount_cents != null) {
       return <p className="text-sm font-semibold" style={{ color: '#047857' }}>✓ Paid — {fmtMoney(answer.amount_cents, answer.currency)}</p>
@@ -315,25 +335,26 @@ export default function FormResults() {
           </Link>
         </div>
 
-        {/* View toggle */}
+        {/* View toggle + actions */}
         <div className="flex gap-2 mb-6 flex-wrap items-center">
-          <button onClick={() => setView('summary')}
-            className="px-4 py-2 rounded-xl text-sm font-semibold cursor-pointer"
-            style={{ background: view === 'summary' ? themeColor : 'transparent', color: view === 'summary' ? '#fff' : 'var(--slate)', border: view === 'summary' ? 'none' : '1px solid var(--border)' }}>
-            Summary
-          </button>
-          <button onClick={() => setView('individual')}
-            className="px-4 py-2 rounded-xl text-sm font-semibold cursor-pointer"
-            style={{ background: view === 'individual' ? themeColor : 'transparent', color: view === 'individual' ? '#fff' : 'var(--slate)', border: view === 'individual' ? 'none' : '1px solid var(--border)' }}>
-            Individual responses
-          </button>
-          
+          {/* Segmented control */}
+          <div className="inline-flex p-1 rounded-xl" style={{ background: 'var(--canvas, #f3f4f6)', border: '1px solid var(--border)' }}>
+            {([['summary', 'Summary'], ['individual', 'Individual']] as const).map(([key, label]) => (
+              <button key={key} onClick={() => setView(key)}
+                className="px-4 py-1.5 rounded-lg text-sm font-semibold cursor-pointer transition-all"
+                style={{ background: view === key ? '#fff' : 'transparent', color: view === key ? 'var(--ink)' : 'var(--slate)', boxShadow: view === key ? '0 1px 3px rgba(0,0,0,0.10)' : 'none' }}>
+                {label}
+              </button>
+            ))}
+          </div>
+
           <button onClick={() => setShowFilterPanel(!showFilterPanel)}
-            className="px-4 py-2 rounded-xl text-sm font-semibold cursor-pointer border"
-            style={{ borderColor: 'var(--border)', color: Object.keys(filters).length > 0 ? themeColor : 'var(--slate)', background: showFilterPanel ? 'var(--canvas)' : '#fff' }}>
-            🔽 Filter {Object.keys(filters).length > 0 ? `(${Object.keys(filters).length})` : ''}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-semibold cursor-pointer border"
+            style={{ borderColor: Object.keys(filters).length > 0 ? themeColor : 'var(--border)', color: Object.keys(filters).length > 0 ? themeColor : 'var(--slate)', background: showFilterPanel ? 'var(--canvas)' : '#fff' }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+            Filter{Object.keys(filters).length > 0 ? ` (${Object.keys(filters).length})` : ''}
           </button>
-          
+
           <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
             {view === 'individual' && responses.length > 0 && (
               <>
@@ -440,22 +461,17 @@ export default function FormResults() {
           <div className="space-y-4">
             {/* Top stats */}
             <div className="grid grid-cols-3 gap-2 sm:gap-4 mb-6">
-              <div className="bg-white rounded-2xl border p-3 sm:p-5 min-w-0" style={{ borderColor: 'var(--border)' }}>
-                <p className="text-xl sm:text-2xl font-black leading-tight" style={{ color: 'var(--ink)' }}>{responses.length}</p>
-                <p className="text-xs" style={{ color: 'var(--slate)' }}>Total responses</p>
-              </div>
-              <div className="bg-white rounded-2xl border p-3 sm:p-5 min-w-0" style={{ borderColor: 'var(--border)' }}>
-                <p className="text-xl sm:text-2xl font-black leading-tight" style={{ color: 'var(--ink)' }}>{questions.length}</p>
-                <p className="text-xs" style={{ color: 'var(--slate)' }}>Questions</p>
-              </div>
-              <div className="bg-white rounded-2xl border p-3 sm:p-5 min-w-0" style={{ borderColor: 'var(--border)' }}>
-                {/* The date is wider than the count values — keep it smaller so it
-                    never overflows/clips the card on a narrow phone. */}
-                <p className="text-sm sm:text-xl font-black leading-tight whitespace-nowrap" style={{ color: 'var(--ink)' }}>
-                  {responses[0] ? new Date(responses[0].created_at).toLocaleDateString() : '—'}
-                </p>
-                <p className="text-xs" style={{ color: 'var(--slate)' }}>Last response</p>
-              </div>
+              {[
+                { icon: <><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></>, value: <span className="text-xl sm:text-2xl font-black leading-tight">{responses.length}</span>, label: 'Total responses' },
+                { icon: <><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></>, value: <span className="text-xl sm:text-2xl font-black leading-tight">{questions.length}</span>, label: 'Questions' },
+                { icon: <><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></>, value: <span className="text-sm sm:text-xl font-black leading-tight whitespace-nowrap">{responses[0] ? new Date(responses[0].created_at).toLocaleDateString() : '—'}</span>, label: 'Last response' },
+              ].map((s, i) => (
+                <div key={i} className="bg-white rounded-2xl border p-3 sm:p-5 min-w-0" style={{ borderColor: 'var(--border)' }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={themeColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: 8, opacity: 0.9 }}>{s.icon}</svg>
+                  <div style={{ color: 'var(--ink)' }}>{s.value}</div>
+                  <p className="text-xs mt-0.5" style={{ color: 'var(--slate)' }}>{s.label}</p>
+                </div>
+              ))}
             </div>
 
             {/* Per-question breakdown */}
@@ -581,10 +597,14 @@ export default function FormResults() {
                   )}
                 </div>
               )}
-              {questions.map((q: any) => (
+              {questions.map((q: any, qi: number) => (
                 <div key={q.id}>
-                  <p className="text-xs font-semibold mb-1" style={{ color: 'var(--slate)' }}>{q.title}</p>
-                  {renderAnswer(selectedResponse.answers?.[q.id])}
+                  <p className="text-xs font-semibold mb-1.5" style={{ color: 'var(--slate)' }}>
+                    <span style={{ color: themeColor }}>{qi + 1}.</span> {q.title}
+                  </p>
+                  <div className="rounded-xl px-3.5 py-2.5" style={{ background: 'var(--canvas, #fafafa)', border: '1px solid var(--border)' }}>
+                    {renderAnswer(selectedResponse.answers?.[q.id], q)}
+                  </div>
                 </div>
               ))}
             </div>
