@@ -5668,7 +5668,10 @@ export default function InboxPage() {
           /* Message bubbles get more of the screen — 70% left too much dead
              space on a 390px phone. */
           .inbox-messages > div > div { max-width: 88% !important; }
-          .inbox-messages { padding: 12px !important; gap: 10px !important; }
+          .inbox-messages { padding: 10px 12px !important; gap: 7px !important; }
+          /* Flatter, less bulky bubbles on a phone. */
+          .inbox-messages .msg-bubble { box-shadow: 0 1px 2px rgba(0,0,0,0.05) !important; }
+          .inbox-messages .msg-bubble p { line-height: 1.4 !important; }
         }
         /* Desktop / tablet: the tools sit inline on the right as before */
         @media (min-width: 768px) {
@@ -7913,14 +7916,14 @@ export default function InboxPage() {
                         </div>
                       )}
 
-                      <div style={{
+                      <div className="msg-bubble" style={{
                         padding: (() => {
                           const hasMedia = atts.some((a: any) => a.kind === 'image' || a.kind === 'video')
                           // A media-only message shows the collage flush to the
                           // bubble edge; with text it gets a small frame.
                           if (hasMedia && !msg.content) return 0
                           if (hasMedia) return 4
-                          return '10px 14px'
+                          return isMobile ? '7px 11px' : '10px 14px'
                         })(),
                         borderRadius: isAgent ? '14px 14px 4px 14px' : '14px 14px 14px 4px',
                         background: isAgent ? 'var(--coral)' : '#fff',
