@@ -43,6 +43,18 @@ export default function FormResults() {
     })()
   }, [formId])
 
+  // Flatten any answer shape to a spreadsheet/PDF-safe string.
+  const answerToText = (a: any): string => {
+    if (a === undefined || a === null || a === '') return ''
+    if (Array.isArray(a)) return a.map((x, i) => `${i + 1}. ${typeof x === 'object' ? JSON.stringify(x) : x}`).join('; ')
+    if (typeof a === 'object') {
+      if (a.url) return (a.name || a.url)
+      return Object.entries(a).map(([k, v]) => `${k}: ${v}`).join('; ')
+    }
+    if (typeof a === 'string' && a.startsWith('data:')) return '[signature]'
+    return String(a)
+  }
+
   const exportToExcel = () => {
     if (exporting) return
     setExporting('excel')
@@ -53,11 +65,7 @@ export default function FormResults() {
       const data = responses.map((r: any) => [
         r.id.slice(0, 8),
         new Date(r.created_at).toLocaleString(),
-        ...questions.map((q: any) => {
-          const answer = r.answers?.[q.id]
-          if (Array.isArray(answer)) return answer.join(', ')
-          return answer || ''
-        })
+        ...questions.map((q: any) => answerToText(r.answers?.[q.id]))
       ])
 
       const worksheet = XLSX.utils.aoa_to_sheet([headers, ...data])
@@ -123,7 +131,7 @@ export default function FormResults() {
         doc.setFontSize(9)
         questions.forEach((q: any) => {
           const answer = response.answers?.[q.id]
-          const answerText = Array.isArray(answer) ? answer.join(', ') : (answer || '(No answer)')
+          const answerText = answerToText(answer) || '(No answer)'
           
           doc.text(`${q.title}:`, 20, yPosition)
           yPosition += 5
@@ -207,8 +215,8 @@ export default function FormResults() {
 
   // Aggregate stats per question
   const getQuestionStats = (q: any) => {
-    const answers = responses.map(r => r.answers?.[q.id]).filter(a => a !== undefined && a !== '')
-    if (q.type === 'multiple_choice' || q.type === 'yes_no') {
+    const answers = responses.map(r => r.answers?.[q.id]).filter(a => a !== undefined && a !== '' && !(Array.isArray(a) && a.length === 0))
+    if (['multiple_choice', 'yes_no', 'dropdown', 'picture_choice'].includes(q.type)) {
       const counts: Record<string, number> = {}
       answers.forEach(a => { counts[a] = (counts[a] || 0) + 1 })
       return { type: 'distribution', counts, total: answers.length }
@@ -218,7 +226,58 @@ export default function FormResults() {
       const avg = nums.length ? (nums.reduce((s, n) => s + n, 0) / nums.length) : 0
       return { type: 'average', avg, total: nums.length }
     }
-    return { type: 'text', samples: answers.slice(0, 5), total: answers.length }
+    // Media-style answers: a bar chart / average makes no sense — just count them.
+    if (['signature', 'video_audio', 'file_upload'].includes(q.type)) {
+      return { type: 'count', total: answers.length }
+    }
+    if (q.type === 'ranking') {
+      const samples = answers.slice(0, 5).map((a: any) => Array.isArray(a) ? a.map((x, i) => `${i + 1}. ${x}`).join('   ') : String(a))
+      return { type: 'text', samples, total: answers.length }
+    }
+    if (q.type === 'matrix') {
+      const samples = answers.slice(0, 5).map((a: any) => (a && typeof a === 'object') ? Object.entries(a).map(([r, c]) => `${r}: ${c}`).join(' · ') : String(a))
+      return { type: 'text', samples, total: answers.length }
+    }
+    return { type: 'text', samples: answers.slice(0, 5).map((a: any) => typeof a === 'object' ? JSON.stringify(a) : String(a)), total: answers.length }
+  }
+
+  // A compact one-line preview of any answer shape (for the response cards).
+  const previewAnswer = (a: any): string => {
+    if (a === undefined || a === null || a === '') return '—'
+    if (Array.isArray(a)) return a.join(', ')
+    if (typeof a === 'object') {
+      if (a.name) return a.name
+      if (a.url) return a.url.split('/').pop() || 'file'
+      return Object.entries(a).map(([k, v]) => `${k}: ${v}`).join(', ')
+    }
+    if (typeof a === 'string' && a.startsWith('data:')) return 'Signature'
+    return String(a)
+  }
+
+  // Full answer rendering in the response modal — handles text, media URLs,
+  // signatures (data URLs), uploads ({url,name}), ranking (arrays) and matrix
+  // (objects) without ever dumping "[object Object]" or a raw base64 string.
+  const renderAnswer = (answer: any) => {
+    const P = ({ children }: { children: any }) => <p className="text-sm" style={{ color: 'var(--ink)' }}>{children}</p>
+    if (answer === undefined || answer === null || answer === '') return <P>—</P>
+    // Matrix (or any plain object without a url)
+    if (typeof answer === 'object' && !Array.isArray(answer) && !answer.url) {
+      const entries = Object.entries(answer)
+      if (entries.length === 0) return <P>—</P>
+      return <div className="space-y-1">{entries.map(([k, v]) => <p key={k} className="text-sm" style={{ color: 'var(--ink)' }}><span style={{ color: 'var(--slate)' }}>{k}:</span> {String(v)}</p>)}</div>
+    }
+    const url = (typeof answer === 'object' && answer.url) ? answer.url : (typeof answer === 'string' ? answer : null)
+    if (typeof url === 'string' && (url.startsWith('http') || url.startsWith('data:'))) {
+      if (/\.(jpg|jpeg|png|gif|webp)$/i.test(url) || url.startsWith('data:image')) return <img src={url} alt="answer" style={{ maxWidth: '100%', maxHeight: 220, borderRadius: 8, border: '1px solid var(--border)' }} />
+      if (/\.(mp4|webm|mov|m4v)$/i.test(url) || url.startsWith('data:video')) return <video src={url} controls style={{ maxWidth: '100%', maxHeight: 220, borderRadius: 8 }} />
+      if (/\.(mp3|wav|ogg|m4a|aac)$/i.test(url) || url.startsWith('data:audio')) return <audio src={url} controls style={{ width: '100%' }} />
+      return <a href={url} target="_blank" rel="noopener" className="text-sm" style={{ color: 'var(--coral)', textDecoration: 'underline' }}>📎 {(typeof answer === 'object' && answer.name) || url.split('/').pop() || 'Download'}</a>
+    }
+    if (Array.isArray(answer)) {
+      // Ranking → numbered; plain multi-select → comma list.
+      return <div className="space-y-0.5">{answer.map((x: any, i: number) => <p key={i} className="text-sm" style={{ color: 'var(--ink)' }}>{i + 1}. {typeof x === 'object' ? JSON.stringify(x) : String(x)}</p>)}</div>
+    }
+    return <P>{String(answer)}</P>
   }
 
   return (
@@ -414,6 +473,13 @@ export default function FormResults() {
                     </div>
                   )}
 
+                  {stats.type === 'count' && (
+                    <div className="flex items-center gap-3">
+                      <span className="text-3xl font-black" style={{ color: themeColor }}>{stats.total}</span>
+                      <span className="text-sm" style={{ color: 'var(--slate)' }}>response{stats.total === 1 ? '' : 's'} collected — open Individual responses to view each</span>
+                    </div>
+                  )}
+
                   {stats.type === 'text' && (
                     <div className="space-y-2">
                       {stats.samples.length === 0 ? (
@@ -443,7 +509,7 @@ export default function FormResults() {
                   <p className="text-xs mb-2" style={{ color: 'var(--slate)' }}>{new Date(r.created_at).toLocaleString()}</p>
                   {questions.slice(0, 2).map((q: any) => (
                     <p key={q.id} className="text-sm mb-1 truncate" style={{ color: 'var(--ink)' }}>
-                      <span style={{ color: 'var(--slate)' }}>{q.title}:</span> {String(r.answers?.[q.id] ?? '—')}
+                      <span style={{ color: 'var(--slate)' }}>{q.title}:</span> {previewAnswer(r.answers?.[q.id])}
                     </p>
                   ))}
                   <p className="text-xs mt-2 font-semibold" style={{ color: themeColor }}>View full response →</p>
@@ -496,56 +562,12 @@ export default function FormResults() {
                   )}
                 </div>
               )}
-              {questions.map((q: any) => {
-                const answer = selectedResponse.answers?.[q.id]
-                const isFileUpload = q.type === 'file_upload'
-                const isMediaAnswer = answer && typeof answer === 'string' && (answer.match(/\.(jpg|jpeg|png|gif|webp|mp4|webm|mp3|wav)$/i) || answer.startsWith('data:'))
-                
-                return (
-                  <div key={q.id}>
-                    <p className="text-xs font-semibold mb-1" style={{ color: 'var(--slate)' }}>{q.title}</p>
-                    {isFileUpload && answer ? (
-                      <div>
-                        {typeof answer === 'string' ? (
-                          answer.startsWith('http') || answer.startsWith('data:') ? (
-                            answer.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? (
-                              <img src={answer} alt="uploaded" style={{ maxWidth: '100%', maxHeight: 200, borderRadius: 8 }} />
-                            ) : answer.match(/\.(mp4|webm)$/i) ? (
-                              <video src={answer} style={{ maxWidth: '100%', maxHeight: 200, borderRadius: 8 }} controls />
-                            ) : (
-                              <a href={answer} target="_blank" rel="noopener" className="text-sm" style={{ color: 'var(--coral)', textDecoration: 'underline' }}>
-                                📎 {answer.split('/').pop() || 'Download file'}
-                              </a>
-                            )
-                          ) : (
-                            <p className="text-sm" style={{ color: 'var(--ink)' }}>{answer}</p>
-                          )
-                        ) : Array.isArray(answer) ? (
-                          <div className="space-y-2">
-                            {answer.map((file: string, idx: number) => (
-                              <a key={idx} href={file} target="_blank" rel="noopener" className="text-sm block" style={{ color: 'var(--coral)', textDecoration: 'underline' }}>
-                                📎 {file.split('/').pop()}
-                              </a>
-                            ))}
-                          </div>
-                        ) : (
-                          <p className="text-sm" style={{ color: 'var(--ink)' }}>—</p>
-                        )}
-                      </div>
-                    ) : isMediaAnswer && typeof answer === 'string' ? (
-                      answer.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? (
-                        <img src={answer} alt="uploaded" style={{ maxWidth: '100%', maxHeight: 200, borderRadius: 8 }} />
-                      ) : (
-                        <p className="text-sm" style={{ color: 'var(--ink)' }}>{String(answer)}</p>
-                      )
-                    ) : Array.isArray(answer) ? (
-                      <p className="text-sm" style={{ color: 'var(--ink)' }}>{answer.join(', ')}</p>
-                    ) : (
-                      <p className="text-sm" style={{ color: 'var(--ink)' }}>{String(answer ?? '—')}</p>
-                    )}
-                  </div>
-                )
-              })}
+              {questions.map((q: any) => (
+                <div key={q.id}>
+                  <p className="text-xs font-semibold mb-1" style={{ color: 'var(--slate)' }}>{q.title}</p>
+                  {renderAnswer(selectedResponse.answers?.[q.id])}
+                </div>
+              ))}
             </div>
           </div>
         </>
