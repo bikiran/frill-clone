@@ -80,11 +80,12 @@ export default function PublicForm() {
   const selectAndAdvance = (questionId: string, value: any) => {
     setAnswers(p => ({ ...p, [questionId]: value }))
     setTimeout(() => {
-      setStep(s => {
-        if (s < questions.length - 1) return s + 1
-        return s
-      })
-      if (step === questions.length - 1) handleSubmit()
+      // Mirror handleNext: advance within the VISIBLE questions, and SUBMIT on the
+      // last one. The old code compared against questions.length (ignoring
+      // conditional logic) and read a stale `step`, so tapping the final answer
+      // stepped past the end instead of submitting — leaving a blank page.
+      if (step < visibleQuestions.length - 1) setStep(step + 1)
+      else handleSubmit()
     }, 280)
   }
 
@@ -157,6 +158,16 @@ export default function PublicForm() {
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   }, [step, answers, questions])
+
+  // Safety net: if step ever lands past the last visible question without a
+  // submission (e.g. an edge in conditional logic), submit rather than render a
+  // blank dead-end. Guarded on submitted/submitting so it fires at most once.
+  useEffect(() => {
+    if (!loading && !submitted && !submitting && step >= 0 && visibleQuestions.length > 0 && step > visibleQuestions.length - 1) {
+      handleSubmit()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, visibleQuestions.length, submitted, submitting, loading])
 
   // Map a scanned contact (from /api/contacts/scan) onto one of this form's
   // questions. Matches by question type first, then by the question's wording
