@@ -566,7 +566,7 @@ export default function FormResults() {
       {selectedResponse && (
         <>
           <div className="fixed inset-0 z-50 backdrop-blur-sm" style={{ background: 'rgba(0,0,0,0.4)' }} onClick={() => setSelectedResponse(null)} />
-          <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-lg bg-white rounded-2xl shadow-2xl mx-4 max-h-[85vh] overflow-y-auto">
+          <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 max-w-lg bg-white rounded-2xl shadow-2xl max-h-[85vh] overflow-y-auto" style={{ width: 'calc(100vw - 32px)' }}>
             <div className="p-6 border-b flex items-center justify-between" style={{ borderColor: 'var(--border)' }}>
               <div>
                 <h2 className="text-lg font-bold" style={{ color: 'var(--ink)' }}>Response</h2>
