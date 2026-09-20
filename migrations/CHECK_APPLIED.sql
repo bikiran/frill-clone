@@ -64,6 +64,31 @@ FROM (VALUES
               AND policyname = 'push_tokens_own_or_member'),
    'policy push_tokens_own_or_member on push_tokens'),
 
+  ('COLVY_V221_CLAIM_PUSH_TOKEN',
+   EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'claim_push_token'),
+   'function claim_push_token()'),
+
+  ('COLVY_V222_PUSH_TOKENS_PER_WORKSPACE',
+   to_regclass('public.push_tokens_device_workspace_uniq') IS NOT NULL,
+   'index push_tokens_device_workspace_uniq'),
+
+  -- V223 is a backfill, so there is nothing it creates to look for. What it
+  -- leaves behind is the ABSENCE of mislabelled threads: any row here means a
+  -- conversation still carries a channel its newest inbound message disagrees
+  -- with, which is either V223 not yet run or new drift.
+  ('COLVY_V223_BACKFILL_META_CONVERSATION_CHANNEL',
+   NOT EXISTS (
+     SELECT 1 FROM conversations c
+       JOIN LATERAL (
+         SELECT lower(m.delivery_channel) AS dc FROM messages m
+          WHERE m.conversation_id = c.id AND m.sender_type = 'visitor'
+            AND m.delivery_channel IS NOT NULL
+          ORDER BY m.created_at DESC LIMIT 1
+       ) n ON TRUE
+      WHERE n.dc IN ('facebook', 'instagram') AND c.channel IS DISTINCT FROM n.dc
+   ),
+   'no thread mislabelled against its newest inbound'),
+
   -- Feature migrations with no version number.
   ('COLVY_PRODUCT_SEARCH_INDEX',
    to_regclass('public.woocommerce_products_name_trgm') IS NOT NULL,
