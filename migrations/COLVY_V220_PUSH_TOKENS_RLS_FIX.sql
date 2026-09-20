@@ -1,5 +1,5 @@
 -- ============================================================
--- COLVY V210 — PUSH TOKENS: MAKE THE DEVICE ROW WRITABLE AGAIN
+-- COLVY V220 — PUSH TOKENS: MAKE THE DEVICE ROW WRITABLE AGAIN
 --
 -- SYMPTOM
 -- Phones stopped receiving new-order and new-SMS alerts. Calls kept working
