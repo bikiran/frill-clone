@@ -1093,6 +1093,21 @@ export default function InboxPage() {
   // showing the web page the customer was supposedly "currently on" — data from
   // a visit that may have ended days ago). The newest message wins.
   const activeChannel = useMemo(() => {
+    // INBOUND first. Taking the newest delivery_channel of ANY message lets one
+    // reply sent on the wrong channel redefine the thread permanently: a single
+    // SMS into a Messenger conversation makes 'sms' the newest channel, so the
+    // next reply goes by SMS too, and so on. It is self-reinforcing, and it
+    // crosses clients — a mobile reply did exactly this to a Messenger thread
+    // and the web then inherited SMS from it. What decides a reply is the
+    // channel the CUSTOMER last used; our own past choices are the thing under
+    // suspicion, so they cannot be the evidence.
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i] as any
+      if (!m || m.sender_type === 'agent' || m.sender_type === 'system' || m.is_internal) continue
+      const dc = String(m.delivery_channel || '').toLowerCase()
+      if (dc && dc !== 'chat') return dc
+    }
+    // Nothing inbound carried one — fall back to any message, then the row.
     for (let i = messages.length - 1; i >= 0; i--) {
       const dc = String((messages[i] as any).delivery_channel || '').toLowerCase()
       if (dc && dc !== 'chat') return dc
