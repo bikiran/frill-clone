@@ -35,6 +35,7 @@ import AddressAutocomplete from '@/components/AddressAutocomplete'
 import DeliveryPanel from '@/components/DeliveryPanel'
 import MediaGallery, { MediaItem } from '@/components/MediaGallery'
 import CustomerMatchCard from '@/components/CustomerMatchCard'
+import CustomerChannels from '@/components/CustomerChannels'
 import DoaPanel from '@/components/DoaPanel'
 import CreateOrderPanel from '@/components/CreateOrderPanel'
 
@@ -9180,9 +9181,19 @@ export default function InboxPage() {
                     companyId={companyId}
                     userId={user?.id}
                     userName={user?.user_metadata?.display_name || user?.email?.split('@')[0]}
-                    onLinked={() => selectConversation(selected)}
+                    onLinked={async () => {
+                      // Confirming a match repoints conversations.contact_id to the
+                      // customer, so re-fetch the row (the local `selected` still
+                      // holds the old visitor id) before reloading the panel.
+                      try {
+                        const { data } = await (supabase as any).from('conversations').select('*').eq('id', selected.id).maybeSingle()
+                        await selectConversation(data || selected)
+                      } catch { await selectConversation(selected) }
+                    }}
                   />
                 )}
+                {/* Other channels this customer is reachable on (cross-channel). */}
+                {contact && <CustomerChannels contactId={contact.id} currentChannel={(selected as any)?.channel} />}
                 {/* Coax-style contact card header */}
                 {contact && !showContactEdit && (
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', padding: '4px 0 16px', borderBottom: '1px solid var(--border)', marginBottom: 14 }}>
