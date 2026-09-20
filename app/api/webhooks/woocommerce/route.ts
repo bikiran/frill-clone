@@ -4,7 +4,7 @@ import { linkContactIdentity } from '@/lib/identity'
 import { createClient } from '@supabase/supabase-js'
 import { attributeOrderToLinks } from '@/lib/link-attribution'
 import { WebhookService } from '@/lib/webhook-service'
-import { notifyCompany } from '@/lib/notify'
+import { notifyCompany, pushInboundMessage } from '@/lib/notify'
 import { logWebhookEvent } from '@/lib/webhook-log'
 import { upsertWooOrder } from '@/lib/orders-sync'
 import { wooDateToISO } from '@/lib/orders'
@@ -402,6 +402,19 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
       })
     }
     try { await notifyCompany({ db, companyId, type: 'order', message: `New order #${order.number || order.id} from ${displayName} — $${order.total}`, actorName: displayName, conversationId: conv.id }) } catch {}
+    // notifyCompany only writes the in-app bell row — it does NOT push, which is
+    // why a new order showed up in Activity and on the web while no phone ever
+    // made a sound. Only announce the order once, on the delivery that created
+    // the dedup marker below.
+    try {
+      await pushInboundMessage({
+        companyId,
+        conversationId: conv.id,
+        title: `New order #${order.number || order.id}`,
+        body: `${displayName} — $${order.total}`,
+        route: `/conversation/${conv.id}`,
+      })
+    } catch {}
     // Record the dedup marker now so repeated webhook deliveries for the same
     // order+status don't re-post (whether or not automation is enabled).
     await db.from('order_chat_events').insert({ ...dupeKey, conversation_id: conv.id })

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { log } from '@/lib/log'
 import { createClient } from '@supabase/supabase-js'
-import { notifyCompany } from '@/lib/notify'
+import { notifyCompany, pushInboundMessage } from '@/lib/notify'
 import { runKeywordReply } from '@/lib/keyword-reply'
 import { TelnyxService } from '@/lib/telnyx-service'
 import { logWebhookEvent } from '@/lib/webhook-log'
@@ -371,6 +371,19 @@ export async function POST(req: NextRequest) {
         }
 
         try { await notifyCompany({ db, companyId, type: 'sms', message: `New SMS from ${from}: ${summary.slice(0, 80)}`, actorName: from, conversationId: conv.id }) } catch {}
+        // notifyCompany only writes the in-app bell row — it does NOT push. The
+        // Meta webhook has always called this too; this path never did, so an
+        // inbound text appeared in Activity and on the web while the phone
+        // stayed silent.
+        try {
+          await pushInboundMessage({
+            companyId,
+            conversationId: conv.id,
+            title: `New SMS from ${from}`,
+            body: summary,
+            route: `/conversation/${conv.id}`,
+          })
+        } catch {}
       }
       return NextResponse.json({ ok: true })
     }
