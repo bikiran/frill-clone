@@ -2,7 +2,20 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { computeMatches, maskEmail, maskPhone, type Candidate, type MatchSignals, type IdentityKind } from '@/lib/customer-match'
 import { phoneKey, emailKey, detectContactInfo } from '@/lib/phone'
-import { getUserRole, canEdit, canViewSensitive } from '@/lib/permissions'
+import { canEdit, canViewSensitive, type UserRole } from '@/lib/permissions'
+
+// Resolve the caller's role with the SERVICE-ROLE client (the shared
+// getUserRole helper uses an unauthenticated anon client, which RLS blocks
+// server-side — making every caller look like a 'viewer').
+async function resolveRole(db: any, userId: string | undefined, companyId: string): Promise<UserRole> {
+  if (!userId) return 'viewer'
+  try {
+    const { data: company } = await db.from('companies').select('owner_id').eq('id', companyId).maybeSingle()
+    if (company?.owner_id === userId) return 'owner'
+    const { data: m } = await db.from('team_members').select('role').eq('company_id', companyId).eq('user_id', userId).maybeSingle()
+    return (m?.role as UserRole) || 'viewer'
+  } catch { return 'viewer' }
+}
 
 export const dynamic = 'force-dynamic'
 
@@ -35,7 +48,7 @@ export async function POST(req: NextRequest) {
     const platformUserId = conv.meta_user_id || null
 
     // Role: viewers can look but not act, and see masked PII.
-    const role = body.userId ? await getUserRole(body.userId, companyId) : 'viewer'
+    const role = await resolveRole(db, body.userId, companyId)
 
     const WRITE = ['confirm', 'unlink', 'reject', 'merge', 'request-details']
     if (WRITE.includes(action) && !canEdit(role)) {

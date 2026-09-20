@@ -53,14 +53,14 @@ export default function CustomerMatchCard({
     try {
       const res = await fetch('/api/inbox/customer-match', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'suggest', conversationId }),
+        body: JSON.stringify({ action: 'suggest', conversationId, userId }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Match lookup failed')
       setResult(data)
     } catch (e: any) { setError(e.message) }
     finally { setLoading(false) }
-  }, [conversationId, applicable])
+  }, [conversationId, applicable, userId])
 
   useEffect(() => { load() }, [load])
 
