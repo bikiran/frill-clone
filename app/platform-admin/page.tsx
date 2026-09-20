@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import LegalAdminPage from '../admin/legal/page'
 import PlatformBannerAdmin from '@/components/PlatformBannerAdmin'
+import BlogAdminPage from '@/components/BlogAdminPage'
 import { SmsPricing, DEFAULT_PRICING, calculateCost, aud, audRate, parsePricingRow } from '@/lib/sms-pricing'
 import { PLAN_FEATURES, PLAN_LIMITS, PLAN_NAMES, OVERRIDABLE_FEATURES, OVERRIDABLE_LIMITS, Plan } from '@/lib/plan'
 import { OPERATIONAL_FLAGS } from '@/lib/feature-flags'
@@ -102,6 +103,7 @@ const NAV = [
   { key: 'roadmap',    label: 'Roadmaps',         icon: 'roadmap' },
   { key: 'announce',   label: 'Announcements',    icon: 'announce' },
   { key: 'help',       label: 'Help Center',      icon: 'help' },
+  { key: 'blog',       label: 'Blog',             icon: 'announce' },
   { key: 'legal',      label: 'Legal Pages',      icon: 'audit' },
   { key: 'banner',     label: 'Product Banner',   icon: 'announce' },
   { section: 'Support' },
@@ -3802,6 +3804,7 @@ export default function SuperAdmin() {
           {page === 'roadmap'    && <CrossCompanyContent title="Roadmaps" sub="All roadmap items across all companies" table="ideas" statusFilter={['planned', 'in_progress', 'shipped']} extraCol={{ header: 'Votes', render: (r) => <span>{r.votes ?? 0}</span> }} />}
           {page === 'announce'   && <CrossCompanyContent title="Announcements" sub="All announcements and changelog posts" table="announcements" />}
           {page === 'help'       && <CrossCompanyContent title="Help Center" sub="Help articles across all companies" table="help_articles" extraCol={{ header: 'Views', render: (r) => <span>{r.views ?? 0}</span> }} />}
+          {page === 'blog'       && <BlogAdminPage />}
           {page === 'chat'       && <LiveChatPage />}
           {page === 'tickets'    && <TicketsPage />}
           {page === 'moderation' && <ModerationPage />}
