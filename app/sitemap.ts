@@ -2,6 +2,7 @@ import type { MetadataRoute } from 'next'
 import { statSync } from 'fs'
 import { join } from 'path'
 import { allMarketingPaths } from '@/lib/marketing-routes'
+import { allArticleSlugs } from '@/lib/blog-store'
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
 
@@ -27,13 +28,13 @@ function sourceFile(path: string): string {
   return `app/${path}/Client.tsx` // static wrapped pages keep their UI in Client.tsx
 }
 
-export default function sitemap(): MetadataRoute.Sitemap {
+export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const buildTime = new Date()
   const lastMod = (path: string): Date => {
     try { return statSync(join(process.cwd(), sourceFile(path))).mtime }
     catch { return buildTime }
   }
-  return allMarketingPaths().map(path => {
+  const pages: MetadataRoute.Sitemap = allMarketingPaths().map(path => {
     const { priority, changeFrequency } = hints(path)
     return {
       url: path ? `${SITE_URL}/${path}` : SITE_URL,
@@ -42,4 +43,15 @@ export default function sitemap(): MetadataRoute.Sitemap {
       priority,
     }
   })
+
+  // Individual blog articles (DB + seed). Never throws — falls back to seed.
+  const slugs = await allArticleSlugs()
+  const posts: MetadataRoute.Sitemap = slugs.map(slug => ({
+    url: `${SITE_URL}/blog/${slug}`,
+    lastModified: buildTime,
+    changeFrequency: 'monthly',
+    priority: 0.7,
+  }))
+
+  return [...pages, ...posts]
 }
