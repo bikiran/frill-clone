@@ -34,14 +34,14 @@ export const metadata: Metadata = {
     title: 'Colvy — Omnichannel Inbox, CRM & Customer Feedback',
     description:
       'One shared inbox across Messenger, Instagram, WhatsApp, SMS and email, a lightweight CRM, and product feedback boards, roadmaps and changelogs.',
-    images: [{ url: '/logo.png', width: 512, height: 512, alt: 'Colvy' }],
+    images: [{ url: '/og.png', width: 1731, height: 909, alt: 'Colvy — customer communication made simple' }],
   },
   twitter: {
     card: 'summary_large_image',
     title: 'Colvy — Omnichannel Inbox, CRM & Customer Feedback',
     description:
       'One shared inbox across Messenger, Instagram, WhatsApp, SMS and email, a lightweight CRM, and product feedback boards, roadmaps and changelogs.',
-    images: ['/logo.png'],
+    images: ['/og.png'],
   },
   robots: {
     index: true,
