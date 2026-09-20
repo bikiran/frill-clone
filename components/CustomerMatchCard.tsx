@@ -84,6 +84,7 @@ export default function CustomerMatchCard({
   })
   const reject = (s: Suggestion) => act('reject', { contactId: s.contactId })
   const unlink = (s: Suggestion) => act('unlink', {})
+  const requestDetails = () => act('request-details', {})
 
   if (!applicable) return null
 
@@ -126,7 +127,8 @@ export default function CustomerMatchCard({
   if (!primary) {
     return (
       <div style={{ ...cardStyle, background: 'var(--canvas)' }}>
-        <p style={{ margin: 0, fontSize: 12.5, color: 'var(--slate)' }}>No matching customer found — this is a new {label(channel)} visitor. You can create or link a customer from the contact panel below.</p>
+        <p style={{ margin: '0 0 10px', fontSize: 12.5, color: 'var(--slate)' }}>No matching customer found — this is a new {label(channel)} visitor. You can create or link a customer from the contact panel below.</p>
+        <button disabled={!!busy} onClick={requestDetails} style={ghostBtn}>{busy === 'request-details' ? 'Sending…' : 'Request customer details'}</button>
       </div>
     )
   }
@@ -156,6 +158,7 @@ export default function CustomerMatchCard({
           <button disabled={!!busy} onClick={() => confirm(s)} style={primaryBtn}>{busy === 'confirm' + s.contactId ? 'Linking…' : 'Confirm match'}</button>
           {!compact && others.length > 0 && <button disabled={!!busy} onClick={() => setShowAll(true)} style={ghostBtn}>Choose another</button>}
           <button disabled={!!busy} onClick={() => reject(s)} style={ghostBtn}>Not this customer</button>
+          {!compact && <button disabled={!!busy} onClick={requestDetails} style={ghostBtn}>{busy === 'request-details' ? 'Sending…' : 'Request details'}</button>}
         </div>
       </div>
     )

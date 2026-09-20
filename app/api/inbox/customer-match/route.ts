@@ -36,6 +36,7 @@ export async function POST(req: NextRequest) {
     if (action === 'confirm') return await confirmMatch(db, conv, body)
     if (action === 'unlink') return await unlinkMatch(db, conv, body)
     if (action === 'reject') return await rejectMatch(db, conv, body)
+    if (action === 'request-details') return await requestDetails(db, conv, body, req)
 
     // ── suggest ──────────────────────────────────────────────────────────────
     if (!META_CHANNELS.includes(platform || '')) {
@@ -279,6 +280,31 @@ async function unlinkMatch(db: any, conv: any, body: any) {
     detail: `Unlinked ${kind} identity`, evidence: { kind, value, restored },
   })
   return NextResponse.json({ ok: true, restored, contactId: rec?.before?.visitorContactId || conv.contact_id || null })
+}
+
+// ── request-details: ask the customer for the email/phone used at checkout ─────
+// Sends a neutral message on the conversation's own channel. It NEVER includes
+// any stored customer information — we only ask them to share an identifier.
+const REQUEST_DETAILS_MESSAGE =
+  'To help locate your order, please share the email address or mobile number used at checkout.'
+
+async function requestDetails(db: any, conv: any, body: any, req: NextRequest) {
+  const companyId = conv.company_id
+  const message = (body.message && String(body.message).trim()) || REQUEST_DETAILS_MESSAGE
+  const base = (process.env.NEXT_PUBLIC_SITE_URL || new URL(req.url).origin).replace(/\/$/, '')
+  const res = await fetch(`${base}/api/meta/send`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ conversationId: conv.id, content: message, agentName: body.userName || 'Agent' }),
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) return NextResponse.json({ error: data.error || 'Could not send the request' }, { status: 502 })
+  await db.from('customer_identity_audit').insert({
+    company_id: companyId, contact_id: conv.contact_id || null, action: 'details_requested',
+    actor_id: body.userId || null, actor_name: body.userName || null,
+    detail: 'Asked the customer for the email/phone used at checkout',
+    evidence: { conversationId: conv.id },
+  })
+  return NextResponse.json({ ok: true })
 }
 
 // ── reject: this suggested customer is NOT the person (don't suggest again) ────
