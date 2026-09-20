@@ -509,6 +509,9 @@ export default function InboxPage() {
   const [convActions, setConvActions] = useState<Record<string, any>>({})
   const [showActionMenu, setShowActionMenu] = useState(false)
   const [showRecordSale, setShowRecordSale] = useState(false)
+  // Whether this conversation already has a recorded sale — used to suppress the
+  // "did this convert to a sale?" nudge so it isn't recorded twice.
+  const [convHasSale, setConvHasSale] = useState(false)
   const [showMediaRequest, setShowMediaRequest] = useState(false)
   const [mrPrompt, setMrPrompt] = useState('')
   const [mrAccept, setMrAccept] = useState<string[]>(['image', 'video', 'pdf'])
@@ -585,6 +588,22 @@ export default function InboxPage() {
     const recent = messages.slice(-6)
     return recent.some(m => { const t = String((m as any).content || '').toLowerCase(); return PAYMENT_SIGNAL_PHRASES.some(p => t.includes(p)) })
   }, [messages])
+
+  // Has a sale already been recorded for the open conversation? If so (or if the
+  // customer already matches an ecommerce order), the payment is on record and
+  // the "record a sale" nudge would double-count — so it's suppressed below.
+  useEffect(() => {
+    const id = selected?.id
+    if (!id) { setConvHasSale(false); return }
+    let cancelled = false
+    ;(async () => {
+      try {
+        const { count } = await (supabase as any).from('conversation_sales').select('id', { count: 'exact', head: true }).eq('conversation_id', id)
+        if (!cancelled) setConvHasSale((count || 0) > 0)
+      } catch { if (!cancelled) setConvHasSale(false) }
+    })()
+    return () => { cancelled = true }
+  }, [selected?.id])
   const [contact, setContact] = useState<Contact | null>(null)
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([])
   const [reply, setReply] = useState('')
@@ -6689,7 +6708,7 @@ export default function InboxPage() {
           currentUser={{ id: user?.id, name: user?.user_metadata?.display_name || user?.email?.split('@')[0] }}
           currency="AUD"
           onClose={() => setShowRecordSale(false)}
-          onSaved={() => { if (selected) loadConversationExtras(selected.id) }}
+          onSaved={() => { setConvHasSale(true); if (selected) loadConversationExtras(selected.id) }}
         />
       )}
       {showMediaRequest && selected && (
@@ -8773,8 +8792,10 @@ export default function InboxPage() {
                 </div>
               )}
 
-              {/* Smart prompt: a recent message reads like a payment — offer to log the sale. */}
-              {selected && paymentSignal && !saleDismissed.has(selected.id) && (
+              {/* Smart prompt: a recent message reads like a payment — offer to log
+                  the sale. Suppressed once a sale is recorded for this thread or the
+                  customer already matches an ecommerce order (already on record). */}
+              {selected && paymentSignal && !saleDismissed.has(selected.id) && !convHasSale && wooOrders.length === 0 && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '0 0 8px', padding: '9px 12px', borderRadius: 10, background: '#ecfdf5', border: '1px solid #a7f3d0' }}>
                   <span style={{ fontSize: 16, flexShrink: 0 }}>💰</span>
                   <span style={{ flex: 1, fontSize: 12.5, color: '#065f46', fontWeight: 600 }}>Looks like a payment — did this convert to a sale?</span>
