@@ -132,6 +132,28 @@ const CHANNEL_NAME: Record<string, string> = {
   facebook: 'Messenger', messenger: 'Messenger', instagram: 'Instagram', whatsapp: 'WhatsApp',
   realestate: 'RealEstate',
 }
+
+// Monochrome (currentColor) channel marks for the Send button, so the button
+// itself shows WHERE the reply will land — Messenger, Instagram, SMS, email,
+// WhatsApp, phone or live chat — instead of a generic arrow. They inherit the
+// button's text colour (white when active, grey when disabled), matching the
+// solid/gradient button background rather than the brand-coloured logos.
+const sendChannelGlyph = (ch: string, s = 15): React.ReactNode => {
+  const c = String(ch || '').toLowerCase()
+  if (c === 'instagram') return (
+    <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><rect x="3" y="3" width="18" height="18" rx="5" /><circle cx="12" cy="12" r="4" /><line x1="17.5" y1="6.5" x2="17.51" y2="6.5" /></svg>
+  )
+  if (c === 'facebook' || c === 'messenger') return (
+    <svg width={s} height={s} viewBox="0 0 24 24" fill="currentColor" style={{ flexShrink: 0 }}><path d="M24 12.07C24 5.4 18.63 0 12 0S0 5.4 0 12.07C0 18.1 4.39 23.1 10.13 24v-8.44H7.08v-3.49h3.05V9.41c0-3.02 1.79-4.69 4.53-4.69 1.31 0 2.68.24 2.68.24v2.97h-1.51c-1.49 0-1.96.93-1.96 1.89v2.25h3.33l-.53 3.49h-2.8V24C19.61 23.1 24 18.1 24 12.07z" /></svg>
+  )
+  if (c === 'whatsapp') return (
+    <svg width={s} height={s} viewBox="0 0 24 24" fill="currentColor" style={{ flexShrink: 0 }}><path d="M12 2a10 10 0 0 0-8.6 15l-1.3 4.7 4.8-1.3A10 10 0 1 0 12 2zm5.8 14.2c-.2.7-1.4 1.3-2 1.4-.5.1-1.2.1-1.9-.1-.4-.1-1-.3-1.7-.6-3-1.3-4.9-4.3-5.1-4.5-.1-.2-1.2-1.5-1.2-2.9s.7-2 1-2.3c.2-.3.5-.3.7-.3h.5c.2 0 .4 0 .6.5l.8 1.9c.1.1.1.3 0 .5l-.3.5c-.1.2-.3.3-.1.6.1.2.6 1 1.3 1.6.9.8 1.6 1 1.9 1.2.2.1.4.1.5-.1l.6-.8c.2-.2.4-.2.6-.1l1.8.9c.2.1.4.2.5.3.1.2.1.7-.1 1.4z" /></svg>
+  )
+  if (c === 'email') return Icon.mail(s)
+  if (c === 'sms') return Icon.mobile(s)
+  if (c === 'phone' || c === 'voice') return Icon.phone(s)
+  return Icon.chat(s)   // widget / chat / anything else
+}
 const SENTIMENT_ICON: Record<string, (s?: number) => React.ReactNode> = {
   positive: Icon.smile, neutral: Icon.meh, negative: Icon.frown,
 }
@@ -9048,7 +9070,11 @@ export default function InboxPage() {
                         ? (internalMode ? 'Saving…' : 'Sending…')
                         : internalMode
                           ? 'Add note'
-                          : `Send${sendChannel !== 'auto' ? ` via ${sendChannel.toUpperCase()}` : ''} →`}
+                          : (
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                              Send {sendChannelGlyph(sendChannel !== 'auto' ? sendChannel : activeChannel, 15)}
+                            </span>
+                          )}
                     </button>
                     {!internalMode && (
                     <>
