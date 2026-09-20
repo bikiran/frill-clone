@@ -16,9 +16,14 @@ export type BlogPost = {
   dateLabel: string     // human label
   readTime: string
   author: string
-  intro: string
-  sections: BlogSection[]
-  takeaways: string[]
+  cover?: string        // optional hero image (else the accent gradient tile)
+  // Body — either the structured form (intro + sections + takeaways) used by the
+  // original seed posts, OR a Markdown `content` string used by newer posts and
+  // by anything authored in the super-admin editor.
+  intro?: string
+  sections?: BlogSection[]
+  takeaways?: string[]
+  content?: string      // Markdown body (takes precedence when present)
 }
 
 export const POSTS: BlogPost[] = [
@@ -106,6 +111,116 @@ export const POSTS: BlogPost[] = [
       { h: 'Run both for a day', p: ['Overlap the old and new tools for a short window so nothing in flight gets dropped. Once the new inbox is catching everything, switch off the old one and cancel — no long contracts to trap you.'] },
     ],
     takeaways: ['Export your data first — and insist on being able to', 'Port your number instead of getting a new one', 'Overlap briefly so no in-flight conversation is lost'],
+  },
+
+  // ── Buyer-intent articles (Markdown body) ──────────────────────────────────
+  {
+    slug: 'best-shared-inbox-for-small-business',
+    title: 'The best shared inbox for small business (what to actually look for)',
+    excerpt: 'A shared inbox turns scattered messages into one team queue. Here’s how to choose one that fits a small team — and the traps to avoid.',
+    category: 'Buyer’s guide', accent: BLUE, icon: 'inbox',
+    date: '2026-09-12', dateLabel: 'Sep 12, 2026', readTime: '7 min read', author: 'The Colvy Team',
+    content: `A shared inbox is where a small team answers customers together — one queue, clear ownership, and the full history in one place. Instead of a support email that only one person watches (or a phone nobody officially owns), everyone sees the same conversations and can pick them up.
+
+If you're comparing options, here's what actually matters for a small business — and what tends to look good in a demo but frustrate you later.
+
+## What a shared inbox should do
+
+- **Pull every channel into one queue.** Email, live chat, SMS, WhatsApp, Instagram and Facebook DMs, and phone should land in the same place. If you still have to open five apps, you don't have a shared inbox — you have five inboxes.
+- **Thread by customer, not by message.** The same person messaging on Instagram today and email next week should be one conversation with one history, not two strangers.
+- **Make ownership obvious.** Assignment, @mentions and simple statuses (open, waiting, done) are what stop things falling through the cracks.
+- **Show who the customer is.** Their past orders, previous messages and notes should sit right next to the conversation so anyone can help without asking them to repeat themselves.
+
+## Questions to ask before you buy
+
+1. **Which channels are included, and which cost extra?** Some tools charge per channel or lock WhatsApp and calling behind the top tier.
+2. **How is it priced as you grow?** Per-seat pricing can get expensive fast for a small team. Look for a plan that fits the size you are now.
+3. **Can you start free?** You should be able to try it on real conversations before committing.
+4. **Does it include a lightweight CRM?** A shared inbox without customer context just moves the chaos.
+5. **How hard is it to leave?** Insist on being able to export your data and port your phone number.
+
+## Traps to avoid
+
+- **Enterprise help desks in disguise.** Powerful, but heavy to set up and priced for large teams. A small business usually wants something that works on day one.
+- **Per-message "ticket" models** that treat a returning customer as a brand-new stranger every time.
+- **Channels that are "coming soon."** Buy what's shipping today, not the roadmap.
+
+## Where Colvy fits
+
+Colvy is built for exactly this: one shared inbox across Messenger, Instagram, WhatsApp, SMS, email, live chat and phone, with a lightweight CRM beside every conversation — and a free plan so you can try it on real messages first. If you're weighing options, start free and see how one queue feels.`,
+  },
+  {
+    slug: 'manage-instagram-dms-for-business',
+    title: 'How to manage Instagram DMs for business (without living in the app)',
+    excerpt: 'Instagram DMs are where a lot of buying decisions happen now. Here’s how to answer them fast, as a team, without missing one.',
+    category: 'Playbooks', accent: PURPLE, icon: 'inbox',
+    date: '2026-09-05', dateLabel: 'Sep 5, 2026', readTime: '6 min read', author: 'The Colvy Team',
+    content: `For a lot of small businesses, Instagram DMs are the new contact form. People ask "do you have this in stock?", "how much?", "can you deliver?" — and whoever replies fastest often gets the sale. The problem is the Instagram app isn't built for a team, and DMs get buried under likes and comments.
+
+Here's how to handle Instagram DMs like a real support channel.
+
+## Connect DMs to a proper inbox
+
+Answering from your phone doesn't scale past one person — there's no assignment, no history, and no way to tell if a message was already handled. Connect your Instagram business account to a shared inbox so DMs land in the same queue as your other channels, and anyone on the team can pick them up.
+
+## Reply fast with saved replies
+
+You get the same questions constantly: price, availability, hours, delivery. Turn your best answers into saved replies your whole team can send in a tap. Fast, consistent answers are what turn a DM into a sale.
+
+## Keep the whole customer in view
+
+When a DM is tied to the customer's profile — past orders, previous chats, notes — you can answer "is my order shipped?" without asking them to explain who they are. That context is the difference between a reply and a good reply.
+
+## Don't forget comments and story replies
+
+Buying questions show up in comments and story replies too, not just the DM tab. Make sure those reach the same inbox so nothing slips.
+
+## Set an expectation when you're closed
+
+A short auto-reply ("Thanks — we'll get back to you within a few hours") buys goodwill and cuts down the "hello??" follow-ups.
+
+## The takeaway
+
+You don't need to live in the Instagram app to be great at DMs — you need them in one place, fast answers ready to go, and the customer's history beside every message. Colvy brings Instagram DMs, comments and story replies into one shared inbox alongside your other channels, so your team can answer quickly without missing a thing.`,
+  },
+  {
+    slug: 'whatsapp-business-shared-inbox-guide',
+    title: 'WhatsApp Business shared inbox: a practical guide for teams',
+    excerpt: 'The WhatsApp Business app stops at one phone. Here’s how to let a whole team answer WhatsApp — with history, assignment and saved replies.',
+    category: 'Buyer’s guide', accent: GREEN, icon: 'inbox',
+    date: '2026-08-29', dateLabel: 'Aug 29, 2026', readTime: '6 min read', author: 'The Colvy Team',
+    content: `WhatsApp is where a lot of customers would rather message you — it's fast, familiar and personal. But the WhatsApp Business app is designed for one person on one phone. The moment two people need to answer, or you want history and reporting, you've outgrown it.
+
+A WhatsApp shared inbox fixes that. Here's what it is and how to set it up.
+
+## Why one phone doesn't scale
+
+- Only one device is really "logged in" at a time.
+- No way to assign a chat or see who's handling it.
+- No shared history when someone's off — the context lives on their phone.
+- No saved replies across the team, no reporting.
+
+## What a shared inbox adds
+
+- **A whole team on one number.** Everyone answers from the same WhatsApp number, in the same queue.
+- **Assignment and statuses** so it's clear who owns a chat and what's still open.
+- **Customer history** — past orders and previous conversations beside the chat.
+- **Saved replies and, optionally, AI-drafted first passes** for the questions you answer all day.
+
+## Getting started
+
+1. **Use the WhatsApp Business Platform (API), not just the app.** A shared inbox connects through the official Business API so multiple agents can answer one number.
+2. **Connect it to your inbox tool** and map it to the right team.
+3. **Load your saved replies** for your top questions.
+4. **Set expectations** with a friendly away message outside hours.
+
+## A note on templates
+
+Outside the 24-hour window after a customer messages you, WhatsApp requires pre-approved message templates for business-initiated messages. A good inbox handles this for you and keeps you compliant.
+
+## Where Colvy fits
+
+Colvy gives your team one shared inbox for WhatsApp — with assignment, customer history and saved replies — right alongside Instagram, Messenger, SMS, email and live chat. One number, one queue, the whole team.`,
   },
 ]
 
