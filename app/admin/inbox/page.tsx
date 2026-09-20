@@ -36,6 +36,7 @@ import DeliveryPanel from '@/components/DeliveryPanel'
 import MediaGallery, { MediaItem } from '@/components/MediaGallery'
 import CustomerMatchCard from '@/components/CustomerMatchCard'
 import StoryReplyPreview from '@/components/StoryReplyPreview'
+import CustomerAddresses from '@/components/CustomerAddresses'
 import DoaPanel from '@/components/DoaPanel'
 import CreateOrderPanel from '@/components/CreateOrderPanel'
 
@@ -8049,7 +8050,10 @@ export default function InboxPage() {
                         // short caption wraps UNDER the media instead of stretching
                         // the bubble wide and leaving empty bubble colour beside a
                         // portrait clip (which is how it read on desktop before).
-                        maxWidth: atts.some((a: any) => a.kind === 'image' || a.kind === 'video') ? 300 : undefined,
+                        // A story-reply bubble hugs its portrait preview (≈150px)
+                        // instead of stretching wide with empty space beside it.
+                        maxWidth: (msg as any).metadata?.story_reply ? 182 : (atts.some((a: any) => a.kind === 'image' || a.kind === 'video') ? 300 : undefined),
+                        width: (msg as any).metadata?.story_reply ? 'fit-content' : undefined,
                       }}>
                         {/* Instagram story reply — show the story they replied
                             to (thumbnail) above their message, like Coax. */}
@@ -9627,6 +9631,15 @@ export default function InboxPage() {
                   </div>
                 ) : (
                   <p style={{ fontSize: 13, color: '#9ca3af', margin: 0 }}>No contact linked yet. Click &ldquo;+ Create&rdquo; to create one.</p>
+                )}
+
+                {/* Delivery address book — every address the customer has used,
+                    with source + default selection (never overwrites). */}
+                {contact && (
+                  <CustomerAddresses
+                    contactId={contact.id}
+                    userName={user?.user_metadata?.display_name || user?.email?.split('@')[0]}
+                  />
                 )}
 
                 {/* Conversation metadata */}
