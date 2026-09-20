@@ -42,6 +42,8 @@ export default function CustomerMatchCard({
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState('')
   const [showAll, setShowAll] = useState(false)
+  const [dupes, setDupes] = useState<{ id: string; name: string; maskedEmail?: string; maskedPhone?: string; reason: string }[] | null>(null)
+  const [showMerge, setShowMerge] = useState(false)
 
   const applicable = ['instagram', 'facebook', 'whatsapp'].includes(String(channel || '').toLowerCase())
 
@@ -71,7 +73,7 @@ export default function CustomerMatchCard({
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Action failed')
-      setShowAll(false)
+      setShowAll(false); setShowMerge(false)
       onLinked?.()
       await load()
     } catch (e: any) { setError(e.message) }
@@ -85,6 +87,23 @@ export default function CustomerMatchCard({
   const reject = (s: Suggestion) => act('reject', { contactId: s.contactId })
   const unlink = (s: Suggestion) => act('unlink', {})
   const requestDetails = () => act('request-details', {})
+
+  const openMerge = async (contactId: string) => {
+    setBusy('find-dupes'); setError('')
+    try {
+      const res = await fetch('/api/inbox/customer-match', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'find-duplicates', conversationId, contactId }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Lookup failed')
+      setDupes(data.duplicates || [])
+      setShowMerge(true)
+    } catch (e: any) { setError(e.message) }
+    finally { setBusy(null) }
+  }
+  const mergeDupe = (primaryContactId: string, mergeContactId: string) =>
+    act('merge', { primaryContactId, mergeContactId })
 
   if (!applicable) return null
 
@@ -119,7 +138,17 @@ export default function CustomerMatchCard({
         {confirmedLinked.evidence?.[0] && (
           <p style={{ margin: '0 0 8px', fontSize: 11.5, color: 'var(--slate)' }}>{confirmedLinked.evidence[0].detail}</p>
         )}
-        <button disabled={!!busy} onClick={() => unlink(confirmedLinked)} style={linkBtn}>Unlink</button>
+        <div style={{ display: 'flex', gap: 12, marginTop: 6, alignItems: 'center' }}>
+          <button disabled={!!busy} onClick={() => unlink(confirmedLinked)} style={linkBtn}>Unlink</button>
+          <button disabled={!!busy} onClick={() => openMerge(confirmedLinked.contactId)} style={linkBtn}>{busy === 'find-dupes' ? 'Checking…' : 'Merge duplicates'}</button>
+        </div>
+        {showMerge && dupes && (
+          <MergeModal
+            primaryId={confirmedLinked.contactId} primaryName={confirmedLinked.name}
+            dupes={dupes} busy={busy} onClose={() => setShowMerge(false)}
+            onMerge={(dupId) => mergeDupe(confirmedLinked.contactId, dupId)}
+          />
+        )}
       </div>
     )
   }
@@ -185,6 +214,41 @@ export default function CustomerMatchCard({
         </div>
       )}
     </>
+  )
+}
+
+function MergeModal({ primaryId, primaryName, dupes, busy, onClose, onMerge }: {
+  primaryId: string; primaryName: string
+  dupes: { id: string; name: string; maskedEmail?: string; maskedPhone?: string; reason: string }[]
+  busy: string | null; onClose: () => void; onMerge: (dupId: string) => void
+}) {
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 400, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+      <div onClick={e => e.stopPropagation()} style={{ width: 440, maxWidth: '95vw', maxHeight: '85vh', overflowY: 'auto', background: '#fff', borderRadius: 18, padding: 22 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+          <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: 'var(--ink)' }}>Merge duplicates</h3>
+          <button onClick={onClose} style={{ border: 'none', background: 'none', fontSize: 20, color: 'var(--slate)', cursor: 'pointer' }}>×</button>
+        </div>
+        <p style={{ margin: '0 0 12px', fontSize: 12, color: 'var(--slate)' }}>
+          These records look like the same person as <strong>{primaryName}</strong>. Merging folds a record into {primaryName} — its conversations, orders and history move over, empty fields are filled (never overwritten), and the change is audited. This can’t be undone.
+        </p>
+        {dupes.length === 0 ? (
+          <p style={{ fontSize: 13, color: 'var(--slate)', padding: '16px 0', textAlign: 'center' }}>No duplicate records found.</p>
+        ) : dupes.map(d => (
+          <div key={d.id} style={{ padding: '10px 0', borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+            <div style={{ minWidth: 0 }}>
+              <p style={{ margin: 0, fontSize: 13.5, fontWeight: 700, color: 'var(--ink)' }}>{d.name}</p>
+              <p style={{ margin: '1px 0 0', fontSize: 11.5, color: 'var(--slate)' }}>{[d.maskedEmail, d.maskedPhone].filter(Boolean).join(' · ') || '—'}</p>
+              <p style={{ margin: '1px 0 0', fontSize: 11, color: '#9ca3af' }}>{d.reason}</p>
+            </div>
+            <button disabled={!!busy} onClick={() => onMerge(d.id)}
+              style={{ flexShrink: 0, padding: '7px 12px', borderRadius: 9, border: '1px solid var(--coral)', background: 'var(--peach)', color: 'var(--coral)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
+              {busy === 'merge' ? 'Merging…' : 'Merge in'}
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
   )
 }
 

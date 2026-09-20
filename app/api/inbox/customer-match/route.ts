@@ -37,6 +37,8 @@ export async function POST(req: NextRequest) {
     if (action === 'unlink') return await unlinkMatch(db, conv, body)
     if (action === 'reject') return await rejectMatch(db, conv, body)
     if (action === 'request-details') return await requestDetails(db, conv, body, req)
+    if (action === 'find-duplicates') return await findDuplicates(db, conv, body)
+    if (action === 'merge') return await mergeCustomers(db, conv, body)
 
     // ── suggest ──────────────────────────────────────────────────────────────
     if (!META_CHANNELS.includes(platform || '')) {
@@ -305,6 +307,72 @@ async function requestDetails(db: any, conv: any, body: any, req: NextRequest) {
     evidence: { conversationId: conv.id },
   })
   return NextResponse.json({ ok: true })
+}
+
+// ── find-duplicates: other contacts that are very likely the same person ──────
+// Only strong, deterministic signals: same identity group, or an exact email /
+// phone match. Never name/photo alone.
+async function findDuplicates(db: any, conv: any, body: any) {
+  const companyId = conv.company_id
+  const contactId = body.contactId
+  if (!contactId) return NextResponse.json({ error: 'contactId required' }, { status: 400 })
+  const { data: primary } = await db.from('contacts').select('*').eq('id', contactId).eq('company_id', companyId).maybeSingle()
+  if (!primary) return NextResponse.json({ error: 'Customer not found' }, { status: 404 })
+
+  const dupes = new Map<string, any>()
+  const add = (rows: any[] | null) => { for (const r of (rows || [])) if (r.id !== contactId) dupes.set(r.id, r) }
+  if (primary.identity_group_id) add((await db.from('contacts').select('*').eq('company_id', companyId).eq('identity_group_id', primary.identity_group_id).neq('id', contactId).limit(10)).data)
+  if (primary.email) add((await db.from('contacts').select('*').eq('company_id', companyId).or(`email.ilike.${String(primary.email).replace(/,/g, '')}`).neq('id', contactId).limit(10)).data)
+  if (primary.phone) { const pk = phoneKey(primary.phone); if (pk.length >= 8) add((await db.from('contacts').select('*').eq('company_id', companyId).eq('phone_norm', pk).neq('id', contactId).limit(10)).data) }
+
+  const duplicates = [...dupes.values()].map(c => ({
+    id: c.id, name: c.name || 'Customer', source: c.source || null, createdAt: c.created_at,
+    maskedEmail: maskEmail(c.email), maskedPhone: maskPhone(c.phone),
+    reason: primary.identity_group_id && c.identity_group_id === primary.identity_group_id ? 'Same linked identity'
+      : (primary.email && emailKey(c.email) === emailKey(primary.email)) ? 'Same email'
+      : 'Same phone number',
+  }))
+  return NextResponse.json({ ok: true, primary: { id: primary.id, name: primary.name }, duplicates })
+}
+
+// ── merge: fold a duplicate contact into the primary, keep an audit ────────────
+async function mergeCustomers(db: any, conv: any, body: any) {
+  const companyId = conv.company_id
+  const primaryId = body.primaryContactId
+  const mergeId = body.mergeContactId
+  if (!primaryId || !mergeId || primaryId === mergeId) return NextResponse.json({ error: 'primaryContactId and a different mergeContactId are required' }, { status: 400 })
+  const { data: primary } = await db.from('contacts').select('*').eq('id', primaryId).eq('company_id', companyId).maybeSingle()
+  const { data: dup } = await db.from('contacts').select('*').eq('id', mergeId).eq('company_id', companyId).maybeSingle()
+  if (!primary || !dup) return NextResponse.json({ error: 'One of the customers was not found' }, { status: 404 })
+
+  // Fill only EMPTY primary fields from the duplicate — never overwrite.
+  const FILL = ['name', 'email', 'phone', 'address', 'city', 'state', 'postcode', 'suburb', 'country', 'company_name', 'avatar_url', 'meta_user_id', 'woo_customer_id', 'prexty_customer_id', 'stripe_customer_id']
+  const patch: any = {}
+  for (const f of FILL) if ((primary[f] === null || primary[f] === undefined || primary[f] === '') && dup[f]) patch[f] = dup[f]
+  if (Object.keys(patch).length) await db.from('contacts').update(patch).eq('id', primaryId)
+
+  // Repoint every reference we know about (best-effort; a missing table is fine).
+  const repoint = async (table: string) => {
+    try { await db.from(table).update({ contact_id: primaryId }).eq('company_id', companyId).eq('contact_id', mergeId) } catch {}
+  }
+  await repoint('conversations')
+  await repoint('customer_identities')
+  await repoint('reviews')
+  await repoint('orders')
+  await repoint('scheduled_messages')
+
+  await db.from('customer_identity_audit').insert({
+    company_id: companyId, contact_id: primaryId, action: 'customers_merged',
+    actor_id: body.userId || null, actor_name: body.userName || null,
+    detail: `Merged “${dup.name || 'customer'}” into “${primary.name || 'customer'}”`,
+    before: { mergedContact: { id: dup.id, name: dup.name, email: dup.email, phone: dup.phone, source: dup.source, created_at: dup.created_at } },
+    after: { primaryContactId: primaryId, filled: Object.keys(patch) },
+  })
+
+  // Remove the now-empty duplicate (references were repointed). Keep the audit.
+  try { await db.from('contacts').delete().eq('id', mergeId).eq('company_id', companyId) } catch {}
+
+  return NextResponse.json({ ok: true, contactId: primaryId, filled: Object.keys(patch) })
 }
 
 // ── reject: this suggested customer is NOT the person (don't suggest again) ────
