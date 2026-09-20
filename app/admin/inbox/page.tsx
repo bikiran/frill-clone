@@ -35,7 +35,6 @@ import AddressAutocomplete from '@/components/AddressAutocomplete'
 import DeliveryPanel from '@/components/DeliveryPanel'
 import MediaGallery, { MediaItem } from '@/components/MediaGallery'
 import CustomerMatchCard from '@/components/CustomerMatchCard'
-import CustomerChannels from '@/components/CustomerChannels'
 import DoaPanel from '@/components/DoaPanel'
 import CreateOrderPanel from '@/components/CreateOrderPanel'
 
@@ -9192,8 +9191,6 @@ export default function InboxPage() {
                     }}
                   />
                 )}
-                {/* Other channels this customer is reachable on (cross-channel). */}
-                {contact && <CustomerChannels contactId={contact.id} currentChannel={(selected as any)?.channel} />}
                 {/* Coax-style contact card header */}
                 {contact && !showContactEdit && (
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', padding: '4px 0 16px', borderBottom: '1px solid var(--border)', marginBottom: 14 }}>
@@ -9644,16 +9641,36 @@ export default function InboxPage() {
                   {linkedChannels.length > 1 && (
                     <div style={{ marginBottom: 14, padding: 10, borderRadius: 10, background: 'var(--canvas)', border: '1px solid var(--border)' }}>
                       <p style={{ margin: '0 0 7px', fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.4, color: 'var(--slate)' }}>Also reachable on</p>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                        {linkedChannels.map((lc, i) => (
-                          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <span style={{ display: 'flex', flexShrink: 0 }}>{CHANNEL_ICON[String(lc.channel).toLowerCase()] || Icon.chat(14)}</span>
-                            <span style={{ fontSize: 12, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                              {CHANNEL_NAME[String(lc.channel).toLowerCase()] || lc.channel}
-                              {lc.label ? <span style={{ color: 'var(--slate)' }}> · {lc.label}</span> : null}
-                            </span>
-                          </div>
-                        ))}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        {linkedChannels.map((lc, i) => {
+                          const isCommerce = ['woocommerce', 'pos', 'shopify', 'prexty'].includes(String(lc.channel).toLowerCase())
+                          const isCurrent = lc.conversationId && lc.conversationId === selected?.id
+                          const clickable = (!!lc.conversationId && !isCurrent) || isCommerce
+                          const go = async () => {
+                            if (lc.conversationId && !isCurrent) {
+                              try {
+                                const { data } = await (supabase as any).from('conversations').select('*').eq('id', lc.conversationId).maybeSingle()
+                                if (data) await selectConversation(data)
+                              } catch {}
+                            } else if (isCommerce) {
+                              setActivePanel('orders'); setMobilePane('thread')
+                            }
+                          }
+                          return (
+                            <button key={i} type="button" disabled={!clickable} onClick={go}
+                              style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '5px 6px', margin: '0 -6px', borderRadius: 8, border: 'none', background: 'none', cursor: clickable ? 'pointer' : 'default' }}
+                              onMouseEnter={e => { if (clickable) e.currentTarget.style.background = '#fff' }}
+                              onMouseLeave={e => { e.currentTarget.style.background = 'none' }}>
+                              <span style={{ display: 'flex', flexShrink: 0 }}>{CHANNEL_ICON[String(lc.channel).toLowerCase()] || Icon.chat(14)}</span>
+                              <span style={{ flex: 1, minWidth: 0, fontSize: 12, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {CHANNEL_NAME[String(lc.channel).toLowerCase()] || lc.channel}
+                                {lc.label ? <span style={{ color: 'var(--slate)' }}> · {lc.label}</span> : null}
+                                {isCurrent ? <span style={{ color: '#9ca3af' }}> · current</span> : null}
+                              </span>
+                              {clickable && <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><polyline points="9 18 15 12 9 6"/></svg>}
+                            </button>
+                          )
+                        })}
                       </div>
                       <button type="button" onClick={() => setShowTimeline(true)}
                         style={{ marginTop: 9, width: '100%', padding: '7px 0', borderRadius: 8, border: '1px solid var(--border)', background: '#fff', color: '#2563eb', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
