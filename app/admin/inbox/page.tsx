@@ -35,6 +35,7 @@ import AddressAutocomplete from '@/components/AddressAutocomplete'
 import DeliveryPanel from '@/components/DeliveryPanel'
 import MediaGallery, { MediaItem } from '@/components/MediaGallery'
 import CustomerMatchCard from '@/components/CustomerMatchCard'
+import StoryReplyPreview from '@/components/StoryReplyPreview'
 import DoaPanel from '@/components/DoaPanel'
 import CreateOrderPanel from '@/components/CreateOrderPanel'
 
@@ -503,7 +504,7 @@ export default function InboxPage() {
   }
   const [showMergePicker, setShowMergePicker] = useState(false)
   const [galleryIndex, setGalleryIndex] = useState<number | null>(null)
-  const [storyView, setStoryView] = useState<MediaItem | null>(null)
+  const [storyView, setStoryView] = useState<{ items: MediaItem[]; index: number } | null>(null)
   const [showDoa, setShowDoa] = useState(false)
   const [doaMatch, setDoaMatch] = useState(false)
   const [convActions, setConvActions] = useState<Record<string, any>>({})
@@ -6850,9 +6851,12 @@ export default function InboxPage() {
         return <MediaGallery items={media} index={galleryIndex} onClose={() => setGalleryIndex(null)} onIndex={setGalleryIndex} />
       })()}
 
-      {/* Story-reply viewer (opens the story the customer replied to, in-app). */}
+      {/* Story-reply viewer — the story plus the thread's other media, so it
+          reads like the normal gallery player with a thumbnail strip. */}
       {storyView && (
-        <MediaGallery items={[storyView]} index={0} onClose={() => setStoryView(null)} onIndex={() => {}} />
+        <MediaGallery items={storyView.items} index={storyView.index}
+          onClose={() => setStoryView(null)}
+          onIndex={(i) => setStoryView(s => (s ? { ...s, index: i } : s))} />
       )}
 
 
@@ -8054,33 +8058,26 @@ export default function InboxPage() {
                           const url: string | null = sr.story_url || null
                           // Newer story replies carry story_type (rehosted at
                           // ingestion). Older ones stored the raw Instagram
-                          // messaging-CDN URL, which has NO file extension, so we
-                          // can't tell image from video — render it as an image
-                          // and, if that fails to load, fall back to a clean
-                          // "View story" card (which also covers expired links).
+                          // messaging-CDN URL with no extension — the preview
+                          // tries an image, then a (hover-playable) video.
                           const knownVideo = sr.story_type === 'video' || (!!url && /\.(mp4|mov|webm)(\?|$)/i.test(url))
-                          const box = { width: 150, maxWidth: '60%', borderRadius: 10, display: 'block', aspectRatio: '9 / 16' } as React.CSSProperties
-                          // Open in an in-app viewer rather than a new browser tab.
-                          const view = (kind: 'image' | 'video') => url && setStoryView({ url, kind, name: 'Story' })
+                          // Open the full gallery player: the story first, then the
+                          // thread's other shared media as thumbnails.
+                          const openStory = (kind: 'image' | 'video') => {
+                            if (!url) return
+                            const chatMedia: MediaItem[] = []
+                            messages.forEach((mm: any) => (Array.isArray(mm.attachments) ? mm.attachments : []).forEach((a: any) => {
+                              const isImg = a.kind === 'image' || String(a.type || '').startsWith('image')
+                              const isVid = a.kind === 'video' || String(a.type || '').startsWith('video')
+                              if ((isImg || isVid) && a.url && a.url !== url) chatMedia.push({ url: a.url, name: a.name, kind: isVid ? 'video' : 'image' })
+                            }))
+                            setStoryView({ items: [{ url, kind, name: 'Story' }, ...chatMedia], index: 0 })
+                          }
                           return (
                             <div style={{ marginBottom: 6 }}>
                               <span style={{ display: 'block', fontSize: 11, opacity: 0.85, fontStyle: 'italic', marginBottom: 4 }}>Replied to your story</span>
                               {url ? (
-                                knownVideo ? (
-                                  <video src={url} controls playsInline preload="metadata"
-                                    style={{ ...box, background: '#000', objectFit: 'cover' }} />
-                                ) : (
-                                  <div style={{ position: 'relative' }}>
-                                    <img src={url} alt="story" onClick={() => view('image')}
-                                      onError={(e) => { const img = e.currentTarget; img.style.display = 'none'; const fb = img.nextElementSibling as HTMLElement | null; if (fb) fb.style.display = 'flex' }}
-                                      style={{ ...box, objectFit: 'cover', cursor: 'zoom-in' }} />
-                                    {/* Image failed → it's almost certainly a video; open it as one in the viewer. */}
-                                    <span onClick={() => view('video')}
-                                      style={{ display: 'none', width: 150, maxWidth: '60%', aspectRatio: '9 / 16', borderRadius: 10, cursor: 'pointer', color: '#fff', fontSize: 12, fontWeight: 700, alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: 8, background: 'linear-gradient(135deg,#F47133,#BC3081)' }}>
-                                      ▶ View story
-                                    </span>
-                                  </div>
-                                )
+                                <StoryReplyPreview url={url} knownVideo={knownVideo} onOpen={openStory} />
                               ) : (
                                 <span style={{ display: 'block', width: 120, aspectRatio: '9 / 16', borderRadius: 10, background: 'linear-gradient(135deg,#F47133,#BC3081)' }} />
                               )}
