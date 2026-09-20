@@ -2461,10 +2461,6 @@ export default function InboxPage() {
     // actually have, and previously only customer messages were stamped.
     for (const m of msgs) {
       if (m.sender_type === 'system') continue
-      // Automated (Colvy-sent) messages don't collect read receipts — the team
-      // never "reads" a broadcast, and a stray "read by Agent" on them just
-      // confused people about who that was.
-      if ((m as any).metadata?.auto) continue
       // Don't mark your own message as read by yourself — that's meaningless.
       if (m.sender_type === 'agent' && (m as any).sender_id === user?.id) continue
       const readBy = Array.isArray((m as any).read_by) ? (m as any).read_by : []
@@ -8487,9 +8483,9 @@ export default function InboxPage() {
                         {/* Who on the team has seen it. Shown on BOTH sides — on an
                             agent message it answers "did my colleague see this?",
                             which is the question people actually have. Automated
-                            (Colvy-sent) messages skip this — a "read by" on a
-                            broadcast the team never opened is just noise. */}
-                        {readBy.length > 0 && !isAutoMsg && (
+                            (Colvy-sent) messages keep this too — seeing which
+                            teammate has read an automation is genuinely useful. */}
+                        {readBy.length > 0 && (
                           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
                             <span>Read by:</span>
                             <span style={{ display: 'inline-flex', gap: 2 }}>
