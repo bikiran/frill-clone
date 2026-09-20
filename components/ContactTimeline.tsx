@@ -17,8 +17,16 @@ const CH: Record<string, { label: string; color: string; bg: string }> = {
   whatsapp:  { label: 'WhatsApp',  color: '#15803d', bg: '#dcfce7' },
 }
 
+const ACT: Record<string, { color: string; bg: string; icon: string }> = {
+  order:   { color: '#047857', bg: '#dcfce7', icon: '🛍️' },
+  payment: { color: '#0e7490', bg: '#cffafe', icon: '💳' },
+  review:  { color: '#b45309', bg: '#fef3c7', icon: '⭐' },
+  audit:   { color: '#6b6b70', bg: 'var(--canvas)', icon: '🔗' },
+}
+
 export default function ContactTimeline({ contactId, contactName, onClose }: { contactId: string; contactName?: string; onClose: () => void }) {
   const [messages, setMessages] = useState<any[]>([])
+  const [activity, setActivity] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [linkedCount, setLinkedCount] = useState(0)
 
@@ -28,10 +36,18 @@ export default function ContactTimeline({ contactId, contactName, onClose }: { c
         const res = await fetch(`/api/contacts/timeline?contactId=${contactId}`)
         const d = await res.json()
         setMessages(d.messages || [])
+        setActivity(d.activity || [])
         setLinkedCount(d.linkedCount || 0)
       } catch {} finally { setLoading(false) }
     })()
   }, [contactId])
+
+  // One chronological stream: messages + non-message activity (orders,
+  // payments, reviews, identity changes), each source-labelled.
+  const stream = [
+    ...messages.map((m: any) => ({ _ts: m.created_at, _type: 'message' as const, data: m })),
+    ...activity.map((a: any) => ({ _ts: a.date, _type: 'activity' as const, data: a })),
+  ].filter(x => x._ts).sort((a, b) => new Date(a._ts).getTime() - new Date(b._ts).getTime())
 
   const fmt = (iso: string) => new Date(iso).toLocaleString('en-AU', { day: '2-digit', month: 'short', hour: 'numeric', minute: '2-digit' })
 
@@ -43,7 +59,7 @@ export default function ContactTimeline({ contactId, contactName, onClose }: { c
         style={{ width: 460, maxWidth: '96vw', height: '100%', background: '#fff', overflowY: 'auto', animation: 'tlIn 0.18s ease-out', boxShadow: '-12px 0 40px rgba(0,0,0,0.16)' }}>
         <div style={{ position: 'sticky', top: 0, background: '#fff', borderBottom: '1px solid var(--border)', padding: '16px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', zIndex: 2 }}>
           <div>
-            <h2 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: 'var(--ink)' }}>All conversations</h2>
+            <h2 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: 'var(--ink)' }}>Customer history</h2>
             <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--slate)' }}>
               {contactName || 'This contact'}{linkedCount > 1 ? ` · ${linkedCount} linked channels` : ''}
             </p>
@@ -57,44 +73,69 @@ export default function ContactTimeline({ contactId, contactName, onClose }: { c
         <div style={{ padding: '14px 20px' }}>
           {loading ? (
             <p style={{ fontSize: 13, color: 'var(--slate)' }}>Loading…</p>
-          ) : messages.length === 0 ? (
-            <p style={{ fontSize: 13, color: 'var(--slate)' }}>No messages yet.</p>
-          ) : messages.map((m, i) => {
-            const isAgent = m.sender_type === 'agent'
-            const isSystem = m.sender_type === 'system'
-            const ch = CH[m.channel] || { label: m.channel, color: 'var(--slate)', bg: 'var(--canvas)' }
-            const prevCh = i > 0 ? (messages[i - 1].channel) : null
-            const showChannelDivider = m.channel !== prevCh
+          ) : stream.length === 0 ? (
+            <p style={{ fontSize: 13, color: 'var(--slate)' }}>No history yet.</p>
+          ) : (() => {
+            let lastCh: string | null = null
+            return stream.map((item) => {
+              // ── Non-message activity: a source-labelled card ──
+              if (item._type === 'activity') {
+                const a = item.data
+                const t = ACT[a.kind] || { color: 'var(--slate)', bg: 'var(--canvas)', icon: '•' }
+                lastCh = null   // force a channel chip before the next message
+                return (
+                  <div key={a.id} style={{ display: 'flex', gap: 9, alignItems: 'flex-start', margin: '10px 0', padding: '9px 11px', borderRadius: 10, background: t.bg, border: '1px solid var(--border)' }}>
+                    <span style={{ fontSize: 14, lineHeight: '18px' }}>{t.icon}</span>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                        <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ink)', textTransform: 'capitalize' }}>{a.title}</span>
+                        <span style={{ fontSize: 9.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.3, color: t.color }}>{a.source}</span>
+                      </div>
+                      {a.detail && <p style={{ margin: '2px 0 0', fontSize: 11.5, color: 'var(--slate)', overflowWrap: 'anywhere' }}>{a.detail}</p>}
+                      <p style={{ margin: '2px 0 0', fontSize: 10, color: '#9ca3af' }}>{fmt(item._ts)}</p>
+                    </div>
+                  </div>
+                )
+              }
 
-            if (isSystem) {
+              // ── Message bubble ──
+              const m = item.data
+              const isAgent = m.sender_type === 'agent'
+              const isSystem = m.sender_type === 'system'
+              const ch = CH[m.channel] || { label: m.channel, color: 'var(--slate)', bg: 'var(--canvas)' }
+              const showChannelDivider = m.channel !== lastCh
+              lastCh = m.channel
+
+              if (isSystem) {
+                return (
+                  <div key={m.id} style={{ textAlign: 'center', margin: '10px 0' }}>
+                    <span style={{ fontSize: 11, color: 'var(--slate)', background: 'var(--canvas)', padding: '3px 10px', borderRadius: 20 }}>{m.content}</span>
+                  </div>
+                )
+              }
+
               return (
-                <div key={m.id} style={{ textAlign: 'center', margin: '10px 0' }}>
-                  <span style={{ fontSize: 11, color: 'var(--slate)', background: 'var(--canvas)', padding: '3px 10px', borderRadius: 20 }}>{m.content}</span>
+                <div key={m.id}>
+                  {showChannelDivider && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '14px 0 8px' }}>
+                      <span style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.4, padding: '3px 9px', borderRadius: 20, color: ch.color, background: ch.bg }}>{ch.label}</span>
+                      <span style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+                    </div>
+                  )}
+                  <div style={{ display: 'flex', justifyContent: isAgent ? 'flex-end' : 'flex-start', marginBottom: 8 }}>
+                    <div style={{ maxWidth: '80%' }}>
+                      <div style={{ padding: '9px 13px', borderRadius: 12, fontSize: 13, lineHeight: 1.5, background: isAgent ? 'var(--coral)' : 'var(--canvas)', color: isAgent ? '#fff' : 'var(--ink)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                        {m.content}
+                      </div>
+                      <p style={{ margin: '2px 4px 0', fontSize: 10, color: '#9ca3af', textAlign: isAgent ? 'right' : 'left' }}>
+                        {m.sender_name ? `${m.sender_name} · ` : ''}{fmt(m.created_at)}
+                      </p>
+                    </div>
+                  </div>
                 </div>
               )
-            }
-
-            return (
-              <div key={m.id}>
-                {showChannelDivider && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '14px 0 8px' }}>
-                    <span style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.4, padding: '3px 9px', borderRadius: 20, color: ch.color, background: ch.bg }}>{ch.label}</span>
-                    <span style={{ flex: 1, height: 1, background: 'var(--border)' }} />
-                  </div>
-                )}
-                <div style={{ display: 'flex', justifyContent: isAgent ? 'flex-end' : 'flex-start', marginBottom: 8 }}>
-                  <div style={{ maxWidth: '80%' }}>
-                    <div style={{ padding: '9px 13px', borderRadius: 12, fontSize: 13, lineHeight: 1.5, background: isAgent ? 'var(--coral)' : 'var(--canvas)', color: isAgent ? '#fff' : 'var(--ink)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                      {m.content}
-                    </div>
-                    <p style={{ margin: '2px 4px 0', fontSize: 10, color: '#9ca3af', textAlign: isAgent ? 'right' : 'left' }}>
-                      {m.sender_name ? `${m.sender_name} · ` : ''}{fmt(m.created_at)}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )
-          })}
+            })
+          })()}
         </div>
       </div>
     </div>

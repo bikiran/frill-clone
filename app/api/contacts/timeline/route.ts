@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { linkedContacts } from '@/lib/identity'
+import { phoneKey, emailKey } from '@/lib/phone'
 
 export const dynamic = 'force-dynamic'
 
@@ -52,8 +53,52 @@ export async function GET(req: NextRequest) {
     }
   })
 
+  // ── Non-message activity, merged into the same stream, source-labelled ──────
+  const companyId = linked[0]?.company_id
+    || (await db.from('contacts').select('company_id').eq('id', contactId).maybeSingle()).data?.company_id
+  const emails = Array.from(new Set(linked.map((c: any) => c.email).filter(Boolean).map((e: string) => emailKey(e)).filter(Boolean)))
+  const phones = Array.from(new Set(linked.map((c: any) => c.phone).filter(Boolean).map((p: string) => phoneKey(p)).filter((k: string) => k.length >= 8)))
+  const money = (n: any, cur?: string) => { const v = Number(n); if (isNaN(v)) return ''; try { return new Intl.NumberFormat(undefined, { style: 'currency', currency: (cur || 'aud').toUpperCase() }).format(v) } catch { return `$${v.toFixed(2)}` } }
+
+  const activity: any[] = []
+  const pushOrder = (o: any) => activity.push({ id: 'order-' + o.id, kind: 'order', source: 'WooCommerce', date: o.order_date || o.created_at, title: `Order #${o.woo_order_id}`, detail: [money(o.total, o.currency), o.status].filter(Boolean).join(' · ') })
+
+  if (companyId && (emails.length || phones.length)) {
+    try {
+      const seen = new Set<string>()
+      if (emails.length) {
+        const orExpr = emails.map(e => `customer_email.ilike.${e.replace(/,/g, '')}`).join(',')
+        const { data } = await db.from('woocommerce_orders').select('id, woo_order_id, total, currency, status, order_date').eq('company_id', companyId).or(orExpr).order('order_date', { ascending: false }).limit(50)
+        for (const o of (data || [])) if (!seen.has(o.id)) { seen.add(o.id); pushOrder(o) }
+      }
+      if (phones.length) {
+        const { data } = await db.from('woocommerce_orders').select('id, woo_order_id, total, currency, status, order_date').eq('company_id', companyId).in('billing_phone_norm', phones).order('order_date', { ascending: false }).limit(50)
+        for (const o of (data || [])) if (!seen.has(o.id)) { seen.add(o.id); pushOrder(o) }
+      }
+    } catch {}
+  }
+  // Reviews (keyed on contact).
+  try {
+    const { data } = await db.from('reviews').select('id, platform, rating, review_text, review_date, created_at').in('contact_id', contactIds).limit(50)
+    for (const r of (data || [])) activity.push({ id: 'review-' + r.id, kind: 'review', source: r.platform || 'Review', date: r.review_date || r.created_at, title: `${r.rating ? r.rating + '★ ' : ''}Review`, detail: (r.review_text || '').slice(0, 160) })
+  } catch {}
+  // In-chat payments (keyed on conversation).
+  try {
+    const { data } = await db.from('chat_payments').select('*').in('conversation_id', convIds).limit(50)
+    for (const p of (data || [])) {
+      const amt = p.amount_cents != null ? p.amount_cents / 100 : p.amount
+      activity.push({ id: 'pay-' + p.id, kind: 'payment', source: 'Payment', date: p.paid_at || p.created_at, title: p.status === 'paid' ? 'Payment received' : `Payment ${p.status || 'requested'}`, detail: money(amt, p.currency) })
+    }
+  } catch {}
+  // Identity / customer-detail changes (audit).
+  try {
+    const { data } = await db.from('customer_identity_audit').select('id, action, detail, actor_name, created_at').in('contact_id', contactIds).order('created_at', { ascending: false }).limit(50)
+    for (const a of (data || [])) activity.push({ id: 'audit-' + a.id, kind: 'audit', source: 'System', date: a.created_at, title: String(a.action || '').replace(/_/g, ' '), detail: [a.detail, a.actor_name ? `by ${a.actor_name}` : ''].filter(Boolean).join(' · ') })
+  } catch {}
+
   return NextResponse.json({
     messages,
+    activity: activity.filter(a => a.date).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()),
     conversations: Object.values(convById),
     linkedCount: linked.length,
   })
