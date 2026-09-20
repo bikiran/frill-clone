@@ -5474,6 +5474,13 @@ export default function InboxPage() {
   // header + Send button take the Instagram gradient, matching the bubbles.
   const igThemeActive = selected?.channel === 'instagram' && !!(companyInfo as any)?.inbox_settings?.instagram_theme
   const IG_GRADIENT = 'linear-gradient(135deg,#5B51D8 0%,#A033C4 55%,#E1306C 100%)'
+  // Messenger theme (Settings → Channels): the equivalent for Facebook Messenger
+  // threads — the signature Messenger blue on replies, header + Send button.
+  const msgrThemeActive = (selected?.channel === 'facebook' || selected?.channel === 'messenger') && !!(companyInfo as any)?.inbox_settings?.messenger_theme
+  const MSGR_GRADIENT = 'linear-gradient(135deg,#00B2FF 0%,#006AFF 100%)'
+  // Whichever channel theme is active supplies the accent for shared controls.
+  const themeGradient = igThemeActive ? IG_GRADIENT : msgrThemeActive ? MSGR_GRADIENT : null
+  const themeSolid = igThemeActive ? '#C13584' : msgrThemeActive ? '#006AFF' : 'var(--coral)'
 
   return (
     <div className={`inbox-root inbox-pane-${mobilePane}`} style={{ display: 'flex', height: '100vh', maxHeight: 'calc(100vh - 56px)', overflow: 'hidden', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
@@ -7380,7 +7387,7 @@ export default function InboxPage() {
                 this …"). No banner here — it was intrusive. */}
 
             {/* Thread header */}
-            <div className="inbox-thread-header" style={{ padding: '12px 16px', borderBottom: igThemeActive ? '2px solid #C13584' : '1px solid var(--border)', background: igThemeActive ? 'linear-gradient(135deg, rgba(131,58,180,0.08), rgba(225,48,108,0.08))' : '#fff', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <div className="inbox-thread-header" style={{ padding: '12px 16px', borderBottom: igThemeActive ? '2px solid #C13584' : msgrThemeActive ? '2px solid #006AFF' : '1px solid var(--border)', background: igThemeActive ? 'linear-gradient(135deg, rgba(131,58,180,0.08), rgba(225,48,108,0.08))' : msgrThemeActive ? 'linear-gradient(135deg, rgba(0,178,255,0.08), rgba(0,106,255,0.08))' : '#fff', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
               {/* Mobile: back to conversation list */}
               <button type="button" className="inbox-mobile-only" onClick={() => setMobilePane('list')} title="Back to chats" aria-label="Back to chats"
                 style={{ display: 'none', height: 36, flexShrink: 0, borderRadius: 10, border: 'none', background: 'color-mix(in srgb, var(--coral) 12%, #fff)', cursor: 'pointer', alignItems: 'center', gap: 3, padding: '0 10px 0 6px', color: 'var(--coral)', fontSize: 13.5, fontWeight: 700, order: -2 }}>
@@ -8003,6 +8010,9 @@ export default function InboxPage() {
                 // replies on an Instagram thread get the Instagram gradient +
                 // rounder bubbles so the thread reads like the Instagram app.
                 const igThemed = isAgent && selected?.channel === 'instagram' && !!(companyInfo as any)?.inbox_settings?.instagram_theme
+                // Messenger equivalent: agent replies on a Facebook thread get the
+                // Messenger blue + rounder bubbles when the theme is enabled.
+                const msgrThemed = isAgent && (selected?.channel === 'facebook' || selected?.channel === 'messenger') && !!(companyInfo as any)?.inbox_settings?.messenger_theme
                 // Group reactions by emoji
                 const reactionCounts: Record<string, number> = {}
                 reactions.forEach((r: any) => { reactionCounts[r.emoji] = (reactionCounts[r.emoji] || 0) + 1 })
@@ -8039,8 +8049,8 @@ export default function InboxPage() {
                           if (hasMedia) return 4
                           return isMobile ? '7px 11px' : '10px 14px'
                         })(),
-                        borderRadius: igThemed ? '18px 18px 5px 18px' : (isAgent ? '14px 14px 4px 14px' : '14px 14px 14px 4px'),
-                        background: igThemed ? 'linear-gradient(135deg,#5B51D8 0%,#A033C4 55%,#E1306C 100%)' : (isAgent ? 'var(--coral)' : '#fff'),
+                        borderRadius: (igThemed || msgrThemed) ? '18px 18px 5px 18px' : (isAgent ? '14px 14px 4px 14px' : '14px 14px 14px 4px'),
+                        background: igThemed ? 'linear-gradient(135deg,#5B51D8 0%,#A033C4 55%,#E1306C 100%)' : msgrThemed ? 'linear-gradient(135deg,#00B2FF 0%,#006AFF 100%)' : (isAgent ? 'var(--coral)' : '#fff'),
                         color: isAgent ? '#fff' : 'var(--ink)',
                         fontSize: 13, lineHeight: 1.5,
                         boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
@@ -9033,7 +9043,7 @@ export default function InboxPage() {
                   {/* Send + channel selector */}
                   <div ref={channelMenuRef} style={{ position: 'relative', display: 'flex' }}>
                     <button type="button" onClick={sendReply} disabled={sending || (!reply.trim() && stagedMedia.length === 0)}
-                      style={{ padding: '8px 16px', borderRadius: internalMode ? 10 : '10px 0 0 10px', background: (!reply.trim() && stagedMedia.length === 0) ? '#e5e7eb' : internalMode ? '#f59e0b' : (igThemeActive ? IG_GRADIENT : 'var(--coral)'), color: (reply.trim() || stagedMedia.length) ? '#fff' : '#9ca3af', border: 'none', fontSize: 13, fontWeight: 700, cursor: (reply.trim() || stagedMedia.length) ? 'pointer' : 'default', transition: 'all 0.15s' }}>
+                      style={{ padding: '8px 16px', borderRadius: internalMode ? 10 : '10px 0 0 10px', background: (!reply.trim() && stagedMedia.length === 0) ? '#e5e7eb' : internalMode ? '#f59e0b' : (themeGradient || 'var(--coral)'), color: (reply.trim() || stagedMedia.length) ? '#fff' : '#9ca3af', border: 'none', fontSize: 13, fontWeight: 700, cursor: (reply.trim() || stagedMedia.length) ? 'pointer' : 'default', transition: 'all 0.15s' }}>
                       {sending
                         ? (internalMode ? 'Saving…' : 'Sending…')
                         : internalMode
@@ -9044,7 +9054,7 @@ export default function InboxPage() {
                     <>
                     <button type="button" onClick={() => setShowChannelMenu(v => !v)} disabled={sending}
                       title="Choose a channel"
-                      style={{ padding: '8px 8px', borderRadius: '0 10px 10px 0', background: (reply.trim() || stagedMedia.length) ? (igThemeActive ? '#C13584' : 'var(--coral)') : '#e5e7eb', color: (reply.trim() || stagedMedia.length) ? '#fff' : '#9ca3af', border: 'none', borderLeft: '1px solid rgba(255,255,255,0.25)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                      style={{ padding: '8px 8px', borderRadius: '0 10px 10px 0', background: (reply.trim() || stagedMedia.length) ? themeSolid : '#e5e7eb', color: (reply.trim() || stagedMedia.length) ? '#fff' : '#9ca3af', border: 'none', borderLeft: '1px solid rgba(255,255,255,0.25)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="18 15 12 9 6 15"/></svg>
                     </button>
 
