@@ -34,6 +34,7 @@ import ContactTimeline from '@/components/ContactTimeline'
 import AddressAutocomplete from '@/components/AddressAutocomplete'
 import DeliveryPanel from '@/components/DeliveryPanel'
 import MediaGallery, { MediaItem } from '@/components/MediaGallery'
+import CustomerMatchCard from '@/components/CustomerMatchCard'
 import DoaPanel from '@/components/DoaPanel'
 import CreateOrderPanel from '@/components/CreateOrderPanel'
 
@@ -9149,6 +9150,18 @@ export default function InboxPage() {
           <div style={{ flex: 1, overflowY: 'auto', padding: '14px 14px' }}>
             {activePanel === 'info' && (
               <>
+                {/* Cross-channel customer match — links an Instagram/Messenger/
+                    WhatsApp visitor to an existing customer (masked until confirmed). */}
+                {selected && ['instagram', 'facebook', 'whatsapp'].includes(String((selected as any).channel || '')) && (
+                  <CustomerMatchCard
+                    conversationId={selected.id}
+                    channel={(selected as any).channel}
+                    companyId={companyId}
+                    userId={user?.id}
+                    userName={user?.user_metadata?.display_name || user?.email?.split('@')[0]}
+                    onLinked={() => selectConversation(selected)}
+                  />
+                )}
                 {/* Coax-style contact card header */}
                 {contact && !showContactEdit && (
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', padding: '4px 0 16px', borderBottom: '1px solid var(--border)', marginBottom: 14 }}>
