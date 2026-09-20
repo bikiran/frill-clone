@@ -101,6 +101,10 @@ const W = {
   postcode: 18,
   priorChannel: 12,
 }
+// Bonus that lifts a UNIQUE exact-name match (name 40 + 32 = 72) over the 70
+// suggest floor, so it appears as a "possible match" to confirm — while a name
+// shared by several customers stays at 40 and is not surfaced on its own.
+const W_UNIQUE_NAME = 32
 
 const lc = (s?: string | null) => String(s || '').trim().toLowerCase()
 const uniqLc = (arr?: (string | null | undefined)[]) => Array.from(new Set((arr || []).map(lc).filter(Boolean)))
@@ -211,13 +215,29 @@ export function computeMatches(signals: MatchSignals, candidates: Candidate[], t
   for (const r of ambiguousOwners.values()) results.push(r)
 
   // 3) Probable matches from soft signals.
+  const probable: MatchResult[] = []
   for (const c of candidates) {
     if (ambiguousOwners.has(c.contactId)) continue
     const ev = scoreProbable(signals, c)
     if (!ev.length) continue
     const confidence = Math.min(94, ev.reduce((s, e) => s + e.points, 0))
-    results.push({ contactId: c.contactId, confidence, band: 'suggested', evidence: ev })
+    probable.push({ contactId: c.contactId, confidence, band: 'suggested', evidence: ev })
   }
+
+  // A UNIQUE exact-name match is worth surfacing as a suggestion (never an
+  // auto-confirm) — if there's exactly one customer with this name and nothing
+  // else is going on for them, a human should still get the chance to confirm
+  // it. A name shared by several customers stays below the floor so we don't
+  // guess between namesakes (the "never merge on name alone" rule).
+  const nameMatches = probable.filter(r => r.evidence.some(e => e.signal === 'name'))
+  if (nameMatches.length === 1) {
+    const r = nameMatches[0]
+    if (!r.evidence.some(e => e.signal === 'unique_name')) {
+      r.evidence.push({ signal: 'unique_name', detail: 'The only customer with this exact name', points: W_UNIQUE_NAME })
+      r.confidence = Math.min(94, r.confidence + W_UNIQUE_NAME)
+    }
+  }
+  for (const r of probable) results.push(r)
 
   // Keep only reliable suggestions, best first, top 3.
   const suggestions = results

@@ -65,12 +65,18 @@ console.log('ambiguous identifier → NOT auto-confirmed (staff must choose)')
   ok('surfaces both as ambiguous suggestions', out.suggestions.length === 2 && out.suggestions.every(s => s.ambiguous))
 }
 
-console.log('duplicate prevention: name alone is never a reliable match')
+console.log('name matching: unique name → suggest (never auto-confirm); shared name → nothing')
 {
-  const out = computeMatches(
+  const unique = computeMatches(
     { platform: 'instagram', platformUserId: 'IG_X', name: 'Sarah Williams' },
     [{ contactId: 'c1', name: 'Sarah Williams' }])
-  ok('name-only stays below the 70 suggest floor', !out.confirmed && out.suggestions.length === 0)
+  ok('a unique exact name is SUGGESTED', !unique.confirmed && unique.suggestions[0]?.contactId === 'c1')
+  ok('name suggestion never auto-confirms (stays ≤94)', unique.suggestions[0]?.confidence <= 94 && unique.suggestions[0]?.confidence >= 70)
+
+  const shared = computeMatches(
+    { platform: 'instagram', platformUserId: 'IG_X', name: 'Sarah Williams' },
+    [{ contactId: 'c1', name: 'Sarah Williams' }, { contactId: 'c2', name: 'Sarah Williams' }])
+  ok('a name shared by several customers is NOT suggested alone', !shared.confirmed && shared.suggestions.length === 0)
 }
 
 console.log('probable match: combined soft signals cross the floor')
