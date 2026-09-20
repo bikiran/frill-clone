@@ -170,9 +170,14 @@ export async function POST(req: NextRequest) {
 
         // Thread into an existing open conversation on this channel, else open one.
         let conv: any = null
+        // Match on meta_user_id, NOT on channel. Pinning the lookup to
+        // .eq('channel', platform) meant that once an SMS had flipped the row's
+        // channel, this webhook stopped recognising its own conversation and
+        // opened a duplicate beside it. meta_user_id already identifies the
+        // thread precisely, and it is per-platform.
         const { data: recent } = await db.from('conversations').select('*')
           .eq('company_id', companyId).eq('meta_user_id', senderId)
-          .eq('channel', platform).order('last_message_at', { ascending: false }).limit(1)
+          .order('last_message_at', { ascending: false }).limit(1)
         conv = recent?.[0] || null
 
         if (!conv) {
@@ -195,6 +200,14 @@ export async function POST(req: NextRequest) {
             status: 'open', is_unread: true,
             unread_count: (conv.unread_count || 0) + 1,
             meta_channel_id: channel.id,
+            // Inbound DM ⇒ this is a Messenger/Instagram conversation now,
+            // whatever it started as. The SMS webhook has always claimed the
+            // conversation this way ("this is an SMS conversation now"), and
+            // Meta never did — so a single text permanently relabelled a thread
+            // that has been on Instagram ever since, and the inbox list kept
+            // showing an SMS badge on it. Symmetry: whoever the customer last
+            // used owns the label.
+            channel: platform,
             last_message: preview.slice(0, 200), last_message_at: new Date().toISOString(), last_customer_activity_at: new Date().toISOString(),
           }).eq('id', conv.id)
         }
