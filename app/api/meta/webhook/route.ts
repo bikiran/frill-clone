@@ -5,6 +5,7 @@ import { META_VERIFY_TOKEN, META_APP_SECRET, fetchMetaProfile, fetchPageComment 
 import { isIgLoginChannel, fetchInstagramUserProfile, fetchInstagramComment, INSTAGRAM_APP_SECRET } from '@/lib/instagram-login'
 import { linkContactIdentity } from '@/lib/identity'
 import { rehostRemoteMedia } from '@/lib/media-rehost'
+import { detectContactInfo, emailKey, phoneKey } from '@/lib/phone'
 import { logWebhookEvent } from '@/lib/webhook-log'
 import { notifyCompany, pushInboundMessage } from '@/lib/notify'
 import { logEnquiryReopened } from '@/lib/conversation-timeline'
@@ -236,6 +237,37 @@ export async function POST(req: NextRequest) {
         if (text && insertedMsg?.id) {
           const base = (process.env.NEXT_PUBLIC_SITE_URL || new URL(req.url).origin).replace(/\/$/, '')
           fetch(`${base}/api/inbox/translate-message`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messageId: insertedMsg.id }) }).catch(() => {})
+        }
+
+        // Customer-matching: if they shared an email/phone (e.g. in reply to a
+        // "Request customer details" ask), capture it so the match engine can
+        // find their orders. Only FILL an empty field — never overwrite verified
+        // data silently; record it as a suggested identity + an audit either way,
+        // and (re)link the identity group so orders resolve across channels.
+        if (text && contact?.id) {
+          try {
+            const info = detectContactInfo(text)
+            if (info.email || info.phone) {
+              const patch: any = {}
+              if (info.email && !contact.email) patch.email = info.email.raw
+              if (info.phone && !contact.phone) patch.phone = info.phone.raw
+              if (Object.keys(patch).length) {
+                await db.from('contacts').update(patch).eq('id', contact.id)
+                await db.from('customer_identity_audit').insert({
+                  company_id: companyId, contact_id: contact.id, action: 'field_changed',
+                  detail: `Captured ${Object.keys(patch).join(' & ')} from the ${platform} conversation`,
+                  before: { email: contact.email || null, phone: contact.phone || null }, after: patch,
+                  evidence: { source: `${platform} conversation`, conversationId: conv.id },
+                }).then(() => {}, () => {})
+                Object.assign(contact, patch)
+              }
+              const idRows: any[] = []
+              if (info.email) idRows.push({ company_id: companyId, contact_id: contact.id, kind: 'email', value: emailKey(info.email.raw), display: info.email.raw, status: 'suggested', source: `${platform} conversation` })
+              if (info.phone) idRows.push({ company_id: companyId, contact_id: contact.id, kind: 'phone', value: phoneKey(info.phone.raw), display: info.phone.raw, status: 'suggested', source: `${platform} conversation` })
+              if (idRows.length) await db.from('customer_identities').insert(idRows).then(() => {}, () => {})
+              await linkContactIdentity(db, companyId, contact.id, { email: contact.email, phone: contact.phone, channel: platform }).catch(() => {})
+            }
+          } catch {}
         }
 
         // Alert the team: in-app bell + a phone push carrying conversationId, so
