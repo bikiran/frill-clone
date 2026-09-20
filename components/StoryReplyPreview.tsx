@@ -15,10 +15,10 @@ export default function StoryReplyPreview({ url, knownVideo, onOpen }: {
   const vidRef = useRef<HTMLVideoElement>(null)
   // A story with no extension that fails to load as an image is a video.
   const showVideo = knownVideo || imgFailed
-  const box: React.CSSProperties = { width: 150, maxWidth: '60%', borderRadius: 10, display: 'block', aspectRatio: '9 / 16', objectFit: 'cover', background: '#000' }
+  const box: React.CSSProperties = { width: 150, maxWidth: '100%', borderRadius: 10, display: 'block', aspectRatio: '9 / 16', objectFit: 'cover', background: '#000' }
 
   return (
-    <div style={{ position: 'relative', width: 150, maxWidth: '60%', cursor: 'zoom-in' }}
+    <div style={{ position: 'relative', width: 150, maxWidth: '100%', cursor: 'zoom-in' }}
       onMouseEnter={() => { if (showVideo) vidRef.current?.play().catch(() => {}) }}
       onMouseLeave={() => { if (showVideo && vidRef.current) { try { vidRef.current.pause(); vidRef.current.currentTime = 0 } catch {} } }}
       onClick={() => onOpen(showVideo ? 'video' : 'image')}>
