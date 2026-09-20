@@ -484,10 +484,27 @@ export async function syncGmailChannel(channelId: string): Promise<{ imported: n
       conv = byThread?.[0] || null
     }
     if (!conv && contact?.id) {
+      // Same SENDER does not mean same thread. Automated senders — invoice
+      // reminders, booking platforms, ticketing systems — mail about completely
+      // different businesses from one address, so every one of them resolved to
+      // the same contact and this fallback appended them all to whichever
+      // conversation happened to be newest. That is how an invoice for Clear
+      // Seas Aquatic Services ended up inside a conversation headed Packware
+      // Accounts.
+      //
+      // Gmail's threadId above is authoritative; this only exists for rows that
+      // predate it being stored. So require the subject to match as well, and
+      // fall through to a new conversation when it doesn't. A genuine reply
+      // still threads — its subject differs only by a Re:/Fwd: prefix.
+      const norm = (v: unknown) =>
+        String(v || '').replace(/^\s*((re|fwd?|fw)\s*:\s*)+/i, '').trim().toLowerCase()
+      const want = norm(subject)
       const { data: recent } = await db.from('conversations').select('*')
         .eq('company_id', companyId).eq('contact_id', contact.id).eq('channel', 'email')
-        .order('last_message_at', { ascending: false }).limit(1)
-      conv = recent?.[0] || null
+        .order('last_message_at', { ascending: false }).limit(20)
+      conv = want
+        ? (recent || []).find((c: any) => norm(c.email_subject || c.subject) === want) || null
+        : null
     }
     if (!conv) {
       const { data: newConv } = await db.from('conversations').insert({
