@@ -2461,6 +2461,10 @@ export default function InboxPage() {
     // actually have, and previously only customer messages were stamped.
     for (const m of msgs) {
       if (m.sender_type === 'system') continue
+      // Automated (Colvy-sent) messages don't collect read receipts — the team
+      // never "reads" a broadcast, and a stray "read by Agent" on them just
+      // confused people about who that was.
+      if ((m as any).metadata?.auto) continue
       // Don't mark your own message as read by yourself — that's meaningless.
       if (m.sender_type === 'agent' && (m as any).sender_id === user?.id) continue
       const readBy = Array.isArray((m as any).read_by) ? (m as any).read_by : []
@@ -7409,7 +7413,7 @@ export default function InboxPage() {
                 this …"). No banner here — it was intrusive. */}
 
             {/* Thread header */}
-            <div className="inbox-thread-header" style={{ padding: '12px 16px', borderBottom: igThemeActive ? '2px solid #C13584' : msgrThemeActive ? '2px solid #006AFF' : '1px solid var(--border)', background: igThemeActive ? 'linear-gradient(135deg, rgba(131,58,180,0.08), rgba(225,48,108,0.08))' : msgrThemeActive ? 'linear-gradient(135deg, rgba(0,178,255,0.08), rgba(0,106,255,0.08))' : '#fff', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <div className="inbox-thread-header" style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', background: igThemeActive ? 'linear-gradient(135deg, rgba(131,58,180,0.08), rgba(225,48,108,0.08))' : msgrThemeActive ? 'linear-gradient(135deg, rgba(0,178,255,0.08), rgba(0,106,255,0.08))' : '#fff', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
               {/* Mobile: back to conversation list */}
               <button type="button" className="inbox-mobile-only" onClick={() => setMobilePane('list')} title="Back to chats" aria-label="Back to chats"
                 style={{ display: 'none', height: 36, flexShrink: 0, borderRadius: 10, border: 'none', background: 'color-mix(in srgb, var(--coral) 12%, #fff)', cursor: 'pointer', alignItems: 'center', gap: 3, padding: '0 10px 0 6px', color: 'var(--coral)', fontSize: 13.5, fontWeight: 700, order: -2 }}>
@@ -8035,6 +8039,9 @@ export default function InboxPage() {
                 // Messenger equivalent: agent replies on a Facebook thread get the
                 // Messenger blue + rounder bubbles when the theme is enabled.
                 const msgrThemed = isAgent && (selected?.channel === 'facebook' || selected?.channel === 'messenger') && !!(companyInfo as any)?.inbox_settings?.messenger_theme
+                // Automated (order automation, review reminders, etc.) — sent by
+                // Colvy on the business's behalf, not by a team member.
+                const isAutoMsg = isAgent && !!((msg as any).metadata?.auto)
                 // Group reactions by emoji
                 const reactionCounts: Record<string, number> = {}
                 reactions.forEach((r: any) => { reactionCounts[r.emoji] = (reactionCounts[r.emoji] || 0) + 1 })
@@ -8050,10 +8057,19 @@ export default function InboxPage() {
                     <div style={{ maxWidth: '70%', position: 'relative' }}
                       onMouseEnter={() => setShowReactPicker(null)}>
                       {!isAgent && <p style={{ margin: '0 0 3px 4px', fontSize: 10, color: '#9ca3af' }}>{contact?.name || msg.sender_name || 'Visitor'}</p>}
-                      {/* Outbound messages name the team member (or business, for
-                          automated ones) that sent them, so an agent reply isn't
-                          mistaken for a customer message. */}
-                      {isAgent && <p style={{ margin: '0 4px 3px 0', fontSize: 10, color: '#9ca3af', textAlign: 'right' }}>{msg.sender_name || 'Team'}</p>}
+                      {/* Outbound messages name the team member that sent them, so
+                          an agent reply isn't mistaken for a customer message.
+                          Automated messages (order automation, etc.) are sent by
+                          Colvy on the business's behalf, so they're labelled
+                          "Delivered by Colvy" with a spark badge rather than a
+                          person's name. */}
+                      {isAgent && (isAutoMsg ? (
+                        <p style={{ margin: '0 4px 3px 0', fontSize: 10, color: '#8b5cf6', fontWeight: 700, textAlign: 'right', display: 'flex', alignItems: 'center', gap: 3, justifyContent: 'flex-end' }}>
+                          <AiSparkIcon size={10} /> Delivered by Colvy
+                        </p>
+                      ) : (
+                        <p style={{ margin: '0 4px 3px 0', fontSize: 10, color: '#9ca3af', textAlign: 'right' }}>{msg.sender_name || 'Team'}</p>
+                      ))}
 
                       {/* Reply-to quote */}
                       {repliedMsg && (
@@ -8470,8 +8486,10 @@ export default function InboxPage() {
 
                         {/* Who on the team has seen it. Shown on BOTH sides — on an
                             agent message it answers "did my colleague see this?",
-                            which is the question people actually have. */}
-                        {readBy.length > 0 && (
+                            which is the question people actually have. Automated
+                            (Colvy-sent) messages skip this — a "read by" on a
+                            broadcast the team never opened is just noise. */}
+                        {readBy.length > 0 && !isAutoMsg && (
                           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
                             <span>Read by:</span>
                             <span style={{ display: 'inline-flex', gap: 2 }}>
