@@ -65,18 +65,33 @@ console.log('ambiguous identifier → NOT auto-confirmed (staff must choose)')
   ok('surfaces both as ambiguous suggestions', out.suggestions.length === 2 && out.suggestions.every(s => s.ambiguous))
 }
 
-console.log('name matching: unique name → suggest (never auto-confirm); shared name → nothing')
+console.log('name matching: unique real customer → suggest; bare visitors ignored; namesakes → nothing')
 {
   const unique = computeMatches(
     { platform: 'instagram', platformUserId: 'IG_X', name: 'Sarah Williams' },
-    [{ contactId: 'c1', name: 'Sarah Williams' }])
-  ok('a unique exact name is SUGGESTED', !unique.confirmed && unique.suggestions[0]?.contactId === 'c1')
-  ok('name suggestion never auto-confirms (stays ≤94)', unique.suggestions[0]?.confidence <= 94 && unique.suggestions[0]?.confidence >= 70)
+    [{ contactId: 'c1', name: 'Sarah Williams', emails: ['sw@x.com'] }])
+  ok('a unique exact name (with contact info) is SUGGESTED', !unique.confirmed && unique.suggestions[0]?.contactId === 'c1')
+  ok('name suggestion never auto-confirms (70–94)', unique.suggestions[0]?.confidence <= 94 && unique.suggestions[0]?.confidence >= 70)
 
-  const shared = computeMatches(
+  // The real-world case: the same name exists as bare social visitors AND one
+  // real customer with contact details. Only the real customer should surface.
+  const withVisitors = computeMatches(
     { platform: 'instagram', platformUserId: 'IG_X', name: 'Sarah Williams' },
-    [{ contactId: 'c1', name: 'Sarah Williams' }, { contactId: 'c2', name: 'Sarah Williams' }])
-  ok('a name shared by several customers is NOT suggested alone', !shared.confirmed && shared.suggestions.length === 0)
+    [
+      { contactId: 'v1', name: 'Sarah Williams' },                       // bare Messenger visitor, no info
+      { contactId: 'c1', name: 'Sarah Williams', phones: ['0412345678'] }, // real customer
+    ])
+  ok('bare same-name visitors are ignored; the real customer surfaces', withVisitors.suggestions.length === 1 && withVisitors.suggestions[0].contactId === 'c1')
+
+  const namesakes = computeMatches(
+    { platform: 'instagram', platformUserId: 'IG_X', name: 'Sarah Williams' },
+    [{ contactId: 'c1', name: 'Sarah Williams', emails: ['a@x.com'] }, { contactId: 'c2', name: 'Sarah Williams', emails: ['b@x.com'] }])
+  ok('two real customers with the same name are NOT suggested on name alone', !namesakes.confirmed && namesakes.suggestions.length === 0)
+
+  const bareOnly = computeMatches(
+    { platform: 'instagram', platformUserId: 'IG_X', name: 'Sarah Williams' },
+    [{ contactId: 'v1', name: 'Sarah Williams' }])
+  ok('a name-only match to a bare visitor (no details) is not surfaced', bareOnly.suggestions.length === 0)
 }
 
 console.log('probable match: combined soft signals cross the floor')

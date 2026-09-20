@@ -225,11 +225,20 @@ export function computeMatches(signals: MatchSignals, candidates: Candidate[], t
   }
 
   // A UNIQUE exact-name match is worth surfacing as a suggestion (never an
-  // auto-confirm) — if there's exactly one customer with this name and nothing
-  // else is going on for them, a human should still get the chance to confirm
-  // it. A name shared by several customers stays below the floor so we don't
-  // guess between namesakes (the "never merge on name alone" rule).
-  const nameMatches = probable.filter(r => r.evidence.some(e => e.signal === 'name'))
+  // auto-confirm). But "unique" is judged only among SUBSTANTIAL customers —
+  // ones that actually carry an email, phone or order. Matching a bare social
+  // visitor (no contact details) to another bare visitor of the same name is
+  // useless and noisy, so those name-only results are dropped; and the auto-
+  // created same-name visitors don't make the real customer look "non-unique".
+  const candById = new Map(candidates.map(c => [c.contactId, c]))
+  const hasInfo = (id: string) => {
+    const c = candById.get(id)
+    return !!(c && ((c.emails && c.emails.length) || (c.phones && c.phones.length) || (c.orderNumbers && c.orderNumbers.length)))
+  }
+  const nameOnly = (r: MatchResult) => r.evidence.every(e => e.signal === 'name')
+  const usable = probable.filter(r => !(nameOnly(r) && !hasInfo(r.contactId)))
+
+  const nameMatches = usable.filter(r => r.evidence.some(e => e.signal === 'name') && hasInfo(r.contactId))
   if (nameMatches.length === 1) {
     const r = nameMatches[0]
     if (!r.evidence.some(e => e.signal === 'unique_name')) {
@@ -237,7 +246,7 @@ export function computeMatches(signals: MatchSignals, candidates: Candidate[], t
       r.confidence = Math.min(94, r.confidence + W_UNIQUE_NAME)
     }
   }
-  for (const r of probable) results.push(r)
+  for (const r of usable) results.push(r)
 
   // Keep only reliable suggestions, best first, top 3.
   const suggestions = results
