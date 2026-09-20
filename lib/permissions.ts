@@ -54,3 +54,10 @@ export function canAccessBilling(role: UserRole): boolean {
 export function canAccessAnalytics(role: UserRole): boolean {
   return role !== 'viewer'
 }
+
+// Can this role see a customer's sensitive PII in full — phone, email,
+// addresses and order detail? Viewers get masked values; everyone else sees the
+// full value. Used to gate the cross-channel customer match panel.
+export function canViewSensitive(role: UserRole): boolean {
+  return role !== 'viewer'
+}

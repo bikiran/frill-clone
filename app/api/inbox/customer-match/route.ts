@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { computeMatches, maskEmail, maskPhone, type Candidate, type MatchSignals, type IdentityKind } from '@/lib/customer-match'
 import { phoneKey, emailKey, detectContactInfo } from '@/lib/phone'
+import { getUserRole, canEdit, canViewSensitive } from '@/lib/permissions'
 
 export const dynamic = 'force-dynamic'
 
@@ -32,6 +33,14 @@ export async function POST(req: NextRequest) {
     const companyId = conv.company_id
     const platform = String(conv.channel || '') as MatchSignals['platform']
     const platformUserId = conv.meta_user_id || null
+
+    // Role: viewers can look but not act, and see masked PII.
+    const role = body.userId ? await getUserRole(body.userId, companyId) : 'viewer'
+
+    const WRITE = ['confirm', 'unlink', 'reject', 'merge', 'request-details']
+    if (WRITE.includes(action) && !canEdit(role)) {
+      return NextResponse.json({ error: 'You don\'t have permission to change customer links.' }, { status: 403 })
+    }
 
     if (action === 'confirm') return await confirmMatch(db, conv, body)
     if (action === 'unlink') return await unlinkMatch(db, conv, body)
@@ -161,11 +170,15 @@ export async function POST(req: NextRequest) {
           if (ord) { lastOrder = { number: ord.woo_order_id, total: Number(ord.total) }; if (!address && ord.billing) { const b = ord.billing; address = [b.address_1, b.city].filter(Boolean).join(', ') || null } }
         }
       } catch {}
+      const sensitive = canViewSensitive(role)
       return {
         contactId: r.contactId, name: c.name || 'Customer', confidence: r.confidence, band: r.band,
         ambiguous: !!r.ambiguous, evidence: r.evidence,
         maskedEmail: maskEmail(c.email), maskedPhone: maskPhone(c.phone),
-        address, lifetime, lastOrder,
+        // Viewers never see address / order / spend, even after a match.
+        address: sensitive ? address : null,
+        lifetime: sensitive ? lifetime : null,
+        lastOrder: sensitive ? lastOrder : null,
         alreadyLinked: r.contactId === confirmedIdentityContactId,
       }
     }
@@ -173,7 +186,7 @@ export async function POST(req: NextRequest) {
     const confirmed = outcome.confirmed ? await enrich(outcome.confirmed) : null
     const suggestions = (await Promise.all(outcome.suggestions.map(enrich))).filter(Boolean)
 
-    return NextResponse.json({ ok: true, confirmed, suggestions, currentContactId: visitorId })
+    return NextResponse.json({ ok: true, confirmed, suggestions, currentContactId: visitorId, canEdit: canEdit(role) })
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 })
   }

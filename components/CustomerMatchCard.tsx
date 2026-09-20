@@ -17,7 +17,7 @@ type Suggestion = {
   lastOrder?: { number: number; total: number } | null
 }
 
-type Result = { confirmed: Suggestion | null; suggestions: Suggestion[]; currentContactId?: string | null; notApplicable?: boolean }
+type Result = { confirmed: Suggestion | null; suggestions: Suggestion[]; currentContactId?: string | null; notApplicable?: boolean; canEdit?: boolean }
 
 const money = (n?: number | null) => (n == null ? null : `$${n.toFixed(2)}`)
 
@@ -121,6 +121,7 @@ export default function CustomerMatchCard({
     </div>
   }
   if (!result) return null
+  const canEdit = result.canEdit !== false
 
   const confirmedLinked = result.confirmed?.alreadyLinked ? result.confirmed : null
   // An auto-match that's ≥95 but not yet linked is shown as the primary suggestion.
@@ -138,10 +139,12 @@ export default function CustomerMatchCard({
         {confirmedLinked.evidence?.[0] && (
           <p style={{ margin: '0 0 8px', fontSize: 11.5, color: 'var(--slate)' }}>{confirmedLinked.evidence[0].detail}</p>
         )}
-        <div style={{ display: 'flex', gap: 12, marginTop: 6, alignItems: 'center' }}>
-          <button disabled={!!busy} onClick={() => unlink(confirmedLinked)} style={linkBtn}>Unlink</button>
-          <button disabled={!!busy} onClick={() => openMerge(confirmedLinked.contactId)} style={linkBtn}>{busy === 'find-dupes' ? 'Checking…' : 'Merge duplicates'}</button>
-        </div>
+        {canEdit && (
+          <div style={{ display: 'flex', gap: 12, marginTop: 6, alignItems: 'center' }}>
+            <button disabled={!!busy} onClick={() => unlink(confirmedLinked)} style={linkBtn}>Unlink</button>
+            <button disabled={!!busy} onClick={() => openMerge(confirmedLinked.contactId)} style={linkBtn}>{busy === 'find-dupes' ? 'Checking…' : 'Merge duplicates'}</button>
+          </div>
+        )}
         {showMerge && dupes && (
           <MergeModal
             primaryId={confirmedLinked.contactId} primaryName={confirmedLinked.name}
@@ -157,7 +160,7 @@ export default function CustomerMatchCard({
     return (
       <div style={{ ...cardStyle, background: 'var(--canvas)' }}>
         <p style={{ margin: '0 0 10px', fontSize: 12.5, color: 'var(--slate)' }}>No matching customer found — this is a new {label(channel)} visitor. You can create or link a customer from the contact panel below.</p>
-        <button disabled={!!busy} onClick={requestDetails} style={ghostBtn}>{busy === 'request-details' ? 'Sending…' : 'Request customer details'}</button>
+        {canEdit && <button disabled={!!busy} onClick={requestDetails} style={ghostBtn}>{busy === 'request-details' ? 'Sending…' : 'Request customer details'}</button>}
       </div>
     )
   }
@@ -183,12 +186,16 @@ export default function CustomerMatchCard({
             {s.evidence.slice(0, 3).map((e, i) => <li key={i}>{e.detail}</li>)}
           </ul>
         )}
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
-          <button disabled={!!busy} onClick={() => confirm(s)} style={primaryBtn}>{busy === 'confirm' + s.contactId ? 'Linking…' : 'Confirm match'}</button>
-          {!compact && others.length > 0 && <button disabled={!!busy} onClick={() => setShowAll(true)} style={ghostBtn}>Choose another</button>}
-          <button disabled={!!busy} onClick={() => reject(s)} style={ghostBtn}>Not this customer</button>
-          {!compact && <button disabled={!!busy} onClick={requestDetails} style={ghostBtn}>{busy === 'request-details' ? 'Sending…' : 'Request details'}</button>}
-        </div>
+        {canEdit ? (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
+            <button disabled={!!busy} onClick={() => confirm(s)} style={primaryBtn}>{busy === 'confirm' + s.contactId ? 'Linking…' : 'Confirm match'}</button>
+            {!compact && others.length > 0 && <button disabled={!!busy} onClick={() => setShowAll(true)} style={ghostBtn}>Choose another</button>}
+            <button disabled={!!busy} onClick={() => reject(s)} style={ghostBtn}>Not this customer</button>
+            {!compact && <button disabled={!!busy} onClick={requestDetails} style={ghostBtn}>{busy === 'request-details' ? 'Sending…' : 'Request details'}</button>}
+          </div>
+        ) : (
+          <p style={{ margin: '10px 0 0', fontSize: 11, color: '#9ca3af' }}>View only — ask an editor to confirm this match.</p>
+        )}
       </div>
     )
   }
