@@ -9,11 +9,58 @@ const isImg = (u: string, t?: string) => (t || '').startsWith('image/') || /\.(p
 const isVid = (u: string, t?: string) => (t || '').startsWith('video/') || /\.(mp4|mov|webm|m4v)(\?|$)/i.test(u)
 const isPdf = (u: string, t?: string) => (t || '') === 'application/pdf' || /\.pdf(\?|$)/i.test(u)
 
-// Inline PDF preview. <object> renders the PDF where the browser supports it
-// (desktop, iOS Safari) and shows the child fallback where it can't (some Android
-// browsers) — so the frame is always filled (no dead leg-space) and there's
-// always a clear way to open the file.
+// PDF version pinned so the worker matches the library.
+const PDFJS_VER = '4.7.76'
+
+// Inline PDF preview. First it renders the PDF's FIRST PAGE to an image with
+// pdf.js (works on every browser, including Android Chrome where <object> just
+// shows a generic icon), so the customer sees a real thumbnail like Gmail. While
+// that loads it shows a spinner, and if pdf.js can't load or the file blocks
+// cross-origin reads it falls back to <object> (desktop/iOS inline) and finally
+// the file card — the frame is always filled and there's always a way to open it.
 function PdfPreview({ url, name, height }: { url: string; name?: string; height: string }) {
+  const [thumb, setThumb] = useState<string | null>(null)
+  const [failed, setFailed] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    setThumb(null); setFailed(false)
+    ;(async () => {
+      try {
+        // Load pdf.js from CDN at runtime (kept out of the bundle).
+        const pdfjs: any = await import(/* webpackIgnore: true */ `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${PDFJS_VER}/pdf.min.mjs`)
+        pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${PDFJS_VER}/pdf.worker.min.mjs`
+        const doc = await pdfjs.getDocument({ url }).promise
+        const page = await doc.getPage(1)
+        const base = page.getViewport({ scale: 1 })
+        const targetW = Math.min(base.width * 2, 1400)   // 2× for crispness, capped
+        const viewport = page.getViewport({ scale: targetW / base.width })
+        const canvas = document.createElement('canvas')
+        canvas.width = viewport.width
+        canvas.height = viewport.height
+        const ctx = canvas.getContext('2d')
+        if (!ctx) throw new Error('no canvas')
+        await page.render({ canvasContext: ctx, viewport }).promise
+        if (!cancelled) setThumb(canvas.toDataURL('image/jpeg', 0.85))
+        try { doc.destroy?.() } catch {}
+      } catch { if (!cancelled) setFailed(true) }
+    })()
+    return () => { cancelled = true }
+  }, [url])
+
+  if (thumb) {
+    return <img src={thumb} alt={name || 'PDF preview'} style={{ width: '100%', height, objectFit: 'cover', objectPosition: 'top', display: 'block', background: '#fff' }} />
+  }
+  if (!failed) {
+    return (
+      <div style={{ height, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, background: '#fff', color: '#9ca3af' }}>
+        <span style={{ width: 30, height: 30, borderRadius: '50%', border: '3px solid #e5e7eb', borderTopColor: '#9ca3af', animation: 'pdfspin 0.8s linear infinite' }} />
+        <style>{`@keyframes pdfspin{to{transform:rotate(360deg)}}`}</style>
+        <p style={{ margin: 0, fontSize: 12.5 }}>Loading preview…</p>
+      </div>
+    )
+  }
+  // pdf.js unavailable → browser-native inline where possible, else the card.
   return (
     <object data={url} type="application/pdf" style={{ width: '100%', height, display: 'block', background: '#fff' }}>
       <div style={{ height, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10, background: '#fff', color: '#6b7280', padding: 24, textAlign: 'center' }}>
