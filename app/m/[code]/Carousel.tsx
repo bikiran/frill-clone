@@ -8,6 +8,17 @@ type Item = { url: string; name?: string; type?: string }
 const isImg = (u: string, t?: string) => (t || '').startsWith('image/') || /\.(png|jpe?g|gif|webp|avif)(\?|$)/i.test(u)
 const isVid = (u: string, t?: string) => (t || '').startsWith('video/') || /\.(mp4|mov|webm|m4v)(\?|$)/i.test(u)
 const isPdf = (u: string, t?: string) => (t || '') === 'application/pdf' || /\.pdf(\?|$)/i.test(u)
+// Word/Excel/PowerPoint — both the modern (.docx) and legacy (.doc) extensions,
+// plus the long MIME types the browser/storage reports.
+const OFFICE_MIMES = new Set([
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+])
+const isOffice = (u: string, t?: string) => OFFICE_MIMES.has(t || '') || /\.(docx?|xlsx?|pptx?)(\?|$)/i.test(u)
 
 // PDF version pinned so the worker matches the library.
 const PDFJS_VER = '4.7.76'
@@ -69,6 +80,30 @@ function PdfPreview({ url, name, height }: { url: string; name?: string; height:
         <p style={{ margin: 0, fontSize: 12.5 }}>Tap “Open file” below to view this PDF.</p>
       </div>
     </object>
+  )
+}
+
+// Inline Office (Word/Excel/PowerPoint) preview. Renders the document through
+// Microsoft's Office Online viewer in an iframe — the same embed Gmail and
+// Outlook use — which turns the shared file into a real, scrollable rendering.
+// It needs a publicly reachable URL, which the shared-link storage URL is. If
+// the embed can't load (blocked network, private URL) it falls back to a file
+// card so there's always a way to open the document.
+function OfficePreview({ url, name, height }: { url: string; name?: string; height: string }) {
+  const [failed, setFailed] = useState(false)
+  const src = `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(url)}`
+  if (failed) {
+    return (
+      <div style={{ height, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10, background: '#fff', color: '#6b7280', padding: 24, textAlign: 'center' }}>
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
+        <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: '#374151', wordBreak: 'break-word' }}>{name || 'Document'}</p>
+        <p style={{ margin: 0, fontSize: 12.5 }}>Tap “Open file” below to view this document.</p>
+      </div>
+    )
+  }
+  return (
+    <iframe src={src} title={name || 'Document preview'} onError={() => setFailed(true)}
+      style={{ width: '100%', height, border: 'none', display: 'block', background: '#fff' }} />
   )
 }
 
@@ -139,10 +174,10 @@ export default function Carousel({ items, accent }: { items: Item[]; accent: str
       <div ref={ref} onScroll={onScroll}
         style={{ display: 'flex', gap: 12, overflowX: 'auto', scrollSnapType: 'x mandatory', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none', alignItems: 'flex-start' }}>
         {items.map((m, i) => {
-          const image = isImg(m.url, m.type), video = isVid(m.url, m.type), pdf = isPdf(m.url, m.type)
+          const image = isImg(m.url, m.type), video = isVid(m.url, m.type), pdf = isPdf(m.url, m.type), office = isOffice(m.url, m.type)
           return (
             <div key={i} style={{ flex: '0 0 100%', scrollSnapAlign: 'center', background: '#fff', borderRadius: 14, overflow: 'hidden', boxShadow: '0 4px 18px rgba(0,0,0,0.06)', display: 'flex', flexDirection: 'column' }}>
-              <div style={{ position: 'relative', height: many ? MEDIA_H : 'auto', maxHeight: many ? undefined : 'min(80vh, 620px)', background: pdf ? '#fff' : '#111', lineHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+              <div style={{ position: 'relative', height: many ? MEDIA_H : (pdf || office ? 'min(78vh, 620px)' : 'auto'), maxHeight: many ? undefined : 'min(80vh, 620px)', background: pdf || office ? '#fff' : '#111', lineHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
                 {image ? (
                   <>
                     <AmbientImg url={m.url} />
@@ -155,11 +190,13 @@ export default function Carousel({ items, accent }: { items: Item[]; accent: str
                   <VideoPlayer src={m.url} autoPlay={false} ambient={i === idx} style={many ? { width: '100%', height: '100%', objectFit: 'contain', borderRadius: 0 } : { width: '100%', maxHeight: 'min(80vh, 620px)', borderRadius: 0 }} />
                 ) : pdf ? (
                   <PdfPreview url={m.url} name={m.name} height={many ? MEDIA_H : 'min(78vh, 620px)'} />
+                ) : office ? (
+                  <OfficePreview url={m.url} name={m.name} height={many ? MEDIA_H : 'min(78vh, 620px)'} />
                 ) : (
                   <div style={{ position: 'relative', zIndex: 1, padding: 30, color: '#fff', fontSize: 14, fontWeight: 700, wordBreak: 'break-word' }}>{m.name || 'File'}</div>
                 )}
-                {/* Expand into the lightbox (images, videos and PDFs). */}
-                {(image || video || pdf) && (
+                {/* Expand into the lightbox (images, videos, PDFs and Office docs). */}
+                {(image || video || pdf || office) && (
                   <button onClick={() => setLb(i)} title="Expand" aria-label="Expand" style={expandBtn}><ExpandIcon /></button>
                 )}
               </div>
@@ -220,7 +257,7 @@ function Lightbox({ items, index, accent, onIndex, onClose }: {
   items: Item[]; index: number; accent: string; onIndex: (i: number) => void; onClose: () => void
 }) {
   const m = items[index]
-  const image = isImg(m.url, m.type), video = isVid(m.url, m.type), pdf = isPdf(m.url, m.type)
+  const image = isImg(m.url, m.type), video = isVid(m.url, m.type), pdf = isPdf(m.url, m.type), office = isOffice(m.url, m.type)
   const many = items.length > 1
   const arrow: React.CSSProperties = {
     position: 'absolute', top: '50%', transform: 'translateY(-50%)', width: 46, height: 46, borderRadius: '50%',
@@ -246,6 +283,10 @@ function Lightbox({ items, index, accent, onIndex, onClose }: {
         ) : pdf ? (
           <div style={{ width: 'min(900px, 94vw)', height: '82vh', borderRadius: 8, overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
             <PdfPreview url={m.url} name={m.name} height="82vh" />
+          </div>
+        ) : office ? (
+          <div style={{ width: 'min(1100px, 94vw)', height: '82vh', borderRadius: 8, overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
+            <OfficePreview url={m.url} name={m.name} height="82vh" />
           </div>
         ) : (
           <div style={{ color: '#fff', fontSize: 15, fontWeight: 700 }}>{m.name || 'File'}</div>
