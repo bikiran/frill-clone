@@ -66,6 +66,14 @@ export default function MetaChannelsPage() {
     if (companyId) await (supabase as any).from('companies').update({ inbox_settings: next }).eq('id', companyId)
   }
 
+  // The Messenger equivalent: render Facebook Messenger conversations with the
+  // signature Messenger blue on outgoing bubbles, header + Send button.
+  const setMsgrTheme = async (on: boolean) => {
+    const next = { ...(inboxSettings || {}), messenger_theme: on }
+    setInboxSettings(next)
+    if (companyId) await (supabase as any).from('companies').update({ inbox_settings: next }).eq('id', companyId)
+  }
+
   if (loading) return <div style={{ padding: 40, color: 'var(--slate)' }}>Loading…</div>
 
   const fbChannels = channels.filter(c => c.platform === 'facebook')
@@ -154,6 +162,23 @@ export default function MetaChannelsPage() {
             onClick={() => setIgTheme(!inboxSettings.instagram_theme)}
             style={{ position: 'relative', width: 44, height: 26, borderRadius: 999, border: 'none', cursor: 'pointer', flexShrink: 0, transition: 'background .15s', background: inboxSettings.instagram_theme ? 'linear-gradient(45deg,#feda75,#d62976,#4f5bd5)' : '#d1d5db' }}>
             <span style={{ position: 'absolute', top: 3, left: inboxSettings.instagram_theme ? 21 : 3, width: 20, height: 20, borderRadius: '50%', background: '#fff', transition: 'left .15s', boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }} />
+          </button>
+        </div>
+      )}
+
+      {fbChannels.length > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 18px', borderRadius: 14, border: '1px solid var(--border)', background: '#fff', marginBottom: 20 }}>
+          <span style={{ width: 40, height: 40, borderRadius: 11, background: 'linear-gradient(135deg,#00B2FF,#006AFF)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="#fff"><path d="M12 2C6.36 2 2 6.13 2 11.7c0 2.91 1.19 5.44 3.14 7.17.16.15.26.35.27.57l.05 1.78c.02.57.6.94 1.12.71l1.99-.88c.17-.07.35-.09.53-.04 1 .27 2.06.42 3.13.42 5.64 0 10-4.13 10-9.7C22 6.13 17.64 2 12 2zm6 7.46l-2.94 4.66c-.47.74-1.47.93-2.18.4l-2.34-1.75a.6.6 0 0 0-.72 0l-3.16 2.4c-.42.32-.97-.18-.69-.63l2.94-4.66c.47-.74 1.47-.93 2.18-.4l2.34 1.75c.21.16.51.16.72 0l3.16-2.4c.42-.32.97.18.69.63z"/></svg>
+          </span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p style={{ margin: 0, fontSize: 14.5, fontWeight: 800, color: 'var(--ink)' }}>Apply Messenger theme</p>
+            <p style={{ margin: '2px 0 0', fontSize: 12.5, color: 'var(--slate)', lineHeight: 1.45 }}>Style Facebook Messenger conversations in the inbox to look like Messenger — the signature blue on your replies and the thread header.</p>
+          </div>
+          <button type="button" role="switch" aria-checked={!!inboxSettings.messenger_theme}
+            onClick={() => setMsgrTheme(!inboxSettings.messenger_theme)}
+            style={{ position: 'relative', width: 44, height: 26, borderRadius: 999, border: 'none', cursor: 'pointer', flexShrink: 0, transition: 'background .15s', background: inboxSettings.messenger_theme ? 'linear-gradient(135deg,#00B2FF,#006AFF)' : '#d1d5db' }}>
+            <span style={{ position: 'absolute', top: 3, left: inboxSettings.messenger_theme ? 21 : 3, width: 20, height: 20, borderRadius: '50%', background: '#fff', transition: 'left .15s', boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }} />
           </button>
         </div>
       )}
