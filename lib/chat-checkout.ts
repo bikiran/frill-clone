@@ -21,10 +21,13 @@ export function chatStripe(company: any): { s: Stripe; connectOpts: Stripe.Reque
   return { s, connectOpts, useOwnKeys }
 }
 
-function returnUrls(originHost: string | null, originVerified: boolean, colvyBase: string) {
-  if (originVerified && originHost) {
-    return { successBase: `https://${originHost}/payment-success`, cancelUrl: `https://${originHost}/payment-cancelled` }
-  }
+// Always land the customer on OUR own thank-you / cancelled pages. We used to
+// redirect verified on-site checkouts back to `https://<merchant>/payment-success`,
+// but merchants don't actually have those pages, so Stripe's redirect hit their
+// site's 404 and the customer thought the payment had failed. Our /pay/success
+// page confirms the charge and tells them they can close the window — which is
+// the right ending for a pay-by-link opened from SMS / chat / a DM.
+function returnUrls(_originHost: string | null, _originVerified: boolean, colvyBase: string) {
   return { successBase: `${colvyBase}/pay/success`, cancelUrl: `${colvyBase}/pay/cancelled` }
 }
 
