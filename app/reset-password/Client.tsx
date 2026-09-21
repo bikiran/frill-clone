@@ -15,6 +15,24 @@ function ResetPasswordForm() {
   const [error, setError] = useState('')
   const [showPassword, setShowPassword] = useState(false)
 
+  // Make this page self-sufficient: if the recovery tokens are in the URL hash
+  // (the reset link may land here directly), establish the session from them so
+  // updateUser() has an authenticated recovery session to act on. Also strip the
+  // hash afterwards so a reload doesn't re-parse a now-consumed token.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const hash = window.location.hash || ''
+    if (!hash.includes('access_token=')) return
+    const p = new URLSearchParams(hash.replace(/^#/, ''))
+    const access_token = p.get('access_token')
+    const refresh_token = p.get('refresh_token')
+    if (access_token && refresh_token) {
+      supabase.auth.setSession({ access_token, refresh_token })
+        .catch(() => {})
+        .finally(() => { try { window.history.replaceState(null, '', window.location.pathname) } catch {} })
+    }
+  }, [])
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
