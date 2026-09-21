@@ -267,7 +267,7 @@ function initialsOf(name?: string | null): string {
 // Interleave conversation events (assignments, channel switches, moves) into the
 // message list in chronological order, so the thread reads like a real timeline.
 function mergeEvents(msgs: any[], events: any[], calls: any[] = []) {
-  const SHOW = ['assigned', 'channel_switch', 'moved', 'status', 'review_request', 'page_view', 'note_created', 'closed', 'reopened']
+  const SHOW = ['assigned', 'channel_switch', 'moved', 'status', 'review_request', 'page_view', 'note_created', 'closed', 'reopened', 'ai_update']
   const evs = (events || [])
     .filter(e => SHOW.includes(e.event_type))
     .map(e => ({ ...e, __event: true }))
@@ -2511,6 +2511,22 @@ export default function InboxPage() {
       conversation_id: selected.id, company_id: companyId, event_type: eventType, actor_name: actorName, detail,
     })
     loadConversationExtras(selected.id)
+  }
+
+  // Record a Colvy AI action as an inline sparkle divider in the thread.
+  const logAiUpdate = async (detail: string) => {
+    if (!selected || !companyId) return
+    try {
+      await (supabase as any).from('conversation_events').insert({
+        conversation_id: selected.id, company_id: companyId, event_type: 'ai_update', actor_name: 'Colvy AI', detail,
+      })
+      loadConversationExtras(selected.id)
+    } catch {}
+  }
+  const onAiTasksCreated = () => {
+    if (!selected) return
+    loadConversationExtras(selected.id)
+    logAiUpdate('Tasks created from the AI call summary')
   }
 
   const markMessagesRead = async (convId: string, msgs: Message[]) => {
@@ -7946,7 +7962,7 @@ export default function InboxPage() {
                           <span style={{ fontSize: 11, fontWeight: 600, color: '#9ca3af', background: '#eef0f2', padding: '3px 12px', borderRadius: 20 }}>{thisDay}</span>
                         </div>
                       ) : null}
-                      <CallCard callId={item.id} meta={{ direction: item.direction, duration_seconds: item.duration_seconds, agent_name: item.agent_name }} timestamp={item.created_at} highlight={(showMsgSearch && msgSearch.trim()) ? msgSearch : searchTerm} accent={companyInfo?.accent_color || 'var(--coral)'} actor={{ id: user?.id, name: myName }} teamMembers={teamMembers} outlets={outlets} defaultLocationId={(selected as any)?.assigned_location_id || (selected as any)?.location_id || null} onTasksCreated={() => { if (selected) loadConversationExtras(selected.id) }} />
+                      <CallCard callId={item.id} meta={{ direction: item.direction, duration_seconds: item.duration_seconds, agent_name: item.agent_name }} timestamp={item.created_at} highlight={(showMsgSearch && msgSearch.trim()) ? msgSearch : searchTerm} accent={companyInfo?.accent_color || 'var(--coral)'} actor={{ id: user?.id, name: myName }} teamMembers={teamMembers} outlets={outlets} defaultLocationId={(selected as any)?.assigned_location_id || (selected as any)?.location_id || null} onTasksCreated={onAiTasksCreated} />
                     </div>
                   )
                 }
@@ -7962,6 +7978,22 @@ export default function InboxPage() {
                           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ev.detail || 'Task completed'}</span>
                           {ev.created_at && <span style={{ color: '#4d9e6a', fontWeight: 500 }}> · {fmtTime(ev.created_at)}</span>}
                         </span>
+                      </div>
+                    )
+                  }
+                  // Colvy AI action — a sparkle divider, tinted, attributed to
+                  // Colvy AI (e.g. "Address and delivery updated by Colvy AI").
+                  if (ev.event_type === 'ai_update' || ev.actor_name === 'Colvy AI') {
+                    return (
+                      <div key={`ev-${ev.id}`} style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '8px 0' }}>
+                        <div style={{ flex: 1, height: 1, background: 'color-mix(in srgb, var(--coral, #ff7a6b) 22%, transparent)' }} />
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5, fontWeight: 600, color: 'var(--coral, #ff7a6b)', whiteSpace: 'nowrap', maxWidth: 460, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" style={{ flexShrink: 0 }}><path d="M12 2l1.6 4.6L18 8l-4.4 1.4L12 14l-1.6-4.6L6 8l4.4-1.4L12 2zM19 14l.8 2.2L22 17l-2.2.8L19 20l-.8-2.2L16 17l2.2-.8L19 14zM5 15l.7 1.8L7.5 17l-1.8.7L5 19.5l-.7-1.8L2.5 17l1.8-.7L5 15z"/></svg>
+                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{ev.detail || 'Updated by Colvy AI'}</span>
+                          <span style={{ opacity: 0.75, fontWeight: 500 }}>· Colvy AI</span>
+                          {ev.created_at && <span style={{ opacity: 0.55, fontWeight: 500 }}> · {fmtTime(ev.created_at)}</span>}
+                        </span>
+                        <div style={{ flex: 1, height: 1, background: 'color-mix(in srgb, var(--coral, #ff7a6b) 22%, transparent)' }} />
                       </div>
                     )
                   }
@@ -8041,7 +8073,7 @@ export default function InboxPage() {
                 if (isSystem && (msg as any).metadata?.call_event && (msg as any).metadata?.call_id) return (
                   <div key={msg.id}>
                     {dateDivider}
-                    <CallCard callId={(msg as any).metadata.call_id} meta={(msg as any).metadata} timestamp={msg.created_at} highlight={(showMsgSearch && msgSearch.trim()) ? msgSearch : searchTerm} accent={companyInfo?.accent_color || 'var(--coral)'} actor={{ id: user?.id, name: myName }} teamMembers={teamMembers} outlets={outlets} defaultLocationId={(selected as any)?.assigned_location_id || (selected as any)?.location_id || null} onTasksCreated={() => { if (selected) loadConversationExtras(selected.id) }} />
+                    <CallCard callId={(msg as any).metadata.call_id} meta={(msg as any).metadata} timestamp={msg.created_at} highlight={(showMsgSearch && msgSearch.trim()) ? msgSearch : searchTerm} accent={companyInfo?.accent_color || 'var(--coral)'} actor={{ id: user?.id, name: myName }} teamMembers={teamMembers} outlets={outlets} defaultLocationId={(selected as any)?.assigned_location_id || (selected as any)?.location_id || null} onTasksCreated={onAiTasksCreated} />
                   </div>
                 )
                 if (isSystem) {
