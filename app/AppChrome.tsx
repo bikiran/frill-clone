@@ -808,6 +808,10 @@ export default function AppChrome({
                   : items
                 return ordered
                 .filter(item => {
+                  // Inside the admin the left sidebar already covers navigation, so
+                  // the top board menu (Help/Ideas/Roadmap/Updates) is redundant —
+                  // hide it once you're in /admin.
+                  if (pathname?.startsWith('/admin')) return false
                   if (isOnBoard && navVisibility[item.label as keyof typeof navVisibility] === false) return false
                   const isBoardItem = ['Ideas', 'Roadmap', 'Updates', 'Help'].includes(item.label) && item.href.startsWith('/') && !item.href.startsWith('/product')
                   const isMarketingItem = item.label === 'Features' || item.label === 'Product'
@@ -819,6 +823,7 @@ export default function AppChrome({
                 }).map(item => (
                 <Link
                   key={item.href}
+                  // (see the filter above; center nav is hidden inside /admin)
                   // "Ideas" always needs ?view=ideas so it reaches the ideas
                   // board even when another page (e.g. Help) is the configured
                   // homepage — bare "/" would just redirect straight past it.
