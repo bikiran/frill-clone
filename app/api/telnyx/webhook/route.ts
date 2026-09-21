@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { log } from '@/lib/log'
 import { createClient } from '@supabase/supabase-js'
 import { notifyCompany, pushInboundMessage } from '@/lib/notify'
+import { parseTapback, matchReactedMessage } from '@/lib/sms-tapback'
 import { runKeywordReply } from '@/lib/keyword-reply'
 import { TelnyxService } from '@/lib/telnyx-service'
 import { logWebhookEvent } from '@/lib/webhook-log'
@@ -275,6 +276,39 @@ export async function POST(req: NextRequest) {
       }
 
       if (conv) {
+        // An iPhone tapback arrives as a whole new SMS ("Loved \u201c…\u201d"), so a
+        // handful of taps would otherwise bury the thread and ring the phone
+        // for each one. Attach it to the message it refers to instead.
+        const tap = parseTapback(text)
+        if (tap) {
+          const { data: recent } = await db.from('messages')
+            .select('id, content, reactions')
+            .eq('conversation_id', conv.id)
+            .order('created_at', { ascending: false })
+            .limit(40)
+          const target = matchReactedMessage(tap.quoted, (recent || []) as any[])
+          if (target) {
+            const who = matchedContactName || from
+            const existing = Array.isArray((target as any).reactions) ? (target as any).reactions : []
+            // One reaction per person per message, so re-tapping replaces
+            // rather than stacks.
+            const others = existing.filter((r: any) => r?.by !== who)
+            await db.from('messages').update({
+              reactions: [...others, { emoji: tap.emoji, by: who, at: new Date().toISOString() }],
+            }).eq('id', (target as any).id)
+            // Surface it in the thread list without a bell or a push — a
+            // reaction is not a message waiting for an answer.
+            await db.from('conversations').update({
+              last_message_at: new Date().toISOString(),
+              status: 'open',
+            }).eq('id', conv.id)
+            return NextResponse.json({ ok: true, reaction: true })
+          }
+          // No match — fall through and keep it as an ordinary message. Losing
+          // a customer's words to a failed guess is far worse than a stray
+          // \u201cLoved …\u201d in the thread.
+        }
+
         // Customer texted a closed enquiry — log the reopen before we flip it.
         await logEnquiryReopened(db, { conversationId: conv.id, companyId, prevStatus: conv.status, actorName: matchedContactName || null, via: 'SMS' })
         await db.from('messages').insert({
