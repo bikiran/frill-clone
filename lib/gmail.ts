@@ -543,6 +543,28 @@ export async function syncGmailChannel(channelId: string): Promise<{ imported: n
 
 // Send a reply through Gmail (so it appears in the business's Sent folder and
 // threads correctly on the customer's side).
+// Fetch an attachment's bytes from its (storage) URL and encode it as a base64
+// MIME body part, wrapped at 76 chars per RFC 2045. Returns null on any failure
+// or if the file is too large — a bad attachment must never fail the whole send.
+async function attachmentPart(a: { url: string; name?: string; type?: string }): Promise<string | null> {
+  try {
+    const res = await fetch(a.url)
+    if (!res.ok) return null
+    const buf = Buffer.from(await res.arrayBuffer())
+    if (!buf.length || buf.length > 20 * 1024 * 1024) return null   // skip empty / >20MB
+    const name = (a.name || 'attachment').replace(/["\r\n]/g, '')
+    const type = a.type || res.headers.get('content-type') || 'application/octet-stream'
+    const b64 = buf.toString('base64').replace(/(.{76})/g, '$1\r\n')
+    return [
+      `Content-Type: ${type}; name="${name}"`,
+      'Content-Transfer-Encoding: base64',
+      `Content-Disposition: attachment; filename="${name}"`,
+      '',
+      b64,
+    ].join('\r\n')
+  } catch { return null }
+}
+
 export async function sendGmail(channel: any, opts: {
   to: string
   cc?: string | null
@@ -552,6 +574,7 @@ export async function sendGmail(channel: any, opts: {
   html?: string | null
   inReplyTo?: string | null
   threadId?: string | null
+  attachments?: { url: string; name?: string; type?: string }[]
 }): Promise<{ id?: string; error?: string }> {
   const token = await getGmailToken(channel)
   if (!token) return { error: 'Google connection expired — reconnect the account.' }
@@ -569,26 +592,48 @@ export async function sendGmail(channel: any, opts: {
     headerLines.push(`References: ${opts.inReplyTo}`)
   }
 
+  // The message body — plain + HTML as a multipart/alternative, or just plain.
+  const altBoundary = `colvy_alt_${Math.random().toString(36).slice(2)}`
+  const bodyBlock = opts.html
+    ? [
+        `Content-Type: multipart/alternative; boundary="${altBoundary}"`,
+        '',
+        `--${altBoundary}`,
+        'Content-Type: text/plain; charset="UTF-8"',
+        '',
+        opts.body,
+        `--${altBoundary}`,
+        'Content-Type: text/html; charset="UTF-8"',
+        '',
+        opts.html,
+        `--${altBoundary}--`,
+      ].join('\r\n')
+    : ['Content-Type: text/plain; charset="UTF-8"', '', opts.body].join('\r\n')
+
+  // Build the attachment parts (fetched + base64-encoded). Failed ones are
+  // dropped rather than aborting the send.
+  const attParts: string[] = []
+  for (const a of (opts.attachments || [])) {
+    if (!a?.url) continue
+    const part = await attachmentPart(a)
+    if (part) attParts.push(part)
+  }
+
   let mime: string
-  if (opts.html) {
-    // Send both plain and HTML so every client renders it well.
-    const boundary = `colvy_${Math.random().toString(36).slice(2)}`
+  if (attParts.length) {
+    // Wrap the body + attachments in multipart/mixed.
+    const mixed = `colvy_mix_${Math.random().toString(36).slice(2)}`
     mime = [
       ...headerLines,
-      `Content-Type: multipart/alternative; boundary="${boundary}"`,
+      `Content-Type: multipart/mixed; boundary="${mixed}"`,
       '',
-      `--${boundary}`,
-      'Content-Type: text/plain; charset="UTF-8"',
-      '',
-      opts.body,
-      `--${boundary}`,
-      'Content-Type: text/html; charset="UTF-8"',
-      '',
-      opts.html,
-      `--${boundary}--`,
+      `--${mixed}`,
+      bodyBlock,
+      ...attParts.map(p => `--${mixed}\r\n${p}`),
+      `--${mixed}--`,
     ].join('\r\n')
   } else {
-    mime = [...headerLines, 'Content-Type: text/plain; charset="UTF-8"', '', opts.body].join('\r\n')
+    mime = [...headerLines, bodyBlock].join('\r\n')
   }
 
   const raw = Buffer.from(mime)
