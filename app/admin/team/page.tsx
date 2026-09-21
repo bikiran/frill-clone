@@ -35,12 +35,17 @@ export default function TeamPage() {
   const [editMember, setEditMember] = useState<any>(null)
   const [editName, setEditName] = useState('')
   const [editAvatar, setEditAvatar] = useState<string>('')
+  const [editDept, setEditDept] = useState<string>('')
   const [editSaving, setEditSaving] = useState(false)
   const [editUploading, setEditUploading] = useState(false)
+  // Department is organisational only (grouping/reporting/routing), separate from
+  // role + permissions which control access.
+  const DEPARTMENTS = ['Sales', 'Support', 'Fulfillment', 'Front Desk', 'Marketing', 'Management']
 
   const openEdit = (m: any) => {
     setEditName(m.display_name || m.name || '')
     setEditAvatar(m.avatar_url || '')
+    setEditDept(m.department || '')
     setEditMember(m)
   }
   const uploadMemberPhoto = async (file: File) => {
@@ -68,17 +73,17 @@ export default function TeamPage() {
     if (!editMember) return
     setEditSaving(true)
     try {
-      const patch = { name: editName.trim() || null, avatar_url: editAvatar || null }
+      const patch = { name: editName.trim() || null, avatar_url: editAvatar || null, department: editDept || null }
       const { error } = await (supabase as any).from('team_members').update(patch).eq('id', editMember.id)
       if (error) throw error
       setMembers(ms => ms.map(m => m.id === editMember.id
-        ? { ...m, name: patch.name, avatar_url: patch.avatar_url, display_name: patch.name || m.display_name }
+        ? { ...m, name: patch.name, avatar_url: patch.avatar_url, department: patch.department, display_name: patch.name || m.display_name }
         : m))
       showMsg('Member profile updated.')
       setEditMember(null)
     } catch (e: any) {
       const msg = String(e?.message || 'error')
-      showMsg('Could not save: ' + msg + (msg.toLowerCase().includes('column') ? ' — run migration COLVY_V307 in Supabase first.' : ''), true)
+      showMsg('Could not save: ' + msg + (msg.toLowerCase().includes('column') ? ' — run migrations COLVY_V307 and V308 in Supabase first.' : ''), true)
     } finally {
       setEditSaving(false)
     }
@@ -561,7 +566,10 @@ export default function TeamPage() {
                   {m.avatar_url ? <img src={m.avatar_url} alt="" className="w-full h-full object-cover" /> : (m.display_name || m.email || '?')[0].toUpperCase()}
                 </div>
                 <div className="min-w-0">
-                  <p className="text-sm truncate" style={{ color: 'var(--ink)', fontWeight: 600 }}>{m.display_name || m.email}</p>
+                  <p className="text-sm truncate flex items-center gap-1.5" style={{ color: 'var(--ink)', fontWeight: 600 }}>
+                    <span className="truncate">{m.display_name || m.email}</span>
+                    {m.department && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded shrink-0" style={{ background: '#eef2ff', color: '#4338ca' }}>{m.department}</span>}
+                  </p>
                   {m.display_name && <p className="text-xs truncate" style={{ color: 'var(--slate)' }}>{m.email}</p>}
                   {outlets.length > 0 && (
                     <select value={m.default_location_id || ''} onChange={e => updateDefaultOutlet(m.id, e.target.value)}
@@ -589,7 +597,7 @@ export default function TeamPage() {
                   className="text-xs px-2 py-1 rounded border focus:outline-none cursor-pointer bg-white"
                   style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
                   <option value="admin">Admin</option>
-                  <option value="editor">Editor</option>
+                  <option value="editor">Agent</option>
                   <option value="viewer">Viewer</option>
                 </select>
               </div>
@@ -628,7 +636,7 @@ export default function TeamPage() {
         <p className="text-sm font-bold mb-2 text-blue-900">Role permissions</p>
         <div className="grid sm:grid-cols-3 gap-2 text-xs text-blue-800">
           <div><strong>Admin</strong> — Full access, settings, team</div>
-          <div><strong>Editor</strong> — Manage ideas, statuses, comments</div>
+          <div><strong>Agent</strong> — Day-to-day work; exact access set per member in Permissions</div>
           <div><strong>Viewer</strong> — Read-only dashboard access</div>
         </div>
       </div>
@@ -656,7 +664,7 @@ export default function TeamPage() {
                   className="w-full px-4 py-2.5 rounded-lg border focus:outline-none cursor-pointer bg-white"
                   style={{ borderColor: 'var(--border)', fontSize: '16px' }}>
                   <option value="admin">Admin</option>
-                  <option value="editor">Editor</option>
+                  <option value="editor">Agent</option>
                   <option value="viewer">Viewer</option>
                 </select>
               </div>
@@ -705,6 +713,17 @@ export default function TeamPage() {
                   className="w-full px-4 py-2.5 rounded-lg border focus:outline-none"
                   style={{ borderColor: 'var(--border)', fontSize: '16px' }} />
                 <p className="text-xs mt-1.5" style={{ color: 'var(--slate)' }}>Shows across the inbox, read receipts and everywhere this member appears.</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--ink)' }}>Department</label>
+                <select value={DEPARTMENTS.includes(editDept) || !editDept ? editDept : '__custom'} onChange={e => { if (e.target.value !== '__custom') setEditDept(e.target.value) }}
+                  className="w-full px-4 py-2.5 rounded-lg border focus:outline-none cursor-pointer bg-white"
+                  style={{ borderColor: 'var(--border)', fontSize: '16px' }}>
+                  <option value="">No department</option>
+                  {DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}
+                  {editDept && !DEPARTMENTS.includes(editDept) && <option value="__custom">{editDept}</option>}
+                </select>
+                <p className="text-xs mt-1.5" style={{ color: 'var(--slate)' }}>Organisational only — for grouping and routing. Doesn’t change what they can access.</p>
               </div>
             </div>
             <div className="flex gap-3 p-6 border-t" style={{ borderColor: 'var(--border)' }}>
@@ -796,7 +815,7 @@ export default function TeamPage() {
                   className="w-full px-4 py-2.5 rounded-lg border focus:outline-none cursor-pointer bg-white"
                   style={{ borderColor: 'var(--border)', fontSize: '16px' }}>
                   <option value="admin">Admin</option>
-                  <option value="editor">Editor</option>
+                  <option value="editor">Agent</option>
                   <option value="viewer">Viewer</option>
                 </select>
               </div>
