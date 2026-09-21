@@ -1647,34 +1647,51 @@ export default function InboxPage() {
   // ── Bootstrap ──────────────────────────────────────────────────────────────
   useEffect(() => {
     const init = async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.user) return
-      setUser(session.user)
-      let cid: string | null = seededCid
-      if (!cid && typeof window !== 'undefined') {
-        const h = window.location.hostname
-        if (h.endsWith('.colvy.com') && h !== 'colvy.com') {
-          const { data: co } = await (supabase as any).from('companies').select('id').eq('slug', h.replace('.colvy.com', '')).maybeSingle()
-          if (co) cid = co.id
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (!session?.user) {
+          // Not authenticated on this subdomain — send them to sign in instead of
+          // hanging on "Loading inbox…" forever (the old early-return left the
+          // full-page spinner up with no way out).
+          if (typeof window !== 'undefined') window.location.href = '/signin'
+          return
         }
+        setUser(session.user)
+        let cid: string | null = seededCid
+        if (!cid && typeof window !== 'undefined') {
+          const h = window.location.hostname
+          if (h.endsWith('.colvy.com') && h !== 'colvy.com') {
+            const { data: co } = await (supabase as any).from('companies').select('id').eq('slug', h.replace('.colvy.com', '')).maybeSingle()
+            if (co) cid = co.id
+          }
+        }
+        if (!cid) {
+          const { data: ownCo } = await (supabase as any).from('companies').select('id').eq('owner_id', session.user.id).maybeSingle()
+          if (ownCo?.id) cid = ownCo.id
+        }
+        if (!cid) return
+        setCompanyId(cid)
+        // Show the inbox ASAP: start the conversation load now, and drop the
+        // company chrome (logo/name/accent/time-format) and the team list OFF the
+        // critical path — they only enrich the UI, so an awaited companies query
+        // in front of the list was making the whole inbox wait on it.
+        loadConversations(cid)
+        loadTeam(cid)
+        ;(supabase as any)
+          .from('companies')
+          .select('name, logo_url, accent_color, slug, conversation_actions, inbox_settings')
+          .eq('id', cid).maybeSingle()
+          .then(({ data: ci }: any) => {
+            if (!ci) return
+            setCompanyInfo(ci); setConvActions(ci.conversation_actions || {})
+            const h12 = ci.inbox_settings?.hour12
+            if (typeof h12 === 'boolean') { setInboxHour12(h12); setHour12(h12) }
+          })
+      } finally {
+        // ALWAYS clear the full-page spinner — a slow query or an early return must
+        // never leave the inbox stuck on "Loading inbox…".
+        setLoading(false)
       }
-      if (!cid) {
-        const { data: ownCo } = await (supabase as any).from('companies').select('id').eq('owner_id', session.user.id).maybeSingle()
-        if (ownCo?.id) cid = ownCo.id
-      }
-      if (!cid) return
-      setCompanyId(cid)
-      // Load company logo/name/accent for agent message avatars
-      const { data: ci } = await (supabase as any).from('companies').select('name, logo_url, accent_color, slug, conversation_actions, inbox_settings').eq('id', cid).maybeSingle()
-      if (ci) {
-        setCompanyInfo(ci); setConvActions(ci.conversation_actions || {})
-        // Apply the company-wide time format so every agent matches.
-        const h12 = ci.inbox_settings?.hour12
-        if (typeof h12 === 'boolean') { setInboxHour12(h12); setHour12(h12) }
-      }
-      loadTeam(cid)
-      loadConversations(cid)
-      setLoading(false)
     }
     init()
   }, [])
