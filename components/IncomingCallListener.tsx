@@ -638,10 +638,21 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
     if (!r) return
     ringbackRef.current = null
     try { clearInterval(r.cadence) } catch {}
+    try { clearInterval(r.poll) } catch {}
     try { clearTimeout(r.timeout) } catch {}
     try { if (r.channel) supabase.removeChannel(r.channel) } catch {}
     try { r.ctx?.close?.() } catch {}
   }
+  // The tone must stop the instant the customer is actually on the line. Keep
+  // ringing through every pre-answer state — the row legitimately moves
+  // dialing_agent → dialing_customer → ringing while the customer is still
+  // ringing, and Twilio stamps in_progress on the AGENT leg (no answered_at yet)
+  // before the customer picks up — so those are NOT "answered". Stop only once
+  // the customer has truly answered (answered_at is set on real pickup by both
+  // providers) or the call reaches a terminal / voicemail state.
+  const RINGBACK_STOP_STATES = ['completed', 'failed', 'no_answer', 'no-answer', 'busy', 'canceled', 'cancelled', 'voicemail', 'voicemail_greeting', 'recording_voicemail']
+  const ringbackShouldStop = (row: any) =>
+    !!row && (!!row.answered_at || RINGBACK_STOP_STATES.includes(String(row.status || '')))
   const startRingback = (callId: string) => {
     if (ringbackRef.current) return
     let ctx: any = null, cadence: any = null
@@ -670,28 +681,27 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
         cadence = setInterval(cycle, 3000)
       }
     } catch {}
-    // Stop as soon as the customer answers (row gets answered_at or leaves the
-    // pre-answer states) or the call ends.
+    // TWO independent stop signals, because relying on realtime alone left the
+    // tone playing over a live conversation whenever the answered_at UPDATE
+    // didn't reach the browser (realtime can drop events). The 1s DB poll is the
+    // reliable backstop; the realtime subscription is just the fast path.
     let channel: any = null
     try {
       channel = supabase
         .channel(`ringback-${callId}`)
         .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'calls', filter: `id=eq.${callId}` }, (payload: any) => {
-          const st = String(payload?.new?.status || '')
-          // Keep ringing through every pre-answer state. The row legitimately moves
-          // dialing_agent → dialing_customer → ringing while the customer is still
-          // ringing, and Twilio stamps in_progress on the AGENT leg (no answered_at
-          // yet) before the customer picks up — so we must NOT treat those as
-          // "answered". Stop only once the customer has truly answered (answered_at
-          // is set on real pickup by both providers) or the call reaches a terminal
-          // or voicemail state.
-          const stop = ['completed', 'failed', 'no_answer', 'no-answer', 'busy', 'canceled', 'cancelled', 'voicemail', 'voicemail_greeting', 'recording_voicemail']
-          if (payload?.new?.answered_at || stop.includes(st)) stopRingback()
+          if (ringbackShouldStop(payload?.new)) stopRingback()
         })
         .subscribe()
     } catch {}
+    const poll = setInterval(async () => {
+      try {
+        const { data } = await (supabase as any).from('calls').select('status, answered_at').eq('id', callId).maybeSingle()
+        if (ringbackShouldStop(data)) stopRingback()
+      } catch {}
+    }, 1000)
     const timeout = setTimeout(stopRingback, 90000)
-    ringbackRef.current = { ctx, cadence, timeout, channel }
+    ringbackRef.current = { ctx, cadence, poll, timeout, channel }
   }
 
   const answer = () => {
