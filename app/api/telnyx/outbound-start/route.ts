@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { log } from '@/lib/log'
 import { createClient } from '@supabase/supabase-js'
-import { TelnyxService } from '@/lib/telnyx-service'
+import { TelnyxService, toE164 } from '@/lib/telnyx-service'
 
 export const dynamic = 'force-dynamic'
 
@@ -39,8 +39,15 @@ const admin = () => createClient(
  */
 export async function POST(req: NextRequest) {
   try {
-    const { companyId, to, from, conversationId, contactId, contactName, agentName, userId } = await req.json()
-    if (!companyId || !to) return NextResponse.json({ error: 'Missing companyId or to' }, { status: 400 })
+    const { companyId, to: toRaw, from, conversationId, contactId, contactName, agentName, userId } = await req.json()
+    if (!companyId || !toRaw) return NextResponse.json({ error: 'Missing companyId or to' }, { status: 400 })
+    // Normalise the customer number to E.164 before it's stored or dialled. The
+    // webhook dials the customer with this stored value, and Telnyx can't route a
+    // national-format number ("0421175430") — the carrier answers it with a "the
+    // number you have called is switched off / not available" announcement. The
+    // direct-dial and Twilio paths already normalise; this closes the gap for the
+    // Telnyx server-bridge path. (toE164 returns an already-E.164 number as-is.)
+    const to = toE164(String(toRaw)) || String(toRaw)
     if (!userId) return NextResponse.json({ error: 'Missing userId (needed to ring your device back)' }, { status: 400 })
 
     const db = admin()
