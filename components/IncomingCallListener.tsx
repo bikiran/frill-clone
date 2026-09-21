@@ -629,9 +629,9 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
   // On an outbound call the agent joins a silent conference immediately and only
   // hears the customer once they answer — so there's no carrier ringback and the
   // agent can't tell the call is ringing. We synthesise the AU/UK double-ring
-  // tone locally from the moment we place the call, and stop it the instant the
-  // customer answers (the calls row gets answered_at / a live status) or the call
-  // ends. A 60s safety cap means it can never play forever.
+  // tone locally from the moment we place the call, and keep it looping until the
+  // customer actually answers (the calls row gets answered_at) or the call reaches
+  // a terminal / voicemail state. A 90s safety cap means it can never play forever.
   const ringbackRef = useRef<any>(null)
   const stopRingback = () => {
     const r = ringbackRef.current
@@ -678,12 +678,19 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
         .channel(`ringback-${callId}`)
         .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'calls', filter: `id=eq.${callId}` }, (payload: any) => {
           const st = String(payload?.new?.status || '')
-          const pre = ['initiated', 'ringing', 'ringing_agents', 'draft', '']
-          if (payload?.new?.answered_at || !pre.includes(st)) stopRingback()
+          // Keep ringing through every pre-answer state. The row legitimately moves
+          // dialing_agent → dialing_customer → ringing while the customer is still
+          // ringing, and Twilio stamps in_progress on the AGENT leg (no answered_at
+          // yet) before the customer picks up — so we must NOT treat those as
+          // "answered". Stop only once the customer has truly answered (answered_at
+          // is set on real pickup by both providers) or the call reaches a terminal
+          // or voicemail state.
+          const stop = ['completed', 'failed', 'no_answer', 'no-answer', 'busy', 'canceled', 'cancelled', 'voicemail', 'voicemail_greeting', 'recording_voicemail']
+          if (payload?.new?.answered_at || stop.includes(st)) stopRingback()
         })
         .subscribe()
     } catch {}
-    const timeout = setTimeout(stopRingback, 60000)
+    const timeout = setTimeout(stopRingback, 90000)
     ringbackRef.current = { ctx, cadence, timeout, channel }
   }
 
