@@ -4813,10 +4813,11 @@ export default function InboxPage() {
         console.warn('Email send failed:', e?.message)
         setSending(false)
         const emsg = String(e?.message || 'Email failed to send')
+        const emsgClean = emsg.replace(/[.\s]+$/, '')
         if (/not configured|no .*mailbox|not connected|gmail/i.test(emsg)) {
           showToast('Email isn’t connected for this workspace yet — connect a mailbox under Integrations. Your message wasn’t sent.')
         } else {
-          showToast(`Couldn’t send email: ${emsg}. Your message wasn’t sent.`)
+          showToast(`Couldn’t send email: ${emsgClean}. Your message wasn’t sent.`)
         }
       }
       return
@@ -4863,10 +4864,11 @@ export default function InboxPage() {
         console.warn('SMS send failed:', e?.message)
         setSending(false)
         const emsg = String(e?.message || 'SMS failed')
+        const emsgClean = emsg.replace(/[.\s]+$/, '')
         if (/not configured|connect (telnyx|twilio)/i.test(emsg)) {
           showToast('SMS isn’t connected for this workspace yet — connect a number under Integrations to text customers. Your message wasn’t sent.')
         } else {
-          showToast(`Couldn’t send SMS: ${emsg}. Your message wasn’t sent.`)
+          showToast(`Couldn’t send SMS: ${emsgClean}. Your message wasn’t sent.`)
         }
       }
       return
