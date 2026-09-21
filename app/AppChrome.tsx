@@ -601,7 +601,11 @@ export default function AppChrome({
   // `/u/` = the customer secure-upload page. It carries its own branded card
   // header, so the app nav on top was redundant and left a big gap above the
   // card. Render it standalone like the other full-page routes.
-  const isFullPageRoute = ['/landing', '/inbox-crm', '/pricing', '/product', '/solutions', '/compare', '/industries', '/channels', '/integrations', '/ai-assistant', '/phones', '/testimonials', '/features', '/about', '/careers', '/blog', '/changelog', '/security', '/status', '/platform-admin', '/forms/', '/widget', '/auth/handoff', '/u/', '/demo'].some(p => pathname?.startsWith(p))
+  // Auth pages (sign in / up, password reset flows) are standalone: they carry
+  // their own centered card and must NOT render the marketing/board nav, the user
+  // menu, or the live-chat bubble on top — that chrome overlapped the reset form
+  // and left an open menu that covered the screen with nothing to tap "outside".
+  const isFullPageRoute = ['/landing', '/inbox-crm', '/pricing', '/product', '/solutions', '/compare', '/industries', '/channels', '/integrations', '/ai-assistant', '/phones', '/testimonials', '/features', '/about', '/careers', '/blog', '/changelog', '/security', '/status', '/platform-admin', '/forms/', '/widget', '/auth', '/signin', '/signup', '/forgot-password', '/reset-password', '/u/', '/demo'].some(p => pathname?.startsWith(p))
   // admin.colvy.com is the Super Admin console — it has its own dark chrome, so
   // the marketing/board nav must never render on top of it (regardless of the
   // path the proxy serves it under). Whole host is full-page.

@@ -412,7 +412,12 @@ export default function TeamPage() {
         </div>
       )}
 
-      <div className="bg-white rounded-2xl border overflow-hidden" style={{ borderColor: 'var(--border)' }}>
+      {/* Horizontal scroll on narrow screens: the 12-column grid needs room, and
+          squeezing it into a phone width made the header labels and the
+          role/status/actions cells overlap. A min width keeps the columns intact
+          and lets the card scroll sideways instead. */}
+      <div className="overflow-x-auto">
+      <div className="bg-white rounded-2xl border overflow-hidden min-w-[680px]" style={{ borderColor: 'var(--border)' }}>
         {/* Header */}
         <div className="grid grid-cols-12 px-5 py-3 border-b text-xs font-semibold uppercase tracking-wider" style={{ borderColor: 'var(--border)', color: 'var(--slate)' }}>
           <div className="col-span-4">User</div>
@@ -516,6 +521,7 @@ export default function TeamPage() {
             </div>
           ))
         )}
+      </div>
       </div>
 
       {/* Role legend */}
