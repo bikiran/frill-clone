@@ -524,40 +524,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     return () => clearTimeout(backstop)
   }, [])
 
-  // Auth resolution hung or failed (stuck/expired session token, backend blip) —
-  // give the user a way out instead of an infinite spinner.
-  if (authed === null && authError) {
-    const signInAgain = async () => { try { await supabase.auth.signOut() } catch {} ; window.location.href = '/signin' }
-    return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--canvas)', padding: 24 }}>
-        <div style={{ maxWidth: 380, textAlign: 'center' }}>
-          <div style={{ width: 52, height: 52, borderRadius: '50%', background: 'var(--peach, #fff0ec)', color: 'var(--coral)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
-            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 9v4" /><path d="M12 17h.01" /><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /></svg>
-          </div>
-          <h2 style={{ margin: '0 0 8px', fontSize: 18, fontWeight: 800, color: 'var(--ink)' }}>We couldn&rsquo;t load your workspace</h2>
-          <p style={{ margin: '0 0 20px', fontSize: 14, lineHeight: 1.6, color: 'var(--slate)' }}>Your session may have expired, or the connection stalled. Try again, or sign in to refresh your session.</p>
-          <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
-            <button onClick={() => window.location.reload()} style={{ padding: '10px 20px', borderRadius: 10, border: 'none', background: 'var(--coral)', color: '#fff', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>Try again</button>
-            <button onClick={signInAgain} style={{ padding: '10px 20px', borderRadius: 10, border: '1px solid var(--border)', background: '#fff', color: 'var(--ink)', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>Sign in again</button>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  if (authed === null) {
-    return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--canvas)' }}>
-        <div className="w-8 h-8 rounded-full border-2 animate-spin" style={{ borderColor: 'var(--coral)', borderTopColor: 'transparent' }} />
-      </div>
-    )
-  }
-
-  const isSuperAdmin = user?.email === SUPER_ADMIN_EMAIL
-
   // Resolve THIS member's role + feature permissions once we know who they are
   // and which company they're in. Owner / super-admin get full access; everyone
   // else is gated by their team_members.permissions map.
+  // NOTE: these hooks MUST stay above the early returns below — a hook after a
+  // conditional return breaks the Rules of Hooks (React error #310).
   useEffect(() => {
     const uid = user?.id
     const cid = company?.id
@@ -597,6 +568,37 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       router.replace('/admin')
     }
   }, [permsLoaded, myRole, myPerms, pathname, router])
+
+  // Auth resolution hung or failed (stuck/expired session token, backend blip) —
+  // give the user a way out instead of an infinite spinner.
+  if (authed === null && authError) {
+    const signInAgain = async () => { try { await supabase.auth.signOut() } catch {} ; window.location.href = '/signin' }
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--canvas)', padding: 24 }}>
+        <div style={{ maxWidth: 380, textAlign: 'center' }}>
+          <div style={{ width: 52, height: 52, borderRadius: '50%', background: 'var(--peach, #fff0ec)', color: 'var(--coral)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 9v4" /><path d="M12 17h.01" /><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /></svg>
+          </div>
+          <h2 style={{ margin: '0 0 8px', fontSize: 18, fontWeight: 800, color: 'var(--ink)' }}>We couldn&rsquo;t load your workspace</h2>
+          <p style={{ margin: '0 0 20px', fontSize: 14, lineHeight: 1.6, color: 'var(--slate)' }}>Your session may have expired, or the connection stalled. Try again, or sign in to refresh your session.</p>
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
+            <button onClick={() => window.location.reload()} style={{ padding: '10px 20px', borderRadius: 10, border: 'none', background: 'var(--coral)', color: '#fff', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>Try again</button>
+            <button onClick={signInAgain} style={{ padding: '10px 20px', borderRadius: 10, border: '1px solid var(--border)', background: '#fff', color: 'var(--ink)', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>Sign in again</button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (authed === null) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--canvas)' }}>
+        <div className="w-8 h-8 rounded-full border-2 animate-spin" style={{ borderColor: 'var(--coral)', borderTopColor: 'transparent' }} />
+      </div>
+    )
+  }
+
+  const isSuperAdmin = user?.email === SUPER_ADMIN_EMAIL
 
   // Nav visibility for the current member.
   const canUseNavItem = (item: { href: string; label: string }) => {
