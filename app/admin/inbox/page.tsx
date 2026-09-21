@@ -1760,6 +1760,24 @@ export default function InboxPage() {
   useEffect(() => { loadConversationsRef.current = loadConversations }, [loadConversations])
   useEffect(() => { loadWooDataRef.current = loadWooData })
 
+  // Coalesce full conversation-list reloads. Every realtime message/conversation
+  // event used to call loadConversations() straight away — TWICE per inbound
+  // message (unread-clear + float-to-top) plus once per conversation update, and
+  // the 5s poll fired another on top. That's a full list query + contacts query
+  // + phone-backfill running many times a second on a busy inbox, which is what
+  // made the whole page feel slow. The realtime handlers already patch the list
+  // in place (append the message, float the thread to the top, zero the badge),
+  // so the reconciling full reload only needs to run once per burst. This batches
+  // any number of events within the window into a single trailing reload.
+  const convReloadTimer = useRef<any>(null)
+  const scheduleConvReload = useRef((delay = 700) => {
+    if (convReloadTimer.current) return
+    convReloadTimer.current = setTimeout(() => {
+      convReloadTimer.current = null
+      loadConversationsRef.current()
+    }, delay)
+  }).current
+
   // Deep-link: open a conversation from ?conversation=<id> (copy chat link, or
   // "Open conversation" from the Orders board). The target may be closed/resolved
   // or otherwise outside the current folder, so it won't be in the loaded list —
@@ -1893,7 +1911,7 @@ export default function InboxPage() {
     // .on() is always called on a fresh, unsubscribed channel.
     const ch = supabase.channel(`inbox-${companyId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'conversations', filter: `company_id=eq.${companyId}` }, (payload: any) => {
-        loadConversationsRef.current()
+        scheduleConvReload()
         // Keep the OPEN conversation fresh too — page history, status and
         // assignment are stored on the conversation row, and without this they
         // only appeared after a manual page reload.
@@ -1920,7 +1938,7 @@ export default function InboxPage() {
           ;(supabase as any).from('conversations')
             .update({ is_unread: false, unread_count: 0 })
             .eq('id', payload.new.conversation_id)
-            .then(() => loadConversationsRef.current(), () => {})
+            .then(() => scheduleConvReload(), () => {})
           // An order automation message means a new order just landed for this
           // customer. Refresh the order panel so the Orders tab populates
           // without a manual page reload.
@@ -1940,7 +1958,7 @@ export default function InboxPage() {
             ? { ...c, last_message_at: payload.new.created_at || new Date().toISOString(), ...(isOpen ? { is_unread: false, unread_count: 0 } : {}) }
             : c
         ))
-        loadConversationsRef.current()
+        scheduleConvReload()
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages', filter: `company_id=eq.${companyId}` }, (payload: any) => {
         // Reactions, read receipts and payment status are UPDATEs to the message
@@ -1983,23 +2001,23 @@ export default function InboxPage() {
     window.addEventListener('focus', revive)
     window.addEventListener('online', revive)
 
-    // Polling fallback — refresh the open thread every 5s in case realtime
-    // isn't enabled on the messages table. (Previously declared after a return
-    // statement, so it never ran.) Uses selectedRef so it always polls the
-    // currently open conversation without re-running this effect.
+    // Polling fallback — a safety net for when realtime isn't enabled on the
+    // messages table. Realtime, when it works, already keeps the list and the
+    // open thread live, so this only needs to run occasionally: at 5s it was
+    // reloading the whole conversation list every 5s on top of the realtime
+    // reloads, which was a big part of why the inbox felt slow. Now every 15s,
+    // and the list reload goes through the coalescing scheduler so it can never
+    // stack up. Uses selectedRef so it always polls the currently open thread.
     const poll = setInterval(async () => {
-      // Use the ref, not the closed-over loadConversations: this effect only
-      // re-runs on (companyId, realtimeNonce), so the captured function is frozen
-      // to the status filter at subscribe time ('open'). Polling with it wiped the
-      // Closed list back to Open every 5s. The ref always points at the current
-      // filter's loader.
-      loadConversationsRef.current()
+      // scheduleConvReload keeps the current status filter correct (it calls the
+      // ref, not the closure frozen to the filter at subscribe time).
+      scheduleConvReload(0)
       const openId = selectedRef.current?.id
       if (openId) {
         const { data: msgs } = await (supabase as any).from('messages').select('*').eq('conversation_id', openId).order('created_at', { ascending: true })
         if (msgs && selectedRef.current?.id === openId) setMessages(prev => msgs.length !== prev.length ? msgs : prev)
       }
-    }, 5000)
+    }, 15000)
 
     // ONE cleanup path. The old code had two return statements — the first
     // (listener removal) won, so removeChannel(ch) was dead code and the
@@ -2009,6 +2027,7 @@ export default function InboxPage() {
       window.removeEventListener('focus', revive)
       window.removeEventListener('online', revive)
       clearInterval(poll)
+      if (convReloadTimer.current) { clearTimeout(convReloadTimer.current); convReloadTimer.current = null }
       try { supabase.removeChannel(ch) } catch {}
       if (channelRef.current === ch) channelRef.current = null
     }
