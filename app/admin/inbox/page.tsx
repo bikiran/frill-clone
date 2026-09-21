@@ -490,10 +490,19 @@ export default function InboxPage() {
   // Per-company operational flag (default ON): may this company text the upload
   // link to the customer's mobile? Off = links only post in the conversation.
   const [mediaSmsEnabled, setMediaSmsEnabled] = useState(true)
+  // Does this workspace's plan include outbound SMS? Default true so the upsell
+  // banner never flashes before entitlements load. When false, we surface an
+  // "Enable SMS" CTA at the exact moment an agent could be texting a customer.
+  const [smsIncluded, setSmsIncluded] = useState(true)
   useEffect(() => {
     let cancelled = false
     getEffectiveEntitlements()
-      .then(e => { if (!cancelled) setMediaSmsEnabled(flagEnabled(e.features, 'media_sms_fallback')) })
+      .then(e => {
+        if (cancelled) return
+        setMediaSmsEnabled(flagEnabled(e.features, 'media_sms_fallback'))
+        const cap = Number(e.limits?.smsPerMonth ?? 0)
+        setSmsIncluded(cap > 0)
+      })
       .catch(() => {})
     return () => { cancelled = true }
   }, [])
@@ -4865,7 +4874,11 @@ export default function InboxPage() {
         setSending(false)
         const emsg = String(e?.message || 'SMS failed')
         const emsgClean = emsg.replace(/[.\s]+$/, '')
-        if (/not configured|connect (telnyx|twilio)/i.test(emsg)) {
+        if (/not included in this plan|upgrade to the/i.test(emsg)) {
+          // Plan gate — reveal the "Enable SMS" upsell banner and point them to it.
+          setSmsIncluded(false)
+          showToast('SMS isn’t on your plan yet — use “Enable SMS” above the reply box to upgrade. Your message wasn’t sent.')
+        } else if (/not configured|connect (telnyx|twilio)/i.test(emsg)) {
           showToast('SMS isn’t connected for this workspace yet — connect a number under Integrations to text customers. Your message wasn’t sent.')
         } else {
           showToast(`Couldn’t send SMS: ${emsgClean}. Your message wasn’t sent.`)
@@ -8918,6 +8931,22 @@ export default function InboxPage() {
               {/* Smart prompt: a recent message reads like a payment — offer to log
                   the sale. Suppressed once a sale is recorded for this thread or the
                   customer already matches an ecommerce order (already on record). */}
+              {/* SMS upsell — shown exactly when an agent could be texting this
+                  customer (a mobile is on file) but the plan doesn't include SMS.
+                  This is the highest-intent moment to convert, so link straight to
+                  the upgrade page. */}
+              {selected && !internalMode && !smsIncluded && !!smsDestination() && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '0 0 8px', padding: '10px 12px', borderRadius: 10, background: 'linear-gradient(135deg, #fff1ee 0%, #ffe9f0 100%)', border: '1px solid #ffd0c4' }}>
+                  <span style={{ fontSize: 16, flexShrink: 0 }}>💬</span>
+                  <span style={{ flex: 1, fontSize: 12.5, color: '#9a3412', fontWeight: 600, lineHeight: 1.4 }}>
+                    Reply by text and reach {contact?.name ? contact.name.split(' ')[0] : 'this customer'} on their phone — SMS isn’t on your current plan.
+                  </span>
+                  <a href="/admin/upgrade"
+                    style={{ padding: '7px 14px', borderRadius: 8, background: 'var(--coral, #ff7a6b)', color: '#fff', fontSize: 12.5, fontWeight: 700, textDecoration: 'none', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                    Enable SMS
+                  </a>
+                </div>
+              )}
               {selected && paymentSignal && !saleDismissed.has(selected.id) && !convHasSale && wooOrders.length === 0 && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '0 0 8px', padding: '9px 12px', borderRadius: 10, background: '#ecfdf5', border: '1px solid #a7f3d0' }}>
                   <span style={{ fontSize: 16, flexShrink: 0 }}>💰</span>
