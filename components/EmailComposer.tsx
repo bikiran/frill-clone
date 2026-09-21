@@ -19,10 +19,11 @@ interface Props {
   signature?: string | null    // the mailbox's own signature (fallback default)
   agentName?: string
   onSent: () => void
+  onAiAssist?: () => void       // fired (once) when the draft is written/improved with AI
 }
 
 export default function EmailComposer({
-  conversationId, companyId, toEmail, defaultSubject, fromLabel, signature, agentName, onSent,
+  conversationId, companyId, toEmail, defaultSubject, fromLabel, signature, agentName, onSent, onAiAssist,
 }: Props) {
   const [to, setTo] = useState(toEmail)
   const [cc, setCc] = useState('')
@@ -137,6 +138,7 @@ export default function EmailComposer({
 
   // AI assist: rewrite the current draft more clearly/professionally.
   const [aiBusy, setAiBusy] = useState(false)
+  const aiLoggedRef = useRef(false)
   const improveWithAI = async () => {
     const text = bodyText()
     if (!text) { setErr('Write a draft first, then improve it with AI'); return }
@@ -152,6 +154,9 @@ export default function EmailComposer({
         editorRef.current.innerHTML = String(d.result).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>')
         syncBody()
       }
+      // Attribute the AI assist in the thread timeline — once per composer so
+      // repeated "AI improve" clicks don't spam the timeline.
+      if (!aiLoggedRef.current) { aiLoggedRef.current = true; onAiAssist?.() }
     } catch (e: any) { setErr(e.message || 'AI could not help right now') }
     finally { setAiBusy(false) }
   }
