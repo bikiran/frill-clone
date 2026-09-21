@@ -9,8 +9,9 @@ import type { Article } from '@/lib/blog-store'
 // an accent-gradient tile with the post's icon.
 
 function Cover({ a, tall = false }: { a: Article; tall?: boolean }) {
-  if (a.cover) {
-    return <img src={a.cover} alt="" aria-hidden style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+  const [failed, setFailed] = useState(false)
+  if (a.cover && !failed) {
+    return <img src={a.cover} alt="" aria-hidden onError={() => setFailed(true)} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
   }
   return (
     <div aria-hidden style={{ position: 'absolute', inset: 0, background: `linear-gradient(150deg, ${a.accent} 0%, ${a.accent}cc 48%, #171a2b 125%)` }}>
@@ -41,7 +42,7 @@ export default function BlogIndexView({ articles }: { articles: Article[] }) {
   const [featured, ...rest] = filtered
 
   return (
-    <main style={{ maxWidth: 1120, margin: '0 auto', padding: '110px 20px 96px' }}>
+    <main style={{ maxWidth: 1280, margin: '0 auto', padding: '110px 24px 96px' }}>
       <header style={{ marginBottom: 30 }}>
         <p style={{ margin: 0, fontSize: 13, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#ff6a4d' }}>The Colvy Blog</p>
         <h1 style={{ fontSize: 'clamp(34px, 5vw, 52px)', fontWeight: 900, letterSpacing: '-0.03em', margin: '6px 0 0' }}>Playbooks for customer communication</h1>

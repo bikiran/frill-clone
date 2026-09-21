@@ -29,6 +29,7 @@ export type BlogPost = {
 export const POSTS: BlogPost[] = [
   {
     slug: 'unify-customer-conversations',
+    cover: '/feature/product.jpg',
     title: 'How to unify every customer conversation into one inbox',
     excerpt: 'SMS, WhatsApp, email, chat, calls and reviews scattered across six tabs? Here’s a practical way to bring them into one thread per customer.',
     category: 'Playbooks', accent: BLUE, icon: 'inbox',
@@ -43,6 +44,7 @@ export const POSTS: BlogPost[] = [
   },
   {
     slug: 'reduce-first-response-time',
+    cover: '/channels/chat-widget.jpg',
     title: 'Five ways to cut your first-response time without hiring',
     excerpt: 'Speed is the easiest way to feel bigger than you are. Five changes that shrink the wait — no new headcount required.',
     category: 'Customer support', accent: TEAL, icon: 'bolt',
@@ -58,6 +60,7 @@ export const POSTS: BlogPost[] = [
   },
   {
     slug: 'reviews-that-grow-your-rating',
+    cover: '/channels/google-reviews.jpg',
     title: 'Asking for reviews at the right moment',
     excerpt: 'The difference between a review request that works and one that’s ignored is usually timing. Here’s when to ask.',
     category: 'Growth', accent: GREEN, icon: 'star',
@@ -72,6 +75,7 @@ export const POSTS: BlogPost[] = [
   },
   {
     slug: 'close-the-feedback-loop',
+    cover: '/suite/roadmap.jpg',
     title: 'Closing the feedback loop: from idea to changelog',
     excerpt: 'Collecting feedback is easy. Turning it into trust means telling people what you did with it. Here’s the full loop.',
     category: 'Product', accent: PURPLE, icon: 'idea',
@@ -86,6 +90,7 @@ export const POSTS: BlogPost[] = [
   },
   {
     slug: 'sell-in-the-chat',
+    cover: '/feature/phones.jpg',
     title: 'Selling in the chat: turning conversations into revenue',
     excerpt: 'Support and sales aren’t separate conversations. Here’s how to help customers buy without leaving the thread.',
     category: 'Growth', accent: CORAL, icon: 'tag',
@@ -100,6 +105,7 @@ export const POSTS: BlogPost[] = [
   },
   {
     slug: 'switching-tools-without-losing-your-mind',
+    cover: '/about/hero.jpg',
     title: 'Switching support tools without losing your mind (or your data)',
     excerpt: 'Dreading a migration? A calm, low-risk way to move platforms — keep your number, your history and your sanity.',
     category: 'Playbooks', accent: CORAL, icon: 'bolt',
@@ -116,6 +122,7 @@ export const POSTS: BlogPost[] = [
   // ── Buyer-intent articles (Markdown body) ──────────────────────────────────
   {
     slug: 'best-shared-inbox-for-small-business',
+    cover: '/channels/email.jpg',
     title: 'The best shared inbox for small business (what to actually look for)',
     excerpt: 'A shared inbox turns scattered messages into one team queue. Here’s how to choose one that fits a small team — and the traps to avoid.',
     category: 'Buyer’s guide', accent: BLUE, icon: 'inbox',
@@ -151,6 +158,7 @@ Colvy is built for exactly this: one shared inbox across Messenger, Instagram, W
   },
   {
     slug: 'manage-instagram-dms-for-business',
+    cover: '/channels/meta.jpg',
     title: 'How to manage Instagram DMs for business (without living in the app)',
     excerpt: 'Instagram DMs are where a lot of buying decisions happen now. Here’s how to answer them fast, as a team, without missing one.',
     category: 'Playbooks', accent: PURPLE, icon: 'inbox',
@@ -185,6 +193,7 @@ You don't need to live in the Instagram app to be great at DMs — you need them
   },
   {
     slug: 'whatsapp-business-shared-inbox-guide',
+    cover: '/channels/whatsapp.jpg',
     title: 'WhatsApp Business shared inbox: a practical guide for teams',
     excerpt: 'The WhatsApp Business app stops at one phone. Here’s how to let a whole team answer WhatsApp — with history, assignment and saved replies.',
     category: 'Buyer’s guide', accent: GREEN, icon: 'inbox',
