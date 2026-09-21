@@ -507,6 +507,22 @@ export default function InboxPage() {
     return () => { cancelled = true }
   }, [])
   const [user, setUser] = useState<any>(null)
+  // The current agent's display name for message authorship and read receipts.
+  // Prefers the owner-set team_members.name, then the person's own account name,
+  // then their email prefix, then 'Agent'. Everything that stamps "who did this"
+  // uses this so an owner-set name shows on NEW messages/reads (existing ones are
+  // stored historically and don't change).
+  const [myName, setMyName] = useState<string>('Agent')
+  useEffect(() => {
+    const uid = user?.id
+    if (!uid) return
+    const md = user?.user_metadata || {}
+    const authName = md.display_name || (user?.email ? String(user.email).split('@')[0] : '') || ''
+    if (authName) setMyName(authName)
+    if (!companyId) return
+    ;(supabase as any).from('team_members').select('name').eq('company_id', companyId).eq('user_id', uid).limit(1)
+      .then(({ data }: any) => { const n = data?.[0]?.name; setMyName(n || authName || 'Agent') }, () => {})
+  }, [user?.id, companyId])
   const [conversations, setConversations] = useState<Conversation[]>(seededConvs ?? [])
   const [selected, setSelected] = useState<Conversation | null>(null)
   const selectedRef = useRef<Conversation | null>(null)
@@ -847,7 +863,7 @@ export default function InboxPage() {
       if (schedule.notify) {
         const when = new Date(schedule.date).toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long' })
         const text = `Your delivery is booked for ${when}${schedule.time_window ? `, between ${schedule.time_window}` : ''}.${schedule.address ? `\nAddress: ${schedule.address}` : ''}\nWe'll let you know when it's on its way.`
-        const me = user?.user_metadata?.display_name || user?.email?.split('@')[0]
+        const me = myName
         const smsNumber = smsDestination()
 
         if (smsNumber) {
@@ -955,7 +971,7 @@ export default function InboxPage() {
       content = `${p.name} — ${price} AUD (${stock})\n${productUrl}`
     }
 
-    const me = user.user_metadata?.display_name || user.email?.split('@')[0]
+    const me = myName
     const smsNumber = smsDestination()
 
     try {
@@ -1059,7 +1075,7 @@ export default function InboxPage() {
   // agent signed in on two devices (e.g. web + phone) would hide each other's
   // typing, which is exactly the case when testing.
   const mySidRef = useRef(Math.random().toString(36).slice(2))
-  const myTypingName = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Agent'
+  const myTypingName = myName
   useEffect(() => {
     if (!selected?.id) { setLiveTyping(''); setAgentTyping(null); return }
     setLiveTyping(''); setAgentTyping(null)
@@ -1600,7 +1616,7 @@ export default function InboxPage() {
       }
       if (!convId) throw new Error('Could not open a conversation with that contact')
 
-      const me = user.user_metadata?.display_name || user.email?.split('@')[0]
+      const me = myName
 
       // Text it too, if that's how we talk to them. A failed text must not lose
       // the forward — the message still goes in the thread below — but it must
@@ -2490,7 +2506,7 @@ export default function InboxPage() {
 
   const logEvent = async (eventType: string, detail: string) => {
     if (!selected || !companyId) return
-    const actorName = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Agent'
+    const actorName = myName
     await (supabase as any).from('conversation_events').insert({
       conversation_id: selected.id, company_id: companyId, event_type: eventType, actor_name: actorName, detail,
     })
@@ -2498,7 +2514,7 @@ export default function InboxPage() {
   }
 
   const markMessagesRead = async (convId: string, msgs: Message[]) => {
-    const me = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Agent'
+    const me = myName
     const initial = initialsOf(me)
     const avatar = user?.user_metadata?.avatar_url || null   // show a real photo on the read receipt
     // Stamp read_by on every message this agent has now seen — including other
@@ -2520,7 +2536,7 @@ export default function InboxPage() {
 
   // ── Reactions ──────────────────────────────────────────────────────────────
   const reactToMessage = async (msg: Message, emoji: string) => {
-    const me = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Agent'
+    const me = myName
     const reactions = Array.isArray((msg as any).reactions) ? (msg as any).reactions : []
     const existing = reactions.findIndex((r: any) => r.emoji === emoji && r.by === me)
     let updated
@@ -2585,7 +2601,7 @@ export default function InboxPage() {
   // (skipChatMessage) without inserting a duplicate — and skip the widget insert.
   const deliverToCustomer = async (opts: { body: string; url?: string | null; subject?: string; silent?: boolean }): Promise<string> => {
     if (!selected || !companyId) throw new Error('No conversation selected')
-    const me = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Agent'
+    const me = myName
     const ch = activeChannel
     const fullBody = opts.url ? `${opts.body}\n${opts.url}` : opts.body
 
@@ -2784,7 +2800,7 @@ export default function InboxPage() {
     // same media into the thread twice.
     if (sendingMediaRef.current) return
     sendingMediaRef.current = true
-    const me = user?.user_metadata?.display_name || user?.email?.split('@')[0]
+    const me = myName
     const smsNumber = smsDestination()
     try {
       for (const item of chosen) {
@@ -2967,7 +2983,7 @@ export default function InboxPage() {
   // ── File upload ────────────────────────────────────────────────────────────
   const handleFileUpload = async (files: FileList | null) => {
     if (!files || files.length === 0 || !selected || !companyId) return
-    const me = user?.user_metadata?.display_name || user?.email?.split('@')[0]
+    const me = myName
 
     // Capture: the agent may switch conversations before uploads settle.
     const conv = selected
@@ -3051,7 +3067,7 @@ export default function InboxPage() {
   // ── Notes & Tasks ──────────────────────────────────────────────────────────
   const addNote = async () => {
     if (!newNote.trim() || !selected || !companyId) return
-    const author = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Agent'
+    const author = myName
     const body = newNote.trim()
     await (supabase as any).from('conversation_notes').insert({ conversation_id: selected.id, company_id: companyId, author_name: author, content: body })
     // Notify anyone @mentioned in a sidebar note, same as an internal message —
@@ -3202,7 +3218,7 @@ export default function InboxPage() {
   )
   const addTask = async () => {
     if (!newTask.trim() || !selected || !companyId) return
-    const me = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Agent'
+    const me = myName
     const assignee = teamMembers.find((m: any) => m.id === newTaskAssignee)
     // Anyone @mentioned in the text should hear about it too, not just the
     // person picked from the dropdown.
@@ -3362,7 +3378,7 @@ export default function InboxPage() {
     if (!selected || !companyId || reviewSending) return
     setReviewSending(true)
     try {
-      const me = user?.user_metadata?.display_name || user?.email?.split('@')[0]
+      const me = myName
 
       // Build a branded short link to the business's Google review page, so the
       // customer gets company.colvy.com/m/xxxx (trustworthy in an SMS) that
@@ -3631,7 +3647,7 @@ export default function InboxPage() {
       // ── Invoice number + served by + footer ──
       doc.setFont('helvetica', 'normal'); doc.setFontSize(9)
       CT(String(order.number || order.id || ''), y); y += 5
-      const servedBy = (user?.user_metadata?.display_name || user?.email?.split('@')[0] || company.name || '')
+      const servedBy = (myName || company.name || '')
       if (servedBy) { CT(`Served by ${servedBy}`, y); y += 4.5 }
       CT(new Date().toLocaleString('en-AU', { hour: 'numeric', minute: '2-digit', hour12: true, day: '2-digit', month: 'short', year: 'numeric' }), y); y += 8
       const footer = company.invoice_footer || 'Thank you for the business.'
@@ -3659,7 +3675,7 @@ export default function InboxPage() {
       const orderNo = pickupModal.payload.order_number || pickupModal.payload.order_id
       const first = contact?.name ? String(contact.name).split(' ')[0] : ''
       const text = `Hi${first ? ' ' + first : ''}, your order #${orderNo} is ready to be collected at: ${locName}. See you soon!`
-      const me = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Agent'
+      const me = myName
       if (smsNumber) {
         try {
           await fetch('/api/telnyx/sms/send', {
@@ -3729,7 +3745,7 @@ export default function InboxPage() {
       const file = new File([blob], invoicePreview.fileName, { type: 'application/pdf' })
       const up = await uploadAttachment(file, { companyId, conversationId: selected.id })
       const attachment = { url: up.url, name: up.name || invoicePreview.fileName, type: 'application/pdf', kind: 'file' }
-      const me = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Agent'
+      const me = myName
       // On an SMS conversation, text the customer a link to the invoice.
       if (smsNumber) {
         try {
@@ -3791,7 +3807,7 @@ export default function InboxPage() {
         body: JSON.stringify({
           companyId, kind: 'redirect', url: raw,
           conversationId: selected?.id || undefined,
-          sentBy: user?.user_metadata?.display_name || user?.email?.split('@')[0] || null,
+          sentBy: myName || null,
         }),
       })
       const d = await res.json()
@@ -3911,7 +3927,7 @@ export default function InboxPage() {
       // this one shows up in the Colvy thread so the team sees what happened).
       if (selected) {
         try {
-          const nm = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Colvy'
+          const nm = myName || 'Colvy'
           await (supabase as any).from('messages').insert({
             conversation_id: selected.id, company_id: companyId, sender_type: 'agent',
             sender_name: nm, is_internal: true,
@@ -3934,7 +3950,7 @@ export default function InboxPage() {
       const amount = (parseFloat(payload.total) || 0).toFixed(2)
       const res = await fetch('/api/stripe/chat-payment', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ companyId, conversationId: selected.id, amount, description: `Order #${payload.order_number}`, senderName: user?.user_metadata?.display_name || user?.email?.split('@')[0], orderId: payload.order_id, integrationId: payload.integration_id }),
+        body: JSON.stringify({ companyId, conversationId: selected.id, amount, description: `Order #${payload.order_number}`, senderName: myName, orderId: payload.order_id, integrationId: payload.integration_id }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Could not send payment request')
@@ -4070,7 +4086,7 @@ export default function InboxPage() {
           companyId, conversationId: selected.id, contactId: contact?.id,
           prompt: 'Please upload your photos or videos here.',
           accept: ['image', 'video'], maxFiles: 10, expiryHours: null,
-          createdBy: user?.user_metadata?.display_name || user?.email?.split('@')[0],
+          createdBy: myName,
           deliveryChannel: uploadChannel(),
         }),
       })
@@ -4096,7 +4112,7 @@ export default function InboxPage() {
           prompt: mrPrompt.trim() || 'Please upload the requested files.',
           accept: mrAccept, maxFiles: parseInt(mrMaxFiles) || 10,
           expiryHours: mrExpiry ? parseInt(mrExpiry) : null,
-          createdBy: user?.user_metadata?.display_name || user?.email?.split('@')[0],
+          createdBy: myName,
           deliveryChannel: uploadChannel(),
         }),
       })
@@ -4130,7 +4146,7 @@ export default function InboxPage() {
           discountType: couponType === 'percent' ? 'percent' : 'fixed',
           code: couponCode.trim() || undefined, oneTime: couponOneTime,
           expiryDays: couponExpiry ? Number(couponExpiry) : undefined,
-          createdByName: user?.user_metadata?.display_name || user?.email?.split('@')[0],
+          createdByName: myName,
         }),
       })
       const data = await res.json()
@@ -4184,7 +4200,7 @@ export default function InboxPage() {
         return
       }
 
-      const me = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Agent'
+      const me = myName
       const note = podNote.trim() || 'Your order has been delivered. Attached is the proof of delivery — thank you!'
 
       // Build ONE branded gallery link for the whole set — the friendly
@@ -4285,7 +4301,7 @@ export default function InboxPage() {
   // Send a poll/survey/form into the chat as an interactive message
   const sendInteractive = async (kind: 'poll' | 'survey' | 'form', item: any) => {
     if (!selected || !companyId) return
-    const senderName = user?.user_metadata?.display_name || user?.email?.split('@')[0]
+    const senderName = myName
     const title = item.question || item.title || item.name || `${kind}`
     const origin = typeof window !== 'undefined' ? window.location.origin : ''
     const link = `${origin.replace(/admin\..*/, '')}/widget?slug=${(selected as any).company_slug || ''}&conversation=${selected.id}`
@@ -4326,7 +4342,7 @@ export default function InboxPage() {
   // Send a payment request into the chat
   const sendPayment = async () => {
     if (!selected || !companyId || !payAmount) return
-    const senderName = user?.user_metadata?.display_name || user?.email?.split('@')[0]
+    const senderName = myName
     try {
       const isWidgetActive = activeChannel === 'widget' || activeChannel === 'chat'
       const res = await fetch('/api/stripe/chat-payment', {
@@ -4485,7 +4501,7 @@ export default function InboxPage() {
     }
     await (supabase as any).from('conversation_events').insert({
       conversation_id: selected.id, company_id: companyId,
-      event_type: 'moved', actor_name: user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Agent',
+      event_type: 'moved', actor_name: myName,
       detail: `Enquiry moved to ${outlet.label || outlet.suburb}`,
     })
     setShowMoveMenu(false)
@@ -4522,7 +4538,7 @@ export default function InboxPage() {
     const wasClosed = ['closed', 'resolved'].includes(String(conv.status || ''))
     await (supabase as any).from('conversations').update({ status: 'closed' }).eq('id', conv.id)
     if (!wasClosed && companyId) {
-      const actorName = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Agent'
+      const actorName = myName
       await (supabase as any).from('conversation_events').insert({
         conversation_id: conv.id, company_id: companyId, event_type: 'closed', actor_name: actorName, detail: 'Enquiry closed.',
       })
@@ -4535,7 +4551,7 @@ export default function InboxPage() {
     const wasClosed = ['closed', 'resolved'].includes(String(conv.status || ''))
     await (supabase as any).from('conversations').update({ status: 'open' }).eq('id', conv.id)
     if (wasClosed && companyId) {
-      const actorName = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Agent'
+      const actorName = myName
       await (supabase as any).from('conversation_events').insert({
         conversation_id: conv.id, company_id: companyId, event_type: 'reopened', actor_name: actorName, detail: 'Enquiry reopened.',
       })
@@ -4562,7 +4578,7 @@ export default function InboxPage() {
     if (!selected || !user) return
     if (selected.assigned_to || (selected as any).assigned_name) return
 
-    const me = user.user_metadata?.display_name || user.email?.split('@')[0] || 'Agent'
+    const me = myName || 'Agent'
 
     setSelected(s => s ? ({ ...s, assigned_to: user.id, assigned_name: me, status: 'assigned' } as any) : s)
 
@@ -4588,7 +4604,7 @@ export default function InboxPage() {
     if ((!reply.trim() && stagedMedia.length === 0) || !selected || !user) return
     setSending(true)
     const content = reply.trim()
-    const senderName = user.user_metadata?.display_name || user.email?.split('@')[0]
+    const senderName = myName
 
     // An internal note isn't taking the customer on, so it doesn't claim the
     // conversation — only a customer-facing reply does.
@@ -4932,7 +4948,7 @@ export default function InboxPage() {
   // ── Assign ─────────────────────────────────────────────────────────────────
   const assignTo = async (member: TeamMember | null) => {
     if (!selected) return
-    const me = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'A team member'
+    const me = myName || 'A team member'
     await (supabase as any).from('conversations').update({
       assigned_to: member?.user_id || null,
       assigned_name: member?.name || null,
@@ -4967,7 +4983,7 @@ export default function InboxPage() {
   // ── Contact save ───────────────────────────────────────────────────────────
   const sendTrackingMessage = async (text: string) => {
     if (!companyId || !selected) return
-    const me = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Agent'
+    const me = myName
     const smsNumber = smsDestination()
     try {
       const { data: trkMsg } = await (supabase as any).from('messages').insert({
@@ -5484,7 +5500,7 @@ export default function InboxPage() {
   const toggleBlockContact = async () => {
     if (!contact?.id || !companyId) return
     const nowBlocked = !(contact as any).is_blocked
-    const me = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'A team member'
+    const me = myName || 'A team member'
     if (nowBlocked && !confirm(`Block ${contact.name || 'this contact'}? Their messages will be marked blocked in the inbox.`)) return
     try {
       await (supabase as any).from('contacts').update({
@@ -5509,7 +5525,7 @@ export default function InboxPage() {
   const reportSpam = async () => {
     if (!selected || !companyId) return
     if (!confirm('Report this conversation as spam? It will be marked spam and closed.')) return
-    const me = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'A team member'
+    const me = myName || 'A team member'
     try {
       await (supabase as any).from('conversations').update({
         is_spam: true, status: 'closed',
@@ -6404,14 +6420,14 @@ export default function InboxPage() {
       )}
 
       {showDialer && (
-        <Dialer companyId={companyId} agentName={user?.user_metadata?.display_name || user?.email?.split('@')[0]}
+        <Dialer companyId={companyId} agentName={myName}
           onClose={() => setShowDialer(false)} />
       )}
 
       {showCompose && companyId && (
         <ComposeMessage
           companyId={companyId}
-          senderName={user?.user_metadata?.display_name || user?.email?.split('@')[0]}
+          senderName={myName}
           onClose={() => setShowCompose(false)}
           onStarted={(convId) => { setShowCompose(false); loadConversations(); }}
         />
@@ -6439,7 +6455,7 @@ export default function InboxPage() {
           conversationId={selected.id}
           contactId={contact?.id || null}
           orderNumber={(contact as any)?.last_order_number || null}
-          senderName={user?.user_metadata?.display_name || user?.email?.split('@')[0]}
+          senderName={myName}
           onClose={() => setShowTracking(false)}
           onSent={async ({ text }) => {
             setShowTracking(false)
@@ -6676,7 +6692,7 @@ export default function InboxPage() {
           conversationId={selected.id}
           contactId={contact?.id}
           contact={contact}
-          staffName={user?.user_metadata?.display_name || user?.email?.split('@')[0]}
+          staffName={myName}
           staffId={user?.id}
           prefillCart={orderPrefillCart}
           channel={['widget', 'chat'].includes(activeChannel) ? null : activeChannel}
@@ -6820,7 +6836,7 @@ export default function InboxPage() {
           conversation={selected}
           contact={contact}
           teamMembers={teamMembers as any}
-          currentUser={{ id: user?.id, name: user?.user_metadata?.display_name || user?.email?.split('@')[0] }}
+          currentUser={{ id: user?.id, name: myName }}
           currency="AUD"
           onClose={() => setShowRecordSale(false)}
           onSaved={() => { setConvHasSale(true); if (selected) loadConversationExtras(selected.id) }}
@@ -7847,7 +7863,7 @@ export default function InboxPage() {
                     conversationId={selected.id} companyId={companyId || undefined}
                     teamMembers={teamMembers} outlets={outlets}
                     defaultLocationId={(selected as any)?.assigned_location_id || (selected as any)?.location_id || null}
-                    actor={{ id: user?.id, name: user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Agent' }}
+                    actor={{ id: user?.id, name: myName }}
                     onCreated={() => { if (selected) loadConversationExtras(selected.id) }}
                     onClosedChange={setChatDraftsClosed}
                     bare
@@ -7930,7 +7946,7 @@ export default function InboxPage() {
                           <span style={{ fontSize: 11, fontWeight: 600, color: '#9ca3af', background: '#eef0f2', padding: '3px 12px', borderRadius: 20 }}>{thisDay}</span>
                         </div>
                       ) : null}
-                      <CallCard callId={item.id} meta={{ direction: item.direction, duration_seconds: item.duration_seconds, agent_name: item.agent_name }} timestamp={item.created_at} highlight={(showMsgSearch && msgSearch.trim()) ? msgSearch : searchTerm} accent={companyInfo?.accent_color || 'var(--coral)'} actor={{ id: user?.id, name: user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Agent' }} teamMembers={teamMembers} outlets={outlets} defaultLocationId={(selected as any)?.assigned_location_id || (selected as any)?.location_id || null} onTasksCreated={() => { if (selected) loadConversationExtras(selected.id) }} />
+                      <CallCard callId={item.id} meta={{ direction: item.direction, duration_seconds: item.duration_seconds, agent_name: item.agent_name }} timestamp={item.created_at} highlight={(showMsgSearch && msgSearch.trim()) ? msgSearch : searchTerm} accent={companyInfo?.accent_color || 'var(--coral)'} actor={{ id: user?.id, name: myName }} teamMembers={teamMembers} outlets={outlets} defaultLocationId={(selected as any)?.assigned_location_id || (selected as any)?.location_id || null} onTasksCreated={() => { if (selected) loadConversationExtras(selected.id) }} />
                     </div>
                   )
                 }
@@ -8025,7 +8041,7 @@ export default function InboxPage() {
                 if (isSystem && (msg as any).metadata?.call_event && (msg as any).metadata?.call_id) return (
                   <div key={msg.id}>
                     {dateDivider}
-                    <CallCard callId={(msg as any).metadata.call_id} meta={(msg as any).metadata} timestamp={msg.created_at} highlight={(showMsgSearch && msgSearch.trim()) ? msgSearch : searchTerm} accent={companyInfo?.accent_color || 'var(--coral)'} actor={{ id: user?.id, name: user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Agent' }} teamMembers={teamMembers} outlets={outlets} defaultLocationId={(selected as any)?.assigned_location_id || (selected as any)?.location_id || null} onTasksCreated={() => { if (selected) loadConversationExtras(selected.id) }} />
+                    <CallCard callId={(msg as any).metadata.call_id} meta={(msg as any).metadata} timestamp={msg.created_at} highlight={(showMsgSearch && msgSearch.trim()) ? msgSearch : searchTerm} accent={companyInfo?.accent_color || 'var(--coral)'} actor={{ id: user?.id, name: myName }} teamMembers={teamMembers} outlets={outlets} defaultLocationId={(selected as any)?.assigned_location_id || (selected as any)?.location_id || null} onTasksCreated={() => { if (selected) loadConversationExtras(selected.id) }} />
                   </div>
                 )
                 if (isSystem) {
@@ -8668,7 +8684,7 @@ export default function InboxPage() {
                     : `Re: ${selected.subject || 'your message'}`}
                   fromLabel={emailFromLabel}
                   signature={emailSignature}
-                  agentName={user?.user_metadata?.display_name || user?.email?.split('@')[0]}
+                  agentName={myName}
                   onSent={async () => {
                     const { data: msgs } = await (supabase as any).from('messages').select('*').eq('conversation_id', selected.id).order('created_at', { ascending: true })
                     setMessages(msgs || [])
@@ -9335,7 +9351,7 @@ export default function InboxPage() {
                     channel={(selected as any).channel}
                     companyId={companyId}
                     userId={user?.id}
-                    userName={user?.user_metadata?.display_name || user?.email?.split('@')[0]}
+                    userName={myName}
                     onLinked={async () => {
                       // Confirming a match repoints conversations.contact_id to the
                       // customer, so re-fetch the row (the local `selected` still
@@ -9793,7 +9809,7 @@ export default function InboxPage() {
                 {contact && (
                   <CustomerAddresses
                     contactId={contact.id}
-                    userName={user?.user_metadata?.display_name || user?.email?.split('@')[0]}
+                    userName={myName}
                   />
                 )}
 

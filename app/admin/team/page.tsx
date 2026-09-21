@@ -508,14 +508,14 @@ export default function TeamPage() {
           role/status/actions cells overlap. A min width keeps the columns intact
           and lets the card scroll sideways instead. */}
       <div className="overflow-x-auto">
-      <div className="bg-white rounded-2xl border overflow-hidden min-w-[680px]" style={{ borderColor: 'var(--border)' }}>
+      <div className="bg-white rounded-2xl border overflow-hidden min-w-[760px]" style={{ borderColor: 'var(--border)' }}>
         {/* Header */}
         <div className="grid grid-cols-12 px-5 py-3 border-b text-xs font-semibold uppercase tracking-wider" style={{ borderColor: 'var(--border)', color: 'var(--slate)' }}>
           <div className="col-span-4">User</div>
-          <div className="col-span-3">Mobile (for SMS)</div>
+          <div className="col-span-2">Mobile (for SMS)</div>
           <div className="col-span-2">Role</div>
           <div className="col-span-1">Status</div>
-          <div className="col-span-2 text-right">Actions</div>
+          <div className="col-span-3 text-right">Actions</div>
         </div>
 
         {/* Current admin — column spans mirror the header (4/3/2/1/2) so the
@@ -530,14 +530,14 @@ export default function TeamPage() {
               <p className="text-xs" style={{ color: 'var(--slate)' }}>You (Owner)</p>
             </div>
           </div>
-          <div className="col-span-3" />
+          <div className="col-span-2" />
           <div className="col-span-2">
             <span className="text-xs px-2 py-1 rounded-full font-semibold" style={{ background: 'var(--peach)', color: 'var(--coral)' }}>Owner</span>
           </div>
           <div className="col-span-1">
             <span className="text-xs px-2 py-1 rounded-full" style={{ background: '#d1fae5', color: '#059669' }}>Active</span>
           </div>
-          <div className="col-span-2 text-right text-xs" style={{ color: 'var(--slate)' }}>—</div>
+          <div className="col-span-3 text-right text-xs" style={{ color: 'var(--slate)' }}>—</div>
         </div>
 
         {loading ? (
@@ -576,7 +576,7 @@ export default function TeamPage() {
               </div>
               {/* Mobile — SMS reminders for assigned events go to this number.
                   Saved on blur so it doesn't write on every keystroke. */}
-              <div className="col-span-3 pr-3">
+              <div className="col-span-2 pr-3">
                 <input
                   defaultValue={m.phone || ''}
                   placeholder="+61…"
@@ -599,7 +599,7 @@ export default function TeamPage() {
                   {m.status === 'active' ? 'Active' : 'Invited'}
                 </span>
               </div>
-              <div className="col-span-2 text-right flex items-center justify-end gap-3">
+              <div className="col-span-3 text-right flex items-center justify-end gap-2.5 whitespace-nowrap">
                 <button onClick={() => openEdit(m)} className="text-xs font-medium cursor-pointer hover:underline" style={{ color: 'var(--slate)' }}>
                   Edit
                 </button>
