@@ -290,14 +290,19 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     }
     load()
     const iv = setInterval(load, 15000)
+    // Coalesce bursts of order webhooks into one badge refetch — a busy store can
+    // fire many order changes a second, and re-running the count query on each was
+    // needless load.
+    let debTimer: any = null
+    const debouncedLoad = () => { clearTimeout(debTimer); debTimer = setTimeout(load, 1500) }
     const onSeen = () => { if (active) setOrdersNew(0); load() }
     window.addEventListener('orders-seen', onSeen)
     window.addEventListener('storage', onSeen)
     const ch = (supabase as any)
       .channel(`orders-badge-${company.id}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders', filter: `company_id=eq.${company.id}` }, load)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders', filter: `company_id=eq.${company.id}` }, debouncedLoad)
       .subscribe()
-    return () => { active = false; clearInterval(iv); window.removeEventListener('orders-seen', onSeen); window.removeEventListener('storage', onSeen); try { (supabase as any).removeChannel(ch) } catch {} }
+    return () => { active = false; clearInterval(iv); clearTimeout(debTimer); window.removeEventListener('orders-seen', onSeen); window.removeEventListener('storage', onSeen); try { (supabase as any).removeChannel(ch) } catch {} }
   }, [company?.id])
 
   // Tasks needing this person's attention: assigned to them, not finished, and
