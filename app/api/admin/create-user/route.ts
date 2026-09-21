@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
+export const dynamic = 'force-dynamic'
+
+const SUPER_ADMIN = 'bishalstha76@gmail.com'
+
 export async function POST(req: NextRequest) {
   try {
     const { email, password, name, role, companyId } = await req.json()
@@ -11,6 +15,34 @@ export async function POST(req: NextRequest) {
       process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
       { auth: { autoRefreshToken: false, persistSession: false } }
     )
+
+    // AUTHORIZATION — this route mints a confirmed auth account with the service
+    // role, so it must never run unauthenticated. Require a caller who is the
+    // owner or an admin of the company the new user is being added to (or the
+    // platform super admin). Without this, anyone able to POST here could create
+    // accounts at will.
+    const token = (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '')
+    if (!token) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+    const { data: authData } = await supabaseAdmin.auth.getUser(token)
+    const caller = authData?.user
+    if (!caller?.id) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+    const callerEmail = (caller.email || '').toLowerCase()
+    if (callerEmail !== SUPER_ADMIN) {
+      if (!companyId) return NextResponse.json({ error: 'companyId required' }, { status: 400 })
+      // Owner of the company?
+      const { data: owned } = await (supabaseAdmin as any)
+        .from('companies').select('id').eq('id', companyId).eq('owner_id', caller.id).maybeSingle()
+      let allowed = !!owned
+      if (!allowed) {
+        // Or an admin/owner team member of the company?
+        const { data: mem } = await (supabaseAdmin as any)
+          .from('team_members').select('role, status')
+          .eq('company_id', companyId).eq('user_id', caller.id)
+          .in('role', ['owner', 'admin']).limit(1)
+        allowed = !!(mem && mem.length && (mem[0].status == null || mem[0].status === 'active'))
+      }
+      if (!allowed) return NextResponse.json({ error: 'Forbidden — you must be an owner or admin of this workspace.' }, { status: 403 })
+    }
 
     let userId: string | null = null
     let userEmail = email.trim().toLowerCase()

@@ -77,6 +77,33 @@ export default function AppChrome({
       }
     }
   }, [])
+
+  // Password-reset links land the user wherever Supabase's redirect_to points —
+  // which, when the app's redirectTo isn't in Supabase's allow-list, is the site
+  // root (Site URL), NOT /auth/confirm. The recovery tokens then sit in the URL
+  // hash on a page that doesn't handle them, so the user just sees the sign-in /
+  // landing page and can never set a new password. Supabase fires PASSWORD_RECOVERY
+  // the moment it detects a recovery link on ANY page, so catch it globally here
+  // and send them to the set-new-password screen (unless they're already there).
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const { data: sub } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'PASSWORD_RECOVERY' && !window.location.pathname.startsWith('/reset-password')) {
+        try { window.location.assign('/reset-password') } catch {}
+      }
+    })
+    // Fallback for browsers/timing where the event was missed but the hash is
+    // still present: detect a recovery hash directly on mount.
+    try {
+      const h = window.location.hash || ''
+      if (h.includes('type=recovery') && h.includes('access_token=') && !window.location.pathname.startsWith('/reset-password')) {
+        // Preserve the hash so /reset-password can set the session from it if the
+        // client hasn't already.
+        window.location.assign('/reset-password' + h)
+      }
+    } catch {}
+    return () => { try { sub?.subscription?.unsubscribe?.() } catch {} }
+  }, [])
   const [showUserMenu, setShowUserMenu] = useState(false)
   const [showNotifications, setShowNotifications] = useState(false)
 
