@@ -141,6 +141,18 @@ export async function POST(req: NextRequest) {
       const companyId = await companyForInboundNumber(db, to, 'telnyx')
       if (!companyId) return NextResponse.json({ ok: true }) // not ours
 
+      // Idempotency: Telnyx retries a webhook (with backoff, sometimes hours
+      // later) whenever it doesn't get a fast 2xx — so a slow or erroring handler
+      // could ingest the SAME inbound message twice (the "double SMS / duplicate
+      // photos" bug). Skip if we've already stored this provider message id.
+      if (payload?.id) {
+        try {
+          const { data: dupe } = await db.from('messages')
+            .select('id').eq('company_id', companyId).eq('telnyx_message_id', payload.id).limit(1)
+          if (dupe && dupe.length) return NextResponse.json({ ok: true, deduped: true })
+        } catch {}
+      }
+
       // Normalise phone numbers to their last 9 digits so E.164 (+61407207207)
       // and local (0407207207) forms match.
       const digits = (s: string) => (s || '').replace(/\D/g, '').slice(-9)

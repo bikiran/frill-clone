@@ -39,6 +39,19 @@ export async function ingestInboundSms(params: {
   const text = params.text || ''
   const media = params.media || []
   const mediaAttemptFailed = !!params.mediaAttemptFailed
+
+  // Idempotency: providers (Twilio/Telnyx) retry a webhook whenever they don't
+  // get a fast 2xx, which would ingest the SAME inbound message twice (the
+  // "double SMS / duplicate photos" bug). If we've already stored this provider
+  // message id, stop here.
+  if (params.providerMessageId) {
+    try {
+      const { data: dupe } = await db.from('messages')
+        .select('id, conversation_id').eq('company_id', companyId)
+        .eq('telnyx_message_id', params.providerMessageId).limit(1)
+      if (dupe && dupe.length) return { conversationId: dupe[0].conversation_id || null }
+    } catch {}
+  }
   const fromDigits = digitsOf(from)
 
   const mediaPreview = media.length
