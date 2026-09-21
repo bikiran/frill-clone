@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 
 export async function POST(req: NextRequest) {
   try {
-    const { email, password, name, role } = await req.json()
+    const { email, password, name, role, companyId } = await req.json()
     if (!email || !password) return NextResponse.json({ error: 'Email and password required' }, { status: 400 })
 
     const supabaseAdmin = createClient(
@@ -55,13 +55,32 @@ export async function POST(req: NextRequest) {
       userId = data.user?.id
     }
 
+    // Scope the membership to the owner's company. Without company_id the row is
+    // orphaned: the team list filters by company_id, so the new user never shows
+    // up there and can't reach the workspace. Also avoid a duplicate row if this
+    // person is already a member of this company (would break the single-row
+    // membership lookups elsewhere).
     try {
-      await (supabaseAdmin as any).from('team_members').insert({
-        email: userEmail, role: role || 'editor', status: 'active', user_id: userId,
-      })
+      const cid = companyId || null
+      let existing: any = null
+      if (userId && cid) {
+        const { data } = await (supabaseAdmin as any)
+          .from('team_members').select('id').eq('company_id', cid).eq('user_id', userId).limit(1)
+        existing = data?.[0] || null
+      }
+      if (existing) {
+        await (supabaseAdmin as any).from('team_members')
+          .update({ role: role || 'editor', status: 'active', email: userEmail })
+          .eq('id', existing.id)
+      } else {
+        await (supabaseAdmin as any).from('team_members').insert({
+          email: userEmail, role: role || 'editor', status: 'active', user_id: userId,
+          company_id: cid,
+        })
+      }
     } catch {}
 
-    return NextResponse.json({ success: true, email: userEmail, userId })
+    return NextResponse.json({ success: true, email: userEmail, userId, companyId: companyId || null })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
