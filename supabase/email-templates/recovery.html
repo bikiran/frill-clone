@@ -1,168 +1,141 @@
 <!--
-  Colvy — password recovery email (Supabase Auth → Email Templates → "Reset Password").
+  Colvy — password recovery email.
+  Paste into: Supabase → Authentication → Emails → Reset Password (Message body).
 
-  WHY THIS FILE EXISTS
+  WHY THIS FILE EXISTS / WHAT WAS WRONG
   The reset email is configured in the Supabase dashboard, not in the app, so it
-  isn't deployed with the code. This is a version-controlled copy of the template
-  to paste into: Supabase → Authentication → Emails → Reset Password.
+  isn't deployed with the code — this is a version-controlled copy to paste in.
 
-  THE BUG THIS FIXES
-  The previous template laid out the numbered "How to reset" steps with CSS that
-  Gmail strips (flexbox / absolute positioning), so the number badges collapsed
-  ON TOP of the step text. Email clients only reliably support TABLE-based layout
-  with inline styles — that's what this template uses, so the badges always sit
-  in their own column beside the text.
+  The previous template relied on a <style> block with `display:flex` (for the
+  logo row, the numbered steps, the security/warning rows) and inline <svg> icons.
+  Email clients — Gmail especially on mobile — strip <style>, drop flexbox, and
+  remove inline SVG, so the number badges collapsed onto the step text and icons
+  vanished. This version uses ONLY table-based layout with inline styles (the one
+  thing every mail client renders reliably) and emoji instead of SVG.
 
-  Supabase variables: {{ .ConfirmationURL }} is the verify link.
+  Supabase variable: {{ .ConfirmationURL }} is the verify link — keep it as-is.
 -->
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f5f5f7;margin:0;padding:0;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f9fafb;margin:0;padding:0;">
   <tr>
     <td align="center" style="padding:24px 12px;">
       <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;background:#ffffff;border-radius:12px;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
 
         <!-- Header -->
         <tr>
-          <td style="background:#ff7a6b;padding:28px 32px;">
-            <div style="color:#ffffff;font-size:22px;font-weight:700;line-height:1.2;">Reset your password</div>
+          <td align="center" style="background:#ff7a6b;padding:36px 20px;">
+            <div style="color:#ffffff;font-size:28px;font-weight:800;letter-spacing:-0.5px;line-height:1.2;">🔑 Colvy</div>
+            <div style="color:#ffe4de;font-size:14px;font-weight:500;margin-top:8px;">Feedback Boards Built for Growth</div>
           </td>
         </tr>
 
         <!-- Body -->
         <tr>
-          <td style="padding:32px;">
-            <p style="margin:0 0 16px 0;color:#1a1a1a;font-size:16px;line-height:1.6;">Hi there,</p>
-            <p style="margin:0 0 24px 0;color:#5b5b63;font-size:15px;line-height:1.6;">
-              We got a request to reset the password for your Colvy account. Click the button below to choose a new one.
+          <td style="padding:36px 30px;">
+            <div style="font-size:22px;font-weight:700;color:#1a1a1a;margin-bottom:6px;">Reset your password</div>
+            <div style="font-size:14px;color:#6b6b70;font-weight:500;margin-bottom:24px;">We received a request to reset your Colvy account password.</div>
+
+            <p style="margin:0 0 20px 0;font-size:15px;line-height:1.6;color:#6b6b70;">
+              For your security, we can&rsquo;t reset your password directly. Instead, we&rsquo;ve generated a secure link that lets you choose a new one.
             </p>
 
+            <p style="margin:0 0 20px 0;font-size:15px;font-weight:600;color:#ff7a6b;">Click the button below to reset your password:</p>
+
             <!-- Button -->
-            <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 24px 0;">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin:8px auto 24px auto;">
               <tr>
                 <td align="center" bgcolor="#ff7a6b" style="border-radius:10px;">
-                  <a href="{{ .ConfirmationURL }}"
-                     style="display:inline-block;padding:14px 32px;color:#ffffff;font-size:16px;font-weight:600;text-decoration:none;border-radius:10px;">
-                    Reset Password
-                  </a>
+                  <a href="{{ .ConfirmationURL }}" style="display:inline-block;padding:14px 40px;color:#ffffff;font-size:16px;font-weight:700;text-decoration:none;border-radius:10px;">Reset Password</a>
                 </td>
               </tr>
             </table>
 
             <!-- Copy link -->
-            <p style="margin:0 0 8px 0;color:#5b5b63;font-size:13px;line-height:1.5;">Or copy and paste this link:</p>
-            <p style="margin:0 0 28px 0;padding:12px 14px;background:#f5f5f7;border-radius:8px;
-                      color:#3b6ef2;font-size:12px;line-height:1.5;word-break:break-all;font-family:'Courier New',Courier,monospace;">
-              {{ .ConfirmationURL }}
-            </p>
+            <p style="margin:0 0 8px 0;text-align:center;font-size:13px;color:#9ca3af;">Or copy and paste this link:</p>
+            <p style="margin:0 0 28px 0;padding:12px 14px;background:#f3f4f6;border-radius:6px;color:#3b6ef2;font-size:12px;line-height:1.5;word-break:break-all;font-family:'Courier New',Courier,monospace;">{{ .ConfirmationURL }}</p>
 
-            <!-- How-to steps (TABLE layout — badge in its own cell, never overlaps text) -->
-            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
-                   style="background:#fff5f3;border-left:4px solid #ff7a6b;border-radius:8px;">
+            <!-- How-to steps (table layout: badge cell + text cell) -->
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#fff7f5;border-left:4px solid #ff7a6b;border-radius:8px;">
+              <tr><td style="padding:18px 18px 6px 18px;font-size:14px;font-weight:700;color:#1a1a1a;">How to reset your password</td></tr>
               <tr>
-                <td style="padding:20px 20px 8px 20px;color:#1a1a1a;font-size:15px;font-weight:700;">
-                  How to reset your password
+                <td style="padding:6px 18px;">
+                  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"><tr>
+                    <td width="36" valign="top"><table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td width="26" height="26" align="center" valign="middle" bgcolor="#ff7a6b" style="width:26px;height:26px;border-radius:13px;color:#ffffff;font-size:13px;font-weight:700;line-height:26px;text-align:center;">1</td></tr></table></td>
+                    <td valign="middle" style="font-size:14px;line-height:1.5;color:#1a1a1a;padding-left:4px;">Click the button or link above</td>
+                  </tr></table>
                 </td>
               </tr>
-
-              <!-- Step 1 -->
               <tr>
-                <td style="padding:6px 20px;">
-                  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
-                    <tr>
-                      <td width="34" valign="top">
-                        <table role="presentation" cellpadding="0" cellspacing="0" border="0">
-                          <tr>
-                            <td width="26" height="26" align="center" valign="middle" bgcolor="#ff7a6b"
-                                style="width:26px;height:26px;border-radius:13px;color:#ffffff;font-size:13px;font-weight:700;line-height:26px;text-align:center;">1</td>
-                          </tr>
-                        </table>
-                      </td>
-                      <td valign="middle" style="color:#3a3a40;font-size:14px;line-height:1.5;padding-left:4px;">
-                        Click the button or link above
-                      </td>
-                    </tr>
-                  </table>
+                <td style="padding:6px 18px;">
+                  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"><tr>
+                    <td width="36" valign="top"><table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td width="26" height="26" align="center" valign="middle" bgcolor="#ff7a6b" style="width:26px;height:26px;border-radius:13px;color:#ffffff;font-size:13px;font-weight:700;line-height:26px;text-align:center;">2</td></tr></table></td>
+                    <td valign="middle" style="font-size:14px;line-height:1.5;color:#1a1a1a;padding-left:4px;">Enter your new password (at least 8 characters)</td>
+                  </tr></table>
                 </td>
               </tr>
-
-              <!-- Step 2 -->
               <tr>
-                <td style="padding:6px 20px;">
-                  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
-                    <tr>
-                      <td width="34" valign="top">
-                        <table role="presentation" cellpadding="0" cellspacing="0" border="0">
-                          <tr>
-                            <td width="26" height="26" align="center" valign="middle" bgcolor="#ff7a6b"
-                                style="width:26px;height:26px;border-radius:13px;color:#ffffff;font-size:13px;font-weight:700;line-height:26px;text-align:center;">2</td>
-                          </tr>
-                        </table>
-                      </td>
-                      <td valign="middle" style="color:#3a3a40;font-size:14px;line-height:1.5;padding-left:4px;">
-                        Enter your new password (at least 8 characters)
-                      </td>
-                    </tr>
-                  </table>
+                <td style="padding:6px 18px;">
+                  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"><tr>
+                    <td width="36" valign="top"><table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td width="26" height="26" align="center" valign="middle" bgcolor="#ff7a6b" style="width:26px;height:26px;border-radius:13px;color:#ffffff;font-size:13px;font-weight:700;line-height:26px;text-align:center;">3</td></tr></table></td>
+                    <td valign="middle" style="font-size:14px;line-height:1.5;color:#1a1a1a;padding-left:4px;">Confirm your new password</td>
+                  </tr></table>
                 </td>
               </tr>
-
-              <!-- Step 3 -->
               <tr>
-                <td style="padding:6px 20px;">
-                  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
-                    <tr>
-                      <td width="34" valign="top">
-                        <table role="presentation" cellpadding="0" cellspacing="0" border="0">
-                          <tr>
-                            <td width="26" height="26" align="center" valign="middle" bgcolor="#ff7a6b"
-                                style="width:26px;height:26px;border-radius:13px;color:#ffffff;font-size:13px;font-weight:700;line-height:26px;text-align:center;">3</td>
-                          </tr>
-                        </table>
-                      </td>
-                      <td valign="middle" style="color:#3a3a40;font-size:14px;line-height:1.5;padding-left:4px;">
-                        Confirm your new password
-                      </td>
-                    </tr>
-                  </table>
-                </td>
-              </tr>
-
-              <!-- Step 4 -->
-              <tr>
-                <td style="padding:6px 20px 20px 20px;">
-                  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
-                    <tr>
-                      <td width="34" valign="top">
-                        <table role="presentation" cellpadding="0" cellspacing="0" border="0">
-                          <tr>
-                            <td width="26" height="26" align="center" valign="middle" bgcolor="#ff7a6b"
-                                style="width:26px;height:26px;border-radius:13px;color:#ffffff;font-size:13px;font-weight:700;line-height:26px;text-align:center;">4</td>
-                          </tr>
-                        </table>
-                      </td>
-                      <td valign="middle" style="color:#3a3a40;font-size:14px;line-height:1.5;padding-left:4px;">
-                        You&rsquo;ll be redirected to sign in with your new password
-                      </td>
-                    </tr>
-                  </table>
+                <td style="padding:6px 18px 18px 18px;">
+                  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"><tr>
+                    <td width="36" valign="top"><table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td width="26" height="26" align="center" valign="middle" bgcolor="#ff7a6b" style="width:26px;height:26px;border-radius:13px;color:#ffffff;font-size:13px;font-weight:700;line-height:26px;text-align:center;">4</td></tr></table></td>
+                    <td valign="middle" style="font-size:14px;line-height:1.5;color:#1a1a1a;padding-left:4px;">You&rsquo;ll be redirected to sign in with your new password</td>
+                  </tr></table>
                 </td>
               </tr>
             </table>
 
-            <!-- Security note -->
-            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:24px;">
-              <tr>
-                <td style="padding:16px 18px;background:#f5f5f7;border-radius:8px;">
-                  <div style="color:#1a1a1a;font-size:14px;font-weight:700;margin-bottom:6px;">Your reset is secure</div>
-                  <div style="color:#5b5b63;font-size:13px;line-height:1.7;">
-                    This link expires in 1 hour &middot; Can only be used once &middot; Personal to your account only
-                  </div>
-                </td>
-              </tr>
+            <!-- Security -->
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:24px;background:#f6f7f8;border:1px solid #e5e7eb;border-radius:10px;">
+              <tr><td style="padding:16px 18px 8px 18px;font-size:14px;font-weight:700;color:#1a1a1a;">🛡️ Your reset is secure</td></tr>
+              <tr><td style="padding:0 18px 16px 18px;font-size:13px;line-height:1.8;color:#6b6b70;">
+                ⏱️ This link expires in 1 hour<br>
+                🔒 Can only be used once<br>
+                👤 Personal to your account only
+              </td></tr>
             </table>
 
-            <p style="margin:24px 0 0 0;padding-top:20px;border-top:1px solid #eeeeee;color:#9ca3af;font-size:12px;line-height:1.6;">
-              If you didn&rsquo;t request a password reset, you can safely ignore this email &mdash; your password won&rsquo;t change.
+            <!-- Password tips -->
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:20px;background:#f0fdf4;border-left:4px solid #10b981;border-radius:10px;">
+              <tr><td style="padding:16px 18px;">
+                <div style="font-size:14px;font-weight:700;color:#15803d;margin-bottom:8px;">Make your password strong</div>
+                <div style="font-size:13px;line-height:1.7;color:#15803d;">
+                  &bull; At least 8 characters long<br>
+                  &bull; Mix of uppercase and lowercase letters<br>
+                  &bull; Include numbers and special characters (!@#$%)<br>
+                  &bull; Avoid common words or personal information
+                </div>
+              </td></tr>
+            </table>
+
+            <!-- Didn't request -->
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:20px;background:#fee2e2;border-left:4px solid #ef4444;border-radius:10px;">
+              <tr><td style="padding:16px 18px;">
+                <div style="font-size:14px;font-weight:700;color:#7f1d1d;margin-bottom:6px;">⚠️ Didn&rsquo;t request a password reset?</div>
+                <div style="font-size:13px;line-height:1.5;color:#7f1d1d;">
+                  If you didn&rsquo;t ask to reset your password, please ignore this email &mdash; your account stays secure. If you&rsquo;re concerned, <a href="mailto:support@colvy.com" style="color:#7f1d1d;font-weight:600;">contact our support team</a>.
+                </div>
+              </td></tr>
+            </table>
+
+            <div style="height:1px;background:#f0f0f0;margin:24px 0;"></div>
+
+            <p style="margin:0;font-size:13px;line-height:1.6;color:#6b6b70;">
+              <strong>Security reminder:</strong> Colvy will never ask you for your password via email. Always reset it through our secure link, and never share your password with anyone.
             </p>
+          </td>
+        </tr>
+
+        <!-- Footer -->
+        <tr>
+          <td align="center" style="background:#fafafa;border-top:1px solid #f0f0f0;padding:24px 30px;font-size:13px;color:#9ca3af;">
+            <div style="margin-bottom:8px;">Questions? <a href="https://colvy.com" style="color:#ff7a6b;font-weight:600;text-decoration:none;">Visit our website</a> or <a href="mailto:support@colvy.com" style="color:#ff7a6b;font-weight:600;text-decoration:none;">contact support</a></div>
+            <div style="font-size:12px;color:#c9ccd1;">&copy; Colvy. All rights reserved. &middot; <a href="https://colvy.com/privacy" style="color:#ff7a6b;text-decoration:none;">Privacy Policy</a></div>
           </td>
         </tr>
 
