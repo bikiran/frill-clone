@@ -67,6 +67,15 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
   const [transferState, setTransferState] = useState<'none' | 'ringing' | 'consulting'>('none')
   const [transferBusy, setTransferBusy] = useState(false)
   const [transferMsg, setTransferMsg] = useState('')
+  // In-call DTMF keypad (send tones for IVR menus / extensions).
+  const [showKeypad, setShowKeypad] = useState(false)
+  // Post-call review card: shown briefly after a connected call ends, with a
+  // 👍/👎 and a countdown auto-dismiss.
+  const [ended, setEnded] = useState<null | { callId?: string; name?: string; number?: string; seconds: number }>(null)
+  const [endedCountdown, setEndedCountdown] = useState(3)
+  const [endedRating, setEndedRating] = useState<0 | 1 | -1>(0)
+  const endedTimerRef = useRef<any>(null)
+  const startedAtRef = useRef<number>(0)
   // ── Server-bridged OUTBOUND call ────────────────────────────────────────────
   // When Colvy places an outbound call server-side (see /api/telnyx/outbound-
   // start), the server rings THIS browser back with a SIP leg. We auto-answer
@@ -158,6 +167,10 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
   // without making it depend on (and re-subscribe to) every state change.
   const liveRef = useRef({ ready: false, inCall: false, incoming: false })
   liveRef.current = { ready, inCall, incoming: !!incoming }
+  // Fresh snapshots so end handlers (registered once, at connect time) can read
+  // the CURRENT caller/incoming instead of a stale closure value.
+  const callerRef = useRef<any>(null); callerRef.current = caller
+  const incomingRef = useRef<any>(null); incomingRef.current = incoming
   // Throttle so a flurry of focus/visibility/online events triggers at most one
   // reconnect attempt every few seconds.
   const lastRecoverRef = useRef(0)
@@ -222,7 +235,7 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
             startRing()
             resolveCaller(fromNum)
             call.on('accept', () => { stopRing(); setInCall(true); startTimer() })
-            call.on('disconnect', () => { stopRing(); reset() })
+            call.on('disconnect', () => { stopRing(); finishCall() })
             call.on('cancel', () => { stopRing(); reset() })
             call.on('reject', () => { stopRing(); reset() })
           })
@@ -340,7 +353,7 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
           // up before/after answer, so the browser popup never gets stuck.
           if (['hangup', 'destroy', 'purge', 'done'].includes(String(call.state))) {
             if (call.id) declinedIds.current.delete(call.id)   // truly over — forget it
-            stopRing(); reset()
+            stopRing(); finishCall()
           }
         })
         client.connect()
@@ -444,7 +457,7 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
             setInCall(true)   // go straight to in-call controls; no Answer/Decline for outbound
             startRingback(callRowId)   // audible "brr-brr" until the customer answers
             call.on('accept', () => { startTimer() })
-            call.on('disconnect', () => { twilioServerHangup(callRowId); reset() })
+            call.on('disconnect', () => { twilioServerHangup(callRowId); finishCall() })
             call.on('cancel', () => reset())
             call.on('error', (err: any) => { setTransferMsg(twErr(err)); reset() })
           } catch {
@@ -506,7 +519,49 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
     } catch { setCaller({ number: fromNumber }) }
   }
 
-  const startTimer = () => { setSeconds(0); timerRef.current = setInterval(() => setSeconds(s => s + 1), 1000) }
+  const startTimer = () => { setSeconds(0); startedAtRef.current = Date.now(); timerRef.current = setInterval(() => setSeconds(s => s + 1), 1000) }
+
+  // Send a DTMF tone on the live call (IVR menus, extensions, "press 1").
+  const sendDTMF = (digit: string) => {
+    try {
+      if (provider === 'twilio') callRef.current?.sendDigits?.(digit)
+      else callRef.current?.dtmf?.(digit)   // Telnyx call
+    } catch {}
+  }
+
+  // End the call and show the brief review card (only for a call that actually
+  // connected), then reset. Duration comes from the start timestamp so it's
+  // accurate even from a long-lived disconnect handler.
+  const finishCall = () => {
+    const wasLive = liveRef.current.inCall && startedAtRef.current > 0
+    const secs = startedAtRef.current > 0 ? Math.max(0, Math.round((Date.now() - startedAtRef.current) / 1000)) : 0
+    const inc = incomingRef.current
+    const cal = callerRef.current
+    const snap = { callId: outboundCallIdRef.current || inc?.callRowId || inc?.id || undefined, name: cal?.name, number: cal?.number || inc?.from, seconds: secs }
+    reset()
+    if (!wasLive) return
+    setEnded(snap); setEndedRating(0); setEndedCountdown(3)
+    let n = 3
+    endedTimerRef.current = setInterval(() => {
+      n -= 1; setEndedCountdown(n)
+      if (n <= 0) { try { clearInterval(endedTimerRef.current) } catch {}; setEnded(null) }
+    }, 1000)
+  }
+  const dismissEnded = () => { try { clearInterval(endedTimerRef.current) } catch {}; setEnded(null) }
+  const rateCall = async (rating: 1 | -1) => {
+    setEndedRating(rating)
+    try { clearInterval(endedTimerRef.current) } catch {}   // stop the countdown once they engage
+    const callId = ended?.callId
+    if (!callId) { setTimeout(() => setEnded(null), 900); return }
+    try {
+      const { data: sess } = await supabase.auth.getSession()
+      await fetch('/api/calls/feedback', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${sess?.session?.access_token || ''}` },
+        body: JSON.stringify({ callId, rating }),
+      })
+    } catch {}
+    setTimeout(() => setEnded(null), 900)
+  }
 
   // Incoming-call ringtone. Prefer the branded ringtone file (the same one the
   // mobile app rings with, so a call sounds the same on web and phone); fall back
@@ -690,7 +745,7 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
     stopRing()
     if (provider === 'twilio') twilioServerHangup()
     try { provider === 'twilio' ? callRef.current?.disconnect?.() : callRef.current?.hangup?.() } catch {}
-    reset()
+    finishCall()
   }
 
   // ── Hold and warm transfer ───────────────────────────────────────────────
@@ -789,6 +844,8 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
     setOnHold(false); setTransferState('none'); setTransferMsg('')
     setSwitchOpen(false); setSwitchDevices([]); setSwitchBusy(false); setMovedTo(null)
     setOutboundCallId(null)
+    setShowKeypad(false)
+    startedAtRef.current = 0
     callRef.current = null
   }
 
@@ -809,6 +866,37 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
 
   if (!incoming) return (<>
     {audioEl}
+    {/* Post-call review card — brief, with a 👍/👎 and a countdown auto-dismiss. */}
+    {ended && (
+      <div style={{ position: 'fixed', top: 20, right: 20, width: 300, background: '#fff', color: '#111', borderRadius: 16, boxShadow: '0 16px 48px rgba(0,0,0,0.28)', zIndex: 9999, overflow: 'hidden', fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: '#0d0d0d', color: '#fff' }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12.5, fontWeight: 700 }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+            Call ended
+          </span>
+          <span style={{ fontSize: 11.5, opacity: 0.7 }}>{endedRating === 0 ? `Closing in ${endedCountdown}s` : 'Thanks!'}</span>
+        </div>
+        <div style={{ padding: '14px 16px' }}>
+          <p style={{ margin: 0, fontSize: 15, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ended.name || ended.number || 'Call'}</p>
+          <p style={{ margin: '2px 0 0', fontSize: 12.5, color: '#6b7280' }}>{ended.number} · {fmtDur(ended.seconds)}</p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12 }}>
+            <span style={{ fontSize: 12, color: '#6b7280', marginRight: 'auto' }}>How was the call?</span>
+            <button type="button" aria-label="Good call" onClick={() => rateCall(1)}
+              style={{ width: 34, height: 34, borderRadius: 9, border: '1px solid var(--border, #eee)', background: endedRating === 1 ? '#dcfce7' : '#fff', color: endedRating === 1 ? '#15803d' : '#6b7280', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88z"/></svg>
+            </button>
+            <button type="button" aria-label="Bad call" onClick={() => rateCall(-1)}
+              style={{ width: 34, height: 34, borderRadius: 9, border: '1px solid var(--border, #eee)', background: endedRating === -1 ? '#fee2e2' : '#fff', color: endedRating === -1 ? '#b91c1c' : '#6b7280', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88z"/></svg>
+            </button>
+            <button type="button" aria-label="Dismiss" onClick={dismissEnded}
+              style={{ width: 34, height: 34, borderRadius: 9, border: '1px solid var(--border, #eee)', background: '#fff', color: '#6b7280', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
     {/* Tiny phone-status indicator so it's visible whether the WebRTC client is
         actually connected to receive inbound calls (green = ready). Dismissable
         — hovering reveals a cross that hides it until the next page refresh. */}
@@ -952,6 +1040,24 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
           </span>
           {onHold && transferState === 'none' && (
             <span style={{ opacity: 0.7, fontSize: 11 }}>they hear hold music</span>
+          )}
+        </div>
+      )}
+      {/* In-call DTMF keypad — for IVR menus, extensions, "press 1", etc. */}
+      {inCall && transferState === 'none' && (
+        <div style={{ margin: '0 20px 8px' }}>
+          <button type="button" onClick={() => setShowKeypad(v => !v)}
+            style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '9px 12px', borderRadius: 10, border: 'none', background: showKeypad ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.08)', color: '#fff', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="5" r="1.6"/><circle cx="12" cy="5" r="1.6"/><circle cx="19" cy="5" r="1.6"/><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/><circle cx="5" cy="19" r="1.6"/><circle cx="12" cy="19" r="1.6"/><circle cx="19" cy="19" r="1.6"/></svg>
+            Keypad
+          </button>
+          {showKeypad && (
+            <div style={{ marginTop: 8, display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
+              {['1', '2', '3', '4', '5', '6', '7', '8', '9', '*', '0', '#'].map(d => (
+                <button key={d} type="button" onClick={() => sendDTMF(d)}
+                  style={{ padding: '11px 0', borderRadius: 10, border: 'none', background: 'rgba(255,255,255,0.1)', color: '#fff', fontSize: 18, fontWeight: 700, cursor: 'pointer' }}>{d}</button>
+              ))}
+            </div>
           )}
         </div>
       )}
