@@ -4808,10 +4808,16 @@ export default function InboxPage() {
         setMessages(msgs || [])
         scrollBottom()
       } catch (e: any) {
-        // Email failed — the chat widget is the last resort so the reply is at
-        // least recorded and visible if they come back.
-        console.warn('Email failed, delivering via chat:', e.message)
-        await deliverChat(content, senderName)
+        // Don't silently record a "Live Chat" the customer can't see — surface
+        // why the email didn't go out and keep the reply for a retry.
+        console.warn('Email send failed:', e?.message)
+        setSending(false)
+        const emsg = String(e?.message || 'Email failed to send')
+        if (/not configured|no .*mailbox|not connected|gmail/i.test(emsg)) {
+          showToast('Email isn’t connected for this workspace yet — connect a mailbox under Integrations. Your message wasn’t sent.')
+        } else {
+          showToast(`Couldn’t send email: ${emsg}. Your message wasn’t sent.`)
+        }
       }
       return
     }
@@ -4850,9 +4856,18 @@ export default function InboxPage() {
         setMessages(msgs || [])
         scrollBottom()
       } catch (e: any) {
-        // Fall back to chat if SMS fails
-        console.warn('SMS failed, delivering via chat:', e.message)
-        await deliverChat(content, senderName)
+        // Do NOT silently drop the reply into a live chat nobody is watching —
+        // reaching the SMS branch means the customer isn't on a live widget, so a
+        // chat fallback goes nowhere. Tell the agent why it didn't send and keep
+        // their text so they can retry once SMS is connected.
+        console.warn('SMS send failed:', e?.message)
+        setSending(false)
+        const emsg = String(e?.message || 'SMS failed')
+        if (/not configured|connect (telnyx|twilio)/i.test(emsg)) {
+          showToast('SMS isn’t connected for this workspace yet — connect a number under Integrations to text customers. Your message wasn’t sent.')
+        } else {
+          showToast(`Couldn’t send SMS: ${emsg}. Your message wasn’t sent.`)
+        }
       }
       return
     }
@@ -7284,6 +7299,11 @@ export default function InboxPage() {
               source = { label: 'Live Chat Enquiry', bg: '#dcfce7', fg: '#15803d' }
             }
             const isLiveChat = source.label === 'Live Chat Enquiry'
+            // Only PULSE as "live" when the visitor is genuinely on the widget
+            // right now (heartbeat < 2 min). Otherwise the animated green dot made
+            // every stale enquiry look like someone was actively waiting.
+            const liveSeenTs = (c as any).page_seen_at ? parseTs((c as any).page_seen_at) : null
+            const isLiveNow = !!liveSeenTs && (Date.now() - liveSeenTs.getTime()) < 120000
 
             // Secondary badge: when the primary badge is the CHANNEL (SMS, email,
             // Messenger…), also surface the order status if this customer has an
@@ -7383,10 +7403,10 @@ export default function InboxPage() {
               {/* Source tag(s) — channel plus order status when both apply */}
               <span style={{ display: 'inline-flex', flexWrap: 'wrap', gap: 4, marginBottom: 5 }}>
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 9.5, fontWeight: 800, letterSpacing: '0.03em', textTransform: 'uppercase', padding: '2px 7px', borderRadius: 5, background: source.bg, color: source.fg }}>
-                  {isLiveChat && (
+                  {isLiveChat && isLiveNow && (
                     <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#22c55e', animation: 'livePulse 1.6s ease-in-out infinite', flexShrink: 0 }} />
                   )}
-                  {source.label}
+                  {isLiveChat ? (isLiveNow ? source.label : 'Web Enquiry') : source.label}
                 </span>
                 {secondBadge && (
                   <span style={{ display: 'inline-flex', alignItems: 'center', fontSize: 9.5, fontWeight: 800, letterSpacing: '0.03em', textTransform: 'uppercase', padding: '2px 7px', borderRadius: 5, background: secondBadge.bg, color: secondBadge.fg }}>
