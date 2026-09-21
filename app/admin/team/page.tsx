@@ -26,6 +26,10 @@ export default function TeamPage() {
   const [working, setWorking] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState<any>(null)
   const [msg, setMsg] = useState('')
+  const [msgErr, setMsgErr] = useState(false)
+  // The last invite link we generated, shown so it can be shared directly when
+  // email delivery is unavailable (or as a reliable backup either way).
+  const [lastInvite, setLastInvite] = useState<{ email: string; link: string } | null>(null)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -105,9 +109,11 @@ export default function TeamPage() {
     catch { /* best effort — the column may need the V213 migration */ }
   }
 
-  const showMsg = (text: string) => {
+  const showMsg = (text: string, isError = false) => {
     setMsg(text)
-    setTimeout(() => setMsg(''), 4000)
+    setMsgErr(isError)
+    // Errors stay up longer than the quick success confirmation.
+    setTimeout(() => setMsg(''), isError ? 8000 : 4000)
   }
 
   const inviteMember = async () => {
@@ -115,16 +121,34 @@ export default function TeamPage() {
     setWorking(true)
     try {
       // Resolve the inviter's company (for the slug + name in the invite link).
+      // PREFER the company fetchMembers already resolved into state — it correctly
+      // handles a board subdomain and membership, not just ownership. Re-resolving
+      // from scratch here (owner-only + a .maybeSingle() on team_members) failed
+      // for anyone who is a MEMBER of the company on its subdomain, or who belongs
+      // to more than one company (maybeSingle returns null when several rows
+      // match) — which is exactly the "Could not determine your company" error.
       let company: any = null
-      const { data: owned } = await (supabase as any).from('companies').select('id, name, slug').eq('owner_id', user?.id).order('created_at', { ascending: true }).limit(1)
-      company = owned?.[0] || null
-      if (!company) {
-        const { data: tm } = await (supabase as any).from('team_members').select('company_id').eq('user_id', user?.id).maybeSingle()
-        if (tm?.company_id) { const { data } = await (supabase as any).from('companies').select('id, name, slug').eq('id', tm.company_id).maybeSingle(); company = data }
+      if (companyId) {
+        const { data } = await (supabase as any).from('companies').select('id, name, slug').eq('id', companyId).maybeSingle()
+        company = data || null
+      }
+      if (!company?.id) {
+        // Fall back to a fresh session user id (the `user` state can lag) and use
+        // limit(1), never maybeSingle, so multiple memberships don't blow up.
+        const uid = user?.id || (await supabase.auth.getSession()).data.session?.user?.id || null
+        if (uid) {
+          const { data: owned } = await (supabase as any).from('companies').select('id, name, slug').eq('owner_id', uid).order('created_at', { ascending: true }).limit(1)
+          company = owned?.[0] || null
+          if (!company?.id) {
+            const { data: tm } = await (supabase as any).from('team_members').select('company_id').eq('user_id', uid).not('company_id', 'is', null).limit(1)
+            const cid = tm?.[0]?.company_id
+            if (cid) { const { data } = await (supabase as any).from('companies').select('id, name, slug').eq('id', cid).maybeSingle(); company = data || null }
+          }
+        }
       }
 
       if (!company?.id) {
-        showMsg('Could not determine your company — reload the page and try again.')
+        showMsg('Could not determine your company — reload the page and try again.', true)
         setWorking(false)
         return
       }
@@ -143,17 +167,30 @@ export default function TeamPage() {
       // to /team/join, which handles sign-up/sign-in and membership acceptance.
       const origin = typeof window !== 'undefined' ? window.location.origin : 'https://colvy.com'
       const inviteLink = `${origin}/team/join?company=${encodeURIComponent(company?.slug || '')}&email=${encodeURIComponent(inviteEmail.trim().toLowerCase())}&role=${inviteRole}`
-      await fetch('/api/send-team-invite', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: inviteEmail.trim().toLowerCase(),
-          companyName: company?.name || 'the team',
-          role: inviteRole,
-          inviteLink,
-          inviterName: user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'A teammate',
-        }),
-      })
-      showMsg(`Invitation sent to ${inviteEmail}!`)
+      const invitedEmail = inviteEmail.trim().toLowerCase()
+      let emailed = false
+      try {
+        const res = await fetch('/api/send-team-invite', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: invitedEmail,
+            companyName: company?.name || 'the team',
+            role: inviteRole,
+            inviteLink,
+            inviterName: user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'A teammate',
+          }),
+        })
+        const data = await res.json().catch(() => ({}))
+        emailed = res.ok && data?.emailed === true
+      } catch { emailed = false }
+      // Always keep the link on screen — it's the reliable way to bring someone in
+      // regardless of whether the email went out.
+      setLastInvite({ email: invitedEmail, link: inviteLink })
+      if (emailed) {
+        showMsg(`Invitation emailed to ${invitedEmail}. You can also copy the link below to send it directly.`)
+      } else {
+        showMsg(`Invite created for ${invitedEmail}, but the email couldn’t be sent. Copy the link below and send it to them directly.`, true)
+      }
       setInviteEmail('')
       setShowInvite(false)
       fetchMembers()
@@ -233,16 +270,25 @@ export default function TeamPage() {
   const resendInvite = async (m: any) => {
     setResendingId(m.id)
     try {
-      // Resolve the company (slug + name) for the invite link.
+      // Resolve the company (slug + name) for the invite link. Prefer the invite
+      // row's own company_id, then the company already resolved into state, then
+      // an owner lookup with a fresh session id — never rely on owner-only, which
+      // breaks for members on a subdomain.
       let company: any = null
-      const { data: owned } = await (supabase as any).from('companies').select('id, name, slug').eq('owner_id', user?.id).order('created_at', { ascending: true }).limit(1)
-      company = owned?.[0] || null
-      if (!company && m.company_id) {
-        const { data } = await (supabase as any).from('companies').select('id, name, slug').eq('id', m.company_id).maybeSingle()
-        company = data
+      const cid = m.company_id || companyId
+      if (cid) {
+        const { data } = await (supabase as any).from('companies').select('id, name, slug').eq('id', cid).maybeSingle()
+        company = data || null
       }
       if (!company?.slug) {
-        showMsg('Could not resolve your company — reload the page and try again.')
+        const uid = user?.id || (await supabase.auth.getSession()).data.session?.user?.id || null
+        if (uid) {
+          const { data: owned } = await (supabase as any).from('companies').select('id, name, slug').eq('owner_id', uid).order('created_at', { ascending: true }).limit(1)
+          company = owned?.[0] || null
+        }
+      }
+      if (!company?.slug) {
+        showMsg('Could not resolve your company — reload the page and try again.', true)
         setResendingId(null)
         return
       }
@@ -260,10 +306,13 @@ export default function TeamPage() {
           inviterName: user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'A teammate',
         }),
       })
-      if (!res.ok) { const o = await res.json().catch(() => ({})); throw new Error(o.error || 'Failed to resend') }
-      showMsg(`Invitation resent to ${m.email}`)
+      const o = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(o.error || 'Failed to resend')
+      setLastInvite({ email: m.email, link: inviteLink })
+      if (o?.emailed === true) showMsg(`Invitation resent to ${m.email}. You can also copy the link below to send it directly.`)
+      else showMsg(`Couldn’t email ${m.email}. Copy the link below and send it to them directly.`, true)
     } catch (e: any) {
-      showMsg(`Could not resend: ${e.message}`)
+      showMsg(`Could not resend: ${e.message}`, true)
     } finally {
       setResendingId(null)
     }
@@ -295,8 +344,43 @@ export default function TeamPage() {
       />
 
       {msg && (
-        <div className="mb-4 p-3 rounded-lg text-sm font-medium" style={{ background: '#d1fae5', color: '#059669' }}>
-          ✓ {msg}
+        <div className="mb-4 p-3 rounded-lg text-sm font-medium" style={msgErr ? { background: '#fee2e2', color: '#b91c1c' } : { background: '#d1fae5', color: '#059669' }}>
+          {msgErr ? '⚠ ' : '✓ '}{msg}
+        </div>
+      )}
+
+      {lastInvite && (
+        <div className="mb-4 p-3 rounded-lg text-sm" style={{ background: '#f8fafc', border: '1px solid var(--border)' }}>
+          <div className="mb-2" style={{ color: 'var(--slate)' }}>
+            Invite link for <strong>{lastInvite.email}</strong> — send it to them directly (email, SMS, WhatsApp):
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              readOnly
+              value={lastInvite.link}
+              onFocus={(e) => e.currentTarget.select()}
+              className="flex-1 px-3 py-2 rounded-lg border text-xs"
+              style={{ borderColor: 'var(--border)', background: 'white' }}
+            />
+            <button
+              onClick={async () => {
+                try { await navigator.clipboard.writeText(lastInvite.link); showMsg('Invite link copied.') }
+                catch { showMsg('Could not copy — select the link and copy it manually.', true) }
+              }}
+              className="px-3 py-2 rounded-lg text-white text-xs font-semibold whitespace-nowrap"
+              style={{ background: 'var(--coral, #ff7a6b)' }}
+            >
+              Copy link
+            </button>
+            <button
+              onClick={() => setLastInvite(null)}
+              className="px-2 py-2 rounded-lg text-xs"
+              style={{ color: 'var(--slate)' }}
+              aria-label="Dismiss invite link"
+            >
+              ✕
+            </button>
+          </div>
         </div>
       )}
 
