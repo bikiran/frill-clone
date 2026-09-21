@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
-import { getArticle, relatedArticles } from '@/lib/blog-store'
+import { getArticle, listArticles } from '@/lib/blog-store'
 import BlogChrome from '@/components/BlogChrome'
 import BlogArticleView from '@/components/BlogArticleView'
 import JsonLd from '@/components/JsonLd'
@@ -32,9 +32,14 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 
 export default async function Page({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params
-  const a = await getArticle(slug)
+  const all = await listArticles()
+  const a = all.find(x => x.slug === slug)
   if (!a) notFound()
-  const related = await relatedArticles(slug, 3)
+  const rest = all.filter(x => x.slug !== slug)
+  const sameCat = rest.filter(x => x.category === a.category)
+  const related = [...sameCat, ...rest.filter(x => x.category !== a.category)].slice(0, 3)
+  const recent = rest.slice(0, 5)
+  const url = `${SITE_URL}/blog/${a.slug}`
 
   const articleLd = {
     '@context': 'https://schema.org',
@@ -53,7 +58,7 @@ export default async function Page({ params }: { params: Promise<{ slug: string 
     <>
       <JsonLd data={articleLd} />
       <BlogChrome>
-        <BlogArticleView article={a} related={related} />
+        <BlogArticleView article={a} related={related} recent={recent} url={url} />
       </BlogChrome>
     </>
   )
