@@ -26,6 +26,7 @@ import { useRouter } from 'next/navigation'
 import MobileNav from '@/components/MobileNav'
 import FeedbackButton from '@/components/FeedbackButton'
 import ColvyAssistant from '@/components/ColvyAssistant'
+import { canUseFeature, canAccessPath, featureForPath, hasFullAccess, type PermissionMap } from '@/lib/permissions'
 
 const SUPER_ADMIN_EMAIL = 'bishalstha76@gmail.com'
 
@@ -165,6 +166,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   useEffect(() => { authedRef.current = authed }, [authed])
   const [adminCollapsed, setAdminCollapsed] = useState(false)
   const [company, setCompany] = useState<any>(null)
+  // The current member's role + feature permissions (see lib/permissions.ts).
+  // Owner/super-admin => full access; a restricted editor/viewer only sees and
+  // can open the features their permission map allows.
+  const [myRole, setMyRole] = useState<string | null>(null)
+  const [myPerms, setMyPerms] = useState<PermissionMap>(null)
+  const [permsLoaded, setPermsLoaded] = useState(false)
   const [demoMsg, setDemoMsg] = useState('')
   useEffect(() => { if (!demoMsg) return; const t = setTimeout(() => setDemoMsg(''), 4000); return () => clearTimeout(t) }, [demoMsg])
 
@@ -548,6 +555,55 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   const isSuperAdmin = user?.email === SUPER_ADMIN_EMAIL
 
+  // Resolve THIS member's role + feature permissions once we know who they are
+  // and which company they're in. Owner / super-admin get full access; everyone
+  // else is gated by their team_members.permissions map.
+  useEffect(() => {
+    const uid = user?.id
+    const cid = company?.id
+    if (!uid || !cid) return
+    let active = true
+    ;(async () => {
+      if (user?.email === SUPER_ADMIN_EMAIL || company?.owner_id === uid) {
+        if (active) { setMyRole('owner'); setMyPerms(null); setPermsLoaded(true) }
+        return
+      }
+      try {
+        // select('*') so this doesn't break if the V306 permissions column
+        // hasn't been added yet — an absent column just reads as undefined
+        // (unrestricted) rather than erroring the whole query.
+        const { data } = await (supabase as any).from('team_members')
+          .select('*').eq('company_id', cid).eq('user_id', uid).limit(1)
+        const row = data?.[0]
+        if (active) {
+          setMyRole(String(row?.role || 'viewer').toLowerCase())
+          setMyPerms((row?.permissions as PermissionMap) || null)
+          setPermsLoaded(true)
+        }
+      } catch {
+        if (active) { setMyRole('viewer'); setMyPerms(null); setPermsLoaded(true) }
+      }
+    })()
+    return () => { active = false }
+  }, [user?.id, company?.id, company?.owner_id])
+
+  // Route guard: a restricted member who opens a disallowed URL directly is sent
+  // back to the dashboard (which is always allowed). Nav hiding covers the normal
+  // path; this covers deep links and typed URLs.
+  useEffect(() => {
+    if (!permsLoaded || hasFullAccess(myRole)) return
+    if (!pathname || !pathname.startsWith('/admin')) return
+    if (!canAccessPath(myRole, myPerms, pathname)) {
+      router.replace('/admin')
+    }
+  }, [permsLoaded, myRole, myPerms, pathname, router])
+
+  // Nav visibility for the current member.
+  const canUseNavItem = (item: { href: string; label: string }) => {
+    const featKey = item.label === 'Ideas' ? 'ideas' : featureForPath(item.href)?.key
+    return !featKey || canUseFeature(myRole, myPerms, featKey)
+  }
+
   const isActive = (href: string) => {
     if (href === '/admin') return pathname === '/admin'
     if (!pathname?.startsWith(href)) return false
@@ -711,6 +767,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         {/* Nav groups */}
         <nav style={{ flex: 1, padding: '10px 8px' }}>
           {NAV_GROUPS.map((group, gi) => {
+            // Hide features this member isn't permitted to use, and drop a whole
+            // group once nothing in it is visible.
+            const permittedItems = group.items.filter(canUseNavItem)
+            if (permittedItems.length === 0) return null
             // Groups without a title (the lone Dashboard link) are never
             // collapsible. In the icon-only sidebar there are no titles to click,
             // so everything stays visible regardless of the saved state.
@@ -731,7 +791,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                   </svg>
                 </button>
               )}
-              {!groupCollapsed && group.items.map(item => {
+              {!groupCollapsed && permittedItems.map(item => {
                 const active = isActive(item.href)
                 // In a demo workspace, pages that connect real accounts, handle
                 // billing or import/export real data are locked. Sending is

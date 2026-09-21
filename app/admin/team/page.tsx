@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase'
 import ConfirmModal from '@/components/ConfirmModal'
 import { SkeletonList } from '@/components/Skeleton'
 import PageHeader from '@/components/PageHeader'
+import { PERMISSION_SUITES, ALL_FEATURE_KEYS } from '@/lib/permissions'
 
 
 export default function TeamPage() {
@@ -30,6 +31,43 @@ export default function TeamPage() {
   // The last invite link we generated, shown so it can be shared directly when
   // email delivery is unavailable (or as a reliable backup either way).
   const [lastInvite, setLastInvite] = useState<{ email: string; link: string } | null>(null)
+  // Per-member feature permissions editor.
+  const [permMember, setPermMember] = useState<any>(null)
+  const [permDraft, setPermDraft] = useState<Record<string, boolean>>({})
+  const [permSaving, setPermSaving] = useState(false)
+
+  const openPermissions = (m: any) => {
+    const existing = m.permissions && typeof m.permissions === 'object' ? m.permissions : null
+    const draft: Record<string, boolean> = {}
+    // Default every feature ON when the member has no map yet (so opening the
+    // editor shows their current effective access — full — and you switch things
+    // off from there).
+    for (const key of ALL_FEATURE_KEYS) draft[key] = existing ? existing[key] !== false : true
+    setPermDraft(draft)
+    setPermMember(m)
+  }
+  const toggleFeature = (key: string) => setPermDraft(d => ({ ...d, [key]: !d[key] }))
+  const setSuite = (suiteKey: string, on: boolean) => {
+    const suite = PERMISSION_SUITES.find(s => s.key === suiteKey)
+    if (!suite) return
+    setPermDraft(d => { const n = { ...d }; for (const f of suite.features) n[f.key] = on; return n })
+  }
+  const savePermissions = async () => {
+    if (!permMember) return
+    setPermSaving(true)
+    try {
+      const { error } = await (supabase as any).from('team_members').update({ permissions: permDraft }).eq('id', permMember.id)
+      if (error) throw error
+      setMembers(ms => ms.map(m => m.id === permMember.id ? { ...m, permissions: permDraft } : m))
+      showMsg(`Permissions updated for ${permMember.display_name || permMember.email}.`)
+      setPermMember(null)
+    } catch (e: any) {
+      const msg = String(e?.message || 'error')
+      showMsg('Could not save permissions: ' + msg + (msg.toLowerCase().includes('permissions') || msg.toLowerCase().includes('column') ? ' — run migration COLVY_V306 in Supabase first.' : ''), true)
+    } finally {
+      setPermSaving(false)
+    }
+  }
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -509,6 +547,11 @@ export default function TeamPage() {
                 </span>
               </div>
               <div className="col-span-2 text-right flex items-center justify-end gap-3">
+                {['editor', 'viewer'].includes((m.role || '').toLowerCase()) && (
+                  <button onClick={() => openPermissions(m)} className="text-xs font-medium cursor-pointer hover:underline" style={{ color: 'var(--slate)' }}>
+                    Permissions
+                  </button>
+                )}
                 {m.status !== 'active' && (
                   <button onClick={() => resendInvite(m)} disabled={resendingId === m.id} className="text-xs font-medium cursor-pointer hover:underline" style={{ color: 'var(--coral)' }}>
                     {resendingId === m.id ? 'Sending…' : 'Resend'}
@@ -568,6 +611,53 @@ export default function TeamPage() {
                 className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white cursor-pointer disabled:opacity-50"
                 style={{ background: 'var(--coral)' }}>
                 {working ? 'Sending...' : 'Send Invite'}
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Permissions Modal */}
+      {permMember && (
+        <>
+          <div className="fixed inset-0 z-40 backdrop-blur-sm animate-backdrop" style={{ background: 'rgba(0,0,0,0.4)' }} onClick={() => setPermMember(null)} />
+          <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-lg bg-white rounded-2xl shadow-2xl animate-modal mx-4 flex flex-col" style={{ maxHeight: '85vh' }}>
+            <div className="p-6 border-b" style={{ borderColor: 'var(--border)' }}>
+              <h2 className="text-xl font-bold" style={{ color: 'var(--ink)' }}>Permissions</h2>
+              <p className="text-sm mt-1" style={{ color: 'var(--slate)' }}>
+                Choose what <strong>{permMember.display_name || permMember.email}</strong> can see and open. Off = hidden from their sidebar and blocked if they open the link directly.
+              </p>
+            </div>
+            <div className="p-6 overflow-y-auto space-y-5" style={{ flex: 1 }}>
+              {PERMISSION_SUITES.map(suite => {
+                const allOn = suite.features.every(f => permDraft[f.key])
+                return (
+                  <div key={suite.key}>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-bold uppercase tracking-wider" style={{ color: 'var(--slate)' }}>{suite.label}</span>
+                      <button onClick={() => setSuite(suite.key, !allOn)} className="text-xs font-medium cursor-pointer hover:underline" style={{ color: 'var(--coral)' }}>
+                        {allOn ? 'Turn all off' : 'Turn all on'}
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      {suite.features.map(f => (
+                        <label key={f.key} className="flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer text-sm"
+                          style={{ borderColor: 'var(--border)', color: 'var(--ink)', background: permDraft[f.key] ? 'var(--peach)' : 'white' }}>
+                          <input type="checkbox" checked={!!permDraft[f.key]} onChange={() => toggleFeature(f.key)} />
+                          <span className="truncate">{f.label}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+            <div className="flex gap-3 p-6 border-t" style={{ borderColor: 'var(--border)' }}>
+              <button onClick={() => setPermMember(null)} className="flex-1 py-2.5 rounded-xl text-sm font-medium border cursor-pointer" style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>Cancel</button>
+              <button onClick={savePermissions} disabled={permSaving}
+                className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white cursor-pointer disabled:opacity-50"
+                style={{ background: 'var(--coral)' }}>
+                {permSaving ? 'Saving…' : 'Save permissions'}
               </button>
             </div>
           </div>
