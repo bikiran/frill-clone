@@ -217,14 +217,21 @@ export default function OrdersPage() {
       let acc: any[] = first.data || []
       setOrders(acc.slice()); setLoading(false)
       if (acc.length < PAGE) return
-      // Remaining pages — detached so they never block interaction.
+      // Remaining pages — detached so they never block interaction. We only
+      // re-render the (large, growing) list every few pages instead of on every
+      // 1000-row chunk — repainting the whole array per chunk was O(n²) work and
+      // the main cost of loading a big book. A final flush guarantees the full
+      // set is shown once paging finishes.
       ;(async () => {
-        for (let offset = PAGE; offset < 200000; offset += PAGE) {
+        let sinceRender = 0
+        for (let offset = PAGE; offset < 100000; offset += PAGE) {
           const { data, error } = await pageQ(offset)
           if (error || !data?.length) break
-          acc = acc.concat(data); setOrders(acc.slice())
+          acc = acc.concat(data)
+          if (++sinceRender >= 5) { setOrders(acc.slice()); sinceRender = 0 }
           if (data.length < PAGE) break
         }
+        setOrders(acc.slice())
       })()
     } catch (e: any) { setToast(`Couldn’t load orders: ${e?.message || e}`); setTimeout(() => setToast(''), 6000); setLoading(false) }
   }, [])
