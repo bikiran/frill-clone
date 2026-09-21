@@ -1664,21 +1664,17 @@ export default function InboxPage() {
       }
       if (!cid) return
       setCompanyId(cid)
-      setLoading(false)
+      // Load company logo/name/accent for agent message avatars
+      const { data: ci } = await (supabase as any).from('companies').select('name, logo_url, accent_color, slug, conversation_actions, inbox_settings').eq('id', cid).maybeSingle()
+      if (ci) {
+        setCompanyInfo(ci); setConvActions(ci.conversation_actions || {})
+        // Apply the company-wide time format so every agent matches.
+        const h12 = ci.inbox_settings?.hour12
+        if (typeof h12 === 'boolean') { setInboxHour12(h12); setHour12(h12) }
+      }
       loadTeam(cid)
-      // The conversation list is loaded by the effect below once companyId is set
-      // (setCompanyId re-creates loadConversations → its effect runs) — don't also
-      // load it here, which double-loaded the whole list on mount. Company info
-      // (logo / accent / time format) is fetched in PARALLEL and must not block
-      // the list from appearing.
-      ;(async () => {
-        const { data: ci } = await (supabase as any).from('companies').select('name, logo_url, accent_color, slug, conversation_actions, inbox_settings').eq('id', cid).maybeSingle()
-        if (ci) {
-          setCompanyInfo(ci); setConvActions(ci.conversation_actions || {})
-          const h12 = ci.inbox_settings?.hour12
-          if (typeof h12 === 'boolean') { setInboxHour12(h12); setHour12(h12) }
-        }
-      })()
+      loadConversations(cid)
+      setLoading(false)
     }
     init()
   }, [])
@@ -1716,44 +1712,38 @@ export default function InboxPage() {
       for (const c of convs) (c as any).contacts = c.contact_id ? byId[c.contact_id] || null : null
     }
 
-    // PAINT the list now — the phone-number backfill below must NOT block it
-    // (it used to run a per-conversation awaited UPDATE loop before the first
-    // render, which was a big chunk of the perceived load time).
-    setConversations(convs)
-    writeCache(cacheKey, convs)
-
-    // On first load (desktop), OPEN the top conversation — but AFTER the list has
-    // painted, so its message/order/extras query burst doesn't contend with the
-    // list load. Skipped when a ?conversation=<id> deep-link will open a specific
-    // thread.
-    const hasDeepLink = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('conversation')
-    if (data && data.length > 0 && !selectedRef.current && !hasDeepLink && typeof window !== 'undefined' && window.innerWidth >= 768) {
-      setTimeout(() => { if (!selectedRef.current) selectConversation(data[0]) }, 0)
-    }
-
     // Fallback: a conversation with no contact_id but a phone (sms_number) may
-    // match a contact added AFTER the thread started. Resolve by the last 9
-    // digits and attach the name — in the BACKGROUND, repainting only if it links
-    // any, and persisting the links fire-and-forget (no awaited write loop).
-    ;(async () => {
-      const dig = (p: string) => (p || '').replace(/\D/g, '')
-      const unlinked = convs.filter((c: any) => !c.contact_id && dig(c.sms_number || c.phone).length >= 8)
-      if (!unlinked.length) return
+    // match a contact that was added AFTER the thread started — the manual link
+    // never happened. Resolve by the last 9 digits, attach the name, and persist
+    // contact_id so the list, thread and Details panel all show it from now on.
+    const dig = (p: string) => (p || '').replace(/\D/g, '')
+    const unlinked = convs.filter((c: any) => !c.contact_id && dig(c.sms_number || c.phone).length >= 8)
+    if (unlinked.length) {
       const tails = Array.from(new Set(unlinked.map((c: any) => dig(c.sms_number || c.phone).slice(-9))))
       const ors = tails.map((t: string) => `phone.ilike.%${t}%`).join(',')
       const { data: cand } = await (supabase as any).from('contacts').select('id, name, email, phone, relationship_type').eq('company_id', id).or(ors).limit(200)
-      if (!cand || !cand.length) return
-      const linked: { conv: string; contact: string }[] = []
-      for (const c of unlinked) {
-        const tail = dig(c.sms_number || c.phone).slice(-9)
-        const m = cand.find((ct: any) => ct.phone && dig(ct.phone).endsWith(tail))
-        if (m) { (c as any).contacts = m; (c as any).contact_id = m.id; linked.push({ conv: c.id, contact: m.id }) }
+      if (cand && cand.length) {
+        const linked: { conv: string; contact: string }[] = []
+        for (const c of unlinked) {
+          const tail = dig(c.sms_number || c.phone).slice(-9)
+          const m = cand.find((ct: any) => ct.phone && dig(ct.phone).endsWith(tail))
+          if (m) { (c as any).contacts = m; (c as any).contact_id = m.id; linked.push({ conv: c.id, contact: m.id }) }
+        }
+        for (const l of linked) { try { await (supabase as any).from('conversations').update({ contact_id: l.contact }).eq('id', l.conv) } catch {} }
       }
-      if (linked.length) {
-        setConversations([...convs]); writeCache(cacheKey, convs)
-        linked.forEach(l => { try { (supabase as any).from('conversations').update({ contact_id: l.contact }).eq('id', l.conv).then(() => {}, () => {}) } catch {} })
-      }
-    })()
+    }
+
+    setConversations(convs)
+    writeCache(cacheKey, convs)
+    // On first load (desktop), OPEN the top conversation — including its messages
+    // and contact — instead of just highlighting it (which left the pane blank).
+    // BUT not when we arrived via ?conversation=<id>: the deep-link handler will
+    // open that specific thread (even if it's in another folder), so don't flash
+    // the wrong (top) conversation first.
+    const hasDeepLink = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('conversation')
+    if (data && data.length > 0 && !selectedRef.current && !hasDeepLink && typeof window !== 'undefined' && window.innerWidth >= 768) {
+      selectConversation(data[0])
+    }
     } finally { convLoadingRef.current = false }
   }, [companyId, statusFilter, convLimit])
 
