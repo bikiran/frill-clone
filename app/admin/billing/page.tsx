@@ -54,7 +54,7 @@ export default function BillingPage() {
   const [company, setCompany] = useState<any>(null)
   const [subscription, setSubscription] = useState<any>(null)
   const [billingHistory, setBillingHistory] = useState<any[]>([])
-  const [billing, setBilling] = useState<'monthly' | 'annual'>('monthly')
+  const [billing, setBilling] = useState<'monthly' | 'annual'>('annual')
   const [currency, setCurrency] = useState('USD')
   const [loading, setLoading] = useState<string | null>(null)
   const [pageLoading, setPageLoading] = useState(true)
@@ -367,14 +367,18 @@ export default function BillingPage() {
           </div>
           <div className="text-right shrink-0 ml-6">
             <div className="text-xl font-black mb-1" style={{ color: 'var(--ink)' }}>
-              {formatPrice(5)}<span className="text-sm font-normal" style={{ color: 'var(--slate)' }}>/mo</span>
+              {/* Flat 5 in the shown currency — the branding add-on's Stripe price
+                  is a fixed 5 (A$5), NOT a USD→local conversion, so don't run it
+                  through formatPrice (which was showing A$8 while Stripe charged
+                  A$5 and the button said +$5). */}
+              {cur.symbol}5<span className="text-sm font-normal" style={{ color: 'var(--slate)' }}>/mo</span>
             </div>
             <button
               onClick={() => handleUpgrade('branding_removal')}
               disabled={company?.remove_branding || loading === 'branding_removal'}
               className="px-4 py-2 rounded-xl text-sm font-bold cursor-pointer disabled:opacity-60 transition-all hover:opacity-90"
               style={{ background: company?.remove_branding ? '#f3f4f6' : 'var(--coral)', color: company?.remove_branding ? 'var(--slate)' : '#fff' }}>
-              {loading === 'branding_removal' ? 'Redirecting...' : company?.remove_branding ? '✓ Active' : 'Add for +$5/mo'}
+              {loading === 'branding_removal' ? 'Redirecting...' : company?.remove_branding ? '✓ Active' : `Add for +${cur.symbol}5/mo`}
             </button>
           </div>
         </div>
