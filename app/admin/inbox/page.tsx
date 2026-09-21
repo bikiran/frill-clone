@@ -2551,10 +2551,15 @@ export default function InboxPage() {
   // fall back to the contact's mobile — otherwise a chat-originated conversation
   // could never receive media/links by text even when we know their number.
   const smsDestination = (): string | null => {
-    const fromConv = (selected as any)?.sms_number
-    if (fromConv) return fromConv
-    const phone = contact?.phone
-    return phone || null
+    // Resolve the customer's mobile from every place it might live, so a reply
+    // never silently falls back to "Live Chat" (which goes nowhere on a
+    // widget-less account) just because one field was empty.
+    const s = selected as any
+    return s?.sms_number
+      || s?.phone
+      || contact?.phone
+      || s?.contacts?.phone
+      || null
   }
 
   // ── Channel-aware delivery for actions ──────────────────────────────────────
@@ -4747,8 +4752,15 @@ export default function InboxPage() {
     const lastInCh = String((lastIn as any)?.delivery_channel || '').toLowerCase()
     const lastInAt = (lastIn as any)?.created_at ? parseTs((lastIn as any).created_at) : null
     const lastInRecent = !!lastInAt && (Date.now() - lastInAt.getTime()) < 180000
-    const lastInIsChat = ['chat', 'widget', 'live_chat', ''].includes(lastInCh)
-    const visitorOnLiveChat = isOnPageNow || (lastInRecent && lastInIsChat)
+    // An EXPLICIT chat/widget channel only — an empty channel is NOT proof the
+    // customer is on a widget (calls, imports and untagged rows have no channel),
+    // and treating '' as live-chat was routing SMS replies into a widget that
+    // doesn't exist on most accounts. Also require that this conversation has a
+    // widget heartbeat history at all (page_seen_at ever set) before trusting the
+    // "recently active in chat" fallback.
+    const lastInIsChat = ['chat', 'widget', 'live_chat'].includes(lastInCh)
+    const hasWidgetHistory = !!(selected as any)?.page_seen_at
+    const visitorOnLiveChat = isOnPageNow || (hasWidgetHistory && lastInRecent && lastInIsChat)
 
     const shouldSms = sendChannel === 'sms'
       ? !!smsNumber
@@ -4845,6 +4857,12 @@ export default function InboxPage() {
       return
     }
 
+    // Last resort: record it in the thread ("Live Chat"). If the customer isn't
+    // actually on a live widget and we have no phone/email for them, this message
+    // reaches no one — warn the agent instead of silently showing "Delivered".
+    if (!visitorOnLiveChat && !smsNumber && !emailTo) {
+      showToast('Heads up: no mobile or email on file and the customer isn’t on live chat — this reply was saved to the thread but not delivered. Add a phone or email to reach them.')
+    }
     await deliverChat(content, senderName)
   }
 
