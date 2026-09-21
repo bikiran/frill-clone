@@ -206,6 +206,21 @@ export default function TeamPage() {
     const tempPassword = Math.random().toString(36).slice(-8) + Math.random().toString(36).toUpperCase().slice(-4) + '!1'
     setWorking(true)
     try {
+      // Scope the new user to this workspace. Prefer the company fetchMembers
+      // already resolved; fall back to an owner lookup with a fresh session id.
+      let cid = companyId
+      if (!cid) {
+        const uid = user?.id || (await supabase.auth.getSession()).data.session?.user?.id || null
+        if (uid) {
+          const { data: owned } = await (supabase as any).from('companies').select('id').eq('owner_id', uid).order('created_at', { ascending: true }).limit(1)
+          cid = owned?.[0]?.id || null
+        }
+      }
+      if (!cid) {
+        showMsg('Could not determine your company — reload the page and try again.', true)
+        setWorking(false)
+        return
+      }
       const res = await fetch('/api/admin/create-user', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -214,12 +229,13 @@ export default function TeamPage() {
           password: tempPassword,
           name: createName.trim(),
           role: createRole,
+          companyId: cid,
         }),
       })
       const result = await res.json()
       if (result.error) throw new Error(result.error)
 
-      showMsg(`✅ User ${result.email} created successfully!`)
+      showMsg(`User ${result.email} created and added to your team.`)
       setCreateEmail('')
       setCreatePassword('')
       setCreateName('')
