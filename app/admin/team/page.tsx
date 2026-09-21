@@ -338,6 +338,16 @@ export default function TeamPage() {
 
   if (!user) return <SkeletonList rows={6} />
 
+  // The current viewer is already shown as the "You (Owner)" row at the top, so
+  // don't list them AGAIN from team_members below — that duplicate is why the
+  // owner appeared a second time with a different role (e.g. Editor). Match on
+  // user_id first, then fall back to email for rows that were invited before the
+  // person signed in (no user_id yet).
+  const meEmail = (user.email || '').toLowerCase()
+  const visibleMembers = members.filter(
+    (m: any) => m.user_id !== user.id && (m.email || '').toLowerCase() !== meEmail
+  )
+
   return (
     <div className="max-w-4xl mx-auto px-6 py-8">
       <PageHeader
@@ -436,7 +446,7 @@ export default function TeamPage() {
 
         {loading ? (
           <SkeletonList rows={5} />
-        ) : members.length === 0 ? (
+        ) : visibleMembers.length === 0 ? (
           <div className="p-10 text-center">
             <div className="text-4xl mb-3">👥</div>
             <p className="text-sm mb-2 font-medium" style={{ color: 'var(--ink)' }}>No team members yet</p>
@@ -448,7 +458,7 @@ export default function TeamPage() {
             </div>
           </div>
         ) : (
-          members.map(m => (
+          visibleMembers.map(m => (
             <div key={m.id} className="grid grid-cols-12 px-5 py-4 border-b last:border-b-0 items-center" style={{ borderColor: 'var(--border)' }}>
               <div className="col-span-4 flex items-center gap-3">
                 <div className="w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-bold overflow-hidden" style={{ background: '#6b7280' }}>
