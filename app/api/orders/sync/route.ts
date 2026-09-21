@@ -52,7 +52,11 @@ export async function POST(req: NextRequest) {
       const { data: woo } = await db.from('woocommerce_orders')
         .select('*').eq('company_id', companyId).order('order_date', { ascending: false }).range(from, from + PAGE - 1)
       if (!woo?.length) break
-      synced += await syncWooOrders(db, companyId, woo)
+      // The automatic light pass (board open) only inserts orders the webhook
+      // missed — it must NOT run the per-row reconcile loops (date/status/outlet
+      // back-fixes, up to ~1600 serial UPDATEs) on every open. Reconcile is for
+      // the manual "Sync" button (full), which pages the whole book.
+      synced += await syncWooOrders(db, companyId, woo, { reconcile: full })
       if (woo.length < PAGE || !full) break
     }
     return NextResponse.json({ ok: true, synced })

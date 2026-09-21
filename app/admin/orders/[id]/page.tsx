@@ -48,18 +48,20 @@ export default function OrderDetailPage() {
   }
 
   const loadRelated = useCallback(async (oid: string, cid: string) => {
-    const [it, nt, ev, tk, allO, tg, loc] = await Promise.all([
+    const [it, nt, ev, tk, tg, loc] = await Promise.all([
       (supabase as any).from('order_items').select('*').eq('order_id', oid),
       (supabase as any).from('order_notes').select('*').eq('order_id', oid).order('created_at', { ascending: false }),
       (supabase as any).from('order_events').select('*').eq('order_id', oid).order('created_at', { ascending: false }),
       (supabase as any).from('conversation_tasks').select('*').eq('company_id', cid).eq('order_id', oid).order('created_at', { ascending: false }),
-      (supabase as any).from('orders').select('tags').eq('company_id', cid).limit(2000),
       (supabase as any).from('order_tags').select('*').eq('company_id', cid).order('name'),
       (supabase as any).from('company_locations').select('id, label, suburb, is_primary').eq('company_id', cid).order('is_primary', { ascending: false }),
     ])
     setItems(it.data || []); setNotes(nt.data || []); setEvents(ev.data || []); setTasks(tk.data || [])
-    setAllTags(Array.from(new Set((allO.data || []).flatMap((o: any) => Array.isArray(o.tags) ? o.tags : []))).filter(Boolean) as string[])
-    setTagDefs((tg.data || []).map((t: any) => ({ id: t.id, name: t.name, color: t.color || hashColor(t.name) })))
+    // Tag autocomplete comes from the canonical order_tags registry (was a
+    // 2,000-row orders scan just to flatten tags on every order open).
+    const defs = (tg.data || []).map((t: any) => ({ id: t.id, name: t.name, color: t.color || hashColor(t.name) }))
+    setAllTags(defs.map((t: any) => t.name).filter(Boolean))
+    setTagDefs(defs)
     setLocations((loc.data || []).map((l: any) => ({ id: l.id, name: l.label || l.suburb || 'Outlet' })))
   }, [])
 
