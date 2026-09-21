@@ -772,6 +772,13 @@ export async function executeAction(db: SupabaseClient, ctx: AssistantContext, n
         metadata: { colvy_ai: true, sent_by: ctx.userName },
       })
       await D.from('conversations').update({ last_message: text.slice(0, 200), last_message_at: new Date().toISOString() }).eq('id', conversationId)
+      // Attribute it in the thread timeline as a Colvy AI action (sparkle divider
+      // in the inbox), consistent with other AI updates.
+      await D.from('conversation_events').insert({
+        conversation_id: conversationId, company_id: ctx.companyId,
+        event_type: 'ai_update', actor_name: 'Colvy AI',
+        detail: `Message drafted and sent by Colvy AI · ${channelLabel}`,
+      })
     } catch { /* delivered even if the thread write fails */ }
     const card = { kind: 'message', title: `Message sent · ${channelLabel}`, lines: [`To ${toName}`, `“${text.length > 90 ? text.slice(0, 90) + '…' : text}”`], href: `/admin/inbox?conversation=${conversationId}` }
     return { ok: true, entityType: 'message', entityId: conversationId, card, undo: null }
