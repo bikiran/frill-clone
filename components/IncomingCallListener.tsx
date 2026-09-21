@@ -442,6 +442,7 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
             setIncoming({ id: callRowId, callRowId, outbound: true, from: number })
             setCaller({ number, name: d.name, contactId: d.contactId })
             setInCall(true)   // go straight to in-call controls; no Answer/Decline for outbound
+            startRingback(callRowId)   // audible "brr-brr" until the customer answers
             call.on('accept', () => { startTimer() })
             call.on('disconnect', () => { twilioServerHangup(callRowId); reset() })
             call.on('cancel', () => reset())
@@ -465,6 +466,7 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
         const data = await res.json().catch(() => ({}))
         if (!res.ok || !data.callId) { fallback(); return }
         expectingOutbound.current = { callId: data.callId, number, name: d.name, contactId: d.contactId, conversationId: d.conversationId, at: Date.now() }
+        startRingback(data.callId)   // audible "brr-brr" until the customer answers
       } catch { fallback() }
     }
     window.addEventListener('colvy:outbound-bridge', onBridge as EventListener)
@@ -557,6 +559,68 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
         ringOscRef.current = null
       }
     } catch {}
+  }
+
+  // ── Outbound ringback ("brr-brr") ────────────────────────────────────────────
+  // On an outbound call the agent joins a silent conference immediately and only
+  // hears the customer once they answer — so there's no carrier ringback and the
+  // agent can't tell the call is ringing. We synthesise the AU/UK double-ring
+  // tone locally from the moment we place the call, and stop it the instant the
+  // customer answers (the calls row gets answered_at / a live status) or the call
+  // ends. A 60s safety cap means it can never play forever.
+  const ringbackRef = useRef<any>(null)
+  const stopRingback = () => {
+    const r = ringbackRef.current
+    if (!r) return
+    ringbackRef.current = null
+    try { clearInterval(r.cadence) } catch {}
+    try { clearTimeout(r.timeout) } catch {}
+    try { if (r.channel) supabase.removeChannel(r.channel) } catch {}
+    try { r.ctx?.close?.() } catch {}
+  }
+  const startRingback = (callId: string) => {
+    if (ringbackRef.current) return
+    let ctx: any = null, cadence: any = null
+    try {
+      const AC = (window as any).AudioContext || (window as any).webkitAudioContext
+      if (AC) {
+        ctx = new AC()
+        const osc = ctx.createOscillator()
+        const gain = ctx.createGain()
+        osc.type = 'sine'; osc.frequency.value = 425
+        gain.gain.value = 0.0001
+        osc.connect(gain); gain.connect(ctx.destination)
+        osc.start()
+        // One cadence cycle = brr (0.4s) · gap (0.2s) · brr (0.4s) · silence → 3s.
+        const cycle = () => {
+          const t = ctx.currentTime
+          const burst = (at: number) => {
+            gain.gain.setValueAtTime(0.0001, t + at)
+            gain.gain.exponentialRampToValueAtTime(0.22, t + at + 0.03)
+            gain.gain.setValueAtTime(0.22, t + at + 0.37)
+            gain.gain.exponentialRampToValueAtTime(0.0001, t + at + 0.4)
+          }
+          burst(0); burst(0.6)
+        }
+        cycle()
+        cadence = setInterval(cycle, 3000)
+      }
+    } catch {}
+    // Stop as soon as the customer answers (row gets answered_at or leaves the
+    // pre-answer states) or the call ends.
+    let channel: any = null
+    try {
+      channel = supabase
+        .channel(`ringback-${callId}`)
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'calls', filter: `id=eq.${callId}` }, (payload: any) => {
+          const st = String(payload?.new?.status || '')
+          const pre = ['initiated', 'ringing', 'ringing_agents', 'draft', '']
+          if (payload?.new?.answered_at || !pre.includes(st)) stopRingback()
+        })
+        .subscribe()
+    } catch {}
+    const timeout = setTimeout(stopRingback, 60000)
+    ringbackRef.current = { ctx, cadence, timeout, channel }
   }
 
   const answer = () => {
@@ -719,6 +783,7 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
 
   const reset = () => {
     stopRing()
+    stopRingback()
     if (timerRef.current) clearInterval(timerRef.current)
     setIncoming(null); setCaller(null); setInCall(false); setSeconds(0)
     setOnHold(false); setTransferState('none'); setTransferMsg('')
