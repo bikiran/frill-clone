@@ -4808,10 +4808,16 @@ export default function InboxPage() {
         setMessages(msgs || [])
         scrollBottom()
       } catch (e: any) {
-        // Email failed — the chat widget is the last resort so the reply is at
-        // least recorded and visible if they come back.
-        console.warn('Email failed, delivering via chat:', e.message)
-        await deliverChat(content, senderName)
+        // Don't silently record a "Live Chat" the customer can't see — surface
+        // why the email didn't go out and keep the reply for a retry.
+        console.warn('Email send failed:', e?.message)
+        setSending(false)
+        const emsg = String(e?.message || 'Email failed to send')
+        if (/not configured|no .*mailbox|not connected|gmail/i.test(emsg)) {
+          showToast('Email isn’t connected for this workspace yet — connect a mailbox under Integrations. Your message wasn’t sent.')
+        } else {
+          showToast(`Couldn’t send email: ${emsg}. Your message wasn’t sent.`)
+        }
       }
       return
     }
@@ -4850,9 +4856,18 @@ export default function InboxPage() {
         setMessages(msgs || [])
         scrollBottom()
       } catch (e: any) {
-        // Fall back to chat if SMS fails
-        console.warn('SMS failed, delivering via chat:', e.message)
-        await deliverChat(content, senderName)
+        // Do NOT silently drop the reply into a live chat nobody is watching —
+        // reaching the SMS branch means the customer isn't on a live widget, so a
+        // chat fallback goes nowhere. Tell the agent why it didn't send and keep
+        // their text so they can retry once SMS is connected.
+        console.warn('SMS send failed:', e?.message)
+        setSending(false)
+        const emsg = String(e?.message || 'SMS failed')
+        if (/not configured|connect (telnyx|twilio)/i.test(emsg)) {
+          showToast('SMS isn’t connected for this workspace yet — connect a number under Integrations to text customers. Your message wasn’t sent.')
+        } else {
+          showToast(`Couldn’t send SMS: ${emsg}. Your message wasn’t sent.`)
+        }
       }
       return
     }
