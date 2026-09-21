@@ -98,6 +98,23 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <body style={{ background: 'var(--canvas)' }}>
+        {/*
+          Password-reset rescue. The reset email's link redirects to the site root
+          (Supabase's Site URL) with the recovery tokens in the URL hash. The
+          Supabase client is configured with detectSessionInUrl + implicit flow,
+          so it parses AND STRIPS that hash the instant its module loads — before
+          any React effect can see it — leaving the user on the landing/sign-in
+          page with no way to the reset screen. This inline script runs during
+          HTML parse, BEFORE the app bundle (and Supabase) executes, so it catches
+          the recovery hash first and forwards to /reset-password with the hash
+          intact (where the session is then established from it).
+        */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              "(function(){try{var h=window.location.hash||'';if(h.indexOf('type=recovery')!==-1&&h.indexOf('access_token=')!==-1&&window.location.pathname.indexOf('/reset-password')!==0){window.location.replace('/reset-password'+h);}}catch(e){}})();",
+          }}
+        />
         <JsonLd data={structuredData} />
         <AppChrome>{children}</AppChrome>
       </body>
