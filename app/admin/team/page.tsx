@@ -31,6 +31,59 @@ export default function TeamPage() {
   // The last invite link we generated, shown so it can be shared directly when
   // email delivery is unavailable (or as a reliable backup either way).
   const [lastInvite, setLastInvite] = useState<{ email: string; link: string } | null>(null)
+  // Owner edit of a member's profile (display name + photo).
+  const [editMember, setEditMember] = useState<any>(null)
+  const [editName, setEditName] = useState('')
+  const [editAvatar, setEditAvatar] = useState<string>('')
+  const [editSaving, setEditSaving] = useState(false)
+  const [editUploading, setEditUploading] = useState(false)
+
+  const openEdit = (m: any) => {
+    setEditName(m.display_name || m.name || '')
+    setEditAvatar(m.avatar_url || '')
+    setEditMember(m)
+  }
+  const uploadMemberPhoto = async (file: File) => {
+    setEditUploading(true)
+    try {
+      const ext = (file.name.split('.').pop() || 'jpg').toLowerCase()
+      const fileName = `team-avatars/${Date.now()}.${ext}`
+      let bucket = 'settings'
+      let { data, error } = await supabase.storage.from(bucket).upload(fileName, file, { upsert: true })
+      if (error) {
+        bucket = 'idea-images'
+        const r = await supabase.storage.from(bucket).upload(fileName, file, { upsert: true })
+        data = r.data; error = r.error
+      }
+      if (error) throw error
+      const { data: pub } = supabase.storage.from(bucket).getPublicUrl(data!.path)
+      setEditAvatar(pub.publicUrl)
+    } catch (e: any) {
+      showMsg('Photo upload failed: ' + (e?.message || 'error') + ' — a public "settings" or "idea-images" storage bucket is required.', true)
+    } finally {
+      setEditUploading(false)
+    }
+  }
+  const saveMemberProfile = async () => {
+    if (!editMember) return
+    setEditSaving(true)
+    try {
+      const patch = { name: editName.trim() || null, avatar_url: editAvatar || null }
+      const { error } = await (supabase as any).from('team_members').update(patch).eq('id', editMember.id)
+      if (error) throw error
+      setMembers(ms => ms.map(m => m.id === editMember.id
+        ? { ...m, name: patch.name, avatar_url: patch.avatar_url, display_name: patch.name || m.display_name }
+        : m))
+      showMsg('Member profile updated.')
+      setEditMember(null)
+    } catch (e: any) {
+      const msg = String(e?.message || 'error')
+      showMsg('Could not save: ' + msg + (msg.toLowerCase().includes('column') ? ' — run migration COLVY_V307 in Supabase first.' : ''), true)
+    } finally {
+      setEditSaving(false)
+    }
+  }
+
   // Per-member feature permissions editor.
   const [permMember, setPermMember] = useState<any>(null)
   const [permDraft, setPermDraft] = useState<Record<string, boolean>>({})
@@ -124,7 +177,7 @@ export default function TeamPage() {
           rows = rows.map((m: any) => ({
             ...m,
             display_name: m.name || names?.[m.user_id]?.name || null,
-            avatar_url: names?.[m.user_id]?.avatar_url || null,
+            avatar_url: m.avatar_url || names?.[m.user_id]?.avatar_url || null,
           }))
         } catch { /* fall back to email */ }
       }
@@ -547,6 +600,9 @@ export default function TeamPage() {
                 </span>
               </div>
               <div className="col-span-2 text-right flex items-center justify-end gap-3">
+                <button onClick={() => openEdit(m)} className="text-xs font-medium cursor-pointer hover:underline" style={{ color: 'var(--slate)' }}>
+                  Edit
+                </button>
                 {['editor', 'viewer'].includes((m.role || '').toLowerCase()) && (
                   <button onClick={() => openPermissions(m)} className="text-xs font-medium cursor-pointer hover:underline" style={{ color: 'var(--slate)' }}>
                     Permissions
@@ -611,6 +667,52 @@ export default function TeamPage() {
                 className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white cursor-pointer disabled:opacity-50"
                 style={{ background: 'var(--coral)' }}>
                 {working ? 'Sending...' : 'Send Invite'}
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Edit Member Profile Modal */}
+      {editMember && (
+        <>
+          <div className="fixed inset-0 z-40 backdrop-blur-sm animate-backdrop" style={{ background: 'rgba(0,0,0,0.4)' }} onClick={() => setEditMember(null)} />
+          <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-md bg-white rounded-2xl shadow-2xl animate-modal mx-4">
+            <div className="p-6 border-b" style={{ borderColor: 'var(--border)' }}>
+              <h2 className="text-xl font-bold" style={{ color: 'var(--ink)' }}>Edit member</h2>
+              <p className="text-sm mt-1" style={{ color: 'var(--slate)' }}>{editMember.email}</p>
+            </div>
+            <div className="p-6 space-y-5">
+              <div className="flex items-center gap-4">
+                <div className="w-16 h-16 rounded-full overflow-hidden flex items-center justify-center text-white text-xl font-bold shrink-0" style={{ background: '#6b7280' }}>
+                  {editAvatar ? <img src={editAvatar} alt="" className="w-full h-full object-cover" /> : (editName || editMember.email || '?')[0].toUpperCase()}
+                </div>
+                <div className="flex flex-col gap-2">
+                  <label className="text-sm font-medium cursor-pointer px-3 py-2 rounded-lg border inline-block" style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
+                    {editUploading ? 'Uploading…' : 'Upload photo'}
+                    <input type="file" accept="image/*" style={{ display: 'none' }}
+                      onChange={e => { const f = e.target.files?.[0]; if (f) uploadMemberPhoto(f) }} disabled={editUploading} />
+                  </label>
+                  {editAvatar && (
+                    <button onClick={() => setEditAvatar('')} className="text-xs cursor-pointer hover:underline text-left" style={{ color: '#dc2626' }}>Remove photo</button>
+                  )}
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--ink)' }}>Display name</label>
+                <input type="text" value={editName} onChange={e => setEditName(e.target.value)}
+                  placeholder="Full name"
+                  className="w-full px-4 py-2.5 rounded-lg border focus:outline-none"
+                  style={{ borderColor: 'var(--border)', fontSize: '16px' }} />
+                <p className="text-xs mt-1.5" style={{ color: 'var(--slate)' }}>Shows across the inbox, read receipts and everywhere this member appears.</p>
+              </div>
+            </div>
+            <div className="flex gap-3 p-6 border-t" style={{ borderColor: 'var(--border)' }}>
+              <button onClick={() => setEditMember(null)} className="flex-1 py-2.5 rounded-xl text-sm font-medium border cursor-pointer" style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>Cancel</button>
+              <button onClick={saveMemberProfile} disabled={editSaving || editUploading}
+                className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white cursor-pointer disabled:opacity-50"
+                style={{ background: 'var(--coral)' }}>
+                {editSaving ? 'Saving…' : 'Save'}
               </button>
             </div>
           </div>
