@@ -171,6 +171,9 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
   // the CURRENT caller/incoming instead of a stale closure value.
   const callerRef = useRef<any>(null); callerRef.current = caller
   const incomingRef = useRef<any>(null); incomingRef.current = incoming
+  // Publish whether the rich (bridged/incoming) panel owns a call, so the direct
+  // dialler (GlobalCallBar) never opens a second panel on top of it.
+  useEffect(() => { try { (window as any).__colvyRichCallActive = !!incoming || inCall } catch {} }, [incoming, inCall])
   // Throttle so a flurry of focus/visibility/online events triggers at most one
   // reconnect attempt every few seconds.
   const lastRecoverRef = useRef(0)
@@ -417,9 +420,15 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
       const number = d.number
       if (!number || !companyId) return
       if (liveRef.current.inCall) return   // already on a call — don't clobber it
-      const fallback = () => window.dispatchEvent(new CustomEvent('colvy:call', {
-        detail: { number, name: d.name, contactId: d.contactId, conversationId: d.conversationId, _noBridge: true },
-      }))
+      if ((window as any).__colvyDirectCallActive) return   // direct dialler already owns a call
+      // Falling back to the direct dialler: tear down any rich panel we've shown
+      // FIRST, so we never leave two call panels on screen ("two calls came").
+      const fallback = () => {
+        reset()
+        window.dispatchEvent(new CustomEvent('colvy:call', {
+          detail: { number, name: d.name, contactId: d.contactId, conversationId: d.conversationId, _noBridge: true },
+        }))
+      }
       const prov = d.provider || provider
       try {
         const { data: sess } = await supabase.auth.getSession()
