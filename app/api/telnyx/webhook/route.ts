@@ -1138,7 +1138,17 @@ export async function POST(req: NextRequest) {
 
               if (integ3.voicemail_enabled !== false) {
                 await svc.speak(parentRow.telnyx_call_control_id, integ3.voicemail_greeting || 'Please leave a message after the tone.')
-                await db.from('calls').update({ status: 'voicemail_greeting', is_voicemail: true }).eq('id', parentRow.id)
+                // Record WHY the agent leg ended so Call Diagnostics can tell a
+                // real no-answer (normal_clearing / timeout after ringing the full
+                // window) apart from an agent leg that failed instantly — a
+                // call_rejected / SIP error means the browser's SIP endpoint
+                // wasn't reachable, which is the usual "rings once → voicemail".
+                const legCause = payload?.hangup_cause || payload?.hangup_source || 'no_answer'
+                const rungCount = Array.isArray(parentRow.ringing_leg_ids) ? parentRow.ringing_leg_ids.length : 0
+                await db.from('calls').update({
+                  status: 'voicemail_greeting', is_voicemail: true,
+                  transcription: `[to voicemail: agent leg ended · cause=${legCause} · rung ${rungCount} device(s)]`,
+                }).eq('id', parentRow.id)
               } else {
                 await svc.hangupCall(parentRow.telnyx_call_control_id)
               }
