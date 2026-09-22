@@ -60,6 +60,48 @@ export default function SocialEngagementPage() {
   const [composer, setComposer] = useState<{ id: string; mode: 'reply' | 'dm'; text: string; busy?: boolean } | null>(null)
   const [drafting, setDrafting] = useState<string | null>(null)
 
+  // ── Link a comment to a CRM contact (manual match) ──────────────────────────
+  const [linkFor, setLinkFor] = useState<any>(null)
+  const [contactSearch, setContactSearch] = useState('')
+  const [contactResults, setContactResults] = useState<any[]>([])
+  const [contactLoading, setContactLoading] = useState(false)
+  const openLink = (c: any) => { setLinkFor(c); setContactSearch(c.author_name && !/^(facebook|instagram) user$/i.test(c.author_name) ? c.author_name : '') }
+  useEffect(() => {
+    if (!linkFor || !companyId) return
+    let cancelled = false
+    setContactLoading(true)
+    const q = contactSearch.trim()
+    const t = setTimeout(async () => {
+      let query = (supabase as any).from('contacts').select('id, name, email').eq('company_id', companyId)
+      const safeQ = q.replace(/[,()]/g, ' ').trim()
+      if (safeQ) query = query.or(`name.ilike.%${safeQ}%,email.ilike.%${safeQ}%,phone.ilike.%${safeQ}%`)
+      const { data } = await query.order('name', { ascending: true }).limit(40)
+      if (cancelled) return
+      const ql = q.toLowerCase()
+      const rank = (c: any) => {
+        const n = (c.name || '').toLowerCase()
+        if (ql && n.startsWith(ql)) return 0
+        if (ql && n.includes(ql)) return 1
+        if (ql && (c.email || '').toLowerCase().includes(ql)) return 2
+        return 3
+      }
+      setContactResults([...(data || [])].sort((a: any, b: any) => rank(a) - rank(b)).slice(0, 25))
+      setContactLoading(false)
+    }, 220)
+    return () => { cancelled = true; clearTimeout(t) }
+  }, [contactSearch, linkFor, companyId])
+  const setLink = async (c: any, contact: any | null) => {
+    if (!companyId) return
+    setComments(cs => cs.map(x => x.id === c.id ? { ...x, contact_id: contact?.id || null, contact_name: contact?.name || null } : x))
+    setLinkFor(null)
+    try {
+      await fetch('/api/social/comments', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId, action: 'link_contact', commentId: c.id, contactId: contact?.id || null }),
+      })
+    } catch {}
+  }
+
   const load = useCallback(async () => {
     if (!companyId) return
     const [{ data: chans }, cmts, posts] = await Promise.all([
@@ -217,6 +259,11 @@ export default function SocialEngagementPage() {
                     <div style={{ minWidth: 0 }}>
                       <p style={{ margin: 0, fontWeight: 800, fontSize: 14 }}>{c.author_name || 'Facebook user'}</p>
                       <p style={{ margin: 0, fontSize: 11, color: 'var(--slate)' }}>{c.commented_at ? new Date(c.commented_at).toLocaleString(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''}{c.is_hidden ? ' · hidden' : ''}{c.is_replied ? ' · replied' : ''}</p>
+                      <button onClick={() => openLink(c)} title="Match this commenter to a customer"
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 3, padding: '2px 8px', borderRadius: 999, border: '1px solid var(--border)', background: c.contact_id ? 'var(--peach)' : '#fff', color: c.contact_id ? 'var(--coral)' : 'var(--slate)', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                        {c.contact_id ? `Linked${c.contact_name ? `: ${c.contact_name}` : ''}` : 'Link to customer'}
+                      </button>
                     </div>
                   </div>
                   <span style={{ fontSize: 11.5, fontWeight: 800, padding: '4px 11px', borderRadius: 999, background: critical ? '#fee2e2' : '#dcfce7', color: critical ? '#dc2626' : '#16a34a', whiteSpace: 'nowrap' }}>
@@ -288,6 +335,44 @@ export default function SocialEngagementPage() {
               <input type="checkbox" checked={showArchived} onChange={e => setShowArchived(e.target.checked)} style={{ accentColor: 'var(--coral)' }} />
               Show archived
             </label>
+          </div>
+        </div>
+      )}
+
+      {/* Link-to-customer modal */}
+      {linkFor && (
+        <div onClick={() => setLinkFor(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 420, background: '#fff', borderRadius: 16, border: '1px solid var(--border)', padding: 20, maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 4 }}>
+              <p style={{ margin: 0, fontSize: 16, fontWeight: 800 }}>Link to customer</p>
+              <span style={{ fontSize: 11.5, fontWeight: 800, padding: '4px 10px', borderRadius: 999, background: linkFor.contact_id ? 'var(--peach)' : '#f3f4f6', color: linkFor.contact_id ? 'var(--coral)' : 'var(--slate)' }}>
+                {linkFor.contact_id ? 'Matched' : 'Not matched'}
+              </span>
+            </div>
+            <p style={{ margin: '0 0 12px', fontSize: 12.5, color: 'var(--slate)' }}>Comment by <strong>{linkFor.author_name || 'Unknown'}</strong></p>
+            <input autoFocus value={contactSearch} onChange={e => setContactSearch(e.target.value)} placeholder="Search customers…"
+              style={{ width: '100%', boxSizing: 'border-box', padding: '9px 11px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 14 }} />
+            {linkFor.contact_id && (
+              <button onClick={() => setLink(linkFor, null)} style={{ alignSelf: 'flex-start', margin: '10px 0 0', fontSize: 12, color: '#dc2626', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>Unlink current customer</button>
+            )}
+            <div style={{ marginTop: 12, overflowY: 'auto', flex: 1 }}>
+              {contactLoading && contactResults.length === 0 ? (
+                <p style={{ padding: 16, color: 'var(--slate)', fontSize: 13 }}>Searching…</p>
+              ) : contactResults.length === 0 ? (
+                <p style={{ padding: 16, color: 'var(--slate)', fontSize: 13 }}>No customers found{contactSearch.trim() ? ` for “${contactSearch.trim()}”` : ''}.</p>
+              ) : contactResults.map((c: any) => (
+                <button key={c.id} onClick={() => setLink(linkFor, c)}
+                  style={{ width: '100%', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 10, border: 'none', background: linkFor.contact_id === c.id ? 'var(--peach)' : 'transparent', cursor: 'pointer' }}
+                  onMouseEnter={e => { if (linkFor.contact_id !== c.id) (e.currentTarget.style.background = 'var(--canvas)') }}
+                  onMouseLeave={e => { if (linkFor.contact_id !== c.id) (e.currentTarget.style.background = 'transparent') }}>
+                  <span style={{ width: 30, height: 30, borderRadius: '50%', background: 'var(--peach)', color: 'var(--coral)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 13, flexShrink: 0 }}>{(c.name || '?').charAt(0).toUpperCase()}</span>
+                  <span style={{ minWidth: 0 }}>
+                    <span style={{ display: 'block', fontSize: 13.5, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name || 'Unnamed'}</span>
+                    {c.email && <span style={{ display: 'block', fontSize: 11.5, color: 'var(--slate)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.email}</span>}
+                  </span>
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       )}
