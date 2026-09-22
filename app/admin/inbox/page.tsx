@@ -7649,37 +7649,37 @@ export default function InboxPage() {
                       {(SENTIMENT_ICON[(selected as any).sentiment] || Icon.meh)(15)}
                     </span>
                   )}
-                  {/* Engagement pills — this customer left a Google review or
-                      commented on a post/ad. Click to view it. */}
+                </p>
+                {/* Subtitle line: last-activity / channel, plus compact
+                    engagement chips (Google review · social comment) so the name
+                    line above stays uncluttered. */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                  {isWebChat
+                    ? (isOnPageNow && selected.page_title && <span style={{ fontSize: 11, color: '#9ca3af', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>On: {dec(selected.page_title)}</span>)
+                    : (() => {
+                        // "Last activity 5m ago", Coax-style, from the customer's
+                        // most recent message on the conversation.
+                        const la = (selected as any).last_customer_activity_at || (selected as any).last_message_at
+                        const rel = la ? timeAgo(la) : null
+                        return rel
+                          ? <span style={{ fontSize: 11, color: '#9ca3af', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>Last activity {rel === 'now' ? 'just now' : `${rel} ago`}</span>
+                          : <span style={{ fontSize: 11, color: '#9ca3af', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>via {CHANNEL_NAME[activeChannel] || activeChannel}</span>
+                      })()}
                   {contactReviews.count > 0 && contactReviews.latest && (
                     <a href={`/admin/reviews?review=${encodeURIComponent(contactReviews.latest.id)}`}
                       title={`Reviewed ${contactReviews.latest.rating}/5 on Google — view review`}
-                      style={{ display: 'inline-flex', alignItems: 'center', gap: 3, flexShrink: 0, fontSize: 10.5, fontWeight: 700, padding: '2px 7px', borderRadius: 999, background: '#fff7e6', color: '#b7791f', textDecoration: 'none' }}>
-                      ★ {contactReviews.latest.rating}/5 · Google
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 3, flexShrink: 0, fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 999, background: '#fff7e6', color: '#b7791f', textDecoration: 'none' }}>
+                      <img src="https://www.google.com/favicon.ico" alt="" style={{ width: 10, height: 10 }} /> ★{contactReviews.latest.rating}
                     </a>
                   )}
                   {contactReviews.commentCount > 0 && contactReviews.latestComment && (
                     <a href={`/admin/social?comment=${encodeURIComponent(contactReviews.latestComment.id)}`}
                       title={`Commented on ${contactReviews.latestComment.platform === 'instagram' ? 'Instagram' : 'Facebook'} — view comment`}
-                      style={{ display: 'inline-flex', alignItems: 'center', gap: 3, flexShrink: 0, fontSize: 10.5, fontWeight: 700, padding: '2px 7px', borderRadius: 999, background: contactReviews.latestComment.platform === 'instagram' ? '#fdeef6' : '#eef2ff', color: contactReviews.latestComment.platform === 'instagram' ? '#c13584' : '#1d4ed8', textDecoration: 'none' }}>
-                      💬 {contactReviews.latestComment.platform === 'instagram' ? 'Instagram' : 'Facebook'}
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 3, flexShrink: 0, fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 999, background: contactReviews.latestComment.platform === 'instagram' ? '#fdeef6' : '#eef2ff', color: contactReviews.latestComment.platform === 'instagram' ? '#c13584' : '#1d4ed8', textDecoration: 'none' }}>
+                      💬 {contactReviews.latestComment.platform === 'instagram' ? 'IG' : 'FB'}
                     </a>
                   )}
-                </p>
-                {/* Live chat: where they are on the site. Any other channel:
-                    name the channel instead, so the agent knows a reply goes
-                    out by SMS/email rather than into a web widget. */}
-                {isWebChat
-                  ? (isOnPageNow && selected.page_title && <p style={{ margin: 0, fontSize: 11, color: '#9ca3af', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>On: {dec(selected.page_title)}</p>)
-                  : (() => {
-                      // "Last activity 5m ago", Coax-style, from the customer's
-                      // most recent message on the conversation.
-                      const la = (selected as any).last_customer_activity_at || (selected as any).last_message_at
-                      const rel = la ? timeAgo(la) : null
-                      return rel
-                        ? <p style={{ margin: 0, fontSize: 11, color: '#9ca3af', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Last activity {rel === 'now' ? 'just now' : `${rel} ago`}</p>
-                        : <p style={{ margin: 0, fontSize: 11, color: '#9ca3af', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>via {CHANNEL_NAME[activeChannel] || activeChannel}</p>
-                    })()}
+                </div>
               </div>
 
               {/* Pin / unpin this conversation for the current agent. Mirrors the
