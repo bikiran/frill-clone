@@ -52,7 +52,24 @@ export default function MarketingFooter({ dark = false }: { dark?: boolean }) {
               <img src="/icon-512.png" alt="Colvy" width={34} height={34} style={{ borderRadius: 9, display: 'block' }} />
               <span style={{ fontWeight: 900, fontSize: 22, letterSpacing: '-0.02em' }}>Colvy</span>
             </div>
-            <p style={{ fontSize: 14.5, color: muted, lineHeight: 1.6, maxWidth: 340, margin: '0 0 30px' }}>One place to talk to customers across every channel — and sell more.</p>
+            <p style={{ fontSize: 14.5, color: muted, lineHeight: 1.6, maxWidth: 340, margin: '0 0 18px' }}>One place to talk to customers across every channel — and sell more.</p>
+            {/* Get the app — App Store + Google Play */}
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', margin: '0 0 30px' }}>
+              <a href="https://apps.apple.com/us/app/colvy/id6803380512" target="_blank" rel="noopener noreferrer" aria-label="Download Colvy on the App Store"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 9, padding: '8px 14px', borderRadius: 11, border: `1px solid ${line}`, color: text, textDecoration: 'none', transition: 'border-color 0.2s, background 0.2s' }}
+                onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.35)'; e.currentTarget.style.background = 'rgba(255,255,255,0.04)' }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor = line; e.currentTarget.style.background = 'transparent' }}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09l.01-.01zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"/></svg>
+                <span style={{ lineHeight: 1.1 }}><span style={{ display: 'block', fontSize: 9.5, color: muted }}>Download on the</span><span style={{ display: 'block', fontSize: 15, fontWeight: 700 }}>App Store</span></span>
+              </a>
+              <a href="https://play.google.com/store/apps/details?id=com.colvy.app" target="_blank" rel="noopener noreferrer" aria-label="Get Colvy on Google Play"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 9, padding: '8px 14px', borderRadius: 11, border: `1px solid ${line}`, color: text, textDecoration: 'none', transition: 'border-color 0.2s, background 0.2s' }}
+                onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.35)'; e.currentTarget.style.background = 'rgba(255,255,255,0.04)' }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor = line; e.currentTarget.style.background = 'transparent' }}>
+                <svg width="18" height="18" viewBox="0 0 24 24"><path fill="#00d2ff" d="M3.6 2.4a1.4 1.4 0 0 0-.32.95v17.3c0 .4.12.72.34.94l.06.05 9.7-9.69v-.2L3.68 2.35l-.08.05z"/><path fill="#00e676" d="M3.68 2.35l9.7 9.7 3.24-3.24L4.86 1.9a1.42 1.42 0 0 0-1.18.45z"/><path fill="#ffd600" d="M13.38 12.05l-9.7 9.69c.35.3.86.33 1.4.02l11.74-6.67-3.44-3.04z"/><path fill="#ff3d00" d="M13.38 12.05l3.44-3.04 3.5 1.99c1 .57 1 1.5 0 2.07l-3.5 1.99-3.44-3.01z"/></svg>
+                <span style={{ lineHeight: 1.1 }}><span style={{ display: 'block', fontSize: 9.5, color: muted }}>Get it on</span><span style={{ display: 'block', fontSize: 15, fontWeight: 700 }}>Google Play</span></span>
+              </a>
+            </div>
             <div className="cvf-cols">
               {COLS.map(col => (
                 <div key={col.title}>
