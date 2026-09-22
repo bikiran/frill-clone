@@ -29,17 +29,19 @@ export async function GET(req: NextRequest) {
     const db = admin()
 
     const { data: contacts } = await db.from('contacts')
-      .select('id, name, email, phone, created_at')
+      .select('id, name, email, phone, identity_group_id, created_at')
       .eq('company_id', companyId).limit(2000)
 
     const byEmail: Record<string, any[]> = {}
     const byPhone: Record<string, any[]> = {}
+    const byGroup: Record<string, any[]> = {}
 
     for (const c of contacts || []) {
       const e = normEmail(c.email)
       const p = normPhone(c.phone)
       if (e) (byEmail[e] ||= []).push(c)
       if (p) (byPhone[p] ||= []).push(c)
+      if (c.identity_group_id) (byGroup[c.identity_group_id] ||= []).push(c)
     }
 
     // Group anything sharing an email or a phone.
@@ -57,6 +59,11 @@ export async function GET(req: NextRequest) {
     }
     collect(byEmail, 'email')
     collect(byPhone, 'phone')
+    // Also surface contacts already linked as one person (same identity_group_id)
+    // but that DON'T share a single email/phone — e.g. a phone-only contact from
+    // a call and an email-only contact from an order, bridged when the order
+    // carried both. These are real duplicates the email/phone buckets miss.
+    collect(byGroup, 'linked')
 
     // Count conversations so the UI can show what would be merged.
     for (const g of groups) {
@@ -98,18 +105,25 @@ export async function POST(req: NextRequest) {
     const { data: others } = await db.from('contacts').select('*').in('id', mergeIds)
 
     // Fill any gaps on the surviving contact from the duplicates — never
-    // overwrite a value that's already there.
+    // overwrite a value that's already there. Also union channels_seen and adopt
+    // a meta_user_id / identity_group_id if the survivor lacks one, so the merged
+    // person keeps every channel and stays linked.
     const patch: any = {}
     for (const o of others || []) {
-      for (const f of ['name', 'email', 'phone', 'address', 'stripe_customer_id']) {
+      for (const f of ['name', 'email', 'phone', 'address', 'city', 'state', 'postcode', 'country', 'company_name', 'stripe_customer_id', 'meta_user_id', 'identity_group_id']) {
         if (!keep[f] && o[f] && !patch[f]) patch[f] = o[f]
       }
     }
+    const channelSet = new Set<string>(Array.isArray(keep.channels_seen) ? keep.channels_seen : [])
+    for (const o of others || []) for (const ch of (Array.isArray(o.channels_seen) ? o.channels_seen : [])) channelSet.add(ch)
+    if (channelSet.size > (Array.isArray(keep.channels_seen) ? keep.channels_seen.length : 0)) patch.channels_seen = Array.from(channelSet)
     if (Object.keys(patch).length) {
       await db.from('contacts').update(patch).eq('id', keepId)
     }
 
-    // Re-point everything that references the duplicates.
+    // Re-point everything that references the duplicates. Best-effort per table
+    // (a table/column may not exist in every deployment), so one missing table
+    // never aborts the merge or strips the rest.
     const moves: Record<string, number> = {}
     const tables: Array<[string, string]> = [
       ['conversations', 'contact_id'],
@@ -119,6 +133,15 @@ export async function POST(req: NextRequest) {
       ['media_requests', 'contact_id'],
       ['support_tickets', 'contact_id'],
       ['ai_coupons', 'contact_id'],
+      // Order history + engagement + audit so nothing detaches on merge.
+      ['woocommerce_orders', 'contact_id'],
+      ['orders', 'contact_id'],
+      ['google_reviews', 'contact_id'],
+      ['social_comments', 'contact_id'],
+      ['review_requests', 'contact_id'],
+      ['customer_identity_audit', 'contact_id'],
+      ['chat_payments', 'contact_id'],
+      ['tasks', 'contact_id'],
     ]
     for (const [table, col] of tables) {
       try {
