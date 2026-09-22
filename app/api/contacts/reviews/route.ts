@@ -46,16 +46,38 @@ export async function GET(req: NextRequest) {
     const db = admin()
     if (!(await callerInCompany(req, db, companyId))) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
 
-    // The contact + everyone in their identity group (so a review linked to any
-    // merged duplicate still surfaces here).
+    // Resolve the whole customer — every contact row that is the same person —
+    // so a review/comment linked to ANY of their channel rows shows on ALL of
+    // their threads (SMS, email, Messenger, Instagram, WhatsApp…). We union three
+    // signals: the formal identity group, and — as a safety net for rows not yet
+    // merged — contacts sharing this one's email or phone.
     const group = await linkedContacts(db, contactId).catch(() => [] as any[])
-    const groupIds = Array.from(new Set([contactId, ...group.map((c: any) => c.id)].filter(Boolean)))
-    const names = Array.from(new Set(group.map((c: any) => norm(c.name)).filter(Boolean)))
-    const metaIds = Array.from(new Set(group.map((c: any) => c.meta_user_id).filter(Boolean)))
-    // The active contact's own name + meta id (linkedContacts may not include it).
-    const { data: me } = await db.from('contacts').select('name, meta_user_id').eq('id', contactId).maybeSingle()
-    if (me?.name) names.push(norm(me.name))
-    if (me?.meta_user_id) metaIds.push(me.meta_user_id)
+    const idSet = new Set<string>([contactId, ...group.map((c: any) => c.id)].filter(Boolean))
+    const names = new Set<string>(group.map((c: any) => norm(c.name)).filter(Boolean))
+    const metaSet = new Set<string>(group.map((c: any) => c.meta_user_id).filter(Boolean))
+    const { data: me } = await db.from('contacts').select('name, email, phone, meta_user_id').eq('id', contactId).maybeSingle()
+    if (me?.name) names.add(norm(me.name))
+    if (me?.meta_user_id) metaSet.add(me.meta_user_id)
+    // Safety-net: same email or same last-9 phone (formatting-agnostic on confirm).
+    const digits = (v: any) => String(v || '').replace(/\D/g, '')
+    const myEmail = String(me?.email || '').trim().toLowerCase()
+    const myTail = digits(me?.phone).slice(-9)
+    if (myEmail || myTail) {
+      try {
+        const ors: string[] = []
+        if (myEmail) ors.push(`email.ilike.${myEmail.replace(/[,()]/g, ' ')}`)
+        if (myTail) ors.push(`phone.ilike.%${myTail}%`)
+        const { data: sameone } = await db.from('contacts')
+          .select('id, name, phone, email, meta_user_id').eq('company_id', companyId).or(ors.join(',')).limit(50)
+        for (const c of (sameone || [])) {
+          const emailHit = myEmail && String(c.email || '').trim().toLowerCase() === myEmail
+          const phoneHit = myTail && digits(c.phone).slice(-9) === myTail
+          if (emailHit || phoneHit) { idSet.add(c.id); if (c.name) names.add(norm(c.name)); if (c.meta_user_id) metaSet.add(c.meta_user_id) }
+        }
+      } catch {}
+    }
+    const groupIds = Array.from(idSet)
+    const metaIds = Array.from(metaSet)
 
     // Pull this company's reviews once; split into "already ours" and candidates.
     const { data: reviews } = await db.from('google_reviews')
@@ -69,7 +91,7 @@ export async function GET(req: NextRequest) {
 
     // Confident auto-link: an unlinked review whose reviewer name matches one of
     // our names, AND no OTHER contact in the workspace has that same name.
-    const nameSet = new Set(names.filter(Boolean))
+    const nameSet = names
     for (const r of all) {
       if (r.contact_id) continue
       const rn = norm(r.reviewer_name)
