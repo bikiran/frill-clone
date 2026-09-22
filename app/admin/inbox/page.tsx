@@ -8623,7 +8623,7 @@ export default function InboxPage() {
                                 // A neat, centered card (mirrors what the customer
                                 // received) — white on the blue bubble, everything
                                 // centered and even rather than left-hugging.
-                                <div style={{ background: '#fff', borderRadius: 16, padding: '20px 16px 16px', width: 320, maxWidth: '100%', boxSizing: 'border-box', position: 'relative', textAlign: 'center' }}>
+                                <div style={{ background: '#fff', borderRadius: 16, padding: '20px 16px 16px', width: 320, maxWidth: '100%', margin: '0 auto', boxSizing: 'border-box', position: 'relative', textAlign: 'center' }}>
                                   {/* Google Business marker, top-left */}
                                   <img src="https://www.google.com/favicon.ico" alt="Google" style={{ position: 'absolute', left: 13, top: 13, width: 16, height: 16 }} />
                                   {/* Clicks / result badge, top-right */}
@@ -8644,8 +8644,10 @@ export default function InboxPage() {
                                 </div>
                               )
                             })()}
-                            {/* The message text (with the /m/ link) below the card. */}
-                            <div style={{ marginTop: 8, fontSize: 13, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{renderTextWithLinks(msg.content)}</div>
+                            {/* The message text (with the /m/ link) below the card —
+                                capped to the card's width and centred so the whole
+                                bubble reads as one balanced, even block. */}
+                            <div style={{ marginTop: 10, maxWidth: 320, marginLeft: 'auto', marginRight: 'auto', fontSize: 13, lineHeight: 1.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{renderTextWithLinks(msg.content)}</div>
                           </div>
                         ) : (
                           msg.content && (() => {
