@@ -367,13 +367,33 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        const { data: ins } = await db.from('social_comments').insert({
+        // Link the comment to a CRM contact when the commenter is someone we
+        // already know — their platform user id (author_id) is the same id DMs
+        // are keyed on (contacts.meta_user_id). This lets a customer's public
+        // comment surface in the inbox (pill / timeline / thread) like their DMs.
+        let commentContactId: string | null = null
+        if (fromId) {
+          try {
+            const { data: cc } = await db.from('contacts').select('id').eq('company_id', companyId).eq('meta_user_id', fromId).limit(1)
+            commentContactId = cc?.[0]?.id || null
+          } catch { /* contact_id column may not exist yet (pre-V313) — ignore */ }
+        }
+
+        const baseRow: any = {
           company_id: companyId, post_id: postDbId, meta_channel_id: channel.id, platform,
           external_comment_id: commentId, external_post_id: mediaId,
           author_name: fromName || (platform === 'instagram' ? 'Instagram user' : 'Facebook user'),
           author_id: fromId, author_photo: fromPhoto, message: text || null,
           commented_at: commentedAt, raw: change,
-        }).select('id').maybeSingle()
+        }
+        let { data: ins, error: insErr } = await db.from('social_comments')
+          .insert({ ...baseRow, ...(commentContactId ? { contact_id: commentContactId } : {}) })
+          .select('id').maybeSingle()
+        // If contact_id isn't a column yet (migration V313 not run), retry without
+        // it so the comment is never dropped.
+        if (insErr && commentContactId && /contact_id|column|schema cache/i.test(insErr.message || '')) {
+          ;({ data: ins } = await db.from('social_comments').insert(baseRow).select('id').maybeSingle())
+        }
 
         // Classify (risk / category / sentiment) so the Engagement filters work.
         if (ins?.id && text.trim()) {

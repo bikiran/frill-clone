@@ -51,9 +51,11 @@ export async function GET(req: NextRequest) {
     const group = await linkedContacts(db, contactId).catch(() => [] as any[])
     const groupIds = Array.from(new Set([contactId, ...group.map((c: any) => c.id)].filter(Boolean)))
     const names = Array.from(new Set(group.map((c: any) => norm(c.name)).filter(Boolean)))
-    // The active contact's own name (linkedContacts may not include it).
-    const { data: me } = await db.from('contacts').select('name').eq('id', contactId).maybeSingle()
+    const metaIds = Array.from(new Set(group.map((c: any) => c.meta_user_id).filter(Boolean)))
+    // The active contact's own name + meta id (linkedContacts may not include it).
+    const { data: me } = await db.from('contacts').select('name, meta_user_id').eq('id', contactId).maybeSingle()
     if (me?.name) names.push(norm(me.name))
+    if (me?.meta_user_id) metaIds.push(me.meta_user_id)
 
     // Pull this company's reviews once; split into "already ours" and candidates.
     const { data: reviews } = await db.from('google_reviews')
@@ -95,7 +97,43 @@ export async function GET(req: NextRequest) {
 
     const rated = out.filter((r: any) => r.rating > 0)
     const avg = rated.length ? Math.round((rated.reduce((s: number, r: any) => s + r.rating, 0) / rated.length) * 10) / 10 : null
-    return NextResponse.json({ reviews: out, count: out.length, latest: out[0] || null, avg })
+
+    // ── Social comments (Facebook/Instagram) left by this customer ────────────
+    // Already-linked (contact_id in group) + confident auto-link by author_id ==
+    // a group contact's meta_user_id (same id DMs are keyed on). Degrades to []
+    // if the contact_id column doesn't exist yet (pre-V313).
+    let socialComments: any[] = []
+    try {
+      const linkedComments: any[] = []
+      const { data: cLinked } = await db.from('social_comments')
+        .select('id, platform, author_name, message, external_post_id, external_comment_id, commented_at, post_id, contact_id')
+        .eq('company_id', companyId).in('contact_id', groupIds.length ? groupIds : ['00000000-0000-0000-0000-000000000000'])
+        .order('commented_at', { ascending: false }).limit(50)
+      if (Array.isArray(cLinked)) linkedComments.push(...cLinked)
+
+      if (metaIds.length) {
+        const { data: byAuthor } = await db.from('social_comments')
+          .select('id, platform, author_name, message, external_post_id, external_comment_id, commented_at, post_id, contact_id, author_id')
+          .eq('company_id', companyId).in('author_id', metaIds).is('contact_id', null)
+          .order('commented_at', { ascending: false }).limit(50)
+        for (const c of (byAuthor || [])) {
+          try {
+            await db.from('social_comments').update({ contact_id: contactId }).eq('id', c.id).is('contact_id', null)
+          } catch {}
+          linkedComments.push({ ...c, contact_id: contactId })
+        }
+      }
+      const seenC = new Set<string>()
+      socialComments = linkedComments.filter((c: any) => (seenC.has(c.id) ? false : (seenC.add(c.id), true)))
+        .map((c: any) => ({
+          id: c.id, platform: c.platform, authorName: c.author_name, message: c.message,
+          externalCommentId: c.external_comment_id, externalPostId: c.external_post_id, commentedAt: c.commented_at,
+        }))
+        .sort((a: any, b: any) => new Date(b.commentedAt || 0).getTime() - new Date(a.commentedAt || 0).getTime())
+    } catch { socialComments = [] }
+
+    const latestComment = socialComments[0] || null
+    return NextResponse.json({ reviews: out, count: out.length, latest: out[0] || null, avg, socialComments, commentCount: socialComments.length, latestComment })
   } catch (e: any) {
     // Missing table/columns (migrations not run) → empty, never a hard failure.
     if (/does not exist|schema cache/i.test(e?.message || '')) return NextResponse.json({ reviews: [], count: 0, latest: null, avg: null })
