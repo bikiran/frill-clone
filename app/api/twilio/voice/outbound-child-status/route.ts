@@ -27,11 +27,14 @@ export async function POST(req: NextRequest) {
       // ANSWERS (in-progress), also stamp status + answered_at — the agent's
       // browser watches this row and stops the outbound ringback tone on it.
       const patch: any = { twilio_call_sid: childSid }
-      if (childStatus === 'in-progress' || childStatus === 'answered') {
-        patch.status = 'in_progress'
-        patch.answered_at = new Date().toISOString()
-      }
+      if (childStatus === 'in-progress' || childStatus === 'answered') patch.status = 'in_progress'
       try { await db.from('calls').update(patch).eq('id', callRowId) } catch {}
+      // Stamp answered_at separately (best-effort): it's what stops the agent's
+      // outbound ringback. Kept out of the patch above so that, if the column is
+      // ever missing from the schema cache, the SID/status write still lands.
+      if (childStatus === 'in-progress' || childStatus === 'answered') {
+        try { await db.from('calls').update({ answered_at: new Date().toISOString() }).eq('id', callRowId) } catch {}
+      }
     }
   } catch { /* best-effort */ }
   return new NextResponse('', { status: 204 })

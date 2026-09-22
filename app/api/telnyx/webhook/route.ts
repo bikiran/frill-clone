@@ -466,9 +466,12 @@ export async function POST(req: NextRequest) {
               await svc.bridgeCalls(callControlId, obRow.agent_call_control_id)
               await db.from('calls').update({
                 status: 'in_progress',
-                answered_at: new Date().toISOString(),
                 telnyx_call_control_id: callControlId,
               }).eq('id', obRow.id)
+              // answered_at separately (best-effort) — it stops the agent's
+              // outbound ringback; keeping it out of the update above means a
+              // missing column can't also drop the status / control-id write.
+              try { await db.from('calls').update({ answered_at: new Date().toISOString() }).eq('id', obRow.id) } catch {}
               try { await svc.recordStart(callControlId) } catch (e: any) { console.error('[telnyx outbound] record start failed', e?.message || e) }
               log.info('[telnyx outbound] bridged customer to agent', { callId: obRow.id })
             } catch (e: any) {
