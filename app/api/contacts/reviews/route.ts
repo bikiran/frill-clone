@@ -128,14 +128,14 @@ export async function GET(req: NextRequest) {
     try {
       const linkedComments: any[] = []
       const { data: cLinked } = await db.from('social_comments')
-        .select('id, platform, author_name, message, external_post_id, external_comment_id, commented_at, post_id, contact_id')
+        .select('id, platform, author_name, message, external_post_id, external_comment_id, commented_at, created_at, post_id, contact_id')
         .eq('company_id', companyId).in('contact_id', groupIds.length ? groupIds : ['00000000-0000-0000-0000-000000000000'])
         .order('commented_at', { ascending: false }).limit(50)
       if (Array.isArray(cLinked)) linkedComments.push(...cLinked)
 
       if (metaIds.length) {
         const { data: byAuthor } = await db.from('social_comments')
-          .select('id, platform, author_name, message, external_post_id, external_comment_id, commented_at, post_id, contact_id, author_id')
+          .select('id, platform, author_name, message, external_post_id, external_comment_id, commented_at, created_at, post_id, contact_id, author_id')
           .eq('company_id', companyId).in('author_id', metaIds).is('contact_id', null)
           .order('commented_at', { ascending: false }).limit(50)
         for (const c of (byAuthor || [])) {
@@ -149,7 +149,11 @@ export async function GET(req: NextRequest) {
       socialComments = linkedComments.filter((c: any) => (seenC.has(c.id) ? false : (seenC.add(c.id), true)))
         .map((c: any) => ({
           id: c.id, platform: c.platform, authorName: c.author_name, message: c.message,
-          externalCommentId: c.external_comment_id, externalPostId: c.external_post_id, commentedAt: c.commented_at,
+          externalCommentId: c.external_comment_id, externalPostId: c.external_post_id,
+          // commented_at can be null for some IG/webhook comments — fall back to
+          // the row's ingestion time so the thread pill sorts into view instead
+          // of dropping to the epoch-top of the conversation.
+          commentedAt: c.commented_at || c.created_at || null,
         }))
         .sort((a: any, b: any) => new Date(b.commentedAt || 0).getTime() - new Date(a.commentedAt || 0).getTime())
     } catch { socialComments = [] }
