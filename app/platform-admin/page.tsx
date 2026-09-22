@@ -2609,37 +2609,95 @@ function CompaniesPage() {
 
 function UsersPage() {
   const [users, setUsers] = useState<any[]>([])
+  const [companies, setCompanies] = useState<any[]>([])
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState('')
+  const [onlyOrphans, setOnlyOrphans] = useState(false)
+  // "Add to workspace" repair modal state.
+  const [attachFor, setAttachFor] = useState<any>(null)
+  const [attachCompanyId, setAttachCompanyId] = useState('')
+  const [attachRole, setAttachRole] = useState('editor')   // 'editor' == Agent
+  const [attachBusy, setAttachBusy] = useState(false)
+  const [attachMsg, setAttachMsg] = useState('')
+
+  const load = async () => {
+    setLoading(true)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch('/api/platform-admin/users', { headers: { 'Authorization': `Bearer ${session?.access_token}` } })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Could not load users')
+      setUsers(data.users || [])
+    } catch (e: any) { setErr(e.message) } finally { setLoading(false) }
+  }
 
   useEffect(() => {
+    load()
     ;(async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession()
-        const res = await fetch('/api/platform-admin/users', { headers: { 'Authorization': `Bearer ${session?.access_token}` } })
-        const data = await res.json()
-        if (!res.ok) throw new Error(data.error || 'Could not load users')
-        setUsers(data.users || [])
-      } catch (e: any) { setErr(e.message) } finally { setLoading(false) }
+        const { data } = await (supabase as any).from('companies').select('id,name,slug').order('name', { ascending: true }).limit(1000)
+        setCompanies(data || [])
+      } catch {}
     })()
   }, [])
 
-  const filtered = users.filter(u => !search
-    || (u.name || '').toLowerCase().includes(search.toLowerCase())
-    || (u.email || '').toLowerCase().includes(search.toLowerCase())
-    || (u.companies || []).some((c: any) => (c.name || '').toLowerCase().includes(search.toLowerCase()) || (c.slug || '').toLowerCase().includes(search.toLowerCase())))
+  // An "orphan" owns no company AND belongs to no workspace — an account that
+  // can log in but lands nowhere (the Logan/Dip case).
+  const isOrphan = (u: any) => (u.companies?.length || 0) === 0 && (u.memberships?.length || 0) === 0
+
+  const filtered = users.filter(u => {
+    if (onlyOrphans && !isOrphan(u)) return false
+    if (!search) return true
+    const s = search.toLowerCase()
+    return (u.name || '').toLowerCase().includes(s)
+      || (u.email || '').toLowerCase().includes(s)
+      || (u.companies || []).some((c: any) => (c.name || '').toLowerCase().includes(s) || (c.slug || '').toLowerCase().includes(s))
+      || (u.memberships || []).some((c: any) => (c.name || '').toLowerCase().includes(s) || (c.slug || '').toLowerCase().includes(s))
+  })
+  const orphanCount = users.filter(isOrphan).length
+
+  const openAttach = (u: any) => {
+    setAttachFor(u)
+    setAttachCompanyId('')
+    setAttachRole('editor')
+    setAttachMsg('')
+  }
+  const submitAttach = async () => {
+    if (!attachFor || !attachCompanyId) { setAttachMsg('Pick a workspace first.'); return }
+    setAttachBusy(true); setAttachMsg('')
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch('/api/platform-admin/attach-member', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
+        body: JSON.stringify({ userId: attachFor.id, email: attachFor.email, companyId: attachCompanyId, role: attachRole }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Could not attach member')
+      setAttachFor(null)
+      await load()
+    } catch (e: any) { setAttachMsg(e.message) } finally { setAttachBusy(false) }
+  }
+
+  const roleLabel = (r: string) => r === 'admin' ? 'Admin' : r === 'viewer' ? 'Viewer' : 'Agent'
 
   return (
     <div>
       <SectionHeader title="Users" sub={`All registered accounts (${users.length})`} />
-      <div style={{ marginBottom: 16 }}><SearchBar placeholder="Search by name, email, or company..." value={search} onChange={setSearch} /></div>
+      <div style={{ marginBottom: 16, display: 'flex', gap: 10, alignItems: 'center' }}>
+        <div style={{ flex: 1 }}><SearchBar placeholder="Search by name, email, or workspace..." value={search} onChange={setSearch} /></div>
+        <button onClick={() => setOnlyOrphans(o => !o)}
+          style={{ padding: '8px 12px', borderRadius: 9, border: '1px solid var(--sa-border)', background: onlyOrphans ? '#fee2e2' : 'transparent', color: onlyOrphans ? '#dc2626' : 'var(--sa-muted)', cursor: 'pointer', fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap' }}>
+          {onlyOrphans ? '✓ ' : ''}Orphaned only ({orphanCount})
+        </button>
+      </div>
       {err && <div style={{ padding: '10px 14px', borderRadius: 9, background: '#fee2e2', color: '#dc2626', fontSize: 13, marginBottom: 14 }}>{err}</div>}
       <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, overflow: 'hidden' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ borderBottom: '1px solid var(--sa-border)' }}>
-              {['User', 'Email', 'Owns', 'Joined', 'Last sign-in', 'Actions'].map(h => (
+              {['User', 'Email', 'Owns', 'Member of', 'Last sign-in', 'Actions'].map(h => (
                 <th key={h} style={{ padding: '12px 16px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--sa-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</th>
               ))}
             </tr>
@@ -2647,7 +2705,9 @@ function UsersPage() {
           <tbody>
             {loading ? <tr><td colSpan={6} style={{ padding: 32, textAlign: 'center', color: 'var(--sa-muted)' }}>Loading...</td></tr>
             : filtered.length === 0 ? <tr><td colSpan={6} style={{ padding: 32, textAlign: 'center', color: 'var(--sa-muted)' }}>No users found</td></tr>
-            : filtered.map((u, i) => (
+            : filtered.map((u, i) => {
+              const orphan = isOrphan(u)
+              return (
               <tr key={u.id} style={{ borderBottom: i < filtered.length - 1 ? '1px solid var(--sa-border)' : 'none' }}
                 onMouseEnter={e => (e.currentTarget.style.background = 'var(--sa-hover)')}
                 onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
@@ -2657,16 +2717,21 @@ function UsersPage() {
                       {(u.name || u.email || '?')[0]?.toUpperCase()}
                     </div>
                     <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--sa-text)' }}>{u.name}</span>
+                    {orphan && <span title="This account owns no workspace and belongs to no team — it can log in but lands nowhere." style={{ fontSize: 10, fontWeight: 700, color: '#dc2626', background: '#fee2e2', padding: '2px 6px', borderRadius: 6 }}>ORPHAN</span>}
                   </div>
                 </td>
                 <td style={{ padding: '12px 16px', fontSize: 12, color: 'var(--sa-muted)' }}>{u.email}{!u.confirmed && <span style={{ marginLeft: 6, fontSize: 10, color: '#f59e0b' }}>(unconfirmed)</span>}</td>
                 <td style={{ padding: '12px 16px', fontSize: 12, color: 'var(--sa-text)' }}>
-                  {u.companies.length === 0 ? <span style={{ color: 'var(--sa-muted)' }}>—</span> : u.companies.map((c: any) => c.name).join(', ')}
+                  {(u.companies?.length || 0) === 0 ? <span style={{ color: 'var(--sa-muted)' }}>—</span> : u.companies.map((c: any) => c.name).join(', ')}
                 </td>
-                <td style={{ padding: '12px 16px', fontSize: 12, color: 'var(--sa-muted)' }}>{u.created_at ? new Date(u.created_at).toLocaleDateString() : '—'}</td>
+                <td style={{ padding: '12px 16px', fontSize: 12, color: 'var(--sa-text)' }}>
+                  {(u.memberships?.length || 0) === 0 ? <span style={{ color: 'var(--sa-muted)' }}>—</span>
+                    : u.memberships.map((m: any) => `${m.name} (${roleLabel(m.role)})`).join(', ')}
+                </td>
                 <td style={{ padding: '12px 16px', fontSize: 12, color: 'var(--sa-muted)' }}>{u.last_sign_in_at ? new Date(u.last_sign_in_at).toLocaleDateString() : 'never'}</td>
                 <td style={{ padding: '12px 16px' }}>
                   <div style={{ display: 'flex', gap: 6 }}>
+                    <button onClick={() => openAttach(u)} style={{ padding: '5px 9px', borderRadius: 7, border: '1px solid var(--sa-border)', background: orphan ? '#ecfdf5' : 'transparent', color: '#059669', cursor: 'pointer', fontSize: 12, whiteSpace: 'nowrap' }}>+ Workspace</button>
                     {u.companies[0]?.slug && <button onClick={async () => {
                       const co = u.companies[0]
                       const reason = window.prompt(`Reason for entering ${co.name || co.slug} as an admin — recorded in the audit log:`, 'Support / troubleshooting')
@@ -2677,10 +2742,44 @@ function UsersPage() {
                   </div>
                 </td>
               </tr>
-            ))}
+            )})}
           </tbody>
         </table>
       </div>
+
+      {/* Add-to-workspace repair modal */}
+      {attachFor && (
+        <div onClick={() => !attachBusy && setAttachFor(null)}
+          style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ width: '100%', maxWidth: 440, background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, padding: 22 }}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--sa-text)', marginBottom: 4 }}>Add to workspace</div>
+            <div style={{ fontSize: 12, color: 'var(--sa-muted)', marginBottom: 16 }}>{attachFor.name} · {attachFor.email}</div>
+            <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: 'var(--sa-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>Workspace</label>
+            <select value={attachCompanyId} onChange={e => setAttachCompanyId(e.target.value)}
+              style={{ width: '100%', padding: '9px 11px', borderRadius: 9, border: '1px solid var(--sa-border)', background: 'var(--sa-bg, #fff)', color: 'var(--sa-text)', fontSize: 13, marginBottom: 14 }}>
+              <option value="">Select a workspace…</option>
+              {companies.map((c: any) => <option key={c.id} value={c.id}>{c.name} ({c.slug})</option>)}
+            </select>
+            <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: 'var(--sa-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>Role</label>
+            <select value={attachRole} onChange={e => setAttachRole(e.target.value)}
+              style={{ width: '100%', padding: '9px 11px', borderRadius: 9, border: '1px solid var(--sa-border)', background: 'var(--sa-bg, #fff)', color: 'var(--sa-text)', fontSize: 13, marginBottom: 16 }}>
+              <option value="admin">Admin</option>
+              <option value="editor">Agent</option>
+              <option value="viewer">Viewer</option>
+            </select>
+            {attachMsg && <div style={{ padding: '8px 11px', borderRadius: 8, background: '#fee2e2', color: '#dc2626', fontSize: 12, marginBottom: 12 }}>{attachMsg}</div>}
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button onClick={() => setAttachFor(null)} disabled={attachBusy}
+                style={{ padding: '8px 14px', borderRadius: 9, border: '1px solid var(--sa-border)', background: 'transparent', color: 'var(--sa-text)', cursor: 'pointer', fontSize: 13 }}>Cancel</button>
+              <button onClick={submitAttach} disabled={attachBusy || !attachCompanyId}
+                style={{ padding: '8px 14px', borderRadius: 9, border: 'none', background: '#059669', color: '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 600, opacity: (attachBusy || !attachCompanyId) ? 0.6 : 1 }}>
+                {attachBusy ? 'Adding…' : 'Add member'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
