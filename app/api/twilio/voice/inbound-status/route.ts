@@ -28,9 +28,17 @@ export async function POST(req: NextRequest) {
     const companyId = sp.get('companyId') || ''
     const conversationId = sp.get('conversationId') || ''
     const soloUser = sp.get('soloUser') || ''
+    const rang = sp.get('rang') || '?'
 
     const dialStatus = (get('DialCallStatus') || '').toLowerCase()
     const durSecs = parseInt(get('DialCallDuration') || '0', 10) || 0
+    // Why a rung call ended up here — recorded on `cause` (shown as "Hangup
+    // cause" in Call Diagnostics) so an agent-ring that doesn't connect is
+    // diagnosable rather than a silent 0s→voicemail. `no-answer` = the client
+    // leg(s) rang the full timeout and nobody picked up; `busy`/`failed` =
+    // a registration declined the leg or wasn't reachable (the usual cause of
+    // "1 ring → voicemail"); `completed` dur=0 = bridged then dropped instantly.
+    const ringOutcome = `agent_${dialStatus || 'unknown'}: rang=${rang} dur=${durSecs}s`
     // The SID of the child leg that actually answered (this callback ALWAYS
     // fires, unlike the per-<Client> "answered" callback). Map it back to the
     // agent via call_legs.
@@ -108,11 +116,11 @@ export async function POST(req: NextRequest) {
     // Nobody answered → voicemail (if enabled).
     const { data: integ } = await db.from('twilio_integrations').select('voicemail_enabled, voicemail_greeting').eq('company_id', companyId).maybeSingle()
     if (integ?.voicemail_enabled === false) {
-      if (callRowId) { try { await db.from('calls').update({ status: 'missed', ended_at: new Date().toISOString() }).eq('id', callRowId) } catch {} }
+      if (callRowId) { try { await db.from('calls').update({ status: 'missed', ended_at: new Date().toISOString(), cause: ringOutcome }).eq('id', callRowId) } catch {} }
       try { await setCallPreview(db as any, conversationId, '📞 Missed call') } catch {}
       return twiml('<Response><Hangup/></Response>')
     }
-    if (callRowId) { try { await db.from('calls').update({ status: 'voicemail_greeting', is_voicemail: true }).eq('id', callRowId) } catch {} }
+    if (callRowId) { try { await db.from('calls').update({ status: 'voicemail_greeting', is_voicemail: true, cause: ringOutcome }).eq('id', callRowId) } catch {} }
     // Provisional — if they hang up without leaving a message it stays "Missed
     // call"; the recording callback upgrades it to "Voicemail" if one is left.
     try { await setCallPreview(db as any, conversationId, '📞 Missed call') } catch {}

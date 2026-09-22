@@ -237,7 +237,10 @@ export async function POST(req: NextRequest) {
     // user id to the Dial action callback so it can record the answerer reliably
     // even if the per-<Client> "answered" status callback doesn't fire.
     const soloQuery = ringUsers.length === 1 ? `&soloUser=${encodeURIComponent(ringUsers[0])}` : ''
-    const actionCb = `${base}/api/twilio/voice/inbound-status?${cbQuery}${soloQuery}`
+    // Carry how many agents were rung into the action callback, so if the call
+    // still falls through to voicemail we can record WHY (DialCallStatus + count)
+    // on `cause` and see it in Call Diagnostics.
+    const actionCb = `${base}/api/twilio/voice/inbound-status?${cbQuery}${soloQuery}&rang=${ringUsers.length}`
     // Pass the calls-row id straight to the browser as a custom parameter, so
     // warm transfer can identify the exact call without guessing from CallSids
     // (the client leg's SID doesn't match the parent row). Each <Client> gets a
