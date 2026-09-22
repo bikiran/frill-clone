@@ -8076,8 +8076,8 @@ export default function InboxPage() {
                 // (Google reviews + FB/IG comments), sorted in among the messages
                 // by their own timestamp so the thread shows the whole relationship.
                 const engagementEvents = [
-                  ...contactReviews.reviews.map((r: any) => ({ id: `rev-${r.id}`, event_type: 'google_review', created_at: r.createdAt, __engRating: r.rating, __engComment: r.comment, __engReviewId: r.id })),
-                  ...contactReviews.socialComments.map((c: any) => ({ id: `cmt-${c.id}`, event_type: 'social_comment', created_at: c.commentedAt, __engPlatform: c.platform, __engComment: c.message, __engCommentId: c.id })),
+                  ...contactReviews.reviews.map((r: any) => ({ id: `rev-${r.id}`, event_type: 'google_review', created_at: r.createdAt || new Date().toISOString(), __engRating: r.rating, __engComment: r.comment, __engReviewId: r.id })),
+                  ...contactReviews.socialComments.map((c: any) => ({ id: `cmt-${c.id}`, event_type: 'social_comment', created_at: c.commentedAt || new Date().toISOString(), __engPlatform: c.platform, __engComment: c.message, __engCommentId: c.id })),
                 ]
                 return [header, liveBanner, ...mergeEvents(list, [...events, ...engagementEvents], extraCalls).map((item: any) => {
                 if (item.__call) {
