@@ -879,6 +879,14 @@ function CallDetail({ call, coName, onClose }: { call: any; coName: string; onCl
           <Row k="Started" v={call.started_at ? new Date(call.started_at).toLocaleString() : '—'} />
           <Row k="Ended" v={call.ended_at ? new Date(call.ended_at).toLocaleString() : '—'} />
           <Row k="Voicemail" v={call.is_voicemail ? 'Yes' : 'No'} />
+          {/* Routing reason — the inbound webhook stamps WHY a call went to
+              voicemail / how it was rung into calls.transcription as a bracketed
+              marker (e.g. "[to voicemail: nobody online]", "[ring failed: …]",
+              "[ringing N device(s)]"). Surface it to diagnose calls that never
+              reached an agent. Real transcripts don't start with "[". */}
+          {typeof call.transcription === 'string' && call.transcription.trim().startsWith('[') && (
+            <Row k="Routing" v={call.transcription} />
+          )}
           {call.sentiment && (
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, padding: '9px 0', borderBottom: '1px solid var(--sa-border)' }}>
               <span style={{ fontSize: 12.5, color: 'var(--sa-muted)' }}>Sentiment</span>
