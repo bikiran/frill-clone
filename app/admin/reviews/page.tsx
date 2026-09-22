@@ -52,6 +52,8 @@ export default function ReviewsPage() {
   // Pagination
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
+  // Deep-link from the inbox: ?review=<db id> → jump to and highlight that row.
+  const [highlightReviewId, setHighlightReviewId] = useState<string | null>(null)
 
   // Customer matching
   const [linkFor, setLinkFor] = useState<Review | null>(null)
@@ -60,6 +62,7 @@ export default function ReviewsPage() {
   const [contactLoading, setContactLoading] = useState(false)
 
   useEffect(() => {
+    try { const rid = new URLSearchParams(window.location.search).get('review'); if (rid) setHighlightReviewId(rid) } catch {}
     const init = async () => {
       let cid: string | null = seededCid
       let nameResolved = false
@@ -249,6 +252,21 @@ export default function ReviewsPage() {
   const pageClamped = Math.min(page, totalPages)
   const pageItems = filtered.slice((pageClamped - 1) * pageSize, pageClamped * pageSize)
 
+  // When deep-linked with ?review=, clear filters, page to the row, and scroll
+  // it into view. The highlight ring fades after a few seconds.
+  useEffect(() => {
+    if (!highlightReviewId || reviews.length === 0) return
+    const idx = reviews.findIndex((r: any) => r.id === highlightReviewId)
+    if (idx < 0) return
+    setRatingFilter(0); setRepliesFilter('all'); setDateFrom(''); setDateTo(''); setSearch('')
+    setPage(Math.floor(idx / pageSize) + 1)
+    const t = setTimeout(() => {
+      try { document.getElementById(`review-${highlightReviewId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }) } catch {}
+    }, 300)
+    const clear = setTimeout(() => setHighlightReviewId(null), 6000)
+    return () => { clearTimeout(t); clearTimeout(clear) }
+  }, [highlightReviewId, reviews.length])   // eslint-disable-line react-hooks/exhaustive-deps
+
   const avg = reviews.length ? (reviews.reduce((a, r) => a + (r.star_rating || 0), 0) / reviews.length) : 0
   const repliedCount = reviews.filter(r => r.reply_comment).length
   const pendingCount = reviews.length - repliedCount
@@ -351,8 +369,9 @@ export default function ReviewsPage() {
             </div>
           ) : pageItems.map(review => {
             const linked = !!review.contact_id
+            const hot = review.id === highlightReviewId
             return (
-            <div key={review.id} style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, padding: '18px 20px', marginBottom: 14 }}>
+            <div key={review.id} id={`review-${review.id}`} style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, padding: '18px 20px', marginBottom: 14, boxShadow: hot ? '0 0 0 3px var(--coral)' : undefined, transition: 'box-shadow 0.4s' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12, flexWrap: 'wrap' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
                   {review.reviewer_photo

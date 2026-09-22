@@ -267,7 +267,7 @@ function initialsOf(name?: string | null): string {
 // Interleave conversation events (assignments, channel switches, moves) into the
 // message list in chronological order, so the thread reads like a real timeline.
 function mergeEvents(msgs: any[], events: any[], calls: any[] = []) {
-  const SHOW = ['assigned', 'channel_switch', 'moved', 'status', 'review_request', 'page_view', 'note_created', 'closed', 'reopened', 'ai_update']
+  const SHOW = ['assigned', 'channel_switch', 'moved', 'status', 'review_request', 'page_view', 'note_created', 'closed', 'reopened', 'ai_update', 'google_review', 'social_comment']
   const evs = (events || [])
     .filter(e => SHOW.includes(e.event_type))
     .map(e => ({ ...e, __event: true }))
@@ -1551,11 +1551,13 @@ export default function InboxPage() {
   // pay the probe once.
   const wooEmailNormRef = useRef<boolean | null>(null)
   const [abandonedCarts, setAbandonedCarts] = useState<any[]>([])
-  // Google reviews left by the active contact (for the info panel stars line).
-  const [contactReviews, setContactReviews] = useState<{ count: number; avg: number | null; latest: any | null; reviews: any[] }>({ count: 0, avg: null, latest: null, reviews: [] })
+  // A customer's off-inbox engagement (Google reviews + FB/IG comments), for the
+  // info-panel stars, the header pills and the thread event cards.
+  const emptyEngagement = { count: 0, avg: null as number | null, latest: null as any, reviews: [] as any[], socialComments: [] as any[], commentCount: 0, latestComment: null as any }
+  const [contactReviews, setContactReviews] = useState<typeof emptyEngagement>(emptyEngagement)
   useEffect(() => {
     const cid = contact?.id
-    if (!cid || !companyId) { setContactReviews({ count: 0, avg: null, latest: null, reviews: [] }); return }
+    if (!cid || !companyId) { setContactReviews(emptyEngagement); return }
     let cancelled = false
     ;(async () => {
       try {
@@ -1564,8 +1566,11 @@ export default function InboxPage() {
           headers: { Authorization: `Bearer ${session?.access_token || ''}` },
         })
         const data = await res.json().catch(() => ({}))
-        if (!cancelled && res.ok) setContactReviews({ count: data.count || 0, avg: data.avg ?? null, latest: data.latest || null, reviews: data.reviews || [] })
-      } catch { /* reviews are a nice-to-have; never block the panel */ }
+        if (!cancelled && res.ok) setContactReviews({
+          count: data.count || 0, avg: data.avg ?? null, latest: data.latest || null, reviews: data.reviews || [],
+          socialComments: data.socialComments || [], commentCount: data.commentCount || 0, latestComment: data.latestComment || null,
+        })
+      } catch { /* engagement is a nice-to-have; never block the panel */ }
     })()
     return () => { cancelled = true }
   }, [contact?.id, companyId])
@@ -7644,6 +7649,22 @@ export default function InboxPage() {
                       {(SENTIMENT_ICON[(selected as any).sentiment] || Icon.meh)(15)}
                     </span>
                   )}
+                  {/* Engagement pills — this customer left a Google review or
+                      commented on a post/ad. Click to view it. */}
+                  {contactReviews.count > 0 && contactReviews.latest && (
+                    <a href={`/admin/reviews?review=${encodeURIComponent(contactReviews.latest.id)}`}
+                      title={`Reviewed ${contactReviews.latest.rating}/5 on Google — view review`}
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 3, flexShrink: 0, fontSize: 10.5, fontWeight: 700, padding: '2px 7px', borderRadius: 999, background: '#fff7e6', color: '#b7791f', textDecoration: 'none' }}>
+                      ★ {contactReviews.latest.rating}/5 · Google
+                    </a>
+                  )}
+                  {contactReviews.commentCount > 0 && contactReviews.latestComment && (
+                    <a href={`/admin/social?comment=${encodeURIComponent(contactReviews.latestComment.id)}`}
+                      title={`Commented on ${contactReviews.latestComment.platform === 'instagram' ? 'Instagram' : 'Facebook'} — view comment`}
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 3, flexShrink: 0, fontSize: 10.5, fontWeight: 700, padding: '2px 7px', borderRadius: 999, background: contactReviews.latestComment.platform === 'instagram' ? '#fdeef6' : '#eef2ff', color: contactReviews.latestComment.platform === 'instagram' ? '#c13584' : '#1d4ed8', textDecoration: 'none' }}>
+                      💬 {contactReviews.latestComment.platform === 'instagram' ? 'Instagram' : 'Facebook'}
+                    </a>
+                  )}
                 </p>
                 {/* Live chat: where they are on the site. Any other channel:
                     name the channel instead, so the agent knows a reply goes
@@ -8051,7 +8072,14 @@ export default function InboxPage() {
                   .map((c: any) => ({ __call: true, ...c }))
 
                 const liveBanner = <LiveCallBanner key="live-call-banner" conversationId={selected.id} accent={companyInfo?.accent_color || 'var(--coral)'} />
-                return [header, liveBanner, ...mergeEvents(list, events, extraCalls).map((item: any) => {
+                // Synthetic thread events for this customer's off-inbox engagement
+                // (Google reviews + FB/IG comments), sorted in among the messages
+                // by their own timestamp so the thread shows the whole relationship.
+                const engagementEvents = [
+                  ...contactReviews.reviews.map((r: any) => ({ id: `rev-${r.id}`, event_type: 'google_review', created_at: r.createdAt, __engRating: r.rating, __engComment: r.comment, __engReviewId: r.id })),
+                  ...contactReviews.socialComments.map((c: any) => ({ id: `cmt-${c.id}`, event_type: 'social_comment', created_at: c.commentedAt, __engPlatform: c.platform, __engComment: c.message, __engCommentId: c.id })),
+                ]
+                return [header, liveBanner, ...mergeEvents(list, [...events, ...engagementEvents], extraCalls).map((item: any) => {
                 if (item.__call) {
                   const thisDay = dayLabel(item.created_at)
                   const showDivider = thisDay && thisDay !== lastDay
@@ -8069,6 +8097,45 @@ export default function InboxPage() {
                 }
                 if (item.__event) {
                   const ev = item
+                  // This customer left a Google review — a gold event card with the
+                  // stars + snippet, linking to the review on the dashboard.
+                  if (ev.event_type === 'google_review') {
+                    const stars = Math.max(0, Math.min(5, ev.__engRating || 0))
+                    return (
+                      <a key={`ev-${ev.id}`} href={`/admin/reviews?review=${encodeURIComponent(ev.__engReviewId)}`}
+                        style={{ display: 'block', textDecoration: 'none', margin: '8px auto', maxWidth: 460 }}>
+                        <div style={{ border: '1px solid #f5d78a', background: '#fffdf5', borderRadius: 12, padding: '10px 13px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                            <span style={{ fontSize: 11.5, fontWeight: 700, color: '#b7791f', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                              <img src="https://www.google.com/favicon.ico" alt="" style={{ width: 14, height: 14 }} /> Wrote a Google review
+                            </span>
+                            {ev.created_at && <span style={{ fontSize: 10.5, color: '#b9a86a' }}>{fmtTime(ev.created_at)}</span>}
+                          </div>
+                          <div style={{ fontSize: 15, letterSpacing: 1, color: '#f5b301', margin: '4px 0 0' }}>{'★'.repeat(stars)}<span style={{ color: '#e5d9b0' }}>{'★'.repeat(5 - stars)}</span></div>
+                          {ev.__engComment && <p style={{ margin: '4px 0 0', fontSize: 12.5, color: 'var(--ink)', fontStyle: 'italic', lineHeight: 1.4 }}>“{ev.__engComment}”</p>}
+                          <p style={{ margin: '5px 0 0', fontSize: 11, fontWeight: 600, color: '#b7791f' }}>View review →</p>
+                        </div>
+                      </a>
+                    )
+                  }
+                  // This customer commented on a post/ad — an event card linking to
+                  // the comment in the Social Engagement manager.
+                  if (ev.event_type === 'social_comment') {
+                    const ig = ev.__engPlatform === 'instagram'
+                    return (
+                      <a key={`ev-${ev.id}`} href={`/admin/social?comment=${encodeURIComponent(ev.__engCommentId)}`}
+                        style={{ display: 'block', textDecoration: 'none', margin: '8px auto', maxWidth: 460 }}>
+                        <div style={{ border: `1px solid ${ig ? '#f6c6e0' : '#c7d2fe'}`, background: ig ? '#fff6fb' : '#f5f7ff', borderRadius: 12, padding: '10px 13px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                            <span style={{ fontSize: 11.5, fontWeight: 700, color: ig ? '#c13584' : '#1d4ed8' }}>💬 Commented on {ig ? 'Instagram' : 'Facebook'}</span>
+                            {ev.created_at && <span style={{ fontSize: 10.5, color: '#9ca3af' }}>{fmtTime(ev.created_at)}</span>}
+                          </div>
+                          {ev.__engComment && <p style={{ margin: '4px 0 0', fontSize: 12.5, color: 'var(--ink)', fontStyle: 'italic', lineHeight: 1.4 }}>“{ev.__engComment}”</p>}
+                          <p style={{ margin: '5px 0 0', fontSize: 11, fontWeight: 600, color: ig ? '#c13584' : '#1d4ed8' }}>View comment →</p>
+                        </div>
+                      </a>
+                    )
+                  }
                   // A task finished on the Tasks page announces itself here as a
                   // green completion pill (and shows in the Timeline tab too).
                   if (ev.event_type === 'task_completed') {

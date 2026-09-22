@@ -44,6 +44,17 @@ export default function SocialEngagementPage() {
   const [type, setType] = useState<'all' | 'unreplied' | 'replied'>('all')
   const [cat, setCat] = useState('')
   const [showArchived, setShowArchived] = useState(false)
+  // Deep-link from the inbox: ?comment=<id> → jump to and highlight that comment.
+  const [highlightCommentId, setHighlightCommentId] = useState<string | null>(null)
+  useEffect(() => { try { const id = new URLSearchParams(window.location.search).get('comment'); if (id) setHighlightCommentId(id) } catch {} }, [])
+  useEffect(() => {
+    if (!highlightCommentId || comments.length === 0) return
+    // Clear filters so the target is never hidden, then scroll to it.
+    setSearch(''); setRisk('all'); setType('all'); setCat(''); setShowArchived(true)
+    const t = setTimeout(() => { try { document.getElementById(`comment-${highlightCommentId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }) } catch {} }, 300)
+    const clear = setTimeout(() => setHighlightCommentId(null), 6000)
+    return () => { clearTimeout(t); clearTimeout(clear) }
+  }, [highlightCommentId, comments.length])
 
   // Per-comment reply / DM composer
   const [composer, setComposer] = useState<{ id: string; mode: 'reply' | 'dm'; text: string; busy?: boolean } | null>(null)
@@ -195,8 +206,9 @@ export default function SocialEngagementPage() {
               </div>
             ) : filtered.map(c => {
               const critical = (c.risk_level || 'safe') === 'critical'
+              const hot = c.id === highlightCommentId
               return (
-              <div key={c.id} style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, padding: '16px 18px', marginBottom: 14, opacity: c.is_hidden ? 0.6 : 1 }}>
+              <div key={c.id} id={`comment-${c.id}`} style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, padding: '16px 18px', marginBottom: 14, opacity: c.is_hidden ? 0.6 : 1, boxShadow: hot ? '0 0 0 3px var(--coral)' : undefined, transition: 'box-shadow 0.4s' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 10 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
                     {c.author_photo

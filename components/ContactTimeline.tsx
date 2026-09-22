@@ -21,6 +21,7 @@ const ACT: Record<string, { color: string; bg: string; icon: string }> = {
   order:   { color: '#047857', bg: '#dcfce7', icon: '🛍️' },
   payment: { color: '#0e7490', bg: '#cffafe', icon: '💳' },
   review:  { color: '#b45309', bg: '#fef3c7', icon: '⭐' },
+  comment: { color: '#be185d', bg: '#fce7f3', icon: '💬' },
   audit:   { color: '#6b6b70', bg: 'var(--canvas)', icon: '🔗' },
 }
 

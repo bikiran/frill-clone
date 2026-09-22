@@ -77,10 +77,21 @@ export async function GET(req: NextRequest) {
       }
     } catch {}
   }
-  // Reviews (keyed on contact).
+  // Reviews (legacy generic table, keyed on contact).
   try {
     const { data } = await db.from('reviews').select('id, platform, rating, review_text, review_date, created_at').in('contact_id', contactIds).limit(50)
     for (const r of (data || [])) activity.push({ id: 'review-' + r.id, kind: 'review', source: r.platform || 'Review', date: r.review_date || r.created_at, title: `${r.rating ? r.rating + '★ ' : ''}Review`, detail: (r.review_text || '').slice(0, 160) })
+  } catch {}
+  // Real synced Google reviews (google_reviews, keyed on contact via V244).
+  try {
+    const { data } = await db.from('google_reviews').select('id, star_rating, comment, review_created_at, created_at').in('contact_id', contactIds).limit(50)
+    for (const r of (data || [])) activity.push({ id: 'greview-' + r.id, kind: 'review', source: 'Google', date: r.review_created_at || r.created_at, title: `${r.star_rating ? r.star_rating + '★ ' : ''}Google review`, detail: (r.comment || '').slice(0, 160), link: `/admin/reviews?review=${r.id}` })
+  } catch {}
+  // Facebook/Instagram comments on a post or ad (social_comments, keyed on
+  // contact via V313).
+  try {
+    const { data } = await db.from('social_comments').select('id, platform, message, commented_at, created_at').in('contact_id', contactIds).limit(50)
+    for (const c of (data || [])) activity.push({ id: 'comment-' + c.id, kind: 'comment', source: c.platform === 'instagram' ? 'Instagram' : 'Facebook', date: c.commented_at || c.created_at, title: `Commented on ${c.platform === 'instagram' ? 'Instagram' : 'Facebook'}`, detail: (c.message || '').slice(0, 160), link: `/admin/social?comment=${c.id}` })
   } catch {}
   // In-chat payments (keyed on conversation).
   try {
