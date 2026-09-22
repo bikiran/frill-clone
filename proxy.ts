@@ -32,6 +32,13 @@ export function proxy(req: NextRequest) {
     if (path.startsWith('/api/') || path.startsWith('/auth/') || path.startsWith('/_next/')) {
       return NextResponse.next()
     }
+    // There's no board admin on the platform host — a stray /admin (e.g. a
+    // relative post-login redirect) would rewrite to /platform-admin/admin and
+    // 404. Send it to the console root instead.
+    if (path === '/admin' || path.startsWith('/admin/')) {
+      url.pathname = '/'
+      return NextResponse.redirect(url)
+    }
     url.pathname = `/platform-admin${path === '/' ? '' : path}`
     return NextResponse.rewrite(url)
   }

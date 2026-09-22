@@ -69,7 +69,14 @@ function SignInForm() {
 
     // Always try to find the user's own company first (they should land on their admin)
     if (user) {
-      const { data: ownCo } = await (supabase as any).from('companies').select('slug').eq('owner_id', user.id).maybeSingle()
+      // A user may OWN MANY companies. maybeSingle() throws on multiple rows and
+      // returned null — so a multi-workspace owner fell through to a bare relative
+      // '/admin', which on admin.colvy.com becomes admin.colvy.com/admin → 404.
+      // Take the oldest-owned as the stable primary (matches getCompanyByOwner).
+      const { data: ownList } = await (supabase as any)
+        .from('companies').select('slug').eq('owner_id', user.id)
+        .order('created_at', { ascending: true }).limit(1)
+      const ownCo = ownList?.[0]
       if (ownCo?.slug) {
         const hostname = window.location.hostname
         const isLocal = hostname.includes('localhost') || hostname.includes('vercel.app')
