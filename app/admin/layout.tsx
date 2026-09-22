@@ -185,6 +185,16 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     return () => window.removeEventListener('resize', apply)
   }, [])
   const [company, setCompany] = useState<any>(null)
+  // Tab favicon = this workspace's logo. AppChrome also tries this, but it
+  // resolves the company by subdomain slug and can miss on /admin (RLS/timing),
+  // leaving Colvy's default icon. Here the company is already resolved (its logo
+  // shows in the sidebar), so set it reliably whenever it changes.
+  useEffect(() => {
+    if (typeof document === 'undefined' || !company?.logo_url) return
+    let link = document.querySelector("link[rel~='icon']") as HTMLLinkElement | null
+    if (!link) { link = document.createElement('link'); link.rel = 'icon'; document.head.appendChild(link) }
+    link.href = company.logo_url
+  }, [company?.logo_url])
   // The current member's role + feature permissions (see lib/permissions.ts).
   // Owner/super-admin => full access; a restricted editor/viewer only sees and
   // can open the features their permission map allows.
