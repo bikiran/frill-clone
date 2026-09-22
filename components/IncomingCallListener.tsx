@@ -425,9 +425,14 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
       // FIRST, so we never leave two call panels on screen ("two calls came").
       const fallback = () => {
         reset()
-        window.dispatchEvent(new CustomEvent('colvy:call', {
-          detail: { number, name: d.name, contactId: d.contactId, conversationId: d.conversationId, _noBridge: true },
-        }))
+        // Defer a tick so reset()'s state settles and __colvyRichCallActive
+        // clears before the direct dialler picks this up (GlobalCallBar also
+        // bypasses that guard for _noBridge, so the fallback dial never drops).
+        setTimeout(() => {
+          window.dispatchEvent(new CustomEvent('colvy:call', {
+            detail: { number, name: d.name, contactId: d.contactId, conversationId: d.conversationId, _noBridge: true },
+          }))
+        }, 0)
       }
       const prov = d.provider || provider
       try {
