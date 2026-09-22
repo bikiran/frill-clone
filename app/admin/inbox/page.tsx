@@ -8618,24 +8618,28 @@ export default function InboxPage() {
                               const completed = !!(msg as any).metadata?.review_completed
                               const rating = (msg as any).metadata?.review_rating || 0
                               const clicks = (msg as any).metadata?.review_clicks || 0
+                              const title = completed ? 'Review Left' : ((msg as any).metadata?.review_title || 'Review Request Sent')
                               return (
-                                <div style={{ background: 'rgba(255,255,255,0.15)', borderRadius: 12, padding: '14px 16px', maxWidth: 300 }}>
-                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                                      <span style={{ width: 26, height: 26, borderRadius: 13, background: 'rgba(255,255,255,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13 }}>⭐</span>
-                                      <span style={{ fontSize: 12.5, fontWeight: 700 }}>{completed ? 'Review Left' : 'Review Request Sent'}</span>
-                                    </div>
-                                    {clicks > 0 && !completed && (
-                                      <span style={{ fontSize: 10.5, fontWeight: 700, background: 'rgba(255,255,255,0.25)', padding: '2px 7px', borderRadius: 20 }}>{clicks} click{clicks === 1 ? '' : 's'}</span>
-                                    )}
-                                  </div>
-                                  <div style={{ display: 'flex', gap: 3, justifyContent: 'center', margin: '6px 0 2px' }}>
+                                // A neat, centered card (mirrors what the customer
+                                // received) — white on the blue bubble, everything
+                                // centered and even rather than left-hugging.
+                                <div style={{ background: '#fff', borderRadius: 16, padding: '20px 16px 16px', width: 320, maxWidth: '100%', boxSizing: 'border-box', position: 'relative', textAlign: 'center' }}>
+                                  {/* Google Business marker, top-left */}
+                                  <img src="https://www.google.com/favicon.ico" alt="Google" style={{ position: 'absolute', left: 13, top: 13, width: 16, height: 16 }} />
+                                  {/* Clicks / result badge, top-right */}
+                                  <span style={{ position: 'absolute', right: 12, top: 12, fontSize: 10.5, fontWeight: 700, background: completed ? '#fff4d6' : '#e7f6ec', color: completed ? '#a97a12' : '#137a3e', padding: '3px 9px', borderRadius: 20 }}>
+                                    {completed ? `★ ${rating}/5` : `${clicks} Click${clicks === 1 ? '' : 's'}`}
+                                  </span>
+                                  {/* Centered star avatar */}
+                                  <span style={{ width: 40, height: 40, borderRadius: 20, background: '#eef2ff', color: '#3b6ef5', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 19, marginBottom: 8 }}>★</span>
+                                  <div style={{ fontSize: 14, fontWeight: 700, color: '#5b6470', marginBottom: 10 }}>{title}</div>
+                                  <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
                                     {[1, 2, 3, 4, 5].map(s => (
-                                      <span key={s} style={{ fontSize: 22, color: completed && s <= rating ? '#ffd25a' : 'rgba(255,255,255,0.45)' }}>★</span>
+                                      <span key={s} style={{ fontSize: 26, lineHeight: 1, color: completed && s <= rating ? '#f5b301' : '#dfe3e8' }}>★</span>
                                     ))}
                                   </div>
                                   {completed && rating > 0 && (
-                                    <p style={{ margin: '4px 0 0', fontSize: 11, textAlign: 'center', opacity: 0.9 }}>Customer left {rating} star{rating === 1 ? '' : 's'}</p>
+                                    <p style={{ margin: '10px 0 0', fontSize: 11.5, color: '#8a929c' }}>Customer left {rating} star{rating === 1 ? '' : 's'}</p>
                                   )}
                                 </div>
                               )
