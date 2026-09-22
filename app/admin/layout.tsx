@@ -718,6 +718,13 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         .nav-group-header:hover .nav-group-chevron { opacity: 0.85; }
         .nav-group-header.is-collapsed { background: #f5f6f8; }
         .nav-group-header.is-collapsed:hover { background: #ececf0; }
+        /* Sidebar nav item — clear hover highlight so you can see which row
+           you're pointing at, with the icon giving a small lift/brighten. */
+        .nav-item { transition: background 0.14s ease, color 0.14s ease; }
+        .nav-item:not(.is-active):hover { background: #f1f2f4; color: var(--ink) !important; }
+        .nav-item .nav-ic { transition: transform 0.16s ease, opacity 0.14s ease; }
+        .nav-item:hover .nav-ic { transform: scale(1.14); opacity: 1 !important; }
+        .nav-item:active .nav-ic { transform: scale(0.96); }
       `}</style>
 
       {/* NOTE: the old floating mobile hamburger was removed. It used
@@ -852,15 +859,15 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                 const locked = !!company?.is_demo && DEMO_LOCKED_HREFS.some(h => item.href === h || item.href.startsWith(h + '/'))
                 return (
                   <Link key={item.href + item.label} href={locked ? '#' : item.href}
+                    className={`nav-item${active ? ' is-active' : ''}`}
                     onClick={(e) => { if (locked) { e.preventDefault(); setDemoMsg(DEMO_LOCK_MESSAGE) } else setMobileSidebarOpen(false) }}
                     title={adminCollapsed ? item.label : undefined}
                     style={{
                       display: 'flex', alignItems: 'center', gap: 9, padding: '7px 10px',
                       borderRadius: 8, fontSize: 13, textDecoration: 'none', marginBottom: 1,
-                      background: active ? 'var(--peach)' : 'transparent',
+                      background: active ? 'var(--peach)' : undefined,
                       color: active ? 'var(--coral)' : 'var(--slate)',
                       fontWeight: active ? 600 : 400,
-                      transition: 'all 0.15s',
                       justifyContent: adminCollapsed ? 'center' : 'flex-start',
                     }}>
                     {/* Any section with things waiting shows a count, so you can
@@ -873,7 +880,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                       const tone = item.label === 'Tasks' ? 'var(--coral)' : item.label === 'Orders' ? '#2563eb' : '#ef4444'
                       return (
                         <>
-                          <span style={{ flexShrink: 0, display: 'flex', opacity: active ? 1 : 0.65, position: 'relative' }}>
+                          <span className="nav-ic" style={{ flexShrink: 0, display: 'flex', opacity: active ? 1 : 0.65, position: 'relative' }}>
                             {icons[item.icon]}
                             {count > 0 && adminCollapsed && (
                               <span style={{ position: 'absolute', top: -3, right: -3, width: 8, height: 8, borderRadius: '50%', background: tone, border: '1.5px solid #fff' }} />
