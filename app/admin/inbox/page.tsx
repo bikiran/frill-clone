@@ -8097,43 +8097,36 @@ export default function InboxPage() {
                 }
                 if (item.__event) {
                   const ev = item
-                  // This customer left a Google review — a gold event card with the
-                  // stars + snippet, linking to the review on the dashboard.
+                  // This customer left a Google review — a slim, centered pill
+                  // that opens the review inside Colvy.
                   if (ev.event_type === 'google_review') {
                     const stars = Math.max(0, Math.min(5, ev.__engRating || 0))
                     return (
-                      <a key={`ev-${ev.id}`} href={`/admin/reviews?review=${encodeURIComponent(ev.__engReviewId)}`}
-                        style={{ display: 'block', textDecoration: 'none', margin: '8px auto', maxWidth: 460 }}>
-                        <div style={{ border: '1px solid #f5d78a', background: '#fffdf5', borderRadius: 12, padding: '10px 13px' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                            <span style={{ fontSize: 11.5, fontWeight: 700, color: '#b7791f', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                              <img src="https://www.google.com/favicon.ico" alt="" style={{ width: 14, height: 14 }} /> Wrote a Google review
-                            </span>
-                            {ev.created_at && <span style={{ fontSize: 10.5, color: '#b9a86a' }}>{fmtTime(ev.created_at)}</span>}
-                          </div>
-                          <div style={{ fontSize: 15, letterSpacing: 1, color: '#f5b301', margin: '4px 0 0' }}>{'★'.repeat(stars)}<span style={{ color: '#e5d9b0' }}>{'★'.repeat(5 - stars)}</span></div>
-                          {ev.__engComment && <p style={{ margin: '4px 0 0', fontSize: 12.5, color: 'var(--ink)', fontStyle: 'italic', lineHeight: 1.4 }}>“{ev.__engComment}”</p>}
-                          <p style={{ margin: '5px 0 0', fontSize: 11, fontWeight: 600, color: '#b7791f' }}>View review →</p>
-                        </div>
-                      </a>
+                      <div key={`ev-${ev.id}`} style={{ textAlign: 'center', padding: '4px 0' }}>
+                        <a href={`/admin/reviews?review=${encodeURIComponent(ev.__engReviewId)}`}
+                          title={ev.__engComment ? `“${ev.__engComment}” — view review` : 'View review'}
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, textDecoration: 'none', background: '#fff7e6', color: '#b7791f', border: '1px solid #f2d693', padding: '4px 12px', borderRadius: 999, fontSize: 12, fontWeight: 600, maxWidth: 460 }}>
+                          <img src="https://www.google.com/favicon.ico" alt="" style={{ width: 13, height: 13 }} />
+                          Wrote a Google review
+                          <span style={{ color: '#f5b301', letterSpacing: 0.5 }}>{'★'.repeat(stars)}</span>
+                          {ev.created_at && <span style={{ color: '#c8b578', fontWeight: 500 }}>· {fmtTime(ev.created_at)}</span>}
+                        </a>
+                      </div>
                     )
                   }
-                  // This customer commented on a post/ad — an event card linking to
-                  // the comment in the Social Engagement manager.
+                  // This customer commented on a post/ad — a slim, centered pill
+                  // that opens the comment in the Social Engagement manager.
                   if (ev.event_type === 'social_comment') {
                     const ig = ev.__engPlatform === 'instagram'
                     return (
-                      <a key={`ev-${ev.id}`} href={`/admin/social?comment=${encodeURIComponent(ev.__engCommentId)}`}
-                        style={{ display: 'block', textDecoration: 'none', margin: '8px auto', maxWidth: 460 }}>
-                        <div style={{ border: `1px solid ${ig ? '#f6c6e0' : '#c7d2fe'}`, background: ig ? '#fff6fb' : '#f5f7ff', borderRadius: 12, padding: '10px 13px' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                            <span style={{ fontSize: 11.5, fontWeight: 700, color: ig ? '#c13584' : '#1d4ed8' }}>💬 Commented on {ig ? 'Instagram' : 'Facebook'}</span>
-                            {ev.created_at && <span style={{ fontSize: 10.5, color: '#9ca3af' }}>{fmtTime(ev.created_at)}</span>}
-                          </div>
-                          {ev.__engComment && <p style={{ margin: '4px 0 0', fontSize: 12.5, color: 'var(--ink)', fontStyle: 'italic', lineHeight: 1.4 }}>“{ev.__engComment}”</p>}
-                          <p style={{ margin: '5px 0 0', fontSize: 11, fontWeight: 600, color: ig ? '#c13584' : '#1d4ed8' }}>View comment →</p>
-                        </div>
-                      </a>
+                      <div key={`ev-${ev.id}`} style={{ textAlign: 'center', padding: '4px 0' }}>
+                        <a href={`/admin/social?comment=${encodeURIComponent(ev.__engCommentId)}`}
+                          title={ev.__engComment ? `“${ev.__engComment}” — view comment` : 'View comment'}
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, textDecoration: 'none', background: ig ? '#fdeef6' : '#eef2ff', color: ig ? '#c13584' : '#1d4ed8', border: `1px solid ${ig ? '#f6c6e0' : '#c7d2fe'}`, padding: '4px 12px', borderRadius: 999, fontSize: 12, fontWeight: 600, maxWidth: 460 }}>
+                          💬 Commented on {ig ? 'Instagram' : 'Facebook'}
+                          {ev.created_at && <span style={{ opacity: 0.7, fontWeight: 500 }}>· {fmtTime(ev.created_at)}</span>}
+                        </a>
+                      </div>
                     )
                   }
                   // A task finished on the Tasks page announces itself here as a
