@@ -100,8 +100,17 @@ export default function AddressAutocomplete({
       placeholder={placeholder || (ready ? 'Start typing an address…' : 'Address')}
       style={style}
       className={className}
-      // Stop the browser's own autofill covering Google's dropdown.
+      // Stop the browser's / a password manager's own address autofill from
+      // covering Google's dropdown with a "!" bubble and blocking further typing.
+      // A random name + these vendor opt-outs suppress Chrome, 1Password & LastPass.
       autoComplete="off"
+      autoCorrect="off"
+      autoCapitalize="off"
+      spellCheck={false}
+      name={`addr-${Math.random().toString(36).slice(2, 9)}`}
+      data-1p-ignore="true"
+      data-lpignore="true"
+      data-form-type="other"
     />
   )
 }

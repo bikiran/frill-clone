@@ -3,14 +3,16 @@
 import { useState, useEffect } from 'react'
 import Portal from './Portal'
 
-export default function LiveChat() {
+export default function LiveChat({ slug: slugProp }: { slug?: string } = {}) {
   const [open, setOpen] = useState(false)
-  const [slug, setSlug] = useState('')
+  const [slug, setSlug] = useState(slugProp || '')
   const [mounted, setMounted] = useState(false)
 
-  // Get slug from hostname
+  // Target workspace: an explicit slug (e.g. Colvy's own support board on the
+  // marketing site) wins; otherwise derive it from the board subdomain.
   useEffect(() => {
     setMounted(true)
+    if (slugProp) { setSlug(slugProp); return }
     if (typeof window !== 'undefined') {
       const hostname = window.location.hostname
       if (hostname.endsWith('.colvy.com') && hostname !== 'colvy.com') {
@@ -18,7 +20,7 @@ export default function LiveChat() {
         setSlug(companySlug)
       }
     }
-  }, [])
+  }, [slugProp])
 
   if (!mounted) return null
 

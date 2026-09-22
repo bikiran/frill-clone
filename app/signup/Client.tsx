@@ -456,10 +456,6 @@ function SignUpForm() {
                 onSelect={p => setAddrParts({ city: p.city, state: p.state, postcode: p.postcode, country: p.country })}
                 placeholder="Business address" style={inputStyle} /></div>
 
-            <div style={{ marginBottom: 16 }}><label style={labelStyle}>Business phone</label>
-              <input value={businessPhone} onChange={e => setBusinessPhone(e.target.value)} placeholder="Business phone number" style={inputStyle} />
-              <p style={{ fontSize: 12, color: '#9ca3af', margin: '6px 2px 0' }}>Used for call forwarding when Colvy Phones isn&rsquo;t active.</p></div>
-
             <div style={{ marginBottom: 8 }}><label style={labelStyle}>Business hours</label>
               <p style={{ fontSize: 12, color: '#9ca3af', margin: '0 2px 10px' }}>Used for after-hours auto-replies and missed-call messages.</p>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>

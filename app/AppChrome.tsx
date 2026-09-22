@@ -644,11 +644,18 @@ export default function AppChrome({
   const isFullPage = isEmbed || isMarketingRoot || isFullPageRoute || isPlatformHost
 
   if (isFullPage) {
+    // Colvy's own prospects need a way to reach us from the marketing site. Show
+    // the Colvy live-chat bubble on marketing pages (routing into Colvy's own
+    // support workspace), but NOT on auth / upload / widget / super-admin pages.
+    const authOrUtility = ['/signin', '/signup', '/forgot-password', '/reset-password', '/auth', '/u/', '/widget', '/platform-admin'].some(p => pathname?.startsWith(p))
+    const showMarketingChat = (isMarketingRoot || isFullPageRoute) && !authOrUtility && !isPlatformHost
+    const supportSlug = process.env.NEXT_PUBLIC_COLVY_SUPPORT_SLUG || 'colvy'
     return (
       <>
         <Analytics />
         {children}
         <UpdateNotification accentColor={company?.accent_color} />
+        {showMarketingChat && <LiveChat slug={supportSlug} />}
       </>
     )
   }
