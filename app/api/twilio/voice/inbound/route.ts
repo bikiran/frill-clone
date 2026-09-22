@@ -207,9 +207,16 @@ export async function POST(req: NextRequest) {
     // Twilio push does that — so dropping it leaves ringing intact.
 
     if (identities.length === 0) {
-      // Nobody online → straight to voicemail (if enabled).
+      // Nobody online → straight to voicemail (if enabled). Record WHY on `cause`
+      // (shown as "Hangup cause" in Call Diagnostics) so this is diagnosable: no
+      // agent had a fresh presence heartbeat AND none had a push token to wake.
       if (integ.voicemail_enabled === false) return twiml('<Response><Hangup/></Response>')
-      try { await db.from('calls').update({ status: 'voicemail_greeting', is_voicemail: true }).eq('id', callRowId || '') } catch {}
+      try {
+        await db.from('calls').update({
+          status: 'voicemail_greeting', is_voicemail: true,
+          cause: `no_agent: nobody online (online heartbeats=${(online || []).length}, push devices=${(mobileTokens || []).length})`,
+        }).eq('id', callRowId || '')
+      } catch {}
       return twiml(voicemailTwiml(base, greeting, cbQuery))
     }
 
