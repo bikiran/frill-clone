@@ -696,7 +696,10 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
     } catch {}
     const poll = setInterval(async () => {
       try {
-        const { data } = await (supabase as any).from('calls').select('status, answered_at').eq('id', callId).maybeSingle()
+        // Select the whole row (not 'status, answered_at') so that if answered_at
+        // is momentarily unknown to the schema cache the query still succeeds and
+        // returns status — a named missing column 400s the whole request.
+        const { data } = await (supabase as any).from('calls').select('*').eq('id', callId).maybeSingle()
         if (ringbackShouldStop(data)) stopRingback()
       } catch {}
     }, 1000)
