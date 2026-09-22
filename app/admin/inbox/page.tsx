@@ -9921,6 +9921,26 @@ export default function InboxPage() {
                       </div>
                     )}
 
+                    {/* ── Social comment ────────────────────────────────────
+                        This customer commented on a post/ad (any linked channel);
+                        opens the comment in the Social Engagement manager. */}
+                    {contactReviews.commentCount > 0 && contactReviews.latestComment && (
+                      <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 4 }}>
+                        <p style={{ margin: '0 0 3px 0', fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase' }}>Social engagement</p>
+                        <a href={`/admin/social?comment=${encodeURIComponent(contactReviews.latestComment.id)}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, textDecoration: 'none' }} title="View on the Social Engagement manager">
+                          <span style={{ fontSize: 13 }}>💬</span>
+                          <span style={{ fontSize: 12, color: 'var(--slate)' }}>
+                            Commented on {contactReviews.latestComment.platform === 'instagram' ? 'Instagram' : 'Facebook'}{contactReviews.commentCount > 1 ? ` · ${contactReviews.commentCount}` : ''}
+                          </span>
+                        </a>
+                        {contactReviews.latestComment.message && (
+                          <p style={{ margin: '5px 0 0 0', fontSize: 12, color: 'var(--ink)', fontStyle: 'italic', lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                            “{contactReviews.latestComment.message}”
+                          </p>
+                        )}
+                      </div>
+                    )}
+
                     {/* ── Preferred agent ───────────────────────────────────
                         When this customer calls, ring this team member first;
                         on no answer the call still rings everyone else. */}
