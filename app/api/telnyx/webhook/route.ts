@@ -714,7 +714,12 @@ export async function POST(req: NextRequest) {
             // network (they hear real ringback) and dial the agents. The bridge
             // (on agent answer) auto-answers the caller and connects both ways.
             if (anyOnline) {
-              const ring = Number(integ.ring_seconds || 25)
+              // Floor the agent ring at 20s. A low/misconfigured ring_seconds was
+              // diverting inbound calls to voicemail after ~1 ring — the browser
+              // popup appeared then vanished before the agent could answer (every
+              // call landing on "Voicemail 0:00"). 20s is the minimum realistic
+              // window to pick up.
+              const ring = Math.max(Number(integ.ring_seconds || 25), 20)
               const dialConnectionId = eventConnectionId || (integ as any).voice_api_application_id || integ.connection_id
 
               // Preferred-agent priority ring: if the caller's contact has a
