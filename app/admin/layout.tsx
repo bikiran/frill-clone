@@ -165,6 +165,25 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const authedRef = useRef<boolean | null>(null)
   useEffect(() => { authedRef.current = authed }, [authed])
   const [adminCollapsed, setAdminCollapsed] = useState(false)
+  // Adapt the sidebar to the window width as it changes. Below 860px the sidebar
+  // is an off-canvas drawer (CSS), so we keep it EXPANDED there for full labels
+  // when opened; in the medium band (860–1200px) auto-COLLAPSE it to icons so
+  // dense pages aren't crushed; wide (≥1200px) leaves it expanded. We only act on
+  // a band CHANGE, so a manual collapse/expand still sticks within a band.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const bandOf = (w: number) => (w < 860 ? 'mobile' : w < 1200 ? 'medium' : 'wide')
+    let prev = ''
+    const apply = () => {
+      const band = bandOf(window.innerWidth)
+      if (band === prev) return
+      prev = band
+      setAdminCollapsed(band === 'medium')
+    }
+    apply()
+    window.addEventListener('resize', apply)
+    return () => window.removeEventListener('resize', apply)
+  }, [])
   const [company, setCompany] = useState<any>(null)
   // The current member's role + feature permissions (see lib/permissions.ts).
   // Owner/super-admin => full access; a restricted editor/viewer only sees and

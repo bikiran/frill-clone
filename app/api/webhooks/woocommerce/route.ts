@@ -401,7 +401,12 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
         metadata: { order_event: true, order_id: order.id, status: badgeStatus },
       })
     }
-    try { await notifyCompany({ db, companyId, type: 'order', message: `New order #${order.number || order.id} from ${displayName} — $${order.total}`, actorName: displayName, conversationId: conv.id }) } catch {}
+    // Title the alert by what actually happened. A completed order was arriving
+    // labelled "New order" — the same wording as a fresh order — so the team
+    // couldn't tell a placement from a fulfilment at a glance. Completed orders
+    // now read "Order completed"; everything else stays "New order".
+    const orderVerb = status === 'completed' ? 'Order completed' : 'New order'
+    try { await notifyCompany({ db, companyId, type: 'order', message: `${orderVerb} #${order.number || order.id} from ${displayName} — $${order.total}`, actorName: displayName, conversationId: conv.id }) } catch {}
     // Record the dedup marker now so repeated webhook deliveries for the same
     // order+status don't re-post (whether or not automation is enabled).
     await db.from('order_chat_events').insert({ ...dupeKey, conversation_id: conv.id })
