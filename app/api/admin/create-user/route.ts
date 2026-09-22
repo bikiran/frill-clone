@@ -46,6 +46,12 @@ export async function POST(req: NextRequest) {
 
     let userId: string | null = null
     let userEmail = email.trim().toLowerCase()
+    // Track whether WE created the auth account on this request. If the
+    // membership link below can't be written, a freshly-created account would be
+    // left orphaned (a login with no workspace — visible in the global Users
+    // list but in no team). We delete it in that case so "Create User" is
+    // all-or-nothing. A pre-existing account is never deleted.
+    let createdNewUser = false
 
     if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
       const { data, error } = await (supabaseAdmin.auth.admin as any).createUser({
@@ -77,6 +83,7 @@ export async function POST(req: NextRequest) {
       } else {
         userId = data.user?.id
         userEmail = data.user?.email || email
+        createdNewUser = true
       }
     } else {
       const { data, error } = await supabaseAdmin.auth.signUp({
@@ -85,34 +92,48 @@ export async function POST(req: NextRequest) {
       })
       if (error) return NextResponse.json({ error: error.message }, { status: 400 })
       userId = data.user?.id
+      createdNewUser = true
     }
 
     // Scope the membership to the owner's company. Without company_id the row is
     // orphaned: the team list filters by company_id, so the new user never shows
-    // up there and can't reach the workspace. Also avoid a duplicate row if this
-    // person is already a member of this company (would break the single-row
-    // membership lookups elsewhere).
+    // up there and can't reach the workspace. This link is NOT best-effort — if
+    // it fails, the whole operation fails (and we undo a freshly-created account),
+    // because a "created" user who lands in no workspace is the exact bug this
+    // route caused: an account visible only in the global list, in no team.
+    // Also avoid a duplicate row if this person is already a member of this
+    // company (would break the single-row membership lookups elsewhere).
+    const cid = companyId || null
+    if (!cid) {
+      if (createdNewUser && userId) { try { await (supabaseAdmin.auth.admin as any).deleteUser(userId) } catch {} }
+      return NextResponse.json({ error: 'companyId required to add the user to a workspace' }, { status: 400 })
+    }
     try {
-      const cid = companyId || null
       let existing: any = null
-      if (userId && cid) {
+      if (userId) {
         const { data } = await (supabaseAdmin as any)
           .from('team_members').select('id').eq('company_id', cid).eq('user_id', userId).limit(1)
         existing = data?.[0] || null
       }
       if (existing) {
-        await (supabaseAdmin as any).from('team_members')
+        const { error } = await (supabaseAdmin as any).from('team_members')
           .update({ role: role || 'editor', status: 'active', email: userEmail })
           .eq('id', existing.id)
+        if (error) throw error
       } else {
-        await (supabaseAdmin as any).from('team_members').insert({
+        const { error } = await (supabaseAdmin as any).from('team_members').insert({
           email: userEmail, role: role || 'editor', status: 'active', user_id: userId,
           company_id: cid,
         })
+        if (error) throw error
       }
-    } catch {}
+    } catch (e: any) {
+      // Roll back a just-created account so we never leave an orphan behind.
+      if (createdNewUser && userId) { try { await (supabaseAdmin.auth.admin as any).deleteUser(userId) } catch {} }
+      return NextResponse.json({ error: `Account created but could not be added to the workspace: ${e?.message || 'membership write failed'}` }, { status: 500 })
+    }
 
-    return NextResponse.json({ success: true, email: userEmail, userId, companyId: companyId || null })
+    return NextResponse.json({ success: true, email: userEmail, userId, companyId: cid })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
