@@ -790,7 +790,10 @@ export async function POST(req: NextRequest) {
                 if (integ.voicemail_enabled !== false) {
                   try { await svc.answerCall(callControlId) } catch {}
                   await svc.speak(callControlId, integ.voicemail_greeting || 'Please leave a message after the tone.')
-                  await db.from('calls').update({ status: 'voicemail_greeting', is_voicemail: true, transcription: `[ring failed: all dial attempts failed]` })
+                  // Reason on `cause` (shown as "Hangup cause" in Call Diagnostics)
+                  // — transcription gets overwritten by the voicemail recording's
+                  // own transcript, so it can't hold the routing reason.
+                  await db.from('calls').update({ status: 'voicemail_greeting', is_voicemail: true, cause: 'ring_failed: all dial attempts failed' })
                     .eq('telnyx_call_control_id', callControlId)
                 } else {
                   try { await svc.hangupCall(callControlId) } catch {}
@@ -805,7 +808,7 @@ export async function POST(req: NextRequest) {
               if (integ.voicemail_enabled !== false) {
                 try { await svc.answerCall(callControlId) } catch {}
                 await svc.speak(callControlId, integ.voicemail_greeting || 'Please leave a message after the tone.')
-                await db.from('calls').update({ status: 'voicemail_greeting', is_voicemail: true, transcription: `[to voicemail: ${reason}]` })
+                await db.from('calls').update({ status: 'voicemail_greeting', is_voicemail: true, cause: `no_agent: ${reason}`.slice(0, 250) })
                   .eq('telnyx_call_control_id', callControlId)
               } else {
                 await svc.hangupCall(callControlId)
@@ -1147,7 +1150,10 @@ export async function POST(req: NextRequest) {
                 const rungCount = Array.isArray(parentRow.ringing_leg_ids) ? parentRow.ringing_leg_ids.length : 0
                 await db.from('calls').update({
                   status: 'voicemail_greeting', is_voicemail: true,
-                  transcription: `[to voicemail: agent leg ended · cause=${legCause} · rung ${rungCount} device(s)]`,
+                  // On `cause` (not transcription — that's overwritten by the
+                  // voicemail recording's transcript) so it survives to show in
+                  // Call Diagnostics' "Hangup cause".
+                  cause: `agent_leg_ended: ${legCause} (rung ${rungCount})`,
                 }).eq('id', parentRow.id)
               } else {
                 await svc.hangupCall(parentRow.telnyx_call_control_id)
