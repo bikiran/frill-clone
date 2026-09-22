@@ -836,11 +836,34 @@ function IntegrationsPage() {
 // per-call detail drawer (status, hangup cause, recording, transcript, sentiment,
 // AI to-dos). Real data only, from the `calls` table (COLVY_V115_TELNYX + ALTERs).
 function CallDetail({ call, coName, onClose }: { call: any; coName: string; onClose: () => void }) {
+  // Admin AI overview: cached on the row (call.ai_admin_review) or generated on
+  // demand. Kept in local state so the panel updates without a page refetch.
+  const [review, setReview] = useState<any>(call.ai_admin_review || null)
+  const [reviewAt, setReviewAt] = useState<string | null>(call.ai_admin_review_at || null)
+  const [reviewBusy, setReviewBusy] = useState(false)
+  const [reviewErr, setReviewErr] = useState('')
+  const genReview = async (force = false) => {
+    setReviewBusy(true); setReviewErr('')
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch('/api/platform-admin/call-review', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
+        body: JSON.stringify({ callId: call.id, force }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Could not analyse this call')
+      setReview(data.review); setReviewAt(data.at || new Date().toISOString())
+      if (data.warning) setReviewErr(data.warning)
+    } catch (e: any) { setReviewErr(e.message) } finally { setReviewBusy(false) }
+  }
   const dur = (s: number) => {
     if (!s && s !== 0) return '—'
     const m = Math.floor(s / 60), r = s % 60
     return m > 0 ? `${m}m ${r}s` : `${r}s`
   }
+  const qualColor: Record<string, string> = { good: '#10b981', fair: '#f59e0b', poor: '#ef4444', unknown: '#6b7280' }
+  const sevColor: Record<string, string> = { high: '#ef4444', medium: '#f59e0b', low: '#6b7280' }
   const statusColor: Record<string, string> = {
     completed: '#10b981', answered: '#10b981', ringing: '#f59e0b', initiated: '#6366f1',
     busy: '#f59e0b', failed: '#ef4444', 'no-answer': '#ef4444',
@@ -876,6 +899,15 @@ function CallDetail({ call, coName, onClose }: { call: any; coName: string; onCl
           <Row k="Hangup cause" v={call.cause} />
           <Row k="Duration" v={dur(call.duration_seconds)} />
           <Row k="Answered by" v={call.answered_by} />
+          {/* Agent's post-call thumbs (calls.rating: 1 good / -1 bad). */}
+          {(call.rating === 1 || call.rating === -1) && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, padding: '9px 0', borderBottom: '1px solid var(--sa-border)' }}>
+              <span style={{ fontSize: 12.5, color: 'var(--sa-muted)' }}>Agent rating</span>
+              <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 9px', borderRadius: 999, background: (call.rating === 1 ? '#10b981' : '#ef4444') + '22', color: call.rating === 1 ? '#10b981' : '#ef4444' }}>
+                {call.rating === 1 ? '👍 Good' : '👎 Bad'}{call.rating_at ? ` · ${new Date(call.rating_at).toLocaleDateString()}` : ''}
+              </span>
+            </div>
+          )}
           <Row k="Started" v={call.started_at ? new Date(call.started_at).toLocaleString() : '—'} />
           <Row k="Ended" v={call.ended_at ? new Date(call.ended_at).toLocaleString() : '—'} />
           <Row k="Voicemail" v={call.is_voicemail ? 'Yes' : 'No'} />
@@ -896,12 +928,59 @@ function CallDetail({ call, coName, onClose }: { call: any; coName: string; onCl
 
           {call.recording_url ? (
             <div style={{ marginTop: 18 }}>
-              <p style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--sa-text)', margin: '0 0 8px' }}>Recording{call.recording_duration ? ` · ${dur(call.recording_duration)}` : ''}</p>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, margin: '0 0 8px' }}>
+                <p style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--sa-text)', margin: 0 }}>Recording{call.recording_duration ? ` · ${dur(call.recording_duration)}` : ''}</p>
+                <a href={call.recording_url} download target="_blank" rel="noopener noreferrer" style={{ fontSize: 11.5, fontWeight: 600, color: '#6366f1', textDecoration: 'none' }}>Download ↓</a>
+              </div>
               <audio controls src={call.recording_url} style={{ width: '100%' }} />
+              {call.conference_recording_url && (
+                <audio controls src={call.conference_recording_url} style={{ width: '100%', marginTop: 8 }} />
+              )}
             </div>
           ) : call.recording_error ? (
             <p style={{ marginTop: 18, fontSize: 12, color: '#f59e0b' }}>Recording unavailable: {call.recording_error}</p>
           ) : null}
+
+          {/* ── Admin AI overview ─────────────────────────────────────────────
+              How the call went + likely technical/sound issues, for ops. */}
+          <div style={{ marginTop: 18, padding: 14, borderRadius: 12, border: '1px solid var(--sa-border)', background: 'var(--sa-card)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: review ? 10 : 0 }}>
+              <p style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--sa-text)', margin: 0 }}>✨ AI overview <span style={{ color: 'var(--sa-muted)', fontWeight: 500 }}>(admin)</span></p>
+              <button onClick={() => genReview(!!review)} disabled={reviewBusy}
+                style={{ padding: '5px 11px', borderRadius: 8, border: '1px solid var(--sa-border)', background: 'transparent', color: '#7c5cff', cursor: reviewBusy ? 'default' : 'pointer', fontSize: 11.5, fontWeight: 600, opacity: reviewBusy ? 0.6 : 1 }}>
+                {reviewBusy ? 'Analysing…' : review ? 'Regenerate' : 'Generate'}
+              </button>
+            </div>
+            {reviewErr && <p style={{ fontSize: 11.5, color: '#f59e0b', margin: '0 0 8px' }}>{reviewErr}</p>}
+            {!review && !reviewBusy && !reviewErr && (
+              <p style={{ fontSize: 12, color: 'var(--sa-muted)', margin: '8px 0 0', lineHeight: 1.5 }}>Generate an admin summary of how this call went — including any signs of dropped audio, poor sound quality, routing problems or the agent never connecting.</p>
+            )}
+            {review && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', padding: '2px 9px', borderRadius: 999, background: (qualColor[review.quality] || '#6b7280') + '22', color: qualColor[review.quality] || '#6b7280' }}>{review.quality || 'unknown'}</span>
+                  {reviewAt && <span style={{ fontSize: 10.5, color: 'var(--sa-muted)' }}>{new Date(reviewAt).toLocaleString()}</span>}
+                </div>
+                <p style={{ fontSize: 12.5, color: 'var(--sa-text)', margin: 0, lineHeight: 1.55 }}>{review.overview}</p>
+                {Array.isArray(review.issues) && review.issues.length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {review.issues.map((it: any, i: number) => (
+                      <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', padding: '7px 10px', borderRadius: 8, border: '1px solid var(--sa-border)' }}>
+                        <span style={{ fontSize: 9.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', padding: '2px 6px', borderRadius: 6, background: (sevColor[it.severity] || '#6b7280') + '22', color: sevColor[it.severity] || '#6b7280', whiteSpace: 'nowrap' }}>{it.severity}</span>
+                        <span style={{ fontSize: 12, color: 'var(--sa-text)', lineHeight: 1.45 }}><b style={{ textTransform: 'capitalize' }}>{it.type}:</b> {it.detail}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {review.sound_quality && (
+                  <p style={{ fontSize: 11.5, color: 'var(--sa-muted)', margin: 0 }}><b style={{ color: 'var(--sa-text)' }}>Sound:</b> {review.sound_quality}</p>
+                )}
+                {review.recommendation && review.recommendation !== 'none' && (
+                  <p style={{ fontSize: 11.5, color: 'var(--sa-muted)', margin: 0 }}><b style={{ color: 'var(--sa-text)' }}>Recommendation:</b> {review.recommendation}</p>
+                )}
+              </div>
+            )}
+          </div>
 
           {todos.length > 0 && (
             <div style={{ marginTop: 18 }}>
