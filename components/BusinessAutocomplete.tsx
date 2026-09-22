@@ -126,7 +126,16 @@ export default function BusinessAutocomplete({
       placeholder={placeholder || (ready ? 'Search your business name…' : 'Business name')}
       style={style}
       className={className}
+      // Suppress browser / password-manager autofill so it doesn't cover Google's
+      // suggestions with a "!" bubble and block typing (see AddressAutocomplete).
       autoComplete="off"
+      autoCorrect="off"
+      autoCapitalize="off"
+      spellCheck={false}
+      name={`biz-${Math.random().toString(36).slice(2, 9)}`}
+      data-1p-ignore="true"
+      data-lpignore="true"
+      data-form-type="other"
     />
   )
 }
