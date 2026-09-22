@@ -716,6 +716,27 @@ export default function InboxPage() {
   const [searchMsgHits, setSearchMsgHits] = useState<Record<string, { field: string; snippet: string }>>({})
   const [msgSearch, setMsgSearch] = useState('')
   const [showMsgSearch, setShowMsgSearch] = useState(false)
+  // Which match is currently focused (index into the ordered, top-down list of
+  // matching messages) for the in-conversation find bar's next/previous nav.
+  const [msgSearchIdx, setMsgSearchIdx] = useState(0)
+  // Ordered (top-down / chronological, since `messages` is chronological) ids of
+  // the messages whose body matches the in-conversation search.
+  const msgMatchIds = useMemo(() => {
+    const q = msgSearch.trim().toLowerCase()
+    if (!q) return [] as string[]
+    return messages.filter(m => (m.content || '').toLowerCase().includes(q)).map(m => String(m.id))
+  }, [messages, msgSearch])
+  // A new query starts from the first match.
+  useEffect(() => { setMsgSearchIdx(0) }, [msgSearch])
+  // Focus the active match: outline it and scroll it into view. Always clears the
+  // previous highlight first, so closing the bar (or an empty query) leaves none.
+  useEffect(() => {
+    document.querySelectorAll('.cmsg-active-hit').forEach(n => n.classList.remove('cmsg-active-hit'))
+    if (!showMsgSearch || msgMatchIds.length === 0) return
+    const idx = Math.min(Math.max(0, msgSearchIdx), msgMatchIds.length - 1)
+    const el = document.getElementById(`cmsg-${msgMatchIds[idx]}`)
+    if (el) { el.classList.add('cmsg-active-hit'); el.scrollIntoView({ behavior: 'smooth', block: 'center' }) }
+  }, [showMsgSearch, msgSearchIdx, msgMatchIds])
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   // On phones we show one pane at a time: the conversation list, the open
   // thread, or the contact panel. Desktop shows all three side by side.
@@ -3183,6 +3204,10 @@ export default function InboxPage() {
   // underlined so they read as links on both agent and visitor bubbles.
   const renderTextWithLinks = (text: string) => {
     if (!text) return text
+    // Highlight the active find term (in-conversation search, else the global
+    // conversation search) inside the message body, not just in the list rows.
+    const hq = (showMsgSearch && msgSearch.trim()) ? msgSearch : searchTerm
+    const acc = companyInfo?.accent_color || 'var(--coral)'
     const parts = text.split(/(https?:\/\/[^\s]+)/g)
     return parts.map((part, i) =>
       /^https?:\/\//.test(part) ? (
@@ -3190,7 +3215,7 @@ export default function InboxPage() {
           onClick={e => e.stopPropagation()}
           style={{ color: 'inherit', textDecoration: 'underline', wordBreak: 'break-all' }}>{part}</a>
       ) : (
-        <span key={i}>{part}</span>
+        <span key={i}><Highlight text={part} q={hq} accent={acc} /></span>
       )
     )
   }
@@ -5584,11 +5609,13 @@ export default function InboxPage() {
 
   // Highlight @mentions inside an internal note so they stand out.
   const renderWithMentions = (text: string) => {
+    const hq = (showMsgSearch && msgSearch.trim()) ? msgSearch : searchTerm
+    const acc = companyInfo?.accent_color || 'var(--coral)'
     const parts = String(text || '').split(/(@[\w.\-]+)/g)
     return parts.map((p, i) =>
       p.startsWith('@')
         ? <strong key={i} style={{ color: '#b45309', fontStyle: 'normal', background: '#fef3c7', padding: '0 3px', borderRadius: 4 }}>{p}</strong>
-        : <span key={i}>{p}</span>
+        : <span key={i}><Highlight text={p} q={hq} accent={acc} /></span>
     )
   }
   // Team members matching the in-progress @token.
@@ -7703,7 +7730,7 @@ export default function InboxPage() {
               </button>
 
               {/* Search messages toggle */}
-              <button type="button" onClick={() => { setShowMsgSearch(v => !v); setMsgSearch('') }} title="Search messages"
+              <button type="button" onClick={() => { setShowMsgSearch(v => !v); setMsgSearch(''); setMsgSearchIdx(0) }} title="Search messages"
                 style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: showMsgSearch ? 'var(--peach)' : '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--slate)', order: -1 }}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
               </button>
@@ -7844,19 +7871,42 @@ export default function InboxPage() {
               </div>
             )}
 
-            {/* Message search bar */}
-            {showMsgSearch && (
-              <div style={{ padding: '8px 16px', borderBottom: '1px solid var(--border)', background: 'var(--canvas)' }}>
-                <input autoFocus value={msgSearch} onChange={e => setMsgSearch(e.target.value)}
-                  placeholder="Search in this conversation…"
-                  style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 13, outline: 'none' }} />
-                {msgSearch && (
-                  <p style={{ margin: '6px 0 0', fontSize: 11, color: 'var(--slate)' }}>
-                    {messages.filter(m => (m.content || '').toLowerCase().includes(msgSearch.toLowerCase())).length} match(es)
-                  </p>
-                )}
+            {/* Message search bar — find-in-conversation with match counter,
+                previous/next navigation (top-down) and a clear/close button. */}
+            {showMsgSearch && (() => {
+              const total = msgMatchIds.length
+              const has = total > 0
+              const cur = has ? Math.min(msgSearchIdx, total - 1) + 1 : 0
+              const goNext = () => { if (total) setMsgSearchIdx(i => (Math.min(i, total - 1) + 1) % total) }
+              const goPrev = () => { if (total) setMsgSearchIdx(i => (Math.min(i, total - 1) - 1 + total) % total) }
+              const close = () => { setShowMsgSearch(false); setMsgSearch(''); setMsgSearchIdx(0) }
+              const navBtn: React.CSSProperties = { width: 28, height: 28, borderRadius: 7, border: '1px solid var(--border)', background: '#fff', cursor: has ? 'pointer' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'center', color: has ? 'var(--slate)' : '#cbd5e1', flexShrink: 0 }
+              return (
+              <div style={{ padding: '8px 16px', borderBottom: '1px solid var(--border)', background: 'var(--canvas)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <style>{`.cmsg-active-hit{border-radius:12px;box-shadow:0 0 0 2px color-mix(in srgb, var(--coral) 55%, transparent);background:color-mix(in srgb, var(--coral) 8%, transparent);scroll-margin:16px;}`}</style>
+                <div style={{ flex: 1, position: 'relative', display: 'flex', alignItems: 'center' }}>
+                  <input autoFocus value={msgSearch} onChange={e => setMsgSearch(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.shiftKey ? goPrev() : goNext() } else if (e.key === 'Escape') { e.preventDefault(); close() } }}
+                    placeholder="Search in this conversation…"
+                    style={{ width: '100%', padding: '8px 64px 8px 12px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
+                  {msgSearch && (
+                    <span style={{ position: 'absolute', right: 10, fontSize: 11, fontWeight: 600, color: has ? 'var(--slate)' : '#ef4444', whiteSpace: 'nowrap' }}>
+                      {has ? `${cur} / ${total}` : 'No matches'}
+                    </span>
+                  )}
+                </div>
+                <button type="button" onClick={goPrev} disabled={!has} title="Previous match (Shift+Enter)" style={navBtn}>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="18 15 12 9 6 15" /></svg>
+                </button>
+                <button type="button" onClick={goNext} disabled={!has} title="Next match (Enter)" style={navBtn}>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
+                </button>
+                <button type="button" onClick={close} title="Close search (Esc)" style={{ ...navBtn, cursor: 'pointer', color: 'var(--slate)' }}>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+                </button>
               </div>
-            )}
+              )
+            })()}
 
             {/* Messages */}
             <div ref={messagesScrollRef} className="inbox-messages" style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: 14, scrollBehavior: 'auto' }}>
@@ -7887,7 +7937,12 @@ export default function InboxPage() {
                 </div>
               )}
               {(() => {
-                const list = msgSearch ? messages.filter(m => (m.content || '').toLowerCase().includes(msgSearch.toLowerCase())) : messages
+                // In-conversation search no longer FILTERS the thread down to
+                // matches — that hid the surrounding conversation and had no way
+                // back to the top. We keep the whole thread and instead highlight
+                // matches in place, scrolling the active one into view (see the
+                // find bar's next/previous nav).
+                const list = messages
                 // Flat list of all images/videos in the thread (for the gallery),
                 // with a lookup from a message's attachment to its gallery index.
                 const galleryMedia: MediaItem[] = []
@@ -7938,7 +7993,7 @@ export default function InboxPage() {
                 // recording, a summary or a completed/answered status also count),
                 // plus voicemails and missed calls. Only in-progress/ringing
                 // attempts and dial-pad calls (no conversation) stay out.
-                const extraCalls = (msgSearch ? [] : convCalls)
+                const extraCalls = convCalls
                   .filter((c: any) => {
                     if (linkedCallIds.has(c.id)) return false
                     const st = String(c.status || '')
@@ -8039,7 +8094,7 @@ export default function InboxPage() {
                   const noteInitials = noteAuthor.split(/\s+/).filter(Boolean).map((w: string) => w[0]).slice(0, 2).join('').toUpperCase() || 'T'
                   const noteRel = timeAgo(msg.created_at)
                   return (
-                  <div key={msg.id}>
+                  <div key={msg.id} id={`cmsg-${msg.id}`} data-cmsg="1">
                     {dateDivider}
                     <div style={{ display: 'flex', justifyContent: 'center', margin: '4px 0' }}>
                       <div style={{ maxWidth: '86%', width: '100%', background: '#fffbeb', border: '1px solid #fde68a', borderLeft: '4px solid #f59e0b', borderRadius: 14, padding: '12px 14px', boxShadow: '0 1px 2px rgba(180,83,9,0.06)' }}>
@@ -8071,7 +8126,7 @@ export default function InboxPage() {
                 // summary, action items, recording player, transcript — not a
                 // grey one-line pill.
                 if (isSystem && (msg as any).metadata?.call_event && (msg as any).metadata?.call_id) return (
-                  <div key={msg.id}>
+                  <div key={msg.id} id={`cmsg-${msg.id}`} data-cmsg="1">
                     {dateDivider}
                     <CallCard callId={(msg as any).metadata.call_id} meta={(msg as any).metadata} timestamp={msg.created_at} highlight={(showMsgSearch && msgSearch.trim()) ? msgSearch : searchTerm} accent={companyInfo?.accent_color || 'var(--coral)'} actor={{ id: user?.id, name: myName }} teamMembers={teamMembers} outlets={outlets} defaultLocationId={(selected as any)?.assigned_location_id || (selected as any)?.location_id || null} onTasksCreated={onAiTasksCreated} />
                   </div>
@@ -8099,7 +8154,7 @@ export default function InboxPage() {
                   if (!kind) {
                     // Plain system line — keep it light and unobtrusive.
                     return (
-                      <div key={msg.id}>
+                      <div key={msg.id} id={`cmsg-${msg.id}`} data-cmsg="1">
                         {dateDivider}
                         <div style={{ textAlign: 'center', fontSize: 11, color: '#9ca3af', padding: '4px 0' }}>
                           <span style={{ background: '#f3f4f6', padding: '3px 10px', borderRadius: 20 }}>{msg.content}</span>
@@ -8121,7 +8176,7 @@ export default function InboxPage() {
                     .trim()
 
                   return (
-                    <div key={msg.id}>
+                    <div key={msg.id} id={`cmsg-${msg.id}`} data-cmsg="1">
                       {dateDivider}
                       <div style={{ display: 'flex', justifyContent: 'center', padding: '5px 0' }}>
                         {/* Grows to the full stream width and wraps to more lines
@@ -8154,7 +8209,7 @@ export default function InboxPage() {
                 if (String((msg as any).delivery_channel || '').toLowerCase() === 'email'
                     && ((msg as any).email_html || (msg as any).email_from || (msg as any).email_subject)) {
                   return (
-                    <div key={msg.id}>
+                    <div key={msg.id} id={`cmsg-${msg.id}`} data-cmsg="1">
                       {dateDivider}
                       <EmailMessage msg={msg} agentColor={companyInfo?.accent_color} />
                       <p style={{ textAlign: isAgent ? 'right' : 'left', fontSize: 10.5, color: '#9ca3af', margin: '2px 12px 0' }}>
@@ -8179,7 +8234,7 @@ export default function InboxPage() {
                 const reactionCounts: Record<string, number> = {}
                 reactions.forEach((r: any) => { reactionCounts[r.emoji] = (reactionCounts[r.emoji] || 0) + 1 })
                 return (
-                  <div key={msg.id}>
+                  <div key={msg.id} id={`cmsg-${msg.id}`} data-cmsg="1">
                     {dateDivider}
                     <div className="chat-msg-row" style={{ display: 'flex', justifyContent: isAgent ? 'flex-end' : 'flex-start', gap: 8, alignItems: 'flex-end', position: 'relative' }}>
                     {!isAgent && (
