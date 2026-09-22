@@ -11,6 +11,26 @@ import LiveChat from '@/components/LiveChat'
 import UpdateNotification from '@/components/UpdateNotification'
 import Analytics from '@/components/Analytics'
 
+// Where a notification should take you when clicked. Shared by the in-app
+// notifications menu AND the bottom-right OS notification, so both route the
+// same way (the OS one used to only handle conversations and otherwise dumped
+// you on /admin — order and task alerts went nowhere useful).
+export function notificationPath(n: any): string {
+  const conv = n?.conversation_id || n?.conversationId
+  switch (n?.type) {
+    case 'idea': return n.idea_id ? `/?idea=${n.idea_id}` : '/'
+    case 'roadmap': return '/roadmap'
+    case 'announcement': return n.announcement_id ? `/announcements?id=${n.announcement_id}` : '/announcements'
+    case 'help': return n.article_id ? `/help/${n.article_id}` : '/help'
+    case 'form': return n.form_id ? `/forms/${n.form_id}` : '/admin/forms'
+    case 'settings': return '/admin/settings'
+    case 'task': return '/admin/tasks'
+    case 'chat': case 'sms': case 'call': case 'order': case 'ticket': case 'cart': case 'activity':
+      return conv ? `/admin/inbox?conversation=${conv}` : '/admin/inbox'
+    default: return conv ? `/admin/inbox?conversation=${conv}` : '/admin'
+  }
+}
+
 const NAV_ITEMS = [
   { href: '/', label: 'Ideas', icon: 'ideas' },
   { href: '/roadmap', label: 'Roadmap', icon: 'roadmap' },
@@ -167,6 +187,10 @@ export default function AppChrome({
 
   // Load nav visibility from settings (DB-first, localStorage fallback)
   useEffect(() => {
+    // The company's logo, resolved below — used as the favicon fallback when no
+    // explicit faviconUrl is set, so a board keeps ITS icon in the tab instead
+    // of Colvy's default.
+    let companyLogo: string | null = null
     const applySettings = (s: any) => {
       if (s) {
         setNavVisibility({
@@ -185,16 +209,13 @@ export default function AppChrome({
         const homeMap: Record<string, string> = { ideas: '/', roadmap: '/roadmap', announcements: '/announcements', help: '/help' }
         setHomePath(homeMap[s.defaultHomepage] || '/')
         if (typeof document !== 'undefined') {
-          // Dynamic favicon per company
-          if (s.faviconUrl) {
-            let link = document.querySelector("link[rel~='icon']") as HTMLLinkElement
-            if (!link) { link = document.createElement('link'); link.rel = 'icon'; document.head.appendChild(link) }
-            link.href = s.faviconUrl
-          } else {
-            // Reset to default colvy favicon (not prexty's)
-            const link = document.querySelector("link[rel~='icon']") as HTMLLinkElement
-            if (link) link.href = '/favicon.png'
-          }
+          // Dynamic favicon per company: explicit faviconUrl first, else the
+          // company's own logo, and only then Colvy's default — so a board that
+          // set a logo but no separate favicon keeps its own icon in the tab.
+          const favicon = s.faviconUrl || companyLogo || '/favicon.png'
+          let link = document.querySelector("link[rel~='icon']") as HTMLLinkElement
+          if (!link) { link = document.createElement('link'); link.rel = 'icon'; document.head.appendChild(link) }
+          link.href = favicon
           // Accent color
           if (s.accentColor) {
             document.documentElement.style.setProperty('--coral', s.accentColor)
@@ -231,8 +252,16 @@ export default function AppChrome({
           const { data: co } = await (supabase as any).from('companies').select('id,name,slug,logo_url,accent_color').eq('slug', slug).maybeSingle()
           if (co) {
             resolvedCompanyId = co.id
+            companyLogo = co.logo_url || null
             setCompany(co)
             try { localStorage.setItem(`company_${slug}`, JSON.stringify(co)) } catch {}
+            // Set the tab favicon to the company logo right away, so it's correct
+            // even if there's no site_settings row (the applySettings path below).
+            if (co.logo_url && typeof document !== 'undefined') {
+              let link = document.querySelector("link[rel~='icon']") as HTMLLinkElement
+              if (!link) { link = document.createElement('link'); link.rel = 'icon'; document.head.appendChild(link) }
+              link.href = co.logo_url
+            }
             if (co.accent_color && typeof document !== 'undefined') {
               document.documentElement.style.setProperty('--coral', co.accent_color)
               const r = parseInt(co.accent_color.slice(1,3), 16)
@@ -533,9 +562,11 @@ export default function AppChrome({
                 silent: true, // we play our own softer chime instead of the OS blare
               })
               notif.onclick = () => {
-                window.focus()
-                if (n.conversation_id) window.location.href = `/admin/inbox?conversation=${n.conversation_id}`
-                else window.location.href = '/admin'
+                try { window.focus() } catch {}
+                // Route by notification type (inbox / orders-as-conversation /
+                // tasks / idea / …) — not just conversations. window.location so
+                // it works even when this tab was in the background.
+                window.location.href = notificationPath(n)
                 notif.close()
               }
             }
@@ -719,7 +750,10 @@ export default function AppChrome({
     } else if (notification.type === 'settings') {
       setShowNotifications(false)
       router.push('/admin/settings')
-    } else if (['chat', 'sms', 'order', 'ticket', 'cart', 'activity'].includes(notification.type)) {
+    } else if (notification.type === 'task') {
+      setShowNotifications(false)
+      router.push('/admin/tasks')
+    } else if (['chat', 'sms', 'call', 'order', 'ticket', 'cart', 'activity'].includes(notification.type)) {
       // CRM activity — go to the inbox (open the specific conversation if known).
       setShowNotifications(false)
       let convId = notification.conversation_id || notification.conversationId
