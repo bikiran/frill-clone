@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { deliverAutomatedMessage } from '@/lib/channel-fallback'
-import { linkContactIdentity } from '@/lib/identity'
+import { linkContactIdentity, linkedContacts } from '@/lib/identity'
 import { createClient } from '@supabase/supabase-js'
 import { attributeOrderToLinks } from '@/lib/link-attribution'
 import { WebhookService } from '@/lib/webhook-service'
@@ -11,12 +11,12 @@ import { wooDateToISO } from '@/lib/orders'
 import { logEnquiryReopened } from '@/lib/conversation-timeline'
 
 const DEFAULT_MESSAGES: Record<string, string> = {
-  processing: 'Thank you for placing an order with {business}. We have received it. If you have any questions, feel free to reply here.',
-  failed: 'We noticed there was an issue with your recent order payment. Do you need any help?',
-  cancelled: 'Your recent order was cancelled. Can we help you with anything?',
-  refunded: 'Your order has been refunded. The refund of {amount} has been processed and should appear shortly.',
-  completed: 'Your order has been completed. Thank you for choosing {business}!',
-  'on-hold': 'Your order is on hold while we confirm a few details. We\'ll be in touch shortly — feel free to reply here.',
+  processing: 'Hi {name}, thanks for your order #{order} with {business} — we\'ve received it and will begin processing. Reply here anytime with any questions.',
+  failed: 'Hi {name}, we noticed there was an issue with the payment on your order #{order}. Do you need any help?',
+  cancelled: 'Hi {name}, your order #{order} was cancelled. Can we help you with anything?',
+  refunded: 'Your order #{order} has been refunded. The refund of {amount} has been processed and should appear shortly.',
+  completed: 'Hi {name}, your order #{order} is complete. Thank you for choosing {business}!',
+  'on-hold': 'Hi {name}, your order #{order} is on hold while we confirm a few details. We\'ll be in touch shortly — reply here anytime.',
 }
 
 // Customer-facing messages that are actively BAD to send on an order that is
@@ -298,7 +298,19 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
       .eq('company_id', companyId).eq('subject', orderSubject).limit(1)
     conv = byOrder?.[0] || null
     if (!conv) {
-      const { data } = await db.from('conversations').select('*').eq('company_id', companyId).eq('contact_id', contact.id).order('last_message_at', { ascending: false }).limit(1)
+      // Reuse the customer's most recent thread — searched across their WHOLE
+      // identity group, not just this contact row. linkContactIdentity (above)
+      // has already grouped an email-only duplicate and a phone-only duplicate
+      // under one identity_group_id using the order's email AND phone; without
+      // this the order would open a SECOND thread on the other duplicate contact
+      // (e.g. a customer who called — a phone contact — then ordered with their
+      // email got two inbox rows). Falls back to just this contact.
+      let groupIds: string[] = [contact.id]
+      try {
+        const linked = await linkedContacts(db, contact.id)
+        if (linked.length) groupIds = Array.from(new Set([contact.id, ...linked.map((c: any) => c.id)]))
+      } catch {}
+      const { data } = await db.from('conversations').select('*').eq('company_id', companyId).in('contact_id', groupIds).order('last_message_at', { ascending: false }).limit(1)
       conv = data?.[0] || null
     }
   }
