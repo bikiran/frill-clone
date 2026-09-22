@@ -254,10 +254,13 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     // call can ring them. "Online" = seen in the last ~2 minutes.
     const beat = async () => {
       const onCall = !!getActiveCall()
-      // Skip while hidden UNLESS we're on a call — a busy agent must keep
-      // reporting available:false even with the tab in the background, so the
-      // next inbound call rings the other agents, not them.
-      if (document.visibilityState !== 'visible' && !onCall) return
+      // Beat even when the tab is backgrounded. Inbound routing only rings agents
+      // with a fresh heartbeat (last ~2 min), so skipping while hidden made a
+      // web agent with the board tab in the background drop offline after 2
+      // minutes — every call then went straight to voicemail, even though the
+      // (backgrounded) tab can still ring. Browsers throttle background timers to
+      // ~1/min, which stays within the 2-minute window. `available: !onCall`
+      // still reports a busy agent as unavailable.
       try {
         const { data: { session } } = await supabase.auth.getSession()
         fetch('/api/telnyx/presence', {
