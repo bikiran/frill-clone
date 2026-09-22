@@ -10,7 +10,11 @@ import { createClient } from '@supabase/supabase-js'
 // Doing user creation AND email generation in one server call avoids both.
 export async function POST(req: NextRequest) {
   try {
-    const { email, password, name, slug, industry, companyId } = await req.json()
+    // mode: 'code' is the mobile app. It has no browser to land a confirmation
+    // link in, so it needs the six-digit code that Supabase issues alongside
+    // the link, typed back into the app instead.
+    const { email, password, name, slug, industry, companyId, mode } = await req.json()
+    const wantCode = mode === 'code'
 
     if (!email || !password) {
       return NextResponse.json({ error: 'Email and password are required' }, { status: 400 })
@@ -48,16 +52,42 @@ export async function POST(req: NextRequest) {
       },
     })
 
+    const taken = 'An account with this email already exists. Try signing in instead.'
+    let resumed = false
+
     if (createErr) {
-      // Already registered — tell the client so it can show a helpful message
-      if (createErr.message?.toLowerCase().includes('already') || createErr.status === 422) {
-        return NextResponse.json({ error: 'An account with this email already exists. Try signing in instead.' }, { status: 409 })
+      const exists = createErr.message?.toLowerCase().includes('already') || createErr.status === 422
+      if (!exists) return NextResponse.json({ error: createErr.message }, { status: 500 })
+
+      // The web flow stops here: the browser tab still has the confirmation
+      // email waiting for it, so a second signup really is a duplicate.
+      if (!wantCode) return NextResponse.json({ error: taken }, { status: 409 })
+
+      // The app's flow can be interrupted — the account is created a screen
+      // BEFORE the code is entered, so backing out of that screen leaves an
+      // unconfirmed account that the same person cannot sign in to and cannot
+      // sign up with either. Dead end, and they did nothing wrong.
+      //
+      // Supabase tells the two cases apart: correct credentials on an
+      // unconfirmed account fail specifically with email_not_confirmed, while a
+      // wrong password fails as invalid credentials. So the same password that
+      // made the account is proof enough to send a fresh code and let them pick
+      // the flow back up. Anything else is a genuine duplicate.
+      const probe = await createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+        { auth: { autoRefreshToken: false, persistSession: false } },
+      ).auth.signInWithPassword({ email, password })
+
+      if (probe.data?.session) return NextResponse.json({ error: taken }, { status: 409 })
+      const why = `${(probe.error as any)?.code || ''} ${probe.error?.message || ''}`
+      if (!/email[_ ]not[_ ]confirmed|not confirmed/i.test(why)) {
+        return NextResponse.json({ error: taken }, { status: 409 })
       }
-      return NextResponse.json({ error: createErr.message }, { status: 500 })
+      resumed = true
     }
 
-    const user = created.user
-    if (!user) return NextResponse.json({ error: 'User creation failed' }, { status: 500 })
+    const user = created?.user || null
+    if (!user && !resumed) return NextResponse.json({ error: 'User creation failed' }, { status: 500 })
 
     // 2. Generate the confirmation link for this exact user
     const baseUrl = 'https://colvy.com'
@@ -76,12 +106,25 @@ export async function POST(req: NextRequest) {
       console.error('Link generation error:', linkError)
       // User was created but link generation failed — still return success
       // with a flag so the client can offer a resend option
-      return NextResponse.json({ ok: true, userId: user.id, emailSent: false, linkError: linkError?.message })
+      return NextResponse.json({ ok: true, userId: user?.id || null, resumed, emailSent: false, linkError: linkError?.message })
     }
 
     const confirmLink = linkData.properties.action_link
+    // Supabase issues both forms of the same confirmation: a link for a browser
+    // and a six-digit code for anywhere there isn't one.
+    const emailOtp = linkData.properties.email_otp
     const boardName = name || 'Your Board'
     const boardUrl = slug ? `${slug}.colvy.com` : 'colvy.com'
+
+    // Asked for a code and Supabase did not give one — send nothing rather than
+    // a link, because the app is about to ask for six digits and a link would
+    // leave the user with no way to answer. Reported so resend can be offered.
+    if (wantCode && !emailOtp) {
+      return NextResponse.json({
+        ok: true, userId: user?.id || null, resumed, emailSent: false,
+        emailError: 'Confirmation code could not be generated',
+      })
+    }
 
     // 3. Send the confirmation email via Resend
     const RESEND_KEY = process.env.RESEND_API_KEY
@@ -94,8 +137,26 @@ export async function POST(req: NextRequest) {
         body: JSON.stringify({
           from: 'Colvy <noreply@updates.colvy.com>',
           to: [email],
-          subject: 'Confirm your email address — Colvy',
-          html: `
+          subject: wantCode ? `${emailOtp} is your Colvy confirmation code` : 'Confirm your email address — Colvy',
+          html: wantCode ? `
+            <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:560px;margin:0 auto;padding:40px 24px">
+              <h1 style="font-size:28px;font-weight:800;color:#0d0d0d;margin:0 0 8px">Welcome to Colvy! 🎉</h1>
+              <p style="font-size:16px;color:#6b7280;margin:0 0 28px">Enter this code in the Colvy app to confirm your email address.</p>
+              <div style="background:#fff4f1;border-radius:12px;padding:24px;text-align:center;margin-bottom:28px">
+                <p style="font-size:34px;font-weight:800;color:#ff7a6b;letter-spacing:8px;margin:0">${emailOtp}</p>
+              </div>
+              ${slug ? `
+              <div style="background:#fafafa;border-radius:12px;padding:16px 20px;margin-bottom:28px">
+                <p style="font-size:13px;font-weight:600;color:#9ca3af;margin:0 0 4px">YOUR BOARD URL</p>
+                <p style="font-size:16px;font-weight:800;color:#ff7a6b;margin:0">${boardUrl}</p>
+              </div>
+              ` : ''}
+              <hr style="border:none;border-top:1px solid #f0f0f0;margin:32px 0">
+              <p style="font-size:12px;color:#9ca3af;margin:0">
+                This code expires in an hour. If you didn't sign up for Colvy, you can safely ignore this email — nobody can use the code without it.
+              </p>
+            </div>
+          ` : `
             <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:560px;margin:0 auto;padding:40px 24px">
               <h1 style="font-size:28px;font-weight:800;color:#0d0d0d;margin:0 0 8px">Welcome to Colvy! 🎉</h1>
               <p style="font-size:16px;color:#6b7280;margin:0 0 32px">Please confirm your email address to activate your account.</p>
@@ -131,7 +192,7 @@ export async function POST(req: NextRequest) {
       emailError = 'RESEND_API_KEY not configured on the server'
     }
 
-    return NextResponse.json({ ok: true, userId: user.id, emailSent, emailError })
+    return NextResponse.json({ ok: true, userId: user?.id || null, resumed, emailSent, emailError })
   } catch (err: any) {
     console.error('Server signup error:', err)
     return NextResponse.json({ error: err.message || 'Signup failed' }, { status: 500 })
