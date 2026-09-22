@@ -185,16 +185,30 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     return () => window.removeEventListener('resize', apply)
   }, [])
   const [company, setCompany] = useState<any>(null)
-  // Tab favicon = this workspace's logo. AppChrome also tries this, but it
-  // resolves the company by subdomain slug and can miss on /admin (RLS/timing),
-  // leaving Colvy's default icon. Here the company is already resolved (its logo
-  // shows in the sidebar), so set it reliably whenever it changes.
+  // Tab favicon for this workspace. Prefer a dedicated square favicon (uploaded
+  // in Settings → site_settings.faviconUrl) — it reads cleanly at 16px — and
+  // fall back to the company logo only when none is set. AppChrome does the same
+  // precedence, but it resolves the company by subdomain slug and can miss on
+  // /admin (RLS/timing), so we set it reliably here where the company is known.
   useEffect(() => {
-    if (typeof document === 'undefined' || !company?.logo_url) return
-    let link = document.querySelector("link[rel~='icon']") as HTMLLinkElement | null
-    if (!link) { link = document.createElement('link'); link.rel = 'icon'; document.head.appendChild(link) }
-    link.href = company.logo_url
-  }, [company?.logo_url])
+    if (typeof document === 'undefined' || !company?.id) return
+    let cancelled = false
+    ;(async () => {
+      let favicon: string | null = null
+      try {
+        const { data } = await (supabase as any).from('site_settings')
+          .select('value').eq('key', 'general').eq('company_id', company.id)
+          .order('updated_at', { ascending: false }).limit(1)
+        favicon = data?.[0]?.value?.faviconUrl || null
+      } catch {}
+      if (!favicon) favicon = company.logo_url || null
+      if (cancelled || !favicon) return
+      let link = document.querySelector("link[rel~='icon']") as HTMLLinkElement | null
+      if (!link) { link = document.createElement('link'); link.rel = 'icon'; document.head.appendChild(link) }
+      link.href = favicon
+    })()
+    return () => { cancelled = true }
+  }, [company?.id, company?.logo_url])
   // The current member's role + feature permissions (see lib/permissions.ts).
   // Owner/super-admin => full access; a restricted editor/viewer only sees and
   // can open the features their permission map allows.
