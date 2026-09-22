@@ -194,6 +194,15 @@ export async function POST(req: NextRequest) {
       // no double-ring, but no silent miss either.
       ...((mobileTokens || []).map((t: any) => t.user_id)).filter(Boolean),
     ])
+    // Always ring the workspace OWNER's browser Client — the owner is the primary
+    // agent and must not be missed just because their presence heartbeat lapsed
+    // (a throttled/occluded tab can fall outside the 2-minute window even while
+    // it's open and able to ring). Twilio rings their <Client identity>; if the
+    // Device isn't actually registered the leg simply no-answers and falls through
+    // to voicemail, so this can't cause a phantom ring. Skip only when the owner
+    // is explicitly busy (on a call → available:false with a fresh heartbeat).
+    if (ownerRow?.owner_id && !unavailable.has(ownerRow.owner_id)) userIds.add(ownerRow.owner_id)
+
     // Keep the user ids alongside their Voice-SDK identities: the per-<Client>
     // status callback needs the user id to record WHO answered the call.
     const ringUsers = Array.from(userIds)
@@ -220,7 +229,9 @@ export async function POST(req: NextRequest) {
       return twiml(voicemailTwiml(base, greeting, cbQuery))
     }
 
-    const ring = Number(integ.ring_seconds || 25)
+    // Floor the ring at 20s so a low/misconfigured ring_seconds can't send the
+    // call to voicemail after ~1 ring before the agent can pick up.
+    const ring = Math.max(Number(integ.ring_seconds || 25), 20)
     const recordingCb = `${base}/api/twilio/voice/recording?${cbQuery}`
     // When exactly ONE agent is rung, whoever answers is unambiguous — pass that
     // user id to the Dial action callback so it can record the answerer reliably
