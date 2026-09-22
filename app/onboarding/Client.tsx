@@ -71,6 +71,28 @@ export default function OnboardingPage() {
           if (!localStorage.getItem(k)) { track('workspace_created', { plan: co.plan || null }); localStorage.setItem(k, '1') }
         } catch { track('workspace_created') }
       }
+      // Apply the business profile captured during an OAuth signup — the OAuth
+      // callback only carries slug/name/industry, so the website/address/phone/
+      // hours (and the person's full name) are stashed at signup and applied here
+      // once, then cleared.
+      if (co?.id) {
+        try {
+          const prof = JSON.parse(localStorage.getItem('pending_business_profile') || 'null')
+          if (prof) {
+            const patch: any = {}
+            for (const k of ['website', 'business_address', 'business_city', 'business_state', 'business_postcode', 'business_country', 'business_phone', 'business_hours']) {
+              if (prof[k] != null && prof[k] !== '') patch[k] = prof[k]
+            }
+            if (Object.keys(patch).length) await supabase.from('companies').update(patch).eq('id', co.id)
+            if (prof.fullName) {
+              try { await supabase.from('team_members').update({ name: prof.fullName }).eq('company_id', co.id).eq('user_id', u.id) } catch {}
+              try { await supabase.auth.updateUser({ data: { display_name: prof.fullName, full_name: prof.fullName } }) } catch {}
+            }
+            localStorage.removeItem('pending_business_profile')
+          }
+        } catch {}
+      }
+
       setCompany(co)
       setLoaded(true)
     })
