@@ -1551,6 +1551,24 @@ export default function InboxPage() {
   // pay the probe once.
   const wooEmailNormRef = useRef<boolean | null>(null)
   const [abandonedCarts, setAbandonedCarts] = useState<any[]>([])
+  // Google reviews left by the active contact (for the info panel stars line).
+  const [contactReviews, setContactReviews] = useState<{ count: number; avg: number | null; latest: any | null; reviews: any[] }>({ count: 0, avg: null, latest: null, reviews: [] })
+  useEffect(() => {
+    const cid = contact?.id
+    if (!cid || !companyId) { setContactReviews({ count: 0, avg: null, latest: null, reviews: [] }); return }
+    let cancelled = false
+    ;(async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        const res = await fetch(`/api/contacts/reviews?contactId=${encodeURIComponent(cid)}&companyId=${encodeURIComponent(companyId)}`, {
+          headers: { Authorization: `Bearer ${session?.access_token || ''}` },
+        })
+        const data = await res.json().catch(() => ({}))
+        if (!cancelled && res.ok) setContactReviews({ count: data.count || 0, avg: data.avg ?? null, latest: data.latest || null, reviews: data.reviews || [] })
+      } catch { /* reviews are a nice-to-have; never block the panel */ }
+    })()
+    return () => { cancelled = true }
+  }, [contact?.id, companyId])
   const [orderSearch, setOrderSearch] = useState('')
   const [orderDateFrom, setOrderDateFrom] = useState('')
   const [orderDateTo, setOrderDateTo] = useState('')
@@ -9815,6 +9833,29 @@ export default function InboxPage() {
                         )
                       })
                     })()}
+
+                    {/* ── Google review ─────────────────────────────────────
+                        Stars for a review this customer left on Google (linked
+                        by contact match). Clicking opens the reviews dashboard. */}
+                    {contactReviews.count > 0 && contactReviews.latest && (
+                      <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 4 }}>
+                        <p style={{ margin: '0 0 3px 0', fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase' }}>Google review</p>
+                        <a href="/admin/reviews" style={{ display: 'flex', alignItems: 'center', gap: 8, textDecoration: 'none' }} title="View on the reviews dashboard">
+                          <span style={{ fontSize: 15, letterSpacing: 1, color: '#f5b301' }}>
+                            {'★'.repeat(Math.max(0, Math.min(5, contactReviews.latest.rating || 0)))}
+                            <span style={{ color: '#d4d4d8' }}>{'★'.repeat(5 - Math.max(0, Math.min(5, contactReviews.latest.rating || 0)))}</span>
+                          </span>
+                          <span style={{ fontSize: 12, color: 'var(--slate)' }}>
+                            {contactReviews.latest.rating}/5{contactReviews.count > 1 ? ` · ${contactReviews.count} reviews` : ''}
+                          </span>
+                        </a>
+                        {contactReviews.latest.comment && (
+                          <p style={{ margin: '5px 0 0 0', fontSize: 12, color: 'var(--ink)', fontStyle: 'italic', lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                            “{contactReviews.latest.comment}”
+                          </p>
+                        )}
+                      </div>
+                    )}
 
                     {/* ── Preferred agent ───────────────────────────────────
                         When this customer calls, ring this team member first;
