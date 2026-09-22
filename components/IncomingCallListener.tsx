@@ -824,7 +824,17 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
     // listener lives in the persistent admin shell, so a router push keeps the
     // call alive while the inbox opens.
     const cid = caller?.contactId
-    try { router.push(cid ? `/admin/inbox?contact=${encodeURIComponent(cid)}` : '/admin/inbox') } catch {}
+    const conv = (caller as any)?.conversationId
+    // Fire an explicit event FIRST: when the inbox is already open (the common
+    // case — you take the call from the inbox), a same-route router.push does not
+    // re-run the inbox's deep-link effect, so the push alone did nothing. The
+    // event opens the conversation live; the push covers being on another page.
+    try { window.dispatchEvent(new CustomEvent('colvy:open-contact', { detail: { contactId: cid || null, conversationId: conv || null } })) } catch {}
+    try {
+      router.push(cid
+        ? `/admin/inbox?contact=${encodeURIComponent(cid)}`
+        : conv ? `/admin/inbox?conversation=${encodeURIComponent(conv)}` : '/admin/inbox')
+    } catch {}
   }
 
   // ── Switch device: move this live call to another of my devices ────────────
