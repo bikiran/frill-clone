@@ -1,8 +1,33 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { readingMinutes } from '@/lib/markdown'
+import { POSTS } from '@/lib/blog'
 
 export const dynamic = 'force-dynamic'
+
+// The public blog (lib/blog-store) shows these hardcoded seed articles merged
+// with DB posts — so they're LIVE on colvy.com/blog even though they aren't in
+// the blog_posts table. Surface them in the admin too (flagged seed:true) so the
+// CMS reflects what's actually published; "Edit" on one saves a DB copy that
+// overrides the seed by slug.
+function seedMarkdown(p: any): string {
+  if (p.content) return p.content
+  const parts: string[] = []
+  if (p.intro) parts.push(p.intro)
+  for (const s of p.sections || []) {
+    parts.push(`## ${s.h}`)
+    for (const para of s.p || []) parts.push(para)
+  }
+  return parts.join('\n\n')
+}
+function seedPosts(existingSlugs: Set<string>) {
+  return POSTS.filter(p => !existingSlugs.has(p.slug)).map(p => ({
+    slug: p.slug, title: p.title, excerpt: p.excerpt, content: seedMarkdown(p),
+    category: p.category, author_name: p.author, accent: p.accent, icon: p.icon,
+    cover_url: (p as any).cover || null, status: 'published',
+    published_at: p.date, updated_at: p.date, seed: true,
+  }))
+}
 
 const SUPER_ADMIN = 'bishalstha76@gmail.com'
 
@@ -32,8 +57,17 @@ export async function GET(req: NextRequest) {
   if (!(await requireSuperAdmin(req, db))) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
   try {
     const { data, error } = await db.from('blog_posts').select('*').order('updated_at', { ascending: false }).limit(500)
-    if (error) { if (MISSING(error)) return NextResponse.json({ posts: [], missing: true }); throw error }
-    return NextResponse.json({ posts: data || [] })
+    if (error) {
+      // Table missing → still show the built-in seed articles that are live on
+      // the public blog, so the admin isn't misleadingly empty.
+      if (MISSING(error)) return NextResponse.json({ posts: seedPosts(new Set()), missing: true })
+      throw error
+    }
+    const rows = data || []
+    const slugs = new Set(rows.map((r: any) => r.slug))
+    const combined = [...rows, ...seedPosts(slugs)]
+      .sort((a: any, b: any) => String(b.published_at || b.updated_at || '').localeCompare(String(a.published_at || a.updated_at || '')))
+    return NextResponse.json({ posts: combined })
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || 'Failed to load' }, { status: 500 })
   }

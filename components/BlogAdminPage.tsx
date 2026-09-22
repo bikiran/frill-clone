@@ -13,6 +13,9 @@ type Post = {
   cover_url?: string | null; category?: string; author_name?: string; accent?: string
   icon?: string; seo_title?: string | null; seo_description?: string | null
   status?: string; published_at?: string | null; updated_at?: string
+  // Built-in article from lib/blog (live on the public blog, not in the DB).
+  // Editing one saves a DB copy that overrides it by slug.
+  seed?: boolean
 }
 
 const CORAL = '#ff6a4d'
@@ -194,17 +197,19 @@ export default function BlogAdminPage() {
       ) : (
         <div style={{ borderRadius: 12, border: '1px solid var(--sa-border)', overflow: 'hidden' }}>
           {posts.map((p, i) => (
-            <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', borderTop: i ? '1px solid var(--sa-border)' : 'none', background: 'var(--sa-card)', flexWrap: 'wrap' }}>
+            <div key={p.id || `seed-${p.slug}`} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', borderTop: i ? '1px solid var(--sa-border)' : 'none', background: 'var(--sa-card)', flexWrap: 'wrap' }}>
               <div style={{ flex: 1, minWidth: 200 }}>
                 <div style={{ fontSize: 14.5, fontWeight: 700, color: 'var(--sa-text)' }}>{p.title || '(untitled)'}</div>
                 <div style={{ fontSize: 12, color: 'var(--sa-muted)', marginTop: 2 }}>/{p.slug} · {p.category} · updated {p.updated_at ? new Date(p.updated_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }) : '—'}</div>
               </div>
-              <span style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', padding: '3px 9px', borderRadius: 999, background: p.status === 'published' ? '#dcfce7' : '#e5e7eb', color: p.status === 'published' ? '#15803d' : '#6b7280' }}>{p.status}</span>
+              {p.seed
+                ? <span style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', padding: '3px 9px', borderRadius: 999, background: '#e0e7ff', color: '#4338ca' }} title="Built-in article shipped with the site. Editing it saves an editable copy that overrides it.">Built-in · Live</span>
+                : <span style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', padding: '3px 9px', borderRadius: 999, background: p.status === 'published' ? '#dcfce7' : '#e5e7eb', color: p.status === 'published' ? '#15803d' : '#6b7280' }}>{p.status}</span>}
               <div style={{ display: 'flex', gap: 6 }}>
                 {p.status === 'published' && <a href={`/blog/${p.slug}`} target="_blank" rel="noopener" style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid var(--sa-border)', color: 'var(--sa-text)', fontSize: 12, fontWeight: 600, textDecoration: 'none' }}>View</a>}
-                <button onClick={() => act(p.status === 'published' ? 'unpublish' : 'publish', p.id)} style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid var(--sa-border)', background: 'var(--sa-bg)', color: 'var(--sa-text)', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>{p.status === 'published' ? 'Unpublish' : 'Publish'}</button>
-                <button onClick={() => startEdit(p)} style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid var(--sa-border)', background: 'var(--sa-bg)', color: 'var(--sa-text)', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Edit</button>
-                <button onClick={() => act('delete', p.id)} style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid var(--sa-border)', background: 'var(--sa-bg)', color: '#dc2626', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Delete</button>
+                {!p.seed && <button onClick={() => act(p.status === 'published' ? 'unpublish' : 'publish', p.id)} style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid var(--sa-border)', background: 'var(--sa-bg)', color: 'var(--sa-text)', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>{p.status === 'published' ? 'Unpublish' : 'Publish'}</button>}
+                <button onClick={() => startEdit(p)} style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid var(--sa-border)', background: 'var(--sa-bg)', color: 'var(--sa-text)', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>{p.seed ? 'Edit copy' : 'Edit'}</button>
+                {!p.seed && <button onClick={() => act('delete', p.id)} style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid var(--sa-border)', background: 'var(--sa-bg)', color: '#dc2626', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Delete</button>}
               </div>
             </div>
           ))}
