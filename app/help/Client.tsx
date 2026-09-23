@@ -47,6 +47,8 @@ export default function HelpCentrePage() {
   const [accessLocked, setAccessLocked] = useState(false)
   const [darkMode, setDarkMode] = useState(false)
   const [cid, setCid] = useState<string | null>(null)
+  const [companyName, setCompanyName] = useState('')
+  const [helpCover, setHelpCover] = useState('')
   const searchRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -111,7 +113,9 @@ export default function HelpCentrePage() {
     const h = window.location.hostname
     if (h.endsWith('.colvy.com') && h !== 'colvy.com' && h !== 'www.colvy.com') {
       const slug = h.replace('.colvy.com', '')
-      const { data } = await (supabase as any).from('companies').select('id').eq('slug', slug).maybeSingle()
+      const { data } = await (supabase as any).from('companies').select('id, name, help_cover_url, accent_color').eq('slug', slug).maybeSingle()
+      if (data?.name) setCompanyName(data.name)
+      if (data?.help_cover_url) setHelpCover(data.help_cover_url)
       try {
         const r = await fetch(`/api/help/contact?slug=${encodeURIComponent(slug)}`)
         const d = await r.json()
@@ -177,6 +181,12 @@ export default function HelpCentrePage() {
   const byCat = allCategories.map(cat => ({
     cat, items: filtered.filter(a => a.category === cat && !a.featured)
   })).filter(g => g.items.length > 0)
+  const totalViews = articles.reduce((s, a) => s + (a.views || 0), 0)
+  const popularCats = allCategories.slice(0, 4)
+  const catCount = (c: string) => articles.filter(a => a.category === c).length
+  const heroTitle = companyName ? `${companyName} Help Centre` : 'Help Centre'
+  const onCover = !!helpCover
+  const excerpt = (a: any) => (a.content || '').replace(/#{1,6} /g, '').replace(/```[\s\S]*?```/g, '').replace(/[*_>#`]/g, '').slice(0, 110)
 
   return (
     <div className="min-h-screen" style={{ background: darkMode ? '#111214' : 'var(--canvas)', filter: darkMode ? 'invert(0.92) hue-rotate(180deg)' : 'none' }}>
@@ -196,15 +206,17 @@ export default function HelpCentrePage() {
           </div>
         </div>
       )}
-      {/* Hero */}
-      <div className="py-16 px-6 text-center" style={{ background: 'var(--peach)' }}>
-        <div className="mb-3 flex justify-center" style={{ color: "var(--coral)" }}><svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg></div>
-        <h1 className="text-4xl font-black mb-3" style={{ color: 'var(--ink)' }}>Help Centre</h1>
-        <p className="mb-8 text-lg" style={{ color: 'var(--slate)' }}>Find answers, guides, and resources</p>
+      {/* Hero (cover photo, or branded gradient fallback) */}
+      <div className="px-6 text-center" style={{ padding: '56px 24px 96px', background: onCover
+        ? `linear-gradient(180deg, rgba(15,23,42,0.28), rgba(15,23,42,0.45)), url(${helpCover}) center/cover no-repeat`
+        : `linear-gradient(135deg, var(--peach) 0%, #ffffff 100%)` }}>
+        <div className="mb-3 flex justify-center" style={{ color: onCover ? '#fff' : "var(--coral)" }}><svg width="46" height="46" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg></div>
+        <h1 className="font-black mb-3" style={{ fontSize: 'clamp(30px,4.5vw,46px)', letterSpacing: '-0.02em', color: onCover ? '#fff' : 'var(--ink)', textShadow: onCover ? '0 1px 12px rgba(0,0,0,0.25)' : 'none' }}>{heroTitle}</h1>
+        <p className="mb-8 text-lg" style={{ color: onCover ? 'rgba(255,255,255,0.9)' : 'var(--slate)', textShadow: onCover ? '0 1px 8px rgba(0,0,0,0.25)' : 'none' }}>Find answers, guides, and resources</p>
 
         {/* Live search */}
-        <div className="max-w-xl mx-auto relative" ref={searchRef}>
-          <svg className="absolute left-4 top-1/2 -translate-y-1/2 z-10" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: 'var(--slate)' }}>
+        <div className="max-w-2xl mx-auto relative" ref={searchRef}>
+          <svg className="absolute left-5 top-1/2 -translate-y-1/2 z-10" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: '#9ca3af' }}>
             <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
           </svg>
           <input
@@ -212,13 +224,16 @@ export default function HelpCentrePage() {
             value={search}
             onChange={e => setSearch(e.target.value)}
             onFocus={() => search && setShowSearchDropdown(searchResults.length > 0)}
-            placeholder="Search articles..."
-            className="w-full pl-12 pr-4 py-3.5 rounded-xl border focus:outline-none bg-white text-base shadow-sm"
-            style={{ borderColor: showSearchDropdown ? 'var(--coral)' : 'var(--border)', fontSize: '16px' }}
+            placeholder="Search articles…"
+            className="w-full focus:outline-none bg-white"
+            style={{ padding: '17px 60px 17px 52px', borderRadius: 999, border: 'none', fontSize: '16px', boxShadow: '0 12px 34px rgba(15,23,42,0.16)' }}
           />
+          <span aria-hidden className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center justify-center" style={{ width: 42, height: 42, borderRadius: '50%', background: 'var(--coral)', color: '#fff' }}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          </span>
           {search && (
             <button onClick={() => { setSearch(''); setShowSearchDropdown(false) }}
-              className="absolute right-4 top-1/2 -translate-y-1/2 cursor-pointer text-lg"
+              className="absolute right-14 top-1/2 -translate-y-1/2 cursor-pointer text-lg"
               style={{ color: 'var(--slate)' }}>×</button>
           )}
           {/* Live search dropdown */}
@@ -244,6 +259,18 @@ export default function HelpCentrePage() {
             </>
           )}
         </div>
+        {popularCats.length > 0 && (
+          <div className="flex flex-wrap gap-2 justify-center items-center mt-4">
+            <span className="text-sm font-semibold" style={{ color: onCover ? 'rgba(255,255,255,0.85)' : 'var(--slate)' }}>Popular searches:</span>
+            {popularCats.map(c => (
+              <button key={c} onClick={() => setCategoryFilter(c)}
+                className="rounded-full font-semibold cursor-pointer"
+                style={{ padding: '4px 12px', fontSize: 12.5, border: onCover ? '1px solid rgba(255,255,255,0.5)' : '1px solid var(--border)', background: onCover ? 'rgba(255,255,255,0.15)' : '#fff', color: onCover ? '#fff' : 'var(--slate)' }}>
+                {catMap[c]?.name || c}
+              </button>
+            ))}
+          </div>
+        )}
         {isAdmin && (
           <div className="mt-5">
             <Link href="/admin/help" className="px-4 py-2 rounded-lg text-sm font-semibold text-white inline-flex items-center gap-2" style={{ background: 'var(--coral)' }}>
@@ -254,27 +281,39 @@ export default function HelpCentrePage() {
         )}
       </div>
 
-      {/* Quick stats */}
-      <div className="border-b py-4 bg-white" style={{ borderColor: 'var(--border)' }}>
-        <div className="max-w-6xl mx-auto px-6 flex items-center gap-8 text-sm" style={{ color: 'var(--slate)' }}>
-          <span>{articles.length} articles</span>
-          <span>{allCategories.length} categories</span>
-          <span>{articles.reduce((sum, a) => sum + (a.views || 0), 0)} total views</span>
+      {/* Stats card overlapping the hero */}
+      <div className="mx-auto px-6" style={{ maxWidth: 1240 }}>
+        <div className="grid grid-cols-3 bg-white overflow-hidden" style={{ borderRadius: 20, boxShadow: '0 10px 34px rgba(15,23,42,0.08)', border: '1px solid var(--border)', marginTop: -56, position: 'relative', zIndex: 2 }}>
+          {[
+            { n: articles.length, l: 'Articles', icon: <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/> },
+            { n: allCategories.length, l: 'Categories', icon: <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/> },
+            { n: totalViews, l: 'Total views', icon: <><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></> },
+          ].map((s, i) => (
+            <div key={s.l} className="flex items-center justify-center gap-3.5" style={{ padding: '22px 16px', borderLeft: i ? '1px solid var(--border)' : 'none' }}>
+              <span className="flex items-center justify-center shrink-0" style={{ width: 44, height: 44, borderRadius: 12, background: 'var(--peach)', color: 'var(--coral)' }}>
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">{s.icon}</svg>
+              </span>
+              <div className="text-left">
+                <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--ink)', lineHeight: 1 }}>{s.n}</div>
+                <div style={{ fontSize: 13, color: 'var(--slate)', marginTop: 3 }}>{s.l}</div>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
 
-      <div className="max-w-6xl mx-auto px-6 py-10">
+      <div className="mx-auto px-6" style={{ maxWidth: 1240, paddingTop: 32, paddingBottom: 40 }}>
         {/* Category filter pills */}
-        <div className="flex gap-2 flex-wrap mb-8">
+        <div className="flex gap-2.5 flex-wrap mb-9">
           <button onClick={() => setCategoryFilter(null)}
-            className="px-4 py-1.5 rounded-full text-sm font-medium border cursor-pointer transition-all"
-            style={{ background: !categoryFilter ? 'var(--coral)' : 'white', color: !categoryFilter ? 'white' : 'var(--slate)', borderColor: !categoryFilter ? 'var(--coral)' : 'var(--border)' }}>
+            className="rounded-full font-semibold border cursor-pointer transition-all flex items-center gap-1.5"
+            style={{ padding: '9px 18px', fontSize: 14, background: !categoryFilter ? 'var(--coral)' : 'white', color: !categoryFilter ? 'white' : 'var(--slate)', borderColor: !categoryFilter ? 'var(--coral)' : 'var(--border)' }}>
             All
           </button>
           {allCategories.map(cat => (
             <button key={cat} onClick={() => setCategoryFilter(categoryFilter === cat ? null : cat)}
-              className="px-4 py-1.5 rounded-full text-sm font-medium border cursor-pointer transition-all flex items-center gap-1.5"
-              style={{ background: categoryFilter === cat ? 'var(--coral)' : 'white', color: categoryFilter === cat ? 'white' : 'var(--slate)', borderColor: categoryFilter === cat ? 'var(--coral)' : 'var(--border)' }}>
+              className="rounded-full font-semibold border cursor-pointer transition-all flex items-center gap-1.5"
+              style={{ padding: '9px 18px', fontSize: 14, background: categoryFilter === cat ? 'var(--coral)' : 'white', color: categoryFilter === cat ? 'white' : 'var(--slate)', borderColor: categoryFilter === cat ? 'var(--coral)' : 'var(--border)' }}>
               {catMap[cat]?.icon
                 ? <span>{catMap[cat].icon}</span>
                 : <CategoryIcon cat={cat} />} {catMap[cat]?.name || cat}
@@ -296,23 +335,52 @@ export default function HelpCentrePage() {
           <>
             {/* Featured */}
             {featured.length > 0 && !search && (
-              <div className="mb-10">
-                <h2 className="text-sm font-bold uppercase tracking-wider mb-4" style={{ color: 'var(--slate)' }}>Featured Articles</h2>
-                <div className="grid md:grid-cols-3 gap-4">
-                  {featured.map(a => (
+              <div className="mb-11">
+                <h2 className="flex items-center gap-2 mb-4" style={{ fontSize: 20, fontWeight: 800, color: 'var(--ink)' }}><span style={{ color: '#f5b301' }}>★</span> Featured Articles</h2>
+                <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fill,minmax(300px,1fr))' }}>
+                  {featured.map(a => {
+                    const img = a.image_url || a.cover_url || a.image
+                    return (
                     <Link key={a.id} href={`/help/${a.id}`}
-                      className="bg-white rounded-2xl border p-5 hover:shadow-md transition-all cursor-pointer group"
-                      style={{ borderColor: 'var(--border)' }}>
-                      <div className="flex items-center gap-2 mb-3">
-                        <span className="text-2xl"><CategoryIcon cat={a.category || 'Other'} /></span>
-                        <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={{ background: 'var(--peach)', color: 'var(--coral)' }}>{a.category}</span>
+                      className="bg-white hover:shadow-lg transition-all cursor-pointer group"
+                      style={{ borderRadius: 18, border: '1px solid var(--border)', padding: 18 }}>
+                      <div className="flex gap-3.5">
+                        <div className="flex-1 min-w-0">
+                          <span className="font-bold px-2.5 py-1 rounded-full" style={{ fontSize: 11.5, background: 'var(--peach)', color: 'var(--coral)' }}>{catMap[a.category]?.name || a.category}</span>
+                          <h3 className="font-bold group-hover:opacity-70 transition-all" style={{ fontSize: 15.5, margin: '11px 0 7px', color: 'var(--ink)', lineHeight: 1.3 }}>{a.title}</h3>
+                          <p style={{ fontSize: 13, color: 'var(--slate)', lineHeight: 1.5, margin: 0 }}>{excerpt(a)}…</p>
+                        </div>
+                        <div className="shrink-0 flex items-center justify-center" style={{ width: 84, height: 84, borderRadius: 12, background: img ? `url(${img}) center/cover no-repeat` : 'var(--peach)', color: 'var(--coral)' }}>
+                          {!img && <CategoryIcon cat={a.category || 'Other'} />}
+                        </div>
                       </div>
-                      <h3 className="font-bold mb-2 group-hover:opacity-70 transition-all" style={{ color: 'var(--ink)' }}>{a.title}</h3>
-                      <p className="text-sm line-clamp-2" style={{ color: 'var(--slate)' }}>
-                        {a.content?.replace(/#{1,6} /g, '').replace(/```[\s\S]*?```/g, '').slice(0, 100)}...
+                      <p className="flex items-center gap-4" style={{ fontSize: 12, color: 'var(--slate)', marginTop: 14 }}>
+                        <span className="inline-flex items-center gap-1"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>{a.views || 0} views</span>
+                        <span className="inline-flex items-center gap-1"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3z"/></svg>{a.likes || 0} helpful</span>
                       </p>
-                      <p className="text-xs mt-3" style={{ color: 'var(--slate)' }}>{a.views || 0} views · {a.likes || 0} helpful</p>
                     </Link>
+                  )})}
+                </div>
+              </div>
+            )}
+
+            {/* Browse by Topic */}
+            {allCategories.length > 0 && !search && !categoryFilter && (
+              <div className="mb-11">
+                <h2 className="mb-4" style={{ fontSize: 20, fontWeight: 800, color: 'var(--ink)' }}>Browse by Topic</h2>
+                <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fill,minmax(210px,1fr))' }}>
+                  {allCategories.map(c => (
+                    <button key={c} onClick={() => setCategoryFilter(c)}
+                      className="text-left bg-white hover:shadow-lg transition-all cursor-pointer flex items-center gap-3"
+                      style={{ border: '1px solid var(--border)', borderRadius: 16, padding: 18 }}>
+                      <span className="flex items-center justify-center shrink-0" style={{ width: 44, height: 44, borderRadius: 12, background: 'var(--peach)', color: 'var(--coral)' }}>
+                        {catMap[c]?.icon ? <span>{catMap[c].icon}</span> : <CategoryIcon cat={c} />}
+                      </span>
+                      <span>
+                        <span className="block font-bold" style={{ fontSize: 14.5, color: 'var(--ink)' }}>{catMap[c]?.name || c}</span>
+                        <span className="block" style={{ fontSize: 12.5, color: 'var(--slate)', marginTop: 2 }}>{catCount(c)} article{catCount(c) === 1 ? '' : 's'}</span>
+                      </span>
+                    </button>
                   ))}
                 </div>
               </div>
