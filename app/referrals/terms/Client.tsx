@@ -8,6 +8,9 @@ const INK = '#0f1119', SLATE = '#5b6472', BLUE = '#2b59ff'
 const REWARD = '$100'
 const EFFECTIVE = '23 September 2026'
 
+// Turn a heading like "3. When a referral qualifies" into an anchor id.
+const slug = (h: string) => h.toLowerCase().replace(/^[\d.]+\s*/, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+
 // Referral program terms. Plain-language rules that match the landing page's
 // promise exactly: $100 account credit per successful referral, earned once the
 // referred business subscribes and pays their first month.
@@ -66,33 +69,72 @@ export default function Client() {
   return (
     <div style={{ background: '#fff', color: INK }}>
       <MarketingNav />
-      <div style={{ maxWidth: 760, margin: '0 auto', padding: '56px 24px 72px' }}>
-        <p style={{ fontSize: 12.5, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: BLUE, margin: '0 0 12px' }}>Colvy Referrals</p>
-        <h1 style={{ fontSize: 'clamp(32px,5vw,48px)', fontWeight: 900, letterSpacing: '-0.02em', margin: '0 0 10px' }}>Referral Program Terms</h1>
-        <p style={{ fontSize: 14, color: SLATE, margin: '0 0 6px' }}>Effective {EFFECTIVE}</p>
-        <p style={{ fontSize: 16, color: SLATE, lineHeight: 1.65, margin: '18px 0 8px' }}>
-          These terms govern the Colvy referral program. In short: refer a business, and when they subscribe and pay their first month, you earn {REWARD} in account credit. The details are below.
-        </p>
 
-        {SECTIONS.map(sec => (
-          <section key={sec.h} style={{ marginTop: 34 }}>
-            <h2 style={{ fontSize: 20, fontWeight: 800, letterSpacing: '-0.01em', margin: '0 0 12px' }}>{sec.h}</h2>
-            {sec.body.map((b, i) => Array.isArray(b) ? (
-              <ul key={i} style={{ margin: '0 0 12px', paddingLeft: 22, color: SLATE }}>
-                {b.map((li, j) => <li key={j} style={{ fontSize: 15.5, lineHeight: 1.7, marginBottom: 4 }}>{li}</li>)}
-              </ul>
-            ) : (
-              <p key={i} style={{ fontSize: 15.5, color: SLATE, lineHeight: 1.7, margin: '0 0 12px' }}>{b}</p>
-            ))}
-          </section>
-        ))}
-
-        <div style={{ marginTop: 40, paddingTop: 24, borderTop: '1px solid #eceef2', display: 'flex', gap: 18, flexWrap: 'wrap' }}>
-          <Link href="/referrals" style={{ color: BLUE, fontWeight: 700, textDecoration: 'none' }}>← Back to Referrals</Link>
-          <Link href="/terms" style={{ color: SLATE, fontWeight: 600, textDecoration: 'none' }}>Terms of Service</Link>
-          <Link href="/privacy" style={{ color: SLATE, fontWeight: 600, textDecoration: 'none' }}>Privacy Policy</Link>
+      {/* Full-bleed banner so the header uses the whole width instead of a
+          skinny centred column. */}
+      <div style={{ background: 'linear-gradient(180deg,#f7f9ff 0%,#fff 100%)', borderBottom: '1px solid #eef1f6' }}>
+        <div style={{ maxWidth: 1180, margin: '0 auto', padding: '52px 24px 40px' }}>
+          <p style={{ fontSize: 12.5, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: BLUE, margin: '0 0 12px' }}>Colvy Referrals</p>
+          <h1 style={{ fontSize: 'clamp(32px,5vw,52px)', fontWeight: 900, letterSpacing: '-0.02em', margin: '0 0 10px' }}>Referral Program Terms</h1>
+          <p style={{ fontSize: 14, color: SLATE, margin: '0 0 14px' }}>Effective {EFFECTIVE}</p>
+          <p style={{ fontSize: 17, color: SLATE, lineHeight: 1.65, margin: 0, maxWidth: 760 }}>
+            These terms govern the Colvy referral program. In short: refer a business, and when they subscribe and pay their first month, you earn {REWARD} in account credit. The details are below.
+          </p>
         </div>
       </div>
+
+      {/* Two columns: a sticky rail (summary + jump links) on the left, the full
+          terms on the right — so the wide desktop space is actually used. */}
+      <div className="ref-terms-grid" style={{ maxWidth: 1180, margin: '0 auto', padding: '40px 24px 72px', display: 'grid', gridTemplateColumns: '300px 1fr', gap: 56, alignItems: 'start' }}>
+        <aside className="ref-terms-rail" style={{ position: 'sticky', top: 24, display: 'flex', flexDirection: 'column', gap: 18 }}>
+          <div style={{ background: 'linear-gradient(135deg,#eff3ff 0%,#f6f0ff 100%)', border: '1px solid #e6ebfb', borderRadius: 16, padding: '20px 20px 22px' }}>
+            <p style={{ fontSize: 12, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: BLUE, margin: '0 0 10px' }}>Quick summary</p>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, margin: '0 0 6px' }}>
+              <span style={{ fontSize: 34, fontWeight: 900, letterSpacing: '-0.02em' }}>{REWARD}</span>
+              <span style={{ fontSize: 14, color: SLATE, fontWeight: 600 }}>account credit</span>
+            </div>
+            <p style={{ fontSize: 13.5, color: SLATE, lineHeight: 1.6, margin: 0 }}>Per business that signs up on your link and pays their first month. No cap.</p>
+          </div>
+          <nav style={{ border: '1px solid #eceef2', borderRadius: 16, padding: '10px 8px' }}>
+            <p style={{ fontSize: 11.5, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: '#9ca3af', margin: '6px 12px 8px' }}>On this page</p>
+            {SECTIONS.map(sec => (
+              <a key={sec.h} href={`#${slug(sec.h)}`}
+                style={{ display: 'block', padding: '7px 12px', borderRadius: 9, fontSize: 13.5, color: SLATE, textDecoration: 'none', fontWeight: 600 }}>
+                {sec.h}
+              </a>
+            ))}
+          </nav>
+        </aside>
+
+        <div>
+          {SECTIONS.map(sec => (
+            <section key={sec.h} id={slug(sec.h)} style={{ marginBottom: 34, scrollMarginTop: 24 }}>
+              <h2 style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.01em', margin: '0 0 12px' }}>{sec.h}</h2>
+              {sec.body.map((b, i) => Array.isArray(b) ? (
+                <ul key={i} style={{ margin: '0 0 12px', paddingLeft: 22, color: SLATE }}>
+                  {b.map((li, j) => <li key={j} style={{ fontSize: 16, lineHeight: 1.7, marginBottom: 4 }}>{li}</li>)}
+                </ul>
+              ) : (
+                <p key={i} style={{ fontSize: 16, color: SLATE, lineHeight: 1.75, margin: '0 0 12px', maxWidth: 760 }}>{b}</p>
+              ))}
+            </section>
+          ))}
+
+          <div style={{ marginTop: 12, paddingTop: 24, borderTop: '1px solid #eceef2', display: 'flex', gap: 18, flexWrap: 'wrap' }}>
+            <Link href="/referrals" style={{ color: BLUE, fontWeight: 700, textDecoration: 'none' }}>← Back to Referrals</Link>
+            <Link href="/terms" style={{ color: SLATE, fontWeight: 600, textDecoration: 'none' }}>Terms of Service</Link>
+            <Link href="/privacy" style={{ color: SLATE, fontWeight: 600, textDecoration: 'none' }}>Privacy Policy</Link>
+          </div>
+        </div>
+      </div>
+
+      <style>{`
+        .ref-terms-rail nav a:hover { background: #f4f6fb; color: ${INK}; }
+        @media (max-width: 860px){
+          .ref-terms-grid { grid-template-columns: 1fr !important; gap: 28px !important; }
+          .ref-terms-rail { position: static !important; }
+        }
+      `}</style>
       <MarketingFooter />
     </div>
   )
