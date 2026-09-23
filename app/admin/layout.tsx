@@ -7,6 +7,7 @@ import { usePathname } from 'next/navigation'
 import { useEffect, useState, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import IncomingCallListener from '@/components/IncomingCallListener'
+import SidebarSearch, { SearchItem } from '@/components/SidebarSearch'
 import CallHandoff from '@/components/CallHandoff'
 import GlobalDialer from '@/components/GlobalDialer'
 import GlobalCallBar from '@/components/GlobalCallBar'
@@ -157,6 +158,22 @@ const NAV_GROUPS = [
       { label: 'Referrals', href: '/admin/referrals', icon: 'link' },
     ],
   },
+]
+
+// Extra destinations for the sidebar search that aren't top-level nav items
+// (deeper settings pages). Deduped against the nav items at render time.
+const SEARCH_EXTRAS: SearchItem[] = [
+  { label: 'Business profile', href: '/admin/crm-settings/business', section: 'Settings', keywords: 'company details address hours abn' },
+  { label: 'Channels', href: '/admin/crm-settings/channels', section: 'Settings', keywords: 'whatsapp instagram facebook messenger sms email meta connect' },
+  { label: 'Chat widget', href: '/admin/crm-settings/chat-widget', section: 'Settings', keywords: 'live chat website widget' },
+  { label: 'Auto-replies', href: '/admin/crm-settings/auto-replies', section: 'Settings', keywords: 'automation canned away hours' },
+  { label: 'Contact form', href: '/admin/crm-settings/contact-form', section: 'Settings' },
+  { label: 'AI settings', href: '/admin/ai-settings', section: 'Settings', keywords: 'assistant colvy ai reply' },
+  { label: 'Statuses', href: '/admin/statuses', section: 'Settings' },
+  { label: 'Topics', href: '/admin/topics', section: 'Settings' },
+  { label: 'Priorities', href: '/admin/priorities', section: 'Settings' },
+  { label: 'Terminology', href: '/admin/terminology', section: 'Settings', keywords: 'wording labels rename' },
+  { label: 'Audit logs', href: '/admin/settings/audit-logs', section: 'Settings', keywords: 'security history' },
 ]
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -827,6 +844,13 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
         {/* Nav groups */}
         <nav style={{ flex: 1, padding: '10px 8px' }}>
+          {/* Search — jumps to any sidebar page or settings destination. */}
+          {(() => {
+            const navItems: SearchItem[] = NAV_GROUPS.flatMap(g => g.items.filter(canUseNavItem).map(it => ({ label: it.label, href: it.href, section: g.label || 'General' })))
+            const seen = new Set(navItems.map(i => i.href))
+            const items = [...navItems, ...SEARCH_EXTRAS.filter(e => !seen.has(e.href))]
+            return <SidebarSearch items={items} collapsed={adminCollapsed} />
+          })()}
           {NAV_GROUPS.map((group, gi) => {
             // Hide features this member isn't permitted to use, and drop a whole
             // group once nothing in it is visible.
