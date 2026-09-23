@@ -16,6 +16,13 @@ const CF_ZONE_ID = process.env.CLOUDFLARE_ZONE_ID || ''
 // Vercel's canonical CNAME target for a subdomain. Overridable in case an
 // account uses a different endpoint than the documented default.
 const CNAME_TARGET = process.env.VERCEL_CNAME_TARGET || 'cname.vercel-dns.com'
+// White-label target shown to CUSTOMERS for their own domains. This is a
+// Colvy-owned host (e.g. cname.colvy.com) that itself CNAMEs to Vercel, so the
+// customer never sees Vercel in their DNS. Create it once in Colvy's DNS:
+//   cname.colvy.com  CNAME  cname.vercel-dns.com   (DNS only)
+// Apex domains can't CNAME, so they use Vercel's anonymous anycast IP.
+export const CUSTOM_CNAME_TARGET = process.env.NEXT_PUBLIC_CUSTOM_CNAME_TARGET || 'cname.colvy.com'
+export const CUSTOM_APEX_IP = process.env.NEXT_PUBLIC_CUSTOM_APEX_IP || '76.76.21.21'
 
 export interface ProvisionResult {
   domain: string
@@ -113,9 +120,14 @@ export async function provisionCustomDomain(domain: string): Promise<CustomDomai
   out.domain = clean
   if (!clean || !/^[a-z0-9.-]+\.[a-z]{2,}$/.test(clean)) { out.error = 'Enter a valid domain, e.g. help.yourcompany.com'; return out }
   if (clean.endsWith('.colvy.com')) { out.error = 'Use the automatic subdomain flow for *.colvy.com'; return out }
+  // The DNS record we ask the customer for — always Colvy-branded, never Vercel.
+  const isApex = clean.split('.').length <= 2
+  const brandedRecord = isApex
+    ? { type: 'A', name: '@', value: CUSTOM_APEX_IP }
+    : { type: 'CNAME', name: clean.split('.')[0], value: CUSTOM_CNAME_TARGET }
+
   if (!VERCEL_TOKEN || !VERCEL_PROJECT_ID) {
-    // No Vercel access — fall back to the documented manual CNAME.
-    out.records = [{ type: 'CNAME', name: clean.split('.')[0], value: 'cname.vercel-dns.com' }]
+    out.records = [brandedRecord]
     out.error = 'Vercel is not configured on the server (set VERCEL_TOKEN + VERCEL_PROJECT_ID).'
     return out
   }
@@ -129,29 +141,18 @@ export async function provisionCustomDomain(domain: string): Promise<CustomDomai
     if (r?.error && !already) out.error = r.error.message
   } catch (e: any) { out.error = e?.message || 'Vercel request failed' }
 
-  // 2) Read verification state + the exact records Vercel wants.
+  // 2) Read verification state. We deliberately do NOT surface Vercel's own
+  //    `verification` records (they name `_vercel` / vercel-dns and would leak
+  //    the provider) — the customer only ever sees the Colvy-branded record.
   try {
     const info = await vercelReq('GET', `/v9/projects/${VERCEL_PROJECT_ID}/domains/${clean}`)
-    if (info && !info.error) {
-      out.verified = !!info.verified
-      // Vercel returns pending TXT/records under `verification` until verified.
-      for (const v of (info.verification || [])) {
-        if (v?.type && v?.domain != null && v?.value != null) out.records.push({ type: v.type, name: v.domain, value: v.value })
-      }
-    }
+    if (info && !info.error) out.verified = !!info.verified
   } catch {}
   try {
     const cfg = await vercelReq('GET', `/v9/projects/${VERCEL_PROJECT_ID}/domains/${clean}/config`)
     if (cfg && typeof cfg.misconfigured === 'boolean') out.misconfigured = cfg.misconfigured
   } catch {}
 
-  // If Vercel gave us no explicit records, show the standard CNAME target so the
-  // customer always has something correct to add.
-  if (out.records.length === 0) {
-    const isApex = clean.split('.').length <= 2
-    out.records = isApex
-      ? [{ type: 'A', name: '@', value: '76.76.21.21' }]
-      : [{ type: 'CNAME', name: clean.split('.')[0], value: 'cname.vercel-dns.com' }]
-  }
+  out.records = [brandedRecord]
   return out
 }
