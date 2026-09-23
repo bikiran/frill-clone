@@ -84,6 +84,7 @@ export default function CustomDomainPage() {
   }, [hostname])
 
   const accent = company?.accent_color || '#ff7a6b'
+  const helpEmail = company?.support_email || company?.business_email || company?.contact_email || company?.email || ''
   const boardUrl = company ? `https://${company.slug}.colvy.com` : '#'
   // For nav links: stay on the custom domain if we're on one
   const currentBase = typeof window !== 'undefined'
@@ -325,15 +326,17 @@ export default function CustomDomainPage() {
         {/* Support options */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(200px,1fr))', gap: 16, marginTop: 48 }}>
           {[
-            { svgIcon: 'chat', title: 'Live Chat', desc: 'Chat with our team in real time', action: 'Start Chat', href: '#' },
+            { svgIcon: 'chat', title: 'Live Chat', desc: 'Chat with our team in real time', action: 'Start Chat', onClick: () => window.dispatchEvent(new CustomEvent('colvy-open-chat')) },
             { svgIcon: 'ticket', title: 'Submit a Ticket', desc: 'We\'ll get back to you soon', action: 'Open Ticket', href: `${boardUrl}/help/ticket` },
-            { svgIcon: 'email', title: 'Email Support', desc: 'Response within 24h', action: 'Send Email', href: `mailto:support@${company.slug}.com` },
-          ].map(s => (
+            ...(helpEmail ? [{ svgIcon: 'email', title: 'Email Support', desc: 'Response within 24h', action: 'Send Email', href: `mailto:${helpEmail}` }] : [{ svgIcon: 'email', title: 'Email Support', desc: 'We\'ll get back to you soon', action: 'Contact us', href: `${boardUrl}/help/ticket` }]),
+          ].map((s: any) => (
             <div key={s.title} style={{ background: '#fff', borderRadius: 16, border: '1px solid var(--border, #f0f0f0)', padding: 20, textAlign: 'center' }}>
-              <div style={{ fontSize: 28, marginBottom: 8 }}>{s.svgIcon === 'chat' ? <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> : s.svgIcon === 'ticket' ? <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg> : <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>}</div>
+              <div style={{ fontSize: 28, marginBottom: 8, display: 'flex', justifyContent: 'center', color: accent }}>{s.svgIcon === 'chat' ? <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> : s.svgIcon === 'ticket' ? <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg> : <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>}</div>
               <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 4, color: 'var(--ink, #1a1a1a)' }}>{s.title}</h3>
               <p style={{ fontSize: 13, color: 'var(--slate, #6b6b70)', marginBottom: 14 }}>{s.desc}</p>
-              <a href={s.href} style={{ display: 'inline-block', padding: '8px 20px', borderRadius: 10, border: '1px solid var(--border, #f0f0f0)', fontSize: 13, fontWeight: 600, color: 'var(--ink, #1a1a1a)', textDecoration: 'none' }}>{s.action}</a>
+              {s.onClick
+                ? <button onClick={s.onClick} style={{ display: 'inline-block', padding: '8px 20px', borderRadius: 10, border: '1px solid var(--border, #f0f0f0)', fontSize: 13, fontWeight: 600, color: 'var(--ink, #1a1a1a)', background: '#fff', cursor: 'pointer' }}>{s.action}</button>
+                : <a href={s.href} style={{ display: 'inline-block', padding: '8px 20px', borderRadius: 10, border: '1px solid var(--border, #f0f0f0)', fontSize: 13, fontWeight: 600, color: 'var(--ink, #1a1a1a)', textDecoration: 'none' }}>{s.action}</a>}
             </div>
           ))}
         </div>

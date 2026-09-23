@@ -157,7 +157,7 @@ export default function HelpArticlePage() {
   const [helpSearch, setHelpSearch] = useState('')
   // The business's own support address, not a hardcoded Colvy one — customers
   // emailing about an aquarium order shouldn't land in Colvy's inbox.
-  const [helpEmail, setHelpEmail] = useState('support@colvy.com')
+  const [helpEmail, setHelpEmail] = useState('')
   const [showTicketForm, setShowTicketForm] = useState(false)
   const [ticketSubject, setTicketSubject] = useState('')
   const [ticketMessage, setTicketMessage] = useState('')
@@ -296,7 +296,12 @@ export default function HelpArticlePage() {
   const submitTicket = async () => {
     if (!ticketSubject || !ticketEmail) return
     try {
-      await (supabase as any).from('support_tickets').insert({ subject: ticketSubject, message: ticketMessage, email: ticketEmail, article_id: article.id })
+      const slug = typeof window !== 'undefined' && window.location.hostname.endsWith('.colvy.com')
+        ? window.location.hostname.replace('.colvy.com', '') : ''
+      await fetch('/api/help/ticket', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ slug, subject: ticketSubject, message: ticketMessage, email: ticketEmail, articleId: article.id }),
+      })
     } catch {}
     setTicketSubmitted(true)
   }
@@ -697,9 +702,9 @@ export default function HelpArticlePage() {
               <div className="space-y-2">
                 {[
                   { icon: <path d="M2 7.5V21a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V7.5M12 7.5V2H8a2 2 0 0 0-2 2v3.5m8 0V4a2 2 0 0 1 2 2v3.5" />, label: 'Submit a ticket', onClick: () => setShowTicketForm(true) },
-                  { icon: <><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></>, label: helpEmail, href: `mailto:${helpEmail}` },
+                  ...(helpEmail ? [{ icon: <><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></>, label: helpEmail, href: `mailto:${helpEmail}` }] : []),
                   { icon: <><line x1="12" y1="2" x2="12" y2="6"/><path d="M9 18h6M10 22h4M12 6a6 6 0 0 0-4 10.5c.5.5 1 1.2 1 2h6c0-.8.5-1.5 1-2A6 6 0 0 0 12 6z"/></>, label: 'Request a feature', href: '/' },
-                ].map((c, i) => {
+                ].map((c: any, i) => {
                   const inner = (<>
                     <span className="flex items-center gap-2.5">
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">{c.icon}</svg>
