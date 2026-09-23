@@ -132,6 +132,8 @@ export default function SettingsPage() {
   const [helpDomain, setHelpDomain] = useState('')         // e.g. help.acme.com
   const [domainVerifying, setDomainVerifying] = useState<string | null>(null)
   const [domainStatus, setDomainStatus] = useState<Record<string, 'unverified'|'verifying'|'verified'|'error'>>({})
+  // A verified domain is soft-locked; "Change" flips this to re-open the field.
+  const [domainEditing, setDomainEditing] = useState<Record<string, boolean>>({})
   // Guest access
   const [guestVotingEnabled, setGuestVotingEnabled] = useState(true)
   const [guestSubmitEnabled, setGuestSubmitEnabled] = useState(true)
@@ -256,6 +258,17 @@ export default function SettingsPage() {
           if (co.board_domain) setBoardDomain(co.board_domain)
           if (co.slug) setSlugEdit(co.slug)
           if (co.help_domain) setHelpDomain(co.help_domain)
+          // Re-check live status on load so the Verified badge (and soft-lock)
+          // survive a reload without relying on the user having saved settings.
+          const recheck = (key: string, dom?: string) => {
+            if (!dom) return
+            fetch(`/api/verify-domain?domain=${encodeURIComponent(dom)}`)
+              .then(r => r.json())
+              .then(d => { if (d.verified) setDomainStatus(p => ({ ...p, [key]: 'verified' })) })
+              .catch(() => {})
+          }
+          recheck('board', co.board_domain)
+          recheck('help', co.help_domain)
         }
       } catch (e: any) {
         console.warn('Company fetch failed:', e.message)
@@ -2343,15 +2356,25 @@ export default function SettingsPage() {
                     <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ background: '#fee2e2', color: '#dc2626' }}>✗ Not found</span>
                   )}
                 </div>
+                {(() => { const boardLocked = domainStatus['board'] === 'verified' && !domainEditing['board']; return (
                 <div className="flex gap-2">
                   <input
                     type="text"
                     value={boardDomain}
                     onChange={e => setBoardDomain(e.target.value.toLowerCase())}
+                    readOnly={boardLocked}
                     placeholder="feedback.yourcompany.com"
                     className="flex-1 px-4 py-2.5 rounded-xl border focus:outline-none text-sm"
-                    style={{ borderColor: domainStatus['board'] === 'verified' ? '#10b981' : domainStatus['board'] === 'error' ? '#ef4444' : 'var(--border)', fontSize: '16px' }}
+                    style={{ borderColor: domainStatus['board'] === 'verified' ? '#10b981' : domainStatus['board'] === 'error' ? '#ef4444' : 'var(--border)', fontSize: '16px', background: boardLocked ? 'var(--canvas)' : '#fff', cursor: boardLocked ? 'default' : 'text' }}
                   />
+                  {boardLocked ? (
+                    <button
+                      onClick={() => setDomainEditing(p => ({ ...p, board: true }))}
+                      className="px-4 py-2.5 rounded-xl border text-sm font-medium cursor-pointer hover:bg-gray-50 shrink-0"
+                      style={{ borderColor: 'var(--border)', color: 'var(--slate)' }}>
+                      Change
+                    </button>
+                  ) : (
                   <button
                     onClick={async () => {
                       if (!boardDomain) return
@@ -2359,7 +2382,9 @@ export default function SettingsPage() {
                       try {
                         const res = await fetch(`/api/verify-domain?domain=${boardDomain}`)
                         const data = await res.json()
-                        setDomainStatus(p => ({ ...p, board: data.verified ? 'verified' : 'error' }))
+                        const ok = !!data.verified
+                        setDomainStatus(p => ({ ...p, board: ok ? 'verified' : 'error' }))
+                        if (ok) setDomainEditing(p => ({ ...p, board: false }))
                       } catch {
                         setDomainStatus(p => ({ ...p, board: 'error' }))
                       }
@@ -2369,7 +2394,9 @@ export default function SettingsPage() {
                     style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
                     {domainStatus['board'] === 'verifying' ? 'Checking...' : 'Verify'}
                   </button>
+                  )}
                 </div>
+                )})()}
                 <p className="text-xs mt-1.5" style={{ color: 'var(--slate)' }}>
                   Your feedback board will be accessible at this domain.
                 </p>
@@ -2389,15 +2416,25 @@ export default function SettingsPage() {
                     <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ background: '#fee2e2', color: '#dc2626' }}>✗ Not found</span>
                   )}
                 </div>
+                {(() => { const helpLocked = domainStatus['help'] === 'verified' && !domainEditing['help']; return (
                 <div className="flex gap-2">
                   <input
                     type="text"
                     value={helpDomain}
                     onChange={e => setHelpDomain(e.target.value.toLowerCase())}
+                    readOnly={helpLocked}
                     placeholder="help.yourcompany.com"
                     className="flex-1 px-4 py-2.5 rounded-xl border focus:outline-none text-sm"
-                    style={{ borderColor: domainStatus['help'] === 'verified' ? '#10b981' : domainStatus['help'] === 'error' ? '#ef4444' : 'var(--border)', fontSize: '16px' }}
+                    style={{ borderColor: domainStatus['help'] === 'verified' ? '#10b981' : domainStatus['help'] === 'error' ? '#ef4444' : 'var(--border)', fontSize: '16px', background: helpLocked ? 'var(--canvas)' : '#fff', cursor: helpLocked ? 'default' : 'text' }}
                   />
+                  {helpLocked ? (
+                    <button
+                      onClick={() => setDomainEditing(p => ({ ...p, help: true }))}
+                      className="px-4 py-2.5 rounded-xl border text-sm font-medium cursor-pointer hover:bg-gray-50 shrink-0"
+                      style={{ borderColor: 'var(--border)', color: 'var(--slate)' }}>
+                      Change
+                    </button>
+                  ) : (
                   <button
                     onClick={async () => {
                       if (!helpDomain) return
@@ -2405,7 +2442,9 @@ export default function SettingsPage() {
                       try {
                         const res = await fetch(`/api/verify-domain?domain=${helpDomain}`)
                         const data = await res.json()
-                        setDomainStatus(p => ({ ...p, help: data.verified ? 'verified' : 'error' }))
+                        const ok = !!data.verified
+                        setDomainStatus(p => ({ ...p, help: ok ? 'verified' : 'error' }))
+                        if (ok) setDomainEditing(p => ({ ...p, help: false }))
                       } catch {
                         setDomainStatus(p => ({ ...p, help: 'error' }))
                       }
@@ -2415,7 +2454,9 @@ export default function SettingsPage() {
                     style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
                     {domainStatus['help'] === 'verifying' ? 'Checking...' : 'Verify'}
                   </button>
+                  )}
                 </div>
+                )})()}
                 <p className="text-xs mt-1.5" style={{ color: 'var(--slate)' }}>
                   Your help centre will be accessible at this domain.
                 </p>
