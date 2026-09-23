@@ -26,7 +26,16 @@ export async function POST(req: NextRequest) {
     if (!email) return NextResponse.json({ error: 'Your email is required.' }, { status: 400 })
 
     const db = admin()
-    const { data: co } = await db.from('companies').select('id').eq('slug', slug).maybeSingle()
+    // `slug` may be a real slug (colvy subdomain) or a custom domain host.
+    let { data: co } = await db.from('companies').select('id').eq('slug', slug).maybeSingle()
+    if (!co?.id) {
+      const { data: byHelp } = await db.from('companies').select('id').eq('help_domain', slug).maybeSingle()
+      co = byHelp || null
+    }
+    if (!co?.id) {
+      const { data: byBoard } = await db.from('companies').select('id').eq('board_domain', slug).maybeSingle()
+      co = byBoard || null
+    }
     if (!co?.id) return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
 
     const ticketNumber = `TICK-${Date.now().toString().slice(-6)}`
