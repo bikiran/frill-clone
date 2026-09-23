@@ -738,7 +738,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         .nav-group-header.is-collapsed:hover { background: #ececf0; }
         /* Sidebar nav item — clear hover highlight so you can see which row
            you're pointing at, with the icon giving a small lift/brighten. */
-        .nav-item { transition: background 0.14s ease, color 0.14s ease; }
+        .nav-item { transition: background 0.14s ease, color 0.14s ease; cursor: pointer; }
+        .nav-item, .nav-item * { cursor: pointer; }
         .nav-item:not(.is-active):hover { background: #f1f2f4; color: var(--ink) !important; }
         .nav-item .nav-ic { transition: transform 0.16s ease, opacity 0.14s ease; }
         .nav-item:hover .nav-ic { transform: scale(1.14); opacity: 1 !important; }
