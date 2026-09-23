@@ -636,7 +636,7 @@ export default function AppChrome({
   // their own centered card and must NOT render the marketing/board nav, the user
   // menu, or the live-chat bubble on top — that chrome overlapped the reset form
   // and left an open menu that covered the screen with nothing to tap "outside".
-  const isFullPageRoute = ['/landing', '/inbox-crm', '/pricing', '/product', '/solutions', '/compare', '/industries', '/channels', '/integrations', '/ai-assistant', '/phones', '/testimonials', '/features', '/referrals', '/custom/', '/about', '/careers', '/blog', '/changelog', '/security', '/status', '/platform-admin', '/forms/', '/widget', '/auth', '/signin', '/signup', '/forgot-password', '/reset-password', '/u/', '/demo'].some(p => pathname?.startsWith(p))
+  const isFullPageRoute = ['/landing', '/inbox-crm', '/pricing', '/product', '/solutions', '/compare', '/industries', '/channels', '/integrations', '/ai-assistant', '/phones', '/testimonials', '/features', '/referrals', '/custom/', '/f/', '/about', '/careers', '/blog', '/changelog', '/security', '/status', '/platform-admin', '/forms/', '/widget', '/auth', '/signin', '/signup', '/forgot-password', '/reset-password', '/u/', '/demo'].some(p => pathname?.startsWith(p))
   // admin.colvy.com is the Super Admin console — it has its own dark chrome, so
   // the marketing/board nav must never render on top of it (regardless of the
   // path the proxy serves it under). Whole host is full-page.
@@ -1195,7 +1195,7 @@ export default function AppChrome({
         </main>
         {/* Public-facing chat widget — hidden on the admin panel where staff
             work (they don't need to open a support chat with themselves). */}
-        {!pathname?.startsWith('/admin') && <LiveChat />}
+        {!pathname?.startsWith('/admin') && !pathname?.startsWith('/f/') && !pathname?.startsWith('/forms/') && <LiveChat />}
         <UpdateNotification accentColor={company?.accent_color} />
     </>
   )
