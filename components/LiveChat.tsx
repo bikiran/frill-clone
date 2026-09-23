@@ -22,6 +22,13 @@ export default function LiveChat({ slug: slugProp }: { slug?: string } = {}) {
     }
   }, [slugProp])
 
+  // Any "Start Chat" / "Live Chat" button on the page opens the widget.
+  useEffect(() => {
+    const openChat = () => setOpen(true)
+    window.addEventListener('colvy-open-chat', openChat)
+    return () => window.removeEventListener('colvy-open-chat', openChat)
+  }, [])
+
   if (!mounted) return null
 
   return (
