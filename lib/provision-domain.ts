@@ -91,3 +91,67 @@ export async function provisionSubdomain(domain: string): Promise<ProvisionResul
   result.ok = !!(result.vercel.success && (result.cloudflare.success || result.cloudflare.skipped))
   return result
 }
+
+export interface CustomDomainResult {
+  domain: string
+  configured: boolean          // Vercel is set up (token present)
+  registered: boolean          // the domain is attached to the project
+  verified: boolean            // Vercel confirms it points here + cert issued
+  misconfigured: boolean       // DNS not (yet) pointing at Vercel
+  records: { type: string; name: string; value: string }[]  // what to add in DNS
+  error?: string
+}
+
+// Register a CUSTOMER-OWNED custom domain (e.g. help.acme.com.au) on the Vercel
+// project and report its verification status. Unlike provisionSubdomain this
+// does NOT touch Cloudflare — the customer owns their own DNS — it just makes
+// Vercel serve the host (so it stops 404-ing with DEPLOYMENT_NOT_FOUND) and
+// tells us exactly which DNS records they still need to add. Idempotent.
+export async function provisionCustomDomain(domain: string): Promise<CustomDomainResult> {
+  const out: CustomDomainResult = { domain, configured: false, registered: false, verified: false, misconfigured: true, records: [] }
+  const clean = (domain || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '')
+  out.domain = clean
+  if (!clean || !/^[a-z0-9.-]+\.[a-z]{2,}$/.test(clean)) { out.error = 'Enter a valid domain, e.g. help.yourcompany.com'; return out }
+  if (clean.endsWith('.colvy.com')) { out.error = 'Use the automatic subdomain flow for *.colvy.com'; return out }
+  if (!VERCEL_TOKEN || !VERCEL_PROJECT_ID) {
+    // No Vercel access — fall back to the documented manual CNAME.
+    out.records = [{ type: 'CNAME', name: clean.split('.')[0], value: 'cname.vercel-dns.com' }]
+    out.error = 'Vercel is not configured on the server (set VERCEL_TOKEN + VERCEL_PROJECT_ID).'
+    return out
+  }
+  out.configured = true
+
+  // 1) Attach the domain to the project (idempotent).
+  try {
+    const r = await vercelReq('POST', `/v10/projects/${VERCEL_PROJECT_ID}/domains`, { name: clean })
+    const already = r?.error && /already.*in use|already exists|domain_already/i.test(r.error.code || r.error.message || '')
+    out.registered = !r?.error || !!already
+    if (r?.error && !already) out.error = r.error.message
+  } catch (e: any) { out.error = e?.message || 'Vercel request failed' }
+
+  // 2) Read verification state + the exact records Vercel wants.
+  try {
+    const info = await vercelReq('GET', `/v9/projects/${VERCEL_PROJECT_ID}/domains/${clean}`)
+    if (info && !info.error) {
+      out.verified = !!info.verified
+      // Vercel returns pending TXT/records under `verification` until verified.
+      for (const v of (info.verification || [])) {
+        if (v?.type && v?.domain != null && v?.value != null) out.records.push({ type: v.type, name: v.domain, value: v.value })
+      }
+    }
+  } catch {}
+  try {
+    const cfg = await vercelReq('GET', `/v9/projects/${VERCEL_PROJECT_ID}/domains/${clean}/config`)
+    if (cfg && typeof cfg.misconfigured === 'boolean') out.misconfigured = cfg.misconfigured
+  } catch {}
+
+  // If Vercel gave us no explicit records, show the standard CNAME target so the
+  // customer always has something correct to add.
+  if (out.records.length === 0) {
+    const isApex = clean.split('.').length <= 2
+    out.records = isApex
+      ? [{ type: 'A', name: '@', value: '76.76.21.21' }]
+      : [{ type: 'CNAME', name: clean.split('.')[0], value: 'cname.vercel-dns.com' }]
+  }
+  return out
+}

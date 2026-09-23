@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { provisionSubdomain } from '@/lib/provision-domain'
+import { provisionSubdomain, provisionCustomDomain } from '@/lib/provision-domain'
 
 const VERCEL_TOKEN = process.env.VERCEL_TOKEN || ''
 const VERCEL_PROJECT_ID = process.env.VERCEL_PROJECT_ID || ''
@@ -21,8 +21,14 @@ export async function POST(req: NextRequest) {
   try {
     const { domain } = await req.json()
     if (!domain) return NextResponse.json({ error: 'Domain required' }, { status: 400 })
-    const result = await provisionSubdomain(domain)
-    return NextResponse.json({ success: result.ok, ...result })
+    // *.colvy.com subdomains are provisioned automatically (Vercel + Cloudflare).
+    // A customer's own domain is registered on the Vercel project (they own DNS).
+    if (String(domain).toLowerCase().endsWith('.colvy.com')) {
+      const result = await provisionSubdomain(domain)
+      return NextResponse.json({ success: result.ok, ...result })
+    }
+    const custom = await provisionCustomDomain(domain)
+    return NextResponse.json({ success: custom.registered, manual: !custom.configured, ...custom })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }

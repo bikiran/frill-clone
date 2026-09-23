@@ -1199,14 +1199,14 @@ export default function SettingsPage() {
                             <tr>
                               <td className="px-4 py-2.5 font-bold" style={{ color: '#2563eb' }}>CNAME</td>
                               <td className="px-4 py-2.5" style={{ color: 'var(--ink)' }}>{boardDomain.split('.')[0]}</td>
-                              <td className="px-4 py-2.5" style={{ color: 'var(--coral)' }}>cns.vercel-dns.com</td>
+                              <td className="px-4 py-2.5" style={{ color: 'var(--coral)' }}>cname.vercel-dns.com</td>
                             </tr>
                           )}
                           {helpDomain && (
                             <tr>
                               <td className="px-4 py-2.5 font-bold" style={{ color: '#2563eb' }}>CNAME</td>
                               <td className="px-4 py-2.5" style={{ color: 'var(--ink)' }}>{helpDomain.split('.')[0]}</td>
-                              <td className="px-4 py-2.5" style={{ color: 'var(--coral)' }}>cns.vercel-dns.com</td>
+                              <td className="px-4 py-2.5" style={{ color: 'var(--coral)' }}>cname.vercel-dns.com</td>
                             </tr>
                           )}
                         </tbody>
@@ -2435,7 +2435,7 @@ export default function SettingsPage() {
                           <div className="grid grid-cols-3 px-3 py-2" style={{ color: 'var(--ink)' }}>
                             <span className="text-blue-600 font-bold">CNAME</span>
                             <span>{boardDomain.split('.')[0]}</span>
-                            <span style={{ color: 'var(--coral)' }}>cns.vercel-dns.com</span>
+                            <span style={{ color: 'var(--coral)' }}>cname.vercel-dns.com</span>
                           </div>
                         </div>
                       </div>
@@ -2450,7 +2450,7 @@ export default function SettingsPage() {
                           <div className="grid grid-cols-3 px-3 py-2" style={{ color: 'var(--ink)' }}>
                             <span className="text-blue-600 font-bold">CNAME</span>
                             <span>{helpDomain.split('.')[0]}</span>
-                            <span style={{ color: 'var(--coral)' }}>cns.vercel-dns.com</span>
+                            <span style={{ color: 'var(--coral)' }}>cname.vercel-dns.com</span>
                           </div>
                         </div>
                       </div>
