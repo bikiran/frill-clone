@@ -24,6 +24,8 @@ export default function WebFormChannel() {
   const [copied, setCopied] = useState<string | null>(null)
   const [openFaq, setOpenFaq] = useState<number | null>(null)
   const [companyName, setCompanyName] = useState('')
+  const [testing, setTesting] = useState<string | null>(null)
+  const [testMsg, setTestMsg] = useState<Record<string, string>>({})
 
   const load = async () => {
     if (!companyId) return
@@ -60,6 +62,19 @@ export default function WebFormChannel() {
 
   const copy = (addr: string) => { navigator.clipboard?.writeText(addr); setCopied(addr); setTimeout(() => setCopied(null), 1500) }
 
+  const sendTest = async (addr: string) => {
+    setTesting(addr); setTestMsg(m => ({ ...m, [addr]: '' }))
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch('/api/web-form/test', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token || ''}` },
+        body: JSON.stringify({ address: addr }),
+      })
+      const d = await res.json()
+      setTestMsg(m => ({ ...m, [addr]: res.ok ? 'Test submission sent — check your inbox ✓' : (d.error || 'Test failed') }))
+    } catch (e: any) { setTestMsg(m => ({ ...m, [addr]: e.message || 'Test failed' })) } finally { setTesting(null) }
+  }
+
   // The rows to show: one per location, plus a company-wide fallback when there
   // are no locations.
   const targets = locations.length > 0
@@ -85,10 +100,16 @@ export default function WebFormChannel() {
                   <span style={{ fontSize: 14.5, fontWeight: 700, color: 'var(--ink)' }}>{t.label}</span>
                 </div>
                 {existing ? (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--canvas)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px' }}>
-                    <code style={{ flex: 1, fontSize: 13.5, color: 'var(--ink)', fontFamily: 'monospace', wordBreak: 'break-all' }}>{existing.inbound_address}</code>
-                    <button onClick={() => copy(existing.inbound_address)} title="Copy" style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 8, padding: '6px 8px', cursor: 'pointer', color: 'var(--slate)', fontSize: 12, fontWeight: 600 }}>{copied === existing.inbound_address ? 'Copied!' : 'Copy'}</button>
-                  </div>
+                  <>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--canvas)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px' }}>
+                      <code style={{ flex: 1, fontSize: 13.5, color: 'var(--ink)', fontFamily: 'monospace', wordBreak: 'break-all' }}>{existing.inbound_address}</code>
+                      <button onClick={() => copy(existing.inbound_address)} title="Copy" style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 8, padding: '6px 8px', cursor: 'pointer', color: 'var(--slate)', fontSize: 12, fontWeight: 600 }}>{copied === existing.inbound_address ? 'Copied!' : 'Copy'}</button>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 10 }}>
+                      <button onClick={() => sendTest(existing.inbound_address)} disabled={testing === existing.inbound_address} style={{ ...S.btnGhost, padding: '7px 14px', fontSize: 12.5 }}>{testing === existing.inbound_address ? 'Sending…' : 'Send a test'}</button>
+                      {testMsg[existing.inbound_address] && <span style={{ fontSize: 12.5, color: testMsg[existing.inbound_address].includes('✓') ? '#059669' : '#dc2626' }}>{testMsg[existing.inbound_address]}</span>}
+                    </div>
+                  </>
                 ) : (
                   <button onClick={() => provision(t.id, t.label)} disabled={busy} style={{ ...S.btnGhost, marginTop: 10 }}>{busy ? 'Generating…' : 'Generate address'}</button>
                 )}

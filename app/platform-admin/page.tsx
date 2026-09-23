@@ -112,6 +112,7 @@ const NAV = [
   { key: 'moderation', label: 'Moderation',       icon: 'moderation' },
   { section: 'Operations' },
   { key: 'imp',        label: 'Impersonation',    icon: 'audit' },
+  { key: 'webforms',   label: 'Web Forms',        icon: 'system' },
   { key: 'demos',      label: 'Demo Workspaces',  icon: 'companies' },
   { key: 'calls',      label: 'Call Diagnostics', icon: 'chat' },
   { key: 'webhooks',   label: 'Webhook Explorer', icon: 'system' },
@@ -2251,6 +2252,70 @@ function AttentionPanel() {
   )
 }
 
+function WebFormsPage() {
+  const [d, setD] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
+  const [q, setQ] = useState('')
+  useEffect(() => {
+    ;(async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        const res = await fetch('/api/platform-admin/web-forms', { headers: { Authorization: `Bearer ${session?.access_token}` } })
+        setD(await res.json())
+      } catch {} finally { setLoading(false) }
+    })()
+  }, [])
+  const addresses = (d?.addresses || []).filter((a: any) => {
+    if (!q.trim()) return true
+    const s = q.toLowerCase()
+    return `${a.address} ${a.company} ${a.location}`.toLowerCase().includes(s)
+  })
+  const Check = ({ ok }: { ok: boolean }) => (
+    <span style={{ fontSize: 11.5, fontWeight: 800, padding: '2px 9px', borderRadius: 999, background: ok ? '#10b98122' : '#ef444422', color: ok ? '#10b981' : '#ef4444' }}>{ok ? 'OK' : 'Not set'}</span>
+  )
+  return (
+    <div>
+      <SectionHeader title="Web Forms" sub="The shared inbound forms domain and every per-business form address" />
+      {loading ? <p style={{ color: 'var(--sa-muted)' }}>Loading…</p> : d?.error ? <p style={{ color: '#ef4444' }}>{d.error}</p> : (
+        <>
+          {/* Readiness */}
+          <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 14, padding: 18, marginBottom: 18 }}>
+            <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)', margin: '0 0 12px' }}>Domain readiness</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+                <span style={{ fontSize: 13, color: 'var(--sa-muted)' }}>Forms domain <code style={{ color: 'var(--sa-text)' }}>{d.formsDomain}</code></span>
+                <Check ok={!!d.domainConfigured} />
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+                <span style={{ fontSize: 13, color: 'var(--sa-muted)' }}>MX records {d.mxRecords?.length ? <span style={{ color: 'var(--sa-text)' }}>({d.mxRecords.join(', ')})</span> : '(none found)'}</span>
+                <Check ok={!!d.mxOk} />
+              </div>
+              <div style={{ fontSize: 12.5, color: 'var(--sa-muted)' }}>Inbound webhook: <code style={{ color: 'var(--sa-text)' }}>{d.webhookUrl}</code></div>
+              {!d.mxOk && <p style={{ fontSize: 12.5, color: '#f59e0b', margin: 0 }}>Add an MX record for <b>{d.formsDomain}</b> pointing at your inbound email provider, and set an inbound route to the webhook above. Once done, every generated address receives mail — no per-business setup.</p>}
+            </div>
+          </div>
+
+          {/* Addresses */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 10 }}>
+            <p style={{ fontSize: 13, color: 'var(--sa-muted)', margin: 0 }}>{d.total} address{d.total === 1 ? '' : 'es'} · {d.companies} compan{d.companies === 1 ? 'y' : 'ies'}</p>
+            <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search address / company…" style={{ padding: '8px 12px', borderRadius: 9, border: '1px solid var(--sa-border)', background: 'var(--sa-bg)', color: 'var(--sa-text)', fontSize: 13, width: 260 }} />
+          </div>
+          <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 14, overflow: 'hidden' }}>
+            {addresses.length === 0 ? <p style={{ padding: 22, color: 'var(--sa-muted)', fontSize: 13, textAlign: 'center' }}>No web-form addresses yet.</p> : addresses.map((a: any, i: number) => (
+              <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', borderTop: i ? '1px solid var(--sa-border)' : 'none' }}>
+                <code style={{ flex: 1, fontSize: 13, color: 'var(--sa-text)', wordBreak: 'break-all' }}>{a.address}</code>
+                <span style={{ fontSize: 13, color: 'var(--sa-text)', minWidth: 140 }}>{a.company}</span>
+                <span style={{ fontSize: 12.5, color: 'var(--sa-muted)', minWidth: 90 }}>{a.location}</span>
+                <span style={{ fontSize: 11, fontWeight: 700, color: a.is_active ? '#10b981' : 'var(--sa-muted)' }}>{a.is_active ? 'Active' : 'Off'}</span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 function OverviewPage({ data }: { data: any }) {
   const sparkA = [12,18,15,22,19,28,25,32,30,38,35,42]
   const sparkB = [5,8,6,11,9,14,12,16,14,19,17,22]
@@ -4173,6 +4238,7 @@ export default function SuperAdmin() {
           {page === 'tickets'    && <TicketsPage />}
           {page === 'moderation' && <ModerationPage />}
           {page === 'imp'          && <ImpersonationSessionsPage />}
+          {page === 'webforms'     && <WebFormsPage />}
           {page === 'demos'        && <DemoWorkspacesPage />}
           {page === 'calls'        && <CallDiagnosticsPage />}
           {page === 'webhooks'     && <WebhookExplorerPage />}
