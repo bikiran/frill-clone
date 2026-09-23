@@ -7,6 +7,10 @@ import Link from 'next/link'
 import { useToast, ToastContainer } from '@/lib/toast'
 import { useEntitlements } from '@/lib/entitlements-client'
 
+// Colvy-branded CNAME target shown to customers for custom domains — a
+// colvy.com host that itself points at our platform, so the underlying
+// provider is never exposed. Overridable via env.
+const CUSTOM_CNAME = process.env.NEXT_PUBLIC_CUSTOM_CNAME_TARGET || 'cname.colvy.com'
 
 const SIDEBAR_ITEMS = [
   { section: null, items: [
@@ -1199,14 +1203,14 @@ export default function SettingsPage() {
                             <tr>
                               <td className="px-4 py-2.5 font-bold" style={{ color: '#2563eb' }}>CNAME</td>
                               <td className="px-4 py-2.5" style={{ color: 'var(--ink)' }}>{boardDomain.split('.')[0]}</td>
-                              <td className="px-4 py-2.5" style={{ color: 'var(--coral)' }}>cns.vercel-dns.com</td>
+                              <td className="px-4 py-2.5" style={{ color: 'var(--coral)' }}>{CUSTOM_CNAME}</td>
                             </tr>
                           )}
                           {helpDomain && (
                             <tr>
                               <td className="px-4 py-2.5 font-bold" style={{ color: '#2563eb' }}>CNAME</td>
                               <td className="px-4 py-2.5" style={{ color: 'var(--ink)' }}>{helpDomain.split('.')[0]}</td>
-                              <td className="px-4 py-2.5" style={{ color: 'var(--coral)' }}>cns.vercel-dns.com</td>
+                              <td className="px-4 py-2.5" style={{ color: 'var(--coral)' }}>{CUSTOM_CNAME}</td>
                             </tr>
                           )}
                         </tbody>
@@ -2435,7 +2439,7 @@ export default function SettingsPage() {
                           <div className="grid grid-cols-3 px-3 py-2" style={{ color: 'var(--ink)' }}>
                             <span className="text-blue-600 font-bold">CNAME</span>
                             <span>{boardDomain.split('.')[0]}</span>
-                            <span style={{ color: 'var(--coral)' }}>cns.vercel-dns.com</span>
+                            <span style={{ color: 'var(--coral)' }}>{CUSTOM_CNAME}</span>
                           </div>
                         </div>
                       </div>
@@ -2450,7 +2454,7 @@ export default function SettingsPage() {
                           <div className="grid grid-cols-3 px-3 py-2" style={{ color: 'var(--ink)' }}>
                             <span className="text-blue-600 font-bold">CNAME</span>
                             <span>{helpDomain.split('.')[0]}</span>
-                            <span style={{ color: 'var(--coral)' }}>cns.vercel-dns.com</span>
+                            <span style={{ color: 'var(--coral)' }}>{CUSTOM_CNAME}</span>
                           </div>
                         </div>
                       </div>

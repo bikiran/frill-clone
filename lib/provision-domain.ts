@@ -16,6 +16,13 @@ const CF_ZONE_ID = process.env.CLOUDFLARE_ZONE_ID || ''
 // Vercel's canonical CNAME target for a subdomain. Overridable in case an
 // account uses a different endpoint than the documented default.
 const CNAME_TARGET = process.env.VERCEL_CNAME_TARGET || 'cname.vercel-dns.com'
+// White-label target shown to CUSTOMERS for their own domains. This is a
+// Colvy-owned host (e.g. cname.colvy.com) that itself CNAMEs to Vercel, so the
+// customer never sees Vercel in their DNS. Create it once in Colvy's DNS:
+//   cname.colvy.com  CNAME  cname.vercel-dns.com   (DNS only)
+// Apex domains can't CNAME, so they use Vercel's anonymous anycast IP.
+export const CUSTOM_CNAME_TARGET = process.env.NEXT_PUBLIC_CUSTOM_CNAME_TARGET || 'cname.colvy.com'
+export const CUSTOM_APEX_IP = process.env.NEXT_PUBLIC_CUSTOM_APEX_IP || '76.76.21.21'
 
 export interface ProvisionResult {
   domain: string
@@ -90,4 +97,62 @@ export async function provisionSubdomain(domain: string): Promise<ProvisionResul
 
   result.ok = !!(result.vercel.success && (result.cloudflare.success || result.cloudflare.skipped))
   return result
+}
+
+export interface CustomDomainResult {
+  domain: string
+  configured: boolean          // Vercel is set up (token present)
+  registered: boolean          // the domain is attached to the project
+  verified: boolean            // Vercel confirms it points here + cert issued
+  misconfigured: boolean       // DNS not (yet) pointing at Vercel
+  records: { type: string; name: string; value: string }[]  // what to add in DNS
+  error?: string
+}
+
+// Register a CUSTOMER-OWNED custom domain (e.g. help.acme.com.au) on the Vercel
+// project and report its verification status. Unlike provisionSubdomain this
+// does NOT touch Cloudflare — the customer owns their own DNS — it just makes
+// Vercel serve the host (so it stops 404-ing with DEPLOYMENT_NOT_FOUND) and
+// tells us exactly which DNS records they still need to add. Idempotent.
+export async function provisionCustomDomain(domain: string): Promise<CustomDomainResult> {
+  const out: CustomDomainResult = { domain, configured: false, registered: false, verified: false, misconfigured: true, records: [] }
+  const clean = (domain || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '')
+  out.domain = clean
+  if (!clean || !/^[a-z0-9.-]+\.[a-z]{2,}$/.test(clean)) { out.error = 'Enter a valid domain, e.g. help.yourcompany.com'; return out }
+  if (clean.endsWith('.colvy.com')) { out.error = 'Use the automatic subdomain flow for *.colvy.com'; return out }
+  // The DNS record we ask the customer for — always Colvy-branded, never Vercel.
+  const isApex = clean.split('.').length <= 2
+  const brandedRecord = isApex
+    ? { type: 'A', name: '@', value: CUSTOM_APEX_IP }
+    : { type: 'CNAME', name: clean.split('.')[0], value: CUSTOM_CNAME_TARGET }
+
+  if (!VERCEL_TOKEN || !VERCEL_PROJECT_ID) {
+    out.records = [brandedRecord]
+    out.error = 'Vercel is not configured on the server (set VERCEL_TOKEN + VERCEL_PROJECT_ID).'
+    return out
+  }
+  out.configured = true
+
+  // 1) Attach the domain to the project (idempotent).
+  try {
+    const r = await vercelReq('POST', `/v10/projects/${VERCEL_PROJECT_ID}/domains`, { name: clean })
+    const already = r?.error && /already.*in use|already exists|domain_already/i.test(r.error.code || r.error.message || '')
+    out.registered = !r?.error || !!already
+    if (r?.error && !already) out.error = r.error.message
+  } catch (e: any) { out.error = e?.message || 'Vercel request failed' }
+
+  // 2) Read verification state. We deliberately do NOT surface Vercel's own
+  //    `verification` records (they name `_vercel` / vercel-dns and would leak
+  //    the provider) — the customer only ever sees the Colvy-branded record.
+  try {
+    const info = await vercelReq('GET', `/v9/projects/${VERCEL_PROJECT_ID}/domains/${clean}`)
+    if (info && !info.error) out.verified = !!info.verified
+  } catch {}
+  try {
+    const cfg = await vercelReq('GET', `/v9/projects/${VERCEL_PROJECT_ID}/domains/${clean}/config`)
+    if (cfg && typeof cfg.misconfigured === 'boolean') out.misconfigured = cfg.misconfigured
+  } catch {}
+
+  out.records = [brandedRecord]
+  return out
 }
