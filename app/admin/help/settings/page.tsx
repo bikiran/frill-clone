@@ -34,6 +34,7 @@ export default function HelpSettingsPage() {
   const [helpSubtitle, setHelpSubtitle] = useState('')
   const [coverUrl, setCoverUrl] = useState('')
   const [coverBusy, setCoverBusy] = useState(false)
+  const [supportEmail, setSupportEmail] = useState('')
   const [showTrending, setShowTrending] = useState(true)
   const [showCategories, setShowCategories] = useState(true)
   const [showContactCta, setShowContactCta] = useState(true)
@@ -81,6 +82,7 @@ export default function HelpSettingsPage() {
       if (Array.isArray(v.helpLanguages)) setLanguages(v.helpLanguages)
       if (v.helpTitle) setHelpTitle(v.helpTitle)
       if (v.helpSubtitle !== undefined) setHelpSubtitle(v.helpSubtitle)
+      if (v.supportEmail !== undefined) setSupportEmail(v.supportEmail)
       if (v.helpShowTrending !== undefined) setShowTrending(v.helpShowTrending)
       if (v.helpShowCategories !== undefined) setShowCategories(v.helpShowCategories)
       if (v.helpShowContactCta !== undefined) setShowContactCta(v.helpShowContactCta)
@@ -100,7 +102,7 @@ export default function HelpSettingsPage() {
       const merged = {
         ...existing,
         helpAccess, helpPrimaryLanguage: primaryLanguage, helpLanguages: languages,
-        helpTitle, helpSubtitle, helpShowTrending: showTrending,
+        helpTitle, helpSubtitle, supportEmail: supportEmail.trim(), helpShowTrending: showTrending,
         helpShowCategories: showCategories, helpShowContactCta: showContactCta,
       }
       await (supabase as any).from('site_settings').upsert(
@@ -268,6 +270,11 @@ export default function HelpSettingsPage() {
               style={{ width: '100%', padding: '11px 14px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 14, outline: 'none', marginBottom: 16 }} />
             <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--slate)', marginBottom: 6 }}>Subtitle (optional)</label>
             <input value={helpSubtitle} onChange={e => setHelpSubtitle(e.target.value)} placeholder="Find answers, guides, and resources"
+              style={{ width: '100%', padding: '11px 14px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 14, outline: 'none', marginBottom: 16 }} />
+
+            <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--slate)', marginBottom: 6 }}>Support email</label>
+            <p style={{ margin: '0 0 8px', fontSize: 12, color: 'var(--slate)' }}>Shown on your help centre's contact options and used for "Email Support". Falls back to your account email if left blank.</p>
+            <input value={supportEmail} onChange={e => setSupportEmail(e.target.value)} type="email" placeholder="support@yourcompany.com"
               style={{ width: '100%', padding: '11px 14px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 14, outline: 'none', marginBottom: 16 }} />
 
             <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--slate)', marginBottom: 6 }}>Cover photo</label>
