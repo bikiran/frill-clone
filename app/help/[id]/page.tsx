@@ -355,14 +355,26 @@ export default function HelpArticlePage() {
     <div className="min-h-screen" style={{ background: 'var(--canvas)' }}>
       {/* Breadcrumb */}
       <div className="help-topbar border-b bg-white" style={{ borderColor: 'var(--border)' }}>
-        <div className="max-w-[1600px] mx-auto px-6 py-3 flex items-center gap-2 text-sm flex-wrap" style={{ color: 'var(--slate)' }}>
-          <Link href="/" className="hover:underline" style={{ color: 'var(--slate)' }}>Home</Link>
-          <span>/</span>
-          <Link href="/help" className="hover:underline" style={{ color: 'var(--slate)' }}>Help Centre</Link>
-          <span>/</span>
-          <span style={{ color: 'var(--coral)' }}>{catMap[article.category]?.name || article.category}</span>
-          <span>/</span>
-          <span className="truncate max-w-48" style={{ color: 'var(--ink)' }}>{article.title}</span>
+        <div className="max-w-[1600px] mx-auto px-6 py-3 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 text-sm flex-wrap" style={{ color: 'var(--slate)' }}>
+            <Link href="/" className="hover:underline inline-flex items-center gap-1" style={{ color: 'var(--slate)' }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+              Home
+            </Link>
+            <span>/</span>
+            <Link href="/help" className="hover:underline" style={{ color: 'var(--slate)' }}>Help Centre</Link>
+            <span>/</span>
+            <span style={{ color: 'var(--coral)' }}>{catMap[article.category]?.name || article.category}</span>
+            <span>/</span>
+            <span className="truncate max-w-48" style={{ color: 'var(--ink)' }}>{article.title}</span>
+          </div>
+          {/* Decorative brand accent — a soft wave band, purely visual. */}
+          <div aria-hidden className="hidden md:block" style={{ position: 'relative', width: 240, height: 30, borderRadius: 10, overflow: 'hidden', flexShrink: 0, background: 'linear-gradient(90deg, transparent, var(--peach))' }}>
+            <svg width="240" height="30" viewBox="0 0 240 30" preserveAspectRatio="none" style={{ position: 'absolute', inset: 0, opacity: 0.6 }}>
+              <path d="M0 20 Q30 10 60 20 T120 20 T180 20 T240 20" fill="none" stroke="var(--coral)" strokeWidth="1.5" opacity="0.5"/>
+              <path d="M0 26 Q30 16 60 26 T120 26 T180 26 T240 26" fill="none" stroke="var(--coral)" strokeWidth="1.5" opacity="0.3"/>
+            </svg>
+          </div>
         </div>
 
         {/* Jump-to-section on mobile. The "On this page" rail is desktop-only,
@@ -420,23 +432,24 @@ export default function HelpArticlePage() {
             {/* The nav scrolls on its own once the heading list outgrows the
                 viewport, instead of running off the bottom of the page. */}
             {toc.length > 0 && (
-              <nav className="help-rail">
-                <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'var(--slate)' }}>
+              <nav className="help-rail bg-white rounded-2xl border p-4" style={{ borderColor: 'var(--border)' }}>
+                <p className="font-bold mb-3" style={{ fontSize: 14.5, color: 'var(--ink)' }}>
                   On this page
                 </p>
-                <ul className="space-y-1 border-l" style={{ borderColor: 'var(--border)' }}>
+                <ul className="space-y-0.5">
                   {toc.map(h => (
                     <li key={h.id}>
                       <a
                         href={`#${h.id}`}
                         onClick={e => { e.preventDefault(); scrollToHeading(h.id) }}
-                        className="block text-sm py-1 cursor-pointer transition-colors"
+                        className="block text-sm cursor-pointer transition-colors"
                         style={{
-                          paddingLeft: h.level === 3 ? 22 : 12,
-                          marginLeft: -1,
-                          borderLeft: activeHeading === h.id ? '2px solid var(--coral)' : '2px solid transparent',
+                          padding: h.level === 3 ? '7px 12px 7px 26px' : '7px 12px',
+                          borderRadius: 9,
+                          background: activeHeading === h.id ? 'var(--peach)' : 'transparent',
                           color: activeHeading === h.id ? 'var(--coral)' : 'var(--slate)',
-                          fontWeight: activeHeading === h.id ? 600 : 400,
+                          fontWeight: activeHeading === h.id ? 700 : 500,
+                          lineHeight: 1.35,
                         }}>
                         {h.text}
                       </a>
@@ -463,7 +476,7 @@ export default function HelpArticlePage() {
                   </div>
                   <h1 className="text-2xl font-bold" style={{ color: 'var(--ink)' }}>{article.title}</h1>
                   <p className="text-sm mt-1" style={{ color: 'var(--slate)' }}>
-                    {article.views || 0} views · {article.likes || 0} found helpful
+                    {article.views || 0} views · {article.likes || 0} found helpful · Updated recently
                   </p>
                 </div>
                 {/* 3-dot menu */}
@@ -564,86 +577,28 @@ export default function HelpArticlePage() {
           {/* Right sidebar — sticks while the article scrolls */}
           <aside className="lg:col-span-1">
             <div className="help-rail space-y-6">
-            {/* Like */}
+            {/* Was this article helpful? — the primary feedback card. */}
             <div className="bg-white rounded-2xl border p-5" style={{ borderColor: 'var(--border)' }}>
-              <button onClick={toggleLike}
-                className="flex items-center gap-2 w-full justify-center py-2 rounded-lg border text-sm font-medium cursor-pointer transition-all"
-                style={{ background: liked ? 'var(--peach)' : 'white', borderColor: liked ? 'var(--coral)' : 'var(--border)', color: liked ? 'var(--coral)' : 'var(--ink)' }}>
-                {liked ? (
-                  <>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
-                    Helpful!
-                  </>
-                ) : (
-                  <>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
-                    Mark as helpful
-                  </>
-                )}
-                {(article.likes || 0) > 0 && <span className="ml-1">({article.likes})</span>}
-              </button>
-            </div>
-
-
-            {/* Search — first thing in the sidebar, so it's reachable from
-                inside an article without scrolling back to the top. */}
-            <div className="bg-white rounded-2xl border p-4" style={{ borderColor: 'var(--border)' }}>
-              <form onSubmit={(e) => { e.preventDefault(); if (helpSearch.trim()) router.push(`/help?q=${encodeURIComponent(helpSearch.trim())}`) }}>
-                <div style={{ position: 'relative' }}>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"
-                    style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', color: 'var(--slate)', pointerEvents: 'none' }}>
-                    <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-                  </svg>
-                  <input
-                    value={helpSearch}
-                    onChange={e => setHelpSearch(e.target.value)}
-                    placeholder="Search help articles…"
-                    style={{ width: '100%', padding: '10px 12px 10px 34px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 14, boxSizing: 'border-box' }}
-                  />
-                </div>
-              </form>
-            </div>
-
-            {/* Was this helpful? — compact icon buttons, instant thanks, improve form on downvote */}
-            <div className="bg-white rounded-2xl border p-5" style={{ borderColor: 'var(--border)' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 10 }}>
-                <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--slate)' }}>Was this helpful?</span>
-                <div style={{ display: 'flex', gap: 6 }}>
-                  <button
-                    type="button"
-                    onClick={() => { if (!feedbackSubmitted) submitFeedback('helpful') }}
-                    title="Yes, it helped"
-                    style={{
-                      width: 46, height: 42, borderRadius: 12, cursor: feedbackSubmitted ? 'default' : 'pointer',
-                      border: feedback === 'helpful' ? '1.5px solid #86b34d' : '1.5px solid var(--border)',
-                      background: feedback === 'helpful' ? 'linear-gradient(135deg, #f2f8e8, #e5f2d3)' : '#fff',
-                      boxShadow: feedback === 'helpful' ? '0 0 0 4px rgba(134,179,77,0.12), 0 4px 14px rgba(134,179,77,0.2)' : '0 1px 3px rgba(0,0,0,0.05)',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      transition: 'all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1)',
-                      transform: feedback === 'helpful' ? 'scale(1.06)' : 'scale(1)',
-                    }}>
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill={feedback === 'helpful' ? '#6f9c3d' : 'none'} stroke={feedback === 'helpful' ? '#4d6e28' : '#9ca3af'} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/>
-                    </svg>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { if (!feedbackSubmitted) submitFeedback('not_helpful') }}
-                    title="Not really"
-                    style={{
-                      width: 46, height: 42, borderRadius: 12, cursor: feedbackSubmitted ? 'default' : 'pointer',
-                      border: feedback === 'not_helpful' ? '1.5px solid #d97706' : '1.5px solid var(--border)',
-                      background: feedback === 'not_helpful' ? 'linear-gradient(135deg, #fdf3e7, #fae5cc)' : '#fff',
-                      boxShadow: feedback === 'not_helpful' ? '0 0 0 4px rgba(217,119,6,0.12), 0 4px 14px rgba(217,119,6,0.18)' : '0 1px 3px rgba(0,0,0,0.05)',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      transition: 'all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1)',
-                      transform: feedback === 'not_helpful' ? 'scale(1.06)' : 'scale(1)',
-                    }}>
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill={feedback === 'not_helpful' ? '#c2701e' : 'none'} stroke={feedback === 'not_helpful' ? '#8a4f13' : '#9ca3af'} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3zm7 7h2.67A2.31 2.31 0 0 0 22 20v-7a2.31 2.31 0 0 0-2.33-2H17"/>
-                    </svg>
-                  </button>
-                </div>
+              <div className="flex items-center gap-2 mb-1">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="var(--coral)" stroke="var(--coral)" strokeWidth="1.5" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink)' }}>Was this article helpful?</span>
+              </div>
+              <p style={{ fontSize: 12.5, color: 'var(--slate)', margin: '0 0 12px' }}>Your feedback helps us improve.</p>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button type="button" onClick={() => { if (!feedbackSubmitted) submitFeedback('helpful') }}
+                  style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, height: 42, borderRadius: 11, fontSize: 14, fontWeight: 700, cursor: feedbackSubmitted ? 'default' : 'pointer',
+                    border: feedback === 'helpful' ? '1.5px solid var(--coral)' : '1px solid var(--border)',
+                    background: feedback === 'helpful' ? 'var(--peach)' : '#fff', color: feedback === 'helpful' ? 'var(--coral)' : 'var(--ink)' }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg>
+                  Yes
+                </button>
+                <button type="button" onClick={() => { if (!feedbackSubmitted) submitFeedback('not_helpful') }}
+                  style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, height: 42, borderRadius: 11, fontSize: 14, fontWeight: 700, cursor: feedbackSubmitted ? 'default' : 'pointer',
+                    border: feedback === 'not_helpful' ? '1.5px solid #d97706' : '1px solid var(--border)',
+                    background: feedback === 'not_helpful' ? '#fdf3e7' : '#fff', color: feedback === 'not_helpful' ? '#b45309' : 'var(--ink)' }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3zm7 7h2.67A2.31 2.31 0 0 0 22 20v-7a2.31 2.31 0 0 0-2.33-2H17"/></svg>
+                  No
+                </button>
               </div>
 
               {/* Upvote: instant thanks banner */}
@@ -696,43 +651,72 @@ export default function HelpArticlePage() {
               )}
             </div>
 
+            {/* Search help articles */}
+            <div className="bg-white rounded-2xl border p-5" style={{ borderColor: 'var(--border)' }}>
+              <div className="flex items-center gap-2 mb-3">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--coral)" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                <span style={{ fontSize: 14.5, fontWeight: 700, color: 'var(--ink)' }}>Search help articles</span>
+              </div>
+              <form onSubmit={(e) => { e.preventDefault(); if (helpSearch.trim()) router.push(`/help?q=${encodeURIComponent(helpSearch.trim())}`) }}>
+                <div style={{ position: 'relative' }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"
+                    style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', color: 'var(--slate)', pointerEvents: 'none' }}>
+                    <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                  </svg>
+                  <input value={helpSearch} onChange={e => setHelpSearch(e.target.value)} placeholder="Search help articles…"
+                    style={{ width: '100%', padding: '10px 12px 10px 34px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 14, boxSizing: 'border-box' }} />
+                </div>
+              </form>
+            </div>
+
             {/* Related articles */}
             {related.length > 0 && (
               <div className="bg-white rounded-2xl border p-5" style={{ borderColor: 'var(--border)' }}>
-                <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'var(--slate)' }}>Related Articles</p>
-                <div className="space-y-2">
+                <div className="flex items-center gap-2 mb-3">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--coral)" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                  <span style={{ fontSize: 14.5, fontWeight: 700, color: 'var(--ink)' }}>Related articles</span>
+                </div>
+                <div className="space-y-1">
                   {related.map(r => (
                     <Link key={r.id} href={`/help/${r.id}`}
-                      className="block text-sm py-1.5 hover:underline cursor-pointer" style={{ color: 'var(--coral)' }}>
-                      {r.title}
+                      className="flex items-center justify-between gap-2 py-2 group cursor-pointer">
+                      <span className="text-sm group-hover:underline" style={{ color: 'var(--coral)', fontWeight: 600 }}>{r.title}</span>
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" strokeWidth="2" style={{ flexShrink: 0 }}><polyline points="9 18 15 12 9 6"/></svg>
                     </Link>
                   ))}
                 </div>
               </div>
             )}
 
-            {/* Quick contacts */}
+            {/* Contact options */}
             <div className="bg-white rounded-2xl border p-5" style={{ borderColor: 'var(--border)' }}>
-              <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'var(--slate)' }}>Contact Options</p>
-              <div className="space-y-2">
-                <button onClick={() => setShowTicketForm(true)}
-                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border text-sm hover:bg-gray-50 cursor-pointer text-left"
-                  style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 7.5V21a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V7.5M12 7.5V2H8a2 2 0 0 0-2 2v3.5m8 0V4a2 2 0 0 1 2 2v3.5"/><line x1="3" y1="12" x2="21" y2="12"/></svg>
-                  Submit a ticket
-                </button>
-                <a href={`mailto:${helpEmail}`}
-                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border text-sm hover:bg-gray-50 cursor-pointer"
-                  style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
-                  {helpEmail}
-                </a>
-                <Link href="/"
-                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border text-sm hover:bg-gray-50 cursor-pointer"
-                  style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
-                  💡 Request a feature
-                </Link>
+              <div className="flex items-center gap-2 mb-3">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--coral)" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                <span style={{ fontSize: 14.5, fontWeight: 700, color: 'var(--ink)' }}>Contact options</span>
               </div>
+              <div className="space-y-2">
+                {[
+                  { icon: <path d="M2 7.5V21a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V7.5M12 7.5V2H8a2 2 0 0 0-2 2v3.5m8 0V4a2 2 0 0 1 2 2v3.5" />, label: 'Submit a ticket', onClick: () => setShowTicketForm(true) },
+                  { icon: <><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></>, label: helpEmail, href: `mailto:${helpEmail}` },
+                  { icon: <><line x1="12" y1="2" x2="12" y2="6"/><path d="M9 18h6M10 22h4M12 6a6 6 0 0 0-4 10.5c.5.5 1 1.2 1 2h6c0-.8.5-1.5 1-2A6 6 0 0 0 12 6z"/></>, label: 'Request a feature', href: '/' },
+                ].map((c, i) => {
+                  const inner = (<>
+                    <span className="flex items-center gap-2.5">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">{c.icon}</svg>
+                      <span className="text-sm" style={{ color: 'var(--ink)' }}>{c.label}</span>
+                    </span>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" strokeWidth="2" style={{ flexShrink: 0 }}><polyline points="9 18 15 12 9 6"/></svg>
+                  </>)
+                  const cls = "w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl border text-left hover:bg-gray-50 cursor-pointer"
+                  const st = { borderColor: 'var(--border)' } as any
+                  return c.onClick
+                    ? <button key={i} onClick={c.onClick} className={cls} style={st}>{inner}</button>
+                    : c.href!.startsWith('mailto:')
+                      ? <a key={i} href={c.href} className={cls} style={st}>{inner}</a>
+                      : <Link key={i} href={c.href!} className={cls} style={st}>{inner}</Link>
+                })}
+              </div>
+              <p style={{ fontSize: 12, color: 'var(--slate)', marginTop: 12 }}>We typically reply within 1–2 business days.</p>
             </div>
 
             {/* Back */}
