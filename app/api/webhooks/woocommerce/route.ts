@@ -19,6 +19,19 @@ const DEFAULT_MESSAGES: Record<string, string> = {
   'on-hold': 'Hi {name}, your order #{order} is on hold while we confirm a few details. We\'ll be in touch shortly — reply here anytime.',
 }
 
+// The earlier default templates (no {name} / #{order}). A saved config that
+// still holds one of these was never really customised — it just captured the
+// old default — so we treat it as unset and use the current default instead,
+// so existing workspaces get the order number + name without re-saving.
+const LEGACY_DEFAULTS = new Set<string>([
+  'Thank you for placing an order with {business}. We have received it. If you have any questions, feel free to reply here.',
+  'We noticed there was an issue with your recent order payment. Do you need any help?',
+  'Your recent order was cancelled. Can we help you with anything?',
+  'Your order has been refunded. The refund of {amount} has been processed and should appear shortly.',
+  'Your order has been completed. Thank you for choosing {business}!',
+  "Your order is on hold while we confirm a few details. We'll be in touch shortly — feel free to reply here.",
+].map(s => s.trim()))
+
 // Customer-facing messages that are actively BAD to send on an order that is
 // actually alive/paid: "your order was cancelled" / "your payment failed". A
 // WooCommerce order can transiently pass through cancelled/failed (a BNPL
@@ -178,7 +191,14 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
   const cfg = company?.order_chat_automation || {}
 
   const status = (order.status || '').toLowerCase()
-  const messages = { ...DEFAULT_MESSAGES, ...(cfg.messages || {}) }
+  // Merge saved overrides, but drop any that are just the old default (or blank)
+  // so they fall back to the current default with {name}/#{order}.
+  const savedMsgs: Record<string, string> = {}
+  for (const [k, v] of Object.entries(cfg.messages || {})) {
+    const val = String(v ?? '').trim()
+    if (val && !LEGACY_DEFAULTS.has(val)) savedMsgs[k] = val as string
+  }
+  const messages = { ...DEFAULT_MESSAGES, ...savedMsgs }
   const template = messages[status]
 
   const email = order.billing?.email

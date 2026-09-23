@@ -4,13 +4,14 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useCompanyUser, S, ToggleRow } from '../_shared'
 
+// Placeholders: {name} customer, #{order} order number, {business}, {amount}, {total}.
 const STATUSES: { key: string; label: string; hint: string; default: string }[] = [
-  { key: 'processing', label: 'Processing (paid)', hint: 'Sent when an order is paid and being processed.', default: 'Thank you for placing an order with {business}. We have received it. If you have any questions, feel free to reply here.' },
-  { key: 'failed', label: 'Failed payment', hint: 'Sent when an order payment fails.', default: 'We noticed there was an issue with your recent order payment. Do you need any help?' },
-  { key: 'cancelled', label: 'Cancelled', hint: 'Sent when an order is cancelled.', default: 'Your recent order was cancelled. Can we help you with anything?' },
-  { key: 'refunded', label: 'Refunded', hint: 'Use {amount} for the refunded amount.', default: 'Your order has been refunded. The refund of {amount} has been processed and should appear shortly.' },
-  { key: 'completed', label: 'Completed', hint: 'Sent when an order is completed.', default: 'Your order has been completed. Thank you for choosing {business}!' },
-  { key: 'on-hold', label: 'On hold', hint: 'Sent when an order goes on hold.', default: "Your order is on hold while we confirm a few details. We'll be in touch shortly — feel free to reply here." },
+  { key: 'processing', label: 'Processing (paid)', hint: 'Use {name} and #{order}. Sent when an order is paid and being processed.', default: 'Hi {name}, thanks for your order #{order} with {business} — we\'ve received it and will begin processing. Reply here anytime with any questions.' },
+  { key: 'failed', label: 'Failed payment', hint: 'Use {name} and #{order}. Sent when an order payment fails.', default: 'Hi {name}, we noticed there was an issue with the payment on your order #{order}. Do you need any help?' },
+  { key: 'cancelled', label: 'Cancelled', hint: 'Use {name} and #{order}. Sent when an order is cancelled.', default: 'Hi {name}, your order #{order} was cancelled. Can we help you with anything?' },
+  { key: 'refunded', label: 'Refunded', hint: 'Use {amount} for the refunded amount, #{order} for the order.', default: 'Your order #{order} has been refunded. The refund of {amount} has been processed and should appear shortly.' },
+  { key: 'completed', label: 'Completed', hint: 'Use {name} and #{order}. Sent when an order is completed.', default: 'Hi {name}, your order #{order} is complete. Thank you for choosing {business}!' },
+  { key: 'on-hold', label: 'On hold', hint: 'Use {name} and #{order}. Sent when an order goes on hold.', default: "Hi {name}, your order #{order} is on hold while we confirm a few details. We'll be in touch shortly — reply here anytime." },
 ]
 
 // Messages the DOA claim tool sends the customer when an agent resolves a
