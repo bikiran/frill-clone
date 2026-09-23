@@ -657,6 +657,45 @@ export default function InboxPage() {
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([])
   const [reply, setReply] = useState('')
 
+  // ── Coax-style resizable composer ──────────────────────────────────────
+  // The reply box can be dragged taller/shorter via the grab handle on its top
+  // border. The chosen height is remembered per-agent (localStorage) so it
+  // survives reloads and conversation switches.
+  const COMPOSER_MIN = 64, COMPOSER_MAX = 420
+  const [composerH, setComposerH] = useState<number>(96)
+  const [composerDragging, setComposerDragging] = useState(false)
+  useEffect(() => {
+    try { const s = Number(localStorage.getItem('colvy_composer_h')); if (s >= COMPOSER_MIN && s <= COMPOSER_MAX) setComposerH(s) } catch {}
+  }, [])
+  const startComposerResize = (startY: number) => {
+    const startH = composerH
+    setComposerDragging(true)
+    const onMove = (clientY: number) => {
+      // Drag UP (clientY decreases) grows the box; DOWN shrinks it.
+      const next = Math.min(COMPOSER_MAX, Math.max(COMPOSER_MIN, Math.round(startH + (startY - clientY))))
+      setComposerH(next)
+    }
+    const onMouseMove = (e: MouseEvent) => { e.preventDefault(); onMove(e.clientY) }
+    const onTouchMove = (e: TouchEvent) => { if (e.touches[0]) onMove(e.touches[0].clientY) }
+    const stop = () => {
+      setComposerDragging(false)
+      window.removeEventListener('mousemove', onMouseMove)
+      window.removeEventListener('mouseup', stop)
+      window.removeEventListener('touchmove', onTouchMove)
+      window.removeEventListener('touchend', stop)
+      document.body.style.userSelect = ''
+      try { localStorage.setItem('colvy_composer_h', String(composerHRef.current)) } catch {}
+    }
+    document.body.style.userSelect = 'none'
+    window.addEventListener('mousemove', onMouseMove)
+    window.addEventListener('mouseup', stop)
+    window.addEventListener('touchmove', onTouchMove, { passive: false })
+    window.addEventListener('touchend', stop)
+  }
+  // Keep the latest height available to the drag-stop closure without re-binding.
+  const composerHRef = useRef(composerH)
+  useEffect(() => { composerHRef.current = composerH }, [composerH])
+
   // Keep an unsent reply so it survives switching conversations, a reload, or
   // coming back tomorrow. Personal to the signed-in agent.
   const draft = useDraft(
@@ -5701,6 +5740,15 @@ export default function InboxPage() {
   return (
     <div className={`inbox-root inbox-pane-${mobilePane}`} style={{ display: 'flex', height: '100vh', maxHeight: 'calc(100vh - 56px)', overflow: 'hidden', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
       <style>{`
+        /* Composer resize grip: reveal the "drag to resize" pill on hover. */
+        .composer-grip:hover .composer-grip-pill { opacity: 1 !important; transform: translateY(0) !important; }
+        .composer-grip::before {
+          content: ''; position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+          width: 44px; height: 4px; border-radius: 999px; background: var(--border);
+          opacity: 0; transition: opacity .12s ease;
+        }
+        .composer-grip:hover::before { opacity: 1; }
+
         /* ── Inbox mobile responsiveness ─────────────────────────────── */
         @media (max-width: 767px) {
           /* Fit the inbox between the top header AND the fixed bottom nav — the
@@ -8871,6 +8919,34 @@ export default function InboxPage() {
 
             {/* Reply box */}
             <div className="inbox-composer" style={{ padding: '10px 14px', background: '#fff', borderTop: '1px solid var(--border)', position: 'relative' }}>
+              {/* Coax-style resize grip: drag the top border of the composer up
+                  or down to grow/shrink the reply box. Email uses its own
+                  composer, so the grip is only shown for the chat box. */}
+              {activeChannel !== 'email' && (
+                <div
+                  onMouseDown={(e) => { e.preventDefault(); startComposerResize(e.clientY) }}
+                  onTouchStart={(e) => { if (e.touches[0]) startComposerResize(e.touches[0].clientY) }}
+                  onDoubleClick={() => { setComposerH(96); try { localStorage.setItem('colvy_composer_h', '96') } catch {} }}
+                  title="Drag up or down to resize"
+                  className="composer-grip"
+                  style={{
+                    position: 'absolute', top: -11, left: 0, right: 0, height: 22,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    cursor: 'ns-resize', zIndex: 30, touchAction: 'none',
+                  }}>
+                  <span className="composer-grip-pill" style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 7,
+                    padding: composerDragging ? '5px 12px' : '3px 9px', borderRadius: 999,
+                    background: '#1f2430', color: '#fff', fontSize: 12, fontWeight: 600,
+                    boxShadow: '0 6px 18px rgba(0,0,0,0.22)', whiteSpace: 'nowrap',
+                    opacity: composerDragging ? 1 : 0, transform: composerDragging ? 'translateY(0)' : 'translateY(2px)',
+                    transition: 'opacity .12s ease, transform .12s ease, padding .12s ease', pointerEvents: 'none',
+                  }}>
+                    <svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor" aria-hidden><circle cx="2.5" cy="2.5" r="1.3"/><circle cx="7.5" cy="2.5" r="1.3"/><circle cx="2.5" cy="7" r="1.3"/><circle cx="7.5" cy="7" r="1.3"/><circle cx="2.5" cy="11.5" r="1.3"/><circle cx="7.5" cy="11.5" r="1.3"/></svg>
+                    {composerDragging ? `${composerH}px` : 'Drag up or down to resize'}
+                  </span>
+                </div>
+              )}
               {/* Email threads get a proper email composer (To/Cc/Subject +
                   signature) instead of the plain chat box. */}
               {activeChannel === 'email' ? (
@@ -9208,8 +9284,7 @@ export default function InboxPage() {
                 placeholder={internalMode
                   ? 'Internal note — only your team will see this. Use @ to mention someone.'
                   : 'Type a reply… (Enter to send, / for quick responses)'}
-                rows={3}
-                style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: internalMode ? '1px dashed #f59e0b' : '1px solid var(--border)', background: internalMode ? '#fffbeb' : '#fff', fontStyle: internalMode ? 'italic' : 'normal', fontSize: 13, resize: 'none', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box', marginBottom: 8 }} />
+                style={{ width: '100%', height: composerH, padding: '10px 12px', borderRadius: 10, border: internalMode ? '1px dashed #f59e0b' : '1px solid var(--border)', background: internalMode ? '#fffbeb' : '#fff', fontStyle: internalMode ? 'italic' : 'normal', fontSize: 13, resize: 'none', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box', marginBottom: 8 }} />
 
               {/* @mention picker */}
               {mentionQuery !== null && mentionMatches.length > 0 && (
