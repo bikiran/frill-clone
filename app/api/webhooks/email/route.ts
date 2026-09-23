@@ -134,8 +134,11 @@ export async function POST(req: NextRequest) {
       conv = recent?.[0] || null
     }
     if (!conv) {
+      // Web-form addresses (provider 'webform') are inbound-only form channels —
+      // label their conversations as 'form' so they read correctly in the inbox.
+      const convChannel = channel.provider === 'webform' ? 'form' : 'email'
       const { data: newConv } = await db.from('conversations').insert({
-        company_id: companyId, channel: 'email', subject,
+        company_id: companyId, channel: convChannel, subject,
         email_subject: subject, email_message_id: messageId || null,
         // Which mailbox it arrived at, and which outlet owns that mailbox — so
         // replies go back out from the right address.
