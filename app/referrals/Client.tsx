@@ -42,7 +42,7 @@ export default function Client() {
       <MarketingNav />
 
       {/* Hero */}
-      <section style={{ maxWidth: 1180, margin: '0 auto', padding: '64px 24px 40px', display: 'grid', gridTemplateColumns: '1.05fr 0.95fr', gap: 48, alignItems: 'center' }} className="ref-hero">
+      <section style={{ maxWidth: 1280, margin: '0 auto', padding: '64px 24px 40px', display: 'grid', gridTemplateColumns: '1.05fr 0.95fr', gap: 48, alignItems: 'center' }} className="ref-hero">
         <div>
           <p style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 12.5, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: BLUE, margin: '0 0 18px' }}>
             <span style={{ width: 8, height: 8, borderRadius: 4, background: BLUE }} /> Colvy Referrals
@@ -50,7 +50,7 @@ export default function Client() {
           <h1 style={{ fontSize: 'clamp(40px,6vw,72px)', fontWeight: 900, letterSpacing: '-0.03em', lineHeight: 1.02, margin: '0 0 20px' }}>
             Refer a business.<br />Earn <span style={{ color: CORAL }}>{REWARD}</span>.
           </h1>
-          <p style={{ fontSize: 18, color: SLATE, lineHeight: 1.6, maxWidth: 520, margin: '0 0 14px' }}>
+          <p style={{ fontSize: 18.5, color: SLATE, lineHeight: 1.6, maxWidth: 580, margin: '0 0 14px' }}>
             Know a business that’d love Colvy? Send them your link. When they subscribe and pay their first month, you get <strong style={{ color: INK }}>{REWARD} account credit</strong> — every time, no cap.
           </p>
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 22 }}>
@@ -88,7 +88,7 @@ export default function Client() {
       </section>
 
       {/* How it works */}
-      <section style={{ maxWidth: 1180, margin: '0 auto', padding: '48px 24px' }}>
+      <section style={{ maxWidth: 1280, margin: '0 auto', padding: '48px 24px' }}>
         <Reveal>
           <h2 style={{ fontSize: 'clamp(28px,4vw,42px)', fontWeight: 900, letterSpacing: '-0.02em', textAlign: 'center', margin: '0 0 8px' }}>How it works</h2>
           <p style={{ textAlign: 'center', color: SLATE, fontSize: 16.5, margin: '0 0 40px' }}>Three steps. About a minute to send.</p>
@@ -127,7 +127,7 @@ export default function Client() {
       </section>
 
       {/* CTA */}
-      <section style={{ maxWidth: 1180, margin: '0 auto', padding: '48px 24px 72px' }}>
+      <section style={{ maxWidth: 1280, margin: '0 auto', padding: '48px 24px 72px' }}>
         <Reveal>
           <div style={{ borderRadius: 26, background: INK, color: '#fff', padding: 'clamp(36px,6vw,64px)', textAlign: 'center' }}>
             <h2 style={{ fontSize: 'clamp(28px,4.5vw,48px)', fontWeight: 900, letterSpacing: '-0.02em', margin: '0 0 12px' }}>Start earning {REWARD} a referral</h2>
