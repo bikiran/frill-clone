@@ -115,13 +115,17 @@ function SignUpForm() {
 
   const planParam = searchParams.get('plan')
   const billingParam = searchParams.get('billing') === 'annual' ? 'annual' : 'monthly'
+  const refParam = searchParams.get('ref')
 
   useEffect(() => {
     track('signup_started', planParam ? { plan: planParam, billing: billingParam } : undefined)
     if (planParam && planParam !== 'free') {
       try { localStorage.setItem('pending_plan', JSON.stringify({ plan: planParam, billing: billingParam })) } catch {}
     }
-  }, [planParam, billingParam])
+    // Persist a referral code so it survives the multi-step flow (and any OAuth
+    // round-trip), the same way the pending plan is stashed.
+    if (refParam) { try { localStorage.setItem('pending_ref', refParam) } catch {} }
+  }, [planParam, billingParam, refParam])
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }: any) => {
@@ -244,6 +248,7 @@ function SignUpForm() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           token, password, fullName: fullName.trim(),
+          ref: refParam || (() => { try { return localStorage.getItem('pending_ref') } catch { return null } })() || null,
           business: {
             name: companyName.trim(), slug: slug.toLowerCase(), industry,
             website: website.trim() || null, address: address.trim() || null,
