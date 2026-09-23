@@ -154,6 +154,7 @@ const NAV_GROUPS = [
       { label: 'Import Data', href: '/admin/import', icon: 'import_data' },
       { label: 'Settings', href: '/admin/settings', icon: 'settings' },
       { label: 'Billing', href: '/admin/billing', icon: 'billing' },
+      { label: 'Referrals', href: '/admin/referrals', icon: 'link' },
     ],
   },
 ]

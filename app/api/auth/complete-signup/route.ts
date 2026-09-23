@@ -30,6 +30,7 @@ export async function POST(req: NextRequest) {
     const biz = body.business || {}
     const slug = String(biz.slug || '').toLowerCase().trim()
     const name = String(biz.name || '').trim()
+    const refCode = String(body.ref || '').trim().toUpperCase()
 
     if (!token) return NextResponse.json({ error: 'Missing signup session' }, { status: 400 })
     if (password.length < 6) return NextResponse.json({ error: 'Password must be at least 6 characters' }, { status: 400 })
@@ -114,6 +115,29 @@ export async function POST(req: NextRequest) {
         name: fullName || null,
       })
     } catch { /* ensure-domain will backfill membership if this raced */ }
+
+    // 4b. Record the referral (non-fatal). If they arrived on someone's
+    //     ?ref= link, link this new company to the referrer as PENDING — it
+    //     becomes qualified (and credited) when they pay their first month.
+    if (refCode) {
+      try {
+        const { data: referrer } = await db.from('companies')
+          .select('id, owner_id').eq('referral_code', refCode).maybeSingle()
+        // Must exist and not be a self-referral (same company or same owner).
+        if (referrer?.id && referrer.id !== company.id && referrer.owner_id !== user.id) {
+          await db.from('referrals').insert({
+            ref_code: refCode,
+            referrer_company_id: referrer.id,
+            referrer_user_id: referrer.owner_id,
+            referred_company_id: company.id,
+            referred_user_id: user.id,
+            referred_email: email,
+            referred_name: name,
+            status: 'pending',
+          })
+        }
+      } catch { /* invalid code / dup / column missing (pre-V314) — never block signup */ }
+    }
 
     // 5. Provision subdomain + seed (mirrors /api/companies; non-fatal).
     let domain: any = null
