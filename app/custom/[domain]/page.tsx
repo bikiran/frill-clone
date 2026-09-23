@@ -255,7 +255,7 @@ export default function CustomDomainPage() {
                   {featured.map(a => {
                     const img = a.image_url || a.cover_url || a.image
                     return (
-                    <a key={a.id} href={`${boardUrl}/help/${a.id}`}
+                    <a key={a.id} href={`/help/${a.id}`}
                       style={{ background: '#fff', borderRadius: 18, border: '1px solid var(--border, #eef0f3)', padding: 18, textDecoration: 'none', display: 'block', transition: 'box-shadow 0.2s, transform 0.2s' }}
                       onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 12px 30px rgba(15,23,42,0.10)'; e.currentTarget.style.transform = 'translateY(-2px)' }}
                       onMouseLeave={e => { e.currentTarget.style.boxShadow = 'none'; e.currentTarget.style.transform = 'none' }}>
@@ -304,7 +304,7 @@ export default function CustomDomainPage() {
             {(search || catFilter !== 'All') && <h2 style={{ fontSize: 18, fontWeight: 800, color: 'var(--ink,#1a1a1a)', margin: '0 0 14px' }}>{catFilter !== 'All' ? catFilter : `Results for “${search}”`}</h2>}
             <div style={{ background: '#fff', borderRadius: 20, border: '1px solid var(--border, #f0f0f0)', overflow: 'hidden' }}>
               {filtered.map((a, i) => (
-                <a key={a.id} href={`${boardUrl}/help/${a.id}`}
+                <a key={a.id} href={`/help/${a.id}`}
                   style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: i < filtered.length - 1 ? '1px solid var(--border, #f0f0f0)' : 'none', textDecoration: 'none', transition: 'background 0.15s' }}
                   onMouseEnter={e => (e.currentTarget.style.background = '#fafafa')}
                   onMouseLeave={e => (e.currentTarget.style.background = '#fff')}>
@@ -327,8 +327,8 @@ export default function CustomDomainPage() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(200px,1fr))', gap: 16, marginTop: 48 }}>
           {[
             { svgIcon: 'chat', title: 'Live Chat', desc: 'Chat with our team in real time', action: 'Start Chat', onClick: () => window.dispatchEvent(new CustomEvent('colvy-open-chat')) },
-            { svgIcon: 'ticket', title: 'Submit a Ticket', desc: 'We\'ll get back to you soon', action: 'Open Ticket', href: `${boardUrl}/help/ticket` },
-            ...(helpEmail ? [{ svgIcon: 'email', title: 'Email Support', desc: 'Response within 24h', action: 'Send Email', href: `mailto:${helpEmail}` }] : [{ svgIcon: 'email', title: 'Email Support', desc: 'We\'ll get back to you soon', action: 'Contact us', href: `${boardUrl}/help/ticket` }]),
+            { svgIcon: 'ticket', title: 'Submit a Ticket', desc: 'We\'ll get back to you soon', action: 'Open Ticket', href: `/help/ticket` },
+            ...(helpEmail ? [{ svgIcon: 'email', title: 'Email Support', desc: 'Response within 24h', action: 'Send Email', href: `mailto:${helpEmail}` }] : [{ svgIcon: 'email', title: 'Email Support', desc: 'We\'ll get back to you soon', action: 'Contact us', href: `/help/ticket` }]),
           ].map((s: any) => (
             <div key={s.title} style={{ background: '#fff', borderRadius: 16, border: '1px solid var(--border, #f0f0f0)', padding: 20, textAlign: 'center' }}>
               <div style={{ fontSize: 28, marginBottom: 8, display: 'flex', justifyContent: 'center', color: accent }}>{s.svgIcon === 'chat' ? <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> : s.svgIcon === 'ticket' ? <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg> : <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>}</div>

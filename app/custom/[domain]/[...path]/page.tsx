@@ -1,11 +1,15 @@
 'use client'
-// Catch-all for custom domain sub-paths
-// help.prexty.com/help/article-123 → /custom/help__prexty__com/help/article-123
-// Redirects to the equivalent colvy.com page
 
-import { useEffect } from 'react'
+// Custom-domain sub-paths. Help pages render in place so the visitor stays on
+// the custom domain (e.g. help.acme.com/help/<id>); other tenant sub-paths
+// (roadmap, announcements, …) still redirect to the colvy.com equivalent.
+
+import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import HelpArticlePage from '../../../help/[id]/page'
+import HelpTicketPage from '../../../help/ticket/page'
+import CustomDomainPage from '../page'
 
 export default function CustomDomainSubPath() {
   const params = useParams()
@@ -13,36 +17,35 @@ export default function CustomDomainSubPath() {
   const path = (params?.path as string[]) || []
   const hostname = encodedDomain?.replace(/__/g, '.')
   const subPath = '/' + path.join('/')
+  const [redirecting, setRedirecting] = useState(false)
+
+  const isHelpTicket = path[0] === 'help' && path[1] === 'ticket'
+  const isHelpArticle = path[0] === 'help' && !!path[1] && path[1] !== 'ticket'
+  const isHelpHome = path[0] === 'help' && !path[1]
+  const renderInPlace = isHelpTicket || isHelpArticle || isHelpHome
 
   useEffect(() => {
-    if (!hostname) return
+    if (!hostname || renderInPlace) return
+    setRedirecting(true)
     ;(async () => {
-      // Resolve company slug
       let slug = ''
-
-      const { data: byHelp } = await (supabase as any)
-        .from('companies').select('slug').eq('help_domain', hostname).maybeSingle()
-      if (byHelp) { slug = byHelp.slug }
-
+      const { data: byHelp } = await (supabase as any).from('companies').select('slug').eq('help_domain', hostname).maybeSingle()
+      if (byHelp) slug = byHelp.slug
       if (!slug) {
-        const { data: byBoard } = await (supabase as any)
-          .from('companies').select('slug').eq('board_domain', hostname).maybeSingle()
+        const { data: byBoard } = await (supabase as any).from('companies').select('slug').eq('board_domain', hostname).maybeSingle()
         if (byBoard) slug = byBoard.slug
       }
-
-      if (!slug) {
-        const parts = hostname.split('.')
-        slug = parts[parts.length - 2] || ''
-      }
-
-      if (slug) {
-        // Redirect to the colvy.com equivalent page
-        window.location.href = `https://${slug}.colvy.com${subPath}`
-      } else {
-        window.location.href = 'https://colvy.com'
-      }
+      if (!slug) { const parts = hostname.split('.'); slug = parts[parts.length - 2] || '' }
+      window.location.href = slug ? `https://${slug}.colvy.com${subPath}` : 'https://colvy.com'
     })()
-  }, [hostname, subPath])
+  }, [hostname, subPath, renderInPlace])
+
+  // Help pages render in place so the visitor never leaves the custom domain.
+  if (isHelpTicket) return <HelpTicketPage />
+  // The article page reads its id from the URL (help.acme.com/help/<id>).
+  if (isHelpArticle) return <HelpArticlePage />
+  // The help centre home on the custom domain.
+  if (isHelpHome) return <CustomDomainPage />
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#fafafa' }}>

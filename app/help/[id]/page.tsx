@@ -136,7 +136,10 @@ function renderContent(content: string) {
 export default function HelpArticlePage() {
   const params = useParams()
   const router = useRouter()
-  const id = params?.id as string
+  // Normally the id comes from the /help/[id] route param. When this component
+  // is rendered for a custom domain (via /custom/[domain]/[...path]), the route
+  // param is the domain, so fall back to reading the id out of the URL path.
+  const id = (params?.id as string) || (typeof window !== 'undefined' ? (window.location.pathname.match(/\/help\/([^/?#]+)/)?.[1] || '') : '')
 
   const [article, setArticle] = useState<any>(null)
   // Headings extracted from the article body, for the "On this page" nav.
@@ -190,14 +193,12 @@ export default function HelpArticlePage() {
           setCatMap(m)
         }
       } catch { /* fall back to the raw category value */ }
-      // The company's own support address for the Contact panel.
+      // The company's own support address for the Contact panel. Works on the
+      // colvy.com subdomain (slug) and on a custom help domain (host).
       try {
         const host = typeof window !== 'undefined' ? window.location.hostname : ''
-        if (host.endsWith('.colvy.com') && host !== 'colvy.com') {
-          const slug = host.replace('.colvy.com', '')
-          // Ask the server for just the support address. Reading the
-          // company row and email_channels from the browser meant both had to
-          // be publicly readable; this exposes one field instead.
+        const slug = (host.endsWith('.colvy.com') && host !== 'colvy.com') ? host.replace('.colvy.com', '') : host
+        if (slug && host !== 'colvy.com' && host !== 'www.colvy.com') {
           try {
             const r = await fetch(`/api/help/contact?slug=${encodeURIComponent(slug)}`)
             const d = await r.json()

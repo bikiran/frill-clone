@@ -26,9 +26,11 @@ export async function GET(req: NextRequest) {
     if (!slug) return NextResponse.json({ email: null })
 
     const db = admin()
-    const { data: co } = await db.from('companies')
-      .select('id, owner_id, support_email, business_email, contact_email, email')
-      .eq('slug', slug).maybeSingle()
+    // `slug` may be a real slug (colvy subdomain) or a custom domain host.
+    const cols = 'id, owner_id, support_email, business_email, contact_email, email'
+    let { data: co } = await db.from('companies').select(cols).eq('slug', slug).maybeSingle()
+    if (!co) { const { data } = await db.from('companies').select(cols).eq('help_domain', slug).maybeSingle(); co = data || null }
+    if (!co) { const { data } = await db.from('companies').select(cols).eq('board_domain', slug).maybeSingle(); co = data || null }
 
     let email: string | null =
       (co as any)?.support_email || (co as any)?.business_email ||
