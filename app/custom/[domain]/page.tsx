@@ -123,7 +123,7 @@ export default function CustomDomainPage() {
 
   const NavHeader = (
     <header style={{ position: 'sticky', top: 0, zIndex: 40, background: '#fff', borderBottom: '1px solid #f0f0f0' }}>
-      <div style={{ maxWidth: 1000, margin: '0 auto', padding: '0 24px', height: 56, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <div style={{ maxWidth: 1240, margin: '0 auto', padding: '0 24px', height: 56, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           {company.logo_url
             ? <img src={company.logo_url} alt={company.name} style={{ height: 28 }} />
@@ -153,43 +153,78 @@ export default function CustomDomainPage() {
     </div>
   )
 
-  // Help domain → full help centre (same design as colvy.com/help)
+  // Help domain → full help centre
+  const totalViews = articles.reduce((s, a) => s + (a.views || 0), 0)
+  const realCats = cats.filter(c => c !== 'All')
+  const catCount = (c: string) => articles.filter(a => a.category === c).length
+  const popular = realCats.slice(0, 4)
+  const coverBg = company.help_cover_url
+    ? `linear-gradient(180deg, rgba(15,23,42,0.28) 0%, rgba(15,23,42,0.45) 100%), url(${company.help_cover_url}) center/cover no-repeat`
+    : `linear-gradient(135deg, ${accent}22 0%, ${accent}0c 55%, #ffffff 100%)`
+  const onCover = !!company.help_cover_url
+  const ink = onCover ? '#fff' : 'var(--ink, #1a1a1a)'
+  const sub = onCover ? 'rgba(255,255,255,0.9)' : 'var(--slate, #6b6b70)'
+  const excerpt = (a: any) => (a.content || '').replace(/#{1,6} /g, '').replace(/```[\s\S]*?```/g, '').replace(/[*_>#`]/g, '').slice(0, 110)
+
   return (
-    <div style={{ background: 'var(--canvas, #fafafa)', minHeight: '100vh' }}>
+    <div style={{ background: 'var(--canvas, #f7f8fa)', minHeight: '100vh' }}>
       {NavHeader}
 
-      {/* Hero — matches colvy.com/help exactly */}
-      <div style={{ padding: '64px 24px', textAlign: 'center', background: 'var(--peach, #fff4f1)' }}>
-        <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'center', color: 'var(--coral, #ff7a6b)' }}>
-          <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+      {/* Hero (cover photo, or branded gradient fallback) */}
+      <div style={{ background: coverBg, padding: '56px 24px 96px', textAlign: 'center' }}>
+        <div style={{ marginBottom: 14, display: 'flex', justifyContent: 'center', color: onCover ? '#fff' : accent }}>
+          <svg width="46" height="46" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
         </div>
-        <h1 style={{ fontSize: 36, fontWeight: 900, marginBottom: 8, color: 'var(--ink, #1a1a1a)' }}>{company.name} Help Centre</h1>
-        <p style={{ color: 'var(--slate, #6b6b70)', marginBottom: 32, fontSize: 18 }}>Find answers, guides, and resources</p>
-        <div style={{ maxWidth: 480, margin: '0 auto', position: 'relative' }}>
-          <svg style={{ position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)', color: 'var(--slate, #6b6b70)' }} width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search articles..."
-            style={{ width: '100%', padding: '14px 16px 14px 48px', borderRadius: 14, border: '1px solid var(--border, #f0f0f0)', fontSize: 16, outline: 'none', boxSizing: 'border-box', background: '#fff' }} />
-          {search && <button onClick={() => setSearch('')} style={{ position: 'absolute', right: 14, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', fontSize: 18, cursor: 'pointer', color: 'var(--slate, #6b6b70)' }}>×</button>}
+        <h1 style={{ fontSize: 'clamp(30px,4.5vw,46px)', fontWeight: 900, letterSpacing: '-0.02em', margin: '0 0 10px', color: ink, textShadow: onCover ? '0 1px 12px rgba(0,0,0,0.25)' : 'none' }}>{company.name} Help Centre</h1>
+        <p style={{ color: sub, margin: '0 auto 28px', fontSize: 18, maxWidth: 560, textShadow: onCover ? '0 1px 8px rgba(0,0,0,0.25)' : 'none' }}>Find answers, guides, and resources to keep your aquarium thriving</p>
+        <div style={{ maxWidth: 640, margin: '0 auto', position: 'relative' }}>
+          <svg style={{ position: 'absolute', left: 20, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af' }} width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search articles…"
+            style={{ width: '100%', padding: '17px 60px 17px 52px', borderRadius: 999, border: 'none', fontSize: 16, outline: 'none', boxSizing: 'border-box', background: '#fff', boxShadow: '0 12px 34px rgba(15,23,42,0.16)' }} />
+          <button aria-label="Search" style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', width: 42, height: 42, borderRadius: '50%', border: 'none', background: accent, color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          </button>
+        </div>
+        {popular.length > 0 && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'center', alignItems: 'center', marginTop: 16 }}>
+            <span style={{ fontSize: 13, fontWeight: 600, color: onCover ? 'rgba(255,255,255,0.85)' : 'var(--slate,#6b6b70)' }}>Popular searches:</span>
+            {popular.map(c => (
+              <button key={c} onClick={() => setCatFilter(c)}
+                style={{ padding: '4px 12px', borderRadius: 999, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', border: onCover ? '1px solid rgba(255,255,255,0.5)' : '1px solid var(--border,#e5e7eb)', background: onCover ? 'rgba(255,255,255,0.15)' : '#fff', color: onCover ? '#fff' : 'var(--slate,#6b6b70)' }}>{c}</button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div style={{ maxWidth: 1240, margin: '0 auto', padding: '0 24px' }}>
+        {/* Stats card overlapping the hero */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', background: '#fff', borderRadius: 20, boxShadow: '0 10px 34px rgba(15,23,42,0.08)', border: '1px solid var(--border,#eef0f3)', marginTop: -56, position: 'relative', zIndex: 2, overflow: 'hidden' }}>
+          {[
+            { n: articles.length, l: 'Articles', icon: <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/> },
+            { n: realCats.length, l: 'Categories', icon: <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/> },
+            { n: totalViews, l: 'Total views', icon: <><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></> },
+          ].map((s, i) => (
+            <div key={s.l} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 14, padding: '22px 16px', borderLeft: i ? '1px solid var(--border,#eef0f3)' : 'none' }}>
+              <span style={{ width: 44, height: 44, borderRadius: 12, background: accent + '15', color: accent, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">{s.icon}</svg>
+              </span>
+              <div style={{ textAlign: 'left' }}>
+                <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--ink,#1a1a1a)', lineHeight: 1 }}>{s.n}</div>
+                <div style={{ fontSize: 13, color: 'var(--slate,#6b6b70)', marginTop: 3 }}>{s.l}</div>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
 
-      {/* Stats bar */}
-      <div style={{ borderBottom: '1px solid var(--border, #f0f0f0)', padding: '12px 24px', background: '#fff' }}>
-        <div style={{ maxWidth: 1000, margin: '0 auto', display: 'flex', gap: 24, fontSize: 13, color: 'var(--slate, #6b6b70)' }}>
-          <span>{articles.length} articles</span>
-          <span>{cats.length - 1} categories</span>
-          <span>{articles.reduce((s, a) => s + (a.views || 0), 0)} total views</span>
-        </div>
-      </div>
-
-      <div style={{ maxWidth: 1000, margin: '0 auto', padding: '40px 24px' }}>
+      <div style={{ maxWidth: 1240, margin: '0 auto', padding: '32px 24px 48px' }}>
 
         {/* Category pills */}
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 32 }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 36 }}>
           {cats.map(cat => (
             <button key={cat} onClick={() => setCatFilter(cat)}
-              style={{ padding: '7px 16px', borderRadius: 999, border: `1px solid ${catFilter === cat ? accent : 'var(--border, #f0f0f0)'}`, background: catFilter === cat ? accent : '#fff', color: catFilter === cat ? '#fff' : 'var(--slate, #6b6b70)', fontSize: 14, fontWeight: 500, cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: 6 }}>
-              <CategorySVG cat={cat} size={13} />
+              style={{ padding: '9px 18px', borderRadius: 999, border: `1px solid ${catFilter === cat ? accent : 'var(--border, #e5e7eb)'}`, background: catFilter === cat ? accent : '#fff', color: catFilter === cat ? '#fff' : 'var(--slate, #6b6b70)', fontSize: 14, fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: 7, boxShadow: '0 1px 2px rgba(0,0,0,0.03)' }}>
+              <CategorySVG cat={cat} size={14} />
               {cat}
             </button>
           ))}
@@ -209,27 +244,63 @@ export default function CustomDomainPage() {
           <>
             {/* Featured */}
             {featured.length > 0 && !search && catFilter === 'All' && (
-              <div style={{ marginBottom: 40 }}>
-                <h2 style={{ fontSize: 13, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--slate, #6b6b70)', marginBottom: 16 }}>⭐ Featured Articles</h2>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(260px,1fr))', gap: 16 }}>
-                  {featured.map(a => (
+              <div style={{ marginBottom: 44 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+                  <h2 style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 20, fontWeight: 800, color: 'var(--ink,#1a1a1a)', margin: 0 }}>
+                    <span style={{ color: '#f5b301' }}>★</span> Featured Articles
+                  </h2>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(300px,1fr))', gap: 18 }}>
+                  {featured.map(a => {
+                    const img = a.image_url || a.cover_url || a.image
+                    return (
                     <a key={a.id} href={`${boardUrl}/help/${a.id}`}
-                      style={{ background: '#fff', borderRadius: 16, border: '1px solid var(--border, #f0f0f0)', padding: 20, textDecoration: 'none', display: 'block', transition: 'box-shadow 0.2s' }}
-                      onMouseEnter={e => (e.currentTarget.style.boxShadow = '0 4px 16px rgba(0,0,0,0.08)')}
-                      onMouseLeave={e => (e.currentTarget.style.boxShadow = 'none')}>
-                      <span style={{ fontSize: 12, padding: '4px 10px', borderRadius: 999, background: accent + '15', color: accent, fontWeight: 600 }}>{a.category}</span>
-                      <h3 style={{ fontSize: 15, fontWeight: 600, margin: '10px 0 6px', color: 'var(--ink, #1a1a1a)' }}>{a.title}</h3>
-                      <p style={{ fontSize: 13, color: 'var(--slate, #6b6b70)', lineHeight: 1.5 }}>
-                        {a.content?.replace(/#{1,6} /g, '').slice(0, 80)}...
+                      style={{ background: '#fff', borderRadius: 18, border: '1px solid var(--border, #eef0f3)', padding: 18, textDecoration: 'none', display: 'block', transition: 'box-shadow 0.2s, transform 0.2s' }}
+                      onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 12px 30px rgba(15,23,42,0.10)'; e.currentTarget.style.transform = 'translateY(-2px)' }}
+                      onMouseLeave={e => { e.currentTarget.style.boxShadow = 'none'; e.currentTarget.style.transform = 'none' }}>
+                      <div style={{ display: 'flex', gap: 14 }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <span style={{ fontSize: 11.5, padding: '4px 10px', borderRadius: 999, background: accent + '15', color: accent, fontWeight: 700 }}>{a.category}</span>
+                          <h3 style={{ fontSize: 15.5, fontWeight: 700, margin: '11px 0 7px', color: 'var(--ink, #1a1a1a)', lineHeight: 1.3 }}>{a.title}</h3>
+                          <p style={{ fontSize: 13, color: 'var(--slate, #6b6b70)', lineHeight: 1.5, margin: 0 }}>{excerpt(a)}…</p>
+                        </div>
+                        <div style={{ width: 84, height: 84, borderRadius: 12, flexShrink: 0, background: img ? `url(${img}) center/cover no-repeat` : `linear-gradient(135deg, ${accent}22, ${accent}0c)`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: accent }}>
+                          {!img && <CategorySVG cat={a.category || 'All'} size={26} />}
+                        </div>
+                      </div>
+                      <p style={{ display: 'flex', alignItems: 'center', gap: 14, fontSize: 12, color: '#9ca3af', marginTop: 14, marginBottom: 0 }}>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>{a.views || 0} views</span>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3z"/></svg>{a.likes || 0} helpful</span>
                       </p>
-                      <p style={{ fontSize: 12, color: '#9ca3af', marginTop: 10 }}>{a.views || 0} views · {a.likes || 0} helpful</p>
                     </a>
+                  )})}
+                </div>
+              </div>
+            )}
+
+            {/* Browse by Topic */}
+            {realCats.length > 0 && !search && catFilter === 'All' && (
+              <div style={{ marginBottom: 44 }}>
+                <h2 style={{ fontSize: 20, fontWeight: 800, color: 'var(--ink,#1a1a1a)', margin: '0 0 16px' }}>Browse by Topic</h2>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(210px,1fr))', gap: 16 }}>
+                  {realCats.map(c => (
+                    <button key={c} onClick={() => setCatFilter(c)}
+                      style={{ textAlign: 'left', background: '#fff', border: '1px solid var(--border,#eef0f3)', borderRadius: 16, padding: '18px 18px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 13, transition: 'box-shadow 0.2s, transform 0.2s' }}
+                      onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 10px 26px rgba(15,23,42,0.08)'; e.currentTarget.style.transform = 'translateY(-2px)' }}
+                      onMouseLeave={e => { e.currentTarget.style.boxShadow = 'none'; e.currentTarget.style.transform = 'none' }}>
+                      <span style={{ width: 44, height: 44, borderRadius: 12, background: accent + '15', color: accent, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><CategorySVG cat={c} size={22} /></span>
+                      <span>
+                        <span style={{ display: 'block', fontSize: 14.5, fontWeight: 700, color: 'var(--ink,#1a1a1a)' }}>{c}</span>
+                        <span style={{ display: 'block', fontSize: 12.5, color: 'var(--slate,#6b6b70)', marginTop: 2 }}>{catCount(c)} article{catCount(c) === 1 ? '' : 's'}</span>
+                      </span>
+                    </button>
                   ))}
                 </div>
               </div>
             )}
 
             {/* All articles list */}
+            {(search || catFilter !== 'All') && <h2 style={{ fontSize: 18, fontWeight: 800, color: 'var(--ink,#1a1a1a)', margin: '0 0 14px' }}>{catFilter !== 'All' ? catFilter : `Results for “${search}”`}</h2>}
             <div style={{ background: '#fff', borderRadius: 20, border: '1px solid var(--border, #f0f0f0)', overflow: 'hidden' }}>
               {filtered.map((a, i) => (
                 <a key={a.id} href={`${boardUrl}/help/${a.id}`}

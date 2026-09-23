@@ -32,6 +32,8 @@ export default function HelpSettingsPage() {
   // Customize
   const [helpTitle, setHelpTitle] = useState('How can we help 👋')
   const [helpSubtitle, setHelpSubtitle] = useState('')
+  const [coverUrl, setCoverUrl] = useState('')
+  const [coverBusy, setCoverBusy] = useState(false)
   const [showTrending, setShowTrending] = useState(true)
   const [showCategories, setShowCategories] = useState(true)
   const [showContactCta, setShowContactCta] = useState(true)
@@ -62,6 +64,12 @@ export default function HelpSettingsPage() {
       setCompanyId(cid)
       setSlug(s)
       if (!cid) return
+
+      // Cover photo lives on the company row (read by both help renderers).
+      try {
+        const { data: co } = await (supabase as any).from('companies').select('help_cover_url').eq('id', cid).maybeSingle()
+        if (co?.help_cover_url) setCoverUrl(co.help_cover_url)
+      } catch {}
 
       // Load saved help settings
       const { data: rows } = await (supabase as any).from('site_settings').select('*')
@@ -104,6 +112,32 @@ export default function HelpSettingsPage() {
       setPreviewKey(k => k + 1)
     } catch { setSaveMsg('Save failed') }
     setSaving(false)
+  }
+
+  // Cover photo → storage, then persist on companies.help_cover_url (both help
+  // renderers read it; falls back to the branded gradient when empty).
+  const uploadCover = async (file: File) => {
+    if (!companyId || !file) return
+    setCoverBusy(true); setSaveMsg('')
+    try {
+      const ext = file.name.split('.').pop()
+      const path = `help-covers/${companyId}-${Date.now()}.${ext}`
+      let bucket = 'settings'
+      let { data, error } = await supabase.storage.from(bucket).upload(path, file, { upsert: true })
+      if (error) { bucket = 'idea-images'; const r = await supabase.storage.from(bucket).upload(path, file, { upsert: true }); data = r.data; error = r.error }
+      if (error) throw error
+      const { data: { publicUrl } } = supabase.storage.from(bucket).getPublicUrl(data!.path)
+      const { error: upErr } = await (supabase as any).from('companies').update({ help_cover_url: publicUrl }).eq('id', companyId)
+      if (upErr) throw upErr
+      setCoverUrl(publicUrl); setSaveMsg('Cover updated!'); setTimeout(() => setSaveMsg(''), 2500); setPreviewKey(k => k + 1)
+    } catch (e: any) { setSaveMsg(/does not exist|schema cache|column/i.test(e?.message || '') ? 'Run COLVY_V315_HELP_COVER.sql, then reload.' : 'Cover upload failed') }
+    setCoverBusy(false)
+  }
+  const removeCover = async () => {
+    if (!companyId) return
+    setCoverBusy(true)
+    try { await (supabase as any).from('companies').update({ help_cover_url: null }).eq('id', companyId); setCoverUrl(''); setPreviewKey(k => k + 1) } catch {}
+    setCoverBusy(false)
   }
 
   const Toggle = ({ on, set }: { on: boolean; set: (v: boolean) => void }) => (
@@ -234,7 +268,20 @@ export default function HelpSettingsPage() {
               style={{ width: '100%', padding: '11px 14px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 14, outline: 'none', marginBottom: 16 }} />
             <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--slate)', marginBottom: 6 }}>Subtitle (optional)</label>
             <input value={helpSubtitle} onChange={e => setHelpSubtitle(e.target.value)} placeholder="Find answers, guides, and resources"
-              style={{ width: '100%', padding: '11px 14px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 14, outline: 'none' }} />
+              style={{ width: '100%', padding: '11px 14px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 14, outline: 'none', marginBottom: 16 }} />
+
+            <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--slate)', marginBottom: 6 }}>Cover photo</label>
+            <p style={{ margin: '0 0 8px', fontSize: 12, color: 'var(--slate)' }}>Shown behind the help centre header. Recommended 1600×500. Leave empty to use the branded gradient.</p>
+            <div style={{ borderRadius: 12, border: '1px dashed var(--border)', overflow: 'hidden', background: 'var(--canvas)' }}>
+              {coverUrl && <div style={{ height: 120, background: `url(${coverUrl}) center/cover no-repeat` }} />}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 12 }}>
+                <label style={{ padding: '8px 14px', borderRadius: 9, background: 'var(--coral)', color: '#fff', fontSize: 13, fontWeight: 700, cursor: coverBusy ? 'default' : 'pointer', opacity: coverBusy ? 0.6 : 1 }}>
+                  {coverBusy ? 'Uploading…' : coverUrl ? 'Replace' : 'Upload cover'}
+                  <input type="file" accept="image/*" disabled={coverBusy} onChange={e => { const f = e.target.files?.[0]; if (f) uploadCover(f) }} style={{ display: 'none' }} />
+                </label>
+                {coverUrl && <button type="button" onClick={removeCover} disabled={coverBusy} style={{ padding: '8px 14px', borderRadius: 9, background: '#fff', border: '1px solid var(--border)', color: 'var(--slate)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Remove</button>}
+              </div>
+            </div>
           </div>
 
           <div style={{ borderRadius: 14, border: '1px solid var(--border)', background: '#fff', padding: '20px 22px' }}>
