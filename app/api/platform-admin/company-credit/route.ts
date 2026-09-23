@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import Stripe from 'stripe'
-import { creditBalanceCents, ensureReferralCode } from '@/lib/referrals'
+import { creditBalanceCents, ensureReferralCode, REFERRAL_CURRENCY } from '@/lib/referrals'
 
 export const dynamic = 'force-dynamic'
 
@@ -35,7 +35,7 @@ export async function GET(req: NextRequest) {
     const companyId = req.nextUrl.searchParams.get('companyId')
     if (!companyId) return NextResponse.json({ error: 'companyId required' }, { status: 400 })
 
-    const { data: company } = await db.from('companies').select('id, name, owner_id, referral_code, currency').eq('id', companyId).maybeSingle()
+    const { data: company } = await db.from('companies').select('id, name, owner_id, referral_code').eq('id', companyId).maybeSingle()
     if (!company) return NextResponse.json({ error: 'Company not found' }, { status: 404 })
 
     const code = await ensureReferralCode(db, company).catch(() => null)
@@ -47,7 +47,7 @@ export async function GET(req: NextRequest) {
     ])
     const balanceCents = (credits || []).reduce((s: number, r: any) => s + (r.amount_cents || 0), 0)
     const list = refs || []
-    const currency = (company as any).currency || 'aud'
+    const currency = REFERRAL_CURRENCY
 
     // Does the owner have a live Stripe customer? (determines whether a grant
     // actually nets off a real invoice, or is ledger-only.)
@@ -93,9 +93,9 @@ export async function POST(req: NextRequest) {
     if (!reason) return NextResponse.json({ error: 'A reason is required (audited).' }, { status: 400 })
     if (Math.abs(amountCents) > 5_000_00) return NextResponse.json({ error: 'Amount looks too large (max $5,000 per grant).' }, { status: 400 })
 
-    const { data: company } = await db.from('companies').select('id, name, owner_id, currency').eq('id', companyId).maybeSingle()
+    const { data: company } = await db.from('companies').select('id, name, owner_id').eq('id', companyId).maybeSingle()
     if (!company) return NextResponse.json({ error: 'Company not found' }, { status: 404 })
-    const currency = String(body.currency || (company as any).currency || 'aud').toLowerCase()
+    const currency = String(body.currency || REFERRAL_CURRENCY).toLowerCase()
 
     const { error: insErr } = await db.from('account_credits').insert({
       company_id: companyId, amount_cents: amountCents, currency,
