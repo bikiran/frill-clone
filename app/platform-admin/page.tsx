@@ -6,7 +6,7 @@ import LegalAdminPage from '../admin/legal/page'
 import PlatformBannerAdmin from '@/components/PlatformBannerAdmin'
 import BlogAdminPage from '@/components/BlogAdminPage'
 import { SmsPricing, DEFAULT_PRICING, calculateCost, aud, audRate, parsePricingRow } from '@/lib/sms-pricing'
-import { PLAN_FEATURES, PLAN_LIMITS, PLAN_NAMES, OVERRIDABLE_FEATURES, OVERRIDABLE_LIMITS, Plan } from '@/lib/plan'
+import { PLAN_FEATURES, PLAN_LIMITS, PLAN_NAMES, PLAN_PRICES, OVERRIDABLE_FEATURES, OVERRIDABLE_LIMITS, Plan } from '@/lib/plan'
 import { OPERATIONAL_FLAGS } from '@/lib/feature-flags'
 
 const SUPER_ADMIN = 'bishalstha76@gmail.com'
@@ -375,6 +375,52 @@ function BusinessDetail({ co, onClose, onAction }: { co: any; onClose: () => voi
     setSubMsg(next ? 'Account marked complimentary.' : 'Complimentary status removed.')
   }
 
+  // ── Account credit & referrals ──────────────────────────────────────────────
+  // Super-admins can see the company's referrals (as referrer), its credit
+  // balance/ledger, and grant credit — a manual top-up, a complimentary month,
+  // or N free days (priced from the plan's monthly rate).
+  const [credit, setCredit] = useState<any>(null)
+  const [creditLoading, setCreditLoading] = useState(false)
+  const [creditAmt, setCreditAmt] = useState('')
+  const [creditReason, setCreditReason] = useState('')
+  const [creditMsg, setCreditMsg] = useState('')
+  const [creditBusy, setCreditBusy] = useState(false)
+  const loadCredit = async () => {
+    setCreditLoading(true)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch(`/api/platform-admin/company-credit?companyId=${co.id}`, { headers: { Authorization: `Bearer ${session?.access_token}` } })
+      const d = await res.json()
+      setCredit(d)
+    } catch (e: any) { setCreditMsg(e?.message || 'Could not load credit') } finally { setCreditLoading(false) }
+  }
+  const grantCredit = async (amountCents: number, reason: string) => {
+    if (!Number.isFinite(amountCents) || amountCents === 0) { setCreditMsg('Enter an amount.'); return }
+    if (!reason.trim()) { setCreditMsg('A reason is required (audited).'); return }
+    setCreditBusy(true); setCreditMsg('')
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch('/api/platform-admin/company-credit', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
+        body: JSON.stringify({ companyId: co.id, amountCents, reason: reason.trim() }),
+      })
+      const d = await res.json()
+      if (!res.ok) throw new Error(d.error || 'Could not grant credit')
+      setCreditMsg(`Credit updated. New balance ${((d.balanceCents || 0) / 100).toFixed(2)}.${d.appliedToStripe ? ' Applied to Stripe balance.' : ' Ledger only (no Stripe customer).'}`)
+      setCreditAmt(''); setCreditReason('')
+      await loadCredit(); loadNotes()
+    } catch (e: any) { setCreditMsg(e?.message || 'Could not grant credit') } finally { setCreditBusy(false) }
+  }
+  // Complimentary time → credit equal to N days of the plan's monthly price.
+  const compDays = (days: number, label: string) => {
+    const monthly = PLAN_PRICES[(co.plan || 'free') as Plan]
+    if (!monthly) { setCreditMsg('This plan has no list price (enterprise/custom) — enter a manual amount instead.'); return }
+    const cents = Math.round(monthly * 100 * (days / 30))
+    grantCredit(cents, `Complimentary ${label} (${PLAN_NAMES[(co.plan || 'free') as Plan] || co.plan})`)
+  }
+  // Load credit/referrals the first time the Subscription tab is opened.
+  useEffect(() => { if (tab === 'plan' && !credit && !creditLoading) loadCredit() }, [tab])
+
   // ── Entitlements & limits overrides ────────────────────────────────────────
   // features/limits maps hold ONLY explicit overrides; an absent key = plan default.
   const [entFeatures, setEntFeatures] = useState<Record<string, boolean>>({})
@@ -536,6 +582,67 @@ function BusinessDetail({ co, onClose, onAction }: { co: any; onClose: () => voi
                   )}
                   {sub.is_complimentary && sub.complimentary_reason && <p style={{ fontSize: 12, color: 'var(--sa-muted)', margin: '0 0 8px' }}>Reason: {sub.complimentary_reason}</p>}
                   <button onClick={toggleComp} disabled={savingSub === 'comp'} style={paBtn(sub.is_complimentary ? '#ef4444' : '#10b981', true)}>{sub.is_complimentary ? 'Remove complimentary' : 'Mark complimentary'}</button>
+                </div>
+
+                {/* Complimentary time — free days/month for a subscribed (paying)
+                    account, granted as account credit at the plan's monthly rate. */}
+                <div style={{ padding: 14, borderRadius: 12, border: '1px solid var(--sa-border)' }}>
+                  <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)', margin: '0 0 3px' }}>Complimentary time</p>
+                  <p style={{ fontSize: 11.5, color: 'var(--sa-muted)', margin: '0 0 10px' }}>Give a paying customer free time as account credit, priced from their plan ({PLAN_NAMES[(co.plan || 'free') as Plan] || co.plan}{PLAN_PRICES[(co.plan || 'free') as Plan] ? ` · $${PLAN_PRICES[(co.plan || 'free') as Plan]}/mo` : ' · custom'}). Nets off their next invoice.</p>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <button onClick={() => compDays(7, '7 days')} disabled={creditBusy} style={paBtn()}>Free 7 days</button>
+                    <button onClick={() => compDays(14, '14 days')} disabled={creditBusy} style={paBtn()}>Free 14 days</button>
+                    <button onClick={() => compDays(30, '1 month')} disabled={creditBusy} style={paBtn()}>Free 1 month</button>
+                    <button onClick={() => compDays(90, '3 months')} disabled={creditBusy} style={paBtn()}>Free 3 months</button>
+                  </div>
+                </div>
+
+                {/* Account credit — balance, ledger and a manual grant/claw-back. */}
+                <div style={{ padding: 14, borderRadius: 12, border: '1px solid var(--sa-border)' }}>
+                  <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10, marginBottom: 8 }}>
+                    <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)', margin: 0 }}>Account credit</p>
+                    <span style={{ fontSize: 18, fontWeight: 800, color: '#10b981' }}>{creditLoading ? '…' : `$${(((credit?.balanceCents) || 0) / 100).toFixed(2)}`}<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--sa-muted)', marginLeft: 4 }}>{(credit?.currency || 'aud').toUpperCase()}</span></span>
+                  </div>
+                  {credit?.needsMigration && <p style={{ fontSize: 12, color: '#f59e0b', margin: '0 0 8px' }}>Run COLVY_V314_REFERRALS.sql to enable credit.</p>}
+                  {credit && !credit.needsMigration && !credit.hasStripe && <p style={{ fontSize: 11.5, color: 'var(--sa-muted)', margin: '0 0 8px' }}>No Stripe customer — credit is recorded in the ledger only (won't auto-apply to an invoice).</p>}
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                    <input value={creditAmt} onChange={e => setCreditAmt(e.target.value)} placeholder="Amount $" inputMode="decimal" style={{ ...paInput, maxWidth: 120 }} />
+                    <input value={creditReason} onChange={e => setCreditReason(e.target.value)} placeholder="Reason (required, audited)…" style={{ ...paInput, flex: 1 }} />
+                  </div>
+                  <button onClick={() => grantCredit(Math.round(parseFloat(creditAmt || '0') * 100), creditReason)} disabled={creditBusy} style={paBtn('#10b981', true)}>{creditBusy ? 'Saving…' : 'Add credit'}</button>
+                  <span style={{ fontSize: 11, color: 'var(--sa-muted)', marginLeft: 10 }}>Tip: use a negative amount to claw back.</span>
+                  {creditMsg && <p style={{ fontSize: 12, color: 'var(--sa-text)', margin: '10px 0 0' }}>{creditMsg}</p>}
+                  {Array.isArray(credit?.credits) && credit.credits.length > 0 && (
+                    <div style={{ marginTop: 12, borderTop: '1px solid var(--sa-border)', paddingTop: 10, display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 160, overflowY: 'auto' }}>
+                      {credit.credits.slice(0, 20).map((c: any) => (
+                        <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 12 }}>
+                          <span style={{ color: 'var(--sa-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.reason || 'Credit'}</span>
+                          <span style={{ fontWeight: 700, color: (c.amount_cents || 0) >= 0 ? '#10b981' : '#ef4444', flexShrink: 0 }}>{(c.amount_cents || 0) >= 0 ? '+' : ''}${(Math.abs(c.amount_cents || 0) / 100).toFixed(2)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Referrals this company has made (as the referrer). */}
+                <div style={{ padding: 14, borderRadius: 12, border: '1px solid var(--sa-border)' }}>
+                  <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10, marginBottom: 8 }}>
+                    <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)', margin: 0 }}>Referrals made</p>
+                    {credit?.stats && <span style={{ fontSize: 11.5, color: 'var(--sa-muted)' }}>{credit.stats.qualified} qualified · {credit.stats.pending} pending</span>}
+                  </div>
+                  {credit?.link && <p style={{ fontSize: 11.5, color: 'var(--sa-muted)', margin: '0 0 10px', wordBreak: 'break-all' }}>Link: {credit.link}</p>}
+                  {(!credit?.referrals || credit.referrals.length === 0) ? (
+                    <p style={{ fontSize: 12.5, color: 'var(--sa-muted)', margin: 0 }}>No referrals yet.</p>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 200, overflowY: 'auto' }}>
+                      {credit.referrals.map((r: any) => (
+                        <div key={r.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, fontSize: 12.5, padding: '6px 0', borderBottom: '1px solid var(--sa-border)' }}>
+                          <span style={{ color: 'var(--sa-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.referred_name || r.referred_email || 'Referred business'}</span>
+                          <span style={{ flexShrink: 0, fontSize: 10.5, fontWeight: 800, padding: '2px 8px', borderRadius: 999, textTransform: 'uppercase', background: r.status === 'qualified' ? '#10b98122' : r.status === 'reversed' ? '#ef444422' : '#f59e0b22', color: r.status === 'qualified' ? '#10b981' : r.status === 'reversed' ? '#ef4444' : '#f59e0b' }}>{r.status}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             )
@@ -3805,6 +3912,9 @@ export default function SuperAdmin() {
   const [page, setPageState] = useState('overview')
   const [data, setData] = useState<any>({})
   const [collapsed, setCollapsed] = useState(false)
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [searchQ, setSearchQ] = useState('')
+  const [searchIdx, setSearchIdx] = useState(0)
 
   const setDark = (v: boolean) => {
     setDarkState(v)
@@ -3826,6 +3936,25 @@ export default function SuperAdmin() {
       if (h) setPageState(h)
     } catch {}
   }, [])
+
+  // Global ⌘K / Ctrl+K opens the nav search.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) { e.preventDefault(); setSearchOpen(true) }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+  useEffect(() => { if (searchOpen) { setSearchQ(''); setSearchIdx(0) } }, [searchOpen])
+
+  // Flat list of navigable destinations (skip section headers).
+  const searchItems = NAV.filter((n: any) => !n.section) as { key: string; label: string; icon: string }[]
+  const searchResults = (() => {
+    const s = searchQ.trim().toLowerCase()
+    if (!s) return searchItems
+    return searchItems.filter(it => it.label.toLowerCase().includes(s) || it.key.toLowerCase().includes(s))
+  })()
+  const goSearch = (key: string) => { setSearchOpen(false); setPage(key) }
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: s }: any) => {
@@ -3918,6 +4047,20 @@ export default function SuperAdmin() {
 
         {/* Nav */}
         <nav style={{ flex: 1, overflowY: 'auto', padding: '8px 8px' }}>
+          {/* Search / command palette — jumps to any section. */}
+          <button onClick={() => setSearchOpen(true)} title="Search (⌘K)"
+            style={{
+              width: '100%', display: 'flex', alignItems: 'center', gap: 9,
+              padding: collapsed ? '9px' : '8px 10px', justifyContent: collapsed ? 'center' : 'flex-start',
+              borderRadius: 9, border: '1px solid var(--sa-border)', cursor: 'pointer', marginBottom: 8,
+              background: 'var(--sa-hover)', color: 'var(--sa-muted)', fontSize: 13,
+            }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+            {!collapsed && <>
+              <span style={{ flex: 1, textAlign: 'left' }}>Search…</span>
+              <span style={{ fontSize: 10.5, fontWeight: 700, border: '1px solid var(--sa-border)', borderRadius: 5, padding: '1px 5px' }}>⌘K</span>
+            </>}
+          </button>
           {NAV.map((item: any, idx) => {
             if (item.section) {
               if (collapsed) return null
@@ -3961,6 +4104,41 @@ export default function SuperAdmin() {
           )}
         </div>
       </aside>
+
+      {/* ── SEARCH PALETTE ──────────────────────────────────────────────────── */}
+      {searchOpen && (
+        <div onClick={() => setSearchOpen(false)}
+          style={{ position: 'fixed', inset: 0, zIndex: 500, background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(2px)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: '12vh' }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ width: '100%', maxWidth: 520, margin: '0 16px', background: 'var(--sa-bg)', border: '1px solid var(--sa-border)', borderRadius: 14, boxShadow: '0 24px 64px rgba(0,0,0,0.35)', overflow: 'hidden', display: 'flex', flexDirection: 'column', maxHeight: '68vh' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '13px 16px', borderBottom: '1px solid var(--sa-border)' }}>
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--sa-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+              <input autoFocus value={searchQ}
+                onChange={e => { setSearchQ(e.target.value); setSearchIdx(0) }}
+                onKeyDown={e => {
+                  if (e.key === 'ArrowDown') { e.preventDefault(); setSearchIdx(i => Math.min(i + 1, searchResults.length - 1)) }
+                  else if (e.key === 'ArrowUp') { e.preventDefault(); setSearchIdx(i => Math.max(i - 1, 0)) }
+                  else if (e.key === 'Enter') { e.preventDefault(); const r = searchResults[searchIdx]; if (r) goSearch(r.key) }
+                  else if (e.key === 'Escape') { setSearchOpen(false) }
+                }}
+                placeholder="Search sections…"
+                style={{ flex: 1, border: 'none', outline: 'none', fontSize: 15, background: 'transparent', color: 'var(--sa-text)' }} />
+              <span style={{ fontSize: 11, color: 'var(--sa-muted)' }}>Esc</span>
+            </div>
+            <div style={{ overflowY: 'auto', padding: 6 }}>
+              {searchResults.length === 0 ? (
+                <p style={{ padding: 22, textAlign: 'center', color: 'var(--sa-muted)', fontSize: 14 }}>No matches for “{searchQ}”.</p>
+              ) : searchResults.map((r, i) => (
+                <button key={r.key} onMouseEnter={() => setSearchIdx(i)} onClick={() => goSearch(r.key)}
+                  style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left', padding: '9px 12px', borderRadius: 9, border: 'none', cursor: 'pointer', background: i === searchIdx ? '#ff7a6b18' : 'transparent', color: i === searchIdx ? '#ff7a6b' : 'var(--sa-text)' }}>
+                  <span style={{ flexShrink: 0, opacity: 0.8 }}>{(I as any)[r.icon]}</span>
+                  <span style={{ fontSize: 13.5, fontWeight: 600 }}>{r.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── MAIN ────────────────────────────────────────────────────────────── */}
       <main style={{ marginLeft: SIDEBAR_W, flex: 1, background: 'var(--sa-bg)', minHeight: '100vh', transition: 'margin-left 0.2s ease' }}>
