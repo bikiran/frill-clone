@@ -28,6 +28,19 @@ export default function CustomDomainPage() {
 
   useEffect(() => {
     if (!hostname) return
+    // This route is the internal renderer for custom domains — reached via a
+    // proxy rewrite from the real domain, where the pretty URL is preserved.
+    // If someone lands on the raw /custom/<host> path on a Colvy host (e.g. a
+    // pasted link), send them to the actual domain so they never see it.
+    if (typeof window !== 'undefined') {
+      const current = window.location.hostname
+      const onColvyHost = current === 'colvy.com' || current === 'www.colvy.com' || current.endsWith('.colvy.com')
+      if (onColvyHost && current !== hostname && /^[a-z0-9.-]+\.[a-z]{2,}$/.test(hostname)) {
+        const after = window.location.pathname.replace(/^\/custom\/[^/]+/, '') || '/'
+        window.location.replace(`https://${hostname}${after}${window.location.search}`)
+        return
+      }
+    }
     ;(async () => {
       let co: any = null
       let help = false
