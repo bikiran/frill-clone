@@ -175,6 +175,33 @@ export async function POST(req: NextRequest) {
       unread_count: (conv.unread_count || 0) + 1,
     }).eq('id', conv.id)
 
+    // ── Route ticket replies back into the ticket ────────────────────────────
+    // Agent ticket replies go out with "[TICK-######]" in the subject; when the
+    // customer replies, that tag survives on the "Re:" subject, so we can thread
+    // their reply straight back onto the ticket (not just the inbox). Best-effort
+    // — a failure here must never break normal inbound-email handling.
+    try {
+      const m = /\[(TICK-\d+)\]/i.exec(subject || '')
+      if (m) {
+        const ticketNumber = m[1].toUpperCase()
+        const { data: ticket } = await db.from('support_tickets')
+          .select('id, status, conversation_id').eq('company_id', companyId).eq('ticket_number', ticketNumber).maybeSingle()
+        if (ticket?.id) {
+          await db.from('ticket_messages').insert({
+            ticket_id: ticket.id, company_id: companyId,
+            kind: 'reply', direction: 'in', body: content,
+            author_name: from.name || from.email, emailed: false,
+          })
+          // Reopen a resolved/closed ticket (the customer is back), link the
+          // conversation for cross-navigation, and bump it to the top.
+          const patch: any = { updated_at: new Date().toISOString() }
+          if (['resolved', 'closed'].includes(String(ticket.status || ''))) patch.status = 'open'
+          if (!ticket.conversation_id) patch.conversation_id = conv.id
+          await db.from('support_tickets').update(patch).eq('id', ticket.id)
+        }
+      }
+    } catch (e) { console.error('[email webhook ticket route]', e) }
+
     // Answer common questions automatically — and EMAIL the answer back, in the
     // same thread, so the customer actually receives it.
     try {
