@@ -10,6 +10,21 @@ const admin = () => createClient(
   { auth: { autoRefreshToken: false, persistSession: false } }
 )
 
+// The platform's verified sending domain. Colvy owns the deliverability setup on
+// this domain, so customers never touch a mail vendor or verify anything — we
+// auto-assign each mailbox a reply-from address on it (e.g. roxyaquarium@…).
+const SENDING_DOMAIN = process.env.COLVY_SENDING_DOMAIN || 'updates.colvy.com'
+// Derive a stable, tidy reply-from local part from the company's slug/name.
+async function autoReplyFrom(db: any, companyId: string): Promise<string> {
+  let local = 'support'
+  try {
+    const { data: co } = await db.from('companies').select('slug,name').eq('id', companyId).maybeSingle()
+    const base = (co?.slug || co?.name || 'support').toString().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+    if (base) local = base
+  } catch {}
+  return `${local}@${SENDING_DOMAIN}`
+}
+
 // GET: all email accounts for a company, with their rules.
 export async function GET(req: NextRequest) {
   try {
@@ -63,11 +78,16 @@ export async function POST(req: NextRequest) {
     if (action === 'save_webhook') {
       const { id, inbound_address, from_address, from_name, location_id, is_active, sync_all } = body
       if (!inbound_address) return NextResponse.json({ error: 'Inbound address required' }, { status: 400 })
+      // Reply-from is managed by Colvy on its own verified sending domain — the
+      // customer never picks it or verifies anything with a mail vendor. Honour an
+      // explicit value if one was passed (advanced/back-compat), otherwise
+      // auto-assign a tidy per-company address on the platform sending domain.
+      const replyFrom = (from_address || '').trim().toLowerCase() || await autoReplyFrom(db, companyId)
       const row: any = {
         company_id: companyId,
         provider: 'webhook',
         inbound_address: String(inbound_address).trim().toLowerCase(),
-        from_address: (from_address || '').trim().toLowerCase() || null,
+        from_address: replyFrom,
         from_name: from_name || null,
         location_id: location_id || null,
         is_active: is_active !== false,
