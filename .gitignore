@@ -1,5 +1,12 @@
 node_modules/
 .next/
+
+# Environment files — never commit secrets. Keep .env.example (a non-secret
+# template) tracked if you add one.
+.env
+.env.*
+!.env.example
+
 # Next.js 16 renamed middleware.ts → proxy.ts; prevent the old file from being re-added
 middleware.ts
 
