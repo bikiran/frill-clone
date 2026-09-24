@@ -51,6 +51,14 @@ export default function TicketDetail() {
     })()
   }, [ticketId])
 
+  // Poll for the customer's inbound replies (routed in via the email webhook)
+  // so they appear in the ticket without a manual reload.
+  useEffect(() => {
+    if (!ticketId) return
+    const iv = setInterval(loadThread, 15000)
+    return () => clearInterval(iv)
+  }, [ticketId])
+
   const updateStatus = async (status: string) => {
     await (supabase as any).from('support_tickets').update({ status, updated_at: new Date().toISOString() }).eq('id', ticketId)
     setTicket((t: any) => ({ ...t, status }))
@@ -127,15 +135,18 @@ export default function TicketDetail() {
           {/* Reply / note thread */}
           {messages.map(m => {
             const isNote = m.kind === 'note'
+            const isInbound = m.direction === 'in'
             return (
-              <div key={m.id} style={{ ...card, background: isNote ? '#fffdf5' : '#fff', borderColor: isNote ? '#fde68a' : 'var(--border)', marginLeft: isNote ? 0 : 40 }}>
+              <div key={m.id} style={{ ...card, background: isNote ? '#fffdf5' : '#fff', borderColor: isNote ? '#fde68a' : 'var(--border)', marginLeft: (isNote || isInbound) ? 0 : 40 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--ink)' }}>{m.author_name || 'Agent'}</span>
+                  <span style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--ink)' }}>{m.author_name || (isInbound ? 'Customer' : 'Agent')}</span>
                   {isNote
                     ? <span style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 12, background: '#fef3c7', color: '#b45309', textTransform: 'uppercase' }}>Internal note</span>
-                    : m.emailed
-                      ? <span style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 12, background: '#dcfce7', color: '#059669' }}>✓ Emailed to customer</span>
-                      : <span title="This reply was saved but not delivered — no mailbox is connected for this workspace." style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 12, background: '#fef2f2', color: '#dc2626' }}>Saved · not emailed</span>}
+                    : isInbound
+                      ? <span style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 12, background: '#dbeafe', color: '#2563eb' }}>From customer</span>
+                      : m.emailed
+                        ? <span style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 12, background: '#dcfce7', color: '#059669' }}>✓ Emailed to customer</span>
+                        : <span title="This reply was saved but not delivered — no mailbox is connected for this workspace." style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 12, background: '#fef2f2', color: '#dc2626' }}>Saved · not emailed</span>}
                   <span style={{ fontSize: 12, color: 'var(--slate)', marginLeft: 'auto' }}>{new Date(m.created_at).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
                 </div>
                 <p style={{ margin: 0, fontSize: 14, color: 'var(--ink)', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{m.body}</p>
