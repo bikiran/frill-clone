@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { newHandoffToken, HANDOFF_TTL_MS } from '@/lib/call-handoff'
+import { newHandoffToken, HANDOFF_TTL_MS, logHandoff } from '@/lib/call-handoff'
 
 export const dynamic = 'force-dynamic'
 
@@ -105,6 +105,8 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ callId: st
       // confirmed. Record it now so a later confirm knows which leg to drop.
       active_agent_call_sid: call.active_agent_call_sid || call.twilio_child_call_sid || null,
     }).eq('id', rowId)
+
+    await logHandoff(db, { callId: rowId, companyId, event: 'requested', deviceId: targetDeviceId, platform: target.platform, userId, detail: `→ ${target.device_name || targetDeviceId}` })
 
     // A backgrounded mobile target also gets a push so the user can reopen Colvy
     // and accept. Best-effort — the realtime banner is the primary path, this

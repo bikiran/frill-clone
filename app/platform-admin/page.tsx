@@ -950,6 +950,17 @@ function CallDetail({ call, coName, onClose }: { call: any; coName: string; onCl
   const [reviewAt, setReviewAt] = useState<string | null>(call.ai_admin_review_at || null)
   const [reviewBusy, setReviewBusy] = useState(false)
   const [reviewErr, setReviewErr] = useState('')
+  // Device-handoff ("Switch device") timeline for this call.
+  const [handoffs, setHandoffs] = useState<any[] | null>(null)
+  useEffect(() => {
+    ;(async () => {
+      try {
+        const { data } = await (supabase as any).from('call_handoff_events')
+          .select('*').eq('call_id', call.id).order('created_at', { ascending: true })
+        setHandoffs(data || [])
+      } catch { setHandoffs([]) }
+    })()
+  }, [call.id])
   const genReview = async (force = false) => {
     setReviewBusy(true); setReviewErr('')
     try {
@@ -1048,6 +1059,31 @@ function CallDetail({ call, coName, onClose }: { call: any; coName: string; onCl
           ) : call.recording_error ? (
             <p style={{ marginTop: 18, fontSize: 12, color: '#f59e0b' }}>Recording unavailable: {call.recording_error}</p>
           ) : null}
+
+          {/* ── Device-handoff timeline ("Switch device") ─────────────────────── */}
+          {handoffs && handoffs.length > 0 && (
+            <div style={{ marginTop: 18, padding: 14, borderRadius: 12, border: '1px solid var(--sa-border)', background: 'var(--sa-card)' }}>
+              <p style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--sa-text)', margin: '0 0 10px' }}>🔀 Device handoff</p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {handoffs.map((h: any) => {
+                  const tone: Record<string, string> = { requested: '#6366f1', accept_attempt: '#0ea5e9', promoted: '#0ea5e9', joining: '#f59e0b', confirmed: '#10b981', cancelled: 'var(--sa-muted)', error: '#ef4444' }
+                  return (
+                    <div key={h.id} style={{ display: 'flex', alignItems: 'baseline', gap: 10, fontSize: 12 }}>
+                      <span style={{ color: 'var(--sa-muted)', flexShrink: 0, minWidth: 62 }}>{new Date(h.created_at).toLocaleTimeString()}</span>
+                      <span style={{ fontWeight: 800, color: tone[h.event] || 'var(--sa-text)', textTransform: 'uppercase', fontSize: 10.5, letterSpacing: '0.03em', flexShrink: 0, minWidth: 96 }}>{String(h.event).replace(/_/g, ' ')}</span>
+                      <span style={{ color: 'var(--sa-muted)' }}>{[h.platform, h.detail].filter(Boolean).join(' · ') || '—'}</span>
+                    </div>
+                  )
+                })}
+              </div>
+              {!handoffs.some((h: any) => h.event === 'confirmed') && handoffs.some((h: any) => h.event === 'joining') && (
+                <p style={{ fontSize: 11.5, color: '#f59e0b', margin: '10px 0 0' }}>Promoted to a conference but the target device never confirmed its join — the new device likely didn't complete the conference join.</p>
+              )}
+              {!handoffs.some((h: any) => ['accept_attempt', 'promoted', 'joining', 'confirmed'].includes(h.event)) && handoffs.some((h: any) => h.event === 'requested') && (
+                <p style={{ fontSize: 11.5, color: '#f59e0b', margin: '10px 0 0' }}>Requested but the target never attempted to accept — the other device didn't pick up the handoff.</p>
+              )}
+            </div>
+          )}
 
           {/* ── Admin AI overview ─────────────────────────────────────────────
               How the call went + likely technical/sound issues, for ops. */}

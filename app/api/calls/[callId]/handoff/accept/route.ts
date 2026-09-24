@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { TwilioService } from '@/lib/twilio-service'
-import { ensureCallConference } from '@/lib/call-handoff'
+import { ensureCallConference, logHandoff } from '@/lib/call-handoff'
 
 export const dynamic = 'force-dynamic'
 
@@ -57,10 +57,11 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ callId: st
     if (call.handoff_by_user_id && call.handoff_by_user_id !== userId) {
       return NextResponse.json({ error: 'A call can only be taken over by the same user' }, { status: 403 })
     }
-    const { data: dev } = await db.from('call_devices').select('user_id, company_id').eq('device_id', deviceId).maybeSingle()
+    const { data: dev } = await db.from('call_devices').select('user_id, company_id, platform').eq('device_id', deviceId).maybeSingle()
     if (!dev || dev.user_id !== userId || String(dev.company_id) !== String(call.company_id)) {
       return NextResponse.json({ error: 'This device may not take over the call' }, { status: 403 })
     }
+    await logHandoff(db, { callId, companyId: call.company_id, event: 'accept_attempt', deviceId, platform: dev.platform, userId })
 
     // Promote the live call into its conference NOW (not at request time) so the
     // current device stays connected until the target actually takes over. This
@@ -71,12 +72,17 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ callId: st
     const svc = new TwilioService(integ.account_sid, integ.auth_token)
     let conf: { confName: string; confSid: string; agentLeg: string | null }
     try { conf = await ensureCallConference(svc, db, call) }
-    catch (e: any) { return NextResponse.json({ error: e.message }, { status: 502 }) }
+    catch (e: any) {
+      await logHandoff(db, { callId, companyId: call.company_id, event: 'error', deviceId, platform: dev.platform, userId, detail: `promote failed: ${e.message}` })
+      return NextResponse.json({ error: e.message }, { status: 502 })
+    }
+    await logHandoff(db, { callId, companyId: call.company_id, event: 'promoted', deviceId, platform: dev.platform, userId, detail: `conference ${conf.confName}` })
 
     await db.from('calls').update({
       handoff_status: 'joining',
       active_agent_call_sid: conf.agentLeg || call.active_agent_call_sid || call.twilio_child_call_sid || null,
     }).eq('id', callId)
+    await logHandoff(db, { callId, companyId: call.company_id, event: 'joining', deviceId, platform: dev.platform, userId })
 
     return NextResponse.json({
       ok: true,
