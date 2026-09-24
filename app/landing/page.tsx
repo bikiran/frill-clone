@@ -308,21 +308,17 @@ export default function LandingPage() {
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }: any) => setUser(data?.session?.user))
-    // Real platform metrics for the stats band. Counts are head-only (cheap);
-    // the two sum-based ones pull just the numeric column (capped).
-    Promise.all([
-      (supabase as any).from('companies').select('*', { count: 'exact', head: true }),
-      (supabase as any).from('conversations').select('*', { count: 'exact', head: true }),
-      (supabase as any).from('messages').select('*', { count: 'exact', head: true }),
-      (supabase as any).from('contacts').select('*', { count: 'exact', head: true }),
-      (supabase as any).from('orders').select('*', { count: 'exact', head: true }),
-      (supabase as any).from('calls').select('duration_seconds').limit(20000),
-      (supabase as any).from('chat_payments').select('amount_cents').eq('status', 'paid').limit(20000),
-    ]).then(([co, conv, msg, contacts, orders, calls, pays]: any[]) => {
-      const callMinutes = Math.round((calls.data || []).reduce((s: number, r: any) => s + (r.duration_seconds || 0), 0) / 60)
-      const paymentsTotal = Math.round((pays.data || []).reduce((s: number, r: any) => s + (r.amount_cents || 0), 0) / 100)
-      setRealStats({ teams: co.count || 0, conversations: conv.count || 0, messages: msg.count || 0, contacts: contacts.count || 0, orders: orders.count || 0, callMinutes, paymentsTotal })
-    }).catch(() => {})
+    // The stats band, counted on the server.
+    //
+    // This used to run in the browser on the anon key: five head-counts plus
+    // twenty thousand rows each of `calls` and `chat_payments`, summed here.
+    // A marketing page therefore needed SELECT on every company's customer
+    // data to render seven numbers, and that requirement is exactly what kept
+    // those tables readable by anyone. The endpoint returns the seven numbers.
+    fetch('/api/platform-stats')
+      .then(r => r.json())
+      .then(d => { if (d && typeof d.teams === 'number') setRealStats(d) })
+      .catch(() => {})
     const { data: l } = supabase.auth.onAuthStateChange((_: any, s: any) => setUser(s?.user ?? null))
     let raf = 0
     const onScroll = () => { if (raf) return; raf = requestAnimationFrame(() => { setScrollY(window.scrollY); raf = 0 }) }
