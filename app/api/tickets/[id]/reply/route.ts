@@ -55,6 +55,9 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     let emailNote: string | null = null
 
     // A reply goes out to the requester by email (an internal note never does).
+    // Uses the SAME channel resolution + send path as the inbox email reply, so
+    // it works whether the workspace's mailbox is a connected Gmail account
+    // (sent via the Gmail API) or a domain mailbox (sent via Resend).
     if (kind === 'reply') {
       // Recipient: contact → parsed "From:" → legacy email column.
       let toEmail = ''
@@ -63,36 +66,46 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
 
       if (!toEmail) {
         emailNote = 'Saved, but no email address on file for this requester, so nothing was sent.'
-      } else if (!process.env.RESEND_API_KEY) {
-        emailNote = 'Saved. Email sending is not configured (RESEND_API_KEY), so the requester was not emailed.'
       } else {
-        // From: the company's active email channel, else its support address.
-        let fromAddress = '', fromName = '', replyTo = ''
+        // The company's active mailbox (any, oldest first — matches the inbox).
+        let channel: any = null
         try {
-          const { data: ch } = await db.from('email_channels').select('from_address,from_name,address,inbound_address,reply_to').eq('company_id', ticket.company_id).eq('is_active', true).limit(1).maybeSingle()
-          if (ch) { fromAddress = ch.from_address || ch.address || ''; fromName = ch.from_name || ''; replyTo = ch.reply_to || ch.inbound_address || '' }
+          const { data: chs } = await db.from('email_channels').select('*').eq('company_id', ticket.company_id).eq('is_active', true).order('created_at', { ascending: true }).limit(1)
+          channel = chs?.[0] || null
         } catch {}
-        if (!fromName || !fromAddress) {
-          try { const { data: co } = await db.from('companies').select('name,support_email,business_email,email').eq('id', ticket.company_id).maybeSingle(); fromName = fromName || co?.name || 'Support'; fromAddress = fromAddress || co?.support_email || co?.business_email || co?.email || '' } catch {}
-        }
-        if (!fromAddress) {
-          emailNote = 'Saved, but no verified sending address is configured for this workspace, so nothing was sent.'
-        } else {
+        const { data: co } = await db.from('companies').select('name,support_email,business_email,email').eq('id', ticket.company_id).maybeSingle().then((r: any) => r, () => ({ data: null }))
+        const fromName = channel?.from_name || co?.name || 'Support'
+        const subject = `Re: ${ticket.subject} [${ticket.ticket_number}]`
+        const escapeHtml = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        const linkify = (t: string) => t.replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1">$1</a>')
+        const bodyHtml = `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;font-size:14px;line-height:1.5;color:#1a1a1a">${linkify(escapeHtml(text)).replace(/\n/g, '<br>')}</div>`
+
+        if (channel?.provider === 'gmail') {
+          // Send through the connected Gmail account (lands in their Sent folder).
           try {
-            const res = await fetch('https://api.resend.com/emails', {
-              method: 'POST',
-              headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                from: `${fromName} <${fromAddress}>`,
-                to: [toEmail],
-                subject: `Re: ${ticket.subject} [${ticket.ticket_number}]`,
-                text,
-                ...(replyTo ? { reply_to: replyTo } : {}),
-              }),
-            })
-            emailed = res.ok
-            if (!res.ok) { const o = await res.json().catch(() => ({})); emailNote = `Saved, but the email could not be sent: ${o?.message || res.status}` }
+            const { sendGmail } = await import('@/lib/gmail')
+            const out = await sendGmail(channel, { to: toEmail, subject, body: text, html: bodyHtml })
+            emailed = !out?.error
+            if (out?.error) emailNote = `Saved, but the email could not be sent: ${out.error}`
           } catch (e: any) { emailNote = `Saved, but the email could not be sent: ${e.message}` }
+        } else if (process.env.RESEND_API_KEY) {
+          const fromAddress = channel?.from_address || channel?.inbound_address || channel?.address || co?.support_email || co?.business_email || co?.email || ''
+          const replyTo = channel?.reply_to || channel?.inbound_address || fromAddress
+          if (!fromAddress) {
+            emailNote = 'Saved, but no verified sending address is configured for this workspace, so nothing was sent. Connect a mailbox under Inbox → Channels.'
+          } else {
+            try {
+              const res = await fetch('https://api.resend.com/emails', {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ from: `${fromName} <${fromAddress}>`, to: [toEmail], subject, text, html: bodyHtml, ...(replyTo ? { reply_to: replyTo } : {}) }),
+              })
+              emailed = res.ok
+              if (!res.ok) { const o = await res.json().catch(() => ({})); emailNote = `Saved, but the email could not be sent: ${o?.message || res.status}` }
+            } catch (e: any) { emailNote = `Saved, but the email could not be sent: ${e.message}` }
+          }
+        } else {
+          emailNote = 'Saved, but email sending is not configured for this workspace, so the requester was not emailed.'
         }
       }
     }

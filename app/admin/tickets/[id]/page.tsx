@@ -133,7 +133,9 @@ export default function TicketDetail() {
                   <span style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--ink)' }}>{m.author_name || 'Agent'}</span>
                   {isNote
                     ? <span style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 12, background: '#fef3c7', color: '#b45309', textTransform: 'uppercase' }}>Internal note</span>
-                    : <span style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 12, background: '#dcfce7', color: '#059669' }}>{m.emailed ? 'Emailed' : 'Reply'}</span>}
+                    : m.emailed
+                      ? <span style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 12, background: '#dcfce7', color: '#059669' }}>✓ Emailed to customer</span>
+                      : <span title="This reply was saved but not delivered — no mailbox is connected for this workspace." style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 12, background: '#fef2f2', color: '#dc2626' }}>Saved · not emailed</span>}
                   <span style={{ fontSize: 12, color: 'var(--slate)', marginLeft: 'auto' }}>{new Date(m.created_at).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
                 </div>
                 <p style={{ margin: 0, fontSize: 14, color: 'var(--ink)', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{m.body}</p>
