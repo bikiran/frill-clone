@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { TwilioService } from '@/lib/twilio-service'
+import { logHandoff } from '@/lib/call-handoff'
 
 export const dynamic = 'force-dynamic'
 
@@ -69,6 +70,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ callId: st
       handoff_token: null,
       handoff_expires_at: null,
     }).eq('id', callId)
+    await logHandoff(db, { callId, companyId: call.company_id, event: 'confirmed', deviceId: call.handoff_target_device_id, platform: deviceType, detail: `new leg ${joinedSid || '?'} joined` })
 
     // Now (and only now) drop the previous agent leg from the conference. The
     // customer never left it, so there's no interruption.

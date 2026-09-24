@@ -54,6 +54,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ callId: st
       handoff_token: null,
       handoff_expires_at: null,
     }).eq('id', callId)
+    try { const { logHandoff } = await import('@/lib/call-handoff'); await logHandoff(db, { callId, companyId: call.company_id, event: reason === 'failed' ? 'error' : 'cancelled', userId, detail: reason === 'failed' ? 'handoff failed' : (body?.reason === 'cancelled' ? 'no accept within window' : 'cancelled') }) } catch {}
 
     return NextResponse.json({ ok: true, status: reason })
   } catch (e: any) {

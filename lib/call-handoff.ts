@@ -4,6 +4,21 @@ import { TwilioService, xmlEscape } from '@/lib/twilio-service'
 // device can no longer self-join and the original leg is kept.
 export const HANDOFF_TTL_MS = 30_000
 
+// Best-effort audit of a handoff step (surfaced in Super-Admin Call Diagnostics).
+// Never throws — diagnostics must not affect the live call.
+export async function logHandoff(db: any, e: {
+  callId: string; companyId?: string | null; event: string;
+  deviceId?: string | null; platform?: string | null; userId?: string | null; detail?: string | null
+}): Promise<void> {
+  try {
+    await db.from('call_handoff_events').insert({
+      call_id: e.callId, company_id: e.companyId || null, event: e.event,
+      device_id: e.deviceId || null, platform: e.platform || null,
+      user_id: e.userId || null, detail: e.detail || null,
+    })
+  } catch { /* table missing or write failed — ignore */ }
+}
+
 // The Twilio Voice SDK reports the caller of an SDK-originated call as
 // `client:<identity>`. Strip the prefix to get the identity string.
 export function parseClientIdentity(from: string | null | undefined): string | null {
