@@ -166,15 +166,15 @@ export default function EmailPage() {
             placeholder="info@roxyaquarium.com.au"
             onChange={e => setAddingDomain({ ...addingDomain, inbound_address: e.target.value })} />
 
-          <label style={L}>Reply-from address <span style={{ fontWeight: 400, color: 'var(--slate)' }}>(must be on a domain verified in Resend)</span></label>
-          <input style={I} value={addingDomain.from_address}
-            placeholder="support@updates.colvy.com"
-            onChange={e => setAddingDomain({ ...addingDomain, from_address: e.target.value })} />
-
           <label style={L}>Reply-from name</label>
           <input style={I} value={addingDomain.from_name}
             placeholder="Roxy Aquarium Support"
             onChange={e => setAddingDomain({ ...addingDomain, from_name: e.target.value })} />
+          <p style={{ margin: '-6px 0 14px', fontSize: 12, color: 'var(--slate)', lineHeight: 1.5 }}>
+            This is the name customers see on your replies. The sending address is
+            set up and managed by Colvy automatically — there&rsquo;s nothing to
+            configure or verify.
+          </p>
 
           {locations.length > 0 && (
             <>
@@ -226,11 +226,18 @@ export default function EmailPage() {
                   </p>
                 </div>
                 <div style={{ display: 'flex', gap: 6, flexShrink: 0, flexWrap: 'wrap' }}>
-                  {isGmail && (
+                  {isGmail ? (
                     <button onClick={() => syncGmail(a)} disabled={busy === 'sync-' + a.id}
                       style={{ padding: '5px 11px', borderRadius: 7, border: '1px solid var(--coral)', background: 'var(--peach)', color: 'var(--coral)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
                       {busy === 'sync-' + a.id ? 'Syncing…' : 'Sync now'}
                     </button>
+                  ) : (
+                    // Domain mailboxes are push (real-time) — nothing to sync. Show
+                    // it's live instead of a Sync button, so its absence isn't read
+                    // as "not working".
+                    <span title="Mail arrives in real time — nothing to sync" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 11px', borderRadius: 7, border: '1px solid #bbf7d0', background: '#f0fdf4', color: '#15803d', fontSize: 12, fontWeight: 700 }}>
+                      <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#22c55e' }} />Live
+                    </span>
                   )}
                   <button onClick={() => setRulesFor(a)}
                     style={{ padding: '5px 11px', borderRadius: 7, border: '1px solid var(--border)', background: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', color: 'var(--ink)' }}>
@@ -449,16 +456,24 @@ export default function EmailPage() {
         )}
       </div>
 
-      {/* Domain webhook setup */}
+      {/* Domain mailbox setup — concierge first, technical detail tucked away */}
       <div style={{ marginTop: 26, border: '1px solid var(--border)', borderRadius: 14, padding: 20, background: 'var(--canvas)' }}>
-        <p style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink)', margin: '0 0 8px' }}>Setting up a domain mailbox</p>
+        <p style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink)', margin: '0 0 8px' }}>Getting your inbound email into Colvy</p>
         <p style={{ fontSize: 13, color: 'var(--slate)', margin: '0 0 12px', lineHeight: 1.6 }}>
-          For addresses on a domain you own, point your provider&rsquo;s inbound/parse webhook (Resend, Postmark, Mailgun, SendGrid, or Cloudflare Email Routing) at:
+          Add your support address above and we&rsquo;ll connect it so mail sent to it flows straight into Colvy in real time. Sending is handled on Colvy&rsquo;s own secure mail service — there are no third-party accounts to create and nothing to verify. If it&rsquo;s not receiving yet, your inbound mail just needs to be routed to Colvy — reach out and we&rsquo;ll set it up with you.
         </p>
-        <code style={{ display: 'block', padding: '10px 12px', borderRadius: 8, background: '#fff', border: '1px solid var(--border)', fontSize: 13, wordBreak: 'break-all', marginBottom: 12 }}>{webhookUrl}</code>
-        <p style={{ fontSize: 12.5, color: 'var(--slate)', margin: 0, lineHeight: 1.6 }}>
-          Colvy matches the address the mail was sent <em>to</em> against your mailboxes, so each address routes to the right outlet. <strong>Gmail accounts don&rsquo;t need this</strong> — they sync over OAuth.
-        </p>
+        <details style={{ marginTop: 4 }}>
+          <summary style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--slate)', cursor: 'pointer' }}>Advanced — for your IT / email admin</summary>
+          <div style={{ marginTop: 10 }}>
+            <p style={{ fontSize: 12.5, color: 'var(--slate)', margin: '0 0 8px', lineHeight: 1.6 }}>
+              Route your domain&rsquo;s inbound mail (an inbound/parse route, or an email-forwarding rule on your support address) to this endpoint:
+            </p>
+            <code style={{ display: 'block', padding: '10px 12px', borderRadius: 8, background: '#fff', border: '1px solid var(--border)', fontSize: 13, wordBreak: 'break-all', marginBottom: 10 }}>{webhookUrl}</code>
+            <p style={{ fontSize: 12, color: 'var(--slate)', margin: 0, lineHeight: 1.6 }}>
+              Colvy matches the address the mail was sent <em>to</em> against your mailboxes, so each address routes to the right outlet. Gmail accounts don&rsquo;t need this — they sync over OAuth.
+            </p>
+          </div>
+        </details>
       </div>
     </div>
   )
