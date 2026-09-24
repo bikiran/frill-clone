@@ -63,7 +63,12 @@ export function proxy(req: NextRequest) {
     return NextResponse.next()
   }
 
-  // Custom domains (e.g. help.prexty.com)
+  // Custom domains (e.g. help.prexty.com). API routes, Next internals and auth
+  // must hit the real app path — NOT the /custom/[domain] renderer — or a
+  // client fetch to /api/... gets the HTML page back ("Unexpected token '<'").
+  if (path.startsWith('/api/') || path.startsWith('/_next/') || path.startsWith('/auth/')) {
+    return NextResponse.next()
+  }
   const encodedDomain = hostname.replace(/\./g, '__')
   url.pathname = `/custom/${encodedDomain}${path === '/' ? '' : path}`
   const res = NextResponse.rewrite(url)
