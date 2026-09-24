@@ -171,10 +171,18 @@ export default function AppChrome({
     try {
       const h = window.location.hostname
       const sub = h.endsWith('.colvy.com') && h !== 'colvy.com' && h !== 'www.colvy.com' && !h.includes('localhost')
-      setIsSubdomain(sub)
+      // A custom help/board domain (e.g. help.roxyaquarium.com.au) is a company
+      // host too — it should show the company's brand + board nav, not Colvy's.
+      const isColvyRoot = h === 'colvy.com' || h === 'www.colvy.com' || h === 'admin.colvy.com'
+      const isLocal = h.includes('localhost') || h.endsWith('vercel.app')
+      const isCustomHost = !sub && !isColvyRoot && !isLocal && h.includes('.')
+      setIsSubdomain(sub || isCustomHost)
       const slug = sub ? h.replace('.colvy.com', '') : null
       if (slug) {
         const cached = localStorage.getItem(`company_${slug}`)
+        if (cached) setCompany(JSON.parse(cached))
+      } else if (isCustomHost) {
+        const cached = localStorage.getItem(`company_domain_${h}`)
         if (cached) setCompany(JSON.parse(cached))
       }
     } catch {}
@@ -243,18 +251,32 @@ export default function AppChrome({
         // Detect company from hostname
         const h = typeof window !== 'undefined' ? window.location.hostname : ''
         const isSubdomain = h.endsWith('.colvy.com') && h !== 'colvy.com' && h !== 'www.colvy.com'
+        const isColvyRoot = h === 'colvy.com' || h === 'www.colvy.com' || h === 'admin.colvy.com'
+        const isLocal = h.includes('localhost') || h.endsWith('vercel.app')
         const slug = isSubdomain ? h.replace('.colvy.com', '') : null
+        // Custom help/board domains resolve their company by domain, so the nav,
+        // logo, name and accent all belong to the customer, not Colvy.
+        const isCustomHost = !isSubdomain && !isColvyRoot && !isLocal && h.includes('.')
 
         // Load settings for this specific company
         let q = (supabase as any).from('site_settings').select('*').eq('key', 'general')
         let resolvedCompanyId: string | null = null
-        if (slug) {
-          const { data: co } = await (supabase as any).from('companies').select('id,name,slug,logo_url,accent_color').eq('slug', slug).maybeSingle()
+        let brandSlug = slug
+        if (slug || isCustomHost) {
+          let co: any = null
+          if (slug) {
+            const r = await (supabase as any).from('companies').select('id,name,slug,logo_url,accent_color').eq('slug', slug).maybeSingle()
+            co = r.data
+          } else {
+            const r = await (supabase as any).from('companies').select('id,name,slug,logo_url,accent_color').or(`help_domain.eq.${h},board_domain.eq.${h}`).maybeSingle()
+            co = r.data
+          }
           if (co) {
             resolvedCompanyId = co.id
+            brandSlug = co.slug || slug
             companyLogo = co.logo_url || null
             setCompany(co)
-            try { localStorage.setItem(`company_${slug}`, JSON.stringify(co)) } catch {}
+            try { localStorage.setItem(slug ? `company_${co.slug || slug}` : `company_domain_${h}`, JSON.stringify(co)) } catch {}
             // Set the tab favicon to the company logo right away, so it's correct
             // even if there's no site_settings row (the applySettings path below).
             if (co.logo_url && typeof document !== 'undefined') {
@@ -271,7 +293,7 @@ export default function AppChrome({
             }
             q = q.eq('company_id', co.id)
           } else {
-            // On a subdomain but company not found — do NOT load unscoped
+            // On a company host but company not found — do NOT load unscoped
             // settings (that would show another company's nav/logo/favicon)
             return
           }
@@ -286,7 +308,7 @@ export default function AppChrome({
         if (data?.value) {
           applySettings(data.value)
           if (typeof window !== 'undefined') {
-            localStorage.setItem(`site_settings_${slug || 'colvy'}`, JSON.stringify(data.value))
+            localStorage.setItem(`site_settings_${brandSlug || 'colvy'}`, JSON.stringify(data.value))
           }
           return
         }
