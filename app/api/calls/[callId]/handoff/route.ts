@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { TwilioService } from '@/lib/twilio-service'
-import { ensureCallConference, newHandoffToken, HANDOFF_TTL_MS } from '@/lib/call-handoff'
+import { newHandoffToken, HANDOFF_TTL_MS } from '@/lib/call-handoff'
 
 export const dynamic = 'force-dynamic'
 
@@ -82,14 +81,16 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ callId: st
       return NextResponse.json({ error: 'That device is offline' }, { status: 409 })
     }
 
-    // ── Promote the live call into its conference (customer stays connected) ──
-    const { data: integ } = await db.from('twilio_integrations').select('*').eq('company_id', companyId).maybeSingle()
+    // Twilio must be configured for a handoff (the accept step promotes the call
+    // into a conference), but we do NOT promote yet: promotion moves the customer
+    // into a conference which ends the current agent's browser leg. Doing that
+    // here would drop the current device the instant "Switch" is clicked, even if
+    // the target never picks up. Instead we only mark the handoff requested and
+    // keep the customer bridged to THIS device; the conference is created when the
+    // target actually accepts (…/accept). If no one accepts within the window the
+    // caller cancels and the call simply carries on here — never lost.
+    const { data: integ } = await db.from('twilio_integrations').select('account_sid, auth_token').eq('company_id', companyId).maybeSingle()
     if (!integ?.account_sid || !integ.auth_token) return NextResponse.json({ error: 'Twilio is not configured' }, { status: 400 })
-    const svc = new TwilioService(integ.account_sid, integ.auth_token)
-
-    let conf: { confName: string; confSid: string; agentLeg: string | null }
-    try { conf = await ensureCallConference(svc, db, call) }
-    catch (e: any) { return NextResponse.json({ error: e.message }, { status: 502 }) }
 
     // ── Mark the handoff requested ────────────────────────────────────────────
     const token = newHandoffToken()
@@ -102,7 +103,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ callId: st
       handoff_expires_at: expiresAt,
       // The agent leg currently carrying the call — removed once the new one is
       // confirmed. Record it now so a later confirm knows which leg to drop.
-      active_agent_call_sid: conf.agentLeg || call.active_agent_call_sid || call.twilio_child_call_sid || null,
+      active_agent_call_sid: call.active_agent_call_sid || call.twilio_child_call_sid || null,
     }).eq('id', rowId)
 
     // A backgrounded mobile target also gets a push so the user can reopen Colvy
@@ -112,7 +113,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ callId: st
       try { await pushTakeover(db, companyId, userId, call) } catch { /* push is best-effort */ }
     }
 
-    return NextResponse.json({ ok: true, status: 'requested', conferenceName: conf.confName, expiresAt })
+    return NextResponse.json({ ok: true, status: 'requested', conferenceName: call.conference_name || `colvy-${rowId}`, expiresAt })
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 })
   }
