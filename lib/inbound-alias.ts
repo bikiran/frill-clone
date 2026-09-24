@@ -1,77 +1,59 @@
-import crypto from 'crypto'
-
 // ── Colvy inbound email aliases ──────────────────────────────────────────────
-// Multi-tenant inbound routing on a single Colvy-owned domain (in.colvy.com).
-// Every outbound email carries a unique, signed Reply-To on this domain, so a
-// customer's reply always comes back to Colvy's own working inbound domain —
-// regardless of where their mailbox is hosted — and routes straight to the right
-// tenant + ticket/conversation. Cold inbound (a customer emailing their support
-// address) is supported by forwarding that address to the company's `u` alias.
+// Multi-tenant inbound routing on a single, brand-friendly Colvy domain
+// (reply.colvy.com). Outbound email carries a human-readable Reply-To that says
+// exactly which thread it belongs to, so a customer's reply always returns to
+// Colvy's own inbound domain — regardless of where their mailbox is hosted — and
+// routes straight to the right ticket / tenant. Cold inbound (a customer emailing
+// their support address) is supported by forwarding that address to the company
+// alias. Aliases are readable, e.g.:
 //
-// Alias shape:  <type>-<id>-<sig>@in.colvy.com
-//   type: t = ticket, c = conversation, u = company (catch-all / forwarding)
-//   id:   the row id (uuid) the mail routes to
-//   sig:  short HMAC over "<type>:<id>" so aliases can't be guessed or spoofed
+//   ticket-046216@reply.colvy.com   → support ticket TICK-046216
+//   roxyaquarium@reply.colvy.com    → the company (forwarded support address,
+//                                      and the reply-to for inbox email threads)
 //
-// Nothing is stored — aliases are derived from ids + a server secret, so this
+// Aliases carry no signature — they're resolved against real rows on receipt, and
+// a support inbox is public by nature (anyone can email it). Nothing is stored;
+// aliases are derived from the visible ticket number / company slug, so this
 // scales to every customer with no per-tenant provisioning.
 
-export const INBOUND_DOMAIN = (process.env.COLVY_INBOUND_DOMAIN || 'in.colvy.com').toLowerCase()
+export const INBOUND_DOMAIN = (process.env.COLVY_INBOUND_DOMAIN || 'reply.colvy.com').toLowerCase()
 
-// The inbound domain must be live in Resend (MX + verified) before we route
-// replies to it — otherwise customer replies would bounce. This stays OFF until
-// the super-admin sets COLVY_INBOUND_DOMAIN (or COLVY_INBOUND_ENABLED=true)
-// after configuring Resend Inbound + DNS. Until then, outbound reply-to falls
-// back to the mailbox's own address (previous behaviour), so nothing regresses.
+// The inbound domain must be live (MX + verified in Resend, inbound webhook set)
+// before we route replies to it — otherwise customer replies would bounce. Stays
+// OFF until the super-admin sets COLVY_INBOUND_DOMAIN (or COLVY_INBOUND_ENABLED
+// =true). Until then outbound reply-to falls back to the mailbox's own address,
+// so nothing regresses.
 export const INBOUND_ENABLED = !!process.env.COLVY_INBOUND_DOMAIN || process.env.COLVY_INBOUND_ENABLED === 'true'
 
-// A stable secret to sign aliases. Falls back to other server secrets so a fresh
-// deploy still produces consistent aliases; set COLVY_INBOUND_SECRET explicitly
-// in production so aliases survive secret rotation elsewhere.
-const SECRET = process.env.COLVY_INBOUND_SECRET
-  || process.env.SUPABASE_SERVICE_ROLE_KEY
-  || process.env.NEXTAUTH_SECRET
-  || 'colvy-inbound-fallback-secret'
+const localSafe = (s: string) => String(s || '').toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '')
 
-export type AliasType = 't' | 'c' | 'u'
+// The visible ticket reference without the "TICK-" prefix, e.g. TICK-046216 → 046216.
+export const ticketRef = (ticketNumber: string) => localSafe(String(ticketNumber || '').replace(/^tick-/i, ''))
 
-function sign(type: AliasType, id: string): string {
-  return crypto.createHmac('sha256', SECRET).update(`${type}:${id}`).digest('hex').slice(0, 10)
-}
+// Reply-To for a ticket:  ticket-046216@reply.colvy.com
+export const ticketAlias = (ticketNumber: string) => `ticket-${ticketRef(ticketNumber)}@${INBOUND_DOMAIN}`
 
-// Build the full Reply-To / forwarding alias for a target.
-export function makeAlias(type: AliasType, id: string): string {
-  return `${type}-${id}-${sign(type, id)}@${INBOUND_DOMAIN}`
-}
+// The company's forwarding + inbox reply-to address:  <slug>@reply.colvy.com
+export const companyAlias = (slug: string) => `${localSafe(slug) || 'support'}@${INBOUND_DOMAIN}`
 
-// Convenience builders.
-export const ticketAlias = (ticketId: string) => makeAlias('t', ticketId)
-export const conversationAlias = (conversationId: string) => makeAlias('c', conversationId)
-export const companyAlias = (companyId: string) => makeAlias('u', companyId)
+export type InboundTarget =
+  | { kind: 'ticket'; ref: string }   // ref = ticket number tail (resolve against support_tickets)
+  | { kind: 'company'; ref: string }  // ref = company slug (resolve against companies)
 
-// Parse + verify an inbound recipient. Returns the routing target, or null if it
-// isn't one of our aliases (or the signature doesn't match).
-export function parseAlias(address: string | null | undefined): { type: AliasType; id: string } | null {
+// Parse an inbound recipient into a routing target, or null if it isn't one of
+// ours. Resolution to a real row happens in the webhook (needs the DB).
+export function parseInboundAlias(address: string | null | undefined): InboundTarget | null {
   if (!address) return null
   const email = String(address).trim().toLowerCase()
   const at = email.indexOf('@')
   if (at < 0) return null
-  const domain = email.slice(at + 1)
-  if (domain !== INBOUND_DOMAIN) return null
+  if (email.slice(at + 1) !== INBOUND_DOMAIN) return null
   const local = email.slice(0, at)
-  // <type>-<uuid>-<sig>. The uuid contains hyphens, so split off the ends.
-  const first = local.indexOf('-')
-  const last = local.lastIndexOf('-')
-  if (first < 0 || last <= first) return null
-  const type = local.slice(0, first) as AliasType
-  const id = local.slice(first + 1, last)
-  const sig = local.slice(last + 1)
-  if (!['t', 'c', 'u'].includes(type) || !id || !sig) return null
-  // Constant-time compare against the expected signature.
-  const expected = sign(type, id)
-  if (sig.length !== expected.length) return null
-  try {
-    if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return null
-  } catch { return null }
-  return { type, id }
+  if (!local) return null
+  if (local.startsWith('ticket-')) {
+    const ref = local.slice('ticket-'.length)
+    return ref ? { kind: 'ticket', ref } : null
+  }
+  // Anything else on the inbound domain is treated as a company slug.
+  return { kind: 'company', ref: local }
 }
