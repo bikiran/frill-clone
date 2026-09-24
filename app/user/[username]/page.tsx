@@ -61,13 +61,14 @@ export default function UserProfilePage() {
         return
       }
 
-      // Fetch team member by username
-      const { data: tm } = await (supabase as any)
-        .from('team_members')
-        .select('email, username, role, created_at')
-        .eq('username', username)
-        .eq('company_id', companyId)
-        .maybeSingle()
+      // Fetch team member by username, through the server.
+      //
+      // Reading team_members from the browser meant that table had to stay
+      // readable by anyone — and a plain SELECT returned every staff member of
+      // every company: email, role, user_id. One profile page held the whole
+      // directory open. The endpoint answers for the one username asked for.
+      const tmRes = await fetch(`/api/team/profile?username=${encodeURIComponent(username)}&companyId=${encodeURIComponent(companyId)}`)
+      const tm = (await tmRes.json().catch(() => ({ member: null }))).member
 
       if (!tm) {
         setNotFound(true)

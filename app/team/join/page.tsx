@@ -63,27 +63,23 @@ function JoinTeamContent() {
       //      them.
       // Match on the email (case-insensitive) and accept either this company or
       // a null company_id.
+      // Asked of the server, which knows the two things that used to make valid
+      // invites read as "not found" — the email's case, and rows whose
+      // company_id was never filled in. It answers with whether an invitation
+      // exists and its status, and nothing else: the row itself is not the
+      // browser's business, and the acceptance below no longer needs its id.
       const emailLc = decodeURIComponent(email).trim().toLowerCase()
-      const { data: candidates } = await (supabase as any)
-        .from('team_members')
-        .select('*')
-        .ilike('email', emailLc)
-      const inv = (candidates || []).find((r: any) =>
-        r.company_id === co.id || r.company_id == null) || (candidates || [])[0] || null
+      const invRes = await fetch(`/api/team/invite?email=${encodeURIComponent(emailLc)}&companySlug=${encodeURIComponent(company)}`)
+      const inv = await invRes.json().catch(() => ({ found: false }))
 
-      if (!inv) throw new Error('Invitation not found or expired')
-      // Backfill the company link if it was missing, so acceptance works.
-      if (inv.company_id == null) {
-        try { await (supabase as any).from('team_members').update({ company_id: co.id }).eq('id', inv.id) } catch {}
-        inv.company_id = co.id
-      }
+      if (!inv?.found) throw new Error('Invitation not found or expired')
       if (inv.status === 'active') {
         setError('You are already a member of this team')
         setLoading(false)
         return
       }
 
-      setInvitation(inv)
+      setInvitation({ email: emailLc, status: inv.status, company_id: co.id })
     } catch (err: any) {
       setError(err.message)
     } finally {
@@ -97,13 +93,26 @@ function JoinTeamContent() {
     try {
       let { data: { session } } = await supabase.auth.getSession()
 
-      // If already signed in as the invited user, just activate membership.
+      // Already signed in as the invited person → activate on the server.
+      //
+      // This was an UPDATE straight onto team_members from the browser, which
+      // only worked because anyone could write to that table — the same
+      // permission that let a stranger add themselves to any company and, via
+      // is_company_member, read everything in it. The endpoint takes the access
+      // token and activates the invitation addressed to THAT session's email,
+      // so the row being claimed is decided by who you are, not by what you ask
+      // for.
       if (session?.user && session.user.email === email) {
-        const { error: updateErr } = await (supabase as any)
-          .from('team_members')
-          .update({ status: 'active', user_id: session.user.id, joined_at: new Date().toISOString() })
-          .eq('id', invitation.id)
-        if (updateErr) throw updateErr
+        const res = await fetch('/api/team/activate', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({ companySlug: company }),
+        })
+        const out = await res.json().catch(() => ({}))
+        if (!res.ok) throw new Error(out?.error || 'Could not accept the invitation.')
         setAccepted(true)
         setTimeout(() => { router.push('/admin') }, 1500)
         return
