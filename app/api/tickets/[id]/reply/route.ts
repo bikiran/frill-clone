@@ -85,7 +85,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
         // never depends on the customer's domain receiving mail.
         const { ticketAlias, INBOUND_ENABLED } = await import('@/lib/inbound-alias')
         const ticketReplyTo = INBOUND_ENABLED
-          ? ticketAlias(id)
+          ? ticketAlias(ticket.ticket_number)
           : (channel?.reply_to || channel?.inbound_address || '')
 
         if (channel?.provider === 'gmail') {

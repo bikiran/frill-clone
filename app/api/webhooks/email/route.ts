@@ -5,7 +5,7 @@ import { runKeywordReply } from '@/lib/keyword-reply'
 import { passesRules } from '@/lib/gmail'
 import { logWebhookEvent } from '@/lib/webhook-log'
 import { logEnquiryReopened } from '@/lib/conversation-timeline'
-import { parseAlias } from '@/lib/inbound-alias'
+import { parseInboundAlias } from '@/lib/inbound-alias'
 
 export const dynamic = 'force-dynamic'
 
@@ -92,24 +92,40 @@ export async function POST(req: NextRequest) {
 
     const content = stripQuoted(String(textBody)) || String(htmlBody).replace(/<[^>]+>/g, ' ').trim()
 
-    // ── Colvy inbound-alias routing (in.colvy.com) ───────────────────────────
-    // Every recipient we might have been reached at — direct To, the whole To/Cc
-    // lists (a forwarded mail can carry several) — is checked for a signed Colvy
-    // alias. This is the multi-tenant router: a signed alias tells us exactly which
-    // ticket / conversation / company the mail belongs to, with no MX changes on
-    // the customer's side.
+    // ── Colvy inbound-alias routing (reply.colvy.com) ────────────────────────
+    // Check every recipient (To + Cc — a forwarded mail can carry several) for a
+    // Colvy alias, then resolve it to a real row. This is the multi-tenant router:
+    // a friendly alias (ticket-046216@ / <slug>@) says which ticket or tenant the
+    // mail belongs to, with no MX changes on the customer's side.
     const recipientEmails: string[] = []
     for (const raw of [toRaw, ccRaw]) {
       const arr = Array.isArray(raw) ? raw : [raw]
       for (const one of arr) { const p = parseAddress(one); if (p.email) recipientEmails.push(p.email) }
     }
-    let alias: { type: 't' | 'c' | 'u'; id: string } | null = null
-    for (const e of recipientEmails) { const a = parseAlias(e); if (a) { alias = a; break } }
+    let ticket: any = null
+    let aliasCompanyId: string | null = null
+    for (const e of recipientEmails) {
+      const a = parseInboundAlias(e)
+      if (!a) continue
+      if (a.kind === 'ticket') {
+        // Resolve the visible number (e.g. "046216" → TICK-046216). Ticket numbers
+        // aren't globally unique, so when several match, prefer the one whose
+        // requester is the sender, else the most recently updated.
+        const tnum = `TICK-${a.ref}`.toUpperCase()
+        const { data: cands } = await db.from('support_tickets').select('*').ilike('ticket_number', tnum).order('updated_at', { ascending: false }).limit(25)
+        const list = cands || []
+        ticket = list.find((t: any) => String(t.email || '').toLowerCase() === from.email)
+          || list.find((t: any) => { const m = /<([^>]+)>/.exec(String(t.description || '')); return !!m && m[1].toLowerCase() === from.email })
+          || list[0] || null
+        if (ticket) break
+      } else if (a.kind === 'company') {
+        const { data: co } = await db.from('companies').select('id').eq('slug', a.ref).maybeSingle()
+        if (co?.id) { aliasCompanyId = co.id; break }
+      }
+    }
 
     // Ticket alias → append the customer's reply straight onto the ticket thread.
-    if (alias?.type === 't') {
-      const { data: ticket } = await db.from('support_tickets').select('*').eq('id', alias.id).maybeSingle()
-      if (!ticket) return NextResponse.json({ ok: false, reason: 'Ticket not found for alias' })
+    if (ticket) {
       await db.from('ticket_messages').insert({
         ticket_id: ticket.id, company_id: ticket.company_id, kind: 'reply', direction: 'in',
         body: content, author_name: from.name || from.email, emailed: false,
@@ -129,26 +145,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true, routed: 'ticket', ticketId: ticket.id })
     }
 
-    // Conversation alias → append the reply straight onto that conversation.
-    if (alias?.type === 'c') {
-      const { data: convo } = await db.from('conversations').select('*').eq('id', alias.id).maybeSingle()
-      if (!convo) return NextResponse.json({ ok: false, reason: 'Conversation not found for alias' })
-      await logEnquiryReopened(db, { conversationId: convo.id, companyId: convo.company_id, prevStatus: convo.status, actorName: from.name || from.email, via: 'email' })
-      await db.from('messages').insert({ conversation_id: convo.id, company_id: convo.company_id, sender_type: 'visitor', sender_name: from.name || from.email, sender_email: from.email, content, email_message_id: messageId || null, email_in_reply_to: inReplyTo || null })
-      await db.from('conversations').update({ last_message: content.slice(0, 200), last_message_at: new Date().toISOString(), is_unread: true, status: 'open', unread_count: (convo.unread_count || 0) + 1 }).eq('id', convo.id)
-      try { await notifyCompany({ db, companyId: convo.company_id, type: 'email', message: `New reply from ${from.name || from.email}`, actorName: from.name || from.email, conversationId: convo.id }) } catch {}
-      try { await pushInboundMessage({ companyId: convo.company_id, conversationId: convo.id, title: `New reply from ${from.name || from.email}`, body: content.slice(0, 200) || 'New message' }) } catch {}
-      logWebhookEvent({ source: 'email', eventType: 'inbound-conversation', companyId: convo.company_id, payload: { conversationId: convo.id, from: from.email } })
-      return NextResponse.json({ ok: true, routed: 'conversation', conversationId: convo.id })
-    }
-
     // ── Resolve the company/mailbox ──────────────────────────────────────────
-    // Company alias (a forwarded support address) resolves by company; otherwise
-    // match the address the mail was sent TO against a configured inbound mailbox.
+    // Company alias (a forwarded support address, or the reply-to on inbox email
+    // threads) resolves by company; otherwise match the address the mail was sent
+    // TO against a configured inbound mailbox.
     let channel: any = null
     let companyId: string | null = null
-    if (alias?.type === 'u') {
-      companyId = alias.id
+    if (aliasCompanyId) {
+      companyId = aliasCompanyId
       const { data: chs } = await db.from('email_channels').select('*').eq('company_id', companyId).eq('is_active', true).order('created_at', { ascending: true }).limit(1)
       channel = chs?.[0] || { company_id: companyId, provider: 'webhook', from_address: null, from_name: null, inbound_address: null }
     } else {
