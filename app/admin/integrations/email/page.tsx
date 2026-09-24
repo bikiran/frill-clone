@@ -14,6 +14,7 @@ export default function EmailPage() {
   const [rules, setRules] = useState<any[]>([])
   const [signatures, setSignatures] = useState<any[]>([])
   const [locations, setLocations] = useState<any[]>([])
+  const [forwardingAlias, setForwardingAlias] = useState('')
   const [msg, setMsg] = useState('')
   const [busy, setBusy] = useState('')
 
@@ -52,6 +53,7 @@ export default function EmailPage() {
     setRules(d.rules || [])
     setSignatures(d.signatures || [])
     setLocations(d.locations || [])
+    setForwardingAlias(d.forwardingAlias || '')
   }
 
   const api = async (body: any) => {
@@ -459,21 +461,24 @@ export default function EmailPage() {
       {/* Domain mailbox setup — concierge first, technical detail tucked away */}
       <div style={{ marginTop: 26, border: '1px solid var(--border)', borderRadius: 14, padding: 20, background: 'var(--canvas)' }}>
         <p style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink)', margin: '0 0 8px' }}>Getting your inbound email into Colvy</p>
-        <p style={{ fontSize: 13, color: 'var(--slate)', margin: '0 0 12px', lineHeight: 1.6 }}>
-          Add your support address above and we&rsquo;ll connect it so mail sent to it flows straight into Colvy in real time. Sending is handled on Colvy&rsquo;s own secure mail service — there are no third-party accounts to create and nothing to verify. If it&rsquo;s not receiving yet, your inbound mail just needs to be routed to Colvy — reach out and we&rsquo;ll set it up with you.
+        <p style={{ fontSize: 13, color: 'var(--slate)', margin: '0 0 14px', lineHeight: 1.6 }}>
+          Keep your existing mailbox exactly as it is. To bring incoming email into Colvy, add <strong>one forwarding rule</strong> at your email host so a copy of mail to your support address is forwarded to your Colvy address below. No MX or DNS changes, and nothing to verify — sending is handled on Colvy&rsquo;s own secure mail service.
         </p>
-        <details style={{ marginTop: 4 }}>
-          <summary style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--slate)', cursor: 'pointer' }}>Advanced — for your IT / email admin</summary>
-          <div style={{ marginTop: 10 }}>
-            <p style={{ fontSize: 12.5, color: 'var(--slate)', margin: '0 0 8px', lineHeight: 1.6 }}>
-              Route your domain&rsquo;s inbound mail (an inbound/parse route, or an email-forwarding rule on your support address) to this endpoint:
+        {forwardingAlias ? (
+          <>
+            <label style={{ ...L, marginTop: 0 }}>Your Colvy forwarding address</label>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              <code style={{ flex: 1, minWidth: 220, padding: '10px 12px', borderRadius: 8, background: '#fff', border: '1px solid var(--border)', fontSize: 13.5, wordBreak: 'break-all' }}>{forwardingAlias}</code>
+              <button onClick={() => { navigator.clipboard?.writeText(forwardingAlias); setMsg('Forwarding address copied.') }}
+                style={{ padding: '9px 14px', borderRadius: 8, border: '1px solid var(--border)', background: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', color: 'var(--ink)' }}>Copy</button>
+            </div>
+            <p style={{ fontSize: 12, color: 'var(--slate)', margin: '8px 0 0', lineHeight: 1.6 }}>
+              Set your support address (e.g. <code>info@roxyaquarium.com.au</code>) to forward to this. Replies from customers already come straight back to the right ticket automatically — this is only for brand-new emails they send to your address.
             </p>
-            <code style={{ display: 'block', padding: '10px 12px', borderRadius: 8, background: '#fff', border: '1px solid var(--border)', fontSize: 13, wordBreak: 'break-all', marginBottom: 10 }}>{webhookUrl}</code>
-            <p style={{ fontSize: 12, color: 'var(--slate)', margin: 0, lineHeight: 1.6 }}>
-              Colvy matches the address the mail was sent <em>to</em> against your mailboxes, so each address routes to the right outlet. Gmail accounts don&rsquo;t need this — they sync over OAuth.
-            </p>
-          </div>
-        </details>
+          </>
+        ) : (
+          <p style={{ fontSize: 12.5, color: 'var(--slate)', margin: 0 }}>Your Colvy forwarding address will appear here once inbound email is switched on for your workspace.</p>
+        )}
       </div>
     </div>
   )

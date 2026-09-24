@@ -54,11 +54,18 @@ export async function GET(req: NextRequest) {
       connected: a.provider === 'gmail' ? !!a.refresh_token : true,
     }))
 
+    // The company's Colvy inbound forwarding address. Customers forward their
+    // own support address (e.g. info@…) to this — no MX changes, works from any
+    // mail host — and mail routes into Colvy by tenant.
+    const { companyAlias, INBOUND_ENABLED } = await import('@/lib/inbound-alias')
     return NextResponse.json({
       accounts: safe,
       rules,
       signatures: signatures || [],
       locations: locations || [],
+      // Only surface a forwarding address once the inbound domain is live, so no
+      // one forwards mail to a not-yet-configured address.
+      forwardingAlias: INBOUND_ENABLED ? companyAlias(companyId) : '',
     })
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 })

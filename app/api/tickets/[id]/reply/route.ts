@@ -80,17 +80,25 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
         const linkify = (t: string) => t.replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1">$1</a>')
         const bodyHtml = `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;font-size:14px;line-height:1.5;color:#1a1a1a">${linkify(escapeHtml(text)).replace(/\n/g, '<br>')}</div>`
 
+        // Route the customer's reply straight back onto THIS ticket, via Colvy's
+        // own inbound domain — so it works no matter where their mailbox is and
+        // never depends on the customer's domain receiving mail.
+        const { ticketAlias, INBOUND_ENABLED } = await import('@/lib/inbound-alias')
+        const ticketReplyTo = INBOUND_ENABLED
+          ? ticketAlias(id)
+          : (channel?.reply_to || channel?.inbound_address || '')
+
         if (channel?.provider === 'gmail') {
           // Send through the connected Gmail account (lands in their Sent folder).
           try {
             const { sendGmail } = await import('@/lib/gmail')
-            const out = await sendGmail(channel, { to: toEmail, subject, body: text, html: bodyHtml })
+            const out = await sendGmail(channel, { to: toEmail, subject, body: text, html: bodyHtml, replyTo: ticketReplyTo })
             emailed = !out?.error
             if (out?.error) emailNote = `Saved, but the email could not be sent: ${out.error}`
           } catch (e: any) { emailNote = `Saved, but the email could not be sent: ${e.message}` }
         } else if (process.env.RESEND_API_KEY) {
           const fromAddress = channel?.from_address || channel?.inbound_address || channel?.address || co?.support_email || co?.business_email || co?.email || ''
-          const replyTo = channel?.reply_to || channel?.inbound_address || fromAddress
+          const replyTo = ticketReplyTo
           if (!fromAddress) {
             emailNote = 'Saved, but no verified sending address is configured for this workspace, so nothing was sent. Connect a mailbox under Inbox → Channels.'
           } else {

@@ -574,6 +574,7 @@ export async function sendGmail(channel: any, opts: {
   html?: string | null
   inReplyTo?: string | null
   threadId?: string | null
+  replyTo?: string | null
   attachments?: { url: string; name?: string; type?: string }[]
 }): Promise<{ id?: string; error?: string }> {
   const token = await getGmailToken(channel)
@@ -585,6 +586,7 @@ export async function sendGmail(channel: any, opts: {
     ...(opts.cc ? [`Cc: ${opts.cc}`] : []),
     ...(opts.bcc ? [`Bcc: ${opts.bcc}`] : []),
     `From: ${fromHeader}`,
+    ...(opts.replyTo ? [`Reply-To: ${opts.replyTo}`] : []),
     `Subject: ${opts.subject}`,
   ]
   if (opts.inReplyTo) {
