@@ -72,8 +72,12 @@ export async function ensureCallConference(
   // completed-recording callback stores it as the call's conference recording.
   const base = (process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com').replace(/\/$/, '')
   const recCb = `${base}/api/twilio/voice/recording?callRowId=${encodeURIComponent(call.id)}&companyId=${encodeURIComponent(call.company_id || '')}&conversationId=${encodeURIComponent(call.conversation_id || '')}&kind=conference`
+  // waitUrl="" → silence, not Twilio's default hold music. During a handoff the
+  // customer is briefly alone in the conference while the new agent device joins;
+  // the old "tung-tung-tung" hold loop made that gap sound like a broken/ringing
+  // call. Silence is the right cue that they're held for a moment, not dropped.
   const conferenceTwiml =
-    `<?xml version="1.0" encoding="UTF-8"?><Response><Dial><Conference startConferenceOnEnter="true" endConferenceOnExit="false" beep="false" ` +
+    `<?xml version="1.0" encoding="UTF-8"?><Response><Dial><Conference startConferenceOnEnter="true" endConferenceOnExit="false" beep="false" waitUrl="" ` +
     `record="record-from-start" recordingStatusCallback="${xmlEscape(recCb)}" recordingStatusCallbackEvent="completed" recordingStatusCallbackMethod="POST">` +
     `${confName}</Conference></Dial></Response>`
   try { await svc.updateCall(customerLeg, { twiml: conferenceTwiml }) }
