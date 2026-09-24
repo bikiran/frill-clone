@@ -122,7 +122,12 @@ export default function CustomDomainPage() {
     { label: 'Help', href: `${currentBase}/help`, active: isHelp },
   ]
 
-  const NavHeader = (
+  // On the real custom domain (and colvy subdomains) the shared AppChrome header
+  // already renders the company's brand, so a second header here would stack. We
+  // only render our own header on the raw internal `/custom/<domain>` path, where
+  // AppChrome treats the route as full-page and shows no chrome of its own.
+  const standalone = typeof window !== 'undefined' && window.location.pathname.startsWith('/custom/')
+  const NavHeader = !standalone ? null : (
     <header style={{ position: 'sticky', top: 0, zIndex: 40, background: '#fff', borderBottom: '1px solid #f0f0f0' }}>
       <div style={{ maxWidth: 1240, margin: '0 auto', padding: '0 24px', height: 56, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
