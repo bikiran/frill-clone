@@ -108,11 +108,17 @@ export async function POST(req: NextRequest) {
 
     // ── Gmail account: send through the Gmail API, so the reply lands in the
     //    business's own Sent folder and threads properly for the customer.
+    // Reply-To on Colvy's inbound domain so the customer's reply routes straight
+    // back onto THIS conversation, regardless of where their mailbox lives.
+    const { conversationAlias, INBOUND_ENABLED } = await import('@/lib/inbound-alias')
+    const convReplyTo = INBOUND_ENABLED ? conversationAlias(conversationId) : (channel.inbound_address || channel.from_address || '')
+
     if (channel.provider === 'gmail') {
       const out = await sendGmail(channel, {
         to: toEmail, cc: ccEmail, bcc: bccEmail, subject, body: fullText, html: bodyHtml,
         inReplyTo,
         threadId: conv.email_message_id || null,
+        replyTo: convReplyTo,
         attachments: atts,
       })
       if (out.error) return NextResponse.json({ error: out.error }, { status: 502 })
@@ -170,7 +176,7 @@ export async function POST(req: NextRequest) {
         subject,
         text: fullText,
         html: bodyHtml,
-        reply_to: channel.inbound_address || fromAddress,
+        reply_to: convReplyTo,
         ...(atts.length ? { attachments: atts.map(a => ({ filename: a.name, path: a.url })) } : {}),
         ...(Object.keys(headers).length ? { headers } : {}),
       }),

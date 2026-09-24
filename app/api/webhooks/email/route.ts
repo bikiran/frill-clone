@@ -5,6 +5,7 @@ import { runKeywordReply } from '@/lib/keyword-reply'
 import { passesRules } from '@/lib/gmail'
 import { logWebhookEvent } from '@/lib/webhook-log'
 import { logEnquiryReopened } from '@/lib/conversation-timeline'
+import { parseAlias } from '@/lib/inbound-alias'
 
 export const dynamic = 'force-dynamic'
 
@@ -67,35 +68,96 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => ({}))
     const db = admin()
 
+    // Resend inbound (email.received) nests the message under `data`; other
+    // providers post it at the top level. Unwrap so the picks below work for all.
+    const evt = (body?.data && typeof body.data === 'object' && /email|inbound|received/i.test(String(body?.type || ''))) ? body.data : body
+
     // ── Extract the essentials across provider shapes ────────────────────────
-    const toRaw = pick(body, 'to', 'To', 'recipient', 'ToFull', 'envelope.to')
-    const fromRaw = pick(body, 'from', 'From', 'sender', 'FromFull', 'envelope.from')
-    const subject = pick(body, 'subject', 'Subject') || '(no subject)'
-    const textBody = pick(body, 'text', 'TextBody', 'body-plain', 'plain', 'stripped-text') || ''
-    const htmlBody = pick(body, 'html', 'HtmlBody', 'body-html') || ''
-    const messageId = pick(body, 'message_id', 'MessageID', 'Message-Id', 'messageId', 'headers.message-id')
-    const inReplyTo = pick(body, 'in_reply_to', 'In-Reply-To', 'headers.in-reply-to', 'InReplyTo')
+    const toRaw = pick(evt, 'to', 'To', 'recipient', 'ToFull', 'envelope.to')
+    const ccRaw = pick(evt, 'cc', 'Cc', 'CcFull')
+    const fromRaw = pick(evt, 'from', 'From', 'sender', 'FromFull', 'envelope.from')
+    const subject = pick(evt, 'subject', 'Subject') || '(no subject)'
+    const textBody = pick(evt, 'text', 'TextBody', 'body-plain', 'plain', 'stripped-text') || ''
+    const htmlBody = pick(evt, 'html', 'HtmlBody', 'body-html') || ''
+    const messageId = pick(evt, 'message_id', 'MessageID', 'Message-Id', 'messageId', 'headers.message-id')
+    const inReplyTo = pick(evt, 'in_reply_to', 'In-Reply-To', 'headers.in-reply-to', 'InReplyTo')
 
     const to = parseAddress(Array.isArray(toRaw) ? toRaw[0] : toRaw)
     const from = parseAddress(fromRaw)
 
-    if (!to.email || !from.email) {
+    if (!from.email) {
       // Always 200 so providers don't retry/disable the webhook.
-      return NextResponse.json({ ok: false, reason: 'Missing to/from address' })
+      return NextResponse.json({ ok: false, reason: 'Missing from address' })
     }
 
-    // ── Resolve the company from the inbound address ─────────────────────────
-    const { data: channels } = await db
-      .from('email_channels')
-      .select('*')
-      .ilike('inbound_address', to.email)
-      .eq('is_active', true)
-      .limit(1)
-    const channel = channels?.[0]
-    if (!channel) {
-      return NextResponse.json({ ok: false, reason: `No email channel configured for ${to.email}` })
+    const content = stripQuoted(String(textBody)) || String(htmlBody).replace(/<[^>]+>/g, ' ').trim()
+
+    // ── Colvy inbound-alias routing (in.colvy.com) ───────────────────────────
+    // Every recipient we might have been reached at — direct To, the whole To/Cc
+    // lists (a forwarded mail can carry several) — is checked for a signed Colvy
+    // alias. This is the multi-tenant router: a signed alias tells us exactly which
+    // ticket / conversation / company the mail belongs to, with no MX changes on
+    // the customer's side.
+    const recipientEmails: string[] = []
+    for (const raw of [toRaw, ccRaw]) {
+      const arr = Array.isArray(raw) ? raw : [raw]
+      for (const one of arr) { const p = parseAddress(one); if (p.email) recipientEmails.push(p.email) }
     }
-    const companyId = channel.company_id
+    let alias: { type: 't' | 'c' | 'u'; id: string } | null = null
+    for (const e of recipientEmails) { const a = parseAlias(e); if (a) { alias = a; break } }
+
+    // Ticket alias → append the customer's reply straight onto the ticket thread.
+    if (alias?.type === 't') {
+      const { data: ticket } = await db.from('support_tickets').select('*').eq('id', alias.id).maybeSingle()
+      if (!ticket) return NextResponse.json({ ok: false, reason: 'Ticket not found for alias' })
+      await db.from('ticket_messages').insert({
+        ticket_id: ticket.id, company_id: ticket.company_id, kind: 'reply', direction: 'in',
+        body: content, author_name: from.name || from.email, emailed: false,
+      })
+      const patch: any = { updated_at: new Date().toISOString() }
+      if (['resolved', 'closed'].includes(String(ticket.status || ''))) patch.status = 'open'
+      await db.from('support_tickets').update(patch).eq('id', ticket.id)
+      // Mirror into the linked inbox conversation too, if the ticket has one.
+      if (ticket.conversation_id) {
+        try {
+          await db.from('messages').insert({ conversation_id: ticket.conversation_id, company_id: ticket.company_id, sender_type: 'visitor', sender_name: from.name || from.email, sender_email: from.email, content, email_message_id: messageId || null, email_in_reply_to: inReplyTo || null })
+          await db.from('conversations').update({ last_message: content.slice(0, 200), last_message_at: new Date().toISOString(), is_unread: true, status: 'open' }).eq('id', ticket.conversation_id)
+        } catch {}
+      }
+      try { await notifyCompany({ db, companyId: ticket.company_id, type: 'ticket', message: `Reply on ${ticket.ticket_number} from ${from.name || from.email}`, actorName: from.name || from.email }) } catch {}
+      logWebhookEvent({ source: 'email', eventType: 'inbound-ticket', companyId: ticket.company_id, payload: { ticket: ticket.ticket_number, from: from.email } })
+      return NextResponse.json({ ok: true, routed: 'ticket', ticketId: ticket.id })
+    }
+
+    // Conversation alias → append the reply straight onto that conversation.
+    if (alias?.type === 'c') {
+      const { data: convo } = await db.from('conversations').select('*').eq('id', alias.id).maybeSingle()
+      if (!convo) return NextResponse.json({ ok: false, reason: 'Conversation not found for alias' })
+      await logEnquiryReopened(db, { conversationId: convo.id, companyId: convo.company_id, prevStatus: convo.status, actorName: from.name || from.email, via: 'email' })
+      await db.from('messages').insert({ conversation_id: convo.id, company_id: convo.company_id, sender_type: 'visitor', sender_name: from.name || from.email, sender_email: from.email, content, email_message_id: messageId || null, email_in_reply_to: inReplyTo || null })
+      await db.from('conversations').update({ last_message: content.slice(0, 200), last_message_at: new Date().toISOString(), is_unread: true, status: 'open', unread_count: (convo.unread_count || 0) + 1 }).eq('id', convo.id)
+      try { await notifyCompany({ db, companyId: convo.company_id, type: 'email', message: `New reply from ${from.name || from.email}`, actorName: from.name || from.email, conversationId: convo.id }) } catch {}
+      try { await pushInboundMessage({ companyId: convo.company_id, conversationId: convo.id, title: `New reply from ${from.name || from.email}`, body: content.slice(0, 200) || 'New message' }) } catch {}
+      logWebhookEvent({ source: 'email', eventType: 'inbound-conversation', companyId: convo.company_id, payload: { conversationId: convo.id, from: from.email } })
+      return NextResponse.json({ ok: true, routed: 'conversation', conversationId: convo.id })
+    }
+
+    // ── Resolve the company/mailbox ──────────────────────────────────────────
+    // Company alias (a forwarded support address) resolves by company; otherwise
+    // match the address the mail was sent TO against a configured inbound mailbox.
+    let channel: any = null
+    let companyId: string | null = null
+    if (alias?.type === 'u') {
+      companyId = alias.id
+      const { data: chs } = await db.from('email_channels').select('*').eq('company_id', companyId).eq('is_active', true).order('created_at', { ascending: true }).limit(1)
+      channel = chs?.[0] || { company_id: companyId, provider: 'webhook', from_address: null, from_name: null, inbound_address: null }
+    } else {
+      if (!to.email) return NextResponse.json({ ok: false, reason: 'Missing to address' })
+      const { data: channels } = await db.from('email_channels').select('*').ilike('inbound_address', to.email).eq('is_active', true).limit(1)
+      channel = channels?.[0]
+      if (!channel) return NextResponse.json({ ok: false, reason: `No email channel configured for ${to.email}` })
+      companyId = channel.company_id
+    }
 
     // Record the event for the Super Admin webhook explorer (best-effort).
     logWebhookEvent({ source: 'email', eventType: 'inbound', companyId, payload: { from: from.email, to: to.email, subject, messageId } })
@@ -104,8 +166,6 @@ export async function POST(req: NextRequest) {
     if (!(await passesRules(db, channel, from.email))) {
       return NextResponse.json({ ok: false, reason: 'Sender filtered by an email rule' })
     }
-
-    const content = stripQuoted(String(textBody)) || String(htmlBody).replace(/<[^>]+>/g, ' ').trim()
 
     // ── Find-or-create the contact ───────────────────────────────────────────
     let contact: any = null
