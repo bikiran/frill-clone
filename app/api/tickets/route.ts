@@ -178,7 +178,38 @@ export async function GET(req: NextRequest) {
     let q = db.from('support_tickets').select('*').eq('company_id', companyId)
     if (conversationId) q = q.eq('conversation_id', conversationId)
     const { data } = await q.order('created_at', { ascending: false })
-    return NextResponse.json({ tickets: data || [] })
+    const tickets = data || []
+
+    // Attach a display customer + channel so the list can show who raised each
+    // ticket and where it came from, without the client re-fetching per row.
+    const contactIds = Array.from(new Set(tickets.map((t: any) => t.contact_id).filter(Boolean)))
+    const convIds = Array.from(new Set(tickets.map((t: any) => t.conversation_id).filter(Boolean)))
+    const contactMap: Record<string, any> = {}
+    const convMap: Record<string, any> = {}
+    if (contactIds.length) {
+      try { const { data: cs } = await db.from('contacts').select('id,name,email,phone').in('id', contactIds); (cs || []).forEach((c: any) => { contactMap[c.id] = c }) } catch {}
+    }
+    if (convIds.length) {
+      try { const { data: cvs } = await db.from('conversations').select('id,channel').in('id', convIds); (cvs || []).forEach((c: any) => { convMap[c.id] = c }) } catch {}
+    }
+    // Parse "— From: Name <email>" that the help-centre form writes into the body.
+    const parseFrom = (desc: string) => {
+      const m = /From:\s*([^<]+?)\s*<([^>]+)>/i.exec(desc || '')
+      return m ? { name: m[1].trim(), email: m[2].trim() } : null
+    }
+    const CHANNEL_LABEL: Record<string, string> = { chat: 'Live Chat', live_chat: 'Live Chat', widget: 'Live Chat', email: 'Email', sms: 'SMS', facebook: 'Facebook', instagram: 'Instagram', whatsapp: 'WhatsApp' }
+    const enriched = tickets.map((t: any) => {
+      const contact = t.contact_id ? contactMap[t.contact_id] : null
+      const from = parseFrom(t.description || '')
+      const customer_name = contact?.name || from?.name || t.name || t.email || 'Unknown'
+      const customer_email = contact?.email || from?.email || t.email || ''
+      let channel = 'Email'
+      if (t.conversation_id && convMap[t.conversation_id]) channel = CHANNEL_LABEL[convMap[t.conversation_id].channel] || 'Inbox'
+      else if (t.conversation_id) channel = 'Inbox'
+      else if (from) channel = 'Help Centre'
+      return { ...t, customer_name, customer_email, channel }
+    })
+    return NextResponse.json({ tickets: enriched })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
