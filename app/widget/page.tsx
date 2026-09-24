@@ -257,18 +257,11 @@ function WidgetContent() {
           setChatName(parsed.name)
           setChatEmail(parsed.email || '')
           setChatStep('chat')
-          // Load existing messages for this conversation
-          ;(async () => {
-            // Via the server, so the widget needs no read access to the
-            // messages table. Internal notes are filtered there.
-            let msgs: any[] | null = null
-            try {
-              const r = await fetch(`/api/widget/messages?companyId=${parsed.companyId || ''}&conversationId=${parsed.convId}`)
-              const d = await r.json()
-              msgs = d.messages || []
-            } catch { msgs = [] }
-            if (msgs) setChatMessages2(msgs)
-          })()
+          // History is NOT fetched here. This effect runs on `slug`, before
+          // /api/widget-data has returned the company, and the saved session
+          // never carried a companyId of its own — so the request went out as
+          // `companyId=` every time, which the endpoint answers with an empty
+          // list. The effect below owns loading, and now waits for the company.
         }
       }
     } catch {}
@@ -276,13 +269,21 @@ function WidgetContent() {
 
   // Subscribe to agent replies on the active chat conversation
   useEffect(() => {
-    if (!chatConvId) return
+    // Waits for the company as well as the conversation. With `[chatConvId]`
+    // alone this effect ran at whatever moment the conversation id appeared —
+    // on a reload that is before /api/widget-data returns — and every request
+    // it made, including the four-second poll that is meant to be the safety
+    // net for a missed broadcast, carried `companyId=undefined` for the life of
+    // the session. The endpoint answers that with an empty list, so the history
+    // never arrived and neither did the auto-reply.
+    const companyId = company?.id
+    if (!chatConvId || !companyId) return
     // Load latest messages when a conversation becomes active (catches anything
     // sent while the subscription was reconnecting)
     ;(async () => {
       let msgs: any[] | null = null
       try {
-        const r = await fetch(`/api/widget/messages?companyId=${company?.id}&conversationId=${chatConvId}`)
+        const r = await fetch(`/api/widget/messages?companyId=${companyId}&conversationId=${chatConvId}`)
         const d = await r.json()
         msgs = d.messages || []
       } catch { msgs = [] }
@@ -345,7 +346,7 @@ function WidgetContent() {
       // a reconnect) — nothing depends on every broadcast arriving.
       let msgs: any[] | null = null
       try {
-        const r = await fetch(`/api/widget/messages?companyId=${company?.id}&conversationId=${chatConvId}`)
+        const r = await fetch(`/api/widget/messages?companyId=${companyId}&conversationId=${chatConvId}`)
         const d = await r.json()
         msgs = d.messages || []
       } catch { return }
@@ -378,7 +379,7 @@ function WidgetContent() {
     }, 4000)
 
     return () => { supabase.removeChannel(ch); clearInterval(poll) }
-  }, [chatConvId])
+  }, [chatConvId, company?.id])
   const [feedback, setFeedback] = useState('')
   const [chatMessages, setChatMessages] = useState<any[]>([])
   const [attachments, setAttachments] = useState<string[]>([])
@@ -1809,7 +1810,7 @@ function WidgetContent() {
                         setChatConvId(conv.id)
                         // Persist so a page reload restores this chat
                         try {
-                          localStorage.setItem(`colvy-chat-${slug}`, JSON.stringify({ convId: conv.id, name: chatName, email: chatEmail }))
+                          localStorage.setItem(`colvy-chat-${slug}`, JSON.stringify({ convId: conv.id, companyId: company?.id || null, name: chatName, email: chatEmail }))
                         } catch {}
                         // Insert a system greeting
                         await fetch('/api/widget/message', {
