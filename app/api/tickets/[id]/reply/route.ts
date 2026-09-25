@@ -80,23 +80,31 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
         const linkify = (t: string) => t.replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1">$1</a>')
         const bodyHtml = `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;font-size:14px;line-height:1.5;color:#1a1a1a">${linkify(escapeHtml(text)).replace(/\n/g, '<br>')}</div>`
 
-        // Route the customer's reply straight back onto THIS ticket, via Colvy's
-        // own inbound domain — so it works no matter where their mailbox is and
-        // never depends on the customer's domain receiving mail.
+        // How the customer's reply threads back onto THIS ticket depends on the
+        // mailbox. The subject carries "[TICK-######]" either way, which both the
+        // inbound-email webhook and the Gmail sync use to route the reply onto the
+        // ticket.
         const { ticketAlias, INBOUND_ENABLED } = await import('@/lib/inbound-alias')
-        const ticketReplyTo = INBOUND_ENABLED
-          ? ticketAlias(ticket.ticket_number)
-          : (channel?.reply_to || channel?.inbound_address || '')
 
         if (channel?.provider === 'gmail') {
-          // Send through the connected Gmail account (lands in their Sent folder).
+          // Gmail: thread the reply straight back to the connected inbox (no
+          // Reply-To override) so it lands in a mailbox we already sync — the sync
+          // then routes the "[TICK-######]" subject onto the ticket. This works
+          // with zero DNS. (The branded reply.colvy.com alias needs that domain's
+          // MX pointed at Resend inbound; until then it would route replies to a
+          // mailbox nothing receives, so we don't use it for Gmail.)
           try {
             const { sendGmail } = await import('@/lib/gmail')
-            const out = await sendGmail(channel, { to: toEmail, subject, body: text, html: bodyHtml, replyTo: ticketReplyTo })
+            const out = await sendGmail(channel, { to: toEmail, subject, body: text, html: bodyHtml })
             emailed = !out?.error
             if (out?.error) emailNote = `Saved, but the email could not be sent: ${out.error}`
           } catch (e: any) { emailNote = `Saved, but the email could not be sent: ${e.message}` }
         } else if (process.env.RESEND_API_KEY) {
+          // Domain mailbox (Resend): the branded alias on reply.colvy.com is the
+          // inbound path — the webhook routes it onto the ticket.
+          const ticketReplyTo = INBOUND_ENABLED
+            ? ticketAlias(ticket.ticket_number)
+            : (channel?.reply_to || channel?.inbound_address || '')
           const fromAddress = channel?.from_address || channel?.inbound_address || channel?.address || co?.support_email || co?.business_email || co?.email || ''
           const replyTo = ticketReplyTo
           if (!fromAddress) {
