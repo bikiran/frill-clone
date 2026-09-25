@@ -378,7 +378,12 @@ function WidgetContent() {
     }, 4000)
 
     return () => { supabase.removeChannel(ch); clearInterval(poll) }
-  }, [chatConvId])
+    // company?.id is in the deps so that a restored session (chatConvId comes
+    // back from localStorage before /api/widget-data has loaded the company)
+    // re-fetches its history the moment the company id is known — otherwise the
+    // initial fetch + the 4s poll both ran with companyId=undefined and the
+    // messages API returns nothing, so a reloaded chat looked empty.
+  }, [chatConvId, company?.id])
   const [feedback, setFeedback] = useState('')
   const [chatMessages, setChatMessages] = useState<any[]>([])
   const [attachments, setAttachments] = useState<string[]>([])
@@ -1809,7 +1814,7 @@ function WidgetContent() {
                         setChatConvId(conv.id)
                         // Persist so a page reload restores this chat
                         try {
-                          localStorage.setItem(`colvy-chat-${slug}`, JSON.stringify({ convId: conv.id, name: chatName, email: chatEmail }))
+                          localStorage.setItem(`colvy-chat-${slug}`, JSON.stringify({ convId: conv.id, name: chatName, email: chatEmail, companyId: company?.id || null }))
                         } catch {}
                         // Insert a system greeting
                         await fetch('/api/widget/message', {
