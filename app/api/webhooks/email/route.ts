@@ -6,6 +6,7 @@ import { passesRules } from '@/lib/gmail'
 import { logWebhookEvent } from '@/lib/webhook-log'
 import { logEnquiryReopened } from '@/lib/conversation-timeline'
 import { parseInboundAlias } from '@/lib/inbound-alias'
+import { uploadToR2, r2Configured } from '@/lib/r2'
 
 export const dynamic = 'force-dynamic'
 
@@ -61,6 +62,43 @@ function stripQuoted(text: string): string {
     out.push(line)
   }
   return out.join('\n').trim() || text.trim()
+}
+
+// Resend inbound webhooks carry only attachment METADATA, not content. To keep a
+// customer's files on the ticket we call Resend's Attachments API for the
+// received email, download each file, and store it on our own R2 → [{url,name,type}].
+async function hostResendAttachments(evt: any, companyId: string): Promise<any[]> {
+  try {
+    if (!process.env.RESEND_API_KEY || !r2Configured()) return []
+    const emailId = pick(evt, 'id', 'email_id', 'emailId')
+    if (!emailId) return []
+    // Skip the extra API call when the payload's metadata says there are none.
+    const meta = evt.attachments || evt.Attachments
+    if (Array.isArray(meta) && meta.length === 0) return []
+    const res = await fetch(`https://api.resend.com/emails/receiving/${emailId}/attachments`, {
+      headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}` },
+    })
+    if (!res.ok) return []
+    const j = await res.json().catch(() => ({}))
+    const list = j.data || j.attachments || []
+    const out: any[] = []
+    for (const a of list) {
+      try {
+        if (!a.download_url) continue
+        const dl = await fetch(a.download_url)
+        if (!dl.ok) continue
+        const bytes = Buffer.from(await dl.arrayBuffer())
+        if (!bytes.length || bytes.length > 20 * 1024 * 1024) continue
+        const name = a.filename || 'file'
+        const type = a.content_type || 'application/octet-stream'
+        const safe = String(name).replace(/[^\w.\-]/g, '_')
+        const key = `ticket-attachments/${companyId}/${emailId}-${safe}`
+        const url = await uploadToR2(key, bytes, type)
+        out.push({ url, name, type })
+      } catch { /* skip one bad attachment */ }
+    }
+    return out
+  } catch { return [] }
 }
 
 export async function POST(req: NextRequest) {
@@ -126,9 +164,11 @@ export async function POST(req: NextRequest) {
 
     // Ticket alias → append the customer's reply straight onto the ticket thread.
     if (ticket) {
+      const ticketAtts = await hostResendAttachments(evt, ticket.company_id)
       await db.from('ticket_messages').insert({
         ticket_id: ticket.id, company_id: ticket.company_id, kind: 'reply', direction: 'in',
         body: content, author_name: from.name || from.email, emailed: false,
+        attachments: ticketAtts,
       })
       const patch: any = { updated_at: new Date().toISOString() }
       if (['resolved', 'closed'].includes(String(ticket.status || ''))) patch.status = 'open'
@@ -251,10 +291,12 @@ export async function POST(req: NextRequest) {
         const { data: ticket } = await db.from('support_tickets')
           .select('id, status, conversation_id').eq('company_id', companyId).eq('ticket_number', ticketNumber).maybeSingle()
         if (ticket?.id) {
+          const ticketAtts = await hostResendAttachments(evt, companyId)
           await db.from('ticket_messages').insert({
             ticket_id: ticket.id, company_id: companyId,
             kind: 'reply', direction: 'in', body: content,
             author_name: from.name || from.email, emailed: false,
+            attachments: ticketAtts,
           })
           // Reopen a resolved/closed ticket (the customer is back), link the
           // conversation for cross-navigation, and bump it to the top.
