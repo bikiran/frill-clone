@@ -248,7 +248,7 @@ export default function ComparePage() {
       <MarketingNav dark={dark} onToggleDark={() => setDark(v => !v)} />
 
       {/* HERO */}
-      <section style={{ position: 'relative', textAlign: 'center', padding: '150px 24px 50px', background: dark ? 'linear-gradient(180deg,#10111b,#0a0b12 80%)' : `linear-gradient(180deg, ${accent}0d 0%, #ffffff 80%)` }}>
+      <section style={{ position: 'relative', textAlign: 'center', padding: 'clamp(100px, 13vw, 150px) 24px 50px', background: dark ? 'linear-gradient(180deg,#10111b,#0a0b12 80%)' : `linear-gradient(180deg, ${accent}0d 0%, #ffffff 80%)` }}>
         <Reveal>
           <a href="/compare" style={{ display: 'inline-block', fontSize: 12, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: accent, background: accent + '16', padding: '6px 14px', borderRadius: 999, textDecoration: 'none', marginBottom: 18 }}>← Compare</a>
           <h1 style={{ fontSize: 'clamp(34px, 5.4vw, 64px)', fontWeight: 900, letterSpacing: '-0.03em', lineHeight: 1.05, margin: '0 auto 16px', maxWidth: 900 }}>{c.heroTitle} <span style={{ color: accent }}>{c.heroAccent}</span></h1>
