@@ -530,6 +530,31 @@ export async function syncGmailChannel(channelId: string): Promise<{ imported: n
       email_attachments: attachmentsResolved,
     })
 
+    // Route ticket replies back onto the ticket. Agent ticket replies carry
+    // "[TICK-######]" in the subject; the customer's "Re:" keeps it, so when the
+    // reply lands in the connected mailbox we can thread it straight onto the
+    // ticket thread (not just the inbox conversation). Mirrors the inbound-email
+    // webhook — best-effort, never breaks the sync.
+    try {
+      const tm = /\[(TICK-\d+)\]/i.exec(subject || '')
+      if (tm) {
+        const ticketNumber = tm[1].toUpperCase()
+        const { data: ticket } = await db.from('support_tickets')
+          .select('id, status, conversation_id').eq('company_id', companyId).eq('ticket_number', ticketNumber).maybeSingle()
+        if (ticket?.id) {
+          await db.from('ticket_messages').insert({
+            ticket_id: ticket.id, company_id: companyId,
+            kind: 'reply', direction: 'in', body: content,
+            author_name: from.name || from.email, emailed: false,
+          })
+          const patch: any = { updated_at: new Date().toISOString() }
+          if (['resolved', 'closed'].includes(String(ticket.status || ''))) patch.status = 'open'
+          if (!ticket.conversation_id) patch.conversation_id = conv.id
+          await db.from('support_tickets').update(patch).eq('id', ticket.id)
+        }
+      }
+    } catch (e) { console.error('[gmail sync ticket route]', e) }
+
     imported++
   }
 

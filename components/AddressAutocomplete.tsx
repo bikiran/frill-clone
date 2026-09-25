@@ -86,7 +86,11 @@ async function photonSuggest(q: string): Promise<Suggestion[]> {
     .map((f: any) => {
       const p = f.properties || {}
       const line1 = [p.housenumber, p.street || p.name].filter(Boolean).join(' ')
-      const city = p.city || p.town || p.village || p.county || ''
+      // Prefer the actual suburb (OSM puts it in `district`/`locality`/`suburb`)
+      // over the metropolitan `city`. Otherwise a Melbourne address came back as
+      // "…, Melbourne, Victoria" instead of "…, Dallas, Victoria".
+      const suburb = p.district || p.locality || p.suburb || p.neighbourhood || ''
+      const city = suburb || p.city || p.town || p.village || p.county || ''
       const bits = [line1 || p.name, city, p.state, p.postcode, p.country].filter(Boolean)
       const parts: AddressParts = { formatted: bits.join(', '), line1: line1 || p.name || '', city, state: p.state || '', postcode: p.postcode || '', country: p.country || '' }
       return parts.formatted ? { label: parts.formatted, parts } : null
