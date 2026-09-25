@@ -38,6 +38,23 @@ export interface AddressParts {
   country?: string
 }
 
+// Keyless fallback: Photon (OpenStreetMap) autocomplete — no API key, CORS-open.
+// Used when NEXT_PUBLIC_GOOGLE_API_KEY isn't set, so address autocomplete works
+// out of the box everywhere. Biased to AU but returns anywhere.
+async function photonSuggest(q: string): Promise<AddressParts[]> {
+  const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=6&lang=en&lat=-37.8&lon=144.9`
+  const res = await fetch(url)
+  if (!res.ok) return []
+  const d = await res.json().catch(() => ({}))
+  return (d.features || []).map((f: any) => {
+    const p = f.properties || {}
+    const line1 = [p.housenumber, p.street || p.name].filter(Boolean).join(' ')
+    const city = p.city || p.town || p.village || p.county || ''
+    const bits = [line1 || p.name, city, p.state, p.postcode, p.country].filter(Boolean)
+    return { formatted: bits.join(', '), line1: line1 || p.name || '', city, state: p.state || '', postcode: p.postcode || '', country: p.country || '' } as AddressParts
+  }).filter((a: AddressParts) => a.formatted)
+}
+
 export default function AddressAutocomplete({
   value, onChange, onSelect, placeholder, style, className,
 }: {
@@ -51,6 +68,11 @@ export default function AddressAutocomplete({
   const inputRef = useRef<HTMLInputElement>(null)
   const acRef = useRef<any>(null)
   const [ready, setReady] = useState(false)
+  const [useGoogle, setUseGoogle] = useState(true)
+  // Keyless fallback state (Photon dropdown).
+  const [suggestions, setSuggestions] = useState<AddressParts[]>([])
+  const [openList, setOpenList] = useState(false)
+  const debRef = useRef<any>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -88,29 +110,61 @@ export default function AddressAutocomplete({
         onSelect?.(parts)
       })
       setReady(true)
-    }).catch(() => { /* degrade to plain input */ })
+    }).catch(() => { setUseGoogle(false) /* no key → keyless dropdown */ })
     return () => { cancelled = true }
   }, [])
 
+  // Keyless typing → debounced Photon suggestions.
+  const onType = (v: string) => {
+    onChange(v)
+    if (useGoogle) return
+    if (debRef.current) clearTimeout(debRef.current)
+    if (!v.trim() || v.trim().length < 3) { setSuggestions([]); setOpenList(false); return }
+    debRef.current = setTimeout(async () => {
+      try { const s = await photonSuggest(v.trim()); setSuggestions(s); setOpenList(s.length > 0) } catch { setSuggestions([]) }
+    }, 250)
+  }
+
+  const pick = (a: AddressParts) => {
+    onChange(a.formatted)
+    onSelect?.(a)
+    setSuggestions([]); setOpenList(false)
+  }
+
   return (
-    <input
-      ref={inputRef}
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      placeholder={placeholder || (ready ? 'Start typing an address…' : 'Address')}
-      style={style}
-      className={className}
-      // Stop the browser's / a password manager's own address autofill from
-      // covering Google's dropdown with a "!" bubble and blocking further typing.
-      // A random name + these vendor opt-outs suppress Chrome, 1Password & LastPass.
-      autoComplete="off"
-      autoCorrect="off"
-      autoCapitalize="off"
-      spellCheck={false}
-      name={`addr-${Math.random().toString(36).slice(2, 9)}`}
-      data-1p-ignore="true"
-      data-lpignore="true"
-      data-form-type="other"
-    />
+    <div style={{ position: 'relative' }}>
+      <input
+        ref={inputRef}
+        value={value}
+        onChange={(e) => onType(e.target.value)}
+        onFocus={() => { if (!useGoogle && suggestions.length) setOpenList(true) }}
+        onBlur={() => setTimeout(() => setOpenList(false), 150)}
+        placeholder={placeholder || (ready ? 'Start typing an address…' : 'Address')}
+        style={style}
+        className={className}
+        // Stop the browser's / a password manager's own address autofill from
+        // covering the dropdown with a "!" bubble and blocking further typing.
+        autoComplete="off"
+        autoCorrect="off"
+        autoCapitalize="off"
+        spellCheck={false}
+        name={`addr-${Math.random().toString(36).slice(2, 9)}`}
+        data-1p-ignore="true"
+        data-lpignore="true"
+        data-form-type="other"
+      />
+      {!useGoogle && openList && suggestions.length > 0 && (
+        <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 60, marginTop: 4, background: '#fff', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 12px 32px rgba(0,0,0,0.14)', overflow: 'hidden', maxHeight: 240, overflowY: 'auto' }}>
+          {suggestions.map((a, i) => (
+            <button key={i} type="button" onMouseDown={(e) => { e.preventDefault(); pick(a) }}
+              style={{ display: 'block', width: '100%', textAlign: 'left', padding: '9px 12px', background: 'none', border: 'none', borderBottom: i < suggestions.length - 1 ? '1px solid var(--border)' : 'none', fontSize: 13.5, color: 'var(--ink)', cursor: 'pointer', fontFamily: 'inherit' }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--canvas)')}
+              onMouseLeave={(e) => (e.currentTarget.style.background = 'none')}>
+              {a.formatted}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }
