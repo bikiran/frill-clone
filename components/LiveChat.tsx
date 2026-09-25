@@ -20,15 +20,20 @@ export default function LiveChat({ slug: slugProp }: { slug?: string } = {}) {
     if (slugProp) { setSlug(slugProp); return }
     if (typeof window !== 'undefined') {
       const hostname = window.location.hostname
-      if (hostname.endsWith('.colvy.com') && hostname !== 'colvy.com') {
-        setSlug(hostname.replace('.colvy.com', ''))
-      } else if (hostname && !hostname.includes('localhost') && !hostname.endsWith('vercel.app') && hostname !== 'colvy.com') {
-        // Custom domain — resolve the slug from the domain so the iframe loads
-        // this company's board (and its brand), not an unbranded widget.
+      const isLocal = hostname.includes('localhost') || hostname.endsWith('vercel.app')
+      if (hostname && !isLocal && hostname !== 'colvy.com' && hostname !== 'www.colvy.com') {
+        // Resolve the workspace from the host itself. This correctly maps a
+        // company's help/board domain (e.g. help.colvy.com → the Colvy workspace)
+        // AND a plain <slug>.colvy.com board — instead of blindly treating the
+        // first label as the slug, which made help.colvy.com resolve to a
+        // non-existent "help" workspace (unbranded widget, "companyId is required").
         fetch(`/api/widget-data?domain=${encodeURIComponent(hostname)}`)
           .then(r => r.ok ? r.json() : null)
-          .then(d => { if (d?.company?.slug) setSlug(d.company.slug) })
-          .catch(() => {})
+          .then(d => {
+            if (d?.company?.slug) setSlug(d.company.slug)
+            else if (hostname.endsWith('.colvy.com')) setSlug(hostname.replace('.colvy.com', ''))
+          })
+          .catch(() => { if (hostname.endsWith('.colvy.com')) setSlug(hostname.replace('.colvy.com', '')) })
       }
     }
   }, [slugProp])
