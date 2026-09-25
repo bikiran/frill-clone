@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { logSuperAdminAudit } from '@/lib/super-admin-audit'
 
 export const dynamic = 'force-dynamic'
 
@@ -53,6 +54,12 @@ export async function POST(req: NextRequest) {
         }
         return NextResponse.json({ error: error.message }, { status: 500 })
       }
+      await logSuperAdminAudit(db, {
+        adminId: u.user.id, adminEmail: u.user.email, companyId: companyId || null,
+        action: 'impersonate_start',
+        summary: `Entered ${name || slug} (${mode === 'read_only' ? 'read-only' : 'full'}, ${mins}m)`,
+        detail: { slug, mode: mode === 'read_only' ? 'read_only' : 'full', minutes: mins, reason: String(reason).trim(), sessionId: data?.id },
+      })
       return NextResponse.json({ ok: true, id: data?.id, expiresAt: data?.expires_at })
     }
 
@@ -62,9 +69,15 @@ export async function POST(req: NextRequest) {
       const email = await callerEmail(req, db)
       const { id } = body
       if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 })
-      const { data: sess } = await db.from('impersonation_sessions').select('admin_email, ended_at').eq('id', id).maybeSingle()
+      const { data: sess } = await db.from('impersonation_sessions').select('admin_id, admin_email, company_id, company_name, company_slug, ended_at').eq('id', id).maybeSingle()
       if (sess && !sess.ended_at && (email === sess.admin_email || email === SUPER_ADMIN)) {
         await db.from('impersonation_sessions').update({ ended_at: new Date().toISOString() }).eq('id', id)
+        await logSuperAdminAudit(db, {
+          adminId: sess.admin_id || null, adminEmail: email || sess.admin_email || null, companyId: sess.company_id || null,
+          action: 'impersonate_end',
+          summary: `Left ${sess.company_name || sess.company_slug || 'workspace'}`,
+          detail: { sessionId: id },
+        })
       }
       return NextResponse.json({ ok: true })
     }

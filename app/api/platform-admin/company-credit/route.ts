@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import Stripe from 'stripe'
 import { creditBalanceCents, ensureReferralCode, REFERRAL_CURRENCY } from '@/lib/referrals'
+import { logSuperAdminAudit } from '@/lib/super-admin-audit'
 
 export const dynamic = 'force-dynamic'
 
@@ -129,6 +130,14 @@ export async function POST(req: NextRequest) {
         category: 'billing',
       })
     } catch {}
+
+    // Super-admin audit log.
+    await logSuperAdminAudit(db, {
+      adminEmail: who.email || null, companyId,
+      action: 'credit_grant',
+      summary: `${amountCents >= 0 ? 'Credited' : 'Clawed back'} ${amountCents >= 0 ? '+' : ''}$${(amountCents / 100).toFixed(2)} ${currency.toUpperCase()}`,
+      detail: { amountCents, currency, reason, appliedToStripe },
+    })
 
     const balanceCents = await creditBalanceCents(db, companyId)
     return NextResponse.json({ ok: true, balanceCents, appliedToStripe })
