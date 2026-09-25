@@ -216,6 +216,28 @@ async function resolveInlineImages(
   return { html: out, attachments: [...attachments, ...extra] }
 }
 
+// Fetch a Gmail message's file attachments and store them to R2, returning
+// hosted [{ url, name, type }]. Used for ticket replies so a customer's file
+// (photo, PDF, receipt) is captured on the ticket with a real URL the ticket
+// page can render — the inbox serves Gmail attachments via a proxy using the
+// attachmentId, but the ticket thread has no such context.
+async function hostGmailAttachments(db: any, messageId: string, atts: any[], companyId: string, auth: any): Promise<any[]> {
+  const out: any[] = []
+  for (const a of atts || []) {
+    try {
+      if (a.url) { out.push({ url: a.url, name: a.name || 'file', type: a.mime || a.type || 'application/octet-stream' }); continue }
+      if (!a.attachmentId || (a.size && a.size > MAX_INLINE_BYTES)) continue
+      const bytes = await fetchGmailAttachment(messageId, a.attachmentId, auth)
+      if (!bytes) continue
+      const safe = String(a.name || 'file').replace(/[^\w.\-]/g, '_')
+      const key = `ticket-attachments/${companyId}/${messageId}-${String(a.attachmentId).slice(-10)}-${safe}`
+      const url = await storeInlineImage(db, key, bytes, a.mime || 'application/octet-stream')
+      if (url) out.push({ url, name: a.name || 'file', type: a.mime || 'application/octet-stream' })
+    } catch { /* skip a bad attachment, never fail the sync */ }
+  }
+  return out
+}
+
 // One-off backfill: re-process already-ingested emails whose body still holds
 // unresolved cid: images, resolving them the same way new mail is. Idempotent —
 // a fully-resolved message no longer matches the cid: filter, and the
@@ -542,10 +564,13 @@ export async function syncGmailChannel(channelId: string): Promise<{ imported: n
         const { data: ticket } = await db.from('support_tickets')
           .select('id, status, conversation_id').eq('company_id', companyId).eq('ticket_number', ticketNumber).maybeSingle()
         if (ticket?.id) {
+          // Keep any files the customer attached, hosted so the ticket renders them.
+          const ticketAtts = await hostGmailAttachments(db, m.id, attachmentsResolved, companyId, auth)
           await db.from('ticket_messages').insert({
             ticket_id: ticket.id, company_id: companyId,
             kind: 'reply', direction: 'in', body: content,
             author_name: from.name || from.email, emailed: false,
+            attachments: ticketAtts,
           })
           const patch: any = { updated_at: new Date().toISOString() }
           if (['resolved', 'closed'].includes(String(ticket.status || ''))) patch.status = 'open'

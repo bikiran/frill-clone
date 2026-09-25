@@ -150,6 +150,24 @@ export default function TicketDetail() {
                   <span style={{ fontSize: 12, color: 'var(--slate)', marginLeft: 'auto' }}>{new Date(m.created_at).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
                 </div>
                 <p style={{ margin: 0, fontSize: 14, color: 'var(--ink)', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{m.body}</p>
+                {Array.isArray(m.attachments) && m.attachments.length > 0 && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
+                    {m.attachments.map((a: any, i: number) => {
+                      const isImg = /^image\//.test(a.type || '') || /\.(png|jpe?g|gif|webp|avif)$/i.test(a.name || '')
+                      return isImg ? (
+                        <a key={i} href={a.url} target="_blank" rel="noreferrer" title={a.name}>
+                          <img src={a.url} alt={a.name || 'attachment'} style={{ maxWidth: 160, maxHeight: 160, borderRadius: 8, border: '1px solid var(--border)', objectFit: 'cover', display: 'block' }} />
+                        </a>
+                      ) : (
+                        <a key={i} href={a.url} target="_blank" rel="noreferrer" download
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--canvas)', fontSize: 13, color: 'var(--ink)', textDecoration: 'none', maxWidth: 240 }}>
+                          <span aria-hidden>📎</span>
+                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.name || 'attachment'}</span>
+                        </a>
+                      )
+                    })}
+                  </div>
+                )}
               </div>
             )
           })}
