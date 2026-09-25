@@ -1834,7 +1834,7 @@ function WidgetContent() {
                       }
                     } catch (err: any) {
                       console.error('Widget chat start error:', err)
-                      setChatCreateError('Could not start chat — please try again.')
+                      setChatCreateError(err?.message ? `Couldn't start chat: ${err.message}` : 'Could not start chat — please try again.')
                     }
                     setChatCreating(false)
                   }}
