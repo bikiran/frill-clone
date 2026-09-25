@@ -2636,6 +2636,19 @@ function CompaniesPage() {
 
   const [imp, setImp] = useState<any>(null)
   const [detailCo, setDetailCo] = useState<any>(null)
+
+  // Deep-link: "#companies/<id-or-slug>" opens that company's detail directly
+  // (used by the "View workspace" link on a contact in any admin workspace).
+  useEffect(() => {
+    if (loading || detailCo) return
+    try {
+      const parts = window.location.hash.replace(/^#/, '').split('/')
+      if (parts[0] === 'companies' && parts[1]) {
+        const co = companies.find(c => c.id === parts[1] || c.slug === parts[1])
+        if (co) setDetailCo(co)
+      }
+    } catch {}
+  }, [loading])
   const startImpersonation = async () => {
     if (!imp?.reason?.trim()) { setImp((s: any) => ({ ...s, err: 'A reason is required.' })); return }
     setImp((s: any) => ({ ...s, busy: true, err: '' }))
@@ -4033,8 +4046,10 @@ export default function SuperAdmin() {
       if (t === 'dark') setDarkState(true)
     } catch {}
     try {
+      // Hash may carry a sub-target (e.g. "companies/<id>" deep-links straight to
+      // a company's detail) — the page key is just the first segment.
       const h = window.location.hash.replace(/^#/, '')
-      if (h) setPageState(h)
+      if (h) setPageState(h.split('/')[0])
     } catch {}
   }, [])
 
