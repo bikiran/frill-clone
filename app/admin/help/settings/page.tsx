@@ -20,6 +20,7 @@ export default function HelpSettingsPage() {
   const [tab, setTab] = useState('access')
   const [companyId, setCompanyId] = useState<string | null>(null)
   const [slug, setSlug] = useState('')
+  const [helpDomain, setHelpDomain] = useState('')
   const [saving, setSaving] = useState(false)
   const [saveMsg, setSaveMsg] = useState('')
 
@@ -51,15 +52,15 @@ export default function HelpSettingsPage() {
         const h = window.location.hostname
         if (h.endsWith('.colvy.com') && h !== 'colvy.com') {
           s = h.replace('.colvy.com', '')
-          const { data } = await (supabase as any).from('companies').select('id, slug').eq('slug', s).maybeSingle()
-          if (data) { cid = data.id; s = data.slug }
+          const { data } = await (supabase as any).from('companies').select('id, slug, help_domain').eq('slug', s).maybeSingle()
+          if (data) { cid = data.id; s = data.slug; if (data.help_domain) setHelpDomain(data.help_domain) }
         }
       }
       if (!cid) {
         const { data: { session } } = await supabase.auth.getSession()
         if (session?.user) {
-          const { data } = await (supabase as any).from('companies').select('id, slug').eq('owner_id', session.user.id).maybeSingle()
-          if (data) { cid = data.id; s = data.slug }
+          const { data } = await (supabase as any).from('companies').select('id, slug, help_domain').eq('owner_id', session.user.id).maybeSingle()
+          if (data) { cid = data.id; s = data.slug; if (data.help_domain) setHelpDomain(data.help_domain) }
         }
       }
       setCompanyId(cid)
@@ -148,7 +149,9 @@ export default function HelpSettingsPage() {
     </button>
   )
 
-  const helpUrl = slug ? `https://${slug}.colvy.com/help?theme=${theme}` : ''
+  // Prefer the configured custom help domain (e.g. help.colvy.com) so the
+  // preview matches what customers actually see; fall back to the colvy subdomain.
+  const helpUrl = helpDomain ? `https://${helpDomain}/help?theme=${theme}` : (slug ? `https://${slug}.colvy.com/help?theme=${theme}` : '')
 
   return (
     <div style={{ maxWidth: 1000, margin: '0 auto', padding: '28px 32px', fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif' }}>
@@ -348,7 +351,7 @@ export default function HelpSettingsPage() {
               <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#28c840' }} />
               <span style={{ flex: 1, textAlign: 'center', fontSize: 12, color: theme === 'dark' ? '#888' : '#9ca3af', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-                {slug}.colvy.com/help
+                {helpDomain || `${slug}.colvy.com`}/help
               </span>
             </div>
             {helpUrl ? (
