@@ -27,6 +27,7 @@ import { useRouter } from 'next/navigation'
 import MobileNav from '@/components/MobileNav'
 import FeedbackButton from '@/components/FeedbackButton'
 import ColvyAssistant from '@/components/ColvyAssistant'
+import SuperAdminBar from '@/components/SuperAdminBar'
 import { canUseFeature, canAccessPath, featureForPath, hasFullAccess, type PermissionMap } from '@/lib/permissions'
 
 const SUPER_ADMIN_EMAIL = 'bishalstha76@gmail.com'
@@ -1026,6 +1027,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       <ColvyAssistant companyId={company?.id || null} userId={user?.id || null} agentName={user?.user_metadata?.display_name || user?.email?.split('@')[0]} />
       {/* Background uploads keep running as you move around the app. */}
       <UploadQueueIndicator />
+      {/* In-workspace Super-Admin bar — renders only for a platform super-admin
+          (the summary API 403s for everyone else). Lets us see/act on this
+          company's plan, trial and usage without leaving their admin. */}
+      <SuperAdminBar companyId={company?.id || null} />
     </div>
   )
 }

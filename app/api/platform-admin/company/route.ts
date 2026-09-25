@@ -22,6 +22,48 @@ async function requireSuperAdmin(req: NextRequest, db: any): Promise<boolean> {
   } catch { return false }
 }
 
+// GET ?companyId= : a compact summary for the in-workspace Super-Admin bar —
+// the plan, trial state, and a few live usage counts. Super-admin only; returns
+// 403 for everyone else so the bar simply doesn't render for normal admins.
+export async function GET(req: NextRequest) {
+  try {
+    const db = admin()
+    if (!(await requireSuperAdmin(req, db))) {
+      return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+    }
+    const companyId = req.nextUrl.searchParams.get('companyId')
+    if (!companyId) return NextResponse.json({ error: 'companyId required' }, { status: 400 })
+
+    const { data: co } = await db.from('companies')
+      .select('id, name, slug, plan, trial_ends_at, created_at, business_phone, owner_id')
+      .eq('id', companyId).maybeSingle()
+    if (!co) return NextResponse.json({ error: 'Company not found' }, { status: 404 })
+
+    const count = async (table: string, build?: (q: any) => any) => {
+      try {
+        let q = db.from(table).select('id', { count: 'exact', head: true }).eq('company_id', companyId)
+        if (build) q = build(q)
+        const { count } = await q
+        return count || 0
+      } catch { return 0 }
+    }
+    const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0)
+    const [team, contacts, openConvos, smsMonth] = await Promise.all([
+      count('team_members'),
+      count('contacts'),
+      count('conversations', (q: any) => q.not('status', 'in', '("closed","resolved")')),
+      count('messages', (q: any) => q.eq('delivery_channel', 'sms').gte('created_at', monthStart.toISOString())),
+    ])
+
+    return NextResponse.json({
+      company: co,
+      usage: { team, contacts, openConvos, smsMonth },
+    })
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message }, { status: 500 })
+  }
+}
+
 // POST: update a company's core fields from the platform admin.
 // Handles slug uniqueness and owner reassignment safely.
 export async function POST(req: NextRequest) {
@@ -34,7 +76,7 @@ export async function POST(req: NextRequest) {
     if (!companyId || !patch) return NextResponse.json({ error: 'Missing companyId or patch' }, { status: 400 })
 
     const allowed: any = {}
-    for (const f of ['name', 'slug', 'plan', 'business_phone', 'assigned_admin_email', 'board_domain', 'help_domain', 'accent_color', 'notes', 'number_provider', 'free_number_credits']) {
+    for (const f of ['name', 'slug', 'plan', 'business_phone', 'assigned_admin_email', 'board_domain', 'help_domain', 'accent_color', 'notes', 'number_provider', 'free_number_credits', 'trial_ends_at']) {
       if (patch[f] !== undefined) allowed[f] = patch[f]
     }
     // Which carrier backs this company's number provisioning (Telnyx / Twilio).
