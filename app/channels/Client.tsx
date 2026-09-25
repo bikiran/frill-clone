@@ -80,7 +80,7 @@ export default function ChannelsHub() {
       <MarketingNav dark={dark} onToggleDark={() => setDark(v => !v)} />
 
       {/* HERO */}
-      <section style={{ position: 'relative', textAlign: 'center', maxWidth: 900, margin: '0 auto', padding: '150px 24px 40px' }}>
+      <section style={{ position: 'relative', textAlign: 'center', maxWidth: 900, margin: '0 auto', padding: 'clamp(100px, 13vw, 150px) 24px 40px' }}>
         <div aria-hidden style={{ position: 'absolute', inset: 0, backgroundImage: gridImg, backgroundSize: '54px 54px', WebkitMaskImage: 'radial-gradient(ellipse 60% 60% at 50% 35%, #000 40%, transparent 80%)', maskImage: 'radial-gradient(ellipse 60% 60% at 50% 35%, #000 40%, transparent 80%)', pointerEvents: 'none' }} />
         <Reveal>
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 14px', borderRadius: 999, background: ACCENT + '18', color: ACCENT, fontSize: 12.5, fontWeight: 800, letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: 18 }}><FeatureIcon name="inbox" color={ACCENT} size={15} />Channels</span>

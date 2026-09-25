@@ -138,7 +138,7 @@ export default function PricingPage() {
       <MarketingNav dark={dark} onToggleDark={() => setDark(v => !v)} />
 
       {/* HEADER */}
-      <section style={{ position: 'relative', padding: '150px 24px 40px', textAlign: 'center', overflow: 'hidden', background: dark ? 'linear-gradient(180deg, #10111b 0%, #0a0b12 70%)' : 'linear-gradient(180deg, #fff4ef 0%, #ffffff 80%)' }}>
+      <section style={{ position: 'relative', padding: 'clamp(100px, 13vw, 150px) 24px 40px', textAlign: 'center', overflow: 'hidden', background: dark ? 'linear-gradient(180deg, #10111b 0%, #0a0b12 70%)' : 'linear-gradient(180deg, #fff4ef 0%, #ffffff 80%)' }}>
         <Reveal>
           <h1 style={{ fontSize: 'clamp(42px, 6vw, 78px)', fontWeight: 900, letterSpacing: '-0.035em', lineHeight: 1.0, margin: '0 0 16px' }}>Simple, <span style={{ color: CORAL }}>honest</span> pricing</h1>
           <p style={{ fontSize: 'clamp(16px, 1.9vw, 20px)', color: muted, maxWidth: 560, margin: '0 auto 28px', lineHeight: 1.6 }}>Start free. Upgrade as your business grows. Software is predictable; communication usage is billed separately.</p>

@@ -68,7 +68,7 @@ export default function StatusPage() {
 
       <MarketingNav dark={dark} onToggleDark={() => setDark(v => !v)} />
 
-      <section style={{ maxWidth: 820, margin: '0 auto', padding: '150px 24px 20px' }}>
+      <section style={{ maxWidth: 820, margin: '0 auto', padding: 'clamp(100px, 13vw, 150px) 24px 20px' }}>
         {/* Overall banner */}
         <Reveal>
           <div style={{ borderRadius: 22, overflow: 'hidden', border: `1px solid ${GREEN}44`, background: `linear-gradient(150deg, ${GREEN}1a, ${GREEN}08)`, padding: 'clamp(24px, 4vw, 34px)', display: 'flex', alignItems: 'center', gap: 18, flexWrap: 'wrap' }}>

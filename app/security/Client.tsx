@@ -70,7 +70,7 @@ export default function SecurityPage() {
       <MarketingNav dark={dark} onToggleDark={() => setDark(v => !v)} />
 
       {/* HERO */}
-      <section style={{ position: 'relative', textAlign: 'center', padding: '150px 24px 26px', maxWidth: 860, margin: '0 auto' }}>
+      <section style={{ position: 'relative', textAlign: 'center', padding: 'clamp(100px, 13vw, 150px) 24px 26px', maxWidth: 860, margin: '0 auto' }}>
         <div aria-hidden style={{ position: 'absolute', inset: 0, backgroundImage: gridImg, backgroundSize: '54px 54px', WebkitMaskImage: 'radial-gradient(ellipse 70% 70% at 50% 30%, #000 40%, transparent 80%)', maskImage: 'radial-gradient(ellipse 70% 70% at 50% 30%, #000 40%, transparent 80%)', pointerEvents: 'none' }} />
         <Reveal>
           <span style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 74, height: 74, borderRadius: 22, background: `linear-gradient(150deg, ${CORAL}, ${CORAL}bb)`, color: '#fff', marginBottom: 22, boxShadow: `0 18px 44px ${CORAL}55`, animation: 'seFloat 6s ease-in-out infinite' }}><FeatureIcon name="lock" color="#fff" size={34} /></span>

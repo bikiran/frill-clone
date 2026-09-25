@@ -139,7 +139,7 @@ export default function ChangelogPage() {
       <MarketingNav dark={dark} onToggleDark={() => setDark(v => !v)} />
 
       {/* HEADER */}
-      <section style={{ position: 'relative', textAlign: 'center', padding: '150px 24px 20px', maxWidth: 900, margin: '0 auto' }}>
+      <section style={{ position: 'relative', textAlign: 'center', padding: 'clamp(100px, 13vw, 150px) 24px 20px', maxWidth: 900, margin: '0 auto' }}>
         <div aria-hidden style={{ position: 'absolute', inset: 0, backgroundImage: gridImg, backgroundSize: '54px 54px', WebkitMaskImage: 'radial-gradient(ellipse 70% 70% at 50% 30%, #000 40%, transparent 80%)', maskImage: 'radial-gradient(ellipse 70% 70% at 50% 30%, #000 40%, transparent 80%)', pointerEvents: 'none' }} />
         <Reveal>
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 14px', borderRadius: 999, background: CORAL + '18', color: CORAL, fontSize: 12.5, fontWeight: 800, letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: 18 }}><FeatureIcon name="megaphone" color={CORAL} size={15} />Changelog</span>
