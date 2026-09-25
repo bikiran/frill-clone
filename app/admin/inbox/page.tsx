@@ -39,6 +39,7 @@ import StoryReplyPreview from '@/components/StoryReplyPreview'
 import CustomerAddresses from '@/components/CustomerAddresses'
 import DoaPanel from '@/components/DoaPanel'
 import CreateOrderPanel from '@/components/CreateOrderPanel'
+import SuperAdminContactWorkspaces from '@/components/SuperAdminContactWorkspaces'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Conversation = {
@@ -10058,6 +10059,12 @@ export default function InboxPage() {
                         <p style={{ margin: '6px 0 0', fontSize: 11, color: 'var(--slate)', lineHeight: 1.5 }}>On an incoming call from this customer, this person rings first; if they don’t pick up, everyone else rings.</p>
                       </div>
                     )}
+
+                    {/* ── Super-Admin: workspaces this contact administers ───
+                        Renders only for a platform super-admin (the lookup API
+                        403s for everyone else). Links to the company's detail in
+                        the Console. */}
+                    <SuperAdminContactWorkspaces email={(contact as any)?.email || null} />
 
                     {/* ── Notes ─────────────────────────────────────────────
                         The same conversation_notes shown in the Timeline tab —
