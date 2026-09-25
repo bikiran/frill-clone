@@ -663,7 +663,16 @@ export default function AppChrome({
   // the marketing/board nav must never render on top of it (regardless of the
   // path the proxy serves it under). Whole host is full-page.
   const isPlatformHost = mounted && typeof window !== 'undefined' && window.location.hostname === 'admin.colvy.com'
-  const isFullPage = isEmbed || isMarketingRoot || isFullPageRoute || isPlatformHost
+  // Before mount we can't tell a marketing-host "/" (colvy.com, full-page landing)
+  // from a board-host "/" (the ideas board, which wants the app header). Rendering
+  // the app header on the server for colvy.com/ and then removing it once
+  // `isMarketingRoot` resolves is exactly the load "flash" (a ghost of the app nav
+  // over the landing's own nav). Treat "/" as full-page until mounted: the
+  // marketing root then never shows the app header (no flash); the board home just
+  // gains its header a beat later once the host is known. Same value on the server
+  // and the first client render, so there's no hydration mismatch.
+  const isRootPending = !mounted && pathname === '/'
+  const isFullPage = isEmbed || isMarketingRoot || isFullPageRoute || isPlatformHost || isRootPending
 
   if (isFullPage) {
     // Colvy's own prospects need a way to reach us from the marketing site. Show

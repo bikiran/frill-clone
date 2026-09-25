@@ -130,10 +130,14 @@ export default function LiveChat({ slug: slugProp }: { slug?: string } = {}) {
         <div
           style={{
             position: 'fixed',
+            // Fit within the viewport on phones: cap width/height to the screen and
+            // never let the panel run off the top or sides. On desktop it stays the
+            // usual 384×600 floating panel above the launcher.
             bottom: 88,
             right: 24,
-            width: 384,
-            height: 600,
+            width: 'min(384px, calc(100vw - 48px))',
+            height: 'min(600px, calc(100dvh - 112px))',
+            maxHeight: 'calc(100dvh - 112px)',
             borderRadius: 16,
             boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
             overflow: 'hidden',
