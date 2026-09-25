@@ -39,9 +39,17 @@ export async function GET(req: NextRequest) {
     if (domain) {
       try {
         const db = getDb()
+        // A company's custom help/board domain wins — this is what makes
+        // help.colvy.com resolve to the Colvy workspace rather than the literal
+        // "help" subdomain.
         const { data: co } = await (db as any).from('companies')
           .select('slug').or(`help_domain.eq.${domain},board_domain.eq.${domain}`).maybeSingle()
         if (co?.slug) slug = co.slug
+        // Otherwise a plain <slug>.colvy.com host maps to that slug.
+        if (!slug && domain.endsWith('.colvy.com')) {
+          const sub = domain.replace('.colvy.com', '')
+          if (sub && sub !== 'www') slug = sub
+        }
       } catch {}
     }
   }
