@@ -9805,13 +9805,20 @@ export default function InboxPage() {
                       <div key={field}>
                         <label style={{ fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 3 }}>{label}</label>
                         {field === 'address' ? (
-                          // Google address lookup. Picking a suggestion fills the
-                          // street line here and splits city/state/postcode/
-                          // country into their own fields, so nothing is stored
-                          // twice.
-                          // A plain, always-typeable input — the Google Places
-                          // widget was intermittently blocking input here.
-                          <input type="text" value={(editContact as any).address || ''} onChange={e => setEditContact(c => ({ ...c, address: e.target.value }))}
+                          // Address lookup (keyless by default; Google when a key is
+                          // set). Picking a suggestion fills the street line and
+                          // splits city/state/postcode/country into their own fields.
+                          // The custom dropdown never blocks typing.
+                          <AddressAutocomplete value={(editContact as any).address || ''}
+                            onChange={v => setEditContact(c => ({ ...c, address: v }))}
+                            onSelect={(parts) => setEditContact(c => ({
+                              ...c,
+                              address: parts.line1 || parts.formatted,
+                              city: parts.city || (c as any).city,
+                              state: parts.state || (c as any).state,
+                              postcode: parts.postcode || (c as any).postcode,
+                              country: parts.country || (c as any).country,
+                            }))}
                             style={{ ...inp, fontSize: 12 }} />
                         ) : (
                           <input type={type} value={(editContact as any)[field] || ''} onChange={e => setEditContact(c => ({ ...c, [field]: e.target.value }))}
@@ -9926,9 +9933,18 @@ export default function InboxPage() {
                           </p>
                           {editField === field ? (
                             <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                              {field === 'address' ? (
+                                <div style={{ flex: 1 }}>
+                                  <AddressAutocomplete value={editFieldValue}
+                                    onChange={setEditFieldValue}
+                                    onSelect={(parts) => { setEditFieldValue(parts.formatted); saveSingleField('address', parts.formatted) }}
+                                    style={{ ...inp, fontSize: 12, padding: '5px 8px' }} />
+                                </div>
+                              ) : (
                               <input autoFocus value={editFieldValue} onChange={e => setEditFieldValue(e.target.value)}
                                 onKeyDown={e => { if (e.key === 'Enter') saveSingleField(field, editFieldValue); if (e.key === 'Escape') setEditField(null) }}
                                 style={{ ...inp, fontSize: 12, padding: '5px 8px' }} />
+                              )}
                               <button type="button" onClick={() => saveSingleField(field, editFieldValue)} style={fieldBtn('#059669')} title="Save">
                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
                               </button>
