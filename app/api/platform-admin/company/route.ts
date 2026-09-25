@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { logSuperAdminAudit } from '@/lib/super-admin-audit'
 
 const SUPER_ADMIN = 'bishalstha76@gmail.com'
 
@@ -20,6 +21,15 @@ async function requireSuperAdmin(req: NextRequest, db: any): Promise<boolean> {
     const { data } = await db.auth.getUser(token)
     return data?.user?.email === SUPER_ADMIN
   } catch { return false }
+}
+
+// Resolve the acting super-admin's identity for the audit trail.
+async function actor(req: NextRequest, db: any): Promise<{ id: string | null; email: string | null }> {
+  try {
+    const token = (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '')
+    const { data } = await db.auth.getUser(token)
+    return { id: data?.user?.id || null, email: data?.user?.email || null }
+  } catch { return { id: null, email: null } }
 }
 
 // GET ?companyId= : a compact summary for the in-workspace Super-Admin bar —
@@ -107,8 +117,27 @@ export async function POST(req: NextRequest) {
       allowed.owner_id = match.id
     }
 
+    // Snapshot the "before" for a meaningful audit diff.
+    const { data: before } = await db.from('companies').select('plan, trial_ends_at').eq('id', companyId).maybeSingle()
+
     const { data, error } = await db.from('companies').update(allowed).eq('id', companyId).select().maybeSingle()
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+    // Audit: derive the most meaningful action from what changed.
+    try {
+      const who = await actor(req, db)
+      let action = 'company_update'
+      let summary = `Updated ${Object.keys(allowed).join(', ')}`
+      if (allowed.plan !== undefined && allowed.plan !== before?.plan) {
+        if (allowed.plan === 'suspended') { action = 'suspend'; summary = `Suspended (was ${before?.plan || 'unknown'})` }
+        else if (before?.plan === 'suspended') { action = 'reactivate'; summary = `Reactivated → ${allowed.plan}` }
+        else { action = 'plan_change'; summary = `Plan ${before?.plan || '?'} → ${allowed.plan}` }
+      } else if (allowed.trial_ends_at !== undefined) {
+        action = 'trial_extend'; summary = `Trial set to ${new Date(allowed.trial_ends_at).toLocaleDateString()}`
+      }
+      await logSuperAdminAudit(db, { adminId: who.id, adminEmail: who.email, companyId, action, summary, detail: { patch: allowed, before } })
+    } catch {}
+
     return NextResponse.json({ ok: true, company: data })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })
