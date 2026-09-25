@@ -10,6 +10,7 @@ import MatchingContactsModal from '@/components/MatchingContactsModal'
 import PageHeader from '@/components/PageHeader'
 import { findMatchingContacts, applyRelationship } from '@/lib/contact-matching'
 import { SegmentationService } from '@/lib/segmentation-service'
+import AddressAutocomplete from '@/components/AddressAutocomplete'
 
 type Contact = { id: string; name: string | null; email: string | null; phone: string | null; address: string | null; city: string | null; country: string | null; source: string; tags: string[]; subscribed_to_marketing: boolean; created_at: string; total_spend?: number; total_orders?: number; last_order_date?: string | null; rfm_category?: string; __aov?: number; relationship_type?: string; company_name?: string | null; notes?: string | null }
 
@@ -623,12 +624,32 @@ export default function ContactsPage() {
                     </button>
                   )
                 })()}
-                {[['name', 'Full Name', 'text'], ['email', 'Email', 'email'], ['phone', 'Phone', 'tel'], ['address', 'Address', 'text'], ['city', 'City', 'text'], ['country', 'Country', 'text']].map(([field, label, type]) => (
+                {[['name', 'Full Name', 'text'], ['email', 'Email', 'email'], ['phone', 'Phone', 'tel']].map(([field, label, type]) => (
                   <div key={field}>
                     <label style={labelStyle}>{label}</label>
                     <input type={type} value={(editData as any)[field] || ''} onChange={e => setEditData(d => ({ ...d, [field]: e.target.value }))} style={inp} />
                   </div>
                 ))}
+                {/* One smart address field — mirrors the inbox contact editor.
+                    Typing suggests verified addresses; picking one fills the
+                    city/state/postcode/country behind the scenes, so there's no
+                    separate City/Country field to fill in by hand. */}
+                <div>
+                  <label style={labelStyle}>Address</label>
+                  <AddressAutocomplete
+                    value={(editData as any).address || ''}
+                    onChange={v => setEditData(d => ({ ...d, address: v }))}
+                    onSelect={(parts) => setEditData(d => ({
+                      ...d,
+                      address: parts.line1 || parts.formatted,
+                      city: parts.city || (d as any).city,
+                      state: parts.state || (d as any).state,
+                      postcode: parts.postcode || (d as any).postcode,
+                      country: parts.country || (d as any).country,
+                    }))}
+                    style={inp}
+                  />
+                </div>
                 <div>
                   <label style={labelStyle}>Relationship</label>
                   <select
