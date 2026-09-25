@@ -119,7 +119,22 @@ export async function provisionCustomDomain(domain: string): Promise<CustomDomai
   const clean = (domain || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '')
   out.domain = clean
   if (!clean || !/^[a-z0-9.-]+\.[a-z]{2,}$/.test(clean)) { out.error = 'Enter a valid domain, e.g. help.yourcompany.com'; return out }
-  if (clean.endsWith('.colvy.com')) { out.error = 'Use the automatic subdomain flow for *.colvy.com'; return out }
+  // A *.colvy.com host (e.g. help.colvy.com) is ours — auto-provision it (attach
+  // to Vercel + add the Cloudflare CNAME) instead of asking the customer for DNS.
+  // Without this the help/board-domain flow rejected colvy.com subdomains, so
+  // they stayed "Pending" and 404'd with DEPLOYMENT_NOT_FOUND.
+  if (clean.endsWith('.colvy.com')) {
+    const sub = await provisionSubdomain(clean)
+    out.configured = !sub.vercel.skipped
+    out.registered = !!sub.vercel.success
+    // It's ours and points at Vercel via Cloudflare, so treat a successful attach
+    // as verified/well-configured; the customer needs no DNS records.
+    out.verified = !!(sub.vercel.success && (sub.cloudflare.success || sub.cloudflare.skipped))
+    out.misconfigured = !out.verified
+    out.records = []
+    if (!sub.ok && (sub.vercel.error || sub.cloudflare.error)) out.error = sub.vercel.error || sub.cloudflare.error
+    return out
+  }
   // The DNS record we ask the customer for — always Colvy-branded, never Vercel.
   const isApex = clean.split('.').length <= 2
   const brandedRecord = isApex
