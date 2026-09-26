@@ -1787,10 +1787,25 @@ function WidgetContent() {
                       // happens on the server, so the contacts and conversations
                       // tables no longer have to accept writes from the browser.
                       // The matching and reopen behaviour is unchanged.
+                      // A stable id for this browser. The pre-chat form only
+                      // requires ONE of name, email or phone, so someone who
+                      // types just a name leaves nothing to recognise them by
+                      // and every visit opened a fresh conversation. This is
+                      // what the server falls back to.
+                      let visitorId = ''
+                      try {
+                        const vk = `colvy-visitor-${slug}`
+                        visitorId = localStorage.getItem(vk) || ''
+                        if (!visitorId) {
+                          visitorId = `v-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+                          localStorage.setItem(vk, visitorId)
+                        }
+                      } catch { /* private browsing — a new thread, as before */ }
                       const startRes = await fetch('/api/widget/start', {
                         method: 'POST', headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                           companyId: company?.id,
+                          visitorId,
                           name: chatName,
                           email: chatEmail ? chatEmail.trim() : null,
                           phone: normalizedMobile,

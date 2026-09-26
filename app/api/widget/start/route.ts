@@ -57,6 +57,9 @@ export async function POST(req: NextRequest) {
     const pageHistory = Array.isArray(b.pageHistory) ? b.pageHistory.slice(0, 30) : []
 
     const last8 = phone ? phone.replace(/\D/g, '').slice(-8) : ''
+    // A stable id the widget keeps in the visitor's browser. It is the only
+    // thing that identifies someone who gave neither an email nor a phone.
+    const visitorKey = String(b.visitorId || '').trim().slice(0, 80) || null
 
     // ── Contact: find, or create ────────────────────────────────────────────
     let contactId: string | null = null
@@ -130,8 +133,29 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // No contact to match on — the pre-chat form only requires ONE of name,
+    // email or phone, so a visitor who types just a name creates no contact at
+    // all, and every chat they start opens a brand-new conversation. Two
+    // "James Thompson" threads a minute apart, one of them empty.
+    //
+    // The browser remembers who they are even when they told us nothing, so
+    // fall back to that.
+    if (!conv && !contactId && visitorKey) {
+      const { data: prior } = await db.from('conversations')
+        .select('id, status').eq('company_id', companyId).eq('visitor_id', visitorKey)
+        .order('last_message_at', { ascending: false }).limit(1)
+      if (prior?.[0]?.id) {
+        await db.from('conversations').update({
+          status: 'open', is_unread: true,
+          page_url: page.url || null, page_title: page.title || null,
+          last_message_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+        }).eq('id', prior[0].id)
+        conv = prior[0]
+      }
+    }
+
     if (!conv) {
-      const visitorId = `widget-${Date.now()}-${Math.random().toString(36).slice(2)}`
+      const visitorId = visitorKey || `widget-${Date.now()}-${Math.random().toString(36).slice(2)}`
       const { data: created } = await db.from('conversations').insert({
         company_id: companyId,
         contact_id: contactId,
