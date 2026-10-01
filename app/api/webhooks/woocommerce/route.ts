@@ -55,6 +55,24 @@ function orderLooksPaid(order: any): boolean {
   return !!(String(paidStamp || '').trim() || String(txn || '').trim())
 }
 
+// Read an order meta_data value by key (case-insensitive). WooCommerce orders
+// carry custom fields as meta_data: [{ key, value }, …].
+function orderMeta(order: any, key: string): string {
+  const meta = Array.isArray(order?.meta_data) ? order.meta_data : []
+  const k = key.toLowerCase()
+  const hit = meta.find((m: any) => String(m?.key || '').toLowerCase() === k)
+  return hit ? String(hit.value ?? '').trim() : ''
+}
+
+// An in-store POS sale, pushed into WooCommerce by Prexty, tagged with
+// `_prexty_source = pos` (plus `_prexty_sale_id` / `_prexty_outlet`). These are
+// NOT online orders, so the customer must NOT get the automated order SMS/email —
+// it costs money and, with the nightly bulk upload of the day's sales, is spammy.
+function posSaleInfo(order: any): { isPos: boolean; saleId: string; outlet: string } {
+  const source = orderMeta(order, '_prexty_source').toLowerCase()
+  return { isPos: source === 'pos', saleId: orderMeta(order, '_prexty_sale_id'), outlet: orderMeta(order, '_prexty_outlet') }
+}
+
 // Re-fetch the order's CURRENT status from WooCommerce so we don't act on a
 // stale/out-of-order webhook. Returns the live status string (lowercased), or
 // null if we can't reach the store (no creds / network) — callers decide how to
@@ -451,6 +469,18 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
   const isNewOrderStatus = ['processing', 'on-hold', 'completed'].includes(status)
   let shouldSend = !seenEvent && template && (cfg.enabled || isNewOrderStatus)
 
+  // In-store POS sale (pushed to WooCommerce by Prexty)? Never send the customer
+  // an automated order SMS/email — they bought in person, and the nightly bulk
+  // upload of the day's sales would otherwise text every one of them. The order
+  // is still recorded below; only the customer-facing message is suppressed.
+  const pos = posSaleInfo(order)
+  if (shouldSend && pos.isPos) {
+    shouldSend = false
+    console.log('[Order automation] suppressed customer message — POS sale', {
+      order: order.number || order.id, saleId: pos.saleId, outlet: pos.outlet,
+    })
+  }
+
   // Rate-limit the customer-facing automation text — each message is a paid
   // SMS. The per-(order,status) dedupe above stops the SAME order re-messaging,
   // but when several DIFFERENT orders for the same customer change status at
@@ -693,7 +723,8 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
   // ── Auto review request on completion ─────────────────────────────────────
   // Independent of the order-chat automation toggle: if the business turned on
   // review requests, schedule one (optionally delayed) for a completed order.
-  if (status === 'completed') {
+  // Skipped for POS sales — the same reason we don't SMS them an order update.
+  if (status === 'completed' && !pos.isPos) {
     try {
       const { data: co } = await db.from('companies').select('review_request_settings').eq('id', companyId).maybeSingle()
       const rr = co?.review_request_settings || {}
