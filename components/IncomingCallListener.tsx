@@ -160,6 +160,10 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
   // and restarted the ringtone, so Decline looked like it did nothing.
   const callIdRef = useRef<string | null>(null)
   const declinedIds = useRef<Set<string>>(new Set())
+  // True once THIS device answers the ringing call, so the incoming-ring backstop
+  // (which watches the calls row for "answered/ended elsewhere") never tears down
+  // a call we picked up here in the brief window before inCall re-renders.
+  const answeredHereRef = useRef(false)
   // The signed-in agent's user id, so a call we accept can notify the REST of
   // the team (excludeUserId = us) to stop their phones ringing.
   const userIdRef = useRef<string | null>(null)
@@ -244,7 +248,7 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
             setIncoming({ id: call.parameters?.CallSid || 'twilio', callRowId: rowId, from: fromNum })
             startRing()
             resolveCaller(fromNum)
-            call.on('accept', () => { stopRing(); setInCall(true); startTimer() })
+            call.on('accept', () => { answeredHereRef.current = true; stopRing(); setInCall(true); startTimer() })
             call.on('disconnect', () => { stopRing(); finishCall() })
             call.on('cancel', () => { stopRing(); reset() })
             call.on('reject', () => { stopRing(); reset() })
@@ -356,6 +360,7 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
             resolveCaller(call.options?.remoteCallerNumber || call.remoteCallerNumber)
           }
           if (call.state === 'active') {
+            answeredHereRef.current = true
             stopRing()
             setInCall(true); startTimer()
           }
@@ -720,6 +725,7 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
   }
 
   const answer = () => {
+    answeredHereRef.current = true
     stopRing()
     try {
       // Direct SIP delivery model: the call is delivered straight to this
@@ -890,6 +896,7 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
   const reset = () => {
     stopRing()
     stopRingback()
+    answeredHereRef.current = false
     if (timerRef.current) clearInterval(timerRef.current)
     setIncoming(null); setCaller(null); setInCall(false); setSeconds(0)
     setOnHold(false); setTransferState('none'); setTransferMsg('')
@@ -901,6 +908,38 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
   }
 
   const fmtDur = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+
+  // ── Incoming-ring backstop ──────────────────────────────────────────────────
+  // A ringing inbound call can be answered, missed or ended on ANOTHER device —
+  // most often the agent's mobile — without the provider sending a cancel to this
+  // browser leg, so our ringtone would keep playing ("tung… tung…") and the popup
+  // would stay open, even after the call is over. Watch the calls row directly
+  // (realtime + a slow poll, the same belt-and-suspenders the outbound ringback
+  // uses): the moment it's answered anywhere or reaches a terminal state, stop
+  // ringing and close the popup. Runs ONLY while this device is still ringing an
+  // inbound call — never for an outbound call or one answered here.
+  useEffect(() => {
+    const rowId = incoming?.callRowId
+    if (!rowId || inCall || (incoming as any)?.outbound) return
+    const TERMINAL = ['completed', 'failed', 'missed', 'no_answer', 'no-answer', 'busy', 'canceled', 'cancelled', 'voicemail', 'voicemail_greeting', 'recording_voicemail', 'ended']
+    const done = (row: any) => {
+      if (!row || answeredHereRef.current || liveRef.current.inCall) return
+      if (row.answered_at || row.ended_at || TERMINAL.includes(String(row.status || ''))) {
+        stopRing(); reset()
+      }
+    }
+    const poll = setInterval(async () => {
+      try { const { data } = await (supabase as any).from('calls').select('*').eq('id', rowId).maybeSingle(); done(data) } catch {}
+    }, 1500)
+    let channel: any = null
+    try {
+      channel = supabase.channel(`inbound-ring-${rowId}`)
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'calls', filter: `id=eq.${rowId}` }, (p: any) => done(p?.new))
+        .subscribe()
+    } catch {}
+    return () => { try { clearInterval(poll) } catch {}; try { if (channel) supabase.removeChannel(channel) } catch {} }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [incoming?.callRowId, inCall])
 
   // Shared style for the answer/decline/hangup buttons — the icons previously
   // had no sizing or alignment rules and rendered squashed against the label.
