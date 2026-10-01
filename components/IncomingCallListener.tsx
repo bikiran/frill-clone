@@ -44,6 +44,10 @@ const prettySource = (s?: string | null): string | null => {
 export default function IncomingCallListener({ companyId, agentName }: Props) {
   const router = useRouter()
   const [incoming, setIncoming] = useState<any>(null)   // the ringing call
+  // The calls-row id for a ringing INBOUND call, used by the incoming-ring
+  // backstop. Twilio delivers it on the call itself (incoming.callRowId); Telnyx
+  // doesn't, so we resolve it from the caller number and keep it here.
+  const [inboundRowId, setInboundRowId] = useState<string | null>(null)
   const [caller, setCaller] = useState<any>(null)       // resolved contact context
   const [inCall, setInCall] = useState(false)
   const [seconds, setSeconds] = useState(0)
@@ -357,7 +361,23 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
             callIdRef.current = call.id || null
             setIncoming(call)
             startRing()
-            resolveCaller(call.options?.remoteCallerNumber || call.remoteCallerNumber)
+            const telFrom = call.options?.remoteCallerNumber || call.remoteCallerNumber || ''
+            resolveCaller(telFrom)
+            // Telnyx inbound calls don't carry our calls-row id, so resolve it from
+            // the caller number for the incoming-ring backstop (so the ringtone
+            // stops when the call is answered on another device, e.g. mobile, or
+            // ends — Telnyx doesn't always send this browser leg a cancel).
+            ;(async () => {
+              try {
+                const digits = String(telFrom).replace(/\D/g, '').slice(-9)
+                if (!digits || !companyId) return
+                const { data } = await (supabase as any).from('calls')
+                  .select('id').eq('company_id', companyId).eq('direction', 'inbound')
+                  .ilike('from_number', `%${digits}%`)
+                  .order('created_at', { ascending: false }).limit(1).maybeSingle()
+                if (data?.id) setInboundRowId(data.id)
+              } catch {}
+            })()
           }
           if (call.state === 'active') {
             answeredHereRef.current = true
@@ -595,6 +615,7 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
   // decode error) so a call is never silent before it's answered.
   const ringOscRef = useRef<any>(null)
   const ringAudioRef = useRef<HTMLAudioElement | null>(null)
+  const ringCapRef = useRef<any>(null)
   const startOscRing = () => {
     try {
       const AC = (window as any).AudioContext || (window as any).webkitAudioContext
@@ -615,6 +636,11 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
     } catch {}
   }
   const startRing = () => {
+    // Hard safety cap: a ringtone must never outlive a realistic ring window. If
+    // every other stop path fails (no SDK cancel, backstop row not found), this
+    // guarantees the "tung tung" can't play forever.
+    try { clearTimeout(ringCapRef.current) } catch {}
+    ringCapRef.current = setTimeout(() => { try { stopRing() } catch {} }, 60000)
     try {
       const a = new Audio('/ringtone.mp3')
       a.loop = true
@@ -626,6 +652,7 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
     } catch { startOscRing() }
   }
   const stopRing = () => {
+    try { clearTimeout(ringCapRef.current); ringCapRef.current = null } catch {}
     try {
       if (ringAudioRef.current) {
         ringAudioRef.current.pause()
@@ -899,6 +926,7 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
     answeredHereRef.current = false
     if (timerRef.current) clearInterval(timerRef.current)
     setIncoming(null); setCaller(null); setInCall(false); setSeconds(0)
+    setInboundRowId(null)
     setOnHold(false); setTransferState('none'); setTransferMsg('')
     setSwitchOpen(false); setSwitchDevices([]); setSwitchBusy(false); setMovedTo(null)
     setOutboundCallId(null)
@@ -919,7 +947,7 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
   // ringing and close the popup. Runs ONLY while this device is still ringing an
   // inbound call — never for an outbound call or one answered here.
   useEffect(() => {
-    const rowId = incoming?.callRowId
+    const rowId = incoming?.callRowId || inboundRowId
     if (!rowId || inCall || (incoming as any)?.outbound) return
     const TERMINAL = ['completed', 'failed', 'missed', 'no_answer', 'no-answer', 'busy', 'canceled', 'cancelled', 'voicemail', 'voicemail_greeting', 'recording_voicemail', 'ended']
     const done = (row: any) => {
@@ -939,7 +967,7 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
     } catch {}
     return () => { try { clearInterval(poll) } catch {}; try { if (channel) supabase.removeChannel(channel) } catch {} }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [incoming?.callRowId, inCall])
+  }, [incoming?.callRowId, inboundRowId, inCall])
 
   // Shared style for the answer/decline/hangup buttons — the icons previously
   // had no sizing or alignment rules and rendered squashed against the label.
