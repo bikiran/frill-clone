@@ -20,6 +20,8 @@ type Overview = {
   facts: { id: string; question: string; answer: string; updated_at: string }[]
   files: { id: string; name: string; size_bytes: number; pages: number; chunks: number; created_at: string }[]
   websitePages: { url: string; title: string }[]
+  unanswered: { id: string; question: string; count: number; examples: { text: string; source: string; at: string }[]; suggested_answer: string | null; last_seen_at: string }[]
+  unansweredReady: boolean
 }
 type TestResult = { answer: string; grounded: boolean; sources: { source: string; title: string; url: string | null; excerpt: string }[] }
 
@@ -54,6 +56,7 @@ function Icon({ name, size = 18 }: { name: string; size?: number }) {
     case 'check': return <svg {...p} strokeWidth={2.6}><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
     case 'alert': return <svg {...p}><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
     case 'shield': return <svg {...p}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></svg>
+    case 'search': return <svg {...p}><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
     case 'spark': return <svg {...p}><path d="M12 3l1.9 4.6L18.5 9.5 13.9 11.4 12 16l-1.9-4.6L5.5 9.5l4.6-1.9L12 3z" /><path d="M19 14l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8.8-2z" /></svg>
     default: return <svg {...p}><circle cx="12" cy="12" r="9" /></svg>
   }
@@ -77,11 +80,14 @@ export default function AiKnowledgePage() {
   const [error, setError] = useState('')
   const [syncing, setSyncing] = useState<string | null>(null)   // 'all' or a setting key
   const [notice, setNotice] = useState('')
+  const [undo, setUndo] = useState<(() => void) | null>(null)
   const [question, setQuestion] = useState('')
   const [testing, setTesting] = useState(false)
   const [test, setTest] = useState<TestResult | null>(null)
   const [testError, setTestError] = useState('')
-  const [factDraft, setFactDraft] = useState<{ id?: string; question: string; answer: string } | null>(null)
+  const [factDraft, setFactDraft] = useState<{ id?: string; question: string; answer: string; unansweredId?: string } | null>(null)
+  const [scanning, setScanning] = useState(false)
+  const [openExamples, setOpenExamples] = useState<string | null>(null)
   const [savingFact, setSavingFact] = useState(false)
   const [uploading, setUploading] = useState('')
   const [dragOver, setDragOver] = useState(false)
@@ -107,7 +113,12 @@ export default function AiKnowledgePage() {
   }, [companyId])
   useEffect(() => { load() }, [load])
 
-  const flash = (m: string) => { setNotice(m); setTimeout(() => setNotice(''), 3500) }
+  const flashTimer = useRef<any>(null)
+  const flash = (m: string, onUndo?: () => void) => {
+    setNotice(m); setUndo(() => onUndo || null)
+    if (flashTimer.current) clearTimeout(flashTimer.current)
+    flashTimer.current = setTimeout(() => { setNotice(''); setUndo(null) }, onUndo ? 6000 : 3500)
+  }
 
   const sync = async (knowledge?: Record<string, boolean>, key = 'all') => {
     if (!companyId) return
@@ -130,7 +141,7 @@ export default function AiKnowledgePage() {
     finally { setTesting(false) }
   }
 
-  const openFact = (f: { id?: string; question: string; answer: string }) => {
+  const openFact = (f: { id?: string; question: string; answer: string; unansweredId?: string }) => {
     setFactDraft(f)
     setTimeout(() => factRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 60)
   }
@@ -139,7 +150,7 @@ export default function AiKnowledgePage() {
     setSavingFact(true)
     try {
       await api('/api/ai/knowledge/facts', { method: 'POST', body: JSON.stringify({ companyId, ...factDraft }) })
-      setFactDraft(null); flash('Fact saved. Colvy AI can use it straight away.'); await load()
+      setFactDraft(null); flash(factDraft.unansweredId ? 'Answered. Colvy AI knows this from now on.' : 'Fact saved. Colvy AI can use it straight away.'); await load()
     } catch (e: any) { flash(e.message) }
     finally { setSavingFact(false) }
   }
@@ -147,6 +158,26 @@ export default function AiKnowledgePage() {
     if (!(await confirmDialog({ title: 'Delete this fact?', message: 'Colvy AI will stop using it.', confirmLabel: 'Delete', tone: 'danger' }))) return
     try { await api('/api/ai/knowledge/facts', { method: 'DELETE', body: JSON.stringify({ companyId, id }) }); await load() }
     catch (e: any) { flash(e.message) }
+  }
+
+  const scan = async () => {
+    if (!companyId) return
+    setScanning(true)
+    try {
+      const d = await api('/api/ai/knowledge/unanswered', { method: 'POST', body: JSON.stringify({ companyId, action: 'scan' }) })
+      flash(d.groups ? `Found ${d.groups} question${d.groups === 1 ? '' : 's'} to answer, from ${d.scanned} recent customer messages.` : `Checked ${d.scanned} recent customer questions. Your knowledge already covers them.`)
+      await load()
+    } catch (e: any) { flash(e.message) }
+    finally { setScanning(false) }
+  }
+  const setUnanswered = async (id: string, action: 'dismiss' | 'reopen') => {
+    if (action === 'dismiss' && ov) setOv({ ...ov, unanswered: ov.unanswered.filter(u => u.id !== id) })
+    try {
+      await api('/api/ai/knowledge/unanswered', { method: 'POST', body: JSON.stringify({ companyId, action, id }) })
+      if (action === 'dismiss') flash('Dismissed.', () => setUnanswered(id, 'reopen'))
+      else { setNotice(''); setUndo(null) }
+      await load()
+    } catch (e: any) { flash(e.message); await load() }
   }
 
   const upload = async (file: File | undefined) => {
@@ -209,7 +240,7 @@ export default function AiKnowledgePage() {
         @keyframes aknSpin{to{transform:rotate(360deg)}}
         .akn-toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#111827;color:#fff;padding:11px 18px;border-radius:12px;font-size:13.5px;font-weight:600;z-index:80;box-shadow:0 12px 30px -10px rgba(0,0,0,.4);max-width:calc(100vw - 32px)}
         @media (max-width:900px){.akn-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
-        @media (max-width:640px){.akn{padding:0 0 56px}.akn-grid{grid-template-columns:1fr}.akn h1{font-size:22px}.akn-head{flex-direction:column;align-items:flex-start!important}}
+        @media (max-width:640px){.akn-toast{left:16px;right:16px;transform:none;bottom:calc(76px + env(safe-area-inset-bottom));max-width:none}.akn{padding:0 0 56px}.akn-grid{grid-template-columns:1fr}.akn h1{font-size:22px}.akn-head{flex-direction:column;align-items:flex-start!important}}
         @media (prefers-reduced-motion:reduce){.akn-in,.akn-spin{animation:none}.akn-switch::after{transition:none}}
       `}</style>
 
@@ -280,6 +311,71 @@ export default function AiKnowledgePage() {
             )}
           </div>
         )}
+      </div>
+
+      {/* Unanswered */}
+      <div className="akn-sec">
+        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+          <div>
+            <h2 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              Questions Colvy AI couldn&rsquo;t answer
+              {ov.unanswered.length > 0 && <span className="akn-pill" style={{ background: '#fff1ee', color: '#e2553f' }}>{ov.unanswered.length}</span>}
+            </h2>
+            <p className="akn-sub">Answer each one once and Colvy AI knows it from then on.</p>
+          </div>
+          <button className="akn-btn" onClick={scan} disabled={scanning || !ov.unansweredReady}>
+            {scanning ? <span className="akn-spin" /> : <Icon name="search" size={15} />}{scanning ? 'Scanning…' : 'Scan recent conversations'}
+          </button>
+        </div>
+        <div className="akn-card" style={{ marginTop: 14 }}>
+          {!ov.unansweredReady ? (
+            <p className="akn-sub" style={{ color: '#7c4a03' }}>One more step: run <strong>migrations/COLVY_V327_AI_UNANSWERED.sql</strong> in the Supabase SQL editor.</p>
+          ) : ov.unanswered.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '8px 0' }}>
+              <span style={{ display: 'inline-flex', width: 40, height: 40, borderRadius: '50%', background: '#ecfdf3', color: '#067647', alignItems: 'center', justifyContent: 'center' }}><Icon name="check" /></span>
+              <p style={{ margin: '10px 0 2px', fontSize: 14, fontWeight: 700, color: 'var(--ink)' }}>Nothing waiting</p>
+              <p className="akn-sub">When Colvy AI can&rsquo;t answer a customer, the question shows up here. Scan your recent conversations to find gaps now.</p>
+            </div>
+          ) : ov.unanswered.map(u => {
+            const from = Array.from(new Set((u.examples || []).map(e => e.source))).map(x => x === 'ai_reply' ? 'auto-replies' : x === 'ai_draft' ? 'inbox drafts' : 'recent chats').join(', ')
+            return (
+              <div key={u.id} className="akn-row akn-in" style={{ flexDirection: 'column', gap: 8 }}>
+                <div style={{ display: 'flex', gap: 12, width: '100%', alignItems: 'flex-start' }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p style={{ margin: 0, fontSize: 14.5, fontWeight: 700, color: 'var(--ink)' }}>{u.question}</p>
+                    <p style={{ margin: '3px 0 0', fontSize: 12, color: 'var(--slate)' }}>
+                      Asked {u.count} time{u.count === 1 ? '' : 's'} · last {ago(u.last_seen_at)}{from ? ` · from ${from}` : ''}
+                    </p>
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                    <button className="akn-btn primary" style={{ padding: '7px 14px', fontSize: 13 }} onClick={() => openFact({ question: u.question, answer: u.suggested_answer || '', unansweredId: u.id })}>Answer</button>
+                    <button className="akn-iconbtn" aria-label="Dismiss" title="Dismiss" onClick={() => setUnanswered(u.id, 'dismiss')}>
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+                    </button>
+                  </div>
+                </div>
+                {u.suggested_answer && (
+                  <div style={{ width: '100%', boxSizing: 'border-box', background: '#f8f8fa', borderRadius: 12, padding: '10px 12px' }}>
+                    <p style={{ margin: 0, fontSize: 11.5, fontWeight: 700, color: '#71717a', textTransform: 'uppercase', letterSpacing: '.04em' }}>How your team answered</p>
+                    <p style={{ margin: '4px 0 0', fontSize: 13.5, color: '#3f3f46', lineHeight: 1.55 }}>{u.suggested_answer}</p>
+                  </div>
+                )}
+                {(u.examples || []).length > 0 && (
+                  <>
+                    <button className="akn-chip" style={{ padding: '3px 10px', fontSize: 11.5 }} onClick={() => setOpenExamples(openExamples === u.id ? null : u.id)}>
+                      {openExamples === u.id ? 'Hide what customers wrote' : 'See what customers wrote'}
+                    </button>
+                    {openExamples === u.id && (
+                      <ul className="akn-in" style={{ margin: 0, padding: '0 0 0 18px', fontSize: 13, color: '#52525b', lineHeight: 1.6, width: '100%' }}>
+                        {u.examples.map((e, i) => <li key={i}>&ldquo;{e.text}&rdquo; <span style={{ color: '#a1a1aa' }}>· {ago(e.at)}</span></li>)}
+                      </ul>
+                    )}
+                  </>
+                )}
+              </div>
+            )
+          })}
+        </div>
       </div>
 
       {/* Sources */}
@@ -415,7 +511,12 @@ export default function AiKnowledgePage() {
         <p className="akn-sub"><strong style={{ color: 'var(--ink)' }}>Never stored here:</strong> customer details, orders, stock levels, prices and form responses. Colvy AI looks those up live, and only for the customer it&rsquo;s talking to, so one customer&rsquo;s details can never show up in a reply to someone else.</p>
       </div>
 
-      {notice && <div className="akn-toast akn-in" role="status">{notice}</div>}
+      {notice && (
+        <div className="akn-toast akn-in" role="status" style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <span>{notice}</span>
+          {undo && <button onClick={() => { const f = undo; setUndo(null); f() }} style={{ border: 'none', background: 'transparent', color: '#ffb4a6', fontWeight: 800, fontSize: 13.5, cursor: 'pointer', fontFamily: 'inherit', padding: 0 }}>Undo</button>}
+        </div>
+      )}
     </div>
   )
 }

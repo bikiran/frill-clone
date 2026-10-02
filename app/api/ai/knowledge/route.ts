@@ -21,11 +21,13 @@ export async function GET(req: NextRequest) {
     const companyId = req.nextUrl.searchParams.get('companyId') || ''
     if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
 
-    const [{ data: co }, facts, files, web, ...perSource] = await Promise.all([
+    const [{ data: co }, facts, files, web, unanswered, ...perSource] = await Promise.all([
       db.from('companies').select('name, ai_settings, website, website_domains, ai_knowledge_synced_at').eq('id', companyId).maybeSingle(),
       db.from('ai_facts').select('id, question, answer, updated_at').eq('company_id', companyId).order('updated_at', { ascending: false }).limit(500),
       db.from('ai_knowledge_files').select('id, name, size_bytes, pages, chunks, created_at').eq('company_id', companyId).order('created_at', { ascending: false }).limit(200),
       db.from('ai_knowledge').select('url, title').eq('company_id', companyId).eq('source', 'website').limit(1000),
+      db.from('ai_unanswered').select('id, question, count, examples, suggested_answer, last_seen_at').eq('company_id', companyId).eq('status', 'open')
+        .order('count', { ascending: false }).order('last_seen_at', { ascending: false }).limit(100),
       ...SOURCES.map(s => db.from('ai_knowledge').select('indexed_at', { count: 'exact' }).eq('company_id', companyId).eq('source', s).order('indexed_at', { ascending: false }).limit(1)),
     ])
     const sources: Record<string, { count: number; latest: string | null }> = {}
@@ -47,6 +49,8 @@ export async function GET(req: NextRequest) {
       facts: facts.data || [],
       files: files.data || [],
       websitePages: Array.from(pages, ([url, title]) => ({ url, title })),
+      unanswered: unanswered.data || [],
+      unansweredReady: !unanswered.error,
     })
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || 'Failed' }, { status: 500 })
