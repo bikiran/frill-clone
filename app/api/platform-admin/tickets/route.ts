@@ -64,7 +64,12 @@ export async function PATCH(req: NextRequest) {
     if (!(await requireSuperAdmin(req, db))) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     const { ticketId, status } = await req.json()
     if (!ticketId || !status) return NextResponse.json({ error: 'Missing ticketId or status' }, { status: 400 })
-    const { error } = await db.from('support_tickets').update({ status, updated_at: new Date().toISOString() }).eq('id', ticketId)
+    const now = new Date().toISOString()
+    const patch: any = { status, updated_at: now, resolved_at: ['resolved', 'closed'].includes(status) ? now : null }
+    let { error } = await db.from('support_tickets').update(patch).eq('id', ticketId)
+    if (error && /resolved_at|schema cache|could not find/i.test(error.message)) {
+      ;({ error } = await db.from('support_tickets').update({ status, updated_at: now }).eq('id', ticketId))
+    }
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     return NextResponse.json({ ok: true })
   } catch (err: any) {

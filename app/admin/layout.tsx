@@ -277,6 +277,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       fetch('/api/cron/email-sync', { method: 'GET' }).catch(() => {})
       // Back-in-stock texts that arrived overnight go out once sending hours open.
       fetch('/api/cron/waitlist', { method: 'GET' }).catch(() => {})
+      // One alert per ticket that misses its reply/resolution deadline.
+      fetch('/api/cron/ticket-sla', { method: 'GET' }).catch(() => {})
     }
     // Agent presence heartbeat — records that this agent is online so an inbound
     // call can ring them. "Online" = seen in the last ~2 minutes.

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { notifyCompany } from '@/lib/notify'
+import { autoAssignTicket, loadTicketTeam } from '@/lib/ticket-assign'
+import { resolveSla } from '@/lib/ticket-sla'
 
 function admin() {
   return createClient(
@@ -161,7 +163,11 @@ export async function POST(req: NextRequest) {
       } catch {}
     }
 
-    try { await notifyCompany({ db, companyId, type: 'ticket', message: `Support ticket ${ticket.ticket_number} created — "${subject}"` }) } catch {}
+    // Auto-assign (if the company turned it on) to the least-loaded teammate.
+    let assignee: { userId: string; name: string } | null = null
+    if (!ticket.assigned_to) { assignee = await autoAssignTicket(db, companyId, ticket.id); if (assignee) ticket.assigned_to = assignee.userId }
+
+    try { await notifyCompany({ db, companyId, type: 'ticket', message: `Support ticket ${ticket.ticket_number} created — "${subject}"${assignee ? ` · assigned to ${assignee.name}` : ''}` }) } catch {}
     return NextResponse.json({ ok: true, ticket, link })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })
@@ -209,7 +215,15 @@ export async function GET(req: NextRequest) {
       else if (from) channel = 'Help Centre'
       return { ...t, customer_name, customer_email, channel }
     })
-    return NextResponse.json({ tickets: enriched })
+    // Deadline targets + the team (for assignee names / the assign picker).
+    let sla = resolveSla(null)
+    let team: { userId: string; name: string }[] = []
+    try {
+      const { data: co } = await db.from('companies').select('ticket_sla_settings').eq('id', companyId).maybeSingle()
+      sla = resolveSla(co?.ticket_sla_settings)
+      team = await loadTicketTeam(db, companyId)
+    } catch {}
+    return NextResponse.json({ tickets: enriched, sla, team })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
