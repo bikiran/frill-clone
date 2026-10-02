@@ -109,6 +109,28 @@ export async function POST(req: NextRequest) {
           break
         }
 
+        // Online booking deposit / payment — confirm the booking (calendar,
+        // contact, customer confirmation) and the chat_payments row. The
+        // manage page's verify does the same; whichever lands first wins.
+        if (meta.kind === 'booking_payment' && meta.bookingId) {
+          try {
+            let s: any = session
+            const piId = typeof session.payment_intent === 'string' ? session.payment_intent : session.payment_intent?.id
+            if (piId) {
+              try {
+                const acctOpt: any = event.account ? { stripeAccount: event.account } : undefined
+                const pi: any = await stripe.paymentIntents.retrieve(piId, { expand: ['latest_charge'] }, acctOpt)
+                s = { ...session, payment_intent: pi }
+              } catch {}
+            }
+            if (session.payment_status === 'paid') {
+              const { settleBookingPayment } = await import('@/lib/booking')
+              await settleBookingPayment(supabase, meta.bookingId, s, req.nextUrl.origin)
+            }
+          } catch (e) { console.error('[webhook] booking_payment failed', e) }
+          break
+        }
+
         // In-chat payment (on a connected account) — mark paid + confirm in chat
         if (meta.kind === 'chat_payment' && meta.conversationId) {
           const receiptUrl = session.receipt_url || null

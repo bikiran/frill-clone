@@ -8,6 +8,7 @@ import TaskEditor from '@/components/TaskEditor'
 import { decodeEntities as dec } from '@/lib/decode-entities'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import { authFetch } from '@/lib/auth-fetch'
 import { peekCompanyUser, readCache, writeCache } from '@/lib/client-cache'
 
 // Default event types. Colours are fixed; the label and whether a type is shown
@@ -142,7 +143,7 @@ export default function CalendarPage() {
     // merged conversation_tasks at all).
     const params = new URLSearchParams({ companyId, from, to })
     if (typeFilter) params.set('type', typeFilter)
-    const res = await fetch(`/api/calendar?${params}`)
+    const res = await authFetch(`/api/calendar?${params}`)
     const d = await res.json()
     let evts: any[] = d.events || []
 
@@ -298,7 +299,7 @@ export default function CalendarPage() {
       ? new Date(`${editing.date}T00:00:00`).toISOString()
       : new Date(`${editing.date}T${editing.time || '09:00'}:00`).toISOString()
 
-    const res = await fetch('/api/calendar', {
+    const res = await authFetch('/api/calendar', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         companyId, id: editing.id,
@@ -332,7 +333,7 @@ export default function CalendarPage() {
 
   const remove = async (id: string) => {
     if (!companyId || !confirm('Delete this event?')) return
-    await fetch('/api/calendar', {
+    await authFetch('/api/calendar', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ companyId, action: 'delete', id }),
     })
@@ -342,7 +343,7 @@ export default function CalendarPage() {
 
   const setStatus = async (id: string, status: string, notifyCustomer: boolean) => {
     if (!companyId) return
-    await fetch('/api/calendar', {
+    await authFetch('/api/calendar', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ companyId, action: 'set_status', id, status, notifyCustomer }),
     })
@@ -369,7 +370,7 @@ export default function CalendarPage() {
           .update({ done, status: done ? 'done' : 'todo', completed_at: done ? new Date().toISOString() : null })
           .eq('id', e._taskId)
       } else {
-        await fetch('/api/calendar', {
+        await authFetch('/api/calendar', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ companyId, action: 'set_status', id: e.id, status: next, notifyCustomer: false }),
         })

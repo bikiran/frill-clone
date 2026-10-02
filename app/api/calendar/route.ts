@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { requireCompanyAccess } from '@/lib/company-access'
 
 export const dynamic = 'force-dynamic'
 
@@ -27,6 +28,7 @@ export async function GET(req: NextRequest) {
     if (!companyId) return NextResponse.json({ error: 'companyId required' }, { status: 400 })
 
     const db = admin()
+    if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
 
     let q = db.from('calendar_events').select('*').eq('company_id', companyId)
     if (from) q = q.gte('starts_at', from)
@@ -66,6 +68,7 @@ export async function POST(req: NextRequest) {
     const { companyId, action } = body
     if (!companyId) return NextResponse.json({ error: 'companyId required' }, { status: 400 })
     const db = admin()
+    if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
 
     // ── Create or update ────────────────────────────────────────────────────
     if (!action || action === 'save') {
@@ -124,7 +127,7 @@ export async function POST(req: NextRequest) {
       // exist, drop it and retry so the rest of the event still saves.
       const writeRow = async (r: any) => {
         const run = (payload: any) => id
-          ? db.from('calendar_events').update(payload).eq('id', id).select().maybeSingle()
+          ? db.from('calendar_events').update(payload).eq('id', id).eq('company_id', companyId).select().maybeSingle()
           : db.from('calendar_events').insert(payload).select().maybeSingle()
         let cur = { ...r }
         for (let attempt = 0; attempt < 4; attempt++) {
@@ -143,6 +146,12 @@ export async function POST(req: NextRequest) {
       const { data, error } = await writeRow(row)
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })
       event = data
+
+      // An online booking moved on the calendar: keep the booking (which is
+      // what blocks the slot on the booking page) in step.
+      if (id && event?.external_source === 'booking' && event?.external_id) {
+        await syncBookingFromEvent(db, companyId, event)
+      }
 
       // If it was scheduled from a chat, note it on the conversation timeline so
       // the whole team can see what was promised.
@@ -166,8 +175,11 @@ export async function POST(req: NextRequest) {
     if (action === 'delete') {
       const { id } = body
       if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
+      const { data: ev } = await db.from('calendar_events').select('id, external_source, external_id').eq('id', id).eq('company_id', companyId).maybeSingle()
+      if (!ev) return NextResponse.json({ ok: true })
       await db.from('delivery_updates').delete().eq('calendar_event_id', id)
-      await db.from('calendar_events').delete().eq('id', id)
+      await db.from('calendar_events').delete().eq('id', id).eq('company_id', companyId)
+      if (ev.external_source === 'booking' && ev.external_id) await releaseBooking(db, companyId, ev.external_id)
       return NextResponse.json({ ok: true })
     }
 
@@ -176,10 +188,16 @@ export async function POST(req: NextRequest) {
       const { id, status, notifyCustomer, note } = body
       if (!id || !status) return NextResponse.json({ error: 'id and status required' }, { status: 400 })
 
-      const { data: event } = await db.from('calendar_events').select('*').eq('id', id).maybeSingle()
+      const { data: event } = await db.from('calendar_events').select('*').eq('id', id).eq('company_id', companyId).maybeSingle()
       if (!event) return NextResponse.json({ error: 'Event not found' }, { status: 404 })
 
       await db.from('calendar_events').update({ status, updated_at: new Date().toISOString() }).eq('id', id)
+      if (event.external_source === 'booking' && event.external_id) {
+        if (status === 'cancelled') await releaseBooking(db, companyId, event.external_id)
+        else if (status === 'completed' || status === 'missed') {
+          try { await db.from('bookings').update({ status: status === 'completed' ? 'completed' : 'no_show' }).eq('id', event.external_id).eq('company_id', companyId).eq('status', 'confirmed') } catch {}
+        }
+      }
 
       await db.from('delivery_updates').insert({
         company_id: companyId, calendar_event_id: id,
@@ -218,4 +236,30 @@ export async function POST(req: NextRequest) {
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 })
   }
+}
+
+// Calendar-side changes to an online booking. Cancelling / deleting the event
+// frees the slot (no refund or customer message — use Bookings for those).
+async function releaseBooking(db: any, companyId: string, bookingId: string) {
+  try {
+    await db.from('bookings').update({ status: 'cancelled', cancelled_at: new Date().toISOString(), cancelled_by: 'business', cancel_reason: 'Removed from the calendar' })
+      .eq('id', bookingId).eq('company_id', companyId).in('status', ['pending', 'confirmed'])
+  } catch {}
+}
+
+async function syncBookingFromEvent(db: any, companyId: string, ev: any) {
+  try {
+    const { data: b } = await db.from('bookings').select('id, starts_at, ends_at, busy_from, busy_until').eq('id', ev.external_id).eq('company_id', companyId).maybeSingle()
+    if (!b || !ev.starts_at) return
+    const start = Date.parse(ev.starts_at)
+    const end = ev.ends_at ? Date.parse(ev.ends_at) : start + (Date.parse(b.ends_at) - Date.parse(b.starts_at))
+    if (start === Date.parse(b.starts_at) && end === Date.parse(b.ends_at)) return
+    const before = Date.parse(b.starts_at) - Date.parse(b.busy_from)
+    const after = Date.parse(b.busy_until) - Date.parse(b.ends_at)
+    await db.from('bookings').update({
+      starts_at: new Date(start).toISOString(), ends_at: new Date(end).toISOString(),
+      busy_from: new Date(start - before).toISOString(), busy_until: new Date(end + after).toISOString(),
+      updated_at: new Date().toISOString(),
+    }).eq('id', b.id)
+  } catch {}
 }

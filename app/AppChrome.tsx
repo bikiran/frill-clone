@@ -658,7 +658,7 @@ export default function AppChrome({
   // their own centered card and must NOT render the marketing/board nav, the user
   // menu, or the live-chat bubble on top — that chrome overlapped the reset form
   // and left an open menu that covered the screen with nothing to tap "outside".
-  const isFullPageRoute = ['/landing', '/inbox-crm', '/pricing', '/product', '/solutions', '/compare', '/industries', '/channels', '/integrations', '/ai-assistant', '/phones', '/testimonials', '/features', '/referrals', '/custom/', '/f/', '/about', '/careers', '/blog', '/changelog', '/security', '/status', '/platform-admin', '/forms/', '/widget', '/auth', '/signin', '/signup', '/forgot-password', '/reset-password', '/u/', '/demo'].some(p => pathname?.startsWith(p))
+  const isFullPageRoute = ['/landing', '/inbox-crm', '/pricing', '/product', '/solutions', '/compare', '/industries', '/channels', '/integrations', '/ai-assistant', '/phones', '/testimonials', '/features', '/referrals', '/custom/', '/f/', '/about', '/careers', '/blog', '/changelog', '/security', '/status', '/platform-admin', '/forms/', '/widget', '/auth', '/signin', '/signup', '/forgot-password', '/reset-password', '/u/', '/demo', '/book'].some(p => pathname?.startsWith(p))
   // admin.colvy.com is the Super Admin console — it has its own dark chrome, so
   // the marketing/board nav must never render on top of it (regardless of the
   // path the proxy serves it under). Whole host is full-page.
@@ -678,7 +678,7 @@ export default function AppChrome({
     // Colvy's own prospects need a way to reach us from the marketing site. Show
     // the Colvy live-chat bubble on marketing pages (routing into Colvy's own
     // support workspace), but NOT on auth / upload / widget / super-admin pages.
-    const authOrUtility = ['/signin', '/signup', '/forgot-password', '/reset-password', '/auth', '/u/', '/widget', '/platform-admin'].some(p => pathname?.startsWith(p))
+    const authOrUtility = ['/signin', '/signup', '/forgot-password', '/reset-password', '/auth', '/u/', '/widget', '/platform-admin', '/book'].some(p => pathname?.startsWith(p))
     const showMarketingChat = (isMarketingRoot || isFullPageRoute) && !authOrUtility && !isPlatformHost
     const supportSlug = process.env.NEXT_PUBLIC_COLVY_SUPPORT_SLUG || 'colvy'
     return (

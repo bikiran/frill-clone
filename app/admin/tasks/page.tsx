@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef, Fragment } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { authFetch } from '@/lib/auth-fetch'
 import { SkeletonList } from '@/components/Skeleton'
 import AssigneePicker from '@/components/AssigneePicker'
 import AttachmentUploader from '@/components/AttachmentUploader'
@@ -391,7 +392,7 @@ export default function TasksPage() {
         companyId: cid,
         from: from.toISOString(), to: to.toISOString(),
       })
-      const res = await fetch(`/api/calendar?${params}`)
+      const res = await authFetch(`/api/calendar?${params}`)
       const d = await res.json()
       const calTasks = (d.events || []).map((e: any) => ({
         id: `cal:${e.id}`,
@@ -695,7 +696,7 @@ export default function TasksPage() {
           sort_order: fields.sort_order !== undefined ? fields.sort_order : (raw.sort_order ?? null),
           linked_notes: fields.linked_notes !== undefined ? fields.linked_notes : (raw.linked_notes ?? []),
         }
-        await fetch('/api/calendar', {
+        await authFetch('/api/calendar', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
         })
@@ -898,7 +899,7 @@ export default function TasksPage() {
   // Delete a task, or a scoped slice of its series.
   const deleteScoped = async (task: any, scope?: string) => {
     if (task._source === 'calendar') {
-      await fetch('/api/calendar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, action: 'delete', id: task._calendarId }) })
+      await authFetch('/api/calendar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, action: 'delete', id: task._calendarId }) })
       return
     }
     if (!task.series_id || !scope || scope === 'this') {
