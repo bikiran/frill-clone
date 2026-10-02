@@ -4743,7 +4743,7 @@ export default function InboxPage() {
   const sendReply = async () => {
     if ((!reply.trim() && stagedMedia.length === 0) || !selected || !user) return
     setSending(true)
-    const content = reply.trim()
+    let content = reply.trim()
     const senderName = myName
 
     // An internal note isn't taking the customer on, so it doesn't claim the
@@ -4852,6 +4852,21 @@ export default function InboxPage() {
         alert('Could not save the internal note: ' + e.message)
       }
       return
+    }
+
+    // Every link a customer gets from Colvy is a tracked short link (opens,
+    // device, city) — whatever channel this goes out on.
+    if (/https?:\/\//i.test(content)) {
+      try {
+        const { data: sess } = await supabase.auth.getSession()
+        const t = sess?.session?.access_token
+        const r = await fetch('/api/links/track', {
+          method: 'POST', headers: { 'Content-Type': 'application/json', ...(t ? { Authorization: `Bearer ${t}` } : {}) },
+          body: JSON.stringify({ companyId, conversationId: selected.id, text: content, channel: (selected as any).channel || sendChannel || 'chat', sentBy: senderName }),
+        })
+        const d = await r.json().catch(() => ({}))
+        if (r.ok && typeof d.text === 'string' && d.text) content = d.text
+      } catch { /* send the original if tracking fails */ }
     }
 
     // Instagram / Messenger conversations reply through the Meta Send API.

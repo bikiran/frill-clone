@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { trackLinksInText } from '@/lib/link-tracking'
 
 const admin = () => createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -166,7 +167,7 @@ export async function runKeywordReply(opts: {
     if (hit) return { matched: false, reason: 'already answered in this conversation' }
   }
 
-  const reply: string = best.reply
+  let reply: string = best.reply
 
   // AI context check: only send if the customer is actually asking for what this
   // rule answers — a lexical keyword hit alone isn't enough.
@@ -174,6 +175,9 @@ export async function runKeywordReply(opts: {
   if (!allowed) return { matched: false, reason: 'keyword present but not asked in context' }
 
   const { data: company } = await db.from('companies').select('name').eq('id', companyId).maybeSingle()
+
+  // Links in the canned answer go out as tracked short links.
+  try { reply = await trackLinksInText(reply, { companyId, conversationId, channel: opts.channel || 'chat' }) } catch {}
 
   await db.from('messages').insert({
     conversation_id: conversationId,

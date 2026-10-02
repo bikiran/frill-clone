@@ -6,6 +6,7 @@
 
 import { isWithinSendingHours } from '@/lib/campaign-sender'
 import { sendCustomerEmail } from '@/lib/customer-email'
+import { shortenUrl } from '@/lib/short-link'
 export { requireCompanyAccess } from '@/lib/company-access'
 
 export const DEFAULT_WAITLIST_TEMPLATE =
@@ -125,8 +126,17 @@ export async function notifyWaitlist(db: any, opts: {
       }
 
       const first = String(row.customer_name || contact?.name || '').trim().split(/\s+/)[0] || 'there'
-      const text = fillTemplate(settings.template, { name: first, item: row.item_name, business, link: row.item_url || '' })
       const conversationId = await ensureConversation(db, companyId, row, contact, phone)
+      // The product link goes out as a tracked short link (SMS and email alike).
+      let link = row.item_url || ''
+      if (link) {
+        try {
+          const s = await shortenUrl(link, { companyId, conversationId: conversationId || undefined, kind: 'waitlist' })
+          const code = s && s !== link ? (s.split('/l/')[1] || '') : ''
+          if (code) { link = s; await db.from('short_links').update({ link_type: 'product', contact_id: contact?.id || row.contact_id || null, conversation_id: conversationId || null, channel: 'waitlist' }).eq('code', code) }
+        } catch {}
+      }
+      const text = fillTemplate(settings.template, { name: first, item: row.item_name, business, link })
 
       let ok = false, via: 'sms' | 'email' = phone ? 'sms' : 'email', err = ''
       if (phone) {
