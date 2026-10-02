@@ -7,6 +7,7 @@ import { SkeletonList } from '@/components/Skeleton'
 import EmojiPicker from '@/components/EmojiPicker'
 import { analyseSms, renderVariables, SMS_VARIABLES } from '@/lib/sms-segments'
 import { calculateCost, DEFAULT_PRICING, SmsPricing, aud, audRate, resolveSmsPricing } from '@/lib/sms-pricing'
+import { confirmDialog } from '@/components/ConfirmDialog'
 
 const AUDIENCE_TYPES: [string, string, string][] = [
   ['all_subscribed', 'All subscribed contacts', 'Everyone with marketing consent'],
@@ -478,7 +479,7 @@ export default function CampaignEditorPage() {
   const sendNow = async () => {
     if (!companyId) return
     // Spending money and messaging real people — make the numbers explicit.
-    const ok = confirm(
+    const ok = await confirmDialog(
       `You are about to send ${recipients.toLocaleString()} SMS messages ` +
       `at an estimated cost of ${aud(costing.totalIncGst)} (inc GST).\n\n` +
       `This cannot be undone once it starts.`

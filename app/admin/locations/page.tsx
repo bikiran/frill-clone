@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import PageHeader from '@/components/PageHeader'
+import { confirmDialog } from '@/components/ConfirmDialog'
 
 const AU_STATES = ['ACT', 'NSW', 'NT', 'QLD', 'SA', 'TAS', 'VIC', 'WA']
 
@@ -99,7 +100,7 @@ export default function LocationsPage() {
   }
 
   const remove = async (id: string) => {
-    if (!confirm('Delete this location?')) return
+    if (!await confirmDialog('Delete this location?')) return
     await (supabase as any).from('company_locations').delete().eq('id', id)
     if (companyId) await loadLocations(companyId)
   }

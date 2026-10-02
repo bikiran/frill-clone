@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/components/ToastProvider'
+import { confirmDialog } from '@/components/ConfirmDialog'
 
 const STATUS_OPTIONS = [
   { value: 'new', label: 'Under consideration' },
@@ -99,7 +100,7 @@ export function BulkActionToolbar({
   }
 
   const handleDelete = async () => {
-    if (!confirm(`Delete ${selectedCount} ideas? This cannot be undone.`)) return
+    if (!await confirmDialog(`Delete ${selectedCount} ideas? This cannot be undone.`)) return
 
     try {
       await supabase

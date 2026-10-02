@@ -13,6 +13,7 @@ import VoiceBlocks from '@/components/VoiceBlocks'
 import NoteComments from '@/components/NoteComments'
 import ChecklistProductPicker, { type PickerProduct } from '@/components/ChecklistProductPicker'
 import { notebookOf, visibleTags, withNotebook, listNotebooks } from '@/lib/notebooks'
+import { confirmDialog } from '@/components/ConfirmDialog'
 
 type Note = {
   id: string; title: string; body: string; checklist: ChecklistItem[]; attachments: any[]
@@ -345,7 +346,7 @@ export default function NotesPage() {
     showToast('Restored')
   }
   const deleteForever = async (id: string) => {
-    if (!confirm('Delete this note permanently? This can’t be undone.')) return
+    if (!await confirmDialog('Delete this note permanently? This can’t be undone.')) return
     setTrashList(prev => prev.filter(x => x.id !== id))
     if (activeId === id) { setActiveId(null); setNote(null) }
     try { await fetch('/api/notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, action: 'delete', id }) }) } catch {}

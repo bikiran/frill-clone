@@ -14,6 +14,7 @@ import { enrichNames } from '@/lib/team-names'
 import { useDraft } from '@/lib/drafts'
 import PageGreeting from '@/components/PageGreeting'
 import { peekCompanyUser, readCache, writeCache } from '@/lib/client-cache'
+import { confirmDialog } from '@/components/ConfirmDialog'
 
 function parseTs(d: string | null | undefined): Date | null {
   if (!d) return null
@@ -823,7 +824,7 @@ export default function TasksPage() {
   const bulkDelete = async () => {
     const ids = realSelectedIds()
     if (!ids.length) return
-    if (!confirm(`Delete ${ids.length} task${ids.length === 1 ? '' : 's'}? This can't be undone.`)) return
+    if (!await confirmDialog(`Delete ${ids.length} task${ids.length === 1 ? '' : 's'}? This can't be undone.`)) return
     try { await (supabase as any).from('conversation_tasks').delete().in('id', ids) } catch (e: any) { alert('Could not delete: ' + e.message); return }
     if (selectedId && ids.includes(selectedId)) setSelectedId(null)
     exitSelect()
@@ -2265,7 +2266,7 @@ function TaskDetail({ task, conv, team, outlets = [], companyId, me, userId, onP
       <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'flex-start' }}>
         {isSeries && onEndRepeatNew && (
           <button onClick={async () => {
-            if (!confirm('End the repeat at this card (this and all following cards are removed) and start a new repeat from here?')) return
+            if (!await confirmDialog('End the repeat at this card (this and all following cards are removed) and start a new repeat from here?')) return
             await onEndRepeatNew()
           }} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, border: '1px solid #0e7490', background: '#ecfeff', color: '#0e7490', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', padding: '8px 12px', borderRadius: 9 }}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
@@ -2274,7 +2275,7 @@ function TaskDetail({ task, conv, team, outlets = [], companyId, me, userId, onP
         )}
         <button onClick={async () => {
           const label = isSeries ? (scope === 'all' ? 'all cards in this series' : scope === 'following' ? 'this and all following cards' : 'this card') : 'this task'
-          if (!confirm(`Delete ${label}?`)) return
+          if (!await confirmDialog(`Delete ${label}?`)) return
           await onDeleteScoped(isSeries ? scope : 'this')
           onDeleted()
         }} style={{ border: 'none', background: 'none', color: '#dc2626', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', padding: 0 }}>

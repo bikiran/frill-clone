@@ -8,6 +8,7 @@ import BlogAdminPage from '@/components/BlogAdminPage'
 import { SmsPricing, DEFAULT_PRICING, calculateCost, aud, audRate, parsePricingRow } from '@/lib/sms-pricing'
 import { PLAN_FEATURES, PLAN_LIMITS, PLAN_NAMES, PLAN_PRICES, OVERRIDABLE_FEATURES, OVERRIDABLE_LIMITS, Plan } from '@/lib/plan'
 import { OPERATIONAL_FLAGS } from '@/lib/feature-flags'
+import { confirmDialog } from '@/components/ConfirmDialog'
 
 const SUPER_ADMIN = 'bishalstha76@gmail.com'
 
@@ -2163,7 +2164,7 @@ function DemoWorkspacesPage() {
                             ? <button onClick={() => act('enable', r.id)} disabled={!!busy} style={paBtn('#10b981')}>Enable</button>
                             : <button onClick={() => act('disable', r.id)} disabled={!!busy} style={paBtn('#f59e0b')}>Disable</button>}
                           {r.status !== 'converted' && <button onClick={() => act('convert', r.id)} disabled={!!busy} style={paBtn('#8b5cf6')}>Convert</button>}
-                          <button onClick={() => { if (confirm('Delete this demo workspace and all its sample data? This cannot be undone.')) act('delete', r.id) }} disabled={!!busy} style={paBtn('#ef4444')}>Delete</button>
+                          <button onClick={async () => { if (await confirmDialog('Delete this demo workspace and all its sample data? This cannot be undone.')) act('delete', r.id) }} disabled={!!busy} style={paBtn('#ef4444')}>Delete</button>
                         </div>
                       </td>
                     </tr>

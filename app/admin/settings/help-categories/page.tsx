@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import EmojiPicker from '@/components/EmojiPicker'
+import { confirmDialog } from '@/components/ConfirmDialog'
 
 
 export default function HelpCategoriesPage() {
@@ -162,7 +163,7 @@ export default function HelpCategoriesPage() {
   }
 
   const handleDeleteCategory = async (id: string) => {
-    if (!confirm('Delete this category? Articles in it will keep their category but the category will be removed.')) return
+    if (!await confirmDialog('Delete this category? Articles in it will keep their category but the category will be removed.')) return
     setSaving(true)
     await (supabase as any)
       .from('help_categories')

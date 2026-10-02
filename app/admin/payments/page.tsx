@@ -7,6 +7,7 @@ import { peekCompanyUser } from '@/lib/client-cache'
 import { SkeletonList } from '@/components/Skeleton'
 import CreatePaymentLinkModal from '@/components/CreatePaymentLinkModal'
 import PageHeader from '@/components/PageHeader'
+import { confirmDialog } from '@/components/ConfirmDialog'
 
 // Payments — transactions taken through Colvy payment links (Stripe). Refund
 // (full or partial), resend receipts, remind on pending, and create new links.
@@ -297,7 +298,7 @@ export default function PaymentsPage() {
   const doRefund = async (p: Payment, amount?: number | null) => {
     const remainingCents = (p.amount_cents || 0) - (p.refunded_cents || 0)
     const askCents = amount != null ? Math.round(amount * 100) : remainingCents
-    if (!window.confirm(`Refund ${money(askCents, p.currency || 'AUD')} to ${customerOf(p).name}? This cannot be undone.`)) return
+    if (!await confirmDialog(`Refund ${money(askCents, p.currency || 'AUD')} to ${customerOf(p).name}? This cannot be undone.`)) return
     setBusy(p.id)
     try {
       const res = await fetch('/api/stripe/refund', {

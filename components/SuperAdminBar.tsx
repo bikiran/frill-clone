@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import { confirmDialog } from '@/components/ConfirmDialog'
 
 // In-workspace Super-Admin context bar.
 // Renders ONLY for a platform super-admin (the summary API 403s for everyone
@@ -77,9 +78,9 @@ export default function SuperAdminBar({ companyId }: { companyId: string | null 
     const base = trialLeft && trialLeft > 0 && co.trial_ends_at ? new Date(co.trial_ends_at).getTime() : Date.now()
     patchCompany({ trial_ends_at: new Date(base + 14 * 86400000).toISOString() }, 'trial')
   }
-  const toggleSuspend = () => {
-    if (suspended) { if (confirm('Reactivate this workspace? It will be set to the Free plan.')) patchCompany({ plan: 'free' }, 'suspend') }
-    else { if (confirm('Suspend this workspace? The plan is set to "suspended".')) patchCompany({ plan: 'suspended' }, 'suspend') }
+  const toggleSuspend = async () => {
+    if (suspended) { if (await confirmDialog('Reactivate this workspace? It will be set to the Free plan.')) patchCompany({ plan: 'free' }, 'suspend') }
+    else { if (await confirmDialog('Suspend this workspace? The plan is set to "suspended".')) patchCompany({ plan: 'suspended' }, 'suspend') }
   }
   const openAudit = async () => {
     setAuditOpen(true); setAudit(null); setAuditNote('')

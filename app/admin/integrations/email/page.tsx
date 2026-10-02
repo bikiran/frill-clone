@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import { confirmDialog } from '@/components/ConfirmDialog'
 
 // Multi-account email. Two kinds of mailbox:
 //   Gmail   — sign in with Google. The ONLY way to use an @gmail.com address.
@@ -97,7 +98,7 @@ export default function EmailPage() {
   }
 
   const deleteAccount = async (a: any) => {
-    if (!confirm(`Remove ${a.inbound_address} from Colvy? Existing conversations stay, but no new mail will arrive.`)) return
+    if (!await confirmDialog(`Remove ${a.inbound_address} from Colvy? Existing conversations stay, but no new mail will arrive.`)) return
     try { await api({ action: 'delete_account', id: a.id }); if (companyId) await load(companyId) }
     catch (e: any) { setMsg(e.message) }
   }

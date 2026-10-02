@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { api, money, dur, card, btn, btnGhost, input, label, hint, Toggle, Modal } from './shared'
 import { PlusIcon, CalendarIcon, WarnIcon, LinkIcon } from '@/components/booking/icons'
 import { availabilityIssue } from '@/lib/booking-time'
+import { confirmDialog } from '@/components/ConfirmDialog'
 
 // Bookable services: list + editor.
 
@@ -112,7 +113,7 @@ function ServiceEditor({ companyId, initial, staff, locations, stripeReady, onCl
     } catch (e: any) { setError(e.message) } finally { setSaving(false) }
   }
   const remove = async () => {
-    if (!confirm(`Delete “${initial.name}”? If it has bookings it’s hidden instead.`)) return
+    if (!await confirmDialog(`Delete “${initial.name}”? If it has bookings it’s hidden instead.`)) return
     try { const d = await api(`/api/bookings/services?companyId=${companyId}&id=${initial.id}`, { method: 'DELETE' }); onSaved(d.archived ? 'Service hidden (it has bookings)' : 'Service deleted') }
     catch (e: any) { setError(e.message) }
   }

@@ -40,12 +40,27 @@ export interface ShortenContext {
  * delivered.
  */
 export async function trackLinksInText(text: string, ctx: ShortenContext): Promise<string> {
-  if (!text) return text
+  return (await trackLinks(text, ctx)).text
+}
+
+export type TrackedLink = { code: string; short: string; url: string; type: string }
+
+// Replace the long URLs in `text` with links it already tracked (e.g. to
+// store the thread copy of a message with the same short links the customer got).
+export function applyTrackedLinks(text: string, links: TrackedLink[]): string {
+  let out = text || ''
+  for (const l of links) out = out.split(l.url).join(l.short)
+  return out
+}
+
+/** Same as trackLinksInText, but also returns the links it created. */
+export async function trackLinks(text: string, ctx: ShortenContext): Promise<{ text: string; links: TrackedLink[] }> {
+  if (!text) return { text, links: [] }
   const urls = Array.from(new Set(text.match(URL_RE) || []))
-  if (urls.length === 0) return text
+  if (urls.length === 0) return { text, links: [] }
 
   let out = text
-  const created: { code: string; url: string }[] = []
+  const created: { code: string; url: string; short: string }[] = []
   for (const url of urls) {
     // Don't re-shorten one of our own links — /l/ (tracked) or /m/ (media),
     // which the attachment path has already created.
@@ -59,7 +74,7 @@ export async function trackLinksInText(text: string, ctx: ShortenContext): Promi
       if (short && short !== url) {
         out = out.split(url).join(short)
         const code = short.split('/l/')[1] || short.split('/m/')[1]
-        if (code) created.push({ code, url })
+        if (code) created.push({ code, url, short })
       }
     } catch { /* leave this URL as-is */ }
   }
@@ -89,7 +104,7 @@ export async function trackLinksInText(text: string, ctx: ShortenContext): Promi
       }
     } catch { /* attribution is optional */ }
   }
-  return out
+  return { text: out, links: created.map(c => ({ code: c.code, short: c.short, url: c.url, type: classifyLink(c.url) })) }
 }
 
 /** Small UA parser — enough to report which device/browser opened a link. */

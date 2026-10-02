@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { resolveSmsSender } from '@/lib/sms-provider'
 import { companyFlagEnabled } from '@/lib/feature-flags'
+import { shortenUrl } from '@/lib/short-link'
 
 function admin() {
   return createClient(
@@ -45,7 +46,16 @@ export async function POST(req: NextRequest) {
       }
     } catch {}
 
-    const smsText = `📎 ${request.prompt}\nUpload here (private, full quality): ${link}`
+    // Tracked short link, so the inbox card shows when (and on what device)
+    // the customer opened the upload page. Falls back to the plain link.
+    try {
+      const short = await shortenUrl(link, { companyId, conversationId: conversationId || undefined, kind: 'upload' })
+      if (short) link = short
+      const code = short && short.split('/l/')[1]
+      if (code) await db.from('short_links').update({ link_type: 'upload', contact_id: contactId || null, conversation_id: conversationId || null }).eq('code', code)
+    } catch {}
+
+    const smsText = `${request.prompt}\nUpload here (private, full quality): ${link}`
 
     // Post the request into the conversation as an agent message.
     if (conversationId) {

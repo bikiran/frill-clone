@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { getRandomName } from '@/lib/randomNames'
 import Link from 'next/link'
+import { confirmDialog } from '@/components/ConfirmDialog'
 
 export default function ProfilePage() {
   const router = useRouter()
@@ -99,7 +100,7 @@ export default function ProfilePage() {
   }
 
   const handleDeleteAvatar = async () => {
-    if (!confirm('Remove profile photo?')) return
+    if (!await confirmDialog('Remove profile photo?')) return
     setSaving(true)
     setAvatarUrl('')
     await supabase.auth.updateUser({ data: { avatar_url: null } })

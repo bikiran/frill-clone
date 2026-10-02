@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter, useSearchParams } from 'next/navigation'
+import { confirmDialog } from '@/components/ConfirmDialog'
 
 export default function ShopifyIntegrationPage() {
   const router = useRouter()
@@ -89,7 +90,7 @@ export default function ShopifyIntegrationPage() {
 
   const removeStore = async (integrationId: string) => {
     if (!companyId) return
-    if (!confirm('Remove this Shopify store? Synced customers stay, but it stops syncing.')) return
+    if (!await confirmDialog('Remove this Shopify store? Synced customers stay, but it stops syncing.')) return
     try {
       await fetch('/api/shopify/setup', {
         method: 'DELETE', headers: { 'Content-Type': 'application/json' },

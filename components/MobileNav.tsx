@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
+import { confirmDialog } from '@/components/ConfirmDialog'
 
 /**
  * App-style bottom navigation for phones.
@@ -149,7 +150,7 @@ export default function MobileNav() {
   }, [showMore])
 
   const logout = async () => {
-    if (!confirm('Log out of Colvy?')) return
+    if (!await confirmDialog('Log out of Colvy?')) return
     try { await supabase.auth.signOut() } catch {}
     router.push('/login')
   }

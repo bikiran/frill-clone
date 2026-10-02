@@ -10,6 +10,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { authFetch } from '@/lib/auth-fetch'
 import { peekCompanyUser, readCache, writeCache } from '@/lib/client-cache'
+import { confirmDialog } from '@/components/ConfirmDialog'
 
 // Default event types. Colours are fixed; the label and whether a type is shown
 // are per-company overrides (companies.calendar_settings.event_types), editable
@@ -332,7 +333,7 @@ export default function CalendarPage() {
   }
 
   const remove = async (id: string) => {
-    if (!companyId || !confirm('Delete this event?')) return
+    if (!companyId || !await confirmDialog('Delete this event?')) return
     await authFetch('/api/calendar', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ companyId, action: 'delete', id }),
@@ -446,7 +447,7 @@ export default function CalendarPage() {
               ['completed', 'Delivered'],
               ['missed', 'Missed'],
             ].map(([k, label]) => (
-              <button key={k} onClick={() => setStatus(e.id, k, e.conversation_id ? confirm(`Tell the customer? ("${label}")`) : false)}
+              <button key={k} onClick={async () => setStatus(e.id, k, e.conversation_id ? await confirmDialog(`Tell the customer? ("${label}")`) : false)}
                 style={{ padding: '5px 10px', borderRadius: 7, border: '1px solid var(--border)', background: e.status === k ? 'var(--peach)' : '#fff', color: e.status === k ? 'var(--coral)' : 'var(--ink)', fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}>
                 {label}
               </button>

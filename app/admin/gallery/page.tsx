@@ -12,6 +12,7 @@ import MentionInput, { resolveMentions } from '@/components/MentionInput'
 import { useGoogleDrivePicker } from '@/components/GoogleDrivePicker'
 import PhoneUploadQR from '@/components/PhoneUploadQR'
 import PageHeader from '@/components/PageHeader'
+import { confirmDialog } from '@/components/ConfirmDialog'
 
 export default function GalleryPage() {
   const { companyId, user, loading } = useCompanyUser()
@@ -344,7 +345,7 @@ export default function GalleryPage() {
   const fileRef = useRef<HTMLInputElement>(null)
   const [prextyStatus, setPrextyStatus] = useState('')
 
-  // In-app confirmation dialog (replaces the browser's native confirm()).
+  // In-app confirmation dialog (replaces the browser's native await confirmDialog()).
   const [confirmState, setConfirmState] = useState<null | {
     title: string; message: string; confirmLabel?: string; danger?: boolean; onConfirm: () => void
   }>(null)
@@ -1418,7 +1419,7 @@ export default function GalleryPage() {
 }
 
 // ── In-app confirmation dialog ────────────────────────────────────────────
-// A themed replacement for window.confirm(): keyboard-friendly (Esc cancels,
+// A themed replacement for await confirmDialog(): keyboard-friendly (Esc cancels,
 // Enter confirms), with a danger variant for destructive actions.
 function ConfirmDialog({ title, message, confirmLabel = 'Confirm', danger, onConfirm, onCancel }: {
   title: string; message: string; confirmLabel?: string; danger?: boolean
