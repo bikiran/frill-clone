@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { api, money, card, btnGhost } from './shared'
+import { WarnIcon, ArrowRightIcon, CheckIcon } from '@/components/booking/icons'
 
 // Today at a glance: headline numbers, then today's bookings in a column per
 // person (one column when the business takes bookings as a whole).
@@ -39,7 +40,7 @@ export default function TodayTab({ companyId, onOpenBookings, reloadKey }: { com
 
   if (error) return <div style={{ ...card, color: '#b91c1c', fontSize: 13.5 }}>{error}</div>
   if (!data) return <div className="bk-skel-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(160px,1fr))', gap: 12 }}>{[0, 1, 2, 3].map(i => <div key={i} style={{ ...card, height: 92, background: '#f6f6f7', border: 'none' }} />)}</div>
-  if (data.hint) return <div style={{ ...card, background: '#fffbeb', borderColor: '#fde68a', color: '#92400e', fontSize: 13.5 }}>⚠ {data.hint}</div>
+  if (data.hint) return <div style={{ ...card, background: '#fffbeb', borderColor: '#fde68a', color: '#92400e', fontSize: 13.5, display: 'flex', gap: 8 }}><WarnIcon size={16} /> {data.hint}</div>
 
   const s = data.stats!
   const todayLabel = new Date(now).toLocaleDateString('en-AU', { timeZone: tz, weekday: 'long', day: 'numeric', month: 'long' })
@@ -67,7 +68,7 @@ export default function TodayTab({ companyId, onOpenBookings, reloadKey }: { com
 
       <div style={{ display: 'flex', alignItems: 'center', marginBottom: 10 }}>
         <div style={{ fontWeight: 800, fontSize: 15, flex: 1 }}>Today’s schedule</div>
-        <button onClick={onOpenBookings} style={{ ...btnGhost, height: 30, fontSize: 12.5 }}>All bookings →</button>
+        <button onClick={onOpenBookings} style={{ ...btnGhost, height: 30, fontSize: 12.5 }}>All bookings <ArrowRightIcon size={13} /></button>
       </div>
       {!columns.length ? (
         <div style={{ ...card, textAlign: 'center', padding: '30px 20px', color: 'var(--slate,#6b7280)', fontSize: 14 }}>Nothing booked today.</div>
@@ -91,7 +92,7 @@ export default function TodayTab({ companyId, onOpenBookings, reloadKey }: { com
                         {live && <span style={{ ...pill, background: '#fff1ee', color: '#c2410c' }}>● Now</span>}
                         {b.status === 'no_show' && <span style={{ ...pill, background: '#f3f4f6', color: '#4b5563' }}>No-show</span>}
                         {b.status === 'completed' && <span style={{ ...pill, background: '#eff6ff', color: '#1d4ed8' }}>Done</span>}
-                        {b.status === 'confirmed' && b.customer_confirmed_at && <span style={{ ...pill, background: '#ecfdf5', color: '#047857' }}>✓ Confirmed</span>}
+                        {b.status === 'confirmed' && b.customer_confirmed_at && <span style={{ ...pill, background: '#ecfdf5', color: '#047857' }}><CheckIcon size={10} strokeWidth={3} style={{ marginRight: 3 }} />Confirmed</span>}
                       </div>
                       <div style={{ fontWeight: 700, fontSize: 14, marginTop: 3 }}>{b.customer_name || 'Customer'}</div>
                       <div style={{ fontSize: 12.5, color: 'var(--slate,#6b7280)', marginTop: 1 }}>{b.service_name}{b.address || b.location_label ? ` · ${b.address || b.location_label}` : ''}</div>
@@ -117,4 +118,4 @@ function Tile({ label, value, sub, i }: { label: string; value: string; sub: str
   )
 }
 
-const pill: React.CSSProperties = { fontSize: 10.5, fontWeight: 700, padding: '2px 7px', borderRadius: 999, whiteSpace: 'nowrap' }
+const pill: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', fontSize: 10.5, fontWeight: 700, padding: '2px 7px', borderRadius: 999, whiteSpace: 'nowrap' }

@@ -2,6 +2,9 @@
 
 import { DAY_ORDER, DAY_LABEL, type WeekHours, type DayKey } from '@/lib/booking-time'
 import { Toggle, input } from './shared'
+import { PlusIcon } from '@/components/booking/icons'
+
+const XIcon = ({ size = 13 }: { size?: number }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
 
 // Opening hours for a week: each day on/off with one or more time ranges.
 
@@ -31,10 +34,10 @@ export default function WeekHoursEditor({ value, onChange }: { value: WeekHours;
                   <span style={{ color: '#9ca3af' }}>–</span>
                   <input type="time" value={r.end} step={300} onChange={e => set(k, ranges.map((x, j) => j === i ? { ...x, end: e.target.value } : x))} style={{ ...input, width: 118 }} />
                   {r.end <= r.start && <span style={{ fontSize: 11.5, color: '#dc2626' }}>End must be after start</span>}
-                  <button type="button" onClick={() => set(k, ranges.filter((_, j) => j !== i))} title="Remove" style={iconBtn}>×</button>
+                  <button type="button" onClick={() => set(k, ranges.filter((_, j) => j !== i))} title="Remove" style={iconBtn}><XIcon size={13} /></button>
                   {i === ranges.length - 1 && (
                     <>
-                      <button type="button" onClick={() => set(k, [...ranges, { start: r.end < '20:00' ? r.end : '13:00', end: r.end < '20:00' ? addHour(r.end, 2) : '17:00' }])} title="Add a break / second range" style={iconBtn}>＋</button>
+                      <button type="button" onClick={() => set(k, [...ranges, { start: r.end < '20:00' ? r.end : '13:00', end: r.end < '20:00' ? addHour(r.end, 2) : '17:00' }])} title="Add a break / second range" style={iconBtn}><PlusIcon size={14} /></button>
                       {k === 'mon' && <button type="button" onClick={() => copyToWeekdays(k)} style={{ ...iconBtn, width: 'auto', padding: '0 8px', fontSize: 12 }}>Copy to Tue–Fri</button>}
                     </>
                   )}
@@ -53,4 +56,4 @@ function addHour(t: string, n: number) {
   return `${String(Math.min(23, h + n)).padStart(2, '0')}:${String(m).padStart(2, '0')}`
 }
 
-const iconBtn: React.CSSProperties = { width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border, #e5e7eb)', background: '#fff', color: 'var(--slate, #6b7280)', cursor: 'pointer', fontSize: 15, lineHeight: 1, fontFamily: 'inherit' }
+const iconBtn: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border, #e5e7eb)', background: '#fff', color: 'var(--slate, #6b7280)', cursor: 'pointer', fontSize: 15, lineHeight: 1, fontFamily: 'inherit' }

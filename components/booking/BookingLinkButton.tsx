@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { api } from '@/components/booking/admin/shared'
+import { SparkleIcon, CalendarIcon } from '@/components/booking/icons'
 
 // Inbox composer: "📅 Booking link" → pick a service (or any) → a personal
 // link for this customer is dropped into the reply. Their details come
@@ -52,7 +53,7 @@ export default function BookingLinkButton({ companyId, conversationId, contactId
       `}</style>
       <button type="button" onClick={() => setOpen(o => !o)} title="Send a booking link for this customer"
         style={{ height, display: 'inline-flex', alignItems: 'center', gap: 5, padding: '0 11px', borderRadius: 8, border: '1px solid var(--border,#e5e7eb)', background: open ? '#f5f5f6' : '#fff', color: 'var(--ink,#111)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="17" rx="2" /><path d="M16 2v4M8 2v4M3 10h18" /></svg>
+        <CalendarIcon size={14} />
         Booking link
       </button>
       {open && (
@@ -64,7 +65,7 @@ export default function BookingLinkButton({ companyId, conversationId, contactId
           )}
           {services && services.length > 0 && (
             <>
-              {services.length > 1 && <button className="blb-item" onClick={() => pick(null)} disabled={!!busy}>✨ <span style={{ flex: 1 }}>Any service</span>{busy === 'any' && '…'}</button>}
+              {services.length > 1 && <button className="blb-item" onClick={() => pick(null)} disabled={!!busy}><SparkleIcon size={14} style={{ color: 'var(--coral,#ff7a6b)' }} /> <span style={{ flex: 1 }}>Any service</span>{busy === 'any' && '…'}</button>}
               {services.map(s => (
                 <button key={s.id} className="blb-item" onClick={() => pick(s.id, s.name)} disabled={!!busy}>
                   <span style={{ width: 8, height: 8, borderRadius: '50%', background: s.color || 'var(--coral,#ff7a6b)', flexShrink: 0 }} />

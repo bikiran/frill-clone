@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import SlotPicker, { viewerTz, tzShort } from '@/components/booking/SlotPicker'
 import { ParallaxBackdrop, MOTION_CSS } from '@/components/booking/motion'
+import { CalendarIcon, LockIcon } from '@/components/booking/icons'
 
 // The public booking page: service → (staff) → time → details → pay/confirm.
 // Rendered at colvy.com/book/<slug>[/<service>], <slug>.colvy.com/book[/<service>]
@@ -159,7 +160,7 @@ export default function BookingFlow({ slug, domain, initialService }: { slug?: s
     }
   }
 
-  if (loadError) return <Shell accent="#ff7a6b"><div className="bk-card bk-card-in" style={{ display: 'block', maxWidth: 520, padding: '56px 24px', textAlign: 'center' }}><div style={{ fontSize: 36, marginBottom: 10 }}>📅</div><div style={{ fontWeight: 700, fontSize: 18, color: '#111', marginBottom: 6 }}>Booking unavailable</div><div style={{ color: '#6b7280', fontSize: 14.5 }}>{loadError}</div></div></Shell>
+  if (loadError) return <Shell accent="#ff7a6b"><div className="bk-card bk-card-in" style={{ display: 'block', maxWidth: 520, padding: '56px 24px', textAlign: 'center' }}><div style={{ width: 56, height: 56, borderRadius: 18, background: '#f3f4f6', color: '#9ca3af', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}><CalendarIcon size={28} /></div><div style={{ fontWeight: 700, fontSize: 18, color: '#111', marginBottom: 6 }}>Booking unavailable</div><div style={{ color: '#6b7280', fontSize: 14.5 }}>{loadError}</div></div></Shell>
   if (!data) return (
     <Shell accent="#ff7a6b">
       <div className="bk-card bk-card-in">
@@ -315,7 +316,7 @@ export default function BookingFlow({ slug, domain, initialService }: { slug?: s
                 <button type="submit" disabled={submitting} className="bk-primary" style={{ width: '100%', height: 50, fontSize: 15.5 }}>
                   {submitting ? <Spinner light /> : due > 0 ? `Continue to payment · ${money(due, service.currency)}` : 'Confirm booking'}
                 </button>
-                {due > 0 && <div style={{ textAlign: 'center', fontSize: 12, color: '#9ca3af', marginTop: 8 }}>🔒 Secure payment by Stripe. Your time is held while you pay.</div>}
+                {due > 0 && <div style={{ textAlign: 'center', fontSize: 12, color: '#9ca3af', marginTop: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}><LockIcon size={12} /> Secure payment by Stripe. Your time is held while you pay.</div>}
               </div>
             </form>
           )}
