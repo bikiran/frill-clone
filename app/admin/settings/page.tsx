@@ -1637,7 +1637,11 @@ export default function SettingsPage() {
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--coral)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
                 <h2 className="font-bold" style={{ color: 'var(--ink)' }}>WordPress plugin</h2>
               </div>
-              <p className="text-sm mb-4" style={{ color: 'var(--slate)' }}>Install the Colvy plugin on your WordPress site, then paste these two values into <strong>Colvy → Settings</strong> in your WP admin. No file editing needed.</p>
+              <p className="text-sm mb-3" style={{ color: 'var(--slate)' }}>One plugin for your site: chat widget, WooCommerce orders and abandoned carts, “Notify me” on sold-out products, booking page embed and branding. Install it, then paste these two values into <strong>Colvy → Connection</strong> in your WP admin. It replaces the older Colvy Dashboard and Colvy Bridge plugins and keeps their settings.</p>
+              <a href="/downloads/colvy-wordpress.zip" download className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold mb-4" style={{ background: 'var(--coral)', color: '#fff' }}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v12M7 10l5 5 5-5" /><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /></svg>
+                Download plugin (v3)
+              </a>
               <div className="space-y-3">
                 <div>
                   <label className="text-xs font-semibold block mb-1" style={{ color: 'var(--slate)' }}>Company ID</label>

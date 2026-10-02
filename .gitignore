@@ -12,3 +12,4 @@ middleware.ts
 
 # TypeScript incremental build artifact
 dist/
+/public/downloads/

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { bookingPageUrl } from '@/lib/booking'
 
 function admin() {
   return createClient(
@@ -48,11 +49,28 @@ export async function GET(req: NextRequest) {
     db.from('help_articles').select('*', { count: 'exact', head: true }).eq('company_id', co.id),
   ])
   const { count: openChats } = await db.from('conversations').select('*', { count: 'exact', head: true }).eq('company_id', co.id).eq('status', 'open')
+  // Newer areas — each optional, so an older workspace without the table still loads.
+  const nowIso = new Date().toISOString()
+  const weekIso = new Date(Date.now() + 7 * 86400000).toISOString()
+  const safeCount = async (q: any) => { try { const { count, error } = await q; return error ? null : (count || 0) } catch { return null } }
+  const [contacts, bookingsWeek, waiting, unread] = await Promise.all([
+    safeCount(db.from('contacts').select('id', { count: 'exact', head: true }).eq('company_id', co.id)),
+    safeCount(db.from('bookings').select('id', { count: 'exact', head: true }).eq('company_id', co.id).eq('status', 'confirmed').gte('starts_at', nowIso).lt('starts_at', weekIso)),
+    safeCount(db.from('stock_waitlist').select('id', { count: 'exact', head: true }).eq('company_id', co.id).in('status', ['waiting', 'queued'])),
+    safeCount(db.from('conversations').select('id', { count: 'exact', head: true }).eq('company_id', co.id).eq('status', 'open').gt('unread_count', 0)),
+  ])
+  let bookingUrl: string | null = null
+  try {
+    const { data: bs } = await db.from('companies').select('booking_settings').eq('id', co.id).maybeSingle()
+    if (co.slug && (bs as any)?.booking_settings?.enabled !== false) bookingUrl = bookingPageUrl(co)
+  } catch {}
 
   return cors(NextResponse.json({
     company: {
       id: co.id, name: co.name, slug: co.slug,
       board_url: `https://${co.slug}.colvy.com`,
+      app_url: `https://${co.slug}.colvy.com/admin`,
+      booking_url: bookingUrl,
       logo_url: co.logo_url || settings.logoUrl || '',
       favicon_url: settings.faviconUrl || '',
       accent_color: co.accent_color || '#ff7a6b',
@@ -64,6 +82,7 @@ export async function GET(req: NextRequest) {
       conversations: convs.count || 0,
       open_chats: openChats || 0,
       help_articles: arts.count || 0,
+      contacts, bookings_week: bookingsWeek, waitlist_waiting: waiting, unread,
     },
   }))
 }
