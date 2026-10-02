@@ -122,8 +122,14 @@ export async function GET(req: NextRequest) {
     if (!request) return NextResponse.json({ error: 'not_found' }, { status: 404 })
 
     // Expiry / status checks
+    // Expired is expired, whatever else has happened to the request. This only
+    // flipped an OPEN one — but the first successful upload marks a request
+    // 'fulfilled', so a link that had been used once never read as expired
+    // here, while the upload route (which checks expires_at directly) refused
+    // every file sent through it. The customer got the normal page, picked
+    // photos, and watched each one fail.
     let status = request.status
-    if (status === 'open' && request.expires_at && new Date(request.expires_at).getTime() < Date.now()) status = 'expired'
+    if (status !== 'cancelled' && request.expires_at && new Date(request.expires_at).getTime() < Date.now()) status = 'expired'
 
     const { data: company } = await db.from('companies').select('name, logo_url, accent_color').eq('id', request.company_id).maybeSingle()
     const { data: files } = await db.from('media_request_files').select('*').eq('request_id', request.id).order('created_at', { ascending: true })
