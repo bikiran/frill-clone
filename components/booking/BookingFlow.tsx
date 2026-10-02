@@ -1,7 +1,8 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import SlotPicker, { viewerTz, tzShort } from '@/components/booking/SlotPicker'
+import { ParallaxBackdrop, MOTION_CSS } from '@/components/booking/motion'
 
 // The public booking page: service → (staff) → time → details → pay/confirm.
 // Rendered at colvy.com/book/<slug>[/<service>], <slug>.colvy.com/book[/<service>]
@@ -56,7 +57,19 @@ export default function BookingFlow({ slug, domain, initialService }: { slug?: s
   const [staff, setStaff] = useState<string>('any')
   const [locationId, setLocationId] = useState<string>('')
   const [slot, setSlot] = useState<string | null>(null)
-  const [step, setStep] = useState<'service' | 'time' | 'details'>('service')
+  const [step, setStepRaw] = useState<'service' | 'time' | 'details'>('service')
+  const [dir, setDir] = useState<'f' | 'b'>('f')
+  const mainRef = useRef<HTMLElement>(null)
+  const ORDER = { service: 0, time: 1, details: 2 }
+  const setStep = (next: 'service' | 'time' | 'details') => {
+    setDir(ORDER[next] >= ORDER[step] ? 'f' : 'b')
+    setStepRaw(next)
+    // On phones the step starts below the summary — bring it into view.
+    requestAnimationFrame(() => {
+      const el = mainRef.current
+      if (el && el.getBoundingClientRect().top < 0) window.scrollTo({ top: window.scrollY + el.getBoundingClientRect().top - 12, behavior: 'smooth' })
+    })
+  }
   const [form, setForm] = useState({ name: '', email: '', phone: '', address: '', notes: '' })
   const [answers, setAnswers] = useState<Record<string, any>>({})
   const [submitting, setSubmitting] = useState(false)
@@ -128,8 +141,15 @@ export default function BookingFlow({ slug, domain, initialService }: { slug?: s
     }
   }
 
-  if (loadError) return <Shell accent="#ff7a6b"><div style={{ padding: '60px 24px', textAlign: 'center' }}><div style={{ fontSize: 36, marginBottom: 10 }}>📅</div><div style={{ fontWeight: 700, fontSize: 18, color: '#111', marginBottom: 6 }}>Booking unavailable</div><div style={{ color: '#6b7280', fontSize: 14.5 }}>{loadError}</div></div></Shell>
-  if (!data) return <Shell accent="#ff7a6b"><div style={{ padding: 80, textAlign: 'center', color: '#9ca3af', fontSize: 14 }}><Spinner /> </div></Shell>
+  if (loadError) return <Shell accent="#ff7a6b"><div className="bk-card bk-card-in" style={{ display: 'block', maxWidth: 520, padding: '56px 24px', textAlign: 'center' }}><div style={{ fontSize: 36, marginBottom: 10 }}>📅</div><div style={{ fontWeight: 700, fontSize: 18, color: '#111', marginBottom: 6 }}>Booking unavailable</div><div style={{ color: '#6b7280', fontSize: 14.5 }}>{loadError}</div></div></Shell>
+  if (!data) return (
+    <Shell accent="#ff7a6b">
+      <div className="bk-card bk-card-in">
+        <aside className="bk-side"><div className="bk-skel" style={{ width: 140, height: 34, marginBottom: 22 }} /><div className="bk-skel" style={{ width: '85%', height: 26, marginBottom: 10 }} /><div className="bk-skel" style={{ width: '60%', height: 14 }} /></aside>
+        <main className="bk-main"><div className="bk-skel" style={{ width: 180, height: 22, marginBottom: 18 }} />{[0, 1, 2].map(i => <div key={i} className="bk-skel" style={{ height: 78, marginBottom: 10, borderRadius: 14 }} />)}</main>
+      </div>
+    </Shell>
+  )
 
   const slotLabel = slot ? new Date(slot).toLocaleString('en-AU', { timeZone: viewerTz(), weekday: 'long', day: 'numeric', month: 'long', hour: 'numeric', minute: '2-digit' }).replace(' am', 'am').replace(' pm', 'pm') : ''
 
@@ -164,9 +184,10 @@ export default function BookingFlow({ slug, domain, initialService }: { slug?: s
 
   return (
     <Shell accent={accent}>
-      <div className="bk-card">
+      <div className="bk-card bk-card-in">
         {summary}
-        <main className="bk-main">
+        <main className="bk-main" ref={mainRef}>
+          <div key={step} className={dir === 'f' ? 'bk-step-f' : 'bk-step-b'}>
           {step !== 'service' && (data.services.length > 1 || step === 'details') && (
             <button type="button" onClick={() => { setError(''); setStep(step === 'details' ? 'time' : 'service') }} style={backBtn}>
               <Icon d={I.back} size={16} /> Back
@@ -178,8 +199,8 @@ export default function BookingFlow({ slug, domain, initialService }: { slug?: s
               <h2 style={h2}>Choose a service</h2>
               {!data.services.length && <p style={{ color: '#6b7280', fontSize: 14 }}>No services are open for online booking right now.</p>}
               <div style={{ display: 'grid', gap: 10 }}>
-                {data.services.map(s => (
-                  <button key={s.id} type="button" onClick={() => { setService(s); setStep('time') }} className="bk-svc">
+                {data.services.map((s, i) => (
+                  <button key={s.id} type="button" onClick={() => { setService(s); setStep('time') }} className="bk-svc bk-rise" style={{ animationDelay: `${80 + i * 60}ms` }}>
                     <span style={{ width: 4, alignSelf: 'stretch', borderRadius: 4, background: s.color || accent, flexShrink: 0 }} />
                     {s.image_url && <img src={s.image_url} alt="" style={{ width: 56, height: 56, borderRadius: 10, objectFit: 'cover', flexShrink: 0 }} />}
                     <span style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
@@ -230,7 +251,8 @@ export default function BookingFlow({ slug, domain, initialService }: { slug?: s
               <SlotPicker accent={accent} businessTz={tz} fetchSlots={fetchSlots} selected={slot} reloadKey={`${service.id}:${staff}`}
                 onSelect={iso => { setSlot(iso); setError('') }} />
               {error && <div style={errBox}>{error}</div>}
-              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 18 }}>
+              <div className={`bk-cta${slot ? ' on' : ''}`}>
+                {slot && <span className="bk-cta-sum">{slotLabel}</span>}
                 <button type="button" disabled={!slot || (serviceLocations.length > 1 && !locationId)} onClick={() => setStep('details')} className="bk-primary">
                   {serviceLocations.length > 1 && !locationId ? 'Choose a location' : slot ? 'Continue' : 'Pick a time'}
                 </button>
@@ -271,15 +293,18 @@ export default function BookingFlow({ slug, domain, initialService }: { slug?: s
                 {policyText(data.page, due > 0, service.payment_mode)}
               </div>
               {error && <div style={errBox}>{error}</div>}
-              <button type="submit" disabled={submitting} className="bk-primary" style={{ width: '100%', marginTop: 16, height: 50, fontSize: 15.5 }}>
-                {submitting ? <Spinner light /> : due > 0 ? `Continue to payment · ${money(due, service.currency)}` : 'Confirm booking'}
-              </button>
-              {due > 0 && <div style={{ textAlign: 'center', fontSize: 12, color: '#9ca3af', marginTop: 8 }}>🔒 Secure payment by Stripe. Your time is held while you pay.</div>}
+              <div className="bk-cta on bk-cta-col">
+                <button type="submit" disabled={submitting} className="bk-primary" style={{ width: '100%', height: 50, fontSize: 15.5 }}>
+                  {submitting ? <Spinner light /> : due > 0 ? `Continue to payment · ${money(due, service.currency)}` : 'Confirm booking'}
+                </button>
+                {due > 0 && <div style={{ textAlign: 'center', fontSize: 12, color: '#9ca3af', marginTop: 8 }}>🔒 Secure payment by Stripe. Your time is held while you pay.</div>}
+              </div>
             </form>
           )}
+          </div>
         </main>
       </div>
-      <div style={{ textAlign: 'center', fontSize: 12, color: '#9ca3af', margin: '18px 0 8px' }}>
+      <div className="bk-shell-foot" style={{ textAlign: 'center', fontSize: 12, color: '#9ca3af', margin: '18px 0 8px' }}>
         Times shown in your timezone ({tzShort(viewerTz())}) · Powered by <a href="https://colvy.com" style={{ color: '#9ca3af' }}>Colvy</a>
       </div>
     </Shell>
@@ -319,23 +344,41 @@ function Spinner({ light }: { light?: boolean }) {
 
 export function Shell({ accent, children }: { accent: string; children: React.ReactNode }) {
   return (
-    <div style={{ minHeight: '100vh', background: '#f6f6f7', padding: '32px 16px', fontFamily: 'Inter, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif', ['--bk-accent' as any]: accent }}>
+    <div style={{ minHeight: '100dvh', background: '#f6f6f7', padding: '32px 16px', fontFamily: 'Inter, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif', position: 'relative', isolation: 'isolate', ['--bk-accent' as any]: accent }}>
+      <ParallaxBackdrop accent={accent} />
+      <style>{MOTION_CSS}</style>
       <style>{`
         @keyframes bkspin{to{transform:rotate(360deg)}}
-        .bk-card{max-width:1000px;margin:0 auto;background:#fff;border-radius:20px;border:1px solid #ececec;box-shadow:0 1px 2px rgba(0,0,0,.03),0 12px 40px -18px rgba(0,0,0,.12);display:grid;grid-template-columns:300px minmax(0,1fr);overflow:hidden}
+        .bk-card{position:relative;z-index:1;max-width:1000px;margin:0 auto;background:rgba(255,255,255,.92);-webkit-backdrop-filter:saturate(1.4) blur(18px);backdrop-filter:saturate(1.4) blur(18px);border-radius:22px;border:1px solid rgba(0,0,0,.06);box-shadow:0 1px 2px rgba(0,0,0,.03),0 24px 60px -28px rgba(0,0,0,.22);display:grid;grid-template-columns:300px minmax(0,1fr);overflow:clip}
+        .bk-shell-foot{position:relative;z-index:1}
+        .bk-cta{display:flex;align-items:center;justify-content:flex-end;gap:12px;margin-top:18px}
+        .bk-cta-col{flex-direction:column;align-items:stretch;gap:0}
+        .bk-cta-sum{display:none}
+        @media(max-width:820px){
+          .bk-cta{position:sticky;bottom:0;z-index:5;margin:18px -22px -22px;padding:12px 22px calc(12px + env(safe-area-inset-bottom));background:rgba(255,255,255,.86);-webkit-backdrop-filter:saturate(1.6) blur(14px);backdrop-filter:saturate(1.6) blur(14px);border-top:1px solid rgba(0,0,0,.06);transform:translate3d(0,0,0)}
+          .bk-cta:not(.on){opacity:.96}
+          .bk-cta .bk-primary{flex:1}
+          .bk-cta-sum{display:block;font-size:12.5px;font-weight:700;color:#374151;line-height:1.3;max-width:46%}
+        }
+        @media(max-width:480px){.bk-cta{margin:18px -16px -18px;padding-left:16px;padding-right:16px}}
         .bk-side{padding:28px;border-right:1px solid #f1f1f1}
         .bk-main{padding:28px;min-width:0}
         @media(max-width:820px){.bk-card{grid-template-columns:1fr}.bk-side{border-right:none;border-bottom:1px solid #f1f1f1;padding:22px}.bk-main{padding:22px}}
         @media(max-width:480px){.bk-side,.bk-main{padding:18px 16px}}
-        .bk-svc{display:flex;align-items:center;gap:14px;padding:14px 16px;border-radius:14px;border:1px solid #ececec;background:#fff;cursor:pointer;font-family:inherit;transition:border-color .12s, box-shadow .12s;width:100%}
-        .bk-svc:hover{border-color:var(--bk-accent);box-shadow:0 4px 18px -10px color-mix(in srgb,var(--bk-accent) 60%,transparent)}
-        .bk-chip{display:inline-flex;align-items:center;gap:7px;padding:7px 13px;border-radius:999px;border:1.5px solid #e5e7eb;background:#fff;font-size:13.5px;font-weight:600;color:#374151;cursor:pointer;font-family:inherit}
+        .bk-svc{display:flex;align-items:center;gap:14px;padding:14px 16px;border-radius:14px;border:1px solid #ececec;background:#fff;cursor:pointer;font-family:inherit;transition:border-color .2s, box-shadow .3s cubic-bezier(.22,1,.36,1), transform .3s cubic-bezier(.22,1,.36,1);width:100%;min-height:64px}
+        .bk-svc:hover{border-color:var(--bk-accent);box-shadow:0 10px 28px -14px color-mix(in srgb,var(--bk-accent) 70%,transparent);transform:translate3d(0,-2px,0)}
+        .bk-svc:active{transform:scale(.985);transition-duration:.08s}
+        .bk-chip{display:inline-flex;align-items:center;gap:7px;padding:8px 14px;min-height:40px;border-radius:999px;border:1.5px solid #e5e7eb;background:#fff;font-size:13.5px;font-weight:600;color:#374151;cursor:pointer;font-family:inherit;transition:all .22s cubic-bezier(.22,1,.36,1)}
+        .bk-chip:active{transform:scale(.96)}
         .bk-chip.sel{border-color:var(--bk-accent);background:color-mix(in srgb,var(--bk-accent) 9%,#fff);color:color-mix(in srgb,var(--bk-accent) 75%,#000)}
         .bk-primary{height:46px;padding:0 24px;border-radius:12px;border:none;background:var(--bk-accent);color:#fff;font-weight:700;font-size:15px;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;justify-content:center;gap:8px}
-        .bk-primary:disabled{opacity:.45;cursor:default}
+        .bk-primary{transition:transform .18s cubic-bezier(.22,1,.36,1),box-shadow .25s,opacity .2s,filter .2s;box-shadow:0 8px 20px -10px color-mix(in srgb,var(--bk-accent) 80%,transparent)}
+        .bk-primary:hover:not(:disabled){filter:brightness(1.05);transform:translate3d(0,-1px,0)}
+        .bk-primary:active:not(:disabled){transform:scale(.97);transition-duration:.08s}
+        .bk-primary:disabled{opacity:.45;cursor:default;box-shadow:none}
         .bk-fields{display:grid;grid-template-columns:1fr 1fr;gap:14px}
         @media(max-width:560px){.bk-fields{grid-template-columns:1fr}}
-        .bk-in{width:100%;box-sizing:border-box;padding:11px 13px;border-radius:10px;border:1.5px solid #e5e7eb;font-size:15px;font-family:inherit;outline:none;background:#fff;color:#111}
+        .bk-in{width:100%;box-sizing:border-box;padding:11px 13px;border-radius:10px;border:1.5px solid #e5e7eb;font-size:16px;transition:border-color .2s,box-shadow .2s;font-family:inherit;outline:none;background:#fff;color:#111}
         .bk-in:focus{border-color:var(--bk-accent)!important;box-shadow:0 0 0 3px color-mix(in srgb,var(--bk-accent) 15%,transparent)}
       `}</style>
       {children}

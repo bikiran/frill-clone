@@ -2,6 +2,7 @@
 
 
 import React, { useState, useEffect, useRef } from 'react'
+import { StatusMark } from '@/components/StatusMark'
 import { compressImage, uploadDirect } from '@/lib/upload-attachment'
 import { useSearchParams } from 'next/navigation'
 import { Suspense } from 'react'
@@ -1426,9 +1427,7 @@ function WidgetContent() {
           <div style={{ animation: 'fadeIn 0.2s ease both' }}>
             {submitted ? (
               <div style={{ textAlign: 'center', padding: '24px 0' }}>
-                <div style={{ width: 44, height: 44, borderRadius: '50%', background: '#dcfce7', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 10px' }}>
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>
-                </div>
+                <div style={{ marginBottom: 10 }}><StatusMark kind="success" size={56} celebrate /></div>
                 <p style={{ fontSize: 13, fontWeight: 700, color: '#0d0d0d' }}>Thanks for your feedback!</p>
               </div>
             ) : expandedFeedback ? (

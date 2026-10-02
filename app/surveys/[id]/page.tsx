@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { StatusMark } from '@/components/StatusMark'
 import { useParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 
@@ -56,7 +57,7 @@ export default function PublicSurveyPage() {
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
         <div className="text-center max-w-md">
-          <div className="text-6xl mb-4">🎉</div>
+          <div className="mb-4"><StatusMark kind="success" size={88} celebrate /></div>
           <h2 className="text-2xl font-bold mb-2" style={{ color: 'var(--ink)' }}>Thank you!</h2>
           <p style={{ color: 'var(--slate)' }}>Your feedback has been recorded. We appreciate your time.</p>
         </div>

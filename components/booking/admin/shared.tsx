@@ -41,14 +41,23 @@ export function Toggle({ on, onChange, disabled }: { on: boolean; onChange: (v: 
 
 export function Modal({ title, onClose, children, width = 560, footer }: { title: string; onClose: () => void; children: React.ReactNode; width?: number; footer?: React.ReactNode }) {
   return (
-    <div onMouseDown={e => { if (e.target === e.currentTarget) onClose() }} style={{ position: 'fixed', inset: 0, background: 'rgba(17,17,17,.4)', zIndex: 1000, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '5vh 12px', overflowY: 'auto' }}>
-      <div style={{ background: '#fff', borderRadius: 16, width: '100%', maxWidth: width, boxShadow: '0 24px 60px -20px rgba(0,0,0,.35)', display: 'flex', flexDirection: 'column', maxHeight: '90vh' }}>
+    <div className="bkm-overlay" onMouseDown={e => { if (e.target === e.currentTarget) onClose() }} style={{ position: 'fixed', inset: 0, background: 'rgba(17,17,17,.4)', WebkitBackdropFilter: 'blur(3px)', backdropFilter: 'blur(3px)', zIndex: 1000, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '5vh 12px', overflowY: 'auto' }}>
+      <style>{`
+        .bkm-overlay{animation:bkmFade .2s ease both}
+        .bkm-panel{animation:bkmIn .38s cubic-bezier(.22,1,.36,1) both}
+        @keyframes bkmFade{from{opacity:0}to{opacity:1}}
+        @keyframes bkmIn{from{opacity:0;transform:translate3d(0,14px,0) scale(.97)}to{opacity:1;transform:none}}
+        @media(max-width:600px){.bkm-overlay{padding:0!important;align-items:flex-end!important}.bkm-panel{border-radius:18px 18px 0 0!important;max-height:92dvh!important;animation-name:bkmUp}}
+        @keyframes bkmUp{from{transform:translate3d(0,100%,0)}to{transform:none}}
+        @media (prefers-reduced-motion: reduce){.bkm-overlay,.bkm-panel{animation:none}}
+      `}</style>
+      <div className="bkm-panel" style={{ background: '#fff', borderRadius: 16, width: '100%', maxWidth: width, boxShadow: '0 24px 60px -20px rgba(0,0,0,.35)', display: 'flex', flexDirection: 'column', maxHeight: '90vh' }}>
         <div style={{ display: 'flex', alignItems: 'center', padding: '16px 20px', borderBottom: '1px solid var(--border, #f1f1f1)' }}>
           <div style={{ fontWeight: 800, fontSize: 16, color: 'var(--ink, #111)', flex: 1 }}>{title}</div>
           <button onClick={onClose} aria-label="Close" style={{ border: 'none', background: 'none', fontSize: 22, color: '#9ca3af', cursor: 'pointer', lineHeight: 1 }}>×</button>
         </div>
         <div style={{ padding: 20, overflowY: 'auto' }}>{children}</div>
-        {footer && <div style={{ padding: '14px 20px', borderTop: '1px solid var(--border, #f1f1f1)', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>{footer}</div>}
+        {footer && <div style={{ padding: '14px 20px calc(14px + env(safe-area-inset-bottom))', flexWrap: 'wrap', borderTop: '1px solid var(--border, #f1f1f1)', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>{footer}</div>}
       </div>
     </div>
   )

@@ -3,9 +3,10 @@ import { createClient } from '@supabase/supabase-js'
 import { checkBurst, callerKey } from '@/lib/rate-limit'
 import { addDays, dateInTz, isDate } from '@/lib/booking-time'
 import { chatStripe } from '@/lib/chat-checkout'
+import { buildIcs } from '@/lib/booking-ics'
 import {
   loadCompanyPublic, resolveBookingSettings, loadStaff, availability, publicBooking, policyFor,
-  cancelBooking, rescheduleBooking, settleBookingPayment, isMissingBookingSchema,
+  cancelBooking, rescheduleBooking, settleBookingPayment, isMissingBookingSchema, manageUrl, whereText,
 } from '@/lib/booking'
 
 export const dynamic = 'force-dynamic'
@@ -21,6 +22,7 @@ const admin = () => createClient(
 //
 // GET  ?token=                            → booking
 // GET  ?token=&op=slots&from=&to=         → times it can move to
+// GET  ?token=&op=ics                     → calendar file (Apple Calendar / Outlook)
 // POST { token, action: 'verify' }        → confirm after Stripe (if the webhook hasn't yet)
 // POST { token, action: 'pay' }           → the checkout link again, while the hold lasts
 // POST { token, action: 'cancel', reason? }
@@ -43,6 +45,18 @@ export async function GET(req: NextRequest) {
     const ctx = await load(db, sp.get('token'))
     if (!ctx) return NextResponse.json({ error: 'Booking not found' }, { status: 404 })
     const { b, company, service, settings } = ctx
+
+    if (sp.get('op') === 'ics') {
+      const url = manageUrl(company, b.manage_token)
+      const ics = buildIcs({
+        uid: b.id, title: `${b.service_name} — ${company.name}`,
+        startMs: Date.parse(b.starts_at), endMs: Date.parse(b.ends_at),
+        location: whereText(b, service) || null, description: `Manage your booking: ${url}`, url,
+        cancelled: b.status === 'cancelled', sequence: b.reschedule_count || 0,
+      })
+      // inline → iOS Safari shows "Add to Calendar"; desktops open Calendar / Outlook.
+      return new NextResponse(ics, { headers: { 'Content-Type': 'text/calendar; charset=utf-8', 'Content-Disposition': 'inline; filename="booking.ics"', 'Cache-Control': 'no-store' } })
+    }
 
     if (sp.get('op') === 'slots') {
       if (!service || !policyFor(b, settings).canReschedule) return NextResponse.json({ timezone: settings.timezone, slots: [] })

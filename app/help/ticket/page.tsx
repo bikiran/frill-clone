@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
+import { StatusMark } from '@/components/StatusMark'
 
 export default function HelpTicketPage() {
   const [subject, setSubject] = useState('')
@@ -41,9 +42,7 @@ export default function HelpTicketPage() {
         <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 20, padding: 28, marginTop: 16 }}>
           {done ? (
             <div style={{ textAlign: 'center', padding: '20px 0' }}>
-              <div style={{ width: 54, height: 54, borderRadius: '50%', background: '#dcfce7', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
-                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-              </div>
+              <div style={{ marginBottom: 16 }}><StatusMark kind="success" size={76} celebrate /></div>
               <h1 style={{ fontSize: 22, fontWeight: 800, color: 'var(--ink)', margin: '0 0 8px' }}>Ticket submitted</h1>
               <p style={{ fontSize: 14.5, color: 'var(--slate)', margin: '0 0 6px' }}>Thanks — we've received your request{done !== 'submitted' ? ` (${done})` : ''}.</p>
               <p style={{ fontSize: 13.5, color: 'var(--slate)', margin: '0 0 20px' }}>We typically reply within 1–2 business days.</p>

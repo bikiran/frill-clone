@@ -20,8 +20,9 @@ function hourIn(ms: number, tz: string) {
 function timeLabel(ms: number, tz: string) {
   return new Date(ms).toLocaleTimeString('en-AU', { timeZone: tz, hour: 'numeric', minute: '2-digit' }).replace(' ', '').toLowerCase()
 }
-function tzShort(tz: string) {
-  try { return new Intl.DateTimeFormat('en-AU', { timeZone: tz, timeZoneName: 'short' }).formatToParts(new Date()).find(p => p.type === 'timeZoneName')?.value || tz } catch { return tz }
+// Short zone name (AEST / AEDT) at a given moment — daylight saving matters.
+function tzShort(tz: string, at?: number) {
+  try { return new Intl.DateTimeFormat('en-AU', { timeZone: tz, timeZoneName: 'short' }).formatToParts(new Date(at ?? Date.now())).find(p => p.type === 'timeZoneName')?.value || tz } catch { return tz }
 }
 const viewerTz = () => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC' } catch { return 'UTC' } }
 
@@ -43,6 +44,14 @@ export default function SlotPicker({ accent = '#ff7a6b', businessTz, fetchSlots,
   const [error, setError] = useState('')
   const [day, setDay] = useState<string | null>(null)
   const autoJumps = useRef(0)
+  const timesRef = useRef<HTMLDivElement>(null)
+  // Picking a day on a phone: glide down to its times.
+  const pickDay = (d: string) => {
+    setDay(d)
+    if (typeof window !== 'undefined' && window.innerWidth <= 720) {
+      setTimeout(() => timesRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60)
+    }
+  }
 
   useEffect(() => { autoJumps.current = 0 }, [reloadKey])
 
@@ -113,13 +122,22 @@ export default function SlotPicker({ accent = '#ff7a6b', businessTz, fetchSlots,
         .bk-compact.bk-picker{grid-template-columns:1fr}
         .bk-cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
         .bk-day{aspect-ratio:1;max-height:46px;border-radius:999px;border:none;background:transparent;font-size:14px;font-weight:500;color:#9ca3af;cursor:default;display:flex;align-items:center;justify-content:center;position:relative;font-family:inherit}
+        .bk-day{transition:background .25s cubic-bezier(.22,1,.36,1),color .2s,transform .25s cubic-bezier(.34,1.56,.64,1),box-shadow .25s}
         .bk-day.on{background:color-mix(in srgb,var(--bk-accent) 12%,#fff);color:color-mix(in srgb,var(--bk-accent) 75%,#000);font-weight:700;cursor:pointer}
+        .bk-day.on:active{transform:scale(.9)}
         .bk-day.on:hover{background:color-mix(in srgb,var(--bk-accent) 22%,#fff)}
-        .bk-day.sel{background:var(--bk-accent)!important;color:#fff!important}
+        .bk-day.sel{background:var(--bk-accent)!important;color:#fff!important;transform:scale(1.06);box-shadow:0 6px 16px -6px color-mix(in srgb,var(--bk-accent) 80%,transparent)}
         .bk-day.today::after{content:'';position:absolute;bottom:5px;width:4px;height:4px;border-radius:50%;background:currentColor}
-        .bk-time{width:100%;padding:11px 8px;border-radius:10px;border:1.5px solid color-mix(in srgb,var(--bk-accent) 35%,#fff);background:#fff;color:color-mix(in srgb,var(--bk-accent) 80%,#000);font-weight:700;font-size:14px;cursor:pointer;font-family:inherit;transition:all .12s}
-        .bk-time:hover{border-color:var(--bk-accent)}
-        .bk-time.sel{background:var(--bk-accent);border-color:var(--bk-accent);color:#fff}
+        .bk-time{width:100%;min-height:46px;padding:11px 8px;border-radius:11px;border:1.5px solid color-mix(in srgb,var(--bk-accent) 35%,#fff);background:#fff;color:color-mix(in srgb,var(--bk-accent) 80%,#000);font-weight:700;font-size:14px;cursor:pointer;font-family:inherit;transition:all .12s}
+        .bk-time{transition:background .22s cubic-bezier(.22,1,.36,1),border-color .2s,color .2s,transform .22s cubic-bezier(.34,1.56,.64,1),box-shadow .25s}
+        .bk-time:hover{border-color:var(--bk-accent);transform:translate3d(0,-1px,0)}
+        .bk-time:active{transform:scale(.95);transition-duration:.08s}
+        .bk-time.sel{background:var(--bk-accent);border-color:var(--bk-accent);color:#fff;box-shadow:0 8px 18px -8px color-mix(in srgb,var(--bk-accent) 85%,transparent)}
+        .bk-tin{animation:bkTimeIn .42s cubic-bezier(.22,1,.36,1) backwards}
+        @keyframes bkTimeIn{from{opacity:0;transform:translate3d(0,8px,0) scale(.97)}to{opacity:1;transform:none}}
+        .bk-month{animation:bkMonth .4s cubic-bezier(.22,1,.36,1) backwards}
+        @keyframes bkMonth{from{opacity:.2;transform:translate3d(0,6px,0)}to{opacity:1;transform:none}}
+        @media (prefers-reduced-motion: reduce){.bk-tin,.bk-month{animation:none;opacity:1}}
         .bk-times{max-height:380px;overflow-y:auto;padding-right:2px}
       `}</style>
 
@@ -134,12 +152,12 @@ export default function SlotPicker({ accent = '#ff7a6b', businessTz, fetchSlots,
         <div className="bk-cal-grid" style={{ marginBottom: 6 }}>
           {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(d => <div key={d} style={{ textAlign: 'center', fontSize: 11, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '.04em', padding: '4px 0' }}>{d}</div>)}
         </div>
-        <div className="bk-cal-grid" style={{ opacity: loading ? 0.5 : 1, transition: 'opacity .15s' }}>
+        <div key={month} className="bk-cal-grid bk-month" style={{ opacity: loading ? 0.5 : 1, transition: 'opacity .2s' }}>
           {cells.map((c, i) => {
             if (!c) return <div key={`e${i}`} />
             const on = byDay.has(c)
             return (
-              <button key={c} type="button" disabled={!on} onClick={() => setDay(c)}
+              <button key={c} type="button" disabled={!on} onClick={() => pickDay(c)}
                 className={`bk-day${on ? ' on' : ''}${c === day ? ' sel' : ''}${c === today ? ' today' : ''}`}>
                 {Number(c.slice(8))}
               </button>
@@ -149,30 +167,30 @@ export default function SlotPicker({ accent = '#ff7a6b', businessTz, fetchSlots,
         <div style={{ marginTop: 14, fontSize: 12.5, color: '#6b7280', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
           <span>🌏</span>
           {mine === businessTz
-            ? <span>Times in {tzShort(businessTz)}</span>
+            ? <span>Times in {tzShort(businessTz, day ? Date.parse(`${day}T02:00:00Z`) : undefined)}</span>
             : (
               <select value={tz} onChange={e => setTz(e.target.value)} style={{ border: 'none', background: 'transparent', color: '#374151', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', padding: 0 }}>
-                <option value={mine}>Your time ({tzShort(mine)})</option>
-                <option value={businessTz}>Business time ({tzShort(businessTz)})</option>
+                <option value={mine}>Your time ({tzShort(mine, day ? Date.parse(`${day}T02:00:00Z`) : undefined)})</option>
+                <option value={businessTz}>Business time ({tzShort(businessTz, day ? Date.parse(`${day}T02:00:00Z`) : undefined)})</option>
               </select>
             )}
         </div>
       </div>
 
-      <div>
+      <div ref={timesRef} style={{ scrollMarginTop: 12 }}>
         {error ? <div style={{ color: '#b91c1c', fontSize: 13.5 }}>{error}</div>
           : loading && !slots.length ? <div style={{ color: '#9ca3af', fontSize: 13.5, paddingTop: 6 }}>Finding times…</div>
           : !day ? <div style={{ color: '#6b7280', fontSize: 13.5, paddingTop: 6, lineHeight: 1.5 }}>{byDay.size ? 'Pick a day to see times.' : 'No times available this month — try the next one.'}</div>
           : (
             <>
               <div style={{ fontWeight: 700, fontSize: 14.5, color: '#111', marginBottom: 10 }}>{dayLabel}</div>
-              <div className="bk-times">
-                {groups.filter(([, l]) => l.length).map(([label, list]) => (
+              <div className="bk-times" key={`${day}:${tz}`}>
+                {groups.filter(([, l]) => l.length).map(([label, list], gi) => (
                   <div key={label} style={{ marginBottom: 12 }}>
                     <div style={{ fontSize: 11, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 6 }}>{label}</div>
                     <div style={{ display: 'grid', gridTemplateColumns: compact ? 'repeat(auto-fill,minmax(92px,1fr))' : '1fr 1fr', gap: 6 }}>
-                      {list.map(s => (
-                        <button key={s.start} type="button" onClick={() => onSelect(s.start)} className={`bk-time${selected === s.start ? ' sel' : ''}`}>
+                      {list.map((s, i) => (
+                        <button key={s.start} type="button" onClick={() => onSelect(s.start)} className={`bk-time bk-tin${selected === s.start ? ' sel' : ''}`} style={{ animationDelay: `${Math.min(14, gi * 3 + i) * 28}ms` }}>
                           {timeLabel(Date.parse(s.start), tz)}
                           {s.seatsLeft != null && <span style={{ display: 'block', fontSize: 10.5, fontWeight: 600, opacity: 0.75 }}>{s.seatsLeft} left</span>}
                         </button>
