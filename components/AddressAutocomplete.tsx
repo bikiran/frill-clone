@@ -99,12 +99,13 @@ async function photonSuggest(q: string): Promise<Suggestion[]> {
 }
 
 export default function AddressAutocomplete({
-  value, onChange, onSelect, placeholder, style, className,
+  value, onChange, onSelect, placeholder, style, className, required,
 }: {
   value: string
   onChange: (v: string) => void
   onSelect?: (parts: AddressParts) => void
   placeholder?: string
+  required?: boolean
   style?: React.CSSProperties
   className?: string
 }) {
@@ -164,6 +165,7 @@ export default function AddressAutocomplete({
         onFocus={() => { if (suggestions.length) setOpenList(true) }}
         onBlur={() => setTimeout(() => setOpenList(false), 150)}
         placeholder={placeholder || 'Start typing an address…'}
+        required={required}
         style={style}
         className={className}
         // Keep the browser's / a password manager's own address autofill from

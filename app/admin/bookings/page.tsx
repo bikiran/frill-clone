@@ -39,6 +39,11 @@ export default function BookingsPage() {
 
   const flash = (m: string) => { setToast(m); setTimeout(() => setToast(''), 4500) }
 
+  // Opening Bookings clears the side-menu "new bookings" badge.
+  useEffect(() => {
+    try { localStorage.setItem('colvy-bookings-seen-at', new Date().toISOString()); window.dispatchEvent(new Event('bookings-seen')) } catch {}
+  }, [])
+
   const loadMeta = useCallback(async (cid: string) => {
     try {
       const d = await api(`/api/bookings/settings?companyId=${cid}`)
