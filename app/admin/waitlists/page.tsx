@@ -47,6 +47,11 @@ export default function WaitlistsPage() {
   const [tab, setTab] = useState<'waiting' | 'notified' | 'all'>('waiting')
   const [search, setSearch] = useState('')
   const [open, setOpen] = useState<Record<string, boolean>>({})
+
+  // Opening Waitlists clears the side-menu "new sign-ups" badge.
+  useEffect(() => {
+    try { localStorage.setItem('colvy-waitlist-seen-at', new Date().toISOString()); window.dispatchEvent(new Event('waitlist-seen')) } catch {}
+  }, [])
   const [busy, setBusy] = useState('')
   const [toast, setToast] = useState('')
   const [showAdd, setShowAdd] = useState(false)

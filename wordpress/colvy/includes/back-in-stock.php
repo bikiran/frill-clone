@@ -59,9 +59,23 @@ add_action( 'wp_enqueue_scripts', function () {
 	if ( ! function_exists( 'is_product' ) ) return;
 	wp_register_style( 'colvy-bis', COLVYWP_URL . 'assets/bis.css', array(), COLVYWP_VERSION );
 	wp_register_script( 'colvy-bis', COLVYWP_URL . 'assets/bis.js', array(), COLVYWP_VERSION, true );
-	wp_localize_script( 'colvy-bis', 'colvyBis', array( 'ajax' => admin_url( 'admin-ajax.php' ) ) );
+	wp_localize_script( 'colvy-bis', 'colvyBis', array( 'ajax' => admin_url( 'admin-ajax.php' ), 'me' => colvy_bis_me() ) );
 	if ( is_product() ) { wp_enqueue_style( 'colvy-bis' ); wp_enqueue_script( 'colvy-bis' ); }
 } );
+
+/**
+ * A logged-in shopper's own details, to prefill the form. Only for logged-in
+ * visitors — those pages aren't page-cached, so nobody else sees them.
+ */
+function colvy_bis_me() {
+	if ( ! is_user_logged_in() ) return null;
+	$u = wp_get_current_user();
+	$g = function ( $k ) use ( $u ) { return (string) get_user_meta( $u->ID, $k, true ); };
+	if ( function_exists( 'WC' ) && class_exists( 'WC_Customer' ) ) {
+		try { $c = new WC_Customer( $u->ID ); return array( 'name' => $c->get_billing_first_name() ?: $u->first_name, 'phone' => $c->get_billing_phone(), 'email' => $c->get_billing_email() ?: $u->user_email ); } catch ( Exception $e ) {}
+	}
+	return array( 'name' => $g( 'billing_first_name' ) ?: $u->first_name, 'phone' => $g( 'billing_phone' ), 'email' => $u->user_email );
+}
 
 function colvy_bis_icon( $name ) {
 	$p = array(

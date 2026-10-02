@@ -492,6 +492,34 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     return () => { active = false; clearInterval(iv); window.removeEventListener('bookings-seen', onSeen); window.removeEventListener('storage', onStorage); window.removeEventListener('focus', load) }
   }, [company?.id])
 
+  // New back-in-stock sign-ups for the Waitlists badge — same pattern as Bookings.
+  const [waitlistNew, setWaitlistNew] = useState(0)
+  useEffect(() => {
+    if (!company?.id) return
+    let active = true
+    const load = async () => {
+      if (document.visibilityState !== 'visible') return
+      try {
+        let s = ''
+        try { s = localStorage.getItem('colvy-waitlist-seen-at') || '' } catch {}
+        if (!s) { s = new Date().toISOString(); try { localStorage.setItem('colvy-waitlist-seen-at', s) } catch {} }
+        const { data } = await supabase.auth.getSession()
+        const t = data?.session?.access_token
+        const r = await fetch(`/api/waitlist?companyId=${company.id}&op=newcount&since=${encodeURIComponent(s)}`, { headers: t ? { Authorization: `Bearer ${t}` } : {} })
+        const d = await r.json().catch(() => ({}))
+        if (active && r.ok) setWaitlistNew(d.count || 0)
+      } catch {}
+    }
+    load()
+    const iv = setInterval(load, 30000)
+    const onSeen = () => { if (active) setWaitlistNew(0) }
+    const onStorage = (e: StorageEvent) => { if (e.key === 'colvy-waitlist-seen-at') onSeen() }
+    window.addEventListener('waitlist-seen', onSeen)
+    window.addEventListener('storage', onStorage)
+    window.addEventListener('focus', load)
+    return () => { active = false; clearInterval(iv); window.removeEventListener('waitlist-seen', onSeen); window.removeEventListener('storage', onStorage); window.removeEventListener('focus', load) }
+  }, [company?.id])
+
   const [showWorkspaces, setShowWorkspaces] = useState(false)
   const [workspaces, setWorkspaces] = useState<any[]>([])
 
@@ -977,8 +1005,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                         : item.label === 'Orders' ? ordersNew
                         : item.label === 'Tickets' ? ticketsNew
                         : item.label === 'Bookings' ? bookingsNew
+                        : item.label === 'Waitlists' ? waitlistNew
                         : 0
-                      const tone = item.label === 'Tasks' ? 'var(--coral)' : item.label === 'Orders' || item.label === 'Bookings' ? '#2563eb' : '#ef4444'
+                      const tone = item.label === 'Tasks' ? 'var(--coral)' : item.label === 'Orders' || item.label === 'Bookings' || item.label === 'Waitlists' ? '#2563eb' : '#ef4444'
                       return (
                         <>
                           <span className="nav-ic" style={{ flexShrink: 0, display: 'flex', opacity: active ? 1 : 0.65, position: 'relative' }}>
