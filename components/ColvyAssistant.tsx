@@ -288,6 +288,7 @@ export default function ColvyAssistant({ companyId, userId, agentName }: { compa
       {!open && !dismissed && (
         <div
           className="colvy-ai-orb-wrap"
+          data-default-pos={orbPos ? undefined : ''}
           onMouseEnter={() => setOrbHover(true)}
           onMouseLeave={() => setOrbHover(false)}
           style={{
@@ -449,6 +450,11 @@ export default function ColvyAssistant({ companyId, userId, agentName }: { compa
       <style>{`
         .colvy-ai-orb:hover { filter: brightness(1.04); transform: translateY(-1px); }
         .colvy-ai-orb { transition: transform .15s ease, filter .15s ease; }
+        /* Phones: in an open inbox thread the orb's default spot sits on the
+           Send button — lift it above the reply box (unless they've dragged it). */
+        @media (max-width: 860px) {
+          body:has(.inbox-composer .cmp-card) .colvy-ai-orb-wrap[data-default-pos] { bottom: calc(58px + env(safe-area-inset-bottom, 0px) + 250px) !important; }
+        }
         @media (min-width: 861px) {
           .colvy-ai-panel { right: 18px !important; bottom: 18px !important; border-radius: 18px !important; }
         }

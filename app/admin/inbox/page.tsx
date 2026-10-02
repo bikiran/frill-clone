@@ -9045,6 +9045,27 @@ export default function InboxPage() {
               .cmp-tool:focus-visible,.cmp-mode button:focus-visible{outline:2px solid var(--coral);outline-offset:1px}
               .cmp-hint{display:flex;justify-content:flex-end;gap:14px;padding:7px 6px 0;font-size:11.5px;color:#9ca3af}
               .cmp-hint kbd{font:inherit;font-weight:700;color:var(--slate);padding:1px 6px;border-radius:5px;background:#f3f4f6;border:1px solid #e5e7eb}
+              /* Responsive: sized by the reply box's own width (it's narrow on
+                 tablets with three columns), not just the screen. */
+              .inbox-composer{container-type:inline-size}
+              .cmp-bar{flex-wrap:wrap;row-gap:8px}
+              .cmp-tools{flex:1 1 230px}
+              .cmp-send{margin-left:auto}
+              @container (max-width: 560px){ .cmp-hint{display:none} }
+              /* Narrow box (phones, or the middle column on a tablet): tools on
+                 their own line, then a full-width Send row. */
+              @container (max-width: 470px){
+                .cmp-bar{flex-direction:column;align-items:stretch}
+                .cmp-tools{flex:0 0 auto}
+                .cmp-send{margin-left:0;width:100%}
+                .cmp-send > div:last-child{flex:1 1 auto;display:flex}
+                .cmp-send > div:last-child > button:first-child{flex:1 1 auto}
+              }
+              @container (max-width: 300px){ .cmp-via{display:none} }
+              @media (max-width: 380px){
+                .inbox-composer .cmp-tools{gap:3px!important}
+                .inbox-composer .cmp-tools .cmp-tool{width:32px!important;min-width:32px!important;height:32px!important;min-height:32px!important}
+              }
               @media (prefers-reduced-motion:reduce){.cmp-mode-thumb,.cmp-tool{transition:none}}
             `}</style>
 
