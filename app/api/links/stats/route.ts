@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { requireCompanyAccess } from '@/lib/company-access'
+import { shortenUrl } from '@/lib/short-link'
 
 export const dynamic = 'force-dynamic'
 
@@ -37,6 +38,24 @@ export async function GET(req: NextRequest) {
           .sort((x: any, y: any) => Math.abs(Date.parse(x.created_at) - at) - Math.abs(Date.parse(y.created_at) - at))[0]
         if (best && Math.abs(Date.parse(best.created_at) - at) < 6 * 3600_000) { resolved[u] = best.code; if (!codes.includes(best.code)) codes.push(best.code) }
       }
+      // Upload links (/u/<token>) sent before they were tracked: the token is
+      // unique, so give the link a tracked twin now — the upload page counts
+      // opens against it from here on.
+      for (const u of urls) {
+        const token = !resolved[u] && u.match(/\/u\/([A-Za-z0-9_-]{8,})\/?$/)?.[1]
+        if (!token) continue
+        const { data: mr } = await db.from('media_requests').select('id, contact_id, conversation_id')
+          .eq('token', token).eq('company_id', companyId).maybeSingle()
+        if (!mr || (mr.conversation_id && mr.conversation_id !== conversationId)) continue
+        const { data: have } = await db.from('short_links').select('code').eq('company_id', companyId).like('target_url', `%/u/${token}`).limit(1)
+        let code = have?.[0]?.code as string | undefined
+        if (!code) {
+          const short = await shortenUrl(u, { companyId: companyId!, conversationId, kind: 'upload' })
+          code = short.split('/l/')[1]
+          if (code) await db.from('short_links').update({ link_type: 'upload', contact_id: mr.contact_id || null }).eq('code', code)
+        }
+        if (code) { resolved[u] = code; if (!codes.includes(code)) codes.push(code) }
+      }
     }
     if (!codes.length) return NextResponse.json({ links: {}, resolved })
 
@@ -67,6 +86,18 @@ export async function GET(req: NextRequest) {
         for (const code of Object.keys(links)) links[code].clicks = Math.max(links[code].clicks, links[code].events.length)
       } catch {}
     }
+    // Upload links: how many files have come in.
+    try {
+      const tokens = new Map<string, string>()
+      for (const [code, l] of Object.entries(links)) { const t = String(l.target || '').match(/\/u\/([A-Za-z0-9_-]{8,})\/?$/)?.[1]; if (t) tokens.set(t, code) }
+      if (tokens.size) {
+        const { data: reqs } = await db.from('media_requests').select('id, token').eq('company_id', companyId).in('token', [...tokens.keys()])
+        for (const r of reqs || []) {
+          const { count } = await db.from('media_request_files').select('id', { count: 'exact', head: true }).eq('request_id', r.id)
+          links[tokens.get(r.token)!].uploaded = count || 0
+        }
+      }
+    } catch {}
     return NextResponse.json({ links, resolved }, { headers: { 'Cache-Control': 'no-store' } })
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || 'Failed' }, { status: 500 })

@@ -33,7 +33,7 @@ export function longUrlsIn(text: string | null | undefined): string[] {
 
 // ── Shared stats store (one request for every card on screen) ─────────────
 type Event = { at: string; device?: string; os?: string; browser?: string; city?: string; region?: string; country?: string }
-export type LinkStats = { target: string; label?: string | null; kind?: string; type?: string | null; clicks: number; lastClickedAt?: string | null; events: Event[] }
+export type LinkStats = { target: string; label?: string | null; kind?: string; type?: string | null; clicks: number; lastClickedAt?: string | null; events: Event[]; uploaded?: number }
 
 const cache = new Map<string, LinkStats | null>()
 const resolvedCache = new Map<string, string | null>()   // `${conv}|${at}|${url}` → code
@@ -215,6 +215,11 @@ function Card({ s, title }: { s: LinkStats; title?: string }) {
         </span>
         <span className={`lc-badge${opened ? ' on' : ''}`}>{opened ? `${s.clicks} ${s.clicks === 1 ? 'open' : 'opens'}` : 'Not opened'}</span>
       </button>
+      {s.uploaded !== undefined && (
+        <div className={`lc-up${s.uploaded ? ' on' : ''}`}>
+          <span className="lc-updot" />{s.uploaded ? `${s.uploaded} ${s.uploaded === 1 ? 'file' : 'files'} uploaded` : opened ? 'Opened — nothing uploaded yet' : 'Waiting for their upload'}
+        </div>
+      )}
       {last && (
         <button type="button" className="lc-last" onClick={() => setOpen(o => !o)}>
           <span className="lc-meta"><DeviceIcon e={last} />{deviceLabel(last)}</span>
@@ -259,6 +264,10 @@ const CSS = `
 .lc-chev.up{transform:rotate(180deg)}
 .lc-list{padding:4px 12px 10px;background:#fafafa}
 .lc-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:6px 0 6px 0;border-top:1px dashed #ececef;animation:lcIn .3s cubic-bezier(.22,1,.36,1) backwards}
+.lc-up{display:flex;align-items:center;gap:7px;padding:7px 12px;border-top:1px solid #f1f1f3;font-size:12px;font-weight:700;color:#6b7280}
+.lc-up.on{color:#15803d;background:#f0fdf4}
+.lc-updot{width:7px;height:7px;border-radius:50%;background:#d1d5db;flex-shrink:0}
+.lc-up.on .lc-updot{background:#22c55e;box-shadow:0 0 0 3px rgba(34,197,94,.18)}
 .lc-dot{width:6px;height:6px;border-radius:50%;background:#22c55e;flex-shrink:0}
 @keyframes lcIn{from{opacity:0;transform:translate3d(0,4px,0)}to{opacity:1;transform:none}}
 @keyframes lcShim{from{background-position:-200px 0}to{background-position:200px 0}}

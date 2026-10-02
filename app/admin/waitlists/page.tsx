@@ -248,7 +248,7 @@ export default function WaitlistsPage() {
                             {e.status === 'failed' && e.error && <div style={{ fontSize: 12, color: '#dc2626', marginTop: 2 }}>{e.error}</div>}
                           </div>
                           <span style={{ fontSize: 12, color: 'var(--slate)', whiteSpace: 'nowrap' }}>
-                            {e.status === 'notified' && e.notified_at ? `Texted ${fmtDate(e.notified_at)}` : `Added ${fmtDate(e.created_at)}`}{e.source === 'inbox' ? ' · from inbox' : ''}
+                            {e.status === 'notified' && e.notified_at ? `${e.notified_via === 'email' ? 'Emailed' : 'Texted'} ${fmtDate(e.notified_at)}` : `Added ${fmtDate(e.created_at)}`}{e.source === 'inbox' ? ' · from inbox' : e.source === 'website' ? ' · from website' : ''}
                           </span>
                           <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 999, background: pill.bg, color: pill.c, whiteSpace: 'nowrap' }}>{pill.label}</span>
                           {e.conversation_id && <a href={`/admin/inbox?conversation=${e.conversation_id}`} title="Open conversation" style={{ ...iconBtn, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: 'var(--slate, #6b7280)' }}><ChatIcon size={15} /></a>}

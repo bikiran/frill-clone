@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { resolveSmsSender } from '@/lib/sms-provider'
 import { companyFlagEnabled } from '@/lib/feature-flags'
 import { shortenUrl } from '@/lib/short-link'
+import { recordLinkClick } from '@/lib/link-click'
 
 function admin() {
   return createClient(
@@ -130,6 +131,16 @@ export async function GET(req: NextRequest) {
     // photos, and watched each one fail.
     let status = request.status
     if (status !== 'cancelled' && request.expires_at && new Date(request.expires_at).getTime() < Date.now()) status = 'expired'
+
+    // Opening the upload page counts as opening its tracked link — covers
+    // links sent before they were shortened. Skip if the /l/ redirect just
+    // logged this same open.
+    try {
+      const { data: sl } = await db.from('short_links').select('id, company_id, contact_id, clicks, last_clicked_at')
+        .eq('company_id', request.company_id).like('target_url', `%/u/${token}`).limit(1)
+      const link = sl?.[0]
+      if (link && (!link.last_clicked_at || Date.now() - Date.parse(link.last_clicked_at) > 60_000)) await recordLinkClick(db, link, req.headers)
+    } catch {}
 
     const { data: company } = await db.from('companies').select('name, logo_url, accent_color').eq('id', request.company_id).maybeSingle()
     const { data: files } = await db.from('media_request_files').select('*').eq('request_id', request.id).order('created_at', { ascending: true })
