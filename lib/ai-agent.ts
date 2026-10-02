@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { WooCommerceService } from '@/lib/woocommerce-service'
+import { trackLinksInText } from '@/lib/link-tracking'
 
 const admin = () => createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -626,6 +627,9 @@ WHAT YOU CANNOT DO
         }
       }
     }
+
+    // Links the AI includes (products, help articles) go out as tracked short links.
+    try { text = await trackLinksInText(text, { companyId, conversationId: opts.conversationId, contactId: contact?.id, channel: 'ai' }) } catch {}
 
     // Post it, clearly marked as AI.
     await db.from('messages').insert({

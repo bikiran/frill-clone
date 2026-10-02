@@ -1,5 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { toPublicUrl } from '@/lib/storage-url'
+import { headers } from 'next/headers'
+import { recordLinkClick } from '@/lib/link-click'
 import DownloadAll from './DownloadAll'
 import Carousel from './Carousel'
 
@@ -33,11 +35,11 @@ export default async function MediaView({ params }: { params: Promise<{ code: st
   let lookupError: string | null = null
   {
     const full = await db.from('short_links')
-      .select('target_url, label, company_id, kind, conversation_id, media_urls, note, expires_at')
+      .select('id, clicks, contact_id, target_url, label, company_id, kind, conversation_id, media_urls, note, expires_at')
       .eq('code', code).maybeSingle()
     if (full.error) {
       const base = await db.from('short_links')
-        .select('target_url, label, company_id, kind, conversation_id')
+        .select('id, clicks, contact_id, target_url, label, company_id, kind, conversation_id')
         .eq('code', code).maybeSingle()
       link = base.data
       lookupError = base.error?.message || full.error.message
@@ -80,6 +82,10 @@ export default async function MediaView({ params }: { params: Promise<{ code: st
   }
   // Give downstream code a usable target_url even for media-only links.
   if (!link.target_url && hasMedia) link.target_url = link.media_urls[0].url
+
+  // Every open is logged like /l/ links (device, city, count) so the inbox
+  // link card and Link Reports see it.
+  if (link.id) await recordLinkClick(db, link, await headers())
 
   // Review links (and any plain redirect link) send the customer straight to
   // the destination — e.g. the business's Google review page.

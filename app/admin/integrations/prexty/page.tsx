@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter, useSearchParams } from 'next/navigation'
+import { confirmDialog } from '@/components/ConfirmDialog'
 
 const DEFAULT_BASE = 'https://prexty.com'
 
@@ -149,7 +150,7 @@ export default function PrextyIntegration() {
   }
 
   const disconnect = async () => {
-    if (!companyId || !confirm('Disconnect Prexty from this company?')) return
+    if (!companyId || !await confirmDialog('Disconnect Prexty from this company?')) return
     setSaving(true); setError(''); setSuccess('')
     try {
       const res = await fetch(`/api/prexty/setup?companyId=${companyId}`, { method: 'DELETE' })

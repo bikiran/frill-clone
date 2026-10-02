@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { peekCompanyUser, readCache, writeCache } from '@/lib/client-cache'
 import { SkeletonList } from '@/components/Skeleton'
 import PageHeader from '@/components/PageHeader'
+import { confirmDialog } from '@/components/ConfirmDialog'
 
 type Campaign = {
   id: string; name: string; channel: string; campaign_type: string | null
@@ -204,7 +205,7 @@ export default function CampaignsPage() {
 
   const deleteCampaign = async (c: Campaign) => {
     if (c.status !== 'draft') { alert('Only draft campaigns can be deleted.'); return }
-    if (!confirm(`Delete the draft “${c.name}”?`)) return
+    if (!await confirmDialog(`Delete the draft “${c.name}”?`)) return
     try {
       await (supabase as any).from('campaigns').delete().eq('id', c.id)
       setCampaigns(list => list.filter(x => x.id !== c.id))

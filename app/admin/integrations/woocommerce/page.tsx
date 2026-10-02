@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter, useSearchParams } from 'next/navigation'
+import { confirmDialog } from '@/components/ConfirmDialog'
 
 const WooLogo = ({ size = 40 }: { size?: number }) => (
   <svg width={size} height={size} viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg" style={{ borderRadius: 10, flexShrink: 0 }}>
@@ -294,7 +295,7 @@ export default function WooCommerceIntegration() {
   }
 
   const disconnectStore = async (integrationId: string) => {
-    if (!confirm('Remove this store? Its synced customers stay, but it will stop syncing.')) return
+    if (!await confirmDialog('Remove this store? Its synced customers stay, but it will stop syncing.')) return
     try {
       await fetch('/api/woocommerce/setup', {
         method: 'DELETE', headers: { 'Content-Type': 'application/json' },
@@ -307,7 +308,7 @@ export default function WooCommerceIntegration() {
   }
 
   const handleDisconnect = async () => {
-    if (!confirm('Are you sure you want to disconnect WooCommerce?')) return
+    if (!await confirmDialog('Are you sure you want to disconnect WooCommerce?')) return
 
     try {
       const res = await fetch('/api/woocommerce/setup', {

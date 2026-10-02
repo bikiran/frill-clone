@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
+import { confirmDialog } from '@/components/ConfirmDialog'
 
 export default function TeamPage() {
   const [company, setCompany] = useState<any>(null)
@@ -104,7 +105,7 @@ export default function TeamPage() {
   }
 
   const removeMember = async (memberId: string) => {
-    if (!confirm('Remove this team member?')) return
+    if (!await confirmDialog('Remove this team member?')) return
     try {
       await (supabase as any)
         .from('team_members')

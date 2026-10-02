@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import { confirmDialog } from '@/components/ConfirmDialog'
 
 // "✨ Draft reply" — AI writes the next reply from your help centre, product
 // catalogue, the customer's orders and the thread; you review and send.
@@ -27,7 +28,7 @@ export function useAiDraft(opts: {
   const run = async (instruction?: string) => {
     if (!opts.companyId || (!opts.conversationId && !opts.ticketId) || busy) return
     const current = (opts.getText?.() || '').trim()
-    if (!instruction && current && !confirm('Replace what you’ve typed with an AI draft?')) return
+    if (!instruction && current && !await confirmDialog('Replace what you’ve typed with an AI draft?')) return
     setBusy(true); setError('')
     try {
       const { data } = await supabase.auth.getSession()
@@ -60,7 +61,10 @@ export function AiDraftButton({ busy, onClick, height = 32 }: { busy: boolean; o
   )
 }
 
-const KIND_ICON: Record<string, string> = { knowledge: '📚', product: '🐠', order: '📦' }
+const BookIcon = () => <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5z" /><path d="M4 19.5A2.5 2.5 0 0 0 6.5 22H20v-5" /></svg>
+const TagIcon = () => <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z" /><circle cx="7.5" cy="7.5" r="1.5" /></svg>
+const BoxIcon = () => <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 8 12 3 3 8v8l9 5 9-5z" /><path d="M3 8l9 5 9-5M12 13v8" /></svg>
+const KIND_ICON: Record<string, React.ReactNode> = { knowledge: <BookIcon />, product: <TagIcon />, order: <BoxIcon /> }
 
 export function AiDraftInfo({ info, error, busy, onRedo, onClose }: {
   info: DraftInfo | null
@@ -87,7 +91,7 @@ export function AiDraftInfo({ info, error, busy, onRedo, onClose }: {
           ? info!.sources.map(s => {
               const chip = (
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11.5, fontWeight: 600, color: 'var(--ink)', background: '#fff', border: '1px solid #ede9fe', borderRadius: 999, padding: '2px 8px', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {KIND_ICON[s.kind] || '•'} {s.label}{s.url ? ' ↗' : ''}
+                  <span style={{ color: '#7c3aed', display: 'inline-flex' }}>{KIND_ICON[s.kind]}</span> {s.label}
                 </span>
               )
               return s.url ? <a key={s.id} href={s.url} target="_blank" rel="noreferrer" style={{ textDecoration: 'none' }}>{chip}</a> : <span key={s.id}>{chip}</span>
@@ -96,7 +100,7 @@ export function AiDraftInfo({ info, error, busy, onRedo, onClose }: {
         <button type="button" onClick={onClose} title="Dismiss" style={{ marginLeft: 'auto', background: 'none', border: 'none', color: '#a78bfa', cursor: 'pointer', fontSize: 14, lineHeight: 1 }}>×</button>
       </div>
       {info!.caution && (
-        <div style={{ marginTop: 6, fontSize: 12, color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, padding: '5px 8px' }}>⚠ {info!.caution}</div>
+        <div style={{ marginTop: 6, fontSize: 12, color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, padding: '5px 8px', display: 'flex', gap: 6, alignItems: 'flex-start' }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 1 }}><path d="M10.3 3.9 2.4 17.5A2 2 0 0 0 4.1 20.5h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" /><path d="M12 9.5v4M12 17h.01" /></svg>{info!.caution}</div>
       )}
       <div style={{ display: 'flex', gap: 6, marginTop: 7 }}>
         <input value={tweak} onChange={e => setTweak(e.target.value)} placeholder="Adjust it: shorter, more formal, mention free delivery…"

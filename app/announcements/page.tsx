@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
 import { BellIcon, HeartIcon } from '@/components/Icons'
+import { confirmDialog } from '@/components/ConfirmDialog'
 
 const TAG_COLORS: Record<string, { bg: string; color: string; label: string }> = {
   new_feature: { bg: '#dbeafe', color: '#0284c7', label: 'New Feature' },
@@ -519,7 +520,7 @@ export default function AnnouncementsPage() {
                                 <div className="border-t" style={{ borderColor: 'var(--border)' }} />
                                 <button
                                   onClick={async () => {
-                                    if (!confirm('Delete this announcement?')) return
+                                    if (!await confirmDialog('Delete this announcement?')) return
                                     await (supabase as any).from('announcements').delete().eq('id', ann.id)
                                     setOpenMenuId(null)
                                     fetchAnnouncements()

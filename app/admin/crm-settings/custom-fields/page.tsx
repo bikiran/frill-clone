@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useCompanyUser, S } from '../_shared'
+import { confirmDialog } from '@/components/ConfirmDialog'
 
 const TYPES = ['text', 'number', 'date', 'checkbox', 'dropdown']
 
@@ -38,7 +39,7 @@ export default function CustomFieldsSettings() {
     setSaving(false); setEditing(null); await load()
   }
   const remove = async (id: string) => {
-    if (!confirm('Delete this field?')) return
+    if (!await confirmDialog('Delete this field?')) return
     await (supabase as any).from('custom_fields').delete().eq('id', id); await load()
   }
 

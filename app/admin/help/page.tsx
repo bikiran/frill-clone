@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { IconEdit, IconLink, IconView, IconDelete } from '@/components/SvgIcons'
+import { confirmDialog } from '@/components/ConfirmDialog'
 
 
 const SEED_ARTICLES = [
@@ -81,7 +82,7 @@ export default function HelpAdminPage() {
   }
 
   const deleteArticle = async (id: string) => {
-    if (!confirm('Delete this article?')) return
+    if (!await confirmDialog('Delete this article?')) return
     await (supabase as any).from('help_articles').delete().eq('id', id)
     setArticles(prev => prev.filter((a: any) => a.id !== id))
     if (selected?.id === id) setSelected(null)

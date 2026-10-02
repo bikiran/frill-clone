@@ -7,6 +7,7 @@ import { getRandomName } from '@/lib/randomNames'
 import { useToast } from '@/components/ToastProvider'
 import ConfirmModal from './ConfirmModal'
 import { AssignIcon, PinIcon, MergeIcon, ArchiveIcon, TrashIcon, EditIcon, ShareIcon, CloseIcon, EyeIcon, LockIcon } from './Icons'
+import { confirmDialog } from '@/components/ConfirmDialog'
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
   new: { label: 'Under consideration', color: '#3b82f6', bg: '#dbeafe' },
@@ -421,7 +422,7 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
   // combines vote counters (deduping users who voted on both), records the merge,
   // and archives this idea. Previously this was only an alert() — nothing happened.
   const performMerge = async (target: any) => {
-    if (!confirm(`Merge "${idea.title}" into "${target.title}"?\n\nComments and votes will move to "${target.title}" and this idea will be archived.`)) return
+    if (!await confirmDialog(`Merge "${idea.title}" into "${target.title}"?\n\nComments and votes will move to "${target.title}" and this idea will be archived.`)) return
     try {
       // 1. Move comments
       await supabase.from('comments').update({ idea_id: target.id }).eq('idea_id', idea.id)

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
+import { confirmDialog } from '@/components/ConfirmDialog'
 
 export default function MetaChannelsPage() {
   const [companyId, setCompanyId] = useState<string | null>(null)
@@ -228,7 +229,7 @@ export default function MetaChannelsPage() {
                     <span style={{ fontSize: 12, color: 'var(--ink)' }}>Active</span>
                   </label>
 
-                  <button type="button" onClick={() => { if (confirm('Disconnect this account?')) api({ action: 'disconnect', id: c.id }) }}
+                  <button type="button" onClick={async () => { if (await confirmDialog('Disconnect this account?')) api({ action: 'disconnect', id: c.id }) }}
                     style={{ padding: '6px 11px', borderRadius: 8, border: '1px solid var(--border)', background: '#fff', color: '#dc2626', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
                     Disconnect
                   </button>

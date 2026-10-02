@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import { XIcon, TagIcon } from '@/components/booking/icons'
 
 // "Add to waitlist" dialog — shared by the Waitlists page and the inbox
 // contact panel (where it's pre-filled with the customer being chatted to).
@@ -96,7 +97,7 @@ export default function WaitlistAddModal({ companyId, onClose, onAdded, presetCo
               <div style={{ fontSize: 13.5, fontWeight: 700 }}>{contact.name || 'Customer'}</div>
               <div style={{ fontSize: 12, color: 'var(--slate)' }}>{[contact.phone, contact.email].filter(Boolean).join(' · ') || 'No phone or email'}</div>
             </div>
-            {!presetContact && <button onClick={() => setContact(null)} style={iconBtn}>✕</button>}
+            {!presetContact && <button onClick={() => setContact(null)} style={{ ...iconBtn, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><XIcon size={13} /></button>}
           </div>
         ) : (
           <>
@@ -121,12 +122,12 @@ export default function WaitlistAddModal({ companyId, onClose, onAdded, presetCo
         <label style={{ ...lbl, marginTop: 18 }}>Item they want</label>
         {product ? (
           <div style={chosen}>
-            {product.image ? <img src={product.image} alt="" style={{ width: 36, height: 36, borderRadius: 8, objectFit: 'cover' }} /> : <span>🐠</span>}
+            {product.image ? <img src={product.image} alt="" style={{ width: 36, height: 36, borderRadius: 8, objectFit: 'cover' }} /> : <span><TagIcon size={16} /></span>}
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 13.5, fontWeight: 700 }}>{product.name}</div>
               <div style={{ fontSize: 12, color: product.stock_status === 'instock' ? '#059669' : '#dc2626' }}>{product.stock_status === 'instock' ? 'Currently in stock' : 'Out of stock'}</div>
             </div>
-            <button onClick={() => setProduct(null)} style={iconBtn}>✕</button>
+            <button onClick={() => setProduct(null)} style={{ ...iconBtn, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><XIcon size={13} /></button>
           </div>
         ) : (
           <>
@@ -135,7 +136,7 @@ export default function WaitlistAddModal({ companyId, onClose, onAdded, presetCo
               <div style={{ border: '1px solid var(--border)', borderRadius: 10, marginTop: 6, overflow: 'hidden' }}>
                 {products.map(p => (
                   <button key={p.id} onClick={() => { setProduct(p); setPq('') }} style={{ ...row, display: 'flex', alignItems: 'center', gap: 10 }}>
-                    {p.image ? <img src={p.image} alt="" style={{ width: 30, height: 30, borderRadius: 6, objectFit: 'cover' }} /> : <span style={{ width: 30, textAlign: 'center' }}>🐠</span>}
+                    {p.image ? <img src={p.image} alt="" style={{ width: 30, height: 30, borderRadius: 6, objectFit: 'cover' }} /> : <span style={{ width: 30, textAlign: 'center' }}><TagIcon size={16} /></span>}
                     <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
                     <span style={{ fontSize: 11, fontWeight: 700, color: p.stock_status === 'instock' ? '#059669' : '#dc2626' }}>{p.stock_status === 'instock' ? 'In stock' : 'Out'}</span>
                   </button>

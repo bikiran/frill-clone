@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { toE164 } from '@/lib/telnyx-service'
 import { resolveSmsSender, isLandlineRejection } from '@/lib/sms-provider'
-import { trackLinksInText } from '@/lib/link-tracking'
+import { trackLinks, applyTrackedLinks, type TrackedLink } from '@/lib/link-tracking'
 import { isExternalSendBlocked, DEMO_BLOCK_MESSAGE, logBlockedSend } from '@/lib/demo-guard'
 import { SmsQuotaError } from '@/lib/sms-quota'
 
@@ -54,6 +54,7 @@ export async function POST(req: NextRequest) {
     // mobile) rather than a raw storage URL, which often just downloads or looks
     // like spam in a text message.
     let body = text || ''
+    let trackedLinks: TrackedLink[] = []
     const atts = Array.isArray(attachments) ? attachments : []
     // When the provider carries real MMS (Twilio), photos go as actual picture
     // messages; everything else (and every attachment on Telnyx) still goes as a
@@ -130,7 +131,7 @@ export async function POST(req: NextRequest) {
           .select('contact_id, assigned_location_id').eq('id', conversationId).maybeSingle()
         convMeta = data
       }
-      body = await trackLinksInText(body, {
+      const tracked = await trackLinks(body, {
         companyId,
         conversationId: conversationId || undefined,
         contactId: convMeta?.contact_id || undefined,
@@ -138,6 +139,8 @@ export async function POST(req: NextRequest) {
         sentBy: senderName || undefined,
         channel: 'sms',
       })
+      body = tracked.text
+      trackedLinks = tracked.links
     } catch {}
 
     // Twilio delivery receipts (for campaign reporting) come back to the Twilio
@@ -155,18 +158,25 @@ export async function POST(req: NextRequest) {
 
     // Log into the conversation thread as an agent message sent via SMS
     if (conversationId && !skipChatMessage) {
-      await db.from('messages').insert({
+      // The thread shows the same tracked short links the customer received,
+      // so the inbox can show a link card with opens / device / city.
+      const threadText = applyTrackedLinks(text || '', trackedLinks)
+      const { data: inserted } = await db.from('messages').insert({
         conversation_id: conversationId,
         company_id: companyId,
         sender_type: 'agent',
         sender_name: senderName || 'Agent',
-        content: text || (atts.length ? '📎 Sent attachment link' : ''),
+        content: threadText || (atts.length ? 'Sent attachment link' : ''),
         attachments: atts,
         delivery_channel: 'sms',
         telnyx_message_id: providerMessageId,
-      })
+        ...(trackedLinks.length ? { metadata: { links: trackedLinks } } : {}),
+      }).select('id').maybeSingle()
+      if (inserted?.id && trackedLinks.length) {
+        try { await db.from('short_links').update({ message_id: inserted.id }).in('code', trackedLinks.map(l => l.code)) } catch {}
+      }
       await db.from('conversations').update({
-        last_message: text || 'Attachment',
+        last_message: applyTrackedLinks(text || '', trackedLinks) || 'Attachment',
         last_message_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
         // The conversation has MOVED to SMS. Without this it kept claiming to be

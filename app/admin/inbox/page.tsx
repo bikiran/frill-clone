@@ -44,6 +44,8 @@ import SuperAdminContactWorkspaces from '@/components/SuperAdminContactWorkspace
 import WaitlistQuickAdd from '@/components/WaitlistQuickAdd'
 import { useAiDraft, AiDraftButton, AiDraftInfo } from '@/components/AiDraft'
 import BookingLinkButton from '@/components/booking/BookingLinkButton'
+import LinkCards, { linkCodesIn, useLinkStats, LastOpen } from '@/components/LinkCards'
+import { confirmDialog } from '@/components/ConfirmDialog'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Conversation = {
@@ -3312,7 +3314,7 @@ export default function InboxPage() {
     if (selected) loadConversationExtras(selected.id)
   }
   const deleteNote = async (id: string) => {
-    if (!confirm('Delete this note?')) return
+    if (!await confirmDialog('Delete this note?')) return
     await (supabase as any).from('conversation_notes').delete().eq('id', id)
     if (selected) loadConversationExtras(selected.id)
   }
@@ -3476,7 +3478,7 @@ export default function InboxPage() {
     if (selected) loadConversationExtras(selected.id)
   }
   const deleteTask = async (id: string) => {
-    if (!confirm('Delete this task?')) return
+    if (!await confirmDialog('Delete this task?')) return
     await (supabase as any).from('conversation_tasks').delete().eq('id', id)
     if (selected) loadConversationExtras(selected.id)
   }
@@ -3981,7 +3983,7 @@ export default function InboxPage() {
     if (!companyId) return
     const orderId = payload.order_id || payload.id
     if (!orderId) { showToast('No order id for this order'); return }
-    if (!confirm(`Mark order #${payload.order_number || orderId} as completed?\n\nThis updates WooCommerce and may send the customer a completion email.`)) return
+    if (!await confirmDialog(`Mark order #${payload.order_number || orderId} as completed?\n\nThis updates WooCommerce and may send the customer a completion email.`)) return
     try {
       const res = await fetch('/api/orders/status', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -4097,7 +4099,7 @@ export default function InboxPage() {
       return
     }
     const totalRefund = chosen.reduce((s, c) => s + c.total + c.tax, 0) + shippingAmt
-    if (!confirm(`Refund $${totalRefund.toFixed(2)} for order #${m.orderNumber}?\n\nThis returns money through the payment gateway and cannot be undone here.`)) return
+    if (!await confirmDialog(`Refund $${totalRefund.toFixed(2)} for order #${m.orderNumber}?\n\nThis returns money through the payment gateway and cannot be undone here.`)) return
 
     setRefundModal((v) => ({ ...v, busy: true }))
     try {
@@ -4224,7 +4226,7 @@ export default function InboxPage() {
   const updateOrderStatus = async (payload: any, status: string) => {
     if (!companyId || !payload?.order_id) return
     const verb = status === 'cancelled' ? 'cancel' : 'mark paid'
-    if (!confirm(`Are you sure you want to ${verb} order #${payload.order_number}?${status !== 'cancelled' ? ' This records payment and reduces stock in WooCommerce.' : ''}`)) return
+    if (!await confirmDialog(`Are you sure you want to ${verb} order #${payload.order_number}?${status !== 'cancelled' ? ' This records payment and reduces stock in WooCommerce.' : ''}`)) return
     try {
       const res = await fetch('/api/orders/status', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -4807,7 +4809,7 @@ export default function InboxPage() {
   const sendReply = async () => {
     if ((!reply.trim() && stagedMedia.length === 0) || !selected || !user) return
     setSending(true)
-    const content = reply.trim()
+    let content = reply.trim()
     const senderName = myName
 
     // An internal note isn't taking the customer on, so it doesn't claim the
@@ -4916,6 +4918,21 @@ export default function InboxPage() {
         alert('Could not save the internal note: ' + e.message)
       }
       return
+    }
+
+    // Every link a customer gets from Colvy is a tracked short link (opens,
+    // device, city) — whatever channel this goes out on.
+    if (/https?:\/\//i.test(content)) {
+      try {
+        const { data: sess } = await supabase.auth.getSession()
+        const t = sess?.session?.access_token
+        const r = await fetch('/api/links/track', {
+          method: 'POST', headers: { 'Content-Type': 'application/json', ...(t ? { Authorization: `Bearer ${t}` } : {}) },
+          body: JSON.stringify({ companyId, conversationId: selected.id, text: content, channel: (selected as any).channel || sendChannel || 'chat', sentBy: senderName }),
+        })
+        const d = await r.json().catch(() => ({}))
+        if (r.ok && typeof d.text === 'string' && d.text) content = d.text
+      } catch { /* send the original if tracking fails */ }
     }
 
     // Instagram / Messenger conversations reply through the Meta Send API.
@@ -5705,7 +5722,7 @@ export default function InboxPage() {
     if (!contact?.id || !companyId) return
     const nowBlocked = !(contact as any).is_blocked
     const me = myName || 'A team member'
-    if (nowBlocked && !confirm(`Block ${contact.name || 'this contact'}? Their messages will be marked blocked in the inbox.`)) return
+    if (nowBlocked && !await confirmDialog(`Block ${contact.name || 'this contact'}? Their messages will be marked blocked in the inbox.`)) return
     try {
       await (supabase as any).from('contacts').update({
         is_blocked: nowBlocked,
@@ -5728,7 +5745,7 @@ export default function InboxPage() {
 
   const reportSpam = async () => {
     if (!selected || !companyId) return
-    if (!confirm('Report this conversation as spam? It will be marked spam and closed.')) return
+    if (!await confirmDialog('Report this conversation as spam? It will be marked spam and closed.')) return
     const me = myName || 'A team member'
     try {
       await (supabase as any).from('conversations').update({
@@ -8735,10 +8752,10 @@ export default function InboxPage() {
                             {/* Review-request card, shown to the agent — mirrors
                                 what the customer received. Updates to "completed"
                                 once the customer leaves the review. */}
-                            {(() => {
+                            <ReviewCard msg={msg} companyId={companyId} render={(linkStats: any) => {
                               const completed = !!(msg as any).metadata?.review_completed
                               const rating = (msg as any).metadata?.review_rating || 0
-                              const clicks = (msg as any).metadata?.review_clicks || 0
+                              const clicks = Math.max((msg as any).metadata?.review_clicks || 0, linkStats?.clicks || 0)
                               const title = completed ? 'Review Left' : ((msg as any).metadata?.review_title || 'Review Request Sent')
                               return (
                                 // A neat, centered card (mirrors what the customer
@@ -8762,9 +8779,10 @@ export default function InboxPage() {
                                   {completed && rating > 0 && (
                                     <p style={{ margin: '10px 0 0', fontSize: 11.5, color: '#8a929c' }}>Customer left {rating} star{rating === 1 ? '' : 's'}</p>
                                   )}
+                                  <LastOpen s={linkStats} />
                                 </div>
                               )
-                            })()}
+                            }} />
                             {/* The message text (with the /m/ link) below the card —
                                 capped to the card's width and centred so the whole
                                 bubble reads as one balanced, even block. */}
@@ -8785,6 +8803,8 @@ export default function InboxPage() {
                             }
                             return (
                               <div style={{ padding: atts.length && atts[0].kind !== 'file' ? '4px 10px 6px' : 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                                {/* Links Colvy sent the customer → a card with opens / device / city. */}
+                                {isAgent && /https?:\/\//.test(body || '') && <div style={{ whiteSpace: 'normal', marginTop: 2 }}><LinkCards companyId={companyId} text={body} conversationId={selected?.id || null} at={(msg as any).created_at || null} /></div>}
                                 {renderTextWithLinks(body)}
                                 {hasTr && (
                                   <div style={{ marginTop: 4, fontSize: 10.5, opacity: 0.8, display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
@@ -10057,7 +10077,7 @@ export default function InboxPage() {
                               <button type="button" title="Copy" onClick={() => copyField(value)} style={fieldBtn('var(--slate)')}>
                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
                               </button>
-                              <button type="button" title="Delete" onClick={async () => { if (confirm(`Clear ${label.toLowerCase()}?`)) { await (supabase as any).from('contacts').update({ [field]: null }).eq('id', contact.id); setContact((c: any) => ({ ...c, [field]: null })); showToast('Cleared') } }} style={fieldBtn('#dc2626')}>
+                              <button type="button" title="Delete" onClick={async () => { if (await confirmDialog(`Clear ${label.toLowerCase()}?`)) { await (supabase as any).from('contacts').update({ [field]: null }).eq('id', contact.id); setContact((c: any) => ({ ...c, [field]: null })); showToast('Cleared') } }} style={fieldBtn('#dc2626')}>
                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                               </button>
                             </div>
@@ -10745,4 +10765,12 @@ export default function InboxPage() {
       )}
     </div>
   )
+}
+
+// Review-request card wrapper: feeds the tracked link's live stats (opens,
+// last device / city) into the card's render function.
+function ReviewCard({ msg, companyId, render }: { msg: any; companyId: string | null; render: (s: any) => React.ReactNode }) {
+  const codes = linkCodesIn(msg?.content).slice(0, 1)
+  const [s] = useLinkStats(companyId, codes)
+  return <>{render(s || null)}</>
 }

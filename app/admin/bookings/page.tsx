@@ -7,7 +7,7 @@ import { resolveCompanyUser } from '@/lib/client-cache'
 import PageHeader from '@/components/PageHeader'
 import { SkeletonList } from '@/components/Skeleton'
 import { api, btn, btnGhost } from '@/components/booking/admin/shared'
-import { LinkIcon, CodeIcon, ExternalIcon, WarnIcon, CheckIcon } from '@/components/booking/icons'
+import { LinkIcon, CodeIcon, ExternalIcon, WarnIcon, CheckIcon, CalendarIcon, ClockIcon, TagIcon, GearIcon, SparkleIcon } from '@/components/booking/icons'
 import BookingsList from '@/components/booking/admin/BookingsList'
 import ServicesTab from '@/components/booking/admin/ServicesTab'
 import AvailabilityTab from '@/components/booking/admin/AvailabilityTab'
@@ -36,8 +36,14 @@ export default function BookingsPage() {
   const [services, setServices] = useState<any[]>([])
   const [bookings, setBookings] = useState<any[]>([])
   const [scope, setScope] = useState('upcoming')
+  const [upcomingCount, setUpcomingCount] = useState<number | null>(null)
 
   const flash = (m: string) => { setToast(m); setTimeout(() => setToast(''), 4500) }
+
+  // Opening Bookings clears the side-menu "new bookings" badge.
+  useEffect(() => {
+    try { localStorage.setItem('colvy-bookings-seen-at', new Date().toISOString()); window.dispatchEvent(new Event('bookings-seen')) } catch {}
+  }, [])
 
   const loadMeta = useCallback(async (cid: string) => {
     try {
@@ -49,7 +55,7 @@ export default function BookingsPage() {
     try { const d = await api(`/api/bookings/services?companyId=${cid}`); setServices(d.services || []); if (d.setupNeeded) setSetupMsg(d.hint) } catch {}
   }, [])
   const loadBookings = useCallback(async (cid: string, sc: string) => {
-    try { const d = await api(`/api/bookings?companyId=${cid}&scope=${sc}`); setBookings(d.bookings || []); if (d.setupNeeded) setSetupMsg(d.hint) } catch {}
+    try { const d = await api(`/api/bookings?companyId=${cid}&scope=${sc}`); setBookings(d.bookings || []); if (sc === 'upcoming') setUpcomingCount((d.bookings || []).filter((b: any) => b.status === 'confirmed').length); if (d.setupNeeded) setSetupMsg(d.hint) } catch {}
   }, [])
 
   useEffect(() => {
@@ -88,12 +94,11 @@ export default function BookingsPage() {
 
   const copyLink = () => { if (meta?.bookingUrl) navigator.clipboard?.writeText(meta.bookingUrl).then(() => flash('Booking link copied')).catch(() => {}) }
 
-  const upcomingCount = scope === 'upcoming' ? bookings.filter(b => b.status === 'confirmed').length : null
-
   return (
-    <div style={{ padding: '0 24px 60px', maxWidth: 1100, margin: '0 auto' }}>
+    <div className="bk-page">
       <PageHeader
         title="Bookings"
+        icon={<CalendarIcon size={21} />}
         subtitle="Let customers book appointments online — and pay a deposit if you want one."
         bleed={24}
         bleedTop={0}
@@ -101,19 +106,24 @@ export default function BookingsPage() {
           <>
             <button onClick={copyLink} style={btnGhost} title="Copy booking link"><LinkIcon size={15} /><span className="bkh-l">Copy booking link</span></button>
             <button onClick={() => setShowEmbed(true)} style={btnGhost} title="Add to your website"><CodeIcon size={15} /><span className="bkh-l">Embed</span></button>
-            <a href={meta.bookingUrl} target="_blank" rel="noreferrer" style={{ ...btn, textDecoration: 'none' }} title="Open booking page"><span className="bkh-l">Open page</span><ExternalIcon size={15} /></a>
+            <a href={meta.bookingUrl} target="_blank" rel="noreferrer" style={{ ...btn, textDecoration: 'none' }} title="Open booking page"><span className="bkh-l">Open booking page</span><ExternalIcon size={15} /></a>
           </>
         ) : undefined}
       />
       <style>{`
-        @media(max-width:700px){.bkh-l{display:none}}
-        .bk-tabs{display:flex;gap:4px;border-bottom:1px solid var(--border,#ececec);margin:16px 0 18px;overflow-x:auto;overflow-y:hidden;scrollbar-width:none}
+        .bk-page{padding:0 24px 60px}
+        @media(max-width:700px){.bkh-l{display:none}.bk-page{padding:0 14px 60px}.bk-page>div:first-child{margin-left:-14px!important;margin-right:-14px!important}}
+        .bk-tabs{display:flex;gap:2px;border-bottom:1px solid var(--border,#ececec);margin:16px 0 18px;overflow-x:auto;overflow-y:hidden;scrollbar-width:none}
         .bk-tabs::-webkit-scrollbar{display:none}
-        .bk-tab{border:none;background:none;padding:10px 14px;font-size:14px;font-weight:700;cursor:pointer;white-space:nowrap;font-family:inherit;color:var(--slate,#6b7280);box-shadow:inset 0 -2px 0 transparent;transition:color .2s,box-shadow .25s cubic-bezier(.22,1,.36,1);outline:none}
+        .bk-tab{display:inline-flex;align-items:center;gap:7px;border:none;background:none;padding:11px 14px;font-size:14px;font-weight:700;cursor:pointer;white-space:nowrap;font-family:inherit;color:var(--slate,#6b7280);box-shadow:inset 0 -2px 0 transparent;transition:color .2s,box-shadow .25s cubic-bezier(.22,1,.36,1);outline:none}
         .bk-tab:hover{color:var(--ink,#111)}
         .bk-tab,.bk-tab:hover,.bk-tab:active,.bk-tab:focus{background:transparent!important}
         .bk-tab.on{color:var(--ink,#111);box-shadow:inset 0 -2px 0 var(--coral,#ff7a6b)}
         .bk-tab:focus-visible{box-shadow:inset 0 0 0 2px var(--coral,#ff7a6b);border-radius:8px}
+        .bk-tab svg{opacity:.75;transition:opacity .2s}
+        .bk-tab.on svg{opacity:1;color:var(--coral,#ff7a6b)}
+        .bk-count{min-width:20px;height:20px;padding:0 6px;border-radius:999px;display:inline-flex;align-items:center;justify-content:center;font-size:11.5px;font-weight:800;background:#f1f1f3;color:var(--slate,#6b7280);font-variant-numeric:tabular-nums;transition:background .2s,color .2s}
+        .bk-tab.on .bk-count{background:var(--peach,#fff1ee);color:var(--coral,#e5604f)}
         .bk-steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
         @media(max-width:760px){.bk-steps{grid-template-columns:1fr}}
         .bk-step{display:flex;gap:11px;align-items:flex-start;text-align:left;padding:12px 13px;border-radius:12px;border:1px solid var(--border,#ececec);background:#fff;cursor:pointer;font:inherit;color:inherit;transition:transform .2s cubic-bezier(.22,1,.36,1),box-shadow .2s,border-color .2s}
@@ -148,8 +158,14 @@ export default function BookingsPage() {
       )}
 
       <div className="bk-tabs" role="tablist">
-        {([['today', 'Today'], ['bookings', `Bookings${upcomingCount ? ` (${upcomingCount})` : ''}`], ['services', `Services${services.length ? ` (${services.length})` : ''}`], ['availability', 'Availability'], ['settings', 'Settings']] as [Tab, string][]).map(([k, l]) => (
-          <button key={k} role="tab" aria-selected={tab === k} onClick={() => switchTab(k)} className={`bk-tab${tab === k ? ' on' : ''}`}>{l}</button>
+        {([
+          ['today', 'Today', <SparkleIcon key="i" size={15} />, null],
+          ['bookings', 'Bookings', <CalendarIcon key="i" size={15} />, upcomingCount],
+          ['services', 'Services', <TagIcon key="i" size={15} />, services.length || null],
+          ['availability', 'Availability', <ClockIcon key="i" size={15} />, null],
+          ['settings', 'Settings', <GearIcon key="i" size={15} />, null],
+        ] as [Tab, string, React.ReactNode, number | null][]).map(([k, l, ic, n]) => (
+          <button key={k} role="tab" aria-selected={tab === k} onClick={() => switchTab(k)} className={`bk-tab${tab === k ? ' on' : ''}`}>{ic}{l}{n ? <span className="bk-count">{n}</span> : null}</button>
         ))}
       </div>
 

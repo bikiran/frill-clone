@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { renderMarkdown } from '@/lib/markdown'
+import { confirmDialog } from '@/components/ConfirmDialog'
 
 // Super-admin blog CMS: list, create, edit, publish/unpublish and delete the
 // posts that power colvy.com/blog (blog_posts table, written via the service-role
@@ -72,7 +73,7 @@ export default function BlogAdminPage() {
   }
 
   const act = async (action: string, id?: string) => {
-    if (action === 'delete' && !confirm('Delete this post? This cannot be undone.')) return
+    if (action === 'delete' && !await confirmDialog('Delete this post? This cannot be undone.')) return
     try {
       const r = await authed('/api/platform-admin/blog', { method: 'POST', body: JSON.stringify({ action, id }) })
       const d = await r.json(); if (!r.ok) { setErr(d.error || 'Action failed'); return }

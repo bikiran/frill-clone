@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import WaitlistAddModal from '@/components/WaitlistAddModal'
+import { BellIcon } from '@/components/booking/icons'
 
 // Contact-panel shortcut: when a customer asks for something that's out of
 // stock ("any diamond eye molly?"), put them on its back-in-stock waitlist
@@ -18,7 +19,7 @@ export default function WaitlistQuickAdd({ companyId, contact, conversationId }:
   return (
     <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12 }}>
       <p style={{ margin: '0 0 6px', fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.03em', display: 'flex', alignItems: 'center', gap: 5 }}>
-        <span aria-hidden>🔔</span> Back-in-stock waitlist
+        <BellIcon size={14} /> Back-in-stock waitlist
       </p>
       <button type="button" onClick={() => { setDone(''); setOpen(true) }}
         style={{ width: '100%', padding: '8px 10px', borderRadius: 9, border: '1px dashed var(--coral)', background: 'var(--peach)', color: 'var(--coral)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', textAlign: 'left' }}>

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { confirmDialog } from '@/components/ConfirmDialog'
 
 // Full, itemised refund for a WooCommerce order — the same capability the inbox
 // order panel has, usable from the Orders board. Choose per-item quantities,
@@ -86,7 +87,7 @@ export default function RefundOrderModal({
     setError('')
     if (chosen.length === 0 && !(refundShipping && shipping > 0)) { setError('Select at least one item or shipping to refund.'); return }
     if (total <= 0) { setError('Nothing to refund.'); return }
-    if (!confirm(`Refund ${money(total)} for order #${order.order_number}?\n\nThis returns money through the payment gateway and cannot be undone here.`)) return
+    if (!await confirmDialog(`Refund ${money(total)} for order #${order.order_number}?\n\nThis returns money through the payment gateway and cannot be undone here.`)) return
     setBusy(true)
     try {
       const lineItems = chosen.map(it => ({

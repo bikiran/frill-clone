@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase'
 import { peekCompanyUser, readCache, writeCache } from '@/lib/client-cache'
 import { SkeletonList } from '@/components/Skeleton'
 import PageHeader from '@/components/PageHeader'
+import { confirmDialog } from '@/components/ConfirmDialog'
 
 export default function ScheduledPage() {
   const seededCid = peekCompanyUser()?.companyId ?? null
@@ -61,7 +62,7 @@ export default function ScheduledPage() {
   }
 
   const cancelScheduled = async (id: string) => {
-    if (!confirm('Cancel this scheduled message?')) return
+    if (!await confirmDialog('Cancel this scheduled message?')) return
     await (supabase as any).from('scheduled_messages').update({ status: 'cancelled' }).eq('id', id)
     setItems(prev => prev.map(i => i.id === id ? { ...i, status: 'cancelled' } : i))
   }

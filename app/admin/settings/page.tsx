@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useToast, ToastContainer } from '@/lib/toast'
 import { useEntitlements } from '@/lib/entitlements-client'
+import { confirmDialog } from '@/components/ConfirmDialog'
 
 // Colvy-branded CNAME target shown to customers for custom domains — a
 // colvy.com host that itself points at our platform, so the underlying
@@ -900,7 +901,7 @@ export default function SettingsPage() {
                   <p className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>Delete all Ideas</p>
                   <p className="text-xs mt-0.5" style={{ color: 'var(--slate)' }}>Once you delete Ideas, there is no going back so please be certain.</p>
                 </div>
-                <button onClick={() => { if (confirm('Delete ALL ideas? This cannot be undone!')) alert('Contact support to delete all ideas.') }}
+                <button onClick={async () => { if (await confirmDialog('Delete ALL ideas? This cannot be undone!')) alert('Contact support to delete all ideas.') }}
                   className="px-4 py-2 rounded-xl border text-sm font-semibold cursor-pointer"
                   style={{ borderColor: '#fca5a5', color: '#dc2626' }}>
                   Delete all Ideas
@@ -911,7 +912,7 @@ export default function SettingsPage() {
                   <p className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>Delete company</p>
                   <p className="text-xs mt-0.5" style={{ color: 'var(--slate)' }}>Including all Ideas and Announcements, this cannot be undone.</p>
                 </div>
-                <button onClick={() => { if (confirm('Delete entire company? This CANNOT be undone!')) alert('Contact support to delete your company.') }}
+                <button onClick={async () => { if (await confirmDialog('Delete entire company? This CANNOT be undone!')) alert('Contact support to delete your company.') }}
                   className="px-4 py-2 rounded-xl text-sm font-semibold cursor-pointer text-white"
                   style={{ background: '#dc2626' }}>
                   Delete company
@@ -2011,7 +2012,7 @@ export default function SettingsPage() {
               </p>
               <button
                 onClick={async () => {
-                  if (!confirm('This will permanently delete all demo/sample data from your board. Continue?')) return
+                  if (!await confirmDialog('This will permanently delete all demo/sample data from your board. Continue?')) return
                   setRemovingDemo(true)
                   try {
                     const cid = company?.id

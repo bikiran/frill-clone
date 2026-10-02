@@ -17,6 +17,7 @@ import RefundOrderModal from '@/components/RefundOrderModal'
 import PageHeader from '@/components/PageHeader'
 import { CARRIERS as TRACK_CARRIERS, carrierByKey } from '@/lib/carriers'
 import { barcodeSVG } from '@/lib/barcode'
+import { confirmDialog } from '@/components/ConfirmDialog'
 
 type Order = any
 
@@ -725,7 +726,7 @@ export default function OrdersPage() {
           return (
             <span key={v.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 2, padding: '4px 6px 4px 12px', borderRadius: 20, border: `1px solid ${on ? ACCENT : 'var(--border)'}`, background: on ? `color-mix(in srgb, ${ACCENT} 12%, transparent)` : 'var(--card,#fff)' }}>
               <button type="button" onClick={() => applyView(v)} style={{ background: 'none', border: 'none', padding: 0, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', color: on ? ACCENT : 'var(--slate)' }}>{v.name}</button>
-              <button type="button" title="Delete view" onClick={() => { if (window.confirm(`Delete view “${v.name}”?`)) deleteView(v.id) }} style={{ background: 'none', border: 'none', padding: '0 2px', cursor: 'pointer', color: 'var(--slate)', fontSize: 13, lineHeight: 1 }}>×</button>
+              <button type="button" title="Delete view" onClick={async () => { if (await confirmDialog(`Delete view “${v.name}”?`)) deleteView(v.id) }} style={{ background: 'none', border: 'none', padding: '0 2px', cursor: 'pointer', color: 'var(--slate)', fontSize: 13, lineHeight: 1 }}>×</button>
             </span>
           )
         })}
@@ -1480,7 +1481,7 @@ function ManageTagsModal({ companyId, accent, tagDefs, setTagDefs, orders, setOr
     setEditingKey(null); setBusy(false)
   }
   const del = async (t: any) => {
-    if (!window.confirm(`Delete tag “${t.name}”? It will be removed from all orders.`)) return
+    if (!await confirmDialog(`Delete tag “${t.name}”? It will be removed from all orders.`)) return
     setBusy(true)
     try { if (t.id) await (supabase as any).from('order_tags').delete().eq('id', t.id); await rewriteOrders(t.name, null); setTagDefs((d: any[]) => d.filter(x => x.id !== t.id)) } catch { onFlash('Could not delete tag') }
     setBusy(false)
@@ -1590,7 +1591,7 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
 
   // ── WooCommerce order actions ─────────────────────────────────────────────
   const markCompleted = async () => {
-    if (!window.confirm(`Mark order ${order.order_number} as completed in WooCommerce?`)) return
+    if (!await confirmDialog(`Mark order ${order.order_number} as completed in WooCommerce?`)) return
     setActBusy('done')
     try {
       const res = await fetch('/api/orders/status', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, orderId: order.external_order_id, status: 'completed', conversationId: order.conversation_id || undefined }) })
@@ -1626,7 +1627,7 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
     setActBusy('')
   }
   const markCollected = async () => {
-    if (!window.confirm(`Mark order ${order.order_number} as collected by the customer?`)) return
+    if (!await confirmDialog(`Mark order ${order.order_number} as collected by the customer?`)) return
     onPatch({ status: 'shipped', fulfilment_status: 'fulfilled' }, { type: 'collected', detail: 'Collected by customer' }); order.status = 'shipped'
     logEvent('collected', 'Order collected by customer')
     onFlash('Marked collected')
@@ -1906,7 +1907,7 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
     setEditNoteId(null)
   }
   const deleteNote = async (n: any) => {
-    if (!window.confirm('Delete this note?')) return
+    if (!await confirmDialog('Delete this note?')) return
     setNotes(ns => ns.filter(x => x.id !== n.id))
     try { await (supabase as any).from('order_notes').delete().eq('id', n.id) } catch {}
   }
@@ -1974,7 +1975,7 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
   // (or the printable-label route as a fallback); void cancels at the carrier
   // and returns the order to Awaiting Shipment so it can be re-labelled.
   const labelAction = async (action: 'reprint' | 'void') => {
-    if (action === 'void' && !confirm('Void this shipping label? The order goes back to Awaiting Shipment.')) return
+    if (action === 'void' && !await confirmDialog('Void this shipping label? The order goes back to Awaiting Shipment.')) return
     try {
       const { data } = await supabase.auth.getSession()
       const token = data?.session?.access_token
