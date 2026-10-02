@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { computeSla, clockLabel, CLOCK_COLORS, resolveSla, DEFAULT_SLA, type SlaSettings, type Clock } from '@/lib/ticket-sla'
 
 const STATUSES = ['open', 'in_progress', 'resolved', 'closed']
 const STATUS_COLORS: Record<string, { bg: string; c: string }> = {
@@ -32,6 +33,15 @@ export default function TicketDetail() {
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
   const [toast, setToast] = useState('')
+  const [sla, setSla] = useState<SlaSettings>(DEFAULT_SLA)
+  const [team, setTeam] = useState<{ userId: string; name: string }[]>([])
+  const [tick, setTick] = useState(0)
+  useEffect(() => { const iv = setInterval(() => setTick(t => t + 1), 60000); return () => clearInterval(iv) }, [])
+
+  const authed = async (): Promise<Record<string, string>> => {
+    const { data: { session } } = await supabase.auth.getSession()
+    return { 'Content-Type': 'application/json', ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}) }
+  }
 
   const loadThread = async () => {
     try { const r = await fetch(`/api/tickets/${ticketId}/reply`); const d = await r.json(); setMessages(d.messages || []) } catch {}
@@ -44,6 +54,10 @@ export default function TicketDetail() {
       if (data?.contact_id) { try { const { data: c } = await (supabase as any).from('contacts').select('*').eq('id', data.contact_id).maybeSingle(); setContact(c) } catch {} }
       if (data?.company_id) {
         try { const { data: co } = await (supabase as any).from('companies').select('id,name,slug,accent_color').eq('id', data.company_id).maybeSingle(); setCompany(co) } catch {}
+        try {
+          const r = await fetch(`/api/tickets/settings?companyId=${data.company_id}`, { headers: await authed() })
+          if (r.ok) { const d = await r.json(); setSla(resolveSla(d.sla)); setTeam(d.team || []) }
+        } catch {}
         try { const { data: arts } = await (supabase as any).from('help_articles').select('id,title,slug').eq('company_id', data.company_id).eq('status', 'published').limit(4); setArticles(arts || []) } catch {}
       }
       await loadThread()
@@ -59,10 +73,19 @@ export default function TicketDetail() {
     return () => clearInterval(iv)
   }, [ticketId])
 
-  const updateStatus = async (status: string) => {
-    await (supabase as any).from('support_tickets').update({ status, updated_at: new Date().toISOString() }).eq('id', ticketId)
-    setTicket((t: any) => ({ ...t, status }))
+  // Status / priority / assignee go through the API so the deadline timestamps
+  // (resolved_at) stay right.
+  const patchTicket = async (patch: Record<string, any>) => {
+    const prev = ticket
+    setTicket((t: any) => ({ ...t, ...patch }))
+    try {
+      const res = await fetch(`/api/tickets/${ticketId}`, { method: 'PATCH', headers: await authed(), body: JSON.stringify(patch) })
+      const d = await res.json()
+      if (!res.ok) throw new Error(d.error || 'Could not update')
+      if (d.ticket) setTicket(d.ticket)
+    } catch (e: any) { setTicket(prev); setToast(e.message) }
   }
+  const updateStatus = (status: string) => patchTicket({ status })
 
   const send = async () => {
     if (!draft.trim()) return
@@ -81,6 +104,8 @@ export default function TicketDetail() {
       else if (tab === 'reply') setToast(d.emailed ? 'Reply sent to the customer by email.' : 'Reply saved.')
       else setToast('Internal note added.')
       await loadThread()
+      // Pick up first_response_at so the deadline card flips to "Met".
+      try { const { data: fresh } = await (supabase as any).from('support_tickets').select('*').eq('id', ticketId).maybeSingle(); if (fresh) setTicket(fresh) } catch {}
       setTimeout(() => setToast(''), 6000)
     } catch (e: any) { setToast(e.message) } finally { setSending(false) }
   }
@@ -213,6 +238,37 @@ export default function TicketDetail() {
             </div>
           </div>
 
+          {sla.enabled && (() => {
+            void tick
+            const t = computeSla(ticket, sla)
+            const row = (label: string, c: Clock, what: 'Reply' | 'Resolve') => {
+              const col = CLOCK_COLORS[c.state]
+              const when = c.doneAt || c.dueAt
+              return (
+                <div style={{ padding: '8px 0', borderTop: '1px solid var(--border)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 13, color: 'var(--slate)' }}>{label}</span>
+                    {c.state === 'off'
+                      ? <span style={{ fontSize: 12, color: '#94a3b8' }}>—</span>
+                      : <span style={{ fontSize: 11.5, fontWeight: 700, padding: '3px 9px', borderRadius: 20, background: col.bg, color: col.c, whiteSpace: 'nowrap' }}>{clockLabel(c, what)}</span>}
+                  </div>
+                  {when && c.state !== 'off' && (
+                    <div style={{ fontSize: 11.5, color: 'var(--slate)', marginTop: 3, textAlign: 'right' }}>
+                      {c.doneAt ? 'Done' : 'Due'} {when.toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}
+                    </div>
+                  )}
+                </div>
+              )
+            }
+            return (
+              <div style={{ ...card, borderColor: t.worst === 'overdue' ? '#fecaca' : 'var(--border)' }}>
+                <p style={sideTitle}>⏱ Deadlines</p>
+                {row('First reply', t.firstResponse, 'Reply')}
+                {row('Resolution', t.resolution, 'Resolve')}
+              </div>
+            )
+          })()}
+
           <div style={card}>
             <p style={sideTitle}>Ticket details</p>
             {[
@@ -225,9 +281,21 @@ export default function TicketDetail() {
                 <span style={{ color: 'var(--ink)', fontWeight: 600, textAlign: 'right' }}>{v}</span>
               </div>
             ))}
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, padding: '6px 0', fontSize: 13 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, padding: '6px 0', fontSize: 13 }}>
               <span style={{ color: 'var(--slate)' }}>Priority</span>
-              <span style={{ color: PRIORITY_COLORS[pr] || '#6b7280', fontWeight: 700, textTransform: 'capitalize' }}>⚑ {pr}</span>
+              <select value={pr} onChange={e => patchTicket({ priority: e.target.value })}
+                style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '4px 8px', fontSize: 13, fontWeight: 700, color: PRIORITY_COLORS[pr] || '#6b7280', background: '#fff', cursor: 'pointer', textTransform: 'capitalize', fontFamily: 'inherit' }}>
+                {['urgent', 'high', 'normal', 'low'].map(p => <option key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</option>)}
+              </select>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, padding: '6px 0', fontSize: 13 }}>
+              <span style={{ color: 'var(--slate)' }}>Assignee</span>
+              <select value={ticket.assigned_to || ''} onChange={e => patchTicket({ assigned_to: e.target.value || null })}
+                style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '4px 8px', fontSize: 13, fontWeight: 600, color: 'var(--ink)', background: '#fff', cursor: 'pointer', maxWidth: 170, fontFamily: 'inherit' }}>
+                <option value="">Unassigned</option>
+                {team.map(m => <option key={m.userId} value={m.userId}>{m.name}</option>)}
+                {ticket.assigned_to && !team.some(m => m.userId === ticket.assigned_to) && <option value={ticket.assigned_to}>Teammate</option>}
+              </select>
             </div>
           </div>
 

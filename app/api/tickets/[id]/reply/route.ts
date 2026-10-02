@@ -136,10 +136,15 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       return NextResponse.json({ error: missing ? 'The ticket reply store is not set up yet — run migrations/COLVY_V318_TICKET_MESSAGES.sql in Supabase.' : error.message }, { status: 500 })
     }
 
-    // Reopen a resolved/closed ticket when the agent replies, and bump updated_at.
+    // Bump updated_at, and stamp the first agent reply for the ticket's
+    // first-response deadline (internal notes don't count).
     try {
-      const patch: any = { updated_at: new Date().toISOString() }
-      await db.from('support_tickets').update(patch).eq('id', id)
+      const now = new Date().toISOString()
+      const patch: any = { updated_at: now }
+      if (kind === 'reply' && !ticket.first_response_at) patch.first_response_at = now
+      const { error: upErr } = await db.from('support_tickets').update(patch).eq('id', id)
+      // Before migration V322 the column doesn't exist — still bump updated_at.
+      if (upErr && patch.first_response_at) await db.from('support_tickets').update({ updated_at: now }).eq('id', id)
     } catch {}
 
     return NextResponse.json({ ok: true, emailed, note: emailNote })
