@@ -30,11 +30,12 @@ async function blobToBase64(blob: Blob): Promise<string> {
   return btoa(binary)
 }
 
-export default function VoiceDictationButton({ onText, keyterms, title = 'Voice type', size = 34 }: {
+export default function VoiceDictationButton({ onText, keyterms, title = 'Voice type', size = 34, soft = false }: {
   onText: (text: string) => void
   keyterms?: string[]
   title?: string
   size?: number
+  soft?: boolean   // borderless rounded-square, for the inbox composer toolbar
 }) {
   const [phase, setPhase] = useState<Phase>('idle')
   const [secs, setSecs] = useState(0)
@@ -129,13 +130,14 @@ export default function VoiceDictationButton({ onText, keyterms, title = 'Voice 
       disabled={busy}
       title={err || label}
       aria-label={label}
+      className={soft ? 'cmp-tool' : undefined}
       style={{
         display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
         height: size, minWidth: size, padding: recording || busy ? '0 10px' : 0,
-        borderRadius: size / 2, cursor: busy ? 'default' : 'pointer', flexShrink: 0,
-        border: '1px solid ' + (recording ? '#dc2626' : 'var(--border)'),
-        background: recording ? '#fef2f2' : (busy ? 'var(--canvas)' : '#fff'),
-        color: recording ? '#dc2626' : 'var(--slate)', transition: 'all 0.12s',
+        borderRadius: soft ? 11 : size / 2, cursor: busy ? 'default' : 'pointer', flexShrink: 0,
+        border: soft ? 'none' : '1px solid ' + (recording ? '#dc2626' : 'var(--border)'),
+        background: recording ? '#fef2f2' : (busy ? 'var(--canvas)' : soft ? '#f3f4f6' : '#fff'),
+        color: recording ? '#dc2626' : soft ? '#6b7280' : 'var(--slate)', transition: 'all 0.12s',
       }}
     >
       {busy ? (

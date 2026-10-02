@@ -52,7 +52,17 @@ const Sparkle = () => (
   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 3v4M21 5h-4"/></svg>
 )
 
-export function AiDraftButton({ busy, onClick, height = 32 }: { busy: boolean; onClick: () => void; height?: number }) {
+export function AiDraftButton({ busy, onClick, height = 32, orb = false }: { busy: boolean; onClick: () => void; height?: number; orb?: boolean }) {
+  // Round gradient button for the composer's send row.
+  if (orb) return (
+    <button type="button" onClick={onClick} disabled={busy} className={`ai-orb${busy ? ' busy' : ''}`}
+      title="Draft a reply with AI from your help centre, products and this customer's orders" aria-label="Draft a reply with AI"
+      style={{ width: height, height, borderRadius: 12, border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', cursor: busy ? 'wait' : 'pointer', flexShrink: 0,
+        background: 'linear-gradient(135deg,#8b5cf6 0%,#d946ef 55%,#f472b6 100%)', boxShadow: '0 6px 16px -8px rgba(168,85,247,.8)' }}>
+      <style>{`.ai-orb{transition:transform .18s cubic-bezier(.22,1,.36,1),box-shadow .18s}.ai-orb:hover{transform:translate3d(0,-1px,0);box-shadow:0 10px 20px -8px rgba(168,85,247,.9)!important}.ai-orb:active{transform:scale(.94)}.ai-orb.busy svg{animation:aiOrbSpin 1.1s linear infinite}@keyframes aiOrbSpin{to{transform:rotate(360deg)}}@media (prefers-reduced-motion:reduce){.ai-orb.busy svg{animation:none}}`}</style>
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor" aria-hidden><path d="M12 2.5l1.9 5.6 5.6 1.9-5.6 1.9L12 17.5l-1.9-5.6-5.6-1.9 5.6-1.9z" /><path d="M19 14.5l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z" opacity=".85" /></svg>
+    </button>
+  )
   return (
     <button type="button" onClick={onClick} disabled={busy} title="Draft a reply with AI from your help centre, products and this customer's orders"
       style={{ height, display: 'inline-flex', alignItems: 'center', gap: 5, padding: '0 11px', borderRadius: 8, border: '1px solid #e9d5ff', background: '#faf5ff', color: '#7c3aed', fontSize: 12.5, fontWeight: 700, cursor: busy ? 'wait' : 'pointer', whiteSpace: 'nowrap' }}>
