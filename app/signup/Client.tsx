@@ -8,10 +8,8 @@ import { track } from '@/lib/analytics'
 import { useRouter, useSearchParams } from 'next/navigation'
 import AddressAutocomplete, { AddressParts } from '@/components/AddressAutocomplete'
 import BusinessAutocomplete, { BusinessDetails, BusinessHours, DAYS, emptyHours } from '@/components/BusinessAutocomplete'
+import { INDUSTRIES } from '@/lib/industries'
 
-const INDUSTRIES = ['SaaS', 'E-commerce', 'Healthcare', 'Education', 'Finance',
-  'Logistics', 'Manufacturing', 'Media & Entertainment', 'Travel & Hospitality',
-  'Retail', 'Real Estate', 'Other']
 
 const CORAL = '#ff7a6b'
 const TOTAL_STEPS = 7
@@ -179,6 +177,7 @@ function SignUpForm() {
     if (d.address) { setAddress(d.address); setAddrParts({ city: d.city, state: d.state, postcode: d.postcode, country: d.country }) }
     if (d.phone) setBusinessPhone(d.phone)
     if (d.hours) setHours(d.hours)
+    if (d.industry) setIndustry(d.industry)
     setFound(d)
   }
 
@@ -470,7 +469,11 @@ function SignUpForm() {
               <select value={industry} onChange={e => setIndustry(e.target.value)} style={{ ...inputStyle, color: industry ? '#0d0d0d' : '#9ca3af', cursor: 'pointer' }}>
                 <option value="">Select an industry</option>
                 {INDUSTRIES.map(i => <option key={i} value={i}>{i}</option>)}
-              </select></div>
+                {industry && !(INDUSTRIES as readonly string[]).includes(industry) && <option value={industry}>{industry}</option>}
+              </select>
+              {found?.source === 'google' && found.category && found.industry && industry === found.industry && (
+                <p style={{ fontSize: 12, color: '#9ca3af', margin: '6px 2px 0' }}>Google lists you as &ldquo;{found.category}&rdquo;. Change it if that&rsquo;s not right.</p>
+              )}</div>
 
             <div style={{ marginBottom: 16 }}><label style={labelStyle}>Website</label>
               <input value={website} onChange={e => setWebsite(e.target.value)} placeholder="https://yourbusiness.com" style={inputStyle} /></div>

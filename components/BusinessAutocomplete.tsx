@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { Industry, industryFromGoogle } from '@/lib/industries'
 
 // "Find on Google" business search for signup.
 //
@@ -31,6 +32,8 @@ export interface BusinessDetails {
   website?: string
   phone?: string
   hours?: BusinessHours | null
+  industry?: Industry | null
+  category?: string         // Google's own label, e.g. "Pet Store"
   source?: 'google' | 'osm'
 }
 
@@ -115,7 +118,7 @@ async function googleDetails(placeId: string, token: string): Promise<BusinessDe
   const res = await fetch(`https://places.googleapis.com/v1/places/${encodeURIComponent(placeId)}?sessionToken=${encodeURIComponent(token)}`, {
     headers: {
       'X-Goog-Api-Key': GKEY!,
-      'X-Goog-FieldMask': 'displayName,formattedAddress,addressComponents,websiteUri,internationalPhoneNumber,nationalPhoneNumber,regularOpeningHours',
+      'X-Goog-FieldMask': 'displayName,formattedAddress,addressComponents,websiteUri,internationalPhoneNumber,nationalPhoneNumber,regularOpeningHours,primaryType,primaryTypeDisplayName,types',
     },
   })
   if (!res.ok) throw new Error(`google details ${res.status}`)
@@ -132,6 +135,8 @@ async function googleDetails(placeId: string, token: string): Promise<BusinessDe
     website: p.websiteUri || '',
     phone: p.nationalPhoneNumber || p.internationalPhoneNumber || '',
     hours: hoursFromPlaces(p.regularOpeningHours),
+    industry: industryFromGoogle(p.primaryType, p.types),
+    category: p.primaryTypeDisplayName?.text || '',
     source: 'google',
   }
 }
