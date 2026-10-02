@@ -314,10 +314,10 @@ export default function BookingFlow({ slug, domain, initialService }: { slug?: s
               </div>
               {error && <div style={errBox}>{error}</div>}
               <div className="bk-cta on bk-cta-col">
-                <button type="submit" disabled={submitting} className="bk-primary" style={{ width: '100%', height: 50, fontSize: 15.5 }}>
+                <button type="submit" disabled={submitting} className="bk-primary" style={{ width: '100%', height: 52, fontSize: 16, borderRadius: 14 }}>
                   {submitting ? <Spinner light /> : due > 0 ? `Continue to payment · ${money(due, service.currency)}` : 'Confirm booking'}
                 </button>
-                {due > 0 && <div style={{ textAlign: 'center', fontSize: 12, color: '#9ca3af', marginTop: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}><LockIcon size={12} /> Secure payment by Stripe. Your time is held while you pay.</div>}
+                {due > 0 && <div className="bk-secure"><LockIcon size={12} />Secure payment by Stripe. Your time is held while you pay.</div>}
               </div>
             </form>
           )}
@@ -393,6 +393,11 @@ export function Shell({ accent, children }: { accent: string; children: React.Re
         .bk-shell-foot{position:relative;z-index:1}
         .bk-cta{display:flex;align-items:center;justify-content:flex-end;gap:12px;margin-top:18px}
         .bk-cta-col{flex-direction:column;align-items:stretch;gap:0}
+        /* In the stacked footer the button keeps its full height — flex:1 in a
+           column meant "start at 0px tall", which squashed it to the text. */
+        .bk-cta-col .bk-primary{flex:0 0 auto!important;min-height:52px}
+        .bk-secure{text-align:center;font-size:12px;color:#9ca3af;margin-top:9px;line-height:1.45;text-wrap:balance}
+        .bk-secure svg{display:inline-block;vertical-align:-2px;margin-right:5px}
         .bk-cta-sum{display:none}
         @media(max-width:820px){
           .bk-cta{position:sticky;bottom:0;z-index:5;margin:18px -22px -22px;padding:12px 22px calc(12px + env(safe-area-inset-bottom));background:rgba(255,255,255,.86);-webkit-backdrop-filter:saturate(1.6) blur(14px);backdrop-filter:saturate(1.6) blur(14px);border-top:1px solid rgba(0,0,0,.06);transform:translate3d(0,0,0)}
