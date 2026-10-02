@@ -39,6 +39,7 @@ const icons: Record<string, React.JSX.Element> = {
   roadmap: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>,
   calendar: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>,
   scheduled: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="13" r="8"/><polyline points="12 9 12 13 15 15"/><path d="M9 1h6"/></svg>,
+  waitlist: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>,
   announcements: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M22 2L11 13"/><path d="M22 2L15 22 11 13 2 9l20-7z"/></svg>,
   polls: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>,
   forms: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><line x1="7" y1="8" x2="17" y2="8"/><line x1="7" y1="12" x2="13" y2="12"/><line x1="7" y1="16" x2="11" y2="16"/></svg>,
@@ -121,6 +122,7 @@ const NAV_GROUPS = [
       { label: 'Scheduled', href: '/admin/scheduled', icon: 'scheduled' },
       { label: 'Call Logs', href: '/admin/calls', icon: 'support' },
       { label: 'Campaigns', href: '/admin/campaigns', icon: 'announcements' },
+      { label: 'Waitlists', href: '/admin/waitlists', icon: 'waitlist' },
       { label: 'Links Generator', href: '/admin/links', icon: 'link' },
       { label: 'Link Reports', href: '/admin/link-reports', icon: 'analytics' },
       { label: 'Reviews', href: '/admin/reviews', icon: 'google' },
@@ -273,6 +275,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     const sync = () => {
       if (document.visibilityState !== 'visible') return   // don't sync in a background tab
       fetch('/api/cron/email-sync', { method: 'GET' }).catch(() => {})
+      // Back-in-stock texts that arrived overnight go out once sending hours open.
+      fetch('/api/cron/waitlist', { method: 'GET' }).catch(() => {})
     }
     // Agent presence heartbeat — records that this agent is online so an inbound
     // call can ring them. "Online" = seen in the last ~2 minutes.

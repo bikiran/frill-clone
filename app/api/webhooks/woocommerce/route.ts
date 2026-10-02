@@ -9,6 +9,29 @@ import { logWebhookEvent } from '@/lib/webhook-log'
 import { upsertWooOrder } from '@/lib/orders-sync'
 import { wooDateToISO } from '@/lib/orders'
 import { logEnquiryReopened } from '@/lib/conversation-timeline'
+import { notifyWaitlist, resolveWaitlistSettings } from '@/lib/waitlist'
+
+// A product changed in WooCommerce. Keep the synced catalogue's stock current,
+// and when it's back IN stock, text everyone on its back-in-stock waitlist
+// (held until the morning if it lands outside sending hours).
+async function handleProductStock(db: any, companyId: string, p: any) {
+  const id = Number(p?.id)
+  if (!id) return
+  const stockStatus = String(p.stock_status || '').toLowerCase()
+  const qty = p.stock_quantity === null || p.stock_quantity === undefined ? null : Number(p.stock_quantity)
+  try {
+    await db.from('woocommerce_products').update({ stock_status: stockStatus || null, stock_quantity: qty })
+      .eq('company_id', companyId).eq('woo_product_id', id)
+  } catch {}
+  const inStock = stockStatus === 'instock' && (qty === null || qty > 0)
+  if (!inStock) return
+  const { data: co } = await db.from('companies').select('waitlist_settings').eq('id', companyId).maybeSingle()
+  if (!resolveWaitlistSettings(co?.waitlist_settings).auto_notify) return
+  // A variation coming back counts for the parent product people subscribed to.
+  const ids = [id, Number(p.parent_id) || null].filter(Boolean) as number[]
+  const r = await notifyWaitlist(db, { companyId, wooProductIds: ids, respectHours: true })
+  if (r.sent || r.queued || r.failed) console.log('[waitlist] product back in stock', { companyId, product: id, ...r })
+}
 
 const DEFAULT_MESSAGES: Record<string, string> = {
   processing: 'Hi {name}, thanks for your order #{order} with {business} — we\'ve received it and will begin processing. Reply here anytime with any questions.',
@@ -820,6 +843,18 @@ export async function POST(req: NextRequest) {
       const webhookService = new WebhookService(supabase)
       await webhookService.processWebhook(companyId, { resource, id: resourceId, action: 'updated', ...data })
     } catch (e) { console.error('[Webhook] sync error', e) }
+
+    // Product updated (stock changed) → back-in-stock waitlists. Woo sends the
+    // resource in a header; a product payload has stock_status + type but no
+    // line_items.
+    const wcResource = (req.headers.get('x-wc-webhook-resource') || '').toLowerCase()
+    const isProductEvent = wcResource === 'product' || topic.startsWith('product.')
+      || (!data.line_items && data.stock_status !== undefined && data.type !== undefined)
+    if (isProductEvent) {
+      try { await handleProductStock(supabase, companyId, data) }
+      catch (e) { console.error('[Webhook] waitlist stock handling error', e) }
+      return NextResponse.json({ success: true, message: 'Product processed', deliveryId })
+    }
 
     // Order-triggered chat automation — the payload for order topics IS the order.
     if ((resource === 'order' || data.line_items) && data.status) {
