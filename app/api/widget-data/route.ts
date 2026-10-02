@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { log } from '@/lib/log'
 import { createClient } from '@supabase/supabase-js'
 import { effectivePlan, companyHasFeature } from '@/lib/plan'
+import { emitIntegrationEvent } from '@/lib/integration-events'
 
 export const dynamic = 'force-dynamic'
 
@@ -267,6 +268,12 @@ export async function POST(req: NextRequest) {
     }
 
     log.info('[WIDGET API POST] Idea created successfully:', { ideaId: idea?.[0]?.id, attachmentCount: attachmentUrls.length })
+    if (idea?.[0]?.id) emitIntegrationEvent(company.id, 'idea.created', {
+      title: `New idea: ${String(title).trim().slice(0, 200)}`, path: `/admin?idea=${idea[0].id}`,
+      fields: { 'Submitted by': user_name || 'Anonymous', Source: 'Website widget' },
+      data: { idea: { id: idea[0].id, title: String(title).trim(), status: 'new' } },
+      dedupeKey: `idea.created:${idea[0].id}`,
+    })
 
     return NextResponse.json({ ok: true, idea: idea?.[0] }, {
       headers: { 'Access-Control-Allow-Origin': '*' }

@@ -11,6 +11,7 @@ import { ensureCallCard, setCallPreview } from '@/lib/call-card'
 import { companyForInboundNumber } from '@/lib/inbound-company'
 import { ensureContactByPhone } from '@/lib/contact-capture'
 import { logEnquiryReopened } from '@/lib/conversation-timeline'
+import { emitInboundEvent, emitCallEvent } from '@/lib/integration-hooks'
 
 function admin() {
   return createClient(
@@ -335,6 +336,7 @@ export async function POST(req: NextRequest) {
           delivery_channel: 'sms',
           telnyx_message_id: payload?.id || null,
         })
+        await emitInboundEvent(db, { companyId, conversationId: conv.id, text, channel: 'sms', phone: from })
         await db.from('conversations').update({
           last_message: summary,
           last_message_at: new Date().toISOString(),
@@ -1128,9 +1130,10 @@ export async function POST(req: NextRequest) {
             }).eq('telnyx_call_control_id', callControlId)
             try { await setCallPreview(db as any, recRow?.conversation_id, '📞 Voicemail') } catch {}
             // Notify the company there's a new voicemail.
-            const { data: c } = await db.from('calls').select('company_id, from_number, caller_name, contact_id').eq('telnyx_call_control_id', callControlId).maybeSingle()
+            const { data: c } = await db.from('calls').select('id, company_id, from_number, caller_name, contact_id').eq('telnyx_call_control_id', callControlId).maybeSingle()
             if (c?.company_id) {
               try { await notifyCompany({ db, companyId: c.company_id, type: 'call', message: `New voicemail from ${c.caller_name || c.from_number}`, actorName: c.caller_name || c.from_number }) } catch {}
+              await emitCallEvent(db, 'voicemail.received', c.id)
             }
           }
         } catch (e) { console.error('[telnyx voicemail save] failed', e) }
@@ -1268,6 +1271,7 @@ export async function POST(req: NextRequest) {
         // ensureCallCard re-reads the freshly-updated row, so it sees the final
         // status/duration. Skipped internally for voicemail/missed/unconnected.
         if (hangupCallRowId) await ensureCallCard(db, hangupCallRowId)
+        if (hangupCallRowId && update.status === 'missed') await emitCallEvent(db, 'call.missed', hangupCallRowId)
       }
       return NextResponse.json({ ok: true })
     }

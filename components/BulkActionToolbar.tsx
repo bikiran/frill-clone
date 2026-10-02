@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/components/ToastProvider'
 import { confirmDialog } from '@/components/ConfirmDialog'
+import { notifyIntegrations } from '@/lib/integrations-notify'
 
 const STATUS_OPTIONS = [
   { value: 'new', label: 'Under consideration' },
@@ -44,6 +45,7 @@ export function BulkActionToolbar({
         .from('ideas')
         .update({ status })
         .in('id', selectedIds)
+      selectedIds.forEach((id: string) => notifyIntegrations('idea.status_changed', { id }))
       
       addToast(`Status changed for ${selectedCount} ideas`, 'success')
       onAction('statusChanged', { status })

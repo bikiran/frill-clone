@@ -11,7 +11,7 @@ import { INTEGRATIONS, integrationHref } from '@/lib/integrations-catalog'
 // integrations are connected, and keeps the integrations list on the left
 // while you're inside one of them.
 
-type Generic = { config: Record<string, any>; enabled: boolean; events: string[] }
+type Generic = { config: Record<string, any>; secrets: Record<string, string>; enabled: boolean; events: string[] }
 type Ctx = {
   companyId: string | null
   ready: boolean
@@ -61,7 +61,7 @@ async function loadStatus(cid: string) {
   const generic: Record<string, Generic> = {}
   const active: Record<string, boolean> = {}
   for (const row of cfg as any[]) {
-    generic[row.integration_id] = { config: row.config || {}, enabled: !!row.enabled, events: row.events || [] }
+    generic[row.integration_id] = { config: row.config || {}, secrets: row.secrets || {}, enabled: !!row.enabled, events: row.events || [] }
     active[row.integration_id] = !!row.enabled
   }
   active.woocommerce = woo

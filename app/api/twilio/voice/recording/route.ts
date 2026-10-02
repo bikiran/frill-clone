@@ -4,6 +4,7 @@ import { TwilioService } from '@/lib/twilio-service'
 import { uploadToR2, r2Configured } from '@/lib/r2'
 import { notifyCompany } from '@/lib/notify'
 import { ensureCallCard, setCallPreview } from '@/lib/call-card'
+import { emitCallEvent } from '@/lib/integration-hooks'
 
 export const dynamic = 'force-dynamic'
 
@@ -92,6 +93,7 @@ export async function POST(req: NextRequest) {
       try { await setCallPreview(db as any, conversationId, '📞 Voicemail') } catch {}
       const { data: c } = await db.from('calls').select('company_id, from_number, caller_name').eq('id', rowId).maybeSingle()
       if (c?.company_id) { try { await notifyCompany({ db, companyId: c.company_id, type: 'call', message: `New voicemail from ${c.caller_name || c.from_number}`, actorName: c.caller_name || c.from_number }) } catch {} }
+      await emitCallEvent(db, 'voicemail.received', rowId)
       return NextResponse.json({ ok: true })
     }
 

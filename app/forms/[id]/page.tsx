@@ -7,6 +7,7 @@ import { getVisibleQuestions } from '@/lib/conditional-logic'
 import { scaleImageToJpeg } from '@/lib/scan-image'
 import Confetti from '@/components/Confetti'
 import { StatusMark } from '@/components/StatusMark'
+import { notifyIntegrations } from '@/lib/integrations-notify'
 
 export default function PublicForm() {
   const params = useParams()
@@ -120,6 +121,7 @@ export default function PublicForm() {
         response_time_seconds: responseTimeSec,
         referrer: document.referrer || null,
       })
+      notifyIntegrations('form.submitted', { id: formId })
 
       // Trigger email notification to form admin (best-effort, background).
       try {

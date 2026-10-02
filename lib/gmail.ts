@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { uploadToR2, r2Configured } from '@/lib/r2'
+import { emitInboundEvent } from '@/lib/integration-hooks'
 
 const admin = () => createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -568,6 +569,7 @@ export async function syncGmailChannel(channelId: string): Promise<{ imported: n
       email_quoted: quoted || null,
       email_attachments: attachmentsResolved,
     })
+    await emitInboundEvent(db, { companyId, conversationId: conv.id, text: content, channel: 'email', name: from.name || null, email: from.email || null })
 
     // Route ticket replies back onto the ticket. Agent ticket replies carry
     // "[TICK-######]" in the subject; the customer's "Re:" keeps it, so when the

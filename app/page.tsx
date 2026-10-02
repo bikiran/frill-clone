@@ -8,6 +8,7 @@ import IdeaModal from '@/components/IdeaModal'
 import IdeaDetailModal from '@/components/IdeaDetailModal'
 import Link from 'next/link'
 import { toggleEngagement, fetchEngagedIdeaIds } from '@/lib/engagement'
+import { notifyIntegrations } from '@/lib/integrations-notify'
 
 async function getCompanyId(): Promise<string | null> {
   if (typeof window === 'undefined') return null
@@ -330,6 +331,7 @@ export default function HomePage() {
           user_avatar: um.avatar_url || null,
         })
         await supabase.from('ideas').update({ votes: (idea?.votes || 0) + 1 }).eq('id', ideaId)
+        notifyIntegrations('idea.voted', { id: ideaId })
         // Notify the idea owner about the new vote (not for self-votes)
         try {
           if (idea?.user_id && idea.user_id !== sess.session.user.id) {
@@ -411,6 +413,7 @@ export default function HomePage() {
         .from('ideas')
         .update({ status: newStatus })
         .eq('id', ideaId)
+      notifyIntegrations('idea.status_changed', { id: ideaId })
       
       // Log activity
       if (user) {

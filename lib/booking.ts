@@ -18,6 +18,7 @@ import {
 import { buildIcs, googleCalendarUrl } from '@/lib/booking-ics'
 import { createChatCheckoutSession, chatStripe } from '@/lib/chat-checkout'
 import { notifyCompany } from '@/lib/notify'
+import { emitIntegrationEvent } from '@/lib/integration-events'
 import { isExternalSendBlocked } from '@/lib/demo-guard'
 import { sendCustomerEmail } from '@/lib/customer-email'
 import { shortenUrl } from '@/lib/short-link'
@@ -410,6 +411,25 @@ function whenText(b: any) {
   return fmtDateTime(Date.parse(b.starts_at), b.timezone || 'Australia/Melbourne', { withTz: true })
 }
 
+// The booking as integrations (Slack, webhooks, Zapier…) see it.
+function bookingEvent(b: any, title: string, extra: Record<string, any> = {}) {
+  return {
+    title, path: '/admin/bookings',
+    customer: { name: b.customer_name, email: b.customer_email, phone: b.customer_phone },
+    fields: {
+      Service: b.service_name, When: whenText(b), Staff: b.staff_name || null,
+      Price: b.price_cents ? fmtMoney(b.price_cents, b.currency) : null,
+      Paid: b.payment_status === 'paid' && b.amount_due_cents ? fmtMoney(b.amount_due_cents, b.currency) : null,
+      ...extra,
+    },
+    data: { booking: {
+      id: b.id, status: b.status, service: b.service_name, staff: b.staff_name || null, starts_at: b.starts_at, ends_at: b.ends_at,
+      price_cents: b.price_cents ?? null, amount_due_cents: b.amount_due_cents ?? null, currency: b.currency || null, payment_status: b.payment_status || null,
+    } },
+    dedupeKey: `booking:${b.id}:${b.status}:${b.starts_at}`,
+  }
+}
+
 // ── Create ───────────────────────────────────────────────────────────────────
 
 export type CreateInput = {
@@ -658,6 +678,7 @@ export async function confirmBooking(db: any, bookingId: string, opts: { origin:
   const who = b.staff_name ? ` with ${b.staff_name}` : ''
   await systemNote(db, bk, `📅 Booked online: ${b.service_name}${who} — ${whenText(b)}`)
   await notifyCompany({ db, companyId: b.company_id, type: 'booking', conversationId: conversationId || undefined, message: `📅 New booking: ${b.customer_name || 'A customer'} — ${b.service_name}${who}, ${whenText(b)}` })
+  emitIntegrationEvent(b.company_id, 'booking.created', bookingEvent(bk, `New booking: ${b.service_name} · ${b.customer_name || 'a customer'}`), { db })
   await customerMessage(db, company, settings, bk, 'confirmed', { service, origin: opts.origin })
   return { ok: true }
 }
@@ -727,6 +748,9 @@ export async function cancelBooking(db: any, bookingId: string, opts: { by: 'cus
   if (opts.by === 'customer') {
     await notifyCompany({ db, companyId: b.company_id, type: 'booking', conversationId: b.conversation_id || undefined, message: `❌ ${b.customer_name || 'A customer'} cancelled ${b.service_name}, ${whenText(b)}.${refundTxt}` })
   }
+  emitIntegrationEvent(b.company_id, 'booking.cancelled', bookingEvent(bk, `Booking cancelled: ${b.service_name} · ${b.customer_name || 'a customer'}`, {
+    'Cancelled by': opts.by === 'customer' ? 'Customer' : 'Team', Reason: bk.cancel_reason, Refunded: refunded ? fmtMoney(refunded, b.currency) : null,
+  }), { db })
   if (opts.notifyCustomer) await customerMessage(db, company, settings, bk, 'cancelled', { refunded, service, origin: opts.origin })
   return { ok: true, refunded, refundError }
 }
@@ -785,6 +809,9 @@ export async function rescheduleBooking(db: any, bookingId: string, opts: { star
   if (opts.by === 'customer') {
     await notifyCompany({ db, companyId: b.company_id, type: 'booking', conversationId: b.conversation_id || undefined, message: `🔁 ${b.customer_name || 'A customer'} moved ${b.service_name} to ${whenText(bk)} (was ${oldWhen})` })
   }
+  emitIntegrationEvent(b.company_id, 'booking.rescheduled', bookingEvent(bk, `Booking moved: ${b.service_name} · ${b.customer_name || 'a customer'}`, {
+    Was: oldWhen, 'Moved by': opts.by === 'customer' ? 'Customer' : 'Team',
+  }), { db })
   if (opts.notifyCustomer) await customerMessage(db, company, settings, bk, 'rescheduled', { service, origin: opts.origin })
   return { ok: true }
 }

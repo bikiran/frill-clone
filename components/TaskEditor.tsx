@@ -11,6 +11,7 @@ import AssigneePicker from '@/components/AssigneePicker'
 import AttachmentUploader from '@/components/AttachmentUploader'
 import MentionInput, { resolveMentions } from '@/components/MentionInput'
 import { useDraft } from '@/lib/drafts'
+import { notifyIntegrations } from '@/lib/integrations-notify'
 
 const PRIORITY = {
   high: { label: 'High', color: '#dc2626', bg: '#fef2f2' },
@@ -196,6 +197,7 @@ export default function TaskEditor({ companyId, team, outlets = [], me, userId, 
         const { error: minErr } = await (supabase as any).from('conversation_tasks').insert(minimalRows)
         if (minErr) throw minErr
       }
+      notifyIntegrations('task.created', { companyId })
       // Tell the people involved — in-app, by email AND by SMS. Being assigned
       // work or tagged in it should reach the person, not just sit in an app
       // they may not have open.

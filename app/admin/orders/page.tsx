@@ -18,6 +18,7 @@ import PageHeader from '@/components/PageHeader'
 import { CARRIERS as TRACK_CARRIERS, carrierByKey } from '@/lib/carriers'
 import { barcodeSVG } from '@/lib/barcode'
 import { confirmDialog } from '@/components/ConfirmDialog'
+import { notifyIntegrations } from '@/lib/integrations-notify'
 
 type Order = any
 
@@ -503,6 +504,7 @@ export default function OrdersPage() {
     if ('store_location_id' in patch) track('order_outlet_assigned', { count: n })
     try {
       await (supabase as any).from('orders').update({ ...patch, updated_at: new Date().toISOString() }).in('id', ids)
+      if (patch.status) ids.forEach(id => notifyIntegrations('order.status_changed', { id }))
       if (event && companyId) {
         await (supabase as any).from('order_events').insert(ids.map(id => ({ order_id: id, company_id: companyId, type: event.type, detail: event.detail, actor_id: me.id, actor_name: me.name })))
       }
@@ -1917,7 +1919,7 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
     try {
       let { data, error } = await (supabase as any).from('conversation_tasks').insert(row).select().maybeSingle()
       if (error) { const r = await (supabase as any).from('conversation_tasks').insert({ company_id: companyId, text, done: false, order_id: order.id }).select().maybeSingle(); data = r.data }
-      if (data) setTasks(t => [data, ...t])
+      if (data) { setTasks(t => [data, ...t]); notifyIntegrations('task.created', { id: data.id, companyId }) }
     } catch {}
     setTaskText('')
   }

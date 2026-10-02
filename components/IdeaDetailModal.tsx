@@ -8,6 +8,7 @@ import { useToast } from '@/components/ToastProvider'
 import ConfirmModal from './ConfirmModal'
 import { AssignIcon, PinIcon, MergeIcon, ArchiveIcon, TrashIcon, EditIcon, ShareIcon, CloseIcon, EyeIcon, LockIcon } from './Icons'
 import { confirmDialog } from '@/components/ConfirmDialog'
+import { notifyIntegrations } from '@/lib/integrations-notify'
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
   new: { label: 'Under consideration', color: '#3b82f6', bg: '#dbeafe' },
@@ -236,6 +237,7 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
     if (error) {
       alert('Failed to post comment: ' + error.message)
     } else {
+      if (!isPrivateNote) notifyIntegrations('idea.commented', { id: idea.id })
       // Notify: idea owner about the comment; parent comment author about the reply.
       // Never for private notes, never notify yourself.
       try {
@@ -467,6 +469,7 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
         user_name: um.display_name || user.email?.split('@')[0] || null,
         user_avatar: um.avatar_url || null,
       })
+      notifyIntegrations('idea.voted', { id: idea.id })
       setHasVoted(true)
       setVoteCount((prev: number) => prev + 1)
       const { data: cur } = await (supabase as any).from('ideas').select('votes').eq('id', idea.id).maybeSingle()
@@ -554,6 +557,7 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
       setSaveStatus('error')
       alert('Failed to save: ' + error.message + '\n\nMake sure DATABASE_SETUP.sql has been run.')
     } else {
+      if (updates.status) notifyIntegrations('idea.status_changed', { id: idea.id })
       // Log activity for status changes
       if (updates.status && updates.status !== idea.status && user) {
         await supabase.from('activity').insert({
