@@ -251,11 +251,23 @@ function fmtReceipt(d: string | undefined | null, isAgent: boolean, channel?: st
   const NAMES: Record<string, string> = {
     sms: 'SMS', email: 'Email', chat: 'Live Chat', widget: 'Live Chat',
     instagram: 'Instagram', facebook: 'Messenger', messenger: 'Messenger',
-    whatsapp: 'WhatsApp', phone: 'Phone Call',
+    whatsapp: 'WhatsApp', phone: 'Phone Call', upload: 'Upload link',
   }
   const chan = channel ? (NAMES[channel.toLowerCase()] || channel.charAt(0).toUpperCase() + channel.slice(1)) : ''
   // Show the channel on BOTH sides — an agent needs to know a reply went by SMS.
   return `${label} ${time} | ${date}${chan ? ` | ${chan}` : ''}`
+}
+// The channel to LABEL a message with. A file the customer sent through an
+// upload link carries no delivery_channel of its own, so it fell back to the
+// conversation's channel and read as "Live Chat" — while having arrived from an
+// SMS'd link. Its attachments are marked from_request, so name it from that.
+//
+// Deliberately not done by stamping delivery_channel: that field also decides
+// which channel a reply goes out on, and an upload is not a channel anyone can
+// be replied to on.
+function receiptChannel(msg: any, fallback?: string): string | undefined {
+  if (Array.isArray(msg?.attachments) && msg.attachments.some((a: any) => a?.from_request)) return 'upload'
+  return msg?.delivery_channel || fallback
 }
 // Two-letter initials from a name — first + last (e.g. "Bikiran Simkhada" → "BS")
 // so team members whose first names share a letter stay distinguishable. A
@@ -8878,7 +8890,7 @@ export default function InboxPage() {
                           "Received 3:42 PM | 29 May | Facebook   Read by: SG" */}
                       <p style={{ margin: '4px 0 0', fontSize: 10.5, color: '#8a8f98', textAlign: isAgent ? 'right' : 'left', display: 'flex', gap: 6, alignItems: 'center', justifyContent: isAgent ? 'flex-end' : 'flex-start', flexWrap: 'wrap' }}>
                         <span style={{ fontStyle: 'italic' }}>
-                          {fmtReceipt(msg.created_at, isAgent, (msg as any).delivery_channel || selected.channel) || fmtTime(msg.created_at)}
+                          {fmtReceipt(msg.created_at, isAgent, receiptChannel(msg, selected.channel)) || fmtTime(msg.created_at)}
                         </span>
 
                         {(msg as any).is_ai && (
