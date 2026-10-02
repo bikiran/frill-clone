@@ -57,15 +57,20 @@
     var e = root.querySelector('.colvy-bis__err');
     e.textContent = msg || '';
     e.classList.toggle('on', !!msg);
-    if (input) { input.classList.remove('cbis-bad'); void input.offsetWidth; input.classList.add('cbis-bad'); input.focus(); }
+    var box = input && (input.closest('.colvy-bis__field') || input);
+    if (box) { box.classList.remove('cbis-bad'); void box.offsetWidth; box.classList.add('cbis-bad'); input.focus(); }
   }
 
   function init(root) {
     if (root.getAttribute('data-ready')) return;
     root.setAttribute('data-ready', '1');
     setCh(root, root.getAttribute('data-ch') || 'sms');
-    // Prefill from last time, and remember who already joined this product.
+    place(root);
+    // Prefill: what they typed last time, else their WooCommerce account details.
     var last = {}; try { last = JSON.parse(store('colvy_bis_me') || '{}') || {}; } catch (e) {}
+    var me = cfg.me || {};
+    last = { phone: last.phone || me.phone || '', email: last.email || me.email || '', name: last.name || me.name || '' };
+    if (!last.phone && last.email && root.querySelector('.colvy-bis__seg')) setCh(root, 'email');
     if (last.phone) { var p = root.querySelector('input[name=phone]'); if (p) p.value = last.phone; }
     if (last.email) { var m = root.querySelector('input[name=email]'); if (m) m.value = last.email; }
     if (last.name) { var n = root.querySelector('input[name=name]'); if (n) n.value = last.name; }
@@ -73,6 +78,32 @@
     if (joined && !root.getAttribute('data-preview')) {
       try { var j = JSON.parse(joined); root.querySelector('.colvy-bis__ask').hidden = true; var d = root.querySelector('.colvy-bis__done'); d.hidden = false; d.querySelector('.colvy-bis__mark').innerHTML = TICK; d.querySelector('.colvy-bis__done-s').textContent = (j.ch === 'email' ? "We'll email " : "We'll text ") + mask(j.v, j.ch) + " the moment it's back."; } catch (e) {}
     }
+  }
+
+  // Some themes print the stock line in a row beside the price (or in an
+  // indented column). Give the form its own full-width line under that row,
+  // lined up with the price. Variation forms stay put — Woo swaps those.
+  function place(root) {
+    if (root.getAttribute('data-preview') || root.closest('.woocommerce-variation, .single_variation_wrap, .woocommerce-variation-availability')) return;
+    var price = null, list = (root.closest('.product') || document).querySelectorAll('.summary .price, p.price, .wp-block-woocommerce-product-price, .elementor-widget-woocommerce-product-price, .price');
+    for (var i = 0; i < list.length; i++) { if (!root.contains(list[i]) && list[i].offsetParent) { price = list[i]; break; } }
+    if (!price) return;
+    var r = root.getBoundingClientRect(), p = price.getBoundingClientRect();
+    var beside = r.top < p.bottom - 4 && r.left > p.right - 4;
+    var indented = Math.abs(r.left - p.left) > 6;
+    if (!beside && !indented) return;
+    // Lowest ancestor holding both the price and the form…
+    var common = root.parentElement;
+    while (common && !common.contains(price)) common = common.parentElement;
+    if (!common) return;
+    // …then step out of any side-by-side row so the form gets the full width.
+    var anchor = root;
+    while (anchor.parentElement && anchor.parentElement !== common) anchor = anchor.parentElement;
+    var host = common;
+    var row = function (el) { var cs = getComputedStyle(el); return (cs.display.indexOf('flex') > -1 && cs.flexDirection.indexOf('row') === 0) || (cs.display.indexOf('grid') > -1 && cs.gridTemplateColumns.split(' ').length > 1); };
+    while (host && host !== document.body && row(host) && host.parentElement) { anchor = host; host = host.parentElement; }
+    if (anchor === root) return;
+    anchor.parentNode.insertBefore(root, anchor.nextSibling);
   }
 
   function initAll() { var all = document.querySelectorAll('.colvy-bis'); for (var i = 0; i < all.length; i++) init(all[i]); }
