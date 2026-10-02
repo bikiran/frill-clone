@@ -99,10 +99,12 @@ export class WooCommerceService {
     }
   }
 
-  // Ensure the order webhooks Colvy relies on exist and point at our endpoint.
-  // Returns a summary so the UI can tell the user exactly what happened.
+  // Ensure the webhooks Colvy relies on exist and point at our endpoint: orders
+  // (chat automation, Orders board) and product updates (back-in-stock
+  // waitlists fire when a product returns to stock). Returns a summary so the
+  // UI can tell the user exactly what happened.
   async ensureColvyWebhooks(deliveryUrl: string, secret?: string) {
-    const wanted = ['order.created', 'order.updated']
+    const wanted = ['order.created', 'order.updated', 'product.updated']
     const existing = await this.listWebhooks()
     const results: any[] = []
     for (const topic of wanted) {

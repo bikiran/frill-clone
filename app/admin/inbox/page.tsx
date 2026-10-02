@@ -40,6 +40,7 @@ import CustomerAddresses from '@/components/CustomerAddresses'
 import DoaPanel from '@/components/DoaPanel'
 import CreateOrderPanel from '@/components/CreateOrderPanel'
 import SuperAdminContactWorkspaces from '@/components/SuperAdminContactWorkspaces'
+import WaitlistQuickAdd from '@/components/WaitlistQuickAdd'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Conversation = {
@@ -10064,6 +10065,11 @@ export default function InboxPage() {
                         Renders only for a platform super-admin (the lookup API
                         403s for everyone else). Links to the company's detail in
                         the Console. */}
+                    {/* ── Back-in-stock waitlist ──────────────────────────────
+                        Customer asked for something out of stock? Put them on
+                        its waitlist — they get one SMS when it's back. */}
+                    <WaitlistQuickAdd companyId={companyId} contact={contact as any} conversationId={selected?.id || null} />
+
                     <SuperAdminContactWorkspaces email={(contact as any)?.email || null} />
 
                     {/* ── Notes ─────────────────────────────────────────────
