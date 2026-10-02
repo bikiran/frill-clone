@@ -2,9 +2,12 @@
 
 import { useState } from 'react'
 import { api, money, dur, card, btn, btnGhost, input, label, hint, Toggle, Modal } from './shared'
+import { PlusIcon, CalendarIcon, WarnIcon, LinkIcon } from '@/components/booking/icons'
+import { availabilityIssue } from '@/lib/booking-time'
 
 // Bookable services: list + editor.
 
+const REBOOK = [0, 14, 28, 42, 90, 180, 365]
 const COLORS = ['#ff7a6b', '#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', '#ec4899', '#14b8a6', '#64748b']
 const BLANK = {
   name: '', description: '', kind: 'appointment', duration_mins: 30, buffer_before: 0, buffer_after: 0, slot_interval: null,
@@ -12,11 +15,14 @@ const BLANK = {
   location_ids: [], video_url: '', staff_ids: [], min_notice_mins: 120, max_days_ahead: 60, questions: [], color: COLORS[0], active: true,
 }
 
-export default function ServicesTab({ companyId, services, reload, staff, locations, stripeReady, bookingUrl, flash }: {
+export default function ServicesTab({ companyId, services, reload, staff, locations, stripeReady, bookingUrl, flash, settings, onGoAvailability }: {
   companyId: string; services: any[]; reload: () => void
   staff: { id: string; name: string }[]; locations: { id: string; label: string; address: string; is_primary: boolean }[]
   stripeReady: boolean; bookingUrl: string | null; flash: (m: string) => void
+  settings?: any; onGoAvailability?: () => void
 }) {
+  const names = Object.fromEntries(staff.map(x => [x.id, x.name]))
+  const issueOf = (svc: any) => settings ? availabilityIssue(svc, settings, names) : null
   const [editing, setEditing] = useState<any | null>(null)
 
   const move = async (i: number, dir: -1 | 1) => {
@@ -33,14 +39,14 @@ export default function ServicesTab({ companyId, services, reload, staff, locati
     <div>
       <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12, gap: 10 }}>
         <div style={{ flex: 1, fontSize: 13, color: 'var(--slate, #6b7280)' }}>{services.length ? 'What customers can book, in the order shown. Each service has its own link.' : ''}</div>
-        <button onClick={() => setEditing({ ...BLANK })} style={btn}>＋ New service</button>
+        <button onClick={() => setEditing({ ...BLANK })} style={btn}><PlusIcon size={15} strokeWidth={2.4} /> New service</button>
       </div>
       {!services.length && (
         <div style={{ ...card, textAlign: 'center', padding: '40px 20px' }}>
-          <div style={{ fontSize: 32, marginBottom: 8 }}>🗓️</div>
+          <div style={{ width: 52, height: 52, borderRadius: 16, background: 'var(--peach,#fff1ee)', color: 'var(--coral,#ff7a6b)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}><CalendarIcon size={26} /></div>
           <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 6 }}>Add your first service</div>
           <div style={{ fontSize: 13.5, color: 'var(--slate, #6b7280)', maxWidth: 420, margin: '0 auto 16px', lineHeight: 1.5 }}>e.g. “Aquarium setup consultation — 45 min, $50 deposit” or “Tank cleaning visit — 1 hr, at the customer’s address”.</div>
-          <button onClick={() => setEditing({ ...BLANK })} style={btn}>＋ New service</button>
+          <button onClick={() => setEditing({ ...BLANK })} style={btn}><PlusIcon size={15} strokeWidth={2.4} /> New service</button>
         </div>
       )}
       <div style={{ display: 'grid', gap: 10 }}>
@@ -64,23 +70,31 @@ export default function ServicesTab({ companyId, services, reload, staff, locati
                   {s.capacity > 1 && <span>· group of {s.capacity}</span>}
                   <span>· {s.staff_ids?.length ? s.staff_ids.map((id: string) => staff.find(x => x.id === id)?.name).filter(Boolean).join(', ') : 'Anyone'}</span>
                 </div>
-                {needsStripe && <div style={{ fontSize: 12, color: '#b45309', marginTop: 5 }}>⚠ Hidden from the booking page until Stripe is connected (Integrations → Stripe).</div>}
+                {needsStripe && <div style={{ fontSize: 12, color: '#b45309', marginTop: 5, display: 'flex', gap: 5, alignItems: 'center' }}><WarnIcon size={13} /> Hidden from the booking page until Stripe is connected (Integrations → Stripe).</div>}
+                {s.active && issueOf(s) && (
+                  <div style={{ fontSize: 12, color: '#b45309', marginTop: 6, display: 'flex', gap: 6, alignItems: 'flex-start', lineHeight: 1.45 }}>
+                    <WarnIcon size={13} style={{ marginTop: 1 }} />
+                    <span><b>No bookable times.</b> {issueOf(s)}{' '}
+                      {onGoAvailability && /Availability|hours/.test(issueOf(s) || '') && <button onClick={onGoAvailability} style={{ border: 'none', background: 'none', padding: 0, color: '#b45309', fontWeight: 700, textDecoration: 'underline', cursor: 'pointer', font: 'inherit' }}>Open Availability</button>}
+                    </span>
+                  </div>
+                )}
               </div>
-              {url && s.active && <button onClick={() => copy(url)} style={{ ...btnGhost, height: 32, fontSize: 12.5 }}>🔗 Copy link</button>}
+              {url && s.active && <button onClick={() => copy(url)} style={{ ...btnGhost, height: 32, fontSize: 12.5 }}><LinkIcon size={14} /> Copy link</button>}
               <button onClick={() => setEditing({ ...s })} style={{ ...btnGhost, height: 32, fontSize: 12.5 }}>Edit</button>
             </div>
           )
         })}
       </div>
-      {editing && <ServiceEditor companyId={companyId} initial={editing} staff={staff} locations={locations} stripeReady={stripeReady}
+      {editing && <ServiceEditor companyId={companyId} initial={editing} staff={staff} locations={locations} stripeReady={stripeReady} issueOf={issueOf}
         onClose={() => setEditing(null)} onSaved={(m) => { setEditing(null); flash(m); reload() }} />}
     </div>
   )
 }
 
-function ServiceEditor({ companyId, initial, staff, locations, stripeReady, onClose, onSaved }: {
+function ServiceEditor({ companyId, initial, staff, locations, stripeReady, onClose, onSaved, issueOf }: {
   companyId: string; initial: any; staff: { id: string; name: string }[]; locations: { id: string; label: string; is_primary: boolean }[]
-  stripeReady: boolean; onClose: () => void; onSaved: (msg: string) => void
+  stripeReady: boolean; onClose: () => void; onSaved: (msg: string) => void; issueOf?: (svc: any) => string | null
 }) {
   const [s, setS] = useState<any>({ ...initial, price: initial.price_cents ? String(initial.price_cents / 100) : '', deposit: initial.deposit_cents ? String(initial.deposit_cents / 100) : '' })
   const [saving, setSaving] = useState(false)
@@ -140,7 +154,17 @@ function ServiceEditor({ companyId, initial, staff, locations, stripeReady, onCl
 
         <Group title="Time">
           <div style={grid3}>
-            <NumField label="Duration (min)" value={s.duration_mins} onChange={v => set({ duration_mins: v })} min={5} />
+            <div>
+              <span style={label}>Duration</span>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <select aria-label="Hours" value={Math.floor((s.duration_mins || 0) / 60)} onChange={e => set({ duration_mins: Math.max(5, Number(e.target.value) * 60 + ((s.duration_mins || 0) % 60)) })} style={{ ...input, flex: 1 }}>
+                  {Array.from({ length: 25 }, (_, h) => <option key={h} value={h}>{h} hr</option>)}
+                </select>
+                <select aria-label="Minutes" value={(s.duration_mins || 0) % 60 - ((s.duration_mins || 0) % 5)} onChange={e => set({ duration_mins: Math.max(5, Math.floor((s.duration_mins || 0) / 60) * 60 + Number(e.target.value)) })} style={{ ...input, flex: 1 }}>
+                  {Array.from({ length: 12 }, (_, i) => i * 5).map(m => <option key={m} value={m}>{m} min</option>)}
+                </select>
+              </div>
+            </div>
             <NumField label="Buffer before" value={s.buffer_before} onChange={v => set({ buffer_before: v })} />
             <NumField label="Buffer after" value={s.buffer_after} onChange={v => set({ buffer_after: v })} />
             <div>
@@ -159,6 +183,11 @@ function ServiceEditor({ companyId, initial, staff, locations, stripeReady, onCl
             <NumField label="Book up to (days ahead)" value={s.max_days_ahead} onChange={v => set({ max_days_ahead: v })} min={1} />
           </div>
           <div style={hint}>Buffers keep time free around each booking (travel, clean-up) without showing it to the customer.</div>
+          {issueOf?.(s) && (
+            <div style={{ marginTop: 8, padding: '8px 10px', borderRadius: 9, background: '#fffbeb', border: '1px solid #fde68a', color: '#92400e', fontSize: 12.5, display: 'flex', gap: 7, alignItems: 'flex-start', lineHeight: 1.45 }}>
+              <WarnIcon size={14} style={{ marginTop: 1 }} /><span><b>Customers won’t see any times:</b> {issueOf(s)}</span>
+            </div>
+          )}
           {s.kind === 'booking' && (
             <div style={{ marginTop: 10, maxWidth: 200 }}>
               <NumField label="Spots per time (group size)" value={s.capacity} onChange={v => set({ capacity: v })} min={1} />
@@ -187,7 +216,7 @@ function ServiceEditor({ companyId, initial, staff, locations, stripeReady, onCl
               </div>
             )}
           </div>
-          {s.payment_mode !== 'none' && !stripeReady && <div style={{ ...hint, color: '#b45309' }}>⚠ Connect Stripe (Integrations → Stripe) to take payments. Until then this service is hidden from the booking page.</div>}
+          {s.payment_mode !== 'none' && !stripeReady && <div style={{ ...hint, color: '#b45309', display: 'flex', gap: 5 }}><WarnIcon size={13} style={{ marginTop: 1 }} /> Connect Stripe (Integrations → Stripe) to take payments. Until then this service is hidden from the booking page.</div>}
           {s.payment_mode !== 'none' && stripeReady && <div style={hint}>Paid by card on Stripe Checkout when booking; the time is held for 30 minutes while they pay.</div>}
         </Group>
 
@@ -232,9 +261,31 @@ function ServiceEditor({ companyId, initial, staff, locations, stripeReady, onCl
                 {x.type === 'select' && <input value={(x.options || []).join(', ')} onChange={e => setQ(i, { options: e.target.value.split(',').map((o: string) => o.trim()) })} placeholder="Options, comma separated" style={{ ...input, flexBasis: '100%' }} />}
               </div>
             ))}
-            <button type="button" onClick={() => set({ questions: [...q, { id: `q${Date.now().toString(36)}`, label: '', type: 'text', options: [], required: false }] })} style={{ ...btnGhost, justifySelf: 'start', height: 32, fontSize: 12.5 }}>＋ Add question</button>
+            <button type="button" onClick={() => set({ questions: [...q, { id: `q${Date.now().toString(36)}`, label: '', type: 'text', options: [], required: false }] })} style={{ ...btnGhost, justifySelf: 'start', height: 32, fontSize: 12.5 }}><PlusIcon size={14} /> Add question</button>
           </div>
           <div style={hint}>Name, mobile and email are always asked.</div>
+        </Group>
+
+        <Group title="After the visit">
+          <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+            <div style={{ minWidth: 220 }}>
+              <span style={label}>Rebook reminder</span>
+              <select value={REBOOK.includes(s.rebook_days || 0) ? String(s.rebook_days || 0) : 'custom'} onChange={e => set({ rebook_days: e.target.value === 'custom' ? (s.rebook_days || 21) : (Number(e.target.value) || null) })} style={input}>
+                <option value="0">Off</option>
+                <option value="14">After 2 weeks</option>
+                <option value="28">After 4 weeks</option>
+                <option value="42">After 6 weeks</option>
+                <option value="90">After 3 months</option>
+                <option value="180">After 6 months</option>
+                <option value="365">After a year</option>
+                <option value="custom">Custom…</option>
+              </select>
+            </div>
+            {s.rebook_days && !REBOOK.includes(s.rebook_days) && (
+              <div style={{ width: 130 }}><NumField label="Days" value={s.rebook_days} onChange={v => set({ rebook_days: v || null })} min={1} /></div>
+            )}
+          </div>
+          <div style={hint}>Texts “Time for your next {s.name || 'visit'}?” with a booking link — only if they haven’t booked again and haven’t opted out. Good for regular services like tank cleans.</div>
         </Group>
 
         <label style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13.5 }}>

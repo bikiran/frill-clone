@@ -145,7 +145,8 @@ async function run(req: NextRequest) {
         }
 
         // ── Customer reminder (delivery / appointment / booking / pickup)
-        if (e.notify_customer && ['delivery', 'appointment', 'booking', 'pickup'].includes(e.event_type)) {
+        // Online bookings have their own reminder sweep (24h + 2h, reply C/R).
+        if (e.notify_customer && e.external_source !== 'booking' && ['delivery', 'appointment', 'booking', 'pickup'].includes(e.event_type)) {
           try {
             const cid = e.customer_contact_id || e.contact_id
             if (cid) {

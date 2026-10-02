@@ -9,6 +9,7 @@
 import { notifyCompany } from './notify'
 import { runKeywordReply } from './keyword-reply'
 import { resolveSmsSender } from './sms-provider'
+import { handleBookingSmsReply } from './booking-replies'
 
 export interface InboundAttachment {
   url: string
@@ -181,8 +182,12 @@ export async function ingestInboundSms(params: {
     if (text && insertedMsg?.id) fetch(`${origin}/api/inbox/translate-message`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messageId: insertedMsg.id }) })
   } catch {}
 
+  // "C" / "R" answering a booking reminder — confirm, or send the reschedule link.
+  let bookingHandled = false
+  try { bookingHandled = await handleBookingSmsReply({ db, companyId, conversationId: conv.id, from, text, origin }) } catch {}
+
   // Keyword auto-reply — texted back over whichever provider owns this company.
-  try {
+  if (!bookingHandled) try {
     await runKeywordReply({
       conversationId: conv.id, text, companyId, channel: 'sms',
       deliver: async (reply) => {

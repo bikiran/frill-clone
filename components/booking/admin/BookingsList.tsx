@@ -4,6 +4,7 @@ import { useCallback, useMemo, useState } from 'react'
 import Link from 'next/link'
 import SlotPicker from '@/components/booking/SlotPicker'
 import { api, money, card, btn, btnGhost, input, Modal, Toggle } from './shared'
+import { PinIcon, CheckIcon, ChatIcon } from '@/components/booking/icons'
 
 // The team's list of online bookings, grouped by day, with cancel (+ refund),
 // reschedule, completed and no-show.
@@ -25,6 +26,7 @@ export default function BookingsList({ companyId, bookings, timezone, scope, set
   const [search, setSearch] = useState('')
   const [cancelling, setCancelling] = useState<any | null>(null)
   const [moving, setMoving] = useState<any | null>(null)
+  const [noShow, setNoShow] = useState<any | null>(null)
 
   const rows = useMemo(() => {
     const s = search.trim().toLowerCase()
@@ -89,7 +91,7 @@ export default function BookingsList({ companyId, bookings, timezone, scope, set
                       <div style={{ fontSize: 12.5, color: 'var(--slate, #6b7280)', marginTop: 3, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                         {b.customer_phone && <a href={`tel:${b.customer_phone}`} style={{ color: 'inherit' }}>{b.customer_phone}</a>}
                         {b.customer_email && <span>{b.customer_email}</span>}
-                        {(b.address || b.location_label) && <span>📍 {b.address || b.location_label}</span>}
+                        {(b.address || b.location_label) && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><PinIcon size={12} /> {b.address || b.location_label}</span>}
                       </div>
                       {Array.isArray(b.answers) && b.answers.length > 0 && (
                         <div style={{ fontSize: 12, color: '#6b7280', marginTop: 4 }}>{b.answers.map((a: any) => `${a.label}: ${a.value}`).join(' · ')}</div>
@@ -98,15 +100,17 @@ export default function BookingsList({ companyId, bookings, timezone, scope, set
                     </div>
                     <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
                       <span style={{ ...pill, background: st.bg, color: st.c }}>{st.label}</span>
+                      {b.status === 'confirmed' && b.customer_confirmed_at && <span style={{ ...pill, background: '#ecfdf5', color: '#047857' }} title="Replied C to the reminder"><CheckIcon size={11} strokeWidth={3} style={{ marginRight: 3 }} />Customer confirmed</span>}
+                      {b.status === 'confirmed' && !b.customer_confirmed_at && (b.reminder_24h_at || b.reminder_2h_at) && <span style={{ ...pill, background: '#f9fafb', color: '#6b7280' }}>Reminded</span>}
                       {b.amount_due_cents > 0 && PAY[b.payment_status] && (
                         <span style={{ ...pill, background: '#f9fafb', color: '#374151' }}>{PAY[b.payment_status]} {money(b.payment_status === 'refunded' || b.payment_status === 'partially_refunded' ? b.refunded_cents : b.amount_due_cents, b.currency)}</span>
                       )}
                     </div>
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                      {b.conversation_id && <Link href={`/admin/inbox?conversation=${b.conversation_id}`} style={{ ...btnGhost, height: 30, fontSize: 12, textDecoration: 'none' }}>💬 Chat</Link>}
+                      {b.conversation_id && <Link href={`/admin/inbox?conversation=${b.conversation_id}`} style={{ ...btnGhost, height: 30, fontSize: 12, textDecoration: 'none' }}><ChatIcon size={13} /> Chat</Link>}
                       {b.status === 'confirmed' && !past && <button onClick={() => setMoving(b)} style={{ ...btnGhost, height: 30, fontSize: 12 }}>Move</button>}
-                      {b.status === 'confirmed' && past && <button onClick={() => act(b, 'complete')} style={{ ...btnGhost, height: 30, fontSize: 12 }}>✓ Done</button>}
-                      {b.status === 'confirmed' && past && <button onClick={() => act(b, 'no_show')} style={{ ...btnGhost, height: 30, fontSize: 12 }}>No-show</button>}
+                      {b.status === 'confirmed' && past && <button onClick={() => act(b, 'complete')} style={{ ...btnGhost, height: 30, fontSize: 12 }}><CheckIcon size={13} strokeWidth={2.6} /> Done</button>}
+                      {b.status === 'confirmed' && past && <button onClick={() => setNoShow(b)} style={{ ...btnGhost, height: 30, fontSize: 12 }}>No-show</button>}
                       {(b.status === 'completed' || b.status === 'no_show') && <button onClick={() => act(b, 'confirm')} style={{ ...btnGhost, height: 30, fontSize: 12 }}>Undo</button>}
                       {(b.status === 'confirmed' || b.status === 'pending') && <button onClick={() => setCancelling(b)} style={{ ...btnGhost, height: 30, fontSize: 12, color: '#dc2626' }}>Cancel</button>}
                     </div>
@@ -119,6 +123,7 @@ export default function BookingsList({ companyId, bookings, timezone, scope, set
       </div>
 
       {cancelling && <CancelDialog companyId={companyId} b={cancelling} onClose={() => setCancelling(null)} onDone={m => { setCancelling(null); flash(m); reload() }} />}
+      {noShow && <NoShowDialog companyId={companyId} b={noShow} onClose={() => setNoShow(null)} onDone={m => { setNoShow(null); flash(m); reload() }} />}
       {moving && <MoveDialog companyId={companyId} b={moving} timezone={timezone} onClose={() => setMoving(null)} onDone={m => { setMoving(null); flash(m); reload() }} />}
     </div>
   )
@@ -156,6 +161,27 @@ function CancelDialog({ companyId, b, onClose, onDone }: { companyId: string; b:
   )
 }
 
+function NoShowDialog({ companyId, b, onClose, onDone }: { companyId: string; b: any; onClose: () => void; onDone: (m: string) => void }) {
+  const [notify, setNotify] = useState(true)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const go = async () => {
+    setBusy(true); setError('')
+    try { await api('/api/bookings', { method: 'PATCH', json: { companyId, id: b.id, action: 'no_show', notify } }); onDone(notify ? 'Marked as no-show — sent them a link to rebook' : 'Marked as no-show') }
+    catch (e: any) { setError(e.message); setBusy(false) }
+  }
+  return (
+    <Modal title="Mark as no-show" onClose={onClose} width={440} footer={<>
+      <button onClick={onClose} style={btnGhost}>Cancel</button>
+      <button onClick={go} disabled={busy} style={btn}>{busy ? 'Saving…' : 'Mark no-show'}</button>
+    </>}>
+      <div style={{ fontSize: 14, marginBottom: 14 }}><b>{b.customer_name}</b> · {b.service_name}</div>
+      <label style={row}><Toggle on={notify} onChange={setNotify} /> Send “Sorry we missed you — pick another time?” with a booking link</label>
+      {error && <div style={{ color: '#b91c1c', fontSize: 13, marginTop: 10 }}>{error}</div>}
+    </Modal>
+  )
+}
+
 function MoveDialog({ companyId, b, timezone, onClose, onDone }: { companyId: string; b: any; timezone: string; onClose: () => void; onDone: (m: string) => void }) {
   const [slot, setSlot] = useState<string | null>(null)
   const [notify, setNotify] = useState(true)
@@ -180,5 +206,5 @@ function MoveDialog({ companyId, b, timezone, onClose, onDone }: { companyId: st
   )
 }
 
-const pill: React.CSSProperties = { fontSize: 11.5, fontWeight: 700, padding: '3px 8px', borderRadius: 999, whiteSpace: 'nowrap' }
+const pill: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', fontSize: 11.5, fontWeight: 700, padding: '3px 8px', borderRadius: 999, whiteSpace: 'nowrap' }
 const row: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 10, fontSize: 13.5, cursor: 'pointer' }

@@ -25,7 +25,7 @@ function WidgetContent() {
     return u ? [{ url: u, title: t || null, ts: new Date().toISOString() }] : []
   })
 
-  const [tab, setTab] = useState<'feedback' | 'roadmap' | 'updates' | 'help' | 'chat'>('feedback')
+  const [tab, setTab] = useState<'feedback' | 'roadmap' | 'updates' | 'help' | 'chat' | 'book'>('feedback')
   const [chatConvId, setChatConvId] = useState<string | null>(null)
   const [chatMessages2, setChatMessages2] = useState<any[]>([])
   const [chatInput, setChatInput] = useState('')
@@ -76,6 +76,13 @@ function WidgetContent() {
   const [selectedItem, setSelectedItem] = useState<{ type: 'idea' | 'announcement' | 'help'; id: string } | null>(null)
   const [company, setCompany] = useState<any>(null)
   const [widgetTabs, setWidgetTabs] = useState<any>(null)
+  // Online booking services (the Book tab shows only when there are some).
+  const [bookServices, setBookServices] = useState<any[]>([])
+  useEffect(() => {
+    if (!slug) return
+    fetch(`/api/book?op=page&slug=${encodeURIComponent(slug)}`).then(r => r.ok ? r.json() : null)
+      .then(d => { if (d?.page?.show_in_widget !== false && d?.services?.length) setBookServices(d.services) }).catch(() => {})
+  }, [slug])
   const [ideas, setIdeas] = useState<any[]>([])
   const [announcements, setAnnouncements] = useState<any[]>([])
   const [forms, setForms] = useState<any[]>([])
@@ -2325,16 +2332,40 @@ function WidgetContent() {
             )}
           </div>
         )}
+        {tab === 'book' && (
+          <div style={{ animation: 'fadeIn 0.2s ease both' }}>
+            <p style={{ fontSize: 15, fontWeight: 800, color: '#0d0d0d', margin: '4px 0 2px' }}>Book an appointment</p>
+            <p style={{ fontSize: 12.5, color: '#6b7280', margin: '0 0 12px' }}>Pick a service to see available times.</p>
+            <div style={{ display: 'grid', gap: 8 }}>
+              {bookServices.map((s: any) => {
+                const price = s.price_cents ? `$${(s.price_cents / 100).toFixed(s.price_cents % 100 ? 2 : 0)}` : 'Free'
+                const dur = s.duration_mins < 60 ? `${s.duration_mins} min` : `${Math.floor(s.duration_mins / 60)} hr${s.duration_mins % 60 ? ` ${s.duration_mins % 60} min` : ''}`
+                return (
+                  <button key={s.id} onClick={() => { trackWidgetEvent('book_service'); window.open(`${window.location.origin}/book/${encodeURIComponent(slug)}/${s.slug}?src=widget`, '_blank', 'noopener') }}
+                    style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '11px 12px', borderRadius: 12, border: '1px solid #eef0f3', background: '#fff', cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit' }}>
+                    <span style={{ width: 4, alignSelf: 'stretch', borderRadius: 4, background: s.color || accentColor }} />
+                    <span style={{ flex: 1, minWidth: 0 }}>
+                      <span style={{ display: 'block', fontSize: 13.5, fontWeight: 700, color: '#0d0d0d' }}>{s.name}</span>
+                      <span style={{ display: 'block', fontSize: 11.5, color: '#6b7280', marginTop: 2 }}>{dur} · {price}{s.payment_mode === 'deposit' ? ` · $${(s.deposit_cents / 100).toFixed(0)} deposit` : ''}</span>
+                    </span>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: accentColor, whiteSpace: 'nowrap' }}>Book →</span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Footer nav */}
       <div style={{ background: '#fff', display: 'flex', padding: '6px 8px 8px', flexShrink: 0, width: '100%', boxSizing: 'border-box', justifyContent: 'space-around', gap: 2 }}>
         {(() => {
           // Map settings labels → widget tab keys (Chat included, orderable).
-          const labelToKey: Record<string, string> = { 'Chat': 'chat', 'Feedback': 'feedback', 'Ideas': 'feedback', 'Roadmap': 'roadmap', 'Updates': 'updates', 'Knowledge Base': 'help', 'Help Centre': 'help', 'Help': 'help' }
-          const allKeys = ['feedback', 'roadmap', 'updates', 'help', 'chat'] as const
-          // Visibility from settings (default: all shown).
-          const visible = (k: string) => !widgetTabs ? true : widgetTabs[k] !== false
+          const labelToKey: Record<string, string> = { 'Chat': 'chat', 'Feedback': 'feedback', 'Ideas': 'feedback', 'Roadmap': 'roadmap', 'Updates': 'updates', 'Knowledge Base': 'help', 'Help Centre': 'help', 'Help': 'help', 'Book': 'book', 'Bookings': 'book' }
+          const allKeys = ['feedback', 'roadmap', 'updates', 'help', 'book', 'chat'] as const
+          // Visibility from settings (default: all shown). Book only when the
+          // business has online booking services.
+          const visible = (k: string) => k === 'book' ? bookServices.length > 0 && widgetTabs?.book !== false : (!widgetTabs ? true : widgetTabs[k] !== false)
           // Order from settings if provided (chat can be anywhere), else default.
           let ordered: string[] = [...allKeys]
           if (widgetTabs?.order && Array.isArray(widgetTabs.order)) {
@@ -2353,6 +2384,7 @@ function WidgetContent() {
                 {t === 'updates' && <><path d="M22 2L11 13"/><path d="M22 2L15 22 11 13 2 9l20-7z"/></>}
                 {t === 'help' && <><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></>}
                 {t === 'chat' && <><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><line x1="8" y1="10" x2="16" y2="10"/><line x1="8" y1="14" x2="12" y2="14"/></>}
+                {t === 'book' && <><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></>}
               </svg>
               <span style={{ fontSize: 10, fontWeight: isActive ? 700 : 500, textTransform: 'capitalize', lineHeight: 1 }}>
                 {t === 'updates' ? 'Updates' : t === 'help' ? 'Help' : t.charAt(0).toUpperCase() + t.slice(1)}

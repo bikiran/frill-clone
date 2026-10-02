@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import SlotPicker, { viewerTz, tzShort } from '@/components/booking/SlotPicker'
 import { ParallaxBackdrop, MOTION_CSS } from '@/components/booking/motion'
+import { CalendarIcon, LockIcon } from '@/components/booking/icons'
 
 // The public booking page: service → (staff) → time → details → pay/confirm.
 // Rendered at colvy.com/book/<slug>[/<service>], <slug>.colvy.com/book[/<service>]
@@ -76,13 +77,25 @@ export default function BookingFlow({ slug, domain, initialService }: { slug?: s
   const [error, setError] = useState('')
 
   const query = slug ? `slug=${encodeURIComponent(slug)}` : `domain=${encodeURIComponent(domain || '')}`
+  // ?i=<token> personal link from the inbox · ?embed=1 inside a website · ?src=widget|link
+  const [ctx, setCtx] = useState<{ invite: string | null; embed: boolean; src: string }>({ invite: null, embed: false, src: 'page' })
 
   useEffect(() => {
-    fetch(`/api/book?op=page&${query}`).then(r => r.json().then(d => ({ ok: r.ok, d }))).then(({ ok, d }) => {
+    const sp = new URLSearchParams(window.location.search)
+    const invite = sp.get('i')
+    const embed = sp.get('embed') === '1'
+    setCtx({ invite, embed, src: invite ? 'invite' : embed ? 'embed' : (sp.get('src') === 'widget' ? 'widget' : sp.get('src') === 'link' ? 'link' : 'page') })
+    Promise.all([
+      fetch(`/api/book?op=page&${query}`).then(r => r.json().then(d => ({ ok: r.ok, d }))),
+      invite ? fetch(`/api/book?op=invite&${query}&token=${encodeURIComponent(invite)}`).then(r => r.json()).catch(() => ({})) : Promise.resolve({}),
+    ]).then(([{ ok, d }, inv]: any) => {
       if (!ok) { setLoadError(d.error || 'This booking page isn’t available.'); return }
       setData(d)
       try { document.title = `Book — ${d.company.name}` } catch {}
-      const pre = initialService ? d.services.find((s: Service) => s.slug === initialService || s.id === initialService) : null
+      const prefill = inv?.prefill
+      if (prefill) setForm(f => ({ ...f, name: prefill.name || f.name, email: prefill.email || f.email, phone: prefill.phone || f.phone }))
+      const want = initialService || prefill?.serviceId
+      const pre = want ? d.services.find((s: Service) => s.slug === want || s.id === want) : null
       const only = d.services.length === 1 ? d.services[0] : null
       if (pre || only) { setService(pre || only); setStep('time') }
     }).catch(() => setLoadError('Couldn’t load this page. Please refresh.'))
@@ -124,7 +137,7 @@ export default function BookingFlow({ slug, domain, initialService }: { slug?: s
           slug, domain, serviceId: service.id, staff, startsAt: slot, locationId: locationId || null,
           name: form.name, email: form.email, phone: form.phone, address: form.address, notes: form.notes,
           answers, timezone: viewerTz(),
-          source: typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('src') === 'link' ? 'link' : 'page',
+          source: ctx.src, invite: ctx.invite,
         }),
       })
       const d = await r.json()
@@ -134,14 +147,20 @@ export default function BookingFlow({ slug, domain, initialService }: { slug?: s
         setSubmitting(false)
         return
       }
-      window.location.href = d.checkoutUrl || `/booking/${d.token}?new=1`
+      if (d.checkoutUrl && ctx.embed) {
+        // Stripe Checkout can't run inside a frame — take the whole tab there.
+        try { window.top!.location.href = d.checkoutUrl } catch { window.open(d.checkoutUrl, '_blank') }
+        setSubmitting(false)
+        return
+      }
+      window.location.href = d.checkoutUrl || `/booking/${d.token}?new=1${ctx.embed ? '&embed=1' : ''}`
     } catch {
       setError('Couldn’t reach the server — check your connection and try again.')
       setSubmitting(false)
     }
   }
 
-  if (loadError) return <Shell accent="#ff7a6b"><div className="bk-card bk-card-in" style={{ display: 'block', maxWidth: 520, padding: '56px 24px', textAlign: 'center' }}><div style={{ fontSize: 36, marginBottom: 10 }}>📅</div><div style={{ fontWeight: 700, fontSize: 18, color: '#111', marginBottom: 6 }}>Booking unavailable</div><div style={{ color: '#6b7280', fontSize: 14.5 }}>{loadError}</div></div></Shell>
+  if (loadError) return <Shell accent="#ff7a6b"><div className="bk-card bk-card-in" style={{ display: 'block', maxWidth: 520, padding: '56px 24px', textAlign: 'center' }}><div style={{ width: 56, height: 56, borderRadius: 18, background: '#f3f4f6', color: '#9ca3af', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}><CalendarIcon size={28} /></div><div style={{ fontWeight: 700, fontSize: 18, color: '#111', marginBottom: 6 }}>Booking unavailable</div><div style={{ color: '#6b7280', fontSize: 14.5 }}>{loadError}</div></div></Shell>
   if (!data) return (
     <Shell accent="#ff7a6b">
       <div className="bk-card bk-card-in">
@@ -297,7 +316,7 @@ export default function BookingFlow({ slug, domain, initialService }: { slug?: s
                 <button type="submit" disabled={submitting} className="bk-primary" style={{ width: '100%', height: 50, fontSize: 15.5 }}>
                   {submitting ? <Spinner light /> : due > 0 ? `Continue to payment · ${money(due, service.currency)}` : 'Confirm booking'}
                 </button>
-                {due > 0 && <div style={{ textAlign: 'center', fontSize: 12, color: '#9ca3af', marginTop: 8 }}>🔒 Secure payment by Stripe. Your time is held while you pay.</div>}
+                {due > 0 && <div style={{ textAlign: 'center', fontSize: 12, color: '#9ca3af', marginTop: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}><LockIcon size={12} /> Secure payment by Stripe. Your time is held while you pay.</div>}
               </div>
             </form>
           )}
@@ -342,10 +361,30 @@ function Spinner({ light }: { light?: boolean }) {
   return <span style={{ display: 'inline-block', width: 18, height: 18, border: `2px solid ${light ? 'rgba(255,255,255,.5)' : '#e5e7eb'}`, borderTopColor: light ? '#fff' : '#9ca3af', borderRadius: '50%', animation: 'bkspin .7s linear infinite', verticalAlign: 'middle' }} />
 }
 
+// Inside a website's iframe (?embed=1): no page background, and tell the host
+// page our height so the frame grows with the content (see the embed snippet).
+function useEmbed() {
+  const [embed, setEmbed] = useState(false)
+  useEffect(() => {
+    let framed = false
+    try { framed = window.self !== window.top } catch { framed = true }
+    if (!framed || new URLSearchParams(window.location.search).get('embed') !== '1') return
+    setEmbed(true)
+    const post = () => { try { window.parent.postMessage({ type: 'colvy-booking-height', height: Math.ceil(document.documentElement.scrollHeight) }, '*') } catch {} }
+    const ro = new ResizeObserver(post)
+    ro.observe(document.body)
+    post()
+    return () => ro.disconnect()
+  }, [])
+  return embed
+}
+
 export function Shell({ accent, children }: { accent: string; children: React.ReactNode }) {
+  const embed = useEmbed()
   return (
-    <div style={{ minHeight: '100dvh', background: '#f6f6f7', padding: '32px 16px', fontFamily: 'Inter, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif', position: 'relative', isolation: 'isolate', ['--bk-accent' as any]: accent }}>
-      <ParallaxBackdrop accent={accent} />
+    <div style={{ minHeight: embed ? 0 : '100dvh', background: embed ? 'transparent' : '#f6f6f7', padding: embed ? '4px 2px 8px' : '32px 16px', fontFamily: 'Inter, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif', position: 'relative', isolation: 'isolate', ['--bk-accent' as any]: accent }}>
+      {!embed && <ParallaxBackdrop accent={accent} />}
+      {embed && <style>{`html,body{background:transparent!important}.bk-card{box-shadow:none!important}`}</style>}
       <style>{MOTION_CSS}</style>
       <style>{`
         @keyframes bkspin{to{transform:rotate(360deg)}}

@@ -200,3 +200,36 @@ export function fmtDuration(mins: number) {
   const h = Math.floor(mins / 60), m = mins % 60
   return m ? `${h} hr ${m} min` : `${h} hr${h > 1 ? 's' : ''}`
 }
+
+// ── Why can't anyone book this? (shown to the business) ─────────────────────
+
+const minsOf = (t: string) => { const [h, m] = t.split(':').map(Number); return h * 60 + m }
+
+// A plain-English reason a service will never show a bookable time, or null.
+// `bookable` = staff switched on under "Who takes bookings" (id → own hours).
+export function availabilityIssue(
+  service: { duration_mins: number; staff_ids?: string[] | null; min_notice_mins?: number; max_days_ahead?: number },
+  settings: { hours: WeekHours; staff?: Record<string, { bookable?: boolean; hours?: WeekHours | null }> },
+  staffNames?: Record<string, string>,
+): string | null {
+  const bookable = Object.entries(settings.staff || {}).filter(([, v]) => v?.bookable)
+  let weeks: WeekHours[]
+  if (!bookable.length) weeks = [settings.hours]
+  else {
+    const allowed = service.staff_ids?.length ? bookable.filter(([id]) => service.staff_ids!.includes(id)) : bookable
+    if (!allowed.length) {
+      const names = (service.staff_ids || []).map(id => staffNames?.[id]).filter(Boolean).join(', ')
+      return `${names || 'The people picked for this service'} ${names.includes(',') ? 'aren’t' : 'isn’t'} switched on under Availability → Who takes bookings.`
+    }
+    weeks = allowed.map(([, v]) => v.hours || settings.hours)
+  }
+  let longest = 0
+  for (const w of weeks) for (const k of DAY_ORDER) for (const r of w[k] || []) longest = Math.max(longest, minsOf(r.end) - minsOf(r.start))
+  if (!longest) return 'No opening hours are set — turn on at least one day under Availability.'
+  if (service.duration_mins > longest) {
+    const f = (m: number) => m < 60 ? `${m} min` : `${Math.floor(m / 60)} hr${m % 60 ? ` ${m % 60} min` : ''}`
+    return `It takes ${f(service.duration_mins)}, but your longest opening is ${f(longest)} — shorten the service or extend your hours.`
+  }
+  if ((service.min_notice_mins || 0) >= (service.max_days_ahead || 60) * 1440) return 'The minimum notice is longer than how far ahead people can book.'
+  return null
+}

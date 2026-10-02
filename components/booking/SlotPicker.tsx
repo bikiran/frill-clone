@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { ClockIcon } from '@/components/booking/icons'
 
 // Month calendar + time list for picking a booking slot. Used by the public
 // booking page, the customer's reschedule screen and the team's reschedule
@@ -106,6 +107,8 @@ export default function SlotPicker({ accent = '#ff7a6b', businessTz, fetchSlots,
   const canPrev = month > today.slice(0, 7)
   const shift = (n: number) => { autoJumps.current = 3; setDay(null); setMonth(ymd(new Date(Date.UTC(y, mo - 1 + n, 1))).slice(0, 7)) }
 
+  // AEST vs AEDT depends on the date being looked at, not today.
+  const zoneAt = Date.parse(`${day || `${month}-15`}T02:00:00Z`)
   const daySlots = day ? (byDay.get(day) || []) : []
   const groups: [string, typeof daySlots][] = [
     ['Morning', daySlots.filter(s => hourIn(Date.parse(s.start), tz) < 12)],
@@ -165,13 +168,13 @@ export default function SlotPicker({ accent = '#ff7a6b', businessTz, fetchSlots,
           })}
         </div>
         <div style={{ marginTop: 14, fontSize: 12.5, color: '#6b7280', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-          <span>🌏</span>
+          <ClockIcon size={14} style={{ color: '#9ca3af' }} />
           {mine === businessTz
-            ? <span>Times in {tzShort(businessTz, day ? Date.parse(`${day}T02:00:00Z`) : undefined)}</span>
+            ? <span>Times in {tzShort(businessTz, zoneAt)}</span>
             : (
               <select value={tz} onChange={e => setTz(e.target.value)} style={{ border: 'none', background: 'transparent', color: '#374151', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', padding: 0 }}>
-                <option value={mine}>Your time ({tzShort(mine, day ? Date.parse(`${day}T02:00:00Z`) : undefined)})</option>
-                <option value={businessTz}>Business time ({tzShort(businessTz, day ? Date.parse(`${day}T02:00:00Z`) : undefined)})</option>
+                <option value={mine}>Your time ({tzShort(mine, zoneAt)})</option>
+                <option value={businessTz}>Business time ({tzShort(businessTz, zoneAt)})</option>
               </select>
             )}
         </div>
@@ -180,7 +183,7 @@ export default function SlotPicker({ accent = '#ff7a6b', businessTz, fetchSlots,
       <div ref={timesRef} style={{ scrollMarginTop: 12 }}>
         {error ? <div style={{ color: '#b91c1c', fontSize: 13.5 }}>{error}</div>
           : loading && !slots.length ? <div style={{ color: '#9ca3af', fontSize: 13.5, paddingTop: 6 }}>Finding times…</div>
-          : !day ? <div style={{ color: '#6b7280', fontSize: 13.5, paddingTop: 6, lineHeight: 1.5 }}>{byDay.size ? 'Pick a day to see times.' : 'No times available this month — try the next one.'}</div>
+          : !day ? <div style={{ color: '#6b7280', fontSize: 13.5, paddingTop: 6, lineHeight: 1.5 }}>{byDay.size ? 'Pick a day to see times.' : autoJumps.current >= 3 && month > today.slice(0, 7) ? 'No times available in the coming months. Please get in touch to book.' : 'No times available this month — try the next one.'}</div>
           : (
             <>
               <div style={{ fontWeight: 700, fontSize: 14.5, color: '#111', marginBottom: 10 }}>{dayLabel}</div>
