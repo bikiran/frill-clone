@@ -64,11 +64,43 @@ function hoursFromPlaces(oh: any): BusinessHours | null {
   return out
 }
 
-async function googleSuggest(q: string, token: string): Promise<Suggestion[]> {
+// Where the visitor roughly is — so "Momo Hub" finds the one down the road, not
+// one in another country. Vercel IP geo first, timezone as a fallback.
+type Geo = { country: string | null; lat: number | null; lng: number | null }
+
+const TZ_COUNTRY: [string, string][] = [
+  ['Australia/', 'AU'], ['Pacific/Auckland', 'NZ'], ['Europe/London', 'GB'], ['Europe/Dublin', 'IE'],
+  ['Asia/Kathmandu', 'NP'], ['Asia/Kolkata', 'IN'], ['Asia/Calcutta', 'IN'], ['Asia/Singapore', 'SG'],
+  ['America/Toronto', 'CA'], ['America/Vancouver', 'CA'], ['America/Edmonton', 'CA'], ['America/Winnipeg', 'CA'], ['America/Halifax', 'CA'],
+  ['America/New_York', 'US'], ['America/Chicago', 'US'], ['America/Denver', 'US'], ['America/Phoenix', 'US'], ['America/Los_Angeles', 'US'],
+]
+const tzCountry = (): string | null => {
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || ''
+    return TZ_COUNTRY.find(([p]) => tz.startsWith(p))?.[1] || null
+  } catch { return null }
+}
+
+let geoP: Promise<Geo> | null = null
+function visitorGeo(): Promise<Geo> {
+  if (!geoP) {
+    geoP = fetch('/api/geo').then(r => r.ok ? r.json() : null).catch(() => null)
+      .then((g: Geo | null) => ({ country: g?.country || tzCountry(), lat: g?.lat ?? null, lng: g?.lng ?? null }))
+  }
+  return geoP
+}
+
+async function googleSuggest(q: string, token: string, geo: Geo, restrict: boolean): Promise<Suggestion[]> {
+  const body: any = { input: q, sessionToken: token }
+  if (geo.country) {
+    body.regionCode = geo.country.toLowerCase()
+    if (restrict) body.includedRegionCodes = [geo.country.toLowerCase()]
+  }
+  if (geo.lat != null && geo.lng != null) body.locationBias = { circle: { center: { latitude: geo.lat, longitude: geo.lng }, radius: 50000 } }
   const res = await fetch('https://places.googleapis.com/v1/places:autocomplete', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Goog-Api-Key': GKEY! },
-    body: JSON.stringify({ input: q, sessionToken: token }),
+    body: JSON.stringify(body),
   })
   if (!res.ok) throw new Error(`google ${res.status}`)
   const d = await res.json()
@@ -104,8 +136,9 @@ async function googleDetails(placeId: string, token: string): Promise<BusinessDe
   }
 }
 
-// Bias OpenStreetMap results toward where the person is (by timezone).
-function photonBias(): string {
+// Bias OpenStreetMap results toward where the person is (IP, else timezone).
+function photonBias(geo: Geo): string {
+  if (geo.lat != null && geo.lng != null) return `&lat=${geo.lat}&lon=${geo.lng}`
   try {
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || ''
     if (tz.startsWith('Australia/')) return '&lat=-33.9&lon=146.0'
@@ -116,8 +149,8 @@ function photonBias(): string {
   return ''
 }
 
-async function photonSuggest(q: string): Promise<Suggestion[]> {
-  const res = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=6&lang=en${photonBias()}`)
+async function photonSuggest(q: string, geo: Geo): Promise<Suggestion[]> {
+  const res = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=6&lang=en${photonBias(geo)}`)
   if (!res.ok) return []
   const d = await res.json().catch(() => ({}))
   return (d.features || []).map((f: any) => {
@@ -151,16 +184,21 @@ export default function BusinessAutocomplete({
   const tokenRef = useRef(newToken())
   const googleOk = useRef(!!GKEY)   // once Google fails, use OpenStreetMap for this field
 
-  useEffect(() => () => { if (debRef.current) clearTimeout(debRef.current) }, [])
+  useEffect(() => { visitorGeo(); return () => { if (debRef.current) clearTimeout(debRef.current) } }, [])
 
   const search = async (q: string) => {
     const my = ++seq.current
     setBusy(true)
     let out: Suggestion[] = []
+    const geo = await visitorGeo()
     if (googleOk.current) {
-      try { out = await googleSuggest(q, tokenRef.current) } catch { googleOk.current = false }
+      try {
+        // Their own country first; only look worldwide if nothing matches there.
+        out = await googleSuggest(q, tokenRef.current, geo, true)
+        if (!out.length && geo.country) out = await googleSuggest(q, tokenRef.current, geo, false)
+      } catch { googleOk.current = false }
     }
-    if (!googleOk.current) { try { out = await photonSuggest(q) } catch { out = [] } }
+    if (!googleOk.current) { try { out = await photonSuggest(q, geo) } catch { out = [] } }
     if (my !== seq.current) return       // a newer keystroke won
     setBusy(false); setItems(out); setActive(0); setOpen(out.length > 0)
   }
