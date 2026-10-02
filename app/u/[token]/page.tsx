@@ -19,6 +19,9 @@ type Item = {
   status: Status
   url?: string
   error?: string
+  // Whether trying the same file again could succeed. A dropped connection or a
+  // server hiccup, yes; a file type this request does not take, no.
+  retryable?: boolean
 }
 
 function kindOf(type: string): Item['kind'] {
@@ -67,6 +70,11 @@ export default function UploadPage() {
   const [items, setItems] = useState<Item[]>([])
   const [dragOver, setDragOver] = useState(false)
   const [error, setError] = useState('')
+  // Set when an upload comes back saying the LINK itself is dead (expired,
+  // cancelled, invalid). That applies to every file, not just the one that
+  // tripped it, so the page switches to explaining it instead of letting the
+  // customer keep picking photos that will all fail the same way.
+  const [linkDead, setLinkDead] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const idRef = useRef(0)
 
@@ -114,10 +122,20 @@ export default function UploadPage() {
       }
       const res = await fetch('/api/media-requests/upload', { method: 'POST', body: fd })
       const d = await res.json().catch(() => ({}))
-      if (!res.ok) { patch(item.id, { status: 'error', progress: 0, error: d.error || 'Upload failed' }); return }
+      if (!res.ok) {
+        // 410 = expired or cancelled, 404 = no such link: the link is the
+        // problem, not this file.
+        if (res.status === 410 || res.status === 404) setLinkDead(d.error || 'This link can no longer be used.')
+        patch(item.id, {
+          status: 'error', progress: 0,
+          error: d.error || 'Upload failed',
+          retryable: res.status >= 500,
+        })
+        return
+      }
       patch(item.id, { status: 'done', progress: 1, url: d.url, kind: d.kind || item.kind })
     } catch {
-      patch(item.id, { status: 'error', progress: 0, error: 'Upload failed. Please try again.' })
+      patch(item.id, { status: 'error', progress: 0, error: 'Connection lost', retryable: true })
     }
   }
 
@@ -181,6 +199,7 @@ export default function UploadPage() {
 
   const expired = req?.status === 'expired'
   const cancelled = req?.status === 'cancelled'
+  const companyName = data?.company?.name || 'the business'
 
   // ── Progress summary ──────────────────────────────────────────────────────
   const total = items.length
@@ -221,8 +240,17 @@ export default function UploadPage() {
 
               {error && <div style={{ background: '#fef2f2', color: '#dc2626', borderRadius: 10, padding: '10px 14px', fontSize: 13, marginBottom: 14 }}>{error}</div>}
 
-              {/* Dropzone */}
-              {!full && (
+              {linkDead && (
+                <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 12, padding: '12px 14px', marginBottom: 14 }}>
+                  <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: '#b91c1c' }}>{linkDead}</p>
+                  <p style={{ margin: '4px 0 0', fontSize: 13, color: '#7f1d1d', lineHeight: 1.45 }}>
+                    Your files weren&apos;t sent. Please ask {companyName} to send you a new link.
+                  </p>
+                </div>
+              )}
+
+              {/* Dropzone — nothing more can go through a dead link. */}
+              {!full && !linkDead && (
                 <div
                   onClick={() => fileRef.current?.click()}
                   onDragOver={e => { e.preventDefault(); if (!dragOver) setDragOver(true) }}
@@ -304,8 +332,16 @@ export default function UploadPage() {
                       {it.status === 'error' && (
                         <div style={{ position: 'absolute', inset: 0, background: 'rgba(220,38,38,0.10)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6, padding: 6, textAlign: 'center' }}>
                           <span style={{ fontSize: 10.5, fontWeight: 700, color: '#dc2626' }}>Failed</span>
-                          <button type="button" onClick={() => uploadItem(it)}
-                            style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 7, border: `1px solid ${accent}`, background: '#fff', color: accent, cursor: 'pointer' }}>Retry</button>
+                          {/* Why — the server always said, and the tile never showed it. */}
+                          {it.error && !linkDead && (
+                            <span style={{ fontSize: 9.5, fontWeight: 600, color: '#991b1b', lineHeight: 1.25, background: 'rgba(255,255,255,0.85)', borderRadius: 5, padding: '2px 5px', maxWidth: '100%', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' } as any}>
+                              {it.error}
+                            </span>
+                          )}
+                          {it.retryable && !linkDead && (
+                            <button type="button" onClick={() => uploadItem(it)}
+                              style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 7, border: `1px solid ${accent}`, background: '#fff', color: accent, cursor: 'pointer' }}>Retry</button>
+                          )}
                         </div>
                       )}
                     </div>
