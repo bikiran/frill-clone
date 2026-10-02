@@ -64,9 +64,9 @@ const TRUST: { label: string; logo?: string; star?: boolean }[] = [
 ]
 
 const STORIES = [
-  { name: 'Sam Rivera', role: 'CEO', company: 'Roxy Aquarium', color: CORAL, photo: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&q=80&auto=format&fit=crop', quote: 'A WhatsApp message becomes a paid sale without leaving the thread.', metric: '45 min setup' },
-  { name: 'Aiko Tanaka', role: 'Product Lead', company: 'nePlay', color: BLUE, photo: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=200&q=80&auto=format&fit=crop', quote: 'One shared inbox for every channel. Our team finally moves fast.', metric: '2× replies' },
-  { name: 'Jordan Mills', role: 'Founder', company: 'Prexty', color: GREEN, photo: 'https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?w=200&q=80&auto=format&fit=crop', quote: 'We see the real revenue every conversation generates. Game changer.', metric: '+28 NPS' },
+  { name: 'Sam Rivera', role: 'CEO', company: 'Roxy Aquarium', color: CORAL, photo: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=112&q=75&auto=format&fit=crop', quote: 'A WhatsApp message becomes a paid sale without leaving the thread.', metric: '45 min setup' },
+  { name: 'Aiko Tanaka', role: 'Product Lead', company: 'nePlay', color: BLUE, photo: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=112&q=75&auto=format&fit=crop', quote: 'One shared inbox for every channel. Our team finally moves fast.', metric: '2× replies' },
+  { name: 'Jordan Mills', role: 'Founder', company: 'Prexty', color: GREEN, photo: 'https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?w=112&q=75&auto=format&fit=crop', quote: 'We see the real revenue every conversation generates. Game changer.', metric: '+28 NPS' },
 ]
 
 // ── hooks / helpers ──────────────────────────────────────────────────────────
@@ -129,7 +129,16 @@ function useCycle(len: number, ms: number) {
 }
 function RotatingWord({ words, color, ms = 2100 }: { words: string[]; color?: string; ms?: number }) {
   const i = useCycle(words.length, ms)
-  return <span key={i} style={{ color, display: 'inline-block', animation: 'wordIn 0.55s cubic-bezier(0.16,1,0.3,1)' }}>{words[i]}</span>
+  // Every word sits in the same grid cell, so the slot is always as wide as the
+  // longest word and the headline never reflows (it used to shift the whole
+  // hero each time a longer word came round — layout shift).
+  return (
+    <span style={{ display: 'inline-grid', color }}>
+      {words.map((w, j) => (
+        <span key={j === i ? `on-${i}` : j} aria-hidden={j !== i} style={{ gridArea: '1 / 1', whiteSpace: 'nowrap', visibility: j === i ? 'visible' : 'hidden', animation: j === i ? 'wordIn 0.55s cubic-bezier(0.16,1,0.3,1)' : undefined }}>{w}</span>
+      ))}
+    </span>
+  )
 }
 
 // Full-bleed stats band that auto-slides through pages of real metrics.
@@ -210,13 +219,13 @@ function SuiteIcon({ name, color }: { name: string; color: string }) {
 // is an optional real background photo (with a dark scrim for legibility);
 // falls back to the abstract colour mesh when absent.
 const SUITE: { icon: string; title: string; desc: string; cta: string; href: string; color: string; img?: string }[] = [
-  { icon: 'idea', title: 'Ideas board', desc: 'Capture feature requests and let customers upvote what matters most.', cta: 'Explore ideas', href: '/product/ideas', color: CORAL, img: '/suite/ideas.jpg' },
-  { icon: 'map', title: 'Public roadmap', desc: "Show what's planned, in progress and shipped — build trust in the open.", cta: 'See roadmap', href: '/product/roadmap', color: BLUE, img: '/suite/roadmap.jpg' },
-  { icon: 'megaphone', title: 'Announcements', desc: 'Post changelogs and auto-notify everyone who voted when their idea ships.', cta: 'See updates', href: '/product/announcements', color: GREEN, img: '/suite/announcements.jpg' },
-  { icon: 'form', title: 'Forms', desc: 'Collect leads, requests and details with branded custom forms.', cta: 'Explore forms', href: '/product', color: PURPLE, img: '/suite/forms.jpg' },
-  { icon: 'chart', title: 'Surveys', desc: 'Ask customers anything and measure sentiment over time.', cta: 'Explore surveys', href: '/product', color: CYAN, img: '/suite/surveys.jpg' },
-  { icon: 'vote', title: 'Polls & voting', desc: 'Run quick polls and let the best ideas rise to the top automatically.', cta: 'Explore polls', href: '/product', color: PINK, img: '/suite/polls.jpg' },
-  { icon: 'help', title: 'Help centre', desc: 'Self-serve articles and a knowledge base so customers find answers fast.', cta: 'Explore help', href: '/product', color: YELLOW, img: '/suite/help.jpg' },
+  { icon: 'idea', title: 'Ideas board', desc: 'Capture feature requests and let customers upvote what matters most.', cta: 'Explore ideas', href: '/product/ideas', color: CORAL, img: '/suite/ideas.webp' },
+  { icon: 'map', title: 'Public roadmap', desc: "Show what's planned, in progress and shipped — build trust in the open.", cta: 'See roadmap', href: '/product/roadmap', color: BLUE, img: '/suite/roadmap.webp' },
+  { icon: 'megaphone', title: 'Announcements', desc: 'Post changelogs and auto-notify everyone who voted when their idea ships.', cta: 'See updates', href: '/product/announcements', color: GREEN, img: '/suite/announcements.webp' },
+  { icon: 'form', title: 'Forms', desc: 'Collect leads, requests and details with branded custom forms.', cta: 'Explore forms', href: '/product', color: PURPLE, img: '/suite/forms.webp' },
+  { icon: 'chart', title: 'Surveys', desc: 'Ask customers anything and measure sentiment over time.', cta: 'Explore surveys', href: '/product', color: CYAN, img: '/suite/surveys.webp' },
+  { icon: 'vote', title: 'Polls & voting', desc: 'Run quick polls and let the best ideas rise to the top automatically.', cta: 'Explore polls', href: '/product', color: PINK, img: '/suite/polls.webp' },
+  { icon: 'help', title: 'Help centre', desc: 'Self-serve articles and a knowledge base so customers find answers fast.', cta: 'Explore help', href: '/product', color: YELLOW, img: '/suite/help.webp' },
 ]
 
 function SuiteCard({ s, i, dark, border }: { s: typeof SUITE[number]; i: number; dark: boolean; border: string }) {
@@ -234,7 +243,7 @@ function SuiteCard({ s, i, dark, border }: { s: typeof SUITE[number]; i: number;
       {/* Real background photo (when provided), colour-graded toward the card's
           accent (soft-light wash + a touch more saturation/contrast) for a
           cinematic feel, then a dark scrim so text stays legible. */}
-      {s.img && <img src={s.img} alt="" aria-hidden className="cv-suite-photo" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', filter: 'saturate(1.12) contrast(1.05) brightness(0.98)' }} />}
+      {s.img && <img src={s.img} alt="" aria-hidden loading="lazy" decoding="async" className="cv-suite-photo" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', filter: 'saturate(1.12) contrast(1.05) brightness(0.98)' }} />}
       {s.img && <div aria-hidden style={{ position: 'absolute', inset: 0, background: s.color, mixBlendMode: 'soft-light', opacity: 0.42 }} />}
       {s.img && <div aria-hidden style={{ position: 'absolute', inset: 0, background: `linear-gradient(180deg, rgba(15,17,25,0.10) 0%, rgba(15,17,25,0.52) 42%, rgba(15,17,25,0.94) 100%)` }} />}
       {/* Abstract futuristic backdrop — colour mesh + grid + glow. Kept subtle
@@ -260,7 +269,7 @@ function FeatureSuite({ dark, text, muted, cardBorder, canvas }: { dark: boolean
     <section style={{ background: canvas, padding: 'clamp(56px, 8vw, 96px) 0', overflow: 'hidden' }}>
       <div style={{ maxWidth: 1200, margin: '0 auto', padding: '0 24px', display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 20, marginBottom: 30 }}>
         <div style={{ maxWidth: 640 }}>
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 14px', borderRadius: 999, background: PURPLE, color: '#fff', fontSize: 12.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 16 }}>Beyond the inbox</span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 14px', borderRadius: 999, background: '#6646f0', color: '#fff', fontSize: 12.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 16 }}>Beyond the inbox</span>
           <h2 style={{ fontSize: 'clamp(28px, 4.4vw, 50px)', fontWeight: 900, letterSpacing: '-0.025em', lineHeight: 1.06, margin: '0 0 14px', color: text }}><BigReveal text="Everything your customers touch." /></h2>
           <p style={{ fontSize: 17, color: muted, lineHeight: 1.6, margin: 0 }}>Ideas, roadmap, announcements, forms, surveys, polls and a help centre — the whole feedback loop, connected to the inbox.</p>
         </div>
@@ -302,8 +311,10 @@ export default function LandingPage() {
   const [user, setUser] = useState<any>(null)
   const [realStats, setRealStats] = useState({ teams: 0, conversations: 0, messages: 0, contacts: 0, orders: 0, callMinutes: 0, paymentsTotal: 0 })
   const [dark, setDark] = useState(false)
-  const [scrollY, setScrollY] = useState(0)
-  const [mouse, setMouse] = useState({ x: 0, y: 0 })
+  // Scroll and pointer drive the hero's parallax through CSS variables on the
+  // page root (--sy, --mx, --my) — never React state, which re-rendered this
+  // whole page on every scroll frame and mouse move.
+  const rootRef = useRef<HTMLDivElement>(null)
   const [mobileOpen, setMobileOpen] = useState(false)
 
   useEffect(() => {
@@ -321,12 +332,21 @@ export default function LandingPage() {
       .catch(() => {})
     const { data: l } = supabase.auth.onAuthStateChange((_: any, s: any) => setUser(s?.user ?? null))
     let raf = 0
-    const onScroll = () => { if (raf) return; raf = requestAnimationFrame(() => { setScrollY(window.scrollY); raf = 0 }) }
+    const onScroll = () => { if (raf) return; raf = requestAnimationFrame(() => { rootRef.current?.style.setProperty('--sy', String(Math.min(window.scrollY, 1600))); raf = 0 }) }
     window.addEventListener('scroll', onScroll, { passive: true })
     return () => { l?.subscription?.unsubscribe(); window.removeEventListener('scroll', onScroll); if (raf) cancelAnimationFrame(raf) }
   }, [])
 
-  const onHeroMouse = (e: React.MouseEvent) => setMouse({ x: (e.clientX / window.innerWidth - 0.5), y: (e.clientY / window.innerHeight - 0.5) })
+  const mouseRaf = useRef(0)
+  const onHeroMouse = (e: React.MouseEvent) => {
+    const x = e.clientX / window.innerWidth - 0.5, y = e.clientY / window.innerHeight - 0.5
+    if (mouseRaf.current) return
+    mouseRaf.current = requestAnimationFrame(() => {
+      mouseRaf.current = 0
+      const el = rootRef.current; if (!el) return
+      el.style.setProperty('--mx', x.toFixed(3)); el.style.setProperty('--my', y.toFixed(3))
+    })
+  }
 
   const handleDashboard = async () => {
     if (!user) { window.location.href = '/signup'; return }
@@ -343,8 +363,6 @@ export default function LandingPage() {
   const muted = dark ? 'rgba(244,245,251,0.62)' : 'rgba(15,17,25,0.6)'
   const cardBg = dark ? 'rgba(255,255,255,0.045)' : '#ffffff'
   const cardBorder = dark ? 'rgba(255,255,255,0.09)' : 'rgba(15,17,25,0.09)'
-  const navScrolled = scrollY > 30
-  const navBg = navScrolled ? (dark ? 'rgba(10,11,18,0.82)' : 'rgba(255,255,255,0.85)') : 'transparent'
   const font = '-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",Inter,sans-serif'
   const gridImg = `linear-gradient(${dark ? 'rgba(255,255,255,0.04)' : 'rgba(15,17,25,0.045)'} 1px,transparent 1px),linear-gradient(90deg,${dark ? 'rgba(255,255,255,0.04)' : 'rgba(15,17,25,0.045)'} 1px,transparent 1px)`
 
@@ -359,7 +377,7 @@ export default function LandingPage() {
   const btnGhost: React.CSSProperties = { padding: '15px 26px', borderRadius: 999, border: `2px solid ${dark ? 'rgba(255,255,255,0.16)' : 'rgba(15,17,25,0.12)'}`, background: 'transparent', color: text, fontWeight: 700, fontSize: 15, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 8, cursor: 'pointer' }
 
   return (
-    <div style={{ background: bg, color: text, fontFamily: font, minHeight: '100vh', overflowX: 'hidden', transition: 'background 0.3s, color 0.3s' }}>
+    <div ref={rootRef} className="cv-root" style={{ background: bg, color: text, fontFamily: font, minHeight: '100vh', overflowX: 'hidden', transition: 'background 0.3s, color 0.3s', ['--sy' as any]: 0, ['--mx' as any]: 0, ['--my' as any]: 0 }}>
       <style>{`
         @keyframes floatY { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-14px)} }
         @keyframes marquee { from{transform:translateX(0)} to{transform:translateX(-50%)} }
@@ -378,6 +396,9 @@ export default function LandingPage() {
         .cv-sm{ display:none; }
         @media (max-width:900px){ .cv-hero{ flex-direction:column !important; align-items:stretch !important; } .cv-big-row{ grid-template-columns:1fr !important; } .cv-hero-grid{ grid-template-columns:1fr !important; } .cv-desktop{ display:none !important; } .cv-mobile-toggle{ display:flex !important; } .cv-bubbles{ display:none !important; } .cv-brand-huge{ font-size:64px !important; } .cv-trust{ position:static !important; margin-top:32px; bottom:auto !important; width:100% !important; } .cv-lg{ display:none !important; } .cv-sm{ display:inline !important; } .cv-hero-cta{ flex-wrap:nowrap !important; } .cv-hero-cta > *{ flex:1 1 0 !important; min-width:0 !important; justify-content:center !important; padding-left:14px !important; padding-right:14px !important; white-space:nowrap !important; } }
         @media (prefers-reduced-motion: reduce){ .cv-marquee-track{ animation:none } [class*="cv-float"]{ animation:none !important } }
+        /* Below the fold: let the browser skip layout/paint (and pause the CSS
+           animations) of sections until they're near the viewport. */
+        .cv-root > section:nth-of-type(n+3), .cv-root > #features > section, .cv-root > footer { content-visibility:auto; contain-intrinsic-size:auto 760px; }
       `}</style>
 
       {/* NAV */}
@@ -386,8 +407,8 @@ export default function LandingPage() {
       {/* HERO — full-bleed, grid-lined, colour blobs bleeding off both edges */}
       <section className="cv-hero" onMouseMove={onHeroMouse} style={{ position: 'relative', minHeight: '100vh', display: 'flex', alignItems: 'center', padding: 'clamp(84px, 12vw, 120px) 24px 130px', overflow: 'hidden', background: dark ? 'linear-gradient(180deg, #10111b 0%, #0a0b12 60%)' : 'linear-gradient(180deg, #fff4ef 0%, #ffffff 58%)' }}>
         <div aria-hidden style={{ position: 'absolute', inset: 0, backgroundImage: gridImg, backgroundSize: '54px 54px', WebkitMaskImage: 'radial-gradient(ellipse 80% 70% at 50% 40%, #000 40%, transparent 80%)', maskImage: 'radial-gradient(ellipse 80% 70% at 50% 40%, #000 40%, transparent 80%)' }} />
-        <div aria-hidden style={{ position: 'absolute', top: '-14%', left: '-8%', width: 460, height: 460, background: YELLOW, borderRadius: '46% 54% 60% 40% / 45% 45% 55% 55%', opacity: dark ? 0.16 : 0.5, transform: `translateY(${scrollY * 0.12}px)` }} />
-        <div aria-hidden style={{ position: 'absolute', bottom: '-12%', right: '-8%', width: 520, height: 520, background: BLUE, borderRadius: '58% 42% 45% 55% / 55% 48% 52% 45%', opacity: dark ? 0.16 : 0.14, transform: `translateY(${scrollY * -0.08}px)` }} />
+        <div aria-hidden style={{ position: 'absolute', top: '-14%', left: '-8%', width: 460, height: 460, background: YELLOW, borderRadius: '46% 54% 60% 40% / 45% 45% 55% 55%', opacity: dark ? 0.16 : 0.5, transform: 'translate3d(0, calc(var(--sy) * 0.12px), 0)' }} />
+        <div aria-hidden style={{ position: 'absolute', bottom: '-12%', right: '-8%', width: 520, height: 520, background: BLUE, borderRadius: '58% 42% 45% 55% / 55% 48% 52% 45%', opacity: dark ? 0.16 : 0.14, transform: 'translate3d(0, calc(var(--sy) * -0.08px), 0)' }} />
 
         <div style={{ position: 'relative', zIndex: 2, maxWidth: 1280, margin: '0 auto', width: '100%' }}>
           <div className="cv-hero-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 40, alignItems: 'center' }}>
@@ -411,16 +432,16 @@ export default function LandingPage() {
                 <a href="#features" className="cv-btn-ghost" style={btnGhost}><span className="cv-lg">See how it works ↓</span><span className="cv-sm">How it works ↓</span></a>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 26 }}>
-                <div style={{ display: 'flex' }}>{[CORAL, BLUE, GREEN, YELLOW, PURPLE].map((c, i) => (<div key={i} style={{ width: 34, height: 34, borderRadius: '50%', background: c, border: `2.5px solid ${bg}`, marginLeft: i ? -10 : 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800, color: '#fff' }}>{['SC', 'MW', 'PS', 'JK', 'AR'][i]}</div>))}</div>
-                <span style={{ fontSize: 13.5, color: muted }}>Loved by <strong style={{ color: text }}>{realStats.teams > 0 ? realStats.teams.toLocaleString() + '+' : 'growing'}</strong> teams · <span style={{ color: YELLOW }}>★★★★★</span></span>
+                <div aria-hidden style={{ display: 'flex' }}>{[CORAL, BLUE, GREEN, YELLOW, PURPLE].map((c, i) => (<div key={i} style={{ width: 34, height: 34, borderRadius: '50%', background: c, border: `2.5px solid ${bg}`, marginLeft: i ? -10 : 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800, color: c === BLUE ? '#fff' : INK }}>{['SC', 'MW', 'PS', 'JK', 'AR'][i]}</div>))}</div>
+                <span style={{ fontSize: 13.5, color: muted }}>Loved by <strong style={{ color: text, display: 'inline-block', minWidth: '4.2em' }}>{realStats.teams > 0 ? realStats.teams.toLocaleString() + '+' : 'growing'}</strong> teams · <span style={{ color: YELLOW }}>★★★★★</span></span>
               </div>
             </div>
 
             {/* Right: product demo + opaque bubbles kept to this side */}
-            <div style={{ position: 'relative', transform: `translateY(${scrollY * -0.04}px)` }}>
+            <div style={{ position: 'relative', transform: 'translate3d(0, calc(var(--sy) * -0.04px), 0)' }}>
               <div className="cv-bubbles" aria-hidden style={{ position: 'absolute', inset: '-8% -4%', zIndex: 3, pointerEvents: 'none' }}>
                 {BUBBLES.map((b, i) => (
-                  <div key={i} className="cv-float" style={{ position: 'absolute', left: b.x, top: b.y, transform: `translate(${mouse.x * 34 * b.depth}px, ${mouse.y * 34 * b.depth}px)`, transition: 'transform 0.2s ease-out' }}>
+                  <div key={i} className="cv-float" style={{ position: 'absolute', left: b.x, top: b.y, transform: `translate3d(calc(var(--mx) * ${34 * b.depth}px), calc(var(--my) * ${34 * b.depth}px), 0)`, transition: 'transform 0.2s ease-out' }}>
                     <div style={{ animation: `floatY ${5 + i * 0.6}s ease-in-out ${b.delay}s infinite` }}>
                       <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 15px', borderRadius: '16px 16px 16px 4px', background: dark ? '#171826' : '#fff', border: `1px solid ${cardBorder}`, boxShadow: '0 16px 40px rgba(15,17,25,0.16)', fontSize: 13.5, fontWeight: 700, color: text, whiteSpace: 'nowrap' }}>
                         <span style={{ width: 9, height: 9, borderRadius: '50%', background: b.color, flexShrink: 0 }} />{b.text}
@@ -431,7 +452,7 @@ export default function LandingPage() {
               </div>
               <div aria-hidden style={{ position: 'absolute', inset: -22, borderRadius: 40, background: `linear-gradient(135deg, ${CORAL}, ${PINK} 55%, ${PURPLE})`, opacity: dark ? 0.42 : 0.24, filter: 'blur(30px)' }} />
               {/* Sleek device: titanium bezel wrapping the live inbox window */}
-              <div style={{ position: 'relative', borderRadius: 28, padding: 8, background: 'linear-gradient(150deg, #34363f, #0b0c12 62%)', boxShadow: '0 50px 120px rgba(15,17,25,0.34), 0 0 0 1px rgba(255,255,255,0.06) inset', transform: `perspective(1600px) rotateY(${-2 + mouse.x * -3}deg) rotateX(${1 + mouse.y * 2}deg) translate(${mouse.x * -8}px, ${mouse.y * -8}px)`, transition: 'transform 0.3s ease-out' }}>
+              <div style={{ position: 'relative', borderRadius: 28, padding: 8, background: 'linear-gradient(150deg, #34363f, #0b0c12 62%)', boxShadow: '0 50px 120px rgba(15,17,25,0.34), 0 0 0 1px rgba(255,255,255,0.06) inset', transform: 'perspective(1600px) rotateY(calc(-2deg + var(--mx) * -3deg)) rotateX(calc(1deg + var(--my) * 2deg)) translate(calc(var(--mx) * -8px), calc(var(--my) * -8px))', transition: 'transform 0.3s ease-out' }}>
                 <div style={{ position: 'relative', borderRadius: 21, overflow: 'hidden', boxShadow: '0 0 0 1px rgba(0,0,0,0.4)' }}>
                   {/* subtle screen sheen */}
                   <div aria-hidden style={{ position: 'absolute', inset: 0, zIndex: 4, pointerEvents: 'none', background: 'linear-gradient(120deg, rgba(255,255,255,0.14), transparent 30%)' }} />
@@ -450,7 +471,7 @@ export default function LandingPage() {
       <section style={{ padding: '30px 0 34px', borderTop: `1px solid ${cardBorder}`, borderBottom: `1px solid ${cardBorder}`, background: canvas, overflow: 'hidden' }}>
         <p style={{ textAlign: 'center', fontSize: 12.5, fontWeight: 800, letterSpacing: '0.14em', textTransform: 'uppercase', color: muted, margin: '0 0 22px' }}>Connects every channel &amp; tool you already use</p>
         <div style={{ position: 'relative', WebkitMaskImage: 'linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent)', maskImage: 'linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent)' }}>
-          <div className="cv-marquee-track">{[...BRANDS, ...BRANDS].map((b, i) => (<div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0 30px', flexShrink: 0 }}><img src={b.logo} alt={b.name} style={{ width: 24, height: 24, opacity: dark ? 0.85 : 0.7, filter: dark ? 'invert(1)' : 'none' }} /><span style={{ fontSize: 17, fontWeight: 800, color: muted, whiteSpace: 'nowrap' }}>{b.name}</span></div>))}</div>
+          <div className="cv-marquee-track">{[...BRANDS, ...BRANDS].map((b, i) => (<div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0 30px', flexShrink: 0 }}><img src={b.logo} alt="" loading="lazy" decoding="async" width={24} height={24} style={{ width: 24, height: 24, opacity: dark ? 0.85 : 0.7, filter: dark ? 'invert(1)' : 'none' }} /><span style={{ fontSize: 17, fontWeight: 800, color: muted, whiteSpace: 'nowrap' }}>{b.name}</span></div>))}</div>
         </div>
       </section>
 
@@ -462,7 +483,7 @@ export default function LandingPage() {
         <div style={{ position: 'relative', maxWidth: 1100, margin: '0 auto', textAlign: 'center' }}>
           <Reveal>
             <div style={{ display: 'inline-flex', alignItems: 'center', gap: 14, marginBottom: 22 }}>
-              <img src="/icon-512.png" alt="Colvy" style={{ width: 'clamp(56px,8vw,88px)', height: 'clamp(56px,8vw,88px)', borderRadius: 'clamp(16px,2.4vw,24px)', boxShadow: `0 20px 50px rgba(0,0,0,0.5)` }} />
+              <img src="/icon-192.png" alt="Colvy" loading="lazy" decoding="async" width={88} height={88} style={{ width: 'clamp(56px,8vw,88px)', height: 'clamp(56px,8vw,88px)', borderRadius: 'clamp(16px,2.4vw,24px)', boxShadow: `0 20px 50px rgba(0,0,0,0.5)` }} />
               <span className="cv-brand-huge" style={{ fontWeight: 900, fontSize: 'clamp(56px, 11vw, 132px)', letterSpacing: '-0.04em', lineHeight: 1 }}>Colvy</span>
             </div>
             <h2 style={{ fontSize: 'clamp(26px, 4.4vw, 52px)', fontWeight: 900, letterSpacing: '-0.02em', lineHeight: 1.08, margin: '0 auto', maxWidth: 900 }}>
@@ -537,7 +558,7 @@ export default function LandingPage() {
         <div style={{ maxWidth: 1160, margin: '0 auto' }}>
           <Reveal><h2 style={{ textAlign: 'center', fontSize: 'clamp(28px, 4.4vw, 48px)', fontWeight: 900, letterSpacing: '-0.025em', margin: '0 0 48px', color: text }}>Teams that switched, <span style={{ color: CORAL }}>and stayed</span></h2></Reveal>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 20 }}>
-            {STORIES.map((t, i) => (<Reveal key={t.name} delay={i * 0.06}><div className="cv-card" style={{ padding: 28, borderRadius: 22, background: cardBg, border: `1px solid ${cardBorder}`, height: '100%', display: 'flex', flexDirection: 'column' }}><div style={{ display: 'flex', gap: 3, marginBottom: 14, color: YELLOW }}>{[...Array(5)].map((_, j) => <svg key={j} width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg>)}</div><p style={{ fontSize: 16, lineHeight: 1.65, color: text, fontWeight: 600, margin: '0 0 22px', flex: 1 }}>&ldquo;{t.quote}&rdquo;</p><div style={{ display: 'flex', alignItems: 'center', gap: 12, justifyContent: 'space-between' }}><div style={{ display: 'flex', alignItems: 'center', gap: 12 }}><img src={t.photo} alt={t.name} style={{ width: 46, height: 46, borderRadius: '50%', objectFit: 'cover' }} /><div><p style={{ margin: 0, fontSize: 14.5, fontWeight: 800, color: text }}>{t.name}</p><p style={{ margin: 0, fontSize: 12.5, color: muted }}>{t.role} · {t.company}</p></div></div><span style={{ padding: '5px 11px', borderRadius: 999, background: t.color + '1a', color: t.color, fontSize: 12, fontWeight: 800 }}>{t.metric}</span></div></div></Reveal>))}
+            {STORIES.map((t, i) => (<Reveal key={t.name} delay={i * 0.06}><div className="cv-card" style={{ padding: 28, borderRadius: 22, background: cardBg, border: `1px solid ${cardBorder}`, height: '100%', display: 'flex', flexDirection: 'column' }}><div style={{ display: 'flex', gap: 3, marginBottom: 14, color: YELLOW }}>{[...Array(5)].map((_, j) => <svg key={j} width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg>)}</div><p style={{ fontSize: 16, lineHeight: 1.65, color: text, fontWeight: 600, margin: '0 0 22px', flex: 1 }}>&ldquo;{t.quote}&rdquo;</p><div style={{ display: 'flex', alignItems: 'center', gap: 12, justifyContent: 'space-between' }}><div style={{ display: 'flex', alignItems: 'center', gap: 12 }}><img src={t.photo} alt="" loading="lazy" decoding="async" width={46} height={46} style={{ width: 46, height: 46, borderRadius: '50%', objectFit: 'cover' }} /><div><p style={{ margin: 0, fontSize: 14.5, fontWeight: 800, color: text }}>{t.name}</p><p style={{ margin: 0, fontSize: 12.5, color: muted }}>{t.role} · {t.company}</p></div></div><span style={{ padding: '5px 11px', borderRadius: 999, background: t.color + '1a', color: t.color, fontSize: 12, fontWeight: 800 }}>{t.metric}</span></div></div></Reveal>))}
           </div>
         </div>
       </section>
@@ -627,7 +648,7 @@ function HowItWorks({ dark, cardBorder }: { dark: boolean; cardBorder: string })
                     <span style={{ display: 'grid', gridTemplateRows: on ? '1fr' : '0fr', transition: 'grid-template-rows 0.3s ease', paddingLeft: 18 }}>
                       <span style={{ overflow: 'hidden' }}>
                         <span style={{ display: 'block', fontSize: 14, color: 'rgba(15,17,25,0.6)', lineHeight: 1.5, margin: '6px 0 8px' }}>{s.desc}</span>
-                        <a href={s.href} onClick={e => e.stopPropagation()} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: BLUE, textDecoration: 'none' }}>
+                        <a href={s.href} onClick={e => e.stopPropagation()} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, minHeight: 28, padding: '4px 0', fontSize: 12.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: BLUE, textDecoration: 'none' }}>
                           Check it out
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" /></svg>
                         </a>
@@ -681,17 +702,17 @@ function PhoneMock({ step, activeKey, border }: { step: Step; activeKey: number;
             <div aria-hidden style={{ position: 'absolute', top: 9, left: '50%', transform: 'translateX(-50%)', width: 86, height: 26, borderRadius: 999, background: '#05060a', zIndex: 3 }} />
             {/* Colvy app bar (branding) */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '40px 15px 10px', background: '#fff' }}>
-              <img src="/icon-512.png" alt="Colvy" width={24} height={24} style={{ borderRadius: 7, display: 'block', flexShrink: 0 }} />
+              <img src="/icon-192.png" alt="" width={24} height={24} style={{ borderRadius: 7, display: 'block', flexShrink: 0 }} />
               <span style={{ fontSize: 14.5, fontWeight: 900, color: INK, letterSpacing: '-0.02em' }}>Colvy</span>
-              <span style={{ fontSize: 11, color: 'rgba(15,17,25,0.4)', fontWeight: 600 }}>Inbox</span>
-              <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10.5, fontWeight: 800, color: '#16a34a', background: '#dcfce7', padding: '3px 9px', borderRadius: 999 }}><span style={{ width: 6, height: 6, borderRadius: '50%', background: '#16a34a' }} />Live</span>
+              <span style={{ fontSize: 11, color: 'rgba(15,17,25,0.62)', fontWeight: 600 }}>Inbox</span>
+              <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10.5, fontWeight: 800, color: '#166534', background: '#dcfce7', padding: '3px 9px', borderRadius: 999 }}><span style={{ width: 6, height: 6, borderRadius: '50%', background: '#16a34a' }} />Live</span>
             </div>
             {/* contact row */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 15px', background: '#fff', borderBottom: `1px solid ${border}` }}>
               <span style={{ width: 32, height: 32, borderRadius: '50%', background: `linear-gradient(135deg, ${CORAL}, ${PURPLE})`, color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 12 }}>SR</span>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <p style={{ margin: 0, fontSize: 13.5, fontWeight: 800, color: INK }}>{step.who}</p>
-                <p style={{ margin: 0, fontSize: 11, color: 'rgba(15,17,25,0.5)', display: 'flex', alignItems: 'center', gap: 5 }}><span style={{ width: 7, height: 7, borderRadius: '50%', background: step.color }} />via {step.channel}</p>
+                <p style={{ margin: 0, fontSize: 11, color: 'rgba(15,17,25,0.64)', display: 'flex', alignItems: 'center', gap: 5 }}><span style={{ width: 7, height: 7, borderRadius: '50%', background: step.color }} />via {step.channel}</p>
               </div>
             </div>
             {/* bubbles (re-mount on step change for the entry animation) */}
@@ -700,14 +721,14 @@ function PhoneMock({ step, activeKey, border }: { step: Step; activeKey: number;
                 const anim = { animation: `popIn 0.45s cubic-bezier(0.16,1,0.3,1) ${i * 0.18}s both` }
                 if (b.kind === 'system') return (<div key={i} style={{ ...anim, alignSelf: 'center', maxWidth: '92%', textAlign: 'center', fontSize: 11.5, fontWeight: 700, color: 'rgba(15,17,25,0.55)', background: '#eef1f6', padding: '7px 12px', borderRadius: 12 }}>{b.text}</div>)
                 if (b.kind === 'pill') return (<div key={i} style={{ ...anim, alignSelf: 'flex-end', display: 'inline-flex', alignItems: 'center', gap: 7, background: GREEN, color: '#fff', fontSize: 12, fontWeight: 800, padding: '9px 13px', borderRadius: 999 }}>{b.text}</div>)
-                if (b.kind === 'image') return (<div key={i} style={{ ...anim, alignSelf: 'flex-end', width: 140, height: 98, borderRadius: '14px 14px 4px 14px', overflow: 'hidden', border: `1px solid ${border}` }}><img src="https://images.unsplash.com/photo-1520302630591-fd1c66edc19d?w=400&q=80&auto=format&fit=crop" alt="Reef tank" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /></div>)
+                if (b.kind === 'image') return (<div key={i} style={{ ...anim, alignSelf: 'flex-end', width: 140, height: 98, borderRadius: '14px 14px 4px 14px', overflow: 'hidden', border: `1px solid ${border}` }}><img src="https://images.unsplash.com/photo-1520302630591-fd1c66edc19d?w=300&q=75&auto=format&fit=crop" alt="Reef tank" loading="lazy" decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /></div>)
                 const me = b.side === 'me'
                 return (<div key={i} style={{ ...anim, alignSelf: me ? 'flex-end' : 'flex-start', maxWidth: '82%', padding: '10px 13px', borderRadius: me ? '15px 15px 4px 15px' : '15px 15px 15px 4px', background: me ? CORAL : '#fff', color: me ? '#fff' : INK, border: me ? 'none' : `1px solid ${border}`, fontSize: 13, fontWeight: 600, lineHeight: 1.45, boxShadow: me ? 'none' : '0 4px 14px rgba(15,17,25,0.05)' }}>{b.text}</div>)
               })}
             </div>
             {/* composer */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 13px 14px', background: '#fff', borderTop: `1px solid ${border}` }}>
-              <span style={{ flex: 1, fontSize: 12, color: 'rgba(15,17,25,0.4)', background: '#f1f3f8', padding: '9px 12px', borderRadius: 999 }}>Reply to Sam…</span>
+              <span style={{ flex: 1, fontSize: 12, color: 'rgba(15,17,25,0.6)', background: '#f1f3f8', padding: '9px 12px', borderRadius: 999 }}>Reply to Sam…</span>
               <span style={{ width: 30, height: 30, borderRadius: '50%', background: CORAL, color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg></span>
             </div>
           </div>
@@ -752,7 +773,7 @@ function ParallaxBanner() {
     on(); window.addEventListener('scroll', on, { passive: true }); window.addEventListener('resize', on)
     return () => { window.removeEventListener('scroll', on); window.removeEventListener('resize', on); if (raf) cancelAnimationFrame(raf) }
   }, [])
-  const IMG = '/hero/landing-omni.jpg'
+  const IMG = '/hero/landing-omni.webp'
   return (
     <section ref={ref} style={{ position: 'relative', minHeight: 'clamp(400px, 66vh, 660px)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
       <div aria-hidden style={{ position: 'absolute', left: 0, right: 0, top: '-16%', bottom: '-16%', backgroundImage: `url(${IMG})`, backgroundSize: 'cover', backgroundPosition: 'center', transform: `translateY(${off}px) scale(1.12)`, willChange: 'transform' }} />
