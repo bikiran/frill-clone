@@ -58,7 +58,7 @@ export async function seedCompanyData(companyId: string, companyName: string) {
         created_by_name: 'User',
       },
       {
-        company_id: companyId, title: `Welcome to ${n}! 👋`,
+        company_id: companyId, title: `Welcome to ${n}!`,
         description: `We're excited to hear your ideas. Share your suggestions and vote on what matters most to you.`,
         votes: 1, likes: 0, status: 'planned',
         topic_id: tIds['welcome'] || null, impact: 2, effort: 1, confidence: 5, reach: 3,

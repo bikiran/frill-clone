@@ -35,6 +35,20 @@ const DEFAULT_TOPICS = [
 
 type SubPanel = null | 'status' | 'priority' | 'visibility'
 
+// Close a popover on a click/tap outside it, or Esc (without also closing the idea).
+function useDismiss(open: boolean, close: () => void, ref: React.RefObject<HTMLElement | null>) {
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: PointerEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) close() }
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); close() } }
+    document.addEventListener('pointerdown', onDown, true)
+    document.addEventListener('keydown', onKey, true)
+    return () => { document.removeEventListener('pointerdown', onDown, true); document.removeEventListener('keydown', onKey, true) }
+  }, [open, close, ref])
+}
+
+type Assignee = { userId: string; name: string; email: string | null; avatar: string | null }
+
 export default function IdeaDetailModal({ idea, onClose, showActivity = true }: { idea: any; onClose: () => void; showActivity?: boolean }) {
   const { addToast } = useToast()
   
@@ -344,6 +358,64 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
   const [voteAnimating, setVoteAnimating] = useState(false)
   const [showAssignDropdown, setShowAssignDropdown] = useState(false)
   const [showMergeDropdown, setShowMergeDropdown] = useState(false)
+  const [assignee, setAssignee] = useState<{ id: string | null; name: string | null }>({ id: idea.assigned_to_id || null, name: idea.assigned_to_name || null })
+  const [teamPeople, setTeamPeople] = useState<Assignee[] | null>(null)
+  const statusMenuRef = useRef<HTMLDivElement>(null)
+  const assignRef = useRef<HTMLDivElement>(null)
+  const mergeRef = useRef<HTMLDivElement>(null)
+  const closeStatusMenu = useRef(() => setShowBodyStatusMenu(false)).current
+  const closeAssign = useRef(() => setShowAssignDropdown(false)).current
+  const closeMerge = useRef(() => setShowMergeDropdown(false)).current
+  useDismiss(showBodyStatusMenu, closeStatusMenu, statusMenuRef)
+  useDismiss(showAssignDropdown, closeAssign, assignRef)
+  useDismiss(showMergeDropdown, closeMerge, mergeRef)
+
+  // The company's real people: the owner plus team members who've joined.
+  const loadTeamPeople = async () => {
+    if (teamPeople || !idea.company_id) return
+    try {
+      const [{ data: co }, { data: tm }] = await Promise.all([
+        (supabase as any).from('companies').select('owner_id').eq('id', idea.company_id).maybeSingle(),
+        (supabase as any).from('team_members').select('user_id, email, name, avatar_url, status').eq('company_id', idea.company_id),
+      ])
+      const rows: any[] = (tm || []).filter((m: any) => m.user_id && m.status !== 'removed' && m.status !== 'invited')
+      const ids = Array.from(new Set([co?.owner_id, ...rows.map(m => m.user_id)].filter(Boolean))) as string[]
+      let names: Record<string, { name: string | null; avatar_url: string | null; email: string | null }> = {}
+      if (ids.length) {
+        try {
+          const res = await fetch('/api/team/names', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userIds: ids }) })
+          names = (await res.json()).names || {}
+        } catch { /* fall back to email */ }
+      }
+      setTeamPeople(ids.map(id => {
+        const m = rows.find(r => r.user_id === id)
+        const email = m?.email || names[id]?.email || null
+        return { userId: id, name: m?.name || names[id]?.name || (email ? email.split('@')[0] : 'Team member'), email, avatar: m?.avatar_url || names[id]?.avatar_url || null }
+      }))
+    } catch { setTeamPeople([]) }
+  }
+
+  const assignTo = async (p: Assignee | null) => {
+    setShowAssignDropdown(false)
+    const prev = assignee
+    setAssignee({ id: p?.userId || null, name: p?.name || null })
+    const { error } = await (supabase as any).from('ideas').update({ assigned_to_id: p?.userId || null, assigned_to_name: p?.name || null }).eq('id', idea.id)
+    if (error) {
+      setAssignee(prev)
+      addToast(/assigned_to/.test(error.message || '') ? 'Assigning needs the latest database update (COLVY_V325). Run it in Supabase, then try again.' : 'Couldn’t assign: ' + error.message, 'error')
+      return
+    }
+    idea.assigned_to_id = p?.userId || null
+    idea.assigned_to_name = p?.name || null
+    addToast(p ? `Assigned to ${p.name}` : 'Unassigned', 'success')
+    if (p && user && p.userId !== user.id) {
+      try {
+        const actorName = user.user_metadata?.display_name || user.email?.split('@')[0] || 'Someone'
+        const { createNotification } = await import('@/lib/notifications')
+        await createNotification(p.userId, 'assigned', idea.id, `${actorName} assigned "${idea.title}" to you`, actorName, user.email)
+      } catch { /* notification is best-effort */ }
+    }
+  }
   const [mergeSearchQuery, setMergeSearchQuery] = useState('')
   const [allIdeas, setAllIdeas] = useState<any[]>([])
 
@@ -658,25 +730,43 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
                 <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'var(--slate)' }}>Actions</p>
                 <div className="space-y-1">
                   {/* Assign */}
-                  <div className="relative">
+                  <div className="relative" ref={assignRef}>
                     <button 
-                      onClick={() => { setShowAssignDropdown(!showAssignDropdown); setShowMergeDropdown(false) }}
+                      onClick={() => { setShowAssignDropdown(!showAssignDropdown); setShowMergeDropdown(false); if (!showAssignDropdown) loadTeamPeople() }}
                       className="w-full flex items-center gap-3 p-2.5 rounded-lg border hover:bg-white transition-smooth cursor-pointer text-left" 
-                      style={{ borderColor: 'var(--border)' }}>
-                      <AssignIcon size={16} color="var(--slate)" />
-                      <span className="text-xs font-medium" style={{ color: 'var(--ink)' }}>Assign</span>
+                      style={{ borderColor: assignee.id ? 'var(--coral)' : 'var(--border)', background: assignee.id ? 'var(--peach)' : 'transparent' }}>
+                      <AssignIcon size={16} color={assignee.id ? 'var(--coral)' : 'var(--slate)'} />
+                      <span className="text-xs font-medium truncate" style={{ color: assignee.id ? 'var(--coral)' : 'var(--ink)' }}>
+                        {assignee.id ? `Assigned to ${assignee.name || 'team member'}` : 'Assign'}
+                      </span>
                     </button>
                     {showAssignDropdown && (
-                      <div className="absolute bottom-full left-0 mb-2 w-full bg-white rounded-lg shadow-2xl border z-40 animate-fade-in-up" style={{ borderColor: 'var(--border)' }}>
+                      <div className="absolute bottom-full left-0 mb-2 w-full bg-white rounded-lg shadow-2xl border z-40 animate-fade-in-up max-h-72 overflow-y-auto" style={{ borderColor: 'var(--border)' }}>
                         <div className="p-2 text-xs font-semibold" style={{ color: 'var(--slate)' }}>Assign to team member</div>
-                        {['Admin', 'Team Member 1', 'Team Member 2'].map(name => (
-                          <button key={name} onClick={() => { alert(`Assigned to ${name}`); setShowAssignDropdown(false) }} className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 transition-smooth cursor-pointer" style={{ color: 'var(--ink)' }}>
-                            <div className="flex items-center gap-2">
-                              <span className="w-6 h-6 rounded-full text-white text-xs font-bold flex items-center justify-center" style={{ background: 'var(--coral)' }}>{name[0]}</span>
-                              {name}
-                            </div>
-                          </button>
-                        ))}
+                        {teamPeople === null && <p className="px-3 pb-3 text-xs" style={{ color: 'var(--slate)' }}>Loading team…</p>}
+                        {teamPeople !== null && teamPeople.length === 0 && (
+                          <p className="px-3 pb-3 text-xs" style={{ color: 'var(--slate)' }}>No team members yet. Invite them from Team settings.</p>
+                        )}
+                        {(teamPeople || []).map(p => {
+                          const on = assignee.id === p.userId
+                          return (
+                            <button key={p.userId} onClick={() => assignTo(on ? null : p)} className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 transition-smooth cursor-pointer" style={{ color: 'var(--ink)' }}>
+                              <div className="flex items-center gap-2">
+                                {p.avatar
+                                  ? <img src={p.avatar} alt="" className="w-6 h-6 rounded-full object-cover shrink-0" />
+                                  : <span className="w-6 h-6 rounded-full text-white text-xs font-bold flex items-center justify-center shrink-0" style={{ background: 'var(--coral)' }}>{(p.name || '?')[0].toUpperCase()}</span>}
+                                <span className="min-w-0 flex-1">
+                                  <span className="block truncate">{p.name}{user?.id === p.userId ? ' (you)' : ''}</span>
+                                  {p.email && p.email.split('@')[0] !== p.name && <span className="block truncate text-xs" style={{ color: 'var(--slate)' }}>{p.email}</span>}
+                                </span>
+                                {on && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--coral)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>}
+                              </div>
+                            </button>
+                          )
+                        })}
+                        {assignee.id && (
+                          <button onClick={() => assignTo(null)} className="w-full px-3 py-2 text-left text-xs border-t hover:bg-gray-50 transition-smooth cursor-pointer" style={{ color: 'var(--slate)', borderColor: 'var(--border)' }}>Unassign</button>
+                        )}
                       </div>
                     )}
                   </div>
@@ -699,7 +789,7 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
                   </button>
                   
                   {/* Merge */}
-                  <div className="relative">
+                  <div className="relative" ref={mergeRef}>
                     <button 
                       onClick={() => { setShowMergeDropdown(!showMergeDropdown); setShowAssignDropdown(false); if (!showMergeDropdown) fetchAllIdeas() }}
                       className="w-full flex items-center gap-3 p-2.5 rounded-lg border hover:bg-white transition-smooth cursor-pointer text-left" 
@@ -1075,7 +1165,7 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
           </div>
 
           {coverImageUrl && (
-            <div className="px-6 md:px-10 mb-6">
+            <div className="px-6 md:px-10 pt-6 mb-6">
               <div 
                 className="relative group cursor-zoom-in"
                 onClick={() => setLightboxUrl(coverImageUrl)}>
@@ -1096,7 +1186,7 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
             </div>
           )}
 
-          <div className="max-w-3xl mx-auto px-6 md:px-10 pb-10">
+          <div className={`max-w-3xl mx-auto px-6 md:px-10 pb-10 ${coverImageUrl ? '' : 'pt-7'}`}>
             {/* Title row with vote */}
             <div className="flex items-start gap-4 mb-6">
               <button
@@ -1272,7 +1362,7 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
                   </span>
                 ))}
                 {/* Status pill — clickable dropdown for admins/editors, read-only for everyone else */}
-                <div style={{ position: 'relative', display: 'inline-block' }}>
+                <div ref={statusMenuRef} style={{ position: 'relative', display: 'inline-block' }}>
                   <button
                     type="button"
                     onClick={() => { if (canEditStatus) setShowBodyStatusMenu(v => !v) }}
