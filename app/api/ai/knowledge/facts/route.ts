@@ -10,7 +10,7 @@ const admin = () => createClient(
   { auth: { autoRefreshToken: false, persistSession: false } }
 )
 
-// POST { companyId, id?, question, answer } → create or update a fact.
+// POST { companyId, id?, question, answer, unansweredId? } → create or update a fact.
 export async function POST(req: NextRequest) {
   try {
     const db = admin()
@@ -27,6 +27,10 @@ export async function POST(req: NextRequest) {
       : db.from('ai_facts').insert({ company_id: companyId, question, answer, created_by: access.userId || null })
     const { data, error } = await q.select('id, question, answer, updated_at').maybeSingle()
     if (error) return NextResponse.json({ error: /ai_facts/.test(error.message) ? 'Run the COLVY_V326 database update in Supabase first.' : error.message }, { status: 500 })
+    // Answering an unanswered question closes it.
+    if (b.unansweredId && data?.id) {
+      try { await db.from('ai_unanswered').update({ status: 'answered', fact_id: data.id }).eq('id', String(b.unansweredId)).eq('company_id', companyId) } catch {}
+    }
     return NextResponse.json({ ok: true, fact: data })
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || 'Failed' }, { status: 500 })

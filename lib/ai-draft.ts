@@ -14,6 +14,7 @@
 
 import Anthropic from '@anthropic-ai/sdk'
 import { retrieve } from '@/lib/ai-agent'
+import { logUnanswered } from '@/lib/ai-unanswered'
 
 const MODEL = 'claude-opus-5-5'
 
@@ -210,6 +211,11 @@ Return JSON with: "reply" (the draft), "used" (the IDs of the sources you relied
     const draft = String(parsed.reply || '').trim()
     if (!draft) return { ok: false, error: 'The AI couldn’t come up with a draft for this one.' }
     const used = new Set((parsed.used || []).map(String))
+    // Nothing to go on → the owner's unanswered-questions list.
+    if (!used.size) {
+      const lastCustomer = [...turns].reverse().find(t => t.who === 'Customer')?.text || ''
+      await logUnanswered(db, companyId, lastCustomer, { source: 'ai_draft', conversationId: opts.conversationId || null })
+    }
     try {
       await db.from('ai_actions').insert({
         company_id: companyId, conversation_id: opts.conversationId || null, action: 'draft', allowed: true,

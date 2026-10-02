@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { searchKnowledge } from '@/lib/ai-knowledge'
+import { logUnanswered } from '@/lib/ai-unanswered'
 import { WooCommerceService } from '@/lib/woocommerce-service'
 import { trackLinksInText } from '@/lib/link-tracking'
 
@@ -445,7 +446,10 @@ export async function runAiAgent(opts: {
     description: 'Hand the conversation to a person. Use this whenever you are unsure, the customer is upset, they ask for a human, or the question needs judgement you do not have.',
     input_schema: {
       type: 'object',
-      properties: { reason: { type: 'string' } },
+      properties: {
+        reason: { type: 'string' },
+        knowledge_gap: { type: 'boolean', description: "true when you're handing over because the business's material doesn't answer the customer's question" },
+      },
       required: ['reason'],
     },
   })
@@ -566,6 +570,8 @@ WHAT YOU CANNOT DO
       else if (toolUse.name === 'hand_to_human') {
         await log(db, { company_id: companyId, conversation_id: opts.conversationId, contact_id: contact?.id, action: 'handoff', payload: toolUse.input, allowed: true })
         handoff = true
+        // A gap in the knowledge library → the owner's unanswered-questions list.
+        if ((toolUse.input as any)?.knowledge_gap || !knowledge.length) await logUnanswered(db, companyId, last.content || '', { source: 'ai_reply', conversationId: opts.conversationId })
         text = text || `Let me get one of the team to help you with this — they'll be with you shortly.`
       }
 
