@@ -204,6 +204,8 @@ export default function IntegrationsPage() {
   const [saved, setSaved] = useState<string | null>(null)
   const [catFilter, setCatFilter] = useState('All')
   const [loading, setLoading] = useState(true)
+  const [companyId, setCompanyId] = useState<string | null>(null)
+  const [saveError, setSaveError] = useState<string | null>(null)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }: any) => {
@@ -231,6 +233,11 @@ export default function IntegrationsPage() {
 
   const isOAuth = (intId: string) => OAUTH_INTEGRATIONS.includes(intId)
 
+  const authHeaders = async (): Promise<Record<string, string>> => {
+    const { data: { session } } = await supabase.auth.getSession()
+    return session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}
+  }
+
   const loadIntegrations = async () => {
     try {
       // Which company: ?slug= when given, else the workspace you're signed in
@@ -252,11 +259,18 @@ export default function IntegrationsPage() {
         }
       }
 
-      // Load standard integrations
-      const { data } = await (supabase as any).from('integration_configs').select('*')
+      setCompanyId(cid)
+      // This business's own settings for the general integrations (server-only table).
       const cfgs: Record<string, any> = {}
       const enb: Record<string, boolean> = {}
       const evts: Record<string, string[]> = {}
+      let data: any[] = []
+      if (cid) {
+        try {
+          const r = await fetch(`/api/integrations/configs?companyId=${cid}`, { headers: await authHeaders() })
+          data = (await r.json())?.configs || []
+        } catch {}
+      }
       ;(data || []).forEach((row: any) => {
         cfgs[row.integration_id] = row.config || {}
         enb[row.integration_id] = row.enabled || false
@@ -297,19 +311,20 @@ export default function IntegrationsPage() {
   }
 
   const saveIntegration = async (id: string) => {
-    setSaving(id)
+    if (!companyId) return
+    setSaving(id); setSaveError(null)
     try {
-      const payload = {
-        integration_id: id,
-        config: configs[id] || {},
-        enabled: enabled[id] || false,
-        events: events[id] || [],
-      }
-      await (supabase as any).from('integration_configs').upsert(payload, { onConflict: 'integration_id' })
+      const res = await fetch('/api/integrations/configs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
+        body: JSON.stringify({ companyId, integrationId: id, config: configs[id] || {}, enabled: enabled[id] || false, events: events[id] || [] }),
+      })
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(d.error || 'Could not save the settings.')
       setSaved(id)
       setTimeout(() => setSaved(null), 2000)
     } catch (err: any) {
-      alert('Save failed: ' + err.message)
+      setSaveError(err?.message || 'Could not save the settings.')
     }
     setSaving(null)
   }
@@ -353,7 +368,7 @@ export default function IntegrationsPage() {
               if ((intg as any).isDedicated) {
                 router.push(`/admin/integrations/${intg.id}?slug=${slug}`)
               } else {
-                setSelected(intg.id)
+                setSelected(intg.id); setSaveError(null)
               }
             }}
               className="w-full text-left px-3 py-2.5 rounded-lg transition-all hover:bg-gray-50 cursor-pointer mb-0.5"
@@ -396,7 +411,7 @@ export default function IntegrationsPage() {
                   if ((intg as any).isDedicated) {
                     router.push(`/admin/integrations/${intg.id}?slug=${slug}`)
                   } else {
-                    setSelected(intg.id)
+                    setSelected(intg.id); setSaveError(null)
                   }
                 }}
                   className="bg-white rounded-2xl border p-5 text-left hover:shadow-md transition-all cursor-pointer group relative flex flex-col"
@@ -514,6 +529,7 @@ export default function IntegrationsPage() {
               style={{ background: 'var(--coral)' }}>
               {saving === activeIntegration.id ? 'Saving...' : saved === activeIntegration.id ? 'Saved' : 'Save Integration'}
             </button>
+            {saveError && <p className="text-sm mt-3" role="alert" style={{ color: '#b42318' }}>{saveError}</p>}
           </div>
         ) : null}
       </main>
