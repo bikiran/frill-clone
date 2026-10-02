@@ -808,6 +808,14 @@ export default function InboxPage() {
   // On phones we show one pane at a time: the conversation list, the open
   // thread, or the contact panel. Desktop shows all three side by side.
   const [mobilePane, setMobilePane] = useState<'list' | 'thread' | 'contact'>('list')
+  // Tablets (768–1100px): the contact panel is a slide-over drawer, not a column.
+  const [tabletContact, setTabletContact] = useState(false)
+  useEffect(() => {
+    if (!tabletContact) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setTabletContact(false) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [tabletContact])
   const [isMobile, setIsMobile] = useState(false)
 
   useEffect(() => {
@@ -5835,7 +5843,7 @@ export default function InboxPage() {
   const themeSolid = igThemeActive ? '#C13584' : msgrThemeActive ? '#006AFF' : 'var(--coral)'
 
   return (
-    <div className={`inbox-root inbox-pane-${mobilePane}`} style={{ display: 'flex', height: '100vh', maxHeight: 'calc(100vh - 56px)', overflow: 'hidden', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
+    <div className={`inbox-root inbox-pane-${mobilePane}${tabletContact ? ' tablet-contact-open' : ''}`} style={{ display: 'flex', height: '100vh', maxHeight: 'calc(100vh - 56px)', overflow: 'hidden', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
       <style>{`
         /* Composer resize grip: reveal the "drag to resize" pill on hover. */
         .composer-grip:hover .composer-grip-pill { opacity: 1 !important; transform: translateY(0) !important; }
@@ -5989,9 +5997,12 @@ export default function InboxPage() {
           /* Fill the real visible viewport. 100vh on iOS Safari includes the
              address bar, so the composer sat below the fold; dvh tracks the
              browser chrome as it hides and shows. */
+          /* …minus the app header and the bottom tab bar, which both stay on
+             screen; a bare 100dvh ran ~115px under the tab bar, so the reply
+             box hid behind it until you scrolled. */
           .inbox-root {
-            height: 100dvh !important;
-            max-height: 100dvh !important;
+            height: calc(100dvh - 56px - 58px - env(safe-area-inset-bottom, 0px)) !important;
+            max-height: calc(100dvh - 56px - 58px - env(safe-area-inset-bottom, 0px)) !important;
             overflow: hidden;
           }
 
@@ -6133,6 +6144,38 @@ export default function InboxPage() {
         }
         @media (min-width: 768px) {
           .inbox-mobile-only { display: none !important; }
+        }
+        /* Tablets: the conversation gets the room; contact details slide in
+           from the right on demand instead of taking a fixed 280px column. */
+        .inbox-tablet-scrim { display: none; }
+        @media (min-width: 768px) and (max-width: 1100px) {
+          .inbox-tablet-only { display: flex !important; }
+          .inbox-root .inbox-col-contact {
+            position: fixed !important; top: 56px; right: 0; bottom: 0; z-index: 320;
+            width: min(360px, 88vw) !important; border-left: 1px solid var(--border);
+            box-shadow: -24px 0 48px -24px rgba(16,24,40,.35);
+            transform: translate3d(105%,0,0); transition: transform .32s cubic-bezier(.22,1,.36,1);
+            visibility: hidden;
+          }
+          .inbox-root.tablet-contact-open .inbox-col-contact { transform: none; visibility: visible; }
+          .inbox-root.tablet-contact-open .inbox-tablet-scrim {
+            display: block; position: fixed; inset: 56px 0 0 0; z-index: 310;
+            background: rgba(17,24,39,.22); animation: tabletScrimIn .25s ease both;
+          }
+          .inbox-root .inbox-col-contact > div:nth-of-type(1) { padding-right: 40px; }
+          @keyframes tabletScrimIn { from { opacity: 0 } to { opacity: 1 } }
+        }
+        @media (min-width: 768px) and (max-width: 860px) {
+          /* the bottom tab bar is still showing at this width — leave room for it */
+          .inbox-root {
+            height: calc(100dvh - 56px - 58px - env(safe-area-inset-bottom, 0px)) !important;
+            max-height: calc(100dvh - 56px - 58px - env(safe-area-inset-bottom, 0px)) !important;
+          }
+          .inbox-root .inbox-col-contact { bottom: calc(58px + env(safe-area-inset-bottom, 0px)); }
+          .inbox-root.tablet-contact-open .inbox-tablet-scrim { bottom: calc(58px + env(safe-area-inset-bottom, 0px)); }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .inbox-root .inbox-col-contact { transition: none !important; }
         }
       `}</style>
       {/* IncomingCallListener now lives in the admin layout, so calls ring on
@@ -7863,6 +7906,11 @@ export default function InboxPage() {
                 </button>
               )}
 
+              {/* Tablet: slide the contact panel in */}
+              <button type="button" className="inbox-tablet-only" onClick={() => setTabletContact(v => !v)} title="Contact info" aria-label="Contact info" aria-expanded={tabletContact}
+                style={{ display: 'none', width: 32, height: 32, borderRadius: 8, border: '1px solid var(--border)', background: tabletContact ? 'var(--peach)' : '#fff', cursor: 'pointer', alignItems: 'center', justifyContent: 'center', color: tabletContact ? 'var(--coral)' : 'var(--slate)', flexShrink: 0 }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M15 4v16"/></svg>
+              </button>
               {/* Mobile: open contact panel */}
               <button type="button" className="inbox-mobile-only" onClick={() => setMobilePane('contact')} title="Contact info"
                 style={{ display: 'none', width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', alignItems: 'center', justifyContent: 'center', color: 'var(--slate)' }}>
@@ -9677,7 +9725,14 @@ export default function InboxPage() {
 
       {/* ── RIGHT: Contact info + Page history ─────────────────────────────── */}
       {selected && (
+        <>
+        <div className="inbox-tablet-scrim" onClick={() => setTabletContact(false)} aria-hidden />
         <div className="inbox-col-contact" style={{ width: 280, flexShrink: 0, borderLeft: '1px solid var(--border)', background: '#fff', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          {/* Tablet: close the drawer */}
+          <button type="button" className="inbox-tablet-only inbox-drawer-close" onClick={() => setTabletContact(false)} aria-label="Close contact panel" title="Close"
+            style={{ display: 'none', position: 'absolute', top: 8, right: 8, zIndex: 2, width: 30, height: 30, borderRadius: 9, border: 'none', background: '#f3f4f6', color: 'var(--slate)', cursor: 'pointer', alignItems: 'center', justifyContent: 'center' }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>
+          </button>
           {/* Mobile: back to thread */}
           <button type="button" className="inbox-mobile-only" onClick={() => setMobilePane('thread')}
             style={{ display: 'none', alignItems: 'center', gap: 6, padding: '10px 14px', border: 'none', borderBottom: '1px solid var(--border)', background: '#fff', cursor: 'pointer', color: 'var(--slate)', fontSize: 13, fontWeight: 600 }}>
@@ -10809,6 +10864,7 @@ export default function InboxPage() {
             )}
           </div>
         </div>
+        </>
       )}
     </div>
   )
