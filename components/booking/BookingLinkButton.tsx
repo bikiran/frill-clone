@@ -8,9 +8,9 @@ import { SparkleIcon, CalendarIcon } from '@/components/booking/icons'
 // link for this customer is dropped into the reply. Their details come
 // pre-filled and the booking lands back in this conversation.
 
-export default function BookingLinkButton({ companyId, conversationId, contactId, onInsert, height = 32 }: {
+export default function BookingLinkButton({ companyId, conversationId, contactId, onInsert, height = 32, iconOnly = false }: {
   companyId: string | null; conversationId: string | null; contactId?: string | null
-  onInsert: (text: string) => void; height?: number
+  onInsert: (text: string) => void; height?: number; iconOnly?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const [services, setServices] = useState<any[] | null>(null)
@@ -51,11 +51,18 @@ export default function BookingLinkButton({ companyId, conversationId, contactId
         .blb-item:hover{background:#f5f5f6}
         @media (prefers-reduced-motion: reduce){.blb-pop{animation:none}}
       `}</style>
+      {iconOnly ? (
+        <button type="button" onClick={() => setOpen(o => !o)} title="Send a booking link" aria-label="Send a booking link" className="cmp-tool"
+          style={{ width: height, height, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 11, border: 'none', background: open ? 'var(--peach,#fff1ee)' : '#f3f4f6', color: open ? 'var(--coral,#ff7a6b)' : '#6b7280', cursor: 'pointer', flexShrink: 0 }}>
+          <CalendarIcon size={16} />
+        </button>
+      ) : (
       <button type="button" onClick={() => setOpen(o => !o)} title="Send a booking link for this customer"
         style={{ height, display: 'inline-flex', alignItems: 'center', gap: 5, padding: '0 11px', borderRadius: 8, border: '1px solid var(--border,#e5e7eb)', background: open ? '#f5f5f6' : '#fff', color: 'var(--ink,#111)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
         <CalendarIcon size={14} />
         Booking link
       </button>
+      )}
       {open && (
         <div className="blb-pop" style={{ position: 'absolute', bottom: 'calc(100% + 6px)', left: 0, zIndex: 50, width: 260, maxHeight: 320, overflowY: 'auto', background: '#fff', border: '1px solid var(--border,#ececec)', borderRadius: 12, boxShadow: '0 16px 40px -12px rgba(0,0,0,.25)', padding: 6 }}>
           <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--slate,#6b7280)', textTransform: 'uppercase', letterSpacing: '.05em', padding: '6px 10px 4px' }}>Send a booking link</div>

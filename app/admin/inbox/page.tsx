@@ -145,6 +145,13 @@ const CHANNEL_NAME: Record<string, string> = {
 // WhatsApp, phone or live chat — instead of a generic arrow. They inherit the
 // button's text colour (white when active, grey when disabled), matching the
 // solid/gradient button background rather than the brand-coloured logos.
+// Composer toolbar button: soft rounded square, icon only (tooltip via title).
+const toolBtn = (on = false, tone?: { bg: string; c: string }): React.CSSProperties => ({
+  width: 34, height: 34, borderRadius: 10, border: 'none', flexShrink: 0, cursor: 'pointer',
+  display: 'flex', alignItems: 'center', justifyContent: 'center',
+  background: tone ? tone.bg : on ? 'var(--peach)' : '#f3f4f6', color: tone ? tone.c : on ? 'var(--coral)' : '#6b7280',
+})
+
 const sendChannelGlyph = (ch: string, s = 15): React.ReactNode => {
   const c = String(ch || '').toLowerCase()
   if (c === 'instagram') return (
@@ -6088,6 +6095,12 @@ export default function InboxPage() {
           .inbox-composer .composer-bar > div:last-child > div {
             flex: 1;
           }
+          /* …except the round AI / resolve buttons beside Send. */
+          .inbox-composer .composer-bar > .cmp-send > .cmp-tool,
+          .inbox-composer .composer-bar > .cmp-send > .ai-orb { flex: 0 0 auto !important; width: 44px !important; }
+          .inbox-composer .cmp-tools { flex-wrap: nowrap; }
+          .inbox-composer .cmp-hint { display: none; }
+          .inbox-composer .cmp-mode button { min-height: 0 !important; }
           .inbox-composer .composer-bar > div:last-child button {
             min-height: 44px;
             font-size: 14px !important;
@@ -9008,6 +9021,31 @@ export default function InboxPage() {
                 content: ''; position: absolute; left: 0; right: 0; top: 100%; height: 22px;
               }
               .chat-att:hover .chat-att-fwd { opacity: 1 !important; }
+              /* ── Reply box: one card (Coax-style) ── */
+              .cmp-card{border:1px solid var(--border);border-radius:18px;background:#f8f9fb;transition:border-color .2s,box-shadow .2s,background .2s}
+              .cmp-card:focus-within{background:#fff;border-color:#d7dae0;box-shadow:0 0 0 4px rgba(255,122,107,.10),0 8px 24px -16px rgba(16,24,40,.25)}
+              .cmp-card.note{background:#fffbeb;border-color:#fcd34d}
+              .cmp-card.note:focus-within{box-shadow:0 0 0 4px rgba(245,158,11,.14)}
+              .cmp-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px 2px}
+              .cmp-mode{position:relative;display:inline-grid;grid-template-columns:1fr 1fr;padding:3px;border-radius:10px;background:rgba(17,24,39,.06)}
+              .cmp-mode-thumb{position:absolute;top:3px;bottom:3px;left:3px;width:calc(50% - 3px);border-radius:8px;background:#fff;box-shadow:0 1px 2px rgba(16,24,40,.08),0 2px 6px -2px rgba(16,24,40,.12);transition:transform .28s cubic-bezier(.22,1,.36,1)}
+              .cmp-mode button{position:relative;z-index:1;display:inline-flex;align-items:center;justify-content:center;gap:5px;min-height:0!important;height:28px;padding:0 14px;border:none;background:none;font:inherit;font-size:12.5px;font-weight:700;color:var(--slate);cursor:pointer;transition:color .2s}
+              .cmp-mode button[aria-selected="true"]{color:var(--ink)}
+              .cmp-card.note .cmp-mode button[aria-selected="true"]{color:#b45309}
+              .cmp-via{display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--slate);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+              .cmp-via b{color:var(--ink);font-weight:700}
+              .cmp-input::placeholder{color:#9ca3af}
+              .cmp-input:focus{outline:none!important;box-shadow:none!important;border:none!important}
+              .cmp-bar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 10px 10px}
+              .cmp-tools{display:flex;align-items:center;gap:5px;min-width:0;flex:1 1 auto;flex-wrap:wrap}
+              .cmp-send{display:flex;align-items:center;gap:8px;flex-shrink:0}
+              .cmp-tool{transition:filter .15s,transform .15s cubic-bezier(.22,1,.36,1),background .15s,color .15s}
+              .cmp-tool:hover{filter:brightness(.95);color:var(--ink)!important}
+              .cmp-tool:active{transform:scale(.93)}
+              .cmp-tool:focus-visible,.cmp-mode button:focus-visible{outline:2px solid var(--coral);outline-offset:1px}
+              .cmp-hint{display:flex;justify-content:flex-end;gap:14px;padding:7px 6px 0;font-size:11.5px;color:#9ca3af}
+              .cmp-hint kbd{font:inherit;font-weight:700;color:var(--slate);padding:1px 6px;border-radius:5px;background:#f3f4f6;border:1px solid #e5e7eb}
+              @media (prefers-reduced-motion:reduce){.cmp-mode-thumb,.cmp-tool{transition:none}}
             `}</style>
 
             {/* Reply box */}
@@ -9127,25 +9165,6 @@ export default function InboxPage() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: 'var(--slate)', marginBottom: 4 }}>
                   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
                   Draft saved
-                </div>
-              )}
-
-              {/* Internal-note header — a clear amber banner so it's obvious the
-                  next message is staff-only, with a one-tap switch back to the
-                  customer reply. */}
-              {internalMode && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '8px 12px', marginBottom: 8, borderRadius: 10, background: '#fffbeb', border: '1px solid #fde68a' }}>
-                  <span style={{ width: 26, height: 26, borderRadius: 8, background: '#fef3c7', color: '#b45309', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-                  </span>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <p style={{ margin: 0, fontSize: 12.5, fontWeight: 800, color: '#b45309' }}>Internal note</p>
-                    <p style={{ margin: 0, fontSize: 11, color: '#a16207' }}>Only your team can see this — the customer never receives it.</p>
-                  </div>
-                  <button type="button" onClick={() => setInternalMode(false)}
-                    style={{ flexShrink: 0, height: 26, padding: '0 10px', borderRadius: 7, border: '1px solid #fde68a', background: '#fff', color: '#b45309', fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}>
-                    Switch to reply
-                  </button>
                 </div>
               )}
 
@@ -9342,43 +9361,6 @@ export default function InboxPage() {
                     style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #a7f3d0', background: '#fff', color: '#065f46', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}>Not now</button>
                 </div>
               )}
-              <textarea ref={textareaRef} value={reply} onChange={e => {
-                  const v = e.target.value
-                  setReply(v)
-                  if (v.trim()) broadcastAgentTyping()
-                  // Detect an in-progress "@name" token at the caret so the
-                  // mention picker can offer team members.
-                  const caret = e.target.selectionStart ?? v.length
-                  const upto = v.slice(0, caret)
-                  const m = upto.match(/@([\w.\-]*)$/)
-                  if (m) { setMentionQuery(m[1]); setMentionIndex(0) } else setMentionQuery(null)
-                }}
-                onKeyDown={e => {
-                  // @mention picker takes priority when it's open.
-                  if (mentionQuery !== null && mentionMatches.length) {
-                    if (e.key === 'ArrowDown') { e.preventDefault(); setMentionIndex(i => (i + 1) % mentionMatches.length); return }
-                    if (e.key === 'ArrowUp') { e.preventDefault(); setMentionIndex(i => (i - 1 + mentionMatches.length) % mentionMatches.length); return }
-                    if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey)) {
-                      e.preventDefault(); applyMention(mentionMatches[mentionIndex]); return
-                    }
-                    if (e.key === 'Escape') { setMentionQuery(null); return }
-                  }
-                  // Quick-response picker takes priority over sending.
-                  if (showQuickMenu && quickMatches.length) {
-                    if (e.key === 'ArrowDown') { e.preventDefault(); setQuickIndex(i => (i + 1) % quickMatches.length); return }
-                    if (e.key === 'ArrowUp') { e.preventDefault(); setQuickIndex(i => (i - 1 + quickMatches.length) % quickMatches.length); return }
-                    if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey)) {
-                      e.preventDefault(); applyQuickResponse(quickMatches[quickIndex]); return
-                    }
-                    if (e.key === 'Escape') { setShowQuickMenu(false); return }
-                  }
-                  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendReply() }
-                }}
-                placeholder={internalMode
-                  ? 'Internal note — only your team will see this. Use @ to mention someone.'
-                  : 'Type a reply… (Enter to send, / for quick responses)'}
-                style={{ width: '100%', height: composerH, padding: '10px 12px', borderRadius: 10, border: internalMode ? '1px dashed #f59e0b' : '1px solid var(--border)', background: internalMode ? '#fffbeb' : '#fff', fontStyle: internalMode ? 'italic' : 'normal', fontSize: 13, resize: 'none', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box', marginBottom: 8 }} />
-
               {!internalMode && <AiDraftInfo info={aiDraft.info} error={aiDraft.error} busy={aiDraft.busy} onRedo={i => aiDraft.run(i)} onClose={aiDraft.clear} />}
 
               {/* @mention picker */}
@@ -9427,19 +9409,72 @@ export default function InboxPage() {
               <input ref={fileInputRef} type="file" multiple accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.txt" style={{ display: 'none' }}
                 onChange={e => { handleFileUpload(e.target.files); e.target.value = '' }} />
 
-              <div className="composer-bar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                <div className="composer-tools" style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+              <div className={`cmp-card${internalMode ? ' note' : ''}`}>
+                <div className="cmp-head">
+                  <div className="cmp-mode" role="tablist" aria-label="Reply or internal note">
+                    <span className="cmp-mode-thumb" style={{ transform: internalMode ? 'translateX(100%)' : 'none' }} />
+                    <button type="button" role="tab" aria-selected={!internalMode} onClick={() => setInternalMode(false)}>Reply</button>
+                    <button type="button" role="tab" aria-selected={internalMode} onClick={() => setInternalMode(true)}>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 1 1 3 3L7 19l-4 1 1-4z"/></svg>
+                      Note
+                    </button>
+                  </div>
+                  <span className="cmp-via">
+                    {internalMode ? 'Only your team sees this' : <>Sending by <b>{({ sms: 'SMS', email: 'email', chat: 'live chat', instagram: 'Instagram', messenger: 'Messenger', whatsapp: 'WhatsApp', call: 'SMS' } as Record<string, string>)[sendChannel !== 'auto' ? sendChannel : activeChannel] || 'chat'}</b> {sendChannelGlyph(sendChannel !== 'auto' ? sendChannel : activeChannel, 13)}</>}
+                  </span>
+                </div>
+              <textarea ref={textareaRef} value={reply} onChange={e => {
+                  const v = e.target.value
+                  setReply(v)
+                  if (v.trim()) broadcastAgentTyping()
+                  // Detect an in-progress "@name" token at the caret so the
+                  // mention picker can offer team members.
+                  const caret = e.target.selectionStart ?? v.length
+                  const upto = v.slice(0, caret)
+                  const m = upto.match(/@([\w.\-]*)$/)
+                  if (m) { setMentionQuery(m[1]); setMentionIndex(0) } else setMentionQuery(null)
+                }}
+                onKeyDown={e => {
+                  // @mention picker takes priority when it's open.
+                  if (mentionQuery !== null && mentionMatches.length) {
+                    if (e.key === 'ArrowDown') { e.preventDefault(); setMentionIndex(i => (i + 1) % mentionMatches.length); return }
+                    if (e.key === 'ArrowUp') { e.preventDefault(); setMentionIndex(i => (i - 1 + mentionMatches.length) % mentionMatches.length); return }
+                    if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey)) {
+                      e.preventDefault(); applyMention(mentionMatches[mentionIndex]); return
+                    }
+                    if (e.key === 'Escape') { setMentionQuery(null); return }
+                  }
+                  // Quick-response picker takes priority over sending.
+                  if (showQuickMenu && quickMatches.length) {
+                    if (e.key === 'ArrowDown') { e.preventDefault(); setQuickIndex(i => (i + 1) % quickMatches.length); return }
+                    if (e.key === 'ArrowUp') { e.preventDefault(); setQuickIndex(i => (i - 1 + quickMatches.length) % quickMatches.length); return }
+                    if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey)) {
+                      e.preventDefault(); applyQuickResponse(quickMatches[quickIndex]); return
+                    }
+                    if (e.key === 'Escape') { setShowQuickMenu(false); return }
+                  }
+                  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendReply() }
+                }}
+                placeholder={internalMode
+                  ? 'Write a note for your team — @ to mention someone'
+                  : `Reply to ${contact?.name ? contact.name.split(' ')[0] : 'customer'}…`}
+                className="cmp-input"
+                style={{ width: '100%', height: composerH, padding: '4px 16px 8px', border: 'none', background: 'transparent', fontStyle: internalMode ? 'italic' : 'normal', fontSize: 14, lineHeight: 1.5, resize: 'none', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box', display: 'block', color: 'var(--ink)' }} />
+
+              <div className="composer-bar cmp-bar">
+                <div className="composer-tools cmp-tools">
                   {/* Colvy Voice — dictate into the reply (Whispr-Flow style). */}
                   <VoiceDictationButton
-                    size={32}
+                    size={34}
+                    soft
                     title="Voice type"
                     keyterms={[contact?.name, (contact as any)?.company_name].filter(Boolean) as string[]}
                     onText={(t) => setReply(prev => (prev.trim() ? prev.replace(/\s*$/, ' ') : '') + t)}
                   />
                   {/* Send poll/survey/form/payment */}
                   <div ref={sendMenuRef} style={{ position: 'relative' }}>
-                    <button type="button" onClick={() => setShowSendMenu(v => !v)} title="Send poll, survey, form or payment"
-                      style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid var(--border)', background: showSendMenu ? 'var(--peach)' : '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--slate)' }}>
+                    <button type="button" className="cmp-tool" onClick={() => setShowSendMenu(v => !v)} title="Send a payment link, form, poll or request media" aria-label="More actions"
+                      style={toolBtn(showSendMenu)}>
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                     </button>
                     {showSendMenu && (
@@ -9479,6 +9514,14 @@ export default function InboxPage() {
 
                         <div style={{ borderTop: '1px solid var(--border)' }} />
 
+                        <button type="button" onClick={() => { setShowSendMenu(false); if (!voiceUploading) startVoiceNote() }} disabled={voiceUploading || recording}
+                          style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}>
+                          <span style={{ color: 'var(--slate)', display: 'inline-flex' }}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3.5" fill="currentColor"/></svg></span>Record voice note
+                        </button>
+                        <button type="button" onClick={() => { setShowSendMenu(false); setShowInboxQR(true) }}
+                          style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}>
+                          <span style={{ color: 'var(--slate)', display: 'inline-flex' }}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M11 18h2"/></svg></span>Upload from your phone
+                        </button>
                         <button type="button" onClick={() => { setShowSendMenu(false); setShowMediaRequest(true) }}
                           style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}>
                           <span style={{ color: 'var(--slate)', display: 'inline-flex' }}>{Icon.media(15)}</span>Request Media
@@ -9487,50 +9530,29 @@ export default function InboxPage() {
                     )}
                   </div>
                   {/* Attach */}
-                  <button type="button" className="press" onClick={() => fileInputRef.current?.click()} title="Attach file"
-                    style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--slate)' }}>
+                  <button type="button" className="cmp-tool" onClick={() => fileInputRef.current?.click()} title="Attach a file" aria-label="Attach a file"
+                    style={toolBtn()}>
                     {<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>}
                   </button>
                   {/* Gallery */}
-                  <button type="button" onClick={openMediaPicker} title="Send from gallery"
-                    style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--slate)' }}>
+                  <button type="button" className="cmp-tool" onClick={openMediaPicker} title="Send from gallery" aria-label="Send from gallery"
+                    style={toolBtn()}>
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
                   </button>
-                  {/* Upload from phone (QR) */}
-                  <button type="button" onClick={() => setShowInboxQR(true)} title="Upload from your phone by scanning a QR code"
-                    style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--slate)' }}>
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><line x1="14" y1="14" x2="14" y2="17"/><line x1="14" y1="20" x2="14" y2="21"/><line x1="18" y1="14" x2="21" y2="14"/><line x1="21" y1="18" x2="21" y2="21"/><line x1="17" y1="21" x2="18" y2="21"/></svg>
-                  </button>
-                  {/* Voice note */}
-                  <button type="button" onClick={() => (recording ? stopVoiceNote(true) : startVoiceNote())} disabled={voiceUploading}
-                    title={recording ? 'Stop recording' : 'Record a voice note'}
-                    style={{ width: 32, height: 32, borderRadius: 8, border: recording ? '1px solid #dc2626' : '1px solid var(--border)', background: recording ? '#fee2e2' : '#fff', cursor: voiceUploading ? 'default' : 'pointer', color: recording ? '#dc2626' : 'var(--slate)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    {voiceUploading
-                      ? <span style={{ width: 13, height: 13, border: '2px solid var(--border)', borderTopColor: 'var(--coral)', borderRadius: '50%', display: 'inline-block', animation: 'spin 0.7s linear infinite' }} />
-                      : <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>}
-                  </button>
                   {/* Emoji */}
-                  <button type="button" onClick={() => setShowEmoji(v => !v)} title="Emoji"
-                    style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', color: 'var(--slate)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{Icon.smile(16)}</button>
+                  <button type="button" className="cmp-tool" onClick={() => setShowEmoji(v => !v)} title="Emoji" aria-label="Emoji"
+                    style={toolBtn(showEmoji)}>{Icon.smile(17)}</button>
                   {/* Review request */}
-                  <button type="button" onClick={sendReviewRequest} title="Send review request"
-                    style={{ height: 32, padding: '0 10px', borderRadius: 8, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', fontSize: 12, fontWeight: 600, color: 'var(--slate)', display: 'flex', alignItems: 'center', gap: 4 }}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg> Review
-                  </button>
-                  {/* Internal note toggle — staff-only message */}
-                  <button type="button" onClick={() => setInternalMode(v => !v)}
-                    title={internalMode ? 'Switch back to replying to the customer' : 'Write an internal note only your team can see'}
-                    style={{ height: 32, padding: '0 10px', borderRadius: 8, border: internalMode ? '1px solid #f59e0b' : '1px solid var(--border)', background: internalMode ? '#fef3c7' : '#fff', cursor: 'pointer', fontSize: 12, fontWeight: 700, color: internalMode ? '#b45309' : 'var(--slate)', display: 'flex', alignItems: 'center', gap: 4 }}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg>
-                    {internalMode ? 'Internal note' : 'Note'}
+                  <button type="button" className="cmp-tool" onClick={sendReviewRequest} title="Send a review request" aria-label="Send a review request"
+                    style={toolBtn()}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
                   </button>
                   {/* Shorten a URL straight into the reply */}
                   <div style={{ position: 'relative' }}>
-                    <button type="button" onClick={() => setShowShortener(v => !v)}
-                      title="Create a short, trackable link"
-                      style={{ height: 32, padding: '0 10px', borderRadius: 8, border: '1px solid var(--border)', background: showShortener ? 'var(--peach)' : '#fff', cursor: 'pointer', fontSize: 12, fontWeight: 700, color: showShortener ? 'var(--coral)' : 'var(--slate)', display: 'flex', alignItems: 'center', gap: 4 }}>
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-                      Short link
+                    <button type="button" className="cmp-tool" onClick={() => setShowShortener(v => !v)}
+                      title="Create a short, trackable link" aria-label="Create a short link"
+                      style={toolBtn(showShortener)}>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
                     </button>
                     {showShortener && (
                       <div style={{ position: 'absolute', bottom: '120%', left: 0, zIndex: 90, width: 320, maxWidth: '80vw', background: '#fff', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 12px 32px rgba(0,0,0,0.16)', padding: 12 }}>
@@ -9556,23 +9578,18 @@ export default function InboxPage() {
                       </div>
                     )}
                   </div>
-                  {!internalMode && <BookingLinkButton companyId={companyId} conversationId={selected?.id || null} contactId={selected?.contact_id || null} onInsert={t => setReply(r => (r.trim() ? r.trimEnd() + '\n' : '') + t)} />}
-                  {!internalMode && <AiDraftButton busy={aiDraft.busy} onClick={() => aiDraft.run()} />}
-                  {/* Resolve */}
-                  <button type="button" onClick={() => setStatus('resolved')}
-                    style={{ height: 32, padding: '0 10px', borderRadius: 8, border: '1px solid #059669', background: '#dcfce7', color: '#059669', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
-                    ✓ Resolve
-                  </button>
+                  {!internalMode && <BookingLinkButton iconOnly height={34} companyId={companyId} conversationId={selected?.id || null} contactId={selected?.contact_id || null} onInsert={t => setReply(r => (r.trim() ? r.trimEnd() + '\n' : '') + t)} />}
                 </div>
-                <div style={{ display: 'flex', gap: 6 }}>
-                  <button type="button" onClick={sendAndClose} disabled={sending || (!reply.trim() && stagedMedia.length === 0)}
-                    style={{ padding: '8px 14px', borderRadius: 10, background: '#fff', color: (reply.trim() || stagedMedia.length) ? 'var(--ink)' : '#9ca3af', border: '1px solid var(--border)', fontSize: 13, fontWeight: 600, cursor: (reply.trim() || stagedMedia.length) ? 'pointer' : 'default' }}>
-                    Send & Close
+                <div className="cmp-send">
+                  {!internalMode && <AiDraftButton orb height={38} busy={aiDraft.busy} onClick={() => aiDraft.run()} />}
+                  <button type="button" className="cmp-tool cmp-resolve" onClick={() => setStatus('resolved')} title="Resolve conversation" aria-label="Resolve conversation"
+                    style={{ ...toolBtn(false, { bg: '#ecfdf3', c: '#059669' }), width: 38, height: 38 }}>
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><path d="m8 12.5 2.7 2.7L16 9.8"/></svg>
                   </button>
                   {/* Send + channel selector */}
                   <div ref={channelMenuRef} style={{ position: 'relative', display: 'flex' }}>
                     <button type="button" onClick={sendReply} disabled={sending || (!reply.trim() && stagedMedia.length === 0)}
-                      style={{ padding: '8px 16px', borderRadius: internalMode ? 10 : '10px 0 0 10px', background: (!reply.trim() && stagedMedia.length === 0) ? '#e5e7eb' : internalMode ? '#f59e0b' : (themeGradient || 'var(--coral)'), color: (reply.trim() || stagedMedia.length) ? '#fff' : '#9ca3af', border: 'none', fontSize: 13, fontWeight: 700, cursor: (reply.trim() || stagedMedia.length) ? 'pointer' : 'default', transition: 'all 0.15s' }}>
+                      style={{ height: 38, padding: '0 18px', borderRadius: internalMode ? 12 : '12px 0 0 12px', background: (!reply.trim() && stagedMedia.length === 0) ? '#e5e7eb' : internalMode ? '#f59e0b' : (themeGradient || 'var(--coral)'), color: (reply.trim() || stagedMedia.length) ? '#fff' : '#9ca3af', border: 'none', fontSize: 13, fontWeight: 700, cursor: (reply.trim() || stagedMedia.length) ? 'pointer' : 'default', transition: 'all 0.15s' }}>
                       {sending
                         ? (internalMode ? 'Saving…' : 'Sending…')
                         : internalMode
@@ -9587,12 +9604,17 @@ export default function InboxPage() {
                     <>
                     <button type="button" onClick={() => setShowChannelMenu(v => !v)} disabled={sending}
                       title="Choose a channel"
-                      style={{ padding: '8px 8px', borderRadius: '0 10px 10px 0', background: (reply.trim() || stagedMedia.length) ? themeSolid : '#e5e7eb', color: (reply.trim() || stagedMedia.length) ? '#fff' : '#9ca3af', border: 'none', borderLeft: '1px solid rgba(255,255,255,0.25)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                      style={{ height: 38, padding: '0 10px', borderRadius: '0 12px 12px 0', background: (reply.trim() || stagedMedia.length) ? themeSolid : '#e5e7eb', color: (reply.trim() || stagedMedia.length) ? '#fff' : '#9ca3af', border: 'none', borderLeft: '1px solid rgba(255,255,255,0.25)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="18 15 12 9 6 15"/></svg>
                     </button>
 
                     {showChannelMenu && (
                       <div style={{ position: 'absolute', bottom: '120%', right: 0, width: 190, background: '#fff', borderRadius: 12, border: '1px solid var(--border)', boxShadow: '0 12px 32px rgba(0,0,0,0.14)', zIndex: 60, overflow: 'hidden', padding: '4px 0' }}>
+                        <button type="button" onClick={() => { setShowChannelMenu(false); sendAndClose() }} disabled={sending || (!reply.trim() && stagedMedia.length === 0)}
+                          style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '9px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: (reply.trim() || stagedMedia.length) ? 'var(--ink)' : '#9ca3af', fontWeight: 600 }}>
+                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4z"/></svg>
+                          Send &amp; close
+                        </button>
                         <button type="button" onClick={() => { setShowChannelMenu(false); openScheduleMsg() }}
                           style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '9px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)', fontWeight: 600 }}>
                           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg>
@@ -9620,6 +9642,10 @@ export default function InboxPage() {
                     )}
                   </div>
                 </div>
+              </div>
+              </div>
+              <div className="cmp-hint">
+                <span><kbd>Enter</kbd> to send</span><span><kbd>Shift</kbd> + <kbd>Enter</kbd> new line</span>{internalMode ? <span><kbd>@</kbd> mention</span> : <span><kbd>/</kbd> quick replies</span>}
               </div>
               </>
               )}
