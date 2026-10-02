@@ -5,13 +5,13 @@ import { supabase } from '@/lib/supabase'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { SkeletonCards } from '@/components/Skeleton'
+import { resolveCompanyUser } from '@/lib/client-cache'
 
 const INTEGRATIONS = [
   {
     id: 'woocommerce',
     name: 'WooCommerce',
     desc: 'Sync your WooCommerce customers and orders directly into Colvy for better customer insights.',
-    icon: '🛍️',
     color: '#96588A',
     bg: '#f3e8ff',
     logo: '/logos/woocommerce.svg',
@@ -22,10 +22,9 @@ const INTEGRATIONS = [
     id: 'shopify',
     name: 'Shopify',
     desc: 'Connect your Shopify store to sync customers into Colvy. Works with multiple stores.',
-    icon: '🛒',
     color: '#95BF47',
     bg: '#eefbe0',
-    logo: '',
+    logo: '/logos/shopify.svg',
     category: 'E-Commerce',
     isDedicated: true,
   },
@@ -33,10 +32,9 @@ const INTEGRATIONS = [
     id: 'prexty',
     name: 'Prexty POS',
     desc: 'Connect your Prexty point-of-sale to pull customer order history into the chat.',
-    icon: '🧾',
     color: '#4f46e5',
     bg: '#eef2ff',
-    logo: '',
+    logo: '/logos/prexty.svg',
     category: 'E-Commerce',
     isDedicated: true,
   },
@@ -44,10 +42,9 @@ const INTEGRATIONS = [
     id: 'stripe',
     name: 'Stripe Payments',
     desc: 'Take card payments and send invoices directly inside the chat. Connect your own Stripe account.',
-    icon: '💳',
     color: '#635BFF',
     bg: '#f5f3ff',
-    logo: '',
+    logo: '/logos/stripe.svg',
     category: 'Payments',
     isDedicated: true,
   },
@@ -55,10 +52,9 @@ const INTEGRATIONS = [
     id: 'calls',
     name: 'Calls & SMS',
     desc: 'Call customers from your browser and continue live chats over SMS to their mobile.',
-    icon: '📞',
     color: '#00c08b',
     bg: '#e6faf4',
-    logo: '',
+    logo: '/logos/calls.svg',
     category: 'Communication',
     isDedicated: true,
   },
@@ -66,7 +62,6 @@ const INTEGRATIONS = [
     id: 'slack',
     name: 'Slack',
     desc: 'Post to a Slack channel when ideas are submitted, voted on, or change status.',
-    icon: '🟦',
     color: '#4A154B',
     bg: '#f9f0ff',
     logo: '/logos/slack.svg',
@@ -81,7 +76,6 @@ const INTEGRATIONS = [
     id: 'jira',
     name: 'Jira',
     desc: 'Automatically create Jira issues from Colvy ideas.',
-    icon: '🔵',
     color: '#0052CC',
     bg: '#e6f0ff',
     logo: '/logos/jira.svg',
@@ -98,7 +92,6 @@ const INTEGRATIONS = [
     id: 'linear',
     name: 'Linear',
     desc: 'Send ideas from Colvy straight to Linear as issues.',
-    icon: '⚫',
     color: '#5E6AD2',
     bg: '#f0f0ff',
     logo: '/logos/linear.svg',
@@ -113,7 +106,6 @@ const INTEGRATIONS = [
     id: 'trello',
     name: 'Trello',
     desc: 'Add new Colvy ideas as Trello cards automatically.',
-    icon: '🟩',
     color: '#0079BF',
     bg: '#e8f4ff',
     logo: '/logos/trello.svg',
@@ -129,7 +121,6 @@ const INTEGRATIONS = [
     id: 'zapier',
     name: 'Zapier',
     desc: 'Connect Colvy to 5000+ apps with Zapier automations.',
-    icon: '🟠',
     color: '#FF4A00',
     bg: '#fff4f0',
     logo: '/logos/zapier.svg',
@@ -143,7 +134,6 @@ const INTEGRATIONS = [
     id: 'github',
     name: 'GitHub',
     desc: 'Create GitHub issues from Colvy ideas.',
-    icon: '⚫',
     color: '#24292F',
     bg: '#f6f8fa',
     logo: '/logos/github.svg',
@@ -158,7 +148,6 @@ const INTEGRATIONS = [
     id: 'intercom',
     name: 'Intercom',
     desc: 'Create and manage Colvy ideas inside of Intercom.',
-    icon: '🟣',
     color: '#286EFA',
     bg: '#e8f0ff',
     logo: '/logos/intercom.svg',
@@ -172,7 +161,6 @@ const INTEGRATIONS = [
     id: 'zendesk',
     name: 'Zendesk',
     desc: 'Create and manage Colvy ideas inside of Zendesk.',
-    icon: '🟢',
     color: '#03363D',
     bg: '#e8f5f5',
     logo: '/logos/zendesk.svg',
@@ -188,7 +176,6 @@ const INTEGRATIONS = [
     id: 'webhook',
     name: 'Custom Webhook',
     desc: 'Send Colvy events to any URL with a custom HTTP webhook.',
-    icon: '🔗',
     color: '#374151',
     bg: '#f9fafb',
     logo: '/logos/webhook.svg',
@@ -246,12 +233,23 @@ export default function IntegrationsPage() {
 
   const loadIntegrations = async () => {
     try {
-      // Get company ID first
+      // Which company: ?slug= when given, else the workspace you're signed in
+      // to (subdomain, owner, or team membership). The connection checks below
+      // used to run only with ?slug=, so on roxyaquarium.colvy.com they never
+      // ran and everything showed as not connected.
       const slug = new URLSearchParams(window.location.search).get('slug')
-      let cid = null
+      let cid: string | null = null
       if (slug) {
-        const { data: co } = await (supabase as any).from('companies').select('id').eq('slug', slug).single()
-        cid = co?.id
+        const { data: co } = await (supabase as any).from('companies').select('id').eq('slug', slug).maybeSingle()
+        cid = co?.id || null
+      }
+      if (!cid) cid = (await resolveCompanyUser()).companyId
+      if (!cid) {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session?.user) {
+          const { data: tm } = await (supabase as any).from('team_members').select('company_id').eq('user_id', session.user.id).limit(1)
+          cid = tm?.[0]?.company_id || null
+        }
       }
 
       // Load standard integrations
@@ -265,63 +263,30 @@ export default function IntegrationsPage() {
         evts[row.integration_id] = row.events || []
       })
 
-      // Check for WooCommerce integration
       if (cid) {
-        const { data: wooRows } = await (supabase as any)
-          .from('woocommerce_integrations')
-          .select('is_active')
-          .eq('company_id', cid)
-          .eq('is_active', true)
-          .limit(1)
-        const wooData = wooRows?.[0]
-        
-        if (wooData && wooData.is_active) {
-          enb['woocommerce'] = true
-        } else {
-          enb['woocommerce'] = false
+        const sb = supabase as any
+        const has = (q: Promise<any>) => q.then((r: any) => (r?.data?.length || 0) > 0, () => false)
+        const [woo, shop, prexty, telnyx, twilio, co] = await Promise.all([
+          has(sb.from('woocommerce_integrations').select('id').eq('company_id', cid).eq('is_active', true).limit(1)),
+          has(sb.from('shopify_integrations').select('id').eq('company_id', cid).eq('is_active', true).limit(1)),
+          has(sb.from('prexty_integrations').select('id').eq('company_id', cid).eq('is_active', true).limit(1)),
+          sb.from('telnyx_integrations').select('is_active, phone_number').eq('company_id', cid).maybeSingle().then((r: any) => r?.data, () => null),
+          sb.from('twilio_integrations').select('account_sid, phone_number').eq('company_id', cid).maybeSingle().then((r: any) => r?.data, () => null),
+          sb.from('companies').select('stripe_connected, stripe_account_id, stripe_mode, stripe_publishable_key').eq('id', cid).maybeSingle().then((r: any) => r?.data, () => null),
+        ])
+        enb['woocommerce'] = woo
+        enb['shopify'] = shop
+        enb['prexty'] = prexty
+        // Calls & SMS: a number on either carrier (the carrier is invisible to them).
+        enb['calls'] = !!(telnyx?.is_active || telnyx?.phone_number || (twilio?.account_sid && twilio?.phone_number))
+        // Stripe: Connect account that can take charges, or own API keys.
+        enb['stripe'] = !!(co?.stripe_connected || (co?.stripe_mode === 'keys' && co?.stripe_publishable_key))
+        if (!enb['stripe'] && co?.stripe_account_id) {
+          // The flag is refreshed when the Stripe page checks the account; check now too.
+          fetch(`/api/stripe/connect?companyId=${cid}`).then(r => r.json()).then(d => {
+            if (d?.connected) setEnabled(prev => ({ ...prev, stripe: true }))
+          }).catch(() => {})
         }
-
-        // Check for a connected Shopify store
-        const { data: shopRows } = await (supabase as any)
-          .from('shopify_integrations')
-          .select('is_active')
-          .eq('company_id', cid)
-          .eq('is_active', true)
-          .limit(1)
-        enb['shopify'] = !!(shopRows && shopRows.length > 0)
-
-        // Prexty POS connection
-        try {
-          const { data: prextyRows } = await (supabase as any)
-            .from('prexty_integrations')
-            .select('is_active')
-            .eq('company_id', cid)
-            .eq('is_active', true)
-            .limit(1)
-          enb['prexty'] = !!(prextyRows && prextyRows.length > 0)
-        } catch { enb['prexty'] = false }
-
-        // Calls & SMS is active if the company has a number on EITHER carrier
-        // (Telnyx or the platform Twilio) — the carrier is invisible to them.
-        const { data: telnyxData } = await (supabase as any)
-          .from('telnyx_integrations')
-          .select('is_active, phone_number')
-          .eq('company_id', cid)
-          .maybeSingle()
-        let callsActive = !!(telnyxData?.is_active || telnyxData?.phone_number)
-        try {
-          const { data: twilioData } = await (supabase as any)
-            .from('twilio_integrations')
-            .select('account_sid, phone_number')
-            .eq('company_id', cid)
-            .maybeSingle()
-          if (twilioData?.account_sid && twilioData?.phone_number) callsActive = true
-        } catch {}
-        enb['calls'] = callsActive
-
-        // Check for Stripe connection
-        const { data: co } = await (supabase as any).from('companies').select('stripe_connected').eq('id', cid).maybeSingle()
-        enb['stripe'] = !!co?.stripe_connected
       }
 
       setConfigs(cfgs)
@@ -371,7 +336,7 @@ export default function IntegrationsPage() {
       <aside className="hidden md:flex flex-col w-64 shrink-0 bg-white border-r" style={{ borderColor: 'var(--border)' }}>
         <div className="p-4 border-b" style={{ borderColor: 'var(--border)' }}>
           <h2 className="font-bold text-sm" style={{ color: 'var(--ink)' }}>Integrations</h2>
-          <p className="text-xs mt-0.5" style={{ color: 'var(--slate)' }}>{Object.values(enabled).filter(Boolean).length} active</p>
+          <p className="text-xs mt-0.5" style={{ color: 'var(--slate)' }}>{INTEGRATIONS.filter(i => enabled[i.id]).length} active</p>
         </div>
         <div className="p-3 border-b" style={{ borderColor: 'var(--border)' }}>
           {CATEGORIES.map(cat => (
@@ -395,7 +360,7 @@ export default function IntegrationsPage() {
               style={{ background: selected === intg.id ? 'var(--peach)' : 'transparent', borderLeft: selected === intg.id ? '2px solid var(--coral)' : '2px solid transparent' }}>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <div className="w-6 h-6 rounded flex items-center justify-center p-0.5 shrink-0" style={{ background: intg.bg }}><img src={intg.logo || '/logos/webhook.svg'} alt={intg.name} style={{ width: 16, height: 16, objectFit: 'contain' }} /></div>
+                  <img src={intg.logo || '/logos/webhook.svg'} alt="" width={24} height={24} className="shrink-0" style={{ width: 24, height: 24 }} />
                   <span className="text-sm font-medium" style={{ color: 'var(--ink)' }}>{intg.name}</span>
                 </div>
                 {enabled[intg.id] && <div className="w-2 h-2 rounded-full" style={{ background: '#10b981' }} />}
@@ -434,7 +399,7 @@ export default function IntegrationsPage() {
                     setSelected(intg.id)
                   }
                 }}
-                  className="bg-white rounded-2xl border p-5 text-left hover:shadow-md transition-all cursor-pointer group relative"
+                  className="bg-white rounded-2xl border p-5 text-left hover:shadow-md transition-all cursor-pointer group relative flex flex-col"
                   style={{ borderColor: enabled[intg.id] ? '#10b981' : 'var(--border)' }}>
                   {enabled[intg.id] && (
                     <div className="absolute top-3 right-3 px-2 py-0.5 rounded-full text-xs font-semibold" style={{ background: '#dcfce7', color: '#16a34a' }}>
@@ -442,14 +407,14 @@ export default function IntegrationsPage() {
                     </div>
                   )}
                   <div className="flex items-center gap-3 mb-3">
-                    <div className="w-10 h-10 rounded-xl flex items-center justify-center p-2" style={{ background: intg.bg }}><img src={intg.logo || '/logos/webhook.svg'} alt={intg.name} style={{ width: 24, height: 24, objectFit: 'contain' }} /></div>
+                    <img src={intg.logo || '/logos/webhook.svg'} alt="" width={40} height={40} className="shrink-0" style={{ width: 40, height: 40 }} />
                     <div>
                       <p className="font-bold text-sm" style={{ color: 'var(--ink)' }}>{intg.name}</p>
                       <p className="text-xs" style={{ color: 'var(--slate)' }}>{intg.category}</p>
                     </div>
                   </div>
-                  <p className="text-xs leading-relaxed" style={{ color: 'var(--slate)' }}>{intg.desc}</p>
-                  <div className="mt-3 pt-3 border-t" style={{ borderColor: 'var(--border)' }}>
+                  <p className="text-xs leading-relaxed mb-3" style={{ color: 'var(--slate)' }}>{intg.desc}</p>
+                  <div className="mt-auto pt-3 border-t w-full" style={{ borderColor: 'var(--border)' }}>
                     <p className="text-xs font-semibold" style={{ color: 'var(--coral)' }}>
                       {enabled[intg.id] ? 'Configure →' : 'Connect →'}
                     </p>
@@ -465,7 +430,7 @@ export default function IntegrationsPage() {
             </button>
 
             <div className="flex items-center gap-4 mb-6">
-              <div className="w-14 h-14 rounded-2xl flex items-center justify-center p-3" style={{ background: activeIntegration.bg }}><img src={activeIntegration.logo || '/logos/webhook.svg'} alt={activeIntegration.name} style={{ width: 36, height: 36, objectFit: 'contain' }} /></div>
+              <img src={activeIntegration.logo || '/logos/webhook.svg'} alt="" width={56} height={56} className="shrink-0" style={{ width: 56, height: 56 }} />
               <div className="flex-1">
                 <h1 className="text-2xl font-bold" style={{ color: 'var(--ink)' }}>{activeIntegration.name}</h1>
                 <p style={{ color: 'var(--slate)' }}>{activeIntegration.desc}</p>
@@ -494,9 +459,9 @@ export default function IntegrationsPage() {
                   </p>
                   <button onClick={() => handleOAuthConnect(activeIntegration.id)}
                     className="flex items-center gap-3 px-5 py-3 rounded-xl border text-sm font-semibold cursor-pointer hover:shadow-md transition-all"
-                    style={{ borderColor: 'var(--border)', color: 'var(--ink)', background: activeIntegration.bg }}>
-                    <img src={activeIntegration.logo || '/logos/webhook.svg'} alt={activeIntegration.name} style={{ width: 20, height: 20, objectFit: 'contain' }} />
-                    {enabled[activeIntegration.id] ? `✅ Connected to ${activeIntegration.name}` : `Connect ${activeIntegration.name}`}
+                    style={{ borderColor: 'var(--border)', color: 'var(--ink)', background: '#fff' }}>
+                    <img src={activeIntegration.logo || '/logos/webhook.svg'} alt="" width={22} height={22} style={{ width: 22, height: 22 }} />
+                    {enabled[activeIntegration.id] ? `Connected to ${activeIntegration.name}` : `Connect ${activeIntegration.name}`}
                   </button>
                   {enabled[activeIntegration.id] && (
                     <button onClick={() => setEnabled(prev => ({ ...prev, [activeIntegration.id]: false }))}
@@ -547,7 +512,7 @@ export default function IntegrationsPage() {
             <button onClick={() => saveIntegration(activeIntegration.id)} disabled={!!saving}
               className="w-full py-3 rounded-xl font-semibold text-white cursor-pointer disabled:opacity-50 transition-all"
               style={{ background: 'var(--coral)' }}>
-              {saving === activeIntegration.id ? 'Saving...' : saved === activeIntegration.id ? '✅ Saved!' : 'Save Integration'}
+              {saving === activeIntegration.id ? 'Saving...' : saved === activeIntegration.id ? 'Saved' : 'Save Integration'}
             </button>
           </div>
         ) : null}
