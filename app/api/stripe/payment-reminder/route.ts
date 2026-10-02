@@ -57,9 +57,9 @@ export async function POST(req: NextRequest) {
     let sent = ''
     try {
       if (channel === 'email' && email) {
-        await fetch(`${base}/api/email/send`, {
+        await fetch(`${base}/api/email/reply`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ companyId, conversationId: pay.conversation_id, to: email, subject: conv?.subject || 'Payment reminder', text, senderName }),
+          body: JSON.stringify({ conversationId: pay.conversation_id, to: email, subject: conv?.subject || 'Payment reminder', content: text, agentName: senderName }),
         })
         sent = 'email'
       } else if (['facebook', 'instagram', 'messenger'].includes(channel)) {

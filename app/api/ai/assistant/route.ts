@@ -35,6 +35,8 @@ export async function POST(req: NextRequest) {
     ctx.orderId = c.orderId || null
     ctx.callId = c.callId || null
     ctx.outletId = c.outletId || null
+    // An open support ticket (/admin/tickets/<id>) is context too.
+    ctx.ticketId = c.ticketId || String(c.currentRoute || '').match(/\/tickets\/([0-9a-f-]{36})/i)?.[1] || null
 
     const history: AssistantTurn[] = Array.isArray(body?.history)
       ? body.history.map((h: any) => ({ role: h?.role === 'assistant' ? 'assistant' : 'user', text: String(h?.text || '') }))

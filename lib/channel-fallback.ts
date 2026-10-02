@@ -95,12 +95,14 @@ export async function deliverAutomatedMessage(params: {
   const sendEmail = async (): Promise<FallbackResult | null> => {
     if (!email) return null
     try {
-      const res = await fetch(`${origin}/api/email/send`, {
+      // /api/email/reply sends from the company's connected mailbox (Gmail or
+      // its domain). There is no /api/email/send — calling it failed silently.
+      const res = await fetch(`${origin}/api/email/reply`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          companyId, conversationId, to: email,
+          conversationId, to: email, agentName: senderName || undefined,
           subject: subject || 'Update on your order',
-          text, skipChatMessage: true,
+          content: text, skipChatMessage: true,
         }),
       })
       if (res.ok) return { onLiveChat, channel: 'email', sent: true }
