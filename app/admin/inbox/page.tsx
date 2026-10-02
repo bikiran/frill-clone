@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import AiLiveReply from '@/components/AiLiveReply'
 import { supabase } from '@/lib/supabase'
 import { authFetch } from '@/lib/auth-fetch'
 import { peekCompanyUser, readCache, writeCache } from '@/lib/client-cache'
@@ -7740,6 +7741,11 @@ export default function InboxPage() {
                     <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#22c55e', animation: 'livePulse 1.6s ease-in-out infinite', flexShrink: 0 }} />
                     {activeCall?.status === 'ringing' ? 'Calling…' : 'Ongoing call'}
                   </p>
+                ) : ((conv.ai_status === 'thinking' || conv.ai_status === 'pending') && (!conv.ai_draft_send_at || Date.parse(conv.ai_draft_send_at) > Date.now() - 30000)) ? (
+                  <p style={{ margin: 0, flex: 1, minWidth: 0, fontSize: 12, fontWeight: 600, color: '#e2553f', display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#ff7a6b', animation: 'livePulse 1.6s ease-in-out infinite', flexShrink: 0 }} />
+                    {conv.ai_status === 'pending' ? 'Colvy AI is about to reply' : 'Colvy AI is writing…'}
+                  </p>
                 ) : (
                 <p style={{ margin: 0, flex: 1, minWidth: 0, fontSize: 12, color: conv.is_unread ? 'var(--ink)' : '#6b7280', fontWeight: conv.is_unread ? 600 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 5 }}>
                   {(() => { const k = callGlyphKind(conv.last_message); return k ? <CallGlyph kind={k} /> : null })()}
@@ -9055,6 +9061,12 @@ export default function InboxPage() {
                 )
               })]
               })()}
+              {/* Colvy AI replying, live: writing… then a countdown with Send now / Edit / Cancel. */}
+              <AiLiveReply
+                conv={selected as any}
+                onEdit={(text) => { setReply(text); setTimeout(() => textareaRef.current?.focus(), 30) }}
+                onChange={() => setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }), 60)}
+              />
               <div ref={messagesEndRef} />
             </div>
 

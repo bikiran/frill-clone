@@ -187,15 +187,22 @@ export async function ingestInboundSms(params: {
   try { bookingHandled = await handleBookingSmsReply({ db, companyId, conversationId: conv.id, from, text, origin }) } catch {}
 
   // Keyword auto-reply — texted back over whichever provider owns this company.
+  let keywordAnswered = false
   if (!bookingHandled) try {
-    await runKeywordReply({
+    keywordAnswered = !!(await runKeywordReply({
       conversationId: conv.id, text, companyId, channel: 'sms',
       deliver: async (reply) => {
         const sender = await resolveSmsSender(db, companyId)
         if (sender) await sender.send({ to: from, text: reply })
       },
-    })
+    }))?.matched
   } catch (e) { console.error('[inbound-sms keyword reply]', e) }
+
+  // Nothing canned answered it → Colvy AI (only if the business switched AI on
+  // for SMS; the agent checks). It shows live in the inbox with a countdown.
+  if (!bookingHandled && !keywordAnswered && text) {
+    try { fetch(`${origin}/api/ai/reply`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ conversationId: conv.id, companyId }) }) } catch {}
+  }
 
   // Failed-media hint auto-reply (only fires when a media attempt truly failed;
   // on Twilio, MMS usually arrives, so this rarely triggers). Throttled 6h.

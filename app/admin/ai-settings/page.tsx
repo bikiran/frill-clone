@@ -7,6 +7,8 @@ import Link from 'next/link'
 const DEFAULTS = {
   enabled: false,
   auto_reply: false,
+  auto_reply_sms: false,
+  send_delay: 3,
   handoff_after: 3,
   knowledge: { ideas: true, roadmap: true, announcements: true, help: true, website: false, past_chats: false },
   capabilities: {
@@ -127,6 +129,32 @@ export default function AiSettingsPage() {
                 </span>
               </span>
             </label>
+
+            {cfg.auto_reply && (
+              <>
+                <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, margin: '0 0 16px 28px' }}>
+                  <input type="checkbox" checked={!!cfg.auto_reply_sms}
+                    onChange={e => setCfg({ ...cfg, auto_reply_sms: e.target.checked })}
+                    style={{ width: 16, height: 16, accentColor: 'var(--coral)', marginTop: 2 }} />
+                  <span>
+                    <span style={{ display: 'block', fontSize: 13.5, fontWeight: 700, color: 'var(--ink)' }}>Also reply to text messages (SMS)</span>
+                    <span style={{ display: 'block', fontSize: 12.5, color: 'var(--slate)', marginTop: 2 }}>Website chat is always on. Keyword auto-replies still go first; the AI answers what they don&rsquo;t.</span>
+                  </span>
+                </label>
+
+                <label style={L}>Countdown before an AI reply is sent</label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+                  <select value={String(cfg.send_delay ?? 3)} onChange={e => setCfg({ ...cfg, send_delay: Number(e.target.value) })}
+                    style={{ ...num, width: 'auto', paddingRight: 28 }}>
+                    <option value="0">No countdown</option>
+                    <option value="3">3 seconds</option>
+                    <option value="5">5 seconds</option>
+                    <option value="10">10 seconds</option>
+                  </select>
+                  <span style={{ fontSize: 13, color: 'var(--slate)' }}>Anyone watching the inbox can send it now, edit it or cancel it.</span>
+                </div>
+              </>
+            )}
 
             <label style={L}>Hand to a person after</label>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>

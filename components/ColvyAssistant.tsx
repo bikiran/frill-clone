@@ -485,6 +485,9 @@ export default function ColvyAssistant({ companyId, userId, agentName }: { compa
            Send button — lift it above the reply box (unless they've dragged it). */
         @media (max-width: 860px) {
           body:has(.inbox-composer .cmp-card) .colvy-ai-orb-wrap[data-default-pos] { bottom: calc(58px + env(safe-area-inset-bottom, 0px) + 250px) !important; }
+          /* …and steps aside while an auto-reply countdown card needs its buttons. */
+          .colvy-ai-orb-wrap { transition: opacity .2s ease, transform .2s ease; }
+          body:has(.ailr-card) .colvy-ai-orb-wrap { opacity: 0; transform: scale(.85); pointer-events: none; }
         }
         .cai-scrim{position:fixed;inset:0;z-index:935;background:rgba(15,23,42,.28);opacity:0;pointer-events:none;transition:opacity .24s ease}
         .cai-panel{position:fixed;z-index:940;right:18px;bottom:18px;width:min(420px,calc(100vw - 36px));height:min(680px,calc(100dvh - 96px));
