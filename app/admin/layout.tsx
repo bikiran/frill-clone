@@ -280,6 +280,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       fetch('/api/cron/waitlist', { method: 'GET' }).catch(() => {})
       // One alert per ticket that misses its reply/resolution deadline.
       fetch('/api/cron/ticket-sla', { method: 'GET' }).catch(() => {})
+      // Booking reminders, wrap-ups and rebook nudges (Vercel Cron runs it too).
+      fetch('/api/cron/booking-reminders', { method: 'GET' }).catch(() => {})
     }
     // Agent presence heartbeat — records that this agent is online so an inbound
     // call can ring them. "Online" = seen in the last ~2 minutes.

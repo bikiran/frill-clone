@@ -43,6 +43,7 @@ import CreateOrderPanel from '@/components/CreateOrderPanel'
 import SuperAdminContactWorkspaces from '@/components/SuperAdminContactWorkspaces'
 import WaitlistQuickAdd from '@/components/WaitlistQuickAdd'
 import { useAiDraft, AiDraftButton, AiDraftInfo } from '@/components/AiDraft'
+import BookingLinkButton from '@/components/booking/BookingLinkButton'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Conversation = {
@@ -9469,6 +9470,7 @@ export default function InboxPage() {
                       </div>
                     )}
                   </div>
+                  {!internalMode && <BookingLinkButton companyId={companyId} conversationId={selected?.id || null} contactId={selected?.contact_id || null} onInsert={t => setReply(r => (r.trim() ? r.trimEnd() + '\n' : '') + t)} />}
                   {!internalMode && <AiDraftButton busy={aiDraft.busy} onClick={() => aiDraft.run()} />}
                   {/* Resolve */}
                   <button type="button" onClick={() => setStatus('resolved')}

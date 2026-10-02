@@ -5,6 +5,7 @@ import { api, money, dur, card, btn, btnGhost, input, label, hint, Toggle, Modal
 
 // Bookable services: list + editor.
 
+const REBOOK = [0, 14, 28, 42, 90, 180, 365]
 const COLORS = ['#ff7a6b', '#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', '#ec4899', '#14b8a6', '#64748b']
 const BLANK = {
   name: '', description: '', kind: 'appointment', duration_mins: 30, buffer_before: 0, buffer_after: 0, slot_interval: null,
@@ -235,6 +236,28 @@ function ServiceEditor({ companyId, initial, staff, locations, stripeReady, onCl
             <button type="button" onClick={() => set({ questions: [...q, { id: `q${Date.now().toString(36)}`, label: '', type: 'text', options: [], required: false }] })} style={{ ...btnGhost, justifySelf: 'start', height: 32, fontSize: 12.5 }}>＋ Add question</button>
           </div>
           <div style={hint}>Name, mobile and email are always asked.</div>
+        </Group>
+
+        <Group title="After the visit">
+          <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+            <div style={{ minWidth: 220 }}>
+              <span style={label}>Rebook reminder</span>
+              <select value={REBOOK.includes(s.rebook_days || 0) ? String(s.rebook_days || 0) : 'custom'} onChange={e => set({ rebook_days: e.target.value === 'custom' ? (s.rebook_days || 21) : (Number(e.target.value) || null) })} style={input}>
+                <option value="0">Off</option>
+                <option value="14">After 2 weeks</option>
+                <option value="28">After 4 weeks</option>
+                <option value="42">After 6 weeks</option>
+                <option value="90">After 3 months</option>
+                <option value="180">After 6 months</option>
+                <option value="365">After a year</option>
+                <option value="custom">Custom…</option>
+              </select>
+            </div>
+            {s.rebook_days && !REBOOK.includes(s.rebook_days) && (
+              <div style={{ width: 130 }}><NumField label="Days" value={s.rebook_days} onChange={v => set({ rebook_days: v || null })} min={1} /></div>
+            )}
+          </div>
+          <div style={hint}>Texts “Time for your next {s.name || 'visit'}?” with a booking link — only if they haven’t booked again and haven’t opted out. Good for regular services like tank cleans.</div>
         </Group>
 
         <label style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13.5 }}>

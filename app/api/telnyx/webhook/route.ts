@@ -3,6 +3,7 @@ import { log } from '@/lib/log'
 import { createClient } from '@supabase/supabase-js'
 import { notifyCompany } from '@/lib/notify'
 import { runKeywordReply } from '@/lib/keyword-reply'
+import { handleBookingSmsReply } from '@/lib/booking-replies'
 import { TelnyxService } from '@/lib/telnyx-service'
 import { logWebhookEvent } from '@/lib/webhook-log'
 import { ensureCallCard, setCallPreview } from '@/lib/call-card'
@@ -322,9 +323,13 @@ export async function POST(req: NextRequest) {
           if (text) fetch(`${origin}/api/inbox/capture-contact`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, conversationId: conv.id, from, text }) })
         } catch {}
 
+        // "C" / "R" answering a booking reminder takes priority over keyword rules.
+        let bookingHandled = false
+        try { bookingHandled = await handleBookingSmsReply({ db, companyId, conversationId: conv.id, from, text, origin: req.nextUrl.origin }) } catch {}
+
         // Answer common questions automatically — and TEXT the answer back, so
         // an SMS customer actually receives it (not just the chat thread).
-        try {
+        if (!bookingHandled) try {
           const { data: integ } = await db.from('telnyx_integrations')
             .select('api_key, phone_number, messaging_profile_id')
             .eq('company_id', companyId).maybeSingle()

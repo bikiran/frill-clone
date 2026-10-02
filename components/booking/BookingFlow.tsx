@@ -76,13 +76,25 @@ export default function BookingFlow({ slug, domain, initialService }: { slug?: s
   const [error, setError] = useState('')
 
   const query = slug ? `slug=${encodeURIComponent(slug)}` : `domain=${encodeURIComponent(domain || '')}`
+  // ?i=<token> personal link from the inbox · ?embed=1 inside a website · ?src=widget|link
+  const [ctx, setCtx] = useState<{ invite: string | null; embed: boolean; src: string }>({ invite: null, embed: false, src: 'page' })
 
   useEffect(() => {
-    fetch(`/api/book?op=page&${query}`).then(r => r.json().then(d => ({ ok: r.ok, d }))).then(({ ok, d }) => {
+    const sp = new URLSearchParams(window.location.search)
+    const invite = sp.get('i')
+    const embed = sp.get('embed') === '1'
+    setCtx({ invite, embed, src: invite ? 'invite' : embed ? 'embed' : (sp.get('src') === 'widget' ? 'widget' : sp.get('src') === 'link' ? 'link' : 'page') })
+    Promise.all([
+      fetch(`/api/book?op=page&${query}`).then(r => r.json().then(d => ({ ok: r.ok, d }))),
+      invite ? fetch(`/api/book?op=invite&${query}&token=${encodeURIComponent(invite)}`).then(r => r.json()).catch(() => ({})) : Promise.resolve({}),
+    ]).then(([{ ok, d }, inv]: any) => {
       if (!ok) { setLoadError(d.error || 'This booking page isn’t available.'); return }
       setData(d)
       try { document.title = `Book — ${d.company.name}` } catch {}
-      const pre = initialService ? d.services.find((s: Service) => s.slug === initialService || s.id === initialService) : null
+      const prefill = inv?.prefill
+      if (prefill) setForm(f => ({ ...f, name: prefill.name || f.name, email: prefill.email || f.email, phone: prefill.phone || f.phone }))
+      const want = initialService || prefill?.serviceId
+      const pre = want ? d.services.find((s: Service) => s.slug === want || s.id === want) : null
       const only = d.services.length === 1 ? d.services[0] : null
       if (pre || only) { setService(pre || only); setStep('time') }
     }).catch(() => setLoadError('Couldn’t load this page. Please refresh.'))
@@ -124,7 +136,7 @@ export default function BookingFlow({ slug, domain, initialService }: { slug?: s
           slug, domain, serviceId: service.id, staff, startsAt: slot, locationId: locationId || null,
           name: form.name, email: form.email, phone: form.phone, address: form.address, notes: form.notes,
           answers, timezone: viewerTz(),
-          source: typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('src') === 'link' ? 'link' : 'page',
+          source: ctx.src, invite: ctx.invite,
         }),
       })
       const d = await r.json()
@@ -134,7 +146,13 @@ export default function BookingFlow({ slug, domain, initialService }: { slug?: s
         setSubmitting(false)
         return
       }
-      window.location.href = d.checkoutUrl || `/booking/${d.token}?new=1`
+      if (d.checkoutUrl && ctx.embed) {
+        // Stripe Checkout can't run inside a frame — take the whole tab there.
+        try { window.top!.location.href = d.checkoutUrl } catch { window.open(d.checkoutUrl, '_blank') }
+        setSubmitting(false)
+        return
+      }
+      window.location.href = d.checkoutUrl || `/booking/${d.token}?new=1${ctx.embed ? '&embed=1' : ''}`
     } catch {
       setError('Couldn’t reach the server — check your connection and try again.')
       setSubmitting(false)
@@ -342,10 +360,30 @@ function Spinner({ light }: { light?: boolean }) {
   return <span style={{ display: 'inline-block', width: 18, height: 18, border: `2px solid ${light ? 'rgba(255,255,255,.5)' : '#e5e7eb'}`, borderTopColor: light ? '#fff' : '#9ca3af', borderRadius: '50%', animation: 'bkspin .7s linear infinite', verticalAlign: 'middle' }} />
 }
 
+// Inside a website's iframe (?embed=1): no page background, and tell the host
+// page our height so the frame grows with the content (see the embed snippet).
+function useEmbed() {
+  const [embed, setEmbed] = useState(false)
+  useEffect(() => {
+    let framed = false
+    try { framed = window.self !== window.top } catch { framed = true }
+    if (!framed || new URLSearchParams(window.location.search).get('embed') !== '1') return
+    setEmbed(true)
+    const post = () => { try { window.parent.postMessage({ type: 'colvy-booking-height', height: Math.ceil(document.documentElement.scrollHeight) }, '*') } catch {} }
+    const ro = new ResizeObserver(post)
+    ro.observe(document.body)
+    post()
+    return () => ro.disconnect()
+  }, [])
+  return embed
+}
+
 export function Shell({ accent, children }: { accent: string; children: React.ReactNode }) {
+  const embed = useEmbed()
   return (
-    <div style={{ minHeight: '100dvh', background: '#f6f6f7', padding: '32px 16px', fontFamily: 'Inter, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif', position: 'relative', isolation: 'isolate', ['--bk-accent' as any]: accent }}>
-      <ParallaxBackdrop accent={accent} />
+    <div style={{ minHeight: embed ? 0 : '100dvh', background: embed ? 'transparent' : '#f6f6f7', padding: embed ? '4px 2px 8px' : '32px 16px', fontFamily: 'Inter, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif', position: 'relative', isolation: 'isolate', ['--bk-accent' as any]: accent }}>
+      {!embed && <ParallaxBackdrop accent={accent} />}
+      {embed && <style>{`html,body{background:transparent!important}.bk-card{box-shadow:none!important}`}</style>}
       <style>{MOTION_CSS}</style>
       <style>{`
         @keyframes bkspin{to{transform:rotate(360deg)}}

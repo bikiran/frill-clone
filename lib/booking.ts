@@ -29,6 +29,7 @@ const INSTANT_HOLD_MINS = 5
 export const isMissingBookingSchema = (e: any) =>
   /booking_services|bookings|booking_settings|claim_booking_slot|does not exist|schema cache|PGRST20[25]/i.test(String(e?.message || e || ''))
 export const MIGRATION_HINT = 'Run migrations/COLVY_V323_BOOKINGS.sql in Supabase, then try again.'
+export const MIGRATION_HINT_V324 = 'Run migrations/COLVY_V324_BOOKING_PHASE2.sql in Supabase, then try again.'
 
 // ── Settings ─────────────────────────────────────────────────────────────────
 
@@ -50,6 +51,10 @@ export type BookingSettings = {
   page_title: string
   intro: string
   confirmation_note: string
+  reminder_24h: boolean
+  reminder_2h: boolean
+  followup_review: boolean
+  show_in_widget: boolean
 }
 
 export function resolveBookingSettings(raw: any): BookingSettings {
@@ -83,6 +88,10 @@ export function resolveBookingSettings(raw: any): BookingSettings {
     page_title: String(s.page_title || '').slice(0, 120),
     intro: String(s.intro || '').slice(0, 1000),
     confirmation_note: String(s.confirmation_note || '').slice(0, 1000),
+    reminder_24h: s.reminder_24h !== false,
+    reminder_2h: s.reminder_2h !== false,
+    followup_review: s.followup_review !== false,
+    show_in_widget: s.show_in_widget !== false,
   }
 }
 
@@ -140,6 +149,7 @@ export function cleanService(input: any): Record<string, any> {
     staff_ids: uuids(input.staff_ids),
     min_notice_mins: clampInt(input.min_notice_mins, 0, 60 * 24 * 60, 120),
     max_days_ahead: clampInt(input.max_days_ahead, 1, 365, 60),
+    rebook_days: input.rebook_days ? clampInt(input.rebook_days, 1, 730, 28) : null,
     questions,
     color: /^#[0-9a-f]{6}$/i.test(String(input.color || '')) ? input.color : null,
     image_url: String(input.image_url || '').trim().slice(0, 1000) || null,
@@ -328,10 +338,14 @@ export async function availability(db: any, opts: {
 
 const tail9 = (s: string) => (s || '').replace(/\D/g, '').slice(-9)
 
-async function ensureContact(db: any, companyId: string, c: { name: string; email: string | null; phone: string | null }) {
+async function ensureContact(db: any, companyId: string, c: { name: string; email: string | null; phone: string | null }, knownId?: string) {
   let hit: any = null
   try {
-    if (c.email) {
+    if (knownId) {
+      const { data } = await db.from('contacts').select('id, name, email, phone').eq('company_id', companyId).eq('id', knownId).maybeSingle()
+      hit = data || null
+    }
+    if (!hit && c.email) {
       const { data } = await db.from('contacts').select('id, name, email, phone').eq('company_id', companyId).ilike('email', c.email).limit(1)
       hit = data?.[0] || null
     }
@@ -409,6 +423,7 @@ export type CreateInput = {
   notes: string | null
   origin: string
   source?: string
+  inviteToken?: string | null
 }
 
 export type CreateResult = { ok: true; token: string; checkoutUrl?: string | null; state: 'confirmed' | 'pending' } | { ok: false; error: string; status?: number }
@@ -481,6 +496,12 @@ export async function createBooking(db: any, input: CreateInput): Promise<Create
     if (data) { bookingId = data as string; break }
   }
   if (!bookingId) return { ok: false, error: 'Sorry, that time was just taken. Please pick another.', status: 409 }
+
+  // A personal link from the inbox → the booking joins that customer's thread.
+  if (input.inviteToken) {
+    const inv = await loadInvite(db, input.inviteToken)
+    if (inv && inv.company_id === company.id) { try { await db.from('bookings').update({ invite_id: inv.id }).eq('id', bookingId) } catch {} }
+  }
 
   if (!needsPayment) {
     await confirmBooking(db, bookingId, { origin: input.origin })
@@ -579,8 +600,20 @@ export async function confirmBooking(db: any, bookingId: string, opts: { origin:
   const bk = { ...b, ...patch }
 
   // CRM: contact + conversation, so the booking lives with the customer.
-  const contactId = await ensureContact(db, b.company_id, { name: b.customer_name || '', email: b.customer_email, phone: b.customer_phone })
-  const conversationId = await ensureConversation(db, b.company_id, contactId, b)
+  let contactId: string | null = null, conversationId: string | null = null
+  if (b.invite_id) {
+    try {
+      const { data: inv } = await db.from('booking_invites').select('id, company_id, contact_id, conversation_id, used_count').eq('id', b.invite_id).maybeSingle()
+      if (inv && inv.company_id === b.company_id) {
+        contactId = inv.contact_id || null
+        conversationId = inv.conversation_id || null
+        await db.from('booking_invites').update({ used_count: (inv.used_count || 0) + 1 }).eq('id', inv.id)
+        if (contactId) await ensureContact(db, b.company_id, { name: b.customer_name || '', email: b.customer_email, phone: b.customer_phone }, contactId)
+      }
+    } catch {}
+  }
+  if (!contactId) contactId = await ensureContact(db, b.company_id, { name: b.customer_name || '', email: b.customer_email, phone: b.customer_phone })
+  if (!conversationId) conversationId = await ensureConversation(db, b.company_id, contactId, b)
   bk.contact_id = contactId; bk.conversation_id = conversationId
   if (b.chat_payment_id && conversationId) { try { await db.from('chat_payments').update({ conversation_id: conversationId }).eq('id', b.chat_payment_id) } catch {} }
 
@@ -604,7 +637,8 @@ export async function confirmBooking(db: any, bookingId: string, opts: { origin:
     external_source: 'booking', external_id: b.id,
     assigned_to_id: b.staff_id || null, assigned_to_name: b.staff_name || null,
     assignees: b.staff_id ? [{ id: b.staff_id, name: b.staff_name || '' }] : [],
-    notify_customer: !!b.customer_phone, customer_contact_id: contactId,
+    // Booking reminders come from the booking sweep, not the calendar's own.
+    notify_customer: false, customer_contact_id: contactId,
   }
   let calendarEventId: string | null = null
   {
@@ -732,6 +766,8 @@ export async function rescheduleBooking(db: any, bookingId: string, opts: { star
   const staffName = newStaff ? (staff.find(s => s.id === newStaff)?.name || null) : null
   const oldWhen = whenText(b)
   await db.from('bookings').update({ staff_name: staffName, reschedule_count: (b.reschedule_count || 0) + 1 }).eq('id', b.id)
+  // New time → remind (and ask to confirm) again.
+  try { await db.from('bookings').update({ reminder_24h_at: null, reminder_2h_at: null, customer_confirmed_at: null }).eq('id', b.id) } catch {}
   const { data: fresh } = await db.from('bookings').select('*').eq('id', b.id).maybeSingle()
   const bk = fresh || b
   if (b.calendar_event_id) {
@@ -754,18 +790,36 @@ export async function rescheduleBooking(db: any, bookingId: string, opts: { star
 
 // ── Customer messages (SMS + email with calendar invite) ─────────────────────
 
-type MsgKind = 'confirmed' | 'cancelled' | 'rescheduled' | 'conflict'
+export type MsgKind = 'confirmed' | 'cancelled' | 'rescheduled' | 'conflict' | 'reminder' | 'noshow' | 'rebook'
 
-async function customerMessage(db: any, company: any, settings: BookingSettings, b: any, kind: MsgKind, extra: { service?: any; refunded?: number | boolean; origin?: string }) {
-  if (!company) return
-  if (await isExternalSendBlocked(company.id, db)) return
+// "today at 10:00am" / "tomorrow at 10:00am" / "Tue 7 Oct, 10:00am AEDT".
+function relWhen(b: any) {
+  const tz = b.timezone || 'Australia/Melbourne'
+  const start = Date.parse(b.starts_at)
+  const day = dateInTz(start, tz), today = dateInTz(Date.now(), tz)
+  const t = new Date(start).toLocaleTimeString('en-AU', { timeZone: tz, hour: 'numeric', minute: '2-digit' }).replace(' ', '').toLowerCase()
+  if (day === today) return `today at ${t}`
+  if (day === addDays(today, 1)) return `tomorrow at ${t}`
+  return whenText(b)
+}
+
+// SMS + email to the customer for every step of a booking's life. Returns
+// which channels went out. `channels` narrows it (e.g. the 2-hour reminder is
+// SMS only).
+export async function customerMessage(db: any, company: any, settings: BookingSettings, b: any, kind: MsgKind,
+  extra: { service?: any; refunded?: number | boolean; origin?: string; channels?: ('sms' | 'email')[] }): Promise<{ sms: boolean; email: boolean }> {
+  const sent = { sms: false, email: false }
+  if (!company) return sent
+  if (await isExternalSendBlocked(company.id, db)) return sent
+  const allow = (c: 'sms' | 'email') => !extra.channels || extra.channels.includes(c)
   const business = company.name || 'us'
   const first = String(b.customer_name || '').trim().split(/\s+/)[0] || 'there'
   const when = whenText(b)
+  const rel = relWhen(b)
   const who = b.staff_name ? ` with ${b.staff_name}` : ''
   const where = whereText(b, extra.service)
   const manage = manageUrl(company, b.manage_token)
-  const rebook = bookingPageUrl(company)
+  const rebook = bookingPageUrl(company, extra.service?.active ? extra.service.slug : undefined)
   const refundAmt = typeof extra.refunded === 'number' ? extra.refunded : 0
   const refundLine = refundAmt ? ` We've refunded ${fmtMoney(refundAmt, b.currency)}.` : (extra.refunded === true ? ' Your payment has been refunded.' : '')
 
@@ -774,42 +828,52 @@ async function customerMessage(db: any, company: any, settings: BookingSettings,
     rescheduled: `Hi ${first}, your ${b.service_name} booking at ${business} is now ${when}${who}. Manage: ${manage}`,
     cancelled: `Hi ${first}, your ${b.service_name} booking at ${business} on ${when} has been cancelled.${refundLine} Book again: ${rebook}`,
     conflict: `Hi ${first}, sorry — the ${b.service_name} time you chose at ${business} (${when}) was taken before your payment finished.${refundLine} Please pick another time: ${rebook}`,
+    reminder: `Reminder: ${b.service_name}${who} at ${business} ${rel}.${where ? ` ${where}.` : ''} Reply C to confirm or R to reschedule. ${manage}`,
+    noshow: `Hi ${first}, we missed you at your ${b.service_name} with ${business} today. Want to pick another time? ${rebook}`,
+    rebook: `Hi ${first}, it's been a while since your ${b.service_name} at ${business} — ready for the next one? Book a time: ${rebook}`,
   }
 
   const origin = extra.origin || String(process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com').replace(/\/$/, '')
 
-  if (settings.notify_sms && b.customer_phone) {
-    let optedOut = false
-    if (b.contact_id) {
-      try { const { data: ct } = await db.from('contacts').select('unsubscribed_at, is_blocked').eq('id', b.contact_id).maybeSingle(); optedOut = !!(ct?.unsubscribed_at || ct?.is_blocked) } catch {}
-    }
-    if (!optedOut) {
-      try {
-        await fetch(`${origin}/api/telnyx/sms/send`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ companyId: company.id, conversationId: b.conversation_id || undefined, to: b.customer_phone, text: sms[kind], senderName: business }),
-        })
-      } catch (e) { console.error('[booking] sms failed', e) }
-    }
+  // Opted out (replied STOP) or blocked → no texts. Marketing-flavoured
+  // nudges (rebook) also skip email for them.
+  let optedOut = false
+  if (b.contact_id) {
+    try { const { data: ct } = await db.from('contacts').select('unsubscribed_at, is_blocked').eq('id', b.contact_id).maybeSingle(); optedOut = !!(ct?.unsubscribed_at || ct?.is_blocked) } catch {}
   }
 
-  if (settings.notify_email && b.customer_email) {
+  if (settings.notify_sms && allow('sms') && b.customer_phone && !optedOut) {
+    try {
+      const r = await fetch(`${origin}/api/telnyx/sms/send`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId: company.id, conversationId: b.conversation_id || undefined, to: b.customer_phone, text: sms[kind], senderName: business }),
+      })
+      sent.sms = r.ok
+    } catch (e) { console.error('[booking] sms failed', e) }
+  }
+
+  if (settings.notify_email && allow('email') && b.customer_email && !(kind === 'rebook' && optedOut)) {
     const subjects: Record<MsgKind, string> = {
       confirmed: `Booking confirmed: ${b.service_name}, ${when}`,
       rescheduled: `Booking moved: ${b.service_name}, now ${when}`,
       cancelled: `Booking cancelled: ${b.service_name}, ${when}`,
       conflict: `Please choose another time: ${b.service_name}`,
+      reminder: `Reminder: ${b.service_name} ${rel}`,
+      noshow: `We missed you — book another time?`,
+      rebook: `Time for your next ${b.service_name}?`,
     }
     const headlines: Record<MsgKind, string> = {
       confirmed: 'You’re booked in ✓', rescheduled: 'Your booking has moved', cancelled: 'Your booking is cancelled', conflict: 'That time was just taken',
+      reminder: `See you ${rel.replace(/ at .*/, '')}`, noshow: 'We missed you', rebook: 'Ready for the next one?',
     }
+    const live = kind === 'confirmed' || kind === 'rescheduled' || kind === 'reminder'
     const invite = {
       uid: b.id, title: `${b.service_name} — ${business}`, startMs: Date.parse(b.starts_at), endMs: Date.parse(b.ends_at),
       location: where || null, description: `Manage your booking: ${manage}`, url: manage,
       cancelled: kind === 'cancelled' || kind === 'conflict', sequence: (b.reschedule_count || 0) + (kind === 'cancelled' ? 1 : 0),
     }
     const accent = /^#[0-9a-f]{6}$/i.test(company.accent_color || '') ? company.accent_color : '#ff7a6b'
-    const rows: [string, string][] = [
+    const rows: [string, string][] = kind === 'noshow' || kind === 'rebook' ? [] : [
       ['What', b.service_name + who],
       ['When', when],
       ...(where ? [['Where', where] as [string, string]] : []),
@@ -820,31 +884,36 @@ async function customerMessage(db: any, company: any, settings: BookingSettings,
       rescheduled: `Hi ${esc(first)}, your booking with ${esc(business)} has a new time.`,
       cancelled: `Hi ${esc(first)}, your booking with ${esc(business)} has been cancelled.${esc(refundLine)}`,
       conflict: `Hi ${esc(first)}, sorry — someone else booked this time before your payment finished.${esc(refundLine)}`,
+      reminder: `Hi ${esc(first)}, a quick reminder of your booking with ${esc(business)}. Need to change it? Use the button below.`,
+      noshow: `Hi ${esc(first)}, we missed you at your ${esc(b.service_name)} today. No worries — pick another time that suits you.`,
+      rebook: `Hi ${esc(first)}, it’s been a while since your ${esc(b.service_name)} with ${esc(business)}. Book your next one in a few taps.`,
     }
-    const buttons = kind === 'confirmed' || kind === 'rescheduled'
-      ? `<a href="${manage}" style="display:inline-block;background:${accent};color:#fff;text-decoration:none;font-weight:700;padding:11px 20px;border-radius:10px;margin:0 8px 8px 0">Manage booking</a><a href="${googleCalendarUrl(invite)}" style="display:inline-block;background:#fff;color:#111;border:1px solid #e5e7eb;text-decoration:none;font-weight:600;padding:10px 18px;border-radius:10px;margin:0 8px 8px 0">Add to Google Calendar</a>`
-      : `<a href="${rebook}" style="display:inline-block;background:${accent};color:#fff;text-decoration:none;font-weight:700;padding:11px 20px;border-radius:10px">Book another time</a>`
-    const note = kind === 'confirmed' && settings.confirmation_note ? `<p style="margin:16px 0 0;color:#374151;font-size:14px;line-height:1.55;white-space:pre-line">${esc(settings.confirmation_note)}</p>` : ''
+    const buttons = live
+      ? `<a href="${manage}" style="display:inline-block;background:${accent};color:#fff;text-decoration:none;font-weight:700;padding:11px 20px;border-radius:10px;margin:0 8px 8px 0">${kind === 'reminder' ? 'View or change' : 'Manage booking'}</a>${kind === 'reminder' ? '' : `<a href="${googleCalendarUrl(invite)}" style="display:inline-block;background:#fff;color:#111;border:1px solid #e5e7eb;text-decoration:none;font-weight:600;padding:10px 18px;border-radius:10px;margin:0 8px 8px 0">Add to Google Calendar</a>`}`
+      : `<a href="${rebook}" style="display:inline-block;background:${accent};color:#fff;text-decoration:none;font-weight:700;padding:11px 20px;border-radius:10px">${kind === 'cancelled' || kind === 'conflict' ? 'Book another time' : 'Book now'}</a>`
+    const note = (kind === 'confirmed' || kind === 'reminder') && settings.confirmation_note ? `<p style="margin:16px 0 0;color:#374151;font-size:14px;line-height:1.55;white-space:pre-line">${esc(settings.confirmation_note)}</p>` : ''
     const html = `<!doctype html><html><body style="margin:0;background:#f6f6f7;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif">
 <div style="max-width:520px;margin:0 auto;padding:28px 16px">
   <div style="background:#fff;border-radius:16px;padding:28px;border:1px solid #eee">
     ${company.logo_url ? `<img src="${esc(company.logo_url)}" alt="" style="height:36px;margin-bottom:14px">` : `<div style="font-weight:800;font-size:16px;margin-bottom:14px">${esc(business)}</div>`}
     <h1 style="margin:0 0 8px;font-size:22px;color:#111">${headlines[kind]}</h1>
     <p style="margin:0 0 18px;color:#4b5563;font-size:14.5px;line-height:1.55">${intro[kind]}</p>
-    <table style="width:100%;border-collapse:collapse;font-size:14px;margin-bottom:20px">
+    ${rows.length ? `<table style="width:100%;border-collapse:collapse;font-size:14px;margin-bottom:20px">
       ${rows.map(([k, v]) => `<tr><td style="padding:8px 0;color:#6b7280;width:90px;vertical-align:top;border-top:1px solid #f1f1f1">${k}</td><td style="padding:8px 0;color:#111;font-weight:600;border-top:1px solid #f1f1f1">${esc(v)}</td></tr>`).join('')}
-    </table>
+    </table>` : ''}
     ${buttons}
     ${note}
   </div>
-  <p style="text-align:center;color:#9ca3af;font-size:12px;margin-top:14px">Booked with ${esc(business)} · Powered by Colvy</p>
+  <p style="text-align:center;color:#9ca3af;font-size:12px;margin-top:14px">${esc(business)} · Powered by Colvy</p>
 </div></body></html>`
-    const text = `${headlines[kind]}\n\n${rows.map(([k, v]) => `${k}: ${v}`).join('\n')}\n\n${kind === 'confirmed' || kind === 'rescheduled' ? `Manage your booking: ${manage}` : `Book again: ${rebook}`}`
-    await sendCustomerEmail(db, company, {
+    const text = `${headlines[kind]}\n\n${rows.map(([k, v]) => `${k}: ${v}`).join('\n')}\n\n${live ? `Manage your booking: ${manage}` : `Book: ${rebook}`}`
+    const withIcs = kind === 'confirmed' || kind === 'rescheduled' || kind === 'cancelled'
+    sent.email = await sendCustomerEmail(db, company, {
       to: b.customer_email, subject: subjects[kind], html, text,
-      attachments: kind === 'conflict' ? [] : [{ filename: kind === 'cancelled' ? 'cancelled.ics' : 'booking.ics', content: Buffer.from(buildIcs(invite)).toString('base64') }],
+      attachments: withIcs ? [{ filename: kind === 'cancelled' ? 'cancelled.ics' : 'booking.ics', content: Buffer.from(buildIcs(invite)).toString('base64') }] : [],
     })
   }
+  return sent
 }
 
 const esc = (s: string) => String(s || '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' } as any)[c])
@@ -913,4 +982,32 @@ export async function settleBookingPayment(db: any, bookingId: string, session: 
     }
   }
   return res
+}
+
+// ── Personal booking links (invites) ─────────────────────────────────────────
+
+export async function loadInvite(db: any, token: string | null | undefined) {
+  if (!token || token.length < 16 || token.length > 80) return null
+  try {
+    const { data } = await db.from('booking_invites').select('*').eq('token', token).maybeSingle()
+    if (!data || Date.parse(data.expires_at) < Date.now()) return null
+    return data
+  } catch { return null }
+}
+
+// What the booking page pre-fills from an invite.
+export async function invitePrefill(db: any, inv: any) {
+  if (!inv?.contact_id) return { name: '', email: '', phone: '', serviceId: inv?.service_id || null }
+  const { data: c } = await db.from('contacts').select('name, email, phone').eq('id', inv.contact_id).eq('company_id', inv.company_id).maybeSingle()
+  return { name: c?.name || '', email: c?.email || '', phone: c?.phone || '', serviceId: inv.service_id || null }
+}
+
+export async function createInvite(db: any, opts: { companyId: string; contactId?: string | null; conversationId?: string | null; serviceId?: string | null; userId?: string | null }) {
+  const token = crypto.randomBytes(18).toString('base64url')
+  const { data, error } = await db.from('booking_invites').insert({
+    token, company_id: opts.companyId, contact_id: opts.contactId || null, conversation_id: opts.conversationId || null,
+    service_id: opts.serviceId || null, created_by: opts.userId || null,
+  }).select('*').maybeSingle()
+  if (error) throw error
+  return data
 }

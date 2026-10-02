@@ -54,6 +54,23 @@ export default function BookingSettingsTab({ settings, setSettings }: { settings
       </section>
 
       <section style={card}>
+        <div style={title}>Reminders & follow-ups</div>
+        <div style={{ display: 'grid', gap: 10, marginTop: 12 }}>
+          <Row label="Reminder the day before" sub="24 hours ahead by SMS and email (sent between 8am and 8pm). Customers reply C to confirm or R to reschedule."><Toggle on={settings.reminder_24h} onChange={v => set({ reminder_24h: v })} /></Row>
+          <Row label="Reminder 2 hours before" sub="A short SMS on the day — skipped if the day-before reminder only just went out."><Toggle on={settings.reminder_2h} onChange={v => set({ reminder_2h: v })} /></Row>
+          <Row label="Ask for a review afterwards" sub="When a visit is done, a review request is queued — uses your Reviews settings (delay, channels, who gets asked)."><Toggle on={settings.followup_review} onChange={v => set({ followup_review: v })} /></Row>
+        </div>
+        <div style={{ ...hint, marginTop: 10 }}>“Time for your next one?” nudges are set per service (Services → edit → Rebook reminder).</div>
+      </section>
+
+      <section style={card}>
+        <div style={title}>Chat widget</div>
+        <div style={{ display: 'grid', gap: 10, marginTop: 12 }}>
+          <Row label="Show a Book tab in your chat widget" sub="Visitors on your website can see your services and book from the widget."><Toggle on={settings.show_in_widget} onChange={v => set({ show_in_widget: v })} /></Row>
+        </div>
+      </section>
+
+      <section style={card}>
         <div style={title}>Customer notifications</div>
         <div style={{ display: 'grid', gap: 10, marginTop: 12 }}>
           <Row label="SMS" sub="Confirmation, changes and cancellations, from your business number. Skipped for people who replied STOP."><Toggle on={settings.notify_sms} onChange={v => set({ notify_sms: v })} /></Row>

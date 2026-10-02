@@ -4,7 +4,7 @@ import { checkBurst, callerKey } from '@/lib/rate-limit'
 import { addDays, dateInTz, isDate } from '@/lib/booking-time'
 import {
   loadCompanyPublic, resolveBookingSettings, loadStaff, loadLocations, availability, createBooking,
-  publicService, isMissingBookingSchema, stripeReady, amountDue,
+  publicService, isMissingBookingSchema, stripeReady, amountDue, loadInvite, invitePrefill,
 } from '@/lib/booking'
 
 export const dynamic = 'force-dynamic'
@@ -19,6 +19,7 @@ const admin = () => createClient(
 //
 // GET ?op=page&slug=|domain=                          → business, services, staff, locations
 // GET ?op=slots&slug=&service=&staff=any|id&from=&to= → bookable start times (ISO)
+// GET ?op=invite&slug=&token=                        → details to pre-fill (personal link)
 // POST { slug|domain, serviceId, staff, startsAt, name, email, phone, timezone,
 //        answers, locationId, address, notes }        → { token, checkoutUrl? }
 
@@ -50,13 +51,19 @@ export async function GET(req: NextRequest) {
       const payReady = stripeReady(company)
       return NextResponse.json({
         company: { name: company.name, slug: company.slug, logo_url: company.logo_url, accent_color: company.accent_color },
-        page: { title: settings.page_title, intro: settings.intro, require_phone: settings.require_phone, require_email: settings.require_email, cancel_hours: settings.cancel_hours, refund_on_cancel: settings.refund_on_cancel, late_cancel: settings.late_cancel, allow_reschedule: settings.allow_reschedule },
+        page: { show_in_widget: settings.show_in_widget, title: settings.page_title, intro: settings.intro, require_phone: settings.require_phone, require_email: settings.require_email, cancel_hours: settings.cancel_hours, refund_on_cancel: settings.refund_on_cancel, late_cancel: settings.late_cancel, allow_reschedule: settings.allow_reschedule },
         timezone: settings.timezone,
         // A paid service can't be booked until the business connects Stripe.
         services: (services || []).filter((s: any) => payReady || amountDue(s) === 0).map(publicService),
         staff: bookable.map(s => ({ id: s.id, name: s.name, avatar_url: s.avatar_url })),
         locations: await loadLocations(db, company.id),
       }, { headers: { 'Cache-Control': 'no-store' } })
+    }
+
+    if (op === 'invite') {
+      const inv = await loadInvite(db, sp.get('token'))
+      if (!inv || inv.company_id !== company.id) return NextResponse.json({ prefill: null })
+      return NextResponse.json({ prefill: await invitePrefill(db, inv) }, { headers: { 'Cache-Control': 'no-store' } })
     }
 
     if (op === 'slots') {
@@ -135,7 +142,8 @@ export async function POST(req: NextRequest) {
       address: clean(b.address, 300) || null,
       notes: clean(b.notes, 2000) || null,
       origin: req.nextUrl.origin,
-      source: b.source === 'link' ? 'link' : 'page',
+      source: ['link', 'widget', 'embed', 'invite'].includes(b.source) ? b.source : 'page',
+      inviteToken: typeof b.invite === 'string' ? b.invite : null,
     })
     if ('error' in r) return NextResponse.json({ error: r.error }, { status: r.status || 400 })
     return NextResponse.json(r)

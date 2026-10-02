@@ -11,17 +11,20 @@ import BookingsList from '@/components/booking/admin/BookingsList'
 import ServicesTab from '@/components/booking/admin/ServicesTab'
 import AvailabilityTab from '@/components/booking/admin/AvailabilityTab'
 import BookingSettingsTab from '@/components/booking/admin/BookingSettingsTab'
+import TodayTab from '@/components/booking/admin/TodayTab'
+import EmbedDialog from '@/components/booking/admin/EmbedDialog'
 
 // Online booking & appointments: the bookings themselves, the services people
 // can book, when they can book, and the policy. The public page lives at
 // /book/<slug> (or <slug>.colvy.com/book).
 
-type Tab = 'bookings' | 'services' | 'availability' | 'settings'
+type Tab = 'today' | 'bookings' | 'services' | 'availability' | 'settings'
 
 export default function BookingsPage() {
   const router = useRouter()
   const [companyId, setCompanyId] = useState('')
-  const [tab, setTab] = useState<Tab>('bookings')
+  const [tab, setTab] = useState<Tab>('today')
+  const [showEmbed, setShowEmbed] = useState(false)
   const [loading, setLoading] = useState(true)
   const [setupMsg, setSetupMsg] = useState('')
   const [toast, setToast] = useState('')
@@ -60,7 +63,7 @@ export default function BookingsPage() {
       if (!cid) { setLoading(false); return }
       setCompanyId(cid)
       const t = new URLSearchParams(window.location.search).get('tab') as Tab | null
-      if (t && ['bookings', 'services', 'availability', 'settings'].includes(t)) setTab(t)
+      if (t && ['today', 'bookings', 'services', 'availability', 'settings'].includes(t)) setTab(t)
       await Promise.all([loadMeta(cid), loadServices(cid), loadBookings(cid, 'upcoming')])
       setLoading(false)
     })()
@@ -95,6 +98,7 @@ export default function BookingsPage() {
         action={meta?.bookingUrl ? (
           <>
             <button onClick={copyLink} style={btnGhost}>🔗 Copy booking link</button>
+            <button onClick={() => setShowEmbed(true)} style={btnGhost}>{'</>'} Embed</button>
             <a href={meta.bookingUrl} target="_blank" rel="noreferrer" style={{ ...btn, textDecoration: 'none' }}>Open page ↗</a>
           </>
         ) : undefined}
@@ -111,13 +115,14 @@ export default function BookingsPage() {
       )}
 
       <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--border, #ececec)', margin: '16px 0 18px', overflowX: 'auto' }}>
-        {([['bookings', `Bookings${upcomingCount ? ` (${upcomingCount})` : ''}`], ['services', `Services${services.length ? ` (${services.length})` : ''}`], ['availability', 'Availability'], ['settings', 'Settings']] as [Tab, string][]).map(([k, l]) => (
+        {([['today', 'Today'], ['bookings', `Bookings${upcomingCount ? ` (${upcomingCount})` : ''}`], ['services', `Services${services.length ? ` (${services.length})` : ''}`], ['availability', 'Availability'], ['settings', 'Settings']] as [Tab, string][]).map(([k, l]) => (
           <button key={k} onClick={() => switchTab(k)} style={{ border: 'none', background: 'none', padding: '10px 14px', fontSize: 14, fontWeight: 700, cursor: 'pointer', color: tab === k ? 'var(--ink, #111)' : 'var(--slate, #6b7280)', borderBottom: `2px solid ${tab === k ? 'var(--coral, #ff7a6b)' : 'transparent'}`, marginBottom: -1, whiteSpace: 'nowrap', fontFamily: 'inherit' }}>{l}</button>
         ))}
       </div>
 
       {loading ? <SkeletonList /> : !companyId ? <div style={{ color: '#6b7280' }}>No workspace found.</div> : (
         <>
+          {tab === 'today' && <TodayTab companyId={companyId} onOpenBookings={() => switchTab('bookings')} />}
           {tab === 'bookings' && <BookingsList companyId={companyId} bookings={bookings} timezone={settings?.timezone || 'Australia/Melbourne'} scope={scope} setScope={setScope} reload={() => loadBookings(companyId, scope)} flash={flash} />}
           {tab === 'services' && meta && <ServicesTab companyId={companyId} services={services} reload={() => loadServices(companyId)} staff={meta.staff || []} locations={meta.locations || []} stripeReady={!!meta.stripeReady} bookingUrl={meta.bookingUrl} flash={flash} />}
           {tab === 'availability' && settings && <AvailabilityTab settings={settings} setSettings={setSettings} staff={meta?.staff || []} />}
@@ -132,6 +137,8 @@ export default function BookingsPage() {
           <button onClick={saveSettings} disabled={savingSettings} style={btn}>{savingSettings ? 'Saving…' : 'Save changes'}</button>
         </div>
       )}
+
+      {showEmbed && meta?.bookingUrl && <EmbedDialog bookingUrl={meta.bookingUrl} services={services.filter(x => x.active)} onClose={() => setShowEmbed(false)} flash={flash} />}
 
       {toast && <div style={{ position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', background: '#111', color: '#fff', padding: '10px 16px', borderRadius: 10, fontSize: 13.5, zIndex: 1100, boxShadow: '0 10px 30px rgba(0,0,0,.25)' }}>{toast}</div>}
     </div>

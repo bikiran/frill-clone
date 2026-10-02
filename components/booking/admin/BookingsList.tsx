@@ -25,6 +25,7 @@ export default function BookingsList({ companyId, bookings, timezone, scope, set
   const [search, setSearch] = useState('')
   const [cancelling, setCancelling] = useState<any | null>(null)
   const [moving, setMoving] = useState<any | null>(null)
+  const [noShow, setNoShow] = useState<any | null>(null)
 
   const rows = useMemo(() => {
     const s = search.trim().toLowerCase()
@@ -98,6 +99,8 @@ export default function BookingsList({ companyId, bookings, timezone, scope, set
                     </div>
                     <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
                       <span style={{ ...pill, background: st.bg, color: st.c }}>{st.label}</span>
+                      {b.status === 'confirmed' && b.customer_confirmed_at && <span style={{ ...pill, background: '#ecfdf5', color: '#047857' }} title="Replied C to the reminder">✓ Customer confirmed</span>}
+                      {b.status === 'confirmed' && !b.customer_confirmed_at && (b.reminder_24h_at || b.reminder_2h_at) && <span style={{ ...pill, background: '#f9fafb', color: '#6b7280' }}>Reminded</span>}
                       {b.amount_due_cents > 0 && PAY[b.payment_status] && (
                         <span style={{ ...pill, background: '#f9fafb', color: '#374151' }}>{PAY[b.payment_status]} {money(b.payment_status === 'refunded' || b.payment_status === 'partially_refunded' ? b.refunded_cents : b.amount_due_cents, b.currency)}</span>
                       )}
@@ -106,7 +109,7 @@ export default function BookingsList({ companyId, bookings, timezone, scope, set
                       {b.conversation_id && <Link href={`/admin/inbox?conversation=${b.conversation_id}`} style={{ ...btnGhost, height: 30, fontSize: 12, textDecoration: 'none' }}>💬 Chat</Link>}
                       {b.status === 'confirmed' && !past && <button onClick={() => setMoving(b)} style={{ ...btnGhost, height: 30, fontSize: 12 }}>Move</button>}
                       {b.status === 'confirmed' && past && <button onClick={() => act(b, 'complete')} style={{ ...btnGhost, height: 30, fontSize: 12 }}>✓ Done</button>}
-                      {b.status === 'confirmed' && past && <button onClick={() => act(b, 'no_show')} style={{ ...btnGhost, height: 30, fontSize: 12 }}>No-show</button>}
+                      {b.status === 'confirmed' && past && <button onClick={() => setNoShow(b)} style={{ ...btnGhost, height: 30, fontSize: 12 }}>No-show</button>}
                       {(b.status === 'completed' || b.status === 'no_show') && <button onClick={() => act(b, 'confirm')} style={{ ...btnGhost, height: 30, fontSize: 12 }}>Undo</button>}
                       {(b.status === 'confirmed' || b.status === 'pending') && <button onClick={() => setCancelling(b)} style={{ ...btnGhost, height: 30, fontSize: 12, color: '#dc2626' }}>Cancel</button>}
                     </div>
@@ -119,6 +122,7 @@ export default function BookingsList({ companyId, bookings, timezone, scope, set
       </div>
 
       {cancelling && <CancelDialog companyId={companyId} b={cancelling} onClose={() => setCancelling(null)} onDone={m => { setCancelling(null); flash(m); reload() }} />}
+      {noShow && <NoShowDialog companyId={companyId} b={noShow} onClose={() => setNoShow(null)} onDone={m => { setNoShow(null); flash(m); reload() }} />}
       {moving && <MoveDialog companyId={companyId} b={moving} timezone={timezone} onClose={() => setMoving(null)} onDone={m => { setMoving(null); flash(m); reload() }} />}
     </div>
   )
@@ -152,6 +156,27 @@ function CancelDialog({ companyId, b, onClose, onDone }: { companyId: string; b:
         <textarea value={reason} onChange={e => setReason(e.target.value)} rows={2} placeholder="Reason (optional, included in the note on the conversation)" style={input} />
         {error && <div style={{ color: '#b91c1c', fontSize: 13 }}>{error}</div>}
       </div>
+    </Modal>
+  )
+}
+
+function NoShowDialog({ companyId, b, onClose, onDone }: { companyId: string; b: any; onClose: () => void; onDone: (m: string) => void }) {
+  const [notify, setNotify] = useState(true)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const go = async () => {
+    setBusy(true); setError('')
+    try { await api('/api/bookings', { method: 'PATCH', json: { companyId, id: b.id, action: 'no_show', notify } }); onDone(notify ? 'Marked as no-show — sent them a link to rebook' : 'Marked as no-show') }
+    catch (e: any) { setError(e.message); setBusy(false) }
+  }
+  return (
+    <Modal title="Mark as no-show" onClose={onClose} width={440} footer={<>
+      <button onClick={onClose} style={btnGhost}>Cancel</button>
+      <button onClick={go} disabled={busy} style={btn}>{busy ? 'Saving…' : 'Mark no-show'}</button>
+    </>}>
+      <div style={{ fontSize: 14, marginBottom: 14 }}><b>{b.customer_name}</b> · {b.service_name}</div>
+      <label style={row}><Toggle on={notify} onChange={setNotify} /> Send “Sorry we missed you — pick another time?” with a booking link</label>
+      {error && <div style={{ color: '#b91c1c', fontSize: 13, marginTop: 10 }}>{error}</div>}
     </Modal>
   )
 }
