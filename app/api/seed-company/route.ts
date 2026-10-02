@@ -75,7 +75,7 @@ export async function POST(req: NextRequest) {
       {
         company_id: companyId, votes: 1, likes: 0, status: 'planned',
         topic_id: tIds['welcome'] || null, created_by_name: 'Team',
-        title: `Welcome to ${n}! 👋`,
+        title: `Welcome to ${n}!`,
         description: `We're excited to hear your ideas. Share your suggestions and vote on what matters most to you.`,
       },
       // Extra ideas to fill all roadmap columns
