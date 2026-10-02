@@ -80,6 +80,7 @@ export const ASSISTANT_TOOLS: ToolDef[] = [
         query: { type: 'string', description: 'order number, customer name or email' },
         status: { type: 'string', description: "operational status: awaiting_shipment | packed | on_hold | shipped | cancelled | refunded" },
         paymentStatus: { type: 'string', enum: ['paid', 'pending', 'refunded', 'failed'] },
+        outletId: { type: 'string', description: "only orders assigned to this outlet, or 'none' for orders with no outlet" },
         limit: { type: 'number' },
       },
     },
@@ -244,6 +245,19 @@ export const ASSISTANT_TOOLS: ToolDef[] = [
     },
   },
   {
+    name: 'assign_order_outlet', safety: 'immediate',
+    description: "Assign one or more orders to an outlet (the store that packs or hands over the order), or clear the outlet. Internal and reversible — just do it. Resolve the orders with search_orders and the outlet with search_outlets first.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        orderIds: { type: 'array', items: { type: 'string' }, description: 'order ids or order numbers (up to 50)' },
+        outletId: { type: 'string', description: 'the outlet id; omit when clearing' },
+        clear: { type: 'boolean', description: 'true to remove the outlet from these orders' },
+      },
+      required: ['orderIds'],
+    },
+  },
+  {
     name: 'update_order_status', safety: 'confirm',
     description: "Change an order's status in the store (WooCommerce). REQUIRES confirmation. Use for 'mark this order completed / on hold / processing'. To cancel use cancel_order; to refund use refund_order.",
     input_schema: {
@@ -369,6 +383,13 @@ export const TOOL_SAFETY: Record<string, ToolSafety> = Object.fromEntries(ASSIST
 // ── helpers ──────────────────────────────────────────────────────────────────
 const norm9 = (p: string) => String(p || '').replace(/\D/g, '').slice(-9)
 const outletName = (l: any) => l?.label || l?.suburb || 'Outlet'
+
+async function outletNames(db: any, companyId: string, ids: (string | null | undefined)[]): Promise<Record<string, string>> {
+  const want = Array.from(new Set(ids.filter(Boolean))) as string[]
+  if (!want.length) return {}
+  const { data } = await db.from('company_locations').select('id, label, suburb').eq('company_id', companyId).in('id', want)
+  return Object.fromEntries((data || []).map((l: any) => [l.id, outletName(l)]))
+}
 
 async function resolveNames(db: any, userIds: string[]): Promise<Record<string, string>> {
   const out: Record<string, string> = {}
@@ -560,19 +581,42 @@ export async function runReadTool(db: SupabaseClient, ctx: AssistantContext, nam
   }
 
   if (name === 'search_orders') {
-    const q = String(args?.query || '').trim()
-    let query = D.from('orders')
-      .select('id, order_number, external_order_id, status, payment_status, total, currency, customer_name, customer_email, item_count, order_date, sales_channel')
-      .eq('company_id', ctx.companyId)
-    if (args?.status) query = query.eq('status', args.status)
-    if (args?.paymentStatus) query = query.eq('payment_status', args.paymentStatus)
-    if (q) query = query.or(`order_number.ilike.%${q}%,customer_name.ilike.%${q}%,customer_email.ilike.%${q}%`)
-    const { data } = await query.order('order_date', { ascending: false }).limit(Math.min(args?.limit || 10, 25))
+    const q = String(args?.query || '').replace(/[,()%]/g, ' ').replace(/\s+/g, ' ').trim()
+    const limit = Math.min(args?.limit || 10, 25)
+    const base = () => {
+      let query = D.from('orders')
+        .select('id, order_number, external_order_id, status, payment_status, total, currency, customer_name, customer_email, item_count, order_date, sales_channel, store_location_id')
+        .eq('company_id', ctx.companyId)
+      if (args?.status) query = query.eq('status', args.status)
+      if (args?.paymentStatus) query = query.eq('payment_status', args.paymentStatus)
+      if (args?.outletId === 'none') query = query.is('store_location_id', null)
+      else if (args?.outletId) query = query.eq('store_location_id', args.outletId)
+      return query
+    }
+    let rows: any[] = []
+    if (q) {
+      const { data } = await base().or(`order_number.ilike.%${q}%,customer_name.ilike.%${q}%,customer_email.ilike.%${q}%`).order('order_date', { ascending: false }).limit(limit)
+      rows = data || []
+      // A misspelt name ("Brayden Pearce" for Braden Pearce): match on any word,
+      // then keep the orders that match the most words.
+      const words = q.toLowerCase().split(' ').filter(w => w.length >= 3)
+      if (!rows.length && words.length > 1) {
+        const { data: loose } = await base().or(words.map(w => `customer_name.ilike.%${w}%`).join(',')).order('order_date', { ascending: false }).limit(40)
+        const scored = (loose || []).map((o: any) => ({ o, s: words.filter(w => String(o.customer_name || '').toLowerCase().includes(w)).length }))
+        const best = Math.max(0, ...scored.map((x: any) => x.s))
+        rows = scored.filter((x: any) => x.s === best).map((x: any) => x.o).slice(0, limit)
+      }
+    } else {
+      const { data } = await base().order('order_date', { ascending: false }).limit(limit)
+      rows = data || []
+    }
+    const outlets = await outletNames(D, ctx.companyId, rows.map(o => o.store_location_id))
     return {
-      orders: (data || []).map((o: any) => ({
+      orders: rows.map((o: any) => ({
         id: o.id, orderNumber: o.order_number, status: o.status, paymentStatus: o.payment_status,
         total: money(o.total, o.currency), customer: o.customer_name, items: o.item_count,
         placed: fmtDate(o.order_date), channel: o.sales_channel, canWriteBack: !!o.external_order_id,
+        outlet: o.store_location_id ? outlets[o.store_location_id] || 'Outlet' : null,
       })),
     }
   }
@@ -580,10 +624,12 @@ export async function runReadTool(db: SupabaseClient, ctx: AssistantContext, nam
     const o = await resolveOrder(D, ctx.companyId, args?.orderId || ctx.orderId)
     if (!o) return { error: 'Order not found (try the exact order number).' }
     const { data: items } = await D.from('order_items').select('product_name, sku, quantity, unit_price, total_price').eq('order_id', o.id).limit(50)
+    const outlets = await outletNames(D, ctx.companyId, [o.store_location_id])
     return {
       order: {
         id: o.id, orderNumber: o.order_number, status: o.status, paymentStatus: o.payment_status,
         fulfilment: o.fulfilment_status, channel: o.sales_channel,
+        outlet: o.store_location_id ? outlets[o.store_location_id] || 'Outlet' : null,
         customer: { name: o.customer_name, email: o.customer_email, phone: o.customer_phone },
         subtotal: money(o.subtotal, o.currency), shipping: money(o.shipping_total, o.currency),
         discount: money(o.discount_total, o.currency), tax: money(o.tax_total, o.currency), total: money(o.total, o.currency),
@@ -802,7 +848,8 @@ export type ActionResult = {
   card?: any        // compact card for the UI
   // undo: with `restore` present the client updates the row back to those
   // values; without it, the client deletes the created row.
-  undo?: { entityType: string; entityId: string; restore?: Record<string, any> } | null
+  // `rows` restores several rows, each to its own prior values.
+  undo?: { entityType: string; entityId: string; restore?: Record<string, any>; rows?: { id: string; restore: Record<string, any> }[] } | null
   // A directive for the client to run in the browser (e.g. open the softphone
   // and dial). The server can't place a WebRTC call — the browser does.
   clientAction?: { type: string; [k: string]: any } | null
@@ -1019,6 +1066,50 @@ export async function executeAction(db: SupabaseClient, ctx: AssistantContext, n
     const card = { kind: 'task', title, lines: [changed.join(' · ')], href: '/admin/tasks' }
     await logAiEvent(D, { companyId: ctx.companyId, userId: ctx.userId, action: 'Updated task', tool: name, entityType: 'task', entityId: task.id, input: patch, result: { changed } })
     return { ok: true, entityType: 'task', entityId: task.id, card, undo: { entityType: 'task_update', entityId: task.id, restore } }
+  }
+
+  if (name === 'assign_order_outlet') {
+    const refs: string[] = (Array.isArray(args?.orderIds) ? args.orderIds : [args?.orderIds || ctx.orderId])
+      .map((r: any) => String(r || '').trim()).filter(Boolean).slice(0, 50)
+    if (!refs.length) return { ok: false, error: 'Tell me which order to assign.' }
+    const clear = !!args?.clear || !args?.outletId
+    let outlet: any = null
+    if (!clear) {
+      const { data } = await D.from('company_locations').select('id, label, suburb').eq('company_id', ctx.companyId).eq('id', args.outletId).maybeSingle()
+      if (!data) return { ok: false, error: 'I couldn\'t find that outlet.' }
+      outlet = data
+    }
+    const found = await Promise.all(refs.map(r => resolveOrder(D, ctx.companyId, r)))
+    const missing = refs.filter((_, i) => !found[i])
+    const orders = Array.from(new Map(found.filter(Boolean).map((o: any) => [o.id, o])).values()) as any[]
+    if (!orders.length) return { ok: false, error: `Order not found: ${missing.join(', ')}.` }
+
+    const locId = outlet?.id || null
+    const toChange = orders.filter(o => (o.store_location_id || null) !== locId)
+    const undoRows = toChange.map(o => ({ id: o.id, restore: { store_location_id: o.store_location_id || null } }))
+    if (toChange.length) {
+      const { error } = await D.from('orders').update({ store_location_id: locId, updated_at: new Date().toISOString() })
+        .eq('company_id', ctx.companyId).in('id', toChange.map(o => o.id))
+      if (error) return { ok: false, error: 'Could not update the order.' }
+      // Same history entry the Orders page writes, so the order's timeline shows it.
+      const detail = locId ? `Assigned to ${outletName(outlet)} by Colvy AI` : 'Outlet cleared by Colvy AI'
+      try { await D.from('order_events').insert(toChange.map(o => ({ order_id: o.id, company_id: ctx.companyId, type: 'outlet', detail, actor_id: ctx.userId, actor_name: ctx.userName }))) } catch {}
+    }
+    const label = (o: any) => `#${o.order_number || o.external_order_id || o.id.slice(0, 8)}`
+    const title = orders.length === 1
+      ? `Order ${label(orders[0])} ${locId ? `assigned to ${outletName(outlet)}` : 'has no outlet now'}`
+      : `${orders.length} orders ${locId ? `assigned to ${outletName(outlet)}` : 'cleared of their outlet'}`
+    const lines = [
+      orders.length === 1 ? [orders[0].customer_name, money(orders[0].total, orders[0].currency)].filter(Boolean).join(' · ') : orders.slice(0, 4).map(label).join(', ') + (orders.length > 4 ? ` +${orders.length - 4} more` : ''),
+      toChange.length < orders.length ? `${orders.length - toChange.length} already there` : null,
+      missing.length ? `Not found: ${missing.join(', ')}` : null,
+    ].filter(Boolean)
+    const href = orders.length === 1 ? `/admin/orders/${orders[0].id}` : '/admin/orders'
+    await logAiEvent(D, { companyId: ctx.companyId, userId: ctx.userId, action: locId ? 'Assigned orders to outlet' : 'Cleared order outlet', tool: name, entityType: 'order', entityId: orders[0].id, input: { orders: orders.map(o => o.order_number), outletId: locId }, result: { changed: toChange.length } })
+    return {
+      ok: true, entityType: 'order', entityId: orders[0].id, card: { kind: 'order', title, lines, href },
+      undo: toChange.length ? { entityType: 'order_outlet', entityId: toChange[0].id, rows: undoRows } : null,
+    }
   }
 
   if (name === 'update_order_status' || name === 'cancel_order') {
