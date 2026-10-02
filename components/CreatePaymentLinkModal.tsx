@@ -78,9 +78,9 @@ export default function CreatePaymentLinkModal({
               body: JSON.stringify({ companyId, conversationId: convId, to: picked.phone, text: `Here's your secure payment link${description.trim() ? ` for ${description.trim()}` : ''}: ${payLink}`, senderName, skipChatMessage: true }),
             })
           } else if (channel === 'email' && picked.email) {
-            await fetch('/api/email/send', {
+            await fetch('/api/email/reply', {
               method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ companyId, conversationId: convId, to: picked.email, subject: 'Your payment link', text: `Here's your secure payment link${description.trim() ? ` for ${description.trim()}` : ''}: ${payLink}`, senderName }),
+              body: JSON.stringify({ conversationId: convId, to: picked.email, subject: 'Your payment link', content: `Here's your secure payment link${description.trim() ? ` for ${description.trim()}` : ''}: ${payLink}`, agentName: senderName, skipChatMessage: true }),
             })
           }
         } catch { /* the card is already in the thread; delivery is best-effort */ }

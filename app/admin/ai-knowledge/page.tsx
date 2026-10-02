@@ -108,7 +108,12 @@ export default function AiKnowledgePage() {
 
   const load = useCallback(async () => {
     if (!companyId) return
-    try { setOv(await api(`/api/ai/knowledge?companyId=${companyId}`)); setError('') }
+    try {
+      const d = await api(`/api/ai/knowledge?companyId=${companyId}`)
+      // Never let a partial response take the page down.
+      setOv({ ...d, settings: d.settings || {}, sources: d.sources || {}, domains: d.domains || [], facts: d.facts || [], files: d.files || [], websitePages: d.websitePages || [], unanswered: d.unanswered || [], total: d.total || 0 })
+      setError('')
+    }
     catch (e: any) { setError(e.message) }
   }, [companyId])
   useEffect(() => { load() }, [load])

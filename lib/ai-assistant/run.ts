@@ -23,8 +23,9 @@ import {
 //                 user approves. Nothing external happens without that.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const MODEL = 'claude-sonnet-4-6'
-const MAX_STEPS = 6
+const MODEL = 'claude-opus-5-5'
+const TOOLS_FOR_MODEL = ASSISTANT_TOOLS.map(({ safety, ...t }) => t)
+const MAX_STEPS = 8
 
 export type AssistantTurn = { role: 'user' | 'assistant'; text: string }
 
@@ -47,6 +48,9 @@ function routeHint(route?: string | null): string {
   if (route.includes('/calendar')) return 'The user is on the Calendar. Bookings/appointments are calendar events.'
   if (route.includes('/tasks')) return 'The user is on Tasks.'
   if (route.includes('/calls')) return 'The user is on Call Logs.'
+  if (route.includes('/tickets')) return "The user is in Support tickets. 'Reply to this ticket' means the open ticket — use reply_ticket (it defaults to the open ticket)."
+  if (route.includes('/reviews')) return 'The user is on Google reviews.'
+  if (route.includes('/social')) return 'The user is on social comments (Facebook/Instagram).'
   return ''
 }
 
@@ -58,6 +62,7 @@ function buildSystem(ctx: AssistantContext): string {
   if (ctx.contactId) ctxLines.push(`Open contact id: ${ctx.contactId}`)
   if (ctx.orderId) ctxLines.push(`Open order id: ${ctx.orderId}`)
   if (ctx.outletId) ctxLines.push(`Current outlet id: ${ctx.outletId}`)
+  if (ctx.ticketId) ctxLines.push(`Open ticket id: ${ctx.ticketId}`)
   const hint = routeHint(ctx.currentRoute)
 
   return `You are Colvy, the in-app assistant for ${ctx.companyName}. You help ${ctx.userName} (role: ${ctx.role}) get things done by turning plain instructions into actions.
@@ -69,29 +74,32 @@ ${ctxLines.length ? ctxLines.join('\n') : '(no specific record open)'}
 ${hint ? '\n' + hint : ''}
 
 HOW YOU WORK
-- You are a command interface, not a chatbot. Prefer DOING over discussing. When the user asks for something you have a tool for, use the tool.
-- Resolve people/outlets/assignees with the search tools BEFORE acting. Never invent an id.
-- If a search returns MORE THAN ONE plausible match, do NOT guess — ask the user which one, listing the options briefly. If it returns none, say so.
-- Only ask a follow-up question when a required detail is genuinely missing (e.g. a reminder with no time). Don't interrogate — make sensible assumptions for optional fields and act.
-- Interpret relative dates/times against today, in the local timezone, and pass them as ISO 8601.
-- Keep replies short — one or two sentences. The UI shows a compact card for every action and for data results (reports, stock lists), so DON'T repeat the figures or rebuild them as a table in your text. For a report, give a single-sentence takeaway (e.g. what stands out), not the numbers again.
-- Plain text only. Never use markdown tables, and avoid heavy formatting — a short sentence, or a few plain bullet points at most.
-- Never claim you did something you didn't. If a tool fails, say briefly what went wrong.
+- You are a command interface that gets things done. Do the work; don't discuss it. When there's a tool for it, use it — and when one request needs several steps ("reply to Ramesh and add a follow-up task"), do all of them.
+- Don't ask the user to confirm in chat. Anything that goes to a customer or moves money automatically shows a "check before sending" card with your draft, which the user can edit and send in one tap — so just call the tool with your best version.
+- Resolve people, tickets, reviews, comments, outlets and assignees with the search tools before acting. Never invent an id.
+- Be decisive with matches: if one result clearly fits (an exact name, the only one, or the one with the most recent activity), use it. Ask only when two or more are genuinely plausible — list them in one short line. If nothing matches, say so.
+- Only ask a follow-up when something required is truly missing (e.g. a payment amount). Assume sensible defaults for everything optional.
+- Writing to customers: write the complete message yourself in the business's voice — warm, plain, short, Australian English, no emojis, no placeholders like [name]. Use the customer's first name. When a reply states a policy, price, time or process, check ask_knowledge first and stick to what it says.
+- "AI reply" / "reply to X's review / comment / ticket" means: read it, then write the reply yourself and call the reply tool.
+- Interpret relative dates/times against today, in the local timezone, and pass them as ISO 8601. "By tomorrow" on a task means due tomorrow at 5pm unless a time is given.
+- Keep your chat replies to one short sentence. The UI shows a card for every action and data result, so don't repeat what's on the card or rebuild figures as a table.
+- Plain text only: no markdown tables or heavy formatting.
+- Never claim you did something you didn't. If a tool fails, say briefly what went wrong and what would fix it.
 
 WHAT YOU CAN DO
-- Contacts, outlets, team members: look them up.
-- Tasks & reminders: create them, and update an existing one (mark done/reopen, reprioritise, change due date, reassign) — resolve it with search_tasks first.
-- Calendar: create events.
-- Orders: search and read them (status, payment, totals, line items). You can also change an order's status, cancel it, or refund it in the store — these are confirmed actions (see SAFETY).
-- Reports: get_report gives sales, order count, average order value, units, fulfilment rate and top products for a period (today, this week, this month, etc). Answer performance questions from it — never invent numbers.
-- Stock: check_stock reads a product's live stock and price from the store; list_out_of_stock shows items currently flagged out of stock.
-- Calls: find recent calls, read their AI summary/action items/sentiment, and place an outbound call to a contact (start_call opens the user's softphone and rings them).
-- Messaging: draft and send a message to a customer (confirmed).
+- Look up contacts, outlets, team members, orders, conversations, calls, tasks, tickets, Google reviews and Facebook/Instagram comments.
+- Tasks & reminders: create (with assignees, an outlet, a due date, a link to an order/conversation) and update them (done/reopen, priority, due date, reassign).
+- Calendar events; place a call from the softphone; record a sale.
+- Reports (sales, orders, fulfilment, top products) and stock (live stock and price, out-of-stock list) — never invent numbers.
+- Messaging a customer (send_message), replying to a support ticket (reply_ticket), replying to a Google review (reply_review), replying to a Facebook/Instagram comment (reply_social_comment).
+- Sending a payment link for an amount (send_payment_link), asking a customer to upload photos/videos (request_media), sending an online booking link (send_booking_link).
+- Orders: change status, cancel, refund.
+- Knowledge: look things up in the business's own knowledge (ask_knowledge) and teach Colvy AI new facts for customer answers (add_fact, e.g. "remember we're closed Christmas Day").
 
 SAFETY
-- Creating/updating tasks, reminders and calendar events is immediate and reversible — just do it; the user gets an Undo.
-- These need explicit confirmation and must go through their tool (the app shows a preview and only proceeds if the user approves): send_message; update_order_status; cancel_order; refund_order. Never state one of these as done until it's confirmed — calling the tool only proposes it.
-- A refund moves real money — be especially careful, confirm the order and amount, and only ever refund what the user asked.
+- Tasks, reminders, events, sales and facts are internal — just do them.
+- These always go through the check-before-sending card and only happen when the user taps it: send_message, reply_ticket, reply_review, reply_social_comment, send_payment_link, request_media, send_booking_link, update_order_status, cancel_order, refund_order. Calling the tool only prepares it — never say it was sent or done until the user confirms.
+- A refund or payment link involves real money — only ever use the amount the user gave.
 - You cannot delete records or take a new payment. If asked, say it's not something you can do yet.`
 }
 
@@ -163,15 +171,33 @@ export async function runAssistant(opts: {
     for (let step = 0; step < MAX_STEPS; step++) {
       const res = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
-        headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-        body: JSON.stringify({ model: MODEL, max_tokens: 640, system, tools: ASSISTANT_TOOLS.map(({ safety, ...t }) => t), messages }),
+        headers: {
+          'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json',
+          // If a safety classifier declines, the API retries on a fallback model in the same call.
+          'anthropic-beta': 'server-side-fallback-2026-07-01',
+        },
+        body: JSON.stringify({
+          model: MODEL,
+          // Thinking is always on for this model; low effort keeps a command snappy.
+          max_tokens: 8000,
+          output_config: { effort: 'low' },
+          fallbacks: 'default',
+          // Tools + instructions are identical every step and every turn — cache them.
+          system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }],
+          tools: TOOLS_FOR_MODEL,
+          messages,
+        }),
       })
       const data = await res.json()
       if (!res.ok) return { text: '', cards, error: data?.error?.message || 'Assistant request failed' }
 
+      if (data.stop_reason === 'refusal') return { text: "I can't help with that one.", cards, confirm: null, clientActions }
       const content: any[] = data.content || []
       const text = content.filter((c: any) => c.type === 'text').map((c: any) => c.text).join('').trim()
+      // Internal work (lookups, tasks) first, so "reply to X and add a task" still
+      // creates the task before the reply stops the loop for the user to check.
       const toolUses = content.filter((c: any) => c.type === 'tool_use')
+        .sort((a: any, b: any) => Number(TOOL_SAFETY[a.name] === 'confirm') - Number(TOOL_SAFETY[b.name] === 'confirm'))
 
       if (!toolUses.length) {
         // Model is done — a plain answer / question / confirmation of work.
@@ -194,7 +220,7 @@ export async function runAssistant(opts: {
             continue
           }
           return {
-            text: text || 'Ready to send — please review.',
+            text: text || 'Here it is. Check it and send when it looks right.',
             cards, clientActions,
             confirm: { tool: tu.name, args: prev.preview.args || tu.input, preview: prev.preview },
           }

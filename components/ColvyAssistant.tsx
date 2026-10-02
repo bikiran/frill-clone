@@ -31,22 +31,32 @@ type Msg =
   | { role: 'user'; text: string }
   | { role: 'assistant'; text?: string; cards?: Card[]; confirm?: ConfirmPayload | null; error?: string; pending?: boolean }
 
+// Colvy AI's own brand colour, the same on every workspace (the workspace
+// accent can be anything, and the AI should always look like the AI).
+const GRAD = 'linear-gradient(135deg, #ff7a6b, #ff9d72)'
+const AI_CORAL = '#e2553f'
+const HISTORY_MAX = 80
+
 type PageCtx = { conversationId?: string | null; contactId?: string | null; orderId?: string | null; callId?: string | null; outletId?: string | null }
 
 // Suggested commands per area — a starting point, not a menu of the only things
 // that work. Freeform typing is always the point.
 function suggestionsFor(path: string): string[] {
-  if (path.includes('/inbox')) return ['Reply to this customer', 'Create a task to follow up tomorrow', 'Call this customer']
-  if (path.includes('/contacts')) return ['Find a contact', 'Call this contact', 'Book an appointment next Tuesday 10am']
+  if (path.includes('/inbox')) return ['Reply to this customer', 'Send them a payment link for $20', 'Ask them for photos', 'Follow-up task for tomorrow']
+  if (path.includes('/tickets')) return ['Reply to this ticket', 'Summarise this ticket', 'Assign it to me']
+  if (path.includes('/reviews')) return ['Reply to my latest Google review', 'Show reviews with no reply']
+  if (path.includes('/contacts')) return ['Call this contact', 'Send them a booking link', 'Book an appointment next Tuesday 10am']
   if (path.includes('/orders')) return ['Show pending orders', 'How did we do this week?', "What's out of stock?"]
   if (path.includes('/calendar')) return ['Book a delivery for Friday 9am', 'Remind me about it the night before']
   if (path.includes('/tasks')) return ['Create a high-priority task', 'Mark a task done', 'Reassign a task']
   if (path.includes('/calls')) return ['Summarise my last call', 'Create a task from this call', 'Remind me to call them back tomorrow']
-  return ['How did we do this week?', 'Create a task', "What's out of stock?", 'Show pending orders']
+  return ['How did we do this week?', 'Reply to my latest Google review', 'Send a payment link to a customer', "What's out of stock?"]
 }
 
 const SUGGEST_LABEL: Record<string, string> = {
   task: 'View tasks', reminder: 'View reminders', calendar_event: 'Open calendar', message: 'Open conversation', order: 'Open orders',
+  payment_link: 'Open conversation', media_request: 'Open conversation', review_reply: 'Open reviews', comment_reply: 'Open comments',
+  ticket_reply: 'Open ticket', booking_link: 'Open conversation', fact: 'Open AI knowledge', idea: 'Open roadmap',
 }
 
 export default function ColvyAssistant({ companyId, userId, agentName }: { companyId?: string | null; userId?: string | null; agentName?: string | null }) {
@@ -57,6 +67,44 @@ export default function ColvyAssistant({ companyId, userId, agentName }: { compa
   const [msgs, setMsgs] = useState<Msg[]>([])
   const [listening, setListening] = useState(false)
   const [toast, setToast] = useState<{ text: string } | null>(null)
+  const inputRef = useRef<HTMLTextAreaElement | null>(null)
+
+  // History survives closing the panel, reloading and navigating — per user and
+  // workspace, on this device. Unsent confirmations come back as "not sent", so
+  // an old preview can never be fired off by accident later.
+  const historyKey = companyId ? `colvy-ai-history:${companyId}:${userId || 'me'}` : ''
+  const loadedRef = useRef(false)
+  useEffect(() => {
+    if (!historyKey || loadedRef.current) return
+    loadedRef.current = true
+    try {
+      const raw = localStorage.getItem(historyKey)
+      if (!raw) return
+      const saved: Msg[] = JSON.parse(raw)
+      setMsgs(saved.filter(m => !(m as any).pending).map(m => m.role === 'assistant' && m.confirm
+        ? { ...m, confirm: null, text: [m.text, 'Not sent.'].filter(Boolean).join(' ') }
+        : m))
+    } catch {}
+  }, [historyKey])
+  useEffect(() => {
+    if (!historyKey || !loadedRef.current) return
+    try { localStorage.setItem(historyKey, JSON.stringify(msgs.filter(m => !(m as any).pending).slice(-HISTORY_MAX))) } catch {}
+  }, [msgs, historyKey])
+  const newChat = () => { setMsgs([]); setInput(''); try { if (historyKey) localStorage.removeItem(historyKey) } catch {} }
+  // Grow the input with the text (up to a few lines).
+  useEffect(() => {
+    const el = inputRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = Math.min(el.scrollHeight, 132) + 'px'
+  }, [input, open])
+  useEffect(() => {
+    if (!open) return
+    setTimeout(() => inputRef.current?.focus(), 220)
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [open])
 
   // Latest page context, kept fresh by pages that publish `colvy:ai-context`.
   const pageCtxRef = useRef<PageCtx>({})
@@ -187,14 +235,14 @@ export default function ColvyAssistant({ companyId, userId, agentName }: { compa
     } finally { setBusy(false) }
   }
 
-  async function confirmSend(confirm: ConfirmPayload, msgIdx: number) {
+  async function confirmSend(confirm: ConfirmPayload, msgIdx: number, editedText?: string) {
     if (busy || !companyId) return
     setBusy(true)
     try {
       const res = await fetch('/api/ai/assistant/execute', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
-        body: JSON.stringify({ tool: confirm.tool, args: confirm.args, context: buildContext(), companyId }),
+        body: JSON.stringify({ tool: confirm.tool, args: editedText != null && confirm.args && 'text' in confirm.args ? { ...confirm.args, text: editedText } : confirm.args, context: buildContext(), companyId }),
       })
       const data = await res.json().catch(() => ({}))
       setMsgs(m => {
@@ -279,8 +327,6 @@ export default function ColvyAssistant({ companyId, userId, agentName }: { compa
 
   if (!companyId) return null
 
-  const CORAL = 'var(--coral)'
-
   return (
     <>
       {/* Launcher orb — draggable anywhere; a hover tab dismisses it for the
@@ -306,7 +352,7 @@ export default function ColvyAssistant({ companyId, userId, agentName }: { compa
             title="Hide for now"
             style={{
               position: 'absolute', top: -6, right: -6, width: isTouch ? 24 : 20, height: isTouch ? 24 : 20, borderRadius: '50%',
-              border: '1.5px solid var(--card, #fff)', background: '#111827', color: '#fff', cursor: 'pointer',
+              border: '1.5px solid #fff', background: '#111827', color: '#fff', cursor: 'pointer',
               display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, zIndex: 2,
               opacity: (orbHover || isTouch) ? 1 : 0, transform: (orbHover || isTouch) ? 'scale(1)' : 'scale(0.6)',
               transition: 'opacity .14s ease, transform .14s ease', pointerEvents: (orbHover || isTouch) ? 'auto' : 'none',
@@ -324,8 +370,7 @@ export default function ColvyAssistant({ companyId, userId, agentName }: { compa
             className="colvy-ai-orb"
             style={{
               width: ORB, height: ORB, borderRadius: '50%', border: 'none', cursor: 'grab',
-              background: `linear-gradient(135deg, ${CORAL}, #ff9d72)`,
-              boxShadow: '0 10px 28px rgba(255,122,107,0.45)', color: '#fff',
+              background: GRAD, boxShadow: '0 12px 28px -6px rgba(255,122,107,0.6)', color: '#fff',
               display: 'flex', alignItems: 'center', justifyContent: 'center', touchAction: 'none',
             }}
           >
@@ -334,117 +379,103 @@ export default function ColvyAssistant({ companyId, userId, agentName }: { compa
         </div>
       )}
 
-      {open && (
-        <>
-          {/* Scrim (mobile mainly) */}
-          <div onClick={() => setOpen(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.35)', backdropFilter: 'blur(2px)', zIndex: 935 }} />
-          <div
-            className="colvy-ai-panel"
-            style={{
-              position: 'fixed', right: 0, bottom: 0, zIndex: 940,
-              width: 'min(420px, 100vw)', maxHeight: '82vh',
-              display: 'flex', flexDirection: 'column',
-              background: 'var(--card)', color: 'var(--ink)',
-              borderTopLeftRadius: 18, borderTopRightRadius: 18,
-              boxShadow: '0 -12px 48px rgba(0,0,0,0.22)', overflow: 'hidden',
-              marginRight: 'max(0px, env(safe-area-inset-right, 0px))',
-            }}
-          >
-            {/* Header */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '13px 16px', borderBottom: '1px solid var(--border)' }}>
-              <span style={{ width: 30, height: 30, borderRadius: '50%', background: `linear-gradient(135deg, ${CORAL}, #ff9d72)`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', flexShrink: 0 }}>
-                <SparkIcon size={16} />
-              </span>
-              <div style={{ minWidth: 0, flex: 1 }}>
-                <p style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink)', lineHeight: 1.1 }}>Colvy AI</p>
-                <p style={{ fontSize: 11, color: 'var(--slate)' }}>Ask me to do things</p>
-              </div>
-              <button type="button" onClick={() => setOpen(false)} aria-label="Close" style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--slate)', padding: 6, display: 'flex' }}>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-              </button>
+      <div className={`cai ${open ? 'cai-open' : ''}`} aria-hidden={!open}>
+        <div className="cai-scrim" onClick={() => setOpen(false)} />
+        <div className="cai-panel" role="dialog" aria-label="Colvy AI">
+          {/* Header */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 14px 12px 16px', borderBottom: '1px solid #f1f1f3' }}>
+            <Orb size={30} />
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <p style={{ margin: 0, fontSize: 14.5, fontWeight: 800, color: '#0d0d0d', lineHeight: 1.15 }}>Colvy AI</p>
+              <p style={{ margin: 0, fontSize: 12, color: '#8b8b94' }}>Ask me to do things</p>
             </div>
+            {msgs.length > 0 && (
+              <button type="button" className="cai-icon-btn" onClick={newChat} disabled={busy} aria-label="New chat" title="New chat">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
+              </button>
+            )}
+            <button type="button" className="cai-icon-btn" onClick={() => setOpen(false)} aria-label="Close Colvy AI">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+            </button>
+          </div>
 
-            {/* Conversation */}
-            <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', padding: '14px 14px 6px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {msgs.length === 0 && (
-                <div style={{ padding: '6px 2px 2px' }}>
-                  <p style={{ fontSize: 13, color: 'var(--slate)', marginBottom: 10, lineHeight: 1.5 }}>
-                    Hi {agentName || 'there'} — tell me what you need. I can pull sales figures, check stock, look up contacts, orders and calls, create and update tasks, book events, place a call, update or refund an order, and draft a message to a customer (I'll ask before anything is sent, changed or refunded).
-                  </p>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
-                    {suggestions.map(s => (
-                      <button key={s} type="button" onClick={() => send(s)}
-                        style={{ fontSize: 12.5, padding: '7px 11px', borderRadius: 999, border: '1px solid var(--border)', background: 'var(--white)', color: 'var(--ink)', cursor: 'pointer' }}>
-                        {s}
-                      </button>
-                    ))}
-                  </div>
+          {/* Conversation */}
+          <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', padding: '18px 16px 8px', overscrollBehavior: 'contain' }}>
+            {msgs.length === 0 && (
+              <div className="cai-msg" style={{ textAlign: 'center', padding: '24px 4px 8px' }}>
+                <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 14 }}><Orb size={52} /></div>
+                <h3 style={{ margin: 0, fontSize: 19, fontWeight: 800, color: '#0d0d0d', letterSpacing: '-.01em' }}>Hi {agentName || 'there'}, what can I do?</h3>
+                <p style={{ margin: '8px auto 0', maxWidth: 320, fontSize: 13.5, lineHeight: 1.55, color: '#6b7280' }}>
+                  Tell me in plain words. I&rsquo;ll get it done, and show you anything that goes to a customer before it&rsquo;s sent.
+                </p>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'center', marginTop: 20 }}>
+                  {suggestions.map(sug => <button key={sug} type="button" className="cai-chip" onClick={() => send(sug)}>{sug}</button>)}
                 </div>
-              )}
+              </div>
+            )}
 
-              {msgs.map((m, i) => (
-                <div key={i}>
-                  {m.role === 'user' ? (
-                    <div style={{ alignSelf: 'flex-end', marginLeft: 'auto', maxWidth: '85%', background: 'var(--peach)', color: 'var(--ink)', padding: '8px 12px', borderRadius: 14, borderBottomRightRadius: 4, fontSize: 13.5, lineHeight: 1.45, width: 'fit-content' }}>
-                      {m.text}
-                    </div>
-                  ) : (
-                    <div style={{ maxWidth: '92%' }}>
-                      {(m as any).pending ? (
-                        <TypingDots />
-                      ) : (
-                        <>
-                          {m.text && <div style={{ marginBottom: (m.cards?.length || m.confirm) ? 8 : 0 }}><RichText text={m.text} /></div>}
-                          {m.error && <p style={{ fontSize: 13, color: '#b91c1c', lineHeight: 1.5 }}>{m.error}</p>}
-
-                          {m.cards?.map((c, ci) => <ActionCard key={ci} card={c} onUndo={() => undo(c)} />)}
-
-                          {m.confirm && (
-                            <ConfirmCard
-                              confirm={m.confirm}
-                              busy={busy}
-                              onCancel={() => cancelConfirm(i)}
-                              onSend={() => confirmSend(m.confirm!, i)}
-                            />
-                          )}
-                        </>
+            {msgs.map((m, i) => m.role === 'user' ? (
+              <div key={i} className="cai-msg" style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 14 }}>
+                <div style={{ maxWidth: '84%', background: '#f4f4f5', color: '#0d0d0d', padding: '10px 14px', borderRadius: '18px 18px 6px 18px', fontSize: 14, lineHeight: 1.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{m.text}</div>
+              </div>
+            ) : (
+              <div key={i} className="cai-msg" style={{ display: 'flex', gap: 10, marginBottom: 16 }}>
+                <Orb size={26} />
+                <div style={{ flex: 1, minWidth: 0, paddingTop: 3 }}>
+                  {(m as any).pending ? <TypingDots /> : (
+                    <>
+                      {m.text && <div style={{ marginBottom: (m.cards?.length || m.confirm) ? 10 : 0 }}><RichText text={m.text} /></div>}
+                      {m.error && <p style={{ margin: 0, fontSize: 14, color: '#b42318', lineHeight: 1.55 }}>{m.error}</p>}
+                      {m.cards?.map((c, ci) => <ActionCard key={ci} card={c} onUndo={() => undo(c)} />)}
+                      {m.confirm && (
+                        <ConfirmCard
+                          confirm={m.confirm}
+                          busy={busy}
+                          onCancel={() => cancelConfirm(i)}
+                          onSend={(edited) => confirmSend(m.confirm!, i, edited)}
+                        />
                       )}
-                    </div>
+                    </>
                   )}
                 </div>
-              ))}
-            </div>
-
-            {/* Composer */}
-            <div style={{ borderTop: '1px solid var(--border)', padding: '10px 12px calc(10px + env(safe-area-inset-bottom, 0px))', background: 'var(--card)' }}>
-              <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 14, padding: '6px 6px 6px 12px' }}>
-                <textarea
-                  value={input}
-                  onChange={e => setInput(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(input) } }}
-                  placeholder="Ask Colvy…"
-                  rows={1}
-                  style={{ flex: 1, resize: 'none', border: 'none', outline: 'none', background: 'transparent', fontSize: 14, color: 'var(--ink)', maxHeight: 96, lineHeight: 1.4, padding: '5px 0' }}
-                />
-                <button type="button" onClick={toggleMic} aria-label={listening ? 'Stop' : 'Voice'}
-                  title="Voice"
-                  style={{ border: 'none', background: listening ? CORAL : 'transparent', color: listening ? '#fff' : 'var(--slate)', cursor: 'pointer', width: 34, height: 34, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  <MicIcon />
-                </button>
-                <button type="button" onClick={() => send(input)} disabled={busy || !input.trim()} aria-label="Send"
-                  style={{ border: 'none', background: input.trim() && !busy ? CORAL : 'var(--border)', color: '#fff', cursor: input.trim() && !busy ? 'pointer' : 'default', width: 34, height: 34, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>
-                </button>
               </div>
+            ))}
+          </div>
+
+          {/* Composer */}
+          <div style={{ padding: '8px 12px calc(12px + env(safe-area-inset-bottom, 0px))' }}>
+            {msgs.length > 0 && !busy && (
+              <div className="cai-chips" style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 8, scrollbarWidth: 'none' }}>
+                {suggestions.slice(0, 3).map(sug => <button key={sug} type="button" className="cai-chip" style={{ padding: '6px 11px', fontSize: 12, whiteSpace: 'nowrap', flexShrink: 0 }} onClick={() => send(sug)}>{sug}</button>)}
+              </div>
+            )}
+            <div className="cai-box" style={{ display: 'flex', alignItems: 'flex-end', gap: 6, padding: '7px 7px 7px 14px' }}>
+              <textarea
+                ref={inputRef}
+                className="cai-input"
+                value={input}
+                onChange={e => setInput(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !(e.nativeEvent as any).isComposing) { e.preventDefault(); send(input) } }}
+                placeholder={listening ? 'Listening…' : 'Ask Colvy AI to do something…'}
+                aria-label="Message Colvy AI"
+                rows={1}
+                style={{ flex: 1, resize: 'none', fontFamily: 'inherit', fontSize: 14.5, color: '#0d0d0d', maxHeight: 132, lineHeight: 1.45, padding: '6px 0' }}
+              />
+              <button type="button" onClick={toggleMic} aria-label={listening ? 'Stop listening' : 'Speak'} title="Voice"
+                className="cai-icon-btn" style={{ width: 34, height: 34, borderRadius: '50%', background: listening ? GRAD : 'transparent', color: listening ? '#fff' : '#71717a', flexShrink: 0 }}>
+                <MicIcon />
+              </button>
+              <button type="button" onClick={() => send(input)} disabled={busy || !input.trim()} aria-label="Send"
+                style={{ width: 34, height: 34, borderRadius: '50%', border: 'none', flexShrink: 0, cursor: input.trim() && !busy ? 'pointer' : 'default', background: input.trim() && !busy ? GRAD : '#ececef', color: input.trim() && !busy ? '#fff' : '#a1a1aa', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background .2s ease' }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M12 19V5" /><path d="m5 12 7-7 7 7" /></svg>
+              </button>
             </div>
           </div>
-        </>
-      )}
+        </div>
+      </div>
 
       {toast && (
-        <div style={{ position: 'fixed', bottom: 'calc(80px + env(safe-area-inset-bottom, 0px))', left: '50%', transform: 'translateX(-50%)', zIndex: 950, padding: '9px 14px', borderRadius: 10, background: '#111827', color: '#fff', fontSize: 13, fontWeight: 500, boxShadow: '0 10px 30px rgba(0,0,0,0.35)' }}>
-          {toast.text}
-        </div>
+        <div className="cai-toast" role="status">{toast.text}</div>
       )}
 
       <style>{`
@@ -455,35 +486,89 @@ export default function ColvyAssistant({ companyId, userId, agentName }: { compa
         @media (max-width: 860px) {
           body:has(.inbox-composer .cmp-card) .colvy-ai-orb-wrap[data-default-pos] { bottom: calc(58px + env(safe-area-inset-bottom, 0px) + 250px) !important; }
         }
-        @media (min-width: 861px) {
-          .colvy-ai-panel { right: 18px !important; bottom: 18px !important; border-radius: 18px !important; }
+        .cai-scrim{position:fixed;inset:0;z-index:935;background:rgba(15,23,42,.28);opacity:0;pointer-events:none;transition:opacity .24s ease}
+        .cai-panel{position:fixed;z-index:940;right:18px;bottom:18px;width:min(420px,calc(100vw - 36px));height:min(680px,calc(100dvh - 96px));
+          background:#fff;border:1px solid #ececef;border-radius:22px;box-shadow:0 30px 70px -20px rgba(16,24,40,.35);display:flex;flex-direction:column;overflow:hidden;
+          opacity:0;transform:translate3d(0,14px,0) scale(.985);transform-origin:bottom right;pointer-events:none;
+          transition:opacity .24s cubic-bezier(.22,1,.36,1),transform .3s cubic-bezier(.22,1,.36,1)}
+        .cai-open .cai-panel{opacity:1;transform:none;pointer-events:auto}
+        .cai-open .cai-scrim{opacity:1;pointer-events:auto}
+        @media (min-width:861px){.cai-scrim{background:transparent}}
+        @media (max-width:640px){
+          .cai-panel{left:0;right:0;bottom:0;width:100%;height:calc(100dvh - 40px);border-radius:22px 22px 0 0;transform:translate3d(0,40px,0)}
         }
+        body:has(.cai-open) button[title="Send feedback"]{display:none!important}
+        .cai-msg{animation:caiIn .32s cubic-bezier(.22,1,.36,1) both}
+        @keyframes caiIn{from{opacity:0;transform:translate3d(0,8px,0)}to{opacity:1;transform:none}}
+        .cai-chip{border:1px solid #ececef;background:#fff;border-radius:999px;padding:8px 13px;font-size:13px;font-weight:600;color:#3f3f46;cursor:pointer;font-family:inherit;transition:border-color .15s ease,background .15s ease,transform .15s ease}
+        .cai-chip:hover{border-color:#ffc9bf;background:#fff7f5;transform:translateY(-1px)}
+        .cai-chips{mask-image:linear-gradient(90deg,#000 85%,transparent);-webkit-mask-image:linear-gradient(90deg,#000 85%,transparent)}
+        .cai-box{border:1px solid #e4e4e7;border-radius:18px;background:#fff;transition:border-color .15s ease,box-shadow .15s ease}
+        .cai-box:focus-within{border-color:#ffb4a6;box-shadow:0 0 0 4px rgba(255,122,107,.12)}
+        .cai-input{border:none!important;outline:none!important;box-shadow:none!important;background:transparent!important;border-radius:0!important;min-height:0!important}
+        .cai-icon-btn{width:32px;height:32px;border-radius:10px;border:none;background:transparent;color:#6b7280;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;transition:background .15s ease,color .15s ease}
+        .cai-icon-btn:hover{background:#f4f4f5;color:#111827}
+        .cai-card{border:1px solid #ececef;border-radius:14px;background:#fff;margin-bottom:8px;overflow:hidden}
+        .cai-toast{position:fixed;left:50%;bottom:calc(84px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:950;padding:10px 16px;border-radius:12px;background:#111827;color:#fff;font-size:13px;font-weight:600;box-shadow:0 12px 30px -10px rgba(0,0,0,.4)}
+        @keyframes caiDot{0%,80%,100%{transform:translateY(0);opacity:.5}40%{transform:translateY(-4px);opacity:1}}
+        @media (prefers-reduced-motion:reduce){.cai-panel,.cai-scrim{transition:none}.cai-msg{animation:none}}
       `}</style>
     </>
   )
 }
 
+const CARD_ICON: Record<string, string> = {
+  calendar_event: 'calendar', reminder: 'clock', message: 'chat', order: 'cart', call: 'phone', task: 'check',
+  payment_link: 'card', media_request: 'camera', review_reply: 'star', comment_reply: 'chat', ticket_reply: 'ticket',
+  booking_link: 'calendar', fact: 'book', idea: 'bulb',
+}
+
+function CardIcon({ name, size = 16 }: { name: string; size?: number }) {
+  const p = { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.9, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const, 'aria-hidden': true }
+  switch (name) {
+    case 'calendar': return <svg {...p}><rect x="3" y="4" width="18" height="18" rx="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg>
+    case 'clock': return <svg {...p}><circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 15 14" /></svg>
+    case 'chat': return <svg {...p}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
+    case 'cart': return <svg {...p}><circle cx="9" cy="21" r="1" /><circle cx="20" cy="21" r="1" /><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6" /></svg>
+    case 'phone': return <svg {...p}><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z" /></svg>
+    case 'card': return <svg {...p}><rect x="2" y="5" width="20" height="14" rx="2" /><line x1="2" y1="10" x2="22" y2="10" /></svg>
+    case 'camera': return <svg {...p}><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" /><circle cx="12" cy="13" r="4" /></svg>
+    case 'star': return <svg {...p}><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg>
+    case 'ticket': return <svg {...p}><path d="M3 7a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v3a2 2 0 0 0 0 4v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-3a2 2 0 0 0 0-4z" /></svg>
+    case 'book': return <svg {...p}><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /></svg>
+    case 'bulb': return <svg {...p}><path d="M9 18h6" /><path d="M10 22h4" /><path d="M15.09 14c.18-.98.65-1.74 1.41-2.5A4.65 4.65 0 0 0 18 8 6 6 0 0 0 6 8c0 1 .23 2.23 1.5 3.5A4.61 4.61 0 0 1 8.91 14" /></svg>
+    default: return <svg {...p} strokeWidth={2.6}><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
+  }
+}
+
+const Orb = ({ size = 28 }: { size?: number }) => (
+  <span style={{ width: size, height: size, borderRadius: '50%', background: GRAD, color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 6px 16px -6px rgba(255,122,107,.7)' }}>
+    <SparkIcon size={Math.round(size * 0.55)} />
+  </span>
+)
+
 function ActionCard({ card, onUndo }: { card: Card; onUndo: () => void }) {
   if (card.kind === '__undone') {
-    return <div style={{ border: '1px dashed var(--border)', borderRadius: 12, padding: '10px 12px', fontSize: 12.5, color: 'var(--slate)', marginBottom: 8 }}>Removed</div>
+    return <div className="cai-card" style={{ borderStyle: 'dashed', padding: '10px 12px', fontSize: 12.5, color: '#71717a' }}>Undone</div>
   }
   if (card.kind === 'report') return <ReportCard card={card} />
   if (card.kind === 'list') return <ListCard card={card} />
-  const icon = card.kind === 'calendar_event' ? '📅' : card.kind === 'reminder' ? '⏰' : card.kind === 'message' ? '💬' : card.kind === 'order' ? '🛒' : card.kind === 'call' ? '📞' : '✅'
   return (
-    <div style={{ border: '1px solid var(--border)', borderRadius: 12, padding: '11px 12px', marginBottom: 8, background: 'var(--white)' }}>
-      <div style={{ display: 'flex', gap: 10 }}>
-        <span style={{ fontSize: 17, lineHeight: 1.2 }}>{icon}</span>
-        <div style={{ minWidth: 0, flex: 1 }}>
-          <p style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink)', lineHeight: 1.35 }}>{card.title}</p>
-          {(card.lines || []).filter(Boolean).map((l, i) => (
-            <p key={i} style={{ fontSize: 12, color: 'var(--slate)', lineHeight: 1.4 }}>{l}</p>
-          ))}
+    <div className="cai-card" style={{ display: 'flex', gap: 10, padding: '11px 12px' }}>
+      <span style={{ width: 28, height: 28, borderRadius: 9, background: '#ecfdf3', color: '#067647', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+        <CardIcon name={CARD_ICON[card.kind] || 'check'} size={15} />
+      </span>
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <p style={{ margin: 0, fontSize: 13.5, fontWeight: 700, color: '#0d0d0d', lineHeight: 1.35 }}>{card.title}</p>
+        {(card.lines || []).filter(Boolean).map((l, i) => (
+          <p key={i} style={{ margin: '1px 0 0', fontSize: 12.5, color: '#6b7280', lineHeight: 1.45, wordBreak: 'break-word' }}>{l}</p>
+        ))}
+        {(card.href || card.undo) && (
           <div style={{ display: 'flex', gap: 14, marginTop: 7 }}>
-            {card.href && <a href={card.href} style={{ fontSize: 12, fontWeight: 600, color: 'var(--coral)', textDecoration: 'none' }}>{SUGGEST_LABEL[card.kind] || 'Open'}</a>}
-            {card.undo && <button type="button" onClick={onUndo} style={{ fontSize: 12, fontWeight: 600, color: 'var(--slate)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Undo</button>}
+            {card.href && <a href={card.href} style={{ fontSize: 12.5, fontWeight: 700, color: AI_CORAL, textDecoration: 'none' }}>{SUGGEST_LABEL[card.kind] || 'Open'}</a>}
+            {card.undo && <button type="button" onClick={onUndo} style={{ fontSize: 12.5, fontWeight: 700, color: '#71717a', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontFamily: 'inherit' }}>Undo</button>}
           </div>
-        </div>
+        )}
       </div>
     </div>
   )
@@ -491,23 +576,23 @@ function ActionCard({ card, onUndo }: { card: Card; onUndo: () => void }) {
 
 function ReportCard({ card }: { card: Card }) {
   return (
-    <div style={{ border: '1px solid var(--border)', borderRadius: 12, padding: '12px', marginBottom: 8, background: 'var(--white)' }}>
-      <p style={{ fontSize: 12, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 9 }}>{card.title}</p>
+    <div className="cai-card" style={{ padding: 12 }}>
+      <p style={{ margin: '0 0 9px', fontSize: 11.5, fontWeight: 700, color: '#71717a', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{card.title}</p>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
-        {(card.stats || []).map((s, i) => (
-          <div key={i} style={{ background: 'var(--canvas, #f8f9fb)', borderRadius: 9, padding: '8px 9px' }}>
-            <p style={{ fontSize: 15, fontWeight: 800, color: 'var(--ink)', lineHeight: 1.15 }}>{s.value}</p>
-            <p style={{ fontSize: 10.5, color: 'var(--slate)', marginTop: 1 }}>{s.label}</p>
+        {(card.stats || []).map((st, i) => (
+          <div key={i} style={{ background: '#f8f8fa', borderRadius: 10, padding: '8px 9px' }}>
+            <p style={{ margin: 0, fontSize: 15, fontWeight: 800, color: '#0d0d0d', lineHeight: 1.15 }}>{st.value}</p>
+            <p style={{ margin: '1px 0 0', fontSize: 10.5, color: '#71717a' }}>{st.label}</p>
           </div>
         ))}
       </div>
       {(card.lists || []).map((l, i) => (
         <div key={i} style={{ marginTop: 10 }}>
-          <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--slate)', marginBottom: 4 }}>{l.heading}</p>
+          <p style={{ margin: '0 0 4px', fontSize: 11, fontWeight: 700, color: '#71717a' }}>{l.heading}</p>
           {l.rows.map((r, j) => (
-            <div key={j} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, padding: '2px 0', fontSize: 12.5, color: 'var(--ink)' }}>
+            <div key={j} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, padding: '2px 0', fontSize: 12.5, color: '#0d0d0d' }}>
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.label}</span>
-              <span style={{ color: 'var(--slate)', flexShrink: 0 }}>{r.value}</span>
+              <span style={{ color: '#71717a', flexShrink: 0 }}>{r.value}</span>
             </div>
           ))}
         </div>
@@ -518,12 +603,12 @@ function ReportCard({ card }: { card: Card }) {
 
 function ListCard({ card }: { card: Card }) {
   return (
-    <div style={{ border: '1px solid var(--border)', borderRadius: 12, padding: '11px 12px', marginBottom: 8, background: 'var(--white)' }}>
-      <p style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ink)', marginBottom: (card.rows || []).length ? 8 : 0 }}>{card.title}</p>
+    <div className="cai-card" style={{ padding: '11px 12px' }}>
+      <p style={{ margin: (card.rows || []).length ? '0 0 6px' : 0, fontSize: 13, fontWeight: 700, color: '#0d0d0d' }}>{card.title}</p>
       {(card.rows || []).map((r, i) => (
-        <div key={i} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, padding: '4px 0', borderTop: i ? '1px solid var(--border)' : 'none' }}>
-          <span style={{ fontSize: 12.5, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.label}</span>
-          {r.sub && <span style={{ fontSize: 11.5, color: 'var(--slate)', flexShrink: 0 }}>{r.sub}</span>}
+        <div key={i} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, padding: '5px 0', borderTop: i ? '1px solid #f1f1f3' : 'none' }}>
+          <span style={{ fontSize: 12.5, color: '#0d0d0d', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.label}</span>
+          {r.sub && <span style={{ fontSize: 11.5, color: '#71717a', flexShrink: 0, maxWidth: '55%', textAlign: 'right' }}>{r.sub}</span>}
         </div>
       ))}
     </div>
@@ -540,8 +625,8 @@ function RichText({ text }: { text: string }) {
     while ((m = re.exec(s))) {
       if (m.index > last) out.push(s.slice(last, m.index))
       if (m[1] != null) out.push(<strong key={`${keyBase}-${k++}`}>{m[1]}</strong>)
-      else if (m[2] != null) out.push(<a key={`${keyBase}-${k++}`} href={m[3]} target="_blank" rel="noreferrer" style={{ color: 'var(--coral)' }}>{m[2]}</a>)
-      else if (m[4] != null) out.push(<a key={`${keyBase}-${k++}`} href={m[4]} target="_blank" rel="noreferrer" style={{ color: 'var(--coral)' }}>{m[4]}</a>)
+      else if (m[2] != null) out.push(<a key={`${keyBase}-${k++}`} href={m[3]} target="_blank" rel="noreferrer" style={{ color: AI_CORAL }}>{m[2]}</a>)
+      else if (m[4] != null) out.push(<a key={`${keyBase}-${k++}`} href={m[4]} target="_blank" rel="noreferrer" style={{ color: AI_CORAL }}>{m[4]}</a>)
       last = re.lastIndex
     }
     if (last < s.length) out.push(s.slice(last))
@@ -549,7 +634,7 @@ function RichText({ text }: { text: string }) {
   }
   const lines = String(text || '').split('\n')
   return (
-    <div style={{ fontSize: 13.5, color: 'var(--ink)', lineHeight: 1.5 }}>
+    <div style={{ fontSize: 14, color: '#1f2937', lineHeight: 1.55 }}>
       {lines.map((ln, i) => {
         const t = ln.trim()
         if (!t) return <div key={i} style={{ height: 6 }} />
@@ -558,7 +643,7 @@ function RichText({ text }: { text: string }) {
         if (bullet || num) {
           return (
             <div key={i} style={{ display: 'flex', gap: 7, paddingLeft: 2 }}>
-              <span style={{ color: 'var(--slate)', flexShrink: 0 }}>{num ? t.match(/^\d+\./)![0] : '•'}</span>
+              <span style={{ color: '#9ca3af', flexShrink: 0 }}>{num ? t.match(/^\d+\./)![0] : '•'}</span>
               <span>{inline(t.replace(/^([-*•]|\d+\.)\s+/, ''), `l${i}`)}</span>
             </div>
           )
@@ -569,41 +654,59 @@ function RichText({ text }: { text: string }) {
   )
 }
 
-function ConfirmCard({ confirm, busy, onCancel, onSend }: { confirm: ConfirmPayload; busy: boolean; onCancel: () => void; onSend: () => void }) {
+// The "check before it goes out" card. One tap to send; the wording can be
+// tweaked right here first, so there's no back-and-forth to change a word.
+function ConfirmCard({ confirm, busy, onCancel, onSend }: { confirm: ConfirmPayload; busy: boolean; onCancel: () => void; onSend: (editedText?: string) => void }) {
   const p = confirm.preview || {}
-  const isRefund = p.kind === 'refund_order'
-  const isOrder = p.kind === 'order_status' || isRefund
-  const heading = isRefund ? 'Confirm refund' : isOrder ? 'Confirm order change' : 'Confirm send'
-  const cta = isRefund ? 'Refund' : isOrder ? 'Confirm' : 'Send'
+  const kind: string = p.kind || 'send_message'
+  const editable = typeof p.text === 'string' && confirm.args && 'text' in confirm.args
+  const [text, setText] = useState<string>(p.text || '')
+  const isRefund = kind === 'refund_order'
+  const isOrder = kind === 'order_status' || isRefund
+  const heading = isRefund ? 'Check the refund' : isOrder ? 'Check the order change'
+    : kind === 'payment_link' ? 'Check the payment link'
+    : kind === 'review_reply' ? 'Check your review reply'
+    : kind === 'comment_reply' ? 'Check your comment reply'
+    : 'Check before sending'
+  const cta = isRefund ? 'Refund' : isOrder ? 'Confirm' : kind === 'review_reply' || kind === 'comment_reply' ? 'Post reply' : 'Send'
+  const rows: [string, string][] = [
+    p.to ? ['To', `${p.to}${p.via ? ` · ${p.via}` : ''}`] : null,
+    p.about ? ['Replying to', p.about] : null,
+    p.amount ? ['Amount', p.amount] : null,
+    p.orderLabel ? ['Order', p.orderLabel] : null,
+    p.action ? ['Change', `${p.action}${p.current ? ` (now ${p.current})` : ''}`] : null,
+  ].filter(Boolean) as [string, string][]
   return (
-    <div style={{ border: '1px solid var(--coral)', borderRadius: 12, padding: '12px', background: 'var(--peach)' }}>
-      <p style={{ fontSize: 12, fontWeight: 700, color: 'var(--coral)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6 }}>{heading}</p>
-
-      {isOrder ? (
-        <>
-          <p style={{ fontSize: 13, color: 'var(--ink)', marginBottom: 2 }}><strong>{p.orderLabel}</strong>{p.to ? ` · ${p.to}` : ''}</p>
-          {isRefund
-            ? <p style={{ fontSize: 13, color: 'var(--ink)', marginBottom: 2 }}>Refund <strong>{p.amount}</strong></p>
-            : <p style={{ fontSize: 13, color: 'var(--ink)', marginBottom: 2 }}>{p.action} <span style={{ color: 'var(--slate)' }}>(now {p.current})</span></p>}
-          {p.warn && <p style={{ fontSize: 12, color: '#b91c1c', margin: '6px 0 10px' }}>{p.warn}</p>}
-          {!p.warn && <div style={{ height: 6 }} />}
-        </>
-      ) : (
-        <>
-          <p style={{ fontSize: 12.5, color: 'var(--ink)', marginBottom: 2 }}><strong>To:</strong> {p.to || 'customer'} {p.via ? `· ${p.via}` : ''}</p>
-          <p style={{ fontSize: 13.5, color: 'var(--ink)', lineHeight: 1.45, background: 'var(--white)', borderRadius: 8, padding: '8px 10px', margin: '6px 0 10px' }}>{p.text}</p>
-        </>
-      )}
-
-      <div style={{ display: 'flex', gap: 8 }}>
-        <button type="button" onClick={onSend} disabled={busy}
-          style={{ flex: 1, padding: '9px 12px', borderRadius: 10, border: 'none', background: 'var(--coral)', color: '#fff', fontSize: 13, fontWeight: 700, cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.7 : 1 }}>
-          {busy ? 'Working…' : cta}
-        </button>
-        <button type="button" onClick={onCancel} disabled={busy}
-          style={{ padding: '9px 14px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--white)', color: 'var(--ink)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-          Cancel
-        </button>
+    <div className="cai-card" style={{ borderColor: '#ffd6cc', boxShadow: '0 10px 24px -18px rgba(226,85,63,.6)' }}>
+      <div style={{ padding: '10px 12px', background: '#fff7f5', borderBottom: '1px solid #ffe4dc', display: 'flex', alignItems: 'center', gap: 7 }}>
+        <span style={{ color: AI_CORAL, display: 'flex' }}><CardIcon name={CARD_ICON[kind] || (isOrder ? 'cart' : 'chat')} size={14} /></span>
+        <span style={{ fontSize: 12, fontWeight: 800, color: AI_CORAL, textTransform: 'uppercase', letterSpacing: '.04em' }}>{heading}</span>
+      </div>
+      <div style={{ padding: 12 }}>
+        {rows.map(([k, v]) => (
+          <div key={k} style={{ display: 'flex', gap: 8, fontSize: 13, lineHeight: 1.5 }}>
+            <span style={{ color: '#71717a', width: 82, flexShrink: 0 }}>{k}</span>
+            <span style={{ color: '#0d0d0d', fontWeight: 600, minWidth: 0, wordBreak: 'break-word' }}>{v}</span>
+          </div>
+        ))}
+        {p.quote && <p style={{ margin: '8px 0 0', fontSize: 12.5, color: '#52525b', lineHeight: 1.5, borderLeft: '3px solid #ececef', paddingLeft: 9, fontStyle: 'italic' }}>{p.quote}</p>}
+        {editable && (
+          <textarea value={text} onChange={e => setText(e.target.value)} rows={Math.min(8, Math.max(3, Math.ceil(text.length / 48)))} aria-label="Message to send"
+            className="cai-edit"
+            style={{ width: '100%', boxSizing: 'border-box', marginTop: 10, padding: '10px 12px', borderRadius: 12, border: '1px solid #e4e4e7', fontFamily: 'inherit', fontSize: 13.5, lineHeight: 1.5, color: '#0d0d0d', resize: 'vertical', outline: 'none', background: '#fff' }} />
+        )}
+        {p.warn && <p style={{ margin: '8px 0 0', fontSize: 12.5, color: '#b42318' }}>{p.warn}</p>}
+        {p.note && <p style={{ margin: '8px 0 0', fontSize: 12, color: '#71717a' }}>{p.note}</p>}
+        <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+          <button type="button" onClick={() => onSend(editable ? text : undefined)} disabled={busy || (editable && !text.trim())}
+            style={{ flex: 1, padding: '10px 12px', borderRadius: 12, border: 'none', background: isRefund ? '#dc2626' : GRAD, color: '#fff', fontSize: 13.5, fontWeight: 700, cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.7 : 1, fontFamily: 'inherit' }}>
+            {busy ? 'Working…' : cta}
+          </button>
+          <button type="button" onClick={onCancel} disabled={busy}
+            style={{ padding: '10px 14px', borderRadius: 12, border: '1px solid #e4e4e7', background: '#fff', color: '#0d0d0d', fontSize: 13.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+            Cancel
+          </button>
+        </div>
       </div>
     </div>
   )
@@ -611,12 +714,11 @@ function ConfirmCard({ confirm, busy, onCancel, onSend }: { confirm: ConfirmPayl
 
 function TypingDots() {
   return (
-    <div style={{ display: 'flex', gap: 4, padding: '6px 2px' }}>
+    <span style={{ display: 'inline-flex', gap: 4, padding: '8px 2px' }} aria-label="Colvy AI is working">
       {[0, 1, 2].map(i => (
-        <span key={i} style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--slate)', opacity: 0.5, animation: `colvyBlink 1.2s ${i * 0.15}s infinite ease-in-out` }} />
+        <span key={i} style={{ width: 6, height: 6, borderRadius: '50%', background: '#c4c4cc', display: 'inline-block', animation: `caiDot 1.1s ${i * 0.15}s infinite ease-in-out` }} />
       ))}
-      <style>{`@keyframes colvyBlink { 0%,80%,100%{opacity:.25;transform:translateY(0)} 40%{opacity:.9;transform:translateY(-2px)} }`}</style>
-    </div>
+    </span>
   )
 }
 

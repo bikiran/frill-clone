@@ -4,6 +4,9 @@ import { deliverAutomatedMessage } from '@/lib/channel-fallback'
 import { logAiEvent } from '@/lib/ai-assistant/audit'
 import { mapWooStatus, mapWooPayment, statusMeta } from '@/lib/orders'
 import { WooCommerceService } from '@/lib/woocommerce-service'
+import { replyToReview } from '@/lib/google-business'
+import { loadCompanyPublic, createInvite, bookingPageUrl } from '@/lib/booking'
+import { searchKnowledge } from '@/lib/ai-knowledge'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Colvy AI assistant — controlled tool layer.
@@ -33,6 +36,7 @@ export type AssistantContext = {
   orderId?: string | null
   callId?: string | null
   outletId?: string | null
+  ticketId?: string | null
 }
 
 export type ToolSafety = 'read' | 'immediate' | 'confirm'
@@ -269,6 +273,95 @@ export const ASSISTANT_TOOLS: ToolDef[] = [
       required: ['orderId'],
     },
   },
+
+  // ── Support tickets ─────────────────────────────────────────────────────
+  {
+    name: 'search_tickets', safety: 'read',
+    description: "Find support tickets by number (TICK-123), customer name or subject. Returns ids, subject, status and the latest messages so you can write a reply.",
+    input_schema: { type: 'object', properties: { query: { type: 'string' }, status: { type: 'string', enum: ['open', 'in_progress', 'resolved', 'closed'] }, limit: { type: 'number' } } },
+  },
+  {
+    name: 'reply_ticket', safety: 'confirm',
+    description: "Reply to a support ticket — emails the customer from the company's mailbox and adds it to the ticket. REQUIRES confirmation (the user sees and can edit the text). Write the full reply in text. Uses the open ticket if no ticketId.",
+    input_schema: { type: 'object', properties: { ticketId: { type: 'string' }, text: { type: 'string' } }, required: ['text'] },
+  },
+
+  // ── Google reviews ──────────────────────────────────────────────────────
+  {
+    name: 'search_reviews', safety: 'read',
+    description: "Find Google reviews by reviewer name or words in the review; unrepliedOnly for ones still needing a reply. Returns ids, stars, the review text and any existing reply.",
+    input_schema: { type: 'object', properties: { query: { type: 'string' }, unrepliedOnly: { type: 'boolean' }, maxStars: { type: 'number' }, limit: { type: 'number' } } },
+  },
+  {
+    name: 'reply_review', safety: 'confirm',
+    description: "Post a public reply to a Google review. REQUIRES confirmation. For 'AI reply' / 'reply to X's review', read the review first (search_reviews) and write a warm, specific reply yourself in text: thank them by first name, mention something they said, keep it 2-4 sentences, no emojis. For a low rating, apologise and invite them to get in touch.",
+    input_schema: { type: 'object', properties: { reviewId: { type: 'string', description: 'id from search_reviews' }, text: { type: 'string' } }, required: ['reviewId', 'text'] },
+  },
+
+  // ── Facebook / Instagram comments ───────────────────────────────────────
+  {
+    name: 'search_social_comments', safety: 'read',
+    description: "Find Facebook/Instagram comments on the business's posts by commenter name or words; unrepliedOnly for ones still needing a reply.",
+    input_schema: { type: 'object', properties: { query: { type: 'string' }, platform: { type: 'string', enum: ['facebook', 'instagram'] }, unrepliedOnly: { type: 'boolean' }, limit: { type: 'number' } } },
+  },
+  {
+    name: 'reply_social_comment', safety: 'confirm',
+    description: "Post a public reply under a Facebook/Instagram comment. REQUIRES confirmation. Read the comment first (search_social_comments) and write the reply in text: short, friendly, no emojis unless the user asks.",
+    input_schema: { type: 'object', properties: { commentId: { type: 'string' }, text: { type: 'string' } }, required: ['commentId', 'text'] },
+  },
+
+  // ── Links to customers ──────────────────────────────────────────────────
+  {
+    name: 'send_payment_link', safety: 'confirm',
+    description: "Create a secure card payment link for an amount and send it to a customer (SMS, or email if no phone). REQUIRES confirmation. Resolve the recipient with search_contacts if they're named. Write the message in text with {link} where the link goes; keep it short.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        contactId: { type: 'string' }, conversationId: { type: 'string' }, phone: { type: 'string' }, name: { type: 'string' },
+        amount: { type: 'number', description: 'dollars, at least 1' },
+        description: { type: 'string', description: 'what it is for, shown on the payment page' },
+        text: { type: 'string', description: "message to send, containing {link}" },
+      },
+      required: ['amount'],
+    },
+  },
+  {
+    name: 'request_media', safety: 'confirm',
+    description: "Ask a customer to upload photos/videos (e.g. of a faulty item or their tank) through a private upload link. REQUIRES confirmation. Resolve the recipient first. text is what the customer is asked, e.g. 'Could you send a few photos of the filter?'.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        contactId: { type: 'string' }, conversationId: { type: 'string' }, phone: { type: 'string' }, name: { type: 'string' },
+        text: { type: 'string', description: 'what to ask for' },
+        photosOnly: { type: 'boolean' },
+      },
+      required: ['text'],
+    },
+  },
+  {
+    name: 'send_booking_link', safety: 'confirm',
+    description: "Send a customer a link to book an appointment online. REQUIRES confirmation. Resolve the recipient first. Write the message in text with {link}.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        contactId: { type: 'string' }, conversationId: { type: 'string' }, phone: { type: 'string' }, name: { type: 'string' },
+        service: { type: 'string', description: 'service name, if they named one' },
+        text: { type: 'string' },
+      },
+    },
+  },
+
+  // ── Knowledge ───────────────────────────────────────────────────────────
+  {
+    name: 'ask_knowledge', safety: 'read',
+    description: "Look something up in the business's own knowledge (help articles, website, policies, facts, uploaded files) — e.g. 'what's our returns policy?', or to get facts right before writing a customer reply.",
+    input_schema: { type: 'object', properties: { question: { type: 'string' } }, required: ['question'] },
+  },
+  {
+    name: 'add_fact', safety: 'immediate',
+    description: "Teach Colvy AI a fact for answering customers — 'remember that we're closed on Christmas Day', 'our CO2 refills are $25'. Reversible.",
+    input_schema: { type: 'object', properties: { question: { type: 'string', description: 'how a customer would ask it' }, answer: { type: 'string' } }, required: ['question', 'answer'] },
+  },
 ]
 
 export const TOOL_SAFETY: Record<string, ToolSafety> = Object.fromEntries(ASSISTANT_TOOLS.map(t => [t.name, t.safety]))
@@ -381,6 +474,47 @@ async function activeWooStore(db: any, companyId: string): Promise<any | null> {
     .eq('company_id', companyId).eq('is_active', true).order('created_at', { ascending: true }).limit(1)
   return data?.[0] || null
 }
+
+const siteBase = (ctx: AssistantContext) => (ctx.siteOrigin || process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com').replace(/\/$/, '')
+
+// The conversation to send into for a resolved recipient: the one we were
+// given, else their latest, else a new one.
+async function ensureConversation(D: any, ctx: AssistantContext, r: { contact: any; conversationId: string | null; phone: string; name: string }): Promise<string | null> {
+  if (r.conversationId) return r.conversationId
+  if (r.contact?.id) {
+    const { data: existing } = await D.from('conversations').select('id').eq('company_id', ctx.companyId).eq('contact_id', r.contact.id).order('last_message_at', { ascending: false }).limit(1)
+    if (existing?.[0]?.id) return existing[0].id
+  }
+  const { data: created } = await D.from('conversations').insert({
+    company_id: ctx.companyId, contact_id: r.contact?.id || null, channel: r.phone ? 'sms' : 'email', status: 'open',
+    subject: r.name || 'Conversation', sms_number: r.phone || null, sms_enabled: !!r.phone,
+    last_message: '', last_message_at: new Date().toISOString(),
+  }).select('id').maybeSingle()
+  return created?.id || null
+}
+
+// Pin the resolved recipient into confirm args, so /execute acts on exactly who
+// the preview showed.
+const pinRecipient = (r: { contact: any; phone: string; name: string }) =>
+  r.contact?.id ? { contactId: r.contact.id } : { phone: r.phone, name: r.name }
+
+const viaLabel = (r: { contact: any; phone: string }) => r.phone ? 'SMS' : (r.contact?.email ? 'Email' : 'message')
+
+async function resolveTicket(D: any, ctx: AssistantContext, ref?: string | null): Promise<any | null> {
+  const r = String(ref || ctx.ticketId || '').trim()
+  if (!r) return null
+  if (/^[0-9a-f-]{36}$/i.test(r)) {
+    const { data } = await D.from('support_tickets').select('*').eq('company_id', ctx.companyId).eq('id', r).maybeSingle()
+    if (data) return data
+  }
+  const digits = r.replace(/\D/g, '')
+  if (!digits) return null
+  const { data } = await D.from('support_tickets').select('*').eq('company_id', ctx.companyId).ilike('ticket_number', `%${digits}`).limit(2)
+  return data?.length === 1 ? data[0] : null
+}
+
+const firstName = (n?: string | null) => String(n || '').trim().split(/\s+/)[0] || ''
+const fillLink = (text: string, link: string) => text.includes('{link}') ? text.replace(/\{link\}/g, link) : `${text.trim()} ${link}`
 
 // ── READ tools: return plain data for the model ──────────────────────────────
 export async function runReadTool(db: SupabaseClient, ctx: AssistantContext, name: string, args: any): Promise<any> {
@@ -598,6 +732,65 @@ export async function runReadTool(db: SupabaseClient, ctx: AssistantContext, nam
       })),
     }
   }
+  if (name === 'search_tickets') {
+    const q = String(args?.query || '').trim()
+    let qb = D.from('support_tickets').select('id, ticket_number, subject, status, priority, contact_id, updated_at, description')
+      .eq('company_id', ctx.companyId).order('updated_at', { ascending: false }).limit(Math.min(Number(args?.limit) || 6, 15))
+    if (args?.status) qb = qb.eq('status', args.status)
+    if (q) {
+      // "TICK-046216", "ticket 46216", "#46216" → match on the digits.
+      const digits = q.match(/^(?:tick(?:et)?[-\s#]*)?#?(\d{3,})$/i)?.[1]
+      qb = digits ? qb.ilike('ticket_number', `%${digits}`) : qb.or(`subject.ilike.%${q.replace(/[%,()]/g, '')}%,description.ilike.%${q.replace(/[%,()]/g, '')}%`)
+    } else if (ctx.ticketId) qb = qb.eq('id', ctx.ticketId)
+    const { data } = await qb
+    const tickets = data || []
+    const ids = tickets.map((t: any) => t.contact_id).filter(Boolean)
+    const { data: contacts } = ids.length ? await D.from('contacts').select('id, name, email').in('id', ids) : { data: [] }
+    const cMap = new Map((contacts || []).map((c: any) => [c.id, c]))
+    const out = []
+    for (const t of tickets.slice(0, 6)) {
+      const { data: msgs } = await D.from('ticket_messages').select('direction, kind, body, author_name, created_at').eq('ticket_id', t.id).neq('kind', 'note').order('created_at', { ascending: false }).limit(4)
+      const c: any = cMap.get(t.contact_id)
+      out.push({
+        id: t.id, number: t.ticket_number, subject: t.subject, status: t.status, priority: t.priority,
+        customer: c?.name || null, email: c?.email || null,
+        opening: String(t.description || '').slice(0, 600),
+        latest: (msgs || []).reverse().map((m: any) => `${m.direction === 'in' ? 'Customer' : (m.author_name || 'Us')}: ${String(m.body || '').slice(0, 500)}`),
+      })
+    }
+    return { tickets: out }
+  }
+
+  if (name === 'search_reviews') {
+    const q = String(args?.query || '').trim().replace(/[%,()]/g, '')
+    let qb = D.from('google_reviews').select('id, reviewer_name, star_rating, comment, reply_comment, review_created_at')
+      .eq('company_id', ctx.companyId).order('review_created_at', { ascending: false }).limit(Math.min(Number(args?.limit) || 6, 15))
+    if (args?.unrepliedOnly) qb = qb.is('reply_comment', null)
+    if (args?.maxStars) qb = qb.lte('star_rating', Number(args.maxStars))
+    if (q) qb = qb.or(`reviewer_name.ilike.%${q}%,comment.ilike.%${q}%`)
+    const { data, error } = await qb
+    if (error) return { error: 'Google reviews aren\'t set up for this workspace.' }
+    return { reviews: (data || []).map((r: any) => ({ id: r.id, reviewer: r.reviewer_name, stars: r.star_rating, text: String(r.comment || '').slice(0, 800), replied: !!r.reply_comment, existingReply: r.reply_comment || null, date: r.review_created_at })) }
+  }
+
+  if (name === 'search_social_comments') {
+    const q = String(args?.query || '').trim().replace(/[%,()]/g, '')
+    let qb = D.from('social_comments').select('id, platform, author_name, message, is_replied, reply_text, commented_at, post_id')
+      .eq('company_id', ctx.companyId).eq('is_hidden', false).order('commented_at', { ascending: false }).limit(Math.min(Number(args?.limit) || 6, 15))
+    if (args?.platform) qb = qb.eq('platform', args.platform)
+    if (args?.unrepliedOnly) qb = qb.eq('is_replied', false)
+    if (q) qb = qb.or(`author_name.ilike.%${q}%,message.ilike.%${q}%`)
+    const { data, error } = await qb
+    if (error) return { error: 'Social comments aren\'t set up for this workspace.' }
+    return { comments: (data || []).map((c: any) => ({ id: c.id, platform: c.platform, author: c.author_name, text: String(c.message || '').slice(0, 600), replied: !!c.is_replied, existingReply: c.reply_text || null, date: c.commented_at })) }
+  }
+
+  if (name === 'ask_knowledge') {
+    const hits = await searchKnowledge(D, ctx.companyId, String(args?.question || ''), 6).catch(() => [])
+    if (!hits.length) return { found: false, note: 'Nothing in the knowledge library covers this. Say so; do not guess.' }
+    return { found: true, sources: hits.map(h => ({ source: h.source, title: h.title, text: String(h.content || '').slice(0, 900), url: h.url })) }
+  }
+
   return { error: `Unknown read tool: ${name}` }
 }
 
@@ -903,6 +1096,125 @@ export async function executeAction(db: SupabaseClient, ctx: AssistantContext, n
     return { ok: true, entityType: 'order', entityId: order.id, card, undo: null }
   }
 
+  if (name === 'add_fact') {
+    const question = String(args?.question || '').trim().slice(0, 300)
+    const answer = String(args?.answer || '').trim().slice(0, 3000)
+    if (!question || !answer) return { ok: false, error: 'A fact needs a question and an answer.' }
+    const { data, error } = await D.from('ai_facts').insert({ company_id: ctx.companyId, question, answer, created_by: ctx.userId }).select('id').maybeSingle()
+    if (error || !data) return { ok: false, error: /ai_facts/.test(error?.message || '') ? 'The AI knowledge library isn\'t set up yet (database update V326).' : (error?.message || 'Could not save that.') }
+    await logAiEvent(D, { companyId: ctx.companyId, userId: ctx.userId, action: 'Added AI fact', tool: name, entityType: 'fact', entityId: data.id, input: { question, answer }, result: { ok: true } })
+    return { ok: true, entityType: 'fact', entityId: data.id, card: { kind: 'fact', title: 'Colvy AI will remember this', lines: [question, answer.slice(0, 160)], href: '/admin/crm-settings/ai-knowledge' }, undo: null }
+  }
+
+  if (name === 'reply_ticket') {
+    const text = String(args?.text || '').trim()
+    if (!text) return { ok: false, error: 'The reply is empty.' }
+    const t = await resolveTicket(D, ctx, args?.ticketId)
+    if (!t) return { ok: false, error: 'Ticket not found.' }
+    let d: any = {}
+    try {
+      const res = await fetch(`${siteBase(ctx)}/api/tickets/${t.id}/reply`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind: 'reply', body: text, authorName: ctx.userName }) })
+      d = await res.json().catch(() => ({}))
+      if (!res.ok) return { ok: false, error: d?.error || `Reply failed (${res.status})` }
+    } catch (e: any) { return { ok: false, error: e?.message || 'Reply failed' } }
+    await logAiEvent(D, { companyId: ctx.companyId, userId: ctx.userId, action: 'Replied to ticket', tool: name, entityType: 'ticket', entityId: t.id, input: { text }, result: { emailed: d?.emailed } })
+    return { ok: true, entityType: 'ticket', entityId: t.id, card: { kind: 'ticket_reply', title: `Replied to ${t.ticket_number}`, lines: [d?.emailed === false ? (d?.emailNote || 'Saved on the ticket (email not sent).') : 'Emailed to the customer', text.slice(0, 140)], href: `/admin/tickets/${t.id}` }, undo: null }
+  }
+
+  if (name === 'reply_review') {
+    const text = String(args?.text || '').trim()
+    const { data: r } = await D.from('google_reviews').select('id, review_id, reviewer_name').eq('company_id', ctx.companyId).eq('id', String(args?.reviewId || '')).maybeSingle()
+    if (!r || !text) return { ok: false, error: 'Review not found.' }
+    try { await replyToReview(ctx.companyId, r.review_id, text) }
+    catch (e: any) { return { ok: false, error: e?.message || 'Google didn\'t accept the reply.' } }
+    await logAiEvent(D, { companyId: ctx.companyId, userId: ctx.userId, action: 'Replied to Google review', tool: name, entityType: 'review', entityId: r.id, input: { text }, result: { ok: true } })
+    return { ok: true, entityType: 'review', entityId: r.id, card: { kind: 'review_reply', title: `Replied to ${r.reviewer_name || 'the'}${r.reviewer_name ? '’s' : ''} review`, lines: [text.slice(0, 140)], href: '/admin/reviews' }, undo: null }
+  }
+
+  if (name === 'reply_social_comment') {
+    const text = String(args?.text || '').trim()
+    const { data: c } = await D.from('social_comments').select('id, author_name, platform').eq('company_id', ctx.companyId).eq('id', String(args?.commentId || '')).maybeSingle()
+    if (!c || !text) return { ok: false, error: 'Comment not found.' }
+    try {
+      const res = await fetch(`${siteBase(ctx)}/api/social/comments`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId: ctx.companyId, action: 'reply', commentId: c.id, message: text, byAi: true }) })
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok || d?.ok === false) return { ok: false, error: d?.error || `Reply failed (${res.status})` }
+    } catch (e: any) { return { ok: false, error: e?.message || 'Reply failed' } }
+    await logAiEvent(D, { companyId: ctx.companyId, userId: ctx.userId, action: 'Replied to social comment', tool: name, entityType: 'social_comment', entityId: c.id, input: { text }, result: { ok: true } })
+    return { ok: true, entityType: 'social_comment', entityId: c.id, card: { kind: 'comment_reply', title: `Replied to ${c.author_name || 'the comment'} on ${c.platform === 'instagram' ? 'Instagram' : 'Facebook'}`, lines: [text.slice(0, 140)], href: '/admin/social' }, undo: null }
+  }
+
+  if (name === 'send_payment_link' || name === 'request_media' || name === 'send_booking_link') {
+    const r = await resolveMessageRecipient(D, ctx, args)
+    if (r.error) return { ok: false, error: r.error }
+    const email = r.contact?.email || null
+    if (!r.phone && !email) return { ok: false, error: `I don't have a phone number or email for ${r.name}.` }
+    const conversationId = await ensureConversation(D, ctx, r)
+    if (!conversationId) return { ok: false, error: 'Could not open a conversation to send into.' }
+    const channel = r.phone ? 'sms' : 'email'
+    const href = `/admin/inbox?conversation=${conversationId}`
+    const deliver = (text: string, subject: string) => deliverAutomatedMessage({
+      companyId: ctx.companyId, conversationId, text, subject, phone: r.phone || undefined, email: email || undefined,
+      senderName: ctx.companyName, origin: ctx.siteOrigin, preferChannel: r.phone ? undefined : 'email', force: true, db: D,
+    })
+
+    if (name === 'send_payment_link') {
+      const amount = Math.round(Number(args?.amount) * 100) / 100
+      if (!isFinite(amount) || amount < 1) return { ok: false, error: 'Payment links need an amount of at least $1.' }
+      const description = String(args?.description || '').trim().slice(0, 120)
+      let link = ''
+      try {
+        const res = await fetch(`${siteBase(ctx)}/api/stripe/chat-payment`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId: ctx.companyId, conversationId, amount, description: description || undefined, senderName: ctx.companyName, channel }) })
+        const d = await res.json().catch(() => ({}))
+        if (!res.ok || !(d?.checkoutUrl || d?.fullUrl)) return { ok: false, error: d?.error || 'Could not create the payment link. Is Stripe connected?' }
+        link = d.checkoutUrl || d.fullUrl
+      } catch (e: any) { return { ok: false, error: e?.message || 'Could not create the payment link.' } }
+      // The payment card is already in the thread (chat-payment adds it), so only deliver.
+      const sent = await deliver(fillLink(String(args?.text || `Here's your secure payment link${description ? ` for ${description}` : ''}: {link}`), link), `Your payment link from ${ctx.companyName}`)
+      await logAiEvent(D, { companyId: ctx.companyId, userId: ctx.userId, action: 'Sent payment link', tool: name, entityType: 'conversation', entityId: conversationId, input: { amount, description, contactId: r.contact?.id || null }, result: { sent: sent.sent, channel: sent.channel, link } })
+      return { ok: true, entityType: 'conversation', entityId: conversationId, card: { kind: 'payment_link', title: `Payment link for ${money(amount)} ${sent.sent ? 'sent' : 'created'}`, lines: [`To ${r.name}${sent.sent ? ` · ${sent.channel === 'email' ? 'Email' : sent.channel === 'live_chat' ? 'Live chat' : 'SMS'}` : ' · not delivered, copy it from the conversation'}`, description || null, link].filter(Boolean), href }, undo: null }
+    }
+
+    if (name === 'request_media') {
+      const text = String(args?.text || '').trim() || 'Could you send us a few photos?'
+      let link = ''
+      try {
+        const res = await fetch(`${siteBase(ctx)}/api/media-requests`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId: ctx.companyId, conversationId, contactId: r.contact?.id || null, prompt: text, accept: args?.photosOnly ? ['image'] : ['image', 'video'], maxFiles: 10, expiryHours: null, createdBy: ctx.userName, deliveryChannel: channel }) })
+        const d = await res.json().catch(() => ({}))
+        if (!res.ok || !d?.link) return { ok: false, error: d?.error || 'Could not create the upload link.' }
+        link = d.link
+      } catch (e: any) { return { ok: false, error: e?.message || 'Could not create the upload link.' } }
+      // The request route texts the link itself when there's a phone; email it otherwise.
+      let via = 'SMS'
+      if (!r.phone && email) { const sent = await deliver(`${text}\nUpload here (private, full quality): ${link}`, `${ctx.companyName}: could you send us some photos?`); via = sent.sent ? 'Email' : 'not delivered' }
+      await logAiEvent(D, { companyId: ctx.companyId, userId: ctx.userId, action: 'Requested media', tool: name, entityType: 'conversation', entityId: conversationId, input: { text, contactId: r.contact?.id || null }, result: { link, via } })
+      return { ok: true, entityType: 'conversation', entityId: conversationId, card: { kind: 'media_request', title: `Upload link sent to ${r.name}`, lines: [`${via} · ${text.slice(0, 100)}`, link], href }, undo: null }
+    }
+
+    // send_booking_link
+    const company = await loadCompanyPublic(D, { id: ctx.companyId })
+    if (!company?.slug) return { ok: false, error: 'Set up your workspace address first.' }
+    let serviceId: string | null = null, serviceSlug: string | undefined
+    if (args?.service) {
+      const { data: svcs } = await D.from('booking_services').select('id, slug, name, active').eq('company_id', ctx.companyId).eq('active', true).ilike('name', `%${String(args.service).replace(/[%,()]/g, '')}%`).limit(2)
+      if (svcs?.length === 1) { serviceId = svcs[0].id; serviceSlug = svcs[0].slug }
+    }
+    let url = ''
+    try {
+      const inv = await createInvite(D, { companyId: ctx.companyId, contactId: r.contact?.id || null, conversationId, serviceId, userId: ctx.userId })
+      url = `${bookingPageUrl(company, serviceSlug)}?i=${inv.token}`
+    } catch (e: any) { return { ok: false, error: /booking_invites/.test(String(e?.message)) ? 'Online booking isn\'t set up yet.' : (e?.message || 'Could not create the booking link.') } }
+    const text = fillLink(String(args?.text || 'You can book a time here: {link}'), url)
+    const sent = await deliver(text, `Book a time with ${ctx.companyName}`)
+    if (!sent.sent) return { ok: false, error: sent.error || 'Could not deliver the booking link.' }
+    try {
+      await D.from('messages').insert({ conversation_id: conversationId, company_id: ctx.companyId, sender_type: 'agent', sender_name: ctx.companyName, content: text, message_type: 'text', is_read: true, delivery_channel: sent.channel === 'sms' ? 'sms' : sent.channel === 'email' ? 'email' : 'chat', metadata: { colvy_ai: true, sent_by: ctx.userName } })
+      await D.from('conversations').update({ last_message: text.slice(0, 200), last_message_at: new Date().toISOString() }).eq('id', conversationId)
+    } catch {}
+    await logAiEvent(D, { companyId: ctx.companyId, userId: ctx.userId, action: 'Sent booking link', tool: name, entityType: 'conversation', entityId: conversationId, input: { service: args?.service || null }, result: { url, channel: sent.channel } })
+    return { ok: true, entityType: 'conversation', entityId: conversationId, card: { kind: 'booking_link', title: `Booking link sent to ${r.name}`, lines: [sent.channel === 'email' ? 'Email' : sent.channel === 'live_chat' ? 'Live chat' : 'SMS', url], href }, undo: null }
+  }
+
   return { ok: false, error: `Unknown action: ${name}` }
 }
 
@@ -944,6 +1256,61 @@ export async function buildConfirmPreview(db: SupabaseClient, ctx: AssistantCont
     const action = name === 'cancel_order' ? 'Cancel this order' : `Set status to “${wooStatus}”`
     return { ok: true, preview: { kind: 'order_status', orderLabel, to: order.customer_name, action, current: statusMeta(order.status).label, amount: total, args: { orderId: order.id, ...(name === 'cancel_order' ? { reason: args?.reason } : { status: wooStatus }) } } }
   }
+  if (!canEdit(ctx.role as any)) return { ok: false, error: "You don't have permission to do that." }
+
+  if (name === 'reply_ticket') {
+    const text = String(args?.text || '').trim()
+    if (!text) return { ok: false, error: 'The reply is empty.' }
+    const t = await resolveTicket(D, ctx, args?.ticketId)
+    if (!t) return { ok: false, error: 'Which ticket? Give me the ticket number, or open it first.' }
+    let to = t.email || ''
+    if (t.contact_id) { const { data: c } = await D.from('contacts').select('name, email').eq('id', t.contact_id).maybeSingle(); to = c?.name ? `${c.name}${c.email ? ` (${c.email})` : ''}` : (c?.email || to) }
+    return { ok: true, preview: { kind: 'ticket_reply', to: to || 'the customer', via: 'Email', about: `${t.ticket_number} · ${t.subject || 'Ticket'}`, text, args: { ticketId: t.id, text } } }
+  }
+
+  if (name === 'reply_review') {
+    const text = String(args?.text || '').trim()
+    if (!text) return { ok: false, error: 'The reply is empty.' }
+    const { data: r } = await D.from('google_reviews').select('id, reviewer_name, star_rating, comment, reply_comment').eq('company_id', ctx.companyId).eq('id', String(args?.reviewId || '')).maybeSingle()
+    if (!r) return { ok: false, error: 'I couldn\'t find that review — search for it first.' }
+    return { ok: true, preview: {
+      kind: 'review_reply', about: `${r.reviewer_name || 'Google reviewer'} · ${r.star_rating} star${r.star_rating === 1 ? '' : 's'}`,
+      quote: String(r.comment || '(no written review)').slice(0, 240), text,
+      note: r.reply_comment ? 'This replaces your current public reply.' : 'Posted publicly on Google.',
+      args: { reviewId: r.id, text },
+    } }
+  }
+
+  if (name === 'reply_social_comment') {
+    const text = String(args?.text || '').trim()
+    if (!text) return { ok: false, error: 'The reply is empty.' }
+    const { data: c } = await D.from('social_comments').select('id, platform, author_name, message').eq('company_id', ctx.companyId).eq('id', String(args?.commentId || '')).maybeSingle()
+    if (!c) return { ok: false, error: 'I couldn\'t find that comment — search for it first.' }
+    const platform = c.platform === 'instagram' ? 'Instagram' : 'Facebook'
+    return { ok: true, preview: { kind: 'comment_reply', about: `${c.author_name || 'Someone'} on ${platform}`, quote: String(c.message || '').slice(0, 240), text, note: `Posted publicly under their ${platform} comment.`, args: { commentId: c.id, text } } }
+  }
+
+  if (name === 'send_payment_link' || name === 'request_media' || name === 'send_booking_link') {
+    const r = await resolveMessageRecipient(D, ctx, args)
+    if (r.error) return { ok: false, error: r.error }
+    if (!r.phone && !r.contact?.email) return { ok: false, error: `I don't have a phone number or email for ${r.name}.` }
+    const first = firstName(r.contact?.name || r.name)
+    const hi = first && !/^\+?\d/.test(first) ? `Hi ${first}, ` : 'Hi, '
+    if (name === 'send_payment_link') {
+      const amount = Math.round(Number(args?.amount) * 100) / 100
+      if (!isFinite(amount) || amount < 1) return { ok: false, error: 'Payment links need an amount of at least $1.' }
+      const description = String(args?.description || '').trim().slice(0, 120)
+      const text = String(args?.text || '').trim() || `${hi}here's your secure payment link${description ? ` for ${description}` : ''}: {link}`
+      return { ok: true, preview: { kind: 'payment_link', to: r.name, via: viaLabel(r), amount: money(amount), text, note: description ? `For: ${description}. The secure link is added where {link} is.` : 'The secure link is added where {link} is.', args: { ...pinRecipient(r), amount, description, text } } }
+    }
+    if (name === 'request_media') {
+      const text = String(args?.text || '').trim() || `${hi}could you send us a few photos?`
+      return { ok: true, preview: { kind: 'media_request', to: r.name, via: viaLabel(r), text, note: 'A private upload link (full quality, photos and videos) is added after your message.', args: { ...pinRecipient(r), text, photosOnly: !!args?.photosOnly } } }
+    }
+    const text = String(args?.text || '').trim() || `${hi}you can book a time here: {link}`
+    return { ok: true, preview: { kind: 'booking_link', to: r.name, via: viaLabel(r), text, note: args?.service ? `Opens straight to “${args.service}”.` : 'The booking link is added where {link} is.', args: { ...pinRecipient(r), service: args?.service || null, text } } }
+  }
+
   return { ok: false, error: `No preview for ${name}` }
 }
 
@@ -1021,6 +1388,8 @@ const fmtDuration = (secs: any) => {
   return m ? `${m}m ${r}s` : `${r}s`
 }
 
-const fmtDate = (v: string) => { const d = new Date(v); return isNaN(+d) ? v : d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }) }
-const fmtTime = (v: string) => { const d = new Date(v); return isNaN(+d) ? '' : d.toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' }) }
+// The server runs in UTC; show dates and times the way the business sees them.
+const LOCAL_TZ = 'Australia/Melbourne'
+const fmtDate = (v: string) => { const d = new Date(v); return isNaN(+d) ? v : d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', timeZone: LOCAL_TZ }) }
+const fmtTime = (v: string) => { const d = new Date(v); return isNaN(+d) ? '' : d.toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit', timeZone: LOCAL_TZ }) }
 const fmtDateTime = (v: string) => { const d = new Date(v); return isNaN(+d) ? v : `${fmtDate(v)} · ${fmtTime(v)}` }

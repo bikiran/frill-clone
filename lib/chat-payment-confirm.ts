@@ -119,9 +119,9 @@ export async function confirmChatPayment(
     const senderName = company || 'Support'
     try {
       if (channel === 'email' && email) {
-        await fetch(`${base}/api/email/send`, {
+        await fetch(`${base}/api/email/reply`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ companyId: pay.company_id, conversationId: pay.conversation_id, to: email, subject: subject || 'Payment received', text: custMsg, senderName }),
+          body: JSON.stringify({ conversationId: pay.conversation_id, to: email, subject: subject || 'Payment received', content: custMsg, agentName: senderName }),
         })
       } else if (['facebook', 'instagram', 'messenger'].includes(channel)) {
         await fetch(`${base}/api/meta/send`, {
