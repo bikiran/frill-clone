@@ -25,7 +25,10 @@ export default function Analytics() {
     started = true
     let cancelled = false
 
-    ;(async () => {
+    // Start PostHog once the page is idle, not during load — it pulls in its
+    // own bundles (surveys, web-vitals) that competed with first paint and
+    // hydration on phones. Events still capture; they just begin a beat later.
+    const run = () => (async () => {
       try {
         // Per-company operational flag (default ON). A logged-in company that has
         // turned analytics off sends no events; anonymous/marketing visitors (no
@@ -81,8 +84,15 @@ export default function Analytics() {
         })
       } catch { /* analytics must never break the app */ }
     })()
+    const w = window as any
+    const handle = w.requestIdleCallback ? w.requestIdleCallback(run, { timeout: 4000 }) : setTimeout(run, 2500)
 
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+      if (w.cancelIdleCallback && w.requestIdleCallback) w.cancelIdleCallback(handle); else clearTimeout(handle)
+      // A cancelled (unmounted) start can be retried by the next mount.
+      if (!phRef.current) started = false
+    }
   }, [])
 
   // Pageview on client-side navigation.

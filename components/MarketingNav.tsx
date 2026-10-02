@@ -320,7 +320,7 @@ export default function MarketingNav({ dark, onToggleDark }: { dark: boolean; on
       <div style={{ maxWidth: 1440, margin: '0 auto', padding: '0 24px', height: 68, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         {/* Logo */}
         <a href="/" style={{ display: 'flex', alignItems: 'center', gap: 9, textDecoration: 'none', flexShrink: 0 }}>
-          <img src="/icon-512.png" alt="Colvy" width={32} height={32} style={{ borderRadius: 9, display: 'block' }} />
+          <img src="/icon-192.png" alt="" width={32} height={32} style={{ borderRadius: 9, display: 'block' }} />
           <span style={{ fontWeight: 900, fontSize: 22, color: text, letterSpacing: '-0.02em' }}>Colvy</span>
         </a>
 
