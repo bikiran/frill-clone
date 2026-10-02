@@ -66,9 +66,14 @@ export default function PublicForm() {
   const current = visibleQuestions[step]
 
   // Question types where a single tap/click is an unambiguous answer — auto-advance
-  const AUTO_ADVANCE_TYPES = ['multiple_choice', 'dropdown', 'yes_no', 'rating', 'nps', 'opinion_scale', 'legal']
+  const AUTO_ADVANCE_TYPES = ['multiple_choice', 'dropdown', 'yes_no', 'rating', 'nps', 'opinion_scale', 'legal', 'picture_choice']
 
   const handleNext = () => {
+    // A payment step can't be skipped until it's actually paid.
+    if (current?.type === 'payment' && Number(current?.amountCents) > 0 && answers[current.id]?.status !== 'paid') {
+      alert('Please complete the payment to continue.')
+      return
+    }
     // A statement is informational — it has no answer, so never block on "required".
     if (current?.type !== 'statement' && current?.required && (answers[current.id] === undefined || answers[current.id] === '' || (Array.isArray(answers[current.id]) && answers[current.id].length === 0))) {
       alert('This question is required')
@@ -150,6 +155,177 @@ export default function PublicForm() {
       alert('File upload failed: ' + e.message)
     }
     setUploadingFile(false)
+  }
+
+  // ── Payment (Stripe hosted checkout, then back to the form) ──────────────────
+  const [paying, setPaying] = useState(false)
+  const [payMsg, setPayMsg] = useState('')
+  const startPayment = async (q: any) => {
+    setPaying(true); setPayMsg('')
+    try {
+      const r = await fetch('/api/forms/payment', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'create', formId, questionId: q.id, origin: window.location.origin }),
+      })
+      const d = await r.json()
+      if (!r.ok || !d.checkoutUrl) { setPayMsg(d.error || 'Could not start the payment.'); setPaying(false); return }
+      // Persist answers + place so returning from Stripe restores the form.
+      try { localStorage.setItem(`colvy_form_progress_${formId}`, JSON.stringify({ answers, step, payQuestionId: q.id })) } catch {}
+      window.location.href = d.checkoutUrl
+    } catch { setPayMsg('Could not start the payment.'); setPaying(false) }
+  }
+  const fmtMoney = (cents: number, currency?: string) => `${new Intl.NumberFormat(undefined, { style: 'currency', currency: (currency || 'aud').toUpperCase() }).format((cents || 0) / 100)}`
+
+  // On returning from Stripe (?form_paid=<id>): restore saved progress, verify the
+  // payment, and mark the payment question paid so the person can finish.
+  useEffect(() => {
+    if (!form) return
+    const url = new URL(window.location.href)
+    const paidId = url.searchParams.get('form_paid')
+    const cancelled = url.searchParams.get('form_pay_cancelled')
+    if (!paidId && !cancelled) return
+    let saved: any = null
+    try { saved = JSON.parse(localStorage.getItem(`colvy_form_progress_${formId}`) || 'null') } catch {}
+    if (saved) { setAnswers(saved.answers || {}); if (typeof saved.step === 'number') setStep(saved.step) }
+    const clean = () => { url.searchParams.delete('form_paid'); url.searchParams.delete('form_pay_cancelled'); url.searchParams.delete('session_id'); window.history.replaceState({}, '', url.toString()) }
+    if (cancelled) { setPayMsg('Payment was cancelled — you can try again.'); clean(); return }
+    ;(async () => {
+      setPaying(true); setPayMsg('Confirming your payment…')
+      try {
+        const r = await fetch('/api/forms/payment', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'verify', paymentId: paidId }) })
+        const d = await r.json()
+        if (d.status === 'paid') {
+          const payQ = saved?.payQuestionId
+          if (payQ) setAnswers(prev => ({ ...prev, [payQ]: { status: 'paid', amount_cents: d.amountCents, currency: d.currency, payment_id: paidId } }))
+          setPayMsg('')
+          try { localStorage.removeItem(`colvy_form_progress_${formId}`) } catch {}
+        } else {
+          setPayMsg('We couldn’t confirm the payment yet. If you completed it, wait a moment and press OK.')
+        }
+      } catch { setPayMsg('We couldn’t confirm the payment. Please try again.') }
+      setPaying(false)
+      clean()
+    })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form])
+
+  // ── Signature pad ───────────────────────────────────────────────────────────
+  const sigRef = useRef<HTMLCanvasElement | null>(null)
+  const sigDrawing = useRef(false)
+  const sigLast = useRef<{ x: number; y: number } | null>(null)
+  const sigPos = (e: React.PointerEvent) => {
+    const c = sigRef.current!; const r = c.getBoundingClientRect()
+    return { x: (e.clientX - r.left) * (c.width / r.width), y: (e.clientY - r.top) * (c.height / r.height) }
+  }
+  const sigStart = (e: React.PointerEvent) => {
+    sigDrawing.current = true; sigLast.current = sigPos(e)
+    try { (e.target as Element).setPointerCapture?.(e.pointerId) } catch {}
+  }
+  const sigMove = (e: React.PointerEvent) => {
+    if (!sigDrawing.current || !sigRef.current) return
+    const ctx = sigRef.current.getContext('2d'); if (!ctx) return
+    const p = sigPos(e)
+    ctx.strokeStyle = '#0d0d0d'; ctx.lineWidth = 2.5; ctx.lineCap = 'round'; ctx.lineJoin = 'round'
+    ctx.beginPath(); ctx.moveTo(sigLast.current!.x, sigLast.current!.y); ctx.lineTo(p.x, p.y); ctx.stroke()
+    sigLast.current = p
+  }
+  const sigEnd = (qid: string) => {
+    if (!sigDrawing.current) return
+    sigDrawing.current = false
+    const c = sigRef.current
+    if (c) setAnswers(p => ({ ...p, [qid]: c.toDataURL('image/png') }))
+  }
+  const sigClear = (qid: string) => {
+    const c = sigRef.current
+    if (c) { const ctx = c.getContext('2d'); ctx?.clearRect(0, 0, c.width, c.height) }
+    setAnswers(p => ({ ...p, [qid]: undefined }))
+  }
+
+  // ── Ranking helpers ──────────────────────────────────────────────────────────
+  // Ranking works on an ordered copy of the options; seed it from the options on
+  // first interaction so a submitted-but-untouched ranking still records an order.
+  const rankOrder = (q: any): string[] => (Array.isArray(answers[q.id]) ? answers[q.id] : (q.options || []))
+  const rankMove = (q: any, from: number, dir: -1 | 1) => {
+    const arr = [...rankOrder(q)]
+    const to = from + dir
+    if (to < 0 || to >= arr.length) return
+    ;[arr[from], arr[to]] = [arr[to], arr[from]]
+    setAnswers(p => ({ ...p, [q.id]: arr }))
+  }
+
+  // ── Scheduler ────────────────────────────────────────────────────────────────
+  const [schedDate, setSchedDate] = useState<string>('')          // 'YYYY-MM-DD'
+  const [schedBooked, setSchedBooked] = useState<{ starts_at: string; ends_at: string }[]>([])
+  const [schedBusy, setSchedBusy] = useState(false)
+  const [schedMsg, setSchedMsg] = useState('')
+  const schedCfg = (q: any) => {
+    const c = q.schedule || {}
+    return {
+      days: (c.days && c.days.length ? c.days : [1, 2, 3, 4, 5]) as number[],
+      start: c.start || '09:00', end: c.end || '17:00',
+      slotMins: Math.max(5, Number(c.slotMins) || Number(c.durationMins) || 30),
+      durationMins: Math.max(5, Number(c.durationMins) || Number(c.slotMins) || 30),
+      daysAhead: Math.max(1, Number(c.daysAhead) || 14),
+    }
+  }
+  const schedDates = (q: any): Date[] => {
+    const { days, daysAhead } = schedCfg(q)
+    const out: Date[] = []
+    const today = new Date(); today.setHours(0, 0, 0, 0)
+    for (let i = 0; i < daysAhead; i++) {
+      const d = new Date(today); d.setDate(today.getDate() + i)
+      if (days.includes(d.getDay())) out.push(d)
+    }
+    return out
+  }
+  const schedSlots = (q: any, dateStr: string): Date[] => {
+    if (!dateStr) return []
+    const { start, end, slotMins, durationMins } = schedCfg(q)
+    const [sh, sm] = start.split(':').map(Number)
+    const [eh, em] = end.split(':').map(Number)
+    const base = new Date(dateStr + 'T00:00:00')
+    const startMin = sh * 60 + sm, endMin = eh * 60 + em
+    const out: Date[] = []
+    for (let m = startMin; m + durationMins <= endMin; m += slotMins) {
+      const d = new Date(base); d.setHours(0, m, 0, 0)
+      if (d.getTime() > Date.now()) out.push(d)
+    }
+    return out
+  }
+  const slotTaken = (q: any, slot: Date): boolean => {
+    const { durationMins } = schedCfg(q)
+    const s = slot.getTime(), e = s + durationMins * 60000
+    return schedBooked.some(b => {
+      const bs = new Date(b.starts_at).getTime(), be = new Date(b.ends_at).getTime()
+      return bs < e && be > s
+    })
+  }
+  const loadSchedBooked = async (q: any, dateStr: string) => {
+    setSchedDate(dateStr); setSchedMsg('')
+    try {
+      const from = new Date(dateStr + 'T00:00:00').toISOString()
+      const to = new Date(dateStr + 'T23:59:59').toISOString()
+      const r = await fetch('/api/forms/schedule', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'slots', formId, questionId: q.id, from, to }) })
+      const d = await r.json()
+      setSchedBooked(Array.isArray(d.booked) ? d.booked : [])
+    } catch { setSchedBooked([]) }
+  }
+  const pickSlot = async (q: any, slot: Date) => {
+    setSchedBusy(true); setSchedMsg('')
+    try {
+      const r = await fetch('/api/forms/schedule', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'book', formId, questionId: q.id, startsAt: slot.toISOString(), releaseEventId: answers[q.id]?.calendar_event_id }),
+      })
+      const d = await r.json()
+      if (!r.ok) {
+        setSchedMsg(d.error || 'Could not book that time.')
+        if (r.status === 409) loadSchedBooked(q, schedDate)   // refresh availability
+        setSchedBusy(false); return
+      }
+      setAnswers(p => ({ ...p, [q.id]: { starts_at: d.startsAt, ends_at: d.endsAt, calendar_event_id: d.eventId } }))
+    } catch { setSchedMsg('Could not book that time.') }
+    setSchedBusy(false)
   }
 
   useEffect(() => {
@@ -450,7 +626,7 @@ export default function PublicForm() {
                   ))}
                 </div>
               )}
-              {current.type === 'multiple_choice' && (
+              {current.type === 'multiple_choice' && !(current as any).multiSelect && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                   {(current.options || []).map((opt: string, oi: number) => (
                     <button key={oi} onClick={() => selectAndAdvance(current.id, opt)}
@@ -461,6 +637,29 @@ export default function PublicForm() {
                       <span style={{ fontSize: 16, color: '#0d0d0d' }}>{opt}</span>
                     </button>
                   ))}
+                </div>
+              )}
+              {/* Multiple Choice with "multiple selection" on behaves like a
+                  checkbox group: pick several, then press OK (no auto-advance). */}
+              {current.type === 'multiple_choice' && (current as any).multiSelect && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {(current.options || []).map((opt: string, oi: number) => {
+                    const selectedArr: string[] = answers[current.id] || []
+                    const isChecked = selectedArr.includes(opt)
+                    return (
+                      <button key={oi} onClick={() => {
+                          const next = isChecked ? selectedArr.filter(o => o !== opt) : [...selectedArr, opt]
+                          setAnswers(p => ({ ...p, [current.id]: next }))
+                        }}
+                        style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 16px', borderRadius: 12, border: `2.5px solid ${isChecked ? themeColor : '#e5e5e5'}`, background: isChecked ? `${themeColor}10` : '#fff', cursor: 'pointer', textAlign: 'left' }}>
+                        <span style={{ width: 26, height: 26, borderRadius: 7, border: `2px solid ${isChecked ? themeColor : '#d1d5db'}`, background: isChecked ? themeColor : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: '#fff', flexShrink: 0 }}>
+                          {isChecked ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg> : <span style={{ color: '#9ca3af' }}>{String.fromCharCode(65 + oi)}</span>}
+                        </span>
+                        <span style={{ fontSize: 16, color: '#0d0d0d' }}>{opt}</span>
+                      </button>
+                    )
+                  })}
+                  <p style={{ fontSize: 12, color: '#9ca3af', marginTop: 4 }}>Select all that apply, then press OK</p>
                 </div>
               )}
               {current.type === 'dropdown' && (
@@ -550,15 +749,185 @@ export default function PublicForm() {
                   )}
                 </div>
               )}
-              {['video_audio', 'signature', 'payment', 'scheduler', 'ranking', 'matrix', 'picture_choice'].includes(current.type) && (
-                <div style={{ padding: '20px', borderRadius: 12, border: '2px dashed #e5e5e5', textAlign: 'center', color: '#9ca3af', fontSize: 14 }}>
-                  This question type isn't fillable yet — coming soon.
+              {current.type === 'picture_choice' && (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 12 }}>
+                  {(current.options || []).map((opt: string, oi: number) => {
+                    const img = (current.optionImages || [])[oi]
+                    const selected = answers[current.id] === opt
+                    return (
+                      <button key={oi} onClick={() => selectAndAdvance(current.id, opt)}
+                        style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', borderRadius: 14, border: `2.5px solid ${selected ? themeColor : '#e5e5e5'}`, background: selected ? `${themeColor}10` : '#fff', cursor: 'pointer', padding: 0, textAlign: 'left' }}>
+                        {img
+                          ? <img src={img} alt="" style={{ width: '100%', aspectRatio: '4/3', objectFit: 'cover' }} />
+                          : <div style={{ width: '100%', aspectRatio: '4/3', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f3f4f6', color: '#c0c4cc' }}>
+                              <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                            </div>}
+                        <span style={{ padding: '10px 12px', fontSize: 14, fontWeight: 600, color: '#0d0d0d' }}>{opt}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+              {current.type === 'ranking' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {rankOrder(current).map((opt: string, oi: number) => (
+                    <div key={opt} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', borderRadius: 12, border: '2px solid #e5e5e5', background: '#fff' }}>
+                      <span style={{ width: 24, height: 24, borderRadius: 7, background: themeColor, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 800, flexShrink: 0 }}>{oi + 1}</span>
+                      <span style={{ flex: 1, fontSize: 16, color: '#0d0d0d' }}>{opt}</span>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        <button onClick={() => rankMove(current, oi, -1)} disabled={oi === 0} aria-label="Move up"
+                          style={{ background: 'none', border: 'none', cursor: oi === 0 ? 'default' : 'pointer', opacity: oi === 0 ? 0.25 : 0.7, padding: 0 }}>
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="18 15 12 9 6 15"/></svg>
+                        </button>
+                        <button onClick={() => rankMove(current, oi, 1)} disabled={oi === rankOrder(current).length - 1} aria-label="Move down"
+                          style={{ background: 'none', border: 'none', cursor: oi === rankOrder(current).length - 1 ? 'default' : 'pointer', opacity: oi === rankOrder(current).length - 1 ? 0.25 : 0.7, padding: 0 }}>
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                  <p style={{ fontSize: 12, color: '#9ca3af', marginTop: 2 }}>Order them from most to least important, then press OK.</p>
+                </div>
+              )}
+              {current.type === 'matrix' && (
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+                    <thead>
+                      <tr>
+                        <th />
+                        {(current.matrixCols || []).map((col: string) => (
+                          <th key={col} style={{ padding: '6px 8px', fontSize: 12.5, fontWeight: 700, color: '#6b6b70', textAlign: 'center' }}>{col}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(current.matrixRows || []).map((row: string) => (
+                        <tr key={row} style={{ borderTop: '1px solid #eee' }}>
+                          <td style={{ padding: '10px 8px', fontWeight: 600, color: '#0d0d0d' }}>{row}</td>
+                          {(current.matrixCols || []).map((col: string) => {
+                            const val = (answers[current.id] || {})[row]
+                            return (
+                              <td key={col} style={{ textAlign: 'center', padding: '10px 8px' }}>
+                                <button onClick={() => setAnswers(p => ({ ...p, [current.id]: { ...(p[current.id] || {}), [row]: col } }))}
+                                  aria-label={`${row}: ${col}`}
+                                  style={{ width: 22, height: 22, borderRadius: '50%', border: `2px solid ${val === col ? themeColor : '#d1d5db'}`, background: val === col ? themeColor : '#fff', cursor: 'pointer', padding: 0 }} />
+                              </td>
+                            )
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              {current.type === 'signature' && (
+                <div>
+                  <canvas ref={sigRef} width={600} height={200}
+                    onPointerDown={sigStart} onPointerMove={sigMove} onPointerUp={() => sigEnd(current.id)} onPointerLeave={() => sigEnd(current.id)}
+                    style={{ width: '100%', height: 200, borderRadius: 12, border: '2px solid #e5e5e5', background: '#fff', touchAction: 'none', cursor: 'crosshair' }} />
+                  <button onClick={() => sigClear(current.id)} type="button"
+                    style={{ marginTop: 8, background: 'none', border: 'none', color: '#9ca3af', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Clear</button>
+                </div>
+              )}
+              {current.type === 'video_audio' && (
+                <div>
+                  {answers[current.id]?.url ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', borderRadius: 12, border: `2px solid ${themeColor}`, background: `${themeColor}10` }}>
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={themeColor} strokeWidth="2"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
+                      <span style={{ fontSize: 14, color: '#0d0d0d', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{answers[current.id].name}</span>
+                      <button onClick={() => setAnswers(p => ({ ...p, [current.id]: undefined }))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444' }}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                      </button>
+                    </div>
+                  ) : (
+                    <label style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, padding: '32px', borderRadius: 14, border: `2px dashed ${themeColor}`, cursor: uploadingFile ? 'wait' : 'pointer', color: themeColor }}>
+                      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
+                      <span style={{ fontSize: 14, fontWeight: 600 }}>{uploadingFile ? 'Uploading...' : 'Upload a video or audio file'}</span>
+                      <input type="file" accept="video/*,audio/*" className="hidden" disabled={uploadingFile}
+                        onChange={e => { const f = e.target.files?.[0]; if (f) handleFileUpload(f, current.id) }} />
+                    </label>
+                  )}
+                </div>
+              )}
+              {current.type === 'payment' && (
+                <div>
+                  {answers[current.id]?.status === 'paid' ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 16px', borderRadius: 12, border: `2px solid ${themeColor}`, background: `${themeColor}10` }}>
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={themeColor} strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>
+                      <span style={{ fontSize: 15, fontWeight: 700, color: '#0d0d0d' }}>
+                        Payment received{answers[current.id].amount_cents ? ` — ${fmtMoney(answers[current.id].amount_cents, answers[current.id].currency)}` : ''}
+                      </span>
+                    </div>
+                  ) : (
+                    <>
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 16 }}>
+                        <span style={{ fontSize: 34, fontWeight: 800, color: '#0d0d0d' }}>{Number(current.amountCents) > 0 ? fmtMoney(current.amountCents, current.currency) : '—'}</span>
+                        <span style={{ fontSize: 13, color: '#9ca3af', textTransform: 'uppercase' }}>{(current.currency || 'aud')}</span>
+                      </div>
+                      <button onClick={() => startPayment(current)} disabled={paying || !(Number(current.amountCents) > 0)}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '13px 26px', borderRadius: 12, background: themeColor, color: '#fff', fontWeight: 700, fontSize: 15, border: 'none', cursor: paying ? 'wait' : 'pointer', opacity: paying ? 0.7 : 1 }}>
+                        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+                        {paying ? 'Please wait…' : `Pay securely`}
+                      </button>
+                      <p style={{ fontSize: 12, color: '#9ca3af', marginTop: 10 }}>You'll be taken to a secure Stripe checkout, then back here.</p>
+                    </>
+                  )}
+                  {payMsg && <p style={{ fontSize: 13, color: payMsg.includes('received') ? '#047857' : '#b45309', marginTop: 10, fontWeight: 600 }}>{payMsg}</p>}
+                </div>
+              )}
+              {current.type === 'scheduler' && (
+                <div>
+                  {answers[current.id]?.starts_at && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderRadius: 12, border: `2px solid ${themeColor}`, background: `${themeColor}10`, marginBottom: 16 }}>
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={themeColor} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                      <span style={{ fontSize: 14, fontWeight: 700, color: '#0d0d0d' }}>{new Date(answers[current.id].starts_at).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}</span>
+                    </div>
+                  )}
+                  {/* Date chips */}
+                  <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 6, marginBottom: 14 }}>
+                    {schedDates(current).map(d => {
+                      const ds = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+                      const on = schedDate === ds
+                      return (
+                        <button key={ds} onClick={() => loadSchedBooked(current, ds)}
+                          style={{ flexShrink: 0, minWidth: 62, padding: '8px 10px', borderRadius: 12, border: `2px solid ${on ? themeColor : '#e5e5e5'}`, background: on ? `${themeColor}10` : '#fff', cursor: 'pointer', textAlign: 'center' }}>
+                          <div style={{ fontSize: 11, color: '#9ca3af', fontWeight: 700 }}>{d.toLocaleDateString([], { weekday: 'short' })}</div>
+                          <div style={{ fontSize: 17, fontWeight: 800, color: on ? themeColor : '#0d0d0d' }}>{d.getDate()}</div>
+                          <div style={{ fontSize: 10.5, color: '#9ca3af' }}>{d.toLocaleDateString([], { month: 'short' })}</div>
+                        </button>
+                      )
+                    })}
+                  </div>
+                  {/* Time slots */}
+                  {schedDate ? (
+                    (() => {
+                      const slots = schedSlots(current, schedDate)
+                      if (slots.length === 0) return <p style={{ fontSize: 13, color: '#9ca3af' }}>No times available on this day.</p>
+                      return (
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(88px, 1fr))', gap: 8 }}>
+                          {slots.map(slot => {
+                            const taken = slotTaken(current, slot)
+                            const chosen = answers[current.id]?.starts_at === slot.toISOString()
+                            return (
+                              <button key={slot.toISOString()} disabled={taken || schedBusy} onClick={() => pickSlot(current, slot)}
+                                style={{ padding: '10px 6px', borderRadius: 10, border: `2px solid ${chosen ? themeColor : '#e5e5e5'}`, background: chosen ? themeColor : taken ? '#f3f4f6' : '#fff', color: chosen ? '#fff' : taken ? '#c0c4cc' : '#0d0d0d', fontSize: 13.5, fontWeight: 600, cursor: taken ? 'not-allowed' : 'pointer', textDecoration: taken ? 'line-through' : 'none' }}>
+                                {slot.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      )
+                    })()
+                  ) : (
+                    <p style={{ fontSize: 13, color: '#9ca3af' }}>Pick a day to see available times.</p>
+                  )}
+                  {schedMsg && <p style={{ fontSize: 13, color: '#b45309', marginTop: 10, fontWeight: 600 }}>{schedMsg}</p>}
                 </div>
               )}
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-              {!AUTO_ADVANCE_TYPES.includes(current.type) && (
+              {(!AUTO_ADVANCE_TYPES.includes(current.type) || (current.type === 'multiple_choice' && (current as any).multiSelect)) && !(current.type === 'payment' && answers[current.id]?.status !== 'paid') && (
                 <button onClick={handleNext} disabled={submitting}
                   style={{ padding: '12px 28px', borderRadius: 12, background: themeColor, color: '#fff', fontWeight: 700, fontSize: 15, border: 'none', cursor: 'pointer', opacity: submitting ? 0.6 : 1 }}>
                   {submitting ? 'Submitting...' : step === visibleQuestions.length - 1 ? 'Submit →' : current.type === 'statement' ? 'Continue →' : 'OK →'}

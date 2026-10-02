@@ -9,9 +9,9 @@ function SuccessInner() {
         <div style={{ width: 64, height: 64, borderRadius: '50%', background: '#dcfce7', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
           <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#059669" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
         </div>
-        <h1 style={{ fontSize: 22, fontWeight: 800, color: 'var(--ink)', margin: '0 0 8px' }}>Payment successful</h1>
-        <p style={{ fontSize: 14, color: 'var(--slate)', margin: '0 0 8px', lineHeight: 1.5 }}>Thank you! Your payment has gone through and a receipt has been emailed to you by Stripe.</p>
-        <p style={{ fontSize: 13, color: 'var(--slate)', margin: 0 }}>You can close this window and return to your chat.</p>
+        <h1 style={{ fontSize: 22, fontWeight: 800, color: 'var(--ink)', margin: '0 0 8px' }}>Thank you — payment received</h1>
+        <p style={{ fontSize: 14, color: 'var(--slate)', margin: '0 0 8px', lineHeight: 1.5 }}>Your payment has gone through and a receipt has been emailed to you by Stripe.</p>
+        <p style={{ fontSize: 13.5, color: 'var(--ink)', fontWeight: 600, margin: 0 }}>You can now close this window.</p>
       </div>
     </div>
   )

@@ -3,22 +3,73 @@
 import { useState, useEffect } from 'react'
 import Portal from './Portal'
 
-export default function LiveChat() {
+export default function LiveChat({ slug: slugProp }: { slug?: string } = {}) {
   const [open, setOpen] = useState(false)
-  const [slug, setSlug] = useState('')
+  const [slug, setSlug] = useState(slugProp || '')
   const [mounted, setMounted] = useState(false)
+  // Brand pulled from the same source the embedded launcher uses, so the pop-up
+  // on the help centre / custom domain matches the widget on the customer's own
+  // site (accent colour instead of the default Colvy coral).
+  const [accent, setAccent] = useState<string>('')
 
-  // Get slug from hostname
+  // Target workspace: an explicit slug (e.g. Colvy's own support board on the
+  // marketing site) wins; otherwise derive it from the board subdomain, or —
+  // on a custom help/board domain — resolve it from the domain itself.
   useEffect(() => {
     setMounted(true)
+    if (slugProp) { setSlug(slugProp); return }
     if (typeof window !== 'undefined') {
       const hostname = window.location.hostname
-      if (hostname.endsWith('.colvy.com') && hostname !== 'colvy.com') {
-        const companySlug = hostname.replace('.colvy.com', '')
-        setSlug(companySlug)
+      const isLocal = hostname.includes('localhost') || hostname.endsWith('vercel.app')
+      if (hostname && !isLocal && hostname !== 'colvy.com' && hostname !== 'www.colvy.com') {
+        // Resolve the workspace from the host itself. This correctly maps a
+        // company's help/board domain (e.g. help.colvy.com → the Colvy workspace)
+        // AND a plain <slug>.colvy.com board — instead of blindly treating the
+        // first label as the slug, which made help.colvy.com resolve to a
+        // non-existent "help" workspace (unbranded widget, "companyId is required").
+        fetch(`/api/widget-data?domain=${encodeURIComponent(hostname)}`)
+          .then(r => r.ok ? r.json() : null)
+          .then(d => {
+            if (d?.company?.slug) setSlug(d.company.slug)
+            else if (hostname.endsWith('.colvy.com')) setSlug(hostname.replace('.colvy.com', ''))
+          })
+          .catch(() => { if (hostname.endsWith('.colvy.com')) setSlug(hostname.replace('.colvy.com', '')) })
       }
     }
+  }, [slugProp])
+
+  // Once we know the workspace, load its accent colour so the launcher matches
+  // the configured brand (the widget iframe already brands itself from slug).
+  useEffect(() => {
+    if (!slug) return
+    let cancelled = false
+    fetch(`/api/widget-data?slug=${encodeURIComponent(slug)}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (!cancelled && d?.company?.accent_color) setAccent(d.company.accent_color) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [slug])
+
+  // Any "Start Chat" / "Live Chat" button on the page opens the widget.
+  useEffect(() => {
+    const openChat = () => setOpen(true)
+    window.addEventListener('colvy-open-chat', openChat)
+    return () => window.removeEventListener('colvy-open-chat', openChat)
   }, [])
+
+  // Where to load the widget iframe from. On a colvy subdomain (or the
+  // marketing site) same-origin works. On a custom help/board domain, `/widget`
+  // would be rewritten to the custom-domain renderer by the proxy, so load it
+  // from the board's canonical colvy origin instead — exactly like the embedded
+  // launcher (widget.js) does from the customer's own site.
+  const widgetOrigin = () => {
+    if (typeof window === 'undefined') return ''
+    const host = window.location.hostname
+    const isColvy = host === 'colvy.com' || host.endsWith('.colvy.com')
+    const isLocal = host.includes('localhost') || host.endsWith('vercel.app')
+    if (!isColvy && !isLocal && slug) return `https://${slug}.colvy.com`
+    return window.location.origin
+  }
 
   if (!mounted) return null
 
@@ -57,7 +108,7 @@ export default function LiveChat() {
           width: 56,
           height: 56,
           borderRadius: '50%',
-          background: 'var(--coral)',
+          background: accent || 'var(--coral)',
           color: 'white',
           border: 'none',
           display: 'flex',
@@ -84,10 +135,14 @@ export default function LiveChat() {
         <div
           style={{
             position: 'fixed',
+            // Fit within the viewport on phones: cap width/height to the screen and
+            // never let the panel run off the top or sides. On desktop it stays the
+            // usual 384×600 floating panel above the launcher.
             bottom: 88,
             right: 24,
-            width: 384,
-            height: 600,
+            width: 'min(384px, calc(100vw - 48px))',
+            height: 'min(600px, calc(100dvh - 112px))',
+            maxHeight: 'calc(100dvh - 112px)',
             borderRadius: 16,
             boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
             overflow: 'hidden',
@@ -121,7 +176,7 @@ export default function LiveChat() {
           {/* Widget iframe */}
           <div style={{ flex: 1, overflow: 'hidden', width: '100%' }}>
             <iframe
-              src={`${typeof window !== 'undefined' ? window.location.origin : ''}/widget?embedded=true${slug ? `&slug=${slug}` : ''}`}
+              src={`${widgetOrigin()}/widget?embedded=true${slug ? `&slug=${slug}` : ''}`}
               style={{
                 width: '100%',
                 height: '100%',

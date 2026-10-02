@@ -65,7 +65,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'No email account configured for this company.' }, { status: 400 })
     }
 
-    const { data: company } = await db.from('companies').select('name').eq('id', conv.company_id).maybeSingle()
+    const { data: company } = await db.from('companies').select('name,slug').eq('id', conv.company_id).maybeSingle()
 
     // Thread the reply to the customer's most recent message.
     const { data: lastInbound } = await db.from('messages')
@@ -108,11 +108,19 @@ export async function POST(req: NextRequest) {
 
     // ── Gmail account: send through the Gmail API, so the reply lands in the
     //    business's own Sent folder and threads properly for the customer.
+    // Reply-To on Colvy's inbound domain so the customer's reply routes straight
+    // back onto THIS conversation, regardless of where their mailbox lives.
+    // Reply-To on Colvy's inbound domain (the company alias). The customer's reply
+    // comes back to Colvy and threads onto this conversation via In-Reply-To.
+    const { companyAlias, INBOUND_ENABLED } = await import('@/lib/inbound-alias')
+    const convReplyTo = (INBOUND_ENABLED && company?.slug) ? companyAlias(company.slug) : (channel.inbound_address || channel.from_address || '')
+
     if (channel.provider === 'gmail') {
       const out = await sendGmail(channel, {
         to: toEmail, cc: ccEmail, bcc: bccEmail, subject, body: fullText, html: bodyHtml,
         inReplyTo,
         threadId: conv.email_message_id || null,
+        replyTo: convReplyTo,
         attachments: atts,
       })
       if (out.error) return NextResponse.json({ error: out.error }, { status: 502 })
@@ -170,7 +178,7 @@ export async function POST(req: NextRequest) {
         subject,
         text: fullText,
         html: bodyHtml,
-        reply_to: channel.inbound_address || fromAddress,
+        reply_to: convReplyTo,
         ...(atts.length ? { attachments: atts.map(a => ({ filename: a.name, path: a.url })) } : {}),
         ...(Object.keys(headers).length ? { headers } : {}),
       }),

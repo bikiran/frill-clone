@@ -58,16 +58,21 @@ export async function POST(req: NextRequest) {
       })
 
       if (!response.ok) {
-        console.error('Resend API error:', await response.text())
-        return NextResponse.json({ ok: true, warning: 'Invitation sent but email delivery may have failed' })
+        const detail = await response.text()
+        console.error('Resend API error:', detail)
+        // Honest status: the row was created but the email did NOT go out, so the
+        // caller can fall back to sharing the invite link directly instead of
+        // telling the inviter "sent" when nothing was delivered.
+        return NextResponse.json({ ok: true, emailed: false, warning: 'The invite was created but the email could not be delivered. Share the invite link directly.' })
       }
 
-      return NextResponse.json({ ok: true, message: 'Invitation email sent successfully' })
+      return NextResponse.json({ ok: true, emailed: true, message: 'Invitation email sent successfully' })
     }
 
-    // Fallback: just log if no Resend API key
-    console.log(`[TEAM INVITE] Email invitation sent to ${email} for ${companyName}`)
-    return NextResponse.json({ ok: true, message: 'Invitation recorded' })
+    // No email provider configured — the invite row still exists, but nothing was
+    // emailed. Say so, so the UI can offer the link instead of a false "sent".
+    console.warn(`[TEAM INVITE] RESEND_API_KEY not set — no email sent to ${email}. Share the invite link directly.`)
+    return NextResponse.json({ ok: true, emailed: false, warning: 'Email isn’t configured on the server, so no email was sent. Share the invite link directly.' })
   } catch (e: any) {
     console.error('Send team invite error:', e)
     return NextResponse.json({ error: e.message }, { status: 500 })

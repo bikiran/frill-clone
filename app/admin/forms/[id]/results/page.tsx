@@ -43,6 +43,20 @@ export default function FormResults() {
     })()
   }, [formId])
 
+  // Flatten any answer shape to a spreadsheet/PDF-safe string.
+  const answerToText = (a: any): string => {
+    if (a === undefined || a === null || a === '') return ''
+    if (Array.isArray(a)) return a.map((x, i) => `${i + 1}. ${typeof x === 'object' ? JSON.stringify(x) : x}`).join('; ')
+    if (typeof a === 'object') {
+      if (a.status === 'paid' && a.amount_cents != null) return `Paid ${fmtMoney(a.amount_cents, a.currency)}`
+      if (a.starts_at) return new Date(a.starts_at).toLocaleString()
+      if (a.url) return (a.name || a.url)
+      return Object.entries(a).map(([k, v]) => `${k}: ${v}`).join('; ')
+    }
+    if (typeof a === 'string' && a.startsWith('data:')) return '[signature]'
+    return String(a)
+  }
+
   const exportToExcel = () => {
     if (exporting) return
     setExporting('excel')
@@ -53,11 +67,7 @@ export default function FormResults() {
       const data = responses.map((r: any) => [
         r.id.slice(0, 8),
         new Date(r.created_at).toLocaleString(),
-        ...questions.map((q: any) => {
-          const answer = r.answers?.[q.id]
-          if (Array.isArray(answer)) return answer.join(', ')
-          return answer || ''
-        })
+        ...questions.map((q: any) => answerToText(r.answers?.[q.id]))
       ])
 
       const worksheet = XLSX.utils.aoa_to_sheet([headers, ...data])
@@ -123,7 +133,7 @@ export default function FormResults() {
         doc.setFontSize(9)
         questions.forEach((q: any) => {
           const answer = response.answers?.[q.id]
-          const answerText = Array.isArray(answer) ? answer.join(', ') : (answer || '(No answer)')
+          const answerText = answerToText(answer) || '(No answer)'
           
           doc.text(`${q.title}:`, 20, yPosition)
           yPosition += 5
@@ -158,11 +168,19 @@ export default function FormResults() {
     setBulkDeleting(true)
     try {
       const ids = Array.from(selectedResponses)
-      await (supabase as any).from('form_responses').delete().in('id', ids)
+      // Delete server-side (service role) — a client-side delete is blocked by
+      // RLS and silently removes nothing, so they'd reappear on reload.
+      const res = await fetch('/api/forms/responses', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'delete', formId, companyId: form?.company_id, ids }),
+      })
+      const d = await res.json()
+      if (!res.ok) throw new Error(d.error || 'Delete failed')
       setResponses(prev => prev.filter(r => !selectedResponses.has(r.id)))
       setSelectedResponses(new Set())
-    } catch (error) {
+    } catch (error: any) {
       console.error('Bulk delete failed:', error)
+      alert(`Could not delete: ${error.message}`)
     } finally {
       setBulkDeleting(false)
     }
@@ -207,10 +225,15 @@ export default function FormResults() {
 
   // Aggregate stats per question
   const getQuestionStats = (q: any) => {
-    const answers = responses.map(r => r.answers?.[q.id]).filter(a => a !== undefined && a !== '')
-    if (q.type === 'multiple_choice' || q.type === 'yes_no') {
+    const answers = responses.map(r => r.answers?.[q.id]).filter(a => a !== undefined && a !== '' && !(Array.isArray(a) && a.length === 0))
+    if (['multiple_choice', 'yes_no', 'dropdown', 'picture_choice', 'checkbox'].includes(q.type)) {
       const counts: Record<string, number> = {}
-      answers.forEach(a => { counts[a] = (counts[a] || 0) + 1 })
+      // Multi-select (checkbox, or multiple_choice with multiSelect on) stores an
+      // array — count each chosen option, not the array as a whole.
+      answers.forEach(a => {
+        if (Array.isArray(a)) a.forEach((v: any) => { counts[v] = (counts[v] || 0) + 1 })
+        else counts[a] = (counts[a] || 0) + 1
+      })
       return { type: 'distribution', counts, total: answers.length }
     }
     if (q.type === 'rating') {
@@ -218,7 +241,95 @@ export default function FormResults() {
       const avg = nums.length ? (nums.reduce((s, n) => s + n, 0) / nums.length) : 0
       return { type: 'average', avg, total: nums.length }
     }
-    return { type: 'text', samples: answers.slice(0, 5), total: answers.length }
+    // Media-style answers: a bar chart / average makes no sense — just count them.
+    if (['signature', 'video_audio', 'file_upload'].includes(q.type)) {
+      return { type: 'count', total: answers.length }
+    }
+    if (q.type === 'ranking') {
+      const samples = answers.slice(0, 5).map((a: any) => Array.isArray(a) ? a.map((x, i) => `${i + 1}. ${x}`).join('   ') : String(a))
+      return { type: 'text', samples, total: answers.length }
+    }
+    if (q.type === 'matrix') {
+      const samples = answers.slice(0, 5).map((a: any) => (a && typeof a === 'object') ? Object.entries(a).map(([r, c]) => `${r}: ${c}`).join(' · ') : String(a))
+      return { type: 'text', samples, total: answers.length }
+    }
+    return { type: 'text', samples: answers.slice(0, 5).map((a: any) => typeof a === 'object' ? JSON.stringify(a) : String(a)), total: answers.length }
+  }
+
+  const fmtMoney = (cents: number, currency?: string) => {
+    try { return new Intl.NumberFormat(undefined, { style: 'currency', currency: (currency || 'aud').toUpperCase() }).format((cents || 0) / 100) }
+    catch { return `$${((cents || 0) / 100).toFixed(2)}` }
+  }
+
+  // A compact one-line preview of any answer shape (for the response cards).
+  const previewAnswer = (a: any): string => {
+    if (a === undefined || a === null || a === '') return '—'
+    if (Array.isArray(a)) return a.join(', ')
+    if (typeof a === 'object') {
+      if (a.status === 'paid' && a.amount_cents != null) return `Paid ${fmtMoney(a.amount_cents, a.currency)}`
+      if (a.starts_at) return new Date(a.starts_at).toLocaleString()
+      if (a.name) return a.name
+      if (a.url) return a.url.split('/').pop() || 'file'
+      return Object.entries(a).map(([k, v]) => `${k}: ${v}`).join(', ')
+    }
+    if (typeof a === 'string' && a.startsWith('data:')) return 'Signature'
+    return String(a)
+  }
+
+  // Full answer rendering in the response modal — handles text, media URLs,
+  // signatures (data URLs), uploads ({url,name}), ranking (arrays) and matrix
+  // (objects) without ever dumping "[object Object]" or a raw base64 string.
+  const renderAnswer = (answer: any, q?: any) => {
+    const P = ({ children }: { children: any }) => <p className="text-sm" style={{ color: 'var(--ink)' }}>{children}</p>
+    if (answer === undefined || answer === null || answer === '') return <p className="text-sm italic" style={{ color: '#c0c4cc' }}>No answer</p>
+
+    // Rating → stars + score; NPS / opinion scale → score out of max with a chip.
+    if (q?.type === 'rating') {
+      const n = Number(answer) || 0
+      return (
+        <div className="flex items-center gap-2">
+          <div className="flex gap-0.5">{[1, 2, 3, 4, 5].map(i => (
+            <svg key={i} width="16" height="16" viewBox="0 0 24 24" fill={i <= n ? themeColor : 'none'} stroke={themeColor} strokeWidth="1.5"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+          ))}</div>
+          <span className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>{n}/5</span>
+        </div>
+      )
+    }
+    if (q?.type === 'nps' || q?.type === 'opinion_scale') {
+      const max = q.type === 'nps' ? 10 : 7
+      const n = Number(answer) || 0
+      const tone = q.type === 'nps' ? (n >= 9 ? '#16a34a' : n >= 7 ? '#d97706' : '#dc2626') : themeColor
+      return <span className="inline-flex items-center justify-center text-sm font-bold px-2.5 py-1 rounded-lg" style={{ background: `${tone}18`, color: tone }}>{n} / {max}</span>
+    }
+
+    // Payment answer
+    if (typeof answer === 'object' && answer.status === 'paid' && answer.amount_cents != null) {
+      return <p className="text-sm font-semibold" style={{ color: '#047857' }}>✓ Paid — {fmtMoney(answer.amount_cents, answer.currency)}</p>
+    }
+    // Scheduler booking
+    if (typeof answer === 'object' && answer.starts_at) {
+      const s = new Date(answer.starts_at)
+      const e = answer.ends_at ? new Date(answer.ends_at) : null
+      return <p className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>📅 {s.toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}{e ? ` – ${e.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : ''}</p>
+    }
+    // Matrix (or any plain object without a url)
+    if (typeof answer === 'object' && !Array.isArray(answer) && !answer.url) {
+      const entries = Object.entries(answer)
+      if (entries.length === 0) return <P>—</P>
+      return <div className="space-y-1">{entries.map(([k, v]) => <p key={k} className="text-sm" style={{ color: 'var(--ink)' }}><span style={{ color: 'var(--slate)' }}>{k}:</span> {String(v)}</p>)}</div>
+    }
+    const url = (typeof answer === 'object' && answer.url) ? answer.url : (typeof answer === 'string' ? answer : null)
+    if (typeof url === 'string' && (url.startsWith('http') || url.startsWith('data:'))) {
+      if (/\.(jpg|jpeg|png|gif|webp)$/i.test(url) || url.startsWith('data:image')) return <img src={url} alt="answer" style={{ maxWidth: '100%', maxHeight: 220, borderRadius: 8, border: '1px solid var(--border)' }} />
+      if (/\.(mp4|webm|mov|m4v)$/i.test(url) || url.startsWith('data:video')) return <video src={url} controls style={{ maxWidth: '100%', maxHeight: 220, borderRadius: 8 }} />
+      if (/\.(mp3|wav|ogg|m4a|aac)$/i.test(url) || url.startsWith('data:audio')) return <audio src={url} controls style={{ width: '100%' }} />
+      return <a href={url} target="_blank" rel="noopener" className="text-sm" style={{ color: 'var(--coral)', textDecoration: 'underline' }}>📎 {(typeof answer === 'object' && answer.name) || url.split('/').pop() || 'Download'}</a>
+    }
+    if (Array.isArray(answer)) {
+      // Ranking → numbered; plain multi-select → comma list.
+      return <div className="space-y-0.5">{answer.map((x: any, i: number) => <p key={i} className="text-sm" style={{ color: 'var(--ink)' }}>{i + 1}. {typeof x === 'object' ? JSON.stringify(x) : String(x)}</p>)}</div>
+    }
+    return <P>{String(answer)}</P>
   }
 
   return (
@@ -232,64 +343,64 @@ export default function FormResults() {
             <h1 className="text-2xl font-bold mt-2" style={{ color: 'var(--ink)' }}>{form.title}</h1>
             <p className="text-sm mt-1" style={{ color: 'var(--slate)' }}>{filteredResponses.length} of {responses.length} response{responses.length !== 1 ? 's' : ''}{Object.keys(filters).length > 0 ? ' (filtered)' : ''}</p>
           </div>
-          <Link href={`/admin/forms/${formId}`} className="px-4 py-2 rounded-xl text-sm font-semibold border cursor-pointer hover:bg-gray-50" style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
-            ✎ Edit form
+          <Link href={`/admin/forms/${formId}`} className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold border cursor-pointer hover:bg-gray-50" style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4Z"/></svg>
+            Edit form
           </Link>
         </div>
 
-        {/* View toggle */}
-        <div className="flex gap-2 mb-6 flex-wrap items-center">
-          <button onClick={() => setView('summary')}
-            className="px-4 py-2 rounded-xl text-sm font-semibold cursor-pointer"
-            style={{ background: view === 'summary' ? themeColor : 'transparent', color: view === 'summary' ? '#fff' : 'var(--slate)', border: view === 'summary' ? 'none' : '1px solid var(--border)' }}>
-            Summary
-          </button>
-          <button onClick={() => setView('individual')}
-            className="px-4 py-2 rounded-xl text-sm font-semibold cursor-pointer"
-            style={{ background: view === 'individual' ? themeColor : 'transparent', color: view === 'individual' ? '#fff' : 'var(--slate)', border: view === 'individual' ? 'none' : '1px solid var(--border)' }}>
-            Individual responses
-          </button>
-          
-          <button onClick={() => setShowFilterPanel(!showFilterPanel)}
-            className="px-4 py-2 rounded-xl text-sm font-semibold cursor-pointer border"
-            style={{ borderColor: 'var(--border)', color: Object.keys(filters).length > 0 ? themeColor : 'var(--slate)', background: showFilterPanel ? 'var(--canvas)' : '#fff' }}>
-            🔽 Filter {Object.keys(filters).length > 0 ? `(${Object.keys(filters).length})` : ''}
-          </button>
-          
-          <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-            {view === 'individual' && responses.length > 0 && (
-              <>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, cursor: 'pointer' }}>
-                  <input
-                    type="checkbox"
-                    checked={selectedResponses.size === responses.length && responses.length > 0}
-                    onChange={toggleSelectAll}
-                    style={{ cursor: 'pointer' }}
-                  />
-                  <span style={{ color: 'var(--slate)' }}>
-                    {selectedResponses.size > 0 ? `${selectedResponses.size} selected` : 'Select all'}
-                  </span>
-                </label>
-                {selectedResponses.size > 0 && (
-                  <button
-                    onClick={bulkDeleteResponses}
-                    disabled={bulkDeleting}
-                    className="px-4 py-2 rounded-xl text-sm font-semibold cursor-pointer border transition-all"
-                    style={{ borderColor: '#dc2626', color: '#dc2626', background: bulkDeleting ? 'var(--canvas)' : '#fff' }}>
-                    {bulkDeleting ? '🗑️ Deleting...' : '🗑️ Delete selected'}
-                  </button>
-                )}
-              </>
-            )}
+        {/* Toolbar */}
+        <div className="mb-6 space-y-2">
+          {/* Row 1: view segmented control + filter */}
+          <div className="flex items-center gap-2">
+            <div className="inline-flex p-1 rounded-xl" style={{ background: 'var(--canvas, #f3f4f6)', border: '1px solid var(--border)' }}>
+              {([['summary', 'Summary'], ['individual', 'Individual']] as const).map(([key, label]) => (
+                <button key={key} onClick={() => setView(key)}
+                  className="px-4 py-1.5 rounded-lg text-sm font-semibold cursor-pointer transition-all"
+                  style={{ background: view === key ? '#fff' : 'transparent', color: view === key ? 'var(--ink)' : 'var(--slate)', boxShadow: view === key ? '0 1px 3px rgba(0,0,0,0.10)' : 'none' }}>
+                  {label}
+                </button>
+              ))}
+            </div>
+            <button onClick={() => setShowFilterPanel(!showFilterPanel)}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-semibold cursor-pointer border"
+              style={{ marginLeft: 'auto', borderColor: Object.keys(filters).length > 0 ? themeColor : 'var(--border)', color: Object.keys(filters).length > 0 ? themeColor : 'var(--slate)', background: showFilterPanel ? 'var(--canvas)' : '#fff' }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+              Filter{Object.keys(filters).length > 0 ? ` (${Object.keys(filters).length})` : ''}
+            </button>
+          </div>
+
+          {/* Row 2 (individual only): select-all + delete */}
+          {view === 'individual' && responses.length > 0 && (
+            <div className="flex items-center gap-3">
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, cursor: 'pointer' }}>
+                <input type="checkbox" checked={selectedResponses.size === responses.length && responses.length > 0} onChange={toggleSelectAll} style={{ cursor: 'pointer', width: 16, height: 16 }} />
+                <span style={{ color: 'var(--slate)' }}>{selectedResponses.size > 0 ? `${selectedResponses.size} selected` : 'Select all'}</span>
+              </label>
+              {selectedResponses.size > 0 && (
+                <button onClick={bulkDeleteResponses} disabled={bulkDeleting}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-semibold cursor-pointer border transition-all"
+                  style={{ marginLeft: 'auto', borderColor: '#dc2626', color: '#dc2626', background: bulkDeleting ? 'var(--canvas)' : '#fff' }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                  {bulkDeleting ? 'Deleting…' : 'Delete selected'}
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Row 3: exports — equal-width on mobile, right-aligned on desktop */}
+          <div className="flex gap-2 sm:justify-end">
             <button onClick={exportToExcel} disabled={responses.length === 0 || exporting !== null}
-              className="px-4 py-2 rounded-xl text-sm font-semibold cursor-pointer border transition-all"
+              className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-semibold cursor-pointer border transition-all"
               style={{ borderColor: 'var(--border)', color: 'var(--ink)', background: exporting === 'excel' ? 'var(--canvas)' : '#fff', opacity: responses.length === 0 ? 0.5 : 1 }}>
-              {exporting === 'excel' ? '↓ Exporting...' : <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'inline', marginRight: 5 }}><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18"/></svg>Export to Excel</>}
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18"/></svg>
+              {exporting === 'excel' ? 'Exporting…' : 'Export to Excel'}
             </button>
             <button onClick={exportToPDF} disabled={responses.length === 0 || exporting !== null}
-              className="px-4 py-2 rounded-xl text-sm font-semibold cursor-pointer border transition-all"
+              className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-semibold cursor-pointer border transition-all"
               style={{ borderColor: 'var(--border)', color: 'var(--ink)', background: exporting === 'pdf' ? 'var(--canvas)' : '#fff', opacity: responses.length === 0 ? 0.5 : 1 }}>
-              {exporting === 'pdf' ? '↓ Exporting...' : <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'inline', marginRight: 5 }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>Export to PDF</>}
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+              {exporting === 'pdf' ? 'Exporting…' : 'Export to PDF'}
             </button>
           </div>
         </div>
@@ -362,22 +473,17 @@ export default function FormResults() {
           <div className="space-y-4">
             {/* Top stats */}
             <div className="grid grid-cols-3 gap-2 sm:gap-4 mb-6">
-              <div className="bg-white rounded-2xl border p-3 sm:p-5 min-w-0" style={{ borderColor: 'var(--border)' }}>
-                <p className="text-xl sm:text-2xl font-black leading-tight" style={{ color: 'var(--ink)' }}>{responses.length}</p>
-                <p className="text-xs" style={{ color: 'var(--slate)' }}>Total responses</p>
-              </div>
-              <div className="bg-white rounded-2xl border p-3 sm:p-5 min-w-0" style={{ borderColor: 'var(--border)' }}>
-                <p className="text-xl sm:text-2xl font-black leading-tight" style={{ color: 'var(--ink)' }}>{questions.length}</p>
-                <p className="text-xs" style={{ color: 'var(--slate)' }}>Questions</p>
-              </div>
-              <div className="bg-white rounded-2xl border p-3 sm:p-5 min-w-0" style={{ borderColor: 'var(--border)' }}>
-                {/* The date is wider than the count values — keep it smaller so it
-                    never overflows/clips the card on a narrow phone. */}
-                <p className="text-sm sm:text-xl font-black leading-tight whitespace-nowrap" style={{ color: 'var(--ink)' }}>
-                  {responses[0] ? new Date(responses[0].created_at).toLocaleDateString() : '—'}
-                </p>
-                <p className="text-xs" style={{ color: 'var(--slate)' }}>Last response</p>
-              </div>
+              {[
+                { icon: <><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></>, value: <span className="text-xl sm:text-2xl font-black leading-tight">{responses.length}</span>, label: 'Total responses' },
+                { icon: <><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></>, value: <span className="text-xl sm:text-2xl font-black leading-tight">{questions.length}</span>, label: 'Questions' },
+                { icon: <><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></>, value: <span className="text-sm sm:text-xl font-black leading-tight whitespace-nowrap">{responses[0] ? new Date(responses[0].created_at).toLocaleDateString() : '—'}</span>, label: 'Last response' },
+              ].map((s, i) => (
+                <div key={i} className="bg-white rounded-2xl border p-3 sm:p-5 min-w-0" style={{ borderColor: 'var(--border)' }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={themeColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: 8, opacity: 0.9 }}>{s.icon}</svg>
+                  <div style={{ color: 'var(--ink)' }}>{s.value}</div>
+                  <p className="text-xs mt-0.5" style={{ color: 'var(--slate)' }}>{s.label}</p>
+                </div>
+              ))}
             </div>
 
             {/* Per-question breakdown */}
@@ -414,6 +520,13 @@ export default function FormResults() {
                     </div>
                   )}
 
+                  {stats.type === 'count' && (
+                    <div className="flex items-center gap-3">
+                      <span className="text-3xl font-black" style={{ color: themeColor }}>{stats.total}</span>
+                      <span className="text-sm" style={{ color: 'var(--slate)' }}>response{stats.total === 1 ? '' : 's'} collected — open Individual responses to view each</span>
+                    </div>
+                  )}
+
                   {stats.type === 'text' && (
                     <div className="space-y-2">
                       {stats.samples.length === 0 ? (
@@ -443,7 +556,7 @@ export default function FormResults() {
                   <p className="text-xs mb-2" style={{ color: 'var(--slate)' }}>{new Date(r.created_at).toLocaleString()}</p>
                   {questions.slice(0, 2).map((q: any) => (
                     <p key={q.id} className="text-sm mb-1 truncate" style={{ color: 'var(--ink)' }}>
-                      <span style={{ color: 'var(--slate)' }}>{q.title}:</span> {String(r.answers?.[q.id] ?? '—')}
+                      <span style={{ color: 'var(--slate)' }}>{q.title}:</span> {previewAnswer(r.answers?.[q.id])}
                     </p>
                   ))}
                   <p className="text-xs mt-2 font-semibold" style={{ color: themeColor }}>View full response →</p>
@@ -458,7 +571,7 @@ export default function FormResults() {
       {selectedResponse && (
         <>
           <div className="fixed inset-0 z-50 backdrop-blur-sm" style={{ background: 'rgba(0,0,0,0.4)' }} onClick={() => setSelectedResponse(null)} />
-          <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-lg bg-white rounded-2xl shadow-2xl mx-4 max-h-[85vh] overflow-y-auto">
+          <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 max-w-lg bg-white rounded-2xl shadow-2xl max-h-[85vh] overflow-y-auto" style={{ width: 'calc(100vw - 32px)' }}>
             <div className="p-6 border-b flex items-center justify-between" style={{ borderColor: 'var(--border)' }}>
               <div>
                 <h2 className="text-lg font-bold" style={{ color: 'var(--ink)' }}>Response</h2>
@@ -496,56 +609,16 @@ export default function FormResults() {
                   )}
                 </div>
               )}
-              {questions.map((q: any) => {
-                const answer = selectedResponse.answers?.[q.id]
-                const isFileUpload = q.type === 'file_upload'
-                const isMediaAnswer = answer && typeof answer === 'string' && (answer.match(/\.(jpg|jpeg|png|gif|webp|mp4|webm|mp3|wav)$/i) || answer.startsWith('data:'))
-                
-                return (
-                  <div key={q.id}>
-                    <p className="text-xs font-semibold mb-1" style={{ color: 'var(--slate)' }}>{q.title}</p>
-                    {isFileUpload && answer ? (
-                      <div>
-                        {typeof answer === 'string' ? (
-                          answer.startsWith('http') || answer.startsWith('data:') ? (
-                            answer.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? (
-                              <img src={answer} alt="uploaded" style={{ maxWidth: '100%', maxHeight: 200, borderRadius: 8 }} />
-                            ) : answer.match(/\.(mp4|webm)$/i) ? (
-                              <video src={answer} style={{ maxWidth: '100%', maxHeight: 200, borderRadius: 8 }} controls />
-                            ) : (
-                              <a href={answer} target="_blank" rel="noopener" className="text-sm" style={{ color: 'var(--coral)', textDecoration: 'underline' }}>
-                                📎 {answer.split('/').pop() || 'Download file'}
-                              </a>
-                            )
-                          ) : (
-                            <p className="text-sm" style={{ color: 'var(--ink)' }}>{answer}</p>
-                          )
-                        ) : Array.isArray(answer) ? (
-                          <div className="space-y-2">
-                            {answer.map((file: string, idx: number) => (
-                              <a key={idx} href={file} target="_blank" rel="noopener" className="text-sm block" style={{ color: 'var(--coral)', textDecoration: 'underline' }}>
-                                📎 {file.split('/').pop()}
-                              </a>
-                            ))}
-                          </div>
-                        ) : (
-                          <p className="text-sm" style={{ color: 'var(--ink)' }}>—</p>
-                        )}
-                      </div>
-                    ) : isMediaAnswer && typeof answer === 'string' ? (
-                      answer.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? (
-                        <img src={answer} alt="uploaded" style={{ maxWidth: '100%', maxHeight: 200, borderRadius: 8 }} />
-                      ) : (
-                        <p className="text-sm" style={{ color: 'var(--ink)' }}>{String(answer)}</p>
-                      )
-                    ) : Array.isArray(answer) ? (
-                      <p className="text-sm" style={{ color: 'var(--ink)' }}>{answer.join(', ')}</p>
-                    ) : (
-                      <p className="text-sm" style={{ color: 'var(--ink)' }}>{String(answer ?? '—')}</p>
-                    )}
+              {questions.map((q: any, qi: number) => (
+                <div key={q.id}>
+                  <p className="text-xs font-semibold mb-1.5" style={{ color: 'var(--slate)' }}>
+                    <span style={{ color: themeColor }}>{qi + 1}.</span> {q.title}
+                  </p>
+                  <div className="rounded-xl px-3.5 py-2.5" style={{ background: 'var(--canvas, #fafafa)', border: '1px solid var(--border)' }}>
+                    {renderAnswer(selectedResponse.answers?.[q.id], q)}
                   </div>
-                )
-              })}
+                </div>
+              ))}
             </div>
           </div>
         </>

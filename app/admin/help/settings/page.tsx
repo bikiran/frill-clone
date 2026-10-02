@@ -20,6 +20,7 @@ export default function HelpSettingsPage() {
   const [tab, setTab] = useState('access')
   const [companyId, setCompanyId] = useState<string | null>(null)
   const [slug, setSlug] = useState('')
+  const [helpDomain, setHelpDomain] = useState('')
   const [saving, setSaving] = useState(false)
   const [saveMsg, setSaveMsg] = useState('')
 
@@ -32,6 +33,9 @@ export default function HelpSettingsPage() {
   // Customize
   const [helpTitle, setHelpTitle] = useState('How can we help 👋')
   const [helpSubtitle, setHelpSubtitle] = useState('')
+  const [coverUrl, setCoverUrl] = useState('')
+  const [coverBusy, setCoverBusy] = useState(false)
+  const [supportEmail, setSupportEmail] = useState('')
   const [showTrending, setShowTrending] = useState(true)
   const [showCategories, setShowCategories] = useState(true)
   const [showContactCta, setShowContactCta] = useState(true)
@@ -48,20 +52,26 @@ export default function HelpSettingsPage() {
         const h = window.location.hostname
         if (h.endsWith('.colvy.com') && h !== 'colvy.com') {
           s = h.replace('.colvy.com', '')
-          const { data } = await (supabase as any).from('companies').select('id, slug').eq('slug', s).maybeSingle()
-          if (data) { cid = data.id; s = data.slug }
+          const { data } = await (supabase as any).from('companies').select('id, slug, help_domain').eq('slug', s).maybeSingle()
+          if (data) { cid = data.id; s = data.slug; if (data.help_domain) setHelpDomain(data.help_domain) }
         }
       }
       if (!cid) {
         const { data: { session } } = await supabase.auth.getSession()
         if (session?.user) {
-          const { data } = await (supabase as any).from('companies').select('id, slug').eq('owner_id', session.user.id).maybeSingle()
-          if (data) { cid = data.id; s = data.slug }
+          const { data } = await (supabase as any).from('companies').select('id, slug, help_domain').eq('owner_id', session.user.id).maybeSingle()
+          if (data) { cid = data.id; s = data.slug; if (data.help_domain) setHelpDomain(data.help_domain) }
         }
       }
       setCompanyId(cid)
       setSlug(s)
       if (!cid) return
+
+      // Cover photo lives on the company row (read by both help renderers).
+      try {
+        const { data: co } = await (supabase as any).from('companies').select('help_cover_url').eq('id', cid).maybeSingle()
+        if (co?.help_cover_url) setCoverUrl(co.help_cover_url)
+      } catch {}
 
       // Load saved help settings
       const { data: rows } = await (supabase as any).from('site_settings').select('*')
@@ -73,6 +83,7 @@ export default function HelpSettingsPage() {
       if (Array.isArray(v.helpLanguages)) setLanguages(v.helpLanguages)
       if (v.helpTitle) setHelpTitle(v.helpTitle)
       if (v.helpSubtitle !== undefined) setHelpSubtitle(v.helpSubtitle)
+      if (v.supportEmail !== undefined) setSupportEmail(v.supportEmail)
       if (v.helpShowTrending !== undefined) setShowTrending(v.helpShowTrending)
       if (v.helpShowCategories !== undefined) setShowCategories(v.helpShowCategories)
       if (v.helpShowContactCta !== undefined) setShowContactCta(v.helpShowContactCta)
@@ -92,7 +103,7 @@ export default function HelpSettingsPage() {
       const merged = {
         ...existing,
         helpAccess, helpPrimaryLanguage: primaryLanguage, helpLanguages: languages,
-        helpTitle, helpSubtitle, helpShowTrending: showTrending,
+        helpTitle, helpSubtitle, supportEmail: supportEmail.trim(), helpShowTrending: showTrending,
         helpShowCategories: showCategories, helpShowContactCta: showContactCta,
       }
       await (supabase as any).from('site_settings').upsert(
@@ -106,13 +117,41 @@ export default function HelpSettingsPage() {
     setSaving(false)
   }
 
+  // Cover photo → storage, then persist on companies.help_cover_url (both help
+  // renderers read it; falls back to the branded gradient when empty).
+  const uploadCover = async (file: File) => {
+    if (!companyId || !file) return
+    setCoverBusy(true); setSaveMsg('')
+    try {
+      const ext = file.name.split('.').pop()
+      const path = `help-covers/${companyId}-${Date.now()}.${ext}`
+      let bucket = 'settings'
+      let { data, error } = await supabase.storage.from(bucket).upload(path, file, { upsert: true })
+      if (error) { bucket = 'idea-images'; const r = await supabase.storage.from(bucket).upload(path, file, { upsert: true }); data = r.data; error = r.error }
+      if (error) throw error
+      const { data: { publicUrl } } = supabase.storage.from(bucket).getPublicUrl(data!.path)
+      const { error: upErr } = await (supabase as any).from('companies').update({ help_cover_url: publicUrl }).eq('id', companyId)
+      if (upErr) throw upErr
+      setCoverUrl(publicUrl); setSaveMsg('Cover updated!'); setTimeout(() => setSaveMsg(''), 2500); setPreviewKey(k => k + 1)
+    } catch (e: any) { setSaveMsg(/does not exist|schema cache|column/i.test(e?.message || '') ? 'Run COLVY_V315_HELP_COVER.sql, then reload.' : 'Cover upload failed') }
+    setCoverBusy(false)
+  }
+  const removeCover = async () => {
+    if (!companyId) return
+    setCoverBusy(true)
+    try { await (supabase as any).from('companies').update({ help_cover_url: null }).eq('id', companyId); setCoverUrl(''); setPreviewKey(k => k + 1) } catch {}
+    setCoverBusy(false)
+  }
+
   const Toggle = ({ on, set }: { on: boolean; set: (v: boolean) => void }) => (
     <button type="button" onClick={() => set(!on)} style={{ width: 40, height: 22, borderRadius: 11, background: on ? 'var(--coral)' : '#d1d5db', border: 'none', cursor: 'pointer', position: 'relative', transition: 'background 0.2s', flexShrink: 0 }}>
       <span style={{ position: 'absolute', top: 3, left: on ? 21 : 3, width: 16, height: 16, background: '#fff', borderRadius: '50%', transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }} />
     </button>
   )
 
-  const helpUrl = slug ? `https://${slug}.colvy.com/help?theme=${theme}` : ''
+  // Prefer the configured custom help domain (e.g. help.colvy.com) so the
+  // preview matches what customers actually see; fall back to the colvy subdomain.
+  const helpUrl = helpDomain ? `https://${helpDomain}/help?theme=${theme}` : (slug ? `https://${slug}.colvy.com/help?theme=${theme}` : '')
 
   return (
     <div style={{ maxWidth: 1000, margin: '0 auto', padding: '28px 32px', fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif' }}>
@@ -234,7 +273,25 @@ export default function HelpSettingsPage() {
               style={{ width: '100%', padding: '11px 14px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 14, outline: 'none', marginBottom: 16 }} />
             <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--slate)', marginBottom: 6 }}>Subtitle (optional)</label>
             <input value={helpSubtitle} onChange={e => setHelpSubtitle(e.target.value)} placeholder="Find answers, guides, and resources"
-              style={{ width: '100%', padding: '11px 14px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 14, outline: 'none' }} />
+              style={{ width: '100%', padding: '11px 14px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 14, outline: 'none', marginBottom: 16 }} />
+
+            <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--slate)', marginBottom: 6 }}>Support email</label>
+            <p style={{ margin: '0 0 8px', fontSize: 12, color: 'var(--slate)' }}>Shown on your help centre's contact options and used for "Email Support". Falls back to your account email if left blank.</p>
+            <input value={supportEmail} onChange={e => setSupportEmail(e.target.value)} type="email" placeholder="support@yourcompany.com"
+              style={{ width: '100%', padding: '11px 14px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 14, outline: 'none', marginBottom: 16 }} />
+
+            <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--slate)', marginBottom: 6 }}>Cover photo</label>
+            <p style={{ margin: '0 0 8px', fontSize: 12, color: 'var(--slate)' }}>Shown behind the help centre header. Recommended 1600×500. Leave empty to use the branded gradient.</p>
+            <div style={{ borderRadius: 12, border: '1px dashed var(--border)', overflow: 'hidden', background: 'var(--canvas)' }}>
+              {coverUrl && <div style={{ height: 120, background: `url(${coverUrl}) center/cover no-repeat` }} />}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 12 }}>
+                <label style={{ padding: '8px 14px', borderRadius: 9, background: 'var(--coral)', color: '#fff', fontSize: 13, fontWeight: 700, cursor: coverBusy ? 'default' : 'pointer', opacity: coverBusy ? 0.6 : 1 }}>
+                  {coverBusy ? 'Uploading…' : coverUrl ? 'Replace' : 'Upload cover'}
+                  <input type="file" accept="image/*" disabled={coverBusy} onChange={e => { const f = e.target.files?.[0]; if (f) uploadCover(f) }} style={{ display: 'none' }} />
+                </label>
+                {coverUrl && <button type="button" onClick={removeCover} disabled={coverBusy} style={{ padding: '8px 14px', borderRadius: 9, background: '#fff', border: '1px solid var(--border)', color: 'var(--slate)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Remove</button>}
+              </div>
+            </div>
           </div>
 
           <div style={{ borderRadius: 14, border: '1px solid var(--border)', background: '#fff', padding: '20px 22px' }}>
@@ -294,7 +351,7 @@ export default function HelpSettingsPage() {
               <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#28c840' }} />
               <span style={{ flex: 1, textAlign: 'center', fontSize: 12, color: theme === 'dark' ? '#888' : '#9ca3af', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-                {slug}.colvy.com/help
+                {helpDomain || `${slug}.colvy.com`}/help
               </span>
             </div>
             {helpUrl ? (

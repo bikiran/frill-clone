@@ -379,6 +379,11 @@ function WidgetContent() {
     }, 4000)
 
     return () => { supabase.removeChannel(ch); clearInterval(poll) }
+    // company?.id is in the deps so that a restored session (chatConvId comes
+    // back from localStorage before /api/widget-data has loaded the company)
+    // re-fetches its history the moment the company id is known — otherwise the
+    // initial fetch + the 4s poll both ran with companyId=undefined and the
+    // messages API returns nothing, so a reloaded chat looked empty.
   }, [chatConvId, company?.id])
   const [feedback, setFeedback] = useState('')
   const [chatMessages, setChatMessages] = useState<any[]>([])
@@ -1825,7 +1830,7 @@ function WidgetContent() {
                         setChatConvId(conv.id)
                         // Persist so a page reload restores this chat
                         try {
-                          localStorage.setItem(`colvy-chat-${slug}`, JSON.stringify({ convId: conv.id, companyId: company?.id || null, name: chatName, email: chatEmail }))
+                          localStorage.setItem(`colvy-chat-${slug}`, JSON.stringify({ convId: conv.id, name: chatName, email: chatEmail, companyId: company?.id || null }))
                         } catch {}
                         // Insert a system greeting
                         await fetch('/api/widget/message', {
@@ -1850,7 +1855,7 @@ function WidgetContent() {
                       }
                     } catch (err: any) {
                       console.error('Widget chat start error:', err)
-                      setChatCreateError('Could not start chat — please try again.')
+                      setChatCreateError(err?.message ? `Couldn't start chat: ${err.message}` : 'Could not start chat — please try again.')
                     }
                     setChatCreating(false)
                   }}

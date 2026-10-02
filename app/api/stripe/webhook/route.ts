@@ -87,6 +87,28 @@ export async function POST(req: NextRequest) {
           } catch (e) { console.error('[webhook] save_card failed', e) }
         }
 
+        // Form payment (no conversation) — confirm the chat_payments row through
+        // the shared helper, which is null-safe on conversation_id. The form's
+        // return page also verifies, so whichever wins confirms exactly once.
+        if (meta.kind === 'form_payment') {
+          const { data: pay } = await (supabase as any).from('chat_payments')
+            .select('id, company_id, conversation_id, message_id, amount_cents').eq('stripe_session_id', session.id).maybeSingle()
+          let cardBrand: string | null = null, cardLast4: string | null = null
+          try {
+            const piId = typeof session.payment_intent === 'string' ? session.payment_intent : session.payment_intent?.id
+            if (piId) {
+              const acctOpt: any = event.account ? { stripeAccount: event.account } : undefined
+              const pi: any = await stripe.paymentIntents.retrieve(piId, { expand: ['latest_charge'] }, acctOpt)
+              const card = pi?.latest_charge?.payment_method_details?.card || null
+              cardBrand = card?.brand || null; cardLast4 = card?.last4 || null
+            }
+          } catch {}
+          if (pay) {
+            await confirmChatPayment(supabase, pay, { receiptUrl: session.receipt_url || null, paymentIntent: (typeof session.payment_intent === 'string' ? session.payment_intent : session.payment_intent?.id) || null, cardBrand, cardLast4 })
+          }
+          break
+        }
+
         // In-chat payment (on a connected account) — mark paid + confirm in chat
         if (meta.kind === 'chat_payment' && meta.conversationId) {
           const receiptUrl = session.receipt_url || null
@@ -197,6 +219,58 @@ export async function POST(req: NextRequest) {
             console.error('Post-payment number provisioning failed:', e)
           }
         }
+        break
+      }
+      // A subscription invoice was PAID. This is the real "paid their first
+      // month" signal (checkout.session.completed fires at trial start, before
+      // any money changes hands). When the paying account was referred, mark the
+      // referral qualified and credit the referrer $100 in Colvy account credit.
+      case 'invoice.paid':
+      case 'invoice.payment_succeeded': {
+        try {
+          const invoice = event.data.object
+          const subId = typeof invoice.subscription === 'string' ? invoice.subscription : invoice.subscription?.id
+          const custId = typeof invoice.customer === 'string' ? invoice.customer : invoice.customer?.id
+          if (!subId || (invoice.amount_paid || 0) <= 0) break   // not a real subscription payment
+
+          // Who paid? Resolve the owner via the subscriptions table.
+          const ors = [subId ? `stripe_subscription_id.eq.${subId}` : '', custId ? `stripe_customer_id.eq.${custId}` : ''].filter(Boolean).join(',')
+          const { data: payerSub } = await (supabase as any).from('subscriptions').select('user_id').or(ors).maybeSingle()
+          const payerUserId = payerSub?.user_id
+          if (!payerUserId) break
+
+          // A pending referral for this referred owner?
+          const { data: ref } = await (supabase as any).from('referrals')
+            .select('*').eq('referred_user_id', payerUserId).eq('status', 'pending').maybeSingle()
+          if (!ref) break
+
+          // Claim it exactly once (guarded update).
+          const { data: claimed } = await (supabase as any).from('referrals')
+            .update({ status: 'qualified', qualified_at: new Date().toISOString(), first_invoice_id: invoice.id })
+            .eq('id', ref.id).eq('status', 'pending').select('id').maybeSingle()
+          if (!claimed) break
+
+          const cents = ref.credit_cents || 10000
+          const cur = ref.currency || 'aud'
+          // Colvy account-credit ledger (source of truth). Unique index on
+          // referral_id makes this idempotent.
+          try {
+            await (supabase as any).from('account_credits').insert({
+              company_id: ref.referrer_company_id, amount_cents: cents, currency: cur,
+              reason: 'Referral reward', referral_id: ref.id,
+            })
+          } catch {}
+          // Also apply it to the referrer's Stripe balance so it nets off their
+          // next invoice (negative balance = credit). Best-effort.
+          try {
+            const { data: refSub } = await (supabase as any).from('subscriptions').select('stripe_customer_id').eq('user_id', ref.referrer_user_id).maybeSingle()
+            if (refSub?.stripe_customer_id) {
+              await stripe.customers.createBalanceTransaction(refSub.stripe_customer_id, {
+                amount: -cents, currency: cur, description: 'Colvy referral reward',
+              })
+            }
+          } catch (e: any) { console.error('[referral] stripe balance credit failed', e?.message || e) }
+        } catch (e: any) { console.error('[referral] invoice.paid handler failed', e?.message || e) }
         break
       }
       case 'customer.subscription.updated': {

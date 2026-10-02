@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase'
 import ConfirmModal from '@/components/ConfirmModal'
 import { SkeletonList } from '@/components/Skeleton'
 import PageHeader from '@/components/PageHeader'
+import { PERMISSION_SUITES, ALL_FEATURE_KEYS } from '@/lib/permissions'
 
 
 export default function TeamPage() {
@@ -26,6 +27,105 @@ export default function TeamPage() {
   const [working, setWorking] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState<any>(null)
   const [msg, setMsg] = useState('')
+  const [msgErr, setMsgErr] = useState(false)
+  // The last invite link we generated, shown so it can be shared directly when
+  // email delivery is unavailable (or as a reliable backup either way).
+  const [lastInvite, setLastInvite] = useState<{ email: string; link: string } | null>(null)
+  // Owner edit of a member's profile (display name + photo).
+  const [editMember, setEditMember] = useState<any>(null)
+  const [editName, setEditName] = useState('')
+  const [editAvatar, setEditAvatar] = useState<string>('')
+  const [editDept, setEditDept] = useState<string>('')
+  const [editSaving, setEditSaving] = useState(false)
+  const [editUploading, setEditUploading] = useState(false)
+  // Department is organisational only (grouping/reporting/routing), separate from
+  // role + permissions which control access.
+  const DEPARTMENTS = ['Sales', 'Support', 'Fulfillment', 'Front Desk', 'Marketing', 'Management']
+
+  const openEdit = (m: any) => {
+    setEditName(m.display_name || m.name || '')
+    setEditAvatar(m.avatar_url || '')
+    setEditDept(m.department || '')
+    setEditMember(m)
+  }
+  const uploadMemberPhoto = async (file: File) => {
+    setEditUploading(true)
+    try {
+      const ext = (file.name.split('.').pop() || 'jpg').toLowerCase()
+      const fileName = `team-avatars/${Date.now()}.${ext}`
+      let bucket = 'settings'
+      let { data, error } = await supabase.storage.from(bucket).upload(fileName, file, { upsert: true })
+      if (error) {
+        bucket = 'idea-images'
+        const r = await supabase.storage.from(bucket).upload(fileName, file, { upsert: true })
+        data = r.data; error = r.error
+      }
+      if (error) throw error
+      const { data: pub } = supabase.storage.from(bucket).getPublicUrl(data!.path)
+      setEditAvatar(pub.publicUrl)
+    } catch (e: any) {
+      showMsg('Photo upload failed: ' + (e?.message || 'error') + ' — a public "settings" or "idea-images" storage bucket is required.', true)
+    } finally {
+      setEditUploading(false)
+    }
+  }
+  const saveMemberProfile = async () => {
+    if (!editMember) return
+    setEditSaving(true)
+    try {
+      const patch = { name: editName.trim() || null, avatar_url: editAvatar || null, department: editDept || null }
+      const { error } = await (supabase as any).from('team_members').update(patch).eq('id', editMember.id)
+      if (error) throw error
+      setMembers(ms => ms.map(m => m.id === editMember.id
+        ? { ...m, name: patch.name, avatar_url: patch.avatar_url, department: patch.department, display_name: patch.name || m.display_name }
+        : m))
+      showMsg('Member profile updated.')
+      setEditMember(null)
+    } catch (e: any) {
+      const msg = String(e?.message || 'error')
+      showMsg('Could not save: ' + msg + (msg.toLowerCase().includes('column') ? ' — run migrations COLVY_V307 and V308 in Supabase first.' : ''), true)
+    } finally {
+      setEditSaving(false)
+    }
+  }
+
+  // Per-member feature permissions editor.
+  const [permMember, setPermMember] = useState<any>(null)
+  const [permDraft, setPermDraft] = useState<Record<string, boolean>>({})
+  const [permSaving, setPermSaving] = useState(false)
+
+  const openPermissions = (m: any) => {
+    const existing = m.permissions && typeof m.permissions === 'object' ? m.permissions : null
+    const draft: Record<string, boolean> = {}
+    // Default every feature ON when the member has no map yet (so opening the
+    // editor shows their current effective access — full — and you switch things
+    // off from there).
+    for (const key of ALL_FEATURE_KEYS) draft[key] = existing ? existing[key] !== false : true
+    setPermDraft(draft)
+    setPermMember(m)
+  }
+  const toggleFeature = (key: string) => setPermDraft(d => ({ ...d, [key]: !d[key] }))
+  const setSuite = (suiteKey: string, on: boolean) => {
+    const suite = PERMISSION_SUITES.find(s => s.key === suiteKey)
+    if (!suite) return
+    setPermDraft(d => { const n = { ...d }; for (const f of suite.features) n[f.key] = on; return n })
+  }
+  const savePermissions = async () => {
+    if (!permMember) return
+    setPermSaving(true)
+    try {
+      const { error } = await (supabase as any).from('team_members').update({ permissions: permDraft }).eq('id', permMember.id)
+      if (error) throw error
+      setMembers(ms => ms.map(m => m.id === permMember.id ? { ...m, permissions: permDraft } : m))
+      showMsg(`Permissions updated for ${permMember.display_name || permMember.email}.`)
+      setPermMember(null)
+    } catch (e: any) {
+      const msg = String(e?.message || 'error')
+      showMsg('Could not save permissions: ' + msg + (msg.toLowerCase().includes('permissions') || msg.toLowerCase().includes('column') ? ' — run migration COLVY_V306 in Supabase first.' : ''), true)
+    } finally {
+      setPermSaving(false)
+    }
+  }
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -82,7 +182,7 @@ export default function TeamPage() {
           rows = rows.map((m: any) => ({
             ...m,
             display_name: m.name || names?.[m.user_id]?.name || null,
-            avatar_url: names?.[m.user_id]?.avatar_url || null,
+            avatar_url: m.avatar_url || names?.[m.user_id]?.avatar_url || null,
           }))
         } catch { /* fall back to email */ }
       }
@@ -105,9 +205,11 @@ export default function TeamPage() {
     catch { /* best effort — the column may need the V213 migration */ }
   }
 
-  const showMsg = (text: string) => {
+  const showMsg = (text: string, isError = false) => {
     setMsg(text)
-    setTimeout(() => setMsg(''), 4000)
+    setMsgErr(isError)
+    // Errors stay up longer than the quick success confirmation.
+    setTimeout(() => setMsg(''), isError ? 8000 : 4000)
   }
 
   const inviteMember = async () => {
@@ -115,16 +217,34 @@ export default function TeamPage() {
     setWorking(true)
     try {
       // Resolve the inviter's company (for the slug + name in the invite link).
+      // PREFER the company fetchMembers already resolved into state — it correctly
+      // handles a board subdomain and membership, not just ownership. Re-resolving
+      // from scratch here (owner-only + a .maybeSingle() on team_members) failed
+      // for anyone who is a MEMBER of the company on its subdomain, or who belongs
+      // to more than one company (maybeSingle returns null when several rows
+      // match) — which is exactly the "Could not determine your company" error.
       let company: any = null
-      const { data: owned } = await (supabase as any).from('companies').select('id, name, slug').eq('owner_id', user?.id).order('created_at', { ascending: true }).limit(1)
-      company = owned?.[0] || null
-      if (!company) {
-        const { data: tm } = await (supabase as any).from('team_members').select('company_id').eq('user_id', user?.id).maybeSingle()
-        if (tm?.company_id) { const { data } = await (supabase as any).from('companies').select('id, name, slug').eq('id', tm.company_id).maybeSingle(); company = data }
+      if (companyId) {
+        const { data } = await (supabase as any).from('companies').select('id, name, slug').eq('id', companyId).maybeSingle()
+        company = data || null
+      }
+      if (!company?.id) {
+        // Fall back to a fresh session user id (the `user` state can lag) and use
+        // limit(1), never maybeSingle, so multiple memberships don't blow up.
+        const uid = user?.id || (await supabase.auth.getSession()).data.session?.user?.id || null
+        if (uid) {
+          const { data: owned } = await (supabase as any).from('companies').select('id, name, slug').eq('owner_id', uid).order('created_at', { ascending: true }).limit(1)
+          company = owned?.[0] || null
+          if (!company?.id) {
+            const { data: tm } = await (supabase as any).from('team_members').select('company_id').eq('user_id', uid).not('company_id', 'is', null).limit(1)
+            const cid = tm?.[0]?.company_id
+            if (cid) { const { data } = await (supabase as any).from('companies').select('id, name, slug').eq('id', cid).maybeSingle(); company = data || null }
+          }
+        }
       }
 
       if (!company?.id) {
-        showMsg('Could not determine your company — reload the page and try again.')
+        showMsg('Could not determine your company — reload the page and try again.', true)
         setWorking(false)
         return
       }
@@ -143,17 +263,30 @@ export default function TeamPage() {
       // to /team/join, which handles sign-up/sign-in and membership acceptance.
       const origin = typeof window !== 'undefined' ? window.location.origin : 'https://colvy.com'
       const inviteLink = `${origin}/team/join?company=${encodeURIComponent(company?.slug || '')}&email=${encodeURIComponent(inviteEmail.trim().toLowerCase())}&role=${inviteRole}`
-      await fetch('/api/send-team-invite', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: inviteEmail.trim().toLowerCase(),
-          companyName: company?.name || 'the team',
-          role: inviteRole,
-          inviteLink,
-          inviterName: user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'A teammate',
-        }),
-      })
-      showMsg(`Invitation sent to ${inviteEmail}!`)
+      const invitedEmail = inviteEmail.trim().toLowerCase()
+      let emailed = false
+      try {
+        const res = await fetch('/api/send-team-invite', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: invitedEmail,
+            companyName: company?.name || 'the team',
+            role: inviteRole,
+            inviteLink,
+            inviterName: user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'A teammate',
+          }),
+        })
+        const data = await res.json().catch(() => ({}))
+        emailed = res.ok && data?.emailed === true
+      } catch { emailed = false }
+      // Always keep the link on screen — it's the reliable way to bring someone in
+      // regardless of whether the email went out.
+      setLastInvite({ email: invitedEmail, link: inviteLink })
+      if (emailed) {
+        showMsg(`Invitation emailed to ${invitedEmail}. You can also copy the link below to send it directly.`)
+      } else {
+        showMsg(`Invite created for ${invitedEmail}, but the email couldn’t be sent. Copy the link below and send it to them directly.`, true)
+      }
       setInviteEmail('')
       setShowInvite(false)
       fetchMembers()
@@ -169,20 +302,38 @@ export default function TeamPage() {
     const tempPassword = Math.random().toString(36).slice(-8) + Math.random().toString(36).toUpperCase().slice(-4) + '!1'
     setWorking(true)
     try {
+      // Scope the new user to this workspace. Prefer the company fetchMembers
+      // already resolved; fall back to an owner lookup with a fresh session id.
+      let cid = companyId
+      if (!cid) {
+        const uid = user?.id || (await supabase.auth.getSession()).data.session?.user?.id || null
+        if (uid) {
+          const { data: owned } = await (supabase as any).from('companies').select('id').eq('owner_id', uid).order('created_at', { ascending: true }).limit(1)
+          cid = owned?.[0]?.id || null
+        }
+      }
+      if (!cid) {
+        showMsg('Could not determine your company — reload the page and try again.', true)
+        setWorking(false)
+        return
+      }
+      const { data: sess } = await supabase.auth.getSession()
+      const token = sess?.session?.access_token
       const res = await fetch('/api/admin/create-user', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         body: JSON.stringify({
           email: createEmail.trim(),
           password: tempPassword,
           name: createName.trim(),
           role: createRole,
+          companyId: cid,
         }),
       })
       const result = await res.json()
       if (result.error) throw new Error(result.error)
 
-      showMsg(`✅ User ${result.email} created successfully!`)
+      showMsg(`User ${result.email} created and added to your team.`)
       setCreateEmail('')
       setCreatePassword('')
       setCreateName('')
@@ -233,16 +384,25 @@ export default function TeamPage() {
   const resendInvite = async (m: any) => {
     setResendingId(m.id)
     try {
-      // Resolve the company (slug + name) for the invite link.
+      // Resolve the company (slug + name) for the invite link. Prefer the invite
+      // row's own company_id, then the company already resolved into state, then
+      // an owner lookup with a fresh session id — never rely on owner-only, which
+      // breaks for members on a subdomain.
       let company: any = null
-      const { data: owned } = await (supabase as any).from('companies').select('id, name, slug').eq('owner_id', user?.id).order('created_at', { ascending: true }).limit(1)
-      company = owned?.[0] || null
-      if (!company && m.company_id) {
-        const { data } = await (supabase as any).from('companies').select('id, name, slug').eq('id', m.company_id).maybeSingle()
-        company = data
+      const cid = m.company_id || companyId
+      if (cid) {
+        const { data } = await (supabase as any).from('companies').select('id, name, slug').eq('id', cid).maybeSingle()
+        company = data || null
       }
       if (!company?.slug) {
-        showMsg('Could not resolve your company — reload the page and try again.')
+        const uid = user?.id || (await supabase.auth.getSession()).data.session?.user?.id || null
+        if (uid) {
+          const { data: owned } = await (supabase as any).from('companies').select('id, name, slug').eq('owner_id', uid).order('created_at', { ascending: true }).limit(1)
+          company = owned?.[0] || null
+        }
+      }
+      if (!company?.slug) {
+        showMsg('Could not resolve your company — reload the page and try again.', true)
         setResendingId(null)
         return
       }
@@ -260,16 +420,29 @@ export default function TeamPage() {
           inviterName: user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'A teammate',
         }),
       })
-      if (!res.ok) { const o = await res.json().catch(() => ({})); throw new Error(o.error || 'Failed to resend') }
-      showMsg(`Invitation resent to ${m.email}`)
+      const o = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(o.error || 'Failed to resend')
+      setLastInvite({ email: m.email, link: inviteLink })
+      if (o?.emailed === true) showMsg(`Invitation resent to ${m.email}. You can also copy the link below to send it directly.`)
+      else showMsg(`Couldn’t email ${m.email}. Copy the link below and send it to them directly.`, true)
     } catch (e: any) {
-      showMsg(`Could not resend: ${e.message}`)
+      showMsg(`Could not resend: ${e.message}`, true)
     } finally {
       setResendingId(null)
     }
   }
 
   if (!user) return <SkeletonList rows={6} />
+
+  // The current viewer is already shown as the "You (Owner)" row at the top, so
+  // don't list them AGAIN from team_members below — that duplicate is why the
+  // owner appeared a second time with a different role (e.g. Editor). Match on
+  // user_id first, then fall back to email for rows that were invited before the
+  // person signed in (no user_id yet).
+  const meEmail = (user.email || '').toLowerCase()
+  const visibleMembers = members.filter(
+    (m: any) => m.user_id !== user.id && (m.email || '').toLowerCase() !== meEmail
+  )
 
   return (
     <div className="max-w-4xl mx-auto px-6 py-8">
@@ -295,19 +468,59 @@ export default function TeamPage() {
       />
 
       {msg && (
-        <div className="mb-4 p-3 rounded-lg text-sm font-medium" style={{ background: '#d1fae5', color: '#059669' }}>
-          ✓ {msg}
+        <div className="mb-4 p-3 rounded-lg text-sm font-medium" style={msgErr ? { background: '#fee2e2', color: '#b91c1c' } : { background: '#d1fae5', color: '#059669' }}>
+          {msgErr ? '⚠ ' : '✓ '}{msg}
         </div>
       )}
 
-      <div className="bg-white rounded-2xl border overflow-hidden" style={{ borderColor: 'var(--border)' }}>
+      {lastInvite && (
+        <div className="mb-4 p-3 rounded-lg text-sm" style={{ background: '#f8fafc', border: '1px solid var(--border)' }}>
+          <div className="mb-2" style={{ color: 'var(--slate)' }}>
+            Invite link for <strong>{lastInvite.email}</strong> — send it to them directly (email, SMS, WhatsApp):
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              readOnly
+              value={lastInvite.link}
+              onFocus={(e) => e.currentTarget.select()}
+              className="flex-1 px-3 py-2 rounded-lg border text-xs"
+              style={{ borderColor: 'var(--border)', background: 'white' }}
+            />
+            <button
+              onClick={async () => {
+                try { await navigator.clipboard.writeText(lastInvite.link); showMsg('Invite link copied.') }
+                catch { showMsg('Could not copy — select the link and copy it manually.', true) }
+              }}
+              className="px-3 py-2 rounded-lg text-white text-xs font-semibold whitespace-nowrap"
+              style={{ background: 'var(--coral, #ff7a6b)' }}
+            >
+              Copy link
+            </button>
+            <button
+              onClick={() => setLastInvite(null)}
+              className="px-2 py-2 rounded-lg text-xs"
+              style={{ color: 'var(--slate)' }}
+              aria-label="Dismiss invite link"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Horizontal scroll on narrow screens: the 12-column grid needs room, and
+          squeezing it into a phone width made the header labels and the
+          role/status/actions cells overlap. A min width keeps the columns intact
+          and lets the card scroll sideways instead. */}
+      <div className="overflow-x-auto">
+      <div className="bg-white rounded-2xl border overflow-hidden min-w-[760px]" style={{ borderColor: 'var(--border)' }}>
         {/* Header */}
         <div className="grid grid-cols-12 px-5 py-3 border-b text-xs font-semibold uppercase tracking-wider" style={{ borderColor: 'var(--border)', color: 'var(--slate)' }}>
           <div className="col-span-4">User</div>
-          <div className="col-span-3">Mobile (for SMS)</div>
+          <div className="col-span-2">Mobile (for SMS)</div>
           <div className="col-span-2">Role</div>
           <div className="col-span-1">Status</div>
-          <div className="col-span-2 text-right">Actions</div>
+          <div className="col-span-3 text-right">Actions</div>
         </div>
 
         {/* Current admin — column spans mirror the header (4/3/2/1/2) so the
@@ -322,19 +535,19 @@ export default function TeamPage() {
               <p className="text-xs" style={{ color: 'var(--slate)' }}>You (Owner)</p>
             </div>
           </div>
-          <div className="col-span-3" />
+          <div className="col-span-2" />
           <div className="col-span-2">
             <span className="text-xs px-2 py-1 rounded-full font-semibold" style={{ background: 'var(--peach)', color: 'var(--coral)' }}>Owner</span>
           </div>
           <div className="col-span-1">
             <span className="text-xs px-2 py-1 rounded-full" style={{ background: '#d1fae5', color: '#059669' }}>Active</span>
           </div>
-          <div className="col-span-2 text-right text-xs" style={{ color: 'var(--slate)' }}>—</div>
+          <div className="col-span-3 text-right text-xs" style={{ color: 'var(--slate)' }}>—</div>
         </div>
 
         {loading ? (
           <SkeletonList rows={5} />
-        ) : members.length === 0 ? (
+        ) : visibleMembers.length === 0 ? (
           <div className="p-10 text-center">
             <div className="text-4xl mb-3">👥</div>
             <p className="text-sm mb-2 font-medium" style={{ color: 'var(--ink)' }}>No team members yet</p>
@@ -346,14 +559,17 @@ export default function TeamPage() {
             </div>
           </div>
         ) : (
-          members.map(m => (
+          visibleMembers.map(m => (
             <div key={m.id} className="grid grid-cols-12 px-5 py-4 border-b last:border-b-0 items-center" style={{ borderColor: 'var(--border)' }}>
               <div className="col-span-4 flex items-center gap-3">
                 <div className="w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-bold overflow-hidden" style={{ background: '#6b7280' }}>
                   {m.avatar_url ? <img src={m.avatar_url} alt="" className="w-full h-full object-cover" /> : (m.display_name || m.email || '?')[0].toUpperCase()}
                 </div>
                 <div className="min-w-0">
-                  <p className="text-sm truncate" style={{ color: 'var(--ink)', fontWeight: 600 }}>{m.display_name || m.email}</p>
+                  <p className="text-sm truncate flex items-center gap-1.5" style={{ color: 'var(--ink)', fontWeight: 600 }}>
+                    <span className="truncate">{m.display_name || m.email}</span>
+                    {m.department && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded shrink-0" style={{ background: '#eef2ff', color: '#4338ca' }}>{m.department}</span>}
+                  </p>
                   {m.display_name && <p className="text-xs truncate" style={{ color: 'var(--slate)' }}>{m.email}</p>}
                   {outlets.length > 0 && (
                     <select value={m.default_location_id || ''} onChange={e => updateDefaultOutlet(m.id, e.target.value)}
@@ -368,7 +584,7 @@ export default function TeamPage() {
               </div>
               {/* Mobile — SMS reminders for assigned events go to this number.
                   Saved on blur so it doesn't write on every keystroke. */}
-              <div className="col-span-3 pr-3">
+              <div className="col-span-2 pr-3">
                 <input
                   defaultValue={m.phone || ''}
                   placeholder="+61…"
@@ -381,7 +597,7 @@ export default function TeamPage() {
                   className="text-xs px-2 py-1 rounded border focus:outline-none cursor-pointer bg-white"
                   style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
                   <option value="admin">Admin</option>
-                  <option value="editor">Editor</option>
+                  <option value="editor">Agent</option>
                   <option value="viewer">Viewer</option>
                 </select>
               </div>
@@ -391,7 +607,15 @@ export default function TeamPage() {
                   {m.status === 'active' ? 'Active' : 'Invited'}
                 </span>
               </div>
-              <div className="col-span-2 text-right flex items-center justify-end gap-3">
+              <div className="col-span-3 text-right flex items-center justify-end gap-2.5 whitespace-nowrap">
+                <button onClick={() => openEdit(m)} className="text-xs font-medium cursor-pointer hover:underline" style={{ color: 'var(--slate)' }}>
+                  Edit
+                </button>
+                {['editor', 'viewer'].includes((m.role || '').toLowerCase()) && (
+                  <button onClick={() => openPermissions(m)} className="text-xs font-medium cursor-pointer hover:underline" style={{ color: 'var(--slate)' }}>
+                    Permissions
+                  </button>
+                )}
                 {m.status !== 'active' && (
                   <button onClick={() => resendInvite(m)} disabled={resendingId === m.id} className="text-xs font-medium cursor-pointer hover:underline" style={{ color: 'var(--coral)' }}>
                     {resendingId === m.id ? 'Sending…' : 'Resend'}
@@ -405,13 +629,14 @@ export default function TeamPage() {
           ))
         )}
       </div>
+      </div>
 
       {/* Role legend */}
       <div className="mt-6 p-4 rounded-xl border" style={{ background: '#eff6ff', borderColor: '#bfdbfe' }}>
         <p className="text-sm font-bold mb-2 text-blue-900">Role permissions</p>
         <div className="grid sm:grid-cols-3 gap-2 text-xs text-blue-800">
           <div><strong>Admin</strong> — Full access, settings, team</div>
-          <div><strong>Editor</strong> — Manage ideas, statuses, comments</div>
+          <div><strong>Agent</strong> — Day-to-day work; exact access set per member in Permissions</div>
           <div><strong>Viewer</strong> — Read-only dashboard access</div>
         </div>
       </div>
@@ -439,7 +664,7 @@ export default function TeamPage() {
                   className="w-full px-4 py-2.5 rounded-lg border focus:outline-none cursor-pointer bg-white"
                   style={{ borderColor: 'var(--border)', fontSize: '16px' }}>
                   <option value="admin">Admin</option>
-                  <option value="editor">Editor</option>
+                  <option value="editor">Agent</option>
                   <option value="viewer">Viewer</option>
                 </select>
               </div>
@@ -450,6 +675,110 @@ export default function TeamPage() {
                 className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white cursor-pointer disabled:opacity-50"
                 style={{ background: 'var(--coral)' }}>
                 {working ? 'Sending...' : 'Send Invite'}
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Edit Member Profile Modal */}
+      {editMember && (
+        <>
+          <div className="fixed inset-0 z-40 backdrop-blur-sm animate-backdrop" style={{ background: 'rgba(0,0,0,0.4)' }} onClick={() => setEditMember(null)} />
+          <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-md bg-white rounded-2xl shadow-2xl animate-modal mx-4">
+            <div className="p-6 border-b" style={{ borderColor: 'var(--border)' }}>
+              <h2 className="text-xl font-bold" style={{ color: 'var(--ink)' }}>Edit member</h2>
+              <p className="text-sm mt-1" style={{ color: 'var(--slate)' }}>{editMember.email}</p>
+            </div>
+            <div className="p-6 space-y-5">
+              <div className="flex items-center gap-4">
+                <div className="w-16 h-16 rounded-full overflow-hidden flex items-center justify-center text-white text-xl font-bold shrink-0" style={{ background: '#6b7280' }}>
+                  {editAvatar ? <img src={editAvatar} alt="" className="w-full h-full object-cover" /> : (editName || editMember.email || '?')[0].toUpperCase()}
+                </div>
+                <div className="flex flex-col gap-2">
+                  <label className="text-sm font-medium cursor-pointer px-3 py-2 rounded-lg border inline-block" style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
+                    {editUploading ? 'Uploading…' : 'Upload photo'}
+                    <input type="file" accept="image/*" style={{ display: 'none' }}
+                      onChange={e => { const f = e.target.files?.[0]; if (f) uploadMemberPhoto(f) }} disabled={editUploading} />
+                  </label>
+                  {editAvatar && (
+                    <button onClick={() => setEditAvatar('')} className="text-xs cursor-pointer hover:underline text-left" style={{ color: '#dc2626' }}>Remove photo</button>
+                  )}
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--ink)' }}>Display name</label>
+                <input type="text" value={editName} onChange={e => setEditName(e.target.value)}
+                  placeholder="Full name"
+                  className="w-full px-4 py-2.5 rounded-lg border focus:outline-none"
+                  style={{ borderColor: 'var(--border)', fontSize: '16px' }} />
+                <p className="text-xs mt-1.5" style={{ color: 'var(--slate)' }}>Shows across the inbox, read receipts and everywhere this member appears.</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--ink)' }}>Department</label>
+                <select value={DEPARTMENTS.includes(editDept) || !editDept ? editDept : '__custom'} onChange={e => { if (e.target.value !== '__custom') setEditDept(e.target.value) }}
+                  className="w-full px-4 py-2.5 rounded-lg border focus:outline-none cursor-pointer bg-white"
+                  style={{ borderColor: 'var(--border)', fontSize: '16px' }}>
+                  <option value="">No department</option>
+                  {DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}
+                  {editDept && !DEPARTMENTS.includes(editDept) && <option value="__custom">{editDept}</option>}
+                </select>
+                <p className="text-xs mt-1.5" style={{ color: 'var(--slate)' }}>Organisational only — for grouping and routing. Doesn’t change what they can access.</p>
+              </div>
+            </div>
+            <div className="flex gap-3 p-6 border-t" style={{ borderColor: 'var(--border)' }}>
+              <button onClick={() => setEditMember(null)} className="flex-1 py-2.5 rounded-xl text-sm font-medium border cursor-pointer" style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>Cancel</button>
+              <button onClick={saveMemberProfile} disabled={editSaving || editUploading}
+                className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white cursor-pointer disabled:opacity-50"
+                style={{ background: 'var(--coral)' }}>
+                {editSaving ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Permissions Modal */}
+      {permMember && (
+        <>
+          <div className="fixed inset-0 z-40 backdrop-blur-sm animate-backdrop" style={{ background: 'rgba(0,0,0,0.4)' }} onClick={() => setPermMember(null)} />
+          <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-lg bg-white rounded-2xl shadow-2xl animate-modal mx-4 flex flex-col" style={{ maxHeight: '85vh' }}>
+            <div className="p-6 border-b" style={{ borderColor: 'var(--border)' }}>
+              <h2 className="text-xl font-bold" style={{ color: 'var(--ink)' }}>Permissions</h2>
+              <p className="text-sm mt-1" style={{ color: 'var(--slate)' }}>
+                Choose what <strong>{permMember.display_name || permMember.email}</strong> can see and open. Off = hidden from their sidebar and blocked if they open the link directly.
+              </p>
+            </div>
+            <div className="p-6 overflow-y-auto space-y-5" style={{ flex: 1 }}>
+              {PERMISSION_SUITES.map(suite => {
+                const allOn = suite.features.every(f => permDraft[f.key])
+                return (
+                  <div key={suite.key}>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-bold uppercase tracking-wider" style={{ color: 'var(--slate)' }}>{suite.label}</span>
+                      <button onClick={() => setSuite(suite.key, !allOn)} className="text-xs font-medium cursor-pointer hover:underline" style={{ color: 'var(--coral)' }}>
+                        {allOn ? 'Turn all off' : 'Turn all on'}
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      {suite.features.map(f => (
+                        <label key={f.key} className="flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer text-sm"
+                          style={{ borderColor: 'var(--border)', color: 'var(--ink)', background: permDraft[f.key] ? 'var(--peach)' : 'white' }}>
+                          <input type="checkbox" checked={!!permDraft[f.key]} onChange={() => toggleFeature(f.key)} />
+                          <span className="truncate">{f.label}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+            <div className="flex gap-3 p-6 border-t" style={{ borderColor: 'var(--border)' }}>
+              <button onClick={() => setPermMember(null)} className="flex-1 py-2.5 rounded-xl text-sm font-medium border cursor-pointer" style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>Cancel</button>
+              <button onClick={savePermissions} disabled={permSaving}
+                className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white cursor-pointer disabled:opacity-50"
+                style={{ background: 'var(--coral)' }}>
+                {permSaving ? 'Saving…' : 'Save permissions'}
               </button>
             </div>
           </div>
@@ -486,7 +815,7 @@ export default function TeamPage() {
                   className="w-full px-4 py-2.5 rounded-lg border focus:outline-none cursor-pointer bg-white"
                   style={{ borderColor: 'var(--border)', fontSize: '16px' }}>
                   <option value="admin">Admin</option>
-                  <option value="editor">Editor</option>
+                  <option value="editor">Agent</option>
                   <option value="viewer">Viewer</option>
                 </select>
               </div>

@@ -82,7 +82,7 @@ Meta will require **Business Verification** (business documents) before some per
 
 ## Notes / limits
 
-- **24-hour window:** Meta only allows a free-form reply within 24 hours of the customer's last message. Colvy blocks a later reply with a clear message rather than a raw API error. Replying outside 24h needs an approved message tag (not yet built).
+- **Messaging windows:** Meta allows a free-form reply within **24 hours** of the customer's last message. From **24 hours to 7 days**, Colvy replies using the **Human Agent** message tag (a human agent answering a customer), so agents can still respond. **After 7 days** Meta blocks any reply and Colvy tells the agent to use another channel. The Human Agent tag requires the **Human Agent** feature to be approved in App Review — add it to your submission (it's the `HUMAN_AGENT` messaging tag / "Human Agent" standard feature).
 - **Token refresh:** A daily cron (`/api/cron/refresh-meta-tokens`) keeps connections alive. **Instagram-Login** tokens (~60 days) are auto-extended in place. **Facebook / page-linked** Page tokens can't be self-refreshed, so the cron probes them: a still-valid token has its expiry stamp pushed out, and a genuinely lapsed one flags the account (`last_error` + a one-time in-app alert) to reconnect under Settings → Channels. Reconnecting always mints fresh tokens. The cron honours `CRON_SECRET` like the others.
 
 ---
@@ -161,8 +161,12 @@ signature check accepts either the Meta or the Instagram app secret.
 
 Real-time comment threads are ingested by the same `/api/meta/webhook` endpoint.
 Instagram sends the **`comments`** field; a Facebook Page sends the **`feed`**
-field (subscribe to it in the Page webhook config if you want live FB comments —
-otherwise FB comments still arrive on the next manual sync). Each new comment is
+field (subscribe to it in the Page webhook config if you want live FB comments).
+The **Sync comments** button backfills history for **both** platforms — the
+Facebook Page's posts + comments AND every connected Instagram account's media +
+comments (page-linked via the Graph API, Instagram-Login via
+`graph.instagram.com`) — so comments that predate the webhook (or arrived while
+it was down) still appear. Each new comment is
 stored in `social_comments`, classified (risk / category / sentiment), and shown
 in the **Social Engagement** manager, where an agent can reply, hide, DM, or
 archive it. Replies route by channel type automatically:

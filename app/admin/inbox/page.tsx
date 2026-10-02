@@ -34,8 +34,13 @@ import ContactTimeline from '@/components/ContactTimeline'
 import AddressAutocomplete from '@/components/AddressAutocomplete'
 import DeliveryPanel from '@/components/DeliveryPanel'
 import MediaGallery, { MediaItem } from '@/components/MediaGallery'
+import CustomerMatchCard from '@/components/CustomerMatchCard'
+import StoryReplyPreview from '@/components/StoryReplyPreview'
+import CustomerAddresses from '@/components/CustomerAddresses'
 import DoaPanel from '@/components/DoaPanel'
 import CreateOrderPanel from '@/components/CreateOrderPanel'
+import SuperAdminContactWorkspaces from '@/components/SuperAdminContactWorkspaces'
+import WaitlistQuickAdd from '@/components/WaitlistQuickAdd'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Conversation = {
@@ -128,6 +133,28 @@ const CHANNEL_NAME: Record<string, string> = {
   widget: 'Live chat', chat: 'Live chat', sms: 'SMS', email: 'Email', phone: 'Phone',
   facebook: 'Messenger', messenger: 'Messenger', instagram: 'Instagram', whatsapp: 'WhatsApp',
   realestate: 'RealEstate',
+}
+
+// Monochrome (currentColor) channel marks for the Send button, so the button
+// itself shows WHERE the reply will land — Messenger, Instagram, SMS, email,
+// WhatsApp, phone or live chat — instead of a generic arrow. They inherit the
+// button's text colour (white when active, grey when disabled), matching the
+// solid/gradient button background rather than the brand-coloured logos.
+const sendChannelGlyph = (ch: string, s = 15): React.ReactNode => {
+  const c = String(ch || '').toLowerCase()
+  if (c === 'instagram') return (
+    <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><rect x="3" y="3" width="18" height="18" rx="5" /><circle cx="12" cy="12" r="4" /><line x1="17.5" y1="6.5" x2="17.51" y2="6.5" /></svg>
+  )
+  if (c === 'facebook' || c === 'messenger') return (
+    <svg width={s} height={s} viewBox="0 0 24 24" fill="currentColor" style={{ flexShrink: 0 }}><path d="M24 12.07C24 5.4 18.63 0 12 0S0 5.4 0 12.07C0 18.1 4.39 23.1 10.13 24v-8.44H7.08v-3.49h3.05V9.41c0-3.02 1.79-4.69 4.53-4.69 1.31 0 2.68.24 2.68.24v2.97h-1.51c-1.49 0-1.96.93-1.96 1.89v2.25h3.33l-.53 3.49h-2.8V24C19.61 23.1 24 18.1 24 12.07z" /></svg>
+  )
+  if (c === 'whatsapp') return (
+    <svg width={s} height={s} viewBox="0 0 24 24" fill="currentColor" style={{ flexShrink: 0 }}><path d="M12 2a10 10 0 0 0-8.6 15l-1.3 4.7 4.8-1.3A10 10 0 1 0 12 2zm5.8 14.2c-.2.7-1.4 1.3-2 1.4-.5.1-1.2.1-1.9-.1-.4-.1-1-.3-1.7-.6-3-1.3-4.9-4.3-5.1-4.5-.1-.2-1.2-1.5-1.2-2.9s.7-2 1-2.3c.2-.3.5-.3.7-.3h.5c.2 0 .4 0 .6.5l.8 1.9c.1.1.1.3 0 .5l-.3.5c-.1.2-.3.3-.1.6.1.2.6 1 1.3 1.6.9.8 1.6 1 1.9 1.2.2.1.4.1.5-.1l.6-.8c.2-.2.4-.2.6-.1l1.8.9c.2.1.4.2.5.3.1.2.1.7-.1 1.4z" /></svg>
+  )
+  if (c === 'email') return Icon.mail(s)
+  if (c === 'sms') return Icon.mobile(s)
+  if (c === 'phone' || c === 'voice') return Icon.phone(s)
+  return Icon.chat(s)   // widget / chat / anything else
 }
 const SENTIMENT_ICON: Record<string, (s?: number) => React.ReactNode> = {
   positive: Icon.smile, neutral: Icon.meh, negative: Icon.frown,
@@ -242,7 +269,7 @@ function initialsOf(name?: string | null): string {
 // Interleave conversation events (assignments, channel switches, moves) into the
 // message list in chronological order, so the thread reads like a real timeline.
 function mergeEvents(msgs: any[], events: any[], calls: any[] = []) {
-  const SHOW = ['assigned', 'channel_switch', 'moved', 'status', 'review_request', 'page_view', 'note_created', 'closed', 'reopened']
+  const SHOW = ['assigned', 'channel_switch', 'moved', 'status', 'review_request', 'page_view', 'note_created', 'closed', 'reopened', 'ai_update', 'google_review', 'social_comment']
   const evs = (events || [])
     .filter(e => SHOW.includes(e.event_type))
     .map(e => ({ ...e, __event: true }))
@@ -465,14 +492,39 @@ export default function InboxPage() {
   // Per-company operational flag (default ON): may this company text the upload
   // link to the customer's mobile? Off = links only post in the conversation.
   const [mediaSmsEnabled, setMediaSmsEnabled] = useState(true)
+  // Does this workspace's plan include outbound SMS? Default true so the upsell
+  // banner never flashes before entitlements load. When false, we surface an
+  // "Enable SMS" CTA at the exact moment an agent could be texting a customer.
+  const [smsIncluded, setSmsIncluded] = useState(true)
   useEffect(() => {
     let cancelled = false
     getEffectiveEntitlements()
-      .then(e => { if (!cancelled) setMediaSmsEnabled(flagEnabled(e.features, 'media_sms_fallback')) })
+      .then(e => {
+        if (cancelled) return
+        setMediaSmsEnabled(flagEnabled(e.features, 'media_sms_fallback'))
+        const cap = Number(e.limits?.smsPerMonth ?? 0)
+        setSmsIncluded(cap > 0)
+      })
       .catch(() => {})
     return () => { cancelled = true }
   }, [])
   const [user, setUser] = useState<any>(null)
+  // The current agent's display name for message authorship and read receipts.
+  // Prefers the owner-set team_members.name, then the person's own account name,
+  // then their email prefix, then 'Agent'. Everything that stamps "who did this"
+  // uses this so an owner-set name shows on NEW messages/reads (existing ones are
+  // stored historically and don't change).
+  const [myName, setMyName] = useState<string>('Agent')
+  useEffect(() => {
+    const uid = user?.id
+    if (!uid) return
+    const md = user?.user_metadata || {}
+    const authName = md.display_name || (user?.email ? String(user.email).split('@')[0] : '') || ''
+    if (authName) setMyName(authName)
+    if (!companyId) return
+    ;(supabase as any).from('team_members').select('name').eq('company_id', companyId).eq('user_id', uid).limit(1)
+      .then(({ data }: any) => { const n = data?.[0]?.name; setMyName(n || authName || 'Agent') }, () => {})
+  }, [user?.id, companyId])
   const [conversations, setConversations] = useState<Conversation[]>(seededConvs ?? [])
   const [selected, setSelected] = useState<Conversation | null>(null)
   const selectedRef = useRef<Conversation | null>(null)
@@ -502,11 +554,15 @@ export default function InboxPage() {
   }
   const [showMergePicker, setShowMergePicker] = useState(false)
   const [galleryIndex, setGalleryIndex] = useState<number | null>(null)
+  const [storyView, setStoryView] = useState<{ items: MediaItem[]; index: number } | null>(null)
   const [showDoa, setShowDoa] = useState(false)
   const [doaMatch, setDoaMatch] = useState(false)
   const [convActions, setConvActions] = useState<Record<string, any>>({})
   const [showActionMenu, setShowActionMenu] = useState(false)
   const [showRecordSale, setShowRecordSale] = useState(false)
+  // Whether this conversation already has a recorded sale — used to suppress the
+  // "did this convert to a sale?" nudge so it isn't recorded twice.
+  const [convHasSale, setConvHasSale] = useState(false)
   const [showMediaRequest, setShowMediaRequest] = useState(false)
   const [mrPrompt, setMrPrompt] = useState('')
   const [mrAccept, setMrAccept] = useState<string[]>(['image', 'video', 'pdf'])
@@ -583,9 +639,64 @@ export default function InboxPage() {
     const recent = messages.slice(-6)
     return recent.some(m => { const t = String((m as any).content || '').toLowerCase(); return PAYMENT_SIGNAL_PHRASES.some(p => t.includes(p)) })
   }, [messages])
+
+  // Has a sale already been recorded for the open conversation? If so (or if the
+  // customer already matches an ecommerce order), the payment is on record and
+  // the "record a sale" nudge would double-count — so it's suppressed below.
+  useEffect(() => {
+    const id = selected?.id
+    if (!id) { setConvHasSale(false); return }
+    let cancelled = false
+    ;(async () => {
+      try {
+        const { count } = await (supabase as any).from('conversation_sales').select('id', { count: 'exact', head: true }).eq('conversation_id', id)
+        if (!cancelled) setConvHasSale((count || 0) > 0)
+      } catch { if (!cancelled) setConvHasSale(false) }
+    })()
+    return () => { cancelled = true }
+  }, [selected?.id])
   const [contact, setContact] = useState<Contact | null>(null)
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([])
   const [reply, setReply] = useState('')
+
+  // ── Coax-style resizable composer ──────────────────────────────────────
+  // The reply box can be dragged taller/shorter via the grab handle on its top
+  // border. The chosen height is remembered per-agent (localStorage) so it
+  // survives reloads and conversation switches.
+  const COMPOSER_MIN = 64, COMPOSER_MAX = 420
+  const [composerH, setComposerH] = useState<number>(96)
+  const [composerDragging, setComposerDragging] = useState(false)
+  useEffect(() => {
+    try { const s = Number(localStorage.getItem('colvy_composer_h')); if (s >= COMPOSER_MIN && s <= COMPOSER_MAX) setComposerH(s) } catch {}
+  }, [])
+  const startComposerResize = (startY: number) => {
+    const startH = composerH
+    setComposerDragging(true)
+    const onMove = (clientY: number) => {
+      // Drag UP (clientY decreases) grows the box; DOWN shrinks it.
+      const next = Math.min(COMPOSER_MAX, Math.max(COMPOSER_MIN, Math.round(startH + (startY - clientY))))
+      setComposerH(next)
+    }
+    const onMouseMove = (e: MouseEvent) => { e.preventDefault(); onMove(e.clientY) }
+    const onTouchMove = (e: TouchEvent) => { if (e.touches[0]) onMove(e.touches[0].clientY) }
+    const stop = () => {
+      setComposerDragging(false)
+      window.removeEventListener('mousemove', onMouseMove)
+      window.removeEventListener('mouseup', stop)
+      window.removeEventListener('touchmove', onTouchMove)
+      window.removeEventListener('touchend', stop)
+      document.body.style.userSelect = ''
+      try { localStorage.setItem('colvy_composer_h', String(composerHRef.current)) } catch {}
+    }
+    document.body.style.userSelect = 'none'
+    window.addEventListener('mousemove', onMouseMove)
+    window.addEventListener('mouseup', stop)
+    window.addEventListener('touchmove', onTouchMove, { passive: false })
+    window.addEventListener('touchend', stop)
+  }
+  // Keep the latest height available to the drag-stop closure without re-binding.
+  const composerHRef = useRef(composerH)
+  useEffect(() => { composerHRef.current = composerH }, [composerH])
 
   // Keep an unsent reply so it survives switching conversations, a reload, or
   // coming back tomorrow. Personal to the signed-in agent.
@@ -646,6 +757,27 @@ export default function InboxPage() {
   const [searchMsgHits, setSearchMsgHits] = useState<Record<string, { field: string; snippet: string }>>({})
   const [msgSearch, setMsgSearch] = useState('')
   const [showMsgSearch, setShowMsgSearch] = useState(false)
+  // Which match is currently focused (index into the ordered, top-down list of
+  // matching messages) for the in-conversation find bar's next/previous nav.
+  const [msgSearchIdx, setMsgSearchIdx] = useState(0)
+  // Ordered (top-down / chronological, since `messages` is chronological) ids of
+  // the messages whose body matches the in-conversation search.
+  const msgMatchIds = useMemo(() => {
+    const q = msgSearch.trim().toLowerCase()
+    if (!q) return [] as string[]
+    return messages.filter(m => (m.content || '').toLowerCase().includes(q)).map(m => String(m.id))
+  }, [messages, msgSearch])
+  // A new query starts from the first match.
+  useEffect(() => { setMsgSearchIdx(0) }, [msgSearch])
+  // Focus the active match: outline it and scroll it into view. Always clears the
+  // previous highlight first, so closing the bar (or an empty query) leaves none.
+  useEffect(() => {
+    document.querySelectorAll('.cmsg-active-hit').forEach(n => n.classList.remove('cmsg-active-hit'))
+    if (!showMsgSearch || msgMatchIds.length === 0) return
+    const idx = Math.min(Math.max(0, msgSearchIdx), msgMatchIds.length - 1)
+    const el = document.getElementById(`cmsg-${msgMatchIds[idx]}`)
+    if (el) { el.classList.add('cmsg-active-hit'); el.scrollIntoView({ behavior: 'smooth', block: 'center' }) }
+  }, [showMsgSearch, msgSearchIdx, msgMatchIds])
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   // On phones we show one pane at a time: the conversation list, the open
   // thread, or the contact panel. Desktop shows all three side by side.
@@ -691,6 +823,10 @@ export default function InboxPage() {
     date: '', time_window: '', address: '', notes: '', location_id: '', notify: true,
   })
   const [outletsForSchedule, setOutletsForSchedule] = useState<any[]>([])
+  // "Schedule message" — send the composed reply at a future time (cron delivers).
+  const [showScheduleMsg, setShowScheduleMsg] = useState(false)
+  const [scheduleMsgAt, setScheduleMsgAt] = useState('')
+  const [schedulingMsg, setSchedulingMsg] = useState(false)
 
   useEffect(() => {
     if (!companyId) return
@@ -714,6 +850,49 @@ export default function InboxPage() {
       notify: true,
     })
     setShowSchedule(true)
+  }
+
+  // Schedule the currently-composed reply to be sent later. Defaults to one hour
+  // from now; the /api/cron/send-scheduled worker delivers it on the
+  // conversation's channel when the time arrives.
+  const openScheduleMsg = () => {
+    if (!reply.trim()) { showToast('Type a message first, then schedule it.'); return }
+    const t = new Date(Date.now() + 60 * 60 * 1000)
+    // datetime-local wants local wall-clock, so offset out the timezone.
+    const local = new Date(t.getTime() - t.getTimezoneOffset() * 60000).toISOString().slice(0, 16)
+    setScheduleMsgAt(local)
+    setShowScheduleMsg(true)
+  }
+
+  const scheduleMessage = async () => {
+    if (!selected || !user || schedulingMsg) return
+    const content = reply.trim()
+    if (!content) { showToast('Type a message first.'); return }
+    const when = scheduleMsgAt ? new Date(scheduleMsgAt) : null
+    if (!when || isNaN(when.getTime())) { showToast('Pick a valid date and time.'); return }
+    if (when.getTime() < Date.now() + 30000) { showToast('Pick a time in the future.'); return }
+    setSchedulingMsg(true)
+    try {
+      const { error } = await (supabase as any).from('scheduled_messages').insert({
+        company_id: companyId,
+        conversation_id: selected.id,
+        contact_id: (selected as any).contact_id || contact?.id || null,
+        message: content,
+        scheduled_for: when.toISOString(),
+        channel: sendChannel !== 'auto' ? sendChannel : ((selected as any).channel || 'chat'),
+        status: 'pending',
+        type: 'message',
+        created_by: user.id,
+      })
+      if (error) throw error
+      setShowScheduleMsg(false)
+      setReply(''); setReplyTo(null); draft.discard()
+      showToast(`Message scheduled for ${when.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}`)
+    } catch (e: any) {
+      showToast('Could not schedule: ' + (e?.message || 'error'))
+    } finally {
+      setSchedulingMsg(false)
+    }
   }
 
   const saveSchedule = async () => {
@@ -746,7 +925,7 @@ export default function InboxPage() {
       if (schedule.notify) {
         const when = new Date(schedule.date).toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long' })
         const text = `Your delivery is booked for ${when}${schedule.time_window ? `, between ${schedule.time_window}` : ''}.${schedule.address ? `\nAddress: ${schedule.address}` : ''}\nWe'll let you know when it's on its way.`
-        const me = user?.user_metadata?.display_name || user?.email?.split('@')[0]
+        const me = myName
         const smsNumber = smsDestination()
 
         if (smsNumber) {
@@ -854,7 +1033,7 @@ export default function InboxPage() {
       content = `${p.name} — ${price} AUD (${stock})\n${productUrl}`
     }
 
-    const me = user.user_metadata?.display_name || user.email?.split('@')[0]
+    const me = myName
     const smsNumber = smsDestination()
 
     try {
@@ -958,7 +1137,7 @@ export default function InboxPage() {
   // agent signed in on two devices (e.g. web + phone) would hide each other's
   // typing, which is exactly the case when testing.
   const mySidRef = useRef(Math.random().toString(36).slice(2))
-  const myTypingName = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Agent'
+  const myTypingName = myName
   useEffect(() => {
     if (!selected?.id) { setLiveTyping(''); setAgentTyping(null); return }
     setLiveTyping(''); setAgentTyping(null)
@@ -1428,6 +1607,29 @@ export default function InboxPage() {
   // pay the probe once.
   const wooEmailNormRef = useRef<boolean | null>(null)
   const [abandonedCarts, setAbandonedCarts] = useState<any[]>([])
+  // A customer's off-inbox engagement (Google reviews + FB/IG comments), for the
+  // info-panel stars, the header pills and the thread event cards.
+  const emptyEngagement = { count: 0, avg: null as number | null, latest: null as any, reviews: [] as any[], socialComments: [] as any[], commentCount: 0, latestComment: null as any }
+  const [contactReviews, setContactReviews] = useState<typeof emptyEngagement>(emptyEngagement)
+  useEffect(() => {
+    const cid = contact?.id
+    if (!cid || !companyId) { setContactReviews(emptyEngagement); return }
+    let cancelled = false
+    ;(async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        const res = await fetch(`/api/contacts/reviews?contactId=${encodeURIComponent(cid)}&companyId=${encodeURIComponent(companyId)}`, {
+          headers: { Authorization: `Bearer ${session?.access_token || ''}` },
+        })
+        const data = await res.json().catch(() => ({}))
+        if (!cancelled && res.ok) setContactReviews({
+          count: data.count || 0, avg: data.avg ?? null, latest: data.latest || null, reviews: data.reviews || [],
+          socialComments: data.socialComments || [], commentCount: data.commentCount || 0, latestComment: data.latestComment || null,
+        })
+      } catch { /* engagement is a nice-to-have; never block the panel */ }
+    })()
+    return () => { cancelled = true }
+  }, [contact?.id, companyId])
   const [orderSearch, setOrderSearch] = useState('')
   const [orderDateFrom, setOrderDateFrom] = useState('')
   const [orderDateTo, setOrderDateTo] = useState('')
@@ -1514,7 +1716,7 @@ export default function InboxPage() {
       }
       if (!convId) throw new Error('Could not open a conversation with that contact')
 
-      const me = user.user_metadata?.display_name || user.email?.split('@')[0]
+      const me = myName
 
       // Text it too, if that's how we talk to them. A failed text must not lose
       // the forward — the message still goes in the thread below — but it must
@@ -1570,34 +1772,51 @@ export default function InboxPage() {
   // ── Bootstrap ──────────────────────────────────────────────────────────────
   useEffect(() => {
     const init = async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.user) return
-      setUser(session.user)
-      let cid: string | null = seededCid
-      if (!cid && typeof window !== 'undefined') {
-        const h = window.location.hostname
-        if (h.endsWith('.colvy.com') && h !== 'colvy.com') {
-          const { data: co } = await (supabase as any).from('companies').select('id').eq('slug', h.replace('.colvy.com', '')).maybeSingle()
-          if (co) cid = co.id
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (!session?.user) {
+          // Not authenticated on this subdomain — send them to sign in instead of
+          // hanging on "Loading inbox…" forever (the old early-return left the
+          // full-page spinner up with no way out).
+          if (typeof window !== 'undefined') window.location.href = '/signin'
+          return
         }
+        setUser(session.user)
+        let cid: string | null = seededCid
+        if (!cid && typeof window !== 'undefined') {
+          const h = window.location.hostname
+          if (h.endsWith('.colvy.com') && h !== 'colvy.com') {
+            const { data: co } = await (supabase as any).from('companies').select('id').eq('slug', h.replace('.colvy.com', '')).maybeSingle()
+            if (co) cid = co.id
+          }
+        }
+        if (!cid) {
+          const { data: ownCo } = await (supabase as any).from('companies').select('id').eq('owner_id', session.user.id).maybeSingle()
+          if (ownCo?.id) cid = ownCo.id
+        }
+        if (!cid) return
+        setCompanyId(cid)
+        // Show the inbox ASAP: start the conversation load now, and drop the
+        // company chrome (logo/name/accent/time-format) and the team list OFF the
+        // critical path — they only enrich the UI, so an awaited companies query
+        // in front of the list was making the whole inbox wait on it.
+        loadConversations(cid)
+        loadTeam(cid)
+        ;(supabase as any)
+          .from('companies')
+          .select('name, logo_url, accent_color, slug, conversation_actions, inbox_settings')
+          .eq('id', cid).maybeSingle()
+          .then(({ data: ci }: any) => {
+            if (!ci) return
+            setCompanyInfo(ci); setConvActions(ci.conversation_actions || {})
+            const h12 = ci.inbox_settings?.hour12
+            if (typeof h12 === 'boolean') { setInboxHour12(h12); setHour12(h12) }
+          })
+      } finally {
+        // ALWAYS clear the full-page spinner — a slow query or an early return must
+        // never leave the inbox stuck on "Loading inbox…".
+        setLoading(false)
       }
-      if (!cid) {
-        const { data: ownCo } = await (supabase as any).from('companies').select('id').eq('owner_id', session.user.id).maybeSingle()
-        if (ownCo?.id) cid = ownCo.id
-      }
-      if (!cid) return
-      setCompanyId(cid)
-      // Load company logo/name/accent for agent message avatars
-      const { data: ci } = await (supabase as any).from('companies').select('name, logo_url, accent_color, slug, conversation_actions, inbox_settings').eq('id', cid).maybeSingle()
-      if (ci) {
-        setCompanyInfo(ci); setConvActions(ci.conversation_actions || {})
-        // Apply the company-wide time format so every agent matches.
-        const h12 = ci.inbox_settings?.hour12
-        if (typeof h12 === 'boolean') { setInboxHour12(h12); setHour12(h12) }
-      }
-      loadTeam(cid)
-      loadConversations(cid)
-      setLoading(false)
     }
     init()
   }, [])
@@ -1683,6 +1902,24 @@ export default function InboxPage() {
   useEffect(() => { loadConversationsRef.current = loadConversations }, [loadConversations])
   useEffect(() => { loadWooDataRef.current = loadWooData })
 
+  // Coalesce full conversation-list reloads. Every realtime message/conversation
+  // event used to call loadConversations() straight away — TWICE per inbound
+  // message (unread-clear + float-to-top) plus once per conversation update, and
+  // the 5s poll fired another on top. That's a full list query + contacts query
+  // + phone-backfill running many times a second on a busy inbox, which is what
+  // made the whole page feel slow. The realtime handlers already patch the list
+  // in place (append the message, float the thread to the top, zero the badge),
+  // so the reconciling full reload only needs to run once per burst. This batches
+  // any number of events within the window into a single trailing reload.
+  const convReloadTimer = useRef<any>(null)
+  const scheduleConvReload = useRef((delay = 700) => {
+    if (convReloadTimer.current) return
+    convReloadTimer.current = setTimeout(() => {
+      convReloadTimer.current = null
+      loadConversationsRef.current()
+    }, delay)
+  }).current
+
   // Deep-link: open a conversation from ?conversation=<id> (copy chat link, or
   // "Open conversation" from the Orders board). The target may be closed/resolved
   // or otherwise outside the current folder, so it won't be in the loaded list —
@@ -1717,45 +1954,73 @@ export default function InboxPage() {
   // the device's own apps. Find the contact's most recent conversation, or create
   // an empty one, then open it with the compose channel pre-selected.
   const deepContactRef = useRef<string | null>(null)
+  // Find-or-create this contact's conversation and open it. Shared by the
+  // on-mount ?contact= deep link AND the live "open this contact" event below.
+  const openContactDeepLink = useCallback(async (contactId: string, wantCh: string | null) => {
+    if (!companyId || !user || !contactId) return
+    try {
+      const { data: ct } = await (supabase as any).from('contacts')
+        .select('id, name, email, phone, relationship_type, prexty_customer_id').eq('id', contactId).maybeSingle()
+      if (!ct) { deepContactRef.current = null; return }
+      // Find-or-create a conversation for this contact.
+      const { data: existing } = await (supabase as any).from('conversations')
+        .select('*').eq('company_id', companyId).eq('contact_id', contactId)
+        .order('last_message_at', { ascending: false }).limit(1)
+      let conv: any = existing?.[0] || null
+      if (!conv) {
+        const chan = wantCh === 'email' ? 'email' : wantCh === 'sms' ? 'sms' : 'chat'
+        const { data: created } = await (supabase as any).from('conversations').insert({
+          company_id: companyId, channel: chan, contact_id: contactId,
+          subject: ct.name || ct.email || ct.phone || 'New conversation',
+          status: 'open', is_unread: false,
+          last_message: '', last_message_at: new Date().toISOString(),
+        }).select('*').maybeSingle()
+        conv = created || null
+      }
+      if (!conv) { deepContactRef.current = null; return }
+      conv.contacts = ct
+      setConversations(prev => prev.some(c => c.id === conv.id) ? prev : [conv, ...prev])
+      selectConversation(conv)
+      if (wantCh === 'sms' || wantCh === 'email' || wantCh === 'chat') setSendChannel(wantCh)
+      // Strip the params so a refresh doesn't re-open / re-create anything.
+      try { window.history.replaceState(null, '', '/admin/inbox') } catch {}
+    } catch { deepContactRef.current = null }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [companyId, user])
+
+  // ?contact=<id>&channel=<sms|email|chat>. This is what the "Message" / "Email"
+  // buttons on the Contacts list and customer profile use so those actions stay
+  // inside Colvy instead of firing an `sms:` / `mailto:` link that hands off to
+  // the device's own apps.
   useEffect(() => {
-    if (!companyId || !user) return
-    if (typeof window === 'undefined') return
+    if (!companyId || !user || typeof window === 'undefined') return
     const params = new URLSearchParams(window.location.search)
     const contactId = params.get('contact')
     if (!contactId || deepContactRef.current === contactId) return
-    const wantCh = params.get('channel')   // 'sms' | 'email' | 'chat' | null
     deepContactRef.current = contactId
-    ;(async () => {
-      try {
-        const { data: ct } = await (supabase as any).from('contacts')
-          .select('id, name, email, phone, relationship_type, prexty_customer_id').eq('id', contactId).maybeSingle()
-        if (!ct) { deepContactRef.current = null; return }
-        // Find-or-create a conversation for this contact.
-        const { data: existing } = await (supabase as any).from('conversations')
-          .select('*').eq('company_id', companyId).eq('contact_id', contactId)
-          .order('last_message_at', { ascending: false }).limit(1)
-        let conv: any = existing?.[0] || null
-        if (!conv) {
-          const chan = wantCh === 'email' ? 'email' : wantCh === 'sms' ? 'sms' : 'chat'
-          const { data: created } = await (supabase as any).from('conversations').insert({
-            company_id: companyId, channel: chan, contact_id: contactId,
-            subject: ct.name || ct.email || ct.phone || 'New conversation',
-            status: 'open', is_unread: false,
-            last_message: '', last_message_at: new Date().toISOString(),
-          }).select('*').maybeSingle()
-          conv = created || null
-        }
-        if (!conv) { deepContactRef.current = null; return }
-        conv.contacts = ct
-        setConversations(prev => prev.some(c => c.id === conv.id) ? prev : [conv, ...prev])
-        selectConversation(conv)
-        if (wantCh === 'sms' || wantCh === 'email' || wantCh === 'chat') setSendChannel(wantCh)
-        // Strip the params so a refresh doesn't re-open / re-create anything.
-        try { window.history.replaceState(null, '', '/admin/inbox') } catch {}
-      } catch { deepContactRef.current = null }
-    })()
+    openContactDeepLink(contactId, params.get('channel'))
+  }, [companyId, user, openContactDeepLink])
+
+  // Live "open in inbox" — the in-call panel and other persistent UI fire this
+  // when the inbox is ALREADY mounted. A same-route router.push('/admin/inbox?
+  // contact=…') never re-runs the mount effect above, so that button did nothing
+  // when you were already on the inbox. Prefer an already-loaded conversation;
+  // otherwise fall back to the contact find-or-create path.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const handler = (e: any) => {
+      const conversationId = e?.detail?.conversationId
+      const contactId = e?.detail?.contactId
+      if (conversationId) {
+        const existing = conversations.find(c => c.id === conversationId)
+        if (existing) { selectConversation(existing); return }
+      }
+      if (contactId) { deepContactRef.current = contactId; openContactDeepLink(contactId, null) }
+    }
+    window.addEventListener('colvy:open-contact', handler as EventListener)
+    return () => window.removeEventListener('colvy:open-contact', handler as EventListener)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [companyId, user])
+  }, [openContactDeepLink, conversations])
 
   // Close the assign dropdown / actions menu when clicking elsewhere
   useEffect(() => {
@@ -1816,7 +2081,7 @@ export default function InboxPage() {
     // .on() is always called on a fresh, unsubscribed channel.
     const ch = supabase.channel(`inbox-${companyId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'conversations', filter: `company_id=eq.${companyId}` }, (payload: any) => {
-        loadConversationsRef.current()
+        scheduleConvReload()
         // Keep the OPEN conversation fresh too — page history, status and
         // assignment are stored on the conversation row, and without this they
         // only appeared after a manual page reload.
@@ -1843,7 +2108,7 @@ export default function InboxPage() {
           ;(supabase as any).from('conversations')
             .update({ is_unread: false, unread_count: 0 })
             .eq('id', payload.new.conversation_id)
-            .then(() => loadConversationsRef.current(), () => {})
+            .then(() => scheduleConvReload(), () => {})
           // An order automation message means a new order just landed for this
           // customer. Refresh the order panel so the Orders tab populates
           // without a manual page reload.
@@ -1863,7 +2128,7 @@ export default function InboxPage() {
             ? { ...c, last_message_at: payload.new.created_at || new Date().toISOString(), ...(isOpen ? { is_unread: false, unread_count: 0 } : {}) }
             : c
         ))
-        loadConversationsRef.current()
+        scheduleConvReload()
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages', filter: `company_id=eq.${companyId}` }, (payload: any) => {
         // Reactions, read receipts and payment status are UPDATEs to the message
@@ -1906,23 +2171,23 @@ export default function InboxPage() {
     window.addEventListener('focus', revive)
     window.addEventListener('online', revive)
 
-    // Polling fallback — refresh the open thread every 5s in case realtime
-    // isn't enabled on the messages table. (Previously declared after a return
-    // statement, so it never ran.) Uses selectedRef so it always polls the
-    // currently open conversation without re-running this effect.
+    // Polling fallback — a safety net for when realtime isn't enabled on the
+    // messages table. Realtime, when it works, already keeps the list and the
+    // open thread live, so this only needs to run occasionally: at 5s it was
+    // reloading the whole conversation list every 5s on top of the realtime
+    // reloads, which was a big part of why the inbox felt slow. Now every 15s,
+    // and the list reload goes through the coalescing scheduler so it can never
+    // stack up. Uses selectedRef so it always polls the currently open thread.
     const poll = setInterval(async () => {
-      // Use the ref, not the closed-over loadConversations: this effect only
-      // re-runs on (companyId, realtimeNonce), so the captured function is frozen
-      // to the status filter at subscribe time ('open'). Polling with it wiped the
-      // Closed list back to Open every 5s. The ref always points at the current
-      // filter's loader.
-      loadConversationsRef.current()
+      // scheduleConvReload keeps the current status filter correct (it calls the
+      // ref, not the closure frozen to the filter at subscribe time).
+      scheduleConvReload(0)
       const openId = selectedRef.current?.id
       if (openId) {
         const { data: msgs } = await (supabase as any).from('messages').select('*').eq('conversation_id', openId).order('created_at', { ascending: true })
         if (msgs && selectedRef.current?.id === openId) setMessages(prev => msgs.length !== prev.length ? msgs : prev)
       }
-    }, 5000)
+    }, 15000)
 
     // ONE cleanup path. The old code had two return statements — the first
     // (listener removal) won, so removeChannel(ch) was dead code and the
@@ -1932,6 +2197,7 @@ export default function InboxPage() {
       window.removeEventListener('focus', revive)
       window.removeEventListener('online', revive)
       clearInterval(poll)
+      if (convReloadTimer.current) { clearTimeout(convReloadTimer.current); convReloadTimer.current = null }
       try { supabase.removeChannel(ch) } catch {}
       if (channelRef.current === ch) channelRef.current = null
     }
@@ -2368,15 +2634,31 @@ export default function InboxPage() {
 
   const logEvent = async (eventType: string, detail: string) => {
     if (!selected || !companyId) return
-    const actorName = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Agent'
+    const actorName = myName
     await (supabase as any).from('conversation_events').insert({
       conversation_id: selected.id, company_id: companyId, event_type: eventType, actor_name: actorName, detail,
     })
     loadConversationExtras(selected.id)
   }
 
+  // Record a Colvy AI action as an inline sparkle divider in the thread.
+  const logAiUpdate = async (detail: string) => {
+    if (!selected || !companyId) return
+    try {
+      await (supabase as any).from('conversation_events').insert({
+        conversation_id: selected.id, company_id: companyId, event_type: 'ai_update', actor_name: 'Colvy AI', detail,
+      })
+      loadConversationExtras(selected.id)
+    } catch {}
+  }
+  const onAiTasksCreated = () => {
+    if (!selected) return
+    loadConversationExtras(selected.id)
+    logAiUpdate('Tasks created from the AI call summary')
+  }
+
   const markMessagesRead = async (convId: string, msgs: Message[]) => {
-    const me = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Agent'
+    const me = myName
     const initial = initialsOf(me)
     const avatar = user?.user_metadata?.avatar_url || null   // show a real photo on the read receipt
     // Stamp read_by on every message this agent has now seen — including other
@@ -2437,7 +2719,7 @@ export default function InboxPage() {
 
   // ── Reactions ──────────────────────────────────────────────────────────────
   const reactToMessage = async (msg: Message, emoji: string) => {
-    const me = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Agent'
+    const me = myName
     const reactions = Array.isArray((msg as any).reactions) ? (msg as any).reactions : []
     const existing = reactions.findIndex((r: any) => r.emoji === emoji && r.by === me)
     let updated
@@ -2477,10 +2759,15 @@ export default function InboxPage() {
   // fall back to the contact's mobile — otherwise a chat-originated conversation
   // could never receive media/links by text even when we know their number.
   const smsDestination = (): string | null => {
-    const fromConv = (selected as any)?.sms_number
-    if (fromConv) return fromConv
-    const phone = contact?.phone
-    return phone || null
+    // Resolve the customer's mobile from every place it might live, so a reply
+    // never silently falls back to "Live Chat" (which goes nowhere on a
+    // widget-less account) just because one field was empty.
+    const s = selected as any
+    return s?.sms_number
+      || s?.phone
+      || contact?.phone
+      || s?.contacts?.phone
+      || null
   }
 
   // ── Channel-aware delivery for actions ──────────────────────────────────────
@@ -2497,7 +2784,7 @@ export default function InboxPage() {
   // (skipChatMessage) without inserting a duplicate — and skip the widget insert.
   const deliverToCustomer = async (opts: { body: string; url?: string | null; subject?: string; silent?: boolean }): Promise<string> => {
     if (!selected || !companyId) throw new Error('No conversation selected')
-    const me = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Agent'
+    const me = myName
     const ch = activeChannel
     const fullBody = opts.url ? `${opts.body}\n${opts.url}` : opts.body
 
@@ -2696,7 +2983,7 @@ export default function InboxPage() {
     // same media into the thread twice.
     if (sendingMediaRef.current) return
     sendingMediaRef.current = true
-    const me = user?.user_metadata?.display_name || user?.email?.split('@')[0]
+    const me = myName
     const smsNumber = smsDestination()
     try {
       for (const item of chosen) {
@@ -2879,7 +3166,7 @@ export default function InboxPage() {
   // ── File upload ────────────────────────────────────────────────────────────
   const handleFileUpload = async (files: FileList | null) => {
     if (!files || files.length === 0 || !selected || !companyId) return
-    const me = user?.user_metadata?.display_name || user?.email?.split('@')[0]
+    const me = myName
 
     // Capture: the agent may switch conversations before uploads settle.
     const conv = selected
@@ -2963,7 +3250,7 @@ export default function InboxPage() {
   // ── Notes & Tasks ──────────────────────────────────────────────────────────
   const addNote = async () => {
     if (!newNote.trim() || !selected || !companyId) return
-    const author = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Agent'
+    const author = myName
     const body = newNote.trim()
     await (supabase as any).from('conversation_notes').insert({ conversation_id: selected.id, company_id: companyId, author_name: author, content: body })
     // Notify anyone @mentioned in a sidebar note, same as an internal message —
@@ -3063,6 +3350,10 @@ export default function InboxPage() {
   // underlined so they read as links on both agent and visitor bubbles.
   const renderTextWithLinks = (text: string) => {
     if (!text) return text
+    // Highlight the active find term (in-conversation search, else the global
+    // conversation search) inside the message body, not just in the list rows.
+    const hq = (showMsgSearch && msgSearch.trim()) ? msgSearch : searchTerm
+    const acc = companyInfo?.accent_color || 'var(--coral)'
     const parts = text.split(/(https?:\/\/[^\s]+)/g)
     return parts.map((part, i) =>
       /^https?:\/\//.test(part) ? (
@@ -3070,7 +3361,7 @@ export default function InboxPage() {
           onClick={e => e.stopPropagation()}
           style={{ color: 'inherit', textDecoration: 'underline', wordBreak: 'break-all' }}>{part}</a>
       ) : (
-        <span key={i}>{part}</span>
+        <span key={i}><Highlight text={part} q={hq} accent={acc} /></span>
       )
     )
   }
@@ -3114,7 +3405,7 @@ export default function InboxPage() {
   )
   const addTask = async () => {
     if (!newTask.trim() || !selected || !companyId) return
-    const me = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Agent'
+    const me = myName
     const assignee = teamMembers.find((m: any) => m.id === newTaskAssignee)
     // Anyone @mentioned in the text should hear about it too, not just the
     // person picked from the dropdown.
@@ -3274,7 +3565,7 @@ export default function InboxPage() {
     if (!selected || !companyId || reviewSending) return
     setReviewSending(true)
     try {
-      const me = user?.user_metadata?.display_name || user?.email?.split('@')[0]
+      const me = myName
 
       // Build a branded short link to the business's Google review page, so the
       // customer gets company.colvy.com/m/xxxx (trustworthy in an SMS) that
@@ -3543,7 +3834,7 @@ export default function InboxPage() {
       // ── Invoice number + served by + footer ──
       doc.setFont('helvetica', 'normal'); doc.setFontSize(9)
       CT(String(order.number || order.id || ''), y); y += 5
-      const servedBy = (user?.user_metadata?.display_name || user?.email?.split('@')[0] || company.name || '')
+      const servedBy = (myName || company.name || '')
       if (servedBy) { CT(`Served by ${servedBy}`, y); y += 4.5 }
       CT(new Date().toLocaleString('en-AU', { hour: 'numeric', minute: '2-digit', hour12: true, day: '2-digit', month: 'short', year: 'numeric' }), y); y += 8
       const footer = company.invoice_footer || 'Thank you for the business.'
@@ -3571,7 +3862,7 @@ export default function InboxPage() {
       const orderNo = pickupModal.payload.order_number || pickupModal.payload.order_id
       const first = contact?.name ? String(contact.name).split(' ')[0] : ''
       const text = `Hi${first ? ' ' + first : ''}, your order #${orderNo} is ready to be collected at: ${locName}. See you soon!`
-      const me = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Agent'
+      const me = myName
       if (smsNumber) {
         try {
           await fetch('/api/telnyx/sms/send', {
@@ -3641,7 +3932,7 @@ export default function InboxPage() {
       const file = new File([blob], invoicePreview.fileName, { type: 'application/pdf' })
       const up = await uploadAttachment(file, { companyId, conversationId: selected.id })
       const attachment = { url: up.url, name: up.name || invoicePreview.fileName, type: 'application/pdf', kind: 'file' }
-      const me = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Agent'
+      const me = myName
       // On an SMS conversation, text the customer a link to the invoice.
       if (smsNumber) {
         try {
@@ -3703,7 +3994,7 @@ export default function InboxPage() {
         body: JSON.stringify({
           companyId, kind: 'redirect', url: raw,
           conversationId: selected?.id || undefined,
-          sentBy: user?.user_metadata?.display_name || user?.email?.split('@')[0] || null,
+          sentBy: myName || null,
         }),
       })
       const d = await res.json()
@@ -3823,7 +4114,7 @@ export default function InboxPage() {
       // this one shows up in the Colvy thread so the team sees what happened).
       if (selected) {
         try {
-          const nm = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Colvy'
+          const nm = myName || 'Colvy'
           await (supabase as any).from('messages').insert({
             conversation_id: selected.id, company_id: companyId, sender_type: 'agent',
             sender_name: nm, is_internal: true,
@@ -3846,7 +4137,7 @@ export default function InboxPage() {
       const amount = (parseFloat(payload.total) || 0).toFixed(2)
       const res = await fetch('/api/stripe/chat-payment', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ companyId, conversationId: selected.id, amount, description: `Order #${payload.order_number}`, senderName: user?.user_metadata?.display_name || user?.email?.split('@')[0], orderId: payload.order_id, integrationId: payload.integration_id }),
+        body: JSON.stringify({ companyId, conversationId: selected.id, amount, description: `Order #${payload.order_number}`, senderName: myName, orderId: payload.order_id, integrationId: payload.integration_id }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Could not send payment request')
@@ -3982,7 +4273,7 @@ export default function InboxPage() {
           companyId, conversationId: selected.id, contactId: contact?.id,
           prompt: 'Please upload your photos or videos here.',
           accept: ['image', 'video'], maxFiles: 10, expiryHours: null,
-          createdBy: user?.user_metadata?.display_name || user?.email?.split('@')[0],
+          createdBy: myName,
           deliveryChannel: uploadChannel(),
         }),
       })
@@ -4008,7 +4299,7 @@ export default function InboxPage() {
           prompt: mrPrompt.trim() || 'Please upload the requested files.',
           accept: mrAccept, maxFiles: parseInt(mrMaxFiles) || 10,
           expiryHours: mrExpiry ? parseInt(mrExpiry) : null,
-          createdBy: user?.user_metadata?.display_name || user?.email?.split('@')[0],
+          createdBy: myName,
           deliveryChannel: uploadChannel(),
         }),
       })
@@ -4042,7 +4333,7 @@ export default function InboxPage() {
           discountType: couponType === 'percent' ? 'percent' : 'fixed',
           code: couponCode.trim() || undefined, oneTime: couponOneTime,
           expiryDays: couponExpiry ? Number(couponExpiry) : undefined,
-          createdByName: user?.user_metadata?.display_name || user?.email?.split('@')[0],
+          createdByName: myName,
         }),
       })
       const data = await res.json()
@@ -4096,7 +4387,7 @@ export default function InboxPage() {
         return
       }
 
-      const me = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Agent'
+      const me = myName
       const note = podNote.trim() || 'Your order has been delivered. Attached is the proof of delivery — thank you!'
 
       // Build ONE branded gallery link for the whole set — the friendly
@@ -4197,7 +4488,7 @@ export default function InboxPage() {
   // Send a poll/survey/form into the chat as an interactive message
   const sendInteractive = async (kind: 'poll' | 'survey' | 'form', item: any) => {
     if (!selected || !companyId) return
-    const senderName = user?.user_metadata?.display_name || user?.email?.split('@')[0]
+    const senderName = myName
     const title = item.question || item.title || item.name || `${kind}`
     const origin = typeof window !== 'undefined' ? window.location.origin : ''
     const link = `${origin.replace(/admin\..*/, '')}/widget?slug=${(selected as any).company_slug || ''}&conversation=${selected.id}`
@@ -4238,7 +4529,7 @@ export default function InboxPage() {
   // Send a payment request into the chat
   const sendPayment = async () => {
     if (!selected || !companyId || !payAmount) return
-    const senderName = user?.user_metadata?.display_name || user?.email?.split('@')[0]
+    const senderName = myName
     try {
       const isWidgetActive = activeChannel === 'widget' || activeChannel === 'chat'
       const res = await fetch('/api/stripe/chat-payment', {
@@ -4397,7 +4688,7 @@ export default function InboxPage() {
     }
     await (supabase as any).from('conversation_events').insert({
       conversation_id: selected.id, company_id: companyId,
-      event_type: 'moved', actor_name: user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Agent',
+      event_type: 'moved', actor_name: myName,
       detail: `Enquiry moved to ${outlet.label || outlet.suburb}`,
     })
     setShowMoveMenu(false)
@@ -4434,7 +4725,7 @@ export default function InboxPage() {
     const wasClosed = ['closed', 'resolved'].includes(String(conv.status || ''))
     await (supabase as any).from('conversations').update({ status: 'closed' }).eq('id', conv.id)
     if (!wasClosed && companyId) {
-      const actorName = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Agent'
+      const actorName = myName
       await (supabase as any).from('conversation_events').insert({
         conversation_id: conv.id, company_id: companyId, event_type: 'closed', actor_name: actorName, detail: 'Enquiry closed.',
       })
@@ -4447,7 +4738,7 @@ export default function InboxPage() {
     const wasClosed = ['closed', 'resolved'].includes(String(conv.status || ''))
     await (supabase as any).from('conversations').update({ status: 'open' }).eq('id', conv.id)
     if (wasClosed && companyId) {
-      const actorName = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Agent'
+      const actorName = myName
       await (supabase as any).from('conversation_events').insert({
         conversation_id: conv.id, company_id: companyId, event_type: 'reopened', actor_name: actorName, detail: 'Enquiry reopened.',
       })
@@ -4474,7 +4765,7 @@ export default function InboxPage() {
     if (!selected || !user) return
     if (selected.assigned_to || (selected as any).assigned_name) return
 
-    const me = user.user_metadata?.display_name || user.email?.split('@')[0] || 'Agent'
+    const me = myName || 'Agent'
 
     setSelected(s => s ? ({ ...s, assigned_to: user.id, assigned_name: me, status: 'assigned' } as any) : s)
 
@@ -4500,7 +4791,7 @@ export default function InboxPage() {
     if ((!reply.trim() && stagedMedia.length === 0) || !selected || !user) return
     setSending(true)
     const content = reply.trim()
-    const senderName = user.user_metadata?.display_name || user.email?.split('@')[0]
+    const senderName = myName
 
     // An internal note isn't taking the customer on, so it doesn't claim the
     // conversation — only a customer-facing reply does.
@@ -4673,8 +4964,15 @@ export default function InboxPage() {
     const lastInCh = String((lastIn as any)?.delivery_channel || '').toLowerCase()
     const lastInAt = (lastIn as any)?.created_at ? parseTs((lastIn as any).created_at) : null
     const lastInRecent = !!lastInAt && (Date.now() - lastInAt.getTime()) < 180000
-    const lastInIsChat = ['chat', 'widget', 'live_chat', ''].includes(lastInCh)
-    const visitorOnLiveChat = isOnPageNow || (lastInRecent && lastInIsChat)
+    // An EXPLICIT chat/widget channel only — an empty channel is NOT proof the
+    // customer is on a widget (calls, imports and untagged rows have no channel),
+    // and treating '' as live-chat was routing SMS replies into a widget that
+    // doesn't exist on most accounts. Also require that this conversation has a
+    // widget heartbeat history at all (page_seen_at ever set) before trusting the
+    // "recently active in chat" fallback.
+    const lastInIsChat = ['chat', 'widget', 'live_chat'].includes(lastInCh)
+    const hasWidgetHistory = !!(selected as any)?.page_seen_at
+    const visitorOnLiveChat = isOnPageNow || (hasWidgetHistory && lastInRecent && lastInIsChat)
 
     const shouldSms = sendChannel === 'sms'
       ? !!smsNumber
@@ -4722,10 +5020,17 @@ export default function InboxPage() {
         setMessages(msgs || [])
         scrollBottom()
       } catch (e: any) {
-        // Email failed — the chat widget is the last resort so the reply is at
-        // least recorded and visible if they come back.
-        console.warn('Email failed, delivering via chat:', e.message)
-        await deliverChat(content, senderName)
+        // Don't silently record a "Live Chat" the customer can't see — surface
+        // why the email didn't go out and keep the reply for a retry.
+        console.warn('Email send failed:', e?.message)
+        setSending(false)
+        const emsg = String(e?.message || 'Email failed to send')
+        const emsgClean = emsg.replace(/[.\s]+$/, '')
+        if (/not configured|no .*mailbox|not connected|gmail/i.test(emsg)) {
+          showToast('Email isn’t connected for this workspace yet — connect a mailbox under Integrations. Your message wasn’t sent.')
+        } else {
+          showToast(`Couldn’t send email: ${emsgClean}. Your message wasn’t sent.`)
+        }
       }
       return
     }
@@ -4764,13 +5069,33 @@ export default function InboxPage() {
         setMessages(msgs || [])
         scrollBottom()
       } catch (e: any) {
-        // Fall back to chat if SMS fails
-        console.warn('SMS failed, delivering via chat:', e.message)
-        await deliverChat(content, senderName)
+        // Do NOT silently drop the reply into a live chat nobody is watching —
+        // reaching the SMS branch means the customer isn't on a live widget, so a
+        // chat fallback goes nowhere. Tell the agent why it didn't send and keep
+        // their text so they can retry once SMS is connected.
+        console.warn('SMS send failed:', e?.message)
+        setSending(false)
+        const emsg = String(e?.message || 'SMS failed')
+        const emsgClean = emsg.replace(/[.\s]+$/, '')
+        if (/not included in this plan|upgrade to the/i.test(emsg)) {
+          // Plan gate — reveal the "Enable SMS" upsell banner and point them to it.
+          setSmsIncluded(false)
+          showToast('SMS isn’t on your plan yet — use “Enable SMS” above the reply box to upgrade. Your message wasn’t sent.')
+        } else if (/not configured|connect (telnyx|twilio)/i.test(emsg)) {
+          showToast('SMS isn’t connected for this workspace yet — connect a number under Integrations to text customers. Your message wasn’t sent.')
+        } else {
+          showToast(`Couldn’t send SMS: ${emsgClean}. Your message wasn’t sent.`)
+        }
       }
       return
     }
 
+    // Last resort: record it in the thread ("Live Chat"). If the customer isn't
+    // actually on a live widget and we have no phone/email for them, this message
+    // reaches no one — warn the agent instead of silently showing "Delivered".
+    if (!visitorOnLiveChat && !smsNumber && !emailTo) {
+      showToast('Heads up: no mobile or email on file and the customer isn’t on live chat — this reply was saved to the thread but not delivered. Add a phone or email to reach them.')
+    }
     await deliverChat(content, senderName)
   }
 
@@ -4810,7 +5135,7 @@ export default function InboxPage() {
   // ── Assign ─────────────────────────────────────────────────────────────────
   const assignTo = async (member: TeamMember | null) => {
     if (!selected) return
-    const me = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'A team member'
+    const me = myName || 'A team member'
     await (supabase as any).from('conversations').update({
       assigned_to: member?.user_id || null,
       assigned_name: member?.name || null,
@@ -4845,7 +5170,7 @@ export default function InboxPage() {
   // ── Contact save ───────────────────────────────────────────────────────────
   const sendTrackingMessage = async (text: string) => {
     if (!companyId || !selected) return
-    const me = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Agent'
+    const me = myName
     const smsNumber = smsDestination()
     try {
       const { data: trkMsg } = await (supabase as any).from('messages').insert({
@@ -5362,7 +5687,7 @@ export default function InboxPage() {
   const toggleBlockContact = async () => {
     if (!contact?.id || !companyId) return
     const nowBlocked = !(contact as any).is_blocked
-    const me = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'A team member'
+    const me = myName || 'A team member'
     if (nowBlocked && !confirm(`Block ${contact.name || 'this contact'}? Their messages will be marked blocked in the inbox.`)) return
     try {
       await (supabase as any).from('contacts').update({
@@ -5387,7 +5712,7 @@ export default function InboxPage() {
   const reportSpam = async () => {
     if (!selected || !companyId) return
     if (!confirm('Report this conversation as spam? It will be marked spam and closed.')) return
-    const me = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'A team member'
+    const me = myName || 'A team member'
     try {
       await (supabase as any).from('conversations').update({
         is_spam: true, status: 'closed',
@@ -5430,11 +5755,13 @@ export default function InboxPage() {
 
   // Highlight @mentions inside an internal note so they stand out.
   const renderWithMentions = (text: string) => {
+    const hq = (showMsgSearch && msgSearch.trim()) ? msgSearch : searchTerm
+    const acc = companyInfo?.accent_color || 'var(--coral)'
     const parts = String(text || '').split(/(@[\w.\-]+)/g)
     return parts.map((p, i) =>
       p.startsWith('@')
         ? <strong key={i} style={{ color: '#b45309', fontStyle: 'normal', background: '#fef3c7', padding: '0 3px', borderRadius: 4 }}>{p}</strong>
-        : <span key={i}>{p}</span>
+        : <span key={i}><Highlight text={p} q={hq} accent={acc} /></span>
     )
   }
   // Team members matching the in-progress @token.
@@ -5454,11 +5781,40 @@ export default function InboxPage() {
     textareaRef.current?.focus()
   }
 
+  // Instagram theme (Settings → Channels): when on, the open Instagram thread's
+  // header + Send button take the Instagram gradient, matching the bubbles.
+  const igThemeActive = selected?.channel === 'instagram' && !!(companyInfo as any)?.inbox_settings?.instagram_theme
+  const IG_GRADIENT = 'linear-gradient(135deg,#5B51D8 0%,#A033C4 55%,#E1306C 100%)'
+  // Messenger theme (Settings → Channels): the equivalent for Facebook Messenger
+  // threads — the signature Messenger blue on replies, header + Send button.
+  const msgrThemeActive = (selected?.channel === 'facebook' || selected?.channel === 'messenger') && !!(companyInfo as any)?.inbox_settings?.messenger_theme
+  const MSGR_GRADIENT = 'linear-gradient(135deg,#00B2FF 0%,#006AFF 100%)'
+  // Whichever channel theme is active supplies the accent for shared controls.
+  const themeGradient = igThemeActive ? IG_GRADIENT : msgrThemeActive ? MSGR_GRADIENT : null
+  const themeSolid = igThemeActive ? '#C13584' : msgrThemeActive ? '#006AFF' : 'var(--coral)'
+
   return (
     <div className={`inbox-root inbox-pane-${mobilePane}`} style={{ display: 'flex', height: '100vh', maxHeight: 'calc(100vh - 56px)', overflow: 'hidden', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
       <style>{`
+        /* Composer resize grip: reveal the "drag to resize" pill on hover. */
+        .composer-grip:hover .composer-grip-pill { opacity: 1 !important; transform: translateY(0) !important; }
+        .composer-grip::before {
+          content: ''; position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+          width: 44px; height: 4px; border-radius: 999px; background: var(--border);
+          opacity: 0; transition: opacity .12s ease;
+        }
+        .composer-grip:hover::before { opacity: 1; }
+
         /* ── Inbox mobile responsiveness ─────────────────────────────── */
         @media (max-width: 767px) {
+          /* Fit the inbox between the top header AND the fixed bottom nav — the
+             old height only subtracted the 56px header, so the composer / Send
+             row (and the mobile back button's pane) sat behind the bottom nav.
+             dvh tracks the mobile browser chrome so the top isn't pushed off. */
+          .inbox-root {
+            height: calc(100dvh - 56px - 58px - env(safe-area-inset-bottom, 0px)) !important;
+            max-height: calc(100dvh - 56px - 58px - env(safe-area-inset-bottom, 0px)) !important;
+          }
           /* One pane at a time on phones */
           .inbox-root .inbox-col-list,
           .inbox-root .inbox-col-thread,
@@ -5640,11 +5996,16 @@ export default function InboxPage() {
           .inbox-root button { min-height: 36px; }
           .inbox-composer button { min-height: 40px; }
 
-          /* The reply box grows with content instead of scrolling in a 2-line
-             window, which is how native keyboards behave. */
+          /* Slimmer composer on a phone: the reply box was a fixed 3 rows, which
+             ate a big chunk of the screen even when empty. Start at ~2 rows and
+             let it grow up to 40dvh as they type; tighten the surrounding gaps. */
+          .inbox-composer { padding: 8px 12px !important; }
           .inbox-composer textarea {
+            min-height: 52px !important;
+            height: 52px !important;
             max-height: 40dvh;
-            line-height: 1.4;
+            line-height: 1.35;
+            margin-bottom: 6px !important;
           }
 
           /* Conversation rows: full-width tap target with a pressed state. */
@@ -5709,7 +6070,10 @@ export default function InboxPage() {
           /* Message bubbles get more of the screen — 70% left too much dead
              space on a 390px phone. */
           .inbox-messages > div > div { max-width: 88% !important; }
-          .inbox-messages { padding: 12px !important; gap: 10px !important; }
+          .inbox-messages { padding: 10px 12px !important; gap: 7px !important; }
+          /* Flatter, less bulky bubbles on a phone. */
+          .inbox-messages .msg-bubble { box-shadow: 0 1px 2px rgba(0,0,0,0.05) !important; }
+          .inbox-messages .msg-bubble p { line-height: 1.4 !important; }
         }
         /* Desktop / tablet: the tools sit inline on the right as before */
         @media (min-width: 768px) {
@@ -5790,6 +6154,33 @@ export default function InboxPage() {
       )}
 
       {/* Schedule a delivery */}
+      {showScheduleMsg && selected && (
+        <div onClick={() => setShowScheduleMsg(false)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 320, padding: 20 }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ width: 420, maxWidth: '95vw', background: '#fff', borderRadius: 18, padding: 24 }}>
+            <h3 style={{ margin: '0 0 4px', fontSize: 18, fontWeight: 800, color: 'var(--ink)' }}>Schedule message</h3>
+            <p style={{ margin: '0 0 16px', fontSize: 13, color: 'var(--slate)', lineHeight: 1.5 }}>
+              Sends your reply automatically at the chosen time, on this conversation&rsquo;s channel.
+            </p>
+            <div style={{ fontSize: 13, color: 'var(--ink)', background: 'var(--canvas)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px', marginBottom: 14, maxHeight: 90, overflowY: 'auto', whiteSpace: 'pre-wrap' }}>
+              {reply.trim() || <span style={{ color: 'var(--slate)' }}>No message typed.</span>}
+            </div>
+            <label style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: 'var(--ink)', marginBottom: 6 }}>Send at</label>
+            <input type="datetime-local" value={scheduleMsgAt} onChange={e => setScheduleMsgAt(e.target.value)}
+              style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 14, marginBottom: 18 }} />
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button type="button" onClick={() => setShowScheduleMsg(false)}
+                style={{ padding: '10px 16px', borderRadius: 10, border: '1px solid var(--border)', background: '#fff', color: 'var(--slate)', fontSize: 13.5, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
+              <button type="button" onClick={scheduleMessage} disabled={schedulingMsg || !reply.trim()}
+                style={{ padding: '10px 18px', borderRadius: 10, border: 'none', background: 'var(--coral)', color: '#fff', fontSize: 13.5, fontWeight: 700, cursor: (schedulingMsg || !reply.trim()) ? 'default' : 'pointer', opacity: (schedulingMsg || !reply.trim()) ? 0.6 : 1 }}>
+                {schedulingMsg ? 'Scheduling…' : 'Schedule'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showSchedule && selected && (
         <div onClick={() => setShowSchedule(false)}
           style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 320, padding: 20 }}>
@@ -6227,14 +6618,14 @@ export default function InboxPage() {
       )}
 
       {showDialer && (
-        <Dialer companyId={companyId} agentName={user?.user_metadata?.display_name || user?.email?.split('@')[0]}
+        <Dialer companyId={companyId} agentName={myName}
           onClose={() => setShowDialer(false)} />
       )}
 
       {showCompose && companyId && (
         <ComposeMessage
           companyId={companyId}
-          senderName={user?.user_metadata?.display_name || user?.email?.split('@')[0]}
+          senderName={myName}
           onClose={() => setShowCompose(false)}
           onStarted={(convId) => { setShowCompose(false); loadConversations(); }}
         />
@@ -6262,7 +6653,7 @@ export default function InboxPage() {
           conversationId={selected.id}
           contactId={contact?.id || null}
           orderNumber={(contact as any)?.last_order_number || null}
-          senderName={user?.user_metadata?.display_name || user?.email?.split('@')[0]}
+          senderName={myName}
           onClose={() => setShowTracking(false)}
           onSent={async ({ text }) => {
             setShowTracking(false)
@@ -6499,7 +6890,7 @@ export default function InboxPage() {
           conversationId={selected.id}
           contactId={contact?.id}
           contact={contact}
-          staffName={user?.user_metadata?.display_name || user?.email?.split('@')[0]}
+          staffName={myName}
           staffId={user?.id}
           prefillCart={orderPrefillCart}
           channel={['widget', 'chat'].includes(activeChannel) ? null : activeChannel}
@@ -6643,10 +7034,10 @@ export default function InboxPage() {
           conversation={selected}
           contact={contact}
           teamMembers={teamMembers as any}
-          currentUser={{ id: user?.id, name: user?.user_metadata?.display_name || user?.email?.split('@')[0] }}
+          currentUser={{ id: user?.id, name: myName }}
           currency="AUD"
           onClose={() => setShowRecordSale(false)}
-          onSaved={() => { if (selected) loadConversationExtras(selected.id) }}
+          onSaved={() => { setConvHasSale(true); if (selected) loadConversationExtras(selected.id) }}
         />
       )}
       {showMediaRequest && selected && (
@@ -6787,6 +7178,14 @@ export default function InboxPage() {
         }))
         return <MediaGallery items={media} index={galleryIndex} onClose={() => setGalleryIndex(null)} onIndex={setGalleryIndex} />
       })()}
+
+      {/* Story-reply viewer — the story plus the thread's other media, so it
+          reads like the normal gallery player with a thumbnail strip. */}
+      {storyView && (
+        <MediaGallery items={storyView.items} index={storyView.index}
+          onClose={() => setStoryView(null)}
+          onIndex={(i) => setStoryView(s => (s ? { ...s, index: i } : s))} />
+      )}
 
 
       {/* Merge picker */}
@@ -7129,6 +7528,11 @@ export default function InboxPage() {
               source = { label: 'Live Chat Enquiry', bg: '#dcfce7', fg: '#15803d' }
             }
             const isLiveChat = source.label === 'Live Chat Enquiry'
+            // Only PULSE as "live" when the visitor is genuinely on the widget
+            // right now (heartbeat < 2 min). Otherwise the animated green dot made
+            // every stale enquiry look like someone was actively waiting.
+            const liveSeenTs = (c as any).page_seen_at ? parseTs((c as any).page_seen_at) : null
+            const isLiveNow = !!liveSeenTs && (Date.now() - liveSeenTs.getTime()) < 120000
 
             // Secondary badge: when the primary badge is the CHANNEL (SMS, email,
             // Messenger…), also surface the order status if this customer has an
@@ -7228,10 +7632,10 @@ export default function InboxPage() {
               {/* Source tag(s) — channel plus order status when both apply */}
               <span style={{ display: 'inline-flex', flexWrap: 'wrap', gap: 4, marginBottom: 5 }}>
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 9.5, fontWeight: 800, letterSpacing: '0.03em', textTransform: 'uppercase', padding: '2px 7px', borderRadius: 5, background: source.bg, color: source.fg }}>
-                  {isLiveChat && (
+                  {isLiveChat && isLiveNow && (
                     <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#22c55e', animation: 'livePulse 1.6s ease-in-out infinite', flexShrink: 0 }} />
                   )}
-                  {source.label}
+                  {isLiveChat ? (isLiveNow ? source.label : 'Web Enquiry') : source.label}
                 </span>
                 {secondBadge && (
                   <span style={{ display: 'inline-flex', alignItems: 'center', fontSize: 9.5, fontWeight: 800, letterSpacing: '0.03em', textTransform: 'uppercase', padding: '2px 7px', borderRadius: 5, background: secondBadge.bg, color: secondBadge.fg }}>
@@ -7308,11 +7712,12 @@ export default function InboxPage() {
                 this …"). No banner here — it was intrusive. */}
 
             {/* Thread header */}
-            <div className="inbox-thread-header" style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', background: '#fff', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <div className="inbox-thread-header" style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', background: igThemeActive ? 'linear-gradient(135deg, rgba(131,58,180,0.08), rgba(225,48,108,0.08))' : msgrThemeActive ? 'linear-gradient(135deg, rgba(0,178,255,0.08), rgba(0,106,255,0.08))' : '#fff', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
               {/* Mobile: back to conversation list */}
-              <button type="button" className="inbox-mobile-only" onClick={() => setMobilePane('list')} title="Back"
-                style={{ display: 'none', width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', alignItems: 'center', justifyContent: 'center', color: 'var(--slate)', order: -2 }}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+              <button type="button" className="inbox-mobile-only" onClick={() => setMobilePane('list')} title="Back to chats" aria-label="Back to chats"
+                style={{ display: 'none', height: 36, flexShrink: 0, borderRadius: 10, border: 'none', background: 'color-mix(in srgb, var(--coral) 12%, #fff)', cursor: 'pointer', alignItems: 'center', gap: 3, padding: '0 10px 0 6px', color: 'var(--coral)', fontSize: 13.5, fontWeight: 700, order: -2 }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+                Chats
               </button>
               {/* Contact avatar — real profile photo (from Messenger/Instagram)
                   when we have it, initials otherwise. */}
@@ -7349,20 +7754,36 @@ export default function InboxPage() {
                     </span>
                   )}
                 </p>
-                {/* Live chat: where they are on the site. Any other channel:
-                    name the channel instead, so the agent knows a reply goes
-                    out by SMS/email rather than into a web widget. */}
-                {isWebChat
-                  ? (isOnPageNow && selected.page_title && <p style={{ margin: 0, fontSize: 11, color: '#9ca3af', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>On: {dec(selected.page_title)}</p>)
-                  : (() => {
-                      // "Last activity 5m ago", Coax-style, from the customer's
-                      // most recent message on the conversation.
-                      const la = (selected as any).last_customer_activity_at || (selected as any).last_message_at
-                      const rel = la ? timeAgo(la) : null
-                      return rel
-                        ? <p style={{ margin: 0, fontSize: 11, color: '#9ca3af', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Last activity {rel === 'now' ? 'just now' : `${rel} ago`}</p>
-                        : <p style={{ margin: 0, fontSize: 11, color: '#9ca3af', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>via {CHANNEL_NAME[activeChannel] || activeChannel}</p>
-                    })()}
+                {/* Subtitle line: last-activity / channel, plus compact
+                    engagement chips (Google review · social comment) so the name
+                    line above stays uncluttered. */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                  {isWebChat
+                    ? (isOnPageNow && selected.page_title && <span style={{ fontSize: 11, color: '#9ca3af', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>On: {dec(selected.page_title)}</span>)
+                    : (() => {
+                        // "Last activity 5m ago", Coax-style, from the customer's
+                        // most recent message on the conversation.
+                        const la = (selected as any).last_customer_activity_at || (selected as any).last_message_at
+                        const rel = la ? timeAgo(la) : null
+                        return rel
+                          ? <span style={{ fontSize: 11, color: '#9ca3af', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>Last activity {rel === 'now' ? 'just now' : `${rel} ago`}</span>
+                          : <span style={{ fontSize: 11, color: '#9ca3af', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>via {CHANNEL_NAME[activeChannel] || activeChannel}</span>
+                      })()}
+                  {contactReviews.count > 0 && contactReviews.latest && (
+                    <a href={`/admin/reviews?review=${encodeURIComponent(contactReviews.latest.id)}`}
+                      title={`Reviewed ${contactReviews.latest.rating}/5 on Google — view review`}
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 3, flexShrink: 0, fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 999, background: '#fff7e6', color: '#b7791f', textDecoration: 'none' }}>
+                      <img src="https://www.google.com/favicon.ico" alt="" style={{ width: 10, height: 10 }} /> ★{contactReviews.latest.rating}
+                    </a>
+                  )}
+                  {contactReviews.commentCount > 0 && contactReviews.latestComment && (
+                    <a href={`/admin/social?comment=${encodeURIComponent(contactReviews.latestComment.id)}`}
+                      title={`Commented on ${contactReviews.latestComment.platform === 'instagram' ? 'Instagram' : 'Facebook'} — view comment`}
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 3, flexShrink: 0, fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 999, background: contactReviews.latestComment.platform === 'instagram' ? '#fdeef6' : '#eef2ff', color: contactReviews.latestComment.platform === 'instagram' ? '#c13584' : '#1d4ed8', textDecoration: 'none' }}>
+                      💬 {contactReviews.latestComment.platform === 'instagram' ? 'IG' : 'FB'}
+                    </a>
+                  )}
+                </div>
               </div>
 
               {/* Pin / unpin this conversation for the current agent. Mirrors the
@@ -7480,7 +7901,7 @@ export default function InboxPage() {
               </button>
 
               {/* Search messages toggle */}
-              <button type="button" onClick={() => { setShowMsgSearch(v => !v); setMsgSearch('') }} title="Search messages"
+              <button type="button" onClick={() => { setShowMsgSearch(v => !v); setMsgSearch(''); setMsgSearchIdx(0) }} title="Search messages"
                 style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: showMsgSearch ? 'var(--peach)' : '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--slate)', order: -1 }}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
               </button>
@@ -7621,19 +8042,42 @@ export default function InboxPage() {
               </div>
             )}
 
-            {/* Message search bar */}
-            {showMsgSearch && (
-              <div style={{ padding: '8px 16px', borderBottom: '1px solid var(--border)', background: 'var(--canvas)' }}>
-                <input autoFocus value={msgSearch} onChange={e => setMsgSearch(e.target.value)}
-                  placeholder="Search in this conversation…"
-                  style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 13, outline: 'none' }} />
-                {msgSearch && (
-                  <p style={{ margin: '6px 0 0', fontSize: 11, color: 'var(--slate)' }}>
-                    {messages.filter(m => (m.content || '').toLowerCase().includes(msgSearch.toLowerCase())).length} match(es)
-                  </p>
-                )}
+            {/* Message search bar — find-in-conversation with match counter,
+                previous/next navigation (top-down) and a clear/close button. */}
+            {showMsgSearch && (() => {
+              const total = msgMatchIds.length
+              const has = total > 0
+              const cur = has ? Math.min(msgSearchIdx, total - 1) + 1 : 0
+              const goNext = () => { if (total) setMsgSearchIdx(i => (Math.min(i, total - 1) + 1) % total) }
+              const goPrev = () => { if (total) setMsgSearchIdx(i => (Math.min(i, total - 1) - 1 + total) % total) }
+              const close = () => { setShowMsgSearch(false); setMsgSearch(''); setMsgSearchIdx(0) }
+              const navBtn: React.CSSProperties = { width: 28, height: 28, borderRadius: 7, border: '1px solid var(--border)', background: '#fff', cursor: has ? 'pointer' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'center', color: has ? 'var(--slate)' : '#cbd5e1', flexShrink: 0 }
+              return (
+              <div style={{ padding: '8px 16px', borderBottom: '1px solid var(--border)', background: 'var(--canvas)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <style>{`.cmsg-active-hit{border-radius:12px;box-shadow:0 0 0 2px color-mix(in srgb, var(--coral) 55%, transparent);background:color-mix(in srgb, var(--coral) 8%, transparent);scroll-margin:16px;}`}</style>
+                <div style={{ flex: 1, position: 'relative', display: 'flex', alignItems: 'center' }}>
+                  <input autoFocus value={msgSearch} onChange={e => setMsgSearch(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.shiftKey ? goPrev() : goNext() } else if (e.key === 'Escape') { e.preventDefault(); close() } }}
+                    placeholder="Search in this conversation…"
+                    style={{ width: '100%', padding: '8px 64px 8px 12px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
+                  {msgSearch && (
+                    <span style={{ position: 'absolute', right: 10, fontSize: 11, fontWeight: 600, color: has ? 'var(--slate)' : '#ef4444', whiteSpace: 'nowrap' }}>
+                      {has ? `${cur} / ${total}` : 'No matches'}
+                    </span>
+                  )}
+                </div>
+                <button type="button" onClick={goPrev} disabled={!has} title="Previous match (Shift+Enter)" style={navBtn}>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="18 15 12 9 6 15" /></svg>
+                </button>
+                <button type="button" onClick={goNext} disabled={!has} title="Next match (Enter)" style={navBtn}>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
+                </button>
+                <button type="button" onClick={close} title="Close search (Esc)" style={{ ...navBtn, cursor: 'pointer', color: 'var(--slate)' }}>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+                </button>
               </div>
-            )}
+              )
+            })()}
 
             {/* Messages */}
             <div ref={messagesScrollRef} className="inbox-messages" style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: 14, scrollBehavior: 'auto' }}>
@@ -7656,7 +8100,7 @@ export default function InboxPage() {
                     conversationId={selected.id} companyId={companyId || undefined}
                     teamMembers={teamMembers} outlets={outlets}
                     defaultLocationId={(selected as any)?.assigned_location_id || (selected as any)?.location_id || null}
-                    actor={{ id: user?.id, name: user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Agent' }}
+                    actor={{ id: user?.id, name: myName }}
                     onCreated={() => { if (selected) loadConversationExtras(selected.id) }}
                     onClosedChange={setChatDraftsClosed}
                     bare
@@ -7664,7 +8108,12 @@ export default function InboxPage() {
                 </div>
               )}
               {(() => {
-                const list = msgSearch ? messages.filter(m => (m.content || '').toLowerCase().includes(msgSearch.toLowerCase())) : messages
+                // In-conversation search no longer FILTERS the thread down to
+                // matches — that hid the surrounding conversation and had no way
+                // back to the top. We keep the whole thread and instead highlight
+                // matches in place, scrolling the active one into view (see the
+                // find bar's next/previous nav).
+                const list = messages
                 // Flat list of all images/videos in the thread (for the gallery),
                 // with a lookup from a message's attachment to its gallery index.
                 const galleryMedia: MediaItem[] = []
@@ -7715,7 +8164,7 @@ export default function InboxPage() {
                 // recording, a summary or a completed/answered status also count),
                 // plus voicemails and missed calls. Only in-progress/ringing
                 // attempts and dial-pad calls (no conversation) stay out.
-                const extraCalls = (msgSearch ? [] : convCalls)
+                const extraCalls = convCalls
                   .filter((c: any) => {
                     if (linkedCallIds.has(c.id)) return false
                     const st = String(c.status || '')
@@ -7727,7 +8176,14 @@ export default function InboxPage() {
                   .map((c: any) => ({ __call: true, ...c }))
 
                 const liveBanner = <LiveCallBanner key="live-call-banner" conversationId={selected.id} accent={companyInfo?.accent_color || 'var(--coral)'} />
-                return [header, liveBanner, ...mergeEvents(list, events, extraCalls).map((item: any) => {
+                // Synthetic thread events for this customer's off-inbox engagement
+                // (Google reviews + FB/IG comments), sorted in among the messages
+                // by their own timestamp so the thread shows the whole relationship.
+                const engagementEvents = [
+                  ...contactReviews.reviews.map((r: any) => ({ id: `rev-${r.id}`, event_type: 'google_review', created_at: r.createdAt || new Date().toISOString(), __engRating: r.rating, __engComment: r.comment, __engReviewId: r.id })),
+                  ...contactReviews.socialComments.map((c: any) => ({ id: `cmt-${c.id}`, event_type: 'social_comment', created_at: c.commentedAt || new Date().toISOString(), __engPlatform: c.platform, __engComment: c.message, __engCommentId: c.id })),
+                ]
+                return [header, liveBanner, ...mergeEvents(list, [...events, ...engagementEvents], extraCalls).map((item: any) => {
                 if (item.__call) {
                   const thisDay = dayLabel(item.created_at)
                   const showDivider = thisDay && thisDay !== lastDay
@@ -7739,12 +8195,44 @@ export default function InboxPage() {
                           <span style={{ fontSize: 11, fontWeight: 600, color: '#9ca3af', background: '#eef0f2', padding: '3px 12px', borderRadius: 20 }}>{thisDay}</span>
                         </div>
                       ) : null}
-                      <CallCard callId={item.id} meta={{ direction: item.direction, duration_seconds: item.duration_seconds, agent_name: item.agent_name }} timestamp={item.created_at} highlight={(showMsgSearch && msgSearch.trim()) ? msgSearch : searchTerm} accent={companyInfo?.accent_color || 'var(--coral)'} actor={{ id: user?.id, name: user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Agent' }} teamMembers={teamMembers} outlets={outlets} defaultLocationId={(selected as any)?.assigned_location_id || (selected as any)?.location_id || null} onTasksCreated={() => { if (selected) loadConversationExtras(selected.id) }} />
+                      <CallCard callId={item.id} meta={{ direction: item.direction, duration_seconds: item.duration_seconds, agent_name: item.agent_name }} timestamp={item.created_at} highlight={(showMsgSearch && msgSearch.trim()) ? msgSearch : searchTerm} accent={companyInfo?.accent_color || 'var(--coral)'} actor={{ id: user?.id, name: myName }} teamMembers={teamMembers} outlets={outlets} defaultLocationId={(selected as any)?.assigned_location_id || (selected as any)?.location_id || null} onTasksCreated={onAiTasksCreated} />
                     </div>
                   )
                 }
                 if (item.__event) {
                   const ev = item
+                  // This customer left a Google review — a slim, centered pill
+                  // that opens the review inside Colvy.
+                  if (ev.event_type === 'google_review') {
+                    const stars = Math.max(0, Math.min(5, ev.__engRating || 0))
+                    return (
+                      <div key={`ev-${ev.id}`} style={{ textAlign: 'center', padding: '4px 0' }}>
+                        <a href={`/admin/reviews?review=${encodeURIComponent(ev.__engReviewId)}`}
+                          title={ev.__engComment ? `“${ev.__engComment}” — view review` : 'View review'}
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, textDecoration: 'none', background: '#fff7e6', color: '#b7791f', border: '1px solid #f2d693', padding: '4px 12px', borderRadius: 999, fontSize: 12, fontWeight: 600, maxWidth: 460 }}>
+                          <img src="https://www.google.com/favicon.ico" alt="" style={{ width: 13, height: 13 }} />
+                          Wrote a Google review
+                          <span style={{ color: '#f5b301', letterSpacing: 0.5 }}>{'★'.repeat(stars)}</span>
+                          {ev.created_at && <span style={{ color: '#c8b578', fontWeight: 500 }}>· {fmtTime(ev.created_at)}</span>}
+                        </a>
+                      </div>
+                    )
+                  }
+                  // This customer commented on a post/ad — a slim, centered pill
+                  // that opens the comment in the Social Engagement manager.
+                  if (ev.event_type === 'social_comment') {
+                    const ig = ev.__engPlatform === 'instagram'
+                    return (
+                      <div key={`ev-${ev.id}`} style={{ textAlign: 'center', padding: '4px 0' }}>
+                        <a href={`/admin/social?comment=${encodeURIComponent(ev.__engCommentId)}`}
+                          title={ev.__engComment ? `“${ev.__engComment}” — view comment` : 'View comment'}
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, textDecoration: 'none', background: ig ? '#fdeef6' : '#eef2ff', color: ig ? '#c13584' : '#1d4ed8', border: `1px solid ${ig ? '#f6c6e0' : '#c7d2fe'}`, padding: '4px 12px', borderRadius: 999, fontSize: 12, fontWeight: 600, maxWidth: 460 }}>
+                          💬 Commented on {ig ? 'Instagram' : 'Facebook'}
+                          {ev.created_at && <span style={{ opacity: 0.7, fontWeight: 500 }}>· {fmtTime(ev.created_at)}</span>}
+                        </a>
+                      </div>
+                    )
+                  }
                   // A task finished on the Tasks page announces itself here as a
                   // green completion pill (and shows in the Timeline tab too).
                   if (ev.event_type === 'task_completed') {
@@ -7755,6 +8243,22 @@ export default function InboxPage() {
                           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ev.detail || 'Task completed'}</span>
                           {ev.created_at && <span style={{ color: '#4d9e6a', fontWeight: 500 }}> · {fmtTime(ev.created_at)}</span>}
                         </span>
+                      </div>
+                    )
+                  }
+                  // Colvy AI action — a sparkle divider, tinted, attributed to
+                  // Colvy AI (e.g. "Address and delivery updated by Colvy AI").
+                  if (ev.event_type === 'ai_update' || ev.actor_name === 'Colvy AI') {
+                    return (
+                      <div key={`ev-${ev.id}`} style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '8px 0' }}>
+                        <div style={{ flex: 1, height: 1, background: 'color-mix(in srgb, var(--coral, #ff7a6b) 22%, transparent)' }} />
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5, fontWeight: 600, color: 'var(--coral, #ff7a6b)', whiteSpace: 'nowrap', maxWidth: 460, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" style={{ flexShrink: 0 }}><path d="M12 2l1.6 4.6L18 8l-4.4 1.4L12 14l-1.6-4.6L6 8l4.4-1.4L12 2zM19 14l.8 2.2L22 17l-2.2.8L19 20l-.8-2.2L16 17l2.2-.8L19 14zM5 15l.7 1.8L7.5 17l-1.8.7L5 19.5l-.7-1.8L2.5 17l1.8-.7L5 15z"/></svg>
+                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{ev.detail || 'Updated by Colvy AI'}</span>
+                          <span style={{ opacity: 0.75, fontWeight: 500 }}>· Colvy AI</span>
+                          {ev.created_at && <span style={{ opacity: 0.55, fontWeight: 500 }}> · {fmtTime(ev.created_at)}</span>}
+                        </span>
+                        <div style={{ flex: 1, height: 1, background: 'color-mix(in srgb, var(--coral, #ff7a6b) 22%, transparent)' }} />
                       </div>
                     )
                   }
@@ -7800,7 +8304,7 @@ export default function InboxPage() {
                   const noteInitials = noteAuthor.split(/\s+/).filter(Boolean).map((w: string) => w[0]).slice(0, 2).join('').toUpperCase() || 'T'
                   const noteRel = timeAgo(msg.created_at)
                   return (
-                  <div key={msg.id}>
+                  <div key={msg.id} id={`cmsg-${msg.id}`} data-cmsg="1">
                     {dateDivider}
                     <div style={{ display: 'flex', justifyContent: 'center', margin: '4px 0' }}>
                       <div style={{ maxWidth: '86%', width: '100%', background: '#fffbeb', border: '1px solid #fde68a', borderLeft: '4px solid #f59e0b', borderRadius: 14, padding: '12px 14px', boxShadow: '0 1px 2px rgba(180,83,9,0.06)' }}>
@@ -7832,9 +8336,9 @@ export default function InboxPage() {
                 // summary, action items, recording player, transcript — not a
                 // grey one-line pill.
                 if (isSystem && (msg as any).metadata?.call_event && (msg as any).metadata?.call_id) return (
-                  <div key={msg.id}>
+                  <div key={msg.id} id={`cmsg-${msg.id}`} data-cmsg="1">
                     {dateDivider}
-                    <CallCard callId={(msg as any).metadata.call_id} meta={(msg as any).metadata} timestamp={msg.created_at} highlight={(showMsgSearch && msgSearch.trim()) ? msgSearch : searchTerm} accent={companyInfo?.accent_color || 'var(--coral)'} actor={{ id: user?.id, name: user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Agent' }} teamMembers={teamMembers} outlets={outlets} defaultLocationId={(selected as any)?.assigned_location_id || (selected as any)?.location_id || null} onTasksCreated={() => { if (selected) loadConversationExtras(selected.id) }} />
+                    <CallCard callId={(msg as any).metadata.call_id} meta={(msg as any).metadata} timestamp={msg.created_at} highlight={(showMsgSearch && msgSearch.trim()) ? msgSearch : searchTerm} accent={companyInfo?.accent_color || 'var(--coral)'} actor={{ id: user?.id, name: myName }} teamMembers={teamMembers} outlets={outlets} defaultLocationId={(selected as any)?.assigned_location_id || (selected as any)?.location_id || null} onTasksCreated={onAiTasksCreated} />
                   </div>
                 )
                 if (isSystem) {
@@ -7860,7 +8364,7 @@ export default function InboxPage() {
                   if (!kind) {
                     // Plain system line — keep it light and unobtrusive.
                     return (
-                      <div key={msg.id}>
+                      <div key={msg.id} id={`cmsg-${msg.id}`} data-cmsg="1">
                         {dateDivider}
                         <div style={{ textAlign: 'center', fontSize: 11, color: '#9ca3af', padding: '4px 0' }}>
                           <span style={{ background: '#f3f4f6', padding: '3px 10px', borderRadius: 20 }}>{msg.content}</span>
@@ -7882,7 +8386,7 @@ export default function InboxPage() {
                     .trim()
 
                   return (
-                    <div key={msg.id}>
+                    <div key={msg.id} id={`cmsg-${msg.id}`} data-cmsg="1">
                       {dateDivider}
                       <div style={{ display: 'flex', justifyContent: 'center', padding: '5px 0' }}>
                         {/* Grows to the full stream width and wraps to more lines
@@ -7915,7 +8419,7 @@ export default function InboxPage() {
                 if (String((msg as any).delivery_channel || '').toLowerCase() === 'email'
                     && ((msg as any).email_html || (msg as any).email_from || (msg as any).email_subject)) {
                   return (
-                    <div key={msg.id}>
+                    <div key={msg.id} id={`cmsg-${msg.id}`} data-cmsg="1">
                       {dateDivider}
                       <EmailMessage msg={msg} agentColor={companyInfo?.accent_color} />
                       <p style={{ textAlign: isAgent ? 'right' : 'left', fontSize: 10.5, color: '#9ca3af', margin: '2px 12px 0' }}>
@@ -7926,11 +8430,21 @@ export default function InboxPage() {
                 }
 
                 const repliedMsg = (msg as any).reply_to ? messages.find(m => m.id === (msg as any).reply_to) : null
+                // Instagram theme: when enabled (Settings → Channels), agent
+                // replies on an Instagram thread get the Instagram gradient +
+                // rounder bubbles so the thread reads like the Instagram app.
+                const igThemed = isAgent && selected?.channel === 'instagram' && !!(companyInfo as any)?.inbox_settings?.instagram_theme
+                // Messenger equivalent: agent replies on a Facebook thread get the
+                // Messenger blue + rounder bubbles when the theme is enabled.
+                const msgrThemed = isAgent && (selected?.channel === 'facebook' || selected?.channel === 'messenger') && !!(companyInfo as any)?.inbox_settings?.messenger_theme
+                // Automated (order automation, review reminders, etc.) — sent by
+                // Colvy on the business's behalf, not by a team member.
+                const isAutoMsg = isAgent && !!((msg as any).metadata?.auto)
                 // Group reactions by emoji
                 const reactionCounts: Record<string, number> = {}
                 reactions.forEach((r: any) => { reactionCounts[r.emoji] = (reactionCounts[r.emoji] || 0) + 1 })
                 return (
-                  <div key={msg.id}>
+                  <div key={msg.id} id={`cmsg-${msg.id}`} data-cmsg="1">
                     {dateDivider}
                     <div className="chat-msg-row" style={{ display: 'flex', justifyContent: isAgent ? 'flex-end' : 'flex-start', gap: 8, alignItems: 'flex-end', position: 'relative' }}>
                     {!isAgent && (
@@ -7941,10 +8455,19 @@ export default function InboxPage() {
                     <div style={{ maxWidth: '70%', position: 'relative' }}
                       onMouseEnter={() => setShowReactPicker(null)}>
                       {!isAgent && <p style={{ margin: '0 0 3px 4px', fontSize: 10, color: '#9ca3af' }}>{contact?.name || msg.sender_name || 'Visitor'}</p>}
-                      {/* Outbound messages name the team member (or business, for
-                          automated ones) that sent them, so an agent reply isn't
-                          mistaken for a customer message. */}
-                      {isAgent && <p style={{ margin: '0 4px 3px 0', fontSize: 10, color: '#9ca3af', textAlign: 'right' }}>{msg.sender_name || 'Team'}</p>}
+                      {/* Outbound messages name the team member that sent them, so
+                          an agent reply isn't mistaken for a customer message.
+                          Automated messages (order automation, etc.) are sent by
+                          Colvy on the business's behalf, so they're labelled
+                          "Delivered by Colvy" with a spark badge rather than a
+                          person's name. */}
+                      {isAgent && (isAutoMsg ? (
+                        <p style={{ margin: '0 4px 3px 0', fontSize: 10, color: '#8b5cf6', fontWeight: 700, textAlign: 'right', display: 'flex', alignItems: 'center', gap: 3, justifyContent: 'flex-end' }}>
+                          <AiSparkIcon size={10} /> Delivered by Colvy
+                        </p>
+                      ) : (
+                        <p style={{ margin: '0 4px 3px 0', fontSize: 10, color: '#9ca3af', textAlign: 'right' }}>{msg.sender_name || 'Team'}</p>
+                      ))}
 
                       {/* Reply-to quote */}
                       {repliedMsg && (
@@ -7953,17 +8476,17 @@ export default function InboxPage() {
                         </div>
                       )}
 
-                      <div style={{
+                      <div className="msg-bubble" style={{
                         padding: (() => {
                           const hasMedia = atts.some((a: any) => a.kind === 'image' || a.kind === 'video')
                           // A media-only message shows the collage flush to the
                           // bubble edge; with text it gets a small frame.
                           if (hasMedia && !msg.content) return 0
                           if (hasMedia) return 4
-                          return '10px 14px'
+                          return isMobile ? '7px 11px' : '10px 14px'
                         })(),
-                        borderRadius: isAgent ? '14px 14px 4px 14px' : '14px 14px 14px 4px',
-                        background: isAgent ? 'var(--coral)' : '#fff',
+                        borderRadius: (igThemed || msgrThemed) ? '18px 18px 5px 18px' : (isAgent ? '14px 14px 4px 14px' : '14px 14px 14px 4px'),
+                        background: igThemed ? 'linear-gradient(135deg,#5B51D8 0%,#A033C4 55%,#E1306C 100%)' : msgrThemed ? 'linear-gradient(135deg,#00B2FF 0%,#006AFF 100%)' : (isAgent ? 'var(--coral)' : '#fff'),
                         color: isAgent ? '#fff' : 'var(--ink)',
                         fontSize: 13, lineHeight: 1.5,
                         boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
@@ -7973,22 +8496,44 @@ export default function InboxPage() {
                         // short caption wraps UNDER the media instead of stretching
                         // the bubble wide and leaving empty bubble colour beside a
                         // portrait clip (which is how it read on desktop before).
-                        maxWidth: atts.some((a: any) => a.kind === 'image' || a.kind === 'video') ? 300 : undefined,
+                        // A story-reply bubble hugs its portrait preview (≈150px)
+                        // instead of stretching wide with empty space beside it.
+                        maxWidth: (msg as any).metadata?.story_reply ? 182 : (atts.some((a: any) => a.kind === 'image' || a.kind === 'video') ? 300 : undefined),
+                        width: (msg as any).metadata?.story_reply ? 'fit-content' : undefined,
                       }}>
                         {/* Instagram story reply — show the story they replied
                             to (thumbnail) above their message, like Coax. */}
-                        {(msg as any).metadata?.story_reply && (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, padding: 6, borderRadius: 8, background: isAgent ? 'rgba(255,255,255,0.15)' : 'var(--canvas)', border: isAgent ? 'none' : '1px solid var(--border)' }}>
-                            {(msg as any).metadata.story_reply.story_url ? (
-                              /\.(mp4|mov|webm)(\?|$)/i.test((msg as any).metadata.story_reply.story_url)
-                                ? <video src={(msg as any).metadata.story_reply.story_url} style={{ width: 34, height: 48, borderRadius: 6, objectFit: 'cover', flexShrink: 0 }} />
-                                : <img src={(msg as any).metadata.story_reply.story_url} alt="story" style={{ width: 34, height: 48, borderRadius: 6, objectFit: 'cover', flexShrink: 0 }} />
-                            ) : (
-                              <span style={{ width: 34, height: 48, borderRadius: 6, background: 'linear-gradient(135deg,#F47133,#BC3081)', flexShrink: 0 }} />
-                            )}
-                            <span style={{ fontSize: 11, opacity: 0.85, fontStyle: 'italic' }}>Replied to your story</span>
-                          </div>
-                        )}
+                        {(msg as any).metadata?.story_reply && (() => {
+                          const sr = (msg as any).metadata.story_reply
+                          const url: string | null = sr.story_url || null
+                          // Newer story replies carry story_type (rehosted at
+                          // ingestion). Older ones stored the raw Instagram
+                          // messaging-CDN URL with no extension — the preview
+                          // tries an image, then a (hover-playable) video.
+                          const knownVideo = sr.story_type === 'video' || (!!url && /\.(mp4|mov|webm)(\?|$)/i.test(url))
+                          // Open the full gallery player: the story first, then the
+                          // thread's other shared media as thumbnails.
+                          const openStory = (kind: 'image' | 'video') => {
+                            if (!url) return
+                            const chatMedia: MediaItem[] = []
+                            messages.forEach((mm: any) => (Array.isArray(mm.attachments) ? mm.attachments : []).forEach((a: any) => {
+                              const isImg = a.kind === 'image' || String(a.type || '').startsWith('image')
+                              const isVid = a.kind === 'video' || String(a.type || '').startsWith('video')
+                              if ((isImg || isVid) && a.url && a.url !== url) chatMedia.push({ url: a.url, name: a.name, kind: isVid ? 'video' : 'image' })
+                            }))
+                            setStoryView({ items: [{ url, kind, name: 'Story' }, ...chatMedia], index: 0 })
+                          }
+                          return (
+                            <div style={{ marginBottom: 6 }}>
+                              <span style={{ display: 'block', fontSize: 11, opacity: 0.85, fontStyle: 'italic', marginBottom: 4 }}>Replied to your story</span>
+                              {url ? (
+                                <StoryReplyPreview url={url} knownVideo={knownVideo} onOpen={openStory} />
+                              ) : (
+                                <span style={{ display: 'block', width: 120, aspectRatio: '9 / 16', borderRadius: 10, background: 'linear-gradient(135deg,#F47133,#BC3081)' }} />
+                              )}
+                            </div>
+                          )
+                        })()}
 
                         {/* Attachments.
                             Facebook-style mosaic: every tile is edge-to-edge
@@ -8177,30 +8722,36 @@ export default function InboxPage() {
                               const completed = !!(msg as any).metadata?.review_completed
                               const rating = (msg as any).metadata?.review_rating || 0
                               const clicks = (msg as any).metadata?.review_clicks || 0
+                              const title = completed ? 'Review Left' : ((msg as any).metadata?.review_title || 'Review Request Sent')
                               return (
-                                <div style={{ background: 'rgba(255,255,255,0.15)', borderRadius: 12, padding: '14px 16px', maxWidth: 300 }}>
-                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                                      <span style={{ width: 26, height: 26, borderRadius: 13, background: 'rgba(255,255,255,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13 }}>⭐</span>
-                                      <span style={{ fontSize: 12.5, fontWeight: 700 }}>{completed ? 'Review Left' : 'Review Request Sent'}</span>
-                                    </div>
-                                    {clicks > 0 && !completed && (
-                                      <span style={{ fontSize: 10.5, fontWeight: 700, background: 'rgba(255,255,255,0.25)', padding: '2px 7px', borderRadius: 20 }}>{clicks} click{clicks === 1 ? '' : 's'}</span>
-                                    )}
-                                  </div>
-                                  <div style={{ display: 'flex', gap: 3, justifyContent: 'center', margin: '6px 0 2px' }}>
+                                // A neat, centered card (mirrors what the customer
+                                // received) — white on the blue bubble, everything
+                                // centered and even rather than left-hugging.
+                                <div style={{ background: '#fff', borderRadius: 16, padding: '20px 16px 16px', width: 320, maxWidth: '100%', margin: '0 auto', boxSizing: 'border-box', position: 'relative', textAlign: 'center' }}>
+                                  {/* Google Business marker, top-left */}
+                                  <img src="https://www.google.com/favicon.ico" alt="Google" style={{ position: 'absolute', left: 13, top: 13, width: 16, height: 16 }} />
+                                  {/* Clicks / result badge, top-right */}
+                                  <span style={{ position: 'absolute', right: 12, top: 12, fontSize: 10.5, fontWeight: 700, background: completed ? '#fff4d6' : '#e7f6ec', color: completed ? '#a97a12' : '#137a3e', padding: '3px 9px', borderRadius: 20 }}>
+                                    {completed ? `★ ${rating}/5` : `${clicks} Click${clicks === 1 ? '' : 's'}`}
+                                  </span>
+                                  {/* Centered star avatar */}
+                                  <span style={{ width: 40, height: 40, borderRadius: 20, background: '#eef2ff', color: '#3b6ef5', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 19, marginBottom: 8 }}>★</span>
+                                  <div style={{ fontSize: 14, fontWeight: 700, color: '#5b6470', marginBottom: 10 }}>{title}</div>
+                                  <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
                                     {[1, 2, 3, 4, 5].map(s => (
-                                      <span key={s} style={{ fontSize: 22, color: completed && s <= rating ? '#ffd25a' : 'rgba(255,255,255,0.45)' }}>★</span>
+                                      <span key={s} style={{ fontSize: 26, lineHeight: 1, color: completed && s <= rating ? '#f5b301' : '#dfe3e8' }}>★</span>
                                     ))}
                                   </div>
                                   {completed && rating > 0 && (
-                                    <p style={{ margin: '4px 0 0', fontSize: 11, textAlign: 'center', opacity: 0.9 }}>Customer left {rating} star{rating === 1 ? '' : 's'}</p>
+                                    <p style={{ margin: '10px 0 0', fontSize: 11.5, color: '#8a929c' }}>Customer left {rating} star{rating === 1 ? '' : 's'}</p>
                                   )}
                                 </div>
                               )
                             })()}
-                            {/* The message text (with the /m/ link) below the card. */}
-                            <div style={{ marginTop: 8, fontSize: 13, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{renderTextWithLinks(msg.content)}</div>
+                            {/* The message text (with the /m/ link) below the card —
+                                capped to the card's width and centred so the whole
+                                bubble reads as one balanced, even block. */}
+                            <div style={{ marginTop: 10, maxWidth: 320, marginLeft: 'auto', marginRight: 'auto', fontSize: 13, lineHeight: 1.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{renderTextWithLinks(msg.content)}</div>
                           </div>
                         ) : (
                           msg.content && (() => {
@@ -8339,7 +8890,9 @@ export default function InboxPage() {
 
                         {/* Who on the team has seen it. Shown on BOTH sides — on an
                             agent message it answers "did my colleague see this?",
-                            which is the question people actually have. */}
+                            which is the question people actually have. Automated
+                            (Colvy-sent) messages keep this too — seeing which
+                            teammate has read an automation is genuinely useful. */}
                         {readBy.length > 0 && (
                           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
                             <span>Read by:</span>
@@ -8422,6 +8975,34 @@ export default function InboxPage() {
 
             {/* Reply box */}
             <div className="inbox-composer" style={{ padding: '10px 14px', background: '#fff', borderTop: '1px solid var(--border)', position: 'relative' }}>
+              {/* Coax-style resize grip: drag the top border of the composer up
+                  or down to grow/shrink the reply box. Email uses its own
+                  composer, so the grip is only shown for the chat box. */}
+              {activeChannel !== 'email' && (
+                <div
+                  onMouseDown={(e) => { e.preventDefault(); startComposerResize(e.clientY) }}
+                  onTouchStart={(e) => { if (e.touches[0]) startComposerResize(e.touches[0].clientY) }}
+                  onDoubleClick={() => { setComposerH(96); try { localStorage.setItem('colvy_composer_h', '96') } catch {} }}
+                  title="Drag up or down to resize"
+                  className="composer-grip"
+                  style={{
+                    position: 'absolute', top: -11, left: 0, right: 0, height: 22,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    cursor: 'ns-resize', zIndex: 30, touchAction: 'none',
+                  }}>
+                  <span className="composer-grip-pill" style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 7,
+                    padding: composerDragging ? '5px 12px' : '3px 9px', borderRadius: 999,
+                    background: '#1f2430', color: '#fff', fontSize: 12, fontWeight: 600,
+                    boxShadow: '0 6px 18px rgba(0,0,0,0.22)', whiteSpace: 'nowrap',
+                    opacity: composerDragging ? 1 : 0, transform: composerDragging ? 'translateY(0)' : 'translateY(2px)',
+                    transition: 'opacity .12s ease, transform .12s ease, padding .12s ease', pointerEvents: 'none',
+                  }}>
+                    <svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor" aria-hidden><circle cx="2.5" cy="2.5" r="1.3"/><circle cx="7.5" cy="2.5" r="1.3"/><circle cx="2.5" cy="7" r="1.3"/><circle cx="7.5" cy="7" r="1.3"/><circle cx="2.5" cy="11.5" r="1.3"/><circle cx="7.5" cy="11.5" r="1.3"/></svg>
+                    {composerDragging ? `${composerH}px` : 'Drag up or down to resize'}
+                  </span>
+                </div>
+              )}
               {/* Email threads get a proper email composer (To/Cc/Subject +
                   signature) instead of the plain chat box. */}
               {activeChannel === 'email' ? (
@@ -8434,7 +9015,8 @@ export default function InboxPage() {
                     : `Re: ${selected.subject || 'your message'}`}
                   fromLabel={emailFromLabel}
                   signature={emailSignature}
-                  agentName={user?.user_metadata?.display_name || user?.email?.split('@')[0]}
+                  agentName={myName}
+                  onAiAssist={() => logAiUpdate('Reply drafted with Colvy AI')}
                   onSent={async () => {
                     const { data: msgs } = await (supabase as any).from('messages').select('*').eq('conversation_id', selected.id).order('created_at', { ascending: true })
                     setMessages(msgs || [])
@@ -8694,8 +9276,26 @@ export default function InboxPage() {
                 </div>
               )}
 
-              {/* Smart prompt: a recent message reads like a payment — offer to log the sale. */}
-              {selected && paymentSignal && !saleDismissed.has(selected.id) && (
+              {/* Smart prompt: a recent message reads like a payment — offer to log
+                  the sale. Suppressed once a sale is recorded for this thread or the
+                  customer already matches an ecommerce order (already on record). */}
+              {/* SMS upsell — shown exactly when an agent could be texting this
+                  customer (a mobile is on file) but the plan doesn't include SMS.
+                  This is the highest-intent moment to convert, so link straight to
+                  the upgrade page. */}
+              {selected && !internalMode && !smsIncluded && !!smsDestination() && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '0 0 8px', padding: '10px 12px', borderRadius: 10, background: 'linear-gradient(135deg, #fff1ee 0%, #ffe9f0 100%)', border: '1px solid #ffd0c4' }}>
+                  <span style={{ fontSize: 16, flexShrink: 0 }}>💬</span>
+                  <span style={{ flex: 1, fontSize: 12.5, color: '#9a3412', fontWeight: 600, lineHeight: 1.4 }}>
+                    Reply by text and reach {contact?.name ? contact.name.split(' ')[0] : 'this customer'} on their phone — SMS isn’t on your current plan.
+                  </span>
+                  <a href="/admin/upgrade"
+                    style={{ padding: '7px 14px', borderRadius: 8, background: 'var(--coral, #ff7a6b)', color: '#fff', fontSize: 12.5, fontWeight: 700, textDecoration: 'none', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                    Enable SMS
+                  </a>
+                </div>
+              )}
+              {selected && paymentSignal && !saleDismissed.has(selected.id) && !convHasSale && wooOrders.length === 0 && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '0 0 8px', padding: '9px 12px', borderRadius: 10, background: '#ecfdf5', border: '1px solid #a7f3d0' }}>
                   <span style={{ fontSize: 16, flexShrink: 0 }}>💰</span>
                   <span style={{ flex: 1, fontSize: 12.5, color: '#065f46', fontWeight: 600 }}>Looks like a payment — did this convert to a sale?</span>
@@ -8740,8 +9340,7 @@ export default function InboxPage() {
                 placeholder={internalMode
                   ? 'Internal note — only your team will see this. Use @ to mention someone.'
                   : 'Type a reply… (Enter to send, / for quick responses)'}
-                rows={3}
-                style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: internalMode ? '1px dashed #f59e0b' : '1px solid var(--border)', background: internalMode ? '#fffbeb' : '#fff', fontStyle: internalMode ? 'italic' : 'normal', fontSize: 13, resize: 'none', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box', marginBottom: 8 }} />
+                style={{ width: '100%', height: composerH, padding: '10px 12px', borderRadius: 10, border: internalMode ? '1px dashed #f59e0b' : '1px solid var(--border)', background: internalMode ? '#fffbeb' : '#fff', fontStyle: internalMode ? 'italic' : 'normal', fontSize: 13, resize: 'none', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box', marginBottom: 8 }} />
 
               {/* @mention picker */}
               {mentionQuery !== null && mentionMatches.length > 0 && (
@@ -8932,23 +9531,33 @@ export default function InboxPage() {
                   {/* Send + channel selector */}
                   <div ref={channelMenuRef} style={{ position: 'relative', display: 'flex' }}>
                     <button type="button" onClick={sendReply} disabled={sending || (!reply.trim() && stagedMedia.length === 0)}
-                      style={{ padding: '8px 16px', borderRadius: internalMode ? 10 : '10px 0 0 10px', background: (!reply.trim() && stagedMedia.length === 0) ? '#e5e7eb' : internalMode ? '#f59e0b' : 'var(--coral)', color: (reply.trim() || stagedMedia.length) ? '#fff' : '#9ca3af', border: 'none', fontSize: 13, fontWeight: 700, cursor: (reply.trim() || stagedMedia.length) ? 'pointer' : 'default', transition: 'all 0.15s' }}>
+                      style={{ padding: '8px 16px', borderRadius: internalMode ? 10 : '10px 0 0 10px', background: (!reply.trim() && stagedMedia.length === 0) ? '#e5e7eb' : internalMode ? '#f59e0b' : (themeGradient || 'var(--coral)'), color: (reply.trim() || stagedMedia.length) ? '#fff' : '#9ca3af', border: 'none', fontSize: 13, fontWeight: 700, cursor: (reply.trim() || stagedMedia.length) ? 'pointer' : 'default', transition: 'all 0.15s' }}>
                       {sending
                         ? (internalMode ? 'Saving…' : 'Sending…')
                         : internalMode
                           ? 'Add note'
-                          : `Send${sendChannel !== 'auto' ? ` via ${sendChannel.toUpperCase()}` : ''} →`}
+                          : (
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                              Send {sendChannelGlyph(sendChannel !== 'auto' ? sendChannel : activeChannel, 15)}
+                            </span>
+                          )}
                     </button>
                     {!internalMode && (
                     <>
                     <button type="button" onClick={() => setShowChannelMenu(v => !v)} disabled={sending}
                       title="Choose a channel"
-                      style={{ padding: '8px 8px', borderRadius: '0 10px 10px 0', background: (reply.trim() || stagedMedia.length) ? 'var(--coral)' : '#e5e7eb', color: (reply.trim() || stagedMedia.length) ? '#fff' : '#9ca3af', border: 'none', borderLeft: '1px solid rgba(255,255,255,0.25)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                      style={{ padding: '8px 8px', borderRadius: '0 10px 10px 0', background: (reply.trim() || stagedMedia.length) ? themeSolid : '#e5e7eb', color: (reply.trim() || stagedMedia.length) ? '#fff' : '#9ca3af', border: 'none', borderLeft: '1px solid rgba(255,255,255,0.25)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="18 15 12 9 6 15"/></svg>
                     </button>
 
                     {showChannelMenu && (
                       <div style={{ position: 'absolute', bottom: '120%', right: 0, width: 190, background: '#fff', borderRadius: 12, border: '1px solid var(--border)', boxShadow: '0 12px 32px rgba(0,0,0,0.14)', zIndex: 60, overflow: 'hidden', padding: '4px 0' }}>
+                        <button type="button" onClick={() => { setShowChannelMenu(false); openScheduleMsg() }}
+                          style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '9px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)', fontWeight: 600 }}>
+                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg>
+                          Schedule message
+                        </button>
+                        <div style={{ height: 1, background: 'var(--border)', margin: '4px 0' }} />
                         <p style={{ margin: 0, padding: '6px 14px 4px', fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--slate)' }}>Send via</p>
                         {([
                           ['auto', 'Automatic', true],
@@ -9065,6 +9674,26 @@ export default function InboxPage() {
           <div style={{ flex: 1, overflowY: 'auto', padding: '14px 14px' }}>
             {activePanel === 'info' && (
               <>
+                {/* Cross-channel customer match — links an Instagram/Messenger/
+                    WhatsApp visitor to an existing customer (masked until confirmed). */}
+                {selected && ['instagram', 'facebook', 'whatsapp'].includes(String((selected as any).channel || '')) && (
+                  <CustomerMatchCard
+                    conversationId={selected.id}
+                    channel={(selected as any).channel}
+                    companyId={companyId}
+                    userId={user?.id}
+                    userName={myName}
+                    onLinked={async () => {
+                      // Confirming a match repoints conversations.contact_id to the
+                      // customer, so re-fetch the row (the local `selected` still
+                      // holds the old visitor id) before reloading the panel.
+                      try {
+                        const { data } = await (supabase as any).from('conversations').select('*').eq('id', selected.id).maybeSingle()
+                        await selectConversation(data || selected)
+                      } catch { await selectConversation(selected) }
+                    }}
+                  />
+                )}
                 {/* Coax-style contact card header */}
                 {contact && !showContactEdit && (
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', padding: '4px 0 16px', borderBottom: '1px solid var(--border)', marginBottom: 14 }}>
@@ -9232,13 +9861,20 @@ export default function InboxPage() {
                       <div key={field}>
                         <label style={{ fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 3 }}>{label}</label>
                         {field === 'address' ? (
-                          // Google address lookup. Picking a suggestion fills the
-                          // street line here and splits city/state/postcode/
-                          // country into their own fields, so nothing is stored
-                          // twice.
-                          // A plain, always-typeable input — the Google Places
-                          // widget was intermittently blocking input here.
-                          <input type="text" value={(editContact as any).address || ''} onChange={e => setEditContact(c => ({ ...c, address: e.target.value }))}
+                          // Address lookup (keyless by default; Google when a key is
+                          // set). Picking a suggestion fills the street line and
+                          // splits city/state/postcode/country into their own fields.
+                          // The custom dropdown never blocks typing.
+                          <AddressAutocomplete value={(editContact as any).address || ''}
+                            onChange={v => setEditContact(c => ({ ...c, address: v }))}
+                            onSelect={(parts) => setEditContact(c => ({
+                              ...c,
+                              address: parts.line1 || parts.formatted,
+                              city: parts.city || (c as any).city,
+                              state: parts.state || (c as any).state,
+                              postcode: parts.postcode || (c as any).postcode,
+                              country: parts.country || (c as any).country,
+                            }))}
                             style={{ ...inp, fontSize: 12 }} />
                         ) : (
                           <input type={type} value={(editContact as any)[field] || ''} onChange={e => setEditContact(c => ({ ...c, [field]: e.target.value }))}
@@ -9353,9 +9989,18 @@ export default function InboxPage() {
                           </p>
                           {editField === field ? (
                             <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                              {field === 'address' ? (
+                                <div style={{ flex: 1 }}>
+                                  <AddressAutocomplete value={editFieldValue}
+                                    onChange={setEditFieldValue}
+                                    onSelect={(parts) => { setEditFieldValue(parts.formatted); saveSingleField('address', parts.formatted) }}
+                                    style={{ ...inp, fontSize: 12, padding: '5px 8px' }} />
+                                </div>
+                              ) : (
                               <input autoFocus value={editFieldValue} onChange={e => setEditFieldValue(e.target.value)}
                                 onKeyDown={e => { if (e.key === 'Enter') saveSingleField(field, editFieldValue); if (e.key === 'Escape') setEditField(null) }}
                                 style={{ ...inp, fontSize: 12, padding: '5px 8px' }} />
+                              )}
                               <button type="button" onClick={() => saveSingleField(field, editFieldValue)} style={fieldBtn('#059669')} title="Save">
                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
                               </button>
@@ -9402,6 +10047,49 @@ export default function InboxPage() {
                       })
                     })()}
 
+                    {/* ── Google review ─────────────────────────────────────
+                        Stars for a review this customer left on Google (linked
+                        by contact match). Clicking opens the reviews dashboard. */}
+                    {contactReviews.count > 0 && contactReviews.latest && (
+                      <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 4 }}>
+                        <p style={{ margin: '0 0 3px 0', fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase' }}>Google review</p>
+                        <a href="/admin/reviews" style={{ display: 'flex', alignItems: 'center', gap: 8, textDecoration: 'none' }} title="View on the reviews dashboard">
+                          <span style={{ fontSize: 15, letterSpacing: 1, color: '#f5b301' }}>
+                            {'★'.repeat(Math.max(0, Math.min(5, contactReviews.latest.rating || 0)))}
+                            <span style={{ color: '#d4d4d8' }}>{'★'.repeat(5 - Math.max(0, Math.min(5, contactReviews.latest.rating || 0)))}</span>
+                          </span>
+                          <span style={{ fontSize: 12, color: 'var(--slate)' }}>
+                            {contactReviews.latest.rating}/5{contactReviews.count > 1 ? ` · ${contactReviews.count} reviews` : ''}
+                          </span>
+                        </a>
+                        {contactReviews.latest.comment && (
+                          <p style={{ margin: '5px 0 0 0', fontSize: 12, color: 'var(--ink)', fontStyle: 'italic', lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                            “{contactReviews.latest.comment}”
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    {/* ── Social comment ────────────────────────────────────
+                        This customer commented on a post/ad (any linked channel);
+                        opens the comment in the Social Engagement manager. */}
+                    {contactReviews.commentCount > 0 && contactReviews.latestComment && (
+                      <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 4 }}>
+                        <p style={{ margin: '0 0 3px 0', fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase' }}>Social engagement</p>
+                        <a href={`/admin/social?comment=${encodeURIComponent(contactReviews.latestComment.id)}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, textDecoration: 'none' }} title="View on the Social Engagement manager">
+                          <span style={{ fontSize: 13 }}>💬</span>
+                          <span style={{ fontSize: 12, color: 'var(--slate)' }}>
+                            Commented on {contactReviews.latestComment.platform === 'instagram' ? 'Instagram' : 'Facebook'}{contactReviews.commentCount > 1 ? ` · ${contactReviews.commentCount}` : ''}
+                          </span>
+                        </a>
+                        {contactReviews.latestComment.message && (
+                          <p style={{ margin: '5px 0 0 0', fontSize: 12, color: 'var(--ink)', fontStyle: 'italic', lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                            “{contactReviews.latestComment.message}”
+                          </p>
+                        )}
+                      </div>
+                    )}
+
                     {/* ── Preferred agent ───────────────────────────────────
                         When this customer calls, ring this team member first;
                         on no answer the call still rings everyone else. */}
@@ -9426,6 +10114,17 @@ export default function InboxPage() {
                         <p style={{ margin: '6px 0 0', fontSize: 11, color: 'var(--slate)', lineHeight: 1.5 }}>On an incoming call from this customer, this person rings first; if they don’t pick up, everyone else rings.</p>
                       </div>
                     )}
+
+                    {/* ── Super-Admin: workspaces this contact administers ───
+                        Renders only for a platform super-admin (the lookup API
+                        403s for everyone else). Links to the company's detail in
+                        the Console. */}
+                    {/* ── Back-in-stock waitlist ──────────────────────────────
+                        Customer asked for something out of stock? Put them on
+                        its waitlist — they get one SMS when it's back. */}
+                    <WaitlistQuickAdd companyId={companyId} contact={contact as any} conversationId={selected?.id || null} />
+
+                    <SuperAdminContactWorkspaces email={(contact as any)?.email || null} />
 
                     {/* ── Notes ─────────────────────────────────────────────
                         The same conversation_notes shown in the Timeline tab —
@@ -9506,6 +10205,15 @@ export default function InboxPage() {
                   <p style={{ fontSize: 13, color: '#9ca3af', margin: 0 }}>No contact linked yet. Click &ldquo;+ Create&rdquo; to create one.</p>
                 )}
 
+                {/* Delivery address book — every address the customer has used,
+                    with source + default selection (never overwrites). */}
+                {contact && (
+                  <CustomerAddresses
+                    contactId={contact.id}
+                    userName={myName}
+                  />
+                )}
+
                 {/* Conversation metadata */}
                 <div style={{ borderTop: '1px solid var(--border)', marginTop: 16, paddingTop: 14 }}>
                   <h3 style={{ margin: '0 0 10px 0', fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>Details</h3>
@@ -9515,16 +10223,36 @@ export default function InboxPage() {
                   {linkedChannels.length > 1 && (
                     <div style={{ marginBottom: 14, padding: 10, borderRadius: 10, background: 'var(--canvas)', border: '1px solid var(--border)' }}>
                       <p style={{ margin: '0 0 7px', fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.4, color: 'var(--slate)' }}>Also reachable on</p>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                        {linkedChannels.map((lc, i) => (
-                          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <span style={{ display: 'flex', flexShrink: 0 }}>{CHANNEL_ICON[String(lc.channel).toLowerCase()] || Icon.chat(14)}</span>
-                            <span style={{ fontSize: 12, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                              {CHANNEL_NAME[String(lc.channel).toLowerCase()] || lc.channel}
-                              {lc.label ? <span style={{ color: 'var(--slate)' }}> · {lc.label}</span> : null}
-                            </span>
-                          </div>
-                        ))}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        {linkedChannels.map((lc, i) => {
+                          const isCommerce = ['woocommerce', 'pos', 'shopify', 'prexty'].includes(String(lc.channel).toLowerCase())
+                          const isCurrent = lc.conversationId && lc.conversationId === selected?.id
+                          const clickable = (!!lc.conversationId && !isCurrent) || isCommerce
+                          const go = async () => {
+                            if (lc.conversationId && !isCurrent) {
+                              try {
+                                const { data } = await (supabase as any).from('conversations').select('*').eq('id', lc.conversationId).maybeSingle()
+                                if (data) await selectConversation(data)
+                              } catch {}
+                            } else if (isCommerce) {
+                              setActivePanel('orders'); setMobilePane('thread')
+                            }
+                          }
+                          return (
+                            <button key={i} type="button" disabled={!clickable} onClick={go}
+                              style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '5px 6px', margin: '0 -6px', borderRadius: 8, border: 'none', background: 'none', cursor: clickable ? 'pointer' : 'default' }}
+                              onMouseEnter={e => { if (clickable) e.currentTarget.style.background = '#fff' }}
+                              onMouseLeave={e => { e.currentTarget.style.background = 'none' }}>
+                              <span style={{ display: 'flex', flexShrink: 0 }}>{CHANNEL_ICON[String(lc.channel).toLowerCase()] || Icon.chat(14)}</span>
+                              <span style={{ flex: 1, minWidth: 0, fontSize: 12, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {CHANNEL_NAME[String(lc.channel).toLowerCase()] || lc.channel}
+                                {lc.label ? <span style={{ color: 'var(--slate)' }}> · {lc.label}</span> : null}
+                                {isCurrent ? <span style={{ color: '#9ca3af' }}> · current</span> : null}
+                              </span>
+                              {clickable && <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><polyline points="9 18 15 12 9 6"/></svg>}
+                            </button>
+                          )
+                        })}
                       </div>
                       <button type="button" onClick={() => setShowTimeline(true)}
                         style={{ marginTop: 9, width: '100%', padding: '7px 0', borderRadius: 8, border: '1px solid var(--border)', background: '#fff', color: '#2563eb', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>

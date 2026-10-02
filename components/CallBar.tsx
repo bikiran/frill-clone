@@ -114,17 +114,46 @@ export default function CallBar({ companyId, toNumber, contactName, contactId, c
     } catch { setErrorMsg('Could not move the call') }
     setSwitchBusy(false)
   }
-  // If the target never accepts within the handoff window, the customer stays on
-  // THIS device — clear the "Moving…" label and cancel the pending handoff so the
-  // call carries on normally here.
+  // Watchdog while a handoff is in flight. Two phases, each with its own deadline,
+  // so a takeover that stalls never strands the customer — the call simply carries
+  // on HERE (this leg is only dropped by the server once the new device is
+  // confirmed in the conference, so cancelling is always safe):
+  //   • 'requested'  → the target hasn't tapped "Take over" yet (25s window).
+  //   • 'joining'    → the target accepted (we're promoted into a conference) but
+  //                    its device never confirmed the conference join — the mobile
+  //                    conference-join gap. Recover fast (18s) so the customer
+  //                    isn't sitting in a silent conference.
+  // A 'completed' handoff means the new device joined; the server will drop this
+  // leg and our Twilio call disconnects, so we just clear the label. 'cancelled'
+  // / 'failed' clears it too.
   useEffect(() => {
-    if (!movedTo) return
-    const t = setTimeout(() => {
+    if (!movedTo || !companyId || !callRowId.current) return
+    const rowId = callRowId.current
+    let joinDeadline: any = null
+    const requestDeadline = setTimeout(() => {
       setMovedTo(null)
-      if (callRowId.current) { handoffFetch(`/api/calls/${callRowId.current}/handoff/cancel`, { reason: 'cancelled' }).catch(() => {}) }
-    }, 33_000)
-    return () => clearTimeout(t)
-  }, [movedTo])
+      handoffFetch(`/api/calls/${rowId}/handoff/cancel`, { reason: 'cancelled' }).catch(() => {})
+    }, 25_000)
+
+    const onRow = (row: any) => {
+      if (!row || row.id !== rowId) return
+      const st = String(row.handoff_status || '')
+      if (st === 'joining' && !joinDeadline) {
+        joinDeadline = setTimeout(() => {
+          setMovedTo(null)
+          handoffFetch(`/api/calls/${rowId}/handoff/cancel`, { reason: 'failed' }).catch(() => {})
+        }, 18_000)
+      } else if (['completed', 'cancelled', 'failed', 'idle', ''].includes(st)) {
+        setMovedTo(null)
+      }
+    }
+    const ch = (supabase as any)
+      .channel(`callbar-handoff-${rowId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'calls', filter: `company_id=eq.${companyId}` }, (p: any) => onRow(p.new))
+      .subscribe()
+
+    return () => { clearTimeout(requestDeadline); if (joinDeadline) clearTimeout(joinDeadline); try { (supabase as any).removeChannel(ch) } catch {} }
+  }, [movedTo, companyId])
 
   // ── Call recording ────────────────────────────────────────────────────────
   // Telnyx records calls placed through Call Control, but a WebRTC/SIP-credential

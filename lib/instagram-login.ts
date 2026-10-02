@@ -120,11 +120,11 @@ export async function subscribeInstagramWebhooks(igId: string, token: string): P
 
 // Send a DM reply from an Instagram-Login account (Instagram Send API on
 // graph.instagram.com, keyed by the account's own token — `me/messages`).
-export async function sendInstagramMessage(token: string, recipientId: string, text: string): Promise<{ id?: string; error?: string }> {
+export async function sendInstagramMessage(token: string, recipientId: string, text: string, tag?: string): Promise<{ id?: string; error?: string }> {
   try {
     const res = await fetch(`${IG_GRAPH_V}/me/messages`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ recipient: { id: recipientId }, message: { text }, access_token: token }),
+      body: JSON.stringify({ recipient: { id: recipientId }, message: { text }, ...(tag ? { messaging_type: 'MESSAGE_TAG', tag } : {}), access_token: token }),
     })
     const data = await res.json().catch(() => ({}))
     if (!res.ok) return { error: data?.error?.message || 'Send failed' }
@@ -135,12 +135,12 @@ export async function sendInstagramMessage(token: string, recipientId: string, t
 }
 
 // Send a media attachment from an Instagram-Login account.
-export async function sendInstagramAttachment(token: string, recipientId: string, url: string, kind: string): Promise<{ id?: string; error?: string }> {
+export async function sendInstagramAttachment(token: string, recipientId: string, url: string, kind: string, tag?: string): Promise<{ id?: string; error?: string }> {
   const type = kind === 'image' ? 'image' : kind === 'video' ? 'video' : kind === 'audio' ? 'audio' : 'file'
   try {
     const res = await fetch(`${IG_GRAPH_V}/me/messages`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ recipient: { id: recipientId }, message: { attachment: { type, payload: { url } } }, access_token: token }),
+      body: JSON.stringify({ recipient: { id: recipientId }, message: { attachment: { type, payload: { url } } }, ...(tag ? { messaging_type: 'MESSAGE_TAG', tag } : {}), access_token: token }),
     })
     const data = await res.json().catch(() => ({}))
     if (!res.ok) return { error: data?.error?.message || 'Attachment send failed' }
@@ -193,6 +193,19 @@ export async function hideInstagramComment(token: string, commentId: string, hid
   } catch (e: any) {
     return { ok: false, error: e?.message || 'Could not update the comment' }
   }
+}
+
+// Fetch a single comment's author + text on an Instagram-Login account. The
+// real-time `comments` webhook payload often omits the commenter's username, so
+// we hydrate it from the Graph API (graph.instagram.com) with the account token.
+export async function fetchInstagramComment(commentId: string, token: string): Promise<{ name?: string; message?: string } | null> {
+  try {
+    const p = new URLSearchParams({ fields: 'from,username,text', access_token: token })
+    const res = await fetch(`${IG_GRAPH_V}/${commentId}?${p.toString()}`)
+    if (!res.ok) return null
+    const d = await res.json()
+    return { name: d.from?.username || d.username || undefined, message: d.text || undefined }
+  } catch { return null }
 }
 
 // Look up a DM sender's profile (name, avatar) on an Instagram-Login account.

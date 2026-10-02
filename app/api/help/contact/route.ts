@@ -26,19 +26,42 @@ export async function GET(req: NextRequest) {
     if (!slug) return NextResponse.json({ email: null })
 
     const db = admin()
-    const { data: co } = await db.from('companies')
-      .select('id, support_email, business_email, contact_email, email')
-      .eq('slug', slug).maybeSingle()
+    // `slug` may be a real slug (colvy subdomain) or a custom domain host.
+    const cols = 'id, owner_id, support_email, business_email, contact_email, email'
+    let { data: co } = await db.from('companies').select(cols).eq('slug', slug).maybeSingle()
+    if (!co) { const { data } = await db.from('companies').select(cols).eq('help_domain', slug).maybeSingle(); co = data || null }
+    if (!co) { const { data } = await db.from('companies').select(cols).eq('board_domain', slug).maybeSingle(); co = data || null }
 
     let email: string | null =
       (co as any)?.support_email || (co as any)?.business_email ||
       (co as any)?.contact_email || (co as any)?.email || null
 
+    // A support address configured in the help settings JSON.
+    if (!email && co?.id) {
+      try {
+        const { data: s } = await db.from('site_settings').select('value')
+          .eq('key', 'general').eq('company_id', co.id)
+          .order('updated_at', { ascending: false }).limit(1)
+        const v = s?.[0]?.value || {}
+        email = v.helpEmail || v.supportEmail || v.contactEmail || v.businessEmail || null
+      } catch {}
+    }
+
+    // A configured, active email channel.
     if (!email && co?.id) {
       const { data: ec } = await db.from('email_channels')
         .select('from_address, inbound_address')
         .eq('company_id', co.id).eq('is_active', true).limit(1)
       email = ec?.[0]?.from_address || ec?.[0]?.inbound_address || null
+    }
+
+    // Last resort: the workspace owner's account email — always company-specific,
+    // never Colvy's. (Only fall back to a generic address if even this is absent.)
+    if (!email && co?.owner_id) {
+      try {
+        const { data: u } = await (db as any).auth.admin.getUserById(co.owner_id)
+        email = u?.user?.email || null
+      } catch {}
     }
 
     return NextResponse.json({ email })

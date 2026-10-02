@@ -10,11 +10,15 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { peekCompanyUser, readCache, writeCache } from '@/lib/client-cache'
 
-const TYPE_META: Record<string, { label: string; bg: string; fg: string; dot: string }> = {
+// Default event types. Colours are fixed; the label and whether a type is shown
+// are per-company overrides (companies.calendar_settings.event_types), editable
+// on the fly from the gear on the calendar. `task` is driven by the Tasks page,
+// so it can be renamed but not hidden here.
+const EVENT_TYPE_BASE: Record<string, { label: string; bg: string; fg: string; dot: string; locked?: boolean }> = {
   delivery:    { label: 'Delivery',    bg: '#fff4f1', fg: '#c2410c', dot: '#f97316' },
   appointment: { label: 'Appointment', bg: '#eef2ff', fg: '#4338ca', dot: '#6366f1' },
   booking:     { label: 'Booking',     bg: '#ecfdf5', fg: '#15803d', dot: '#22c55e' },
-  task:        { label: 'Task',        bg: '#f5f3ff', fg: '#7c3aed', dot: '#8b5cf6' },
+  task:        { label: 'Task',        bg: '#f5f3ff', fg: '#7c3aed', dot: '#8b5cf6', locked: true },
   pickup:      { label: 'Pickup',      bg: '#fefce8', fg: '#a16207', dot: '#eab308' },
 }
 
@@ -54,14 +58,47 @@ export default function CalendarPage() {
   const [reminders, setReminders] = useState<any>({ reminders_enabled: false, lead_hours: 24, email: true })
   const [savingRem, setSavingRem] = useState(false)
 
+  // ── Event-type config (per-company: rename + show/hide, edited on the fly) ──
+  const [typeCfg, setTypeCfg] = useState<Record<string, { label?: string; enabled?: boolean }>>({})
+  const [showTypes, setShowTypes] = useState(false)
+  const [savingTypes, setSavingTypes] = useState(false)
+  const typeMeta = useMemo(() => {
+    const out: Record<string, { label: string; bg: string; fg: string; dot: string; enabled: boolean; locked?: boolean }> = {}
+    for (const [k, base] of Object.entries(EVENT_TYPE_BASE)) {
+      const cfg = typeCfg[k] || {}
+      out[k] = { ...base, label: (cfg.label && cfg.label.trim()) || base.label, enabled: cfg.enabled !== false }
+    }
+    return out
+  }, [typeCfg])
+  // Types offered when creating an event / in the filter (hidden ones are still
+  // labelled correctly wherever an existing event of that type is shown).
+  const enabledTypeKeys = useMemo(() => Object.keys(typeMeta).filter(k => typeMeta[k].enabled), [typeMeta])
+
+  // Persist calendar_settings without clobbering the other half (reminders vs types).
+  const persistCalendarSettings = async (patch: any) => {
+    if (!companyId) return
+    const merged = { ...reminders, event_types: typeCfg, ...patch }
+    await (supabase as any).from('companies').update({ calendar_settings: merged }).eq('id', companyId)
+  }
+
   const saveReminders = async () => {
     if (!companyId) return
     setSavingRem(true)
     try {
-      await (supabase as any).from('companies').update({ calendar_settings: reminders }).eq('id', companyId)
+      await persistCalendarSettings({})
       setShowReminders(false)
     } catch (e: any) { alert(e.message) }
     finally { setSavingRem(false) }
+  }
+
+  const saveTypes = async () => {
+    if (!companyId) return
+    setSavingTypes(true)
+    try {
+      await persistCalendarSettings({ event_types: typeCfg })
+      setShowTypes(false)
+    } catch (e: any) { alert(e.message) }
+    finally { setSavingTypes(false) }
   }
 
   useEffect(() => {
@@ -74,7 +111,9 @@ export default function CalendarPage() {
       const { data: owned } = await (supabase as any).from('companies').select('id, calendar_settings').eq('owner_id', user.id).order('created_at', { ascending: true }).limit(1)
       cid = owned?.[0]?.id || null
       if (owned?.[0]?.calendar_settings && Object.keys(owned[0].calendar_settings).length) {
-        setReminders({ reminders_enabled: false, lead_hours: 24, email: true, ...owned[0].calendar_settings })
+        const cs = owned[0].calendar_settings
+        setReminders({ reminders_enabled: false, lead_hours: 24, email: true, ...cs })
+        if (cs.event_types && typeof cs.event_types === 'object') setTypeCfg(cs.event_types)
       }
       if (!cid) {
         const { data: tm } = await (supabase as any).from('team_members').select('company_id').eq('user_id', user.id).limit(1)
@@ -345,7 +384,7 @@ export default function CalendarPage() {
   // One rich event card, shared by the day popup and the right slide-out so
   // both stay in sync. Actions close whichever container they were opened from.
   const EventCard = (e: any) => {
-    const m = TYPE_META[e.event_type] || TYPE_META.appointment
+    const m = typeMeta[e.event_type] || typeMeta.appointment
     const st = STATUS_META[e.status] || STATUS_META.scheduled
     const locIds: string[] = (e.location_ids && e.location_ids.length) ? e.location_ids : (e.location_id ? [e.location_id] : [])
     const locNames = locIds.map(id => locations.find(l => l.id === id)).filter(Boolean).map((l: any) => l.label || l.suburb)
@@ -524,7 +563,11 @@ export default function CalendarPage() {
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
             Reminders
           </button>
-          <button onClick={() => setEditing({ event_type: 'appointment', date: localYmd(new Date()), time: '09:00', status: 'scheduled' })}
+          <button onClick={() => setShowTypes(true)} title="Edit event types"
+            style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 40, height: 40, borderRadius: 10, background: '#fff', color: 'var(--slate)', border: '1px solid var(--border)', cursor: 'pointer' }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          </button>
+          <button onClick={() => setEditing({ event_type: enabledTypeKeys[0] || 'appointment', date: localYmd(new Date()), time: '09:00', status: 'scheduled' })}
             style={{ padding: '10px 18px', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
             + Add event
           </button>
@@ -563,7 +606,7 @@ export default function CalendarPage() {
         <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)}
           style={{ padding: '7px 11px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13, background: '#fff' }}>
           <option value="">All types</option>
-          {Object.entries(TYPE_META).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+          {enabledTypeKeys.map(k => [k, typeMeta[k]] as const).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
         </select>
       </div>
 
@@ -576,7 +619,7 @@ export default function CalendarPage() {
             <div style={{ padding: 30, textAlign: 'center', color: 'var(--slate)', fontSize: 13.5 }}>No events match your search.</div>
           )}
           {searchResults.map(e => {
-            const m = TYPE_META[e.event_type] || TYPE_META.appointment
+            const m = typeMeta[e.event_type] || typeMeta.appointment
             const when = new Date(e.starts_at)
             const as = (Array.isArray(e.assignees) && e.assignees.length) ? e.assignees : (e.assigned_to_name ? [{ name: e.assigned_to_name }] : [])
             return (
@@ -617,7 +660,7 @@ export default function CalendarPage() {
               const today = d && isToday(d)
               return (
                 <div key={i} className="cal-cell"
-                  onClick={() => d && (evs.length ? setDayOpen(k) : setEditing({ event_type: 'appointment', date: localYmd(d), time: '09:00', status: 'scheduled' }))}
+                  onClick={() => d && (evs.length ? setDayOpen(k) : setEditing({ event_type: enabledTypeKeys[0] || 'appointment', date: localYmd(d), time: '09:00', status: 'scheduled' }))}
                   style={{
                     background: d ? (today ? 'var(--peach)' : '#fff') : 'var(--canvas)',
                     cursor: d ? 'pointer' : 'default',
@@ -634,7 +677,7 @@ export default function CalendarPage() {
 
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
                         {evs.slice(0, 3).map(e => {
-                          const m = TYPE_META[e.event_type] || TYPE_META.appointment
+                          const m = typeMeta[e.event_type] || typeMeta.appointment
                           const done = e.status === 'completed'
                           return (
                             <div key={e.id} title={dec(e.title)} className="cal-event"
@@ -678,7 +721,7 @@ export default function CalendarPage() {
 
       {/* Legend + Prexty note */}
       <div style={{ display: 'flex', gap: 14, marginTop: 14, flexWrap: 'wrap', alignItems: 'center' }}>
-        {Object.entries(TYPE_META).map(([k, v]) => (
+        {enabledTypeKeys.map(k => [k, typeMeta[k]] as const).map(([k, v]) => (
           <span key={k} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--slate)' }}>
             <span style={{ width: 8, height: 8, borderRadius: '50%', background: v.dot }} />{v.label}
           </span>
@@ -750,6 +793,53 @@ export default function CalendarPage() {
         </div>
       )}
 
+      {/* Event types editor — rename + show/hide, on the fly */}
+      {showTypes && (
+        <div onClick={() => setShowTypes(false)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 340, padding: 20 }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ width: 480, maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto', background: '#fff', borderRadius: 18, padding: 24 }}>
+            <h2 style={{ margin: '0 0 4px', fontSize: 18, fontWeight: 800, color: 'var(--ink)' }}>Event types</h2>
+            <p style={{ margin: '0 0 18px', fontSize: 13, color: 'var(--slate)', lineHeight: 1.5 }}>
+              Rename the types your team uses, and turn off the ones you don&rsquo;t. Existing events keep their type.
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {Object.entries(EVENT_TYPE_BASE).map(([k, base]) => {
+                const cfg = typeCfg[k] || {}
+                const enabled = cfg.enabled !== false
+                return (
+                  <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 12, border: '1px solid var(--border)', background: enabled ? '#fff' : 'var(--canvas)' }}>
+                    <span style={{ width: 10, height: 10, borderRadius: '50%', background: base.dot, flexShrink: 0 }} />
+                    <input value={cfg.label ?? base.label}
+                      onChange={e => setTypeCfg({ ...typeCfg, [k]: { ...cfg, label: e.target.value } })}
+                      placeholder={base.label}
+                      style={{ flex: 1, minWidth: 0, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 14, fontFamily: 'inherit', background: '#fff' }} />
+                    {base.locked ? (
+                      <span title="Task events come from the Tasks page and can't be hidden" style={{ fontSize: 11, color: 'var(--slate)', whiteSpace: 'nowrap' }}>Always on</span>
+                    ) : (
+                      <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, fontWeight: 600, color: enabled ? 'var(--coral)' : 'var(--slate)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                        <input type="checkbox" checked={enabled}
+                          onChange={e => setTypeCfg({ ...typeCfg, [k]: { ...cfg, enabled: e.target.checked } })}
+                          style={{ width: 16, height: 16, accentColor: 'var(--coral)' }} />
+                        {enabled ? 'Shown' : 'Hidden'}
+                      </label>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+            <div style={{ display: 'flex', gap: 8, marginTop: 20 }}>
+              <button onClick={saveTypes} disabled={savingTypes}
+                style={{ padding: '10px 20px', borderRadius: 9, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
+                {savingTypes ? 'Saving…' : 'Save'}
+              </button>
+              <button onClick={() => setShowTypes(false)}
+                style={{ padding: '10px 20px', borderRadius: 9, background: '#fff', color: 'var(--slate)', border: '1px solid var(--border)', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Day detail */}
       {dayOpen && (
         <div onClick={() => setDayOpen(null)}
@@ -780,7 +870,7 @@ export default function CalendarPage() {
             style={{ width: 440, maxWidth: '96vw', height: '100%', overflowY: 'auto', background: '#fff', boxShadow: '-10px 0 40px rgba(0,0,0,0.16)', padding: 24, animation: 'calSlideIn 0.18s ease' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
               <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: 'var(--ink)' }}>
-                {(TYPE_META[selectedEvent.event_type] || TYPE_META.appointment).label}
+                {(typeMeta[selectedEvent.event_type] || typeMeta.appointment).label}
               </h2>
               <button onClick={() => setSelectedEvent(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--slate)', display: 'flex' }}>
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
@@ -805,7 +895,7 @@ export default function CalendarPage() {
 
             <label style={L}>Type</label>
             <div style={{ display: 'flex', gap: 5, marginBottom: 14, flexWrap: 'wrap' }}>
-              {Object.entries(TYPE_META).map(([k, v]) => (
+              {enabledTypeKeys.map(k => [k, typeMeta[k]] as const).map(([k, v]) => (
                 <button key={k} onClick={() => setEditing({ ...editing, event_type: k })}
                   style={{ padding: '6px 12px', borderRadius: 8, border: `1px solid ${editing.event_type === k ? v.dot : 'var(--border)'}`, background: editing.event_type === k ? v.bg : '#fff', color: editing.event_type === k ? v.fg : 'var(--slate)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
                   {v.label}
@@ -950,7 +1040,7 @@ export default function CalendarPage() {
                       Also remind the customer
                     </span>
                     <span style={{ fontSize: 11.5, color: 'var(--slate)' }}>
-                      Sends the customer a reminder before this {TYPE_META[editing.event_type]?.label.toLowerCase() || 'event'}.
+                      Sends the customer a reminder before this {typeMeta[editing.event_type]?.label.toLowerCase() || 'event'}.
                     </span>
                   </span>
                 </label>

@@ -5,6 +5,8 @@ import { runKeywordReply } from '@/lib/keyword-reply'
 import { passesRules } from '@/lib/gmail'
 import { logWebhookEvent } from '@/lib/webhook-log'
 import { logEnquiryReopened } from '@/lib/conversation-timeline'
+import { parseInboundAlias } from '@/lib/inbound-alias'
+import { uploadToR2, r2Configured } from '@/lib/r2'
 
 export const dynamic = 'force-dynamic'
 
@@ -62,40 +64,144 @@ function stripQuoted(text: string): string {
   return out.join('\n').trim() || text.trim()
 }
 
+// Resend inbound webhooks carry only attachment METADATA, not content. To keep a
+// customer's files on the ticket we call Resend's Attachments API for the
+// received email, download each file, and store it on our own R2 → [{url,name,type}].
+async function hostResendAttachments(evt: any, companyId: string): Promise<any[]> {
+  try {
+    if (!process.env.RESEND_API_KEY || !r2Configured()) return []
+    const emailId = pick(evt, 'id', 'email_id', 'emailId')
+    if (!emailId) return []
+    // Skip the extra API call when the payload's metadata says there are none.
+    const meta = evt.attachments || evt.Attachments
+    if (Array.isArray(meta) && meta.length === 0) return []
+    const res = await fetch(`https://api.resend.com/emails/receiving/${emailId}/attachments`, {
+      headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}` },
+    })
+    if (!res.ok) return []
+    const j = await res.json().catch(() => ({}))
+    const list = j.data || j.attachments || []
+    const out: any[] = []
+    for (const a of list) {
+      try {
+        if (!a.download_url) continue
+        const dl = await fetch(a.download_url)
+        if (!dl.ok) continue
+        const bytes = Buffer.from(await dl.arrayBuffer())
+        if (!bytes.length || bytes.length > 20 * 1024 * 1024) continue
+        const name = a.filename || 'file'
+        const type = a.content_type || 'application/octet-stream'
+        const safe = String(name).replace(/[^\w.\-]/g, '_')
+        const key = `ticket-attachments/${companyId}/${emailId}-${safe}`
+        const url = await uploadToR2(key, bytes, type)
+        out.push({ url, name, type })
+      } catch { /* skip one bad attachment */ }
+    }
+    return out
+  } catch { return [] }
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}))
     const db = admin()
 
+    // Resend inbound (email.received) nests the message under `data`; other
+    // providers post it at the top level. Unwrap so the picks below work for all.
+    const evt = (body?.data && typeof body.data === 'object' && /email|inbound|received/i.test(String(body?.type || ''))) ? body.data : body
+
     // ── Extract the essentials across provider shapes ────────────────────────
-    const toRaw = pick(body, 'to', 'To', 'recipient', 'ToFull', 'envelope.to')
-    const fromRaw = pick(body, 'from', 'From', 'sender', 'FromFull', 'envelope.from')
-    const subject = pick(body, 'subject', 'Subject') || '(no subject)'
-    const textBody = pick(body, 'text', 'TextBody', 'body-plain', 'plain', 'stripped-text') || ''
-    const htmlBody = pick(body, 'html', 'HtmlBody', 'body-html') || ''
-    const messageId = pick(body, 'message_id', 'MessageID', 'Message-Id', 'messageId', 'headers.message-id')
-    const inReplyTo = pick(body, 'in_reply_to', 'In-Reply-To', 'headers.in-reply-to', 'InReplyTo')
+    const toRaw = pick(evt, 'to', 'To', 'recipient', 'ToFull', 'envelope.to')
+    const ccRaw = pick(evt, 'cc', 'Cc', 'CcFull')
+    const fromRaw = pick(evt, 'from', 'From', 'sender', 'FromFull', 'envelope.from')
+    const subject = pick(evt, 'subject', 'Subject') || '(no subject)'
+    const textBody = pick(evt, 'text', 'TextBody', 'body-plain', 'plain', 'stripped-text') || ''
+    const htmlBody = pick(evt, 'html', 'HtmlBody', 'body-html') || ''
+    const messageId = pick(evt, 'message_id', 'MessageID', 'Message-Id', 'messageId', 'headers.message-id')
+    const inReplyTo = pick(evt, 'in_reply_to', 'In-Reply-To', 'headers.in-reply-to', 'InReplyTo')
 
     const to = parseAddress(Array.isArray(toRaw) ? toRaw[0] : toRaw)
     const from = parseAddress(fromRaw)
 
-    if (!to.email || !from.email) {
+    if (!from.email) {
       // Always 200 so providers don't retry/disable the webhook.
-      return NextResponse.json({ ok: false, reason: 'Missing to/from address' })
+      return NextResponse.json({ ok: false, reason: 'Missing from address' })
     }
 
-    // ── Resolve the company from the inbound address ─────────────────────────
-    const { data: channels } = await db
-      .from('email_channels')
-      .select('*')
-      .ilike('inbound_address', to.email)
-      .eq('is_active', true)
-      .limit(1)
-    const channel = channels?.[0]
-    if (!channel) {
-      return NextResponse.json({ ok: false, reason: `No email channel configured for ${to.email}` })
+    const content = stripQuoted(String(textBody)) || String(htmlBody).replace(/<[^>]+>/g, ' ').trim()
+
+    // ── Colvy inbound-alias routing (reply.colvy.com) ────────────────────────
+    // Check every recipient (To + Cc — a forwarded mail can carry several) for a
+    // Colvy alias, then resolve it to a real row. This is the multi-tenant router:
+    // a friendly alias (ticket-046216@ / <slug>@) says which ticket or tenant the
+    // mail belongs to, with no MX changes on the customer's side.
+    const recipientEmails: string[] = []
+    for (const raw of [toRaw, ccRaw]) {
+      const arr = Array.isArray(raw) ? raw : [raw]
+      for (const one of arr) { const p = parseAddress(one); if (p.email) recipientEmails.push(p.email) }
     }
-    const companyId = channel.company_id
+    let ticket: any = null
+    let aliasCompanyId: string | null = null
+    for (const e of recipientEmails) {
+      const a = parseInboundAlias(e)
+      if (!a) continue
+      if (a.kind === 'ticket') {
+        // Resolve the visible number (e.g. "046216" → TICK-046216). Ticket numbers
+        // aren't globally unique, so when several match, prefer the one whose
+        // requester is the sender, else the most recently updated.
+        const tnum = `TICK-${a.ref}`.toUpperCase()
+        const { data: cands } = await db.from('support_tickets').select('*').ilike('ticket_number', tnum).order('updated_at', { ascending: false }).limit(25)
+        const list = cands || []
+        ticket = list.find((t: any) => String(t.email || '').toLowerCase() === from.email)
+          || list.find((t: any) => { const m = /<([^>]+)>/.exec(String(t.description || '')); return !!m && m[1].toLowerCase() === from.email })
+          || list[0] || null
+        if (ticket) break
+      } else if (a.kind === 'company') {
+        const { data: co } = await db.from('companies').select('id').eq('slug', a.ref).maybeSingle()
+        if (co?.id) { aliasCompanyId = co.id; break }
+      }
+    }
+
+    // Ticket alias → append the customer's reply straight onto the ticket thread.
+    if (ticket) {
+      const ticketAtts = await hostResendAttachments(evt, ticket.company_id)
+      await db.from('ticket_messages').insert({
+        ticket_id: ticket.id, company_id: ticket.company_id, kind: 'reply', direction: 'in',
+        body: content, author_name: from.name || from.email, emailed: false,
+        attachments: ticketAtts,
+      })
+      const patch: any = { updated_at: new Date().toISOString() }
+      if (['resolved', 'closed'].includes(String(ticket.status || ''))) patch.status = 'open'
+      await db.from('support_tickets').update(patch).eq('id', ticket.id)
+      // Mirror into the linked inbox conversation too, if the ticket has one.
+      if (ticket.conversation_id) {
+        try {
+          await db.from('messages').insert({ conversation_id: ticket.conversation_id, company_id: ticket.company_id, sender_type: 'visitor', sender_name: from.name || from.email, sender_email: from.email, content, email_message_id: messageId || null, email_in_reply_to: inReplyTo || null })
+          await db.from('conversations').update({ last_message: content.slice(0, 200), last_message_at: new Date().toISOString(), is_unread: true, status: 'open' }).eq('id', ticket.conversation_id)
+        } catch {}
+      }
+      try { await notifyCompany({ db, companyId: ticket.company_id, type: 'ticket', message: `Reply on ${ticket.ticket_number} from ${from.name || from.email}`, actorName: from.name || from.email }) } catch {}
+      logWebhookEvent({ source: 'email', eventType: 'inbound-ticket', companyId: ticket.company_id, payload: { ticket: ticket.ticket_number, from: from.email } })
+      return NextResponse.json({ ok: true, routed: 'ticket', ticketId: ticket.id })
+    }
+
+    // ── Resolve the company/mailbox ──────────────────────────────────────────
+    // Company alias (a forwarded support address, or the reply-to on inbox email
+    // threads) resolves by company; otherwise match the address the mail was sent
+    // TO against a configured inbound mailbox.
+    let channel: any = null
+    let companyId: string | null = null
+    if (aliasCompanyId) {
+      companyId = aliasCompanyId
+      const { data: chs } = await db.from('email_channels').select('*').eq('company_id', companyId).eq('is_active', true).order('created_at', { ascending: true }).limit(1)
+      channel = chs?.[0] || { company_id: companyId, provider: 'webhook', from_address: null, from_name: null, inbound_address: null }
+    } else {
+      if (!to.email) return NextResponse.json({ ok: false, reason: 'Missing to address' })
+      const { data: channels } = await db.from('email_channels').select('*').ilike('inbound_address', to.email).eq('is_active', true).limit(1)
+      channel = channels?.[0]
+      if (!channel) return NextResponse.json({ ok: false, reason: `No email channel configured for ${to.email}` })
+      companyId = channel.company_id
+    }
 
     // Record the event for the Super Admin webhook explorer (best-effort).
     logWebhookEvent({ source: 'email', eventType: 'inbound', companyId, payload: { from: from.email, to: to.email, subject, messageId } })
@@ -104,8 +210,6 @@ export async function POST(req: NextRequest) {
     if (!(await passesRules(db, channel, from.email))) {
       return NextResponse.json({ ok: false, reason: 'Sender filtered by an email rule' })
     }
-
-    const content = stripQuoted(String(textBody)) || String(htmlBody).replace(/<[^>]+>/g, ' ').trim()
 
     // ── Find-or-create the contact ───────────────────────────────────────────
     let contact: any = null
@@ -134,8 +238,11 @@ export async function POST(req: NextRequest) {
       conv = recent?.[0] || null
     }
     if (!conv) {
+      // Web-form addresses (provider 'webform') are inbound-only form channels —
+      // label their conversations as 'form' so they read correctly in the inbox.
+      const convChannel = channel.provider === 'webform' ? 'form' : 'email'
       const { data: newConv } = await db.from('conversations').insert({
-        company_id: companyId, channel: 'email', subject,
+        company_id: companyId, channel: convChannel, subject,
         email_subject: subject, email_message_id: messageId || null,
         // Which mailbox it arrived at, and which outlet owns that mailbox — so
         // replies go back out from the right address.
@@ -171,6 +278,35 @@ export async function POST(req: NextRequest) {
       status: 'open',
       unread_count: (conv.unread_count || 0) + 1,
     }).eq('id', conv.id)
+
+    // ── Route ticket replies back into the ticket ────────────────────────────
+    // Agent ticket replies go out with "[TICK-######]" in the subject; when the
+    // customer replies, that tag survives on the "Re:" subject, so we can thread
+    // their reply straight back onto the ticket (not just the inbox). Best-effort
+    // — a failure here must never break normal inbound-email handling.
+    try {
+      const m = /\[(TICK-\d+)\]/i.exec(subject || '')
+      if (m) {
+        const ticketNumber = m[1].toUpperCase()
+        const { data: ticket } = await db.from('support_tickets')
+          .select('id, status, conversation_id').eq('company_id', companyId).eq('ticket_number', ticketNumber).maybeSingle()
+        if (ticket?.id) {
+          const ticketAtts = await hostResendAttachments(evt, companyId)
+          await db.from('ticket_messages').insert({
+            ticket_id: ticket.id, company_id: companyId,
+            kind: 'reply', direction: 'in', body: content,
+            author_name: from.name || from.email, emailed: false,
+            attachments: ticketAtts,
+          })
+          // Reopen a resolved/closed ticket (the customer is back), link the
+          // conversation for cross-navigation, and bump it to the top.
+          const patch: any = { updated_at: new Date().toISOString() }
+          if (['resolved', 'closed'].includes(String(ticket.status || ''))) patch.status = 'open'
+          if (!ticket.conversation_id) patch.conversation_id = conv.id
+          await db.from('support_tickets').update(patch).eq('id', ticket.id)
+        }
+      }
+    } catch (e) { console.error('[email webhook ticket route]', e) }
 
     // Answer common questions automatically — and EMAIL the answer back, in the
     // same thread, so the customer actually receives it.

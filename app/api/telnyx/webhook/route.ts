@@ -142,6 +142,18 @@ export async function POST(req: NextRequest) {
       const companyId = await companyForInboundNumber(db, to, 'telnyx')
       if (!companyId) return NextResponse.json({ ok: true }) // not ours
 
+      // Idempotency: Telnyx retries a webhook (with backoff, sometimes hours
+      // later) whenever it doesn't get a fast 2xx — so a slow or erroring handler
+      // could ingest the SAME inbound message twice (the "double SMS / duplicate
+      // photos" bug). Skip if we've already stored this provider message id.
+      if (payload?.id) {
+        try {
+          const { data: dupe } = await db.from('messages')
+            .select('id').eq('company_id', companyId).eq('telnyx_message_id', payload.id).limit(1)
+          if (dupe && dupe.length) return NextResponse.json({ ok: true, deduped: true })
+        } catch {}
+      }
+
       // Normalise phone numbers to their last 9 digits so E.164 (+61407207207)
       // and local (0407207207) forms match.
       const digits = (s: string) => (s || '').replace(/\D/g, '').slice(-9)
@@ -501,9 +513,12 @@ export async function POST(req: NextRequest) {
               await svc.bridgeCalls(callControlId, obRow.agent_call_control_id)
               await db.from('calls').update({
                 status: 'in_progress',
-                answered_at: new Date().toISOString(),
                 telnyx_call_control_id: callControlId,
               }).eq('id', obRow.id)
+              // answered_at separately (best-effort) — it stops the agent's
+              // outbound ringback; keeping it out of the update above means a
+              // missing column can't also drop the status / control-id write.
+              try { await db.from('calls').update({ answered_at: new Date().toISOString() }).eq('id', obRow.id) } catch {}
               try { await svc.recordStart(callControlId) } catch (e: any) { console.error('[telnyx outbound] record start failed', e?.message || e) }
               log.info('[telnyx outbound] bridged customer to agent', { callId: obRow.id })
             } catch (e: any) {
@@ -746,7 +761,12 @@ export async function POST(req: NextRequest) {
             // network (they hear real ringback) and dial the agents. The bridge
             // (on agent answer) auto-answers the caller and connects both ways.
             if (anyOnline) {
-              const ring = Number(integ.ring_seconds || 25)
+              // Floor the agent ring at 20s. A low/misconfigured ring_seconds was
+              // diverting inbound calls to voicemail after ~1 ring — the browser
+              // popup appeared then vanished before the agent could answer (every
+              // call landing on "Voicemail 0:00"). 20s is the minimum realistic
+              // window to pick up.
+              const ring = Math.max(Number(integ.ring_seconds || 25), 20)
               const dialConnectionId = eventConnectionId || (integ as any).voice_api_application_id || integ.connection_id
 
               // Preferred-agent priority ring: if the caller's contact has a
@@ -817,7 +837,10 @@ export async function POST(req: NextRequest) {
                 if (integ.voicemail_enabled !== false) {
                   try { await svc.answerCall(callControlId) } catch {}
                   await svc.speak(callControlId, integ.voicemail_greeting || 'Please leave a message after the tone.')
-                  await db.from('calls').update({ status: 'voicemail_greeting', is_voicemail: true, transcription: `[ring failed: all dial attempts failed]` })
+                  // Reason on `cause` (shown as "Hangup cause" in Call Diagnostics)
+                  // — transcription gets overwritten by the voicemail recording's
+                  // own transcript, so it can't hold the routing reason.
+                  await db.from('calls').update({ status: 'voicemail_greeting', is_voicemail: true, cause: 'ring_failed: all dial attempts failed' })
                     .eq('telnyx_call_control_id', callControlId)
                 } else {
                   try { await svc.hangupCall(callControlId) } catch {}
@@ -832,7 +855,7 @@ export async function POST(req: NextRequest) {
               if (integ.voicemail_enabled !== false) {
                 try { await svc.answerCall(callControlId) } catch {}
                 await svc.speak(callControlId, integ.voicemail_greeting || 'Please leave a message after the tone.')
-                await db.from('calls').update({ status: 'voicemail_greeting', is_voicemail: true, transcription: `[to voicemail: ${reason}]` })
+                await db.from('calls').update({ status: 'voicemail_greeting', is_voicemail: true, cause: `no_agent: ${reason}`.slice(0, 250) })
                   .eq('telnyx_call_control_id', callControlId)
               } else {
                 await svc.hangupCall(callControlId)
@@ -1165,7 +1188,20 @@ export async function POST(req: NextRequest) {
 
               if (integ3.voicemail_enabled !== false) {
                 await svc.speak(parentRow.telnyx_call_control_id, integ3.voicemail_greeting || 'Please leave a message after the tone.')
-                await db.from('calls').update({ status: 'voicemail_greeting', is_voicemail: true }).eq('id', parentRow.id)
+                // Record WHY the agent leg ended so Call Diagnostics can tell a
+                // real no-answer (normal_clearing / timeout after ringing the full
+                // window) apart from an agent leg that failed instantly — a
+                // call_rejected / SIP error means the browser's SIP endpoint
+                // wasn't reachable, which is the usual "rings once → voicemail".
+                const legCause = payload?.hangup_cause || payload?.hangup_source || 'no_answer'
+                const rungCount = Array.isArray(parentRow.ringing_leg_ids) ? parentRow.ringing_leg_ids.length : 0
+                await db.from('calls').update({
+                  status: 'voicemail_greeting', is_voicemail: true,
+                  // On `cause` (not transcription — that's overwritten by the
+                  // voicemail recording's transcript) so it survives to show in
+                  // Call Diagnostics' "Hangup cause".
+                  cause: `agent_leg_ended: ${legCause} (rung ${rungCount})`,
+                }).eq('id', parentRow.id)
               } else {
                 await svc.hangupCall(parentRow.telnyx_call_control_id)
               }

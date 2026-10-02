@@ -216,6 +216,28 @@ async function resolveInlineImages(
   return { html: out, attachments: [...attachments, ...extra] }
 }
 
+// Fetch a Gmail message's file attachments and store them to R2, returning
+// hosted [{ url, name, type }]. Used for ticket replies so a customer's file
+// (photo, PDF, receipt) is captured on the ticket with a real URL the ticket
+// page can render — the inbox serves Gmail attachments via a proxy using the
+// attachmentId, but the ticket thread has no such context.
+async function hostGmailAttachments(db: any, messageId: string, atts: any[], companyId: string, auth: any): Promise<any[]> {
+  const out: any[] = []
+  for (const a of atts || []) {
+    try {
+      if (a.url) { out.push({ url: a.url, name: a.name || 'file', type: a.mime || a.type || 'application/octet-stream' }); continue }
+      if (!a.attachmentId || (a.size && a.size > MAX_INLINE_BYTES)) continue
+      const bytes = await fetchGmailAttachment(messageId, a.attachmentId, auth)
+      if (!bytes) continue
+      const safe = String(a.name || 'file').replace(/[^\w.\-]/g, '_')
+      const key = `ticket-attachments/${companyId}/${messageId}-${String(a.attachmentId).slice(-10)}-${safe}`
+      const url = await storeInlineImage(db, key, bytes, a.mime || 'application/octet-stream')
+      if (url) out.push({ url, name: a.name || 'file', type: a.mime || 'application/octet-stream' })
+    } catch { /* skip a bad attachment, never fail the sync */ }
+  }
+  return out
+}
+
 // One-off backfill: re-process already-ingested emails whose body still holds
 // unresolved cid: images, resolving them the same way new mail is. Idempotent —
 // a fully-resolved message no longer matches the cid: filter, and the
@@ -547,6 +569,34 @@ export async function syncGmailChannel(channelId: string): Promise<{ imported: n
       email_attachments: attachmentsResolved,
     })
 
+    // Route ticket replies back onto the ticket. Agent ticket replies carry
+    // "[TICK-######]" in the subject; the customer's "Re:" keeps it, so when the
+    // reply lands in the connected mailbox we can thread it straight onto the
+    // ticket thread (not just the inbox conversation). Mirrors the inbound-email
+    // webhook — best-effort, never breaks the sync.
+    try {
+      const tm = /\[(TICK-\d+)\]/i.exec(subject || '')
+      if (tm) {
+        const ticketNumber = tm[1].toUpperCase()
+        const { data: ticket } = await db.from('support_tickets')
+          .select('id, status, conversation_id').eq('company_id', companyId).eq('ticket_number', ticketNumber).maybeSingle()
+        if (ticket?.id) {
+          // Keep any files the customer attached, hosted so the ticket renders them.
+          const ticketAtts = await hostGmailAttachments(db, m.id, attachmentsResolved, companyId, auth)
+          await db.from('ticket_messages').insert({
+            ticket_id: ticket.id, company_id: companyId,
+            kind: 'reply', direction: 'in', body: content,
+            author_name: from.name || from.email, emailed: false,
+            attachments: ticketAtts,
+          })
+          const patch: any = { updated_at: new Date().toISOString() }
+          if (['resolved', 'closed'].includes(String(ticket.status || ''))) patch.status = 'open'
+          if (!ticket.conversation_id) patch.conversation_id = conv.id
+          await db.from('support_tickets').update(patch).eq('id', ticket.id)
+        }
+      }
+    } catch (e) { console.error('[gmail sync ticket route]', e) }
+
     imported++
   }
 
@@ -560,6 +610,28 @@ export async function syncGmailChannel(channelId: string): Promise<{ imported: n
 
 // Send a reply through Gmail (so it appears in the business's Sent folder and
 // threads correctly on the customer's side).
+// Fetch an attachment's bytes from its (storage) URL and encode it as a base64
+// MIME body part, wrapped at 76 chars per RFC 2045. Returns null on any failure
+// or if the file is too large — a bad attachment must never fail the whole send.
+async function attachmentPart(a: { url: string; name?: string; type?: string }): Promise<string | null> {
+  try {
+    const res = await fetch(a.url)
+    if (!res.ok) return null
+    const buf = Buffer.from(await res.arrayBuffer())
+    if (!buf.length || buf.length > 20 * 1024 * 1024) return null   // skip empty / >20MB
+    const name = (a.name || 'attachment').replace(/["\r\n]/g, '')
+    const type = a.type || res.headers.get('content-type') || 'application/octet-stream'
+    const b64 = buf.toString('base64').replace(/(.{76})/g, '$1\r\n')
+    return [
+      `Content-Type: ${type}; name="${name}"`,
+      'Content-Transfer-Encoding: base64',
+      `Content-Disposition: attachment; filename="${name}"`,
+      '',
+      b64,
+    ].join('\r\n')
+  } catch { return null }
+}
+
 export async function sendGmail(channel: any, opts: {
   to: string
   cc?: string | null
@@ -569,6 +641,8 @@ export async function sendGmail(channel: any, opts: {
   html?: string | null
   inReplyTo?: string | null
   threadId?: string | null
+  replyTo?: string | null
+  attachments?: { url: string; name?: string; type?: string }[]
 }): Promise<{ id?: string; error?: string }> {
   const token = await getGmailToken(channel)
   if (!token) return { error: 'Google connection expired — reconnect the account.' }
@@ -579,6 +653,7 @@ export async function sendGmail(channel: any, opts: {
     ...(opts.cc ? [`Cc: ${opts.cc}`] : []),
     ...(opts.bcc ? [`Bcc: ${opts.bcc}`] : []),
     `From: ${fromHeader}`,
+    ...(opts.replyTo ? [`Reply-To: ${opts.replyTo}`] : []),
     `Subject: ${opts.subject}`,
   ]
   if (opts.inReplyTo) {
@@ -586,26 +661,48 @@ export async function sendGmail(channel: any, opts: {
     headerLines.push(`References: ${opts.inReplyTo}`)
   }
 
+  // The message body — plain + HTML as a multipart/alternative, or just plain.
+  const altBoundary = `colvy_alt_${Math.random().toString(36).slice(2)}`
+  const bodyBlock = opts.html
+    ? [
+        `Content-Type: multipart/alternative; boundary="${altBoundary}"`,
+        '',
+        `--${altBoundary}`,
+        'Content-Type: text/plain; charset="UTF-8"',
+        '',
+        opts.body,
+        `--${altBoundary}`,
+        'Content-Type: text/html; charset="UTF-8"',
+        '',
+        opts.html,
+        `--${altBoundary}--`,
+      ].join('\r\n')
+    : ['Content-Type: text/plain; charset="UTF-8"', '', opts.body].join('\r\n')
+
+  // Build the attachment parts (fetched + base64-encoded). Failed ones are
+  // dropped rather than aborting the send.
+  const attParts: string[] = []
+  for (const a of (opts.attachments || [])) {
+    if (!a?.url) continue
+    const part = await attachmentPart(a)
+    if (part) attParts.push(part)
+  }
+
   let mime: string
-  if (opts.html) {
-    // Send both plain and HTML so every client renders it well.
-    const boundary = `colvy_${Math.random().toString(36).slice(2)}`
+  if (attParts.length) {
+    // Wrap the body + attachments in multipart/mixed.
+    const mixed = `colvy_mix_${Math.random().toString(36).slice(2)}`
     mime = [
       ...headerLines,
-      `Content-Type: multipart/alternative; boundary="${boundary}"`,
+      `Content-Type: multipart/mixed; boundary="${mixed}"`,
       '',
-      `--${boundary}`,
-      'Content-Type: text/plain; charset="UTF-8"',
-      '',
-      opts.body,
-      `--${boundary}`,
-      'Content-Type: text/html; charset="UTF-8"',
-      '',
-      opts.html,
-      `--${boundary}--`,
+      `--${mixed}`,
+      bodyBlock,
+      ...attParts.map(p => `--${mixed}\r\n${p}`),
+      `--${mixed}--`,
     ].join('\r\n')
   } else {
-    mime = [...headerLines, 'Content-Type: text/plain; charset="UTF-8"', '', opts.body].join('\r\n')
+    mime = [...headerLines, bodyBlock].join('\r\n')
   }
 
   const raw = Buffer.from(mime)

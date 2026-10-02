@@ -14,6 +14,7 @@ export default function EmailPage() {
   const [rules, setRules] = useState<any[]>([])
   const [signatures, setSignatures] = useState<any[]>([])
   const [locations, setLocations] = useState<any[]>([])
+  const [forwardingAlias, setForwardingAlias] = useState('')
   const [msg, setMsg] = useState('')
   const [busy, setBusy] = useState('')
 
@@ -52,6 +53,7 @@ export default function EmailPage() {
     setRules(d.rules || [])
     setSignatures(d.signatures || [])
     setLocations(d.locations || [])
+    setForwardingAlias(d.forwardingAlias || '')
   }
 
   const api = async (body: any) => {
@@ -166,15 +168,15 @@ export default function EmailPage() {
             placeholder="info@roxyaquarium.com.au"
             onChange={e => setAddingDomain({ ...addingDomain, inbound_address: e.target.value })} />
 
-          <label style={L}>Reply-from address <span style={{ fontWeight: 400, color: 'var(--slate)' }}>(must be on a domain verified in Resend)</span></label>
-          <input style={I} value={addingDomain.from_address}
-            placeholder="support@updates.colvy.com"
-            onChange={e => setAddingDomain({ ...addingDomain, from_address: e.target.value })} />
-
           <label style={L}>Reply-from name</label>
           <input style={I} value={addingDomain.from_name}
             placeholder="Roxy Aquarium Support"
             onChange={e => setAddingDomain({ ...addingDomain, from_name: e.target.value })} />
+          <p style={{ margin: '-6px 0 14px', fontSize: 12, color: 'var(--slate)', lineHeight: 1.5 }}>
+            This is the name customers see on your replies. The sending address is
+            set up and managed by Colvy automatically — there&rsquo;s nothing to
+            configure or verify.
+          </p>
 
           {locations.length > 0 && (
             <>
@@ -226,11 +228,18 @@ export default function EmailPage() {
                   </p>
                 </div>
                 <div style={{ display: 'flex', gap: 6, flexShrink: 0, flexWrap: 'wrap' }}>
-                  {isGmail && (
+                  {isGmail ? (
                     <button onClick={() => syncGmail(a)} disabled={busy === 'sync-' + a.id}
                       style={{ padding: '5px 11px', borderRadius: 7, border: '1px solid var(--coral)', background: 'var(--peach)', color: 'var(--coral)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
                       {busy === 'sync-' + a.id ? 'Syncing…' : 'Sync now'}
                     </button>
+                  ) : (
+                    // Domain mailboxes are push (real-time) — nothing to sync. Show
+                    // it's live instead of a Sync button, so its absence isn't read
+                    // as "not working".
+                    <span title="Mail arrives in real time — nothing to sync" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 11px', borderRadius: 7, border: '1px solid #bbf7d0', background: '#f0fdf4', color: '#15803d', fontSize: 12, fontWeight: 700 }}>
+                      <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#22c55e' }} />Live
+                    </span>
                   )}
                   <button onClick={() => setRulesFor(a)}
                     style={{ padding: '5px 11px', borderRadius: 7, border: '1px solid var(--border)', background: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', color: 'var(--ink)' }}>
@@ -449,16 +458,27 @@ export default function EmailPage() {
         )}
       </div>
 
-      {/* Domain webhook setup */}
+      {/* Domain mailbox setup — concierge first, technical detail tucked away */}
       <div style={{ marginTop: 26, border: '1px solid var(--border)', borderRadius: 14, padding: 20, background: 'var(--canvas)' }}>
-        <p style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink)', margin: '0 0 8px' }}>Setting up a domain mailbox</p>
-        <p style={{ fontSize: 13, color: 'var(--slate)', margin: '0 0 12px', lineHeight: 1.6 }}>
-          For addresses on a domain you own, point your provider&rsquo;s inbound/parse webhook (Resend, Postmark, Mailgun, SendGrid, or Cloudflare Email Routing) at:
+        <p style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink)', margin: '0 0 8px' }}>Getting your inbound email into Colvy</p>
+        <p style={{ fontSize: 13, color: 'var(--slate)', margin: '0 0 14px', lineHeight: 1.6 }}>
+          Keep your existing mailbox exactly as it is. To bring incoming email into Colvy, add <strong>one forwarding rule</strong> at your email host so a copy of mail to your support address is forwarded to your Colvy address below. No MX or DNS changes, and nothing to verify — sending is handled on Colvy&rsquo;s own secure mail service.
         </p>
-        <code style={{ display: 'block', padding: '10px 12px', borderRadius: 8, background: '#fff', border: '1px solid var(--border)', fontSize: 13, wordBreak: 'break-all', marginBottom: 12 }}>{webhookUrl}</code>
-        <p style={{ fontSize: 12.5, color: 'var(--slate)', margin: 0, lineHeight: 1.6 }}>
-          Colvy matches the address the mail was sent <em>to</em> against your mailboxes, so each address routes to the right outlet. <strong>Gmail accounts don&rsquo;t need this</strong> — they sync over OAuth.
-        </p>
+        {forwardingAlias ? (
+          <>
+            <label style={{ ...L, marginTop: 0 }}>Your Colvy forwarding address</label>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              <code style={{ flex: 1, minWidth: 220, padding: '10px 12px', borderRadius: 8, background: '#fff', border: '1px solid var(--border)', fontSize: 13.5, wordBreak: 'break-all' }}>{forwardingAlias}</code>
+              <button onClick={() => { navigator.clipboard?.writeText(forwardingAlias); setMsg('Forwarding address copied.') }}
+                style={{ padding: '9px 14px', borderRadius: 8, border: '1px solid var(--border)', background: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', color: 'var(--ink)' }}>Copy</button>
+            </div>
+            <p style={{ fontSize: 12, color: 'var(--slate)', margin: '8px 0 0', lineHeight: 1.6 }}>
+              Set your support address (e.g. <code>info@roxyaquarium.com.au</code>) to forward to this. Replies from customers already come straight back to the right ticket automatically — this is only for brand-new emails they send to your address.
+            </p>
+          </>
+        ) : (
+          <p style={{ fontSize: 12.5, color: 'var(--slate)', margin: 0 }}>Your Colvy forwarding address will appear here once inbound email is switched on for your workspace.</p>
+        )}
       </div>
     </div>
   )

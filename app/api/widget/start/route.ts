@@ -156,7 +156,7 @@ export async function POST(req: NextRequest) {
 
     if (!conv) {
       const visitorId = visitorKey || `widget-${Date.now()}-${Math.random().toString(36).slice(2)}`
-      const { data: created } = await db.from('conversations').insert({
+      const { data: created, error: convErr } = await db.from('conversations').insert({
         company_id: companyId,
         contact_id: contactId,
         channel: 'widget',
@@ -175,11 +175,15 @@ export async function POST(req: NextRequest) {
         last_message_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       }).select('id').maybeSingle()
+      if (convErr) {
+        console.error('[widget start] conversation insert failed', convErr)
+        return NextResponse.json({ error: `Could not start the chat: ${convErr.message}` }, { status: 500 })
+      }
       conv = created
     }
 
     if (!conv?.id) {
-      return NextResponse.json({ error: 'Could not start the chat' }, { status: 500 })
+      return NextResponse.json({ error: 'Could not start the chat (no conversation was created)' }, { status: 500 })
     }
 
     return NextResponse.json({
@@ -190,6 +194,6 @@ export async function POST(req: NextRequest) {
     })
   } catch (e: any) {
     console.error('[widget start] failed', e)
-    return NextResponse.json({ error: 'Could not start the chat' }, { status: 500 })
+    return NextResponse.json({ error: `Could not start the chat: ${e?.message || 'unexpected error'}` }, { status: 500 })
   }
 }

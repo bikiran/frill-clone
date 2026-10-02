@@ -51,6 +51,14 @@ export default function GlobalCallBar({ companyId, agentName }: { companyId: str
       // Ignore a new request while a call is up (remounting CallBar would hang
       // the live call up).
       if (sessionRef.current) return
+      // Never open the direct dialler on top of the rich bridged panel
+      // (IncomingCallListener). Without this a bridge + a fallback direct dial
+      // could both show for one call ("two calls came"). EXCEPT a _noBridge
+      // re-dispatch: that IS the bridge's own fallback (it just called reset()),
+      // and __colvyRichCallActive is still true this tick because the flag only
+      // clears on a later effect — bailing here dropped the fallback dial and the
+      // call silently vanished after ~one ring.
+      if (!d._noBridge && (window as any).__colvyRichCallActive) return
 
       // Server-bridge path. `_noBridge` marks a fallback re-dispatch from
       // IncomingCallListener when the bridge couldn't start — take the direct
@@ -72,6 +80,10 @@ export default function GlobalCallBar({ companyId, agentName }: { companyId: str
     window.addEventListener('colvy:call', onCall as EventListener)
     return () => window.removeEventListener('colvy:call', onCall as EventListener)
   }, [companyId])
+
+  // Publish whether the direct dialler is showing a call, so the bridged panel
+  // (IncomingCallListener) never doubles up on top of it.
+  useEffect(() => { try { (window as any).__colvyDirectCallActive = !!session } catch {} }, [session])
 
   // ── draggable ──────────────────────────────────────────────────────────────
   const onMove = (e: PointerEvent) => {

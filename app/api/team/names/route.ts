@@ -42,6 +42,25 @@ export async function POST(req: NextRequest) {
       } catch { /* skip ids that aren't auth users */ }
     }))
 
+    // Owner-set overrides (COLVY_V307): a name/photo the owner set on the
+    // team_members row wins over the member's own account values, so the edit
+    // shows everywhere this resolver is used. select('*') keeps this working even
+    // before the migration adds the columns.
+    try {
+      const { data: members } = await admin
+        .from('team_members').select('*').in('user_id', Array.from(wanted))
+      for (const m of members || []) {
+        const id = (m as any).user_id
+        if (!id) continue
+        const prev = names[id] || { name: null, avatar_url: null, email: (m as any).email || null }
+        names[id] = {
+          name: (m as any).name || prev.name,
+          avatar_url: (m as any).avatar_url || prev.avatar_url,
+          email: prev.email || (m as any).email || null,
+        }
+      }
+    } catch { /* columns may not exist yet — fall back to auth values */ }
+
     return NextResponse.json({ names })
   } catch (e: any) {
     return NextResponse.json({ error: e.message, names: {} }, { status: 500 })

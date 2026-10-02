@@ -44,6 +44,10 @@ const prettySource = (s?: string | null): string | null => {
 export default function IncomingCallListener({ companyId, agentName }: Props) {
   const router = useRouter()
   const [incoming, setIncoming] = useState<any>(null)   // the ringing call
+  // The calls-row id for a ringing INBOUND call, used by the incoming-ring
+  // backstop. Twilio delivers it on the call itself (incoming.callRowId); Telnyx
+  // doesn't, so we resolve it from the caller number and keep it here.
+  const [inboundRowId, setInboundRowId] = useState<string | null>(null)
   const [caller, setCaller] = useState<any>(null)       // resolved contact context
   const [inCall, setInCall] = useState(false)
   const [seconds, setSeconds] = useState(0)
@@ -67,6 +71,15 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
   const [transferState, setTransferState] = useState<'none' | 'ringing' | 'consulting'>('none')
   const [transferBusy, setTransferBusy] = useState(false)
   const [transferMsg, setTransferMsg] = useState('')
+  // In-call DTMF keypad (send tones for IVR menus / extensions).
+  const [showKeypad, setShowKeypad] = useState(false)
+  // Post-call review card: shown briefly after a connected call ends, with a
+  // 👍/👎 and a countdown auto-dismiss.
+  const [ended, setEnded] = useState<null | { callId?: string; name?: string; number?: string; seconds: number }>(null)
+  const [endedCountdown, setEndedCountdown] = useState(3)
+  const [endedRating, setEndedRating] = useState<0 | 1 | -1>(0)
+  const endedTimerRef = useRef<any>(null)
+  const startedAtRef = useRef<number>(0)
   // ── Server-bridged OUTBOUND call ────────────────────────────────────────────
   // When Colvy places an outbound call server-side (see /api/telnyx/outbound-
   // start), the server rings THIS browser back with a SIP leg. We auto-answer
@@ -151,6 +164,10 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
   // and restarted the ringtone, so Decline looked like it did nothing.
   const callIdRef = useRef<string | null>(null)
   const declinedIds = useRef<Set<string>>(new Set())
+  // True once THIS device answers the ringing call, so the incoming-ring backstop
+  // (which watches the calls row for "answered/ended elsewhere") never tears down
+  // a call we picked up here in the brief window before inCall re-renders.
+  const answeredHereRef = useRef(false)
   // The signed-in agent's user id, so a call we accept can notify the REST of
   // the team (excludeUserId = us) to stop their phones ringing.
   const userIdRef = useRef<string | null>(null)
@@ -158,6 +175,13 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
   // without making it depend on (and re-subscribe to) every state change.
   const liveRef = useRef({ ready: false, inCall: false, incoming: false })
   liveRef.current = { ready, inCall, incoming: !!incoming }
+  // Fresh snapshots so end handlers (registered once, at connect time) can read
+  // the CURRENT caller/incoming instead of a stale closure value.
+  const callerRef = useRef<any>(null); callerRef.current = caller
+  const incomingRef = useRef<any>(null); incomingRef.current = incoming
+  // Publish whether the rich (bridged/incoming) panel owns a call, so the direct
+  // dialler (GlobalCallBar) never opens a second panel on top of it.
+  useEffect(() => { try { (window as any).__colvyRichCallActive = !!incoming || inCall } catch {} }, [incoming, inCall])
   // Throttle so a flurry of focus/visibility/online events triggers at most one
   // reconnect attempt every few seconds.
   const lastRecoverRef = useRef(0)
@@ -210,9 +234,16 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
           device.on('error', (e: any) => { if (!cancelled) { setReady(false); setConnErr(twErr(e)) } console.error('[twilio voice] error', e) })
           device.on('incoming', (call: any) => {
             console.log('[twilio voice] INCOMING CALL')
-            // Already on a call? Don't clobber it. Reject this second leg so it
-            // rings the other available agents instead of interrupting us.
-            if (liveRef.current.inCall) { try { call.reject?.() } catch {}; return }
+            // Already on a call? Don't clobber it — but IGNORE this leg, never
+            // reject() it. The <Client> identity (u_<userId>) is shared across
+            // every tab/device this user has open, so Twilio forks one inbound
+            // call to ALL of them. reject() sends a decline/busy that tears down
+            // the WHOLE forked <Client> leg — so a second, idle-but-"busy" tab
+            // (or a stale registration) killed the ring on the tab actually
+            // looking at the call: "1 ring → straight to voicemail". ignore()
+            // silently drops only THIS registration and lets the others keep
+            // ringing until someone answers or the dial times out.
+            if (liveRef.current.inCall) { try { call.ignore?.() } catch { try { call.reject?.() } catch {} }; return }
             callRef.current = call
             const fromNum = call.parameters?.From || call.parameters?.from || ''
             // The inbound TwiML passes our calls-row id as a custom parameter so
@@ -221,8 +252,8 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
             setIncoming({ id: call.parameters?.CallSid || 'twilio', callRowId: rowId, from: fromNum })
             startRing()
             resolveCaller(fromNum)
-            call.on('accept', () => { stopRing(); setInCall(true); startTimer() })
-            call.on('disconnect', () => { stopRing(); reset() })
+            call.on('accept', () => { answeredHereRef.current = true; stopRing(); setInCall(true); startTimer() })
+            call.on('disconnect', () => { stopRing(); finishCall() })
             call.on('cancel', () => { stopRing(); reset() })
             call.on('reject', () => { stopRing(); reset() })
           })
@@ -330,9 +361,26 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
             callIdRef.current = call.id || null
             setIncoming(call)
             startRing()
-            resolveCaller(call.options?.remoteCallerNumber || call.remoteCallerNumber)
+            const telFrom = call.options?.remoteCallerNumber || call.remoteCallerNumber || ''
+            resolveCaller(telFrom)
+            // Telnyx inbound calls don't carry our calls-row id, so resolve it from
+            // the caller number for the incoming-ring backstop (so the ringtone
+            // stops when the call is answered on another device, e.g. mobile, or
+            // ends — Telnyx doesn't always send this browser leg a cancel).
+            ;(async () => {
+              try {
+                const digits = String(telFrom).replace(/\D/g, '').slice(-9)
+                if (!digits || !companyId) return
+                const { data } = await (supabase as any).from('calls')
+                  .select('id').eq('company_id', companyId).eq('direction', 'inbound')
+                  .ilike('from_number', `%${digits}%`)
+                  .order('created_at', { ascending: false }).limit(1).maybeSingle()
+                if (data?.id) setInboundRowId(data.id)
+              } catch {}
+            })()
           }
           if (call.state === 'active') {
+            answeredHereRef.current = true
             stopRing()
             setInCall(true); startTimer()
           }
@@ -340,7 +388,7 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
           // up before/after answer, so the browser popup never gets stuck.
           if (['hangup', 'destroy', 'purge', 'done'].includes(String(call.state))) {
             if (call.id) declinedIds.current.delete(call.id)   // truly over — forget it
-            stopRing(); reset()
+            stopRing(); finishCall()
           }
         })
         client.connect()
@@ -404,9 +452,20 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
       const number = d.number
       if (!number || !companyId) return
       if (liveRef.current.inCall) return   // already on a call — don't clobber it
-      const fallback = () => window.dispatchEvent(new CustomEvent('colvy:call', {
-        detail: { number, name: d.name, contactId: d.contactId, conversationId: d.conversationId, _noBridge: true },
-      }))
+      if ((window as any).__colvyDirectCallActive) return   // direct dialler already owns a call
+      // Falling back to the direct dialler: tear down any rich panel we've shown
+      // FIRST, so we never leave two call panels on screen ("two calls came").
+      const fallback = () => {
+        reset()
+        // Defer a tick so reset()'s state settles and __colvyRichCallActive
+        // clears before the direct dialler picks this up (GlobalCallBar also
+        // bypasses that guard for _noBridge, so the fallback dial never drops).
+        setTimeout(() => {
+          window.dispatchEvent(new CustomEvent('colvy:call', {
+            detail: { number, name: d.name, contactId: d.contactId, conversationId: d.conversationId, _noBridge: true },
+          }))
+        }, 0)
+      }
       const prov = d.provider || provider
       try {
         const { data: sess } = await supabase.auth.getSession()
@@ -442,8 +501,9 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
             setIncoming({ id: callRowId, callRowId, outbound: true, from: number })
             setCaller({ number, name: d.name, contactId: d.contactId })
             setInCall(true)   // go straight to in-call controls; no Answer/Decline for outbound
+            startRingback(callRowId)   // audible "brr-brr" until the customer answers
             call.on('accept', () => { startTimer() })
-            call.on('disconnect', () => { twilioServerHangup(callRowId); reset() })
+            call.on('disconnect', () => { twilioServerHangup(callRowId); finishCall() })
             call.on('cancel', () => reset())
             call.on('error', (err: any) => { setTransferMsg(twErr(err)); reset() })
           } catch {
@@ -465,6 +525,7 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
         const data = await res.json().catch(() => ({}))
         if (!res.ok || !data.callId) { fallback(); return }
         expectingOutbound.current = { callId: data.callId, number, name: d.name, contactId: d.contactId, conversationId: d.conversationId, at: Date.now() }
+        startRingback(data.callId)   // audible "brr-brr" until the customer answers
       } catch { fallback() }
     }
     window.addEventListener('colvy:outbound-bridge', onBridge as EventListener)
@@ -504,7 +565,49 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
     } catch { setCaller({ number: fromNumber }) }
   }
 
-  const startTimer = () => { setSeconds(0); timerRef.current = setInterval(() => setSeconds(s => s + 1), 1000) }
+  const startTimer = () => { setSeconds(0); startedAtRef.current = Date.now(); timerRef.current = setInterval(() => setSeconds(s => s + 1), 1000) }
+
+  // Send a DTMF tone on the live call (IVR menus, extensions, "press 1").
+  const sendDTMF = (digit: string) => {
+    try {
+      if (provider === 'twilio') callRef.current?.sendDigits?.(digit)
+      else callRef.current?.dtmf?.(digit)   // Telnyx call
+    } catch {}
+  }
+
+  // End the call and show the brief review card (only for a call that actually
+  // connected), then reset. Duration comes from the start timestamp so it's
+  // accurate even from a long-lived disconnect handler.
+  const finishCall = () => {
+    const wasLive = liveRef.current.inCall && startedAtRef.current > 0
+    const secs = startedAtRef.current > 0 ? Math.max(0, Math.round((Date.now() - startedAtRef.current) / 1000)) : 0
+    const inc = incomingRef.current
+    const cal = callerRef.current
+    const snap = { callId: outboundCallIdRef.current || inc?.callRowId || inc?.id || undefined, name: cal?.name, number: cal?.number || inc?.from, seconds: secs }
+    reset()
+    if (!wasLive) return
+    setEnded(snap); setEndedRating(0); setEndedCountdown(3)
+    let n = 3
+    endedTimerRef.current = setInterval(() => {
+      n -= 1; setEndedCountdown(n)
+      if (n <= 0) { try { clearInterval(endedTimerRef.current) } catch {}; setEnded(null) }
+    }, 1000)
+  }
+  const dismissEnded = () => { try { clearInterval(endedTimerRef.current) } catch {}; setEnded(null) }
+  const rateCall = async (rating: 1 | -1) => {
+    setEndedRating(rating)
+    try { clearInterval(endedTimerRef.current) } catch {}   // stop the countdown once they engage
+    const callId = ended?.callId
+    if (!callId) { setTimeout(() => setEnded(null), 900); return }
+    try {
+      const { data: sess } = await supabase.auth.getSession()
+      await fetch('/api/calls/feedback', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${sess?.session?.access_token || ''}` },
+        body: JSON.stringify({ callId, rating }),
+      })
+    } catch {}
+    setTimeout(() => setEnded(null), 900)
+  }
 
   // Incoming-call ringtone. Prefer the branded ringtone file (the same one the
   // mobile app rings with, so a call sounds the same on web and phone); fall back
@@ -512,6 +615,7 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
   // decode error) so a call is never silent before it's answered.
   const ringOscRef = useRef<any>(null)
   const ringAudioRef = useRef<HTMLAudioElement | null>(null)
+  const ringCapRef = useRef<any>(null)
   const startOscRing = () => {
     try {
       const AC = (window as any).AudioContext || (window as any).webkitAudioContext
@@ -532,6 +636,11 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
     } catch {}
   }
   const startRing = () => {
+    // Hard safety cap: a ringtone must never outlive a realistic ring window. If
+    // every other stop path fails (no SDK cancel, backstop row not found), this
+    // guarantees the "tung tung" can't play forever.
+    try { clearTimeout(ringCapRef.current) } catch {}
+    ringCapRef.current = setTimeout(() => { try { stopRing() } catch {} }, 60000)
     try {
       const a = new Audio('/ringtone.mp3')
       a.loop = true
@@ -543,6 +652,7 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
     } catch { startOscRing() }
   }
   const stopRing = () => {
+    try { clearTimeout(ringCapRef.current); ringCapRef.current = null } catch {}
     try {
       if (ringAudioRef.current) {
         ringAudioRef.current.pause()
@@ -559,7 +669,90 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
     } catch {}
   }
 
+  // ── Outbound ringback ("brr-brr") ────────────────────────────────────────────
+  // On an outbound call the agent joins a silent conference immediately and only
+  // hears the customer once they answer — so there's no carrier ringback and the
+  // agent can't tell the call is ringing. We synthesise the AU/UK double-ring
+  // tone locally from the moment we place the call, and keep it looping until the
+  // customer actually answers (the calls row gets answered_at) or the call reaches
+  // a terminal / voicemail state. A 90s safety cap means it can never play forever.
+  const ringbackRef = useRef<any>(null)
+  const stopRingback = () => {
+    const r = ringbackRef.current
+    if (!r) return
+    ringbackRef.current = null
+    try { clearInterval(r.cadence) } catch {}
+    try { clearInterval(r.poll) } catch {}
+    try { clearTimeout(r.timeout) } catch {}
+    try { if (r.channel) supabase.removeChannel(r.channel) } catch {}
+    try { r.ctx?.close?.() } catch {}
+  }
+  // The tone must stop the instant the customer is actually on the line. Keep
+  // ringing through every pre-answer state — the row legitimately moves
+  // dialing_agent → dialing_customer → ringing while the customer is still
+  // ringing, and Twilio stamps in_progress on the AGENT leg (no answered_at yet)
+  // before the customer picks up — so those are NOT "answered". Stop only once
+  // the customer has truly answered (answered_at is set on real pickup by both
+  // providers) or the call reaches a terminal / voicemail state.
+  const RINGBACK_STOP_STATES = ['completed', 'failed', 'no_answer', 'no-answer', 'busy', 'canceled', 'cancelled', 'voicemail', 'voicemail_greeting', 'recording_voicemail']
+  const ringbackShouldStop = (row: any) =>
+    !!row && (!!row.answered_at || RINGBACK_STOP_STATES.includes(String(row.status || '')))
+  const startRingback = (callId: string) => {
+    if (ringbackRef.current) return
+    let ctx: any = null, cadence: any = null
+    try {
+      const AC = (window as any).AudioContext || (window as any).webkitAudioContext
+      if (AC) {
+        ctx = new AC()
+        const osc = ctx.createOscillator()
+        const gain = ctx.createGain()
+        osc.type = 'sine'; osc.frequency.value = 425
+        gain.gain.value = 0.0001
+        osc.connect(gain); gain.connect(ctx.destination)
+        osc.start()
+        // One cadence cycle = brr (0.4s) · gap (0.2s) · brr (0.4s) · silence → 3s.
+        const cycle = () => {
+          const t = ctx.currentTime
+          const burst = (at: number) => {
+            gain.gain.setValueAtTime(0.0001, t + at)
+            gain.gain.exponentialRampToValueAtTime(0.22, t + at + 0.03)
+            gain.gain.setValueAtTime(0.22, t + at + 0.37)
+            gain.gain.exponentialRampToValueAtTime(0.0001, t + at + 0.4)
+          }
+          burst(0); burst(0.6)
+        }
+        cycle()
+        cadence = setInterval(cycle, 3000)
+      }
+    } catch {}
+    // TWO independent stop signals, because relying on realtime alone left the
+    // tone playing over a live conversation whenever the answered_at UPDATE
+    // didn't reach the browser (realtime can drop events). The 1s DB poll is the
+    // reliable backstop; the realtime subscription is just the fast path.
+    let channel: any = null
+    try {
+      channel = supabase
+        .channel(`ringback-${callId}`)
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'calls', filter: `id=eq.${callId}` }, (payload: any) => {
+          if (ringbackShouldStop(payload?.new)) stopRingback()
+        })
+        .subscribe()
+    } catch {}
+    const poll = setInterval(async () => {
+      try {
+        // Select the whole row (not 'status, answered_at') so that if answered_at
+        // is momentarily unknown to the schema cache the query still succeeds and
+        // returns status — a named missing column 400s the whole request.
+        const { data } = await (supabase as any).from('calls').select('*').eq('id', callId).maybeSingle()
+        if (ringbackShouldStop(data)) stopRingback()
+      } catch {}
+    }, 1000)
+    const timeout = setTimeout(stopRingback, 90000)
+    ringbackRef.current = { ctx, cadence, poll, timeout, channel }
+  }
+
   const answer = () => {
+    answeredHereRef.current = true
     stopRing()
     try {
       // Direct SIP delivery model: the call is delivered straight to this
@@ -626,7 +819,7 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
     stopRing()
     if (provider === 'twilio') twilioServerHangup()
     try { provider === 'twilio' ? callRef.current?.disconnect?.() : callRef.current?.hangup?.() } catch {}
-    reset()
+    finishCall()
   }
 
   // ── Hold and warm transfer ───────────────────────────────────────────────
@@ -679,7 +872,17 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
     // listener lives in the persistent admin shell, so a router push keeps the
     // call alive while the inbox opens.
     const cid = caller?.contactId
-    try { router.push(cid ? `/admin/inbox?contact=${encodeURIComponent(cid)}` : '/admin/inbox') } catch {}
+    const conv = (caller as any)?.conversationId
+    // Fire an explicit event FIRST: when the inbox is already open (the common
+    // case — you take the call from the inbox), a same-route router.push does not
+    // re-run the inbox's deep-link effect, so the push alone did nothing. The
+    // event opens the conversation live; the push covers being on another page.
+    try { window.dispatchEvent(new CustomEvent('colvy:open-contact', { detail: { contactId: cid || null, conversationId: conv || null } })) } catch {}
+    try {
+      router.push(cid
+        ? `/admin/inbox?contact=${encodeURIComponent(cid)}`
+        : conv ? `/admin/inbox?conversation=${encodeURIComponent(conv)}` : '/admin/inbox')
+    } catch {}
   }
 
   // ── Switch device: move this live call to another of my devices ────────────
@@ -719,15 +922,52 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
 
   const reset = () => {
     stopRing()
+    stopRingback()
+    answeredHereRef.current = false
     if (timerRef.current) clearInterval(timerRef.current)
     setIncoming(null); setCaller(null); setInCall(false); setSeconds(0)
+    setInboundRowId(null)
     setOnHold(false); setTransferState('none'); setTransferMsg('')
     setSwitchOpen(false); setSwitchDevices([]); setSwitchBusy(false); setMovedTo(null)
     setOutboundCallId(null)
+    setShowKeypad(false)
+    startedAtRef.current = 0
     callRef.current = null
   }
 
   const fmtDur = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+
+  // ── Incoming-ring backstop ──────────────────────────────────────────────────
+  // A ringing inbound call can be answered, missed or ended on ANOTHER device —
+  // most often the agent's mobile — without the provider sending a cancel to this
+  // browser leg, so our ringtone would keep playing ("tung… tung…") and the popup
+  // would stay open, even after the call is over. Watch the calls row directly
+  // (realtime + a slow poll, the same belt-and-suspenders the outbound ringback
+  // uses): the moment it's answered anywhere or reaches a terminal state, stop
+  // ringing and close the popup. Runs ONLY while this device is still ringing an
+  // inbound call — never for an outbound call or one answered here.
+  useEffect(() => {
+    const rowId = incoming?.callRowId || inboundRowId
+    if (!rowId || inCall || (incoming as any)?.outbound) return
+    const TERMINAL = ['completed', 'failed', 'missed', 'no_answer', 'no-answer', 'busy', 'canceled', 'cancelled', 'voicemail', 'voicemail_greeting', 'recording_voicemail', 'ended']
+    const done = (row: any) => {
+      if (!row || answeredHereRef.current || liveRef.current.inCall) return
+      if (row.answered_at || row.ended_at || TERMINAL.includes(String(row.status || ''))) {
+        stopRing(); reset()
+      }
+    }
+    const poll = setInterval(async () => {
+      try { const { data } = await (supabase as any).from('calls').select('*').eq('id', rowId).maybeSingle(); done(data) } catch {}
+    }, 1500)
+    let channel: any = null
+    try {
+      channel = supabase.channel(`inbound-ring-${rowId}`)
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'calls', filter: `id=eq.${rowId}` }, (p: any) => done(p?.new))
+        .subscribe()
+    } catch {}
+    return () => { try { clearInterval(poll) } catch {}; try { if (channel) supabase.removeChannel(channel) } catch {} }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [incoming?.callRowId, inboundRowId, inCall])
 
   // Shared style for the answer/decline/hangup buttons — the icons previously
   // had no sizing or alignment rules and rendered squashed against the label.
@@ -744,6 +984,37 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
 
   if (!incoming) return (<>
     {audioEl}
+    {/* Post-call review card — brief, with a 👍/👎 and a countdown auto-dismiss. */}
+    {ended && (
+      <div style={{ position: 'fixed', top: 20, right: 20, width: 300, background: '#fff', color: '#111', borderRadius: 16, boxShadow: '0 16px 48px rgba(0,0,0,0.28)', zIndex: 9999, overflow: 'hidden', fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: '#0d0d0d', color: '#fff' }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12.5, fontWeight: 700 }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+            Call ended
+          </span>
+          <span style={{ fontSize: 11.5, opacity: 0.7 }}>{endedRating === 0 ? `Closing in ${endedCountdown}s` : 'Thanks!'}</span>
+        </div>
+        <div style={{ padding: '14px 16px' }}>
+          <p style={{ margin: 0, fontSize: 15, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ended.name || ended.number || 'Call'}</p>
+          <p style={{ margin: '2px 0 0', fontSize: 12.5, color: '#6b7280' }}>{ended.number} · {fmtDur(ended.seconds)}</p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12 }}>
+            <span style={{ fontSize: 12, color: '#6b7280', marginRight: 'auto' }}>How was the call?</span>
+            <button type="button" aria-label="Good call" onClick={() => rateCall(1)}
+              style={{ width: 34, height: 34, borderRadius: 9, border: '1px solid var(--border, #eee)', background: endedRating === 1 ? '#dcfce7' : '#fff', color: endedRating === 1 ? '#15803d' : '#6b7280', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88z"/></svg>
+            </button>
+            <button type="button" aria-label="Bad call" onClick={() => rateCall(-1)}
+              style={{ width: 34, height: 34, borderRadius: 9, border: '1px solid var(--border, #eee)', background: endedRating === -1 ? '#fee2e2' : '#fff', color: endedRating === -1 ? '#b91c1c' : '#6b7280', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88z"/></svg>
+            </button>
+            <button type="button" aria-label="Dismiss" onClick={dismissEnded}
+              style={{ width: 34, height: 34, borderRadius: 9, border: '1px solid var(--border, #eee)', background: '#fff', color: '#6b7280', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
     {/* Tiny phone-status indicator so it's visible whether the WebRTC client is
         actually connected to receive inbound calls (green = ready). Dismissable
         — hovering reveals a cross that hides it until the next page refresh. */}
@@ -887,6 +1158,24 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
           </span>
           {onHold && transferState === 'none' && (
             <span style={{ opacity: 0.7, fontSize: 11 }}>they hear hold music</span>
+          )}
+        </div>
+      )}
+      {/* In-call DTMF keypad — for IVR menus, extensions, "press 1", etc. */}
+      {inCall && transferState === 'none' && (
+        <div style={{ margin: '0 20px 8px' }}>
+          <button type="button" onClick={() => setShowKeypad(v => !v)}
+            style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '9px 12px', borderRadius: 10, border: 'none', background: showKeypad ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.08)', color: '#fff', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="5" r="1.6"/><circle cx="12" cy="5" r="1.6"/><circle cx="19" cy="5" r="1.6"/><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/><circle cx="5" cy="19" r="1.6"/><circle cx="12" cy="19" r="1.6"/><circle cx="19" cy="19" r="1.6"/></svg>
+            Keypad
+          </button>
+          {showKeypad && (
+            <div style={{ marginTop: 8, display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
+              {['1', '2', '3', '4', '5', '6', '7', '8', '9', '*', '0', '#'].map(d => (
+                <button key={d} type="button" onClick={() => sendDTMF(d)}
+                  style={{ padding: '11px 0', borderRadius: 10, border: 'none', background: 'rgba(255,255,255,0.1)', color: '#fff', fontSize: 18, fontWeight: 700, cursor: 'pointer' }}>{d}</button>
+              ))}
+            </div>
           )}
         </div>
       )}

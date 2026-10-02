@@ -22,6 +22,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true })
     }
 
+    // Link (or unlink) this comment to a CRM contact — a local match, no Graph
+    // call. contactId null = unlink. Lets the customer's comment surface in the
+    // inbox (pill / timeline / thread) when auto-matching by author id missed.
+    if (action === 'link_contact') {
+      const { contactId } = body
+      const { error } = await db.from('social_comments')
+        .update({ contact_id: contactId || null }).eq('id', commentId).eq('company_id', companyId)
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+      return NextResponse.json({ ok: true })
+    }
+
     // Everything else needs the channel that owns this comment. Resolve it by the
     // comment's own meta_channel_id (a comment may be Facebook, page-linked
     // Instagram, or Instagram-Login), falling back to the company's Facebook page

@@ -22,6 +22,13 @@ export default function ChatSupport() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
+  // Let any "Start Chat" / "Live Chat" button on the page open the widget.
+  useEffect(() => {
+    const open = () => { setIsEnabled(true); setIsOpen(true) }
+    window.addEventListener('colvy-open-chat', open)
+    return () => window.removeEventListener('colvy-open-chat', open)
+  }, [])
+
   useEffect(() => {
     // Load chat settings
     const loadSettings = async () => {

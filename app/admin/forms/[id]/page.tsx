@@ -14,6 +14,21 @@ type Question = {
   description: string
   required: boolean
   options?: string[]
+  multiSelect?: boolean           // multiple_choice: allow selecting more than one
+  optionImages?: string[]        // picture_choice: image per option (parallel to options)
+  matrixRows?: string[]          // matrix: row labels
+  matrixCols?: string[]          // matrix: column labels
+  amountCents?: number           // payment: amount to charge, in cents
+  currency?: string              // payment: ISO currency (default aud)
+  schedule?: {                   // scheduler: availability config
+    days?: number[]              // 0=Sun … 6=Sat
+    start?: string               // 'HH:MM'
+    end?: string                 // 'HH:MM'
+    slotMins?: number            // gap between slot start times
+    durationMins?: number        // length of each booking
+    daysAhead?: number           // how far ahead people can book
+    locationId?: string | null
+  }
   mediaUrl?: string
   mediaType?: 'image' | 'video'
   fileAccept?: string
@@ -262,6 +277,28 @@ export default function FormBuilder() {
     setMediaUploading('')
   }
 
+  // Picture Choice: upload an image for a single option (parallel optionImages array).
+  const uploadOptionImage = async (file: File, questionId: string, optionIndex: number) => {
+    const key = `${questionId}:${optionIndex}`
+    setMediaUploading(key)
+    try {
+      const ext = file.name.split('.').pop()
+      const fileName = `forms/${formId}/opt-${Date.now()}-${optionIndex}.${ext}`
+      const { data, error } = await supabase.storage.from('idea-images').upload(fileName, file, { upsert: true })
+      if (error) throw error
+      const { data: { publicUrl } } = supabase.storage.from('idea-images').getPublicUrl(data.path)
+      setQuestions(prev => prev.map(q => {
+        if (q.id !== questionId) return q
+        const imgs = [...(q.optionImages || [])]
+        imgs[optionIndex] = publicUrl
+        return { ...q, optionImages: imgs }
+      }))
+    } catch (e: any) {
+      alert('Image upload failed: ' + e.message)
+    }
+    setMediaUploading('')
+  }
+
   const deleteQuestion = (id: string) => {
     setQuestions(prev => prev.filter(q => q.id !== id))
     if (selectedQ === id) setSelectedQ(null)
@@ -501,13 +538,24 @@ export default function FormBuilder() {
                     ))}
                   </div>
                 )}
-                {['multiple_choice', 'dropdown', 'checkbox', 'picture_choice'].includes(questions[previewStep].type) && (
+                {['multiple_choice', 'dropdown', 'checkbox', 'picture_choice', 'ranking'].includes(questions[previewStep].type) && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    {(questions[previewStep].options || []).map((opt, oi) => (
+                    {(questions[previewStep].options || []).map((opt, oi) => {
+                      const isPic = questions[previewStep].type === 'picture_choice'
+                      const img = (questions[previewStep].optionImages || [])[oi]
+                      return (
                       <div key={oi} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 10, border: '2px solid #e5e5e5' }}>
-                        <span style={{ width: 22, height: 22, borderRadius: questions[previewStep].type === 'checkbox' ? 6 : 6, border: '2px solid #d1d5db', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: '#9ca3af', flexShrink: 0 }}>
-                          {String.fromCharCode(65 + oi)}
-                        </span>
+                        {isPic ? (
+                          <label style={{ width: 40, height: 40, borderRadius: 8, flexShrink: 0, cursor: 'pointer', overflow: 'hidden', border: '1px solid #e5e5e5', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f3f4f6', color: '#9ca3af' }}>
+                            {img ? <img src={img} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                              : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>}
+                            <input type="file" accept="image/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) uploadOptionImage(f, questions[previewStep].id, oi) }} />
+                          </label>
+                        ) : (
+                          <span style={{ width: 22, height: 22, borderRadius: 6, border: '2px solid #d1d5db', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: '#9ca3af', flexShrink: 0 }}>
+                            {String.fromCharCode(65 + oi)}
+                          </span>
+                        )}
                         <input value={opt} onChange={e => {
                           const opts = [...(questions[previewStep].options || [])]
                           opts[oi] = e.target.value
@@ -515,14 +563,17 @@ export default function FormBuilder() {
                         }} style={{ flex: 1, border: 'none', outline: 'none', fontSize: 14, background: 'transparent' }} />
                         <button onClick={() => {
                           const opts = (questions[previewStep].options || []).filter((_, idx) => idx !== oi)
-                          updateQuestion(questions[previewStep].id, { options: opts })
+                          const imgs = (questions[previewStep].optionImages || []).filter((_, idx) => idx !== oi)
+                          updateQuestion(questions[previewStep].id, { options: opts, optionImages: imgs })
                         }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', opacity: 0.5 }}>×</button>
                       </div>
-                    ))}
+                      )
+                    })}
                     <button onClick={() => {
                       const opts = [...(questions[previewStep].options || []), `Option ${(questions[previewStep].options || []).length + 1}`]
                       updateQuestion(questions[previewStep].id, { options: opts })
                     }} style={{ fontSize: 13, color: themeColor, background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', fontWeight: 600 }}>+ Add option</button>
+                    {questions[previewStep].type === 'picture_choice' && <p style={{ fontSize: 11.5, color: '#9ca3af' }}>Tap the square to add an image to each option.</p>}
                   </div>
                 )}
                 {questions[previewStep].type === 'nps' && (
@@ -539,9 +590,38 @@ export default function FormBuilder() {
                     ))}
                   </div>
                 )}
-                {['contact_info', 'phone', 'address', 'website', 'video_audio', 'signature', 'payment', 'file_upload', 'scheduler', 'legal', 'ranking', 'matrix'].includes(questions[previewStep].type) && (
+                {['contact_info', 'phone', 'address', 'website', 'video_audio', 'signature', 'payment', 'file_upload', 'scheduler', 'legal'].includes(questions[previewStep].type) && (
                   <div style={{ borderBottom: '2px solid #e5e5e5', paddingBottom: 8, fontSize: 14, color: '#9ca3af' }}>
                     {QUESTION_TYPES.find(t => t.type === questions[previewStep].type)?.label} input preview
+                  </div>
+                )}
+                {questions[previewStep].type === 'matrix' && (
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ borderCollapse: 'collapse', fontSize: 13 }}>
+                      <thead>
+                        <tr>
+                          <th />
+                          {(questions[previewStep].matrixCols || []).map((c, ci) => (
+                            <th key={ci} style={{ padding: '4px 6px', fontSize: 11.5, color: '#9ca3af', fontWeight: 700 }}>{c}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(questions[previewStep].matrixRows || []).map((r, ri) => (
+                          <tr key={ri}>
+                            <td style={{ padding: '6px 8px', fontSize: 13, color: '#374151' }}>{r}</td>
+                            {(questions[previewStep].matrixCols || []).map((_, ci) => (
+                              <td key={ci} style={{ textAlign: 'center', padding: '6px 8px' }}>
+                                <span style={{ display: 'inline-block', width: 18, height: 18, borderRadius: '50%', border: '2px solid #d1d5db' }} />
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {((questions[previewStep].matrixRows || []).length === 0 || (questions[previewStep].matrixCols || []).length === 0) && (
+                      <p style={{ fontSize: 12.5, color: '#9ca3af' }}>Add rows and columns in the settings panel →</p>
+                    )}
                   </div>
                 )}
 
@@ -575,6 +655,18 @@ export default function FormBuilder() {
                   <button onClick={() => updateQuestion(selected.id, { required: !selected.required })}
                     style={{ width: 38, height: 21, borderRadius: 999, background: selected.required ? themeColor : '#d1d5db', border: 'none', cursor: 'pointer', position: 'relative' }}>
                     <span style={{ width: 15, height: 15, borderRadius: '50%', background: '#fff', position: 'absolute', top: 3, left: selected.required ? 20 : 3, transition: 'left 0.15s' }} />
+                  </button>
+                </div>
+              )}
+              {selected.type === 'multiple_choice' && (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+                  <div>
+                    <label style={{ fontSize: 13, color: 'var(--ink)', fontWeight: 600, display: 'block' }}>Multiple selection</label>
+                    <span style={{ fontSize: 11.5, color: 'var(--slate)' }}>Let people pick more than one option</span>
+                  </div>
+                  <button onClick={() => updateQuestion(selected.id, { multiSelect: !selected.multiSelect })}
+                    style={{ width: 38, height: 21, borderRadius: 999, background: selected.multiSelect ? themeColor : '#d1d5db', border: 'none', cursor: 'pointer', position: 'relative', flexShrink: 0 }}>
+                    <span style={{ width: 15, height: 15, borderRadius: '50%', background: '#fff', position: 'absolute', top: 3, left: selected.multiSelect ? 20 : 3, transition: 'left 0.15s' }} />
                   </button>
                 </div>
               )}
@@ -617,6 +709,95 @@ export default function FormBuilder() {
                     <option value=".pdf,.doc,.docx">Documents (PDF, Word)</option>
                     <option value="video/*">Videos only</option>
                   </select>
+                </div>
+              )}
+
+              {selected.type === 'payment' && (
+                <div style={{ marginBottom: 16 }}>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--slate)', display: 'block', marginBottom: 6 }}>Amount to charge</label>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <input type="number" min="0.50" step="0.01"
+                      value={selected.amountCents != null ? (selected.amountCents / 100).toString() : ''}
+                      onChange={e => updateQuestion(selected.id, { amountCents: Math.round((parseFloat(e.target.value) || 0) * 100) })}
+                      placeholder="0.00"
+                      style={{ flex: 1, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 13 }} />
+                    <select value={selected.currency || 'aud'} onChange={e => updateQuestion(selected.id, { currency: e.target.value })}
+                      style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 13, cursor: 'pointer' }}>
+                      {['aud', 'usd', 'nzd', 'gbp', 'eur', 'cad'].map(c => <option key={c} value={c}>{c.toUpperCase()}</option>)}
+                    </select>
+                  </div>
+                  <p style={{ fontSize: 11.5, color: 'var(--slate)', marginTop: 8, lineHeight: 1.5 }}>
+                    The person pays this before they can finish the form. Requires your Stripe to be connected under Integrations → Stripe.
+                  </p>
+                </div>
+              )}
+
+              {selected.type === 'scheduler' && (() => {
+                const sc = selected.schedule || {}
+                const setSc = (patch: any) => updateQuestion(selected.id, { schedule: { ...sc, ...patch } })
+                const days = sc.days || [1, 2, 3, 4, 5]
+                const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+                return (
+                  <div style={{ marginBottom: 16 }}>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--slate)', display: 'block', marginBottom: 6 }}>Available days</label>
+                    <div style={{ display: 'flex', gap: 4, marginBottom: 12, flexWrap: 'wrap' }}>
+                      {DOW.map((d, di) => {
+                        const on = days.includes(di)
+                        return (
+                          <button key={di} onClick={() => setSc({ days: on ? days.filter((x: number) => x !== di) : [...days, di].sort() })}
+                            style={{ padding: '5px 9px', borderRadius: 8, border: `1.5px solid ${on ? themeColor : 'var(--border)'}`, background: on ? themeColor : '#fff', color: on ? '#fff' : 'var(--slate)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{d}</button>
+                        )
+                      })}
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+                      <div style={{ flex: 1 }}>
+                        <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--slate)', display: 'block', marginBottom: 4 }}>From</label>
+                        <input type="time" value={sc.start || '09:00'} onChange={e => setSc({ start: e.target.value })} style={{ width: '100%', padding: '7px 8px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 13 }} />
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--slate)', display: 'block', marginBottom: 4 }}>To</label>
+                        <input type="time" value={sc.end || '17:00'} onChange={e => setSc({ end: e.target.value })} style={{ width: '100%', padding: '7px 8px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 13 }} />
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <div style={{ flex: 1 }}>
+                        <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--slate)', display: 'block', marginBottom: 4 }}>Slot length (min)</label>
+                        <input type="number" min="5" step="5" value={sc.durationMins || 30} onChange={e => setSc({ durationMins: Math.max(5, parseInt(e.target.value) || 30), slotMins: Math.max(5, parseInt(e.target.value) || 30) })} style={{ width: '100%', padding: '7px 8px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 13 }} />
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--slate)', display: 'block', marginBottom: 4 }}>Days ahead</label>
+                        <input type="number" min="1" max="90" value={sc.daysAhead || 14} onChange={e => setSc({ daysAhead: Math.max(1, parseInt(e.target.value) || 14) })} style={{ width: '100%', padding: '7px 8px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 13 }} />
+                      </div>
+                    </div>
+                    <p style={{ fontSize: 11.5, color: 'var(--slate)', marginTop: 8, lineHeight: 1.5 }}>Bookings appear on your Calendar. Times use the visitor's local time.</p>
+                  </div>
+                )
+              })()}
+
+              {selected.type === 'matrix' && (
+                <div style={{ marginBottom: 16 }}>
+                  {(['matrixRows', 'matrixCols'] as const).map(field => (
+                    <div key={field} style={{ marginBottom: 12 }}>
+                      <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--slate)', display: 'block', marginBottom: 6 }}>{field === 'matrixRows' ? 'Rows' : 'Columns'}</label>
+                      {((selected as any)[field] || []).map((val: string, vi: number) => (
+                        <div key={vi} style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+                          <input value={val} onChange={e => {
+                              const arr = [...((selected as any)[field] || [])]; arr[vi] = e.target.value
+                              updateQuestion(selected.id, { [field]: arr } as any)
+                            }}
+                            style={{ flex: 1, padding: '6px 8px', borderRadius: 6, border: '1px solid var(--border)', fontSize: 13 }} />
+                          <button onClick={() => {
+                              const arr = ((selected as any)[field] || []).filter((_: any, idx: number) => idx !== vi)
+                              updateQuestion(selected.id, { [field]: arr } as any)
+                            }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', opacity: 0.6 }}>×</button>
+                        </div>
+                      ))}
+                      <button onClick={() => {
+                          const arr = [...((selected as any)[field] || []), field === 'matrixRows' ? `Row ${((selected as any)[field] || []).length + 1}` : `Col ${((selected as any)[field] || []).length + 1}`]
+                          updateQuestion(selected.id, { [field]: arr } as any)
+                        }} style={{ fontSize: 12.5, color: themeColor, background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>+ Add {field === 'matrixRows' ? 'row' : 'column'}</button>
+                    </div>
+                  ))}
                 </div>
               )}
 

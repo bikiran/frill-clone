@@ -29,7 +29,30 @@ const cacheHeaders = {
 }
 
 export async function GET(req: NextRequest) {
-  const slug = req.nextUrl.searchParams.get('slug')
+  let slug = req.nextUrl.searchParams.get('slug')
+  // Custom help/board domains (e.g. help.roxyaquarium.com.au) have no colvy
+  // subdomain to derive a slug from. Resolve the company by its custom domain so
+  // the widget still loads its brand (accent colour + logo) instead of falling
+  // back to the default Colvy coral.
+  if (!slug) {
+    const domain = (req.nextUrl.searchParams.get('domain') || '').toLowerCase().trim().replace(/^https?:\/\//, '').replace(/\/.*$/, '')
+    if (domain) {
+      try {
+        const db = getDb()
+        // A company's custom help/board domain wins — this is what makes
+        // help.colvy.com resolve to the Colvy workspace rather than the literal
+        // "help" subdomain.
+        const { data: co } = await (db as any).from('companies')
+          .select('slug').or(`help_domain.eq.${domain},board_domain.eq.${domain}`).maybeSingle()
+        if (co?.slug) slug = co.slug
+        // Otherwise a plain <slug>.colvy.com host maps to that slug.
+        if (!slug && domain.endsWith('.colvy.com')) {
+          const sub = domain.replace('.colvy.com', '')
+          if (sub && sub !== 'www') slug = sub
+        }
+      } catch {}
+    }
+  }
   if (!slug) return NextResponse.json({ error: 'slug required' }, { status: 400 })
   const location = req.nextUrl.searchParams.get('location') || ''
   const cacheKey = `${slug}|${location}`

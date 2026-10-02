@@ -4,8 +4,9 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import LegalAdminPage from '../admin/legal/page'
 import PlatformBannerAdmin from '@/components/PlatformBannerAdmin'
+import BlogAdminPage from '@/components/BlogAdminPage'
 import { SmsPricing, DEFAULT_PRICING, calculateCost, aud, audRate, parsePricingRow } from '@/lib/sms-pricing'
-import { PLAN_FEATURES, PLAN_LIMITS, PLAN_NAMES, OVERRIDABLE_FEATURES, OVERRIDABLE_LIMITS, Plan } from '@/lib/plan'
+import { PLAN_FEATURES, PLAN_LIMITS, PLAN_NAMES, PLAN_PRICES, OVERRIDABLE_FEATURES, OVERRIDABLE_LIMITS, Plan } from '@/lib/plan'
 import { OPERATIONAL_FLAGS } from '@/lib/feature-flags'
 
 const SUPER_ADMIN = 'bishalstha76@gmail.com'
@@ -102,6 +103,7 @@ const NAV = [
   { key: 'roadmap',    label: 'Roadmaps',         icon: 'roadmap' },
   { key: 'announce',   label: 'Announcements',    icon: 'announce' },
   { key: 'help',       label: 'Help Center',      icon: 'help' },
+  { key: 'blog',       label: 'Blog',             icon: 'announce' },
   { key: 'legal',      label: 'Legal Pages',      icon: 'audit' },
   { key: 'banner',     label: 'Product Banner',   icon: 'announce' },
   { section: 'Support' },
@@ -110,6 +112,7 @@ const NAV = [
   { key: 'moderation', label: 'Moderation',       icon: 'moderation' },
   { section: 'Operations' },
   { key: 'imp',        label: 'Impersonation',    icon: 'audit' },
+  { key: 'webforms',   label: 'Web Forms',        icon: 'system' },
   { key: 'demos',      label: 'Demo Workspaces',  icon: 'companies' },
   { key: 'calls',      label: 'Call Diagnostics', icon: 'chat' },
   { key: 'webhooks',   label: 'Webhook Explorer', icon: 'system' },
@@ -373,6 +376,52 @@ function BusinessDetail({ co, onClose, onAction }: { co: any; onClose: () => voi
     setSubMsg(next ? 'Account marked complimentary.' : 'Complimentary status removed.')
   }
 
+  // ── Account credit & referrals ──────────────────────────────────────────────
+  // Super-admins can see the company's referrals (as referrer), its credit
+  // balance/ledger, and grant credit — a manual top-up, a complimentary month,
+  // or N free days (priced from the plan's monthly rate).
+  const [credit, setCredit] = useState<any>(null)
+  const [creditLoading, setCreditLoading] = useState(false)
+  const [creditAmt, setCreditAmt] = useState('')
+  const [creditReason, setCreditReason] = useState('')
+  const [creditMsg, setCreditMsg] = useState('')
+  const [creditBusy, setCreditBusy] = useState(false)
+  const loadCredit = async () => {
+    setCreditLoading(true)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch(`/api/platform-admin/company-credit?companyId=${co.id}`, { headers: { Authorization: `Bearer ${session?.access_token}` } })
+      const d = await res.json()
+      setCredit(d)
+    } catch (e: any) { setCreditMsg(e?.message || 'Could not load credit') } finally { setCreditLoading(false) }
+  }
+  const grantCredit = async (amountCents: number, reason: string) => {
+    if (!Number.isFinite(amountCents) || amountCents === 0) { setCreditMsg('Enter an amount.'); return }
+    if (!reason.trim()) { setCreditMsg('A reason is required (audited).'); return }
+    setCreditBusy(true); setCreditMsg('')
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch('/api/platform-admin/company-credit', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
+        body: JSON.stringify({ companyId: co.id, amountCents, reason: reason.trim() }),
+      })
+      const d = await res.json()
+      if (!res.ok) throw new Error(d.error || 'Could not grant credit')
+      setCreditMsg(`Credit updated. New balance ${((d.balanceCents || 0) / 100).toFixed(2)}.${d.appliedToStripe ? ' Applied to Stripe balance.' : ' Ledger only (no Stripe customer).'}`)
+      setCreditAmt(''); setCreditReason('')
+      await loadCredit(); loadNotes()
+    } catch (e: any) { setCreditMsg(e?.message || 'Could not grant credit') } finally { setCreditBusy(false) }
+  }
+  // Complimentary time → credit equal to N days of the plan's monthly price.
+  const compDays = (days: number, label: string) => {
+    const monthly = PLAN_PRICES[(co.plan || 'free') as Plan]
+    if (!monthly) { setCreditMsg('This plan has no list price (enterprise/custom) — enter a manual amount instead.'); return }
+    const cents = Math.round(monthly * 100 * (days / 30))
+    grantCredit(cents, `Complimentary ${label} (${PLAN_NAMES[(co.plan || 'free') as Plan] || co.plan})`)
+  }
+  // Load credit/referrals the first time the Subscription tab is opened.
+  useEffect(() => { if (tab === 'plan' && !credit && !creditLoading) loadCredit() }, [tab])
+
   // ── Entitlements & limits overrides ────────────────────────────────────────
   // features/limits maps hold ONLY explicit overrides; an absent key = plan default.
   const [entFeatures, setEntFeatures] = useState<Record<string, boolean>>({})
@@ -534,6 +583,67 @@ function BusinessDetail({ co, onClose, onAction }: { co: any; onClose: () => voi
                   )}
                   {sub.is_complimentary && sub.complimentary_reason && <p style={{ fontSize: 12, color: 'var(--sa-muted)', margin: '0 0 8px' }}>Reason: {sub.complimentary_reason}</p>}
                   <button onClick={toggleComp} disabled={savingSub === 'comp'} style={paBtn(sub.is_complimentary ? '#ef4444' : '#10b981', true)}>{sub.is_complimentary ? 'Remove complimentary' : 'Mark complimentary'}</button>
+                </div>
+
+                {/* Complimentary time — free days/month for a subscribed (paying)
+                    account, granted as account credit at the plan's monthly rate. */}
+                <div style={{ padding: 14, borderRadius: 12, border: '1px solid var(--sa-border)' }}>
+                  <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)', margin: '0 0 3px' }}>Complimentary time</p>
+                  <p style={{ fontSize: 11.5, color: 'var(--sa-muted)', margin: '0 0 10px' }}>Give a paying customer free time as account credit, priced from their plan ({PLAN_NAMES[(co.plan || 'free') as Plan] || co.plan}{PLAN_PRICES[(co.plan || 'free') as Plan] ? ` · $${PLAN_PRICES[(co.plan || 'free') as Plan]}/mo` : ' · custom'}). Nets off their next invoice.</p>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <button onClick={() => compDays(7, '7 days')} disabled={creditBusy} style={paBtn()}>Free 7 days</button>
+                    <button onClick={() => compDays(14, '14 days')} disabled={creditBusy} style={paBtn()}>Free 14 days</button>
+                    <button onClick={() => compDays(30, '1 month')} disabled={creditBusy} style={paBtn()}>Free 1 month</button>
+                    <button onClick={() => compDays(90, '3 months')} disabled={creditBusy} style={paBtn()}>Free 3 months</button>
+                  </div>
+                </div>
+
+                {/* Account credit — balance, ledger and a manual grant/claw-back. */}
+                <div style={{ padding: 14, borderRadius: 12, border: '1px solid var(--sa-border)' }}>
+                  <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10, marginBottom: 8 }}>
+                    <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)', margin: 0 }}>Account credit</p>
+                    <span style={{ fontSize: 18, fontWeight: 800, color: '#10b981' }}>{creditLoading ? '…' : `$${(((credit?.balanceCents) || 0) / 100).toFixed(2)}`}<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--sa-muted)', marginLeft: 4 }}>{(credit?.currency || 'aud').toUpperCase()}</span></span>
+                  </div>
+                  {credit?.needsMigration && <p style={{ fontSize: 12, color: '#f59e0b', margin: '0 0 8px' }}>Run COLVY_V314_REFERRALS.sql to enable credit.</p>}
+                  {credit && !credit.needsMigration && !credit.hasStripe && <p style={{ fontSize: 11.5, color: 'var(--sa-muted)', margin: '0 0 8px' }}>No Stripe customer — credit is recorded in the ledger only (won't auto-apply to an invoice).</p>}
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                    <input value={creditAmt} onChange={e => setCreditAmt(e.target.value)} placeholder="Amount $" inputMode="decimal" style={{ ...paInput, maxWidth: 120 }} />
+                    <input value={creditReason} onChange={e => setCreditReason(e.target.value)} placeholder="Reason (required, audited)…" style={{ ...paInput, flex: 1 }} />
+                  </div>
+                  <button onClick={() => grantCredit(Math.round(parseFloat(creditAmt || '0') * 100), creditReason)} disabled={creditBusy} style={paBtn('#10b981', true)}>{creditBusy ? 'Saving…' : 'Add credit'}</button>
+                  <span style={{ fontSize: 11, color: 'var(--sa-muted)', marginLeft: 10 }}>Tip: use a negative amount to claw back.</span>
+                  {creditMsg && <p style={{ fontSize: 12, color: 'var(--sa-text)', margin: '10px 0 0' }}>{creditMsg}</p>}
+                  {Array.isArray(credit?.credits) && credit.credits.length > 0 && (
+                    <div style={{ marginTop: 12, borderTop: '1px solid var(--sa-border)', paddingTop: 10, display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 160, overflowY: 'auto' }}>
+                      {credit.credits.slice(0, 20).map((c: any) => (
+                        <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 12 }}>
+                          <span style={{ color: 'var(--sa-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.reason || 'Credit'}</span>
+                          <span style={{ fontWeight: 700, color: (c.amount_cents || 0) >= 0 ? '#10b981' : '#ef4444', flexShrink: 0 }}>{(c.amount_cents || 0) >= 0 ? '+' : ''}${(Math.abs(c.amount_cents || 0) / 100).toFixed(2)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Referrals this company has made (as the referrer). */}
+                <div style={{ padding: 14, borderRadius: 12, border: '1px solid var(--sa-border)' }}>
+                  <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10, marginBottom: 8 }}>
+                    <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)', margin: 0 }}>Referrals made</p>
+                    {credit?.stats && <span style={{ fontSize: 11.5, color: 'var(--sa-muted)' }}>{credit.stats.qualified} qualified · {credit.stats.pending} pending</span>}
+                  </div>
+                  {credit?.link && <p style={{ fontSize: 11.5, color: 'var(--sa-muted)', margin: '0 0 10px', wordBreak: 'break-all' }}>Link: {credit.link}</p>}
+                  {(!credit?.referrals || credit.referrals.length === 0) ? (
+                    <p style={{ fontSize: 12.5, color: 'var(--sa-muted)', margin: 0 }}>No referrals yet.</p>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 200, overflowY: 'auto' }}>
+                      {credit.referrals.map((r: any) => (
+                        <div key={r.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, fontSize: 12.5, padding: '6px 0', borderBottom: '1px solid var(--sa-border)' }}>
+                          <span style={{ color: 'var(--sa-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.referred_name || r.referred_email || 'Referred business'}</span>
+                          <span style={{ flexShrink: 0, fontSize: 10.5, fontWeight: 800, padding: '2px 8px', borderRadius: 999, textTransform: 'uppercase', background: r.status === 'qualified' ? '#10b98122' : r.status === 'reversed' ? '#ef444422' : '#f59e0b22', color: r.status === 'qualified' ? '#10b981' : r.status === 'reversed' ? '#ef4444' : '#f59e0b' }}>{r.status}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             )
@@ -834,11 +944,45 @@ function IntegrationsPage() {
 // per-call detail drawer (status, hangup cause, recording, transcript, sentiment,
 // AI to-dos). Real data only, from the `calls` table (COLVY_V115_TELNYX + ALTERs).
 function CallDetail({ call, coName, onClose }: { call: any; coName: string; onClose: () => void }) {
+  // Admin AI overview: cached on the row (call.ai_admin_review) or generated on
+  // demand. Kept in local state so the panel updates without a page refetch.
+  const [review, setReview] = useState<any>(call.ai_admin_review || null)
+  const [reviewAt, setReviewAt] = useState<string | null>(call.ai_admin_review_at || null)
+  const [reviewBusy, setReviewBusy] = useState(false)
+  const [reviewErr, setReviewErr] = useState('')
+  // Device-handoff ("Switch device") timeline for this call.
+  const [handoffs, setHandoffs] = useState<any[] | null>(null)
+  useEffect(() => {
+    ;(async () => {
+      try {
+        const { data } = await (supabase as any).from('call_handoff_events')
+          .select('*').eq('call_id', call.id).order('created_at', { ascending: true })
+        setHandoffs(data || [])
+      } catch { setHandoffs([]) }
+    })()
+  }, [call.id])
+  const genReview = async (force = false) => {
+    setReviewBusy(true); setReviewErr('')
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch('/api/platform-admin/call-review', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
+        body: JSON.stringify({ callId: call.id, force }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Could not analyse this call')
+      setReview(data.review); setReviewAt(data.at || new Date().toISOString())
+      if (data.warning) setReviewErr(data.warning)
+    } catch (e: any) { setReviewErr(e.message) } finally { setReviewBusy(false) }
+  }
   const dur = (s: number) => {
     if (!s && s !== 0) return '—'
     const m = Math.floor(s / 60), r = s % 60
     return m > 0 ? `${m}m ${r}s` : `${r}s`
   }
+  const qualColor: Record<string, string> = { good: '#10b981', fair: '#f59e0b', poor: '#ef4444', unknown: '#6b7280' }
+  const sevColor: Record<string, string> = { high: '#ef4444', medium: '#f59e0b', low: '#6b7280' }
   const statusColor: Record<string, string> = {
     completed: '#10b981', answered: '#10b981', ringing: '#f59e0b', initiated: '#6366f1',
     busy: '#f59e0b', failed: '#ef4444', 'no-answer': '#ef4444',
@@ -874,9 +1018,26 @@ function CallDetail({ call, coName, onClose }: { call: any; coName: string; onCl
           <Row k="Hangup cause" v={call.cause} />
           <Row k="Duration" v={dur(call.duration_seconds)} />
           <Row k="Answered by" v={call.answered_by} />
+          {/* Agent's post-call thumbs (calls.rating: 1 good / -1 bad). */}
+          {(call.rating === 1 || call.rating === -1) && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, padding: '9px 0', borderBottom: '1px solid var(--sa-border)' }}>
+              <span style={{ fontSize: 12.5, color: 'var(--sa-muted)' }}>Agent rating</span>
+              <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 9px', borderRadius: 999, background: (call.rating === 1 ? '#10b981' : '#ef4444') + '22', color: call.rating === 1 ? '#10b981' : '#ef4444' }}>
+                {call.rating === 1 ? '👍 Good' : '👎 Bad'}{call.rating_at ? ` · ${new Date(call.rating_at).toLocaleDateString()}` : ''}
+              </span>
+            </div>
+          )}
           <Row k="Started" v={call.started_at ? new Date(call.started_at).toLocaleString() : '—'} />
           <Row k="Ended" v={call.ended_at ? new Date(call.ended_at).toLocaleString() : '—'} />
           <Row k="Voicemail" v={call.is_voicemail ? 'Yes' : 'No'} />
+          {/* Routing reason — the inbound webhook stamps WHY a call went to
+              voicemail / how it was rung into calls.transcription as a bracketed
+              marker (e.g. "[to voicemail: nobody online]", "[ring failed: …]",
+              "[ringing N device(s)]"). Surface it to diagnose calls that never
+              reached an agent. Real transcripts don't start with "[". */}
+          {typeof call.transcription === 'string' && call.transcription.trim().startsWith('[') && (
+            <Row k="Routing" v={call.transcription} />
+          )}
           {call.sentiment && (
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, padding: '9px 0', borderBottom: '1px solid var(--sa-border)' }}>
               <span style={{ fontSize: 12.5, color: 'var(--sa-muted)' }}>Sentiment</span>
@@ -886,12 +1047,84 @@ function CallDetail({ call, coName, onClose }: { call: any; coName: string; onCl
 
           {call.recording_url ? (
             <div style={{ marginTop: 18 }}>
-              <p style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--sa-text)', margin: '0 0 8px' }}>Recording{call.recording_duration ? ` · ${dur(call.recording_duration)}` : ''}</p>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, margin: '0 0 8px' }}>
+                <p style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--sa-text)', margin: 0 }}>Recording{call.recording_duration ? ` · ${dur(call.recording_duration)}` : ''}</p>
+                <a href={call.recording_url} download target="_blank" rel="noopener noreferrer" style={{ fontSize: 11.5, fontWeight: 600, color: '#6366f1', textDecoration: 'none' }}>Download ↓</a>
+              </div>
               <audio controls src={call.recording_url} style={{ width: '100%' }} />
+              {call.conference_recording_url && (
+                <audio controls src={call.conference_recording_url} style={{ width: '100%', marginTop: 8 }} />
+              )}
             </div>
           ) : call.recording_error ? (
             <p style={{ marginTop: 18, fontSize: 12, color: '#f59e0b' }}>Recording unavailable: {call.recording_error}</p>
           ) : null}
+
+          {/* ── Device-handoff timeline ("Switch device") ─────────────────────── */}
+          {handoffs && handoffs.length > 0 && (
+            <div style={{ marginTop: 18, padding: 14, borderRadius: 12, border: '1px solid var(--sa-border)', background: 'var(--sa-card)' }}>
+              <p style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--sa-text)', margin: '0 0 10px' }}>🔀 Device handoff</p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {handoffs.map((h: any) => {
+                  const tone: Record<string, string> = { requested: '#6366f1', accept_attempt: '#0ea5e9', promoted: '#0ea5e9', joining: '#f59e0b', confirmed: '#10b981', cancelled: 'var(--sa-muted)', error: '#ef4444' }
+                  return (
+                    <div key={h.id} style={{ display: 'flex', alignItems: 'baseline', gap: 10, fontSize: 12 }}>
+                      <span style={{ color: 'var(--sa-muted)', flexShrink: 0, minWidth: 62 }}>{new Date(h.created_at).toLocaleTimeString()}</span>
+                      <span style={{ fontWeight: 800, color: tone[h.event] || 'var(--sa-text)', textTransform: 'uppercase', fontSize: 10.5, letterSpacing: '0.03em', flexShrink: 0, minWidth: 96 }}>{String(h.event).replace(/_/g, ' ')}</span>
+                      <span style={{ color: 'var(--sa-muted)' }}>{[h.platform, h.detail].filter(Boolean).join(' · ') || '—'}</span>
+                    </div>
+                  )
+                })}
+              </div>
+              {!handoffs.some((h: any) => h.event === 'confirmed') && handoffs.some((h: any) => h.event === 'joining') && (
+                <p style={{ fontSize: 11.5, color: '#f59e0b', margin: '10px 0 0' }}>Promoted to a conference but the target device never confirmed its join — the new device likely didn't complete the conference join.</p>
+              )}
+              {!handoffs.some((h: any) => ['accept_attempt', 'promoted', 'joining', 'confirmed'].includes(h.event)) && handoffs.some((h: any) => h.event === 'requested') && (
+                <p style={{ fontSize: 11.5, color: '#f59e0b', margin: '10px 0 0' }}>Requested but the target never attempted to accept — the other device didn't pick up the handoff.</p>
+              )}
+            </div>
+          )}
+
+          {/* ── Admin AI overview ─────────────────────────────────────────────
+              How the call went + likely technical/sound issues, for ops. */}
+          <div style={{ marginTop: 18, padding: 14, borderRadius: 12, border: '1px solid var(--sa-border)', background: 'var(--sa-card)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: review ? 10 : 0 }}>
+              <p style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--sa-text)', margin: 0 }}>✨ AI overview <span style={{ color: 'var(--sa-muted)', fontWeight: 500 }}>(admin)</span></p>
+              <button onClick={() => genReview(!!review)} disabled={reviewBusy}
+                style={{ padding: '5px 11px', borderRadius: 8, border: '1px solid var(--sa-border)', background: 'transparent', color: '#7c5cff', cursor: reviewBusy ? 'default' : 'pointer', fontSize: 11.5, fontWeight: 600, opacity: reviewBusy ? 0.6 : 1 }}>
+                {reviewBusy ? 'Analysing…' : review ? 'Regenerate' : 'Generate'}
+              </button>
+            </div>
+            {reviewErr && <p style={{ fontSize: 11.5, color: '#f59e0b', margin: '0 0 8px' }}>{reviewErr}</p>}
+            {!review && !reviewBusy && !reviewErr && (
+              <p style={{ fontSize: 12, color: 'var(--sa-muted)', margin: '8px 0 0', lineHeight: 1.5 }}>Generate an admin summary of how this call went — including any signs of dropped audio, poor sound quality, routing problems or the agent never connecting.</p>
+            )}
+            {review && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', padding: '2px 9px', borderRadius: 999, background: (qualColor[review.quality] || '#6b7280') + '22', color: qualColor[review.quality] || '#6b7280' }}>{review.quality || 'unknown'}</span>
+                  {reviewAt && <span style={{ fontSize: 10.5, color: 'var(--sa-muted)' }}>{new Date(reviewAt).toLocaleString()}</span>}
+                </div>
+                <p style={{ fontSize: 12.5, color: 'var(--sa-text)', margin: 0, lineHeight: 1.55 }}>{review.overview}</p>
+                {Array.isArray(review.issues) && review.issues.length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {review.issues.map((it: any, i: number) => (
+                      <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', padding: '7px 10px', borderRadius: 8, border: '1px solid var(--sa-border)' }}>
+                        <span style={{ fontSize: 9.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', padding: '2px 6px', borderRadius: 6, background: (sevColor[it.severity] || '#6b7280') + '22', color: sevColor[it.severity] || '#6b7280', whiteSpace: 'nowrap' }}>{it.severity}</span>
+                        <span style={{ fontSize: 12, color: 'var(--sa-text)', lineHeight: 1.45 }}><b style={{ textTransform: 'capitalize' }}>{it.type}:</b> {it.detail}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {review.sound_quality && (
+                  <p style={{ fontSize: 11.5, color: 'var(--sa-muted)', margin: 0 }}><b style={{ color: 'var(--sa-text)' }}>Sound:</b> {review.sound_quality}</p>
+                )}
+                {review.recommendation && review.recommendation !== 'none' && (
+                  <p style={{ fontSize: 11.5, color: 'var(--sa-muted)', margin: 0 }}><b style={{ color: 'var(--sa-text)' }}>Recommendation:</b> {review.recommendation}</p>
+                )}
+              </div>
+            )}
+          </div>
 
           {todos.length > 0 && (
             <div style={{ marginTop: 18 }}>
@@ -2055,6 +2288,70 @@ function AttentionPanel() {
   )
 }
 
+function WebFormsPage() {
+  const [d, setD] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
+  const [q, setQ] = useState('')
+  useEffect(() => {
+    ;(async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        const res = await fetch('/api/platform-admin/web-forms', { headers: { Authorization: `Bearer ${session?.access_token}` } })
+        setD(await res.json())
+      } catch {} finally { setLoading(false) }
+    })()
+  }, [])
+  const addresses = (d?.addresses || []).filter((a: any) => {
+    if (!q.trim()) return true
+    const s = q.toLowerCase()
+    return `${a.address} ${a.company} ${a.location}`.toLowerCase().includes(s)
+  })
+  const Check = ({ ok }: { ok: boolean }) => (
+    <span style={{ fontSize: 11.5, fontWeight: 800, padding: '2px 9px', borderRadius: 999, background: ok ? '#10b98122' : '#ef444422', color: ok ? '#10b981' : '#ef4444' }}>{ok ? 'OK' : 'Not set'}</span>
+  )
+  return (
+    <div>
+      <SectionHeader title="Web Forms" sub="The shared inbound forms domain and every per-business form address" />
+      {loading ? <p style={{ color: 'var(--sa-muted)' }}>Loading…</p> : d?.error ? <p style={{ color: '#ef4444' }}>{d.error}</p> : (
+        <>
+          {/* Readiness */}
+          <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 14, padding: 18, marginBottom: 18 }}>
+            <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)', margin: '0 0 12px' }}>Domain readiness</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+                <span style={{ fontSize: 13, color: 'var(--sa-muted)' }}>Forms domain <code style={{ color: 'var(--sa-text)' }}>{d.formsDomain}</code></span>
+                <Check ok={!!d.domainConfigured} />
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+                <span style={{ fontSize: 13, color: 'var(--sa-muted)' }}>MX records {d.mxRecords?.length ? <span style={{ color: 'var(--sa-text)' }}>({d.mxRecords.join(', ')})</span> : '(none found)'}</span>
+                <Check ok={!!d.mxOk} />
+              </div>
+              <div style={{ fontSize: 12.5, color: 'var(--sa-muted)' }}>Inbound webhook: <code style={{ color: 'var(--sa-text)' }}>{d.webhookUrl}</code></div>
+              {!d.mxOk && <p style={{ fontSize: 12.5, color: '#f59e0b', margin: 0 }}>Add an MX record for <b>{d.formsDomain}</b> pointing at your inbound email provider, and set an inbound route to the webhook above. Once done, every generated address receives mail — no per-business setup.</p>}
+            </div>
+          </div>
+
+          {/* Addresses */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 10 }}>
+            <p style={{ fontSize: 13, color: 'var(--sa-muted)', margin: 0 }}>{d.total} address{d.total === 1 ? '' : 'es'} · {d.companies} compan{d.companies === 1 ? 'y' : 'ies'}</p>
+            <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search address / company…" style={{ padding: '8px 12px', borderRadius: 9, border: '1px solid var(--sa-border)', background: 'var(--sa-bg)', color: 'var(--sa-text)', fontSize: 13, width: 260 }} />
+          </div>
+          <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 14, overflow: 'hidden' }}>
+            {addresses.length === 0 ? <p style={{ padding: 22, color: 'var(--sa-muted)', fontSize: 13, textAlign: 'center' }}>No web-form addresses yet.</p> : addresses.map((a: any, i: number) => (
+              <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', borderTop: i ? '1px solid var(--sa-border)' : 'none' }}>
+                <code style={{ flex: 1, fontSize: 13, color: 'var(--sa-text)', wordBreak: 'break-all' }}>{a.address}</code>
+                <span style={{ fontSize: 13, color: 'var(--sa-text)', minWidth: 140 }}>{a.company}</span>
+                <span style={{ fontSize: 12.5, color: 'var(--sa-muted)', minWidth: 90 }}>{a.location}</span>
+                <span style={{ fontSize: 11, fontWeight: 700, color: a.is_active ? '#10b981' : 'var(--sa-muted)' }}>{a.is_active ? 'Active' : 'Off'}</span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 function OverviewPage({ data }: { data: any }) {
   const sparkA = [12,18,15,22,19,28,25,32,30,38,35,42]
   const sparkB = [5,8,6,11,9,14,12,16,14,19,17,22]
@@ -2339,6 +2636,19 @@ function CompaniesPage() {
 
   const [imp, setImp] = useState<any>(null)
   const [detailCo, setDetailCo] = useState<any>(null)
+
+  // Deep-link: "#companies/<id-or-slug>" opens that company's detail directly
+  // (used by the "View workspace" link on a contact in any admin workspace).
+  useEffect(() => {
+    if (loading || detailCo) return
+    try {
+      const parts = window.location.hash.replace(/^#/, '').split('/')
+      if (parts[0] === 'companies' && parts[1]) {
+        const co = companies.find(c => c.id === parts[1] || c.slug === parts[1])
+        if (co) setDetailCo(co)
+      }
+    } catch {}
+  }, [loading])
   const startImpersonation = async () => {
     if (!imp?.reason?.trim()) { setImp((s: any) => ({ ...s, err: 'A reason is required.' })); return }
     setImp((s: any) => ({ ...s, busy: true, err: '' }))
@@ -2599,37 +2909,95 @@ function CompaniesPage() {
 
 function UsersPage() {
   const [users, setUsers] = useState<any[]>([])
+  const [companies, setCompanies] = useState<any[]>([])
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState('')
+  const [onlyOrphans, setOnlyOrphans] = useState(false)
+  // "Add to workspace" repair modal state.
+  const [attachFor, setAttachFor] = useState<any>(null)
+  const [attachCompanyId, setAttachCompanyId] = useState('')
+  const [attachRole, setAttachRole] = useState('editor')   // 'editor' == Agent
+  const [attachBusy, setAttachBusy] = useState(false)
+  const [attachMsg, setAttachMsg] = useState('')
+
+  const load = async () => {
+    setLoading(true)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch('/api/platform-admin/users', { headers: { 'Authorization': `Bearer ${session?.access_token}` } })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Could not load users')
+      setUsers(data.users || [])
+    } catch (e: any) { setErr(e.message) } finally { setLoading(false) }
+  }
 
   useEffect(() => {
+    load()
     ;(async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession()
-        const res = await fetch('/api/platform-admin/users', { headers: { 'Authorization': `Bearer ${session?.access_token}` } })
-        const data = await res.json()
-        if (!res.ok) throw new Error(data.error || 'Could not load users')
-        setUsers(data.users || [])
-      } catch (e: any) { setErr(e.message) } finally { setLoading(false) }
+        const { data } = await (supabase as any).from('companies').select('id,name,slug').order('name', { ascending: true }).limit(1000)
+        setCompanies(data || [])
+      } catch {}
     })()
   }, [])
 
-  const filtered = users.filter(u => !search
-    || (u.name || '').toLowerCase().includes(search.toLowerCase())
-    || (u.email || '').toLowerCase().includes(search.toLowerCase())
-    || (u.companies || []).some((c: any) => (c.name || '').toLowerCase().includes(search.toLowerCase()) || (c.slug || '').toLowerCase().includes(search.toLowerCase())))
+  // An "orphan" owns no company AND belongs to no workspace — an account that
+  // can log in but lands nowhere (the Logan/Dip case).
+  const isOrphan = (u: any) => (u.companies?.length || 0) === 0 && (u.memberships?.length || 0) === 0
+
+  const filtered = users.filter(u => {
+    if (onlyOrphans && !isOrphan(u)) return false
+    if (!search) return true
+    const s = search.toLowerCase()
+    return (u.name || '').toLowerCase().includes(s)
+      || (u.email || '').toLowerCase().includes(s)
+      || (u.companies || []).some((c: any) => (c.name || '').toLowerCase().includes(s) || (c.slug || '').toLowerCase().includes(s))
+      || (u.memberships || []).some((c: any) => (c.name || '').toLowerCase().includes(s) || (c.slug || '').toLowerCase().includes(s))
+  })
+  const orphanCount = users.filter(isOrphan).length
+
+  const openAttach = (u: any) => {
+    setAttachFor(u)
+    setAttachCompanyId('')
+    setAttachRole('editor')
+    setAttachMsg('')
+  }
+  const submitAttach = async () => {
+    if (!attachFor || !attachCompanyId) { setAttachMsg('Pick a workspace first.'); return }
+    setAttachBusy(true); setAttachMsg('')
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch('/api/platform-admin/attach-member', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
+        body: JSON.stringify({ userId: attachFor.id, email: attachFor.email, companyId: attachCompanyId, role: attachRole }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Could not attach member')
+      setAttachFor(null)
+      await load()
+    } catch (e: any) { setAttachMsg(e.message) } finally { setAttachBusy(false) }
+  }
+
+  const roleLabel = (r: string) => r === 'admin' ? 'Admin' : r === 'viewer' ? 'Viewer' : 'Agent'
 
   return (
     <div>
       <SectionHeader title="Users" sub={`All registered accounts (${users.length})`} />
-      <div style={{ marginBottom: 16 }}><SearchBar placeholder="Search by name, email, or company..." value={search} onChange={setSearch} /></div>
+      <div style={{ marginBottom: 16, display: 'flex', gap: 10, alignItems: 'center' }}>
+        <div style={{ flex: 1 }}><SearchBar placeholder="Search by name, email, or workspace..." value={search} onChange={setSearch} /></div>
+        <button onClick={() => setOnlyOrphans(o => !o)}
+          style={{ padding: '8px 12px', borderRadius: 9, border: '1px solid var(--sa-border)', background: onlyOrphans ? '#fee2e2' : 'transparent', color: onlyOrphans ? '#dc2626' : 'var(--sa-muted)', cursor: 'pointer', fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap' }}>
+          {onlyOrphans ? '✓ ' : ''}Orphaned only ({orphanCount})
+        </button>
+      </div>
       {err && <div style={{ padding: '10px 14px', borderRadius: 9, background: '#fee2e2', color: '#dc2626', fontSize: 13, marginBottom: 14 }}>{err}</div>}
       <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, overflow: 'hidden' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ borderBottom: '1px solid var(--sa-border)' }}>
-              {['User', 'Email', 'Owns', 'Joined', 'Last sign-in', 'Actions'].map(h => (
+              {['User', 'Email', 'Owns', 'Member of', 'Last sign-in', 'Actions'].map(h => (
                 <th key={h} style={{ padding: '12px 16px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--sa-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</th>
               ))}
             </tr>
@@ -2637,7 +3005,9 @@ function UsersPage() {
           <tbody>
             {loading ? <tr><td colSpan={6} style={{ padding: 32, textAlign: 'center', color: 'var(--sa-muted)' }}>Loading...</td></tr>
             : filtered.length === 0 ? <tr><td colSpan={6} style={{ padding: 32, textAlign: 'center', color: 'var(--sa-muted)' }}>No users found</td></tr>
-            : filtered.map((u, i) => (
+            : filtered.map((u, i) => {
+              const orphan = isOrphan(u)
+              return (
               <tr key={u.id} style={{ borderBottom: i < filtered.length - 1 ? '1px solid var(--sa-border)' : 'none' }}
                 onMouseEnter={e => (e.currentTarget.style.background = 'var(--sa-hover)')}
                 onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
@@ -2647,16 +3017,21 @@ function UsersPage() {
                       {(u.name || u.email || '?')[0]?.toUpperCase()}
                     </div>
                     <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--sa-text)' }}>{u.name}</span>
+                    {orphan && <span title="This account owns no workspace and belongs to no team — it can log in but lands nowhere." style={{ fontSize: 10, fontWeight: 700, color: '#dc2626', background: '#fee2e2', padding: '2px 6px', borderRadius: 6 }}>ORPHAN</span>}
                   </div>
                 </td>
                 <td style={{ padding: '12px 16px', fontSize: 12, color: 'var(--sa-muted)' }}>{u.email}{!u.confirmed && <span style={{ marginLeft: 6, fontSize: 10, color: '#f59e0b' }}>(unconfirmed)</span>}</td>
                 <td style={{ padding: '12px 16px', fontSize: 12, color: 'var(--sa-text)' }}>
-                  {u.companies.length === 0 ? <span style={{ color: 'var(--sa-muted)' }}>—</span> : u.companies.map((c: any) => c.name).join(', ')}
+                  {(u.companies?.length || 0) === 0 ? <span style={{ color: 'var(--sa-muted)' }}>—</span> : u.companies.map((c: any) => c.name).join(', ')}
                 </td>
-                <td style={{ padding: '12px 16px', fontSize: 12, color: 'var(--sa-muted)' }}>{u.created_at ? new Date(u.created_at).toLocaleDateString() : '—'}</td>
+                <td style={{ padding: '12px 16px', fontSize: 12, color: 'var(--sa-text)' }}>
+                  {(u.memberships?.length || 0) === 0 ? <span style={{ color: 'var(--sa-muted)' }}>—</span>
+                    : u.memberships.map((m: any) => `${m.name} (${roleLabel(m.role)})`).join(', ')}
+                </td>
                 <td style={{ padding: '12px 16px', fontSize: 12, color: 'var(--sa-muted)' }}>{u.last_sign_in_at ? new Date(u.last_sign_in_at).toLocaleDateString() : 'never'}</td>
                 <td style={{ padding: '12px 16px' }}>
                   <div style={{ display: 'flex', gap: 6 }}>
+                    <button onClick={() => openAttach(u)} style={{ padding: '5px 9px', borderRadius: 7, border: '1px solid var(--sa-border)', background: orphan ? '#ecfdf5' : 'transparent', color: '#059669', cursor: 'pointer', fontSize: 12, whiteSpace: 'nowrap' }}>+ Workspace</button>
                     {u.companies[0]?.slug && <button onClick={async () => {
                       const co = u.companies[0]
                       const reason = window.prompt(`Reason for entering ${co.name || co.slug} as an admin — recorded in the audit log:`, 'Support / troubleshooting')
@@ -2667,10 +3042,44 @@ function UsersPage() {
                   </div>
                 </td>
               </tr>
-            ))}
+            )})}
           </tbody>
         </table>
       </div>
+
+      {/* Add-to-workspace repair modal */}
+      {attachFor && (
+        <div onClick={() => !attachBusy && setAttachFor(null)}
+          style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ width: '100%', maxWidth: 440, background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, padding: 22 }}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--sa-text)', marginBottom: 4 }}>Add to workspace</div>
+            <div style={{ fontSize: 12, color: 'var(--sa-muted)', marginBottom: 16 }}>{attachFor.name} · {attachFor.email}</div>
+            <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: 'var(--sa-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>Workspace</label>
+            <select value={attachCompanyId} onChange={e => setAttachCompanyId(e.target.value)}
+              style={{ width: '100%', padding: '9px 11px', borderRadius: 9, border: '1px solid var(--sa-border)', background: 'var(--sa-bg, #fff)', color: 'var(--sa-text)', fontSize: 13, marginBottom: 14 }}>
+              <option value="">Select a workspace…</option>
+              {companies.map((c: any) => <option key={c.id} value={c.id}>{c.name} ({c.slug})</option>)}
+            </select>
+            <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: 'var(--sa-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>Role</label>
+            <select value={attachRole} onChange={e => setAttachRole(e.target.value)}
+              style={{ width: '100%', padding: '9px 11px', borderRadius: 9, border: '1px solid var(--sa-border)', background: 'var(--sa-bg, #fff)', color: 'var(--sa-text)', fontSize: 13, marginBottom: 16 }}>
+              <option value="admin">Admin</option>
+              <option value="editor">Agent</option>
+              <option value="viewer">Viewer</option>
+            </select>
+            {attachMsg && <div style={{ padding: '8px 11px', borderRadius: 8, background: '#fee2e2', color: '#dc2626', fontSize: 12, marginBottom: 12 }}>{attachMsg}</div>}
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button onClick={() => setAttachFor(null)} disabled={attachBusy}
+                style={{ padding: '8px 14px', borderRadius: 9, border: '1px solid var(--sa-border)', background: 'transparent', color: 'var(--sa-text)', cursor: 'pointer', fontSize: 13 }}>Cancel</button>
+              <button onClick={submitAttach} disabled={attachBusy || !attachCompanyId}
+                style={{ padding: '8px 14px', borderRadius: 9, border: 'none', background: '#059669', color: '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 600, opacity: (attachBusy || !attachCompanyId) ? 0.6 : 1 }}>
+                {attachBusy ? 'Adding…' : 'Add member'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -3617,6 +4026,9 @@ export default function SuperAdmin() {
   const [page, setPageState] = useState('overview')
   const [data, setData] = useState<any>({})
   const [collapsed, setCollapsed] = useState(false)
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [searchQ, setSearchQ] = useState('')
+  const [searchIdx, setSearchIdx] = useState(0)
 
   const setDark = (v: boolean) => {
     setDarkState(v)
@@ -3634,10 +4046,31 @@ export default function SuperAdmin() {
       if (t === 'dark') setDarkState(true)
     } catch {}
     try {
+      // Hash may carry a sub-target (e.g. "companies/<id>" deep-links straight to
+      // a company's detail) — the page key is just the first segment.
       const h = window.location.hash.replace(/^#/, '')
-      if (h) setPageState(h)
+      if (h) setPageState(h.split('/')[0])
     } catch {}
   }, [])
+
+  // Global ⌘K / Ctrl+K opens the nav search.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) { e.preventDefault(); setSearchOpen(true) }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+  useEffect(() => { if (searchOpen) { setSearchQ(''); setSearchIdx(0) } }, [searchOpen])
+
+  // Flat list of navigable destinations (skip section headers).
+  const searchItems = NAV.filter((n: any) => !n.section) as { key: string; label: string; icon: string }[]
+  const searchResults = (() => {
+    const s = searchQ.trim().toLowerCase()
+    if (!s) return searchItems
+    return searchItems.filter(it => it.label.toLowerCase().includes(s) || it.key.toLowerCase().includes(s))
+  })()
+  const goSearch = (key: string) => { setSearchOpen(false); setPage(key) }
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: s }: any) => {
@@ -3730,6 +4163,20 @@ export default function SuperAdmin() {
 
         {/* Nav */}
         <nav style={{ flex: 1, overflowY: 'auto', padding: '8px 8px' }}>
+          {/* Search / command palette — jumps to any section. */}
+          <button onClick={() => setSearchOpen(true)} title="Search (⌘K)"
+            style={{
+              width: '100%', display: 'flex', alignItems: 'center', gap: 9,
+              padding: collapsed ? '9px' : '8px 10px', justifyContent: collapsed ? 'center' : 'flex-start',
+              borderRadius: 9, border: '1px solid var(--sa-border)', cursor: 'pointer', marginBottom: 8,
+              background: 'var(--sa-hover)', color: 'var(--sa-muted)', fontSize: 13,
+            }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+            {!collapsed && <>
+              <span style={{ flex: 1, textAlign: 'left' }}>Search…</span>
+              <span style={{ fontSize: 10.5, fontWeight: 700, border: '1px solid var(--sa-border)', borderRadius: 5, padding: '1px 5px' }}>⌘K</span>
+            </>}
+          </button>
           {NAV.map((item: any, idx) => {
             if (item.section) {
               if (collapsed) return null
@@ -3774,6 +4221,41 @@ export default function SuperAdmin() {
         </div>
       </aside>
 
+      {/* ── SEARCH PALETTE ──────────────────────────────────────────────────── */}
+      {searchOpen && (
+        <div onClick={() => setSearchOpen(false)}
+          style={{ position: 'fixed', inset: 0, zIndex: 500, background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(2px)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: '12vh' }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ width: '100%', maxWidth: 520, margin: '0 16px', background: 'var(--sa-bg)', border: '1px solid var(--sa-border)', borderRadius: 14, boxShadow: '0 24px 64px rgba(0,0,0,0.35)', overflow: 'hidden', display: 'flex', flexDirection: 'column', maxHeight: '68vh' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '13px 16px', borderBottom: '1px solid var(--sa-border)' }}>
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--sa-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+              <input autoFocus value={searchQ}
+                onChange={e => { setSearchQ(e.target.value); setSearchIdx(0) }}
+                onKeyDown={e => {
+                  if (e.key === 'ArrowDown') { e.preventDefault(); setSearchIdx(i => Math.min(i + 1, searchResults.length - 1)) }
+                  else if (e.key === 'ArrowUp') { e.preventDefault(); setSearchIdx(i => Math.max(i - 1, 0)) }
+                  else if (e.key === 'Enter') { e.preventDefault(); const r = searchResults[searchIdx]; if (r) goSearch(r.key) }
+                  else if (e.key === 'Escape') { setSearchOpen(false) }
+                }}
+                placeholder="Search sections…"
+                style={{ flex: 1, border: 'none', outline: 'none', fontSize: 15, background: 'transparent', color: 'var(--sa-text)' }} />
+              <span style={{ fontSize: 11, color: 'var(--sa-muted)' }}>Esc</span>
+            </div>
+            <div style={{ overflowY: 'auto', padding: 6 }}>
+              {searchResults.length === 0 ? (
+                <p style={{ padding: 22, textAlign: 'center', color: 'var(--sa-muted)', fontSize: 14 }}>No matches for “{searchQ}”.</p>
+              ) : searchResults.map((r, i) => (
+                <button key={r.key} onMouseEnter={() => setSearchIdx(i)} onClick={() => goSearch(r.key)}
+                  style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left', padding: '9px 12px', borderRadius: 9, border: 'none', cursor: 'pointer', background: i === searchIdx ? '#ff7a6b18' : 'transparent', color: i === searchIdx ? '#ff7a6b' : 'var(--sa-text)' }}>
+                  <span style={{ flexShrink: 0, opacity: 0.8 }}>{(I as any)[r.icon]}</span>
+                  <span style={{ fontSize: 13.5, fontWeight: 600 }}>{r.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── MAIN ────────────────────────────────────────────────────────────── */}
       <main style={{ marginLeft: SIDEBAR_W, flex: 1, background: 'var(--sa-bg)', minHeight: '100vh', transition: 'margin-left 0.2s ease' }}>
         {/* Topbar */}
@@ -3802,10 +4284,12 @@ export default function SuperAdmin() {
           {page === 'roadmap'    && <CrossCompanyContent title="Roadmaps" sub="All roadmap items across all companies" table="ideas" statusFilter={['planned', 'in_progress', 'shipped']} extraCol={{ header: 'Votes', render: (r) => <span>{r.votes ?? 0}</span> }} />}
           {page === 'announce'   && <CrossCompanyContent title="Announcements" sub="All announcements and changelog posts" table="announcements" />}
           {page === 'help'       && <CrossCompanyContent title="Help Center" sub="Help articles across all companies" table="help_articles" extraCol={{ header: 'Views', render: (r) => <span>{r.views ?? 0}</span> }} />}
+          {page === 'blog'       && <BlogAdminPage />}
           {page === 'chat'       && <LiveChatPage />}
           {page === 'tickets'    && <TicketsPage />}
           {page === 'moderation' && <ModerationPage />}
           {page === 'imp'          && <ImpersonationSessionsPage />}
+          {page === 'webforms'     && <WebFormsPage />}
           {page === 'demos'        && <DemoWorkspacesPage />}
           {page === 'calls'        && <CallDiagnosticsPage />}
           {page === 'webhooks'     && <WebhookExplorerPage />}

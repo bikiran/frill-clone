@@ -4,6 +4,21 @@ import { TwilioService, xmlEscape } from '@/lib/twilio-service'
 // device can no longer self-join and the original leg is kept.
 export const HANDOFF_TTL_MS = 30_000
 
+// Best-effort audit of a handoff step (surfaced in Super-Admin Call Diagnostics).
+// Never throws — diagnostics must not affect the live call.
+export async function logHandoff(db: any, e: {
+  callId: string; companyId?: string | null; event: string;
+  deviceId?: string | null; platform?: string | null; userId?: string | null; detail?: string | null
+}): Promise<void> {
+  try {
+    await db.from('call_handoff_events').insert({
+      call_id: e.callId, company_id: e.companyId || null, event: e.event,
+      device_id: e.deviceId || null, platform: e.platform || null,
+      user_id: e.userId || null, detail: e.detail || null,
+    })
+  } catch { /* table missing or write failed — ignore */ }
+}
+
 // The Twilio Voice SDK reports the caller of an SDK-originated call as
 // `client:<identity>`. Strip the prefix to get the identity string.
 export function parseClientIdentity(from: string | null | undefined): string | null {
@@ -57,8 +72,12 @@ export async function ensureCallConference(
   // completed-recording callback stores it as the call's conference recording.
   const base = (process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com').replace(/\/$/, '')
   const recCb = `${base}/api/twilio/voice/recording?callRowId=${encodeURIComponent(call.id)}&companyId=${encodeURIComponent(call.company_id || '')}&conversationId=${encodeURIComponent(call.conversation_id || '')}&kind=conference`
+  // waitUrl="" → silence, not Twilio's default hold music. During a handoff the
+  // customer is briefly alone in the conference while the new agent device joins;
+  // the old "tung-tung-tung" hold loop made that gap sound like a broken/ringing
+  // call. Silence is the right cue that they're held for a moment, not dropped.
   const conferenceTwiml =
-    `<?xml version="1.0" encoding="UTF-8"?><Response><Dial><Conference startConferenceOnEnter="true" endConferenceOnExit="false" beep="false" ` +
+    `<?xml version="1.0" encoding="UTF-8"?><Response><Dial><Conference startConferenceOnEnter="true" endConferenceOnExit="false" beep="false" waitUrl="" ` +
     `record="record-from-start" recordingStatusCallback="${xmlEscape(recCb)}" recordingStatusCallbackEvent="completed" recordingStatusCallbackMethod="POST">` +
     `${confName}</Conference></Dial></Response>`
   try { await svc.updateCall(customerLeg, { twiml: conferenceTwiml }) }

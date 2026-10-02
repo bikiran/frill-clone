@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { deliverAutomatedMessage } from '@/lib/channel-fallback'
-import { linkContactIdentity } from '@/lib/identity'
+import { linkContactIdentity, linkedContacts } from '@/lib/identity'
 import { createClient } from '@supabase/supabase-js'
 import { attributeOrderToLinks } from '@/lib/link-attribution'
 import { WebhookService } from '@/lib/webhook-service'
@@ -9,15 +9,51 @@ import { logWebhookEvent } from '@/lib/webhook-log'
 import { upsertWooOrder } from '@/lib/orders-sync'
 import { wooDateToISO } from '@/lib/orders'
 import { logEnquiryReopened } from '@/lib/conversation-timeline'
+import { notifyWaitlist, resolveWaitlistSettings } from '@/lib/waitlist'
+
+// A product changed in WooCommerce. Keep the synced catalogue's stock current,
+// and when it's back IN stock, text everyone on its back-in-stock waitlist
+// (held until the morning if it lands outside sending hours).
+async function handleProductStock(db: any, companyId: string, p: any) {
+  const id = Number(p?.id)
+  if (!id) return
+  const stockStatus = String(p.stock_status || '').toLowerCase()
+  const qty = p.stock_quantity === null || p.stock_quantity === undefined ? null : Number(p.stock_quantity)
+  try {
+    await db.from('woocommerce_products').update({ stock_status: stockStatus || null, stock_quantity: qty })
+      .eq('company_id', companyId).eq('woo_product_id', id)
+  } catch {}
+  const inStock = stockStatus === 'instock' && (qty === null || qty > 0)
+  if (!inStock) return
+  const { data: co } = await db.from('companies').select('waitlist_settings').eq('id', companyId).maybeSingle()
+  if (!resolveWaitlistSettings(co?.waitlist_settings).auto_notify) return
+  // A variation coming back counts for the parent product people subscribed to.
+  const ids = [id, Number(p.parent_id) || null].filter(Boolean) as number[]
+  const r = await notifyWaitlist(db, { companyId, wooProductIds: ids, respectHours: true })
+  if (r.sent || r.queued || r.failed) console.log('[waitlist] product back in stock', { companyId, product: id, ...r })
+}
 
 const DEFAULT_MESSAGES: Record<string, string> = {
-  processing: 'Thank you for placing an order with {business}. We have received it. If you have any questions, feel free to reply here.',
-  failed: 'We noticed there was an issue with your recent order payment. Do you need any help?',
-  cancelled: 'Your recent order was cancelled. Can we help you with anything?',
-  refunded: 'Your order has been refunded. The refund of {amount} has been processed and should appear shortly.',
-  completed: 'Your order has been completed. Thank you for choosing {business}!',
-  'on-hold': 'Your order is on hold while we confirm a few details. We\'ll be in touch shortly — feel free to reply here.',
+  processing: 'Hi {name}, thanks for your order #{order} with {business} — we\'ve received it and will begin processing. Reply here anytime with any questions.',
+  failed: 'Hi {name}, we noticed there was an issue with the payment on your order #{order}. Do you need any help?',
+  cancelled: 'Hi {name}, your order #{order} was cancelled. Can we help you with anything?',
+  refunded: 'Your order #{order} has been refunded. The refund of {amount} has been processed and should appear shortly.',
+  completed: 'Hi {name}, your order #{order} is complete. Thank you for choosing {business}!',
+  'on-hold': 'Hi {name}, your order #{order} is on hold while we confirm a few details. We\'ll be in touch shortly — reply here anytime.',
 }
+
+// The earlier default templates (no {name} / #{order}). A saved config that
+// still holds one of these was never really customised — it just captured the
+// old default — so we treat it as unset and use the current default instead,
+// so existing workspaces get the order number + name without re-saving.
+const LEGACY_DEFAULTS = new Set<string>([
+  'Thank you for placing an order with {business}. We have received it. If you have any questions, feel free to reply here.',
+  'We noticed there was an issue with your recent order payment. Do you need any help?',
+  'Your recent order was cancelled. Can we help you with anything?',
+  'Your order has been refunded. The refund of {amount} has been processed and should appear shortly.',
+  'Your order has been completed. Thank you for choosing {business}!',
+  "Your order is on hold while we confirm a few details. We'll be in touch shortly — feel free to reply here.",
+].map(s => s.trim()))
 
 // Customer-facing messages that are actively BAD to send on an order that is
 // actually alive/paid: "your order was cancelled" / "your payment failed". A
@@ -40,6 +76,24 @@ function orderLooksPaid(order: any): boolean {
   const paidStamp = order?.date_paid || order?.date_paid_gmt
   const txn = order?.transaction_id
   return !!(String(paidStamp || '').trim() || String(txn || '').trim())
+}
+
+// Read an order meta_data value by key (case-insensitive). WooCommerce orders
+// carry custom fields as meta_data: [{ key, value }, …].
+function orderMeta(order: any, key: string): string {
+  const meta = Array.isArray(order?.meta_data) ? order.meta_data : []
+  const k = key.toLowerCase()
+  const hit = meta.find((m: any) => String(m?.key || '').toLowerCase() === k)
+  return hit ? String(hit.value ?? '').trim() : ''
+}
+
+// An in-store POS sale, pushed into WooCommerce by Prexty, tagged with
+// `_prexty_source = pos` (plus `_prexty_sale_id` / `_prexty_outlet`). These are
+// NOT online orders, so the customer must NOT get the automated order SMS/email —
+// it costs money and, with the nightly bulk upload of the day's sales, is spammy.
+function posSaleInfo(order: any): { isPos: boolean; saleId: string; outlet: string } {
+  const source = orderMeta(order, '_prexty_source').toLowerCase()
+  return { isPos: source === 'pos', saleId: orderMeta(order, '_prexty_sale_id'), outlet: orderMeta(order, '_prexty_outlet') }
 }
 
 // Re-fetch the order's CURRENT status from WooCommerce so we don't act on a
@@ -178,7 +232,14 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
   const cfg = company?.order_chat_automation || {}
 
   const status = (order.status || '').toLowerCase()
-  const messages = { ...DEFAULT_MESSAGES, ...(cfg.messages || {}) }
+  // Merge saved overrides, but drop any that are just the old default (or blank)
+  // so they fall back to the current default with {name}/#{order}.
+  const savedMsgs: Record<string, string> = {}
+  for (const [k, v] of Object.entries(cfg.messages || {})) {
+    const val = String(v ?? '').trim()
+    if (val && !LEGACY_DEFAULTS.has(val)) savedMsgs[k] = val as string
+  }
+  const messages = { ...DEFAULT_MESSAGES, ...savedMsgs }
   const template = messages[status]
 
   const email = order.billing?.email
@@ -298,7 +359,19 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
       .eq('company_id', companyId).eq('subject', orderSubject).limit(1)
     conv = byOrder?.[0] || null
     if (!conv) {
-      const { data } = await db.from('conversations').select('*').eq('company_id', companyId).eq('contact_id', contact.id).order('last_message_at', { ascending: false }).limit(1)
+      // Reuse the customer's most recent thread — searched across their WHOLE
+      // identity group, not just this contact row. linkContactIdentity (above)
+      // has already grouped an email-only duplicate and a phone-only duplicate
+      // under one identity_group_id using the order's email AND phone; without
+      // this the order would open a SECOND thread on the other duplicate contact
+      // (e.g. a customer who called — a phone contact — then ordered with their
+      // email got two inbox rows). Falls back to just this contact.
+      let groupIds: string[] = [contact.id]
+      try {
+        const linked = await linkedContacts(db, contact.id)
+        if (linked.length) groupIds = Array.from(new Set([contact.id, ...linked.map((c: any) => c.id)]))
+      } catch {}
+      const { data } = await db.from('conversations').select('*').eq('company_id', companyId).in('contact_id', groupIds).order('last_message_at', { ascending: false }).limit(1)
       conv = data?.[0] || null
     }
   }
@@ -401,7 +474,12 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
         metadata: { order_event: true, order_id: order.id, status: badgeStatus },
       })
     }
-    try { await notifyCompany({ db, companyId, type: 'order', message: `New order #${order.number || order.id} from ${displayName} — $${order.total}`, actorName: displayName, conversationId: conv.id }) } catch {}
+    // Title the alert by what actually happened. A completed order was arriving
+    // labelled "New order" — the same wording as a fresh order — so the team
+    // couldn't tell a placement from a fulfilment at a glance. Completed orders
+    // now read "Order completed"; everything else stays "New order".
+    const orderVerb = status === 'completed' ? 'Order completed' : 'New order'
+    try { await notifyCompany({ db, companyId, type: 'order', message: `${orderVerb} #${order.number || order.id} from ${displayName} — $${order.total}`, actorName: displayName, conversationId: conv.id }) } catch {}
     // notifyCompany only writes the in-app bell row — it does NOT push, which is
     // why a new order showed up in Activity and on the web while no phone ever
     // made a sound. Only announce the order once, on the delivery that created
@@ -410,7 +488,7 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
       await pushInboundMessage({
         companyId,
         conversationId: conv.id,
-        title: `New order #${order.number || order.id}`,
+        title: `${orderVerb} #${order.number || order.id}`,
         body: `${displayName} — $${order.total}`,
         route: `/conversation/${conv.id}`,
       })
@@ -426,6 +504,18 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
   // that says nothing about the order they just placed.
   const isNewOrderStatus = ['processing', 'on-hold', 'completed'].includes(status)
   let shouldSend = !seenEvent && template && (cfg.enabled || isNewOrderStatus)
+
+  // In-store POS sale (pushed to WooCommerce by Prexty)? Never send the customer
+  // an automated order SMS/email — they bought in person, and the nightly bulk
+  // upload of the day's sales would otherwise text every one of them. The order
+  // is still recorded below; only the customer-facing message is suppressed.
+  const pos = posSaleInfo(order)
+  if (shouldSend && pos.isPos) {
+    shouldSend = false
+    console.log('[Order automation] suppressed customer message — POS sale', {
+      order: order.number || order.id, saleId: pos.saleId, outlet: pos.outlet,
+    })
+  }
 
   // Rate-limit the customer-facing automation text — each message is a paid
   // SMS. The per-(order,status) dedupe above stops the SAME order re-messaging,
@@ -669,7 +759,8 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
   // ── Auto review request on completion ─────────────────────────────────────
   // Independent of the order-chat automation toggle: if the business turned on
   // review requests, schedule one (optionally delayed) for a completed order.
-  if (status === 'completed') {
+  // Skipped for POS sales — the same reason we don't SMS them an order update.
+  if (status === 'completed' && !pos.isPos) {
     try {
       const { data: co } = await db.from('companies').select('review_request_settings').eq('id', companyId).maybeSingle()
       const rr = co?.review_request_settings || {}
@@ -765,6 +856,18 @@ export async function POST(req: NextRequest) {
       const webhookService = new WebhookService(supabase)
       await webhookService.processWebhook(companyId, { resource, id: resourceId, action: 'updated', ...data })
     } catch (e) { console.error('[Webhook] sync error', e) }
+
+    // Product updated (stock changed) → back-in-stock waitlists. Woo sends the
+    // resource in a header; a product payload has stock_status + type but no
+    // line_items.
+    const wcResource = (req.headers.get('x-wc-webhook-resource') || '').toLowerCase()
+    const isProductEvent = wcResource === 'product' || topic.startsWith('product.')
+      || (!data.line_items && data.stock_status !== undefined && data.type !== undefined)
+    if (isProductEvent) {
+      try { await handleProductStock(supabase, companyId, data) }
+      catch (e) { console.error('[Webhook] waitlist stock handling error', e) }
+      return NextResponse.json({ success: true, message: 'Product processed', deliveryId })
+    }
 
     // Order-triggered chat automation — the payload for order topics IS the order.
     if ((resource === 'order' || data.line_items) && data.status) {

@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import crypto from 'crypto'
-import { META_VERIFY_TOKEN, META_APP_SECRET, fetchMetaProfile } from '@/lib/meta'
-import { isIgLoginChannel, fetchInstagramUserProfile, INSTAGRAM_APP_SECRET } from '@/lib/instagram-login'
+import { META_VERIFY_TOKEN, META_APP_SECRET, fetchMetaProfile, fetchPageComment } from '@/lib/meta'
+import { isIgLoginChannel, fetchInstagramUserProfile, fetchInstagramComment, INSTAGRAM_APP_SECRET } from '@/lib/instagram-login'
 import { linkContactIdentity } from '@/lib/identity'
+import { rehostRemoteMedia } from '@/lib/media-rehost'
+import { detectContactInfo, emailKey, phoneKey } from '@/lib/phone'
 import { logWebhookEvent } from '@/lib/webhook-log'
 import { notifyCompany, pushInboundMessage } from '@/lib/notify'
 import { logEnquiryReopened } from '@/lib/conversation-timeline'
@@ -102,6 +104,16 @@ export async function POST(req: NextRequest) {
             kind: 'story_reply',
             story_url: replyTo.story.url || null,
             story_id: replyTo.story.id || null,
+            story_type: null as string | null,
+          }
+          // The story's media URL is a short-lived Instagram CDN link that 403s
+          // within hours, so it renders as a broken thumbnail by the time an
+          // agent opens the thread. Rehost a durable copy now, while it's fresh,
+          // and record whether it's an image or a video so the inbox can show it
+          // full-size and play it (like Coax does).
+          if (storyReply.story_url) {
+            const rehosted = await rehostRemoteMedia(db, storyReply.story_url, 'ig-story')
+            if (rehosted) { storyReply.story_url = rehosted.url; storyReply.story_type = rehosted.kind }
           }
         }
 
@@ -240,6 +252,37 @@ export async function POST(req: NextRequest) {
           fetch(`${base}/api/inbox/translate-message`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messageId: insertedMsg.id }) }).catch(() => {})
         }
 
+        // Customer-matching: if they shared an email/phone (e.g. in reply to a
+        // "Request customer details" ask), capture it so the match engine can
+        // find their orders. Only FILL an empty field — never overwrite verified
+        // data silently; record it as a suggested identity + an audit either way,
+        // and (re)link the identity group so orders resolve across channels.
+        if (text && contact?.id) {
+          try {
+            const info = detectContactInfo(text)
+            if (info.email || info.phone) {
+              const patch: any = {}
+              if (info.email && !contact.email) patch.email = info.email.raw
+              if (info.phone && !contact.phone) patch.phone = info.phone.raw
+              if (Object.keys(patch).length) {
+                await db.from('contacts').update(patch).eq('id', contact.id)
+                await db.from('customer_identity_audit').insert({
+                  company_id: companyId, contact_id: contact.id, action: 'field_changed',
+                  detail: `Captured ${Object.keys(patch).join(' & ')} from the ${platform} conversation`,
+                  before: { email: contact.email || null, phone: contact.phone || null }, after: patch,
+                  evidence: { source: `${platform} conversation`, conversationId: conv.id },
+                }).then(() => {}, () => {})
+                Object.assign(contact, patch)
+              }
+              const idRows: any[] = []
+              if (info.email) idRows.push({ company_id: companyId, contact_id: contact.id, kind: 'email', value: emailKey(info.email.raw), display: info.email.raw, status: 'suggested', source: `${platform} conversation` })
+              if (info.phone) idRows.push({ company_id: companyId, contact_id: contact.id, kind: 'phone', value: phoneKey(info.phone.raw), display: info.phone.raw, status: 'suggested', source: `${platform} conversation` })
+              if (idRows.length) await db.from('customer_identities').insert(idRows).then(() => {}, () => {})
+              await linkContactIdentity(db, companyId, contact.id, { email: contact.email, phone: contact.phone, channel: platform }).catch(() => {})
+            }
+          } catch {}
+        }
+
         // Alert the team: in-app bell + a phone push carrying conversationId, so
         // the notification gets the Reply / Mark-read quick actions.
         const who = contact?.name || (platform === 'instagram' ? 'an Instagram user' : 'a Facebook user')
@@ -297,8 +340,9 @@ export async function POST(req: NextRequest) {
         const commentId = field === 'comments' ? v.id : (v.comment_id || v.id)
         if (!commentId) continue
         const fromId = v.from?.id ? String(v.from.id) : null
-        const fromName = v.from?.username || v.from?.name || null
-        const text: string = v.text || v.message || ''
+        let fromName = v.from?.username || v.from?.name || null
+        let fromPhoto: string | null = v.from?.picture?.data?.url || null
+        let text: string = v.text || v.message || ''
         const mediaId = field === 'comments' ? (v.media?.id || null) : (v.post_id || null)
 
         // Skip the business's own comments/replies (they echo back as webhooks).
@@ -321,13 +365,48 @@ export async function POST(req: NextRequest) {
           ? new Date(typeof v.created_time === 'number' ? v.created_time * 1000 : v.created_time).toISOString()
           : new Date().toISOString()
 
-        const { data: ins } = await db.from('social_comments').insert({
+        // The webhook payload usually omits the commenter's name (and never
+        // carries their photo), so a live comment would show as "Facebook user"
+        // until the next manual sync. Hydrate the author (name + photo) and text
+        // from the Graph API with the channel's own token, like DMs do.
+        if (!fromName || !fromPhoto || !text) {
+          const hydrated = isIgLoginChannel(channel)
+            ? await fetchInstagramComment(commentId, channel.page_access_token)
+            : await fetchPageComment(commentId, channel.page_access_token)
+          if (hydrated) {
+            fromName = fromName || hydrated.name || null
+            fromPhoto = fromPhoto || (hydrated as any).photo || null
+            text = text || hydrated.message || ''
+          }
+        }
+
+        // Link the comment to a CRM contact when the commenter is someone we
+        // already know — their platform user id (author_id) is the same id DMs
+        // are keyed on (contacts.meta_user_id). This lets a customer's public
+        // comment surface in the inbox (pill / timeline / thread) like their DMs.
+        let commentContactId: string | null = null
+        if (fromId) {
+          try {
+            const { data: cc } = await db.from('contacts').select('id').eq('company_id', companyId).eq('meta_user_id', fromId).limit(1)
+            commentContactId = cc?.[0]?.id || null
+          } catch { /* contact_id column may not exist yet (pre-V313) — ignore */ }
+        }
+
+        const baseRow: any = {
           company_id: companyId, post_id: postDbId, meta_channel_id: channel.id, platform,
           external_comment_id: commentId, external_post_id: mediaId,
           author_name: fromName || (platform === 'instagram' ? 'Instagram user' : 'Facebook user'),
-          author_id: fromId, message: text || null,
+          author_id: fromId, author_photo: fromPhoto, message: text || null,
           commented_at: commentedAt, raw: change,
-        }).select('id').maybeSingle()
+        }
+        let { data: ins, error: insErr } = await db.from('social_comments')
+          .insert({ ...baseRow, ...(commentContactId ? { contact_id: commentContactId } : {}) })
+          .select('id').maybeSingle()
+        // If contact_id isn't a column yet (migration V313 not run), retry without
+        // it so the comment is never dropped.
+        if (insErr && commentContactId && /contact_id|column|schema cache/i.test(insErr.message || '')) {
+          ;({ data: ins } = await db.from('social_comments').insert(baseRow).select('id').maybeSingle())
+        }
 
         // Classify (risk / category / sentiment) so the Engagement filters work.
         if (ins?.id && text.trim()) {

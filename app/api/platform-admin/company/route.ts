@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { logSuperAdminAudit } from '@/lib/super-admin-audit'
 
 const SUPER_ADMIN = 'bishalstha76@gmail.com'
 
@@ -22,6 +23,57 @@ async function requireSuperAdmin(req: NextRequest, db: any): Promise<boolean> {
   } catch { return false }
 }
 
+// Resolve the acting super-admin's identity for the audit trail.
+async function actor(req: NextRequest, db: any): Promise<{ id: string | null; email: string | null }> {
+  try {
+    const token = (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '')
+    const { data } = await db.auth.getUser(token)
+    return { id: data?.user?.id || null, email: data?.user?.email || null }
+  } catch { return { id: null, email: null } }
+}
+
+// GET ?companyId= : a compact summary for the in-workspace Super-Admin bar —
+// the plan, trial state, and a few live usage counts. Super-admin only; returns
+// 403 for everyone else so the bar simply doesn't render for normal admins.
+export async function GET(req: NextRequest) {
+  try {
+    const db = admin()
+    if (!(await requireSuperAdmin(req, db))) {
+      return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+    }
+    const companyId = req.nextUrl.searchParams.get('companyId')
+    if (!companyId) return NextResponse.json({ error: 'companyId required' }, { status: 400 })
+
+    const { data: co } = await db.from('companies')
+      .select('id, name, slug, plan, trial_ends_at, created_at, business_phone, owner_id')
+      .eq('id', companyId).maybeSingle()
+    if (!co) return NextResponse.json({ error: 'Company not found' }, { status: 404 })
+
+    const count = async (table: string, build?: (q: any) => any) => {
+      try {
+        let q = db.from(table).select('id', { count: 'exact', head: true }).eq('company_id', companyId)
+        if (build) q = build(q)
+        const { count } = await q
+        return count || 0
+      } catch { return 0 }
+    }
+    const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0)
+    const [team, contacts, openConvos, smsMonth] = await Promise.all([
+      count('team_members'),
+      count('contacts'),
+      count('conversations', (q: any) => q.not('status', 'in', '("closed","resolved")')),
+      count('messages', (q: any) => q.eq('delivery_channel', 'sms').gte('created_at', monthStart.toISOString())),
+    ])
+
+    return NextResponse.json({
+      company: co,
+      usage: { team, contacts, openConvos, smsMonth },
+    })
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message }, { status: 500 })
+  }
+}
+
 // POST: update a company's core fields from the platform admin.
 // Handles slug uniqueness and owner reassignment safely.
 export async function POST(req: NextRequest) {
@@ -34,7 +86,7 @@ export async function POST(req: NextRequest) {
     if (!companyId || !patch) return NextResponse.json({ error: 'Missing companyId or patch' }, { status: 400 })
 
     const allowed: any = {}
-    for (const f of ['name', 'slug', 'plan', 'business_phone', 'assigned_admin_email', 'board_domain', 'help_domain', 'accent_color', 'notes', 'number_provider', 'free_number_credits']) {
+    for (const f of ['name', 'slug', 'plan', 'business_phone', 'assigned_admin_email', 'board_domain', 'help_domain', 'accent_color', 'notes', 'number_provider', 'free_number_credits', 'trial_ends_at']) {
       if (patch[f] !== undefined) allowed[f] = patch[f]
     }
     // Which carrier backs this company's number provisioning (Telnyx / Twilio).
@@ -65,8 +117,27 @@ export async function POST(req: NextRequest) {
       allowed.owner_id = match.id
     }
 
+    // Snapshot the "before" for a meaningful audit diff.
+    const { data: before } = await db.from('companies').select('plan, trial_ends_at').eq('id', companyId).maybeSingle()
+
     const { data, error } = await db.from('companies').update(allowed).eq('id', companyId).select().maybeSingle()
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+    // Audit: derive the most meaningful action from what changed.
+    try {
+      const who = await actor(req, db)
+      let action = 'company_update'
+      let summary = `Updated ${Object.keys(allowed).join(', ')}`
+      if (allowed.plan !== undefined && allowed.plan !== before?.plan) {
+        if (allowed.plan === 'suspended') { action = 'suspend'; summary = `Suspended (was ${before?.plan || 'unknown'})` }
+        else if (before?.plan === 'suspended') { action = 'reactivate'; summary = `Reactivated → ${allowed.plan}` }
+        else { action = 'plan_change'; summary = `Plan ${before?.plan || '?'} → ${allowed.plan}` }
+      } else if (allowed.trial_ends_at !== undefined) {
+        action = 'trial_extend'; summary = `Trial set to ${new Date(allowed.trial_ends_at).toLocaleDateString()}`
+      }
+      await logSuperAdminAudit(db, { adminId: who.id, adminEmail: who.email, companyId, action, summary, detail: { patch: allowed, before } })
+    } catch {}
+
     return NextResponse.json({ ok: true, company: data })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })

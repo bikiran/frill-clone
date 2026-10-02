@@ -47,12 +47,21 @@ export async function GET(req: NextRequest) {
   // A deprecated scope like pages_read_user_content will NOT appear here; if
   // Facebook still complains about it, it's configured on the Meta app itself.
   if (url.searchParams.get('debug') === '1') {
+    // Break the generated dialog URL into its actual params so the config_id /
+    // override_default_response_type can be verified directly. `state` is
+    // redacted (it's base64 company context, not a secret, but noisy).
+    const parsed = new URL(loginUrl)
+    const params: Record<string, string> = {}
+    parsed.searchParams.forEach((v, k) => { params[k] = k === 'state' ? '(redacted)' : v })
     return NextResponse.json({
       mode: noConfig ? 'scope (config_id bypassed)' : (META_LOGIN_CONFIG_ID ? 'config_id' : 'scope'),
       requestedScope: (META_LOGIN_CONFIG_ID && !noConfig) ? '(ignored — using config_id)' : scope,
-      configId: noConfig ? '(bypassed)' : (META_LOGIN_CONFIG_ID || null),
+      configIdEnv: META_LOGIN_CONFIG_ID || null,
+      configIdInUrl: params.config_id || null,
+      overrideDefaultResponseType: params.override_default_response_type || null,
       redirectUri: process.env.META_REDIRECT_URI || null,
-      loginUrl,
+      params,
+      loginUrl: loginUrl.replace(/state=[^&]+/, 'state=(redacted)'),
     })
   }
 

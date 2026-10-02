@@ -68,14 +68,28 @@ export async function POST(req: NextRequest) {
       // by hand. Send it for real over whichever provider owns the number.
       try {
         const { data: conv } = await db.from('conversations')
-          .select('sms_number, sms_enabled').eq('id', conversationId).maybeSingle()
-        const to = conv?.sms_number
+          .select('sms_number, sms_enabled, contact_id').eq('id', conversationId).maybeSingle()
+        // Recipient: the conversation's SMS number if set, else fall back to the
+        // linked contact's phone. Previously only sms_number was used, so a
+        // request on a call/mixed thread (no sms_number) recorded the message
+        // but never actually texted the customer — the agent had to resend by
+        // hand. Prefer the request's own contact, then the conversation's.
+        let to: string | null = conv?.sms_number || null
+        if (!to) {
+          const cid = contactId || conv?.contact_id
+          if (cid) {
+            const { data: c } = await db.from('contacts').select('phone').eq('id', cid).maybeSingle()
+            to = c?.phone || null
+          }
+        }
         // Per-company operational flag (default ON): skip texting the link when
         // media-link SMS is disabled for this company.
         const smsAllowed = await companyFlagEnabled(db, companyId, 'media_sms_fallback')
         if (to && conv?.sms_enabled !== false && smsAllowed) {
           const sender = await resolveSmsSender(db, companyId)
           if (sender) await sender.send({ to, text: smsText })
+        } else if (!to) {
+          console.warn('[media-requests] no SMS recipient resolved for conversation', conversationId)
         }
       } catch (e: any) {
         console.error('[media-requests] sms send failed', e?.message || e)

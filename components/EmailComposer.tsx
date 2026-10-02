@@ -19,10 +19,11 @@ interface Props {
   signature?: string | null    // the mailbox's own signature (fallback default)
   agentName?: string
   onSent: () => void
+  onAiAssist?: () => void       // fired (once) when the draft is written/improved with AI
 }
 
 export default function EmailComposer({
-  conversationId, companyId, toEmail, defaultSubject, fromLabel, signature, agentName, onSent,
+  conversationId, companyId, toEmail, defaultSubject, fromLabel, signature, agentName, onSent, onAiAssist,
 }: Props) {
   const [to, setTo] = useState(toEmail)
   const [cc, setCc] = useState('')
@@ -44,6 +45,44 @@ export default function EmailComposer({
   const exec = (cmd: string, val?: string) => { editorRef.current?.focus(); document.execCommand(cmd, false, val); syncBody() }
   const insertAtCursor = (text: string) => { editorRef.current?.focus(); document.execCommand('insertText', false, text); syncBody() }
   const EMOJIS = ['😀', '😊', '🙏', '👍', '🎉', '✅', '❤️', '🐟', '📦', '⭐', '😅', '🙌']
+
+  // ── Draft persistence ───────────────────────────────────────────────────────
+  // Keep an unsent email per conversation in localStorage so switching threads,
+  // navigating away, or a reload never loses what was typed. Restored when the
+  // conversation opens; cleared on a successful send.
+  const draftKey = conversationId ? `colvy-email-draft:${conversationId}` : ''
+  const clearDraft = () => { try { if (draftKey) localStorage.removeItem(draftKey) } catch {} }
+  // Load (declared BEFORE the save effect so a fresh mount restores before it
+  // could ever overwrite).
+  useEffect(() => {
+    if (!draftKey) return
+    let saved: any = null
+    try { saved = JSON.parse(localStorage.getItem(draftKey) || 'null') } catch {}
+    if (saved) {
+      if (typeof saved.subject === 'string') setSubject(saved.subject)
+      if (saved.cc) { setCc(saved.cc); setShowCc(true) }
+      if (saved.bcc) { setBcc(saved.bcc); setShowBcc(true) }
+      if (editorRef.current) editorRef.current.innerHTML = saved.bodyHtml || ''
+      setBodyHtml(saved.bodyHtml || '')
+    } else if (editorRef.current) {
+      editorRef.current.innerHTML = ''
+      setBodyHtml('')
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversationId])
+  // Auto-save (debounced).
+  useEffect(() => {
+    if (!draftKey) return
+    const t = setTimeout(() => {
+      try {
+        const has = bodyText() || (subject && subject !== defaultSubject) || cc || bcc
+        if (has) localStorage.setItem(draftKey, JSON.stringify({ subject, cc, bcc, bodyHtml }))
+        else localStorage.removeItem(draftKey)
+      } catch {}
+    }, 400)
+    return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [subject, cc, bcc, bodyHtml, draftKey, defaultSubject])
 
   // Insert an image inline (uploaded to storage, referenced by URL so it renders
   // in the customer's email client).
@@ -99,6 +138,7 @@ export default function EmailComposer({
 
   // AI assist: rewrite the current draft more clearly/professionally.
   const [aiBusy, setAiBusy] = useState(false)
+  const aiLoggedRef = useRef(false)
   const improveWithAI = async () => {
     const text = bodyText()
     if (!text) { setErr('Write a draft first, then improve it with AI'); return }
@@ -114,6 +154,9 @@ export default function EmailComposer({
         editorRef.current.innerHTML = String(d.result).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>')
         syncBody()
       }
+      // Attribute the AI assist in the thread timeline — once per composer so
+      // repeated "AI improve" clicks don't spam the timeline.
+      if (!aiLoggedRef.current) { aiLoggedRef.current = true; onAiAssist?.() }
     } catch (e: any) { setErr(e.message || 'AI could not help right now') }
     finally { setAiBusy(false) }
   }
@@ -190,6 +233,7 @@ export default function EmailComposer({
       if (!res.ok) throw new Error(d.error || 'Send failed')
       if (editorRef.current) editorRef.current.innerHTML = ''
       setBodyHtml(''); setCc(''); setShowCc(false); setBcc(''); setShowBcc(false); setAttachments([])
+      clearDraft()
       onSent()
     } catch (e: any) {
       setErr(e.message || 'Could not send')

@@ -1,0 +1,146 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
+import { requireCompanyAccess, resolveWaitlistSettings, isMissingTable } from '@/lib/waitlist'
+
+export const dynamic = 'force-dynamic'
+
+const admin = () => createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+  { auth: { autoRefreshToken: false, persistSession: false } }
+)
+
+const NEEDS_MIGRATION = 'Run migrations/COLVY_V321_STOCK_WAITLIST.sql in Supabase, then reload.'
+
+// GET ?companyId= — every waitlist entry (newest first) + the company's settings.
+// Linked products carry their live stock from the synced catalogue.
+export async function GET(req: NextRequest) {
+  try {
+    const db = admin()
+    const companyId = req.nextUrl.searchParams.get('companyId')
+    if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+
+    const { data: co } = await db.from('companies').select('waitlist_settings').eq('id', companyId).maybeSingle()
+    const settings = resolveWaitlistSettings((co as any)?.waitlist_settings)
+
+    const { data: entries, error } = await db.from('stock_waitlist').select('*')
+      .eq('company_id', companyId).order('created_at', { ascending: false }).limit(2000)
+    if (error) {
+      if (isMissingTable(error)) return NextResponse.json({ needsMigration: true, error: NEEDS_MIGRATION, entries: [], settings, stock: {} })
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+
+    const productIds = Array.from(new Set((entries || []).map((e: any) => e.woo_product_id).filter(Boolean)))
+    const stock: Record<string, { stock_status: string | null; stock_quantity: number | null }> = {}
+    if (productIds.length) {
+      const { data: prods } = await db.from('woocommerce_products')
+        .select('woo_product_id, stock_status, stock_quantity').eq('company_id', companyId).in('woo_product_id', productIds)
+      ;(prods || []).forEach((p: any) => { stock[String(p.woo_product_id)] = { stock_status: p.stock_status, stock_quantity: p.stock_quantity } })
+    }
+    return NextResponse.json({ entries: entries || [], settings, stock })
+  } catch (e: any) {
+    return NextResponse.json({ error: e?.message || 'Failed' }, { status: 500 })
+  }
+}
+
+// POST — add a customer to a waitlist.
+// { companyId, itemName, wooProductId?, itemImage?, itemUrl?, contactId?,
+//   conversationId?, customerName?, phone?, email?, note?, source? }
+export async function POST(req: NextRequest) {
+  try {
+    const db = admin()
+    const b = await req.json().catch(() => ({}))
+    const companyId = String(b.companyId || '')
+    const access = await requireCompanyAccess(req, db, companyId)
+    if (!access.ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+
+    let itemName = String(b.itemName || '').trim()
+    const wooProductId = b.wooProductId ? Number(b.wooProductId) : null
+    let itemImage = b.itemImage || null
+    let itemUrl = b.itemUrl || null
+    // Linked product → fill the name/image/link from the synced catalogue.
+    if (wooProductId) {
+      const { data: p } = await db.from('woocommerce_products').select('name, image, permalink')
+        .eq('company_id', companyId).eq('woo_product_id', wooProductId).maybeSingle()
+      if (p) { itemName = itemName || p.name; itemImage = itemImage || p.image || null; itemUrl = itemUrl || p.permalink || null }
+    }
+    if (!itemName) return NextResponse.json({ error: 'What are they waiting for? Pick a product or type the item.' }, { status: 400 })
+
+    let { contactId = null, conversationId = null, customerName = null, phone = null, email = null } = b
+    // Only accept a contact / conversation that belongs to THIS company, so a
+    // crafted request can't point a waitlist text at another workspace's customer.
+    if (contactId) {
+      const { data: c } = await db.from('contacts').select('name, phone, email').eq('id', contactId).eq('company_id', companyId).maybeSingle()
+      if (c) { customerName = customerName || c.name; phone = phone || c.phone; email = email || c.email }
+      else contactId = null
+    }
+    if (conversationId) {
+      const { data: cv } = await db.from('conversations').select('id').eq('id', conversationId).eq('company_id', companyId).maybeSingle()
+      if (!cv) conversationId = null
+    }
+    phone = phone ? String(phone).trim() : null
+    email = email ? String(email).trim() : null
+    if (!phone && !email) return NextResponse.json({ error: 'This customer has no phone or email to notify.' }, { status: 400 })
+
+    const { data, error } = await db.from('stock_waitlist').insert({
+      company_id: companyId, contact_id: contactId, conversation_id: conversationId,
+      woo_product_id: wooProductId, item_name: itemName, item_image: itemImage, item_url: itemUrl,
+      customer_name: customerName, phone, email,
+      note: b.note ? String(b.note).slice(0, 500) : null,
+      source: ['inbox', 'widget', 'manual'].includes(b.source) ? b.source : 'manual',
+      created_by: access.userId || null,
+    }).select('*').maybeSingle()
+    if (error) {
+      if ((error as any).code === '23505') return NextResponse.json({ ok: true, duplicate: true })
+      if (isMissingTable(error)) return NextResponse.json({ error: NEEDS_MIGRATION }, { status: 400 })
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+
+    // Leave a staff-only note in their conversation so the team can see it.
+    if (conversationId) {
+      try {
+        await db.from('messages').insert({
+          conversation_id: conversationId, company_id: companyId, sender_type: 'system', is_internal: true,
+          content: `📋 Added to the waitlist for ${itemName} — they'll get an SMS when it's back in stock.`,
+          metadata: { internal: true, waitlist: true, waitlist_id: data?.id },
+        })
+      } catch {}
+    }
+    return NextResponse.json({ ok: true, entry: data })
+  } catch (e: any) {
+    return NextResponse.json({ error: e?.message || 'Failed' }, { status: 500 })
+  }
+}
+
+// PATCH — { companyId, id, action: 'cancel' } removes someone from a waitlist;
+// { companyId, settings: { auto_notify?, template?, timezone? } } saves settings.
+export async function PATCH(req: NextRequest) {
+  try {
+    const db = admin()
+    const b = await req.json().catch(() => ({}))
+    const companyId = String(b.companyId || '')
+    if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+
+    if (b.settings) {
+      const { data: co } = await db.from('companies').select('waitlist_settings').eq('id', companyId).maybeSingle()
+      const cur = (co as any)?.waitlist_settings || {}
+      const next: any = { ...cur }
+      if (b.settings.auto_notify !== undefined) next.auto_notify = !!b.settings.auto_notify
+      if (b.settings.template !== undefined) next.template = String(b.settings.template || '').slice(0, 480)
+      if (b.settings.timezone !== undefined) next.timezone = String(b.settings.timezone || '')
+      const { error } = await db.from('companies').update({ waitlist_settings: next }).eq('id', companyId)
+      if (error) return NextResponse.json({ error: isMissingTable(error) ? NEEDS_MIGRATION : error.message }, { status: 400 })
+      return NextResponse.json({ ok: true, settings: resolveWaitlistSettings(next) })
+    }
+
+    if (b.id && b.action === 'cancel') {
+      const { error } = await db.from('stock_waitlist').update({ status: 'cancelled' })
+        .eq('id', b.id).eq('company_id', companyId).in('status', ['waiting', 'queued', 'failed'])
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+      return NextResponse.json({ ok: true })
+    }
+    return NextResponse.json({ error: 'Nothing to do' }, { status: 400 })
+  } catch (e: any) {
+    return NextResponse.json({ error: e?.message || 'Failed' }, { status: 500 })
+  }
+}

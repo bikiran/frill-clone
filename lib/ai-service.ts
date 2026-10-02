@@ -244,6 +244,81 @@ export class AIService {
       return { questions: [] }
     }
   }
+
+  // Admin-facing review of a single voice call: how it went and — crucially for
+  // ops — any signs of a TECHNICAL problem (dropped audio, one-way / robotic /
+  // choppy sound, long silences, echo, the call cutting out, the agent never
+  // connecting). This reads the transcript together with the call's metadata
+  // (status, hangup cause, duration, whether it went to voicemail, the agent's
+  // own thumbs rating) and is honest about uncertainty: text can only hint at
+  // audio quality, so it flags likelihood rather than pretending to measure it.
+  async analyzeCallForAdmin(input: {
+    direction?: string; status?: string; cause?: string; durationSeconds?: number
+    isVoicemail?: boolean; agentRating?: number | null; transcript?: string
+  }): Promise<{
+    overview: string
+    quality: 'good' | 'fair' | 'poor' | 'unknown'
+    issues: Array<{ type: string; detail: string; severity: 'low' | 'medium' | 'high' }>
+    sound_quality: string
+    recommendation: string
+  }> {
+    this.ensureAvailable()
+    const meta = [
+      `direction: ${input.direction || 'unknown'}`,
+      `status: ${input.status || 'unknown'}`,
+      input.cause ? `hangup_cause: ${input.cause}` : '',
+      `duration_seconds: ${input.durationSeconds ?? 'unknown'}`,
+      `went_to_voicemail: ${input.isVoicemail ? 'yes' : 'no'}`,
+      input.agentRating === 1 ? 'agent_rating: thumbs_up' : input.agentRating === -1 ? 'agent_rating: thumbs_down' : 'agent_rating: none',
+    ].filter(Boolean).join('\n')
+    const transcript = (input.transcript || '').trim()
+    const message = await this.anthropic.messages.create({
+      model: this.model,
+      max_tokens: 700,
+      messages: [{
+        role: 'user',
+        content: `You are a telephony operations analyst reviewing ONE customer service phone call for the platform's ADMIN (not the customer, not the agent). Judge how the call went and, most importantly, surface any TECHNICAL or experience problems worth an operator's attention: dropped/one-way/robotic/choppy audio, echo, long dead-air silences, the call cutting out, the agent never actually connecting, the customer having to repeat themselves, or the call going to voicemail when it shouldn't have.
+
+Ground every claim in the evidence. The transcript is text, so you can only INFER audio quality from cues ("you're breaking up", "I can't hear you", "hello? hello?", repeated repeats) and from the metadata — never assert a sound problem you can't point to. If evidence is thin, say so and use "unknown".
+
+Call metadata:
+${meta}
+
+Transcript (may be empty if the call was too short, unanswered, or not transcribed):
+"""
+${transcript || '(no transcript available)'}
+"""
+
+Respond with ONLY a JSON object, no prose:
+{
+  "overview": "2-3 sentence plain-English summary of how the call went, for an admin",
+  "quality": "good|fair|poor|unknown",
+  "issues": [{"type":"audio|connection|routing|agent|customer|other","detail":"<=20 words, cite the evidence","severity":"low|medium|high"}],
+  "sound_quality": "one line: what the evidence says about audio quality, or 'no evidence either way'",
+  "recommendation": "one actionable line for the operator, or 'none'"
+}
+If the call has no transcript and nothing notable in metadata, return quality "unknown", an empty issues array, and say so in the overview.`,
+      }],
+    })
+    const raw = message.content?.[0]?.type === 'text' ? message.content[0].text : ''
+    try {
+      const m = raw.match(/\{[\s\S]*\}/)
+      const j = m ? JSON.parse(m[0]) : {}
+      return {
+        overview: String(j.overview || 'No overview available.'),
+        quality: ['good', 'fair', 'poor', 'unknown'].includes(j.quality) ? j.quality : 'unknown',
+        issues: Array.isArray(j.issues) ? j.issues.slice(0, 8).map((it: any) => ({
+          type: String(it?.type || 'other'),
+          detail: String(it?.detail || ''),
+          severity: ['low', 'medium', 'high'].includes(it?.severity) ? it.severity : 'low',
+        })) : [],
+        sound_quality: String(j.sound_quality || 'no evidence either way'),
+        recommendation: String(j.recommendation || 'none'),
+      }
+    } catch {
+      return { overview: 'Could not analyse this call.', quality: 'unknown', issues: [], sound_quality: 'no evidence either way', recommendation: 'none' }
+    }
+  }
 }
 
 export const createAIService = (config?: AIServiceConfig) => new AIService(config)

@@ -21,10 +21,13 @@ export function chatStripe(company: any): { s: Stripe; connectOpts: Stripe.Reque
   return { s, connectOpts, useOwnKeys }
 }
 
-function returnUrls(originHost: string | null, originVerified: boolean, colvyBase: string) {
-  if (originVerified && originHost) {
-    return { successBase: `https://${originHost}/payment-success`, cancelUrl: `https://${originHost}/payment-cancelled` }
-  }
+// Always land the customer on OUR own thank-you / cancelled pages. We used to
+// redirect verified on-site checkouts back to `https://<merchant>/payment-success`,
+// but merchants don't actually have those pages, so Stripe's redirect hit their
+// site's 404 and the customer thought the payment had failed. Our /pay/success
+// page confirms the charge and tells them they can close the window — which is
+// the right ending for a pay-by-link opened from SMS / chat / a DM.
+function returnUrls(_originHost: string | null, _originVerified: boolean, colvyBase: string) {
   return { successBase: `${colvyBase}/pay/success`, cancelUrl: `${colvyBase}/pay/cancelled` }
 }
 
@@ -39,6 +42,13 @@ export type ChatCheckoutOpts = {
   originHost?: string | null
   originVerified?: boolean
   pageUrl?: string | null
+  // A non-chat caller (e.g. a form payment field) can override the metadata
+  // `kind`, add extra metadata, and set its own return URLs so the customer
+  // lands back where they came from.
+  kind?: string
+  extraMetadata?: Record<string, string>
+  successUrl?: string
+  cancelUrl?: string
 }
 
 // Create a hosted Checkout session on the business's account. Card data stays
@@ -48,7 +58,7 @@ export async function createChatCheckoutSession(company: any, opts: ChatCheckout
   const { s, connectOpts, useOwnKeys } = chatStripe(company)
   const colvyBase = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
   const { successBase, cancelUrl } = returnUrls(opts.originHost || null, !!opts.originVerified, colvyBase)
-  const successUrl = `${successBase}?session_id={CHECKOUT_SESSION_ID}`
+  const successUrl = opts.successUrl || `${successBase}?session_id={CHECKOUT_SESSION_ID}`
 
   const feePct = useOwnKeys ? 0 : parseFloat(process.env.COLVY_PAYMENT_FEE_PCT || '0')
   const applicationFee = feePct > 0 ? Math.round(opts.cents * (feePct / 100)) : 0
@@ -66,13 +76,14 @@ export async function createChatCheckoutSession(company: any, opts: ChatCheckout
     }],
     payment_intent_data: applicationFee > 0 ? { application_fee_amount: applicationFee } : undefined,
     success_url: successUrl,
-    cancel_url: cancelUrl,
+    cancel_url: opts.cancelUrl || cancelUrl,
     metadata: {
-      kind: 'chat_payment', companyId: opts.companyId, conversationId: opts.conversationId,
+      kind: opts.kind || 'chat_payment', companyId: opts.companyId, conversationId: opts.conversationId,
       orderId: opts.orderId ? String(opts.orderId) : '',
       integrationId: opts.integrationId ? String(opts.integrationId) : '',
       originHost: opts.originHost || '', originVerified: opts.originVerified ? '1' : '0',
       pageUrl: (opts.pageUrl || '').slice(0, 400),
+      ...(opts.extraMetadata || {}),
     },
   }, connectOpts)
 }

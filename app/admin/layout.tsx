@@ -7,6 +7,7 @@ import { usePathname } from 'next/navigation'
 import { useEffect, useState, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import IncomingCallListener from '@/components/IncomingCallListener'
+import SidebarSearch, { SearchItem } from '@/components/SidebarSearch'
 import CallHandoff from '@/components/CallHandoff'
 import GlobalDialer from '@/components/GlobalDialer'
 import GlobalCallBar from '@/components/GlobalCallBar'
@@ -26,6 +27,8 @@ import { useRouter } from 'next/navigation'
 import MobileNav from '@/components/MobileNav'
 import FeedbackButton from '@/components/FeedbackButton'
 import ColvyAssistant from '@/components/ColvyAssistant'
+import SuperAdminBar from '@/components/SuperAdminBar'
+import { canUseFeature, canAccessPath, featureForPath, hasFullAccess, type PermissionMap } from '@/lib/permissions'
 
 const SUPER_ADMIN_EMAIL = 'bishalstha76@gmail.com'
 
@@ -36,6 +39,7 @@ const icons: Record<string, React.JSX.Element> = {
   roadmap: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>,
   calendar: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>,
   scheduled: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="13" r="8"/><polyline points="12 9 12 13 15 15"/><path d="M9 1h6"/></svg>,
+  waitlist: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>,
   announcements: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M22 2L11 13"/><path d="M22 2L15 22 11 13 2 9l20-7z"/></svg>,
   polls: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>,
   forms: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><line x1="7" y1="8" x2="17" y2="8"/><line x1="7" y1="12" x2="13" y2="12"/><line x1="7" y1="16" x2="11" y2="16"/></svg>,
@@ -49,6 +53,11 @@ const icons: Record<string, React.JSX.Element> = {
   notes: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M14 3v5h5"/><path d="M18 21H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9l5 5v11a2 2 0 0 1-2 2z"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="14" y2="17"/></svg>,
   link: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>,
   analytics: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/><line x1="2" y1="20" x2="22" y2="20"/></svg>,
+  // Brand marks — Reviews (Google "G") and Social Engagement (Meta), drawn as
+  // outline icons in currentColor so they match the weight AND size of the
+  // other (stroke-based) sidebar icons.
+  google: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M20.9 12a8.9 8.9 0 1 1-2.7-6.4"/><path d="M21 12h-8"/></svg>,
+  meta: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M12 10.174c1.766 -2.784 3.315 -4.174 4.648 -4.174c2 0 3.263 2.213 4 5.217c.704 2.869 .5 6.783 -2 6.783c-1.114 0 -2.648 -1.565 -4.148 -3.652a27.627 27.627 0 0 1 -2.5 -4.174z"/><path d="M12 10.174c-1.766 -2.784 -3.315 -4.174 -4.648 -4.174c-2 0 -3.263 2.213 -4 5.217c-.704 2.869 -.5 6.783 2 6.783c1.114 0 2.648 -1.565 4.148 -3.652a27.627 27.627 0 0 0 2.5 -4.174z"/></svg>,
   help: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>,
   support: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>,
   team: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>,
@@ -113,10 +122,11 @@ const NAV_GROUPS = [
       { label: 'Scheduled', href: '/admin/scheduled', icon: 'scheduled' },
       { label: 'Call Logs', href: '/admin/calls', icon: 'support' },
       { label: 'Campaigns', href: '/admin/campaigns', icon: 'announcements' },
+      { label: 'Waitlists', href: '/admin/waitlists', icon: 'waitlist' },
       { label: 'Links Generator', href: '/admin/links', icon: 'link' },
       { label: 'Link Reports', href: '/admin/link-reports', icon: 'analytics' },
-      { label: 'Reviews', href: '/admin/reviews', icon: 'analytics' },
-      { label: 'Social Engagement', href: '/admin/social', icon: 'announcements' },
+      { label: 'Reviews', href: '/admin/reviews', icon: 'google' },
+      { label: 'Social Engagement', href: '/admin/social', icon: 'meta' },
     ],
   },
   {
@@ -148,8 +158,25 @@ const NAV_GROUPS = [
       { label: 'Import Data', href: '/admin/import', icon: 'import_data' },
       { label: 'Settings', href: '/admin/settings', icon: 'settings' },
       { label: 'Billing', href: '/admin/billing', icon: 'billing' },
+      { label: 'Referrals', href: '/admin/referrals', icon: 'link' },
     ],
   },
+]
+
+// Extra destinations for the sidebar search that aren't top-level nav items
+// (deeper settings pages). Deduped against the nav items at render time.
+const SEARCH_EXTRAS: SearchItem[] = [
+  { label: 'Business profile', href: '/admin/crm-settings/business', section: 'Settings', keywords: 'company details address hours abn' },
+  { label: 'Channels', href: '/admin/crm-settings/channels', section: 'Settings', keywords: 'whatsapp instagram facebook messenger sms email meta connect' },
+  { label: 'Chat widget', href: '/admin/crm-settings/chat-widget', section: 'Settings', keywords: 'live chat website widget' },
+  { label: 'Auto-replies', href: '/admin/crm-settings/auto-replies', section: 'Settings', keywords: 'automation canned away hours' },
+  { label: 'Contact form', href: '/admin/crm-settings/contact-form', section: 'Settings' },
+  { label: 'AI settings', href: '/admin/ai-settings', section: 'Settings', keywords: 'assistant colvy ai reply' },
+  { label: 'Statuses', href: '/admin/statuses', section: 'Settings' },
+  { label: 'Topics', href: '/admin/topics', section: 'Settings' },
+  { label: 'Priorities', href: '/admin/priorities', section: 'Settings' },
+  { label: 'Terminology', href: '/admin/terminology', section: 'Settings', keywords: 'wording labels rename' },
+  { label: 'Audit logs', href: '/admin/settings/audit-logs', section: 'Settings', keywords: 'security history' },
 ]
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -164,7 +191,56 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const authedRef = useRef<boolean | null>(null)
   useEffect(() => { authedRef.current = authed }, [authed])
   const [adminCollapsed, setAdminCollapsed] = useState(false)
+  // Adapt the sidebar to the window width as it changes. Below 860px the sidebar
+  // is an off-canvas drawer (CSS), so we keep it EXPANDED there for full labels
+  // when opened; in the medium band (860–1200px) auto-COLLAPSE it to icons so
+  // dense pages aren't crushed; wide (≥1200px) leaves it expanded. We only act on
+  // a band CHANGE, so a manual collapse/expand still sticks within a band.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const bandOf = (w: number) => (w < 860 ? 'mobile' : w < 1200 ? 'medium' : 'wide')
+    let prev = ''
+    const apply = () => {
+      const band = bandOf(window.innerWidth)
+      if (band === prev) return
+      prev = band
+      setAdminCollapsed(band === 'medium')
+    }
+    apply()
+    window.addEventListener('resize', apply)
+    return () => window.removeEventListener('resize', apply)
+  }, [])
   const [company, setCompany] = useState<any>(null)
+  // Tab favicon for this workspace. Prefer a dedicated square favicon (uploaded
+  // in Settings → site_settings.faviconUrl) — it reads cleanly at 16px — and
+  // fall back to the company logo only when none is set. AppChrome does the same
+  // precedence, but it resolves the company by subdomain slug and can miss on
+  // /admin (RLS/timing), so we set it reliably here where the company is known.
+  useEffect(() => {
+    if (typeof document === 'undefined' || !company?.id) return
+    let cancelled = false
+    ;(async () => {
+      let favicon: string | null = null
+      try {
+        const { data } = await (supabase as any).from('site_settings')
+          .select('value').eq('key', 'general').eq('company_id', company.id)
+          .order('updated_at', { ascending: false }).limit(1)
+        favicon = data?.[0]?.value?.faviconUrl || null
+      } catch {}
+      if (!favicon) favicon = company.logo_url || null
+      if (cancelled || !favicon) return
+      let link = document.querySelector("link[rel~='icon']") as HTMLLinkElement | null
+      if (!link) { link = document.createElement('link'); link.rel = 'icon'; document.head.appendChild(link) }
+      link.href = favicon
+    })()
+    return () => { cancelled = true }
+  }, [company?.id, company?.logo_url])
+  // The current member's role + feature permissions (see lib/permissions.ts).
+  // Owner/super-admin => full access; a restricted editor/viewer only sees and
+  // can open the features their permission map allows.
+  const [myRole, setMyRole] = useState<string | null>(null)
+  const [myPerms, setMyPerms] = useState<PermissionMap>(null)
+  const [permsLoaded, setPermsLoaded] = useState(false)
   const [demoMsg, setDemoMsg] = useState('')
   useEffect(() => { if (!demoMsg) return; const t = setTimeout(() => setDemoMsg(''), 4000); return () => clearTimeout(t) }, [demoMsg])
 
@@ -199,15 +275,20 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     const sync = () => {
       if (document.visibilityState !== 'visible') return   // don't sync in a background tab
       fetch('/api/cron/email-sync', { method: 'GET' }).catch(() => {})
+      // Back-in-stock texts that arrived overnight go out once sending hours open.
+      fetch('/api/cron/waitlist', { method: 'GET' }).catch(() => {})
     }
     // Agent presence heartbeat — records that this agent is online so an inbound
     // call can ring them. "Online" = seen in the last ~2 minutes.
     const beat = async () => {
       const onCall = !!getActiveCall()
-      // Skip while hidden UNLESS we're on a call — a busy agent must keep
-      // reporting available:false even with the tab in the background, so the
-      // next inbound call rings the other agents, not them.
-      if (document.visibilityState !== 'visible' && !onCall) return
+      // Beat even when the tab is backgrounded. Inbound routing only rings agents
+      // with a fresh heartbeat (last ~2 min), so skipping while hidden made a
+      // web agent with the board tab in the background drop offline after 2
+      // minutes — every call then went straight to voicemail, even though the
+      // (backgrounded) tab can still ring. Browsers throttle background timers to
+      // ~1/min, which stays within the 2-minute window. `available: !onCall`
+      // still reports a busy agent as unavailable.
       try {
         const { data: { session } } = await supabase.auth.getSession()
         fetch('/api/telnyx/presence', {
@@ -290,14 +371,19 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     }
     load()
     const iv = setInterval(load, 15000)
+    // Coalesce bursts of order webhooks into one badge refetch — a busy store can
+    // fire many order changes a second, and re-running the count query on each was
+    // needless load.
+    let debTimer: any = null
+    const debouncedLoad = () => { clearTimeout(debTimer); debTimer = setTimeout(load, 1500) }
     const onSeen = () => { if (active) setOrdersNew(0); load() }
     window.addEventListener('orders-seen', onSeen)
     window.addEventListener('storage', onSeen)
     const ch = (supabase as any)
       .channel(`orders-badge-${company.id}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders', filter: `company_id=eq.${company.id}` }, load)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders', filter: `company_id=eq.${company.id}` }, debouncedLoad)
       .subscribe()
-    return () => { active = false; clearInterval(iv); window.removeEventListener('orders-seen', onSeen); window.removeEventListener('storage', onSeen); try { (supabase as any).removeChannel(ch) } catch {} }
+    return () => { active = false; clearInterval(iv); clearTimeout(debTimer); window.removeEventListener('orders-seen', onSeen); window.removeEventListener('storage', onSeen); try { (supabase as any).removeChannel(ch) } catch {} }
   }, [company?.id])
 
   // Tasks needing this person's attention: assigned to them, not finished, and
@@ -336,6 +422,39 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'conversation_tasks', filter: `company_id=eq.${company.id}` }, load)
       .subscribe()
     return () => { active = false; clearInterval(iv); try { (supabase as any).removeChannel(ch) } catch {} }
+  }, [company?.id])
+
+  // New, unviewed support tickets for the Tickets nav badge. "Unviewed" = raised
+  // since the last time this browser opened the Tickets page (colvy-tickets-seen-at).
+  // Only actionable ones count: open / in_progress (resolved & closed are dealt with).
+  const [ticketsNew, setTicketsNew] = useState(0)
+  useEffect(() => {
+    if (!company?.id) return
+    let active = true
+    const load = async () => {
+      try {
+        let s = ''
+        try { s = localStorage.getItem('colvy-tickets-seen-at') || '' } catch {}
+        if (!s) { s = new Date().toISOString(); try { localStorage.setItem('colvy-tickets-seen-at', s) } catch {} }
+        const { count } = await (supabase as any)
+          .from('support_tickets')
+          .select('id', { count: 'exact', head: true })
+          .eq('company_id', company.id)
+          .gt('created_at', s)
+          .in('status', ['open', 'in_progress'])
+        if (active) setTicketsNew(count || 0)
+      } catch {}
+    }
+    load()
+    const iv = setInterval(load, 15000)
+    const onSeen = () => { if (active) setTicketsNew(0); load() }
+    window.addEventListener('tickets-seen', onSeen)
+    window.addEventListener('storage', onSeen)
+    const ch = (supabase as any)
+      .channel(`tickets-badge-${company.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'support_tickets', filter: `company_id=eq.${company.id}` }, load)
+      .subscribe()
+    return () => { active = false; clearInterval(iv); window.removeEventListener('tickets-seen', onSeen); window.removeEventListener('storage', onSeen); try { (supabase as any).removeChannel(ch) } catch {} }
   }, [company?.id])
 
   const [showWorkspaces, setShowWorkspaces] = useState(false)
@@ -512,6 +631,51 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     return () => clearTimeout(backstop)
   }, [])
 
+  // Resolve THIS member's role + feature permissions once we know who they are
+  // and which company they're in. Owner / super-admin get full access; everyone
+  // else is gated by their team_members.permissions map.
+  // NOTE: these hooks MUST stay above the early returns below — a hook after a
+  // conditional return breaks the Rules of Hooks (React error #310).
+  useEffect(() => {
+    const uid = user?.id
+    const cid = company?.id
+    if (!uid || !cid) return
+    let active = true
+    ;(async () => {
+      if (user?.email === SUPER_ADMIN_EMAIL || company?.owner_id === uid) {
+        if (active) { setMyRole('owner'); setMyPerms(null); setPermsLoaded(true) }
+        return
+      }
+      try {
+        // select('*') so this doesn't break if the V306 permissions column
+        // hasn't been added yet — an absent column just reads as undefined
+        // (unrestricted) rather than erroring the whole query.
+        const { data } = await (supabase as any).from('team_members')
+          .select('*').eq('company_id', cid).eq('user_id', uid).limit(1)
+        const row = data?.[0]
+        if (active) {
+          setMyRole(String(row?.role || 'viewer').toLowerCase())
+          setMyPerms((row?.permissions as PermissionMap) || null)
+          setPermsLoaded(true)
+        }
+      } catch {
+        if (active) { setMyRole('viewer'); setMyPerms(null); setPermsLoaded(true) }
+      }
+    })()
+    return () => { active = false }
+  }, [user?.id, company?.id, company?.owner_id])
+
+  // Route guard: a restricted member who opens a disallowed URL directly is sent
+  // back to the dashboard (which is always allowed). Nav hiding covers the normal
+  // path; this covers deep links and typed URLs.
+  useEffect(() => {
+    if (!permsLoaded || hasFullAccess(myRole)) return
+    if (!pathname || !pathname.startsWith('/admin')) return
+    if (!canAccessPath(myRole, myPerms, pathname)) {
+      router.replace('/admin')
+    }
+  }, [permsLoaded, myRole, myPerms, pathname, router])
+
   // Auth resolution hung or failed (stuck/expired session token, backend blip) —
   // give the user a way out instead of an infinite spinner.
   if (authed === null && authError) {
@@ -542,6 +706,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   }
 
   const isSuperAdmin = user?.email === SUPER_ADMIN_EMAIL
+
+  // Nav visibility for the current member.
+  const canUseNavItem = (item: { href: string; label: string }) => {
+    const featKey = item.label === 'Ideas' ? 'ideas' : featureForPath(item.href)?.key
+    return !featKey || canUseFeature(myRole, myPerms, featKey)
+  }
 
   const isActive = (href: string) => {
     if (href === '/admin') return pathname === '/admin'
@@ -604,6 +774,14 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         .nav-group-header:hover .nav-group-chevron { opacity: 0.85; }
         .nav-group-header.is-collapsed { background: #f5f6f8; }
         .nav-group-header.is-collapsed:hover { background: #ececf0; }
+        /* Sidebar nav item — clear hover highlight so you can see which row
+           you're pointing at, with the icon giving a small lift/brighten. */
+        .nav-item { transition: background 0.14s ease, color 0.14s ease; cursor: pointer; }
+        .nav-item, .nav-item * { cursor: pointer; }
+        .nav-item:not(.is-active):hover { background: #f1f2f4; color: var(--ink) !important; }
+        .nav-item .nav-ic { transition: transform 0.16s ease, opacity 0.14s ease; }
+        .nav-item:hover .nav-ic { transform: scale(1.14); opacity: 1 !important; }
+        .nav-item:active .nav-ic { transform: scale(0.96); }
       `}</style>
 
       {/* NOTE: the old floating mobile hamburger was removed. It used
@@ -705,7 +883,18 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
         {/* Nav groups */}
         <nav style={{ flex: 1, padding: '10px 8px' }}>
+          {/* Search — jumps to any sidebar page or settings destination. */}
+          {(() => {
+            const navItems: SearchItem[] = NAV_GROUPS.flatMap(g => g.items.filter(canUseNavItem).map(it => ({ label: it.label, href: it.href, section: g.label || 'General' })))
+            const seen = new Set(navItems.map(i => i.href))
+            const items = [...navItems, ...SEARCH_EXTRAS.filter(e => !seen.has(e.href))]
+            return <SidebarSearch items={items} collapsed={adminCollapsed} />
+          })()}
           {NAV_GROUPS.map((group, gi) => {
+            // Hide features this member isn't permitted to use, and drop a whole
+            // group once nothing in it is visible.
+            const permittedItems = group.items.filter(canUseNavItem)
+            if (permittedItems.length === 0) return null
             // Groups without a title (the lone Dashboard link) are never
             // collapsible. In the icon-only sidebar there are no titles to click,
             // so everything stays visible regardless of the saved state.
@@ -726,7 +915,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                   </svg>
                 </button>
               )}
-              {!groupCollapsed && group.items.map(item => {
+              {!groupCollapsed && permittedItems.map(item => {
                 const active = isActive(item.href)
                 // In a demo workspace, pages that connect real accounts, handle
                 // billing or import/export real data are locked. Sending is
@@ -734,15 +923,15 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                 const locked = !!company?.is_demo && DEMO_LOCKED_HREFS.some(h => item.href === h || item.href.startsWith(h + '/'))
                 return (
                   <Link key={item.href + item.label} href={locked ? '#' : item.href}
+                    className={`nav-item${active ? ' is-active' : ''}`}
                     onClick={(e) => { if (locked) { e.preventDefault(); setDemoMsg(DEMO_LOCK_MESSAGE) } else setMobileSidebarOpen(false) }}
                     title={adminCollapsed ? item.label : undefined}
                     style={{
                       display: 'flex', alignItems: 'center', gap: 9, padding: '7px 10px',
                       borderRadius: 8, fontSize: 13, textDecoration: 'none', marginBottom: 1,
-                      background: active ? 'var(--peach)' : 'transparent',
+                      background: active ? 'var(--peach)' : undefined,
                       color: active ? 'var(--coral)' : 'var(--slate)',
                       fontWeight: active ? 600 : 400,
-                      transition: 'all 0.15s',
                       justifyContent: adminCollapsed ? 'center' : 'flex-start',
                     }}>
                     {/* Any section with things waiting shows a count, so you can
@@ -751,11 +940,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                       const count = item.label === 'Inbox' ? inboxUnread
                         : item.label === 'Tasks' ? taskDue
                         : item.label === 'Orders' ? ordersNew
+                        : item.label === 'Tickets' ? ticketsNew
                         : 0
                       const tone = item.label === 'Tasks' ? 'var(--coral)' : item.label === 'Orders' ? '#2563eb' : '#ef4444'
                       return (
                         <>
-                          <span style={{ flexShrink: 0, display: 'flex', opacity: active ? 1 : 0.65, position: 'relative' }}>
+                          <span className="nav-ic" style={{ flexShrink: 0, display: 'flex', opacity: active ? 1 : 0.65, position: 'relative' }}>
                             {icons[item.icon]}
                             {count > 0 && adminCollapsed && (
                               <span style={{ position: 'absolute', top: -3, right: -3, width: 8, height: 8, borderRadius: '50%', background: tone, border: '1.5px solid #fff' }} />
@@ -769,7 +959,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                               // pop animation replays whenever the count moves.
                               key={count}
                               className="count-pop"
-                              title={item.label === 'Tasks' ? `${count} task${count === 1 ? '' : 's'} due or overdue` : item.label === 'Orders' ? `${count} new order${count === 1 ? '' : 's'}` : `${count} unread`}
+                              title={item.label === 'Tasks' ? `${count} task${count === 1 ? '' : 's'} due or overdue` : item.label === 'Orders' ? `${count} new order${count === 1 ? '' : 's'}` : item.label === 'Tickets' ? `${count} new ticket${count === 1 ? '' : 's'}` : `${count} unread`}
                               style={{ marginLeft: 'auto', minWidth: 18, height: 18, padding: '0 5px', borderRadius: 9, background: tone, color: '#fff', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                               {count > 99 ? '99+' : count}
                             </span>
@@ -841,6 +1031,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       <ColvyAssistant companyId={company?.id || null} userId={user?.id || null} agentName={user?.user_metadata?.display_name || user?.email?.split('@')[0]} />
       {/* Background uploads keep running as you move around the app. */}
       <UploadQueueIndicator />
+      {/* In-workspace Super-Admin bar — renders only for a platform super-admin
+          (the summary API 403s for everyone else). Lets us see/act on this
+          company's plan, trial and usage without leaving their admin. */}
+      <SuperAdminBar companyId={company?.id || null} />
     </div>
   )
 }

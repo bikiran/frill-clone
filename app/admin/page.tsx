@@ -66,45 +66,33 @@ export default function AdminDashboard() {
         } catch {}
       }
     })
+    // Live activity — subscribe to THIS company's new ideas only. votes and
+    // comments are keyed by idea_id (no company_id), so a Postgres-changes filter
+    // can't scope them to this company; subscribing to them unfiltered woke every
+    // admin client on every company's activity (a cross-tenant storm, and it also
+    // leaked other tenants' rows into this feed). The feed still shows recent
+    // votes/comments from the initial fetchActivity() load.
+    let channel: any = null
     resolveCompanyId().then(cid => {
       fetchStats(cid)
       fetchActivity(cid)
       fetchOps(cid)
       fetchSales(cid)
+      if (!cid) return
+      channel = (supabase as any)
+        .channel('admin-activity')
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'ideas', filter: `company_id=eq.${cid}` }, (payload: any) => {
+          setActivity(prev => [{
+            type: 'idea', typeLabel: 'New idea',
+            label: payload.new.title || 'New idea',
+            by: payload.new.created_by_name || 'Someone',
+            at: payload.new.created_at || new Date().toISOString(),
+            color: '#ff7a6b'
+          }, ...prev].slice(0, 12))
+        })
+        .subscribe()
     })
-
-    // Live activity: subscribe to ideas table changes
-    const channel = (supabase as any)
-      .channel('admin-activity')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'ideas' }, (payload: any) => {
-        setActivity(prev => [{
-          type: 'idea', typeLabel: 'New idea',
-          label: payload.new.title || 'New idea',
-          by: payload.new.created_by_name || 'Someone',
-          at: payload.new.created_at || new Date().toISOString(),
-          color: '#ff7a6b'
-        }, ...prev].slice(0, 12))
-      })
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'votes' }, (payload: any) => {
-        setActivity(prev => [{
-          type: 'vote', typeLabel: 'Vote',
-          label: 'Upvoted an idea',
-          by: payload.new?.guest_id ? 'Guest visitor' : 'Registered user',
-          at: payload.new?.created_at || new Date().toISOString(),
-          color: '#2563eb'
-        }, ...prev].slice(0, 12))
-      })
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'comments' }, (payload: any) => {
-        setActivity(prev => [{
-          type: 'comment', typeLabel: 'Comment',
-          label: payload.new?.content?.slice(0, 60) || 'New comment',
-          by: payload.new?.author_name || 'Someone',
-          at: payload.new?.created_at || new Date().toISOString(),
-          color: '#7c3aed'
-        }, ...prev].slice(0, 12))
-      })
-      .subscribe()
-    return () => { (supabase as any).removeChannel(channel) }
+    return () => { if (channel) { try { (supabase as any).removeChannel(channel) } catch {} } }
   }, [router])
 
   const fetchStats = async (cid?: string) => {

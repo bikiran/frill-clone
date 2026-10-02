@@ -54,6 +54,7 @@ const MORE_GROUPS: { title: string; items: { href: string; label: string; icon: 
       { href: '/admin/notes', label: 'Notes', icon: I.tasks },
       { href: '/admin/gallery', label: 'Gallery', icon: I.gallery },
       { href: '/admin/campaigns', label: 'Campaigns', icon: I.campaigns },
+      { href: '/admin/waitlists', label: 'Waitlists', icon: I.campaigns },
       { href: '/admin/reviews', label: 'Reviews', icon: I.reviews },
       { href: '/admin/calls', label: 'Call logs', icon: I.calls },
     ],

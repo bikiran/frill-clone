@@ -194,6 +194,15 @@ export async function POST(req: NextRequest) {
       // no double-ring, but no silent miss either.
       ...((mobileTokens || []).map((t: any) => t.user_id)).filter(Boolean),
     ])
+    // Always ring the workspace OWNER's browser Client — the owner is the primary
+    // agent and must not be missed just because their presence heartbeat lapsed
+    // (a throttled/occluded tab can fall outside the 2-minute window even while
+    // it's open and able to ring). Twilio rings their <Client identity>; if the
+    // Device isn't actually registered the leg simply no-answers and falls through
+    // to voicemail, so this can't cause a phantom ring. Skip only when the owner
+    // is explicitly busy (on a call → available:false with a fresh heartbeat).
+    if (ownerRow?.owner_id && !unavailable.has(ownerRow.owner_id)) userIds.add(ownerRow.owner_id)
+
     // Keep the user ids alongside their Voice-SDK identities: the per-<Client>
     // status callback needs the user id to record WHO answered the call.
     const ringUsers = Array.from(userIds)
@@ -207,19 +216,31 @@ export async function POST(req: NextRequest) {
     // Twilio push does that — so dropping it leaves ringing intact.
 
     if (identities.length === 0) {
-      // Nobody online → straight to voicemail (if enabled).
+      // Nobody online → straight to voicemail (if enabled). Record WHY on `cause`
+      // (shown as "Hangup cause" in Call Diagnostics) so this is diagnosable: no
+      // agent had a fresh presence heartbeat AND none had a push token to wake.
       if (integ.voicemail_enabled === false) return twiml('<Response><Hangup/></Response>')
-      try { await db.from('calls').update({ status: 'voicemail_greeting', is_voicemail: true }).eq('id', callRowId || '') } catch {}
+      try {
+        await db.from('calls').update({
+          status: 'voicemail_greeting', is_voicemail: true,
+          cause: `no_agent: nobody online (online heartbeats=${(online || []).length}, push devices=${(mobileTokens || []).length})`,
+        }).eq('id', callRowId || '')
+      } catch {}
       return twiml(voicemailTwiml(base, greeting, cbQuery))
     }
 
-    const ring = Number(integ.ring_seconds || 25)
+    // Floor the ring at 20s so a low/misconfigured ring_seconds can't send the
+    // call to voicemail after ~1 ring before the agent can pick up.
+    const ring = Math.max(Number(integ.ring_seconds || 25), 20)
     const recordingCb = `${base}/api/twilio/voice/recording?${cbQuery}`
     // When exactly ONE agent is rung, whoever answers is unambiguous — pass that
     // user id to the Dial action callback so it can record the answerer reliably
     // even if the per-<Client> "answered" status callback doesn't fire.
     const soloQuery = ringUsers.length === 1 ? `&soloUser=${encodeURIComponent(ringUsers[0])}` : ''
-    const actionCb = `${base}/api/twilio/voice/inbound-status?${cbQuery}${soloQuery}`
+    // Carry how many agents were rung into the action callback, so if the call
+    // still falls through to voicemail we can record WHY (DialCallStatus + count)
+    // on `cause` and see it in Call Diagnostics.
+    const actionCb = `${base}/api/twilio/voice/inbound-status?${cbQuery}${soloQuery}&rang=${ringUsers.length}`
     // Pass the calls-row id straight to the browser as a custom parameter, so
     // warm transfer can identify the exact call without guessing from CallSids
     // (the client leg's SID doesn't match the parent row). Each <Client> gets a

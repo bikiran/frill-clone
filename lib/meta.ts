@@ -74,8 +74,16 @@ export function metaLoginUrl(state: string, scope: string = META_SCOPES, configI
     state,
     response_type: 'code',
   })
-  if (configId) p.set('config_id', configId)     // Facebook Login for Business
-  else p.set('scope', scope)                      // classic scope-based login
+  if (configId) {
+    // Facebook Login for Business. With a config_id, Facebook otherwise uses the
+    // configuration's DEFAULT response type — so to get an auth `code` back we
+    // must explicitly opt in with override_default_response_type=true. Without
+    // it the callback can arrive with no `code` (the "no_code" / generic error).
+    p.set('config_id', configId)
+    p.set('override_default_response_type', 'true')
+  } else {
+    p.set('scope', scope)                          // classic scope-based login
+  }
   return `https://www.facebook.com/v25.0/dialog/oauth?${p.toString()}`
 }
 
@@ -136,8 +144,10 @@ export async function subscribePageWebhooks(pageId: string, pageToken: string): 
 
 // Send a message via the Send API. Works for both Messenger (PSID) and
 // Instagram (IGSID) — same endpoint, keyed by the Page.
+// `tag` (e.g. 'HUMAN_AGENT') sends outside the standard 24h window — the Human
+// Agent tag extends it to 7 days for a human agent's reply.
 export async function sendMetaMessage(
-  pageId: string, pageToken: string, recipientId: string, text: string
+  pageId: string, pageToken: string, recipientId: string, text: string, tag?: string
 ): Promise<{ id?: string; error?: string }> {
   const res = await fetch(`${GRAPH}/${pageId}/messages`, {
     method: 'POST',
@@ -145,7 +155,7 @@ export async function sendMetaMessage(
     body: JSON.stringify({
       recipient: { id: recipientId },
       message: { text },
-      messaging_type: 'RESPONSE',   // a reply within the 24h window
+      ...(tag ? { messaging_type: 'MESSAGE_TAG', tag } : { messaging_type: 'RESPONSE' }),
       access_token: pageToken,
     }),
   })
@@ -157,7 +167,7 @@ export async function sendMetaMessage(
 // Send a media attachment (image / video / audio / file) by URL. Meta fetches
 // the URL and delivers it to the customer.
 export async function sendMetaAttachment(
-  pageId: string, pageToken: string, recipientId: string, url: string, kind: string
+  pageId: string, pageToken: string, recipientId: string, url: string, kind: string, tag?: string
 ): Promise<{ id?: string; error?: string }> {
   const type = kind === 'image' ? 'image' : kind === 'video' ? 'video' : kind === 'audio' ? 'audio' : 'file'
   const res = await fetch(`${GRAPH}/${pageId}/messages`, {
@@ -166,13 +176,33 @@ export async function sendMetaAttachment(
     body: JSON.stringify({
       recipient: { id: recipientId },
       message: { attachment: { type, payload: { url, is_reusable: true } } },
-      messaging_type: 'RESPONSE',
+      ...(tag ? { messaging_type: 'MESSAGE_TAG', tag } : { messaging_type: 'RESPONSE' }),
       access_token: pageToken,
     }),
   })
   const data = await res.json()
   if (!res.ok) return { error: data?.error?.message || 'Attachment send failed' }
   return { id: data.message_id }
+}
+
+// Fetch a single comment's author (name + photo) and text via the Page token.
+// The real-time `feed`/`comments` webhook payload frequently omits the
+// commenter's name and never carries their photo, so we hydrate from the Graph
+// API here. Covers both a Facebook Page comment and a page-linked Instagram
+// comment (IG exposes `username` rather than `name`, and usually no picture).
+export async function fetchPageComment(
+  commentId: string, pageToken: string
+): Promise<{ name?: string; photo?: string; message?: string } | null> {
+  try {
+    const res = await fetch(`${GRAPH}/${commentId}?fields=from{id,name,username,picture},message&access_token=${encodeURIComponent(pageToken)}`)
+    if (!res.ok) return null
+    const d = await res.json()
+    return {
+      name: d.from?.name || d.from?.username || undefined,
+      photo: d.from?.picture?.data?.url || undefined,
+      message: d.message || undefined,
+    }
+  } catch { return null }
 }
 
 // Fetch a sender's profile (name, avatar) so the contact isn't just an opaque id.
