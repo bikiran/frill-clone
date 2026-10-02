@@ -313,7 +313,7 @@ function colvy_bis_admin_page() {
 				<div><label for="cbis-a">Button colour</label><input id="cbis-a" type="text" name="<?php echo $f; ?>[accent]" value="<?php echo esc_attr( $o['accent'] ); ?>" placeholder="<?php echo esc_attr( colvy_bis_accent() ); ?> (brand)" pattern="#[0-9a-fA-F]{6}"></div>
 			</div>
 			<button type="submit" class="cw-btn">Save</button>
-			<p class="cw-help" style="margin-top:14px">Using another back-in-stock or waitlist plugin (or WoodMart's built-in waitlist)? Switch it off so shoppers don't see two forms. The text customers get is set in Colvy → Waitlists.</p>
+			<p class="cw-help" style="margin-top:14px">WoodMart's built-in waitlist form is hidden automatically where this one shows. Using another back-in-stock plugin? Switch it off so shoppers don't see two forms. The text customers get is set in Colvy → Waitlists.</p>
 		</form>
 
 		<div class="cw-side">
