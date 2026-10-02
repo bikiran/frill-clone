@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import SlotPicker, { viewerTz, tzShort } from '@/components/booking/SlotPicker'
 import { ParallaxBackdrop, MOTION_CSS } from '@/components/booking/motion'
+import AddressAutocomplete from '@/components/AddressAutocomplete'
 import { CalendarIcon, LockIcon } from '@/components/booking/icons'
 
 // The public booking page: service → (staff) → time → details → pay/confirm.
@@ -287,7 +288,7 @@ export default function BookingFlow({ slug, domain, initialService }: { slug?: s
                 <Field label="Mobile" required={data.page.require_phone}><input className="bk-in" type="tel" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} autoComplete="tel" required={data.page.require_phone} placeholder="04xx xxx xxx" /></Field>
                 <Field label="Email" required={data.page.require_email} wide><input className="bk-in" type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} autoComplete="email" required={data.page.require_email} /></Field>
                 {service.location_mode === 'customer' && (
-                  <Field label="Address for the appointment" required wide><input className="bk-in" value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} autoComplete="street-address" required placeholder="Street, suburb, postcode" /></Field>
+                  <Field label="Address for the appointment" required wide><AddressAutocomplete className="bk-in" value={form.address} onChange={v => setForm(f => ({ ...f, address: v }))} required placeholder="Start typing your address…" /></Field>
                 )}
                 {service.questions.map(q => (
                   <Field key={q.id} label={q.type === 'checkbox' ? '' : q.label} required={q.required && q.type !== 'checkbox'} wide>

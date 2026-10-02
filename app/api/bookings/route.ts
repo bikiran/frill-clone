@@ -46,6 +46,16 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ timezone: settings.timezone, slots: slots.map(s => ({ start: new Date(s.start).toISOString() })) })
     }
 
+    // Side-menu badge: bookings confirmed since this browser last opened Bookings.
+    if (sp.get('op') === 'newcount') {
+      const since = sp.get('since')
+      if (!since || isNaN(Date.parse(since))) return NextResponse.json({ count: 0 })
+      const { count, error } = await db.from('bookings').select('id', { count: 'exact', head: true })
+        .eq('company_id', companyId).in('status', ['confirmed', 'completed'])
+        .gt('confirmed_at', new Date(since).toISOString())
+      return NextResponse.json({ count: error ? 0 : (count || 0) }, { headers: { 'Cache-Control': 'no-store' } })
+    }
+
     if (sp.get('op') === 'today') {
       const company = await loadCompanyPublic(db, { id: companyId })
       const settings = resolveBookingSettings(company?.booking_settings)
