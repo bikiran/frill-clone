@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { searchKnowledge } from '@/lib/ai-knowledge'
 import { WooCommerceService } from '@/lib/woocommerce-service'
 import { trackLinksInText } from '@/lib/link-tracking'
 
@@ -41,22 +42,8 @@ export interface AiResult {
 // Pull the most relevant knowledge for this question. Keyword scoring — simple,
 // predictable, and it never hallucinates a source.
 export async function retrieve(db: any, companyId: string, question: string, limit = 8) {
-  const { data: all } = await db.from('ai_knowledge')
-    .select('source, title, content, url').eq('company_id', companyId).limit(500)
-  if (!all?.length) return []
-
-  const words = String(question).toLowerCase().match(/[a-z0-9']{3,}/g) || []
-  if (!words.length) return all.slice(0, limit)
-
-  const scored = all.map((k: any) => {
-    const hay = `${k.title || ''} ${k.content || ''}`.toLowerCase()
-    let score = 0
-    for (const w of words) if (hay.includes(w)) score += 1
-    // Help articles are usually the best answer to a direct question.
-    if (k.source === 'help') score += 0.5
-    return { ...k, score }
-  })
-  return scored.filter((k: any) => k.score > 0).sort((a: any, b: any) => b.score - a.score).slice(0, limit)
+  // Ranked full-text search over the knowledge library (with synonyms), see lib/ai-knowledge.
+  return searchKnowledge(db, companyId, question, limit)
 }
 
 async function log(db: any, row: any) {
