@@ -1640,7 +1640,7 @@ export default function SettingsPage() {
               <p className="text-sm mb-3" style={{ color: 'var(--slate)' }}>One plugin for your site: chat widget, WooCommerce orders and abandoned carts, “Notify me” on sold-out products, booking page embed and branding. Install it, then paste these two values into <strong>Colvy → Connection</strong> in your WP admin. It replaces the older Colvy Dashboard and Colvy Bridge plugins and keeps their settings.</p>
               <a href="/downloads/colvy-wordpress.zip" download className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold mb-4" style={{ background: 'var(--coral)', color: '#fff' }}>
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v12M7 10l5 5 5-5" /><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /></svg>
-                Download plugin (v3.0.1)
+                Download plugin (v3.0.2)
               </a>
               <div className="space-y-3">
                 <div>

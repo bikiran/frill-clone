@@ -85,8 +85,15 @@
   // lined up with the price. Variation forms stay put — Woo swaps those.
   function place(root) {
     if (root.getAttribute('data-preview') || root.closest('.woocommerce-variation, .single_variation_wrap, .woocommerce-variation-availability')) return;
-    var price = null, list = (root.closest('.product') || document).querySelectorAll('.summary .price, p.price, .wp-block-woocommerce-product-price, .elementor-widget-woocommerce-product-price, .price');
-    for (var i = 0; i < list.length; i++) { if (!root.contains(list[i]) && list[i].offsetParent) { price = list[i]; break; } }
+    // The price nearest the form in the page structure (a few levels up at
+    // most) — not one from a header product-nav popup, sticky bar or related
+    // products elsewhere on the page.
+    var SKIP = '.wd-product-nav, .product-nav, header, .related, .upsells, .cross-sells, .wd-sticky-btn, .sticky-add-to-cart, .colvy-bis';
+    var price = null, up = root.parentElement;
+    for (var lvl = 0; up && lvl < 5 && !price; lvl++, up = up.parentElement) {
+      var list = up.querySelectorAll('p.price, .price, .wp-block-woocommerce-product-price');
+      for (var i = 0; i < list.length; i++) { if (!list[i].closest(SKIP) && list[i].offsetParent) { price = list[i]; break; } }
+    }
     if (!price) return;
     var r = root.getBoundingClientRect(), p = price.getBoundingClientRect();
     var beside = r.top < p.bottom - 4 && r.left > p.right - 4;
@@ -101,9 +108,15 @@
     while (anchor.parentElement && anchor.parentElement !== common) anchor = anchor.parentElement;
     var host = common;
     var row = function (el) { var cs = getComputedStyle(el); return (cs.display.indexOf('flex') > -1 && cs.flexDirection.indexOf('row') === 0) || (cs.display.indexOf('grid') > -1 && cs.gridTemplateColumns.split(' ').length > 1); };
-    while (host && host !== document.body && row(host) && host.parentElement) { anchor = host; host = host.parentElement; }
+    // A wrapping row (Elementor/WoodMart widget rows) can give the form its own
+    // full-width line right here; only a non-wrapping row needs stepping out of.
+    while (host && host !== document.body && row(host) && getComputedStyle(host).flexWrap === 'nowrap' && host.parentElement) { anchor = host; host = host.parentElement; }
     if (anchor === root) return;
+    var before = root.getBoundingClientRect().top, homeParent = root.parentNode, homeNext = root.nextSibling;
     anchor.parentNode.insertBefore(root, anchor.nextSibling);
+    // Safety net: a move should only ever nudge the form under the price row.
+    // If it jumped far (an unexpected layout), put it back where it was.
+    if (Math.abs(root.getBoundingClientRect().top - before) > 400) homeParent.insertBefore(root, homeNext);
   }
 
   function initAll() { var all = document.querySelectorAll('.colvy-bis'); for (var i = 0; i < all.length; i++) init(all[i]); }

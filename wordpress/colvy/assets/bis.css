@@ -9,6 +9,9 @@
 .colvy-bis *,.colvy-bis *::before,.colvy-bis *::after{box-sizing:border-box}
 .colvy-bis{display:block;width:100%;max-width:640px;flex:1 1 100%;clear:both;text-align:left}
 .colvy-bis button{text-transform:none!important;letter-spacing:0!important}
+/* One form per product: hide WoodMart's built-in waitlist form where ours shows.
+   (WoodMart keeps emailing anyone who joined its list before.) */
+body:has(.colvy-bis:not([data-preview])) .wd-wtl-form{display:none!important}
 .colvy-bis__done{padding-left:4px!important}
 .colvy-bis__in{padding:20px 20px 16px}
 @keyframes cbisIn{from{opacity:0;transform:translate3d(0,8px,0)}to{opacity:1;transform:none}}

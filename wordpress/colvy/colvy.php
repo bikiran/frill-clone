@@ -3,7 +3,7 @@
  * Plugin Name:       Colvy
  * Plugin URI:        https://colvy.com
  * Description:       Colvy for WordPress & WooCommerce, in one plugin — chat widget, order and abandoned-cart sync, "Notify me" on sold-out products, booking page embed, branding and live stats from your Colvy inbox.
- * Version:           3.0.1
+ * Version:           3.0.2
  * Author:            Colvy
  * Author URI:        https://colvy.com
  * Requires at least: 6.0
@@ -18,7 +18,7 @@
 if ( ! defined( 'ABSPATH' ) ) exit;
 if ( defined( 'COLVYWP_VERSION' ) ) return; // a second copy is installed — the first one runs
 
-define( 'COLVYWP_VERSION', '3.0.1' );
+define( 'COLVYWP_VERSION', '3.0.2' );
 define( 'COLVYWP_FILE', __FILE__ );
 define( 'COLVYWP_URL', plugin_dir_url( __FILE__ ) );
 if ( ! defined( 'COLVY_API_BASE' ) ) define( 'COLVY_API_BASE', 'https://colvy.com' );
