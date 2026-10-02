@@ -6,6 +6,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { extractDominantColor } from '@/lib/extract-color'
 import Link from 'next/link'
+import FormAiChat, { FormSnapshot, AiSpark } from '@/components/FormAiChat'
 
 type Question = {
   id: string
@@ -157,11 +158,13 @@ export default function FormBuilder() {
   const [isDirty, setIsDirty] = useState(false)
   const [previewStep, setPreviewStep] = useState(-1) // -1 = welcome screen
   const [showAddMenu, setShowAddMenu] = useState(false)
+  const [aiOpen, setAiOpen] = useState(false)
   // Mobile responsiveness
   const [isMobile, setIsMobile] = useState(false)
+  const [isWide, setIsWide] = useState(false)   // room to dock Colvy AI beside the preview
   const [mobilePanel, setMobilePanel] = useState<'steps' | 'preview' | 'settings'>('preview')
   useEffect(() => {
-    const check = () => setIsMobile(window.innerWidth < 768)
+    const check = () => { setIsMobile(window.innerWidth < 768); setIsWide(window.innerWidth >= 1100) }
     check()
     window.addEventListener('resize', check)
     return () => window.removeEventListener('resize', check)
@@ -256,6 +259,16 @@ export default function FormBuilder() {
     setShowAddMenu(false)
   }
 
+  // Colvy AI: put a whole version of the form in place (new draft, undo or redo).
+  const applySnapshot = (s: FormSnapshot) => {
+    setTitle(s.title)
+    setWelcomeMessage(s.welcomeMessage)
+    setThankYouMessage(s.thankYouMessage)
+    setQuestions(s.questions)
+    setSelectedQ(null)
+    setPreviewStep(-1)
+  }
+
   const updateQuestion = (id: string, patch: Partial<Question>) => {
     setQuestions(prev => prev.map(q => q.id === id ? { ...q, ...patch } : q))
   }
@@ -314,6 +327,8 @@ export default function FormBuilder() {
   if (loading) return <div className="p-8" style={{ color: 'var(--slate)' }}>Loading...</div>
 
   const selected = questions.find(q => q.id === selectedQ)
+  // On wide screens Colvy AI takes the settings column, so the preview stays in view.
+  const aiDocked = aiOpen && isWide
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 56px)' }}>
@@ -335,6 +350,10 @@ export default function FormBuilder() {
           {saving ? 'Saving...' : 'Save'}
         </button>
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: isMobile ? 6 : 10, flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
+          <button onClick={() => setAiOpen(true)} aria-label="Open Colvy AI" className="fb-ai-btn"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: isMobile ? '6px 10px' : '8px 14px', borderRadius: 10, fontSize: isMobile ? 12 : 13, fontWeight: 700, cursor: 'pointer', border: '1px solid #ffd6cc', background: 'linear-gradient(135deg, #fff5f2, #fff0e8)', color: '#e2553f' }}>
+            <AiSpark size={15} />{isMobile ? 'AI' : 'Colvy AI'}
+          </button>
           {!isMobile && (
             <span style={{ fontSize: 12, padding: '3px 10px', borderRadius: 999, background: isPublished ? '#dcfce7' : '#f3f4f6', color: isPublished ? '#16a34a' : '#6b7280', fontWeight: 600 }}>
               {isPublished ? 'Live' : 'Draft'}
@@ -381,13 +400,13 @@ export default function FormBuilder() {
         </div>
       )}
 
-      <div style={{ flex: 1, display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '280px 1fr 320px', overflow: 'hidden' }}>
+      <div style={{ flex: 1, display: 'grid', gridTemplateColumns: isMobile ? '1fr' : aiDocked ? '280px 1fr 452px' : '280px 1fr 320px', transition: 'grid-template-columns .32s cubic-bezier(.22,1,.36,1)', overflow: 'hidden' }}>
         {/* LEFT: Question list */}
         <div style={{ borderRight: isMobile ? 'none' : '1px solid var(--border)', overflowY: 'auto', padding: 16, background: '#fafafa', display: isMobile && mobilePanel !== 'steps' ? 'none' : 'block' }}>
           <button
             onClick={() => { setPreviewStep(-1); if (isMobile) setMobilePanel('preview') }}
             style={{ width: '100%', textAlign: 'left', padding: '10px 12px', borderRadius: 10, marginBottom: 6, cursor: 'pointer', border: 'none', background: previewStep === -1 ? '#fff' : 'transparent', boxShadow: previewStep === -1 ? '0 1px 4px rgba(0,0,0,0.08)' : 'none' }}>
-            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--slate)' }}>👋 Welcome screen</span>
+            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--slate)' }}>Welcome screen</span>
           </button>
 
           {questions.map((q, i) => (
@@ -418,6 +437,17 @@ export default function FormBuilder() {
             <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--slate)' }}>Thank you screen</span>
           </button>
 
+          {questions.length === 0 && (
+            <button onClick={() => setAiOpen(true)} className="fb-ai-card"
+              style={{ width: '100%', textAlign: 'left', padding: '14px 14px 13px', borderRadius: 14, marginBottom: 10, cursor: 'pointer', border: '1px solid #ffd6cc', background: 'linear-gradient(135deg, #fff6f3, #fff1ea)', display: 'flex', gap: 11, alignItems: 'flex-start' }}>
+              <span style={{ width: 30, height: 30, borderRadius: '50%', background: 'linear-gradient(135deg, #ff7a6b, #ff9d72)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><AiSpark size={16} /></span>
+              <span>
+                <span style={{ display: 'block', fontSize: 13, fontWeight: 800, color: 'var(--ink)' }}>Build it with Colvy AI</span>
+                <span style={{ display: 'block', fontSize: 12, lineHeight: 1.45, color: 'var(--slate)', marginTop: 2 }}>Describe the form you need and AI writes the questions.</span>
+              </span>
+            </button>
+          )}
+
           <div style={{ position: 'relative' }}>
             <button onClick={() => setShowAddMenu(!showAddMenu)}
               style={{ width: '100%', padding: '10px', borderRadius: 10, border: `1.5px dashed ${themeColor}`, background: 'transparent', color: themeColor, fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
@@ -426,10 +456,12 @@ export default function FormBuilder() {
             </button>
             {showAddMenu && (
               <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 6, background: '#fff', borderRadius: 14, boxShadow: '0 12px 32px rgba(0,0,0,0.18)', border: '1px solid var(--border)', overflow: 'hidden', zIndex: 10, maxHeight: 420, display: 'flex', flexDirection: 'column' }}>
-                <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', display: 'flex', gap: 8 }}>
-                  <button style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 999, background: themeColor, color: '#fff', border: 'none', cursor: 'pointer' }}>Add elements</button>
-                  <button style={{ fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 999, background: 'transparent', color: 'var(--slate)', border: '1px solid var(--border)', cursor: 'pointer' }}>Import questions</button>
-                  <button style={{ fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 999, background: 'transparent', color: 'var(--slate)', border: '1px solid var(--border)', cursor: 'pointer' }}>Create with AI</button>
+                <div style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)', display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, padding: '5px 10px', borderRadius: 999, background: themeColor, color: '#fff', whiteSpace: 'nowrap' }}>Add elements</span>
+                  <button onClick={() => { setShowAddMenu(false); setAiOpen(true) }}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 999, background: 'linear-gradient(135deg, #fff5f2, #fff0e8)', color: '#e2553f', border: '1px solid #ffd6cc', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                    <AiSpark size={12} />Create with AI
+                  </button>
                 </div>
                 <div style={{ overflowY: 'auto', padding: '8px 0' }}>
                   {QUESTION_CATEGORIES.map(cat => (
@@ -634,7 +666,7 @@ export default function FormBuilder() {
         </div>
 
         {/* RIGHT: Settings panel */}
-        <div style={{ borderLeft: isMobile ? 'none' : '1px solid var(--border)', overflowY: 'auto', padding: isMobile ? 16 : 20, display: isMobile && mobilePanel !== 'settings' ? 'none' : 'block' }}>
+        <div style={{ borderLeft: isMobile ? 'none' : '1px solid var(--border)', overflowY: 'auto', padding: isMobile ? 16 : 20, display: (isMobile && mobilePanel !== 'settings') || aiDocked ? 'none' : 'block' }}>
           {selected ? (
             <>
               <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)', marginBottom: 16 }}>Question Settings</h3>
@@ -1019,6 +1051,14 @@ export default function FormBuilder() {
           )}
         </div>
       </div>
+
+      <FormAiChat
+        open={aiOpen}
+        onClose={() => setAiOpen(false)}
+        formId={formId}
+        current={{ title, welcomeMessage, thankYouMessage, questions }}
+        apply={applySnapshot}
+      />
     </div>
   )
 }
