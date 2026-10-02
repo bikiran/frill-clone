@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
+import { notifyIntegrations } from '@/lib/integrations-notify'
 
 // A compact, dismissible "draft tasks" panel. Given a list of AI-detected
 // action items (from a call summary or a chat AI summary), it lets an agent
@@ -89,6 +90,7 @@ export default function DraftTasks({
       ({ error } = await (supabase as any).from('conversation_tasks').insert(rows.map(({ description, ...r }: any) => r)))
     }
     if (error) throw error
+    notifyIntegrations('task.created', { companyId })
   }
 
   const createTasks = async () => {

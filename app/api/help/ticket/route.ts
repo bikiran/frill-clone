@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { autoAssignTicket } from '@/lib/ticket-assign'
+import { emitTicketEvent } from '@/lib/integration-hooks'
 
 export const dynamic = 'force-dynamic'
 
@@ -78,6 +79,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (ticketId) await autoAssignTicket(db, co.id, ticketId)
+    if (ticketId) await emitTicketEvent(db, 'ticket.created', { id: ticketId, company_id: co.id })
     return NextResponse.json({ ok: true, ticketNumber })
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || 'Failed' }, { status: 500 })

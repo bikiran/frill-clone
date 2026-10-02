@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase'
 import IdeaDetailModal from '@/components/IdeaDetailModal'
 import IdeaModal from '@/components/IdeaModal'
 import Link from 'next/link'
+import { notifyIntegrations } from '@/lib/integrations-notify'
 
 const ADMIN_EMAIL = 'bishalstha76@gmail.com'
 
@@ -127,6 +128,7 @@ export default function RoadmapPage() {
   const updateIdeaStatus = async (ideaId: string, newStatus: string) => {
     if (!isCompanyAdmin) return
     await supabase.from('ideas').update({ status: newStatus }).eq('id', ideaId)
+    notifyIntegrations('idea.status_changed', { id: ideaId })
     fetchIdeas()
   }
 
@@ -202,6 +204,7 @@ export default function RoadmapPage() {
     if (!isSameColumn) {
       // Moving to a different column — just update status
       await supabase.from('ideas').update({ status }).eq('id', draggedIdea.id)
+      notifyIntegrations('idea.status_changed', { id: draggedIdea.id })
     }
 
     // Reorder within column based on drop indicator

@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { notifyIntegrations } from '@/lib/integrations-notify'
 
 
 type Idea = {
@@ -91,6 +92,7 @@ export default function PrioritiesPage() {
     setSaving(id)
     try {
       await (supabase as any).from('ideas').update(fields).eq('id', id)
+      if ('status' in fields) notifyIntegrations('idea.status_changed', { id })
       setIdeas(prev => prev.map(i => i.id === id ? { ...i, ...fields } : i))
       if (selected?.id === id) setSelected(prev => prev ? { ...prev, ...fields } : null)
     } catch {}

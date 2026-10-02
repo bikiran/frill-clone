@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
+import { notifyIntegrations } from '@/lib/integrations-notify'
 
 
 const TAGS = ['Feature', 'Bug Fix', 'Update', 'Improvement', 'News']
@@ -166,6 +167,7 @@ export default function NewAnnouncementPage() {
       // Only notify when actually publishing (not saving as draft) and the
       // announcement wasn't already sent before (avoid re-notifying on every edit)
       let shouldNotify = false
+      let becamePublished = false
 
       if (editId) {
         console.log('[ANN PUBLISH] Updating announcement:', editId)
@@ -175,6 +177,7 @@ export default function NewAnnouncementPage() {
         if (error) throw error
         // Notify only on the transition draft → published, and only once
         shouldNotify = notifySubscribers && status === 'published' && prev?.status !== 'published' && !prev?.notified_at
+        becamePublished = status === 'published' && prev?.status !== 'published'
       } else {
         console.log('[ANN PUBLISH] Inserting new announcement')
         const { data, error } = await (supabase as any).from('announcements').insert({ ...payload, views: 0, impressions: 0 }).select().maybeSingle()
@@ -182,7 +185,9 @@ export default function NewAnnouncementPage() {
         if (error) throw error
         savedId = data?.id
         shouldNotify = notifySubscribers && status === 'published'
+        becamePublished = status === 'published'
       }
+      if (becamePublished && savedId) notifyIntegrations('announcement.published', { id: savedId })
 
       // Fire subscriber notifications (in-app + email) in the background
       if (shouldNotify && savedId) {

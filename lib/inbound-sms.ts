@@ -10,6 +10,7 @@ import { notifyCompany } from './notify'
 import { runKeywordReply } from './keyword-reply'
 import { resolveSmsSender } from './sms-provider'
 import { handleBookingSmsReply } from './booking-replies'
+import { emitInboundEvent } from '@/lib/integration-hooks'
 
 export interface InboundAttachment {
   url: string
@@ -150,6 +151,7 @@ export async function ingestInboundSms(params: {
     delivery_channel: 'sms',
     telnyx_message_id: params.providerMessageId || null,
   }).select('id').maybeSingle()
+  await emitInboundEvent(db, { companyId, conversationId: conv.id, text, channel: 'sms', phone: from, messageId: insertedMsg?.id || null })
   await db.from('conversations').update({
     last_message: summary, last_message_at: new Date().toISOString(),
     is_unread: true, channel: 'sms', status: 'open',

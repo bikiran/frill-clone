@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { notifyCompany, pushInboundMessage } from '@/lib/notify'
 import { logWebhookEvent } from '@/lib/webhook-log'
 import { normalizePrextyCustomer } from '@/lib/prexty-service'
+import { emitIntegrationEvent } from '@/lib/integration-events'
 
 export const dynamic = 'force-dynamic'
 
@@ -252,6 +253,15 @@ export async function POST(req: NextRequest) {
           body: `${status}${totalStr ? ` · ${totalStr}` : ''}${outletLabel ? ` at ${outletLabel}` : ''}`,
         })
       } catch {}
+      emitIntegrationEvent(companyId, isNew ? 'order.created' : 'order.status_changed', {
+        title: isNew ? `New Prexty order #${orderNo}${totalStr ? ` · ${totalStr}` : ''} · ${custName || email || phone || 'a customer'}` : `Prexty order #${orderNo} is now ${status}`,
+        summary: itemLine,
+        path: `/admin/inbox?conversation=${conv.id}`,
+        customer: { name: custName || null, email, phone },
+        fields: { Total: totalStr, Status: status, Outlet: outletLabel, Source: 'Prexty POS' },
+        data: { order: { channel: 'prexty', id: orderId, number: orderNo, status, total: total != null ? Number(total) : null, currency: currency || null, outlet: outletLabel, items, created_at: createdAt || null } },
+        dedupeKey: `prexty:${orderId}:${status}`,
+      }, { db })
     }
 
     db.from('prexty_integrations').update({ last_synced_at: new Date().toISOString() }).eq('company_id', companyId).then(() => {}, () => {})

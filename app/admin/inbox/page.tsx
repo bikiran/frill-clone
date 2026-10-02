@@ -47,6 +47,7 @@ import { useAiDraft, AiDraftButton, AiDraftInfo } from '@/components/AiDraft'
 import BookingLinkButton from '@/components/booking/BookingLinkButton'
 import LinkCards, { linkCodesIn, useLinkStats, LastOpen } from '@/components/LinkCards'
 import { confirmDialog } from '@/components/ConfirmDialog'
+import { notifyIntegrations } from '@/lib/integrations-notify'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Conversation = {
@@ -3458,6 +3459,7 @@ export default function InboxPage() {
       location_id: convLoc, location_ids: convLoc ? [convLoc] : [],
       mentions: (mentioned as any[]).map(m => ({ id: m.id, name: m.name })),
     }).select().maybeSingle()
+    if (created?.id) notifyIntegrations('task.created', { id: created.id, companyId })
 
     // Notify the assignee and anyone mentioned (never yourself).
     const notify = new Map<string, string>()

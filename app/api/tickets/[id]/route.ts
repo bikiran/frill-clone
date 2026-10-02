@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { requireCompanyAccess } from '@/lib/company-access'
+import { emitTicketEvent } from '@/lib/integration-hooks'
 
 export const dynamic = 'force-dynamic'
 
@@ -55,6 +56,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
       ;({ data, error } = await db.from('support_tickets').update(patch).eq('id', id).select('*').maybeSingle())
     }
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (patch.status && patch.status !== ticket.status && data) await emitTicketEvent(db, 'ticket.status_changed', data, { oldStatus: ticket.status })
     return NextResponse.json({ ok: true, ticket: data })
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || 'Failed' }, { status: 500 })

@@ -56,7 +56,7 @@ export function IntegrationPage({ children }: { children: React.ReactNode }) {
   return <div className="w-full max-w-[1200px] mx-auto px-4 md:px-8 py-6 md:py-8">{children}</div>
 }
 
-export function IntegrationHeader({ id, title, desc, connected, children }: { id: string; title?: string; desc?: string; connected?: boolean; children?: React.ReactNode }) {
+export function IntegrationHeader({ id, title, desc, connected, badge = 'Connected', children }: { id: string; title?: string; desc?: string; connected?: boolean; badge?: string; children?: React.ReactNode }) {
   const intg = INTEGRATIONS.find(i => i.id === id)
   return (
     <>
@@ -70,7 +70,7 @@ export function IntegrationHeader({ id, title, desc, connected, children }: { id
             <h1 className="text-2xl font-bold" style={{ color: 'var(--ink)', margin: 0 }}>{title || intg?.name}</h1>
             {connected && (
               <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold" style={{ background: '#dcfce7', color: '#15803d' }}>
-                <Icon name="check" size={12} /> Connected
+                <Icon name="check" size={12} /> {badge}
               </span>
             )}
           </div>

@@ -7,6 +7,7 @@ import { logWebhookEvent } from '@/lib/webhook-log'
 import { logEnquiryReopened } from '@/lib/conversation-timeline'
 import { parseInboundAlias } from '@/lib/inbound-alias'
 import { uploadToR2, r2Configured } from '@/lib/r2'
+import { emitInboundEvent } from '@/lib/integration-hooks'
 
 export const dynamic = 'force-dynamic'
 
@@ -271,6 +272,7 @@ export async function POST(req: NextRequest) {
       email_message_id: messageId || null,
       email_in_reply_to: inReplyTo || null,
     })
+    await emitInboundEvent(db, { companyId, conversationId: conv.id, text: content, channel: 'email', name: from.name || null, email: from.email || null })
 
     await db.from('conversations').update({
       last_message: content.slice(0, 200),
