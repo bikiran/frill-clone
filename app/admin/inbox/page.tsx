@@ -254,11 +254,23 @@ function fmtReceipt(d: string | undefined | null, isAgent: boolean, channel?: st
   const NAMES: Record<string, string> = {
     sms: 'SMS', email: 'Email', chat: 'Live Chat', widget: 'Live Chat',
     instagram: 'Instagram', facebook: 'Messenger', messenger: 'Messenger',
-    whatsapp: 'WhatsApp', phone: 'Phone Call',
+    whatsapp: 'WhatsApp', phone: 'Phone Call', upload: 'Upload link',
   }
   const chan = channel ? (NAMES[channel.toLowerCase()] || channel.charAt(0).toUpperCase() + channel.slice(1)) : ''
   // Show the channel on BOTH sides — an agent needs to know a reply went by SMS.
   return `${label} ${time} | ${date}${chan ? ` | ${chan}` : ''}`
+}
+// The channel to LABEL a message with. A file the customer sent through an
+// upload link carries no delivery_channel of its own, so it fell back to the
+// conversation's channel and read as "Live Chat" — while having arrived from an
+// SMS'd link. Its attachments are marked from_request, so name it from that.
+//
+// Deliberately not done by stamping delivery_channel: that field also decides
+// which channel a reply goes out on, and an upload is not a channel anyone can
+// be replied to on.
+function receiptChannel(msg: any, fallback?: string): string | undefined {
+  if (Array.isArray(msg?.attachments) && msg.attachments.some((a: any) => a?.from_request)) return 'upload'
+  return msg?.delivery_channel || fallback
 }
 // Two-letter initials from a name — first + last (e.g. "Bikiran Simkhada" → "BS")
 // so team members whose first names share a letter stay distinguishable. A
@@ -1277,6 +1289,21 @@ export default function InboxPage() {
   // showing the web page the customer was supposedly "currently on" — data from
   // a visit that may have ended days ago). The newest message wins.
   const activeChannel = useMemo(() => {
+    // INBOUND first. Taking the newest delivery_channel of ANY message lets one
+    // reply sent on the wrong channel redefine the thread permanently: a single
+    // SMS into a Messenger conversation makes 'sms' the newest channel, so the
+    // next reply goes by SMS too, and so on. It is self-reinforcing, and it
+    // crosses clients — a mobile reply did exactly this to a Messenger thread
+    // and the web then inherited SMS from it. What decides a reply is the
+    // channel the CUSTOMER last used; our own past choices are the thing under
+    // suspicion, so they cannot be the evidence.
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i] as any
+      if (!m || m.sender_type === 'agent' || m.sender_type === 'system' || m.is_internal) continue
+      const dc = String(m.delivery_channel || '').toLowerCase()
+      if (dc && dc !== 'chat') return dc
+    }
+    // Nothing inbound carried one — fall back to any message, then the row.
     for (let i = messages.length - 1; i >= 0; i--) {
       const dc = String((messages[i] as any).delivery_channel || '').toLowerCase()
       if (dc && dc !== 'chat') return dc
@@ -2656,16 +2683,55 @@ export default function InboxPage() {
     // actually have, and previously only customer messages were stamped.
     for (const m of msgs) {
       if (m.sender_type === 'system') continue
+      // Tenant isolation. A receipt written without a company cannot be
+      // attributed afterwards, and an unattributable receipt is exactly what
+      // put one workspace's name on another workspace's conversation.
+      if (!companyId) continue
+      if ((m as any).company_id && (m as any).company_id !== companyId) continue
       // Don't mark your own message as read by yourself — that's meaningless.
       if (m.sender_type === 'agent' && (m as any).sender_id === user?.id) continue
       const readBy = Array.isArray((m as any).read_by) ? (m as any).read_by : []
-      if (readBy.some((r: any) => r.name === me)) continue
-      const updated = [...readBy, { name: me, initial, at: new Date().toISOString(), ...(avatar ? { avatar } : {}) }]
+      // Match on the reader's id first. Matching on the display name alone
+      // collapsed two different people who share one, and failed to recognise
+      // the same person signed in under a second login.
+      if (readBy.some((r: any) => (r.id && r.id === user?.id) || (!r.id && r.name === me))) continue
+      const updated = [...readBy, {
+        id: user?.id || null, company_id: companyId,
+        name: me, initial, at: new Date().toISOString(), ...(avatar ? { avatar } : {}),
+      }]
       await (supabase as any).from('messages').update({
         read_by: updated,
         ...(m.sender_type === 'visitor' ? { is_read: true } : {}),
       }).eq('id', m.id)
     }
+  }
+
+  /**
+   * Which read receipts belong on this workspace's thread.
+   *
+   * read_by is a JSON array that anyone who can write the row appends to, and
+   * receipts written before this carried no company at all — so the array can
+   * hold readers from a workspace that has nothing to do with this
+   * conversation. Rendering it raw put "Aqua Circle" under Roxy Aquarium's
+   * customer messages.
+   *
+   * A receipt is shown when it says it belongs to this company, or — for the
+   * older ones that say nothing — when the reader is demonstrably on this
+   * company's team. Anything that cannot be placed is dropped. Hiding a
+   * colleague's receipt is a cosmetic loss; showing another company's name on a
+   * customer conversation is not.
+   */
+  const visibleReadBy = (raw: any, msgCompanyId?: string | null) => {
+    const list = Array.isArray(raw) ? raw : []
+    const own = msgCompanyId || companyId
+    if (!own) return []
+    return list.filter((r: any) => {
+      if (r?.company_id) return r.company_id === own
+      if (r?.id && r.id === user?.id) return true
+      if (r?.id) return teamMembers.some((m: any) => (m.user_id || m.id) === r.id)
+      const n = String(r?.name || '').trim().toLowerCase()
+      return !!n && teamMembers.some((m: any) => String(m.name || m.email || '').trim().toLowerCase() === n)
+    })
   }
 
   // ── Reactions ──────────────────────────────────────────────────────────────
@@ -8361,7 +8427,7 @@ export default function InboxPage() {
                   )
                 }
                 const reactions = Array.isArray((msg as any).reactions) ? (msg as any).reactions : []
-                const readBy = Array.isArray((msg as any).read_by) ? (msg as any).read_by : []
+                const readBy = visibleReadBy((msg as any).read_by, (msg as any).company_id)
                 const atts = Array.isArray(msg.attachments) ? msg.attachments : []
 
                 // Email messages render as a full Coax-style card (From/To/Cc,
@@ -8829,7 +8895,7 @@ export default function InboxPage() {
                           "Received 3:42 PM | 29 May | Facebook   Read by: SG" */}
                       <p style={{ margin: '4px 0 0', fontSize: 10.5, color: '#8a8f98', textAlign: isAgent ? 'right' : 'left', display: 'flex', gap: 6, alignItems: 'center', justifyContent: isAgent ? 'flex-end' : 'flex-start', flexWrap: 'wrap' }}>
                         <span style={{ fontStyle: 'italic' }}>
-                          {fmtReceipt(msg.created_at, isAgent, (msg as any).delivery_channel || selected.channel) || fmtTime(msg.created_at)}
+                          {fmtReceipt(msg.created_at, isAgent, receiptChannel(msg, selected.channel)) || fmtTime(msg.created_at)}
                         </span>
 
                         {(msg as any).is_ai && (

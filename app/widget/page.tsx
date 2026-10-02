@@ -265,18 +265,11 @@ function WidgetContent() {
           setChatName(parsed.name)
           setChatEmail(parsed.email || '')
           setChatStep('chat')
-          // Load existing messages for this conversation
-          ;(async () => {
-            // Via the server, so the widget needs no read access to the
-            // messages table. Internal notes are filtered there.
-            let msgs: any[] | null = null
-            try {
-              const r = await fetch(`/api/widget/messages?companyId=${parsed.companyId || ''}&conversationId=${parsed.convId}`)
-              const d = await r.json()
-              msgs = d.messages || []
-            } catch { msgs = [] }
-            if (msgs) setChatMessages2(msgs)
-          })()
+          // History is NOT fetched here. This effect runs on `slug`, before
+          // /api/widget-data has returned the company, and the saved session
+          // never carried a companyId of its own — so the request went out as
+          // `companyId=` every time, which the endpoint answers with an empty
+          // list. The effect below owns loading, and now waits for the company.
         }
       }
     } catch {}
@@ -284,13 +277,21 @@ function WidgetContent() {
 
   // Subscribe to agent replies on the active chat conversation
   useEffect(() => {
-    if (!chatConvId) return
+    // Waits for the company as well as the conversation. With `[chatConvId]`
+    // alone this effect ran at whatever moment the conversation id appeared —
+    // on a reload that is before /api/widget-data returns — and every request
+    // it made, including the four-second poll that is meant to be the safety
+    // net for a missed broadcast, carried `companyId=undefined` for the life of
+    // the session. The endpoint answers that with an empty list, so the history
+    // never arrived and neither did the auto-reply.
+    const companyId = company?.id
+    if (!chatConvId || !companyId) return
     // Load latest messages when a conversation becomes active (catches anything
     // sent while the subscription was reconnecting)
     ;(async () => {
       let msgs: any[] | null = null
       try {
-        const r = await fetch(`/api/widget/messages?companyId=${company?.id}&conversationId=${chatConvId}`)
+        const r = await fetch(`/api/widget/messages?companyId=${companyId}&conversationId=${chatConvId}`)
         const d = await r.json()
         msgs = d.messages || []
       } catch { msgs = [] }
@@ -353,7 +354,7 @@ function WidgetContent() {
       // a reconnect) — nothing depends on every broadcast arriving.
       let msgs: any[] | null = null
       try {
-        const r = await fetch(`/api/widget/messages?companyId=${company?.id}&conversationId=${chatConvId}`)
+        const r = await fetch(`/api/widget/messages?companyId=${companyId}&conversationId=${chatConvId}`)
         const d = await r.json()
         msgs = d.messages || []
       } catch { return }
@@ -1797,10 +1798,25 @@ function WidgetContent() {
                       // happens on the server, so the contacts and conversations
                       // tables no longer have to accept writes from the browser.
                       // The matching and reopen behaviour is unchanged.
+                      // A stable id for this browser. The pre-chat form only
+                      // requires ONE of name, email or phone, so someone who
+                      // types just a name leaves nothing to recognise them by
+                      // and every visit opened a fresh conversation. This is
+                      // what the server falls back to.
+                      let visitorId = ''
+                      try {
+                        const vk = `colvy-visitor-${slug}`
+                        visitorId = localStorage.getItem(vk) || ''
+                        if (!visitorId) {
+                          visitorId = `v-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+                          localStorage.setItem(vk, visitorId)
+                        }
+                      } catch { /* private browsing — a new thread, as before */ }
                       const startRes = await fetch('/api/widget/start', {
                         method: 'POST', headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                           companyId: company?.id,
+                          visitorId,
                           name: chatName,
                           email: chatEmail ? chatEmail.trim() : null,
                           phone: normalizedMobile,
