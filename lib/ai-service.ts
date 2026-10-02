@@ -1,16 +1,12 @@
 // lib/ai-service.ts
-// AI SDK is optional — only loads when ANTHROPIC_API_KEY is set at runtime.
-// Using eval to prevent bundler from trying to resolve '@anthropic-ai/sdk' at build time.
-let Anthropic: any = null
+// Server-only. Uses the official Anthropic SDK. The SDK used to be loaded with
+// eval("require(...)") so the build wouldn't fail when it wasn't installed — but
+// it was never in package.json, so every feature here (AI improve, summarise,
+// AI-written help articles/forms/polls) failed with "SDK not installed". It's a
+// real dependency now, imported normally.
+import AnthropicSDK from '@anthropic-ai/sdk'
 
-if (typeof process !== 'undefined' && process.env.ANTHROPIC_API_KEY) {
-  try {
-    // eslint-disable-next-line no-eval
-    Anthropic = eval("require('@anthropic-ai/sdk')")?.default || eval("require('@anthropic-ai/sdk')")
-  } catch {
-    // SDK not installed — AI features disabled
-  }
-}
+const Anthropic: any = AnthropicSDK
 
 export type AIProvider = 'claude' | 'openai' | 'gemini'
 export type AITask = 'improve_writing' | 'summarize' | 'fix_formatting' | 'suggest_tags' | 'write_help_article' | 'build_form' | 'create_poll' | 'create_survey'

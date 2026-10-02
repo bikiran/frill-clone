@@ -19,6 +19,7 @@ export async function POST(req: NextRequest) {
       const ai = createAIService()
 
       switch (task) {
+        case 'improve':          // the email composer sends 'improve'
         case 'improve_writing':
           if (!text) return NextResponse.json({ error: 'Missing text' }, { status: 400 })
           const improved = await ai.improveWriting(text, tone)
