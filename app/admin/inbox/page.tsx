@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
+import { authFetch } from '@/lib/auth-fetch'
 import { peekCompanyUser, readCache, writeCache } from '@/lib/client-cache'
 import { uploadAttachment, readJsonSafe } from '@/lib/upload-attachment'
 import MentionInput, { resolveMentions as resolveTeamMentions } from '@/components/MentionInput'
@@ -903,7 +904,7 @@ export default function InboxPage() {
     setScheduling(true)
     try {
       const who = contact?.name || contact?.email || 'customer'
-      const res = await fetch('/api/calendar', {
+      const res = await authFetch('/api/calendar', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           companyId,

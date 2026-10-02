@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo } from 'react'
+import { StatusMark } from '@/components/StatusMark'
 import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
@@ -573,8 +574,8 @@ export default function HelpArticlePage() {
                 </div>
               )}
               {ticketSubmitted && (
-                <div className="mt-4 p-4 rounded-xl text-sm" style={{ background: 'var(--peach)', color: 'var(--coral)' }}>
-                  ✓ Ticket submitted! We'll respond to <strong>{ticketEmail}</strong> within 24 hours.
+                <div className="mt-4 p-4 rounded-xl text-sm" style={{ background: 'var(--peach)', color: 'var(--coral)', display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <StatusMark kind="success" size={26} /> <span>Ticket submitted! We'll respond to <strong>{ticketEmail}</strong> within 24 hours.</span>
                 </div>
               )}
             </div>

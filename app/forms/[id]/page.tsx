@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { getVisibleQuestions } from '@/lib/conditional-logic'
 import { scaleImageToJpeg } from '@/lib/scan-image'
 import Confetti from '@/components/Confetti'
+import { StatusMark } from '@/components/StatusMark'
 
 export default function PublicForm() {
   const params = useParams()
@@ -480,9 +481,7 @@ export default function PublicForm() {
       <div style={{ width: '100%', maxWidth: 600 }}>
         {submitted ? (
           <div key="thanks" className="ff-anim" style={{ textAlign: 'center' }}>
-            <div style={{ width: 64, height: 64, borderRadius: '50%', background: '#dcfce7', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 24px' }}>
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>
-            </div>
+            <div style={{ marginBottom: 24 }}><StatusMark kind="success" size={88} celebrate /></div>
             <h1 style={{ fontSize: 24, fontWeight: 800, color: '#0d0d0d', marginBottom: (form.end_actions || []).length > 0 ? 28 : 0 }}>{form.thank_you_message || 'Thanks for completing this form!'}</h1>
             {(form.end_actions || []).length > 0 && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxWidth: 320, margin: '0 auto' }}>

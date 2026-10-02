@@ -119,6 +119,7 @@ const NAV_GROUPS = [
       { label: 'Notes', href: '/admin/notes', icon: 'notes' },
       { label: 'Gallery', href: '/admin/gallery', icon: 'gallery' },
       { label: 'Calendar', href: '/admin/calendar', icon: 'calendar' },
+      { label: 'Bookings', href: '/admin/bookings', icon: 'calendar' },
       { label: 'Scheduled', href: '/admin/scheduled', icon: 'scheduled' },
       { label: 'Call Logs', href: '/admin/calls', icon: 'support' },
       { label: 'Campaigns', href: '/admin/campaigns', icon: 'announcements' },

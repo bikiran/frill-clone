@@ -5,6 +5,7 @@
 // companies.waitlist_settings (migrations/COLVY_V321_STOCK_WAITLIST.sql).
 
 import { isWithinSendingHours } from '@/lib/campaign-sender'
+import { sendCustomerEmail } from '@/lib/customer-email'
 export { requireCompanyAccess } from '@/lib/company-access'
 
 export const DEFAULT_WAITLIST_TEMPLATE =
@@ -72,7 +73,7 @@ export async function notifyWaitlist(db: any, opts: {
 }): Promise<NotifyResult> {
   const result: NotifyResult = { sent: 0, failed: 0, queued: 0, skipped: 0 }
   const { companyId } = opts
-  const { data: co } = await db.from('companies').select('name, waitlist_settings').eq('id', companyId).maybeSingle()
+  const { data: co } = await db.from('companies').select('id, name, slug, waitlist_settings').eq('id', companyId).maybeSingle()
   const settings = resolveWaitlistSettings(co?.waitlist_settings)
   const business = co?.name || 'us'
 
@@ -139,12 +140,8 @@ export async function notifyWaitlist(db: any, opts: {
       }
       if (!ok && email) {
         via = 'email'
-        const res = await fetch(`${origin}/api/email/send`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ companyId, conversationId, to: email, subject: `${row.item_name} is back in stock`, text }),
-        })
-        ok = res.ok
-        if (!ok) err = err || `Email failed (${res.status})`
+        ok = await sendCustomerEmail(db, co || { id: companyId, name: business }, { to: email, subject: `${row.item_name} is back in stock`, text })
+        if (!ok) err = err || 'Email failed'
       }
 
       await db.from('stock_waitlist').update(ok

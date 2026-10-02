@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { StatusMark } from '@/components/StatusMark'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase'
@@ -180,8 +181,8 @@ export default function PollPage() {
 
           {submitted && (
             <div className="mt-8 p-4 rounded-lg border text-center" style={{ borderColor: 'var(--border)', background: 'var(--peach)' }}>
-              <p style={{ color: 'var(--coral)' }}>
-                ✓ Your vote for <strong>{userVote}</strong> has been recorded
+              <p style={{ color: 'var(--coral)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, margin: 0 }}>
+                <StatusMark kind="success" size={24} /> <span>Your vote for <strong>{userVote}</strong> has been recorded</span>
               </p>
             </div>
           )}

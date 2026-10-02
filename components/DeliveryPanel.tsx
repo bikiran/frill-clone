@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
+import { authFetch } from '@/lib/auth-fetch'
 
 // Slide-out delivery scheduler. The sidebar used to hold a bare <input
 // type="date"> that saved a string on the contact and nothing else — it never
@@ -66,7 +67,7 @@ export default function DeliveryPanel({ companyId, contact, onClose, onSaved }: 
     setSaving(true); setErr('')
     try {
       // Book it on the team calendar.
-      const res = await fetch('/api/calendar', {
+      const res = await authFetch('/api/calendar', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           companyId,

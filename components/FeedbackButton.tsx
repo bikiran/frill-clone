@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { StatusMark } from '@/components/StatusMark'
 import { supabase } from '@/lib/supabase'
 
 // A persistent feedback / bug-report button pinned to the right edge of the
@@ -64,9 +65,7 @@ export default function FeedbackButton({ companyId }: { companyId?: string }) {
           <div style={{ padding: 18 }}>
             {sent ? (
               <div style={{ textAlign: 'center', padding: '24px 0' }}>
-                <div style={{ width: 48, height: 48, borderRadius: '50%', background: '#dcfce7', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}>
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#059669" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-                </div>
+                <div style={{ marginBottom: 12 }}><StatusMark kind="success" size={60} celebrate /></div>
                 <p style={{ margin: 0, fontSize: 14, fontWeight: 600, color: 'var(--ink)' }}>Thanks! Your feedback has been sent to our team.</p>
               </div>
             ) : (
