@@ -51,6 +51,10 @@
     {
       "path": "/api/cron/booking-reminders",
       "schedule": "*/10 * * * *"
+    },
+    {
+      "path": "/api/cron/ai-knowledge",
+      "schedule": "25 * * * *"
     }
   ]
 }

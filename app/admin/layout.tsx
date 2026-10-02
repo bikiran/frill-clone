@@ -173,6 +173,7 @@ const SEARCH_EXTRAS: SearchItem[] = [
   { label: 'Auto-replies', href: '/admin/crm-settings/auto-replies', section: 'Settings', keywords: 'automation canned away hours' },
   { label: 'Contact form', href: '/admin/crm-settings/contact-form', section: 'Settings' },
   { label: 'AI settings', href: '/admin/ai-settings', section: 'Settings', keywords: 'assistant colvy ai reply' },
+  { label: 'AI knowledge', href: '/admin/crm-settings/ai-knowledge', section: 'Settings', keywords: 'colvy ai library facts files website train learn answers' },
   { label: 'Statuses', href: '/admin/statuses', section: 'Settings' },
   { label: 'Topics', href: '/admin/topics', section: 'Settings' },
   { label: 'Priorities', href: '/admin/priorities', section: 'Settings' },
