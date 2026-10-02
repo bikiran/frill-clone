@@ -6,11 +6,9 @@ import { isValidSlug, isSlugAvailable } from '@/lib/board'
 import { PLAN_NAMES, Plan } from '@/lib/plan'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { INDUSTRIES } from '@/lib/industries'
 
 const SUPER_ADMIN_EMAIL = 'bishalstha76@gmail.com'
-const INDUSTRIES = ['SaaS', 'E-commerce', 'Healthcare', 'Education', 'Finance',
-  'Logistics', 'Manufacturing', 'Media & Entertainment', 'Travel & Hospitality',
-  'Retail', 'Real Estate', 'Other']
 // The real tiers customers buy (plus the trial state). Values match
 // companies.plan / lib/plan.ts, so the entitlement model applies exactly.
 const PLANS = ['free', 'trial', 'feedback', 'omnichannel', 'everything', 'enterprise']
