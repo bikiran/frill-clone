@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { StatusMark } from '@/components/StatusMark'
 
 type Field = { key: string; label: string; type: string; required: boolean }
 
@@ -66,9 +67,7 @@ export default function PublicContactForm() {
       <div style={{ maxWidth: 480, margin: form.alignment === 'left' ? 0 : '0 auto', background: '#fff', border: '1px solid #eef0f3', borderRadius: Math.max(radius, 12) + 4, padding: 24, boxShadow: '0 8px 30px rgba(15,23,42,0.06)' }}>
         {done ? (
           <div style={{ textAlign: 'center', padding: '20px 0' }}>
-            <div style={{ width: 52, height: 52, borderRadius: '50%', background: '#dcfce7', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>
-              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-            </div>
+            <div style={{ marginBottom: 14 }}><StatusMark kind="success" size={64} celebrate /></div>
             <p style={{ fontSize: 16, fontWeight: 700, color: '#111', margin: 0 }}>{form.success_message || "Thanks! We'll be in touch shortly."}</p>
           </div>
         ) : (

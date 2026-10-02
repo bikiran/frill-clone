@@ -4,10 +4,9 @@
 // product webhook and the waitlist cron. Requires stock_waitlist +
 // companies.waitlist_settings (migrations/COLVY_V321_STOCK_WAITLIST.sql).
 
-import type { NextRequest } from 'next/server'
 import { isWithinSendingHours } from '@/lib/campaign-sender'
-
-const SUPER_ADMIN = 'bishalstha76@gmail.com'
+import { sendCustomerEmail } from '@/lib/customer-email'
+export { requireCompanyAccess } from '@/lib/company-access'
 
 export const DEFAULT_WAITLIST_TEMPLATE =
   'Hi {name}, good news — {item} is back in stock at {business}! {link} Reply STOP to opt out.'
@@ -24,24 +23,6 @@ export function resolveWaitlistSettings(raw: any): WaitlistSettings {
 }
 
 export const isMissingTable = (e: any) => /does not exist|schema cache|PGRST205/i.test(String(e?.message || e || ''))
-
-// The caller (Bearer access token) must be the company's owner, one of its team
-// members, or the platform super-admin.
-export async function requireCompanyAccess(req: NextRequest, db: any, companyId: string | null | undefined): Promise<{ ok: boolean; userId?: string }> {
-  try {
-    const token = (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '')
-    if (!token || !companyId) return { ok: false }
-    const { data } = await db.auth.getUser(token)
-    const user = data?.user
-    if (!user) return { ok: false }
-    if (user.email === SUPER_ADMIN) return { ok: true, userId: user.id }
-    const { data: co } = await db.from('companies').select('id').eq('id', companyId).eq('owner_id', user.id).maybeSingle()
-    if (co) return { ok: true, userId: user.id }
-    const { data: tm } = await db.from('team_members').select('id').eq('company_id', companyId).eq('user_id', user.id).limit(1)
-    if (tm?.length) return { ok: true, userId: user.id }
-    return { ok: false }
-  } catch { return { ok: false } }
-}
 
 function fillTemplate(tpl: string, v: { name: string; item: string; business: string; link: string }) {
   return tpl
@@ -92,7 +73,7 @@ export async function notifyWaitlist(db: any, opts: {
 }): Promise<NotifyResult> {
   const result: NotifyResult = { sent: 0, failed: 0, queued: 0, skipped: 0 }
   const { companyId } = opts
-  const { data: co } = await db.from('companies').select('name, waitlist_settings').eq('id', companyId).maybeSingle()
+  const { data: co } = await db.from('companies').select('id, name, slug, waitlist_settings').eq('id', companyId).maybeSingle()
   const settings = resolveWaitlistSettings(co?.waitlist_settings)
   const business = co?.name || 'us'
 
@@ -159,12 +140,8 @@ export async function notifyWaitlist(db: any, opts: {
       }
       if (!ok && email) {
         via = 'email'
-        const res = await fetch(`${origin}/api/email/send`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ companyId, conversationId, to: email, subject: `${row.item_name} is back in stock`, text }),
-        })
-        ok = res.ok
-        if (!ok) err = err || `Email failed (${res.status})`
+        ok = await sendCustomerEmail(db, co || { id: companyId, name: business }, { to: email, subject: `${row.item_name} is back in stock`, text })
+        if (!ok) err = err || 'Email failed'
       }
 
       await db.from('stock_waitlist').update(ok

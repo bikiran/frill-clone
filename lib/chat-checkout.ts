@@ -49,6 +49,10 @@ export type ChatCheckoutOpts = {
   extraMetadata?: Record<string, string>
   successUrl?: string
   cancelUrl?: string
+  // Optional: close the session after this unix time (Stripe allows 30 min – 24 h)
+  // and prefill the customer's email — used by booking holds.
+  expiresAt?: number
+  customerEmail?: string | null
 }
 
 // Create a hosted Checkout session on the business's account. Card data stays
@@ -77,6 +81,8 @@ export async function createChatCheckoutSession(company: any, opts: ChatCheckout
     payment_intent_data: applicationFee > 0 ? { application_fee_amount: applicationFee } : undefined,
     success_url: successUrl,
     cancel_url: opts.cancelUrl || cancelUrl,
+    ...(opts.expiresAt ? { expires_at: opts.expiresAt } : {}),
+    ...(opts.customerEmail ? { customer_email: opts.customerEmail } : {}),
     metadata: {
       kind: opts.kind || 'chat_payment', companyId: opts.companyId, conversationId: opts.conversationId,
       orderId: opts.orderId ? String(opts.orderId) : '',

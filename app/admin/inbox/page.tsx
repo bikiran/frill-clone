@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
+import { authFetch } from '@/lib/auth-fetch'
 import { peekCompanyUser, readCache, writeCache } from '@/lib/client-cache'
 import { uploadAttachment, readJsonSafe } from '@/lib/upload-attachment'
 import MentionInput, { resolveMentions as resolveTeamMentions } from '@/components/MentionInput'
@@ -41,6 +42,8 @@ import DoaPanel from '@/components/DoaPanel'
 import CreateOrderPanel from '@/components/CreateOrderPanel'
 import SuperAdminContactWorkspaces from '@/components/SuperAdminContactWorkspaces'
 import WaitlistQuickAdd from '@/components/WaitlistQuickAdd'
+import { useAiDraft, AiDraftButton, AiDraftInfo } from '@/components/AiDraft'
+import BookingLinkButton from '@/components/booking/BookingLinkButton'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Conversation = {
@@ -670,6 +673,8 @@ export default function InboxPage() {
   const [contact, setContact] = useState<Contact | null>(null)
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([])
   const [reply, setReply] = useState('')
+  // ✨ Draft reply (chat/SMS composer): AI writes the next reply for the agent to review.
+  const aiDraft = useAiDraft({ companyId, conversationId: selected?.id || null, onDraft: t => setReply(t), getText: () => reply })
 
   // ── Coax-style resizable composer ──────────────────────────────────────
   // The reply box can be dragged taller/shorter via the grab handle on its top
@@ -912,7 +917,7 @@ export default function InboxPage() {
     setScheduling(true)
     try {
       const who = contact?.name || contact?.email || 'customer'
-      const res = await fetch('/api/calendar', {
+      const res = await authFetch('/api/calendar', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           companyId,
@@ -9354,6 +9359,8 @@ export default function InboxPage() {
                   : 'Type a reply… (Enter to send, / for quick responses)'}
                 style={{ width: '100%', height: composerH, padding: '10px 12px', borderRadius: 10, border: internalMode ? '1px dashed #f59e0b' : '1px solid var(--border)', background: internalMode ? '#fffbeb' : '#fff', fontStyle: internalMode ? 'italic' : 'normal', fontSize: 13, resize: 'none', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box', marginBottom: 8 }} />
 
+              {!internalMode && <AiDraftInfo info={aiDraft.info} error={aiDraft.error} busy={aiDraft.busy} onRedo={i => aiDraft.run(i)} onClose={aiDraft.clear} />}
+
               {/* @mention picker */}
               {mentionQuery !== null && mentionMatches.length > 0 && (
                 <div style={{ position: 'absolute', bottom: '100%', left: 12, right: 12, marginBottom: 6, background: '#fff', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 10px 28px rgba(0,0,0,0.14)', maxHeight: 220, overflowY: 'auto', zIndex: 60 }}>
@@ -9529,6 +9536,8 @@ export default function InboxPage() {
                       </div>
                     )}
                   </div>
+                  {!internalMode && <BookingLinkButton companyId={companyId} conversationId={selected?.id || null} contactId={selected?.contact_id || null} onInsert={t => setReply(r => (r.trim() ? r.trimEnd() + '\n' : '') + t)} />}
+                  {!internalMode && <AiDraftButton busy={aiDraft.busy} onClick={() => aiDraft.run()} />}
                   {/* Resolve */}
                   <button type="button" onClick={() => setStatus('resolved')}
                     style={{ height: 32, padding: '0 10px', borderRadius: 8, border: '1px solid #059669', background: '#dcfce7', color: '#059669', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>

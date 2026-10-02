@@ -590,9 +590,11 @@ export async function syncGmailChannel(channelId: string): Promise<{ imported: n
             attachments: ticketAtts,
           })
           const patch: any = { updated_at: new Date().toISOString() }
-          if (['resolved', 'closed'].includes(String(ticket.status || ''))) patch.status = 'open'
+          if (['resolved', 'closed'].includes(String(ticket.status || ''))) { patch.status = 'open'; patch.resolved_at = null }
           if (!ticket.conversation_id) patch.conversation_id = conv.id
-          await db.from('support_tickets').update(patch).eq('id', ticket.id)
+          { const { error: tuErr } = await db.from('support_tickets').update(patch).eq('id', ticket.id)
+            // Before migration V322 resolved_at doesn't exist — reopen anyway.
+            if (tuErr && 'resolved_at' in patch) { delete patch.resolved_at; await db.from('support_tickets').update(patch).eq('id', ticket.id) } }
         }
       }
     } catch (e) { console.error('[gmail sync ticket route]', e) }

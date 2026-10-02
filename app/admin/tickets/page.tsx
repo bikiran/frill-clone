@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { SkeletonList } from '@/components/Skeleton'
 import PageHeader from '@/components/PageHeader'
+import { computeSla, activeClock, clockLabel, CLOCK_COLORS, resolveSla, DEFAULT_SLA, type SlaSettings } from '@/lib/ticket-sla'
 
 const STATUS_COLORS: Record<string, { bg: string; c: string }> = {
   open: { bg: '#dbeafe', c: '#2563eb' },
@@ -34,17 +35,29 @@ export default function TicketsList() {
   const [priorityFilter, setPriorityFilter] = useState<string>('all')
   const [page, setPage] = useState(1)
   const [showNew, setShowNew] = useState(false)
+  const [sla, setSla] = useState<SlaSettings>(DEFAULT_SLA)
+  const [team, setTeam] = useState<{ userId: string; name: string }[]>([])
+  const [meId, setMeId] = useState('')
+  const [dueFilter, setDueFilter] = useState<'all' | 'overdue' | 'soon'>('all')
+  const [assigneeFilter, setAssigneeFilter] = useState<string>('all')
+  const [showSla, setShowSla] = useState(false)
+  const [tick, setTick] = useState(0)
+  // Re-render every minute so "due in…" countdowns stay current.
+  useEffect(() => { const iv = setInterval(() => setTick(t => t + 1), 60000); return () => clearInterval(iv) }, [])
 
   const load = async (cid: string) => {
     const res = await fetch(`/api/tickets?companyId=${cid}`)
     const data = await res.json()
     setTickets(data.tickets || [])
+    if (data.sla) setSla(resolveSla(data.sla))
+    if (Array.isArray(data.team)) setTeam(data.team)
   }
 
   useEffect(() => {
     ;(async () => {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session?.user) { router.push('/signin'); return }
+      setMeId(session.user.id)
       const { data: co } = await (supabase as any).from('companies').select('id').eq('owner_id', session.user.id).maybeSingle()
       let cid = co?.id
       if (!cid) {
@@ -58,29 +71,41 @@ export default function TicketsList() {
     })()
   }, [])
 
+  // Each ticket's deadline clocks, recomputed every minute.
+  const withSla = useMemo(() => {
+    const now = new Date()
+    return tickets.map(t => ({ ...t, _sla: computeSla(t, sla, now) }))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tickets, sla, tick])
+  const teamName = (uid: string | null) => (uid && team.find(m => m.userId === uid)?.name) || ''
+
   const counts = useMemo(() => {
-    const c: Record<string, number> = { open: 0, in_progress: 0, resolved: 0, closed: 0 }
-    tickets.forEach(t => { if (c[t.status] != null) c[t.status]++ })
+    const c: Record<string, number> = { open: 0, in_progress: 0, resolved: 0, closed: 0, overdue: 0 }
+    withSla.forEach(t => { if (c[t.status] != null) c[t.status]++; if (t._sla.worst === 'overdue') c.overdue++ })
     return c
-  }, [tickets])
+  }, [withSla])
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
-    return tickets.filter(t => {
+    return withSla.filter(t => {
       if (statusFilter !== 'all' && t.status !== statusFilter) return false
+      if (dueFilter !== 'all' && t._sla.worst !== dueFilter) return false
+      if (assigneeFilter === 'me' && t.assigned_to !== meId) return false
+      if (assigneeFilter === 'unassigned' && t.assigned_to) return false
+      if (!['all', 'me', 'unassigned'].includes(assigneeFilter) && t.assigned_to !== assigneeFilter) return false
       if (priorityFilter !== 'all' && (t.priority || 'normal') !== priorityFilter) return false
       if (!q) return true
       return [t.ticket_number, t.subject, t.customer_name, t.customer_email, t.description].some((v: any) => String(v || '').toLowerCase().includes(q))
     })
-  }, [tickets, search, statusFilter, priorityFilter])
+  }, [withSla, search, statusFilter, priorityFilter, dueFilter, assigneeFilter, meId])
 
-  useEffect(() => { setPage(1) }, [search, statusFilter, priorityFilter])
+  useEffect(() => { setPage(1) }, [search, statusFilter, priorityFilter, dueFilter, assigneeFilter])
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const pageRows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
   const exportCsv = () => {
-    const rows = [['Ticket', 'Subject', 'Customer', 'Email', 'Channel', 'Priority', 'Status', 'Created']]
-    filtered.forEach(t => rows.push([t.ticket_number, t.subject, t.customer_name, t.customer_email, t.channel, t.priority || 'normal', t.status, new Date(t.created_at).toISOString()]))
+    const rows = [['Ticket', 'Subject', 'Customer', 'Email', 'Channel', 'Priority', 'Status', 'Assignee', 'Deadline', 'Created']]
+    filtered.forEach(t => { const a = activeClock(t._sla); rows.push([t.ticket_number, t.subject, t.customer_name, t.customer_email, t.channel, t.priority || 'normal', t.status, teamName(t.assigned_to), clockLabel(a.clock, a.what), new Date(t.created_at).toISOString()]) })
     const csv = rows.map(r => r.map(c => `"${String(c || '').replace(/"/g, '""')}"`).join(',')).join('\n')
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }))
     const a = document.createElement('a'); a.href = url; a.download = `tickets-${new Date().toISOString().slice(0, 10)}.csv`; a.click(); URL.revokeObjectURL(url)
@@ -96,6 +121,7 @@ export default function TicketsList() {
         bleed={24}
         action={
           <>
+            <button onClick={() => setShowSla(true)} title="Deadlines & assignment" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9px 14px', borderRadius: 10, border: '1px solid var(--border)', background: '#fff', color: 'var(--ink)', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>⏱ Deadlines</button>
             <button onClick={exportCsv} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9px 16px', borderRadius: 10, border: '1px solid var(--border)', background: '#fff', color: 'var(--ink)', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>↓ Export</button>
             <button onClick={() => setShowNew(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9px 16px', borderRadius: 10, border: 'none', background: 'var(--coral)', color: '#fff', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>+ New Ticket</button>
           </>
@@ -117,6 +143,16 @@ export default function TicketsList() {
             </button>
           )
         })}
+        {sla.enabled && (
+          <button onClick={() => setDueFilter(dueFilter === 'overdue' ? 'all' : 'overdue')}
+            style={{ textAlign: 'left', display: 'flex', alignItems: 'center', gap: 14, padding: '16px 18px', borderRadius: 16, border: dueFilter === 'overdue' ? '2px solid #dc2626' : '1px solid var(--border)', background: counts.overdue ? '#fffafa' : '#fff', cursor: 'pointer', transition: 'all .15s' }}>
+            <div style={{ width: 44, height: 44, borderRadius: 12, background: '#fef2f2', color: '#dc2626', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>⏰</div>
+            <div>
+              <div style={{ fontSize: 26, fontWeight: 800, color: counts.overdue ? '#dc2626' : 'var(--ink)', lineHeight: 1 }}>{counts.overdue || 0}</div>
+              <div style={{ fontSize: 13, color: 'var(--slate)', marginTop: 4, fontWeight: 600 }}>Overdue</div>
+            </div>
+          </button>
+        )}
       </div>
 
       {/* Search + filters */}
@@ -140,22 +176,35 @@ export default function TicketsList() {
           <option value="high">High</option>
           <option value="urgent">Urgent</option>
         </select>
+        {sla.enabled && (
+          <select value={dueFilter} onChange={e => setDueFilter(e.target.value as any)} style={selStyle}>
+            <option value="all">All deadlines</option>
+            <option value="overdue">Overdue</option>
+            <option value="soon">Due soon</option>
+          </select>
+        )}
+        <select value={assigneeFilter} onChange={e => setAssigneeFilter(e.target.value)} style={selStyle}>
+          <option value="all">Anyone</option>
+          <option value="me">Assigned to me</option>
+          <option value="unassigned">Unassigned</option>
+          {team.map(m => <option key={m.userId} value={m.userId}>{m.name}</option>)}
+        </select>
       </div>
 
       {loading ? <SkeletonList rows={6} /> : (
         <div style={{ border: '1px solid var(--border)', borderRadius: 16, background: '#fff', overflow: 'hidden' }}>
           <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 860 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1040 }}>
               <thead>
                 <tr style={{ background: 'var(--canvas)' }}>
-                  {['Ticket', 'Subject', 'Customer', 'Channel', 'Priority', 'Status', 'Updated'].map(h => (
+                  {['Ticket', 'Subject', 'Customer', 'Channel', 'Priority', 'Status', ...(sla.enabled ? ['Due'] : []), 'Assignee', 'Updated'].map(h => (
                     <th key={h} style={{ textAlign: 'left', padding: '12px 16px', fontSize: 11.5, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: '0.03em', whiteSpace: 'nowrap' }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {pageRows.length === 0 ? (
-                  <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--slate)', padding: 48, fontSize: 14 }}>No tickets match your filters.</td></tr>
+                  <tr><td colSpan={sla.enabled ? 9 : 8} style={{ textAlign: 'center', color: 'var(--slate)', padding: 48, fontSize: 14 }}>No tickets match your filters.</td></tr>
                 ) : pageRows.map(t => {
                   const sc = STATUS_COLORS[t.status] || STATUS_COLORS.open
                   const pr = t.priority || 'normal'
@@ -186,6 +235,20 @@ export default function TicketsList() {
                       <td style={{ padding: '14px 16px' }}>
                         <span style={{ fontSize: 11.5, fontWeight: 700, padding: '4px 10px', borderRadius: 20, background: sc.bg, color: sc.c, textTransform: 'capitalize', whiteSpace: 'nowrap' }}>{String(t.status || 'open').replace('_', ' ')}</span>
                       </td>
+                      {sla.enabled && (() => {
+                        const a = activeClock(t._sla)
+                        const col = CLOCK_COLORS[a.clock.state]
+                        return (
+                          <td style={{ padding: '14px 16px' }}>
+                            {a.clock.state === 'off' ? <span style={{ color: '#cbd5e1' }}>—</span> : (
+                              <span title={a.clock.dueAt ? `Due ${a.clock.dueAt.toLocaleString()}` : ''} style={{ fontSize: 11.5, fontWeight: 700, padding: '4px 9px', borderRadius: 20, background: col.bg, color: col.c, whiteSpace: 'nowrap' }}>
+                                {a.clock.state === 'overdue' ? '⏰ ' : ''}{clockLabel(a.clock, a.what)}
+                              </span>
+                            )}
+                          </td>
+                        )
+                      })()}
+                      <td style={{ padding: '14px 16px', fontSize: 13, color: t.assigned_to ? 'var(--ink)' : 'var(--slate)', whiteSpace: 'nowrap' }}>{teamName(t.assigned_to) || (t.assigned_to ? 'Teammate' : 'Unassigned')}</td>
                       <td style={{ padding: '14px 16px', fontSize: 12.5, color: 'var(--slate)', whiteSpace: 'nowrap' }}>{new Date(t.updated_at || t.created_at).toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' })}</td>
                     </tr>
                   )
@@ -212,6 +275,7 @@ export default function TicketsList() {
         </div>
       )}
 
+      {showSla && <SlaSettingsModal companyId={companyId} sla={sla} onClose={() => setShowSla(false)} onSaved={s2 => { setSla(s2); setShowSla(false) }} />}
       {showNew && <NewTicketModal companyId={companyId} onClose={() => setShowNew(false)} onCreated={async () => { setShowNew(false); if (companyId) await load(companyId) }} />}
     </div>
   )
@@ -264,6 +328,76 @@ function NewTicketModal({ companyId, onClose, onCreated }: { companyId: string; 
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 4 }}>
             <button onClick={onClose} style={{ padding: '10px 18px', borderRadius: 10, border: '1px solid var(--border)', background: '#fff', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>Cancel</button>
             <button onClick={submit} disabled={busy} style={{ padding: '10px 18px', borderRadius: 10, border: 'none', background: 'var(--coral)', color: '#fff', fontWeight: 700, fontSize: 14, cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.7 : 1 }}>{busy ? 'Creating…' : 'Create ticket'}</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Deadlines & assignment settings ─────────────────────────────────────────
+function SlaSettingsModal({ companyId, sla, onClose, onSaved }: { companyId: string; sla: SlaSettings; onClose: () => void; onSaved: (s: SlaSettings) => void }) {
+  const [form, setForm] = useState<SlaSettings>(JSON.parse(JSON.stringify(sla)))
+  const [saving, setSaving] = useState(false)
+  const [err, setErr] = useState('')
+  const PRI: { key: 'urgent' | 'high' | 'normal' | 'low'; label: string; color: string }[] = [
+    { key: 'urgent', label: 'Urgent', color: '#dc2626' }, { key: 'high', label: 'High', color: '#d97706' },
+    { key: 'normal', label: 'Normal', color: '#2563eb' }, { key: 'low', label: 'Low', color: '#6b7280' },
+  ]
+  const setHours = (which: 'first_response_hours' | 'resolution_hours', p: string, v: string) =>
+    setForm(f => ({ ...f, [which]: { ...f[which], [p]: Number(v) } }))
+  const save = async () => {
+    setSaving(true); setErr('')
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch('/api/tickets/settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}) },
+        body: JSON.stringify({ companyId, settings: form }),
+      })
+      const d = await res.json()
+      if (!res.ok) throw new Error(d.error || 'Could not save')
+      onSaved(resolveSla(d.settings))
+    } catch (e: any) { setErr(e.message) } finally { setSaving(false) }
+  }
+  const num: React.CSSProperties = { width: 70, padding: '7px 8px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 13.5, textAlign: 'right', fontFamily: 'inherit' }
+  return (
+    <div onClick={() => !saving && onClose()} style={{ position: 'fixed', inset: 0, zIndex: 3000, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <div onClick={e => e.stopPropagation()} style={{ width: 'min(520px, 100%)', maxHeight: '90vh', overflowY: 'auto', background: '#fff', borderRadius: 16, padding: 22, boxShadow: '0 24px 70px rgba(0,0,0,0.25)' }}>
+        <p style={{ margin: '0 0 4px', fontWeight: 800, fontSize: 17, color: 'var(--ink)' }}>Deadlines & assignment</p>
+        <p style={{ margin: '0 0 16px', fontSize: 13, color: 'var(--slate)', lineHeight: 1.5 }}>How quickly each ticket should get a first reply and be resolved, counted in hours from when it was raised. Overdue tickets are flagged and the team gets one alert.</p>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, cursor: 'pointer', fontSize: 13.5, fontWeight: 700, color: 'var(--ink)' }}>
+          <input type="checkbox" checked={form.enabled} onChange={e => setForm(f => ({ ...f, enabled: e.target.checked }))} /> Track deadlines
+        </label>
+        <div style={{ opacity: form.enabled ? 1 : 0.45, pointerEvents: form.enabled ? 'auto' : 'none' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 14 }}>
+            <thead><tr>
+              {['Priority', 'First reply within', 'Resolve within'].map(h => <th key={h} style={{ textAlign: 'left', fontSize: 11.5, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase', padding: '6px 4px' }}>{h}</th>)}
+            </tr></thead>
+            <tbody>
+              {PRI.map(p => (
+                <tr key={p.key} style={{ borderTop: '1px solid var(--border)' }}>
+                  <td style={{ padding: '8px 4px', fontSize: 13.5, fontWeight: 700, color: p.color }}>● {p.label}</td>
+                  <td style={{ padding: '8px 4px', fontSize: 13, color: 'var(--slate)' }}><input type="number" min={1} value={form.first_response_hours[p.key]} onChange={e => setHours('first_response_hours', p.key, e.target.value)} style={num} /> h</td>
+                  <td style={{ padding: '8px 4px', fontSize: 13, color: 'var(--slate)' }}><input type="number" min={1} value={form.resolution_hours[p.key]} onChange={e => setHours('resolution_hours', p.key, e.target.value)} style={num} /> h</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer' }}>
+          <input type="checkbox" checked={form.auto_assign} onChange={e => setForm(f => ({ ...f, auto_assign: e.target.checked }))} style={{ marginTop: 3 }} />
+          <span>
+            <span style={{ display: 'block', fontSize: 13.5, fontWeight: 700, color: 'var(--ink)' }}>Auto-assign new tickets</span>
+            <span style={{ display: 'block', fontSize: 12.5, color: 'var(--slate)', marginTop: 2 }}>Each new ticket goes to the teammate with the fewest open tickets.</span>
+          </span>
+        </label>
+        {err && <p style={{ fontSize: 12.5, color: '#dc2626', margin: '12px 0 0' }}>{err}</p>}
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, marginTop: 20, flexWrap: 'wrap' }}>
+          <button onClick={() => setForm(JSON.parse(JSON.stringify(DEFAULT_SLA)))} style={{ padding: '9px 14px', borderRadius: 10, border: '1px solid var(--border)', background: '#fff', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>Reset defaults</button>
+          <div style={{ display: 'flex', gap: 10 }}>
+            <button onClick={onClose} disabled={saving} style={{ padding: '9px 16px', borderRadius: 10, border: '1px solid var(--border)', background: '#fff', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>Cancel</button>
+            <button onClick={save} disabled={saving} style={{ padding: '9px 18px', borderRadius: 10, border: 'none', background: 'var(--coral)', color: '#fff', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>{saving ? 'Saving…' : 'Save'}</button>
           </div>
         </div>
       </div>

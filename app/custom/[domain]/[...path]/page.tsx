@@ -10,6 +10,8 @@ import { supabase } from '@/lib/supabase'
 import HelpArticlePage from '../../../help/[id]/page'
 import HelpTicketPage from '../../../help/ticket/page'
 import CustomDomainPage from '../page'
+import BookingFlow from '@/components/booking/BookingFlow'
+import ManageBooking from '@/components/booking/ManageBooking'
 
 export default function CustomDomainSubPath() {
   const params = useParams()
@@ -22,7 +24,9 @@ export default function CustomDomainSubPath() {
   const isHelpTicket = path[0] === 'help' && path[1] === 'ticket'
   const isHelpArticle = path[0] === 'help' && !!path[1] && path[1] !== 'ticket'
   const isHelpHome = path[0] === 'help' && !path[1]
-  const renderInPlace = isHelpTicket || isHelpArticle || isHelpHome
+  const isBook = path[0] === 'book'
+  const isBookingManage = path[0] === 'booking' && !!path[1]
+  const renderInPlace = isHelpTicket || isHelpArticle || isHelpHome || isBook || isBookingManage
 
   useEffect(() => {
     if (!hostname || renderInPlace) return
@@ -40,6 +44,9 @@ export default function CustomDomainSubPath() {
     })()
   }, [hostname, subPath, renderInPlace])
 
+  // Booking pages render in place too (book.acme.com/book/<service>).
+  if (isBook) return <BookingFlow domain={hostname} initialService={path[1] || null} />
+  if (isBookingManage) return <ManageBooking token={path[1]} />
   // Help pages render in place so the visitor never leaves the custom domain.
   if (isHelpTicket) return <HelpTicketPage />
   // The article page reads its id from the URL (help.acme.com/help/<id>).

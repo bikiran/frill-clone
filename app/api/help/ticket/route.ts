@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { autoAssignTicket } from '@/lib/ticket-assign'
 
 export const dynamic = 'force-dynamic'
 
@@ -62,9 +63,10 @@ export async function POST(req: NextRequest) {
     }
 
     let attempts = 0
+    let ticketId: string | null = null
     while (true) {
-      const { error } = await db.from('support_tickets').insert(payload)
-      if (!error) break
+      const { data: ins, error } = await db.from('support_tickets').insert(payload).select('id').maybeSingle()
+      if (!error) { ticketId = ins?.id || null; break }
       const msg = error.message || ''
       // A column we optimistically added doesn't exist on this instance — drop it.
       const missing = msg.match(/Could not find the '([^']+)' column/i) || msg.match(/column "([^"]+)" .* does not exist/i)
@@ -75,6 +77,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
+    if (ticketId) await autoAssignTicket(db, co.id, ticketId)
     return NextResponse.json({ ok: true, ticketNumber })
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || 'Failed' }, { status: 500 })

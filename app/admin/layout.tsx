@@ -119,6 +119,7 @@ const NAV_GROUPS = [
       { label: 'Notes', href: '/admin/notes', icon: 'notes' },
       { label: 'Gallery', href: '/admin/gallery', icon: 'gallery' },
       { label: 'Calendar', href: '/admin/calendar', icon: 'calendar' },
+      { label: 'Bookings', href: '/admin/bookings', icon: 'calendar' },
       { label: 'Scheduled', href: '/admin/scheduled', icon: 'scheduled' },
       { label: 'Call Logs', href: '/admin/calls', icon: 'support' },
       { label: 'Campaigns', href: '/admin/campaigns', icon: 'announcements' },
@@ -277,6 +278,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       fetch('/api/cron/email-sync', { method: 'GET' }).catch(() => {})
       // Back-in-stock texts that arrived overnight go out once sending hours open.
       fetch('/api/cron/waitlist', { method: 'GET' }).catch(() => {})
+      // One alert per ticket that misses its reply/resolution deadline.
+      fetch('/api/cron/ticket-sla', { method: 'GET' }).catch(() => {})
+      // Booking reminders, wrap-ups and rebook nudges (Vercel Cron runs it too).
+      fetch('/api/cron/booking-reminders', { method: 'GET' }).catch(() => {})
     }
     // Agent presence heartbeat — records that this agent is online so an inbound
     // call can ring them. "Online" = seen in the last ~2 minutes.
