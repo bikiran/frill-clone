@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import { useAiDraft, AiDraftButton, AiDraftInfo } from '@/components/AiDraft'
 import { uploadDirect } from '@/lib/upload-attachment'
 import { supabase } from '@/lib/supabase'
 
@@ -139,6 +140,18 @@ export default function EmailComposer({
   // AI assist: rewrite the current draft more clearly/professionally.
   const [aiBusy, setAiBusy] = useState(false)
   const aiLoggedRef = useRef(false)
+  // ✨ Draft reply: AI writes the email from the help centre, products and orders.
+  const aiDraft = useAiDraft({
+    companyId, conversationId,
+    getText: () => bodyText(),
+    onDraft: (t) => {
+      if (editorRef.current) {
+        editorRef.current.innerHTML = t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>')
+        syncBody()
+      }
+      if (!aiLoggedRef.current) { aiLoggedRef.current = true; onAiAssist?.() }
+    },
+  })
   const improveWithAI = async () => {
     const text = bodyText()
     if (!text) { setErr('Write a draft first, then improve it with AI'); return }
@@ -409,11 +422,17 @@ export default function EmailComposer({
         </div>
       )}
 
+      {(aiDraft.info || aiDraft.error) && (
+        <div style={{ padding: '0 12px' }}>
+          <AiDraftInfo info={aiDraft.info} error={aiDraft.error} busy={aiDraft.busy} onRedo={i => aiDraft.run(i)} onClose={aiDraft.clear} />
+        </div>
+      )}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', borderTop: '1px solid var(--border)', background: 'var(--canvas)' }}>
         <span style={{ fontSize: 12, color: err ? '#dc2626' : 'var(--slate)' }}>
           {err || (sigPreview ? 'Signature will be appended' : ' ')}
         </span>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <AiDraftButton busy={aiDraft.busy} onClick={() => aiDraft.run()} height={34} />
           <button type="button" onClick={improveWithAI} disabled={aiBusy} title="Improve this draft with AI"
             style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '8px 12px', borderRadius: 9, border: '1px solid #e9d5ff', background: '#faf5ff', color: '#7c3aed', fontSize: 12.5, fontWeight: 700, cursor: aiBusy ? 'wait' : 'pointer' }}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/></svg>

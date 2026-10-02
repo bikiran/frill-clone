@@ -39,7 +39,7 @@ export interface AiResult {
 
 // Pull the most relevant knowledge for this question. Keyword scoring — simple,
 // predictable, and it never hallucinates a source.
-async function retrieve(db: any, companyId: string, question: string, limit = 8) {
+export async function retrieve(db: any, companyId: string, question: string, limit = 8) {
   const { data: all } = await db.from('ai_knowledge')
     .select('source, title, content, url').eq('company_id', companyId).limit(500)
   if (!all?.length) return []

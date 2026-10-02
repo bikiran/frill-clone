@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { useAiDraft, AiDraftButton, AiDraftInfo } from '@/components/AiDraft'
 import { computeSla, clockLabel, CLOCK_COLORS, resolveSla, DEFAULT_SLA, type SlaSettings, type Clock } from '@/lib/ticket-sla'
 
 const STATUSES = ['open', 'in_progress', 'resolved', 'closed']
@@ -37,6 +38,8 @@ export default function TicketDetail() {
   const [team, setTeam] = useState<{ userId: string; name: string }[]>([])
   const [tick, setTick] = useState(0)
   useEffect(() => { const iv = setInterval(() => setTick(t => t + 1), 60000); return () => clearInterval(iv) }, [])
+  // ✨ Draft reply: AI writes the next email from the help centre, products and orders.
+  const aiDraft = useAiDraft({ companyId: ticket?.company_id || null, ticketId, onDraft: t => { setTab('reply'); setDraft(t) }, getText: () => draft })
 
   const authed = async (): Promise<Record<string, string>> => {
     const { data: { session } } = await supabase.auth.getSession()
@@ -207,11 +210,13 @@ export default function TicketDetail() {
                 </button>
               ))}
             </div>
+            {tab === 'reply' && <AiDraftInfo info={aiDraft.info} error={aiDraft.error} busy={aiDraft.busy} onRedo={i => aiDraft.run(i)} onClose={aiDraft.clear} />}
             <textarea value={draft} onChange={e => setDraft(e.target.value)} rows={4}
               placeholder={tab === 'reply' ? 'Write a reply — this is emailed to the customer…' : 'Add an internal note (only your team sees this)…'}
               style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 14, outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit', resize: 'vertical', background: tab === 'note' ? '#fffdf5' : '#fff' }} />
             {toast && <p style={{ margin: '10px 0 0', fontSize: 13, color: 'var(--slate)' }}>{toast}</p>}
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 8, marginTop: 12 }}>
+              {tab === 'reply' && <AiDraftButton busy={aiDraft.busy} onClick={() => aiDraft.run()} height={40} />}
               <button onClick={send} disabled={sending || !draft.trim()}
                 style={{ padding: '10px 20px', borderRadius: 10, border: 'none', background: tab === 'reply' ? 'var(--coral)' : '#b45309', color: '#fff', fontWeight: 700, fontSize: 14, cursor: sending || !draft.trim() ? 'default' : 'pointer', opacity: sending || !draft.trim() ? 0.6 : 1 }}>
                 {sending ? 'Sending…' : tab === 'reply' ? 'Send reply' : 'Add note'}
