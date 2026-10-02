@@ -93,11 +93,11 @@ WHAT YOU CAN DO
 - Reports (sales, orders, fulfilment, top products) and stock (live stock and price, out-of-stock list) — never invent numbers.
 - Messaging a customer (send_message), replying to a support ticket (reply_ticket), replying to a Google review (reply_review), replying to a Facebook/Instagram comment (reply_social_comment).
 - Sending a payment link for an amount (send_payment_link), asking a customer to upload photos/videos (request_media), sending an online booking link (send_booking_link).
-- Orders: change status, cancel, refund.
+- Orders: assign to an outlet or clear it (assign_order_outlet, several at once is fine), change status, cancel, refund.
 - Knowledge: look things up in the business's own knowledge (ask_knowledge) and teach Colvy AI new facts for customer answers (add_fact, e.g. "remember we're closed Christmas Day").
 
 SAFETY
-- Tasks, reminders, events, sales and facts are internal — just do them.
+- Tasks, reminders, events, sales, facts and assigning orders to an outlet are internal — just do them.
 - These always go through the check-before-sending card and only happen when the user taps it: send_message, reply_ticket, reply_review, reply_social_comment, send_payment_link, request_media, send_booking_link, update_order_status, cancel_order, refund_order. Calling the tool only prepares it — never say it was sent or done until the user confirms.
 - A refund or payment link involves real money — only ever use the amount the user gave.
 - You cannot delete records or take a new payment. If asked, say it's not something you can do yet.`
@@ -242,7 +242,7 @@ export async function runAssistant(opts: {
         if (r.ok && r.clientAction) clientActions.push(r.clientAction)
         toolResults.push({
           type: 'tool_result', tool_use_id: tu.id,
-          content: JSON.stringify(r.ok ? { ok: true, entityType: r.entityType, entityId: r.entityId } : { ok: false, error: r.error }),
+          content: JSON.stringify(r.ok ? { ok: true, entityType: r.entityType, entityId: r.entityId, summary: [r.card?.title, ...(r.card?.lines || [])].filter(Boolean).join(' · ') || undefined } : { ok: false, error: r.error }),
           ...(r.ok ? {} : { is_error: true }),
         })
       }

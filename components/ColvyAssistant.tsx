@@ -46,7 +46,7 @@ function suggestionsFor(path: string): string[] {
   if (path.includes('/tickets')) return ['Reply to this ticket', 'Summarise this ticket', 'Assign it to me']
   if (path.includes('/reviews')) return ['Reply to my latest Google review', 'Show reviews with no reply']
   if (path.includes('/contacts')) return ['Call this contact', 'Send them a booking link', 'Book an appointment next Tuesday 10am']
-  if (path.includes('/orders')) return ['Show pending orders', 'How did we do this week?', "What's out of stock?"]
+  if (path.includes('/orders')) return ['Show pending orders', 'Show orders with no outlet', 'How did we do this week?', "What's out of stock?"]
   if (path.includes('/calendar')) return ['Book a delivery for Friday 9am', 'Remind me about it the night before']
   if (path.includes('/tasks')) return ['Create a high-priority task', 'Mark a task done', 'Reassign a task']
   if (path.includes('/calls')) return ['Summarise my last call', 'Create a task from this call', 'Remind me to call them back tomorrow']
@@ -281,12 +281,21 @@ export default function ColvyAssistant({ companyId, userId, agentName }: { compa
   // permissive, so the client can do this directly and immediately.
   async function undo(card: Card) {
     if (!card.undo) return
-    const { entityType, entityId, restore } = card.undo as any
-    const table = entityType === 'calendar_event' ? 'calendar_events' : entityType === 'sale' ? 'conversation_sales' : 'conversation_tasks'
+    const { entityType, entityId, restore, rows } = card.undo as any
+    const table = entityType === 'calendar_event' ? 'calendar_events' : entityType === 'sale' ? 'conversation_sales' : entityType === 'order_outlet' ? 'orders' : 'conversation_tasks'
     try {
-      // An edit (task_update) is undone by restoring the prior values; a created
-      // row is undone by deleting it.
-      if (restore) await (supabase as any).from(table).update(restore).eq('id', entityId)
+      // An edit (task_update, order_outlet) is undone by restoring the prior
+      // values; a created row is undone by deleting it.
+      if (Array.isArray(rows)) {
+        for (const r of rows) {
+          const { error } = await (supabase as any).from(table).update(r.restore).eq('id', r.id)
+          if (error) throw error
+        }
+        if (entityType === 'order_outlet') {
+          try { await (supabase as any).from('order_events').insert(rows.map((r: any) => ({ order_id: r.id, company_id: companyId, type: 'outlet', detail: 'Outlet change undone' }))) } catch {}
+        }
+      }
+      else if (restore) await (supabase as any).from(table).update(restore).eq('id', entityId)
       else await (supabase as any).from(table).delete().eq('id', entityId)
       setToast({ text: 'Undone' })
       setMsgs(m => m.map(msg => msg.role === 'assistant' && msg.cards
