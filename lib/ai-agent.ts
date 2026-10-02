@@ -1,6 +1,8 @@
 import { createClient } from '@supabase/supabase-js'
 import { searchKnowledge } from '@/lib/ai-knowledge'
 import { logUnanswered } from '@/lib/ai-unanswered'
+import { findProducts } from '@/lib/product-search'
+import { markThinking, clearThinking, queueDraft, claimDraft, answeredSince, sendAiReply, sleep, replyInFlight, DEFAULT_SEND_DELAY_S } from '@/lib/ai-live-reply'
 import { WooCommerceService } from '@/lib/woocommerce-service'
 import { trackLinksInText } from '@/lib/link-tracking'
 
@@ -30,7 +32,7 @@ const admin = () => createClient(
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-const MODEL = 'claude-sonnet-4-6'
+const MODEL = 'claude-opus-5-5'
 
 export interface AiResult {
   replied: boolean
@@ -319,8 +321,9 @@ async function createDraftOrder(db: any, ctx: any, req: any) {
 export async function runAiAgent(opts: {
   conversationId: string
   companyId?: string
+  db?: any   // for tests; defaults to the service-role client
 }): Promise<AiResult> {
-  const db = admin()
+  const db = opts.db || admin()
   const key = process.env.ANTHROPIC_API_KEY
   if (!key) return { replied: false, reason: 'ANTHROPIC_API_KEY not set' }
 
@@ -341,17 +344,29 @@ export async function runAiAgent(opts: {
     return { replied: false, reason: 'AI is switched off for this conversation' }
   }
 
+  // SMS replies are a separate switch — a text costs money and lands on a phone.
+  if (String(conv.channel || '') === 'sms' && !cfg.auto_reply_sms) {
+    return { replied: false, reason: 'AI auto-reply is off for SMS' }
+  }
+  // One reply in flight per conversation (a second message mid-countdown waits its turn).
+  if (replyInFlight(conv)) {
+    return { replied: false, reason: 'Colvy AI is already replying in this conversation' }
+  }
+
   const { data: contact } = conv.contact_id
     ? await db.from('contacts').select('*').eq('id', conv.contact_id).maybeSingle()
     : { data: null as any }
 
   // History (and how many times the AI has already replied here).
+  // The LATEST 40 messages, oldest first. (This used to take the first 30 ever
+  // sent, so in a long conversation the AI answered a months-old "hi" instead
+  // of the customer's actual question.)
   const { data: msgs } = await db.from('messages')
     .select('sender_type, content, is_ai, created_at')
     .eq('conversation_id', opts.conversationId)
-    .order('created_at', { ascending: true }).limit(30)
+    .order('created_at', { ascending: false }).limit(40)
 
-  const history = msgs || []
+  const history = (msgs || []).slice().reverse()
   const last = [...history].reverse().find(m => m.sender_type === 'visitor')
   if (!last?.content) return { replied: false, reason: 'Nothing to answer' }
 
@@ -386,8 +401,22 @@ export async function runAiAgent(opts: {
   const caps = cfg.capabilities || {}
   const ctx = { companyId, conversationId: opts.conversationId, contact, caps }
 
-  const knowledge = await retrieve(db, companyId, last.content)
+  // From here the inbox shows "Colvy AI is writing…" live.
+  await markThinking(db, opts.conversationId)
+  try {
+    return await composeAndSend()
+  } finally {
+    await clearThinking(db, opts.conversationId)
+  }
+
+  async function composeAndSend(): Promise<AiResult> {
+
+  const [knowledge, products] = await Promise.all([
+    retrieve(db, companyId, last.content),
+    findProducts(db, companyId, last.content).catch(() => [] as any[]),
+  ])
   const business = company?.name || 'the business'
+  const isSms = String(conv.channel || '') === 'sms'
 
   // Only advertise the tools that are actually switched on.
   const tools: any[] = []
@@ -454,6 +483,15 @@ export async function runAiAgent(opts: {
     },
   })
 
+  // Live from the store, right now — the only source for stock and prices.
+  const productBlock = products.length
+    ? products.map((p: any) => {
+        const price = p.on_sale && p.sale_price ? `$${p.sale_price} (on sale, was $${p.price})` : (p.price ? `$${p.price}` : 'price on request')
+        const stock = p.stock_status === 'instock' ? `in stock${p.stock_quantity != null ? ` (${p.stock_quantity} available)` : ''}` : p.stock_status === 'onbackorder' ? 'on backorder' : 'out of stock'
+        return `- ${p.name}: ${price}, ${stock}${p.permalink ? ` — ${p.permalink}` : ''}`
+      }).join('\n')
+    : '(no matching products found in the store for this message)'
+
   const knowledgeBlock = knowledge.length
     ? knowledge.map((k: any) => `[${k.source}] ${k.title || ''}\n${String(k.content).slice(0, 900)}`).join('\n\n---\n\n')
     : '(no material indexed yet)'
@@ -468,17 +506,24 @@ export async function runAiAgent(opts: {
     ? `You ALREADY have these details for this customer — never ask for them again:\n${known.join('\n')}`
     : 'You have no details for this customer yet.'
 
-  const system = `You are a customer service assistant for ${business}, replying in a live chat.
+  const system = `You are a customer service assistant for ${business}, replying ${isSms ? 'by text message (SMS). Keep it short — ideally under 300 characters' : 'in a live chat'}.
+
+Today is ${new Date().toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Australia/Melbourne' })}.
 
 WHAT YOU KNOW
 Everything below comes from ${business}'s own material. It is the ONLY thing you may treat as fact about this business:
 
 ${knowledgeBlock}
 
+LIVE STOCK AND PRICES (from the online store, right now)
+${productBlock}
+Only state stock or prices from this list. If the product they asked about isn't listed, say you'll check with the team and hand to a human — never guess. Link the product when it helps.
+
 WHAT YOU KNOW ABOUT THIS CUSTOMER
 ${knownBlock}
 
 HOW TO ANSWER
+- Answer the customer's LATEST message. Earlier messages are context only.
 - FIRST decide what the customer is actually asking for. If their latest message does NOT ask a specific question — a thank-you, a greeting, small talk, or a sign-off like "I'll get back to you", "will talk soon", "I'll wait a bit" — do NOT send any facts, product info, addresses or store details. Reply with a short, warm acknowledgement (e.g. "No worries at all — reach out whenever you're ready.") or hand to a human. NEVER answer a question they did not ask.
 - Answer only from the material above, and only when it ACTUALLY addresses their specific question. The material is retrieved by keyword, so some of it is often off-topic — if none of it answers what they asked, do NOT reply with it just because it's there. Say you're not sure and hand to a human. Never guess or invent prices, stock, policies, delivery times or product details.
 - NEVER volunteer store locations, address, opening hours, or phone number unless the customer EXPLICITLY asks for them ("where are you?", "what's your address?", "what time do you open?"). A passing phrase like "where to go to get it" or "I know where to get it" is NOT a request for our address — do not reply with locations.
@@ -532,7 +577,9 @@ WHAT YOU CANNOT DO
       },
       body: JSON.stringify({
         model: MODEL,
-        max_tokens: 700,
+        // Thinking is always on for this model; low effort keeps replies quick.
+        max_tokens: 4000,
+        output_config: { effort: 'low' },
         system,
         tools,
         messages: convo.length ? convo : [{ role: 'user', content: last.content }],
@@ -624,23 +671,25 @@ WHAT YOU CANNOT DO
     // Links the AI includes (products, help articles) go out as tracked short links.
     try { text = await trackLinksInText(text, { companyId, conversationId: opts.conversationId, contactId: contact?.id, channel: 'ai' }) } catch {}
 
-    // Post it, clearly marked as AI.
-    await db.from('messages').insert({
-      conversation_id: opts.conversationId,
-      company_id: companyId,
-      sender_type: 'agent',
-      sender_name: business,
-      content: text,
-      message_type: 'text',
-      is_ai: true,
-      metadata: { ai: true, action: actionName || null, handoff },
-    })
+    // ── Live: show the draft with a countdown, so a person watching the inbox
+    // can send it now, edit it or cancel it. Sent only if it's still there.
+    const delayS = Math.max(0, Math.min(15, Number(cfg.send_delay ?? DEFAULT_SEND_DELAY_S)))
+    const draftId = delayS > 0 ? await queueDraft(db, opts.conversationId, text, delayS * 1000) : null
+    if (draftId) {
+      await sleep(delayS * 1000)
+      if (!(await claimDraft(db, opts.conversationId, draftId))) {
+        await log(db, { company_id: companyId, conversation_id: opts.conversationId, contact_id: contact?.id, action: 'reply_taken_over', allowed: true, payload: { draft: text.slice(0, 400) } })
+        return { replied: false, reason: 'A person took over the reply during the countdown' }
+      }
+    }
+    // Never talk over a person (or a keyword reply) who answered meanwhile.
+    if (await answeredSince(db, opts.conversationId, last.created_at)) {
+      return { replied: false, reason: 'Someone answered while Colvy AI was writing' }
+    }
 
-    await db.from('conversations').update({
-      last_message: text.slice(0, 200),
-      last_message_at: new Date().toISOString(),
-      ...(handoff ? { is_unread: true } : {}),
-    }).eq('id', opts.conversationId)
+    // Post it, clearly marked as AI (and text it, for an SMS conversation).
+    const sent = await sendAiReply(db, { conv, companyId, businessName: business, text, handoff, meta: { action: actionName || null } })
+    if (!sent.ok) return { replied: false, reason: sent.error || 'Could not send the reply' }
 
     if (handoff) {
       try {
@@ -655,5 +704,6 @@ WHAT YOU CANNOT DO
     return { replied: true, reply: text, action: actionName, handoff }
   } catch (e: any) {
     return { replied: false, reason: e.message }
+  }
   }
 }

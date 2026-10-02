@@ -363,12 +363,13 @@ export async function POST(req: NextRequest) {
 
         // Answer common questions automatically — and TEXT the answer back, so
         // an SMS customer actually receives it (not just the chat thread).
+        let keywordAnswered = false
         if (!bookingHandled) try {
           const { data: integ } = await db.from('telnyx_integrations')
             .select('api_key, phone_number, messaging_profile_id')
             .eq('company_id', companyId).maybeSingle()
 
-          await runKeywordReply({
+          keywordAnswered = !!(await runKeywordReply({
             conversationId: conv.id, text, companyId, channel: 'sms',
             deliver: async (reply) => {
               if (!integ?.api_key || !integ.phone_number) return
@@ -380,8 +381,14 @@ export async function POST(req: NextRequest) {
                 messaging_profile_id: integ.messaging_profile_id || undefined,
               })
             },
-          })
+          }))?.matched
         } catch (e) { console.error('[sms keyword reply]', e) }
+
+        // Nothing canned answered it → Colvy AI (only if switched on for SMS;
+        // the agent checks). It shows live in the inbox with a countdown.
+        if (!bookingHandled && !keywordAnswered && text) {
+          try { fetch(`${req.nextUrl.origin}/api/ai/reply`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ conversationId: conv.id, companyId }) }) } catch {}
+        }
 
         // Auto-reply to a failed media attempt: text the customer a secure upload
         // link so their photo isn't lost. Throttled to once per conversation per
