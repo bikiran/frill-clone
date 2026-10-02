@@ -8804,7 +8804,7 @@ export default function InboxPage() {
                             return (
                               <div style={{ padding: atts.length && atts[0].kind !== 'file' ? '4px 10px 6px' : 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
                                 {/* Links Colvy sent the customer → a card with opens / device / city. */}
-                                {isAgent && linkCodesIn(body).length > 0 && <div style={{ whiteSpace: 'normal', marginTop: 2 }}><LinkCards companyId={companyId} text={body} /></div>}
+                                {isAgent && /https?:\/\//.test(body || '') && <div style={{ whiteSpace: 'normal', marginTop: 2 }}><LinkCards companyId={companyId} text={body} conversationId={selected?.id || null} at={(msg as any).created_at || null} /></div>}
                                 {renderTextWithLinks(body)}
                                 {hasTr && (
                                   <div style={{ marginTop: 4, fontSize: 10.5, opacity: 0.8, display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>

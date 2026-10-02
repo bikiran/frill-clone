@@ -17,11 +17,27 @@ export function linkCodesIn(text: string | null | undefined): string[] {
   return out
 }
 
+// Plain (untracked) URLs in an older message — resolved to the short link the
+// customer was actually sent.
+const URL_RE = /https?:\/\/[^\s<>"')]+/g
+export function longUrlsIn(text: string | null | undefined): string[] {
+  if (!text) return []
+  const out: string[] = []
+  for (const m of text.match(URL_RE) || []) {
+    if (/\/(l|m)\/[A-Za-z0-9_-]{4,16}\b/.test(m)) continue
+    // The sender stored the raw match (trailing "." and all) — ask for both.
+    for (const u of [m, m.replace(/[.,;:!?]+$/, '')]) if (!out.includes(u)) out.push(u)
+  }
+  return out
+}
+
 // ── Shared stats store (one request for every card on screen) ─────────────
 type Event = { at: string; device?: string; os?: string; browser?: string; city?: string; region?: string; country?: string }
 export type LinkStats = { target: string; label?: string | null; kind?: string; type?: string | null; clicks: number; lastClickedAt?: string | null; events: Event[] }
 
 const cache = new Map<string, LinkStats | null>()
+const resolvedCache = new Map<string, string | null>()   // `${conv}|${at}|${url}` → code
+const resolving = new Set<string>()
 const listeners = new Set<() => void>()
 let version = 0
 const wanted = new Map<string, Set<string>>()   // companyId → codes on screen
@@ -43,6 +59,25 @@ async function fetchCodes(companyId: string, codes: string[]) {
     }
     emit()
   } catch {}
+}
+
+async function resolveUrls(companyId: string, conversationId: string, at: string, urls: string[]) {
+  const todo = urls.filter(u => { const k = `${conversationId}|${at}|${u}`; return !resolvedCache.has(k) && !resolving.has(k) })
+  if (!todo.length) return
+  todo.forEach(u => resolving.add(`${conversationId}|${at}|${u}`))
+  try {
+    const { data } = await supabase.auth.getSession()
+    const t = data?.session?.access_token
+    const r = await fetch(`/api/links/stats?companyId=${companyId}&conversationId=${conversationId}&at=${encodeURIComponent(at)}&urls=${encodeURIComponent(JSON.stringify(todo))}`, { headers: t ? { Authorization: `Bearer ${t}` } : {} })
+    const d = r.ok ? await r.json() : {}
+    for (const u of todo) {
+      const code = d.resolved?.[u] || null
+      resolvedCache.set(`${conversationId}|${at}|${u}`, code)
+      if (code && d.links?.[code]) cache.set(code, d.links[code])
+      if (code) { const set = wanted.get(companyId) || new Set<string>(); set.add(code); wanted.set(companyId, set) }
+    }
+    emit()
+  } catch {} finally { todo.forEach(u => resolving.delete(`${conversationId}|${at}|${u}`)) }
 }
 
 function schedule() {
@@ -136,8 +171,20 @@ const DeviceIcon = ({ e }: { e: Event }) => e.device === 'desktop'
 const PinIcon = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 21s-7-6.2-7-12a7 7 0 0 1 14 0c0 5.8-7 12-7 12z" /><circle cx="12" cy="9" r="2.5" /></svg>
 
 // ── The cards ─────────────────────────────────────────────────────────────
-export default function LinkCards({ companyId, text, codes: given, title }: { companyId: string | null; text?: string | null; codes?: string[]; title?: string }) {
-  const codes = given || linkCodesIn(text)
+export default function LinkCards({ companyId, text, codes: given, title, conversationId, at }: {
+  companyId: string | null; text?: string | null; codes?: string[]; title?: string
+  conversationId?: string | null; at?: string | null   // for older messages that kept long URLs
+}) {
+  const direct = given || linkCodesIn(text)
+  const longs = !given && conversationId && at ? longUrlsIn(text) : []
+  const longKey = longs.join(' ')
+  useEffect(() => {
+    if (companyId && conversationId && at && longs.length) resolveUrls(companyId, conversationId, at, longs)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [companyId, conversationId, at, longKey])
+  useSyncExternalStore(cb => { listeners.add(cb); return () => listeners.delete(cb) }, () => version, () => 0)
+  const fromLong = longs.map(u => resolvedCache.get(`${conversationId}|${at}|${u}`)).filter((c): c is string => !!c)
+  const codes = Array.from(new Set([...direct, ...fromLong]))
   const stats = useLinkStats(companyId, codes)
   if (!codes.length) return null
   return (

@@ -19,7 +19,26 @@ export async function GET(req: NextRequest) {
     const companyId = sp.get('companyId')
     if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     const codes = Array.from(new Set(String(sp.get('codes') || '').split(',').map(c => c.trim()).filter(c => /^[A-Za-z0-9_-]{4,16}$/.test(c)))).slice(0, 60)
-    if (!codes.length) return NextResponse.json({ links: {} })
+
+    // Older messages kept the long URL in the inbox copy, although the customer
+    // was sent a tracked short link. Find that link: same conversation, same
+    // destination, made closest to when the message was sent.
+    const resolved: Record<string, string> = {}
+    const conversationId = sp.get('conversationId')
+    let urls: string[] = []
+    try { urls = JSON.parse(sp.get('urls') || '[]') } catch {}
+    urls = (Array.isArray(urls) ? urls : []).filter(u => typeof u === 'string' && /^https?:\/\//.test(u)).slice(0, 20)
+    if (urls.length && conversationId) {
+      const at = Date.parse(sp.get('at') || '') || Date.now()
+      const { data: cands } = await db.from('short_links').select('code, target_url, created_at')
+        .eq('company_id', companyId).eq('conversation_id', conversationId).in('target_url', urls).limit(200)
+      for (const u of urls) {
+        const best = (cands || []).filter((c: any) => c.target_url === u)
+          .sort((x: any, y: any) => Math.abs(Date.parse(x.created_at) - at) - Math.abs(Date.parse(y.created_at) - at))[0]
+        if (best && Math.abs(Date.parse(best.created_at) - at) < 6 * 3600_000) { resolved[u] = best.code; if (!codes.includes(best.code)) codes.push(best.code) }
+      }
+    }
+    if (!codes.length) return NextResponse.json({ links: {}, resolved })
 
     const { data: rows } = await db.from('short_links')
       .select('id, code, target_url, label, kind, link_type, clicks, last_clicked_at, created_at')
@@ -48,7 +67,7 @@ export async function GET(req: NextRequest) {
         for (const code of Object.keys(links)) links[code].clicks = Math.max(links[code].clicks, links[code].events.length)
       } catch {}
     }
-    return NextResponse.json({ links }, { headers: { 'Cache-Control': 'no-store' } })
+    return NextResponse.json({ links, resolved }, { headers: { 'Cache-Control': 'no-store' } })
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || 'Failed' }, { status: 500 })
   }
