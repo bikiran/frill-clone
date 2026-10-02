@@ -135,7 +135,7 @@ export default function EmailPage() {
   const webhookUrl = 'https://colvy.com/api/webhooks/email'
 
   return (
-    <div style={{ maxWidth: 800, margin: '0 auto', padding: '28px 24px', fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif' }}>
+    <div className="w-full max-w-[1200px] mx-auto px-4 md:px-8 py-6 md:py-8">
       <h1 style={{ fontSize: 24, fontWeight: 800, color: 'var(--ink)', margin: '0 0 4px' }}>Email</h1>
       <p style={{ fontSize: 14, color: 'var(--slate)', margin: '0 0 20px' }}>
         Connect as many mailboxes as you need — one per outlet if you like. Everything lands in your inbox, and replies go back out from the right address.

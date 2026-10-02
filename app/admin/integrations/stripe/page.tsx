@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
+import Link from 'next/link'
+import { Icon } from '@/components/integrations/ui'
 
 export default function StripeIntegration() {
   const [companyId, setCompanyId] = useState<string | null>(null)
@@ -51,26 +53,29 @@ export default function StripeIntegration() {
   if (loading) return <div style={{ padding: 24, color: 'var(--slate)' }}>Loading…</div>
 
   return (
-    <div style={{ maxWidth: 640, margin: '0 auto', padding: '28px 24px', fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif' }}>
+    <div className="w-full max-w-[1200px] mx-auto px-4 md:px-8 py-6 md:py-8">
+      <Link href="/admin/integrations" className="inline-flex items-center gap-1.5 text-sm mb-5 hover:opacity-70 transition-opacity" style={{ color: 'var(--slate)' }}>
+        <Icon name="back" size={15} /> All integrations
+      </Link>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
-        <div style={{ width: 44, height: 44, borderRadius: 10, background: '#635BFF', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 800, fontSize: 20 }}>S</div>
+        <img src="/logos/stripe.svg" alt="" width={48} height={48} style={{ width: 48, height: 48, flexShrink: 0 }} />
         <div>
           <h1 style={{ fontSize: 22, fontWeight: 800, color: 'var(--ink)', margin: 0 }}>Stripe Payments</h1>
           <p style={{ fontSize: 13.5, color: 'var(--slate)', margin: '2px 0 0' }}>Take card payments and send invoices directly inside the chat.</p>
         </div>
-        {connected && <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 700, background: '#dcfce7', color: '#059669', padding: '4px 12px', borderRadius: 20 }}>● Connected</span>}
+        {connected && <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, fontWeight: 600, background: '#dcfce7', color: '#15803d', padding: '3px 10px', borderRadius: 20 }}><Icon name="check" size={12} /> Connected</span>}
       </div>
 
       {error && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 10, padding: '11px 15px', margin: '16px 0', fontSize: 13, color: '#dc2626' }}>{error}</div>}
 
       {connected ? (
         <div style={{ border: '1px solid var(--border)', borderRadius: 16, padding: 24, background: '#fff' }}>
-          <p style={{ margin: '0 0 12px', fontSize: 15, fontWeight: 700, color: 'var(--ink)' }}>Your Stripe account is connected 🎉</p>
+          <p style={{ margin: '0 0 12px', fontSize: 15, fontWeight: 700, color: 'var(--ink)' }}>Your Stripe account is connected</p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 13.5, color: 'var(--slate)' }}>
-            <span>✓ Request payments from the chat composer</span>
-            <span>✓ Send invoices via chat or a secure link (works over SMS too)</span>
-            <span>✓ Customers pay by card; Stripe emails them a receipt automatically</span>
-            <span>✓ Funds settle directly into your Stripe account</span>
+            <span style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}><span style={{ color: '#15803d', marginTop: 2 }}><Icon name="check" size={14} /></span>Request payments from the chat composer</span>
+            <span style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}><span style={{ color: '#15803d', marginTop: 2 }}><Icon name="check" size={14} /></span>Send invoices via chat or a secure link (works over SMS too)</span>
+            <span style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}><span style={{ color: '#15803d', marginTop: 2 }}><Icon name="check" size={14} /></span>Customers pay by card; Stripe emails them a receipt automatically</span>
+            <span style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}><span style={{ color: '#15803d', marginTop: 2 }}><Icon name="check" size={14} /></span>Funds settle directly into your Stripe account</span>
           </div>
           <button onClick={connect} disabled={connecting} style={{ marginTop: 18, padding: '10px 18px', borderRadius: 10, background: 'var(--canvas)', border: '1px solid var(--border)', fontSize: 13.5, fontWeight: 600, cursor: 'pointer', color: 'var(--ink)' }}>
             {connecting ? 'Opening…' : 'Manage Stripe account'}
@@ -171,7 +176,7 @@ function StripeKeysOption({ companyId }: { companyId: string | null }) {
             style={{ width: '100%', padding: '9px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13, boxSizing: 'border-box', marginBottom: 12 }} />
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <button onClick={save} disabled={saving} style={{ padding: '9px 18px', borderRadius: 9, background: '#635BFF', color: '#fff', border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>{saving ? 'Saving…' : 'Save keys'}</button>
-            {saved && <span style={{ fontSize: 12.5, color: '#059669', fontWeight: 600 }}>✓ Saved</span>}
+            {saved && <span style={{ fontSize: 12.5, color: '#059669', fontWeight: 600 }}>Saved</span>}
           </div>
           <p style={{ fontSize: 11, color: '#9ca3af', margin: '10px 0 0' }}>Your secret key is stored securely and never shown in the browser again.</p>
         </div>
@@ -241,7 +246,7 @@ function WebsiteDomains({ companyId }: { companyId: string | null }) {
         </div>
       ) : <p style={{ fontSize: 12.5, color: 'var(--slate)', margin: '0 0 14px' }}>No domains added yet — payments will return to a Colvy-hosted result page.</p>}
 
-      <button onClick={save} disabled={saving} style={{ padding: '9px 18px', borderRadius: 9, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>{saving ? 'Saving…' : saved ? 'Saved ✓' : 'Save domains'}</button>
+      <button onClick={save} disabled={saving} style={{ padding: '9px 18px', borderRadius: 9, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>{saving ? 'Saving…' : saved ? 'Saved' : 'Save domains'}</button>
     </div>
   )
 }
