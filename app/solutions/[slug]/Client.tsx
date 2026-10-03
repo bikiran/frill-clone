@@ -53,7 +53,7 @@ const PAGES: Record<string, Page> = {
       { icon: 'user', title: 'CRM beside every chat', desc: 'See who you’re talking to, what they’ve bought and where they’re up to.' },
       { icon: 'tag', title: 'Sell in the thread', desc: 'Build a live order and take payment without leaving the conversation.' },
       { icon: 'link', title: 'Payment links', desc: 'Send a secure link by SMS or email; they pay on their device.' },
-      { icon: 'bolt', title: 'Automated follow-ups', desc: 'Nudge quotes and abandoned carts on autopilot so nothing goes cold.' },
+      { icon: 'bolt', title: 'Follow-ups that stick', desc: 'Abandoned carts land in the inbox and you can schedule the follow-up, so nothing goes cold.' },
       { icon: 'phone', title: 'Missed-call text-back', desc: 'Auto-SMS callers you miss so the lead never slips away.' },
     ],
     bands: [

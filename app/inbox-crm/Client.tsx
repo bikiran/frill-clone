@@ -93,8 +93,8 @@ const BLOCKS = (dark: boolean, border: string, ink: string, sub: string) => [
       </div>
     ) },
   { id: 'woo', tag: 'Advanced WooCommerce', title: 'Orders, refunds & carts — in the thread',
-    body: 'Look up a live WooCommerce order, issue a refund, or recover an abandoned cart without switching tabs. The customer’s purchase history sits right next to the conversation.',
-    points: ['Live order lookup & one-click refunds', 'Abandoned-cart recovery messages', 'Full order history synced to the contact'],
+    body: 'Look up a live WooCommerce order, issue a refund, or follow up an abandoned cart without switching tabs. Sold-out products get a “Notify me” form, and everyone waiting is texted when stock returns.',
+    points: ['Live order lookup & one-click refunds', 'Abandoned carts in the inbox, ready to follow up', 'Back-in-stock waitlists with automatic texts'],
     mock: (
       <div style={{ padding: 18, borderRadius: 16, background: dark ? '#171826' : '#fff', border: `1px solid ${border}`, width: '100%', maxWidth: 340, boxShadow: '0 14px 40px rgba(15,17,25,0.08)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10 }}><span style={{ fontSize: 12.5, fontWeight: 700, color: ink }}>Order #10428</span><span style={{ fontSize: 10.5, fontWeight: 800, padding: '2px 9px', borderRadius: 999, background: GREEN + '22', color: GREEN }}>PAID</span></div>

@@ -47,6 +47,8 @@ const COMPARE: { group: string; rows: { label: string; cells: (boolean | string)
     { label: 'WhatsApp, SMS & voice calls', cells: [false, false, true, true] },
     { label: 'SMS included / month', cells: ['—', '—', '3,000*', '3,000*'] },
     { label: 'WooCommerce & Shopify sync', cells: [false, false, true, true] },
+    { label: 'Back-in-stock waitlists (WooCommerce)', cells: [false, false, true, true] },
+    { label: 'Abandoned cart capture (WooCommerce)', cells: [false, false, true, true] },
     { label: 'Broadcast & scheduled campaigns', cells: [false, false, true, true] },
     { label: 'AI flow automation', cells: [false, false, true, true] },
     { label: 'Review dashboard', cells: [false, false, true, true] },

@@ -111,6 +111,8 @@ const IND: Record<string, Ind> = {
       { icon: 'star', title: 'Google Reviews', desc: 'Automated review requests after every purchase.' },
       { icon: 'megaphone', title: 'SMS campaigns', desc: 'Broadcast offers and win-backs that convert.' },
       { icon: 'pin', title: 'Multi-location', desc: 'One inbox across every store, each with its own number.' },
+      { icon: 'bell', title: 'Back-in-stock waitlists', desc: '“Notify me” on sold-out WooCommerce products, texted automatically on restock.' },
+      { icon: 'cart', title: 'Abandoned carts', desc: 'Lost checkouts land in the inbox, ready for a follow-up.' },
     ],
     bands: [
       { tag: 'Sell in the conversation', title: 'Turn a chat into a sale', body: 'Look up orders, recover carts and take payment without leaving the thread — then see the revenue each conversation drove.', bullets: ['Live orders & refunds', 'Payment links & recorded sales', 'Revenue per conversation'] },
@@ -125,6 +127,7 @@ const IND: Record<string, Ind> = {
     faqs: [
       { q: 'Which stores connect?', a: 'WooCommerce and Shopify sync live orders and customers; multiple stores are supported.' },
       { q: 'Can we take payment in the chat?', a: 'Yes — connect your own Stripe to send payment links and invoices in the thread.' },
+      { q: 'What happens when something sells out?', a: 'With the Colvy WordPress plugin, sold-out WooCommerce products get a “Notify me” form. When stock returns, everyone waiting gets a text, or an email if they left no mobile.' },
       { q: 'Does it handle multiple locations?', a: 'Run one inbox across locations, each with its own number and review profile.' },
     ],
     stats: [{ big: '14', label: 'channels, one thread' }, { big: 'Auto', label: 'review requests' }, { big: '45 min', label: 'to set up' }],
