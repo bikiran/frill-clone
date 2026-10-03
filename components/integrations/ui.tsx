@@ -9,6 +9,7 @@ import { INTEGRATIONS } from '@/lib/integrations-catalog'
 const PATHS: Record<string, React.ReactNode> = {
   back: <polyline points="15 18 9 12 15 6" />,
   check: <polyline points="20 6 9 17 4 12" />,
+  form: <><rect x="5" y="3" width="14" height="18" rx="2" /><line x1="9" y1="8" x2="15" y2="8" /><line x1="9" y1="12" x2="15" y2="12" /><line x1="9" y1="16" x2="13" y2="16" /></>,
   sync: <><polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" /><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" /></>,
   bolt: <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />,
   bag: <><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z" /><line x1="3" y1="6" x2="21" y2="6" /><path d="M16 10a4 4 0 0 1-8 0" /></>,

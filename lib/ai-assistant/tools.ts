@@ -7,6 +7,7 @@ import { WooCommerceService } from '@/lib/woocommerce-service'
 import { replyToReview } from '@/lib/google-business'
 import { loadCompanyPublic, createInvite, bookingPageUrl } from '@/lib/booking'
 import { searchKnowledge } from '@/lib/ai-knowledge'
+import { BUILDER_TOOLS, BUILDER_TOOL_NAMES, runBuilderAction, runBuilderRead } from '@/lib/ai-assistant/builders'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Colvy AI assistant — controlled tool layer.
@@ -376,6 +377,8 @@ export const ASSISTANT_TOOLS: ToolDef[] = [
     description: "Teach Colvy AI a fact for answering customers — 'remember that we're closed on Christmas Day', 'our CO2 refills are $25'. Reversible.",
     input_schema: { type: 'object', properties: { question: { type: 'string', description: 'how a customer would ask it' }, answer: { type: 'string' } }, required: ['question', 'answer'] },
   },
+  // Forms, polls and surveys (lib/ai-assistant/builders.ts).
+  ...BUILDER_TOOLS,
 ]
 
 export const TOOL_SAFETY: Record<string, ToolSafety> = Object.fromEntries(ASSISTANT_TOOLS.map(t => [t.name, t.safety]))
@@ -540,6 +543,7 @@ const fillLink = (text: string, link: string) => text.includes('{link}') ? text.
 // ── READ tools: return plain data for the model ──────────────────────────────
 export async function runReadTool(db: SupabaseClient, ctx: AssistantContext, name: string, args: any): Promise<any> {
   const D = db as any
+  if (BUILDER_TOOL_NAMES.has(name)) return runBuilderRead(D, ctx, name, args)
   if (name === 'search_contacts') {
     const q = String(args?.query || '').trim()
     if (!q) return { matches: [] }
@@ -861,6 +865,10 @@ export async function executeAction(db: SupabaseClient, ctx: AssistantContext, n
   const D = db as any
   // Every write requires edit rights (viewers are read-only in Colvy).
   if (!canEdit(ctx.role as any)) return { ok: false, error: "You don't have permission to make changes." }
+  if (BUILDER_TOOL_NAMES.has(name)) {
+    const { link, ...r } = await runBuilderAction(D, ctx, name, args)
+    return r
+  }
 
   if (name === 'create_task') {
     const title = String(args?.title || '').trim()
