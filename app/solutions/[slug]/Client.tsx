@@ -117,6 +117,24 @@ const PAGES: Record<string, Page> = {
     stats: [{ big: 'idea→ship', label: 'one connected loop' }, { big: 'public', label: 'roadmap & changelog' }, { big: 'auto', label: 'ship notifications' }],
     cta: { title: 'Build what your customers ask for', sub: 'Capture, prioritise and announce — all in one place.' },
   },
+  bookings: {
+    accent: PINK, eyebrow: 'Bookings & appointments', title: 'Fill your calendar', titleAccent: 'without the phone tag', sub: 'Customers book and pay a deposit online, get reminders by SMS, and change their own booking. Every booking sits in the same thread as their messages.',
+    heroChips: ['Book online', 'Deposits', 'SMS reminders', 'Reschedule'],
+    features: [
+      { icon: 'calendar', title: 'Online booking page', desc: 'Your services, prices and live availability on your own Colvy address.' },
+      { icon: 'user', title: 'Staff & locations', desc: 'Hours per team member and outlet, so only real free times show.' },
+      { icon: 'bolt', title: 'Deposits with Stripe', desc: 'Take a deposit or full payment when they book.' },
+      { icon: 'bell', title: 'Reminders that cut no-shows', desc: 'SMS and email confirmations, plus reminders 24 hours and 2 hours before.' },
+      { icon: 'link', title: 'Self-serve changes', desc: 'Customers reschedule or cancel within your policy, refunds included.' },
+      { icon: 'chat', title: 'Booked from any chat', desc: 'Send a booking link from the inbox, or let Colvy AI send it.' },
+    ],
+    bands: [
+      { tag: 'Stop playing phone tag', title: 'Let customers book themselves', body: 'Back-and-forth over times wastes everyone’s day. Share one link and customers pick a service, a time and a team member that suits them, around the clock.', bullets: ['Booking page on your own address', 'Live staff and location availability', 'Intake questions up front'] },
+      { tag: 'Fewer no-shows', title: 'Deposits, reminders and easy changes', body: 'A deposit and two timely reminders keep people turning up. When plans change, they move the booking themselves and the slot opens up again.', bullets: ['Stripe deposits or prepayment', 'Reminders 24 hours and 2 hours before', 'Reschedule and cancel links with your policy'] },
+    ],
+    stats: [{ big: '24/7', label: 'online booking' }, { big: '2', label: 'automatic reminders' }, { big: 'in-thread', label: 'every booking' }],
+    cta: { title: 'Take bookings while you work', sub: 'Online booking, deposits and reminders, all in the inbox.' },
+  },
   payments: {
     accent: CYAN, eyebrow: 'Payments & orders', title: 'Get paid', titleAccent: 'in the chat', sub: 'Send a secure payment link, take the order and track delivery — without the customer ever leaving the conversation.',
     heroChips: ['Payment links', 'Live orders', 'WISMO', 'Refunds'],

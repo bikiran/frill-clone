@@ -137,6 +137,25 @@ const BLOCKS = (dark: boolean, border: string, ink: string, sub: string) => [
         ))}
       </div>
     ) },
+  { id: 'booking', tag: 'Online booking', title: 'Bookings, right beside the chat',
+    body: 'Customers book a service and a time on your own booking page, pay a deposit and get SMS reminders. Send the link from any conversation, and every booking shows on the customer’s thread.',
+    points: ['Staff & location availability', 'Stripe deposits, SMS reminders', 'Self-serve reschedule & cancel'],
+    mock: (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%', maxWidth: 360 }}>
+        {[['Aquarium health check', 'Thu 9 Oct · 10:30am', 'Deposit paid', GREEN], ['Tank setup consult', 'Fri 10 Oct · 2:00pm', 'Confirmed', BLUE], ['Water testing', 'Mon 13 Oct · 9:00am', 'Reminder sent', PURPLE]].map(([t, when, st, c]) => (
+          <div key={t as string} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderRadius: 14, background: dark ? '#171826' : '#fff', border: `1px solid ${border}`, boxShadow: '0 8px 24px rgba(15,17,25,0.05)' }}>
+            <span style={{ width: 32, height: 32, borderRadius: 10, background: (c as string) + '1f', color: c as string, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg>
+            </span>
+            <span style={{ minWidth: 0, flex: 1 }}>
+              <span style={{ display: 'block', fontSize: 13, fontWeight: 700, color: ink }}>{t}</span>
+              <span style={{ display: 'block', fontSize: 11.5, color: sub }}>{when}</span>
+            </span>
+            <span style={{ fontSize: 11, fontWeight: 800, color: c as string, whiteSpace: 'nowrap' }}>{st}</span>
+          </div>
+        ))}
+      </div>
+    ) },
   { id: 'tasks', tag: 'Tasks, calendar & automations', title: 'Turn chats into things that get done',
     body: 'Spin any message into an assignable task, colour-code it, set it to repeat, and see it on a calendar. Automate replies and follow-ups so nothing slips.',
     points: ['One-click task from any conversation', 'Recurring tasks & calendar view', 'Auto-replies and scheduled follow-ups'],

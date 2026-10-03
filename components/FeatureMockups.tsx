@@ -10,13 +10,13 @@ import React from 'react'
 export type MockKind =
   | 'inbox' | 'crm' | 'gallery' | 'notes' | 'orders' | 'payments' | 'links'
   | 'insights' | 'calendar' | 'tasks' | 'broadcasts' | 'automation'
-  | 'ideas' | 'roadmap' | 'announcements' | 'kb'
+  | 'ideas' | 'roadmap' | 'announcements' | 'kb' | 'booking'
 
 const TITLES: Record<MockKind, string> = {
   inbox: 'Shared inbox', crm: 'Customer profile', gallery: 'Media gallery', notes: 'Internal notes',
   orders: 'Orders', payments: 'Payments', links: 'Link analytics', insights: 'Insights',
   calendar: 'Calendar', tasks: 'Tasks', broadcasts: 'Broadcast', automation: 'Automation',
-  ideas: 'Ideas board', roadmap: 'Roadmap', announcements: 'Changelog', kb: 'Help centre',
+  ideas: 'Ideas board', roadmap: 'Roadmap', announcements: 'Changelog', kb: 'Help centre', booking: 'Book online',
 }
 
 interface Theme { bg: string; panel: string; ink: string; sub: string; border: string; accent: string; soft: string; dark: boolean }
@@ -194,6 +194,33 @@ function Calendar(T: Theme) {
   )
 }
 
+// The customer's booking page: pick a service, a time, pay the deposit.
+function Booking(T: Theme) {
+  const services = [['Aquarium health check', '30 min', '$45'], ['Tank setup consult', '60 min', '$90']] as const
+  const slots = ['9:00', '9:30', '10:30', '11:00', '1:30', '2:00']
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+      {services.map(([name, len, price], i) => (
+        <Card key={name} T={T} style={{ padding: 9, display: 'flex', alignItems: 'center', gap: 8, borderColor: i === 0 ? T.accent : T.border, background: i === 0 ? T.soft : T.bg }}>
+          <div style={{ width: 22, height: 22, borderRadius: 7, background: i === 0 ? T.accent : T.panel, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={i === 0 ? '#fff' : T.sub} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 15 14" /></svg>
+          </div>
+          <div style={{ minWidth: 0 }}><div style={{ fontSize: 10.5, fontWeight: 800, color: T.ink }}>{name}</div><div style={{ fontSize: 9, color: T.sub }}>{len}</div></div>
+          <span style={{ marginLeft: 'auto', fontSize: 10.5, fontWeight: 800, color: T.ink }}>{price}</span>
+        </Card>
+      ))}
+      <div style={{ display: 'flex', alignItems: 'center' }}><span style={{ fontSize: 10.5, fontWeight: 800, color: T.ink }}>Thu 9 Oct</span><span style={{ marginLeft: 'auto', fontSize: 9, color: T.sub }}>Melbourne time</span></div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 5 }}>
+        {slots.map((t, i) => (
+          <div key={t} style={{ padding: '6px 0', borderRadius: 7, textAlign: 'center', fontSize: 10, fontWeight: 800, background: i === 2 ? T.accent : T.panel, color: i === 2 ? '#fff' : T.ink, opacity: i === 1 ? 0.4 : 1, textDecoration: i === 1 ? 'line-through' : 'none' }}>{t}</div>
+        ))}
+      </div>
+      <div style={{ background: T.accent, color: '#fff', borderRadius: 9, padding: '9px 0', textAlign: 'center', fontSize: 11.5, fontWeight: 800 }}>Pay $20 deposit and book</div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, fontSize: 9, color: T.sub }}>Confirmation and reminder by SMS</div>
+    </div>
+  )
+}
+
 function Kanban(T: Theme, cols: [string, string][], cards: Record<number, number>) {
   return (
     <div style={{ display: 'grid', gridTemplateColumns: `repeat(${cols.length},1fr)`, gap: 8 }}>
@@ -283,7 +310,7 @@ function Kb(T: Theme) {
 const RENDER: Record<MockKind, (T: Theme) => React.ReactNode> = {
   inbox: Inbox, crm: Crm, gallery: Gallery, notes: Notes, orders: Orders, payments: Payments,
   links: Links, insights: Insights, calendar: Calendar, broadcasts: Broadcasts, automation: Automation,
-  ideas: Ideas, announcements: Announcements, kb: Kb,
+  ideas: Ideas, announcements: Announcements, kb: Kb, booking: Booking,
   tasks: (T) => Kanban(T, [['To do', '#6b7280'], ['Doing', T.accent], ['Done', '#10b981']], { 0: 2, 1: 2, 2: 1 }),
   roadmap: (T) => Kanban(T, [['Planned', '#6b7280'], ['Building', T.accent], ['Shipped', '#10b981']], { 0: 2, 1: 1, 2: 2 }),
 }

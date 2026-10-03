@@ -36,6 +36,7 @@ const MENUS: Menu[] = [
         { icon: 'megaphone', title: 'Announcements', desc: 'Release notes & changelog', href: '/product/announcements' },
       ] },
       { heading: 'Engage', items: [
+        { icon: 'calendar', title: 'Online booking', desc: 'Appointments, deposits, reminders', href: '/product/booking' },
         { icon: 'vote', title: 'Polls & surveys', desc: 'Ask, measure, decide', href: '/product' },
         { icon: 'pen', title: 'Forms', desc: 'Capture structured input', href: '/product' },
         { icon: 'reaction', title: 'Feedback widget', desc: 'Embed on any page', href: '/product' },
@@ -61,6 +62,7 @@ const MENUS: Menu[] = [
       ] },
       { heading: 'Build & get paid', items: [
         { icon: 'idea', title: 'Product feedback', desc: 'Ideas, roadmap, changelog', href: '/solutions/feedback' },
+        { icon: 'calendar', title: 'Bookings & appointments', desc: 'Book, pay and remind online', href: '/solutions/bookings' },
         { icon: 'link', title: 'Payments & orders', desc: 'Get paid in the thread', href: '/solutions/payments' },
       ] },
     ],
@@ -143,12 +145,13 @@ const MENUS: Menu[] = [
       ] },
       { heading: 'Commerce', items: [
         { icon: 'tag', title: 'Orders', desc: 'Live orders in the chat', href: '/product/orders' },
+        { icon: 'calendar', title: 'Online booking', desc: 'Book, pay, get reminded', href: '/product/booking' },
         { icon: 'bolt', title: 'Payments', desc: 'Get paid in the thread', href: '/product/payments' },
         { icon: 'link', title: 'Link reports', desc: 'See who clicked what', href: '/product/links' },
         { icon: 'chart', title: 'Insights', desc: 'Conversations & revenue', href: '/product/insights' },
       ] },
       { heading: 'Organise', items: [
-        { icon: 'calendar', title: 'Calendar', desc: 'Bookings & reminders', href: '/product/calendar' },
+        { icon: 'calendar', title: 'Calendar', desc: 'Events & reminders', href: '/product/calendar' },
         { icon: 'kanban', title: 'Tasks', desc: 'Turn chats into to-dos', href: '/product/tasks' },
         { icon: 'megaphone', title: 'Broadcasts', desc: 'Reach everyone at once', href: '/product/broadcasts' },
         { icon: 'target', title: 'Automation', desc: 'Trigger actions on events', href: '/product/automation' },

@@ -131,14 +131,14 @@ const IND: Record<string, Ind> = {
   },
   hospitality: {
     accent: GREEN, eyebrow: 'Hospitality', name: 'hospitality', sub: 'Bookings, enquiries and guest comms in one thread — before, during and after the visit.',
-    heroChips: ['Bookings', 'Guest comms', 'Reviews'],
+    heroChips: ['Online bookings', 'Guest comms', 'Reviews'],
     pains: [
       { title: 'Booking calls go to voicemail', desc: 'You’re busy serving guests and enquiries slip while the phone rings out.' },
       { title: 'Messages on five apps', desc: 'WhatsApp, Instagram, texts and email — all on someone’s personal phone.' },
       { title: 'Great visits, no reviews', desc: 'Happy guests leave without ever being asked to leave a review.' },
     ],
     features: [
-      { icon: 'calendar', title: 'Bookings & enquiries', desc: 'Every request in one place, answered fast.' },
+      { icon: 'calendar', title: 'Online bookings & deposits', desc: 'Guests book and pay a deposit online; enquiries land in one place.' },
       { icon: 'chat', title: 'WhatsApp & SMS', desc: 'Confirmations and reminders guests actually read.' },
       { icon: 'star', title: 'Review requests', desc: 'Ask happy guests for a review at the right moment.' },
       { icon: 'ai', title: 'AI answers FAQs', desc: 'Hours, menus, bookings — handled 24/7.' },
@@ -146,7 +146,7 @@ const IND: Record<string, Ind> = {
       { icon: 'user', title: 'Team handover', desc: 'Front-of-house and management on the same thread.' },
     ],
     bands: [
-      { tag: 'Fill every table', title: 'Answer faster, book more', body: 'Guests message on whatever channel they like — Colvy brings it together so nothing slips and every enquiry gets a fast, on-brand reply.', bullets: ['One thread per guest', 'AI replies out of hours', 'Missed-call text-back'] },
+      { tag: 'Fill every table', title: 'Answer faster, book more', body: 'Guests message on whatever channel they like — Colvy brings it together so nothing slips and every enquiry gets a fast, on-brand reply.', bullets: ['Online booking page with deposits', 'One thread per guest', 'Missed-call text-back'] },
       { tag: 'Turn visits into regulars', title: 'Reviews & repeat visits', body: 'Automated review requests and follow-ups keep your rating climbing and guests coming back.', bullets: ['Timed review requests', 'Win-back campaigns', 'Reply to reviews in one place'] },
     ],
     playbook: [
@@ -156,6 +156,7 @@ const IND: Record<string, Ind> = {
       { title: 'Ask for the review', desc: 'A timed request after the visit, on the channel they prefer.' },
     ],
     faqs: [
+      { q: 'Can guests book online?', a: 'Yes. Share your Colvy booking page and guests pick a time, pay a deposit if you ask for one, and get SMS reminders.' },
       { q: 'Can guests reply to reminders?', a: 'Yes — reminders are two-way, so guests can confirm or reschedule by text.' },
       { q: 'Does it work across venues?', a: 'Run every location from one inbox, each with its own number and review profile.' },
       { q: 'What happens to missed calls?', a: 'Callers you miss get an automatic text back, so the booking isn’t lost.' },
@@ -197,14 +198,14 @@ const IND: Record<string, Ind> = {
   },
   healthcare: {
     accent: PINK, eyebrow: 'Healthcare', name: 'healthcare', sub: 'Reminders, patient comms and enquiries handled with care — on every channel.',
-    heroChips: ['Reminders', 'Two-way SMS', 'Recalls'],
+    heroChips: ['Online booking', 'Reminders', 'Two-way SMS'],
     pains: [
       { title: 'No-shows cost you daily', desc: 'Empty slots from forgotten appointments add up fast.' },
       { title: 'The front desk is swamped', desc: 'Phones ring while patients wait, and messages pile up between shifts.' },
       { title: 'Patients drift off schedule', desc: 'Recalls slip and patients don’t come back when they should.' },
     ],
     features: [
-      { icon: 'calendar', title: 'Appointment reminders', desc: 'Cut no-shows with timely, two-way reminders.' },
+      { icon: 'calendar', title: 'Online booking & reminders', desc: 'Patients book online, then get reminders 24 hours and 2 hours before.' },
       { icon: 'chat', title: 'Two-way SMS', desc: 'Patients reply, reschedule and confirm by text.' },
       { icon: 'bell', title: 'Recalls', desc: 'Automated recalls bring patients back on schedule.' },
       { icon: 'ai', title: 'AI triage & FAQs', desc: 'Answer common questions and route the rest.' },
@@ -212,7 +213,7 @@ const IND: Record<string, Ind> = {
       { icon: 'lock', title: 'Handled with care', desc: 'Encrypted in transit and at rest; access controlled.' },
     ],
     bands: [
-      { tag: 'Fewer no-shows', title: 'Reminders patients act on', body: 'Two-way reminders and easy rescheduling keep the calendar full and reduce gaps, without extra front-desk load.', bullets: ['Two-way SMS reminders', 'Self-serve reschedule', 'Automated recalls'] },
+      { tag: 'Fewer no-shows', title: 'Reminders patients act on', body: 'Two-way reminders and easy rescheduling keep the calendar full and reduce gaps, without extra front-desk load.', bullets: ['Online booking with deposits', 'Two-way SMS reminders', 'Self-serve reschedule'] },
       { tag: 'Every enquiry', title: 'One place for patient comms', body: 'Calls, texts and web enquiries land in one thread per patient, so nothing is missed between shifts.', bullets: ['One thread per patient', 'Missed-call text-back', 'AI answers FAQs 24/7'] },
     ],
     playbook: [
@@ -223,7 +224,8 @@ const IND: Record<string, Ind> = {
     ],
     faqs: [
       { q: 'Is patient data handled securely?', a: 'Data is encrypted in transit and at rest, with access controls across your team.' },
-      { q: 'Can patients reschedule themselves?', a: 'Yes — two-way reminders let patients confirm or reschedule by reply.' },
+      { q: 'Can patients book online?', a: 'Yes. Your Colvy booking page shows live availability per practitioner and location, and can take a deposit.' },
+      { q: 'Can patients reschedule themselves?', a: 'Yes. Every booking comes with a link to reschedule or cancel within your policy, and patients can reply to reminders too.' },
       { q: 'Does it reduce no-shows?', a: 'Two-way reminders and easy rescheduling are designed to keep the calendar full.' },
     ],
     stats: [{ big: 'Fewer', label: 'no-shows' }, { big: '24/7', label: 'AI answers' }, { big: 'Secure', label: 'by design' }],

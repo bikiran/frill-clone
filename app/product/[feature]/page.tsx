@@ -15,6 +15,7 @@ const META: Record<string, { title: string; description: string }> = {
   payments: { title: 'Payments & Pay-by-Link', description: 'Request and collect payments inside any chat with secure Stripe pay-by-link in Colvy.' },
   links: { title: 'Secure Links & Uploads', description: 'Send secure upload and payment links, and collect files from customers, right from Colvy.' },
   insights: { title: 'Analytics & Insights', description: 'Track response times, volume and team performance with Colvy analytics.' },
+  booking: { title: 'Online Booking & Appointments', description: 'Let customers book services online with Colvy: live staff availability, deposits with Stripe, SMS reminders and self-serve rescheduling, all in your inbox.' },
   calendar: { title: 'Bookings & Calendar', description: 'Schedule and manage appointments alongside your conversations in Colvy.' },
   tasks: { title: 'Tasks & Follow-ups', description: 'Turn conversations into tasks and never drop a follow-up with Colvy.' },
   broadcasts: { title: 'Broadcasts', description: 'Send targeted SMS, WhatsApp and email broadcasts and handle replies in your Colvy inbox.' },
