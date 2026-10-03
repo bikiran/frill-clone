@@ -48,7 +48,7 @@ async function resolveCompanyId(): Promise<string | null> {
 async function loadStatus(cid: string) {
   const sb = supabase as any
   const has = (q: Promise<any>) => q.then((r: any) => (r?.data?.length || 0) > 0, () => false)
-  const [woo, shop, prexty, telnyx, twilio, co, cfg] = await Promise.all([
+  const [woo, shop, prexty, telnyx, twilio, co, cfg, mcp] = await Promise.all([
     has(sb.from('woocommerce_integrations').select('id').eq('company_id', cid).eq('is_active', true).limit(1)),
     has(sb.from('shopify_integrations').select('id').eq('company_id', cid).eq('is_active', true).limit(1)),
     has(sb.from('prexty_integrations').select('id').eq('company_id', cid).eq('is_active', true).limit(1)),
@@ -57,6 +57,7 @@ async function loadStatus(cid: string) {
     sb.from('companies').select('stripe_connected, stripe_account_id, stripe_mode, stripe_publishable_key').eq('id', cid).maybeSingle().then((r: any) => r?.data, () => null),
     // This business's own settings for the general integrations (server-only table).
     authHeaders().then(h => fetch(`/api/integrations/configs?companyId=${cid}`, { headers: h })).then(r => r.json()).then(d => d?.configs || [], () => []),
+    authHeaders().then(h => fetch(`/api/mcp/keys?companyId=${cid}`, { headers: h })).then(r => r.json()).then(d => (d?.keys?.length || 0) + (d?.apps?.length || 0) > 0, () => false),
   ])
   const generic: Record<string, Generic> = {}
   const active: Record<string, boolean> = {}
@@ -65,6 +66,7 @@ async function loadStatus(cid: string) {
     active[row.integration_id] = !!row.enabled
   }
   active.woocommerce = woo
+  active.mcp = mcp
   active.shopify = shop
   active.prexty = prexty
   // Calls & SMS: a number on either carrier (the carrier is invisible to them).
