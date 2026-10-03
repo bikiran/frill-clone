@@ -4286,13 +4286,15 @@ export default function InboxPage() {
   // Crucially, when the thread HAS an sms_number the server already texted, so
   // we send nothing — this is what removes the SMS double-send (server + client)
   // that hit SMS-channel media requests.
-  const deliverUploadLink = async (link: string, body: string): Promise<string> => {
+  const deliverUploadLink = async (link: string, body: string, texted = false): Promise<string> => {
     const subject = `${companyInfo?.name || 'We'} need a few files from you`
     const ch = activeChannel
     if (ch === 'email' || ch === 'instagram' || ch === 'facebook') {
       return deliverToCustomer({ subject, body, url: link })
     }
-    if (mediaSmsEnabled && !(selected as any)?.sms_number && smsDestination()) {
+    // The server also texts the contact's phone when the thread has no
+    // sms_number, so only send here when it says it didn't.
+    if (!texted && mediaSmsEnabled && !(selected as any)?.sms_number && smsDestination()) {
       return deliverToCustomer({ subject, body, url: link, silent: true })
     }
     // server already texted (thread has an sms_number), widget with no mobile, or
@@ -4317,7 +4319,7 @@ export default function InboxPage() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Could not create request')
       let how = 'sent'
-      if (data.link) how = await deliverUploadLink(data.link, 'Please upload your photos or videos here:')
+      if (data.link) how = await deliverUploadLink(data.link, 'Please upload your photos or videos here:', !!data.texted)
       showToast(`Upload link ${how.toLowerCase()}`)
       selectConversation(selected)
     } catch (e: any) { showToast(e.message || 'Could not send the upload link') }
@@ -4350,7 +4352,7 @@ export default function InboxPage() {
       let how = 'sent'
       if (data.link) {
         try {
-          how = await deliverUploadLink(data.link, `${mrPrompt.trim() || 'Please upload the requested files.'}\nUpload here:`)
+          how = await deliverUploadLink(data.link, `${mrPrompt.trim() || 'Please upload the requested files.'}\nUpload here:`, !!data.texted)
         } catch (e: any) { showToast(`Request created, but sending failed: ${e.message}`); setMrSaving(false); return }
       }
       showToast(`Media request ${how.toLowerCase()}`)

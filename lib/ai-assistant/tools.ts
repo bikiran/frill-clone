@@ -1268,18 +1268,18 @@ export async function executeAction(db: SupabaseClient, ctx: AssistantContext, n
 
     if (name === 'request_media') {
       const text = String(args?.text || '').trim() || 'Could you send us a few photos?'
-      let link = ''
+      let link = '', texted = false
       try {
         const res = await fetch(`${siteBase(ctx)}/api/media-requests`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId: ctx.companyId, conversationId, contactId: r.contact?.id || null, prompt: text, accept: args?.photosOnly ? ['image'] : ['image', 'video'], maxFiles: 10, expiryHours: null, createdBy: ctx.userName, deliveryChannel: channel }) })
         const d = await res.json().catch(() => ({}))
         if (!res.ok || !d?.link) return { ok: false, error: d?.error || 'Could not create the upload link.' }
-        link = d.link
+        link = d.link; texted = !!d.texted
       } catch (e: any) { return { ok: false, error: e?.message || 'Could not create the upload link.' } }
-      // The request route texts the link itself when there's a phone; email it otherwise.
-      let via = 'SMS'
-      if (!r.phone && email) { const sent = await deliver(`${text}\nUpload here (private, full quality): ${link}`, `${ctx.companyName}: could you send us some photos?`); via = sent.sent ? 'Email' : 'not delivered' }
+      // The request route texts the link itself when it can; email it otherwise.
+      let via = texted ? 'SMS' : 'not delivered'
+      if (!texted && email) { const sent = await deliver(`${text}\nUpload here (private, full quality): ${link}`, `${ctx.companyName}: could you send us some photos?`); via = sent.sent ? 'Email' : 'not delivered' }
       await logAiEvent(D, { companyId: ctx.companyId, userId: ctx.userId, action: 'Requested media', tool: name, entityType: 'conversation', entityId: conversationId, input: { text, contactId: r.contact?.id || null }, result: { link, via } })
-      return { ok: true, entityType: 'conversation', entityId: conversationId, card: { kind: 'media_request', title: `Upload link sent to ${r.name}`, lines: [`${via} · ${text.slice(0, 100)}`, link], href }, undo: null }
+      return { ok: true, entityType: 'conversation', entityId: conversationId, card: { kind: 'media_request', title: via === 'not delivered' ? `Upload link created for ${r.name}` : `Upload link sent to ${r.name}`, lines: [`${via} · ${text.slice(0, 100)}`, link], href }, undo: null }
     }
 
     // send_booking_link

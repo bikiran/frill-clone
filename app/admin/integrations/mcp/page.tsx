@@ -283,7 +283,7 @@ export default function ColvyMcpPage() {
               </div>
             </div>
             {!!keys?.length && (
-              <ul className="divide-y mt-4 pt-4 border-t" style={{ margin: 0, padding: 0, listStyle: 'none', borderColor: 'var(--border)' }}>
+              <ul className="divide-y border-t" style={{ margin: '18px 0 0', padding: '16px 0 0', listStyle: 'none', borderColor: 'var(--border)' }}>
                 {keys.map(c => <ConnRow key={c.id} c={c} kind="key" />)}
               </ul>
             )}

@@ -224,7 +224,8 @@ export async function ingestInboundSms(params: {
           }),
         })
         const mrData = await mr.json().catch(() => ({}))
-        if (mr.ok && mrData.link) {
+        // The request route already texts the link when it can; don't send it twice.
+        if (mr.ok && mrData.link && !mrData.texted) {
           const sender = await resolveSmsSender(db, companyId)
           if (sender) await sender.send({ to: from, text: `It looks like you tried to send a photo — please upload it here: ${mrData.link}` })
         }
