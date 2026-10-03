@@ -90,6 +90,13 @@ export const normaliseEvents = (list: any): string[] => Array.from(new Set((Arra
 
 export const INTEGRATIONS: Integration[] = [
   {
+    id: 'mcp',
+    name: 'Colvy MCP',
+    desc: 'Let Claude, ChatGPT, Cursor and other AI assistants look things up and get work done in your Colvy.',
+    color: '#111827', bg: '#f4f4f5', logo: '/logos/mcp.svg', category: 'AI',
+    isDedicated: true,
+  },
+  {
     id: 'woocommerce',
     name: 'WooCommerce',
     desc: 'Sync your WooCommerce customers and orders directly into Colvy for better customer insights.',
