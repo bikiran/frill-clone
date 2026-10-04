@@ -3,16 +3,27 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useCompanyUser, S, ToggleRow } from '../_shared'
+import { DEFAULT_ORDER_MESSAGES, isStaleOrderMessage } from '@/lib/order-messages'
 
-// Placeholders: {name} customer, #{order} order number, {business}, {amount}, {total}.
+// Placeholders: {name} first name, {full_name}, #{order} order number, {business}, {amount}, {total}.
+// Defaults live in lib/order-messages.ts, shared with the order webhook.
 const STATUSES: { key: string; label: string; hint: string; default: string }[] = [
-  { key: 'processing', label: 'Processing (paid)', hint: 'Use {name} and #{order}. Sent when an order is paid and being processed.', default: 'Hi {name}, thanks for your order #{order} with {business} — we\'ve received it and will begin processing. Reply here anytime with any questions.' },
-  { key: 'failed', label: 'Failed payment', hint: 'Use {name} and #{order}. Sent when an order payment fails.', default: 'Hi {name}, we noticed there was an issue with the payment on your order #{order}. Do you need any help?' },
-  { key: 'cancelled', label: 'Cancelled', hint: 'Use {name} and #{order}. Sent when an order is cancelled.', default: 'Hi {name}, your order #{order} was cancelled. Can we help you with anything?' },
-  { key: 'refunded', label: 'Refunded', hint: 'Use {amount} for the refunded amount, #{order} for the order.', default: 'Your order #{order} has been refunded. The refund of {amount} has been processed and should appear shortly.' },
-  { key: 'completed', label: 'Completed', hint: 'Use {name} and #{order}. Sent when an order is completed.', default: 'Hi {name}, your order #{order} is complete. Thank you for choosing {business}!' },
-  { key: 'on-hold', label: 'On hold', hint: 'Use {name} and #{order}. Sent when an order goes on hold.', default: "Hi {name}, your order #{order} is on hold while we confirm a few details. We'll be in touch shortly — reply here anytime." },
+  { key: 'processing', label: 'Processing (paid)', hint: '{name} is the customer’s first name. Sent when an order is paid and being processed.', default: DEFAULT_ORDER_MESSAGES['processing'] },
+  { key: 'failed', label: 'Failed payment', hint: 'Use {name} and #{order}. Sent when an order payment fails.', default: DEFAULT_ORDER_MESSAGES['failed'] },
+  { key: 'cancelled', label: 'Cancelled', hint: 'Use {name} and #{order}. Sent when an order is cancelled.', default: DEFAULT_ORDER_MESSAGES['cancelled'] },
+  { key: 'refunded', label: 'Refunded', hint: 'Use {amount} for the refunded amount, #{order} for the order.', default: DEFAULT_ORDER_MESSAGES['refunded'] },
+  { key: 'completed', label: 'Completed', hint: 'Use {name} and #{order}. Sent when an order is completed.', default: DEFAULT_ORDER_MESSAGES['completed'] },
+  { key: 'on-hold', label: 'On hold', hint: 'Use {name} and #{order}. Sent when an order goes on hold.', default: DEFAULT_ORDER_MESSAGES['on-hold'] },
 ]
+
+// What a customer would see, with sample order details.
+const preview = (t: string, business: string) => t
+  .replace(/\{business\}/g, business || 'Your business')
+  .replace(/\{full_name\}/g, 'Cassandra Scofield')
+  .replace(/\{name\}/g, 'Cassandra')
+  .replace(/\{order\}/g, '124434')
+  .replace(/\{amount\}/g, '$24.00')
+  .replace(/\{total\}/g, '$124.00')
 
 // Messages the DOA claim tool sends the customer when an agent resolves a
 // damaged-order claim from the inbox. These are separate from the status
@@ -27,6 +38,7 @@ export default function OrderAutomationSettings() {
   const { companyId, loading } = useCompanyUser()
   const [enabled, setEnabled] = useState(false)
   const [messages, setMessages] = useState<Record<string, string>>({})
+  const [businessName, setBusinessName] = useState('')
   const [doa, setDoa] = useState<Record<string, string>>({})
   const [reviewUrl, setReviewUrl] = useState('')
   const [alsoSms, setAlsoSms] = useState(false)
@@ -38,10 +50,17 @@ export default function OrderAutomationSettings() {
   useEffect(() => {
     if (!companyId) return
     ;(async () => {
-      const { data: co } = await (supabase as any).from('companies').select('order_chat_automation').eq('id', companyId).maybeSingle()
+      const { data: co } = await (supabase as any).from('companies').select('name, order_chat_automation').eq('id', companyId).maybeSingle()
       const cfg = co?.order_chat_automation || {}
       setEnabled(!!cfg.enabled)
-      setMessages(cfg.messages || {})
+      setBusinessName(co?.name || '')
+      // A saved message that's just an old default (maybe with a sign-off) isn't
+      // used any more, so show the current default the customer will get.
+      const msgs: Record<string, string> = {}
+      for (const [k, v] of Object.entries(cfg.messages || {})) {
+        if (typeof v === 'string' && !isStaleOrderMessage(v, co?.name)) msgs[k] = v
+      }
+      setMessages(msgs)
       setDoa(cfg.doa || {})
       setReviewUrl(cfg.review_url || '')
       setAlsoSms(!!cfg.also_sms)
@@ -77,16 +96,27 @@ export default function OrderAutomationSettings() {
         <>
           <div style={S.card}>
             <h2 style={S.h2}>Messages per status</h2>
-            <p style={{ ...S.hint, marginBottom: 14 }}>Placeholders: <code>{'{business}'}</code>, <code>{'{name}'}</code>, <code>{'{order}'}</code>, <code>{'{amount}'}</code> (refund), <code>{'{total}'}</code>. Leave a field blank to send nothing for that status.</p>
+            <p style={{ ...S.hint, marginBottom: 14 }}>Placeholders: <code>{'{business}'}</code>, <code>{'{name}'}</code> (first name), <code>{'{full_name}'}</code>, <code>{'{order}'}</code>, <code>{'{amount}'}</code> (refund), <code>{'{total}'}</code>. Leave a field blank to send nothing for that status.</p>
             {STATUSES.map(st => (
               <div key={st.key} style={{ marginBottom: 16 }}>
                 <label style={S.label}>{st.label}</label>
                 <textarea
                   value={messages[st.key] ?? st.default}
                   onChange={e => setMessages(m => ({ ...m, [st.key]: e.target.value }))}
-                  style={{ ...S.input, minHeight: 54, resize: 'vertical' }}
+                  style={{ ...S.input, minHeight: st.default.includes('\n') ? 120 : 54, resize: 'vertical' }}
                 />
-                <p style={S.hint}>{st.hint}</p>
+                <p style={S.hint}>
+                  {st.hint}
+                  {messages[st.key] !== undefined && messages[st.key] !== st.default && (
+                    <> <button type="button" onClick={() => setMessages(m => { const n = { ...m }; delete n[st.key]; return n })}
+                      style={{ background: 'none', border: 'none', padding: 0, color: 'var(--coral)', fontWeight: 700, cursor: 'pointer', fontSize: 'inherit', fontFamily: 'inherit' }}>Reset to default</button></>
+                  )}
+                </p>
+                {!!(messages[st.key] ?? st.default).trim() && (
+                  <p style={{ ...S.hint, whiteSpace: 'pre-wrap', background: 'var(--canvas, #f6f6f8)', borderRadius: 10, padding: '8px 10px', marginTop: 6 }}>
+                    <strong>Preview: </strong>{preview(messages[st.key] ?? st.default, businessName)}
+                  </p>
+                )}
               </div>
             ))}
           </div>
