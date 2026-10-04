@@ -39,14 +39,14 @@ export const STATIC_MARKETING_ROUTES: string[] = [
 export const PRODUCT_FEATURES: string[] = [
   'ideas', 'roadmap', 'announcements', 'knowledgebase', 'inbox', 'crm', 'gallery',
   'notes', 'orders', 'payments', 'links', 'insights', 'calendar', 'tasks',
-  'broadcasts', 'automation',
+  'broadcasts', 'automation', 'booking', 'waitlists', 'abandoned-carts',
 ]
 export const CHANNEL_SLUGS: string[] = [
   'meta', 'email', 'phones', 'chat-widget', 'google-reviews', 'whatsapp', 'sms',
   'forms', 'broadcasts',
 ]
 export const SOLUTION_SLUGS: string[] = [
-  'customer-support', 'sales', 'marketing', 'reviews', 'feedback', 'payments',
+  'customer-support', 'sales', 'marketing', 'reviews', 'feedback', 'bookings', 'payments',
 ]
 export const INDUSTRY_SLUGS: string[] = [
   'saas', 'agencies', 'ecommerce', 'hospitality', 'real-estate', 'healthcare',

@@ -369,7 +369,8 @@ export default function LandingPage() {
   // Full-bleed feature bands (edge-to-edge colour — kills the empty sides).
   const BIG = [
     { color: CORAL, band: dark ? 'rgba(255,106,77,0.10)' : '#fff1ec', tag: 'One shared inbox', title: 'Every channel. One conversation.', body: 'WhatsApp, Instagram, Messenger, email, SMS and live chat land in a single shared inbox — each message tied to a full customer profile, so anyone on your team can pick up the thread.', bullets: ['Unified omnichannel inbox', 'Full customer profile beside every chat', 'Assign, @mention and collaborate'], href: '/inbox-crm', visual: 'demo' as const },
-    { color: BLUE, band: dark ? 'rgba(43,89,255,0.10)' : '#eef2ff', tag: 'Sell inside the chat', title: 'Turn a message into money.', body: 'Look up live WooCommerce orders, take payments, recover abandoned carts and record off-Stripe sales — right where the customer is talking to you. Then see the real revenue each conversation drove.', bullets: ['Live orders, refunds & payment links', 'Record bank-transfer & cash sales', 'Revenue-per-conversation reporting'], href: '/inbox-crm#woo', visual: 'sale' as const },
+    { color: BLUE, band: dark ? 'rgba(43,89,255,0.10)' : '#eef2ff', tag: 'Sell inside the chat', title: 'Turn a message into money.', body: 'Look up live WooCommerce orders, take payments, recover abandoned carts and record off-Stripe sales — right where the customer is talking to you. Then see the real revenue each conversation drove.', bullets: ['Live orders, refunds & payment links', 'Abandoned carts & back-in-stock waitlists', 'Revenue-per-conversation reporting'], href: '/inbox-crm#woo', visual: 'sale' as const },
+    { color: GREEN, band: dark ? 'rgba(0,196,140,0.10)' : '#eafaf4', tag: 'Online booking', title: 'Bookings that fill themselves.', body: 'Customers book a service, a time and a team member on your own booking page, pay a deposit, and get SMS reminders. If plans change, they move it themselves. Every booking lands in the same thread as their messages.', bullets: ['Live staff & location availability', 'Stripe deposits and SMS reminders', 'Self-serve reschedule & cancel'], href: '/product/booking', visual: 'booking' as const },
     { color: PURPLE, band: dark ? 'rgba(124,92,255,0.10)' : '#f3efff', tag: 'Work less, close more', title: 'Automations that never sleep.', body: 'Auto-reply, route and follow up. Turn any conversation into an assignable task on a calendar, trigger order updates, and let AI draft the reply — you stay in control.', bullets: ['Order-status & follow-up automations', 'Tasks, calendar & reminders', 'AI-assisted replies with an undo'], href: '/inbox-crm#tasks', visual: 'flow' as const },
   ]
 
@@ -530,6 +531,7 @@ export default function LandingPage() {
                     <Reveal>
                       {f.visual === 'demo' && <div style={{ width: '100%', maxWidth: 520, borderRadius: 20, overflow: 'hidden', border: `1px solid ${cardBorder}`, boxShadow: '0 30px 70px rgba(15,17,25,0.18)' }}><OmniInboxDemo dark={dark} /></div>}
                       {f.visual === 'sale' && <SaleMock color={f.color} text={text} muted={muted} cardBg={dark ? '#171826' : '#fff'} border={cardBorder} />}
+                      {f.visual === 'booking' && <BookingMock color={f.color} text={text} muted={muted} cardBg={dark ? '#171826' : '#fff'} border={cardBorder} />}
                       {f.visual === 'flow' && <FlowMock color={f.color} text={text} cardBg={dark ? '#171826' : '#fff'} border={cardBorder} />}
                     </Reveal>
                   </Parallax>
@@ -597,6 +599,31 @@ function SaleMock({ color, text, muted, cardBg, border }: { color: string; text:
         <p style={{ margin: '0 0 8px', fontSize: 11.5, fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase', color: muted }}>Revenue via Colvy · 30d</p>
         <p style={{ margin: 0, fontSize: 28, fontWeight: 900, color: text, letterSpacing: '-0.02em' }}>$18,240</p>
         <div style={{ display: 'flex', gap: 4, marginTop: 10, height: 36, alignItems: 'flex-end' }}>{[40, 62, 48, 78, 90, 68, 100].map((h, i) => <span key={i} style={{ flex: 1, height: `${h}%`, borderRadius: 4, background: color, opacity: 0.35 + (h / 100) * 0.65 }} />)}</div>
+      </div>
+    </div>
+  )
+}
+function BookingMock({ color, text, muted, cardBg, border }: { color: string; text: string; muted: string; cardBg: string; border: string }) {
+  const card = { padding: 16, borderRadius: 16, background: cardBg, border: `1px solid ${border}`, boxShadow: '0 14px 40px rgba(15,17,25,0.08)' }
+  return (
+    <div style={{ width: '100%', maxWidth: 400, display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ alignSelf: 'flex-start', maxWidth: '82%', padding: '11px 15px', borderRadius: '16px 16px 16px 4px', background: cardBg, border: `1px solid ${border}`, fontSize: 14, fontWeight: 600, color: text, animation: 'popIn 0.5s both', boxShadow: '0 10px 30px rgba(15,17,25,0.08)' }}>Can I get my tank checked this week?</div>
+      <div style={{ ...card, animation: 'popIn 0.5s 0.3s both' }}>
+        <p style={{ margin: '0 0 10px', fontSize: 11.5, fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase', color: muted }}>Thu 9 Oct · Aquarium health check</p>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 6 }}>
+          {['9:00', '10:30', '11:00', '1:30', '2:00', '3:30'].map((t, i) => (
+            <span key={t} style={{ padding: '8px 0', borderRadius: 9, textAlign: 'center', fontSize: 13, fontWeight: 800, background: i === 1 ? color : border, color: i === 1 ? '#fff' : text }}>{t}</span>
+          ))}
+        </div>
+      </div>
+      <div style={{ alignSelf: 'center', display: 'inline-flex', alignItems: 'center', gap: 8, padding: '9px 15px', borderRadius: 999, background: color, color: '#fff', fontSize: 13.5, fontWeight: 800, animation: 'popIn 0.5s 0.55s both', boxShadow: `0 12px 30px ${color}55` }}>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>Booked · 10:30am · $20 deposit paid
+      </div>
+      <div style={{ ...card, padding: '12px 15px', display: 'flex', alignItems: 'center', gap: 10, animation: 'popIn 0.5s 0.8s both' }}>
+        <span style={{ width: 30, height: 30, borderRadius: 10, background: color + '1f', color, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></svg>
+        </span>
+        <span style={{ fontSize: 13.5, fontWeight: 600, color: text }}>SMS reminder goes out 24 hours before</span>
       </div>
     </div>
   )

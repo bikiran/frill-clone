@@ -19,7 +19,7 @@ const WOO = '#7f54b3', SHOP = '#5a8f2f', STRIPE = '#635bff', SLACK = '#611f69', 
 // The integrations Colvy connects to — used in the "rest of your stack" strip.
 const STACK = ['WooCommerce', 'Shopify', 'Stripe', 'Slack', 'Zapier', 'Webhooks & API']
 
-type Band = { tag: string; title: string; body: string; bullets: string[] }
+type Band = { tag: string; title: string; body: string; bullets: string[]; icon?: string }
 type Intg = {
   accent: string; eyebrow: string; name: string; title: string; sub: string; heroChips: string[]
   features: { icon: string; title: string; desc: string }[]
@@ -33,7 +33,7 @@ const INTG: Record<string, Intg> = {
     accent: WOO, eyebrow: 'WooCommerce', name: 'WooCommerce',
     title: 'WooCommerce orders, right in the chat',
     sub: 'Connect your WooCommerce store and see live orders, tracking and customer history beside every conversation — look things up and act without leaving the thread.',
-    heroChips: ['Live orders', 'Customer sync', 'Refunds & tracking'],
+    heroChips: ['Live orders', 'Back-in-stock alerts', 'Abandoned carts'],
     features: [
       { icon: 'tag', title: 'Live orders in the thread', desc: 'Order status, items and totals beside each chat.' },
       { icon: 'user', title: 'Customer sync', desc: 'Orders and lifetime value on every contact.' },
@@ -41,10 +41,13 @@ const INTG: Record<string, Intg> = {
       { icon: 'ai', title: 'WISMO answered', desc: 'AI replies “where’s my order?” with live tracking.' },
       { icon: 'search', title: 'Order search', desc: 'Find any order by name, email or number.' },
       { icon: 'chart', title: 'Revenue in context', desc: 'See what each conversation is worth.' },
+      { icon: 'bell', title: 'Back-in-stock waitlists', desc: '“Notify me” on sold-out products, texted automatically on restock.' },
+      { icon: 'cart', title: 'Abandoned carts', desc: 'Lost checkouts land in the inbox to follow up and recover.' },
     ],
     bands: [
       { tag: 'No tab-switching', title: 'Every order beside the message', body: 'The moment a customer messages, their WooCommerce orders, items and status are right there — no copying order numbers between tabs.', bullets: ['Live order status & items', 'Full purchase history', 'One click to the store admin'] },
       { tag: 'Answers on autopilot', title: '“Where’s my order?” — handled', body: 'Your assistant pulls live tracking and answers the most common question for you, so the team only touches the ones that need a human.', bullets: ['Live tracking in replies', 'AI-drafted order updates', 'Refunds recorded in the thread'] },
+      { tag: 'Sales you’d have lost', title: 'Sold out or walked away? Win it back', body: 'The Colvy WordPress plugin adds a “Notify me” form to sold-out products and texts everyone the moment stock returns. Shoppers who leave checkout land in your inbox with their cart, ready for a friendly follow-up.', bullets: ['Automatic back-in-stock texts', 'Abandoned carts in the inbox', 'Recovered orders matched for you'], icon: 'bell' },
     ],
     stats: [{ big: 'Live', label: 'order data' }, { big: '0', label: 'tabs to switch' }, { big: '2-way', label: 'customer sync' }],
     ctaHead: 'Connect WooCommerce to Colvy',
@@ -276,7 +279,7 @@ export default function IntegrationPage() {
                 <div style={{ position: 'relative', borderRadius: 24, minHeight: 280, overflow: 'hidden', background: `linear-gradient(140deg, ${accent}22, ${accent}05)`, border: `1px solid ${cardBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   <div aria-hidden style={{ position: 'absolute', inset: 0, backgroundImage: gridImg, backgroundSize: '32px 32px', opacity: 0.5 }} />
                   <div style={{ position: 'relative', width: 96, height: 96, borderRadius: 26, background: accent, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: `0 20px 50px ${accent}55`, animation: 'igFloat 6s ease-in-out infinite' }}>
-                    <FeatureIcon name={intg.features[Math.min(i + 2, intg.features.length - 1)].icon} color="#fff" size={44} />
+                    <FeatureIcon name={b.icon || intg.features[Math.min(i + 2, intg.features.length - 1)].icon} color="#fff" size={44} />
                   </div>
                 </div>
               </Reveal>

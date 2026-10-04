@@ -13,13 +13,14 @@ import FeatureIcon from '@/components/FeatureIcon'
 
 const CORAL = '#ff6a4d', BLUE = '#2b59ff', PURPLE = '#7c5cff', GREEN = '#00c48c', PINK = '#ff4d8d', CYAN = '#0891b2', AMBER = '#d97706', INK = '#0f1119'
 
-// The six use-case solutions. `metric` is a small capability pill, not a claim.
+// The use-case solutions. `metric` is a small capability pill, not a claim.
 const SOLUTIONS = [
   { slug: 'customer-support', icon: 'inbox', title: 'Customer support', tag: 'Every question in one shared inbox, with AI drafts and full history.', metric: 'Shared inbox', accent: BLUE },
   { slug: 'sales', icon: 'tag', title: 'Sales & conversions', tag: 'Capture leads, follow up automatically and sell right in the chat.', metric: 'Sell in-chat', accent: GREEN },
   { slug: 'marketing', icon: 'megaphone', title: 'Marketing & campaigns', tag: 'Targeted SMS, WhatsApp and email — and every reply in one inbox.', metric: 'Broadcasts', accent: PURPLE },
   { slug: 'reviews', icon: 'star', title: 'Reviews & reputation', tag: 'Automate Google review requests and reply without leaving Colvy.', metric: 'Google reviews', accent: AMBER },
   { slug: 'feedback', icon: 'idea', title: 'Product feedback', tag: 'Ideas board, public roadmap and changelog — the loop, closed.', metric: 'Idea → ship', accent: CORAL },
+  { slug: 'bookings', icon: 'calendar', title: 'Bookings & appointments', tag: 'Online booking, deposits and SMS reminders, with every booking in the thread.', metric: 'Book online', accent: PINK },
   { slug: 'payments', icon: 'link', title: 'Payments & orders', tag: 'Payment links, live orders and delivery tracking, all in the thread.', metric: 'Get paid in-chat', accent: CYAN },
 ]
 
@@ -93,7 +94,7 @@ export default function SolutionsHub() {
           <Reveal>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 14px', borderRadius: 999, background: CORAL + '18', color: CORAL, fontSize: 12.5, fontWeight: 800, letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: 18 }}><FeatureIcon name="target" color={CORAL} size={15} />Solutions</span>
             <h1 style={{ fontSize: 'clamp(40px, 6vw, 74px)', fontWeight: 900, letterSpacing: '-0.035em', lineHeight: 1.02, margin: '0 0 18px' }}>Whatever the job,<br /><span style={{ color: CORAL }}>one place to do it</span></h1>
-            <p style={{ fontSize: 'clamp(16px, 1.9vw, 20px)', color: muted, maxWidth: 520, lineHeight: 1.6, margin: '0 0 30px' }}>Support, sales, marketing, reviews, feedback and payments — all in the same inbox, sharing the same customer history. Pick where you want to start.</p>
+            <p style={{ fontSize: 'clamp(16px, 1.9vw, 20px)', color: muted, maxWidth: 520, lineHeight: 1.6, margin: '0 0 30px' }}>Support, sales, marketing, reviews, feedback, bookings and payments — all in the same inbox, sharing the same customer history. Pick where you want to start.</p>
             <div className="sol-hero-cta" style={{ display: 'flex', gap: 12 }}>
               <button onClick={go} className="sol-btn" style={btnPrimary}>Start free — no card →</button>
               <a href="/pricing" className="sol-btn" style={btnGhost}>See pricing</a>
@@ -137,7 +138,9 @@ export default function SolutionsHub() {
         </Reveal>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 20 }}>
           {SOLUTIONS.map((s, i) => (
-            <Reveal key={s.slug} delay={(i % 3) * 0.05}>
+            // An odd last card spans the row instead of sitting alone.
+            <div key={s.slug} style={{ gridColumn: i === SOLUTIONS.length - 1 && SOLUTIONS.length % 2 === 1 ? '1 / -1' : undefined }}>
+            <Reveal delay={(i % 3) * 0.05}>
               <a href={`/solutions/${s.slug}`} className="sol-card" style={{ position: 'relative', overflow: 'hidden', display: 'block', height: '100%', borderRadius: 22, background: cardBg, border: `1px solid ${cardBorder}`, padding: '24px 24px 22px', textDecoration: 'none', boxShadow: '0 1px 2px rgba(15,17,25,0.04)' }}>
                 <div aria-hidden style={{ position: 'absolute', top: -36, right: -36, width: 150, height: 150, borderRadius: '50%', background: s.accent + (dark ? '22' : '18'), filter: 'blur(30px)' }} />
                 <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
@@ -149,6 +152,7 @@ export default function SolutionsHub() {
                 <span style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 14, fontWeight: 800, color: s.accent }}>Explore<span className="sol-arrow" style={{ display: 'inline-flex' }}>→</span></span>
               </a>
             </Reveal>
+            </div>
           ))}
         </div>
       </section>

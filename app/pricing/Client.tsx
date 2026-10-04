@@ -25,7 +25,7 @@ const INK = '#0f1119'
 const TIERS = [
   { id: 'free', name: 'Free', tagline: 'Try the feedback suite', accent: '#6b7280', monthly: 0, annual: 0, badge: null, cta: 'Get started free', smsNote: false, features: ['Ideas & feedback board', 'Public roadmap', 'Announcements / changelog', '1 poll & 1 survey', 'Help center (10 articles)', 'Feedback widget', '2 team members', 'Community support'] },
   { id: 'feedback', name: 'Feedback', tagline: 'For product & feedback teams', accent: PURPLE, monthly: 39, annual: 29, badge: null, cta: 'Start free trial', smsNote: false, features: ['Everything in Free', 'Unlimited ideas & voting', 'Unlimited polls, surveys & forms', 'Private + public roadmaps', 'Unlimited help center articles', 'Customisable widget', 'Remove Colvy branding', '5 team members', 'Email support'] },
-  { id: 'omnichannel', name: 'Inbox', tagline: 'For sales & support teams', accent: BLUE, monthly: 179, annual: 149, badge: null, cta: 'Start free trial', smsNote: true, features: ['Live chat inbox', 'Contacts & CRM', 'WhatsApp, SMS & voice calls', '3,000 SMS / month included*', 'WooCommerce sync', 'Broadcast & scheduled campaigns', 'AI flow automation', 'Review dashboard', '10 team members', 'Priority support'] },
+  { id: 'omnichannel', name: 'Inbox', tagline: 'For sales & support teams', accent: BLUE, monthly: 179, annual: 149, badge: null, cta: 'Start free trial', smsNote: true, features: ['Live chat inbox', 'Contacts & CRM', 'WhatsApp, SMS & voice calls', '3,000 SMS / month included*', 'WooCommerce sync', 'Broadcast & scheduled campaigns', 'Online booking & deposits', 'AI flow automation', 'Review dashboard', '10 team members', 'Priority support'] },
   { id: 'everything', name: 'Everything', tagline: 'The full Colvy platform', accent: CORAL, monthly: 259, annual: 209, badge: 'Best value', cta: 'Start free trial', smsNote: true, features: ['Feedback suite + Inbox', '3,000 SMS / month included*', 'White-label branding', 'Custom domain', 'Advanced analytics', 'AI writing assistant', 'Unlimited team members', 'Priority support'] },
 ]
 
@@ -47,9 +47,12 @@ const COMPARE: { group: string; rows: { label: string; cells: (boolean | string)
     { label: 'WhatsApp, SMS & voice calls', cells: [false, false, true, true] },
     { label: 'SMS included / month', cells: ['—', '—', '3,000*', '3,000*'] },
     { label: 'WooCommerce & Shopify sync', cells: [false, false, true, true] },
+    { label: 'Back-in-stock waitlists (WooCommerce)', cells: [false, false, true, true] },
+    { label: 'Abandoned cart capture (WooCommerce)', cells: [false, false, true, true] },
     { label: 'Broadcast & scheduled campaigns', cells: [false, false, true, true] },
     { label: 'AI flow automation', cells: [false, false, true, true] },
     { label: 'Review dashboard', cells: [false, false, true, true] },
+    { label: 'Online booking, deposits & reminders', cells: [false, false, true, true] },
   ] },
   { group: 'Platform & team', rows: [
     { label: 'White-label branding', cells: [false, false, false, true] },

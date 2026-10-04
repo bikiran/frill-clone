@@ -10,13 +10,14 @@ import React from 'react'
 export type MockKind =
   | 'inbox' | 'crm' | 'gallery' | 'notes' | 'orders' | 'payments' | 'links'
   | 'insights' | 'calendar' | 'tasks' | 'broadcasts' | 'automation'
-  | 'ideas' | 'roadmap' | 'announcements' | 'kb'
+  | 'ideas' | 'roadmap' | 'announcements' | 'kb' | 'booking' | 'waitlist' | 'carts'
 
 const TITLES: Record<MockKind, string> = {
   inbox: 'Shared inbox', crm: 'Customer profile', gallery: 'Media gallery', notes: 'Internal notes',
   orders: 'Orders', payments: 'Payments', links: 'Link analytics', insights: 'Insights',
   calendar: 'Calendar', tasks: 'Tasks', broadcasts: 'Broadcast', automation: 'Automation',
-  ideas: 'Ideas board', roadmap: 'Roadmap', announcements: 'Changelog', kb: 'Help centre',
+  ideas: 'Ideas board', roadmap: 'Roadmap', announcements: 'Changelog', kb: 'Help centre', booking: 'Book online',
+  waitlist: 'Back-in-stock waitlists', carts: 'Abandoned carts',
 }
 
 interface Theme { bg: string; panel: string; ink: string; sub: string; border: string; accent: string; soft: string; dark: boolean }
@@ -194,6 +195,81 @@ function Calendar(T: Theme) {
   )
 }
 
+// The customer's booking page: pick a service, a time, pay the deposit.
+function Booking(T: Theme) {
+  const services = [['Aquarium health check', '30 min', '$45'], ['Tank setup consult', '60 min', '$90']] as const
+  const slots = ['9:00', '9:30', '10:30', '11:00', '1:30', '2:00']
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+      {services.map(([name, len, price], i) => (
+        <Card key={name} T={T} style={{ padding: 9, display: 'flex', alignItems: 'center', gap: 8, borderColor: i === 0 ? T.accent : T.border, background: i === 0 ? T.soft : T.bg }}>
+          <div style={{ width: 22, height: 22, borderRadius: 7, background: i === 0 ? T.accent : T.panel, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={i === 0 ? '#fff' : T.sub} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 15 14" /></svg>
+          </div>
+          <div style={{ minWidth: 0 }}><div style={{ fontSize: 10.5, fontWeight: 800, color: T.ink }}>{name}</div><div style={{ fontSize: 9, color: T.sub }}>{len}</div></div>
+          <span style={{ marginLeft: 'auto', fontSize: 10.5, fontWeight: 800, color: T.ink }}>{price}</span>
+        </Card>
+      ))}
+      <div style={{ display: 'flex', alignItems: 'center' }}><span style={{ fontSize: 10.5, fontWeight: 800, color: T.ink }}>Thu 9 Oct</span><span style={{ marginLeft: 'auto', fontSize: 9, color: T.sub }}>Melbourne time</span></div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 5 }}>
+        {slots.map((t, i) => (
+          <div key={t} style={{ padding: '6px 0', borderRadius: 7, textAlign: 'center', fontSize: 10, fontWeight: 800, background: i === 2 ? T.accent : T.panel, color: i === 2 ? '#fff' : T.ink, opacity: i === 1 ? 0.4 : 1, textDecoration: i === 1 ? 'line-through' : 'none' }}>{t}</div>
+        ))}
+      </div>
+      <div style={{ background: T.accent, color: '#fff', borderRadius: 9, padding: '9px 0', textAlign: 'center', fontSize: 11.5, fontWeight: 800 }}>Pay $20 deposit and book</div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, fontSize: 9, color: T.sub }}>Confirmation and reminder by SMS</div>
+    </div>
+  )
+}
+
+// Waitlists ranked by demand, with the restock alert going out.
+function Waitlist(T: Theme) {
+  const items = [['Fluval 307 canister filter', 14, 'Out of stock'], ['Red cherry shrimp (10)', 9, 'Out of stock'], ['CO2 refill 2.6kg', 6, 'Back in stock']] as const
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+        {[['Customers waiting', '29'], ['Told it’s back · 30d', '41']].map(([a, b]) => (
+          <Card key={a} T={T} style={{ padding: 8 }}><div style={{ fontSize: 9, color: T.sub, fontWeight: 700 }}>{a}</div><div style={{ fontSize: 15, fontWeight: 900, color: T.ink }}>{b}</div></Card>
+        ))}
+      </div>
+      {items.map(([name, n, st]) => {
+        const back = st === 'Back in stock'
+        return (
+          <Card key={name} T={T} style={{ padding: 9, display: 'flex', alignItems: 'center', gap: 8, borderColor: back ? T.accent : T.border, background: back ? T.soft : T.bg }}>
+            <div style={{ width: 24, height: 24, borderRadius: 7, background: T.panel, flexShrink: 0 }} />
+            <div style={{ minWidth: 0, flex: 1 }}><div style={{ fontSize: 10.5, fontWeight: 800, color: T.ink, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{name}</div><div style={{ fontSize: 9, color: back ? T.accent : T.sub, fontWeight: 700 }}>{st}</div></div>
+            <Chip bg={T.panel} fg={T.ink}>{n} waiting</Chip>
+          </Card>
+        )
+      })}
+      <div style={{ background: T.accent, color: '#fff', borderRadius: 9, padding: '9px 10px', fontSize: 10.5, fontWeight: 700, lineHeight: 1.45 }}>SMS sent to 6 people: “Hi Mia, the CO2 refill 2.6kg is back in stock at Roxy Aquarium.”</div>
+    </div>
+  )
+}
+
+// An abandoned checkout landing in the inbox, then recovered.
+function Carts(T: Theme) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <Card T={T} style={{ padding: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+          <Avatar t="JL" c={AV[3]} s={24} />
+          <div style={{ minWidth: 0 }}><div style={{ fontSize: 10.5, fontWeight: 800, color: T.ink }}>Jordan Lee</div><div style={{ fontSize: 9, color: T.sub }}>Left checkout · 12 min ago</div></div>
+          <span style={{ marginLeft: 'auto' }}><Chip bg={hex('#f59e0b', '22')} fg={T.dark ? '#fbbf24' : '#b45309'}>Abandoned cart</Chip></span>
+        </div>
+        {[['Aqua One 60cm tank', '$189'], ['LED light kit', '$64'], ['Shipping', '$12']].map(([a, b]) => (
+          <div key={a} style={{ display: 'flex', fontSize: 10, color: T.sub, padding: '2px 0' }}><span>{a}</span><span style={{ marginLeft: 'auto', color: T.ink, fontWeight: 700 }}>{b}</span></div>
+        ))}
+        <div style={{ display: 'flex', fontSize: 11, fontWeight: 900, color: T.ink, borderTop: `1px solid ${T.border}`, marginTop: 6, paddingTop: 6 }}><span>Total</span><span style={{ marginLeft: 'auto' }}>$265</span></div>
+      </Card>
+      <div style={{ alignSelf: 'flex-end', maxWidth: '85%', background: T.accent, color: '#fff', borderRadius: '12px 12px 4px 12px', padding: '8px 10px', fontSize: 10.5, fontWeight: 600, lineHeight: 1.4 }}>Hi Jordan, any questions about the tank? Here’s 10% off if you’d like to finish your order.</div>
+      <div style={{ alignSelf: 'center', display: 'flex', alignItems: 'center', gap: 6, padding: '6px 11px', borderRadius: 999, background: hex('#10b981', '22'), color: T.dark ? '#34d399' : '#047857', fontSize: 10, fontWeight: 800 }}>
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>Recovered · order #10482 · $238.50
+      </div>
+    </div>
+  )
+}
+
 function Kanban(T: Theme, cols: [string, string][], cards: Record<number, number>) {
   return (
     <div style={{ display: 'grid', gridTemplateColumns: `repeat(${cols.length},1fr)`, gap: 8 }}>
@@ -283,7 +359,7 @@ function Kb(T: Theme) {
 const RENDER: Record<MockKind, (T: Theme) => React.ReactNode> = {
   inbox: Inbox, crm: Crm, gallery: Gallery, notes: Notes, orders: Orders, payments: Payments,
   links: Links, insights: Insights, calendar: Calendar, broadcasts: Broadcasts, automation: Automation,
-  ideas: Ideas, announcements: Announcements, kb: Kb,
+  ideas: Ideas, announcements: Announcements, kb: Kb, booking: Booking, waitlist: Waitlist, carts: Carts,
   tasks: (T) => Kanban(T, [['To do', '#6b7280'], ['Doing', T.accent], ['Done', '#10b981']], { 0: 2, 1: 2, 2: 1 }),
   roadmap: (T) => Kanban(T, [['Planned', '#6b7280'], ['Building', T.accent], ['Shipped', '#10b981']], { 0: 2, 1: 1, 2: 2 }),
 }
