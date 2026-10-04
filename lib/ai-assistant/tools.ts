@@ -7,6 +7,7 @@ import { WooCommerceService } from '@/lib/woocommerce-service'
 import { replyToReview } from '@/lib/google-business'
 import { loadCompanyPublic, createInvite, bookingPageUrl } from '@/lib/booking'
 import { searchKnowledge } from '@/lib/ai-knowledge'
+import { BUILDER_TOOLS, BUILDER_TOOL_NAMES, runBuilderAction, runBuilderRead } from '@/lib/ai-assistant/builders'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Colvy AI assistant — controlled tool layer.
@@ -376,6 +377,8 @@ export const ASSISTANT_TOOLS: ToolDef[] = [
     description: "Teach Colvy AI a fact for answering customers — 'remember that we're closed on Christmas Day', 'our CO2 refills are $25'. Reversible.",
     input_schema: { type: 'object', properties: { question: { type: 'string', description: 'how a customer would ask it' }, answer: { type: 'string' } }, required: ['question', 'answer'] },
   },
+  // Forms, polls and surveys (lib/ai-assistant/builders.ts).
+  ...BUILDER_TOOLS,
 ]
 
 export const TOOL_SAFETY: Record<string, ToolSafety> = Object.fromEntries(ASSISTANT_TOOLS.map(t => [t.name, t.safety]))
@@ -540,6 +543,7 @@ const fillLink = (text: string, link: string) => text.includes('{link}') ? text.
 // ── READ tools: return plain data for the model ──────────────────────────────
 export async function runReadTool(db: SupabaseClient, ctx: AssistantContext, name: string, args: any): Promise<any> {
   const D = db as any
+  if (BUILDER_TOOL_NAMES.has(name)) return runBuilderRead(D, ctx, name, args)
   if (name === 'search_contacts') {
     const q = String(args?.query || '').trim()
     if (!q) return { matches: [] }
@@ -861,6 +865,10 @@ export async function executeAction(db: SupabaseClient, ctx: AssistantContext, n
   const D = db as any
   // Every write requires edit rights (viewers are read-only in Colvy).
   if (!canEdit(ctx.role as any)) return { ok: false, error: "You don't have permission to make changes." }
+  if (BUILDER_TOOL_NAMES.has(name)) {
+    const { link, ...r } = await runBuilderAction(D, ctx, name, args)
+    return r
+  }
 
   if (name === 'create_task') {
     const title = String(args?.title || '').trim()
@@ -1268,18 +1276,18 @@ export async function executeAction(db: SupabaseClient, ctx: AssistantContext, n
 
     if (name === 'request_media') {
       const text = String(args?.text || '').trim() || 'Could you send us a few photos?'
-      let link = ''
+      let link = '', texted = false
       try {
         const res = await fetch(`${siteBase(ctx)}/api/media-requests`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId: ctx.companyId, conversationId, contactId: r.contact?.id || null, prompt: text, accept: args?.photosOnly ? ['image'] : ['image', 'video'], maxFiles: 10, expiryHours: null, createdBy: ctx.userName, deliveryChannel: channel }) })
         const d = await res.json().catch(() => ({}))
         if (!res.ok || !d?.link) return { ok: false, error: d?.error || 'Could not create the upload link.' }
-        link = d.link
+        link = d.link; texted = !!d.texted
       } catch (e: any) { return { ok: false, error: e?.message || 'Could not create the upload link.' } }
-      // The request route texts the link itself when there's a phone; email it otherwise.
-      let via = 'SMS'
-      if (!r.phone && email) { const sent = await deliver(`${text}\nUpload here (private, full quality): ${link}`, `${ctx.companyName}: could you send us some photos?`); via = sent.sent ? 'Email' : 'not delivered' }
+      // The request route texts the link itself when it can; email it otherwise.
+      let via = texted ? 'SMS' : 'not delivered'
+      if (!texted && email) { const sent = await deliver(`${text}\nUpload here (private, full quality): ${link}`, `${ctx.companyName}: could you send us some photos?`); via = sent.sent ? 'Email' : 'not delivered' }
       await logAiEvent(D, { companyId: ctx.companyId, userId: ctx.userId, action: 'Requested media', tool: name, entityType: 'conversation', entityId: conversationId, input: { text, contactId: r.contact?.id || null }, result: { link, via } })
-      return { ok: true, entityType: 'conversation', entityId: conversationId, card: { kind: 'media_request', title: `Upload link sent to ${r.name}`, lines: [`${via} · ${text.slice(0, 100)}`, link], href }, undo: null }
+      return { ok: true, entityType: 'conversation', entityId: conversationId, card: { kind: 'media_request', title: via === 'not delivered' ? `Upload link created for ${r.name}` : `Upload link sent to ${r.name}`, lines: [`${via} · ${text.slice(0, 100)}`, link], href }, undo: null }
     }
 
     // send_booking_link

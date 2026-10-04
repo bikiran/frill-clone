@@ -413,7 +413,8 @@ export async function POST(req: NextRequest) {
                 }),
               })
               const mrData = await mr.json().catch(() => ({}))
-              if (mr.ok && mrData.link) {
+              // The request route already texts the link when it can; don't send it twice.
+              if (mr.ok && mrData.link && !mrData.texted) {
                 const { data: integ2 } = await db.from('telnyx_integrations')
                   .select('api_key, phone_number, messaging_profile_id')
                   .eq('company_id', companyId).maybeSingle()

@@ -57,6 +57,7 @@ const SUGGEST_LABEL: Record<string, string> = {
   task: 'View tasks', reminder: 'View reminders', calendar_event: 'Open calendar', message: 'Open conversation', order: 'Open orders',
   payment_link: 'Open conversation', media_request: 'Open conversation', review_reply: 'Open reviews', comment_reply: 'Open comments',
   ticket_reply: 'Open ticket', booking_link: 'Open conversation', fact: 'Open AI knowledge', idea: 'Open roadmap',
+  form: 'Edit form', poll: 'Open poll', survey: 'Open survey',
 }
 
 export default function ColvyAssistant({ companyId, userId, agentName }: { companyId?: string | null; userId?: string | null; agentName?: string | null }) {
@@ -282,7 +283,8 @@ export default function ColvyAssistant({ companyId, userId, agentName }: { compa
   async function undo(card: Card) {
     if (!card.undo) return
     const { entityType, entityId, restore, rows } = card.undo as any
-    const table = entityType === 'calendar_event' ? 'calendar_events' : entityType === 'sale' ? 'conversation_sales' : entityType === 'order_outlet' ? 'orders' : 'conversation_tasks'
+    const table = entityType === 'calendar_event' ? 'calendar_events' : entityType === 'sale' ? 'conversation_sales' : entityType === 'order_outlet' ? 'orders'
+      : entityType === 'form' ? 'forms' : entityType === 'poll' ? 'polls' : entityType === 'survey' ? 'surveys' : 'conversation_tasks'
     try {
       // An edit (task_update, order_outlet) is undone by restoring the prior
       // values; a created row is undone by deleting it.
@@ -532,7 +534,7 @@ export default function ColvyAssistant({ companyId, userId, agentName }: { compa
 const CARD_ICON: Record<string, string> = {
   calendar_event: 'calendar', reminder: 'clock', message: 'chat', order: 'cart', call: 'phone', task: 'check',
   payment_link: 'card', media_request: 'camera', review_reply: 'star', comment_reply: 'chat', ticket_reply: 'ticket',
-  booking_link: 'calendar', fact: 'book', idea: 'bulb',
+  booking_link: 'calendar', fact: 'book', idea: 'bulb', form: 'form', poll: 'poll', survey: 'poll',
 }
 
 function CardIcon({ name, size = 16 }: { name: string; size?: number }) {
@@ -549,6 +551,8 @@ function CardIcon({ name, size = 16 }: { name: string; size?: number }) {
     case 'ticket': return <svg {...p}><path d="M3 7a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v3a2 2 0 0 0 0 4v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-3a2 2 0 0 0 0-4z" /></svg>
     case 'book': return <svg {...p}><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /></svg>
     case 'bulb': return <svg {...p}><path d="M9 18h6" /><path d="M10 22h4" /><path d="M15.09 14c.18-.98.65-1.74 1.41-2.5A4.65 4.65 0 0 0 18 8 6 6 0 0 0 6 8c0 1 .23 2.23 1.5 3.5A4.61 4.61 0 0 1 8.91 14" /></svg>
+    case 'form': return <svg {...p}><rect x="5" y="3" width="14" height="18" rx="2" /><line x1="9" y1="8" x2="15" y2="8" /><line x1="9" y1="12" x2="15" y2="12" /><line x1="9" y1="16" x2="13" y2="16" /></svg>
+    case 'poll': return <svg {...p}><line x1="6" y1="20" x2="6" y2="13" /><line x1="12" y1="20" x2="12" y2="5" /><line x1="18" y1="20" x2="18" y2="10" /></svg>
     default: return <svg {...p} strokeWidth={2.6}><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
   }
 }

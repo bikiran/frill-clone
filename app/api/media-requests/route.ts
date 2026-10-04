@@ -58,21 +58,11 @@ export async function POST(req: NextRequest) {
 
     const smsText = `${request.prompt}\nUpload here (private, full quality): ${link}`
 
-    // Post the request into the conversation as an agent message.
-    if (conversationId) {
-      await db.from('messages').insert({
-        conversation_id: conversationId, company_id: companyId,
-        sender_type: 'agent', sender_name: createdBy || 'Support',
-        content: smsText,
-        message_type: 'media_request',
-        // Stamp the channel the link is actually delivered over (SMS/email/…) so
-        // the inbox doesn't mislabel a texted request as "Live Chat". The client
-        // computes this; default to chat when not supplied.
-        delivery_channel: (typeof deliveryChannel === 'string' && deliveryChannel) ? deliveryChannel : 'chat',
-        message_payload: { kind: 'media_request', token, prompt: request.prompt, accept: request.accept, max_files: request.max_files, expires_at, link },
-      })
-      await db.from('conversations').update({ last_message: 'Requested media upload', last_message_at: new Date().toISOString() }).eq('id', conversationId)
+    // Did this route text the link itself? Callers use it to avoid sending it a
+    // second time, and the thread card is labelled from it.
+    let texted = false
 
+    if (conversationId) {
       // Actually deliver the link to the customer over SMS. Previously we only
       // inserted the message row, so it showed in the agent's thread but the
       // customer never received it — the agent had to copy the link and text it
@@ -98,16 +88,33 @@ export async function POST(req: NextRequest) {
         const smsAllowed = await companyFlagEnabled(db, companyId, 'media_sms_fallback')
         if (to && conv?.sms_enabled !== false && smsAllowed) {
           const sender = await resolveSmsSender(db, companyId)
-          if (sender) await sender.send({ to, text: smsText })
+          if (sender) { await sender.send({ to, text: smsText }); texted = true }
         } else if (!to) {
           console.warn('[media-requests] no SMS recipient resolved for conversation', conversationId)
         }
       } catch (e: any) {
         console.error('[media-requests] sms send failed', e?.message || e)
       }
+
+      // Post the request into the conversation as an agent message, labelled
+      // with the channel it really went out on. The client's guess said "chat"
+      // whenever it couldn't see a mobile, even though we had just texted it —
+      // so a texted link read "Live Chat". Email/Messenger/Instagram are sent
+      // by the client, so its value stands for those.
+      const asked = typeof deliveryChannel === 'string' ? deliveryChannel : ''
+      const channel = ['email', 'instagram', 'facebook'].includes(asked) ? asked : texted ? 'sms' : (asked || 'chat')
+      await db.from('messages').insert({
+        conversation_id: conversationId, company_id: companyId,
+        sender_type: 'agent', sender_name: createdBy || 'Support',
+        content: smsText,
+        message_type: 'media_request',
+        delivery_channel: channel,
+        message_payload: { kind: 'media_request', token, prompt: request.prompt, accept: request.accept, max_files: request.max_files, expires_at, link },
+      })
+      await db.from('conversations').update({ last_message: 'Requested media upload', last_message_at: new Date().toISOString() }).eq('id', conversationId)
     }
 
-    return NextResponse.json({ ok: true, token, link })
+    return NextResponse.json({ ok: true, token, link, texted })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }

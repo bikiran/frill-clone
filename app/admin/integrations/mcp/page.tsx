@@ -70,6 +70,7 @@ const CAN_DO: { icon: string; title: string; text: string }[] = [
   { icon: 'bag', title: 'Orders & stock', text: 'Look up orders, check live stock and prices, change status, assign an outlet, cancel or refund (refunds need your OK).' },
   { icon: 'store', title: 'Customers', text: 'Find contacts, their history, outlets and team members.' },
   { icon: 'card', title: 'Payments & bookings', text: 'Send payment links, booking links and photo/video requests; see today’s bookings.' },
+  { icon: 'form', title: 'Forms, polls & surveys', text: 'Describe what you need and get a ready-to-share form, poll or survey link; check votes, NPS and responses.' },
   { icon: 'check', title: 'Tasks & calendar', text: 'Create, assign and complete tasks, set reminders and add calendar events.' },
   { icon: 'info', title: 'Reports & knowledge', text: 'Sales and order reports, out-of-stock items, and answers from your AI knowledge library.' },
   { icon: 'phone', title: 'Support & reviews', text: 'Tickets, Google reviews and Facebook/Instagram comments — read and reply.' },
@@ -82,6 +83,9 @@ const EXAMPLES = [
   'Reply to the latest Google review and thank them by name.',
   'Send Rahul a $5 payment link for the shipping difference.',
   'Create a task for the Somerton outlet to call back today’s missed calls.',
+  'Make a feedback form for our aquascaping service and give me the link.',
+  'Run a poll: which fish should we stock next, bettas, guppies or tetras?',
+  'What did people say in our NPS survey this month?',
   'How did we go this week compared to last week?',
 ]
 
@@ -283,7 +287,7 @@ export default function ColvyMcpPage() {
               </div>
             </div>
             {!!keys?.length && (
-              <ul className="divide-y mt-4 pt-4 border-t" style={{ margin: 0, padding: 0, listStyle: 'none', borderColor: 'var(--border)' }}>
+              <ul className="divide-y border-t" style={{ margin: '18px 0 0', padding: '16px 0 0', listStyle: 'none', borderColor: 'var(--border)' }}>
                 {keys.map(c => <ConnRow key={c.id} c={c} kind="key" />)}
               </ul>
             )}

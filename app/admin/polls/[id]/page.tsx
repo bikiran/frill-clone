@@ -29,6 +29,8 @@ export default function PollDetailPage() {
         try { opts = JSON.parse(opts) } catch {}
       }
       if (!Array.isArray(opts)) opts = []
+      // Options are saved as { text, image, description } by the create form; votes are keyed by the text.
+      opts = opts.map((o: any) => typeof o === 'string' ? o : String(o?.text || '')).filter(Boolean)
       setPoll({ ...p, options: opts })
     }
     const { data: v } = await supabase.from('poll_votes').select('*').eq('poll_id', pollId)
