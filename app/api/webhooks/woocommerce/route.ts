@@ -8,6 +8,7 @@ import { notifyCompany, pushInboundMessage } from '@/lib/notify'
 import { logWebhookEvent } from '@/lib/webhook-log'
 import { upsertWooOrder } from '@/lib/orders-sync'
 import { wooDateToISO } from '@/lib/orders'
+import { DEFAULT_ORDER_MESSAGES, isStaleOrderMessage } from '@/lib/order-messages'
 import { logEnquiryReopened } from '@/lib/conversation-timeline'
 import { notifyWaitlist, resolveWaitlistSettings } from '@/lib/waitlist'
 
@@ -32,28 +33,6 @@ async function handleProductStock(db: any, companyId: string, p: any) {
   const r = await notifyWaitlist(db, { companyId, wooProductIds: ids, respectHours: true })
   if (r.sent || r.queued || r.failed) console.log('[waitlist] product back in stock', { companyId, product: id, ...r })
 }
-
-const DEFAULT_MESSAGES: Record<string, string> = {
-  processing: 'Hi {name}, thanks for your order #{order} with {business} — we\'ve received it and will begin processing. Reply here anytime with any questions.',
-  failed: 'Hi {name}, we noticed there was an issue with the payment on your order #{order}. Do you need any help?',
-  cancelled: 'Hi {name}, your order #{order} was cancelled. Can we help you with anything?',
-  refunded: 'Your order #{order} has been refunded. The refund of {amount} has been processed and should appear shortly.',
-  completed: 'Hi {name}, your order #{order} is complete. Thank you for choosing {business}!',
-  'on-hold': 'Hi {name}, your order #{order} is on hold while we confirm a few details. We\'ll be in touch shortly — reply here anytime.',
-}
-
-// The earlier default templates (no {name} / #{order}). A saved config that
-// still holds one of these was never really customised — it just captured the
-// old default — so we treat it as unset and use the current default instead,
-// so existing workspaces get the order number + name without re-saving.
-const LEGACY_DEFAULTS = new Set<string>([
-  'Thank you for placing an order with {business}. We have received it. If you have any questions, feel free to reply here.',
-  'We noticed there was an issue with your recent order payment. Do you need any help?',
-  'Your recent order was cancelled. Can we help you with anything?',
-  'Your order has been refunded. The refund of {amount} has been processed and should appear shortly.',
-  'Your order has been completed. Thank you for choosing {business}!',
-  "Your order is on hold while we confirm a few details. We'll be in touch shortly — feel free to reply here.",
-].map(s => s.trim()))
 
 // Customer-facing messages that are actively BAD to send on an order that is
 // actually alive/paid: "your order was cancelled" / "your payment failed". A
@@ -237,9 +216,9 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
   const savedMsgs: Record<string, string> = {}
   for (const [k, v] of Object.entries(cfg.messages || {})) {
     const val = String(v ?? '').trim()
-    if (val && !LEGACY_DEFAULTS.has(val)) savedMsgs[k] = val as string
+    if (val && !isStaleOrderMessage(val, company?.name)) savedMsgs[k] = val as string
   }
-  const messages = { ...DEFAULT_MESSAGES, ...savedMsgs }
+  const messages = { ...DEFAULT_ORDER_MESSAGES, ...savedMsgs }
   const template = messages[status]
 
   const email = order.billing?.email
@@ -378,6 +357,14 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
   const businessName = company?.name || 'us'
   const billingName = `${order.billing?.first_name || ''} ${order.billing?.last_name || ''}`.trim()
   const displayName = contact?.name || order.billing?.first_name || 'there'
+  // "Hi Cassandra", not "Hi Cassandra Scofield" (or an email address when
+  // that's all the contact has).
+  const firstName = (() => {
+    const pick = String(order.billing?.first_name || contact?.name || '').trim()
+    if (!pick || /@|^\+?[\d\s()-]+$/.test(pick)) return 'there'
+    const first = pick.split(/\s+/)[0]
+    return first.charAt(0).toUpperCase() + first.slice(1)
+  })()
   const convSubject = contact?.name || billingName || `Order #${order.number || order.id}`
   const isNewConv = !conv
   // The customer's mobile, so an SMS reply threads back into THIS conversation
@@ -598,7 +585,8 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
   const refundedAmount = order.refunds?.length ? `$${Math.abs(order.refunds.reduce((s: number, r: any) => s + (parseFloat(r.total) || 0), 0)).toFixed(2)}` : `$${order.total}`
   const body = template
     .replace(/\{business\}/g, businessName)
-    .replace(/\{name\}/g, displayName)
+    .replace(/\{name\}/g, firstName)
+    .replace(/\{full_name\}/g, billingName || displayName)
     .replace(/\{order\}/g, String(order.number || order.id))
     .replace(/\{amount\}/g, refundedAmount)
     .replace(/\{total\}/g, `$${order.total}`)
