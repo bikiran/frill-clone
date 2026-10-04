@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import { confirmDialog } from '@/components/ConfirmDialog'
 
 // A searchable Select for payment methods, backed by a managed per-company list
 // (payment_methods, COLVY_V296) — the same idea as Order Tags. Users can search,
@@ -195,7 +196,7 @@ function ManagePaymentMethodsModal({
 
   const del = async (m: Method) => {
     if (!m.id) { setEditingKey(null); return }  // unregistered — nothing stored to delete
-    if (!window.confirm(`Delete payment method “${m.name}”? Past sales keep their recorded method; it's just removed from the list.`)) return
+    if (!await confirmDialog(`Delete payment method “${m.name}”? Past sales keep their recorded method; it's just removed from the list.`)) return
     setBusy(true); setErr('')
     try { await (supabase as any).from('payment_methods').delete().eq('id', m.id); await onChanged() }
     catch { setErr('Could not delete.') }

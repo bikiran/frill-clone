@@ -22,6 +22,8 @@ const CORAL = '#ff6a4d', BLUE = '#2b59ff', PURPLE = '#7c5cff', GREEN = '#00c48c'
 // Standard capability row order for every table. Comms rows first, then the
 // product-feedback suite — where Colvy is unique among these tools. A competitor
 // with a shorter `comp` array shows ✗ for the rows it doesn't declare.
+// Booking is the last row: only Podium (via integrations) and Birdeye
+// (Appointments) declare it.
 const FEAT = [
   'SMS (Australian 🇦🇺 numbers)', 'WhatsApp', 'Instagram DMs', 'Facebook / Meta DMs',
   'Email (Gmail / Outlook)', 'Phone calls & voicemail', 'Google Reviews', 'Live chat widget',
@@ -29,6 +31,7 @@ const FEAT = [
   'Payments (send link, get paid)', 'Australian 🇦🇺 phone numbers', 'Australian 🇦🇺 support team', '45-minute migration',
   'Ideas & feedback board', 'Public roadmap', 'Announcements / changelog', 'Polls & surveys',
   'Media gallery', 'Team notes', 'Shared calendar', 'Tasks & reminders',
+  'Online booking, deposits & reminders',
 ]
 
 type Val = boolean | string
@@ -45,7 +48,7 @@ const CMP: Record<string, Cmp> = {
   podium: {
     name: 'Podium', accent: GREEN, heroTitle: 'The Podium alternative built for', heroAccent: 'Australian 🇦🇺 business', heroSub: 'More channels, AI that learns from every chat, Australian support and real results — everything Podium locks behind contracts and add-ons, Colvy includes.',
     stats: [{ big: 'No', label: 'lock-in contracts' }, { big: '14', label: 'channels included' }, { big: '45 min', label: 'full migration' }],
-    comp: [true, false, true, true, false, true, true, true, 'Limited', true, false, 'Limited', true, true, 'Overseas', false],
+    comp: [true, false, true, true, false, true, true, true, 'Limited', true, false, 'Limited', true, true, 'Overseas', false, false, false, false, false, false, false, false, false, 'Via integrations'],
     tableNote: 'Colvy covers more channels, deeper AI and genuine Australian 🇦🇺 support.',
     wins: [
       { t: 'One conversation, nothing siloed', d: 'Every channel lives in one thread per customer — SMS, calls, email, WhatsApp, Instagram, reviews. Not separate inboxes.' },
@@ -168,7 +171,7 @@ const CMP: Record<string, Cmp> = {
     stats: [{ big: 'SMB', label: 'pricing, not enterprise' }, { big: '14', label: 'channels included' }, { big: '45 min', label: 'full migration' }],
     // Birdeye leads on reviews/surveys (✓), but has no built-in phone system and
     // no product-feedback board; Colvy adds those. Feedback rows auto-✗ except surveys.
-    comp: [true, true, true, true, 'Marketing', false, true, true, 'BirdAI', false, false, 'Limited', true, false, false, false, false, false, false, true],
+    comp: [true, true, true, true, 'Marketing', false, true, true, 'BirdAI', false, false, 'Limited', true, false, false, false, false, false, false, true, false, false, false, false, 'Appointments'],
     tableNote: 'Birdeye leads on reviews and surveys — Colvy matches that and adds real calling, a shared inbox and a product-feedback suite, at SMB pricing.',
     wins: [
       { t: 'A real phone system', d: 'Colvy includes voice calls, voicemail and call intelligence. Birdeye has no built-in phone system.' },

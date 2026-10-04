@@ -2,6 +2,7 @@
 
 import { useState, useRef } from 'react'
 import { uploadIdeaImage, deleteIdeaImage, reorderIdeaImages } from '@/lib/imageGallery'
+import { confirmDialog } from '@/components/ConfirmDialog'
 
 export default function ImageGallery({ ideaId, images, onUpdate, isAdmin }: {
   ideaId: string
@@ -30,7 +31,7 @@ export default function ImageGallery({ ideaId, images, onUpdate, isAdmin }: {
   }
 
   const handleDelete = async (imageId: string) => {
-    if (!confirm('Delete image?')) return
+    if (!await confirmDialog('Delete image?')) return
     try {
       await deleteIdeaImage(imageId)
       onUpdate()

@@ -30,6 +30,18 @@ const nextConfig = {
       { source: '/features/:slug*', destination: '/product/:slug*', permanent: true },
     ]
   },
+  // Colvy MCP: OAuth discovery documents live under /.well-known. The path-
+  // suffixed forms (…/oauth-protected-resource/api/mcp) are what newer MCP
+  // clients ask for first.
+  async rewrites() {
+    return [
+      { source: '/.well-known/oauth-protected-resource', destination: '/api/mcp/oauth/protected-resource' },
+      { source: '/.well-known/oauth-protected-resource/:path*', destination: '/api/mcp/oauth/protected-resource' },
+      { source: '/.well-known/oauth-authorization-server', destination: '/api/mcp/oauth/metadata' },
+      { source: '/.well-known/oauth-authorization-server/:path*', destination: '/api/mcp/oauth/metadata' },
+      { source: '/.well-known/openid-configuration', destination: '/api/mcp/oauth/metadata' },
+    ]
+  },
   // Keep the embeddable widget script fresh so businesses pick up updates fast
   // (default static caching would pin an old widget.js for a long time).
   async headers() {

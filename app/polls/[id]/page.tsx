@@ -38,6 +38,8 @@ export default function PollPage() {
           try { parsedOptions = JSON.parse(parsedOptions) } catch {}
         }
         if (!Array.isArray(parsedOptions)) parsedOptions = []
+        // The admin page saves options as { text, image, description }; votes are keyed by the text.
+        parsedOptions = parsedOptions.map((o: any) => typeof o === 'string' ? o : String(o?.text || '')).filter(Boolean)
         
         setPoll({ ...data, options: parsedOptions })
         

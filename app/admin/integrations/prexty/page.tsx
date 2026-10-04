@@ -2,22 +2,13 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { confirmDialog } from '@/components/ConfirmDialog'
+import { useIntegrations } from '@/components/integrations/IntegrationsShell'
+import { IntegrationPage, IntegrationHeader, Card, Notice, Icon, btn, inputCls, inputStyle } from '@/components/integrations/ui'
 
 const DEFAULT_BASE = 'https://prexty.com'
 
-const PrextyLogo = ({ size = 40 }: { size?: number }) => (
-  <svg width={size} height={size} viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg" style={{ borderRadius: 10, flexShrink: 0 }}>
-    <rect width="256" height="256" rx="48" fill="#4f46e5" />
-    <path fill="#fff" d="M84 60h54c31 0 52 20 52 49s-21 49-53 49h-27v38h-26V60zm26 76h24c16 0 26-11 26-27s-10-27-26-27h-24v54z" />
-  </svg>
-)
-
 export default function PrextyIntegration() {
-  const router = useRouter()
-  const searchParams = useSearchParams()
-  const slug = searchParams.get('slug') || ''
-
   const [companyId, setCompanyId] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -34,42 +25,18 @@ export default function PrextyIntegration() {
   const [testTarget, setTestTarget] = useState('')
   const [testBusy, setTestBusy] = useState(false)
   const [testMsg, setTestMsg] = useState('')
+  const [testOk, setTestOk] = useState(false)
 
   const webhookUrl = integration?.webhook_token && typeof window !== 'undefined'
     ? `${window.location.origin}/api/webhooks/prexty?t=${integration.webhook_token}`
     : ''
 
-  // Resolve the company the same way the WooCommerce page does: ?slug=, then
-  // hostname, then the signed-in user's own/member company.
+  const { companyId: shellCompanyId, ready: shellReady, setActive } = useIntegrations()
   useEffect(() => {
+    if (!shellReady) return
     const init = async () => {
       try {
-        const sb = supabase as any
-        let cid: string | null = null
-
-        if (slug) {
-          const { data } = await sb.from('companies').select('id').eq('slug', slug).maybeSingle()
-          if (data) cid = data.id
-        }
-        if (!cid && typeof window !== 'undefined') {
-          const h = window.location.hostname
-          if (h.endsWith('.colvy.com') && h !== 'colvy.com' && h !== 'www.colvy.com') {
-            const { data } = await sb.from('companies').select('id').eq('slug', h.replace('.colvy.com', '')).maybeSingle()
-            if (data) cid = data.id
-          }
-        }
-        if (!cid) {
-          const { data: { session } } = await sb.auth.getSession()
-          if (session?.user) {
-            const { data: ownCo } = await sb.from('companies').select('id').eq('owner_id', session.user.id).maybeSingle()
-            if (ownCo?.id) cid = ownCo.id
-            else {
-              const { data: memberships } = await sb.from('team_members').select('company_id').eq('user_id', session.user.id).limit(1)
-              if (memberships && memberships.length > 0) cid = memberships[0].company_id
-            }
-          }
-        }
-
+        const cid = shellCompanyId
         if (cid) {
           setCompanyId(cid)
           const res = await fetch(`/api/prexty/setup?companyId=${cid}`)
@@ -83,8 +50,7 @@ export default function PrextyIntegration() {
       setLoading(false)
     }
     init()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [slug])
+  }, [shellReady, shellCompanyId])
 
   const save = async () => {
     setError(''); setSuccess('')
@@ -105,7 +71,8 @@ export default function PrextyIntegration() {
       if (!res.ok) throw new Error(d.error || 'Failed to connect')
       setIntegration(d.data)
       setApiKey('')
-      setSuccess('Prexty connected — the API key is valid.')
+      setActive('prexty', true)
+      setSuccess('Prexty connected. The API key works.')
     } catch (e: any) {
       setError(e.message || 'Failed to connect')
     } finally {
@@ -142,20 +109,20 @@ export default function PrextyIntegration() {
       })
       const d = await res.json().catch(() => ({}))
       if (!res.ok || d.ok === false) throw new Error(d.reason || d.error || 'Test failed')
-      setTestMsg(`✓ Sent order #${payload.order_number} — open the inbox to see it land.`)
+      setTestOk(true); setTestMsg(`Sent test order #${payload.order_number}. Open the inbox to see it arrive.`)
     } catch (e: any) {
-      setTestMsg(e.message || 'Test failed')
+      setTestOk(false); setTestMsg(e.message || 'Test failed')
     } finally { setTestBusy(false) }
   }
 
   const disconnect = async () => {
-    if (!companyId || !confirm('Disconnect Prexty from this company?')) return
+    if (!companyId || !await confirmDialog('Disconnect Prexty from this company?')) return
     setSaving(true); setError(''); setSuccess('')
     try {
       const res = await fetch(`/api/prexty/setup?companyId=${companyId}`, { method: 'DELETE' })
       const d = await res.json()
       if (!res.ok) throw new Error(d.error || 'Failed to disconnect')
-      setIntegration(null); setApiKey(''); setBaseUrl(DEFAULT_BASE)
+      setIntegration(null); setApiKey(''); setBaseUrl(DEFAULT_BASE); setActive('prexty', false)
       setSuccess('Prexty disconnected.')
     } catch (e: any) {
       setError(e.message || 'Failed to disconnect')
@@ -164,132 +131,106 @@ export default function PrextyIntegration() {
     }
   }
 
-  if (loading) return <div className="px-6 py-8" style={{ color: 'var(--slate)' }}>Loading…</div>
+  if (loading) {
+    return (
+      <IntegrationPage>
+        <IntegrationHeader id="prexty" />
+        <div className="bg-white rounded-2xl border p-6 text-sm" style={{ borderColor: 'var(--border)', color: 'var(--slate)' }}>Loading…</div>
+      </IntegrationPage>
+    )
+  }
 
   return (
-    <div className="px-6 py-8 max-w-2xl">
-      <button onClick={() => router.push(`/admin/integrations?slug=${slug}`)} className="flex items-center gap-2 text-sm mb-6 cursor-pointer hover:opacity-70" style={{ color: 'var(--slate)' }}>
-        ← All Integrations
-      </button>
+    <IntegrationPage>
+      <IntegrationHeader id="prexty" connected={!!integration?.is_active}
+        desc="Pull customers and order history from your Prexty point of sale into the chat." />
 
-      <div className="flex items-center gap-4 mb-6">
-        <PrextyLogo size={56} />
-        <div className="flex-1">
-          <h1 className="text-2xl font-bold" style={{ color: 'var(--ink)' }}>Prexty POS</h1>
-          <p style={{ color: 'var(--slate)' }}>Connect your Prexty store to pull customers and order history into the chat.</p>
-        </div>
-        {integration?.is_active && (
-          <span className="px-3 py-1 rounded-full text-xs font-semibold" style={{ background: '#dcfce7', color: '#16a34a' }}>Connected</span>
-        )}
-      </div>
+      {error && <Notice tone="error">{error}</Notice>}
+      {success && <Notice tone="success">{success}</Notice>}
 
-      <div className="bg-white rounded-2xl border p-6 mb-4" style={{ borderColor: 'var(--border)' }}>
-        <h3 className="font-bold mb-1" style={{ color: 'var(--ink)' }}>External API key</h3>
-        <p className="text-sm mb-4" style={{ color: 'var(--slate)' }}>
-          Generate a key in Prexty under <strong>External API</strong>, then paste it here. It's sent in the <code>X-Prexty</code> header on every request and grants access to this business's data.
-        </p>
-
-        {integration && (
-          <div className="mb-4 p-3 rounded-xl text-sm" style={{ background: 'var(--canvas)', color: 'var(--slate)' }}>
-            Connected to <strong style={{ color: 'var(--ink)' }}>{integration.store_name || integration.base_url}</strong>. Paste a new key below to replace it, or disconnect.
-          </div>
-        )}
-
-        <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--ink)' }}>API Key</label>
-        <div className="flex gap-2 mb-3">
-          <input
-            type={showKey ? 'text' : 'password'}
-            value={apiKey}
-            onChange={e => setApiKey(e.target.value)}
-            placeholder={integration ? '•••••••• (unchanged)' : 'Paste your Prexty API key'}
-            className="flex-1 px-4 py-2.5 rounded-xl border text-sm focus:outline-none"
-            style={{ borderColor: 'var(--border)', fontSize: '16px' }}
-          />
-          <button type="button" onClick={() => setShowKey(v => !v)}
-            className="px-3 rounded-xl border text-sm cursor-pointer" style={{ borderColor: 'var(--border)', color: 'var(--slate)' }}>
-            {showKey ? 'Hide' : 'Show'}
-          </button>
-        </div>
-
-        <button type="button" onClick={() => setShowAdvanced(v => !v)} className="text-xs cursor-pointer hover:underline mb-2" style={{ color: 'var(--slate)' }}>
-          {showAdvanced ? '▾ Advanced' : '▸ Advanced'}
-        </button>
-        {showAdvanced && (
-          <div className="mb-2">
-            <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--ink)' }}>API base URL</label>
-            <input
-              type="text" value={baseUrl} onChange={e => setBaseUrl(e.target.value)}
-              placeholder={DEFAULT_BASE}
-              className="w-full px-4 py-2.5 rounded-xl border text-sm focus:outline-none"
-              style={{ borderColor: 'var(--border)', fontSize: '16px' }}
-            />
-            <p className="text-xs mt-1" style={{ color: 'var(--slate)' }}>Only change this if your Prexty instance is on a different host. Defaults to {DEFAULT_BASE}.</p>
-          </div>
-        )}
-      </div>
-
-      {error && <div className="mb-4 p-3 rounded-xl text-sm" style={{ background: '#fef2f2', color: '#b91c1c', border: '1px solid #fecaca' }}>{error}</div>}
-      {success && <div className="mb-4 p-3 rounded-xl text-sm" style={{ background: '#dcfce7', color: '#166534', border: '1px solid #bbf7d0' }}>{success}</div>}
-
-      <div className="flex gap-3">
-        <button onClick={save} disabled={saving}
-          className="flex-1 py-3 rounded-xl font-semibold text-white cursor-pointer disabled:opacity-50 transition-all"
-          style={{ background: 'var(--coral)' }}>
-          {saving ? 'Testing…' : integration ? 'Test & Save' : 'Connect Prexty'}
-        </button>
-        {integration && (
-          <button onClick={disconnect} disabled={saving}
-            className="px-5 py-3 rounded-xl font-semibold cursor-pointer disabled:opacity-50 border"
-            style={{ borderColor: '#fecaca', color: '#dc2626', background: '#fff' }}>
-            Disconnect
-          </button>
-        )}
-      </div>
-
-      {integration && webhookUrl && (
-        <div className="mt-4 bg-white rounded-2xl border p-6" style={{ borderColor: 'var(--border)' }}>
-          <h3 className="font-bold mb-1" style={{ color: 'var(--ink)' }}>Order webhook URL</h3>
-          <p className="text-sm mb-3" style={{ color: 'var(--slate)' }}>
-            Give this to Prexty (or your developer) to send new orders (and new/updated customers) into Colvy — matched by email/phone, just like WooCommerce. Prexty should <strong>POST</strong> each <code>order.*</code> and <code>customer.*</code> event here.
-          </p>
-          <div className="flex gap-2">
-            <input readOnly value={webhookUrl} onFocus={e => e.currentTarget.select()}
-              className="flex-1 px-3 py-2.5 rounded-xl border text-xs font-mono"
-              style={{ borderColor: 'var(--border)', color: 'var(--ink)', background: 'var(--canvas)' }} />
-            <button type="button"
-              onClick={() => { navigator.clipboard?.writeText(webhookUrl).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500) }) }}
-              className="px-4 rounded-xl border text-sm font-semibold cursor-pointer whitespace-nowrap"
-              style={{ borderColor: 'var(--border)', color: copied ? '#16a34a' : 'var(--slate)' }}>
-              {copied ? 'Copied' : 'Copy'}
-            </button>
-          </div>
-          <p className="text-xs mt-2" style={{ color: 'var(--slate)' }}>
-            This URL contains a secret token — treat it like a password. Prexty may also send the <code>X-Prexty</code> key on each call as an alternative to the token.
-          </p>
-
-          <div className="mt-4 pt-4" style={{ borderTop: '1px solid var(--border)' }}>
-            <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--ink)' }}>Send a test order</label>
-            <div className="flex gap-2">
-              <input value={testTarget} onChange={e => setTestTarget(e.target.value)}
-                placeholder="Customer email or phone (optional)"
-                className="flex-1 px-3 py-2.5 rounded-xl border text-sm" style={{ borderColor: 'var(--border)', fontSize: '16px' }} />
-              <button type="button" onClick={sendTestOrder} disabled={testBusy}
-                className="px-4 rounded-xl font-semibold text-white cursor-pointer disabled:opacity-50 whitespace-nowrap"
-                style={{ background: 'var(--coral)' }}>
-                {testBusy ? 'Sending…' : 'Send test order'}
+      <div className="grid gap-5 lg:grid-cols-2 items-start">
+        <div className="space-y-5">
+          <Card icon="key" title="External API key"
+            sub={<>Create a key in Prexty under <strong style={{ color: 'var(--ink)' }}>External API</strong> and paste it here. Colvy sends it in the <code>X-Prexty</code> header, and it gives access to this business&rsquo;s data.</>}>
+            {integration && (
+              <div className="flex items-center gap-2 mb-4 p-3 rounded-xl text-sm" style={{ background: 'var(--canvas, #f8f8fa)', color: 'var(--slate)' }}>
+                <span style={{ color: '#16a34a' }}><Icon name="check" size={15} /></span>
+                <span>Connected to <strong style={{ color: 'var(--ink)' }}>{integration.store_name || integration.base_url}</strong>. Paste a new key to replace it.</span>
+              </div>
+            )}
+            <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--ink)' }}>API key</label>
+            <div className="flex gap-2 mb-3">
+              <input type={showKey ? 'text' : 'password'} value={apiKey} onChange={e => setApiKey(e.target.value)}
+                placeholder={integration ? '•••••••• (unchanged)' : 'Paste your Prexty API key'} className={inputCls + ' flex-1'} style={inputStyle} />
+              <button type="button" onClick={() => setShowKey(v => !v)} {...btn('secondary')} aria-label={showKey ? 'Hide key' : 'Show key'}>
+                <Icon name={showKey ? 'eyeOff' : 'eye'} size={15} />
               </button>
             </div>
-            {testMsg && <p className="text-xs mt-2" style={{ color: testMsg.startsWith('✓') ? '#16a34a' : '#b91c1c' }}>{testMsg}</p>}
-            <p className="text-xs mt-1" style={{ color: 'var(--slate)' }}>
-              Posts a synthetic order to the webhook above so you can watch one land end-to-end. Enter a real customer&rsquo;s email or phone to have it thread into their existing chat; leave blank to create a test conversation.
-            </p>
-          </div>
-        </div>
-      )}
+            <button type="button" onClick={() => setShowAdvanced(v => !v)} className="inline-flex items-center gap-1 text-xs font-semibold cursor-pointer" style={{ color: 'var(--slate)', background: 'none', border: 'none', padding: 0 }}>
+              <Icon name={showAdvanced ? 'chevronDown' : 'chevron'} size={13} /> Advanced
+            </button>
+            {showAdvanced && (
+              <div className="mt-3">
+                <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--ink)' }}>API base URL</label>
+                <input type="text" value={baseUrl} onChange={e => setBaseUrl(e.target.value)} placeholder={DEFAULT_BASE} className={inputCls} style={inputStyle} />
+                <p className="text-xs mt-1" style={{ color: 'var(--slate)' }}>Only change this if your Prexty runs on a different address. Default: {DEFAULT_BASE}.</p>
+              </div>
+            )}
+            <div className="flex gap-2 mt-5 pt-5 border-t flex-wrap" style={{ borderColor: 'var(--border)' }}>
+              <button onClick={save} disabled={saving} {...btn('primary', 'md', 'flex-1')}>
+                {saving ? 'Testing…' : integration ? 'Test & save' : 'Connect Prexty'}
+              </button>
+              {integration && (
+                <button onClick={disconnect} disabled={saving} {...btn('danger')}><Icon name="unlink" size={14} /> Disconnect</button>
+              )}
+            </div>
+          </Card>
 
-      <div className="mt-6 p-4 rounded-xl text-sm" style={{ background: 'var(--canvas)', color: 'var(--slate)' }}>
-        <strong style={{ color: 'var(--ink)' }}>What's next:</strong> once connected, this verifies against Prexty's live <code>customers</code> API and shows each customer's spend in the chat. Paste the <strong>order webhook URL</strong> above into Prexty to have new orders land in the conversation automatically (matched by email/phone, with the outlet shown).
+          <Card icon="info" title="How it works">
+            <ul className="space-y-2.5 text-sm" style={{ color: 'var(--slate)', margin: 0, padding: 0, listStyle: 'none' }}>
+              {[
+                'Colvy checks the key against Prexty’s live customers API.',
+                'Each customer’s spend and order history show in their chat.',
+                'Add the order webhook to Prexty and new orders land in the right conversation, matched by email or phone, with the outlet shown.',
+              ].map((t, i) => (
+                <li key={i} className="flex gap-2.5"><span className="mt-0.5" style={{ color: 'var(--coral)' }}><Icon name="check" size={15} /></span><span>{t}</span></li>
+              ))}
+            </ul>
+          </Card>
+        </div>
+
+        {integration && webhookUrl ? (
+          <Card icon="webhook" title="Order webhook URL"
+            sub={<>Give this to Prexty (or your developer). Prexty should <strong style={{ color: 'var(--ink)' }}>POST</strong> each <code>order.*</code> and <code>customer.*</code> event here, and Colvy matches them by email or phone, just like WooCommerce.</>}>
+            <div className="flex gap-2">
+              <input readOnly value={webhookUrl} onFocus={e => e.currentTarget.select()} className={inputCls + ' flex-1 font-mono'} style={{ ...inputStyle, fontSize: 12.5, background: 'var(--canvas, #f8f8fa)' }} />
+              <button type="button" onClick={() => { navigator.clipboard?.writeText(webhookUrl).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500) }) }} {...btn('secondary')}>
+                <Icon name={copied ? 'check' : 'copy'} size={14} /> {copied ? 'Copied' : 'Copy'}
+              </button>
+            </div>
+            <p className="flex items-start gap-1.5 text-xs mt-2" style={{ color: 'var(--slate)' }}>
+              <span className="mt-px"><Icon name="lock" size={12} /></span>
+              <span>This address contains a secret token, so treat it like a password. Prexty can also send the <code>X-Prexty</code> key on each call instead.</span>
+            </p>
+
+            <div className="mt-5 pt-5 border-t" style={{ borderColor: 'var(--border)' }}>
+              <label className="block text-sm font-semibold mb-1" style={{ color: 'var(--ink)' }}>Send a test order</label>
+              <p className="text-xs mb-2.5" style={{ color: 'var(--slate)' }}>Posts a sample order to the webhook so you can watch it arrive. Enter a real customer&rsquo;s email or phone to add it to their chat, or leave it blank for a test conversation.</p>
+              <div className="flex gap-2 flex-wrap sm:flex-nowrap">
+                <input value={testTarget} onChange={e => setTestTarget(e.target.value)} placeholder="Customer email or phone (optional)" className={inputCls + ' flex-1 min-w-0'} style={inputStyle} />
+                <button type="button" onClick={sendTestOrder} disabled={testBusy} {...btn('primary', 'md', 'whitespace-nowrap')}>
+                  <Icon name="send" size={14} /> {testBusy ? 'Sending…' : 'Send test order'}
+                </button>
+              </div>
+              {testMsg && <p className="text-xs mt-2" style={{ color: testOk ? '#15803d' : '#b42318' }}>{testMsg}</p>}
+            </div>
+          </Card>
+        ) : (
+          <Card icon="webhook" title="Order webhook URL">
+            <p className="text-sm" style={{ color: 'var(--slate)', margin: 0 }}>Connect Prexty first. Then this shows the address to give Prexty so new orders land in the inbox automatically.</p>
+          </Card>
+        )}
       </div>
-    </div>
+    </IntegrationPage>
   )
 }

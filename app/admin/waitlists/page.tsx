@@ -7,6 +7,8 @@ import { resolveCompanyUser } from '@/lib/client-cache'
 import PageHeader from '@/components/PageHeader'
 import { SkeletonList } from '@/components/Skeleton'
 import WaitlistAddModal from '@/components/WaitlistAddModal'
+import { confirmDialog } from '@/components/ConfirmDialog'
+import { BellIcon, GearIcon, PlusIcon, ChatIcon, TagIcon, XIcon } from '@/components/booking/icons'
 
 // Back-in-stock waitlists. Customers who asked for something that's out of
 // stock are grouped by item; when it's back, everyone waiting gets one SMS —
@@ -45,6 +47,11 @@ export default function WaitlistsPage() {
   const [tab, setTab] = useState<'waiting' | 'notified' | 'all'>('waiting')
   const [search, setSearch] = useState('')
   const [open, setOpen] = useState<Record<string, boolean>>({})
+
+  // Opening Waitlists clears the side-menu "new sign-ups" badge.
+  useEffect(() => {
+    try { localStorage.setItem('colvy-waitlist-seen-at', new Date().toISOString()); window.dispatchEvent(new Event('waitlist-seen')) } catch {}
+  }, [])
   const [busy, setBusy] = useState('')
   const [toast, setToast] = useState('')
   const [showAdd, setShowAdd] = useState(false)
@@ -117,7 +124,7 @@ export default function WaitlistsPage() {
   const notifyGroup = async (g: any) => {
     const ids = g.entries.filter((e: any) => e.status === 'waiting' || e.status === 'queued').map((e: any) => e.id)
     if (!ids.length) return
-    if (!confirm(`Text ${ids.length} customer${ids.length === 1 ? '' : 's'} that ${g.name} is back in stock?`)) return
+    if (!await confirmDialog({ title: `Text ${ids.length} customer${ids.length === 1 ? '' : 's'}?`, message: `They'll get an SMS that ${g.name} is back in stock.`, confirmLabel: ids.length === 1 ? 'Send text' : `Send ${ids.length} texts`, tone: 'primary' })) return
     setBusy(g.key)
     try {
       const res = await fetch('/api/waitlist/notify', { method: 'POST', headers: await authHeaders(), body: JSON.stringify({ companyId, ids }) })
@@ -132,7 +139,7 @@ export default function WaitlistsPage() {
   }
 
   const removeEntry = async (e: any) => {
-    if (!confirm(`Remove ${e.customer_name || e.phone || 'this customer'} from the ${e.item_name} waitlist?`)) return
+    if (!await confirmDialog({ title: 'Remove from waitlist?', message: `${e.customer_name || e.phone || 'This customer'} won't be told when ${e.item_name} is back.`, confirmLabel: 'Remove', tone: 'danger' })) return
     setBusy(e.id)
     try {
       const res = await fetch('/api/waitlist', { method: 'PATCH', headers: await authHeaders(), body: JSON.stringify({ companyId, id: e.id, action: 'cancel' }) })
@@ -160,8 +167,8 @@ export default function WaitlistsPage() {
         bleed={24}
         action={
           <>
-            <button onClick={() => setShowSettings(s => !s)} style={btnGhost}>⚙ Settings</button>
-            <button onClick={() => setShowAdd(true)} disabled={!!setupMsg} style={btnPrimary}>+ Add to waitlist</button>
+            <button onClick={() => setShowSettings(s => !s)} style={{ ...btnGhost, display: 'inline-flex', alignItems: 'center', gap: 6 }}><GearIcon size={15} /> Settings</button>
+            <button onClick={() => setShowAdd(true)} disabled={!!setupMsg} style={{ ...btnPrimary, display: 'inline-flex', alignItems: 'center', gap: 6 }}><PlusIcon size={15} strokeWidth={2.4} /> Add to waitlist</button>
           </>
         }
       />
@@ -198,12 +205,12 @@ export default function WaitlistsPage() {
 
       {groups.length === 0 ? (
         <div style={{ ...card, textAlign: 'center', padding: '48px 20px' }}>
-          <div style={{ fontSize: 34, marginBottom: 8 }}>🔔</div>
+          <div style={{ width: 54, height: 54, borderRadius: 17, background: 'var(--peach, #fff1ee)', color: 'var(--coral, #ff7a6b)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}><BellIcon size={26} /></div>
           <p style={{ margin: '0 0 6px', fontWeight: 800, fontSize: 16, color: 'var(--ink)' }}>{tab === 'waiting' ? 'Nobody is waiting right now' : 'Nothing here yet'}</p>
           <p style={{ margin: '0 auto 16px', fontSize: 13.5, color: 'var(--slate)', maxWidth: 440, lineHeight: 1.55 }}>
             When a customer asks for something that's out of stock, add them here (or with <b>Waitlist</b> on their conversation). The moment it's back, they get a text.
           </p>
-          {!setupMsg && <button onClick={() => setShowAdd(true)} style={btnPrimary}>+ Add to waitlist</button>}
+          {!setupMsg && <button onClick={() => setShowAdd(true)} style={{ ...btnPrimary, display: 'inline-flex', alignItems: 'center', gap: 6 }}><PlusIcon size={15} strokeWidth={2.4} /> Add to waitlist</button>}
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -216,7 +223,7 @@ export default function WaitlistsPage() {
                   <button onClick={() => setOpen(o => ({ ...o, [g.key]: !isOpen }))} style={{ display: 'flex', alignItems: 'center', gap: 14, flex: '1 1 260px', minWidth: 0, background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left' }}>
                     {g.image
                       ? <img src={g.image} alt="" style={{ width: 48, height: 48, borderRadius: 10, objectFit: 'cover', border: '1px solid var(--border)', flexShrink: 0 }} />
-                      : <div style={{ width: 48, height: 48, borderRadius: 10, background: 'var(--peach)', color: 'var(--coral)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>🐠</div>}
+                      : <div style={{ width: 48, height: 48, borderRadius: 10, background: 'var(--peach)', color: 'var(--coral)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}><TagIcon size={22} /></div>}
                     <div style={{ minWidth: 0 }}>
                       <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{g.name}</div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4, flexWrap: 'wrap' }}>
@@ -246,12 +253,12 @@ export default function WaitlistsPage() {
                             {e.status === 'failed' && e.error && <div style={{ fontSize: 12, color: '#dc2626', marginTop: 2 }}>{e.error}</div>}
                           </div>
                           <span style={{ fontSize: 12, color: 'var(--slate)', whiteSpace: 'nowrap' }}>
-                            {e.status === 'notified' && e.notified_at ? `Texted ${fmtDate(e.notified_at)}` : `Added ${fmtDate(e.created_at)}`}{e.source === 'inbox' ? ' · from inbox' : ''}
+                            {e.status === 'notified' && e.notified_at ? `${e.notified_via === 'email' ? 'Emailed' : 'Texted'} ${fmtDate(e.notified_at)}` : `Added ${fmtDate(e.created_at)}`}{e.source === 'inbox' ? ' · from inbox' : e.source === 'website' ? ' · from website' : ''}
                           </span>
                           <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 999, background: pill.bg, color: pill.c, whiteSpace: 'nowrap' }}>{pill.label}</span>
-                          {e.conversation_id && <a href={`/admin/inbox?conversation=${e.conversation_id}`} title="Open conversation" style={{ ...iconBtn, textDecoration: 'none' }}>💬</a>}
+                          {e.conversation_id && <a href={`/admin/inbox?conversation=${e.conversation_id}`} title="Open conversation" style={{ ...iconBtn, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: 'var(--slate, #6b7280)' }}><ChatIcon size={15} /></a>}
                           {['waiting', 'queued', 'failed'].includes(e.status) && (
-                            <button onClick={() => removeEntry(e)} disabled={busy === e.id} title="Remove from waitlist" style={iconBtn}>✕</button>
+                            <button onClick={() => removeEntry(e)} disabled={busy === e.id} title="Remove from waitlist" style={{ ...iconBtn, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><XIcon size={13} /></button>
                           )}
                         </div>
                       )

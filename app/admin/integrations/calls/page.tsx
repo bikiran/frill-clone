@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import RegulatoryForm from '@/components/RegulatoryForm'
+import Link from 'next/link'
+import { Icon } from '@/components/integrations/ui'
 
 export default function TelnyxIntegration() {
   const [companyId, setCompanyId] = useState<string | null>(null)
@@ -128,7 +130,7 @@ export default function TelnyxIntegration() {
               const r2 = await fetch(`/api/${provParam}/setup?companyId=${cid}`)
               const s2 = await r2.json()
               if (s2.integration) setIntegration(s2.integration)
-              setSuccess(`🎉 Your business number ${d.phoneNumber} is live!`)
+              setSuccess(`Your business number ${d.phoneNumber} is live.`)
               return
             }
             if (res.status === 202 && tries < 12) { setTimeout(attempt, 3000); return } // payment still settling
@@ -260,14 +262,10 @@ export default function TelnyxIntegration() {
   const hasNumber = integration?.phone_number
 
   return (
-    <div style={{ maxWidth: 640, margin: '0 auto', padding: '28px 24px', fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif' }}>
-      {/* This page renders outside the Integrations sub-nav, so give people a way
-          back rather than relying on the browser's back button. */}
-      <button
-        onClick={() => { const s = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('slug') : null; window.location.href = `/admin/integrations${s ? `?slug=${encodeURIComponent(s)}` : ''}` }}
-        style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginBottom: 18, padding: '6px 10px', borderRadius: 8, border: '1px solid var(--border)', background: '#fff', color: 'var(--slate)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-        ← Back to Integrations
-      </button>
+    <div className="w-full max-w-[1200px] mx-auto px-4 md:px-8 py-6 md:py-8">
+      <Link href="/admin/integrations" className="inline-flex items-center gap-1.5 text-sm mb-5 hover:opacity-70 transition-opacity" style={{ color: 'var(--slate)' }}>
+        <Icon name="back" size={15} /> All integrations
+      </Link>
       {showRegForm && companyId && (
         <RegulatoryForm
           companyId={companyId}
@@ -284,12 +282,12 @@ export default function TelnyxIntegration() {
         />
       )}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
-        <div style={{ width: 44, height: 44, borderRadius: 10, background: '#00c08b', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 800, fontSize: 22 }}>📞</div>
+        <img src="/logos/calls.svg" alt="" width={48} height={48} style={{ width: 48, height: 48, flexShrink: 0 }} />
         <div>
           <h1 style={{ fontSize: 22, fontWeight: 800, color: 'var(--ink)', margin: 0 }}>Calls & SMS</h1>
           <p style={{ fontSize: 13.5, color: 'var(--slate)', margin: '2px 0 0' }}>Call customers from your browser and text them from the inbox.</p>
         </div>
-        {hasNumber && <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 700, background: '#dcfce7', color: '#059669', padding: '4px 12px', borderRadius: 20 }}>● Active</span>}
+        {hasNumber && <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, fontWeight: 600, background: '#dcfce7', color: '#15803d', padding: '3px 10px', borderRadius: 20 }}><Icon name="check" size={12} /> Active</span>}
       </div>
 
       {error && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 10, padding: '11px 15px', margin: '16px 0', fontSize: 13, color: '#dc2626' }}>{error}</div>}
@@ -311,7 +309,7 @@ export default function TelnyxIntegration() {
                 </p>
               </div>
               <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
-                <button onClick={checkCalling} disabled={callBusy}
+                <button onClick={checkCalling} disabled={!!callBusy}
                   style={{ padding: '8px 14px', borderRadius: 9, border: '1px solid var(--border)', background: '#fff', color: 'var(--ink)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
                   {callBusy === 'check' ? 'Checking…' : 'Check'}
                 </button>
@@ -350,8 +348,8 @@ export default function TelnyxIntegration() {
                       {n.number_type === 'mobile' && <span style={{ fontSize: 10, fontWeight: 700, background: '#eef2ff', color: '#4f46e5', padding: '2px 8px', borderRadius: 20 }}>MOBILE</span>}
                     </div>
                     <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', fontSize: 12, color: 'var(--slate)', marginTop: 6 }}>
-                      <span>✓ Calls & SMS</span>
-                      {n.provisioned_by_colvy && <span>💳 ${n.monthly_cost || 15}/mo</span>}
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><Icon name="check" size={12} /> Calls & SMS</span>
+                      {n.provisioned_by_colvy && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><Icon name="card" size={12} /> ${n.monthly_cost || 15}/mo</span>}
                     </div>
                   </div>
                   {!n.is_primary && n.id !== 'legacy' && (
@@ -362,7 +360,7 @@ export default function TelnyxIntegration() {
                 {/* Location assignment (only if the company has locations) */}
                 {locations.length > 0 && n.id !== 'legacy' && (
                   <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <span style={{ fontSize: 12.5, color: 'var(--slate)' }}>📍 Location:</span>
+                    <span style={{ fontSize: 12.5, color: 'var(--slate)', display: 'inline-flex', alignItems: 'center', gap: 4 }}><Icon name="pin" size={13} /> Location:</span>
                     <select value={n.location_id || ''} onChange={e => assignNumberToLocation(n.id, e.target.value)}
                       style={{ flex: 1, maxWidth: 260, padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 13, background: '#fff' }}>
                       <option value="">Unassigned (company-wide)</option>
@@ -378,14 +376,14 @@ export default function TelnyxIntegration() {
 
           {locations.length === 0 && numbers.length > 0 && (
             <p style={{ margin: '14px 0 0', fontSize: 12.5, color: 'var(--slate)' }}>
-              💡 Add <a href="/admin/locations" style={{ color: 'var(--coral)', fontWeight: 600 }}>business locations</a> to assign specific numbers to each.
+              <Icon name="info" size={13} style={{ verticalAlign: '-2px', marginRight: 4 }} />Add <a href="/admin/locations" style={{ color: 'var(--coral)', fontWeight: 600 }}>business locations</a> to assign specific numbers to each.
             </p>
           )}
         </div>
       ) : (
         <div style={{ border: '2px solid var(--coral)', borderRadius: 16, padding: 24, background: 'linear-gradient(135deg, #fff9f8, #fff)' }}>
           {addingNumber && (
-            <button onClick={() => setAddingNumber(false)} style={{ background: 'none', border: 'none', color: 'var(--slate)', fontSize: 13, cursor: 'pointer', marginBottom: 12, padding: 0 }}>← Back to my numbers</button>
+            <button onClick={() => setAddingNumber(false)} style={{ background: 'none', border: 'none', color: 'var(--slate)', fontSize: 13, cursor: 'pointer', marginBottom: 12, padding: 0 }}>Back to my numbers</button>
           )}
           <h2 style={{ margin: '0 0 6px', fontSize: 18, fontWeight: 800, color: 'var(--ink)' }}>{addingNumber ? 'Add another number' : 'Get a business number'}</h2>
           <p style={{ margin: '0 0 20px', fontSize: 14, color: 'var(--slate)', lineHeight: 1.5 }}>
@@ -484,7 +482,7 @@ export default function TelnyxIntegration() {
                   </div>
                 ))}
               </div>
-              <button onClick={() => setAvailable([])} style={{ marginTop: 10, fontSize: 12.5, color: 'var(--slate)', background: 'none', border: 'none', cursor: 'pointer' }}>← Back</button>
+              <button onClick={() => setAvailable([])} style={{ marginTop: 10, fontSize: 12.5, color: 'var(--slate)', background: 'none', border: 'none', cursor: 'pointer' }}>Back</button>
             </div>
           )}
         </div>
@@ -509,7 +507,7 @@ export default function TelnyxIntegration() {
           carrier this board is routed through. Hidden from all customers. */}
       {isSuperAdmin && (
         <div style={{ marginTop: 20, display: 'inline-flex', alignItems: 'center', gap: 7, padding: '5px 11px', borderRadius: 20, background: numProvider === 'twilio' ? '#eef2ff' : '#ecfeff', border: `1px solid ${numProvider === 'twilio' ? '#c7d2fe' : '#a5f3fc'}`, fontSize: 11.5, fontWeight: 700, color: numProvider === 'twilio' ? '#4338ca' : '#0e7490' }}>
-          <span style={{ opacity: 0.7 }}>🔒 internal</span>
+          <span style={{ opacity: 0.7, display: 'inline-flex', alignItems: 'center', gap: 3 }}><Icon name="lock" size={11} /> internal</span>
           carrier: {numProvider === 'twilio' ? 'Twilio' : 'Telnyx'}
         </div>
       )}

@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { SkeletonList } from '@/components/Skeleton'
+import { confirmDialog } from '@/components/ConfirmDialog'
 
 const TYPES = [
   ['promotion', 'Promotion'], ['new_arrivals', 'New arrivals'], ['product_launch', 'Product launch'],
@@ -77,7 +78,7 @@ export default function CampaignTemplatesPage() {
   }
 
   const remove = async (id: string) => {
-    if (!confirm('Delete this template?')) return
+    if (!await confirmDialog('Delete this template?')) return
     await (supabase as any).from('campaign_templates').delete().eq('id', id)
     setTemplates(t => t.filter(x => x.id !== id))
   }

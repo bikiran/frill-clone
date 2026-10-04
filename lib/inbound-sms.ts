@@ -10,6 +10,7 @@ import { notifyCompany } from './notify'
 import { runKeywordReply } from './keyword-reply'
 import { resolveSmsSender } from './sms-provider'
 import { handleBookingSmsReply } from './booking-replies'
+import { emitInboundEvent } from '@/lib/integration-hooks'
 
 export interface InboundAttachment {
   url: string
@@ -150,6 +151,7 @@ export async function ingestInboundSms(params: {
     delivery_channel: 'sms',
     telnyx_message_id: params.providerMessageId || null,
   }).select('id').maybeSingle()
+  await emitInboundEvent(db, { companyId, conversationId: conv.id, text, channel: 'sms', phone: from, messageId: insertedMsg?.id || null })
   await db.from('conversations').update({
     last_message: summary, last_message_at: new Date().toISOString(),
     is_unread: true, channel: 'sms', status: 'open',
@@ -187,15 +189,22 @@ export async function ingestInboundSms(params: {
   try { bookingHandled = await handleBookingSmsReply({ db, companyId, conversationId: conv.id, from, text, origin }) } catch {}
 
   // Keyword auto-reply — texted back over whichever provider owns this company.
+  let keywordAnswered = false
   if (!bookingHandled) try {
-    await runKeywordReply({
+    keywordAnswered = !!(await runKeywordReply({
       conversationId: conv.id, text, companyId, channel: 'sms',
       deliver: async (reply) => {
         const sender = await resolveSmsSender(db, companyId)
         if (sender) await sender.send({ to: from, text: reply })
       },
-    })
+    }))?.matched
   } catch (e) { console.error('[inbound-sms keyword reply]', e) }
+
+  // Nothing canned answered it → Colvy AI (only if the business switched AI on
+  // for SMS; the agent checks). It shows live in the inbox with a countdown.
+  if (!bookingHandled && !keywordAnswered && text) {
+    try { fetch(`${origin}/api/ai/reply`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ conversationId: conv.id, companyId }) }) } catch {}
+  }
 
   // Failed-media hint auto-reply (only fires when a media attempt truly failed;
   // on Twilio, MMS usually arrives, so this rarely triggers). Throttled 6h.
@@ -215,7 +224,8 @@ export async function ingestInboundSms(params: {
           }),
         })
         const mrData = await mr.json().catch(() => ({}))
-        if (mr.ok && mrData.link) {
+        // The request route already texts the link when it can; don't send it twice.
+        if (mr.ok && mrData.link && !mrData.texted) {
           const sender = await resolveSmsSender(db, companyId)
           if (sender) await sender.send({ to: from, text: `It looks like you tried to send a photo — please upload it here: ${mrData.link}` })
         }

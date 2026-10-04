@@ -3,13 +3,9 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter, useSearchParams } from 'next/navigation'
-
-const WooLogo = ({ size = 40 }: { size?: number }) => (
-  <svg width={size} height={size} viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg" style={{ borderRadius: 10, flexShrink: 0 }}>
-    <rect width="256" height="256" rx="48" fill="#7f54b3" />
-    <path fill="#fff" d="M37 86c3.5-8 11-13 20-13 13 0 20 9 22 25 3 22 5 39 7 55 6-12 12-25 17-38 6-14 10-27 12-36 2-8 7-13 15-13 10 0 17 6 18 16 1 6 3 18 6 33 2 14 5 26 7 37 3-17 7-35 12-55 4-16 8-26 12-31 4-4 9-6 15-6 6 1 11 3 14 8 3 4 4 9 3 15 0 4-2 10-4 18-6 22-12 44-17 66-3 13-6 22-9 28-4 7-9 10-16 10-6 0-11-3-14-8-2-4-4-10-6-19-3-16-6-32-9-49-8 18-15 33-21 45-7 15-12 24-16 27-4 4-9 5-14 4-6-1-10-5-12-11-2-5-4-14-6-27-3-22-6-44-8-66-1-6 0-11 2-15z"/>
-  </svg>
-)
+import { confirmDialog } from '@/components/ConfirmDialog'
+import { useIntegrations } from '@/components/integrations/IntegrationsShell'
+import { IntegrationPage, IntegrationHeader, Card, Notice, Icon, btn, inputCls, inputStyle } from '@/components/integrations/ui'
 
 export default function WooCommerceIntegration() {
   const router = useRouter()
@@ -64,103 +60,37 @@ export default function WooCommerceIntegration() {
   const [addingStore, setAddingStore] = useState(false)
   const [editing, setEditing] = useState(false)
 
+  const { companyId: shellCompanyId, ready: shellReady, setActive } = useIntegrations()
   useEffect(() => {
+    if (!shellReady) return
     const init = async () => {
+      const cid = shellCompanyId
+      if (!cid) { setError('Company not found. Please sign in and try again.'); setLoading(false); return }
       try {
-        // Use the imported Supabase client directly.
-        const sb = supabase as any
-
-        let companyId: string | null = null
-        let companySlug = slug
-
-        // Strategy 1: slug from the ?slug= query param
-        if (companySlug) {
-          const { data: company } = await sb
-            .from('companies')
-            .select('id')
-            .eq('slug', companySlug)
-            .maybeSingle()
-
-          if (company) {
-            companyId = company.id
-          }
-        }
-
-        // Strategy 2: slug from the hostname (e.g. funnynepal.colvy.com)
-        if (!companyId && typeof window !== 'undefined') {
-          const h = window.location.hostname
-          if (h.endsWith('.colvy.com') && h !== 'colvy.com' && h !== 'www.colvy.com') {
-            const hostSlug = h.replace('.colvy.com', '')
-            const { data: coByHost } = await sb
-              .from('companies')
-              .select('id')
-              .eq('slug', hostSlug)
-              .maybeSingle()
-            if (coByHost) companyId = coByHost.id
-          }
-        }
-
-        // Strategy 3: the signed-in user's own company (owner_id)
-        if (!companyId) {
-          const { data: { session } } = await sb.auth.getSession()
-
-          if (session?.user) {
-            const { data: ownCo } = await sb
-              .from('companies')
-              .select('id')
-              .eq('owner_id', session.user.id)
-              .maybeSingle()
-            if (ownCo?.id) {
-              companyId = ownCo.id
-            } else {
-              // Strategy 4: team membership — array query with .length check,
-              // never .single() (throws when the user has no membership rows)
-              const { data: memberships } = await sb
-                .from('team_members')
-                .select('company_id')
-                .eq('user_id', session.user.id)
-                .limit(1)
-
-              if (memberships && memberships.length > 0 && memberships[0].company_id) {
-                companyId = memberships[0].company_id
-              }
-            }
-          }
-        }
-
-        if (!companyId) {
-          setError('Company not found. Please sign in and try again.')
-          setLoading(false)
-          return
-        }
-
-        setCompanyId(companyId)
-        setError('')  // Clear any previous errors
-        await fetchIntegration(companyId)
+        setCompanyId(cid)
+        setError('')
+        await fetchIntegration(cid)
         // If a background sync is already running, resume showing progress
         try {
-          const sres = await fetch(`/api/woocommerce/sync-status?companyId=${companyId}`)
+          const sres = await fetch(`/api/woocommerce/sync-status?companyId=${cid}`)
           const { job } = await sres.json()
-          if (job && job.status === 'running') { setSyncing(true); setSuccess(job.message || 'Syncing…'); pollSyncStatusFor(companyId) }
+          if (job && job.status === 'running') { setSyncing(true); setSuccess(job.message || 'Syncing…'); pollSyncStatusFor(cid) }
         } catch {}
-        // Done loading — this was missing, leaving the page stuck on
-        // "Loading WooCommerce integration..." forever on the success path
-        setLoading(false)
       } catch (err: any) {
-        console.error('Init error:', err)
         setError(err.message || 'Failed to load page')
-        setLoading(false)
       }
+      setLoading(false)
     }
-
     init()
-  }, [slug])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shellReady, shellCompanyId])
 
   const fetchIntegration = async (cid: string) => {
     try {
       const res = await fetch(`/api/woocommerce/setup?companyId=${cid}`)
       const result = await res.json()
       setStores(result.stores || [])
+      setActive('woocommerce', (result.stores || []).some((x: any) => x.is_active !== false))
       if (result.data) {
         setIntegration(result.data)
         // Pre-populate form fields for editing
@@ -278,7 +208,7 @@ export default function WooCommerceIntegration() {
           setSuccess(job.message || 'Syncing…')
           setTimeout(tick, 3000)
         } else if (job.status === 'completed') {
-          setSuccess(`✓ ${job.message || 'Sync complete'}`)
+          setSuccess(job.message || 'Sync complete')
           setSyncing(false)
           await fetchIntegration(cid)
         } else if (job.status === 'failed') {
@@ -294,7 +224,7 @@ export default function WooCommerceIntegration() {
   }
 
   const disconnectStore = async (integrationId: string) => {
-    if (!confirm('Remove this store? Its synced customers stay, but it will stop syncing.')) return
+    if (!await confirmDialog('Remove this store? Its synced customers stay, but it will stop syncing.')) return
     try {
       await fetch('/api/woocommerce/setup', {
         method: 'DELETE', headers: { 'Content-Type': 'application/json' },
@@ -307,7 +237,7 @@ export default function WooCommerceIntegration() {
   }
 
   const handleDisconnect = async () => {
-    if (!confirm('Are you sure you want to disconnect WooCommerce?')) return
+    if (!await confirmDialog('Are you sure you want to disconnect WooCommerce?')) return
 
     try {
       const res = await fetch('/api/woocommerce/setup', {
@@ -318,7 +248,7 @@ export default function WooCommerceIntegration() {
 
       if (res.ok) {
         setSuccess('Disconnected from WooCommerce')
-        setIntegration(null)
+        setIntegration(null); setStores([]); setActive('woocommerce', false)
       } else {
         setError('Failed to disconnect')
       }
@@ -327,378 +257,123 @@ export default function WooCommerceIntegration() {
     }
   }
 
+  const storeName = (st: any) => st.store_name || (() => { try { return new URL(st.store_url).hostname.replace(/^www\./, '') } catch { return st.store_url } })()
+  const showForm = stores.length === 0 || editing || addingStore
+
   if (loading) {
     return (
-      <div style={{ padding: '24px', display: 'flex', alignItems: 'center', gap: 12, color: '#666' }}>
-        <WooLogo size={32} />
-        Loading WooCommerce integration...
-      </div>
-    )
-  }
-
-  if (!companyId && error) {
-    return (
-      <div style={{ maxWidth: '800px', margin: '0 auto', padding: '24px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: '8px' }}>
-          <WooLogo size={36} />
-          <h1 style={{ fontSize: '24px', fontWeight: 700, color: 'var(--ink)' }}>
-            WooCommerce Integration
-          </h1>
-        </div>
-        <div style={{
-          padding: '16px',
-          borderRadius: '8px',
-          background: '#fee2e2',
-          color: '#991b1b',
-          fontSize: '13px'
-        }}>
-          {error}
-        </div>
-      </div>
+      <IntegrationPage>
+        <IntegrationHeader id="woocommerce" title="WooCommerce" />
+        <div className="bg-white rounded-2xl border p-6 text-sm" style={{ borderColor: 'var(--border)', color: 'var(--slate)' }}>Loading your stores…</div>
+      </IntegrationPage>
     )
   }
 
   return (
-    <div style={{ maxWidth: '800px', margin: '0 auto', padding: '24px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: '8px' }}>
-        <WooLogo size={44} />
-        <div>
-          <h1 style={{ fontSize: '24px', fontWeight: 700, color: 'var(--ink)', lineHeight: 1.2 }}>
-            WooCommerce Integration
-          </h1>
-          <p style={{ color: '#666', fontSize: '14px', marginTop: 2 }}>
-            Connect your WooCommerce store to sync customer data, orders, and purchase history.
-          </p>
-        </div>
-      </div>
-      <div style={{ marginBottom: '24px' }} />
+    <IntegrationPage>
+      <IntegrationHeader id="woocommerce" title="WooCommerce" connected={stores.length > 0}
+        desc="Sync your store's customers, orders and products into Colvy, and open a chat for every new order." />
 
-      {error && (
-        <div style={{
-          padding: '12px 16px',
-          borderRadius: '8px',
-          background: '#fee2e2',
-          color: '#991b1b',
-          marginBottom: '16px',
-          fontSize: '13px'
-        }}>
-          {error}
-        </div>
-      )}
+      {error && <Notice tone="error">{error}</Notice>}
+      {success && <Notice tone="success">{success}</Notice>}
 
-      {success && (
-        <div style={{
-          padding: '12px 16px',
-          borderRadius: '8px',
-          background: '#dcfce7',
-          color: '#166534',
-          marginBottom: '16px',
-          fontSize: '13px'
-        }}>
-          ✓ {success}
-        </div>
-      )}
-
-      {(stores.length === 0 || editing || addingStore) ? (
-        <form onSubmit={handleConfigure} style={{
-          borderRadius: '12px',
-          border: '1px solid var(--border)',
-          padding: '24px',
-          background: '#fff'
-        }}>
-          {addingStore && (
-            <button type="button" onClick={() => { setAddingStore(false); setStoreUrl(''); setEditing(false) }}
-              style={{ background: 'none', border: 'none', color: 'var(--slate)', fontSize: 13, cursor: 'pointer', marginBottom: 12, padding: 0 }}>
-              ← Back to my stores
-            </button>
-          )}
-          <h2 style={{ fontSize: '16px', fontWeight: 600, marginBottom: '16px', color: 'var(--ink)' }}>
-            {editing ? 'Update store' : addingStore ? 'Add another store' : 'Configure WooCommerce'}
-          </h2>
-
-          <div style={{ marginBottom: '16px' }}>
-            <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '8px', color: 'var(--ink)' }}>
-              Store URL
-            </label>
-            <input
-              type="url"
-              value={storeUrl}
-              onChange={e => setStoreUrl(e.target.value)}
-              placeholder="https://mystore.com"
-              required
-              style={{
-                width: '100%',
-                padding: '10px 12px',
-                borderRadius: '8px',
-                border: '1px solid var(--border)',
-                fontSize: '14px',
-                fontFamily: 'inherit'
-              }}
-            />
-            <p style={{ fontSize: '12px', color: '#666', marginTop: '4px' }}>
-              Your WooCommerce store URL (without trailing slash)
-            </p>
-          </div>
-
-          <div style={{ marginBottom: '16px' }}>
-            <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '8px', color: 'var(--ink)' }}>
-              Consumer Key {editing ? '(optional)' : ''}
-            </label>
-            <input
-              type={showSecrets ? 'text' : 'password'}
-              value={consumerKey}
-              onChange={e => setConsumerKey(e.target.value)}
-              placeholder="ck_..."
-              required={!editing}
-              style={{
-                width: '100%',
-                padding: '10px 12px',
-                borderRadius: '8px',
-                border: '1px solid var(--border)',
-                fontSize: '14px',
-                fontFamily: 'monospace'
-              }}
-            />
-            {editing && (
-              <p style={{ fontSize: '11px', color: '#666', marginTop: '4px' }}>
-                Leave blank to keep existing value
-              </p>
-            )}
-          </div>
-
-          <div style={{ marginBottom: '16px' }}>
-            <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '8px', color: 'var(--ink)' }}>
-              Consumer Secret {editing ? '(optional)' : ''}
-            </label>
-            <input
-              type={showSecrets ? 'text' : 'password'}
-              value={consumerSecret}
-              onChange={e => setConsumerSecret(e.target.value)}
-              placeholder="cs_..."
-              required={!editing}
-              style={{
-                width: '100%',
-                padding: '10px 12px',
-                borderRadius: '8px',
-                border: '1px solid var(--border)',
-                fontSize: '14px',
-                fontFamily: 'monospace'
-              }}
-            />
-            {editing && (
-              <p style={{ fontSize: '11px', color: '#666', marginTop: '4px' }}>
-                Leave blank to keep existing value
-              </p>
-            )}
-          </div>
-
-          <label style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            fontSize: '13px',
-            marginBottom: '24px',
-            cursor: 'pointer'
-          }}>
-            <input
-              type="checkbox"
-              checked={showSecrets}
-              onChange={e => setShowSecrets(e.target.checked)}
-              style={{ cursor: 'pointer' }}
-            />
-            Show API keys
-          </label>
-
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <button
-              type="submit"
-              disabled={configuring}
-              style={{
-                flex: 1,
-                padding: '10px 16px',
-                borderRadius: '8px',
-                border: 'none',
-                background: 'var(--coral)',
-                color: '#fff',
-                fontSize: '13px',
-                fontWeight: 600,
-                cursor: configuring ? 'default' : 'pointer',
-                opacity: configuring ? 0.6 : 1
-              }}
-            >
-              {configuring ? 'Configuring...' : editing ? 'Update Configuration' : 'Connect WooCommerce'}
-            </button>
-            {editing && (
-              <button
-                type="button"
-                onClick={() => {
-                  setEditing(false)
-                  setStoreUrl(integration.store_url || '')
-                  setConsumerKey('')
-                  setConsumerSecret('')
-                }}
-                style={{
-                  padding: '10px 16px',
-                  borderRadius: '8px',
-                  border: '1px solid var(--border)',
-                  background: '#fff',
-                  color: 'var(--slate)',
-                  fontSize: '13px',
-                  fontWeight: 600,
-                  cursor: 'pointer'
-                }}
-              >
-                Cancel
-              </button>
-            )}
-          </div>
-
-          <p style={{ fontSize: '12px', color: '#999', marginTop: '16px', lineHeight: 1.5 }}>
-            💡 Get your API keys from WooCommerce: Settings → Advanced → REST API
-          </p>
-        </form>
-      ) : (
-        <div style={{
-          borderRadius: '12px',
-          border: '1px solid var(--border)',
-          padding: '24px',
-          background: 'var(--peach)'
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
-            <h2 style={{ fontSize: '16px', fontWeight: 600, margin: 0, color: 'var(--ink)' }}>
-              ✓ Connected {stores.length > 1 ? `— ${stores.length} stores` : 'to WooCommerce'}
-            </h2>
-            <button type="button" onClick={() => { setAddingStore(true); setStoreUrl(''); setEditing(false) }}
-              style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid var(--coral)', background: '#fff', color: 'var(--coral)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
-              + Add another store
-            </button>
-          </div>
-
-          {/* All connected stores */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 16 }}>
-            {stores.map((s: any) => (
-              <div key={s.id} style={{ padding: '14px 16px', background: '#fff', borderRadius: 8, border: '1px solid var(--border)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+      {showForm ? (
+        <div className="grid gap-5 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] items-start">
+          <form onSubmit={handleConfigure}>
+            <Card icon="key" title={editing ? 'Update store connection' : addingStore ? 'Add another store' : 'Connect your store'}
+              sub={editing ? 'Leave a key blank to keep the one you saved.' : 'Paste your store address and REST API keys.'}
+              right={(addingStore || editing) ? (
+                <button type="button" onClick={() => { setAddingStore(false); setEditing(false); setStoreUrl(''); setConsumerKey(''); setConsumerSecret('') }} {...btn('secondary', 'sm')}>Cancel</button>
+              ) : undefined}>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--ink)' }}>Store URL</label>
+                  <input type="url" value={storeUrl} onChange={e => setStoreUrl(e.target.value)} placeholder="https://mystore.com" required className={inputCls} style={inputStyle} />
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
                   <div>
-                    <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: 'var(--ink)' }}>
-                      🛒 {s.store_name || (() => { try { return new URL(s.store_url).hostname.replace(/^www\./, '') } catch { return s.store_url } })()}
-                    </p>
-                    <p style={{ margin: '2px 0 0', fontSize: 12, color: '#888' }}>{s.store_url}</p>
-                    {s.last_synced_at && <p style={{ margin: '4px 0 0', fontSize: 11.5, color: '#999' }}>Last synced {new Date(s.last_synced_at).toLocaleString()}</p>}
+                    <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--ink)' }}>Consumer key{editing ? ' (optional)' : ''}</label>
+                    <input type={showSecrets ? 'text' : 'password'} value={consumerKey} onChange={e => setConsumerKey(e.target.value)} placeholder="ck_…" required={!editing} className={inputCls} style={{ ...inputStyle, fontFamily: 'ui-monospace, monospace' }} />
                   </div>
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    <button onClick={() => handleSync(false, s.id)} disabled={syncing}
-                      style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid var(--coral)', background: 'var(--peach)', color: 'var(--coral)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Sync</button>
-                    <button onClick={() => disconnectStore(s.id)}
-                      style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid #fecaca', background: '#fff', color: '#dc2626', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Remove</button>
+                  <div>
+                    <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--ink)' }}>Consumer secret{editing ? ' (optional)' : ''}</label>
+                    <input type={showSecrets ? 'text' : 'password'} value={consumerSecret} onChange={e => setConsumerSecret(e.target.value)} placeholder="cs_…" required={!editing} className={inputCls} style={{ ...inputStyle, fontFamily: 'ui-monospace, monospace' }} />
                   </div>
                 </div>
+                <button type="button" onClick={() => setShowSecrets(v => !v)} className="inline-flex items-center gap-1.5 text-xs font-semibold cursor-pointer" style={{ color: 'var(--slate)', background: 'none', border: 'none', padding: 0 }}>
+                  <Icon name={showSecrets ? 'eyeOff' : 'eye'} size={14} /> {showSecrets ? 'Hide keys' : 'Show keys'}
+                </button>
+                <button type="submit" disabled={configuring} {...btn('primary', 'md', 'w-full')}>
+                  {configuring ? 'Checking the store…' : editing ? 'Save changes' : 'Connect WooCommerce'}
+                </button>
               </div>
-            ))}
-          </div>
+            </Card>
+          </form>
+          <Card icon="info" title="Where to find your API keys">
+            <ol className="space-y-3 text-sm" style={{ color: 'var(--slate)', margin: 0, paddingLeft: 0, listStyle: 'none' }}>
+              {[
+                <>In WordPress, open <strong style={{ color: 'var(--ink)' }}>WooCommerce → Settings → Advanced → REST API</strong>.</>,
+                <>Click <strong style={{ color: 'var(--ink)' }}>Add key</strong>, name it “Colvy”, and set permissions to <strong style={{ color: 'var(--ink)' }}>Read/Write</strong>.</>,
+                <>Copy the <strong style={{ color: 'var(--ink)' }}>consumer key</strong> and <strong style={{ color: 'var(--ink)' }}>consumer secret</strong> into this form.</>,
+                <>After connecting, turn on <strong style={{ color: 'var(--ink)' }}>Order → chat</strong> so new orders open a conversation.</>,
+              ].map((t, i) => (
+                <li key={i} className="flex gap-3">
+                  <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0" style={{ background: 'var(--peach)', color: 'var(--coral)' }}>{i + 1}</span>
+                  <span className="pt-0.5">{t}</span>
+                </li>
+              ))}
+            </ol>
+          </Card>
+        </div>
+      ) : (
+        <div className="grid gap-5 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] items-start">
+          <Card icon="store" title={stores.length > 1 ? `Your stores (${stores.length})` : 'Your store'}
+            right={<button type="button" onClick={() => { setAddingStore(true); setStoreUrl(''); setEditing(false) }} {...btn('secondary', 'sm')}><Icon name="plus" size={14} /> Add store</button>}>
+            <div className="space-y-2.5">
+              {stores.map((st: any) => (
+                <div key={st.id} className="flex items-center gap-3 p-3 rounded-xl border flex-wrap sm:flex-nowrap" style={{ borderColor: 'var(--border)' }}>
+                  <img src="/logos/woocommerce.svg" alt="" width={36} height={36} style={{ width: 36, height: 36 }} className="shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold truncate" style={{ color: 'var(--ink)', margin: 0 }}>{storeName(st)}</p>
+                    <p className="text-xs truncate" style={{ color: 'var(--slate)', margin: '2px 0 0' }}>{st.store_url}</p>
+                    {st.last_synced_at && <p className="text-xs" style={{ color: 'var(--slate)', margin: '2px 0 0' }}>Last synced {new Date(st.last_synced_at).toLocaleString('en-AU', { dateStyle: 'medium', timeStyle: 'short' })}</p>}
+                  </div>
+                  <div className="flex gap-2 shrink-0">
+                    <button onClick={() => handleSync(false, st.id)} disabled={syncing} {...btn('secondary', 'sm')}><Icon name="sync" size={13} /> Sync</button>
+                    <button onClick={() => disconnectStore(st.id)} {...btn('danger', 'sm')} aria-label={`Remove ${storeName(st)}`} title="Remove store"><Icon name="trash" size={14} /></button>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-2 flex-wrap mt-4 pt-4 border-t" style={{ borderColor: 'var(--border)' }}>
+              <button onClick={() => { setEditing(true); setConsumerKey(''); setConsumerSecret('') }} {...btn('secondary')}><Icon name="edit" size={14} /> Edit connection</button>
+              <button onClick={handleDisconnect} {...btn('danger')}><Icon name="unlink" size={14} /> Disconnect</button>
+            </div>
+          </Card>
 
-          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-            <button
-              onClick={() => handleSync(false)}
-              disabled={syncing}
-              style={{
-                flex: 1,
-                minWidth: '120px',
-                padding: '10px 16px',
-                borderRadius: '8px',
-                border: '1px solid var(--coral)',
-                background: '#fff',
-                color: 'var(--coral)',
-                fontSize: '13px',
-                fontWeight: 600,
-                cursor: syncing ? 'default' : 'pointer',
-                opacity: syncing ? 0.6 : 1
-              }}
-            >
-              {syncing ? 'Syncing...' : '🔄 Full Sync'}
-            </button>
-
-            <button
-              onClick={() => handleSync(true)}
-              disabled={syncing}
-              title="Only fetch customers and orders changed since your last sync — much faster."
-              style={{
-                flex: 1, minWidth: '120px', padding: '10px 16px', borderRadius: '8px',
-                border: '1px solid var(--border)', background: 'var(--coral)', color: '#fff',
-                fontSize: '13px', fontWeight: 600, cursor: syncing ? 'default' : 'pointer', opacity: syncing ? 0.6 : 1,
-              }}
-            >
-              ⚡ Quick Update
-            </button>
-
-            <button
-              onClick={() => handleSync(false, undefined, 'products')}
-              disabled={syncing}
-              title="Copy the product catalogue into Colvy. The product picker searches this copy, so a product added in WooCommerce will not appear until this has run."
-              style={{
-                flex: 1, minWidth: '150px', padding: '10px 16px', borderRadius: '8px',
-                border: '1px solid var(--border)', background: 'var(--card)', color: 'var(--ink)',
-                fontSize: '13px', fontWeight: 600, cursor: syncing ? 'default' : 'pointer', opacity: syncing ? 0.6 : 1,
-              }}
-            >
-              🛍️ Sync products
-            </button>
-
-            <button
-              onClick={registerWebhooks}
-              disabled={registeringHooks}
-              title="Lets WooCommerce notify Colvy when an order is placed, so a chat opens automatically with a thank-you."
-              style={{
-                flex: 1, minWidth: '160px', padding: '10px 16px', borderRadius: '8px',
-                border: '1px solid var(--coral)', background: 'var(--peach)', color: 'var(--coral)',
-                fontSize: '13px', fontWeight: 700, cursor: registeringHooks ? 'default' : 'pointer', opacity: registeringHooks ? 0.6 : 1,
-              }}
-            >
-              {registeringHooks ? 'Connecting…' : 'Enable order → chat'}
-            </button>
-
-            <button
-              onClick={() => {
-                setEditing(true)
-                setConsumerKey('')
-                setConsumerSecret('')
-              }}
-              style={{
-                flex: 1,
-                minWidth: '120px',
-                padding: '10px 16px',
-                borderRadius: '8px',
-                border: '1px solid #e5e5e5',
-                background: '#fff',
-                color: '#666',
-                fontSize: '13px',
-                fontWeight: 600,
-                cursor: 'pointer'
-              }}
-            >
-              ✎ Edit Configuration
-            </button>
-
-            <button
-              onClick={handleDisconnect}
-              style={{
-                flex: 1,
-                minWidth: '120px',
-                padding: '10px 16px',
-                borderRadius: '8px',
-                border: '1px solid #fecaca',
-                background: '#fff',
-                color: '#dc2626',
-                fontSize: '13px',
-                fontWeight: 600,
-                cursor: 'pointer'
-              }}
-            >
-              Disconnect
-            </button>
-          </div>
+          <Card icon="sync" title="Sync & automation" sub="Syncs run in the background, so you can leave this page.">
+            <div className="divide-y" style={{ borderColor: 'var(--border)' }}>
+              {[
+                { icon: 'bolt', title: 'Quick update', desc: 'Customers and orders changed since the last sync. Fast.', label: 'Run', run: () => handleSync(true), busy: syncing, primary: true },
+                { icon: 'sync', title: 'Full sync', desc: 'Re-imports every customer and order. Use after a big change in the store.', label: 'Run', run: () => handleSync(false), busy: syncing },
+                { icon: 'bag', title: 'Sync products', desc: 'Copies the catalogue so the product picker and Colvy AI can find new products.', label: 'Run', run: () => handleSync(false, undefined, 'products'), busy: syncing },
+                { icon: 'chat', title: 'Order → chat', desc: 'WooCommerce tells Colvy about each new order, so a chat opens with a thank-you.', label: registeringHooks ? 'Connecting…' : 'Enable', run: registerWebhooks, busy: registeringHooks },
+              ].map(a => (
+                <div key={a.title} className="flex items-center gap-3 py-3 first:pt-0 last:pb-0" style={{ borderColor: 'var(--border)' }}>
+                  <span className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ background: 'var(--peach)', color: 'var(--coral)' }}><Icon name={a.icon} size={17} /></span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold" style={{ color: 'var(--ink)', margin: 0 }}>{a.title}</p>
+                    <p className="text-xs" style={{ color: 'var(--slate)', margin: '2px 0 0', lineHeight: 1.45 }}>{a.desc}</p>
+                  </div>
+                  <button onClick={a.run} disabled={a.busy} {...btn(a.primary ? 'primary' : 'secondary', 'sm', 'shrink-0')}>
+                    {a.busy && a.label === 'Run' ? 'Syncing…' : a.label}
+                  </button>
+                </div>
+              ))}
+            </div>
+          </Card>
         </div>
       )}
-    </div>
+    </IntegrationPage>
   )
 }

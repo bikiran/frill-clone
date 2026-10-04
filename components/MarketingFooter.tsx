@@ -9,11 +9,11 @@ export default function MarketingFooter({ dark = false }: { dark?: boolean }) {
   const CORAL = '#ff6a4d'
   const text = '#ffffff'
   const muted = 'rgba(255,255,255,0.6)'
-  const dim = 'rgba(255,255,255,0.34)'
+  const dim = 'rgba(255,255,255,0.6)'
   const line = 'rgba(255,255,255,0.1)'
 
   const COLS = [
-    { title: 'Platform', links: [{ l: 'Inbox & CRM', h: '/inbox-crm' }, { l: 'Media Gallery', h: '/inbox-crm#gallery' }, { l: 'WooCommerce', h: '/inbox-crm#woo' }, { l: 'Payments', h: '/inbox-crm#woo' }, { l: 'Link Reports', h: '/inbox-crm#links' }, { l: 'Insights', h: '/inbox-crm#insights' }] },
+    { title: 'Platform', links: [{ l: 'Inbox & CRM', h: '/inbox-crm' }, { l: 'Media Gallery', h: '/inbox-crm#gallery' }, { l: 'WooCommerce', h: '/inbox-crm#woo' }, { l: 'Online booking', h: '/product/booking' }, { l: 'Payments', h: '/inbox-crm#woo' }, { l: 'Link Reports', h: '/inbox-crm#links' }, { l: 'Insights', h: '/inbox-crm#insights' }] },
     { title: 'Product', links: [{ l: 'Overview', h: '/product' }, { l: 'Ideas', h: '/product/ideas' }, { l: 'Roadmap', h: '/product/roadmap' }, { l: 'Announcements', h: '/product/announcements' }, { l: 'Knowledgebase', h: '/product/knowledgebase' }] },
     { title: 'Explore', links: [{ l: 'AI Assistant', h: '/ai-assistant' }, { l: 'Phones', h: '/phones' }, { l: 'Integrations', h: '/integrations' }, { l: 'Industries', h: '/industries' }, { l: 'Compare', h: '/compare' }] },
     { title: 'Channels', links: [{ l: 'WhatsApp', h: '/channels/whatsapp' }, { l: 'Instagram & Messenger', h: '/channels/meta' }, { l: 'Email', h: '/channels/email' }, { l: 'Two-way SMS', h: '/channels/sms' }, { l: 'Live chat', h: '/channels/chat-widget' }, { l: 'Google Reviews', h: '/channels/google-reviews' }] },
@@ -55,14 +55,14 @@ export default function MarketingFooter({ dark = false }: { dark?: boolean }) {
             <p style={{ fontSize: 14.5, color: muted, lineHeight: 1.6, maxWidth: 340, margin: '0 0 18px' }}>One place to talk to customers across every channel — and sell more.</p>
             {/* Get the app — App Store + Google Play */}
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', margin: '0 0 30px' }}>
-              <a href="https://apps.apple.com/us/app/colvy/id6803380512" target="_blank" rel="noopener noreferrer" aria-label="Download Colvy on the App Store"
+              <a href="https://apps.apple.com/us/app/colvy/id6803380512" target="_blank" rel="noopener noreferrer" aria-label="Download on the App Store"
                 style={{ display: 'inline-flex', alignItems: 'center', gap: 9, padding: '8px 14px', borderRadius: 11, border: `1px solid ${line}`, color: text, textDecoration: 'none', transition: 'border-color 0.2s, background 0.2s' }}
                 onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.35)'; e.currentTarget.style.background = 'rgba(255,255,255,0.04)' }}
                 onMouseLeave={e => { e.currentTarget.style.borderColor = line; e.currentTarget.style.background = 'transparent' }}>
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09l.01-.01zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"/></svg>
                 <span style={{ lineHeight: 1.1 }}><span style={{ display: 'block', fontSize: 9.5, color: muted }}>Download on the</span><span style={{ display: 'block', fontSize: 15, fontWeight: 700 }}>App Store</span></span>
               </a>
-              <a href="https://play.google.com/store/apps/details?id=com.colvy.app" target="_blank" rel="noopener noreferrer" aria-label="Get Colvy on Google Play"
+              <a href="https://play.google.com/store/apps/details?id=com.colvy.app" target="_blank" rel="noopener noreferrer" aria-label="Get it on Google Play"
                 style={{ display: 'inline-flex', alignItems: 'center', gap: 9, padding: '8px 14px', borderRadius: 11, border: `1px solid ${line}`, color: text, textDecoration: 'none', transition: 'border-color 0.2s, background 0.2s' }}
                 onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.35)'; e.currentTarget.style.background = 'rgba(255,255,255,0.04)' }}
                 onMouseLeave={e => { e.currentTarget.style.borderColor = line; e.currentTarget.style.background = 'transparent' }}>
@@ -73,7 +73,7 @@ export default function MarketingFooter({ dark = false }: { dark?: boolean }) {
             <div className="cvf-cols">
               {COLS.map(col => (
                 <div key={col.title}>
-                  <h4 style={{ fontSize: 12, fontWeight: 800, color: dim, margin: '0 0 14px', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{col.title}</h4>
+                  <h3 style={{ fontSize: 12, fontWeight: 800, color: dim, margin: '0 0 14px', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{col.title}</h3>
                   {col.links.map(lk => (
                     <a key={lk.l} href={lk.h} className="cvf-link" style={{ display: 'block', fontSize: 14.5, color: muted, textDecoration: 'none', marginBottom: 11, transition: 'color 0.2s' }}
                       onMouseEnter={e => (e.currentTarget.style.color = '#fff')} onMouseLeave={e => (e.currentTarget.style.color = muted)}>{lk.l}</a>

@@ -10,6 +10,7 @@ import { logWebhookEvent } from '@/lib/webhook-log'
 import { notifyCompany, pushInboundMessage } from '@/lib/notify'
 import { logEnquiryReopened } from '@/lib/conversation-timeline'
 import { classifyOne } from '@/lib/social-sync'
+import { emitInboundEvent } from '@/lib/integration-hooks'
 
 export const dynamic = 'force-dynamic'
 
@@ -244,6 +245,7 @@ export async function POST(req: NextRequest) {
           attachments: attachments.length ? attachments : [],
           metadata: storyReply ? { story_reply: storyReply } : {},
         }).select('id').maybeSingle()
+        await emitInboundEvent(db, { companyId, conversationId: conv.id, text, channel: platform, name: contact?.name || null, messageId: insertedMsg?.id || null })
 
         // Detect language + translate to English (fire-and-forget) for the inbox
         // "Translated · English / View original" toggle.

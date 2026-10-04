@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import { preconnect } from 'react-dom'
 import './globals.css'
 import AppChrome from './AppChrome'
 import JsonLd from '@/components/JsonLd'
@@ -95,6 +96,9 @@ const structuredData = [
 ]
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
+  // Every page talks to Supabase early (session, data) — open that connection
+  // while the HTML is still arriving.
+  if (process.env.NEXT_PUBLIC_SUPABASE_URL) preconnect(process.env.NEXT_PUBLIC_SUPABASE_URL, { crossOrigin: 'anonymous' })
   return (
     <html lang="en">
       <body style={{ background: 'var(--canvas)' }}>

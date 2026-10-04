@@ -7,6 +7,7 @@ import { statusMeta, channelMeta, orderAge, fmtMoney, isClickCollect, variationF
 import { ChannelIcon, CopyBtn, copyToClipboard, TagMenu, CreateLabelModal, TagChip, hashColor, PrintModal } from '../page'
 import OrderItemsPanel from '@/components/OrderItemsPanel'
 import { barcodeSVG } from '@/lib/barcode'
+import { notifyIntegrations } from '@/lib/integrations-notify'
 
 type Order = any
 
@@ -119,6 +120,7 @@ export default function OrderDetailPage() {
     setOrder((o: Order) => ({ ...o, ...patch }))
     try {
       await (supabase as any).from('orders').update({ ...patch, updated_at: new Date().toISOString() }).eq('id', orderId)
+      if (patch.status) notifyIntegrations('order.status_changed', { id: orderId })
       if (event && companyId) {
         const row = { order_id: orderId, company_id: companyId, type: event.type, detail: event.detail, actor_id: me.id, actor_name: me.name }
         const { data } = await (supabase as any).from('order_events').insert(row).select().maybeSingle()
@@ -159,7 +161,7 @@ export default function OrderDetailPage() {
     try {
       let { data, error } = await (supabase as any).from('conversation_tasks').insert(row).select().maybeSingle()
       if (error) { const r = await (supabase as any).from('conversation_tasks').insert({ company_id: companyId, text, done: false, order_id: orderId }).select().maybeSingle(); data = r.data }
-      if (data) setTasks(t => [data, ...t])
+      if (data) { setTasks(t => [data, ...t]); notifyIntegrations('task.created', { id: data.id, companyId }) }
     } catch {}
     setTaskText('')
   }

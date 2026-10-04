@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { emitIntegrationEvent } from '@/lib/integration-events'
 
 const admin = () => createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -228,6 +229,20 @@ export async function syncReviews(companyId: string) {
     if (!existing?.id) {
       saved++
       newReviews.push(row)
+      // Integrations hear about genuinely new reviews only — the first sync
+      // imports years of history, which shouldn't flood Slack.
+      if (row.review_created_at && Date.now() - Date.parse(row.review_created_at) < 7 * 86400_000) {
+        const stars = row.star_rating ? `${row.star_rating}-star ` : ''
+        emitIntegrationEvent(companyId, 'review.received', {
+          title: `New ${stars}Google review from ${reviewerName || 'a customer'}`,
+          summary: row.comment ? `“${String(row.comment).slice(0, 800)}”` : null,
+          path: '/admin/reviews',
+          customer: match ? { name: match.name || reviewerName || null, email: (match as any).email || null, phone: (match as any).phone || null } : { name: reviewerName || null },
+          fields: { Rating: row.star_rating ? `${row.star_rating} / 5` : null, Replied: row.reply_comment ? 'Yes' : 'Not yet' },
+          data: { review: { rating: row.star_rating, comment: row.comment, reviewer: reviewerName, created_at: row.review_created_at } },
+          dedupeKey: `review:${(r as any).reviewId || (r as any).name || reviewerName}:${row.review_created_at}`,
+        }, { db })
+      }
       // Tie a new review back to a review request we sent, so the agent's
       // review card can show it was completed.
       try {

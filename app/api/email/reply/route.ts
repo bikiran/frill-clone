@@ -15,7 +15,7 @@ const admin = () => createClient(
 // message so it lands in the same email conversation on their side.
 export async function POST(req: NextRequest) {
   try {
-    const { conversationId, content, html: htmlOverride, agentName, to, cc, bcc, subject: subjectOverride, signature: sigOverride, attachments, metadata } = await req.json()
+    const { conversationId, content, html: htmlOverride, agentName, to, cc, bcc, subject: subjectOverride, signature: sigOverride, attachments, metadata, skipChatMessage } = await req.json()
     // Normalise attachments to {url,name,type} + a display kind for the thread.
     const atts = (Array.isArray(attachments) ? attachments : [])
       .filter((a: any) => a && a.url)
@@ -125,26 +125,29 @@ export async function POST(req: NextRequest) {
       })
       if (out.error) return NextResponse.json({ error: out.error }, { status: 502 })
 
-      await db.from('messages').insert({
-        conversation_id: conversationId,
-        company_id: conv.company_id,
-        sender_type: 'agent',
-        sender_name: agentName || fromName,
-        content: fullText,
-        delivery_channel: 'email',
-        gmail_message_id: out.id || null,
-        email_in_reply_to: inReplyTo,
-        email_from: fromLabel,
-        email_to: toEmail,
-        email_cc: ccEmail,
-        email_subject: subject,
-        email_html: bodyHtml,
-        ...(displayAtts.length ? { attachments: displayAtts } : {}),
-      })
-      await db.from('conversations').update({
-        last_message: content.slice(0, 200),
-        last_message_at: new Date().toISOString(),
-      }).eq('id', conversationId)
+      // Callers that record the thread row themselves (automated sends) pass skipChatMessage.
+      if (!skipChatMessage) {
+        await db.from('messages').insert({
+          conversation_id: conversationId,
+          company_id: conv.company_id,
+          sender_type: 'agent',
+          sender_name: agentName || fromName,
+          content: fullText,
+          delivery_channel: 'email',
+          gmail_message_id: out.id || null,
+          email_in_reply_to: inReplyTo,
+          email_from: fromLabel,
+          email_to: toEmail,
+          email_cc: ccEmail,
+          email_subject: subject,
+          email_html: bodyHtml,
+          ...(displayAtts.length ? { attachments: displayAtts } : {}),
+        })
+        await db.from('conversations').update({
+          last_message: content.slice(0, 200),
+          last_message_at: new Date().toISOString(),
+        }).eq('id', conversationId)
+      }
 
       return NextResponse.json({ ok: true, id: out.id, via: 'gmail' })
     }
@@ -189,28 +192,30 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: out?.message || 'Resend rejected the email', detail: out }, { status: 502 })
     }
 
-    await db.from('messages').insert({
-      conversation_id: conversationId,
-      company_id: conv.company_id,
-      sender_type: 'agent',
-      sender_name: agentName || fromName,
-      content: fullText,
-      delivery_channel: 'email',
-      email_message_id: out?.id || null,
-      email_in_reply_to: inReplyTo,
-      email_from: `${fromName} <${fromAddress}>`,
-      email_to: toEmail,
-      email_cc: ccEmail,
-      email_subject: subject,
-      email_html: bodyHtml,
-      ...(displayAtts.length ? { attachments: displayAtts } : {}),
-      ...(metadata && typeof metadata === 'object' ? { metadata } : {}),
-    })
+    if (!skipChatMessage) {
+      await db.from('messages').insert({
+        conversation_id: conversationId,
+        company_id: conv.company_id,
+        sender_type: 'agent',
+        sender_name: agentName || fromName,
+        content: fullText,
+        delivery_channel: 'email',
+        email_message_id: out?.id || null,
+        email_in_reply_to: inReplyTo,
+        email_from: `${fromName} <${fromAddress}>`,
+        email_to: toEmail,
+        email_cc: ccEmail,
+        email_subject: subject,
+        email_html: bodyHtml,
+        ...(displayAtts.length ? { attachments: displayAtts } : {}),
+        ...(metadata && typeof metadata === 'object' ? { metadata } : {}),
+      })
 
-    await db.from('conversations').update({
-      last_message: content.slice(0, 200),
-      last_message_at: new Date().toISOString(),
-    }).eq('id', conversationId)
+      await db.from('conversations').update({
+        last_message: content.slice(0, 200),
+        last_message_at: new Date().toISOString(),
+      }).eq('id', conversationId)
+    }
 
     return NextResponse.json({ ok: true, id: out?.id, via: 'resend' })
   } catch (e: any) {

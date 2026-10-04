@@ -1,4 +1,5 @@
-import { mapWooStatus, mapWooPayment, wooDateToISO, variationFromMeta } from '@/lib/orders'
+import { mapWooStatus, mapWooPayment, wooDateToISO, variationFromMeta, statusMeta } from '@/lib/orders'
+import { emitIntegrationEvent } from '@/lib/integration-events'
 
 // The shipping method name from a woocommerce_orders row or a raw Woo order.
 function shippingMethodOf(o: any): string | null {
@@ -322,6 +323,21 @@ export async function syncWooOrders(db: any, companyId: string, wooRows: any[], 
   return fresh.length
 }
 
+// An order as integrations (Slack, webhooks, Zapier…) see it.
+function orderEvent(src: any, orderId: string, title: string, extra: Record<string, any> = {}, items: any[] = []) {
+  const money = (n: any) => n != null ? `$${Number(n).toFixed(2)}` : null
+  return {
+    title, path: `/admin/orders/${orderId}`,
+    customer: { name: src.customer_name, email: src.customer_email, phone: src.customer_phone },
+    fields: { Total: money(src.total), Items: src.item_count || null, Shipping: src.shipping_method, Payment: src.payment_status, ...extra },
+    data: { order: {
+      id: orderId, number: src.order_number, channel: src.sales_channel, total: src.total, currency: src.currency,
+      payment_status: src.payment_status, shipping_method: src.shipping_method, note: src.customer_note || null,
+      items: items.slice(0, 50).map((li: any) => ({ name: li.name, sku: li.sku || null, quantity: Number(li.quantity) || 1, total: parseFloat(li.total ?? 0) || 0 })),
+    } },
+  }
+}
+
 /**
  * Upsert ONE storefront order into the operational table — called from the
  * WooCommerce webhook so a new/updated order appears in the Orders board
@@ -361,6 +377,13 @@ export async function upsertWooOrder(db: any, companyId: string, o: any, contact
     }
     await updateResilient(db, 'orders', patch, prev.id)
     orderId = prev.id
+    if (patch.status && patch.status !== prev.status) {
+      const label = statusMeta(patch.status).label
+      emitIntegrationEvent(companyId, 'order.status_changed', {
+        ...orderEvent(src, orderId, `Order #${src.order_number} is now ${label}`, { 'Old status': statusMeta(prev.status).label, 'New status': label }),
+        dedupeKey: `order.status:${orderId}:${patch.status}`,
+      }, { db })
+    }
   } else {
     const st = statusOf(o)
     // Auto-assign a Click & Collect order to its pickup outlet (staff can still
@@ -382,6 +405,10 @@ export async function upsertWooOrder(db: any, companyId: string, o: any, contact
     // does, so the Orders tab badge and a push both fire. Best-effort; never
     // block the sync on it. (Only on INSERT, so a status refresh doesn't re-alert.)
     notifyNewOrder(companyId, src)
+    emitIntegrationEvent(companyId, 'order.created', {
+      ...orderEvent(src, orderId, `New order #${src.order_number}${src.total ? ` · $${Number(src.total).toFixed(2)}` : ''} · ${src.customer_name}`, { Status: statusMeta(st).label }, Array.isArray(o.line_items) ? o.line_items : []),
+      dedupeKey: `order.created:${orderId}`,
+    }, { db })
   }
   try {
     await db.from('order_items').delete().eq('order_id', orderId)

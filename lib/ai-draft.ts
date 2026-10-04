@@ -14,6 +14,8 @@
 
 import Anthropic from '@anthropic-ai/sdk'
 import { retrieve } from '@/lib/ai-agent'
+import { findProducts } from '@/lib/product-search'
+import { logUnanswered } from '@/lib/ai-unanswered'
 
 const MODEL = 'claude-opus-5-5'
 
@@ -21,33 +23,6 @@ export type DraftSource = { id: string; kind: 'knowledge' | 'product' | 'order';
 export type DraftResult =
   | { ok: true; draft: string; sources: DraftSource[]; caution: string }
   | { ok: false; error: string }
-
-const STOP = new Set(['that', 'this', 'with', 'have', 'from', 'your', 'what', 'when', 'where', 'which', 'would', 'could', 'should', 'there', 'their', 'they', 'them', 'then', 'than', 'about', 'just', 'like', 'want', 'need', 'know', 'does', 'will', 'been', 'were', 'also', 'some', 'much', 'many', 'more', 'very', 'please', 'thanks', 'thank', 'hello', 'today', 'still', 'into', 'here', 'okay', 'good', 'great', 'sure', 'yeah', 'order', 'orders', 'price', 'stock', 'available', 'have', 'buy', 'get'])
-
-const keywords = (text: string) => Array.from(new Set(
-  (String(text).toLowerCase().match(/[a-z][a-z'-]{3,}/g) || []).filter(w => !STOP.has(w))
-)).slice(0, 8)
-
-// Products the customer seems to be asking about, from the synced catalogue.
-async function findProducts(db: any, companyId: string, text: string) {
-  const words = keywords(text)
-  if (!words.length) return []
-  const ors = words.map(w => `name.ilike.%${w.replace(/[%,()]/g, '')}%`).join(',')
-  const { data } = await db.from('woocommerce_products')
-    .select('woo_product_id, name, price, sale_price, on_sale, stock_status, stock_quantity, permalink')
-    .eq('company_id', companyId).or(ors).limit(80)
-  const lower = String(text).toLowerCase()
-  return (data || [])
-    .map((p: any) => {
-      const name = String(p.name || '').toLowerCase()
-      let score = words.filter(w => name.includes(w)).length
-      if (lower.includes(name)) score += 3          // the full product name was mentioned
-      return { ...p, score }
-    })
-    .filter((p: any) => p.score >= (words.length > 1 ? 2 : 1) || lower.includes(String(p.name || '').toLowerCase()))
-    .sort((a: any, b: any) => b.score - a.score)
-    .slice(0, 5)
-}
 
 // The customer's latest orders (by email, then phone).
 async function findOrders(db: any, companyId: string, email: string | null, phone: string | null) {
@@ -210,6 +185,11 @@ Return JSON with: "reply" (the draft), "used" (the IDs of the sources you relied
     const draft = String(parsed.reply || '').trim()
     if (!draft) return { ok: false, error: 'The AI couldn’t come up with a draft for this one.' }
     const used = new Set((parsed.used || []).map(String))
+    // Nothing to go on → the owner's unanswered-questions list.
+    if (!used.size) {
+      const lastCustomer = [...turns].reverse().find(t => t.who === 'Customer')?.text || ''
+      await logUnanswered(db, companyId, lastCustomer, { source: 'ai_draft', conversationId: opts.conversationId || null })
+    }
     try {
       await db.from('ai_actions').insert({
         company_id: companyId, conversation_id: opts.conversationId || null, action: 'draft', allowed: true,

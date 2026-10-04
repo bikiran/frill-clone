@@ -20,6 +20,15 @@ export async function GET(req: NextRequest) {
     const companyId = req.nextUrl.searchParams.get('companyId')
     if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
 
+    // Side-menu badge: people who joined a waitlist since this browser last opened Waitlists.
+    if (req.nextUrl.searchParams.get('op') === 'newcount') {
+      const since = req.nextUrl.searchParams.get('since')
+      if (!since || isNaN(Date.parse(since))) return NextResponse.json({ count: 0 })
+      const { count, error } = await db.from('stock_waitlist').select('id', { count: 'exact', head: true })
+        .eq('company_id', companyId).in('status', ['waiting', 'queued']).gt('created_at', new Date(since).toISOString())
+      return NextResponse.json({ count: error ? 0 : (count || 0) }, { headers: { 'Cache-Control': 'no-store' } })
+    }
+
     const { data: co } = await db.from('companies').select('waitlist_settings').eq('id', companyId).maybeSingle()
     const settings = resolveWaitlistSettings((co as any)?.waitlist_settings)
 

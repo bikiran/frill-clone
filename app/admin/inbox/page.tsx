@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import AiLiveReply from '@/components/AiLiveReply'
 import { supabase } from '@/lib/supabase'
 import { authFetch } from '@/lib/auth-fetch'
 import { peekCompanyUser, readCache, writeCache } from '@/lib/client-cache'
@@ -44,6 +45,9 @@ import SuperAdminContactWorkspaces from '@/components/SuperAdminContactWorkspace
 import WaitlistQuickAdd from '@/components/WaitlistQuickAdd'
 import { useAiDraft, AiDraftButton, AiDraftInfo } from '@/components/AiDraft'
 import BookingLinkButton from '@/components/booking/BookingLinkButton'
+import LinkCards, { linkCodesIn, useLinkStats, LastOpen } from '@/components/LinkCards'
+import { confirmDialog } from '@/components/ConfirmDialog'
+import { notifyIntegrations } from '@/lib/integrations-notify'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Conversation = {
@@ -143,6 +147,13 @@ const CHANNEL_NAME: Record<string, string> = {
 // WhatsApp, phone or live chat — instead of a generic arrow. They inherit the
 // button's text colour (white when active, grey when disabled), matching the
 // solid/gradient button background rather than the brand-coloured logos.
+// Composer toolbar button: soft rounded square, icon only (tooltip via title).
+const toolBtn = (on = false, tone?: { bg: string; c: string }): React.CSSProperties => ({
+  width: 34, height: 34, borderRadius: 10, border: 'none', flexShrink: 0, cursor: 'pointer',
+  display: 'flex', alignItems: 'center', justifyContent: 'center',
+  background: tone ? tone.bg : on ? 'var(--peach)' : '#f3f4f6', color: tone ? tone.c : on ? 'var(--coral)' : '#6b7280',
+})
+
 const sendChannelGlyph = (ch: string, s = 15): React.ReactNode => {
   const c = String(ch || '').toLowerCase()
   if (c === 'instagram') return (
@@ -799,6 +810,14 @@ export default function InboxPage() {
   // On phones we show one pane at a time: the conversation list, the open
   // thread, or the contact panel. Desktop shows all three side by side.
   const [mobilePane, setMobilePane] = useState<'list' | 'thread' | 'contact'>('list')
+  // Tablets (768–1100px): the contact panel is a slide-over drawer, not a column.
+  const [tabletContact, setTabletContact] = useState(false)
+  useEffect(() => {
+    if (!tabletContact) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setTabletContact(false) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [tabletContact])
   const [isMobile, setIsMobile] = useState(false)
 
   useEffect(() => {
@@ -3312,7 +3331,7 @@ export default function InboxPage() {
     if (selected) loadConversationExtras(selected.id)
   }
   const deleteNote = async (id: string) => {
-    if (!confirm('Delete this note?')) return
+    if (!await confirmDialog('Delete this note?')) return
     await (supabase as any).from('conversation_notes').delete().eq('id', id)
     if (selected) loadConversationExtras(selected.id)
   }
@@ -3440,6 +3459,7 @@ export default function InboxPage() {
       location_id: convLoc, location_ids: convLoc ? [convLoc] : [],
       mentions: (mentioned as any[]).map(m => ({ id: m.id, name: m.name })),
     }).select().maybeSingle()
+    if (created?.id) notifyIntegrations('task.created', { id: created.id, companyId })
 
     // Notify the assignee and anyone mentioned (never yourself).
     const notify = new Map<string, string>()
@@ -3476,7 +3496,7 @@ export default function InboxPage() {
     if (selected) loadConversationExtras(selected.id)
   }
   const deleteTask = async (id: string) => {
-    if (!confirm('Delete this task?')) return
+    if (!await confirmDialog('Delete this task?')) return
     await (supabase as any).from('conversation_tasks').delete().eq('id', id)
     if (selected) loadConversationExtras(selected.id)
   }
@@ -3981,7 +4001,7 @@ export default function InboxPage() {
     if (!companyId) return
     const orderId = payload.order_id || payload.id
     if (!orderId) { showToast('No order id for this order'); return }
-    if (!confirm(`Mark order #${payload.order_number || orderId} as completed?\n\nThis updates WooCommerce and may send the customer a completion email.`)) return
+    if (!await confirmDialog(`Mark order #${payload.order_number || orderId} as completed?\n\nThis updates WooCommerce and may send the customer a completion email.`)) return
     try {
       const res = await fetch('/api/orders/status', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -4097,7 +4117,7 @@ export default function InboxPage() {
       return
     }
     const totalRefund = chosen.reduce((s, c) => s + c.total + c.tax, 0) + shippingAmt
-    if (!confirm(`Refund $${totalRefund.toFixed(2)} for order #${m.orderNumber}?\n\nThis returns money through the payment gateway and cannot be undone here.`)) return
+    if (!await confirmDialog(`Refund $${totalRefund.toFixed(2)} for order #${m.orderNumber}?\n\nThis returns money through the payment gateway and cannot be undone here.`)) return
 
     setRefundModal((v) => ({ ...v, busy: true }))
     try {
@@ -4224,7 +4244,7 @@ export default function InboxPage() {
   const updateOrderStatus = async (payload: any, status: string) => {
     if (!companyId || !payload?.order_id) return
     const verb = status === 'cancelled' ? 'cancel' : 'mark paid'
-    if (!confirm(`Are you sure you want to ${verb} order #${payload.order_number}?${status !== 'cancelled' ? ' This records payment and reduces stock in WooCommerce.' : ''}`)) return
+    if (!await confirmDialog(`Are you sure you want to ${verb} order #${payload.order_number}?${status !== 'cancelled' ? ' This records payment and reduces stock in WooCommerce.' : ''}`)) return
     try {
       const res = await fetch('/api/orders/status', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -4266,13 +4286,15 @@ export default function InboxPage() {
   // Crucially, when the thread HAS an sms_number the server already texted, so
   // we send nothing — this is what removes the SMS double-send (server + client)
   // that hit SMS-channel media requests.
-  const deliverUploadLink = async (link: string, body: string): Promise<string> => {
+  const deliverUploadLink = async (link: string, body: string, texted = false): Promise<string> => {
     const subject = `${companyInfo?.name || 'We'} need a few files from you`
     const ch = activeChannel
     if (ch === 'email' || ch === 'instagram' || ch === 'facebook') {
       return deliverToCustomer({ subject, body, url: link })
     }
-    if (mediaSmsEnabled && !(selected as any)?.sms_number && smsDestination()) {
+    // The server also texts the contact's phone when the thread has no
+    // sms_number, so only send here when it says it didn't.
+    if (!texted && mediaSmsEnabled && !(selected as any)?.sms_number && smsDestination()) {
       return deliverToCustomer({ subject, body, url: link, silent: true })
     }
     // server already texted (thread has an sms_number), widget with no mobile, or
@@ -4297,7 +4319,7 @@ export default function InboxPage() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Could not create request')
       let how = 'sent'
-      if (data.link) how = await deliverUploadLink(data.link, 'Please upload your photos or videos here:')
+      if (data.link) how = await deliverUploadLink(data.link, 'Please upload your photos or videos here:', !!data.texted)
       showToast(`Upload link ${how.toLowerCase()}`)
       selectConversation(selected)
     } catch (e: any) { showToast(e.message || 'Could not send the upload link') }
@@ -4330,7 +4352,7 @@ export default function InboxPage() {
       let how = 'sent'
       if (data.link) {
         try {
-          how = await deliverUploadLink(data.link, `${mrPrompt.trim() || 'Please upload the requested files.'}\nUpload here:`)
+          how = await deliverUploadLink(data.link, `${mrPrompt.trim() || 'Please upload the requested files.'}\nUpload here:`, !!data.texted)
         } catch (e: any) { showToast(`Request created, but sending failed: ${e.message}`); setMrSaving(false); return }
       }
       showToast(`Media request ${how.toLowerCase()}`)
@@ -4807,7 +4829,7 @@ export default function InboxPage() {
   const sendReply = async () => {
     if ((!reply.trim() && stagedMedia.length === 0) || !selected || !user) return
     setSending(true)
-    const content = reply.trim()
+    let content = reply.trim()
     const senderName = myName
 
     // An internal note isn't taking the customer on, so it doesn't claim the
@@ -4916,6 +4938,21 @@ export default function InboxPage() {
         alert('Could not save the internal note: ' + e.message)
       }
       return
+    }
+
+    // Every link a customer gets from Colvy is a tracked short link (opens,
+    // device, city) — whatever channel this goes out on.
+    if (/https?:\/\//i.test(content)) {
+      try {
+        const { data: sess } = await supabase.auth.getSession()
+        const t = sess?.session?.access_token
+        const r = await fetch('/api/links/track', {
+          method: 'POST', headers: { 'Content-Type': 'application/json', ...(t ? { Authorization: `Bearer ${t}` } : {}) },
+          body: JSON.stringify({ companyId, conversationId: selected.id, text: content, channel: (selected as any).channel || sendChannel || 'chat', sentBy: senderName }),
+        })
+        const d = await r.json().catch(() => ({}))
+        if (r.ok && typeof d.text === 'string' && d.text) content = d.text
+      } catch { /* send the original if tracking fails */ }
     }
 
     // Instagram / Messenger conversations reply through the Meta Send API.
@@ -5705,7 +5742,7 @@ export default function InboxPage() {
     if (!contact?.id || !companyId) return
     const nowBlocked = !(contact as any).is_blocked
     const me = myName || 'A team member'
-    if (nowBlocked && !confirm(`Block ${contact.name || 'this contact'}? Their messages will be marked blocked in the inbox.`)) return
+    if (nowBlocked && !await confirmDialog(`Block ${contact.name || 'this contact'}? Their messages will be marked blocked in the inbox.`)) return
     try {
       await (supabase as any).from('contacts').update({
         is_blocked: nowBlocked,
@@ -5728,7 +5765,7 @@ export default function InboxPage() {
 
   const reportSpam = async () => {
     if (!selected || !companyId) return
-    if (!confirm('Report this conversation as spam? It will be marked spam and closed.')) return
+    if (!await confirmDialog('Report this conversation as spam? It will be marked spam and closed.')) return
     const me = myName || 'A team member'
     try {
       await (supabase as any).from('conversations').update({
@@ -5811,7 +5848,7 @@ export default function InboxPage() {
   const themeSolid = igThemeActive ? '#C13584' : msgrThemeActive ? '#006AFF' : 'var(--coral)'
 
   return (
-    <div className={`inbox-root inbox-pane-${mobilePane}`} style={{ display: 'flex', height: '100vh', maxHeight: 'calc(100vh - 56px)', overflow: 'hidden', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
+    <div className={`inbox-root inbox-pane-${mobilePane}${tabletContact ? ' tablet-contact-open' : ''}`} style={{ display: 'flex', height: '100vh', maxHeight: 'calc(100vh - 56px)', overflow: 'hidden', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
       <style>{`
         /* Composer resize grip: reveal the "drag to resize" pill on hover. */
         .composer-grip:hover .composer-grip-pill { opacity: 1 !important; transform: translateY(0) !important; }
@@ -5965,9 +6002,12 @@ export default function InboxPage() {
           /* Fill the real visible viewport. 100vh on iOS Safari includes the
              address bar, so the composer sat below the fold; dvh tracks the
              browser chrome as it hides and shows. */
+          /* …minus the app header and the bottom tab bar, which both stay on
+             screen; a bare 100dvh ran ~115px under the tab bar, so the reply
+             box hid behind it until you scrolled. */
           .inbox-root {
-            height: 100dvh !important;
-            max-height: 100dvh !important;
+            height: calc(100dvh - 56px - 58px - env(safe-area-inset-bottom, 0px)) !important;
+            max-height: calc(100dvh - 56px - 58px - env(safe-area-inset-bottom, 0px)) !important;
             overflow: hidden;
           }
 
@@ -6071,6 +6111,12 @@ export default function InboxPage() {
           .inbox-composer .composer-bar > div:last-child > div {
             flex: 1;
           }
+          /* …except the round AI / resolve buttons beside Send. */
+          .inbox-composer .composer-bar > .cmp-send > .cmp-tool,
+          .inbox-composer .composer-bar > .cmp-send > .ai-orb { flex: 0 0 auto !important; width: 44px !important; }
+          .inbox-composer .cmp-tools { flex-wrap: nowrap; }
+          .inbox-composer .cmp-hint { display: none; }
+          .inbox-composer .cmp-mode button { min-height: 0 !important; }
           .inbox-composer .composer-bar > div:last-child button {
             min-height: 44px;
             font-size: 14px !important;
@@ -6103,6 +6149,38 @@ export default function InboxPage() {
         }
         @media (min-width: 768px) {
           .inbox-mobile-only { display: none !important; }
+        }
+        /* Tablets: the conversation gets the room; contact details slide in
+           from the right on demand instead of taking a fixed 280px column. */
+        .inbox-tablet-scrim { display: none; }
+        @media (min-width: 768px) and (max-width: 1100px) {
+          .inbox-tablet-only { display: flex !important; }
+          .inbox-root .inbox-col-contact {
+            position: fixed !important; top: 56px; right: 0; bottom: 0; z-index: 320;
+            width: min(360px, 88vw) !important; border-left: 1px solid var(--border);
+            box-shadow: -24px 0 48px -24px rgba(16,24,40,.35);
+            transform: translate3d(105%,0,0); transition: transform .32s cubic-bezier(.22,1,.36,1);
+            visibility: hidden;
+          }
+          .inbox-root.tablet-contact-open .inbox-col-contact { transform: none; visibility: visible; }
+          .inbox-root.tablet-contact-open .inbox-tablet-scrim {
+            display: block; position: fixed; inset: 56px 0 0 0; z-index: 310;
+            background: rgba(17,24,39,.22); animation: tabletScrimIn .25s ease both;
+          }
+          .inbox-root .inbox-col-contact > div:nth-of-type(1) { padding-right: 40px; }
+          @keyframes tabletScrimIn { from { opacity: 0 } to { opacity: 1 } }
+        }
+        @media (min-width: 768px) and (max-width: 860px) {
+          /* the bottom tab bar is still showing at this width — leave room for it */
+          .inbox-root {
+            height: calc(100dvh - 56px - 58px - env(safe-area-inset-bottom, 0px)) !important;
+            max-height: calc(100dvh - 56px - 58px - env(safe-area-inset-bottom, 0px)) !important;
+          }
+          .inbox-root .inbox-col-contact { bottom: calc(58px + env(safe-area-inset-bottom, 0px)); }
+          .inbox-root.tablet-contact-open .inbox-tablet-scrim { bottom: calc(58px + env(safe-area-inset-bottom, 0px)); }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .inbox-root .inbox-col-contact { transition: none !important; }
         }
       `}</style>
       {/* IncomingCallListener now lives in the admin layout, so calls ring on
@@ -7667,6 +7745,11 @@ export default function InboxPage() {
                     <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#22c55e', animation: 'livePulse 1.6s ease-in-out infinite', flexShrink: 0 }} />
                     {activeCall?.status === 'ringing' ? 'Calling…' : 'Ongoing call'}
                   </p>
+                ) : ((conv.ai_status === 'thinking' || conv.ai_status === 'pending') && (!conv.ai_draft_send_at || Date.parse(conv.ai_draft_send_at) > Date.now() - 30000)) ? (
+                  <p style={{ margin: 0, flex: 1, minWidth: 0, fontSize: 12, fontWeight: 600, color: '#e2553f', display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#ff7a6b', animation: 'livePulse 1.6s ease-in-out infinite', flexShrink: 0 }} />
+                    {conv.ai_status === 'pending' ? 'Colvy AI is about to reply' : 'Colvy AI is writing…'}
+                  </p>
                 ) : (
                 <p style={{ margin: 0, flex: 1, minWidth: 0, fontSize: 12, color: conv.is_unread ? 'var(--ink)' : '#6b7280', fontWeight: conv.is_unread ? 600 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 5 }}>
                   {(() => { const k = callGlyphKind(conv.last_message); return k ? <CallGlyph kind={k} /> : null })()}
@@ -7833,6 +7916,11 @@ export default function InboxPage() {
                 </button>
               )}
 
+              {/* Tablet: slide the contact panel in */}
+              <button type="button" className="inbox-tablet-only" onClick={() => setTabletContact(v => !v)} title="Contact info" aria-label="Contact info" aria-expanded={tabletContact}
+                style={{ display: 'none', width: 32, height: 32, borderRadius: 8, border: '1px solid var(--border)', background: tabletContact ? 'var(--peach)' : '#fff', cursor: 'pointer', alignItems: 'center', justifyContent: 'center', color: tabletContact ? 'var(--coral)' : 'var(--slate)', flexShrink: 0 }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M15 4v16"/></svg>
+              </button>
               {/* Mobile: open contact panel */}
               <button type="button" className="inbox-mobile-only" onClick={() => setMobilePane('contact')} title="Contact info"
                 style={{ display: 'none', width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', alignItems: 'center', justifyContent: 'center', color: 'var(--slate)' }}>
@@ -8735,10 +8823,10 @@ export default function InboxPage() {
                             {/* Review-request card, shown to the agent — mirrors
                                 what the customer received. Updates to "completed"
                                 once the customer leaves the review. */}
-                            {(() => {
+                            <ReviewCard msg={msg} companyId={companyId} render={(linkStats: any) => {
                               const completed = !!(msg as any).metadata?.review_completed
                               const rating = (msg as any).metadata?.review_rating || 0
-                              const clicks = (msg as any).metadata?.review_clicks || 0
+                              const clicks = Math.max((msg as any).metadata?.review_clicks || 0, linkStats?.clicks || 0)
                               const title = completed ? 'Review Left' : ((msg as any).metadata?.review_title || 'Review Request Sent')
                               return (
                                 // A neat, centered card (mirrors what the customer
@@ -8762,9 +8850,10 @@ export default function InboxPage() {
                                   {completed && rating > 0 && (
                                     <p style={{ margin: '10px 0 0', fontSize: 11.5, color: '#8a929c' }}>Customer left {rating} star{rating === 1 ? '' : 's'}</p>
                                   )}
+                                  <LastOpen s={linkStats} />
                                 </div>
                               )
-                            })()}
+                            }} />
                             {/* The message text (with the /m/ link) below the card —
                                 capped to the card's width and centred so the whole
                                 bubble reads as one balanced, even block. */}
@@ -8785,6 +8874,8 @@ export default function InboxPage() {
                             }
                             return (
                               <div style={{ padding: atts.length && atts[0].kind !== 'file' ? '4px 10px 6px' : 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                                {/* Links Colvy sent the customer → a card with opens / device / city. */}
+                                {isAgent && /https?:\/\//.test(body || '') && <div style={{ whiteSpace: 'normal', marginTop: 2 }}><LinkCards companyId={companyId} text={body} conversationId={selected?.id || null} at={(msg as any).created_at || null} /></div>}
                                 {renderTextWithLinks(body)}
                                 {hasTr && (
                                   <div style={{ marginTop: 4, fontSize: 10.5, opacity: 0.8, display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
@@ -8974,6 +9065,12 @@ export default function InboxPage() {
                 )
               })]
               })()}
+              {/* Colvy AI replying, live: writing… then a countdown with Send now / Edit / Cancel. */}
+              <AiLiveReply
+                conv={selected as any}
+                onEdit={(text) => { setReply(text); setTimeout(() => textareaRef.current?.focus(), 30) }}
+                onChange={() => setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }), 60)}
+              />
               <div ref={messagesEndRef} />
             </div>
 
@@ -8988,6 +9085,52 @@ export default function InboxPage() {
                 content: ''; position: absolute; left: 0; right: 0; top: 100%; height: 22px;
               }
               .chat-att:hover .chat-att-fwd { opacity: 1 !important; }
+              /* ── Reply box: one card (Coax-style) ── */
+              .cmp-card{border:1px solid var(--border);border-radius:18px;background:#f8f9fb;transition:border-color .2s,box-shadow .2s,background .2s}
+              .cmp-card:focus-within{background:#fff;border-color:#d7dae0;box-shadow:0 0 0 4px rgba(255,122,107,.10),0 8px 24px -16px rgba(16,24,40,.25)}
+              .cmp-card.note{background:#fffbeb;border-color:#fcd34d}
+              .cmp-card.note:focus-within{box-shadow:0 0 0 4px rgba(245,158,11,.14)}
+              .cmp-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px 2px}
+              .cmp-mode{position:relative;display:inline-grid;grid-template-columns:1fr 1fr;padding:3px;border-radius:10px;background:rgba(17,24,39,.06)}
+              .cmp-mode-thumb{position:absolute;top:3px;bottom:3px;left:3px;width:calc(50% - 3px);border-radius:8px;background:#fff;box-shadow:0 1px 2px rgba(16,24,40,.08),0 2px 6px -2px rgba(16,24,40,.12);transition:transform .28s cubic-bezier(.22,1,.36,1)}
+              .cmp-mode button{position:relative;z-index:1;display:inline-flex;align-items:center;justify-content:center;gap:5px;min-height:0!important;height:28px;padding:0 14px;border:none;background:none;font:inherit;font-size:12.5px;font-weight:700;color:var(--slate);cursor:pointer;transition:color .2s}
+              .cmp-mode button[aria-selected="true"]{color:var(--ink)}
+              .cmp-card.note .cmp-mode button[aria-selected="true"]{color:#b45309}
+              .cmp-via{display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--slate);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+              .cmp-via b{color:var(--ink);font-weight:700}
+              .cmp-input::placeholder{color:#9ca3af}
+              .cmp-input:focus{outline:none!important;box-shadow:none!important;border:none!important}
+              .cmp-bar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 10px 10px}
+              .cmp-tools{display:flex;align-items:center;gap:5px;min-width:0;flex:1 1 auto;flex-wrap:wrap}
+              .cmp-send{display:flex;align-items:center;gap:8px;flex-shrink:0}
+              .cmp-tool{transition:filter .15s,transform .15s cubic-bezier(.22,1,.36,1),background .15s,color .15s}
+              .cmp-tool:hover{filter:brightness(.95);color:var(--ink)!important}
+              .cmp-tool:active{transform:scale(.93)}
+              .cmp-tool:focus-visible,.cmp-mode button:focus-visible{outline:2px solid var(--coral);outline-offset:1px}
+              .cmp-hint{display:flex;justify-content:flex-end;gap:14px;padding:7px 6px 0;font-size:11.5px;color:#9ca3af}
+              .cmp-hint kbd{font:inherit;font-weight:700;color:var(--slate);padding:1px 6px;border-radius:5px;background:#f3f4f6;border:1px solid #e5e7eb}
+              /* Responsive: sized by the reply box's own width (it's narrow on
+                 tablets with three columns), not just the screen. */
+              .inbox-composer{container-type:inline-size}
+              .cmp-bar{flex-wrap:wrap;row-gap:8px}
+              .cmp-tools{flex:1 1 230px}
+              .cmp-send{margin-left:auto}
+              @container (max-width: 560px){ .cmp-hint{display:none} }
+              /* Narrow box (phones, or the middle column on a tablet): tools on
+                 their own line, then a full-width Send row. */
+              @container (max-width: 470px){
+                .cmp-bar{flex-direction:column;align-items:stretch}
+                .cmp-tools{flex:0 0 auto}
+                .cmp-send{margin-left:0;width:100%}
+                .cmp-send > div:last-child{flex:1 1 auto;display:flex}
+                .cmp-send > div:last-child > button:first-child{flex:1 1 auto}
+              }
+              @container (max-width: 300px){ .cmp-via{display:none} }
+              @media (max-width: 380px){
+                .inbox-composer .cmp-tools{gap:3px!important}
+                .inbox-composer .cmp-tools .cmp-tool{width:32px!important;min-width:32px!important;height:32px!important;min-height:32px!important}
+              }
+              @media (prefers-reduced-motion:reduce){.cmp-mode-thumb,.cmp-tool{transition:none}}
             `}</style>
 
             {/* Reply box */}
@@ -9107,25 +9250,6 @@ export default function InboxPage() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: 'var(--slate)', marginBottom: 4 }}>
                   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
                   Draft saved
-                </div>
-              )}
-
-              {/* Internal-note header — a clear amber banner so it's obvious the
-                  next message is staff-only, with a one-tap switch back to the
-                  customer reply. */}
-              {internalMode && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '8px 12px', marginBottom: 8, borderRadius: 10, background: '#fffbeb', border: '1px solid #fde68a' }}>
-                  <span style={{ width: 26, height: 26, borderRadius: 8, background: '#fef3c7', color: '#b45309', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-                  </span>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <p style={{ margin: 0, fontSize: 12.5, fontWeight: 800, color: '#b45309' }}>Internal note</p>
-                    <p style={{ margin: 0, fontSize: 11, color: '#a16207' }}>Only your team can see this — the customer never receives it.</p>
-                  </div>
-                  <button type="button" onClick={() => setInternalMode(false)}
-                    style={{ flexShrink: 0, height: 26, padding: '0 10px', borderRadius: 7, border: '1px solid #fde68a', background: '#fff', color: '#b45309', fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}>
-                    Switch to reply
-                  </button>
                 </div>
               )}
 
@@ -9322,43 +9446,6 @@ export default function InboxPage() {
                     style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #a7f3d0', background: '#fff', color: '#065f46', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}>Not now</button>
                 </div>
               )}
-              <textarea ref={textareaRef} value={reply} onChange={e => {
-                  const v = e.target.value
-                  setReply(v)
-                  if (v.trim()) broadcastAgentTyping()
-                  // Detect an in-progress "@name" token at the caret so the
-                  // mention picker can offer team members.
-                  const caret = e.target.selectionStart ?? v.length
-                  const upto = v.slice(0, caret)
-                  const m = upto.match(/@([\w.\-]*)$/)
-                  if (m) { setMentionQuery(m[1]); setMentionIndex(0) } else setMentionQuery(null)
-                }}
-                onKeyDown={e => {
-                  // @mention picker takes priority when it's open.
-                  if (mentionQuery !== null && mentionMatches.length) {
-                    if (e.key === 'ArrowDown') { e.preventDefault(); setMentionIndex(i => (i + 1) % mentionMatches.length); return }
-                    if (e.key === 'ArrowUp') { e.preventDefault(); setMentionIndex(i => (i - 1 + mentionMatches.length) % mentionMatches.length); return }
-                    if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey)) {
-                      e.preventDefault(); applyMention(mentionMatches[mentionIndex]); return
-                    }
-                    if (e.key === 'Escape') { setMentionQuery(null); return }
-                  }
-                  // Quick-response picker takes priority over sending.
-                  if (showQuickMenu && quickMatches.length) {
-                    if (e.key === 'ArrowDown') { e.preventDefault(); setQuickIndex(i => (i + 1) % quickMatches.length); return }
-                    if (e.key === 'ArrowUp') { e.preventDefault(); setQuickIndex(i => (i - 1 + quickMatches.length) % quickMatches.length); return }
-                    if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey)) {
-                      e.preventDefault(); applyQuickResponse(quickMatches[quickIndex]); return
-                    }
-                    if (e.key === 'Escape') { setShowQuickMenu(false); return }
-                  }
-                  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendReply() }
-                }}
-                placeholder={internalMode
-                  ? 'Internal note — only your team will see this. Use @ to mention someone.'
-                  : 'Type a reply… (Enter to send, / for quick responses)'}
-                style={{ width: '100%', height: composerH, padding: '10px 12px', borderRadius: 10, border: internalMode ? '1px dashed #f59e0b' : '1px solid var(--border)', background: internalMode ? '#fffbeb' : '#fff', fontStyle: internalMode ? 'italic' : 'normal', fontSize: 13, resize: 'none', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box', marginBottom: 8 }} />
-
               {!internalMode && <AiDraftInfo info={aiDraft.info} error={aiDraft.error} busy={aiDraft.busy} onRedo={i => aiDraft.run(i)} onClose={aiDraft.clear} />}
 
               {/* @mention picker */}
@@ -9407,19 +9494,72 @@ export default function InboxPage() {
               <input ref={fileInputRef} type="file" multiple accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.txt" style={{ display: 'none' }}
                 onChange={e => { handleFileUpload(e.target.files); e.target.value = '' }} />
 
-              <div className="composer-bar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                <div className="composer-tools" style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+              <div className={`cmp-card${internalMode ? ' note' : ''}`}>
+                <div className="cmp-head">
+                  <div className="cmp-mode" role="tablist" aria-label="Reply or internal note">
+                    <span className="cmp-mode-thumb" style={{ transform: internalMode ? 'translateX(100%)' : 'none' }} />
+                    <button type="button" role="tab" aria-selected={!internalMode} onClick={() => setInternalMode(false)}>Reply</button>
+                    <button type="button" role="tab" aria-selected={internalMode} onClick={() => setInternalMode(true)}>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 1 1 3 3L7 19l-4 1 1-4z"/></svg>
+                      Note
+                    </button>
+                  </div>
+                  <span className="cmp-via">
+                    {internalMode ? 'Only your team sees this' : <>Sending by <b>{({ sms: 'SMS', email: 'email', chat: 'live chat', instagram: 'Instagram', messenger: 'Messenger', whatsapp: 'WhatsApp', call: 'SMS' } as Record<string, string>)[sendChannel !== 'auto' ? sendChannel : activeChannel] || 'chat'}</b> {sendChannelGlyph(sendChannel !== 'auto' ? sendChannel : activeChannel, 13)}</>}
+                  </span>
+                </div>
+              <textarea ref={textareaRef} value={reply} onChange={e => {
+                  const v = e.target.value
+                  setReply(v)
+                  if (v.trim()) broadcastAgentTyping()
+                  // Detect an in-progress "@name" token at the caret so the
+                  // mention picker can offer team members.
+                  const caret = e.target.selectionStart ?? v.length
+                  const upto = v.slice(0, caret)
+                  const m = upto.match(/@([\w.\-]*)$/)
+                  if (m) { setMentionQuery(m[1]); setMentionIndex(0) } else setMentionQuery(null)
+                }}
+                onKeyDown={e => {
+                  // @mention picker takes priority when it's open.
+                  if (mentionQuery !== null && mentionMatches.length) {
+                    if (e.key === 'ArrowDown') { e.preventDefault(); setMentionIndex(i => (i + 1) % mentionMatches.length); return }
+                    if (e.key === 'ArrowUp') { e.preventDefault(); setMentionIndex(i => (i - 1 + mentionMatches.length) % mentionMatches.length); return }
+                    if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey)) {
+                      e.preventDefault(); applyMention(mentionMatches[mentionIndex]); return
+                    }
+                    if (e.key === 'Escape') { setMentionQuery(null); return }
+                  }
+                  // Quick-response picker takes priority over sending.
+                  if (showQuickMenu && quickMatches.length) {
+                    if (e.key === 'ArrowDown') { e.preventDefault(); setQuickIndex(i => (i + 1) % quickMatches.length); return }
+                    if (e.key === 'ArrowUp') { e.preventDefault(); setQuickIndex(i => (i - 1 + quickMatches.length) % quickMatches.length); return }
+                    if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey)) {
+                      e.preventDefault(); applyQuickResponse(quickMatches[quickIndex]); return
+                    }
+                    if (e.key === 'Escape') { setShowQuickMenu(false); return }
+                  }
+                  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendReply() }
+                }}
+                placeholder={internalMode
+                  ? 'Write a note for your team — @ to mention someone'
+                  : `Reply to ${contact?.name ? contact.name.split(' ')[0] : 'customer'}…`}
+                className="cmp-input"
+                style={{ width: '100%', height: composerH, padding: '4px 16px 8px', border: 'none', background: 'transparent', fontStyle: internalMode ? 'italic' : 'normal', fontSize: 14, lineHeight: 1.5, resize: 'none', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box', display: 'block', color: 'var(--ink)' }} />
+
+              <div className="composer-bar cmp-bar">
+                <div className="composer-tools cmp-tools">
                   {/* Colvy Voice — dictate into the reply (Whispr-Flow style). */}
                   <VoiceDictationButton
-                    size={32}
+                    size={34}
+                    soft
                     title="Voice type"
                     keyterms={[contact?.name, (contact as any)?.company_name].filter(Boolean) as string[]}
                     onText={(t) => setReply(prev => (prev.trim() ? prev.replace(/\s*$/, ' ') : '') + t)}
                   />
                   {/* Send poll/survey/form/payment */}
                   <div ref={sendMenuRef} style={{ position: 'relative' }}>
-                    <button type="button" onClick={() => setShowSendMenu(v => !v)} title="Send poll, survey, form or payment"
-                      style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid var(--border)', background: showSendMenu ? 'var(--peach)' : '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--slate)' }}>
+                    <button type="button" className="cmp-tool" onClick={() => setShowSendMenu(v => !v)} title="Send a payment link, form, poll or request media" aria-label="More actions"
+                      style={toolBtn(showSendMenu)}>
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                     </button>
                     {showSendMenu && (
@@ -9459,6 +9599,14 @@ export default function InboxPage() {
 
                         <div style={{ borderTop: '1px solid var(--border)' }} />
 
+                        <button type="button" onClick={() => { setShowSendMenu(false); if (!voiceUploading) startVoiceNote() }} disabled={voiceUploading || recording}
+                          style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}>
+                          <span style={{ color: 'var(--slate)', display: 'inline-flex' }}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3.5" fill="currentColor"/></svg></span>Record voice note
+                        </button>
+                        <button type="button" onClick={() => { setShowSendMenu(false); setShowInboxQR(true) }}
+                          style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}>
+                          <span style={{ color: 'var(--slate)', display: 'inline-flex' }}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M11 18h2"/></svg></span>Upload from your phone
+                        </button>
                         <button type="button" onClick={() => { setShowSendMenu(false); setShowMediaRequest(true) }}
                           style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}>
                           <span style={{ color: 'var(--slate)', display: 'inline-flex' }}>{Icon.media(15)}</span>Request Media
@@ -9467,50 +9615,29 @@ export default function InboxPage() {
                     )}
                   </div>
                   {/* Attach */}
-                  <button type="button" className="press" onClick={() => fileInputRef.current?.click()} title="Attach file"
-                    style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--slate)' }}>
+                  <button type="button" className="cmp-tool" onClick={() => fileInputRef.current?.click()} title="Attach a file" aria-label="Attach a file"
+                    style={toolBtn()}>
                     {<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>}
                   </button>
                   {/* Gallery */}
-                  <button type="button" onClick={openMediaPicker} title="Send from gallery"
-                    style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--slate)' }}>
+                  <button type="button" className="cmp-tool" onClick={openMediaPicker} title="Send from gallery" aria-label="Send from gallery"
+                    style={toolBtn()}>
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
                   </button>
-                  {/* Upload from phone (QR) */}
-                  <button type="button" onClick={() => setShowInboxQR(true)} title="Upload from your phone by scanning a QR code"
-                    style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--slate)' }}>
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><line x1="14" y1="14" x2="14" y2="17"/><line x1="14" y1="20" x2="14" y2="21"/><line x1="18" y1="14" x2="21" y2="14"/><line x1="21" y1="18" x2="21" y2="21"/><line x1="17" y1="21" x2="18" y2="21"/></svg>
-                  </button>
-                  {/* Voice note */}
-                  <button type="button" onClick={() => (recording ? stopVoiceNote(true) : startVoiceNote())} disabled={voiceUploading}
-                    title={recording ? 'Stop recording' : 'Record a voice note'}
-                    style={{ width: 32, height: 32, borderRadius: 8, border: recording ? '1px solid #dc2626' : '1px solid var(--border)', background: recording ? '#fee2e2' : '#fff', cursor: voiceUploading ? 'default' : 'pointer', color: recording ? '#dc2626' : 'var(--slate)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    {voiceUploading
-                      ? <span style={{ width: 13, height: 13, border: '2px solid var(--border)', borderTopColor: 'var(--coral)', borderRadius: '50%', display: 'inline-block', animation: 'spin 0.7s linear infinite' }} />
-                      : <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>}
-                  </button>
                   {/* Emoji */}
-                  <button type="button" onClick={() => setShowEmoji(v => !v)} title="Emoji"
-                    style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', color: 'var(--slate)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{Icon.smile(16)}</button>
+                  <button type="button" className="cmp-tool" onClick={() => setShowEmoji(v => !v)} title="Emoji" aria-label="Emoji"
+                    style={toolBtn(showEmoji)}>{Icon.smile(17)}</button>
                   {/* Review request */}
-                  <button type="button" onClick={sendReviewRequest} title="Send review request"
-                    style={{ height: 32, padding: '0 10px', borderRadius: 8, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', fontSize: 12, fontWeight: 600, color: 'var(--slate)', display: 'flex', alignItems: 'center', gap: 4 }}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg> Review
-                  </button>
-                  {/* Internal note toggle — staff-only message */}
-                  <button type="button" onClick={() => setInternalMode(v => !v)}
-                    title={internalMode ? 'Switch back to replying to the customer' : 'Write an internal note only your team can see'}
-                    style={{ height: 32, padding: '0 10px', borderRadius: 8, border: internalMode ? '1px solid #f59e0b' : '1px solid var(--border)', background: internalMode ? '#fef3c7' : '#fff', cursor: 'pointer', fontSize: 12, fontWeight: 700, color: internalMode ? '#b45309' : 'var(--slate)', display: 'flex', alignItems: 'center', gap: 4 }}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg>
-                    {internalMode ? 'Internal note' : 'Note'}
+                  <button type="button" className="cmp-tool" onClick={sendReviewRequest} title="Send a review request" aria-label="Send a review request"
+                    style={toolBtn()}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
                   </button>
                   {/* Shorten a URL straight into the reply */}
                   <div style={{ position: 'relative' }}>
-                    <button type="button" onClick={() => setShowShortener(v => !v)}
-                      title="Create a short, trackable link"
-                      style={{ height: 32, padding: '0 10px', borderRadius: 8, border: '1px solid var(--border)', background: showShortener ? 'var(--peach)' : '#fff', cursor: 'pointer', fontSize: 12, fontWeight: 700, color: showShortener ? 'var(--coral)' : 'var(--slate)', display: 'flex', alignItems: 'center', gap: 4 }}>
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-                      Short link
+                    <button type="button" className="cmp-tool" onClick={() => setShowShortener(v => !v)}
+                      title="Create a short, trackable link" aria-label="Create a short link"
+                      style={toolBtn(showShortener)}>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
                     </button>
                     {showShortener && (
                       <div style={{ position: 'absolute', bottom: '120%', left: 0, zIndex: 90, width: 320, maxWidth: '80vw', background: '#fff', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 12px 32px rgba(0,0,0,0.16)', padding: 12 }}>
@@ -9536,23 +9663,18 @@ export default function InboxPage() {
                       </div>
                     )}
                   </div>
-                  {!internalMode && <BookingLinkButton companyId={companyId} conversationId={selected?.id || null} contactId={selected?.contact_id || null} onInsert={t => setReply(r => (r.trim() ? r.trimEnd() + '\n' : '') + t)} />}
-                  {!internalMode && <AiDraftButton busy={aiDraft.busy} onClick={() => aiDraft.run()} />}
-                  {/* Resolve */}
-                  <button type="button" onClick={() => setStatus('resolved')}
-                    style={{ height: 32, padding: '0 10px', borderRadius: 8, border: '1px solid #059669', background: '#dcfce7', color: '#059669', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
-                    ✓ Resolve
-                  </button>
+                  {!internalMode && <BookingLinkButton iconOnly height={34} companyId={companyId} conversationId={selected?.id || null} contactId={selected?.contact_id || null} onInsert={t => setReply(r => (r.trim() ? r.trimEnd() + '\n' : '') + t)} />}
                 </div>
-                <div style={{ display: 'flex', gap: 6 }}>
-                  <button type="button" onClick={sendAndClose} disabled={sending || (!reply.trim() && stagedMedia.length === 0)}
-                    style={{ padding: '8px 14px', borderRadius: 10, background: '#fff', color: (reply.trim() || stagedMedia.length) ? 'var(--ink)' : '#9ca3af', border: '1px solid var(--border)', fontSize: 13, fontWeight: 600, cursor: (reply.trim() || stagedMedia.length) ? 'pointer' : 'default' }}>
-                    Send & Close
+                <div className="cmp-send">
+                  {!internalMode && <AiDraftButton orb height={38} busy={aiDraft.busy} onClick={() => aiDraft.run()} />}
+                  <button type="button" className="cmp-tool cmp-resolve" onClick={() => setStatus('resolved')} title="Resolve conversation" aria-label="Resolve conversation"
+                    style={{ ...toolBtn(false, { bg: '#ecfdf3', c: '#059669' }), width: 38, height: 38 }}>
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><path d="m8 12.5 2.7 2.7L16 9.8"/></svg>
                   </button>
                   {/* Send + channel selector */}
                   <div ref={channelMenuRef} style={{ position: 'relative', display: 'flex' }}>
                     <button type="button" onClick={sendReply} disabled={sending || (!reply.trim() && stagedMedia.length === 0)}
-                      style={{ padding: '8px 16px', borderRadius: internalMode ? 10 : '10px 0 0 10px', background: (!reply.trim() && stagedMedia.length === 0) ? '#e5e7eb' : internalMode ? '#f59e0b' : (themeGradient || 'var(--coral)'), color: (reply.trim() || stagedMedia.length) ? '#fff' : '#9ca3af', border: 'none', fontSize: 13, fontWeight: 700, cursor: (reply.trim() || stagedMedia.length) ? 'pointer' : 'default', transition: 'all 0.15s' }}>
+                      style={{ height: 38, padding: '0 18px', borderRadius: internalMode ? 12 : '12px 0 0 12px', background: (!reply.trim() && stagedMedia.length === 0) ? '#e5e7eb' : internalMode ? '#f59e0b' : (themeGradient || 'var(--coral)'), color: (reply.trim() || stagedMedia.length) ? '#fff' : '#9ca3af', border: 'none', fontSize: 13, fontWeight: 700, cursor: (reply.trim() || stagedMedia.length) ? 'pointer' : 'default', transition: 'all 0.15s' }}>
                       {sending
                         ? (internalMode ? 'Saving…' : 'Sending…')
                         : internalMode
@@ -9567,12 +9689,17 @@ export default function InboxPage() {
                     <>
                     <button type="button" onClick={() => setShowChannelMenu(v => !v)} disabled={sending}
                       title="Choose a channel"
-                      style={{ padding: '8px 8px', borderRadius: '0 10px 10px 0', background: (reply.trim() || stagedMedia.length) ? themeSolid : '#e5e7eb', color: (reply.trim() || stagedMedia.length) ? '#fff' : '#9ca3af', border: 'none', borderLeft: '1px solid rgba(255,255,255,0.25)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                      style={{ height: 38, padding: '0 10px', borderRadius: '0 12px 12px 0', background: (reply.trim() || stagedMedia.length) ? themeSolid : '#e5e7eb', color: (reply.trim() || stagedMedia.length) ? '#fff' : '#9ca3af', border: 'none', borderLeft: '1px solid rgba(255,255,255,0.25)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="18 15 12 9 6 15"/></svg>
                     </button>
 
                     {showChannelMenu && (
                       <div style={{ position: 'absolute', bottom: '120%', right: 0, width: 190, background: '#fff', borderRadius: 12, border: '1px solid var(--border)', boxShadow: '0 12px 32px rgba(0,0,0,0.14)', zIndex: 60, overflow: 'hidden', padding: '4px 0' }}>
+                        <button type="button" onClick={() => { setShowChannelMenu(false); sendAndClose() }} disabled={sending || (!reply.trim() && stagedMedia.length === 0)}
+                          style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '9px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: (reply.trim() || stagedMedia.length) ? 'var(--ink)' : '#9ca3af', fontWeight: 600 }}>
+                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4z"/></svg>
+                          Send &amp; close
+                        </button>
                         <button type="button" onClick={() => { setShowChannelMenu(false); openScheduleMsg() }}
                           style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '9px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)', fontWeight: 600 }}>
                           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg>
@@ -9601,6 +9728,10 @@ export default function InboxPage() {
                   </div>
                 </div>
               </div>
+              </div>
+              <div className="cmp-hint">
+                <span><kbd>Enter</kbd> to send</span><span><kbd>Shift</kbd> + <kbd>Enter</kbd> new line</span>{internalMode ? <span><kbd>@</kbd> mention</span> : <span><kbd>/</kbd> quick replies</span>}
+              </div>
               </>
               )}
             </div>
@@ -9610,7 +9741,14 @@ export default function InboxPage() {
 
       {/* ── RIGHT: Contact info + Page history ─────────────────────────────── */}
       {selected && (
+        <>
+        <div className="inbox-tablet-scrim" onClick={() => setTabletContact(false)} aria-hidden />
         <div className="inbox-col-contact" style={{ width: 280, flexShrink: 0, borderLeft: '1px solid var(--border)', background: '#fff', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          {/* Tablet: close the drawer */}
+          <button type="button" className="inbox-tablet-only inbox-drawer-close" onClick={() => setTabletContact(false)} aria-label="Close contact panel" title="Close"
+            style={{ display: 'none', position: 'absolute', top: 8, right: 8, zIndex: 2, width: 30, height: 30, borderRadius: 9, border: 'none', background: '#f3f4f6', color: 'var(--slate)', cursor: 'pointer', alignItems: 'center', justifyContent: 'center' }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>
+          </button>
           {/* Mobile: back to thread */}
           <button type="button" className="inbox-mobile-only" onClick={() => setMobilePane('thread')}
             style={{ display: 'none', alignItems: 'center', gap: 6, padding: '10px 14px', border: 'none', borderBottom: '1px solid var(--border)', background: '#fff', cursor: 'pointer', color: 'var(--slate)', fontSize: 13, fontWeight: 600 }}>
@@ -10057,7 +10195,7 @@ export default function InboxPage() {
                               <button type="button" title="Copy" onClick={() => copyField(value)} style={fieldBtn('var(--slate)')}>
                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
                               </button>
-                              <button type="button" title="Delete" onClick={async () => { if (confirm(`Clear ${label.toLowerCase()}?`)) { await (supabase as any).from('contacts').update({ [field]: null }).eq('id', contact.id); setContact((c: any) => ({ ...c, [field]: null })); showToast('Cleared') } }} style={fieldBtn('#dc2626')}>
+                              <button type="button" title="Delete" onClick={async () => { if (await confirmDialog(`Clear ${label.toLowerCase()}?`)) { await (supabase as any).from('contacts').update({ [field]: null }).eq('id', contact.id); setContact((c: any) => ({ ...c, [field]: null })); showToast('Cleared') } }} style={fieldBtn('#dc2626')}>
                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                               </button>
                             </div>
@@ -10742,7 +10880,16 @@ export default function InboxPage() {
             )}
           </div>
         </div>
+        </>
       )}
     </div>
   )
+}
+
+// Review-request card wrapper: feeds the tracked link's live stats (opens,
+// last device / city) into the card's render function.
+function ReviewCard({ msg, companyId, render }: { msg: any; companyId: string | null; render: (s: any) => React.ReactNode }) {
+  const codes = linkCodesIn(msg?.content).slice(0, 1)
+  const [s] = useLinkStats(companyId, codes)
+  return <>{render(s || null)}</>
 }

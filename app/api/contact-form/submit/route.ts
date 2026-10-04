@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { emitInboundEvent } from '@/lib/integration-hooks'
+import { emitIntegrationEvent } from '@/lib/integration-events'
 
 export const dynamic = 'force-dynamic'
 
@@ -73,7 +75,16 @@ export async function POST(req: NextRequest) {
           sender_type: 'visitor', sender_name: name, sender_email: email || null,
           content,
         })
+        await emitInboundEvent(db, { companyId, conversationId, text: message || content, channel: 'form', name, email: email || null, phone: phone || null, isNew: true })
       }
+      emitIntegrationEvent(companyId, 'form.submitted', {
+        title: `New ${form.name || 'contact form'} submission from ${name}`,
+        summary: message ? `“${String(message).slice(0, 600)}”` : null,
+        path: conversationId ? `/admin/inbox?conversation=${conversationId}` : '/admin/inbox',
+        customer: { name, email: email || null, phone: phone || null },
+        fields: Object.fromEntries(fields.slice(0, 12).map((f: any) => [String(f.label || f.key), String(data[f.key] ?? '').slice(0, 300) || null])),
+        data: { form: { id: form.id, name: form.name || null, kind: 'contact_form' }, answers: Object.fromEntries(fields.map((f: any) => [f.key, data[f.key] ?? null])) },
+      }, { db })
     } catch (e: any) {
       // Even if inbox wiring fails, keep the submission below.
       console.error('[contact-form] inbox create failed', e?.message || e)

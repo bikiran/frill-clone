@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { xmlEscape } from '@/lib/twilio-service'
 import { setCallPreview } from '@/lib/call-card'
 import { resolveAgentName } from '@/lib/agent-name'
+import { emitCallEvent } from '@/lib/integration-hooks'
 
 export const dynamic = 'force-dynamic'
 
@@ -118,6 +119,7 @@ export async function POST(req: NextRequest) {
     if (integ?.voicemail_enabled === false) {
       if (callRowId) { try { await db.from('calls').update({ status: 'missed', ended_at: new Date().toISOString(), cause: ringOutcome }).eq('id', callRowId) } catch {} }
       try { await setCallPreview(db as any, conversationId, '📞 Missed call') } catch {}
+      await emitCallEvent(db, 'call.missed', callRowId)
       return twiml('<Response><Hangup/></Response>')
     }
     if (callRowId) { try { await db.from('calls').update({ status: 'voicemail_greeting', is_voicemail: true, cause: ringOutcome }).eq('id', callRowId) } catch {} }

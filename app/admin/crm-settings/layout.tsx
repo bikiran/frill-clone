@@ -12,6 +12,7 @@ const NAV = [
   { slug: 'custom-fields', label: 'Custom Fields' },
   { slug: 'power-ups', label: 'Time Savers' },
   { slug: 'ai', label: 'AI' },
+  { slug: 'ai-knowledge', label: 'AI Knowledge' },
   { slug: 'contact-form', label: 'Contact Form' },
   { slug: 'chat-widget', label: 'Chat Widget' },
   { slug: 'auto-replies', label: 'Automatic Replies' },
@@ -26,7 +27,9 @@ const NAV = [
 
 export default function CrmSettingsLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
-  const current = NAV.find(n => pathname?.includes(`/crm-settings/${n.slug}`)) || NAV[0]
+  // Match a whole path segment, so /ai doesn't also light up for /ai-knowledge.
+  const isAt = (slug: string) => new RegExp(`/crm-settings/${slug}(/|$|[?#])`).test(pathname || '')
+  const current = NAV.find(n => isAt(n.slug)) || NAV[0]
 
   // Channel detail pages live under /crm-settings/channels/<slug>. Show them as a
   // third breadcrumb level with a "Back to channels" link, so people don't lose
@@ -82,12 +85,13 @@ export default function CrmSettingsLayout({ children }: { children: React.ReactN
               white-space: nowrap !important; padding: 8px !important; gap: 6px !important;
             }
             .crm-settings-nav a { display: inline-block !important; margin-bottom: 0 !important; flex-shrink: 0 !important; }
+            .crm-settings-content { padding: 20px 16px !important; }
           }
         `}</style>
         {/* Settings sidebar */}
         <div className="crm-settings-nav" style={{ width: 230, flexShrink: 0, borderRight: '1px solid var(--border)', background: '#fafafa', padding: '12px 8px', overflowY: 'auto' }}>
           {NAV.map(n => {
-            const active = pathname?.includes(`/crm-settings/${n.slug}`)
+            const active = isAt(n.slug)
             return (
               <Link key={n.slug} href={`/admin/crm-settings/${n.slug}`}
                 style={{
@@ -103,7 +107,7 @@ export default function CrmSettingsLayout({ children }: { children: React.ReactN
         </div>
 
         {/* Page content */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '28px 32px', minWidth: 0 }}>
+        <div className="crm-settings-content" style={{ flex: 1, overflowY: 'auto', padding: '28px 32px', minWidth: 0 }}>
           {children}
         </div>
       </div>

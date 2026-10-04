@@ -3,6 +3,9 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter, useSearchParams } from 'next/navigation'
+import { confirmDialog } from '@/components/ConfirmDialog'
+import Link from 'next/link'
+import { Icon } from '@/components/integrations/ui'
 
 export default function ShopifyIntegrationPage() {
   const router = useRouter()
@@ -89,7 +92,7 @@ export default function ShopifyIntegrationPage() {
 
   const removeStore = async (integrationId: string) => {
     if (!companyId) return
-    if (!confirm('Remove this Shopify store? Synced customers stay, but it stops syncing.')) return
+    if (!await confirmDialog('Remove this Shopify store? Synced customers stay, but it stops syncing.')) return
     try {
       await fetch('/api/shopify/setup', {
         method: 'DELETE', headers: { 'Content-Type': 'application/json' },
@@ -102,17 +105,18 @@ export default function ShopifyIntegrationPage() {
   if (loading) return <div style={{ padding: 24, color: 'var(--slate)' }}>Loading…</div>
 
   return (
-    <div style={{ maxWidth: 640, margin: '0 auto', padding: '28px 24px', fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif' }}>
-      <button onClick={() => router.push(`/admin/integrations${slug ? `?slug=${slug}` : ''}`)}
-        style={{ background: 'none', border: 'none', color: 'var(--slate)', fontSize: 13, cursor: 'pointer', marginBottom: 16, padding: 0 }}>← Back to integrations</button>
+    <div className="w-full max-w-[1200px] mx-auto px-4 md:px-8 py-6 md:py-8">
+      <Link href="/admin/integrations" className="inline-flex items-center gap-1.5 text-sm mb-5 hover:opacity-70 transition-opacity" style={{ color: 'var(--slate)' }}>
+        <Icon name="back" size={15} /> All integrations
+      </Link>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
-        <div style={{ width: 44, height: 44, borderRadius: 10, background: '#95BF47', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22 }}>🛒</div>
+        <img src="/logos/shopify.svg" alt="" width={48} height={48} style={{ width: 48, height: 48, flexShrink: 0 }} />
         <div>
           <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: 'var(--ink)' }}>Shopify</h1>
           <p style={{ margin: 0, fontSize: 13, color: 'var(--slate)' }}>Sync your Shopify customers into Colvy</p>
         </div>
-        {stores.length > 0 && <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 700, background: '#dcfce7', color: '#059669', padding: '4px 12px', borderRadius: 20 }}>● {stores.length} store{stores.length > 1 ? 's' : ''}</span>}
+        {stores.length > 0 && <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, fontWeight: 600, background: '#dcfce7', color: '#15803d', padding: '3px 10px', borderRadius: 20 }}><Icon name="check" size={12} /> {stores.length} store{stores.length > 1 ? 's' : ''}</span>}
       </div>
 
       {error && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 10, padding: '10px 14px', marginBottom: 14, fontSize: 13, color: '#dc2626' }}>{error}</div>}
@@ -120,7 +124,7 @@ export default function ShopifyIntegrationPage() {
 
       {(stores.length === 0 || addingStore) ? (
         <form onSubmit={connect} style={{ borderRadius: 12, border: '1px solid var(--border)', padding: 24, background: '#fff' }}>
-          {addingStore && <button type="button" onClick={() => setAddingStore(false)} style={{ background: 'none', border: 'none', color: 'var(--slate)', fontSize: 13, cursor: 'pointer', marginBottom: 12, padding: 0 }}>← Back to my stores</button>}
+          {addingStore && <button type="button" onClick={() => setAddingStore(false)} style={{ background: 'none', border: 'none', color: 'var(--slate)', fontSize: 13, cursor: 'pointer', marginBottom: 12, padding: 0 }}>Back to my stores</button>}
           <h2 style={{ fontSize: 16, fontWeight: 700, marginBottom: 6, color: 'var(--ink)' }}>{addingStore ? 'Add another store' : 'Connect your Shopify store'}</h2>
 
           <div style={{ background: '#f9fafb', borderRadius: 10, padding: 14, margin: '14px 0', fontSize: 12.5, color: 'var(--slate)', lineHeight: 1.6 }}>
@@ -149,7 +153,7 @@ export default function ShopifyIntegrationPage() {
       ) : (
         <div style={{ borderRadius: 12, border: '1px solid var(--border)', padding: 24, background: 'var(--canvas)' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
-            <h2 style={{ fontSize: 16, fontWeight: 700, margin: 0, color: 'var(--ink)' }}>✓ Connected {stores.length > 1 ? `— ${stores.length} stores` : ''}</h2>
+            <h2 style={{ fontSize: 16, fontWeight: 700, margin: 0, color: 'var(--ink)' }}>Connected {stores.length > 1 ? `— ${stores.length} stores` : ''}</h2>
             <button onClick={() => { setAddingStore(true); setStoreDomain(''); setAccessToken('') }}
               style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid #95BF47', background: '#fff', color: '#5c8a1b', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>+ Add another store</button>
           </div>
@@ -159,7 +163,7 @@ export default function ShopifyIntegrationPage() {
               <div key={s.id} style={{ padding: '14px 16px', background: '#fff', borderRadius: 8, border: '1px solid var(--border)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
                   <div>
-                    <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: 'var(--ink)' }}>🛒 {s.store_name || s.store_domain}</p>
+                    <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: 'var(--ink)' }}>{s.store_name || s.store_domain}</p>
                     <p style={{ margin: '2px 0 0', fontSize: 12, color: '#888' }}>{s.store_domain}</p>
                     {s.last_synced_at && <p style={{ margin: '4px 0 0', fontSize: 11.5, color: '#999' }}>Last synced {new Date(s.last_synced_at).toLocaleString()}</p>}
                   </div>

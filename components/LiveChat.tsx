@@ -101,6 +101,7 @@ export default function LiveChat({ slug: slugProp }: { slug?: string } = {}) {
       {/* Floating button - truly fixed to viewport */}
       <button
         onClick={() => setOpen(!open)}
+        aria-label={open ? 'Close chat' : 'Chat with us'}
         style={{
           position: 'fixed',
           bottom: 24,

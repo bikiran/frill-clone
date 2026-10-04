@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import Link from 'next/link'
+import { Icon, Star } from '@/components/integrations/ui'
 
 export default function GoogleReviewsPage() {
   const [companyId, setCompanyId] = useState<string | null>(null)
@@ -151,7 +153,7 @@ export default function GoogleReviewsPage() {
       let d: any = {}
       try { d = text ? JSON.parse(text) : {} } catch { d = { error: res.ok ? 'The sync took too long — it may still be running. Refresh in a minute.' : (text.slice(0, 160) || 'Sync failed') } }
       if (!res.ok || d.error) throw new Error(d.error)
-      setMsg(`Synced ${d.total} review(s)${d.averageRating ? ` · average ${Number(d.averageRating).toFixed(1)}★` : ''}.`)
+      setMsg(`Synced ${d.total} review(s)${d.averageRating ? ` · average rating ${Number(d.averageRating).toFixed(1)} of 5` : ''}.`)
       await load(companyId)
     } catch (e: any) { setMsg('Sync failed: ' + e.message) }
     finally { setBusy('') }
@@ -192,7 +194,7 @@ export default function GoogleReviewsPage() {
   }
 
   const Stars = ({ n }: { n: number }) => (
-    <span style={{ color: '#f5a623', fontSize: 13 }}>{'★'.repeat(n || 0)}<span style={{ color: '#e5e5e5' }}>{'★'.repeat(5 - (n || 0))}</span></span>
+    <span style={{ display: 'inline-flex', gap: 1 }} aria-label={`${n || 0} out of 5 stars`}>{[0, 1, 2, 3, 4].map(i => <Star key={i} on={i < (n || 0)} />)}</span>
   )
 
   const L: any = { display: 'block', fontSize: 12.5, fontWeight: 700, color: 'var(--ink)', marginBottom: 6 }
@@ -201,7 +203,7 @@ export default function GoogleReviewsPage() {
   if (loading) return <div style={{ padding: 28 }}>Loading…</div>
 
   return (
-    <div style={{ maxWidth: 760, margin: '0 auto', padding: '28px 24px', fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif' }}>
+    <div className="w-full max-w-[1200px] mx-auto px-4 md:px-8 py-6 md:py-8">
       <h1 style={{ fontSize: 24, fontWeight: 800, color: 'var(--ink)', margin: '0 0 4px' }}>Google Reviews</h1>
       <p style={{ fontSize: 14, color: 'var(--slate)', margin: '0 0 20px' }}>See and reply to your Google reviews, and automatically ask customers for one after their order completes.</p>
 

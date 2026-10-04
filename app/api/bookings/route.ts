@@ -46,6 +46,16 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ timezone: settings.timezone, slots: slots.map(s => ({ start: new Date(s.start).toISOString() })) })
     }
 
+    // Side-menu badge: bookings confirmed since this browser last opened Bookings.
+    if (sp.get('op') === 'newcount') {
+      const since = sp.get('since')
+      if (!since || isNaN(Date.parse(since))) return NextResponse.json({ count: 0 })
+      const { count, error } = await db.from('bookings').select('id', { count: 'exact', head: true })
+        .eq('company_id', companyId).in('status', ['confirmed', 'completed'])
+        .gt('confirmed_at', new Date(since).toISOString())
+      return NextResponse.json({ count: error ? 0 : (count || 0) }, { headers: { 'Cache-Control': 'no-store' } })
+    }
+
     if (sp.get('op') === 'today') {
       const company = await loadCompanyPublic(db, { id: companyId })
       const settings = resolveBookingSettings(company?.booking_settings)
@@ -102,7 +112,18 @@ export async function GET(req: NextRequest) {
     // Lapsed unpaid holds are noise in "upcoming" — hide them.
     const rows = (data || []).filter((b: any) => b.status !== 'pending' || (b.hold_expires_at && b.hold_expires_at > nowIso))
     const company = await loadCompanyPublic(db, { id: companyId })
-    return NextResponse.json({ bookings: rows.map((b: any) => ({ ...b, manage_token: undefined, manage_url: company ? manageUrl(company, b.manage_token) : null })) })
+    // Earlier kept appointments per customer — "New customer" vs "Returning · 3 visits".
+    const contactIds = [...new Set(rows.map((b: any) => b.contact_id).filter(Boolean))]
+    const history: any[] = []
+    for (let i = 0; i < contactIds.length; i += 200) {
+      const { data: h } = await db.from('bookings').select('contact_id, starts_at').eq('company_id', companyId)
+        .in('contact_id', contactIds.slice(i, i + 200)).in('status', ['confirmed', 'completed']).lt('ends_at', nowIso).limit(5000)
+      history.push(...(h || []))
+    }
+    const byContact = new Map<string, string[]>()
+    for (const h of history) byContact.set(h.contact_id, [...(byContact.get(h.contact_id) || []), h.starts_at])
+    const visits = (b: any) => (byContact.get(b.contact_id) || []).filter(s => s < b.starts_at).length
+    return NextResponse.json({ bookings: rows.map((b: any) => ({ ...b, manage_token: undefined, manage_url: company ? manageUrl(company, b.manage_token) : null, visits: visits(b) })) })
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || 'Failed' }, { status: 500 })
   }

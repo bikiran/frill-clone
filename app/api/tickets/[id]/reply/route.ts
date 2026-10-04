@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { trackLinksInText } from '@/lib/link-tracking'
 
 export const dynamic = 'force-dynamic'
 
@@ -44,7 +45,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     const userId = await userFromReq(db, req)
     const body = await req.json().catch(() => ({}))
     const kind = body?.kind === 'note' ? 'note' : 'reply'
-    const text = String(body?.body || '').trim()
+    let text = String(body?.body || '').trim()
     const authorName = String(body?.authorName || 'Agent').trim()
     if (!text) return NextResponse.json({ error: 'Message is required' }, { status: 400 })
 
@@ -53,6 +54,11 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
 
     let emailed = false
     let emailNote: string | null = null
+
+    // Links in a reply to the customer go out as tracked short links.
+    if (kind === 'reply' && /https?:\/\//i.test(text)) {
+      try { text = await trackLinksInText(text, { companyId: ticket.company_id, contactId: ticket.contact_id || undefined, channel: 'email' }) } catch {}
+    }
 
     // A reply goes out to the requester by email (an internal note never does).
     // Uses the SAME channel resolution + send path as the inbox email reply, so

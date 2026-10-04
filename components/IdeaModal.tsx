@@ -7,6 +7,7 @@ import { track } from '@/lib/analytics'
 import { useToast } from '@/components/ToastProvider'
 import { SurveyQuestionBuilder, type SurveyQuestion } from '@/components/SurveyQuestionBuilder'
 import { FormFieldBuilder, type FormField } from '@/components/FormFieldBuilder'
+import { notifyIntegrations } from '@/lib/integrations-notify'
 
 const TOPICS = [
   { id: 'welcome', label: 'Welcome', emoji: '👋' },
@@ -512,6 +513,7 @@ export default function IdeaModal({ onClose, onSubmitted }: {
       setLoading(false)
       return
     }
+    notifyIntegrations('idea.created', { id: idea.id })
 
     if (session.session?.user.id) {
       await supabase.from('votes').insert({ idea_id: idea.id, user_id: session.session.user.id })

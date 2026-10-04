@@ -2,10 +2,13 @@
 
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import Link from 'next/link'
 
 const DEFAULTS = {
   enabled: false,
   auto_reply: false,
+  auto_reply_sms: false,
+  send_delay: 3,
   handoff_after: 3,
   knowledge: { ideas: true, roadmap: true, announcements: true, help: true, website: false, past_chats: false },
   capabilities: {
@@ -20,7 +23,6 @@ export default function AiSettingsPage() {
   const [loading, setLoading] = useState(true)
   const [cfg, setCfg] = useState<any>(DEFAULTS)
   const [saving, setSaving] = useState(false)
-  const [indexing, setIndexing] = useState(false)
   const [index, setIndex] = useState<any>(null)
   const [msg, setMsg] = useState('')
   const [diag, setDiag] = useState<any>(null)
@@ -65,7 +67,8 @@ export default function AiSettingsPage() {
 
   const loadIndex = async (cid: string) => {
     try {
-      const res = await fetch(`/api/ai/index-knowledge?companyId=${cid}`)
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch(`/api/ai/index-knowledge?companyId=${cid}`, { headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {} })
       setIndex(await res.json())
     } catch {}
   }
@@ -79,24 +82,6 @@ export default function AiSettingsPage() {
       setTimeout(() => setMsg(''), 2500)
     } catch (e: any) { setMsg(e.message) }
     finally { setSaving(false) }
-  }
-
-  const reindex = async () => {
-    if (!companyId) return
-    setIndexing(true); setMsg('')
-    try {
-      // Save first, so the indexer honours the sources just ticked.
-      await (supabase as any).from('companies').update({ ai_settings: cfg }).eq('id', companyId)
-      const res = await fetch('/api/ai/index-knowledge', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ companyId }),
-      })
-      const d = await res.json()
-      if (!res.ok) throw new Error(d.error || 'Indexing failed')
-      setMsg(`Learned from ${d.indexed} source${d.indexed === 1 ? '' : 's'}.`)
-      await loadIndex(companyId)
-    } catch (e: any) { setMsg('Could not index: ' + e.message) }
-    finally { setIndexing(false) }
   }
 
   const setCap = (key: string, patch: any) =>
@@ -145,6 +130,32 @@ export default function AiSettingsPage() {
               </span>
             </label>
 
+            {cfg.auto_reply && (
+              <>
+                <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, margin: '0 0 16px 28px' }}>
+                  <input type="checkbox" checked={!!cfg.auto_reply_sms}
+                    onChange={e => setCfg({ ...cfg, auto_reply_sms: e.target.checked })}
+                    style={{ width: 16, height: 16, accentColor: 'var(--coral)', marginTop: 2 }} />
+                  <span>
+                    <span style={{ display: 'block', fontSize: 13.5, fontWeight: 700, color: 'var(--ink)' }}>Also reply to text messages (SMS)</span>
+                    <span style={{ display: 'block', fontSize: 12.5, color: 'var(--slate)', marginTop: 2 }}>Website chat is always on. Keyword auto-replies still go first; the AI answers what they don&rsquo;t.</span>
+                  </span>
+                </label>
+
+                <label style={L}>Countdown before an AI reply is sent</label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+                  <select value={String(cfg.send_delay ?? 3)} onChange={e => setCfg({ ...cfg, send_delay: Number(e.target.value) })}
+                    style={{ ...num, width: 'auto', paddingRight: 28 }}>
+                    <option value="0">No countdown</option>
+                    <option value="3">3 seconds</option>
+                    <option value="5">5 seconds</option>
+                    <option value="10">10 seconds</option>
+                  </select>
+                  <span style={{ fontSize: 13, color: 'var(--slate)' }}>Anyone watching the inbox can send it now, edit it or cancel it.</span>
+                </div>
+              </>
+            )}
+
             <label style={L}>Hand to a person after</label>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <input type="number" min={1} max={10} value={cfg.handoff_after}
@@ -165,44 +176,17 @@ export default function AiSettingsPage() {
               The AI answers <strong>only</strong> from your own material. If the answer isn&rsquo;t here, it says it&rsquo;s unsure and fetches a person rather than guessing.
             </p>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 9, marginBottom: 16 }}>
-              {[
-                ['ideas', 'Ideas', 'What customers have asked for'],
-                ['roadmap', 'Roadmap', "What's planned and shipped"],
-                ['announcements', 'Announcements', 'Your changelog and news'],
-                ['help', 'Help centre articles', 'Usually the best source of answers'],
-                ['website', 'Your website', 'Reads the pages on your verified domains'],
-                ['past_chats', 'Past conversations', 'How your team actually answers — only human replies are learned from'],
-              ].map(([k, label, note]) => (
-                <label key={k} style={{ display: 'flex', alignItems: 'flex-start', gap: 9 }}>
-                  <input type="checkbox" checked={!!cfg.knowledge[k as string]}
-                    onChange={e => setCfg({ ...cfg, knowledge: { ...cfg.knowledge, [k as string]: e.target.checked } })}
-                    style={{ width: 16, height: 16, accentColor: 'var(--coral)', marginTop: 2 }} />
-                  <span>
-                    <span style={{ display: 'block', fontSize: 13.5, fontWeight: 600, color: 'var(--ink)' }}>{label}</span>
-                    <span style={{ display: 'block', fontSize: 12, color: 'var(--slate)' }}>{note}</span>
-                  </span>
-                </label>
-              ))}
-            </div>
-
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-              <button onClick={reindex} disabled={indexing}
-                style={{ padding: '9px 18px', borderRadius: 9, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>
-                {indexing ? 'Learning…' : 'Learn from my content'}
-              </button>
-              {index?.total > 0 && (
-                <span style={{ fontSize: 12.5, color: 'var(--slate)' }}>
-                  {index.total} source{index.total === 1 ? '' : 's'} indexed
-                  {index.lastIndexedAt ? ` · ${new Date(index.lastIndexedAt).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}` : ''}
-                </span>
-              )}
+              <Link href="/admin/crm-settings/ai-knowledge"
+                style={{ padding: '9px 18px', borderRadius: 9, background: 'var(--coral)', color: '#fff', fontSize: 13.5, fontWeight: 700, textDecoration: 'none' }}>
+                Open AI knowledge
+              </Link>
+              <span style={{ fontSize: 12.5, color: 'var(--slate)' }}>
+                {index?.total > 0
+                  ? `${index.total} item${index.total === 1 ? '' : 's'} in the library${index.lastIndexedAt ? ` · updated ${new Date(index.lastIndexedAt).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}` : ''}`
+                  : 'Choose sources, add facts and files, and test answers there.'}
+              </span>
             </div>
-            {index?.total === 0 && (
-              <p style={{ margin: '10px 0 0', fontSize: 12.5, color: '#b45309' }}>
-                Nothing indexed yet — the AI can&rsquo;t answer anything about your business until you do this.
-              </p>
-            )}
           </Card>
 
           {/* Capabilities */}

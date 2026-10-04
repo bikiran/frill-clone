@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { SegmentationService } from '@/lib/segmentation-service'
+import { notifyIntegrations } from '@/lib/integrations-notify'
 
 export default function CustomerProfilePage() {
   const searchParams = useSearchParams()
@@ -465,6 +466,7 @@ export default function CustomerProfilePage() {
           .insert({ company_id: companyId, text, done: false, ...(convId ? { conversation_id: convId } : {}), ...(due ? { due_date: due } : {}) }).select().maybeSingle()
         inserted = d2
       } else inserted = data
+      if (inserted?.id) notifyIntegrations('task.created', { id: inserted.id, companyId })
       if (inserted) setTasks(ts => [inserted, ...ts])
       setTaskText(''); setTaskDue('')
     } catch {} finally { setSavingTask(false) }

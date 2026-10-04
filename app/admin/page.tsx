@@ -9,6 +9,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 
 import { LightbulbIcon, MapIcon, MegaphoneIcon, SurveyIcon, PollIcon, HomeIcon } from '@/components/Icons'
+import { confirmDialog } from '@/components/ConfirmDialog'
 
 
 export default function AdminDashboard() {
@@ -133,7 +134,7 @@ export default function AdminDashboard() {
   }
 
   const seedSampleData = async () => {
-    const action = confirm('Add sample data to your dashboard?\n\nClick OK to add fresh sample data (existing data kept).\nHold Shift and click OK to REPLACE all data with fresh samples.')
+    const action = await confirmDialog('Add sample data to your dashboard?\n\nClick OK to add fresh sample data (existing data kept).\nHold Shift and click OK to REPLACE all data with fresh samples.')
     if (!action) return
     setSeeding(true)
     try {

@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useToast, ToastContainer } from '@/lib/toast'
 import { useEntitlements } from '@/lib/entitlements-client'
+import { confirmDialog } from '@/components/ConfirmDialog'
 
 // Colvy-branded CNAME target shown to customers for custom domains — a
 // colvy.com host that itself points at our platform, so the underlying
@@ -900,7 +901,7 @@ export default function SettingsPage() {
                   <p className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>Delete all Ideas</p>
                   <p className="text-xs mt-0.5" style={{ color: 'var(--slate)' }}>Once you delete Ideas, there is no going back so please be certain.</p>
                 </div>
-                <button onClick={() => { if (confirm('Delete ALL ideas? This cannot be undone!')) alert('Contact support to delete all ideas.') }}
+                <button onClick={async () => { if (await confirmDialog('Delete ALL ideas? This cannot be undone!')) alert('Contact support to delete all ideas.') }}
                   className="px-4 py-2 rounded-xl border text-sm font-semibold cursor-pointer"
                   style={{ borderColor: '#fca5a5', color: '#dc2626' }}>
                   Delete all Ideas
@@ -911,7 +912,7 @@ export default function SettingsPage() {
                   <p className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>Delete company</p>
                   <p className="text-xs mt-0.5" style={{ color: 'var(--slate)' }}>Including all Ideas and Announcements, this cannot be undone.</p>
                 </div>
-                <button onClick={() => { if (confirm('Delete entire company? This CANNOT be undone!')) alert('Contact support to delete your company.') }}
+                <button onClick={async () => { if (await confirmDialog('Delete entire company? This CANNOT be undone!')) alert('Contact support to delete your company.') }}
                   className="px-4 py-2 rounded-xl text-sm font-semibold cursor-pointer text-white"
                   style={{ background: '#dc2626' }}>
                   Delete company
@@ -1636,7 +1637,11 @@ export default function SettingsPage() {
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--coral)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
                 <h2 className="font-bold" style={{ color: 'var(--ink)' }}>WordPress plugin</h2>
               </div>
-              <p className="text-sm mb-4" style={{ color: 'var(--slate)' }}>Install the Colvy plugin on your WordPress site, then paste these two values into <strong>Colvy → Settings</strong> in your WP admin. No file editing needed.</p>
+              <p className="text-sm mb-3" style={{ color: 'var(--slate)' }}>One plugin for your site: chat widget, WooCommerce orders and abandoned carts, “Notify me” on sold-out products, booking page embed and branding. Install it, then paste these two values into <strong>Colvy → Connection</strong> in your WP admin. It replaces the older Colvy Dashboard and Colvy Bridge plugins and keeps their settings.</p>
+              <a href="/downloads/colvy-wordpress.zip" download className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold mb-4" style={{ background: 'var(--coral)', color: '#fff' }}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v12M7 10l5 5 5-5" /><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /></svg>
+                Download plugin (v3.0.2)
+              </a>
               <div className="space-y-3">
                 <div>
                   <label className="text-xs font-semibold block mb-1" style={{ color: 'var(--slate)' }}>Company ID</label>
@@ -2011,7 +2016,7 @@ export default function SettingsPage() {
               </p>
               <button
                 onClick={async () => {
-                  if (!confirm('This will permanently delete all demo/sample data from your board. Continue?')) return
+                  if (!await confirmDialog('This will permanently delete all demo/sample data from your board. Continue?')) return
                   setRemovingDemo(true)
                   try {
                     const cid = company?.id

@@ -173,6 +173,7 @@ const SEARCH_EXTRAS: SearchItem[] = [
   { label: 'Auto-replies', href: '/admin/crm-settings/auto-replies', section: 'Settings', keywords: 'automation canned away hours' },
   { label: 'Contact form', href: '/admin/crm-settings/contact-form', section: 'Settings' },
   { label: 'AI settings', href: '/admin/ai-settings', section: 'Settings', keywords: 'assistant colvy ai reply' },
+  { label: 'AI knowledge', href: '/admin/crm-settings/ai-knowledge', section: 'Settings', keywords: 'colvy ai library facts files website train learn answers' },
   { label: 'Statuses', href: '/admin/statuses', section: 'Settings' },
   { label: 'Topics', href: '/admin/topics', section: 'Settings' },
   { label: 'Priorities', href: '/admin/priorities', section: 'Settings' },
@@ -460,6 +461,64 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'support_tickets', filter: `company_id=eq.${company.id}` }, load)
       .subscribe()
     return () => { active = false; clearInterval(iv); window.removeEventListener('tickets-seen', onSeen); window.removeEventListener('storage', onSeen); try { (supabase as any).removeChannel(ch) } catch {} }
+  }, [company?.id])
+
+  // New online bookings for the Bookings nav badge — confirmed since this
+  // browser last opened Bookings (colvy-bookings-seen-at). Bookings are
+  // server-only (RLS), so this polls a tiny count endpoint.
+  const [bookingsNew, setBookingsNew] = useState(0)
+  useEffect(() => {
+    if (!company?.id) return
+    let active = true
+    const load = async () => {
+      if (document.visibilityState !== 'visible') return
+      try {
+        let s = ''
+        try { s = localStorage.getItem('colvy-bookings-seen-at') || '' } catch {}
+        if (!s) { s = new Date().toISOString(); try { localStorage.setItem('colvy-bookings-seen-at', s) } catch {} }
+        const { data } = await supabase.auth.getSession()
+        const t = data?.session?.access_token
+        const r = await fetch(`/api/bookings?companyId=${company.id}&op=newcount&since=${encodeURIComponent(s)}`, { headers: t ? { Authorization: `Bearer ${t}` } : {} })
+        const d = await r.json().catch(() => ({}))
+        if (active && r.ok) setBookingsNew(d.count || 0)
+      } catch {}
+    }
+    load()
+    const iv = setInterval(load, 20000)
+    const onSeen = () => { if (active) setBookingsNew(0) }
+    const onStorage = (e: StorageEvent) => { if (e.key === 'colvy-bookings-seen-at') onSeen() }
+    window.addEventListener('bookings-seen', onSeen)
+    window.addEventListener('storage', onStorage)
+    window.addEventListener('focus', load)
+    return () => { active = false; clearInterval(iv); window.removeEventListener('bookings-seen', onSeen); window.removeEventListener('storage', onStorage); window.removeEventListener('focus', load) }
+  }, [company?.id])
+
+  // New back-in-stock sign-ups for the Waitlists badge — same pattern as Bookings.
+  const [waitlistNew, setWaitlistNew] = useState(0)
+  useEffect(() => {
+    if (!company?.id) return
+    let active = true
+    const load = async () => {
+      if (document.visibilityState !== 'visible') return
+      try {
+        let s = ''
+        try { s = localStorage.getItem('colvy-waitlist-seen-at') || '' } catch {}
+        if (!s) { s = new Date().toISOString(); try { localStorage.setItem('colvy-waitlist-seen-at', s) } catch {} }
+        const { data } = await supabase.auth.getSession()
+        const t = data?.session?.access_token
+        const r = await fetch(`/api/waitlist?companyId=${company.id}&op=newcount&since=${encodeURIComponent(s)}`, { headers: t ? { Authorization: `Bearer ${t}` } : {} })
+        const d = await r.json().catch(() => ({}))
+        if (active && r.ok) setWaitlistNew(d.count || 0)
+      } catch {}
+    }
+    load()
+    const iv = setInterval(load, 30000)
+    const onSeen = () => { if (active) setWaitlistNew(0) }
+    const onStorage = (e: StorageEvent) => { if (e.key === 'colvy-waitlist-seen-at') onSeen() }
+    window.addEventListener('waitlist-seen', onSeen)
+    window.addEventListener('storage', onStorage)
+    window.addEventListener('focus', load)
+    return () => { active = false; clearInterval(iv); window.removeEventListener('waitlist-seen', onSeen); window.removeEventListener('storage', onStorage); window.removeEventListener('focus', load) }
   }, [company?.id])
 
   const [showWorkspaces, setShowWorkspaces] = useState(false)
@@ -946,8 +1005,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                         : item.label === 'Tasks' ? taskDue
                         : item.label === 'Orders' ? ordersNew
                         : item.label === 'Tickets' ? ticketsNew
+                        : item.label === 'Bookings' ? bookingsNew
+                        : item.label === 'Waitlists' ? waitlistNew
                         : 0
-                      const tone = item.label === 'Tasks' ? 'var(--coral)' : item.label === 'Orders' ? '#2563eb' : '#ef4444'
+                      const tone = item.label === 'Tasks' ? 'var(--coral)' : item.label === 'Orders' || item.label === 'Bookings' || item.label === 'Waitlists' ? '#2563eb' : '#ef4444'
                       return (
                         <>
                           <span className="nav-ic" style={{ flexShrink: 0, display: 'flex', opacity: active ? 1 : 0.65, position: 'relative' }}>
@@ -964,7 +1025,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                               // pop animation replays whenever the count moves.
                               key={count}
                               className="count-pop"
-                              title={item.label === 'Tasks' ? `${count} task${count === 1 ? '' : 's'} due or overdue` : item.label === 'Orders' ? `${count} new order${count === 1 ? '' : 's'}` : item.label === 'Tickets' ? `${count} new ticket${count === 1 ? '' : 's'}` : `${count} unread`}
+                              title={item.label === 'Tasks' ? `${count} task${count === 1 ? '' : 's'} due or overdue` : item.label === 'Orders' ? `${count} new order${count === 1 ? '' : 's'}` : item.label === 'Tickets' ? `${count} new ticket${count === 1 ? '' : 's'}` : item.label === 'Bookings' ? `${count} new booking${count === 1 ? '' : 's'}` : `${count} unread`}
                               style={{ marginLeft: 'auto', minWidth: 18, height: 18, padding: '0 5px', borderRadius: 9, background: tone, color: '#fff', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                               {count > 99 ? '99+' : count}
                             </span>

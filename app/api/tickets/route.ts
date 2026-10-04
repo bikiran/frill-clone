@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { notifyCompany } from '@/lib/notify'
 import { autoAssignTicket, loadTicketTeam } from '@/lib/ticket-assign'
 import { resolveSla } from '@/lib/ticket-sla'
+import { emitTicketEvent } from '@/lib/integration-hooks'
 
 function admin() {
   return createClient(
@@ -168,6 +169,7 @@ export async function POST(req: NextRequest) {
     if (!ticket.assigned_to) { assignee = await autoAssignTicket(db, companyId, ticket.id); if (assignee) ticket.assigned_to = assignee.userId }
 
     try { await notifyCompany({ db, companyId, type: 'ticket', message: `Support ticket ${ticket.ticket_number} created — "${subject}"${assignee ? ` · assigned to ${assignee.name}` : ''}` }) } catch {}
+    await emitTicketEvent(db, 'ticket.created', ticket, { assignee: assignee?.name || null })
     return NextResponse.json({ ok: true, ticket, link })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })

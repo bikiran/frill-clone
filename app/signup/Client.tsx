@@ -8,10 +8,8 @@ import { track } from '@/lib/analytics'
 import { useRouter, useSearchParams } from 'next/navigation'
 import AddressAutocomplete, { AddressParts } from '@/components/AddressAutocomplete'
 import BusinessAutocomplete, { BusinessDetails, BusinessHours, DAYS, emptyHours } from '@/components/BusinessAutocomplete'
+import { INDUSTRIES } from '@/lib/industries'
 
-const INDUSTRIES = ['SaaS', 'E-commerce', 'Healthcare', 'Education', 'Finance',
-  'Logistics', 'Manufacturing', 'Media & Entertainment', 'Travel & Hospitality',
-  'Retail', 'Real Estate', 'Other']
 
 const CORAL = '#ff7a6b'
 const TOTAL_STEPS = 7
@@ -88,6 +86,8 @@ function SignUpForm() {
   const [addrParts, setAddrParts] = useState<Partial<AddressParts>>({})
   const [businessPhone, setBusinessPhone] = useState('')
   const [hours, setHours] = useState<BusinessHours>(emptyHours())
+  // The business picked from search (kept so Back → Continue still shows it).
+  const [found, setFound] = useState<BusinessDetails | null>(null)
 
   const [email, setEmail] = useState('')
   const [mobile, setMobile] = useState('')
@@ -177,7 +177,8 @@ function SignUpForm() {
     if (d.address) { setAddress(d.address); setAddrParts({ city: d.city, state: d.state, postcode: d.postcode, country: d.country }) }
     if (d.phone) setBusinessPhone(d.phone)
     if (d.hours) setHours(d.hours)
-    setStep(3)
+    if (d.industry) setIndustry(d.industry)
+    setFound(d)
   }
 
   // ── Step transitions ─────────────────────────────────────────────────────
@@ -406,14 +407,31 @@ function SignUpForm() {
             <h1 style={{ fontSize: 24, fontWeight: 800, color: '#0d0d0d', margin: '4px 0 6px' }}>Your business</h1>
             <p style={{ fontSize: 15, color: '#6b6b70', marginBottom: 20 }}>Let&rsquo;s find your business on Google or enter it manually.</p>
             <div style={{ display: 'inline-flex', background: '#f5f5f5', borderRadius: 12, padding: 4, marginBottom: 20 }}>
-              <button type="button" onClick={() => setBizMode('google')} style={{ padding: '9px 18px', borderRadius: 9, border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 700, background: bizMode === 'google' ? CORAL : 'transparent', color: bizMode === 'google' ? '#fff' : '#6b6b70' }}>🔍 Find on Google</button>
+              <button type="button" onClick={() => setBizMode('google')} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '9px 18px', borderRadius: 9, border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 700, background: bizMode === 'google' ? CORAL : 'transparent', color: bizMode === 'google' ? '#fff' : '#6b6b70' }}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
+                Find on Google
+              </button>
               <button type="button" onClick={() => setBizMode('manual')} style={{ padding: '9px 18px', borderRadius: 9, border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 700, background: bizMode === 'manual' ? CORAL : 'transparent', color: bizMode === 'manual' ? '#fff' : '#6b6b70' }}>Enter manually</button>
             </div>
             <div style={{ maxWidth: 480, margin: '0 auto', textAlign: 'left' }}>
               {bizMode === 'google' ? (
                 <>
-                  <BusinessAutocomplete value={companyName} onChange={setCompanyName} onSelect={applyBusiness} placeholder="Search your business name…" style={inputStyle} />
-                  <p style={{ fontSize: 12.5, color: '#9ca3af', margin: '8px 2px 0' }}>Search your business name and we&rsquo;ll fill your details from Google Maps.</p>
+                  <BusinessAutocomplete value={companyName} onChange={v => { setCompanyName(v); if (found && v !== found.name) setFound(null) }} onSelect={applyBusiness} placeholder="Search your business name…" style={inputStyle} />
+                  {found && found.name === companyName ? (
+                    <div className="su-found" style={{ marginTop: 12 }}>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '6px 12px', borderRadius: 999, background: '#ecfdf3', color: '#067647', fontSize: 13, fontWeight: 700 }}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
+                        {found.source === 'osm' ? 'Found on the map' : 'Found on Google'}
+                      </span>
+                      <p style={{ fontSize: 13.5, color: '#4b5563', margin: '10px 2px 0', lineHeight: 1.5 }}>
+                        {found.address ? <><strong style={{ color: '#0d0d0d' }}>{found.address}</strong><br /></> : null}
+                        We&rsquo;ll fill in your details{found.source === 'osm' ? '' : ' — address, phone, website and opening hours'}. Continue to check them.
+                      </p>
+                    </div>
+                  ) : (
+                    <p style={{ fontSize: 12.5, color: '#9ca3af', margin: '8px 2px 0' }}>Search your business name and we&rsquo;ll fill your details from Google Maps.</p>
+                  )}
+                  <style>{`.su-found{animation:suFound .35s cubic-bezier(.22,1,.36,1) both}@keyframes suFound{from{opacity:0;transform:translate3d(0,4px,0)}to{opacity:1;transform:none}}@media (prefers-reduced-motion:reduce){.su-found{animation:none}}`}</style>
                 </>
               ) : (
                 <>
@@ -451,7 +469,11 @@ function SignUpForm() {
               <select value={industry} onChange={e => setIndustry(e.target.value)} style={{ ...inputStyle, color: industry ? '#0d0d0d' : '#9ca3af', cursor: 'pointer' }}>
                 <option value="">Select an industry</option>
                 {INDUSTRIES.map(i => <option key={i} value={i}>{i}</option>)}
-              </select></div>
+                {industry && !(INDUSTRIES as readonly string[]).includes(industry) && <option value={industry}>{industry}</option>}
+              </select>
+              {found?.source === 'google' && found.category && found.industry && industry === found.industry && (
+                <p style={{ fontSize: 12, color: '#9ca3af', margin: '6px 2px 0' }}>Google lists you as &ldquo;{found.category}&rdquo;. Change it if that&rsquo;s not right.</p>
+              )}</div>
 
             <div style={{ marginBottom: 16 }}><label style={labelStyle}>Website</label>
               <input value={website} onChange={e => setWebsite(e.target.value)} placeholder="https://yourbusiness.com" style={inputStyle} /></div>
@@ -461,7 +483,17 @@ function SignUpForm() {
                 onSelect={p => setAddrParts({ city: p.city, state: p.state, postcode: p.postcode, country: p.country })}
                 placeholder="Business address" style={inputStyle} /></div>
 
-            <div style={{ marginBottom: 8 }}><label style={labelStyle}>Business hours</label>
+            <div style={{ marginBottom: 16 }}><label style={labelStyle}>Business phone</label>
+              <input value={businessPhone} onChange={e => setBusinessPhone(e.target.value)} type="tel" inputMode="tel" autoComplete="tel" placeholder="03 9000 0000" style={inputStyle} />
+              <p style={{ fontSize: 12, color: '#9ca3af', margin: '6px 2px 0' }}>Where calls are forwarded until your Colvy phone line is set up.</p></div>
+
+            <div style={{ marginBottom: 8 }}><label style={{ ...labelStyle, display: 'flex', alignItems: 'center', gap: 8 }}>Business hours
+              {found?.source === 'google' && found.hours && (
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 9px', borderRadius: 999, background: '#ecfdf3', color: '#067647', fontSize: 11.5, fontWeight: 700 }}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
+                  Verified via Google
+                </span>
+              )}</label>
               <p style={{ fontSize: 12, color: '#9ca3af', margin: '0 2px 10px' }}>Used for after-hours auto-replies and missed-call messages.</p>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {DAYS.map(d => (

@@ -11,6 +11,7 @@ import PageHeader from '@/components/PageHeader'
 import { findMatchingContacts, applyRelationship } from '@/lib/contact-matching'
 import { SegmentationService } from '@/lib/segmentation-service'
 import AddressAutocomplete from '@/components/AddressAutocomplete'
+import { confirmDialog } from '@/components/ConfirmDialog'
 
 type Contact = { id: string; name: string | null; email: string | null; phone: string | null; address: string | null; city: string | null; country: string | null; source: string; tags: string[]; subscribed_to_marketing: boolean; created_at: string; total_spend?: number; total_orders?: number; last_order_date?: string | null; rfm_category?: string; __aov?: number; relationship_type?: string; company_name?: string | null; notes?: string | null }
 
@@ -93,7 +94,7 @@ export default function ContactsPage() {
   const mergeGroup = async (group: any[], keepId: string) => {
     if (!companyId) return
     const mergeIds = group.filter(c => c.id !== keepId).map(c => c.id)
-    if (!confirm(`Merge ${mergeIds.length} duplicate${mergeIds.length === 1 ? '' : 's'} into this contact? All their conversations and history move across — nothing is lost.`)) return
+    if (!await confirmDialog(`Merge ${mergeIds.length} duplicate${mergeIds.length === 1 ? '' : 's'} into this contact? All their conversations and history move across — nothing is lost.`)) return
     setDupBusy(true)
     try {
       const res = await fetch('/api/contacts/duplicates', {

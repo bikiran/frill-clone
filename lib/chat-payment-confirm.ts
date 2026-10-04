@@ -119,9 +119,9 @@ export async function confirmChatPayment(
     const senderName = company || 'Support'
     try {
       if (channel === 'email' && email) {
-        await fetch(`${base}/api/email/send`, {
+        await fetch(`${base}/api/email/reply`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ companyId: pay.company_id, conversationId: pay.conversation_id, to: email, subject: subject || 'Payment received', text: custMsg, senderName }),
+          body: JSON.stringify({ conversationId: pay.conversation_id, to: email, subject: subject || 'Payment received', content: custMsg, agentName: senderName }),
         })
       } else if (['facebook', 'instagram', 'messenger'].includes(channel)) {
         await fetch(`${base}/api/meta/send`, {
@@ -182,6 +182,26 @@ export async function confirmChatPayment(
       }
     }
   } catch { /* analytics only — never affect payment processing */ }
+
+  // Tell the business's integrations (Slack, webhooks, Zapier…).
+  try {
+    const { data: row } = await db.from('chat_payments').select('description, currency').eq('id', pay.id).maybeSingle()
+    const { emitIntegrationEvent } = await import('@/lib/integration-events')
+    const amount = pay.amount_cents ? `$${(pay.amount_cents / 100).toFixed(2)}` : ''
+    emitIntegrationEvent(pay.company_id, 'payment.received', {
+      title: `Payment received${amount ? ` · ${amount}` : ''}${who ? ` from ${who}` : ''}`,
+      summary: row?.description || null,
+      path: pay.conversation_id ? `/admin/inbox?conversation=${pay.conversation_id}` : '/admin/payments',
+      customer: { name: who || subject || null, email: email || null, phone: phone || null },
+      fields: {
+        Amount: amount ? `${amount} ${String(row?.currency || 'aud').toUpperCase()}` : null, For: row?.description || null,
+        Card: opts?.cardBrand ? `${opts.cardBrand}${opts.cardLast4 ? ` ····${opts.cardLast4}` : ''}` : null,
+        Order: opts?.orderNumber ? `#${opts.orderNumber}` : null,
+      },
+      data: { payment: { id: pay.id, amount_cents: pay.amount_cents, currency: row?.currency || 'aud', description: row?.description || null, receipt_url: opts?.receiptUrl || null, order_number: opts?.orderNumber || null } },
+      dedupeKey: `payment:${pay.id}`,
+    }, { db })
+  } catch {}
 
   return { confirmed: true }
 }

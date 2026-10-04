@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { checkBurst, callerKey } from '@/lib/rate-limit'
 import { notifyCompany, pushInboundMessage } from '@/lib/notify'
 import { logEnquiryReopened } from '@/lib/conversation-timeline'
+import { emitInboundEvent } from '@/lib/integration-hooks'
 
 export const dynamic = 'force-dynamic'
 
@@ -117,6 +118,7 @@ export async function POST(req: NextRequest) {
     // team: the in-app bell plus a phone push carrying conversationId, so the
     // notification gets the Reply / Mark-read quick actions.
     if (senderType === 'visitor') {
+      await emitInboundEvent(db, { companyId, conversationId, text: content || 'Sent an attachment', channel: 'chat', name: (body.senderName || '').toString().slice(0, 120) || null, email: (body.senderEmail || '').toString().slice(0, 200) || null, messageId: message?.id || null })
       const who = (body.senderName || '').toString().slice(0, 120) || 'a visitor'
       const preview = content || '📎 Attachment'
       try {

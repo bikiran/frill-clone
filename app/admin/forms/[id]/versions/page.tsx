@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
+import { confirmDialog } from '@/components/ConfirmDialog'
 
 export default function FormVersionsPage() {
   const params = useParams()
@@ -47,7 +48,7 @@ export default function FormVersionsPage() {
   }
 
   const handleRollback = async (versionId: string, versionNumber: number) => {
-    if (!confirm(`Rollback to version ${versionNumber}? Current form will be replaced.`)) return
+    if (!await confirmDialog(`Rollback to version ${versionNumber}? Current form will be replaced.`)) return
 
     setRolling(true)
     try {

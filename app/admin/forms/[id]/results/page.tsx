@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
 import * as XLSX from 'xlsx'
 import jsPDF from 'jspdf'
+import { confirmDialog } from '@/components/ConfirmDialog'
 
 export default function FormResults() {
   const params = useParams()
@@ -163,7 +164,7 @@ export default function FormResults() {
 
   const bulkDeleteResponses = async () => {
     if (selectedResponses.size === 0) return
-    if (!confirm(`Delete ${selectedResponses.size} response(s)?`)) return
+    if (!await confirmDialog(`Delete ${selectedResponses.size} response(s)?`)) return
     
     setBulkDeleting(true)
     try {

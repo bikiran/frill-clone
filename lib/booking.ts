@@ -18,8 +18,10 @@ import {
 import { buildIcs, googleCalendarUrl } from '@/lib/booking-ics'
 import { createChatCheckoutSession, chatStripe } from '@/lib/chat-checkout'
 import { notifyCompany } from '@/lib/notify'
+import { emitIntegrationEvent } from '@/lib/integration-events'
 import { isExternalSendBlocked } from '@/lib/demo-guard'
 import { sendCustomerEmail } from '@/lib/customer-email'
+import { shortenUrl } from '@/lib/short-link'
 
 const MIN = 60_000
 const HOUR = 3_600_000
@@ -409,6 +411,25 @@ function whenText(b: any) {
   return fmtDateTime(Date.parse(b.starts_at), b.timezone || 'Australia/Melbourne', { withTz: true })
 }
 
+// The booking as integrations (Slack, webhooks, Zapier…) see it.
+function bookingEvent(b: any, title: string, extra: Record<string, any> = {}) {
+  return {
+    title, path: '/admin/bookings',
+    customer: { name: b.customer_name, email: b.customer_email, phone: b.customer_phone },
+    fields: {
+      Service: b.service_name, When: whenText(b), Staff: b.staff_name || null,
+      Price: b.price_cents ? fmtMoney(b.price_cents, b.currency) : null,
+      Paid: b.payment_status === 'paid' && b.amount_due_cents ? fmtMoney(b.amount_due_cents, b.currency) : null,
+      ...extra,
+    },
+    data: { booking: {
+      id: b.id, status: b.status, service: b.service_name, staff: b.staff_name || null, starts_at: b.starts_at, ends_at: b.ends_at,
+      price_cents: b.price_cents ?? null, amount_due_cents: b.amount_due_cents ?? null, currency: b.currency || null, payment_status: b.payment_status || null,
+    } },
+    dedupeKey: `booking:${b.id}:${b.status}:${b.starts_at}`,
+  }
+}
+
 // ── Create ───────────────────────────────────────────────────────────────────
 
 export type CreateInput = {
@@ -657,6 +678,7 @@ export async function confirmBooking(db: any, bookingId: string, opts: { origin:
   const who = b.staff_name ? ` with ${b.staff_name}` : ''
   await systemNote(db, bk, `📅 Booked online: ${b.service_name}${who} — ${whenText(b)}`)
   await notifyCompany({ db, companyId: b.company_id, type: 'booking', conversationId: conversationId || undefined, message: `📅 New booking: ${b.customer_name || 'A customer'} — ${b.service_name}${who}, ${whenText(b)}` })
+  emitIntegrationEvent(b.company_id, 'booking.created', bookingEvent(bk, `New booking: ${b.service_name} · ${b.customer_name || 'a customer'}`), { db })
   await customerMessage(db, company, settings, bk, 'confirmed', { service, origin: opts.origin })
   return { ok: true }
 }
@@ -726,6 +748,9 @@ export async function cancelBooking(db: any, bookingId: string, opts: { by: 'cus
   if (opts.by === 'customer') {
     await notifyCompany({ db, companyId: b.company_id, type: 'booking', conversationId: b.conversation_id || undefined, message: `❌ ${b.customer_name || 'A customer'} cancelled ${b.service_name}, ${whenText(b)}.${refundTxt}` })
   }
+  emitIntegrationEvent(b.company_id, 'booking.cancelled', bookingEvent(bk, `Booking cancelled: ${b.service_name} · ${b.customer_name || 'a customer'}`, {
+    'Cancelled by': opts.by === 'customer' ? 'Customer' : 'Team', Reason: bk.cancel_reason, Refunded: refunded ? fmtMoney(refunded, b.currency) : null,
+  }), { db })
   if (opts.notifyCustomer) await customerMessage(db, company, settings, bk, 'cancelled', { refunded, service, origin: opts.origin })
   return { ok: true, refunded, refundError }
 }
@@ -784,6 +809,9 @@ export async function rescheduleBooking(db: any, bookingId: string, opts: { star
   if (opts.by === 'customer') {
     await notifyCompany({ db, companyId: b.company_id, type: 'booking', conversationId: b.conversation_id || undefined, message: `🔁 ${b.customer_name || 'A customer'} moved ${b.service_name} to ${whenText(bk)} (was ${oldWhen})` })
   }
+  emitIntegrationEvent(b.company_id, 'booking.rescheduled', bookingEvent(bk, `Booking moved: ${b.service_name} · ${b.customer_name || 'a customer'}`, {
+    Was: oldWhen, 'Moved by': opts.by === 'customer' ? 'Customer' : 'Team',
+  }), { db })
   if (opts.notifyCustomer) await customerMessage(db, company, settings, bk, 'rescheduled', { service, origin: opts.origin })
   return { ok: true }
 }
@@ -818,8 +846,19 @@ export async function customerMessage(db: any, company: any, settings: BookingSe
   const rel = relWhen(b)
   const who = b.staff_name ? ` with ${b.staff_name}` : ''
   const where = whereText(b, extra.service)
-  const manage = manageUrl(company, b.manage_token)
-  const rebook = bookingPageUrl(company, extra.service?.active ? extra.service.slug : undefined)
+  // Tracked short links (same one in the SMS and the email), so the inbox card
+  // shows when the customer opened their booking.
+  const short = async (url: string, type: string) => {
+    try {
+      const s = await shortenUrl(url, { companyId: company.id, conversationId: b.conversation_id || undefined, kind: 'booking' })
+      const code = s && s !== url ? (s.split('/l/')[1] || '') : ''
+      if (code) await db.from('short_links').update({ link_type: type, contact_id: b.contact_id || null, conversation_id: b.conversation_id || null, channel: 'booking' }).eq('code', code)
+      return s || url
+    } catch { return url }
+  }
+  const live = kind === 'confirmed' || kind === 'rescheduled' || kind === 'reminder'
+  const manage = live ? await short(manageUrl(company, b.manage_token), 'booking') : manageUrl(company, b.manage_token)
+  const rebook = live ? bookingPageUrl(company, extra.service?.active ? extra.service.slug : undefined) : await short(bookingPageUrl(company, extra.service?.active ? extra.service.slug : undefined), 'booking')
   const refundAmt = typeof extra.refunded === 'number' ? extra.refunded : 0
   const refundLine = refundAmt ? ` We've refunded ${fmtMoney(refundAmt, b.currency)}.` : (extra.refunded === true ? ' Your payment has been refunded.' : '')
 
@@ -866,7 +905,6 @@ export async function customerMessage(db: any, company: any, settings: BookingSe
       confirmed: 'You’re booked in ✓', rescheduled: 'Your booking has moved', cancelled: 'Your booking is cancelled', conflict: 'That time was just taken',
       reminder: `See you ${rel.replace(/ at .*/, '')}`, noshow: 'We missed you', rebook: 'Ready for the next one?',
     }
-    const live = kind === 'confirmed' || kind === 'rescheduled' || kind === 'reminder'
     const invite = {
       uid: b.id, title: `${b.service_name} — ${business}`, startMs: Date.parse(b.starts_at), endMs: Date.parse(b.ends_at),
       location: where || null, description: `Manage your booking: ${manage}`, url: manage,

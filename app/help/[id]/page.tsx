@@ -5,6 +5,7 @@ import { StatusMark } from '@/components/StatusMark'
 import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
+import { confirmDialog } from '@/components/ConfirmDialog'
 
 const ADMIN_EMAIL = 'bishalstha76@gmail.com'
 
@@ -513,7 +514,7 @@ export default function HelpArticlePage() {
                           <>
                             <div className="border-t" style={{ borderColor: 'var(--border)' }} />
                             <button onClick={async () => {
-                              if (!confirm('Delete this article?')) return
+                              if (!await confirmDialog('Delete this article?')) return
                               await (supabase as any).from('help_articles').delete().eq('id', article.id)
                               window.location.href = '/help'
                             }} className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm hover:bg-red-50 text-left cursor-pointer" style={{ color: '#dc2626' }}>

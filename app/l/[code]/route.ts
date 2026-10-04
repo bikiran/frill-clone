@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { parseUserAgent } from '@/lib/link-tracking'
+import { recordLinkClick } from '@/lib/link-click'
 
 // Redirects /l/<code> to the stored target URL and records the click.
 // The redirect is the priority: click logging is best-effort and must never
@@ -43,41 +43,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ code
       } catch { /* couldn't resolve — fall back to the original target */ }
     }
 
-    // Detailed click event for the Reports tab — when, where, what device.
-    try {
-      const ua = req.headers.get('user-agent') || ''
-      const { device, os, browser } = parseUserAgent(ua)
-      const ip =
-        req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
-        req.headers.get('x-real-ip') || null
-      // Vercel supplies coarse geo headers at the edge (URL-encoded city names).
-      const city = req.headers.get('x-vercel-ip-city')
-      const region = req.headers.get('x-vercel-ip-country-region')
-      const country = req.headers.get('x-vercel-ip-country')
-
-      const base = {
-        link_id: data.id,
-        company_id: data.company_id,
-        ip,
-        city: city ? decodeURIComponent(city) : null,
-        region: region || null,
-        country: country || null,
-        device, os, browser,
-        referrer: req.headers.get('referer') || null,
-        user_agent: ua || null,
-      }
-      // contact_id lets "unique clicks" and order attribution work, but it's
-      // added by migration V192 — if that hasn't been applied the whole insert
-      // errored and NO clicks were recorded (Reports showed 0). Fall back to the
-      // base columns so a click is always logged either way.
-      const { error: ce } = await db.from('link_clicks').insert({ ...base, contact_id: data.contact_id || null })
-      if (ce) { await db.from('link_clicks').insert(base) }
-    } catch { /* analytics table may not exist yet — ignore */ }
-
-    // Keep the fast counter on the link itself current.
-    db.from('short_links')
-      .update({ clicks: (data.clicks || 0) + 1, last_clicked_at: new Date().toISOString() })
-      .eq('code', code).then(() => {}, () => {})
+    // Click event (device / city) + the link's counter. Awaited: serverless
+    // can freeze the function once the redirect is sent.
+    await recordLinkClick(db, data, req.headers)
 
     return NextResponse.redirect(target)
   } catch {
