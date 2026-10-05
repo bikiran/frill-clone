@@ -750,6 +750,13 @@ export default function InboxPage() {
   const [locationFilter, setLocationFilter] = useState<string>('all')
   // All / Assigned to me / Unassigned tabs above the conversation list.
   const [assignFilter, setAssignFilter] = useState<'all' | 'mine' | 'unassigned' | 'unread'>('all')
+  // ?view=unread|unassigned|mine — dashboard tiles open the inbox on that tab.
+  useEffect(() => {
+    try {
+      const v = new URLSearchParams(window.location.search).get('view')
+      if (v === 'unread' || v === 'unassigned' || v === 'mine') setAssignFilter(v)
+    } catch {}
+  }, [])
   // Coax-style arrow scrolling for the assignment strip: arrows appear only when
   // the row overflows, and dim at each end.
   const assignScrollRef = useRef<HTMLDivElement>(null)
