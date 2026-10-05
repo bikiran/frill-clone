@@ -651,6 +651,8 @@ export default function CustomerProfilePage() {
             />
           </div>
 
+          {/* Rows must not shrink: in a height-capped flex column with overflow
+              hidden they squash into empty slivers instead of scrolling. */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 520, overflowY: 'auto', paddingRight: 4 }}>
             {filteredProducts.length === 0 && <p style={{ color: '#888', fontSize: 13 }}>No products match your search.</p>}
             {filteredProducts.map((item: any, idx: number) => {
@@ -673,7 +675,7 @@ export default function CustomerProfilePage() {
               const sku = item.sku || ''
               const isOpen = expandedProducts.has(idx)
               return (
-                <div key={idx} style={{ borderRadius: 10, border: '1px solid var(--border)', overflow: 'hidden', background: isOpen ? 'var(--canvas)' : 'var(--card, #fff)' }}>
+                <div key={idx} style={{ borderRadius: 10, border: '1px solid var(--border)', overflow: 'hidden', flexShrink: 0, background: isOpen ? 'var(--canvas)' : 'var(--card, #fff)' }}>
                   <button
                     type="button"
                     onClick={() => {
