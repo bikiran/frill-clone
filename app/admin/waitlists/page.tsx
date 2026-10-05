@@ -142,6 +142,18 @@ export default function WaitlistsPage() {
     } catch (e: any) { flash(e.message) } finally { setBusy('') }
   }
 
+  // Website sign-ups have no thread yet: find or create their contact and
+  // conversation, then open it in the inbox.
+  const openChat = async (e: any) => {
+    setBusy(`chat:${e.id}`)
+    try {
+      const res = await fetch('/api/waitlist', { method: 'PATCH', headers: await authHeaders(), body: JSON.stringify({ companyId, id: e.id, action: 'chat' }) })
+      const d = await res.json()
+      if (!res.ok || !d.conversationId) throw new Error(d.error || 'Could not open a chat')
+      router.push(`/admin/inbox?conversation=${d.conversationId}`)
+    } catch (err: any) { flash(err.message); setBusy('') }
+  }
+
   const removeEntry = async (e: any) => {
     if (!await confirmDialog({ title: 'Remove from waitlist?', message: `${e.customer_name || e.phone || 'This customer'} won't be told when ${e.item_name} is back.`, confirmLabel: 'Remove', tone: 'danger' })) return
     setBusy(e.id)
@@ -270,7 +282,11 @@ export default function WaitlistsPage() {
                             {e.status === 'notified' && e.notified_at ? `${e.notified_via === 'email' ? 'Emailed' : 'Texted'} ${fmtDate(e.notified_at)}` : `Added ${fmtDate(e.created_at)}`}{e.source === 'inbox' ? ' · from inbox' : e.source === 'website' ? ' · from website' : ''}
                           </span>
                           <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 999, background: pill.bg, color: pill.c, whiteSpace: 'nowrap' }}>{pill.label}</span>
-                          {e.conversation_id && <a href={`/admin/inbox?conversation=${e.conversation_id}`} title="Open conversation" style={{ ...iconBtn, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: 'var(--slate, #6b7280)' }}><ChatIcon size={15} /></a>}
+                          {e.conversation_id
+                            ? <a href={`/admin/inbox?conversation=${e.conversation_id}`} title="Open conversation" aria-label="Open conversation" style={{ ...iconBtn, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: 'var(--slate, #6b7280)' }}><ChatIcon size={15} /></a>
+                            : (e.phone || e.email || e.contact_id) && (
+                              <button onClick={() => openChat(e)} disabled={busy === `chat:${e.id}`} title="Chat with this customer" aria-label="Chat with this customer" style={{ ...iconBtn, opacity: busy === `chat:${e.id}` ? 0.5 : 1 }}><ChatIcon size={15} /></button>
+                            )}
                           {['waiting', 'queued', 'failed'].includes(e.status) && (
                             <button onClick={() => setEditing(e.id)} title="Edit customer details" aria-label="Edit customer details" style={iconBtn}><EditIcon size={14} /></button>
                           )}
