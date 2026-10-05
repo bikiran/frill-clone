@@ -22,17 +22,10 @@ import { notifyIntegrations } from '@/lib/integrations-notify'
 
 type Order = any
 
-// WooCommerce brand mark — a white "W" on the WooCommerce purple, instead of a
-// plain purple dot.
+// WooCommerce brand mark — the official Woo logo (public/logos/woocommerce.svg).
 function WooLogo({ size = 16 }: { size?: number }) {
   const box = size + 6
-  return (
-    <span title="WooCommerce" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: box, height: box, borderRadius: 6, background: '#7f54b3', flexShrink: 0 }}>
-      <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-        <path d="M4 8.6c.15-.5.5-.85 1.05-.85.5 0 .82.3 1 .82l1.35 4.1 1.5-3.85c.2-.5.5-.85 1.02-.85.5 0 .82.32 1 .85l1.5 3.85 1.35-4.1c.18-.52.5-.82 1-.82.55 0 .9.35 1.05.85.05.2.03.4-.05.62l-2.35 6.35c-.2.55-.56.9-1.08.9-.5 0-.86-.35-1.06-.9L11 12.2l-1.28 3.75c-.2.55-.56.9-1.06.9-.52 0-.88-.35-1.08-.9L5.23 9.6c-.08-.22-.1-.42-.05-.62z" fill="#fff" />
-      </svg>
-    </span>
-  )
+  return <img src="/logos/woocommerce.svg" alt="WooCommerce" title="WooCommerce" width={box} height={box} style={{ width: box, height: box, borderRadius: 6, flexShrink: 0, display: 'inline-block' }} />
 }
 export function ChannelIcon({ channel, size = 15 }: { channel?: string | null; size?: number }) {
   if (channel === 'woocommerce') return <WooLogo size={size} />
