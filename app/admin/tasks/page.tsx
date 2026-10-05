@@ -329,12 +329,15 @@ export default function TasksPage() {
   //                       Monday task lands on Monday, not today)
   //   ?task=<id>        → open that task's detail
   //   ?new=1&title=&date= → open the New task drawer, prefilled
+  //   ?bucket=overdue|today|upcoming → open on that tab (dashboard tiles)
   useEffect(() => {
     if (typeof window === 'undefined') return
     const p = new URLSearchParams(window.location.search)
     const date = p.get('date')
     const task = p.get('task')
     const isNew = p.get('new')
+    const tab = p.get('bucket')
+    if (tab && ['overdue', 'today', 'upcoming'].includes(tab)) setBucket(tab as Bucket)
     if (date) { setBucket('date' as Bucket); setBucketDate(date) }
     if (task) setSelectedId(task)
     if (isNew) {
@@ -342,7 +345,7 @@ export default function TasksPage() {
       setNewTaskSeed({ title: p.get('title') || '', due: date || '' })
     }
     // Tidy the URL so a refresh doesn't reopen the drawer / re-jump.
-    if (date || task || isNew) {
+    if (date || task || isNew || tab) {
       try { window.history.replaceState({}, '', '/admin/tasks') } catch {}
     }
   }, [])
