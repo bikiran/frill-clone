@@ -19,7 +19,7 @@ function genCode(prefix = 'SAVE') {
 // big copyable coupon card.
 export async function POST(req: NextRequest) {
   try {
-    const { companyId, integrationId, conversationId, contactId, email, amount, discountType, code, oneTime, expiryDays, createdByName, deliver } = await req.json()
+    const { companyId, integrationId, conversationId, contactId, email, amount, discountType, code, oneTime, expiryDays, createdByName, deliver, channel: sendChannel } = await req.json()
     if (!companyId || !conversationId || !amount) return NextResponse.json({ error: 'Missing companyId, conversationId or amount' }, { status: 400 })
 
     const db = admin()
@@ -71,12 +71,24 @@ export async function POST(req: NextRequest) {
     // Human-readable amount for the card
     const displayAmount = dt === 'percent' ? `${amount}% off` : `$${parseFloat(String(amount)).toFixed(2)} off`
 
+    // Which channel the customer gets this on. Without it the card took the
+    // column default ('chat') and read "Live Chat" under a coupon that actually
+    // went out by SMS. The web inbox sends the channel it's replying on; with
+    // `deliver`, it's whichever channel we dispatch on below.
+    const { data: conv } = await db.from('conversations').select('channel, sms_number').eq('id', conversationId).maybeSingle()
+    const convChannel = String(conv?.channel || '').toLowerCase()
+    const deliverVia = convChannel === 'sms' || (!!conv?.sms_number && convChannel !== 'email') ? 'sms'
+      : convChannel === 'email' && email ? 'email' : null
+    const asked = String(sendChannel || '').toLowerCase()
+    const via = asked && asked !== 'widget' ? asked : deliver ? deliverVia : null
+
     // Post the coupon card into the chat.
     const content = `🎟️ You have received a coupon: ${finalCode} (${displayAmount})`
     await db.from('messages').insert({
       conversation_id: conversationId, company_id: companyId,
       sender_type: 'agent', sender_name: createdByName || 'Support',
       content,
+      ...(via ? { delivery_channel: via } : {}),
       message_type: 'coupon',
       message_payload: {
         kind: 'coupon', code: finalCode, amount: String(amount), discount_type: dt,
@@ -93,15 +105,13 @@ export async function POST(req: NextRequest) {
     // coupon that was already created.
     if (deliver) {
       try {
-        const { data: conv } = await db.from('conversations').select('channel, sms_number').eq('id', conversationId).maybeSingle()
-        const channel = String(conv?.channel || '').toLowerCase()
         const base = String(process.env.NEXT_PUBLIC_SITE_URL || '').replace(/\/$/, '')
-        if (base && (channel === 'sms' || (!!conv?.sms_number && channel !== 'email'))) {
+        if (base && deliverVia === 'sms') {
           await fetch(`${base}/api/telnyx/sms/send`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ companyId, conversationId, to: conv?.sms_number, text: content, senderName: createdByName || 'Support', skipChatMessage: true }),
           })
-        } else if (base && channel === 'email' && email) {
+        } else if (base && deliverVia === 'email') {
           await fetch(`${base}/api/email/reply`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ conversationId, content, to: email, subject: 'Your coupon', agentName: createdByName || 'Support' }),

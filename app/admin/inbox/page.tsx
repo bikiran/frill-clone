@@ -2283,6 +2283,18 @@ export default function InboxPage() {
     }
   }
 
+  // After sending something into the open thread (coupon, upload link, payment
+  // request…), pull in the new messages WITHOUT re-opening the conversation.
+  // selectConversation clears the thread and contact first, so the header
+  // flashed "Visitor", the history blanked and the scroll jumped — it looked
+  // like the page had reloaded.
+  const refreshThread = async () => {
+    const convId = selectedRef.current?.id
+    if (!convId) return
+    const { data } = await (supabase as any).from('messages').select('*').eq('conversation_id', convId).order('created_at', { ascending: true })
+    if (data && selectedRef.current?.id === convId) { setMessages(data); scrollBottom() }
+  }
+
   const selectConversation = async (conv: Conversation) => {
     // Reconcile any pending Stripe payments straight from Stripe. The webhook
     // may not be configured (or a delivery was missed), which would otherwise
@@ -4193,7 +4205,7 @@ export default function InboxPage() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Could not send payment request')
       showToast('Payment request sent')
-      selectConversation(selected)
+      refreshThread()
     } catch (e: any) { showToast(e.message || 'Failed to send payment request') }
   }
 
@@ -4335,7 +4347,7 @@ export default function InboxPage() {
       let how = 'sent'
       if (data.link) how = await deliverUploadLink(data.link, 'Please upload your photos or videos here:', !!data.texted)
       showToast(`Upload link ${how.toLowerCase()}`)
-      selectConversation(selected)
+      refreshThread()
     } catch (e: any) { showToast(e.message || 'Could not send the upload link') }
     finally { setQuickMrBusy(false) }
   }
@@ -4370,7 +4382,7 @@ export default function InboxPage() {
         } catch (e: any) { showToast(`Request created, but sending failed: ${e.message}`); setMrSaving(false); return }
       }
       showToast(`Media request ${how.toLowerCase()}`)
-      selectConversation(selected)
+      refreshThread()
     } catch (e: any) { showToast(e.message || 'Failed to send request') } finally { setMrSaving(false) }
   }
 
@@ -4386,7 +4398,7 @@ export default function InboxPage() {
           discountType: couponType === 'percent' ? 'percent' : 'fixed',
           code: couponCode.trim() || undefined, oneTime: couponOneTime,
           expiryDays: couponExpiry ? Number(couponExpiry) : undefined,
-          createdByName: myName,
+          createdByName: myName, channel: activeChannel,
         }),
       })
       const data = await res.json()
@@ -4408,7 +4420,7 @@ export default function InboxPage() {
         } catch (e: any) { showToast(`Coupon created, but sending failed: ${e.message}`); setCouponSaving(false); return }
       }
       showToast(`Coupon ${data.code} ${how.toLowerCase()}`)
-      selectConversation(selected)
+      refreshThread()
     } catch (e: any) { showToast(e.message || 'Failed to send coupon') } finally { setCouponSaving(false) }
   }
 
