@@ -36,6 +36,8 @@ const groupKey = (e: any) => e.woo_product_id ? `p:${e.woo_product_id}` : `n:${S
 // Only real web links open in a new tab (staff can type an item link by hand).
 const webUrl = (u?: string | null) => (u && /^https?:\/\//i.test(u) ? u : null)
 const fmtDate = (d: string) => new Date(d).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })
+const money = (n: number) => new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' }).format(n)
+const isWaiting = (e: any) => e.status === 'waiting' || e.status === 'queued'
 
 export default function WaitlistsPage() {
   const router = useRouter()
@@ -110,20 +112,34 @@ export default function WaitlistsPage() {
     }
     const list = Array.from(map.values())
     list.forEach(g => { g.url = webUrl(g.url) || webUrl(g.productId ? stock[String(g.productId)]?.permalink : null) })
-    list.forEach(g => { g.waiting = g.entries.filter((e: any) => e.status === 'waiting' || e.status === 'queued').length })
+    list.forEach(g => {
+      g.waiting = g.entries.filter(isWaiting).length
+      // Current price from the store, and what the waitlist is worth if each
+      // person waiting buys one once it's back.
+      const p = g.productId ? stock[String(g.productId)] : null
+      g.price = p?.price ?? null
+      g.regular = p?.on_sale ? p.regular_price : null
+      g.potential = g.price != null ? g.price * g.waiting : null
+    })
     return list.sort((a, b) => b.waiting - a.waiting || b.entries.length - a.entries.length)
   }, [entries, tab, search, stock])
 
   const stats = useMemo(() => {
     const monthAgo = Date.now() - 30 * 86400000
-    const waiting = entries.filter(e => e.status === 'waiting' || e.status === 'queued')
+    const waiting = entries.filter(isWaiting)
+    let potential = 0, unpriced = 0
+    for (const e of waiting) {
+      const price = e.woo_product_id ? stock[String(e.woo_product_id)]?.price : null
+      if (price != null) potential += price; else unpriced++
+    }
     return {
+      potential, unpriced,
       waiting: waiting.length,
       items: new Set(waiting.map(groupKey)).size,
       queued: entries.filter(e => e.status === 'queued').length,
       notified30: entries.filter(e => e.status === 'notified' && e.notified_at && new Date(e.notified_at).getTime() > monthAgo).length,
     }
-  }, [entries])
+  }, [entries, stock])
 
   const notifyGroup = async (g: any) => {
     const ids = g.entries.filter((e: any) => e.status === 'waiting' || e.status === 'queued').map((e: any) => e.id)
@@ -177,7 +193,15 @@ export default function WaitlistsPage() {
 
   return (
     <div style={{ padding: 24, maxWidth: 1280, margin: '0 auto' }}>
-      <style>{`@media (max-width: 560px) { .wl-hide-sm { display: none } }`}</style>
+      <style>{`
+        @media (max-width: 560px) { .wl-hide-sm { display: none } }
+        @media (max-width: 640px) {
+          .wl-stats { display: flex !important; overflow-x: auto; scroll-snap-type: x mandatory; margin-left: -24px; margin-right: -24px; padding: 0 24px 4px; scroll-padding-left: 24px; scrollbar-width: none; -webkit-overflow-scrolling: touch }
+          .wl-stats::-webkit-scrollbar { display: none }
+          .wl-stats > div { flex: 0 0 72%; scroll-snap-align: start }
+          .wl-title { white-space: normal !important; line-height: 1.3 }
+        }
+      `}</style>
       <PageHeader
         title="Back-in-stock waitlists"
         subtitle="Customers waiting for an item. When it's back, they get one SMS."
@@ -195,17 +219,24 @@ export default function WaitlistsPage() {
 
       {showSettings && <SettingsPanel companyId={companyId} businessName={businessName} settings={settings} onSaved={s => { setSettings(s); flash('Settings saved.') }} />}
 
-      {/* Stat tiles */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12, marginBottom: 18 }}>
+      {/* Stat tiles — a swipeable row on phones */}
+      <div className="wl-stats" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 12, marginBottom: 18 }}>
         {[
-          { label: 'Customers waiting', value: stats.waiting, c: '#2563eb', bg: '#eff6ff' },
-          { label: 'Items with a waitlist', value: stats.items, c: '#7c3aed', bg: '#f5f3ff' },
-          { label: 'Queued for 9am', value: stats.queued, c: '#b45309', bg: '#fffbeb' },
-          { label: 'Notified (30 days)', value: stats.notified30, c: '#059669', bg: '#f0fdf4' },
-        ].map(s => (
-          <div key={s.label} style={{ ...card, display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px' }}>
-            <div style={{ width: 38, height: 38, borderRadius: 10, background: s.bg, color: s.c, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 15 }}>{s.value}</div>
-            <div style={{ fontSize: 13, color: 'var(--slate)', fontWeight: 600 }}>{s.label}</div>
+          { label: 'Customers waiting', value: String(stats.waiting), c: '#2563eb', bg: '#eff6ff' },
+          { label: 'Items with a waitlist', value: String(stats.items), c: '#7c3aed', bg: '#f5f3ff' },
+          { label: 'Potential revenue', value: money(stats.potential), c: '#059669', bg: '#f0fdf4',
+            sub: stats.unpriced ? `${stats.unpriced} without a price` : 'If everyone waiting buys one',
+            title: 'Current store price × each customer waiting. Items not listed online have no price, so they aren’t counted.' },
+          ...(stats.queued ? [{ label: 'Texts queued for 9am', value: String(stats.queued), c: '#b45309', bg: '#fffbeb',
+            sub: 'Back in stock overnight', title: 'Texts only go out 9am–8pm. Anything back in stock overnight is sent at 9am.' }] : []),
+          { label: 'Notified (30 days)', value: String(stats.notified30), c: '#0891b2', bg: '#ecfeff' },
+        ].map((s: any) => (
+          <div key={s.label} title={s.title} style={{ ...card, display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px' }}>
+            <div style={{ minWidth: 38, height: 38, padding: s.value.length > 3 ? '0 10px' : 0, borderRadius: 10, background: s.bg, color: s.c, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 15, flexShrink: 0, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{s.value}</div>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 13, color: 'var(--slate)', fontWeight: 600 }}>{s.label}</div>
+              {s.sub && <div style={{ fontSize: 11.5, color: 'var(--slate)', marginTop: 1, opacity: 0.85 }}>{s.sub}</div>}
+            </div>
           </div>
         ))}
       </div>
@@ -242,10 +273,21 @@ export default function WaitlistsPage() {
                       ? <img src={g.image} alt="" style={{ width: 48, height: 48, borderRadius: 10, objectFit: 'cover', border: '1px solid var(--border)', flexShrink: 0 }} />
                       : <div style={{ width: 48, height: 48, borderRadius: 10, background: 'var(--peach)', color: 'var(--coral)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}><TagIcon size={22} /></div>}
                     <div style={{ minWidth: 0 }}>
-                      <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{g.name}</div>
+                      <div className="wl-title" style={{ fontSize: 15, fontWeight: 800, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {g.name}
+                        {g.price != null && (
+                          <span style={{ fontWeight: 700, color: 'var(--ink)' }}> – {money(g.price)}
+                            {g.regular != null && <span style={{ fontWeight: 500, fontSize: 13, color: 'var(--slate)', textDecoration: 'line-through', marginLeft: 6 }}>{money(g.regular)}</span>}
+                          </span>
+                        )}
+                      </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4, flexWrap: 'wrap' }}>
                         <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 999, background: badge.bg, color: badge.c }}>{badge.label}</span>
-                        <span style={{ fontSize: 12.5, color: 'var(--slate)' }}>{g.waiting} waiting · {g.entries.length} total {isOpen ? '▴' : '▾'}</span>
+                        <span style={{ fontSize: 12.5, color: 'var(--slate)' }}>
+                          {g.waiting} waiting · {g.entries.length} total
+                          {g.potential != null && g.waiting > 0 && <> · <span style={{ color: '#059669', fontWeight: 700 }}>{money(g.potential)} potential</span></>}
+                          {' '}{isOpen ? '▴' : '▾'}
+                        </span>
                       </div>
                     </div>
                   </button>
@@ -296,6 +338,16 @@ export default function WaitlistsPage() {
                         </div>
                       )
                     })}
+                    {g.waiting > 0 && (
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '10px 16px', background: 'var(--canvas, #fafafa)', flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 12.5, color: 'var(--slate)' }}>
+                          {g.price != null
+                            ? <>Potential revenue · {g.waiting} waiting × {money(g.price)} each</>
+                            : g.productId ? 'No price on this product in your store yet' : 'Not listed online, so there’s no price to estimate from'}
+                        </span>
+                        {g.potential != null && <span style={{ fontSize: 14, fontWeight: 800, color: '#059669', fontVariantNumeric: 'tabular-nums' }}>{money(g.potential)}</span>}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
