@@ -1,9 +1,10 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useCompanyUser, S, ToggleRow } from '../_shared'
 import { DEFAULT_ORDER_MESSAGES, isStaleOrderMessage } from '@/lib/order-messages'
+import { resolveCartRecovery, fillCartMessage, CART_DELAYS, DEFAULT_CART_MESSAGE, type CartRecoverySettings } from '@/lib/cart-recovery-shared'
 
 // Placeholders: {name} first name, {full_name}, #{order} order number, {business}, {amount}, {total}.
 // Defaults live in lib/order-messages.ts, shared with the order webhook.
@@ -44,6 +45,8 @@ export default function OrderAutomationSettings() {
   const [alsoSms, setAlsoSms] = useState(false)
   const [alsoEmail, setAlsoEmail] = useState(false)
   const [webhookUrl, setWebhookUrl] = useState('')
+  const [cart, setCart] = useState<CartRecoverySettings>(() => resolveCartRecovery(null))
+  const loadedCfg = useRef<any>({})
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
 
@@ -52,7 +55,9 @@ export default function OrderAutomationSettings() {
     ;(async () => {
       const { data: co } = await (supabase as any).from('companies').select('name, order_chat_automation').eq('id', companyId).maybeSingle()
       const cfg = co?.order_chat_automation || {}
+      loadedCfg.current = cfg
       setEnabled(!!cfg.enabled)
+      setCart(resolveCartRecovery(cfg.cart_recovery))
       setBusinessName(co?.name || '')
       // A saved message that's just an old default (maybe with a sign-off) isn't
       // used any more, so show the current default the customer will get.
@@ -75,9 +80,14 @@ export default function OrderAutomationSettings() {
   const save = async () => {
     if (!companyId) return
     setSaving(true)
+    // Turning the cart message on stamps when, so it only ever messages carts
+    // abandoned from then on — never a backlog.
+    const cart_recovery = { ...cart, enabled_at: cart.enabled ? (cart.enabled_at || new Date().toISOString()) : null }
     await (supabase as any).from('companies').update({
-      order_chat_automation: { enabled, review_url: reviewUrl, messages, also_sms: alsoSms, also_email: alsoEmail, doa },
+      order_chat_automation: { ...loadedCfg.current, enabled, review_url: reviewUrl, messages, also_sms: alsoSms, also_email: alsoEmail, doa, cart_recovery },
     }).eq('id', companyId)
+    loadedCfg.current = { ...loadedCfg.current, cart_recovery }
+    setCart(cart_recovery)
     setSaving(false); setSaved(true); setTimeout(() => setSaved(false), 2000)
   }
 
@@ -141,6 +151,44 @@ export default function OrderAutomationSettings() {
       )}
 
       <div style={S.card}>
+        <h2 style={{ ...S.h2, marginBottom: 4 }}>Automatic abandoned-cart message</h2>
+        <p style={{ ...S.hint, margin: '0 0 4px' }}>Off by default. When on, a shopper who leaves checkout gets one message, so you don't have to follow up by hand. Each message uses SMS credits.</p>
+        <ToggleRow title="Message shoppers who leave checkout" desc="One SMS (or email if there's no mobile) per cart, posted into their conversation so replies come to your inbox." checked={cart.enabled} onChange={v => setCart(c => ({ ...c, enabled: v }))} />
+        {cart.enabled && (
+          <div style={{ marginTop: 14 }}>
+            <label style={S.label}>Send after</label>
+            <select value={cart.delay_minutes} onChange={e => setCart(c => ({ ...c, delay_minutes: Number(e.target.value) }))} style={{ ...S.input, maxWidth: 260, fontSize: 16 }}>
+              {CART_DELAYS.map(m => <option key={m} value={m}>{m < 60 ? `${m} minutes` : `${m / 60} hour${m === 60 ? '' : 's'}`} after they leave</option>)}
+            </select>
+            <label style={{ ...S.label, marginTop: 14 }}>Message</label>
+            <textarea value={cart.message} onChange={e => setCart(c => ({ ...c, message: e.target.value }))} style={{ ...S.input, minHeight: 96, resize: 'vertical', fontSize: 16 }} />
+            <p style={S.hint}>
+              Placeholders: <code>{'{name}'}</code> (first name), <code>{'{items}'}</code>, <code>{'{total}'}</code>, <code>{'{business}'}</code>, <code>{'{link}'}</code> (their checkout, when your store sends one).
+              {cart.message !== DEFAULT_CART_MESSAGE && (
+                <> <button type="button" onClick={() => setCart(c => ({ ...c, message: DEFAULT_CART_MESSAGE }))}
+                  style={{ background: 'none', border: 'none', padding: 0, color: 'var(--coral)', fontWeight: 700, cursor: 'pointer', fontSize: 'inherit', fontFamily: 'inherit' }}>Reset to default</button></>
+              )}
+            </p>
+            {(() => {
+              const pv = fillCartMessage(cart.message, { name: 'Cassandra', items: 'Lemon Oscar - Medium', total: '$124.00', business: businessName || 'Your business', link: 'https://colvy.com/l/ab12cd' })
+              const segs = pv.length <= 160 ? 1 : Math.ceil(pv.length / 153)
+              return (
+                <p style={{ ...S.hint, whiteSpace: 'pre-wrap', background: 'var(--canvas, #f6f6f8)', borderRadius: 10, padding: '8px 10px', marginTop: 8 }}>
+                  <strong>Preview · {pv.length} characters · {segs} SMS: </strong>{pv}
+                </p>
+              )
+            })()}
+            {!/stop/i.test(cart.message) && <p style={{ ...S.hint, color: '#b45309' }}>Keep "Reply STOP to opt out" — it's required for marketing texts in Australia.</p>}
+            <ul style={{ ...S.hint, margin: '10px 0 0', paddingLeft: 18, lineHeight: 1.6 }}>
+              <li>Only sent 9am to 8pm; anything due overnight goes out in the morning.</li>
+              <li>Never sent if they've since ordered, the cart was recovered or dismissed, or they've opted out.</li>
+              <li>Only carts abandoned after you turn this on, and within the last 24 hours.</li>
+            </ul>
+          </div>
+        )}
+      </div>
+
+      <div style={S.card}>
         <h2 style={S.h2}>DOA claim messages</h2>
         <p style={{ ...S.hint, marginBottom: 14 }}>What Colvy sends the customer when you resolve a damaged-order (DOA) claim from the inbox. These fire on your action, independent of the order-automation toggle above. Placeholders: <code>{'{amount}'}</code>, <code>{'{code}'}</code> (store-credit coupon). Leave blank to use the default wording.</p>
         {DOA_MESSAGES.map(dm => (
@@ -162,7 +210,7 @@ export default function OrderAutomationSettings() {
       </div>
 
       <div style={{ ...S.card, background: 'var(--canvas)' }}>
-        <h2 style={S.h2}>⚙️ One-time WooCommerce setup</h2>
+        <h2 style={S.h2}>One-time WooCommerce setup</h2>
         <p style={{ fontSize: 13.5, color: 'var(--ink)', lineHeight: 1.6 }}>
           For this to work, WooCommerce needs to notify Colvy when orders change. In your WooCommerce admin go to <strong>WooCommerce → Settings → Advanced → Webhooks</strong> and add two webhooks:
         </p>
@@ -179,7 +227,7 @@ export default function OrderAutomationSettings() {
       </div>
 
       <div style={{ ...S.card, background: 'var(--canvas)' }}>
-        <h2 style={S.h2}>🛒 Abandoned carts</h2>
+        <h2 style={S.h2}>Abandoned carts</h2>
         <p style={{ fontSize: 13.5, color: 'var(--ink)', lineHeight: 1.6 }}>
           WooCommerce doesn't track abandoned carts on its own. If your store uses an abandonment plugin (or a small checkout snippet) that can send cart data to a URL, point it at Colvy and abandoned carts will appear in the chat sidebar — so you can see exactly what a customer wanted and convert it into an order.
         </p>
