@@ -9,6 +9,7 @@ import { logWebhookEvent } from '@/lib/webhook-log'
 import { upsertWooOrder } from '@/lib/orders-sync'
 import { wooDateToISO } from '@/lib/orders'
 import { DEFAULT_ORDER_MESSAGES, isStaleOrderMessage } from '@/lib/order-messages'
+import { findCustomerGoogleReview } from '@/lib/review-match'
 import { logEnquiryReopened } from '@/lib/conversation-timeline'
 import { notifyWaitlist, resolveWaitlistSettings } from '@/lib/waitlist'
 
@@ -600,8 +601,9 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
     metadata: { auto: true, order_automation: status, order_id: order.id },
   }).select('id').maybeSingle()
 
-  // Completed orders can include a Google review reminder as a follow-up line.
-  if (status === 'completed' && cfg.review_url) {
+  // Completed orders can include a Google review reminder as a follow-up line,
+  // unless this customer has already left a Google review.
+  if (status === 'completed' && cfg.review_url && !(await findCustomerGoogleReview(db, companyId, contact?.id)).reviewed) {
     await db.from('messages').insert({
       conversation_id: conv.id, company_id: companyId,
       sender_type: 'agent', sender_name: businessName,
