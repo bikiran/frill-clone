@@ -41,11 +41,21 @@ export async function GET(req: NextRequest) {
     }
 
     const productIds = Array.from(new Set((entries || []).map((e: any) => e.woo_product_id).filter(Boolean)))
-    const stock: Record<string, { stock_status: string | null; stock_quantity: number | null; permalink?: string | null }> = {}
+    // Live stock + current price from the synced catalogue (price drives the
+    // "potential revenue" figures — what the waitlist is worth once it's back).
+    const stock: Record<string, { stock_status: string | null; stock_quantity: number | null; permalink?: string | null; price: number | null; regular_price: number | null; on_sale: boolean }> = {}
+    const num = (v: any) => { const n = parseFloat(String(v ?? '')); return isFinite(n) && n > 0 ? n : null }
     if (productIds.length) {
       const { data: prods } = await db.from('woocommerce_products')
-        .select('woo_product_id, stock_status, stock_quantity, permalink').eq('company_id', companyId).in('woo_product_id', productIds)
-      ;(prods || []).forEach((p: any) => { stock[String(p.woo_product_id)] = { stock_status: p.stock_status, stock_quantity: p.stock_quantity, permalink: p.permalink || null } })
+        .select('woo_product_id, stock_status, stock_quantity, permalink, price, regular_price, sale_price, on_sale').eq('company_id', companyId).in('woo_product_id', productIds)
+      ;(prods || []).forEach((p: any) => {
+        const price = num(p.price) ?? (p.on_sale ? num(p.sale_price) : null) ?? num(p.regular_price)
+        const regular = num(p.regular_price)
+        stock[String(p.woo_product_id)] = {
+          stock_status: p.stock_status, stock_quantity: p.stock_quantity, permalink: p.permalink || null,
+          price, regular_price: regular, on_sale: !!p.on_sale && price != null && regular != null && price < regular,
+        }
+      })
     }
     return NextResponse.json({ entries: entries || [], settings, stock })
   } catch (e: any) {
