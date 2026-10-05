@@ -2899,19 +2899,22 @@ export default function InboxPage() {
     const d = new Date(`${code}T00:00:00`)
     return isNaN(d.getTime()) ? 'Keep forever' : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
   }
-  const anyExpiring = stagedMedia.some((m: any) => stagedExpiry[m.id] && stagedExpiry[m.id] !== 'forever')
-  // Apply one expiry choice to every staged item at once.
+  // Media picked from the Colvy gallery is already kept there, so it isn't
+  // asked for an expiry; only new uploads (files, voice notes, QR photos) are.
+  const expirable = stagedMedia.filter((m: any) => !m._fromGallery)
+  const anyExpiring = expirable.some((m: any) => stagedExpiry[m.id] && stagedExpiry[m.id] !== 'forever')
+  // Apply one expiry choice to every new upload at once.
   const applyBulkExpiry = (val: string) => {
     setStagedExpiry(prev => {
       const n = { ...prev }
-      stagedMedia.forEach((m: any) => { if (val === 'forever') delete n[m.id]; else n[m.id] = val })
+      expirable.forEach((m: any) => { if (val === 'forever') delete n[m.id]; else n[m.id] = val })
       return n
     })
   }
-  // The shared expiry code when every staged item agrees, else '' (mixed).
+  // The shared expiry code when every new upload agrees, else '' (mixed).
   const bulkExpiryCode = (() => {
-    if (!stagedMedia.length) return 'forever'
-    const codes = stagedMedia.map((m: any) => stagedExpiry[m.id] || 'forever')
+    if (!expirable.length) return 'forever'
+    const codes = expirable.map((m: any) => stagedExpiry[m.id] || 'forever')
     return codes.every(c => c === codes[0]) ? codes[0] : ''
   })()
 
@@ -2922,7 +2925,7 @@ export default function InboxPage() {
     if (chosen.length) {
       setStagedMedia(prev => {
         const have = new Set(prev.map((p: any) => p.id))
-        return [...prev, ...chosen.filter((c: any) => !have.has(c.id))]
+        return [...prev, ...chosen.filter((c: any) => !have.has(c.id)).map((c: any) => ({ ...c, _fromGallery: true }))]
       })
     }
     setGallerySelected(new Set())
@@ -4856,7 +4859,7 @@ export default function InboxPage() {
       const uploadItems = stagedMedia.filter((m: any) => m._upload)
       const galleryToSend = galleryItems.map((it: any) => ({
         ...it,
-        _expiresAt: resolveExpiry(stagedExpiry[it.id]),
+        _expiresAt: it._fromGallery ? null : resolveExpiry(stagedExpiry[it.id]),
         _expiryMode: expiryDeleteMode ? 'delete' : 'access',
       }))
       // The uploaded batch shares one link, so use the earliest chosen expiry.
@@ -9273,13 +9276,13 @@ export default function InboxPage() {
               )}
 
               {/* Attached-but-unsent media — preview cards, delivered on Send.
-                  Each card carries a Media-expiry selector (Keep forever by
-                  default). */}
+                  New uploads carry a Media-expiry selector (Keep forever by
+                  default); gallery picks don't, they're already kept there. */}
               {stagedMedia.length > 0 && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 8 }}>
                   {/* Bulk expiry — set one expiry for every staged item at once
                       (mirrors the mobile app). Only worth showing for 2+ items. */}
-                  {!internalMode && stagedMedia.length > 1 && (
+                  {!internalMode && expirable.length > 1 && (
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '2px 2px 0' }}>
                       <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--slate)' }}>
                         {stagedMedia.length} attachments
@@ -9355,7 +9358,13 @@ export default function InboxPage() {
 
                         {/* Media-expiry selector — only for customer-facing sends
                             (an internal note is never delivered, so it can't expire). */}
-                        {!internalMode && (
+                        {!internalMode && m._fromGallery && (
+                          <span title="Already saved in your Colvy gallery" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5, fontWeight: 700, color: 'var(--slate)', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                            From gallery
+                          </span>
+                        )}
+                        {!internalMode && !m._fromGallery && (
                         <div data-expiry-picker style={{ position: 'relative', flexShrink: 0 }}>
                           <button type="button"
                             onClick={() => { setExpiryMenuFor(expiryMenuFor === m.id ? null : m.id); setCustomDateFor(null) }}
