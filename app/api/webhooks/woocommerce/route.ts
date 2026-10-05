@@ -211,12 +211,14 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
   const cfg = company?.order_chat_automation || {}
 
   const status = (order.status || '').toLowerCase()
-  // Merge saved overrides, but drop any that are just the old default (or blank)
-  // so they fall back to the current default with {name}/#{order}.
+  // Merge saved overrides. A message cleared to blank means "don't send for
+  // this status" (as the settings page says). One that's just an old default
+  // falls back to the current default with {name}/#{order}.
   const savedMsgs: Record<string, string> = {}
   for (const [k, v] of Object.entries(cfg.messages || {})) {
     const val = String(v ?? '').trim()
-    if (val && !isStaleOrderMessage(val, company?.name)) savedMsgs[k] = val as string
+    if (!val) savedMsgs[k] = ''
+    else if (!isStaleOrderMessage(val, company?.name)) savedMsgs[k] = val as string
   }
   const messages = { ...DEFAULT_ORDER_MESSAGES, ...savedMsgs }
   const template = messages[status]

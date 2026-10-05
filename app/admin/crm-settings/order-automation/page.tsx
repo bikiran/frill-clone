@@ -112,6 +112,9 @@ export default function OrderAutomationSettings() {
                       style={{ background: 'none', border: 'none', padding: 0, color: 'var(--coral)', fontWeight: 700, cursor: 'pointer', fontSize: 'inherit', fontFamily: 'inherit' }}>Reset to default</button></>
                   )}
                 </p>
+                {!(messages[st.key] ?? st.default).trim() && (
+                  <p style={{ ...S.hint, marginTop: 6, color: '#b45309', fontWeight: 600 }}>Not sent: this field is blank, so customers get no message for this status.</p>
+                )}
                 {!!(messages[st.key] ?? st.default).trim() && (
                   <p style={{ ...S.hint, whiteSpace: 'pre-wrap', background: 'var(--canvas, #f6f6f8)', borderRadius: 10, padding: '8px 10px', marginTop: 6 }}>
                     <strong>Preview: </strong>{preview(messages[st.key] ?? st.default, businessName)}
