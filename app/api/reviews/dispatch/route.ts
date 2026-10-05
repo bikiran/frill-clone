@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { holidaySet, wallClock, isBlockedDay, nextOpenSlot } from '@/lib/holidays'
 import { assessReviewSentiment } from '@/lib/review-sentiment'
 import { shortenUrl } from '@/lib/short-link'
+import { findCustomerGoogleReview } from '@/lib/review-match'
 
 export const dynamic = 'force-dynamic'
 
@@ -64,6 +65,24 @@ async function run(req: NextRequest) {
             await db.from('review_requests').update({ status: 'skipped', error: 'Customer already engaged with a review request' }).eq('id', rr.id)
             results.push({ id: rr.id, skipped: 'already reviewed' })
             continue
+          }
+        }
+
+        // Already left a Google review? Never ask again. Checks the contact on
+        // the request, or the one on its conversation when the request has none.
+        {
+          let reviewer = rr.contact_id as string | null
+          if (!reviewer && rr.conversation_id) {
+            const { data: cv } = await db.from('conversations').select('contact_id').eq('id', rr.conversation_id).maybeSingle()
+            reviewer = cv?.contact_id || null
+          }
+          if (reviewer) {
+            const prev = await findCustomerGoogleReview(db, rr.company_id, reviewer)
+            if (prev.reviewed) {
+              await db.from('review_requests').update({ status: 'skipped', error: `Customer already left a Google review${prev.rating ? ` (${prev.rating}/5)` : ''}` }).eq('id', rr.id)
+              results.push({ id: rr.id, skipped: 'already reviewed on Google' })
+              continue
+            }
           }
         }
 

@@ -3603,6 +3603,17 @@ export default function InboxPage() {
   const [reviewSending, setReviewSending] = useState(false)
   const sendReviewRequest = async () => {
     if (!selected || !companyId || reviewSending) return
+    // They've already left a Google review — check before asking again.
+    if (contactReviews.count > 0 && contactReviews.latest) {
+      const r = contactReviews.latest
+      const when = r.createdAt ? new Date(r.createdAt).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' }) : ''
+      const ok = await confirmDialog({
+        title: 'They’ve already reviewed you',
+        message: `${contact?.name || 'This customer'} left a ${r.rating ? `${r.rating}-star ` : ''}Google review${when ? ` on ${when}` : ''}. Send another review request anyway?`,
+        confirmLabel: 'Send anyway', tone: 'primary',
+      })
+      if (!ok) return
+    }
     setReviewSending(true)
     try {
       const me = myName
