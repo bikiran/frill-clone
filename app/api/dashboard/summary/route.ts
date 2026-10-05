@@ -39,8 +39,15 @@ export async function GET(req: NextRequest) {
   const companyId = req.nextUrl.searchParams.get('companyId')
   const tz = validTz(req.nextUrl.searchParams.get('tz'))
   const db: any = admin()
-  const access = await requireCompanyAccess(req, db, companyId)
-  if (!access.ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+  // Cheap rejections first, so an anonymous request never touches the data.
+  if (!companyId || !/^Bearer\s+\S+/i.test(req.headers.get('authorization') || '')) {
+    return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+  }
+  const started = Date.now()
+  // The access check is 2–3 round trips to Supabase (verify the token, then
+  // owner / team member). Run it ALONGSIDE the queries rather than before
+  // them; nothing is returned unless it passes.
+  const accessP = requireCompanyAccess(req, db, companyId)
 
   const now = new Date()
   const today0 = startOfDay(now, tz)
@@ -66,12 +73,7 @@ export async function GET(req: NextRequest) {
   const notClosed = '(closed,resolved)'
   const notSpam = 'is_spam.is.null,is_spam.eq.false'
 
-  const [
-    unread, unassigned, callsToday, awaiting, oldestAwaiting, tasks, tickets, company,
-    reviewsToAnswer, lowReviewsToAnswer, waitlist, carts, bookingsToday,
-    orders60, convNow, convPrev, reviews60, callsNow, callsPrev,
-    recentOrders, recentReviews, recentWaitlist, recentBookings, recentIdeas,
-  ] = await Promise.all([
+  const dataP = Promise.all([
     count(conv().eq('is_unread', true).not('status', 'in', notClosed).or(notSpam)),
     count(conv().is('assigned_to', null).not('status', 'in', notClosed).or(notSpam).gte('last_message_at', d7)),
     rows(db.from('calls').select('direction, status, duration_seconds, is_voicemail').eq('company_id', companyId).gte('created_at', today0.toISOString()).limit(1000)),
@@ -98,6 +100,14 @@ export async function GET(req: NextRequest) {
     rows(db.from('bookings').select('id, customer_name, service_name, starts_at, created_at').eq('company_id', companyId).in('status', ['pending', 'confirmed']).order('created_at', { ascending: false }).limit(4)),
     rows(db.from('ideas').select('id, title, created_by_name, created_at').eq('company_id', companyId).order('created_at', { ascending: false }).limit(3)),
   ])
+  const [access, results] = await Promise.all([accessP, dataP])
+  if (!access.ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+  const [
+    unread, unassigned, callsToday, awaiting, oldestAwaiting, tasks, tickets, company,
+    reviewsToAnswer, lowReviewsToAnswer, waitlist, carts, bookingsToday,
+    orders60, convNow, convPrev, reviews60, callsNow, callsPrev,
+    recentOrders, recentReviews, recentWaitlist, recentBookings, recentIdeas,
+  ] = results
 
   // ── Needs attention ────────────────────────────────────────────────────────
   let missedCalls = 0, voicemails = 0
@@ -159,7 +169,7 @@ export async function GET(req: NextRequest) {
   activity.sort((a, b) => Date.parse(b.at || 0) - Date.parse(a.at || 0))
 
   return NextResponse.json({
-    tz,
+    tz, ms: Date.now() - started,
     attention: {
       unread, unassigned,
       missedCalls, voicemails, callsToday: callsToday.length,

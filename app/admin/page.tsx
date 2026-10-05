@@ -77,6 +77,29 @@ const card = 'bg-white rounded-xl border'
 const cardStyle = { borderColor: 'var(--border)' } as const
 const eyebrow = 'text-xs font-semibold uppercase tracking-wider'
 
+// Last numbers seen on this device, so the page paints instantly and refreshes
+// in the background instead of opening on empty tiles every visit. Scoped to
+// the signed-in user and this workspace's hostname.
+const CACHE_KEY = 'colvy-dash-v1'
+const CACHE_MAX_AGE = 7 * 864e5
+type DashCache = { host: string; userId: string; companyId: string; at: number; summary?: Summary; sales?: any; stats?: any }
+function readCache(userId: string | undefined): DashCache | null {
+  if (!userId) return null
+  try {
+    const c = JSON.parse(localStorage.getItem(CACHE_KEY) || 'null') as DashCache | null
+    if (!c || c.userId !== userId || c.host !== window.location.hostname || Date.now() - c.at > CACHE_MAX_AGE) return null
+    return c
+  } catch { return null }
+}
+function writeCache(userId: string | undefined, companyId: string, patch: Partial<DashCache>) {
+  if (!userId) return
+  try {
+    const prev = readCache(userId)
+    const base = prev && prev.companyId === companyId ? prev : { host: window.location.hostname, userId, companyId }
+    localStorage.setItem(CACHE_KEY, JSON.stringify({ ...base, ...patch, at: Date.now() }))
+  } catch { /* storage full or blocked — the page just loads without it */ }
+}
+
 export default function AdminDashboard() {
   const [companyId, setCompanyId] = useState<string | null>(null)
   const [user, setUser] = useState<any>(null)
@@ -84,6 +107,9 @@ export default function AdminDashboard() {
   const [summaryError, setSummaryError] = useState('')
   const [sales, setSales] = useState<{ total: number; count: number; byMethod: [string, number][]; bySeller: [string, number][] } | null>(null)
   const [stats, setStats] = useState<{ ideas: number; announcements: number; surveys: number; polls: number; topics: number; statuses: number } | null>(null)
+  // True while fresh numbers are on their way and the page is showing cached ones.
+  const [refreshing, setRefreshing] = useState(false)
+  const userIdRef = useRef<string | undefined>(undefined)
 
   const resolveCompanyId = async () => {
     if (typeof window !== 'undefined') {
@@ -111,7 +137,9 @@ export default function AdminDashboard() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Could not load the dashboard')
       setSummary(data); setSummaryError('')
+      writeCache(userIdRef.current, cid, { summary: data })
     } catch (e: any) { setSummaryError(e.message || 'Could not load the dashboard') }
+    finally { setRefreshing(false) }
   }, [])
 
   const loadSales = async (cid: string) => {
@@ -128,7 +156,8 @@ export default function AdminDashboard() {
         const s = r.sold_by_name || 'Unattributed'; bySellerM.set(s, (bySellerM.get(s) || 0) + a)
       }
       const top = (mp: Map<string, number>) => Array.from(mp.entries()).sort((a, b) => b[1] - a[1]).slice(0, 4)
-      setSales({ total, count: (data || []).length, byMethod: top(byMethodM), bySeller: top(bySellerM) })
+      const next = { total, count: (data || []).length, byMethod: top(byMethodM), bySeller: top(bySellerM) }
+      setSales(next); writeCache(userIdRef.current, cid, { sales: next })
     } catch { setSales({ total: 0, count: 0, byMethod: [], bySeller: [] }) }
   }
 
@@ -136,6 +165,7 @@ export default function AdminDashboard() {
     const c = async (t: string) => { try { const { count } = await (supabase as any).from(t).select('id', { count: 'exact', head: true }).eq('company_id', cid); return count || 0 } catch { return 0 } }
     const [ideas, announcements, surveys, polls, topics, statuses] = await Promise.all(['ideas', 'announcements', 'surveys', 'polls', 'topics', 'statuses'].map(c))
     setStats({ ideas, announcements, surveys, polls, topics, statuses })
+    writeCache(userIdRef.current, cid, { stats: { ideas, announcements, surveys, polls, topics, statuses } })
     // A brand-new workspace gets sample ideas so the board isn't empty.
     if (ideas === 0) {
       try {
@@ -149,13 +179,30 @@ export default function AdminDashboard() {
     let timer: any = null
     let cid: string | null = null
     const onFocus = () => { if (cid && document.visibilityState === 'visible') loadSummary(cid) }
+    const loadAll = (id: string) => { loadSummary(id); loadSales(id); loadStats(id) }
     ;(async () => {
       const { data } = await supabase.auth.getSession()
-      setUser(data.session?.user || null)
-      cid = await resolveCompanyId()
-      setCompanyId(cid)
-      if (!cid) { setSummaryError('No workspace found for this account'); return }
-      loadSummary(cid); loadSales(cid); loadStats(cid)
+      const u = data.session?.user || null
+      setUser(u); userIdRef.current = u?.id
+      // Paint the last numbers straight away and start refreshing them without
+      // waiting to look the workspace up again.
+      const cached = readCache(u?.id)
+      if (cached) {
+        cid = cached.companyId; setCompanyId(cid)
+        if (cached.summary) setSummary(cached.summary)
+        if (cached.sales) setSales(cached.sales)
+        if (cached.stats) setStats(cached.stats)
+        setRefreshing(!!cached.summary)
+        loadAll(cid)
+      }
+      const resolved = await resolveCompanyId()
+      if (resolved !== cid) {
+        // First visit on this device, or the workspace changed — start clean.
+        cid = resolved; setCompanyId(cid)
+        setSummary(null); setSales(null); setStats(null); setRefreshing(false)
+        if (!cid) { setSummaryError('No workspace found for this account'); return }
+        loadAll(cid)
+      }
       // Keep the numbers current while the tab is open.
       timer = setInterval(onFocus, 60_000)
       document.addEventListener('visibilitychange', onFocus)
@@ -176,7 +223,7 @@ export default function AdminDashboard() {
           <div className={`${card} p-4 mb-6 text-sm`} style={{ ...cardStyle, color: '#b91c1c' }}>{summaryError}</div>
         )}
 
-        <NeedsAttention s={summary} />
+        <NeedsAttention s={summary} refreshing={refreshing} />
         <Today s={summary} />
         <Performance s={summary} />
 
@@ -218,7 +265,7 @@ export default function AdminDashboard() {
 
 // ── Needs attention ───────────────────────────────────────────────────────────
 
-function NeedsAttention({ s }: { s: Summary | null }) {
+function NeedsAttention({ s, refreshing }: { s: Summary | null; refreshing?: boolean }) {
   const a = s?.attention
   const tiles = a ? [
     { key: 'unread', label: 'Unread messages', n: a.unread, urgent: true, href: '/admin/inbox?view=unread', icon: ChatI,
@@ -248,7 +295,12 @@ function NeedsAttention({ s }: { s: Summary | null }) {
     <section className="mb-8">
       <div className="flex items-baseline justify-between mb-3 gap-3">
         <h2 className="text-xl font-bold" style={{ color: 'var(--ink)' }}>Needs attention</h2>
-        {a && <span className="text-sm" style={{ color: 'var(--slate)' }}>{outstanding ? `${plural(outstanding, 'area')} to look at` : 'All clear'}</span>}
+        {a && (
+          <span className="text-sm inline-flex items-center gap-2" style={{ color: 'var(--slate)' }}>
+            {refreshing && <span className="inline-flex items-center gap-1.5 text-xs" aria-live="polite"><span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: 'var(--coral)' }} />Updating</span>}
+            {outstanding ? `${plural(outstanding, 'area')} to look at` : 'All clear'}
+          </span>
+        )}
       </div>
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
         {!a ? Array.from({ length: 6 }).map((_, i) => <div key={i} className={`${card} h-[118px] animate-pulse`} style={{ ...cardStyle, background: 'var(--canvas)' }} />)
