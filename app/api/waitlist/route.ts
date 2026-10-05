@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { requireCompanyAccess, resolveWaitlistSettings, isMissingTable } from '@/lib/waitlist'
+import { requireCompanyAccess, resolveWaitlistSettings, isMissingTable, openWaitlistConversation } from '@/lib/waitlist'
 import { toE164, emailKey } from '@/lib/phone'
 
 export const dynamic = 'force-dynamic'
@@ -123,6 +123,7 @@ export async function POST(req: NextRequest) {
 }
 
 // PATCH — { companyId, id, action: 'cancel' } removes someone from a waitlist;
+// { companyId, id, action: 'chat' } finds or starts their conversation;
 // { companyId, id, action: 'edit', customerName?, phone?, email?, note? } fixes
 // a waiting customer's details (the alert goes to the entry's own phone/email);
 // { companyId, settings: { auto_notify?, template?, timezone? } } saves settings.
@@ -143,6 +144,13 @@ export async function PATCH(req: NextRequest) {
       const { error } = await db.from('companies').update({ waitlist_settings: next }).eq('id', companyId)
       if (error) return NextResponse.json({ error: isMissingTable(error) ? NEEDS_MIGRATION : error.message }, { status: 400 })
       return NextResponse.json({ ok: true, settings: resolveWaitlistSettings(next) })
+    }
+
+    // Open (or start) the customer's conversation, e.g. for a website sign-up.
+    if (b.id && b.action === 'chat') {
+      const r = await openWaitlistConversation(db, companyId, String(b.id))
+      if (!r.conversationId) return NextResponse.json({ error: r.error || 'Could not open a chat.' }, { status: 400 })
+      return NextResponse.json({ ok: true, conversationId: r.conversationId })
     }
 
     if (b.id && b.action === 'edit') {
