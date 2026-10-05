@@ -8,7 +8,7 @@ import PageHeader from '@/components/PageHeader'
 import { SkeletonList } from '@/components/Skeleton'
 import WaitlistAddModal from '@/components/WaitlistAddModal'
 import { confirmDialog } from '@/components/ConfirmDialog'
-import { BellIcon, GearIcon, PlusIcon, ChatIcon, TagIcon, XIcon } from '@/components/booking/icons'
+import { BellIcon, GearIcon, PlusIcon, ChatIcon, TagIcon, XIcon, EditIcon, ExternalIcon } from '@/components/booking/icons'
 
 // Back-in-stock waitlists. Customers who asked for something that's out of
 // stock are grouped by item; when it's back, everyone waiting gets one SMS —
@@ -33,6 +33,8 @@ async function authHeaders(): Promise<Record<string, string>> {
 }
 
 const groupKey = (e: any) => e.woo_product_id ? `p:${e.woo_product_id}` : `n:${String(e.item_name || '').trim().toLowerCase()}`
+// Only real web links open in a new tab (staff can type an item link by hand).
+const webUrl = (u?: string | null) => (u && /^https?:\/\//i.test(u) ? u : null)
 const fmtDate = (d: string) => new Date(d).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })
 
 export default function WaitlistsPage() {
@@ -47,6 +49,7 @@ export default function WaitlistsPage() {
   const [tab, setTab] = useState<'waiting' | 'notified' | 'all'>('waiting')
   const [search, setSearch] = useState('')
   const [open, setOpen] = useState<Record<string, boolean>>({})
+  const [editing, setEditing] = useState<string | null>(null)
 
   // Opening Waitlists clears the side-menu "new sign-ups" badge.
   useEffect(() => {
@@ -106,9 +109,10 @@ export default function WaitlistsPage() {
       map.set(k, g)
     }
     const list = Array.from(map.values())
+    list.forEach(g => { g.url = webUrl(g.url) || webUrl(g.productId ? stock[String(g.productId)]?.permalink : null) })
     list.forEach(g => { g.waiting = g.entries.filter((e: any) => e.status === 'waiting' || e.status === 'queued').length })
     return list.sort((a, b) => b.waiting - a.waiting || b.entries.length - a.entries.length)
-  }, [entries, tab, search])
+  }, [entries, tab, search, stock])
 
   const stats = useMemo(() => {
     const monthAgo = Date.now() - 30 * 86400000
@@ -161,6 +165,7 @@ export default function WaitlistsPage() {
 
   return (
     <div style={{ padding: 24, maxWidth: 1280, margin: '0 auto' }}>
+      <style>{`@media (max-width: 560px) { .wl-hide-sm { display: none } }`}</style>
       <PageHeader
         title="Back-in-stock waitlists"
         subtitle="Customers waiting for an item. When it's back, they get one SMS."
@@ -232,6 +237,10 @@ export default function WaitlistsPage() {
                       </div>
                     </div>
                   </button>
+                  {g.url && (
+                    <a href={g.url} target="_blank" rel="noopener noreferrer" title="View product on your website" aria-label={`View ${g.name} on your website`}
+                      style={{ ...btnGhost, textDecoration: 'none', padding: '9px 12px' }}><ExternalIcon size={15} /> <span className="wl-hide-sm">View product</span></a>
+                  )}
                   {g.waiting > 0 && (
                     <button onClick={() => notifyGroup(g)} disabled={busy === g.key} style={{ ...btnPrimary, opacity: busy === g.key ? 0.6 : 1 }}>
                       {busy === g.key ? 'Sending…' : `Notify ${g.waiting} now`}
@@ -242,6 +251,11 @@ export default function WaitlistsPage() {
                   <div style={{ borderTop: '1px solid var(--border)' }}>
                     {g.entries.map((e: any) => {
                       const pill = STATUS_PILL[e.status] || STATUS_PILL.waiting
+                      if (editing === e.id) return (
+                        <EditEntry key={e.id} entry={e} companyId={companyId}
+                          onCancel={() => setEditing(null)}
+                          onSaved={async () => { setEditing(null); flash('Customer details saved.'); await load(companyId) }} />
+                      )
                       return (
                         <div key={e.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', borderBottom: '1px solid var(--border)', flexWrap: 'wrap' }}>
                           <div style={{ flex: '1 1 200px', minWidth: 0 }}>
@@ -258,6 +272,9 @@ export default function WaitlistsPage() {
                           <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 999, background: pill.bg, color: pill.c, whiteSpace: 'nowrap' }}>{pill.label}</span>
                           {e.conversation_id && <a href={`/admin/inbox?conversation=${e.conversation_id}`} title="Open conversation" style={{ ...iconBtn, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: 'var(--slate, #6b7280)' }}><ChatIcon size={15} /></a>}
                           {['waiting', 'queued', 'failed'].includes(e.status) && (
+                            <button onClick={() => setEditing(e.id)} title="Edit customer details" aria-label="Edit customer details" style={iconBtn}><EditIcon size={14} /></button>
+                          )}
+                          {['waiting', 'queued', 'failed'].includes(e.status) && (
                             <button onClick={() => removeEntry(e)} disabled={busy === e.id} title="Remove from waitlist" style={{ ...iconBtn, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><XIcon size={13} /></button>
                           )}
                         </div>
@@ -273,6 +290,53 @@ export default function WaitlistsPage() {
 
       {showAdd && <WaitlistAddModal companyId={companyId} onClose={() => setShowAdd(false)} onAdded={async (dup) => { setShowAdd(false); flash(dup ? 'Already on that waitlist.' : 'Added to the waitlist.'); await load(companyId) }} />}
     </div>
+  )
+}
+
+// ── Edit a waiting customer ───────────────────────────────────────────────────
+function EditEntry({ entry, companyId, onCancel, onSaved }: { entry: any; companyId: string; onCancel: () => void; onSaved: () => void }) {
+  const [name, setName] = useState<string>(entry.customer_name || '')
+  const [phone, setPhone] = useState<string>(entry.phone || '')
+  const [email, setEmail] = useState<string>(entry.email || '')
+  const [note, setNote] = useState<string>(entry.note || '')
+  const [saving, setSaving] = useState(false)
+  const [err, setErr] = useState('')
+
+  const save = async (ev: React.FormEvent) => {
+    ev.preventDefault()
+    if (!phone.trim() && !email.trim()) { setErr('Add a phone number or an email so they can be told it’s back.'); return }
+    setSaving(true); setErr('')
+    try {
+      const res = await fetch('/api/waitlist', { method: 'PATCH', headers: await authHeaders(), body: JSON.stringify({ companyId, id: entry.id, action: 'edit', customerName: name, phone, email, note }) })
+      const d = await res.json()
+      if (!res.ok) throw new Error(d.error || 'Could not save')
+      onSaved()
+    } catch (e: any) { setErr(e.message) } finally { setSaving(false) }
+  }
+
+  const field = (label: string, el: React.ReactNode) => (
+    <label style={{ display: 'block', flex: '1 1 180px', minWidth: 0 }}>
+      <span style={{ display: 'block', fontSize: 11.5, fontWeight: 700, color: 'var(--slate)', marginBottom: 4 }}>{label}</span>
+      {el}
+    </label>
+  )
+  return (
+    <form onSubmit={save} style={{ padding: '12px 16px 14px', borderBottom: '1px solid var(--border)', background: 'var(--canvas, #fafafa)' }}>
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+        {field('Name', <input value={name} onChange={e => setName(e.target.value)} placeholder="Customer name" autoFocus style={{ ...inp, fontSize: 16 }} />)}
+        {field('Mobile', <input value={phone} onChange={e => setPhone(e.target.value)} placeholder="0412 345 678" inputMode="tel" autoComplete="off" style={{ ...inp, fontSize: 16 }} />)}
+        {field('Email', <input value={email} onChange={e => setEmail(e.target.value)} placeholder="name@example.com" type="email" inputMode="email" autoComplete="off" style={{ ...inp, fontSize: 16 }} />)}
+      </div>
+      <div style={{ marginTop: 10 }}>
+        {field('Note (staff only)', <input value={note} onChange={e => setNote(e.target.value)} placeholder="e.g. wants 2, happy to pick up" style={{ ...inp, fontSize: 16 }} />)}
+      </div>
+      <p style={{ fontSize: 12, color: 'var(--slate)', margin: '8px 0 0' }}>They’re texted when it’s back, or emailed if there’s no mobile.</p>
+      {err && <p role="alert" style={{ fontSize: 12.5, color: '#dc2626', margin: '6px 0 0' }}>{err}</p>}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 10 }}>
+        <button type="button" onClick={onCancel} style={btnGhost}>Cancel</button>
+        <button type="submit" disabled={saving} style={{ ...btnPrimary, opacity: saving ? 0.7 : 1 }}>{saving ? 'Saving…' : 'Save'}</button>
+      </div>
+    </form>
   )
 }
 
