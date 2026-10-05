@@ -119,6 +119,7 @@ export default function WaitlistsPage() {
       const p = g.productId ? stock[String(g.productId)] : null
       g.price = p?.price ?? null
       g.regular = p?.on_sale ? p.regular_price : null
+      g.approx = !!p?.approx
       g.potential = g.price != null ? g.price * g.waiting : null
     })
     return list.sort((a, b) => b.waiting - a.waiting || b.entries.length - a.entries.length)
@@ -183,7 +184,7 @@ export default function WaitlistsPage() {
   const stockBadge = (g: any) => {
     if (!g.productId) return { label: 'Not listed online', bg: '#f3f4f6', c: '#6b7280' }
     const s = stock[String(g.productId)]
-    if (!s) return { label: 'Linked product', bg: '#f3f4f6', c: '#6b7280' }
+    if (!s || !s.stock_status) return { label: 'Linked product', bg: '#f3f4f6', c: '#6b7280' }
     if (s.stock_status === 'instock') return { label: `In stock${s.stock_quantity != null ? ` · ${s.stock_quantity}` : ''}`, bg: '#f0fdf4', c: '#059669' }
     if (s.stock_status === 'onbackorder') return { label: 'On backorder', bg: '#fffbeb', c: '#b45309' }
     return { label: 'Out of stock', bg: '#fef2f2', c: '#dc2626' }
@@ -276,7 +277,7 @@ export default function WaitlistsPage() {
                       <div className="wl-title" style={{ fontSize: 15, fontWeight: 800, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {g.name}
                         {g.price != null && (
-                          <span style={{ fontWeight: 700, color: 'var(--ink)' }}> – {money(g.price)}
+                          <span style={{ fontWeight: 700, color: 'var(--ink)' }} title={g.approx ? 'Couldn’t reach your store for this size, so this is the product’s starting price' : undefined}> – {g.approx ? 'from ' : ''}{money(g.price)}
                             {g.regular != null && <span style={{ fontWeight: 500, fontSize: 13, color: 'var(--slate)', textDecoration: 'line-through', marginLeft: 6 }}>{money(g.regular)}</span>}
                           </span>
                         )}
@@ -342,7 +343,7 @@ export default function WaitlistsPage() {
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '10px 16px', background: 'var(--canvas, #fafafa)', flexWrap: 'wrap' }}>
                         <span style={{ fontSize: 12.5, color: 'var(--slate)' }}>
                           {g.price != null
-                            ? <>Potential revenue · {g.waiting} waiting × {money(g.price)} each</>
+                            ? <>Potential revenue · {g.waiting} waiting × {money(g.price)} each{g.approx ? ' (starting price — estimate)' : ''}</>
                             : g.productId ? 'No price on this product in your store yet' : 'Not listed online, so there’s no price to estimate from'}
                         </span>
                         {g.potential != null && <span style={{ fontSize: 14, fontWeight: 800, color: '#059669', fontVariantNumeric: 'tabular-nums' }}>{money(g.potential)}</span>}

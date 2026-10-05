@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { requireCompanyAccess, resolveWaitlistSettings, isMissingTable, openWaitlistConversation } from '@/lib/waitlist'
 import { toE164, emailKey } from '@/lib/phone'
+import { variationStock, pricing, type ItemStock } from '@/lib/waitlist-stock'
 
 export const dynamic = 'force-dynamic'
 
@@ -43,19 +44,17 @@ export async function GET(req: NextRequest) {
     const productIds = Array.from(new Set((entries || []).map((e: any) => e.woo_product_id).filter(Boolean)))
     // Live stock + current price from the synced catalogue (price drives the
     // "potential revenue" figures — what the waitlist is worth once it's back).
-    const stock: Record<string, { stock_status: string | null; stock_quantity: number | null; permalink?: string | null; price: number | null; regular_price: number | null; on_sale: boolean }> = {}
-    const num = (v: any) => { const n = parseFloat(String(v ?? '')); return isFinite(n) && n > 0 ? n : null }
+    const stock: Record<string, ItemStock> = {}
     if (productIds.length) {
       const { data: prods } = await db.from('woocommerce_products')
         .select('woo_product_id, stock_status, stock_quantity, permalink, price, regular_price, sale_price, on_sale').eq('company_id', companyId).in('woo_product_id', productIds)
       ;(prods || []).forEach((p: any) => {
-        const price = num(p.price) ?? (p.on_sale ? num(p.sale_price) : null) ?? num(p.regular_price)
-        const regular = num(p.regular_price)
-        stock[String(p.woo_product_id)] = {
-          stock_status: p.stock_status, stock_quantity: p.stock_quantity, permalink: p.permalink || null,
-          price, regular_price: regular, on_sale: !!p.on_sale && price != null && regular != null && price < regular,
-        }
+        stock[String(p.woo_product_id)] = { ...pricing(p), stock_status: p.stock_status, stock_quantity: p.stock_quantity, permalink: p.permalink || null }
       })
+      // Website sign-ups store the size/variation id, which isn't in the synced
+      // catalogue — look those up through their parent product.
+      const variations = productIds.map(Number).filter(id => !stock[String(id)])
+      if (variations.length) Object.assign(stock, await variationStock(db, companyId!, variations))
     }
     return NextResponse.json({ entries: entries || [], settings, stock })
   } catch (e: any) {
