@@ -7,6 +7,7 @@ import { resolveCompanyUser } from '@/lib/client-cache'
 import PageHeader from '@/components/PageHeader'
 import { SkeletonList } from '@/components/Skeleton'
 import WaitlistAddModal from '@/components/WaitlistAddModal'
+import Pagination, { usePagination } from '@/components/Pagination'
 import { confirmDialog } from '@/components/ConfirmDialog'
 import { BellIcon, GearIcon, PlusIcon, ChatIcon, TagIcon, XIcon, EditIcon, ExternalIcon } from '@/components/booking/icons'
 
@@ -142,6 +143,9 @@ export default function WaitlistsPage() {
     }
   }, [entries, stock])
 
+  // One card per item; page through them once the list gets long.
+  const pg = usePagination(groups, { key: 'waitlists', defaultSize: 25, resetOn: [tab, search] })
+
   const notifyGroup = async (g: any) => {
     const ids = g.entries.filter((e: any) => e.status === 'waiting' || e.status === 'queued').map((e: any) => e.id)
     if (!ids.length) return
@@ -263,7 +267,7 @@ export default function WaitlistsPage() {
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {groups.map(g => {
+          {pg.items.map(g => {
             const badge = stockBadge(g)
             const isOpen = open[g.key] ?? groups.length <= 3
             return (
@@ -354,6 +358,7 @@ export default function WaitlistsPage() {
               </div>
             )
           })}
+          <Pagination {...pg} noun="items" />
         </div>
       )}
 
