@@ -50,6 +50,15 @@ export default function CallBar({ companyId, toNumber, contactName, contactId, c
   const [errorMsg, setErrorMsg] = useState('')
   const autoStartedRef = useRef(false)
 
+  // This direct-dial client can't be reattached after a reload, so warn before
+  // the page unloads mid-call rather than silently dropping the customer.
+  useEffect(() => {
+    if (!['connecting', 'ringing', 'active'].includes(state)) return
+    const warn = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = '' }
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [state])
+
   // Errors and ended calls shouldn't linger — clear the bar automatically so it
   // doesn't sit there permanently.
   useEffect(() => {
