@@ -74,12 +74,12 @@ export async function variationStock(db: any, companyId: string, ids: number[], 
 
   // 2. Live variation data from the store, one request per parent.
   const live = new Map<number, any>()
-  try {
+  if (opts.live !== false) try {
     const { data: integ } = await db.from('woocommerce_integrations')
       .select('store_url, consumer_key, consumer_secret')
       .eq('company_id', companyId).eq('is_active', true)
       .order('created_at', { ascending: true }).limit(1).maybeSingle()
-    if (opts.live !== false && integ?.store_url && integ.consumer_key) {
+    if (integ?.store_url && integ.consumer_key) {
       const auth = `Basic ${Buffer.from(`${integ.consumer_key}:${integ.consumer_secret}`).toString('base64')}`
       const byParent = new Map<number, number[]>()
       for (const [vid, p] of Array.from(parentOf.entries())) byParent.set(p.woo_product_id, [...(byParent.get(p.woo_product_id) || []), vid])
