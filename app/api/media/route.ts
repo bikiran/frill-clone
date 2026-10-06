@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { requireCompanyAccess } from '@/lib/company-access'
 
 function admin() {
   return createClient(
@@ -18,6 +19,9 @@ export async function GET(req: NextRequest) {
     const trashed = req.nextUrl.searchParams.get('trashed') === '1'
     if (!companyId) return NextResponse.json({ error: 'Missing companyId' }, { status: 400 })
     const db = admin()
+    // Service-role reads bypass RLS, so the caller must be shown to belong to
+    // this workspace — this used to answer for any companyId it was sent.
+    if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
 
     // Auto-purge trash older than 30 days (best-effort; no-op pre-migration).
     try {
@@ -55,6 +59,7 @@ export async function POST(req: NextRequest) {
     const { companyId, action } = body
     if (!companyId || !action) return NextResponse.json({ error: 'Missing companyId or action' }, { status: 400 })
     const db = admin()
+    if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
 
     if (action === 'create_folder') {
       const { data } = await db.from('media_folders').insert({ company_id: companyId, name: body.name || 'New folder', parent_id: body.parentId || null }).select().maybeSingle()

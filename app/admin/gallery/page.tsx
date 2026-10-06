@@ -13,6 +13,7 @@ import { useGoogleDrivePicker } from '@/components/GoogleDrivePicker'
 import PhoneUploadQR from '@/components/PhoneUploadQR'
 import PageHeader from '@/components/PageHeader'
 import { confirmDialog } from '@/components/ConfirmDialog'
+import { authFetch } from '@/lib/auth-fetch'
 
 export default function GalleryPage() {
   const { companyId, user, loading } = useCompanyUser()
@@ -55,7 +56,7 @@ export default function GalleryPage() {
       setItemCats(cached.byItem)
     }
     try {
-      const res = await fetch(`/api/media/categories?companyId=${companyId}`)
+      const res = await authFetch(`/api/media/categories?companyId=${companyId}`)
       const d = await res.json()
       const categories = d.categories || []
       const byItem = d.byItem || {}
@@ -89,7 +90,7 @@ export default function GalleryPage() {
   }, [companyId])
 
   const catApi = async (body: any) => {
-    const res = await fetch('/api/media/categories', {
+    const res = await authFetch('/api/media/categories', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ companyId, ...body }),
     })
@@ -326,7 +327,7 @@ export default function GalleryPage() {
       fd.append('file', file); fd.append('companyId', companyId)
       if (item.folder_id) fd.append('folderId', item.folder_id)
       fd.append('title', `${base} (edited)`)
-      const res = await fetch('/api/media/upload', { method: 'POST', body: fd })
+      const res = await authFetch('/api/media/upload', { method: 'POST', body: fd })
       if (!res.ok) throw new Error('upload failed')
       setEditingItem(null)
       await load()
@@ -376,7 +377,7 @@ export default function GalleryPage() {
       if (activeFolder === '__trash') params.set('trashed', '1')
       else if (activeFolder && activeFolder !== '__fav') params.set('folderId', activeFolder)
       if (search.trim()) params.set('q', search.trim())
-      const res = await fetch(`/api/media?${params}`)
+      const res = await authFetch(`/api/media?${params}`)
       const data = await res.json()
       const folders = data.folders || []
       const items = data.items || []
@@ -392,7 +393,7 @@ export default function GalleryPage() {
   const loadFavorites = useCallback(async () => {
     if (!companyId || !userId) return
     try {
-      const res = await fetch(`/api/media/favorites?userId=${userId}&companyId=${companyId}`)
+      const res = await authFetch(`/api/media/favorites?userId=${userId}&companyId=${companyId}`)
       const d = await res.json()
       setFavIds(new Set<string>(d.ids || []))
     } catch {}
@@ -410,7 +411,7 @@ export default function GalleryPage() {
       return next
     })
     try {
-      await fetch('/api/media/favorites', {
+      await authFetch('/api/media/favorites', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId, mediaId: item.id, companyId, on }),
       })
@@ -430,7 +431,7 @@ export default function GalleryPage() {
       value: '', placeholder: 'e.g. Fish, Tanks, Plants', confirmLabel: 'Create',
       onSubmit: async (name) => {
         if (!name.trim() || !companyId) return
-        await fetch('/api/media', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, action: 'create_folder', name: name.trim(), parentId }) })
+        await authFetch('/api/media', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, action: 'create_folder', name: name.trim(), parentId }) })
         load()
       },
     })
@@ -442,7 +443,7 @@ export default function GalleryPage() {
       title: 'Rename category', value: f.name || '', confirmLabel: 'Save',
       onSubmit: async (name) => {
         if (!name.trim() || !companyId) return
-        await fetch('/api/media', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, action: 'rename_folder', folderId: f.id, name: name.trim() }) })
+        await authFetch('/api/media', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, action: 'rename_folder', folderId: f.id, name: name.trim() }) })
         load()
       },
     })
@@ -455,7 +456,7 @@ export default function GalleryPage() {
       message: `Delete “${f.name}”? Its media won't be removed — it will move to Unfiled.`,
       confirmLabel: 'Delete category', danger: true,
       onConfirm: async () => {
-        await fetch('/api/media', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, action: 'delete_folder', folderId: f.id }) })
+        await authFetch('/api/media', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, action: 'delete_folder', folderId: f.id }) })
         if (activeFolder === f.id) setActiveFolder(null)
         load()
       },
@@ -525,7 +526,7 @@ export default function GalleryPage() {
           fd.append('companyId', companyId!)
           if (activeFolder) fd.append('folderId', activeFolder)
           fd.append('url', url); fd.append('name', file.name); fd.append('type', toSend.type)
-          const res = await fetch('/api/media/upload', { method: 'POST', body: fd })
+          const res = await authFetch('/api/media/upload', { method: 'POST', body: fd })
           return res.ok
         }
       }
@@ -533,7 +534,7 @@ export default function GalleryPage() {
       const fd = new FormData()
       fd.append('file', toSend); fd.append('companyId', companyId!)
       if (activeFolder) fd.append('folderId', activeFolder)
-      const res = await fetch('/api/media/upload', { method: 'POST', body: fd })
+      const res = await authFetch('/api/media/upload', { method: 'POST', body: fd })
       return res.ok
     }
 
@@ -581,7 +582,7 @@ export default function GalleryPage() {
     if (!companyId || picked.length === 0) return
     setDriveImporting(true)
     try {
-      const res = await fetch('/api/media/import-drive', {
+      const res = await authFetch('/api/media/import-drive', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ companyId, folderId: activeFolder, accessToken: picked[0].accessToken, files: picked.map(p => ({ id: p.id, name: p.name, mimeType: p.mimeType })) }),
       })
@@ -604,7 +605,7 @@ export default function GalleryPage() {
     if (!companyId) return
     setItems(prev => prev.filter((it: any) => it.id !== item.id))
     try {
-      await fetch('/api/media', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, action: 'trash_item', itemId: item.id }) })
+      await authFetch('/api/media', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, action: 'trash_item', itemId: item.id }) })
     } catch {}
   }
 
@@ -612,7 +613,7 @@ export default function GalleryPage() {
     if (!companyId) return
     setItems(prev => prev.filter((it: any) => it.id !== item.id))
     try {
-      await fetch('/api/media', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, action: 'restore_item', itemId: item.id }) })
+      await authFetch('/api/media', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, action: 'restore_item', itemId: item.id }) })
     } catch {}
   }
 
@@ -624,14 +625,14 @@ export default function GalleryPage() {
       confirmLabel: 'Delete forever', danger: true,
       onConfirm: async () => {
         setItems(prev => prev.filter((it: any) => it.id !== item.id))
-        await fetch('/api/media', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, action: 'delete_item', itemId: item.id }) })
+        await authFetch('/api/media', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, action: 'delete_item', itemId: item.id }) })
       },
     })
   }
 
   const moveItem = async (item: any, folderId: string | null) => {
     if (!companyId) return
-    await fetch('/api/media', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, action: 'update_item', itemId: item.id, folder_id: folderId }) })
+    await authFetch('/api/media', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, action: 'update_item', itemId: item.id, folder_id: folderId }) })
     load()
   }
 
@@ -643,7 +644,7 @@ export default function GalleryPage() {
     if (!companyId || t === (item.title || '')) return
     setItems(prev => prev.map((x: any) => x.id === item.id ? { ...x, title: t } : x))   // optimistic
     try {
-      await fetch('/api/media', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, action: 'update_item', itemId: item.id, title: t }) })
+      await authFetch('/api/media', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, action: 'update_item', itemId: item.id, title: t }) })
     } catch { load() }
   }
 
@@ -651,7 +652,7 @@ export default function GalleryPage() {
     if (!companyId) return
     setPrextyStatus('Syncing…')
     try {
-      const res = await fetch('/api/media/prexty-sync', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId }) })
+      const res = await authFetch('/api/media/prexty-sync', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId }) })
       const data = await res.json()
       setPrextyStatus(data.message || (data.ok ? `Synced ${data.synced} items` : 'Not available yet'))
     } catch (e: any) { setPrextyStatus(e.message) }

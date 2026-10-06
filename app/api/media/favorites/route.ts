@@ -1,6 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
+// The user is whoever the Bearer token says, never a userId from the client —
+// that let anyone read or change anyone's favourites.
+async function caller(req: NextRequest, db: any): Promise<string | null> {
+  const token = (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '')
+  if (!token) return null
+  try { const { data } = await db.auth.getUser(token); return data?.user?.id || null } catch { return null }
+}
+
 function admin() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -12,10 +20,10 @@ function admin() {
 // GET: the media ids the given user has favourited (optionally scoped to a company).
 export async function GET(req: NextRequest) {
   try {
-    const userId = req.nextUrl.searchParams.get('userId')
     const companyId = req.nextUrl.searchParams.get('companyId')
-    if (!userId) return NextResponse.json({ error: 'Missing userId' }, { status: 400 })
     const db = admin()
+    const userId = await caller(req, db)
+    if (!userId) return NextResponse.json({ error: 'Not signed in' }, { status: 401 })
     let q = db.from('media_favorites').select('media_id').eq('user_id', userId)
     if (companyId) q = q.eq('company_id', companyId)
     const { data, error } = await q
@@ -30,10 +38,12 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
-    const { userId, mediaId, companyId } = body
+    const { mediaId, companyId } = body
     const on = body.on
-    if (!userId || !mediaId) return NextResponse.json({ error: 'Missing userId or mediaId' }, { status: 400 })
+    if (!mediaId) return NextResponse.json({ error: 'Missing mediaId' }, { status: 400 })
     const db = admin()
+    const userId = await caller(req, db)
+    if (!userId) return NextResponse.json({ error: 'Not signed in' }, { status: 401 })
 
     if (on === false) {
       await db.from('media_favorites').delete().eq('user_id', userId).eq('media_id', mediaId)
