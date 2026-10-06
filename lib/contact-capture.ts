@@ -13,6 +13,33 @@
 
 const digitsOf = (s: string) => (s || '').replace(/\D/g, '').slice(-9)
 
+// Find a company's contact by phone, however the number was saved —
+// "+61455123456", "0455123456" or "0455 123 456". A plain `ilike %455123456%`
+// misses the spaced/dashed forms (the digits aren't contiguous in the column),
+// which made an SMS from a known customer look like a stranger. Tries the
+// contiguous match first, then the normalised column, then a candidate scan on
+// the last three digits compared by the last nine.
+export async function findContactByPhone(db: any, companyId: string, phone: string): Promise<{ id: string; name: string | null; phone: string | null } | null> {
+  const tail = digitsOf(phone)
+  if (!companyId || !tail || tail.length < 8) return null
+  const same = (c: any) => c?.phone && digitsOf(c.phone) === tail
+  try {
+    const { data } = await db.from('contacts').select('id, name, phone').eq('company_id', companyId).ilike('phone', `%${tail}%`).limit(10)
+    const hit = (data || []).find(same)
+    if (hit) return hit
+  } catch {}
+  try {
+    const { data, error } = await db.from('contacts').select('id, name, phone').eq('company_id', companyId).eq('phone_norm', tail).limit(5)
+    if (!error) { const hit = (data || []).find(same); if (hit) return hit }
+  } catch {}
+  try {
+    const { data } = await db.from('contacts').select('id, name, phone').eq('company_id', companyId).ilike('phone', `%${tail.slice(-3)}`).limit(1000)
+    const hit = (data || []).find(same)
+    if (hit) return hit
+  } catch {}
+  return null
+}
+
 // Find, or create, a contact for a phone number — company-scoped.
 //
 // Unlike captureContactFromSms (which deliberately won't mint a nameless contact
@@ -29,12 +56,8 @@ export async function ensureContactByPhone(
   if (!companyId || !phone) return null
   const tail = digitsOf(phone)
   if (!tail || tail.length < 6) return null
-  try {
-    const { data: matches } = await db.from('contacts')
-      .select('id, phone').eq('company_id', companyId).ilike('phone', `%${tail}%`).limit(10)
-    const hit = (matches || []).find((c: any) => c.phone && digitsOf(c.phone) === tail)
-    if (hit) return hit.id
-  } catch { /* fall through to create */ }
+  const existing = await findContactByPhone(db, companyId, phone)
+  if (existing) return existing.id
   try {
     const { data: created } = await db.from('contacts').insert({
       company_id: companyId,
@@ -118,12 +141,8 @@ export async function captureContactFromSms(params: {
 
   // Not linked yet → try to find an existing contact by phone before creating one.
   if (!contactId && fromDigits) {
-    try {
-      const { data: matches } = await db.from('contacts')
-        .select('id, phone').eq('company_id', companyId).ilike('phone', `%${fromDigits}%`).limit(10)
-      const hit = (matches || []).find((c: any) => c.phone && digitsOf(c.phone) === fromDigits)
-      if (hit) contactId = hit.id
-    } catch {}
+    const hit = await findContactByPhone(db, companyId, from)
+    if (hit) contactId = hit.id
   }
 
   // ── Existing contact: fill only empty fields, mark them as AI-added ─────────
