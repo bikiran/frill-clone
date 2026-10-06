@@ -4,9 +4,12 @@ import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { useCompanyUser } from '../crm-settings/_shared'
 import PageHeader from '@/components/PageHeader'
+import Pagination, { usePagination } from '@/components/Pagination'
 
 type Comment = {
   id: string
+  contact_id?: string | null
+  contact_name?: string | null
   external_comment_id: string
   author_name: string | null
   author_photo: string | null
@@ -164,8 +167,6 @@ export default function SocialEngagementPage() {
     } catch {} finally { setDrafting(null) }
   }
 
-  if (loading) return <div style={{ padding: 40, color: 'var(--slate)' }}>Loading…</div>
-
   const active = comments.filter(c => showArchived ? c.is_archived : !c.is_archived)
   const stats = {
     posts: postCount,
@@ -187,6 +188,17 @@ export default function SocialEngagementPage() {
     }
     return true
   })
+
+  // 2,000 comments in one scroll was unworkable — page them like Reviews.
+  const pg = usePagination(filtered, { key: 'social', defaultSize: 25, resetOn: [risk, type, cat, search, showArchived] })
+  // A deep link to one comment opens the page it's on.
+  const highlightIndex = highlightCommentId ? filtered.findIndex(c => c.id === highlightCommentId) : -1
+  useEffect(() => {
+    if (highlightIndex >= 0) pg.goTo(Math.floor(highlightIndex / pg.pageSize) + 1, false)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [highlightIndex, pg.pageSize])
+
+  if (loading) return <div style={{ padding: 40, color: 'var(--slate)' }}>Loading…</div>
 
   const Chip = ({ label, value, tone }: { label: string; value: number; tone: string }) => (
     <button onClick={() => { if (label === 'Replied') setType('replied'); else if (label === 'Unreplied') setType('unreplied'); else setType('all') }}
@@ -246,7 +258,7 @@ export default function SocialEngagementPage() {
               <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, padding: 40, textAlign: 'center', color: 'var(--slate)' }}>
                 {comments.length === 0 ? 'No comments yet — hit “Sync comments” to pull them from your page.' : 'No comments match these filters.'}
               </div>
-            ) : filtered.map(c => {
+            ) : pg.items.map(c => {
               const critical = (c.risk_level || 'safe') === 'critical'
               const hot = c.id === highlightCommentId
               return (
@@ -304,6 +316,7 @@ export default function SocialEngagementPage() {
                 )}
               </div>
             )})}
+            <Pagination {...pg} noun="comments" />
           </div>
 
           {/* Filters */}
