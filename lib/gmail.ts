@@ -406,7 +406,10 @@ export function junkReason(headers: any[], fromEmail: string, subject: string, o
  * Only inbound messages are imported (never our own sent mail), and each Gmail
  * message id is recorded so nothing is imported twice.
  */
-export async function syncGmailChannel(channelId: string): Promise<{ imported: number; skipped?: number; error?: string }> {
+export async function syncGmailChannel(
+  channelId: string,
+  opts: { lookbackDays?: number; deadline?: number } = {},
+): Promise<{ imported: number; skipped?: number; error?: string; more?: boolean }> {
   const db = admin()
   const { data: channel } = await db.from('email_channels').select('*').eq('id', channelId).maybeSingle()
   if (!channel || channel.provider !== 'gmail') return { imported: 0, error: 'Not a Gmail channel' }
@@ -416,33 +419,70 @@ export async function syncGmailChannel(channelId: string): Promise<{ imported: n
 
   const auth = { Authorization: `Bearer ${token}` }
 
-  // Only look at the inbox, and only since the last sync (default: last 7 days).
-  const since = channel.last_synced_at
-    ? Math.floor(new Date(channel.last_synced_at).getTime() / 1000)
-    : Math.floor((Date.now() - 7 * 24 * 3600 * 1000) / 1000)
+  // Only look at the inbox, since the last sync (default: last 7 days).
+  //
+  // This used to read just the newest 25 messages and then move last_synced_at
+  // to "now" — on a busy inbox anything older in that window was skipped for
+  // good (an enquiry to info@ that Gmail had filed among dozens of others never
+  // arrived). Now: page through EVERY new message, import oldest first within
+  // a time budget, and only move the watermark as far as we actually got. Each
+  // run also overlaps the last by 10 minutes (messages are de-duplicated by
+  // Gmail id), so mail that lands mid-sync isn't missed either.
+  // "Sync now" passes lookbackDays to sweep back over recent days and recover
+  // anything earlier syncs missed.
+  const runStartedAt = Date.now()
+  const deadline = opts.deadline ?? runStartedAt + 40_000
+  const OVERLAP_S = 10 * 60
+  const since = opts.lookbackDays
+    ? Math.floor((Date.now() - opts.lookbackDays * 24 * 3600 * 1000) / 1000)
+    : channel.last_synced_at
+      ? Math.floor(new Date(channel.last_synced_at).getTime() / 1000) - OVERLAP_S
+      : Math.floor((Date.now() - 7 * 24 * 3600 * 1000) / 1000)
 
-  const listRes = await fetch(
-    `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(`in:inbox after:${since}`)}&maxResults=25`,
-    { headers: auth }
-  )
-  const list = await listRes.json()
-  if (!listRes.ok) {
-    const msg = list?.error?.message || 'Gmail list failed'
-    await db.from('email_channels').update({ sync_error: msg }).eq('id', channelId)
-    return { imported: 0, error: msg }
+  const ids: string[] = []
+  let pageToken = ''
+  for (let page = 0; page < 10; page++) {
+    const listRes = await fetch(
+      `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(`in:inbox after:${since}`)}&maxResults=100${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ''}`,
+      { headers: auth }
+    )
+    const list = await listRes.json()
+    if (!listRes.ok) {
+      const msg = list?.error?.message || 'Gmail list failed'
+      await db.from('email_channels').update({ sync_error: msg }).eq('id', channelId)
+      return { imported: 0, error: msg }
+    }
+    for (const m of list.messages || []) if (m?.id) ids.push(m.id)
+    pageToken = list.nextPageToken || ''
+    if (!pageToken) break
+  }
+  // Gmail lists newest first. Regular syncs import oldest first so a run that
+  // runs out of time can pick up exactly where it stopped; a look-back sweep
+  // goes newest first, so the most recent missed mail is recovered first.
+  if (!opts.lookbackDays) ids.reverse()
+
+  // Which of these are already in Colvy (one query instead of one per message).
+  const seenIds = new Set<string>()
+  for (let i = 0; i < ids.length; i += 200) {
+    const { data: seenRows } = await db.from('messages').select('gmail_message_id').in('gmail_message_id', ids.slice(i, i + 200))
+    for (const r of seenRows || []) if (r.gmail_message_id) seenIds.add(r.gmail_message_id)
   }
 
   let imported = 0
   let skipped = 0
+  let lastProcessedAt = 0     // internalDate (ms) of the newest message handled
+  let ranOut = false
 
-  for (const m of list.messages || []) {
+  for (const m of ids.map(id => ({ id }))) {
     // Skip anything we already have.
-    const { data: seen } = await db.from('messages').select('id').eq('gmail_message_id', m.id).maybeSingle()
-    if (seen) continue
+    if (seenIds.has(m.id)) continue
+    if (Date.now() > deadline) { ranOut = true; break }
 
     const msgRes = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${m.id}?format=full`, { headers: auth })
     if (!msgRes.ok) continue
     const full = await msgRes.json()
+    const internal = Number(full.internalDate) || 0
+    if (internal > lastProcessedAt) lastProcessedAt = internal
 
     const headers = full.payload?.headers || []
     const from = parseAddress(header(headers, 'From'))
@@ -604,12 +644,18 @@ export async function syncGmailChannel(channelId: string): Promise<{ imported: n
     imported++
   }
 
-  await db.from('email_channels').update({
-    last_synced_at: new Date().toISOString(),
-    sync_error: null,
-  }).eq('id', channelId)
+  // Move the watermark only as far as this run really got. A finished run
+  // covers everything up to when it started; one that ran out of time covers
+  // up to the last message it handled, and the next run carries on from there.
+  // A look-back sweep that didn't finish leaves the watermark alone.
+  const watermark = !ranOut ? runStartedAt : (!opts.lookbackDays && lastProcessedAt ? lastProcessedAt : 0)
+  const patch: any = { sync_error: null }
+  if (watermark && (!channel.last_synced_at || watermark > new Date(channel.last_synced_at).getTime() || !ranOut)) {
+    patch.last_synced_at = new Date(watermark).toISOString()
+  }
+  await db.from('email_channels').update(patch).eq('id', channelId)
 
-  return { imported, skipped }
+  return { imported, skipped, more: ranOut }
 }
 
 // Send a reply through Gmail (so it appears in the business's Sent folder and
