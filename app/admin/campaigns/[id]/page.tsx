@@ -418,7 +418,7 @@ export default function CampaignEditorPage() {
     if (!testNumber.trim() || !companyId) return
     setTestBusy(true); setTestResult('')
     try {
-      const res = await fetch('/api/campaigns/test-send', {
+      const res = await authFetch('/api/campaigns/test-send', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ companyId, campaignId, to: testNumber.trim() }),
       })

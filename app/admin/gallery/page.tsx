@@ -1683,7 +1683,7 @@ function MediaDetailsPanel({ item, folders, categories, itemCats, companyId, use
     ))
     if (ids.length && companyId) {
       try {
-        await fetch('/api/notify/members', {
+        await authFetch('/api/notify/members', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             companyId, userIds: ids, type: 'media_note',

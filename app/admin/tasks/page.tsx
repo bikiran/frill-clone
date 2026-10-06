@@ -1937,7 +1937,7 @@ function TaskDetail({ task, conv, team, outlets = [], companyId, me, userId, onP
     ))
     if (mentionIds.length) {
       try {
-        await fetch('/api/notify/members', {
+        await authFetch('/api/notify/members', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             companyId, userIds: mentionIds, type: 'task_comment',
@@ -2129,7 +2129,7 @@ function TaskDetail({ task, conv, team, outlets = [], companyId, me, userId, onP
             .filter(id => isUuid(id) && !before.has(id) && id !== userId)
           if (added.length) {
             try {
-              await fetch('/api/notify/members', {
+              await authFetch('/api/notify/members', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                   companyId, userIds: added, type: 'task_assigned',

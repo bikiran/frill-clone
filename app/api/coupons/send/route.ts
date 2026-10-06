@@ -1,3 +1,4 @@
+import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { WooCommerceService } from '@/lib/woocommerce-service'
@@ -24,10 +25,17 @@ export async function POST(req: NextRequest) {
     if (!companyId || !conversationId || !amount) return NextResponse.json({ error: 'Missing companyId, conversationId or amount' }, { status: 400 })
 
     const db = admin()
+    // Creates real discount codes in the shop: members only, and only on their
+    // own store and conversations.
+    if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+    {
+      const { data: owner } = await db.from('conversations').select('company_id').eq('id', conversationId).maybeSingle()
+      if (!owner || owner.company_id !== companyId) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+    }
     if (await isExternalSendBlocked(companyId, db)) { logBlockedSend(companyId, 'coupon', db); return NextResponse.json({ error: DEMO_BLOCK_MESSAGE }, { status: 403 }) }
     let integ: any = null
     if (integrationId) {
-      const r = await db.from('woocommerce_integrations').select('*').eq('id', integrationId).maybeSingle()
+      const r = await db.from('woocommerce_integrations').select('*').eq('id', integrationId).eq('company_id', companyId).maybeSingle()
       integ = r.data
     }
     if (!integ) {

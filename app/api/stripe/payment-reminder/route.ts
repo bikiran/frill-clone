@@ -1,3 +1,4 @@
+import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { shortenUrl } from '@/lib/short-link'
@@ -20,6 +21,7 @@ export async function POST(req: NextRequest) {
     if (!companyId || !paymentId) return NextResponse.json({ error: 'Missing companyId or paymentId' }, { status: 400 })
 
     const db = admin()
+    if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     const { data: pay } = await db.from('chat_payments').select('*').eq('id', paymentId).eq('company_id', companyId).maybeSingle()
     if (!pay) return NextResponse.json({ error: 'Payment not found' }, { status: 404 })
     if (pay.status !== 'pending') return NextResponse.json({ error: 'Only pending payments can be reminded' }, { status: 400 })

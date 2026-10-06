@@ -4610,7 +4610,7 @@ export default function InboxPage() {
     if (!companyId || !selected || !couponAmount.trim()) return
     setCouponSaving(true)
     try {
-      const res = await fetch('/api/coupons/send', {
+      const res = await authFetch('/api/coupons/send', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           companyId, conversationId: selected.id, contactId: contact?.id,

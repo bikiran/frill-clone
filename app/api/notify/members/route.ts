@@ -1,3 +1,4 @@
+import { requireCompanyAccess } from '@/lib/company-access'
 import { internalHeaders } from '@/lib/internal-call'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
@@ -42,9 +43,11 @@ export async function POST(req: NextRequest) {
     const companyId = b.companyId
     const ids: string[] = Array.from(new Set((b.userIds || []).filter(uuidOrNull))) as string[]
     if (!companyId) return NextResponse.json({ error: 'companyId required' }, { status: 400 })
-    if (ids.length === 0) return NextResponse.json({ ok: true, notified: 0 })
-
     const db = admin()
+    // Emails and texts the team from the workspace's own mailbox and number, with
+    // the caller's words: a teammate only, never an outsider.
+    if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+    if (ids.length === 0) return NextResponse.json({ ok: true, notified: 0 })
     const title: string = b.title || 'Colvy update'
     const body: string = b.body || ''
     const link: string = b.link || '/admin'

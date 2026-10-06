@@ -1,3 +1,4 @@
+import { isInternalCall } from '@/lib/internal-call'
 import { internalHeaders } from '@/lib/internal-call'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
@@ -274,7 +275,9 @@ async function run(req: NextRequest) {
       }
     }
 
-    return NextResponse.json({ ok: true, sent, results })
+    // Anyone can nudge this (the admin shell pings it), but the per-request
+    // details — ids, sentiment reasons, errors — are only for our own calls.
+    return NextResponse.json(isInternalCall(req) ? { ok: true, sent, results } : { ok: true, sent })
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 })
   }

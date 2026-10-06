@@ -1,5 +1,6 @@
 'use client'
 
+import { authFetch } from '@/lib/auth-fetch'
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
@@ -330,7 +331,7 @@ export default function PaymentsPage() {
   const doRemind = async (p: Payment) => {
     setBusy(p.id)
     try {
-      const res = await fetch('/api/stripe/payment-reminder', {
+      const res = await authFetch('/api/stripe/payment-reminder', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, paymentId: p.id }),
       })
       const j = await res.json().catch(() => ({}))
