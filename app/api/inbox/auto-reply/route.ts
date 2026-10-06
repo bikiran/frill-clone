@@ -78,6 +78,39 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // SMS conversation → actually TEXT the thank-you (it used to be written to
+    // the thread only, so the customer never got it and it read "Live Chat").
+    // Not when Colvy AI's SMS auto-reply is on (it answers the text itself — two
+    // texts would be noise), and never to someone who opted out or whose first
+    // message was STOP.
+    let smsThanks = false
+    const thanks = messagesToSend.find(m => !m.metadata?.contact_request)
+    if (thanks && conv.channel === 'sms' && conv.sms_number) {
+      const ai = company?.ai_settings || {}
+      const aiAnswersSms = !!(ai.enabled && ai.auto_reply && ai.auto_reply_sms)
+      let optedOut = false
+      try {
+        if (conv.contact_id) {
+          const { data: c } = await db.from('contacts').select('unsubscribed_at, is_blocked').eq('id', conv.contact_id).maybeSingle()
+          optedOut = !!(c?.unsubscribed_at || c?.is_blocked)
+        }
+        const { data: first } = await db.from('messages').select('content').eq('conversation_id', conversationId)
+          .eq('sender_type', 'visitor').order('created_at', { ascending: true }).limit(1).maybeSingle()
+        if (/^\s*(stop|stopall|unsubscribe|cancel|end|quit|opt[\s-]?out)\b/i.test(String(first?.content || ''))) optedOut = true
+      } catch {}
+      if (!aiAnswersSms && !optedOut) {
+        try {
+          const origin = process.env.NEXT_PUBLIC_SITE_URL || req.nextUrl.origin
+          const r = await fetch(`${origin}/api/telnyx/sms/send`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ companyId: conv.company_id, conversationId, to: conv.sms_number, text: thanks.content, senderName: businessName, skipChatMessage: true }),
+          })
+          smsThanks = r.ok
+        } catch {}
+        if (smsThanks) thanks.delivery_channel = 'sms'
+      }
+    }
+
     if (messagesToSend.length > 0) {
       await db.from('messages').insert(messagesToSend)
       await db.from('conversations').update({
