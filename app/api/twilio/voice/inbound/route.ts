@@ -1,3 +1,4 @@
+import { twilioSignatureOk } from '@/lib/twilio-signature'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { xmlEscape, twilioIdentity } from '@/lib/twilio-service'
@@ -35,6 +36,8 @@ function voicemailTwiml(base: string, greeting: string, cbQuery: string): string
 export async function POST(req: NextRequest) {
   try {
     const form = await req.formData()
+    // Only Twilio (signed with the account's auth token).
+    if (!(await twilioSignatureOk(req, form))) return new NextResponse('Forbidden', { status: 403 })
     const get = (k: string) => { const v = form.get(k); return v == null ? '' : String(v) }
     const callSid = get('CallSid')
     const from = get('From')

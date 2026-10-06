@@ -194,12 +194,17 @@ function colvywp_wc_register_webhooks() {
 	if ( ! colvywp_wc_ready() ) return array( 'Connect Colvy first.' );
 	if ( ! class_exists( 'WC_Webhook' ) ) return array( 'WooCommerce webhooks are unavailable.' );
 	$url = colvywp_wc_delivery_url(); $res = array();
+	$secret = (string) colvywp_get( 'api_key' );
 	try {
 		foreach ( WC_Data_Store::load( 'webhook' )->search_webhooks( array( 'limit' => 100 ) ) as $id ) {
 			$wh = wc_get_webhook( $id );
-			if ( $wh && strpos( $wh->get_delivery_url(), '/api/webhooks/woocommerce' ) !== false && ( $wh->get_delivery_url() !== $url || $wh->get_status() !== 'active' ) ) {
-				$wh->set_delivery_url( $url ); $wh->set_status( 'active' ); $wh->save();
-				$res[] = $wh->get_topic() . ': repaired';
+			if ( $wh && strpos( $wh->get_delivery_url(), '/api/webhooks/woocommerce' ) !== false ) {
+				// Sign deliveries with the plugin key so Colvy can tell they're really from this store.
+				$fix = $wh->get_delivery_url() !== $url || $wh->get_status() !== 'active' || ( $secret && $wh->get_secret() !== $secret );
+				if ( $fix ) {
+					$wh->set_delivery_url( $url ); $wh->set_status( 'active' ); if ( $secret ) $wh->set_secret( $secret ); $wh->save();
+					$res[] = $wh->get_topic() . ': repaired';
+				}
 			}
 		}
 	} catch ( Exception $e ) {}
@@ -212,6 +217,7 @@ function colvywp_wc_register_webhooks() {
 			$wh->set_topic( $topic );
 			$wh->set_delivery_url( $url );
 			$wh->set_status( 'active' );
+			if ( $secret ) $wh->set_secret( $secret );
 			$wh->set_user_id( get_current_user_id() );
 			$wh->save();
 			$res[] = $topic . ': connected';

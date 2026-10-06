@@ -1,3 +1,4 @@
+import { telnyxSignatureOk } from '@/lib/telnyx-signature'
 import { internalHeaders } from '@/lib/internal-call'
 import { NextRequest, NextResponse } from 'next/server'
 import { log } from '@/lib/log'
@@ -42,7 +43,10 @@ async function companyFromConnection(db: any, connId: string | null | undefined)
 //   https://<your-domain>/api/telnyx/webhook
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json()
+    const rawBody = await req.text()
+    // Only Telnyx (Ed25519-signed; see lib/telnyx-signature.ts).
+    if (!telnyxSignatureOk(req, rawBody)) return NextResponse.json({ error: 'Invalid signature' }, { status: 403 })
+    const body = JSON.parse(rawBody || '{}')
     const event = body?.data
     const eventType: string = event?.event_type || ''
     const db = admin()

@@ -1,3 +1,4 @@
+import { twilioSignatureOk } from '@/lib/twilio-signature'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { TwilioService } from '@/lib/twilio-service'
@@ -61,6 +62,8 @@ async function rehostMedia(svc: TwilioService, db: any, companyId: string, media
 export async function POST(req: NextRequest) {
   try {
     const form = await req.formData()
+    // Only Twilio (signed with the account's auth token).
+    if (!(await twilioSignatureOk(req, form))) return new NextResponse('Forbidden', { status: 403 })
     const get = (k: string) => { const v = form.get(k); return v == null ? null : String(v) }
 
     const db = admin()

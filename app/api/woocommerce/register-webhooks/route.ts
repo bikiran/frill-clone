@@ -1,3 +1,4 @@
+import { wooIntegrationSecret } from '@/lib/woo-webhook'
 import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
@@ -43,7 +44,8 @@ export async function POST(req: NextRequest) {
           consumerKey: integ.consumer_key,
           consumerSecret: integ.consumer_secret,
         })
-        const results = await woo.ensureColvyWebhooks(deliveryUrl)
+        // Each store's webhooks are signed with its own secret.
+        const results = await woo.ensureColvyWebhooks(deliveryUrl, wooIntegrationSecret(integ.id))
         summary.push({ store: integ.store_url, deliveryUrl, results })
       } catch (e: any) {
         summary.push({ store: integ.store_url, error: e.message })

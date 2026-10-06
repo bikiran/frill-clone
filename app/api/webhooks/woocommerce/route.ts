@@ -1,3 +1,4 @@
+import { wooSignatureOk } from '@/lib/woo-webhook'
 import { NextRequest, NextResponse } from 'next/server'
 import { deliverAutomatedMessage } from '@/lib/channel-fallback'
 import { linkContactIdentity, linkedContacts } from '@/lib/identity'
@@ -827,6 +828,18 @@ export async function POST(req: NextRequest) {
     const companyId = req.headers.get('x-company-id') || req.nextUrl.searchParams.get('company')
     if (!companyId) {
       return NextResponse.json({ error: 'Missing company ID (header x-company-id or ?company=)' }, { status: 400 })
+    }
+
+    // Only WooCommerce, signed for this business (see lib/woo-webhook.ts), and
+    // a store id in the URL must be this business's own.
+    {
+      const vdb = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY || '', { auth: { autoRefreshToken: false, persistSession: false } }) as any
+      if (!(await wooSignatureOk(req, payload, vdb, companyId))) return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
+      const integ = req.nextUrl.searchParams.get('integration')
+      if (integ) {
+        const { data: own } = await vdb.from('woocommerce_integrations').select('company_id').eq('id', integ).maybeSingle()
+        if (!own || own.company_id !== companyId) return NextResponse.json({ error: 'Store does not belong to this business' }, { status: 400 })
+      }
     }
 
     // Record the event for the Super Admin webhook explorer (best-effort).

@@ -112,6 +112,19 @@ export class WooCommerceService {
         w.topic === topic && (w.delivery_url || '').split('?')[0] === deliveryUrl.split('?')[0]
       )
       if (match) {
+        // Give existing webhooks the signing secret (older ones were made without).
+        if (secret) {
+          try {
+            await fetch(`${this.config.storeUrl}/wp-json/wc/v3/webhooks/${match.id}`, {
+              method: 'PUT', headers: this.wcHeaders(),
+              body: JSON.stringify({ status: 'active', delivery_url: deliveryUrl, secret }),
+            })
+            results.push({ topic, action: 'secured' })
+          } catch (e: any) {
+            results.push({ topic, action: 'failed', error: e.message })
+          }
+          continue
+        }
         // Re-activate if it was disabled (Woo auto-disables after failures).
         if (match.status !== 'active') {
           try {

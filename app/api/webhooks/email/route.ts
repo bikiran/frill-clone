@@ -1,3 +1,4 @@
+import { emailWebhookOk } from '@/lib/email-webhook'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { notifyCompany, pushInboundMessage } from '@/lib/notify'
@@ -104,7 +105,11 @@ async function hostResendAttachments(evt: any, companyId: string): Promise<any[]
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json().catch(() => ({}))
+    const raw = await req.text()
+    // Only the mail provider (see lib/email-webhook.ts).
+    if (!emailWebhookOk(req, raw)) return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
+    let body: any = {}
+    try { body = JSON.parse(raw || '{}') } catch { body = {} }
     const db = admin()
 
     // Resend inbound (email.received) nests the message under `data`; other
