@@ -2925,7 +2925,7 @@ export default function InboxPage() {
     const fullBody = opts.url ? `${opts.body}\n${opts.url}` : opts.body
 
     if (ch === 'email') {
-      const res = await fetch('/api/email/reply', {
+      const res = await authFetch('/api/email/reply', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ conversationId: selected.id, content: fullBody, agentName: me, subject: opts.subject }),
       })
@@ -3262,7 +3262,7 @@ export default function InboxPage() {
         const body = galleryUrl
           ? `${media.length > 1 ? `${media.length} photos` : 'Photo'} attached:\n${galleryUrl}`
           : attachments.map(a => `${a.name}:\n${a.url}`).join('\n\n')
-        const r = await fetch('/api/email/reply', {
+        const r = await authFetch('/api/email/reply', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ conversationId: convId, agentName: me, content: body }),
         })
@@ -3747,7 +3747,7 @@ export default function InboxPage() {
       if (metaCh === 'email') {
         // The email route inserts the thread message itself — pass the metadata
         // so it still renders as the review card. Don't also insert below.
-        const r = await fetch('/api/email/reply', {
+        const r = await authFetch('/api/email/reply', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ conversationId: selected.id, content: body, agentName: me, subject: "We'd love your feedback ⭐", metadata: { review_request: true } }),
         })
@@ -5225,7 +5225,7 @@ export default function InboxPage() {
     // original message), not through the chat widget.
     if ((selected as any).channel === 'email' || sendChannel === 'email') {
       try {
-        const res = await fetch('/api/email/reply', {
+        const res = await authFetch('/api/email/reply', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ conversationId: selected.id, content, agentName: senderName }),
         })
@@ -5309,7 +5309,7 @@ export default function InboxPage() {
         } else if ((selected as any).active_channel !== 'email') {
           await (supabase as any).from('conversations').update({ active_channel: 'email' }).eq('id', selected.id)
         }
-        const res = await fetch('/api/email/reply', {
+        const res = await authFetch('/api/email/reply', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ conversationId: selected.id, content, agentName: senderName, to: emailTo }),
         })

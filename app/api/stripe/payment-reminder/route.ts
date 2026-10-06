@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { shortenUrl } from '@/lib/short-link'
+import { internalHeaders } from '@/lib/internal-call'
 
 function admin() {
   return createClient(
@@ -58,7 +59,7 @@ export async function POST(req: NextRequest) {
     try {
       if (channel === 'email' && email) {
         await fetch(`${base}/api/email/reply`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({ conversationId: pay.conversation_id, to: email, subject: conv?.subject || 'Payment reminder', content: text, agentName: senderName }),
         })
         sent = 'email'

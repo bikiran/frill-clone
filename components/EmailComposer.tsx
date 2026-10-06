@@ -1,5 +1,6 @@
 'use client'
 
+import { authFetch } from '@/lib/auth-fetch'
 import { useState, useEffect, useRef } from 'react'
 import { useAiDraft, AiDraftButton, AiDraftInfo } from '@/components/AiDraft'
 import { uploadDirect } from '@/lib/upload-attachment'
@@ -221,7 +222,7 @@ export default function EmailComposer({
   const loadSigs = async () => {
     if (!companyId) return
     try {
-      const res = await fetch(`/api/email/accounts?companyId=${companyId}`)
+      const res = await authFetch(`/api/email/accounts?companyId=${companyId}`)
       const d = await res.json()
       const list: Sig[] = d.signatures || []
       setSigs(list)
@@ -243,7 +244,7 @@ export default function EmailComposer({
     if (!newSigName.trim() || !newSigBody.trim() || !companyId) return
     setSavingSig(true)
     try {
-      await fetch('/api/email/accounts', {
+      await authFetch('/api/email/accounts', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ companyId, action: 'save_signature', name: newSigName.trim(), sigBody: newSigBody, is_default: sigs.length === 0 }),
       })
@@ -262,7 +263,7 @@ export default function EmailComposer({
     if (!text) { setErr('Write a message'); return }
     setSending(true); setErr('')
     try {
-      const res = await fetch('/api/email/reply', {
+      const res = await authFetch('/api/email/reply', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           conversationId, to: to.trim(), cc: cc.trim() || null, bcc: bcc.trim() || null,

@@ -1,3 +1,4 @@
+import { internalHeaders } from '@/lib/internal-call'
 // Shared "a chat payment just succeeded" handler, used by BOTH the Stripe
 // webhook and the verify-payment reconciler so the two paths can't diverge or
 // double-fire. It:
@@ -120,7 +121,7 @@ export async function confirmChatPayment(
     try {
       if (channel === 'email' && email) {
         await fetch(`${base}/api/email/reply`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({ conversationId: pay.conversation_id, to: email, subject: subject || 'Payment received', content: custMsg, agentName: senderName }),
         })
       } else if (['facebook', 'instagram', 'messenger'].includes(channel)) {

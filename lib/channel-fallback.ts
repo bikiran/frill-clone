@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { internalHeaders } from '@/lib/internal-call'
 
 /**
  * Deciding HOW to deliver an automated message.
@@ -98,7 +99,7 @@ export async function deliverAutomatedMessage(params: {
       // /api/email/reply sends from the company's connected mailbox (Gmail or
       // its domain). There is no /api/email/send — calling it failed silently.
       const res = await fetch(`${origin}/api/email/reply`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           conversationId, to: email, agentName: senderName || undefined,
           subject: subject || 'Update on your order',

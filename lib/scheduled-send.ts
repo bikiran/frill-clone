@@ -1,3 +1,4 @@
+import { internalHeaders } from '@/lib/internal-call'
 // Delivering a scheduled reply (server only). Shared by the cron worker and the
 // inbox's "Send now", so both send exactly the way the inbox does live:
 //   Instagram / Messenger → /api/meta/send
@@ -39,7 +40,7 @@ export async function deliverScheduled(db: any, base: string, sm: any): Promise<
       }
       if (!to) return { ok: false, error: 'no email address on this conversation' }
       const r = await fetch(`${base}/api/email/reply`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ conversationId: conv.id, content, agentName, to }),
       })
       return r.ok ? { ok: true } : { ok: false, error: (await r.json().catch(() => ({})))?.error || `email ${r.status}` }

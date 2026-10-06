@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { WooCommerceService } from '@/lib/woocommerce-service'
 import { isExternalSendBlocked, DEMO_BLOCK_MESSAGE, logBlockedSend } from '@/lib/demo-guard'
+import { internalHeaders } from '@/lib/internal-call'
 
 function admin() {
   return createClient(
@@ -113,7 +114,7 @@ export async function POST(req: NextRequest) {
           })
         } else if (base && deliverVia === 'email') {
           await fetch(`${base}/api/email/reply`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({ conversationId, content, to: email, subject: 'Your coupon', agentName: createdByName || 'Support' }),
           })
         }

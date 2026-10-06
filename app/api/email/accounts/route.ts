@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { syncGmailChannel } from '@/lib/gmail'
+import { requireCompanyAccess } from '@/lib/company-access'
 
 export const maxDuration = 60
 
@@ -33,6 +34,7 @@ export async function GET(req: NextRequest) {
     const companyId = req.nextUrl.searchParams.get('companyId')
     if (!companyId) return NextResponse.json({ error: 'companyId required' }, { status: 400 })
     const db = admin()
+    if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
 
     const { data: accounts } = await db.from('email_channels')
       .select('*').eq('company_id', companyId).order('created_at', { ascending: true })
@@ -87,6 +89,13 @@ export async function POST(req: NextRequest) {
     const { companyId, action } = body
     if (!companyId || !action) return NextResponse.json({ error: 'companyId and action required' }, { status: 400 })
     const db = admin()
+    // Members only — and every id below is matched to this companyId, so a
+    // member of one workspace can't touch another's mailboxes, rules or signatures.
+    if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+    const ownsChannel = async (chId: string) => {
+      const { data } = await db.from('email_channels').select('id').eq('id', chId).eq('company_id', companyId).maybeSingle()
+      return !!data
+    }
 
     // ── Webhook (domain) mailbox ─────────────────────────────────────────────
     if (action === 'save_webhook') {
@@ -107,7 +116,7 @@ export async function POST(req: NextRequest) {
         is_active: is_active !== false,
         sync_all: sync_all !== false,
       }
-      if (id) await db.from('email_channels').update(row).eq('id', id)
+      if (id) await db.from('email_channels').update(row).eq('id', id).eq('company_id', companyId)
       else {
         const { error } = await db.from('email_channels').insert(row)
         if (error) return NextResponse.json({ error: error.message }, { status: 400 })
@@ -126,15 +135,16 @@ export async function POST(req: NextRequest) {
       if (sync_interval_minutes !== undefined) patch.sync_interval_minutes = Number(sync_interval_minutes)
       if (filter_settings !== undefined) patch.filter_settings = filter_settings
       if (body.signature !== undefined) patch.signature = body.signature
-      await db.from('email_channels').update(patch).eq('id', id)
+      await db.from('email_channels').update(patch).eq('id', id).eq('company_id', companyId)
       return NextResponse.json({ ok: true })
     }
 
     if (action === 'delete_account') {
       const { id } = body
       if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
+      if (!(await ownsChannel(id))) return NextResponse.json({ error: 'Not found' }, { status: 404 })
       await db.from('email_rules').delete().eq('email_channel_id', id)
-      await db.from('email_channels').delete().eq('id', id)
+      await db.from('email_channels').delete().eq('id', id).eq('company_id', companyId)
       return NextResponse.json({ ok: true })
     }
 
@@ -142,6 +152,7 @@ export async function POST(req: NextRequest) {
     if (action === 'sync') {
       const { id } = body
       if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
+      if (!(await ownsChannel(id))) return NextResponse.json({ error: 'Not found' }, { status: 404 })
       // "Sync now" also sweeps back over the last 2 days, so anything an earlier
       // automatic sync missed comes in too (already-imported mail is skipped).
       const result = await syncGmailChannel(id, { lookbackDays: 2, deadline: Date.now() + 50_000 })
@@ -155,6 +166,7 @@ export async function POST(req: NextRequest) {
       if (!email_channel_id || !rule_type || !pattern) {
         return NextResponse.json({ error: 'Channel, type and pattern are required' }, { status: 400 })
       }
+      if (!(await ownsChannel(email_channel_id))) return NextResponse.json({ error: 'Not found' }, { status: 404 })
       const clean = String(pattern).trim().toLowerCase().replace(/^@/, '')
       const { error } = await db.from('email_rules').insert({
         company_id: companyId, email_channel_id, rule_type, pattern: clean, is_enabled: true,
@@ -168,13 +180,13 @@ export async function POST(req: NextRequest) {
 
     if (action === 'toggle_rule') {
       const { id, is_enabled } = body
-      await db.from('email_rules').update({ is_enabled }).eq('id', id)
+      await db.from('email_rules').update({ is_enabled }).eq('id', id).eq('company_id', companyId)
       return NextResponse.json({ ok: true })
     }
 
     if (action === 'delete_rule') {
       const { id } = body
-      await db.from('email_rules').delete().eq('id', id)
+      await db.from('email_rules').delete().eq('id', id).eq('company_id', companyId)
       return NextResponse.json({ ok: true })
     }
 
@@ -187,14 +199,15 @@ export async function POST(req: NextRequest) {
         email_channel_id: email_channel_id || null,
         is_default: !!is_default,
       }
-      if (id) await db.from('email_signatures').update(row).eq('id', id)
+      if (email_channel_id && !(await ownsChannel(email_channel_id))) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+      if (id) await db.from('email_signatures').update(row).eq('id', id).eq('company_id', companyId)
       else await db.from('email_signatures').insert(row)
       return NextResponse.json({ ok: true })
     }
 
     if (action === 'delete_signature') {
       const { id } = body
-      await db.from('email_signatures').delete().eq('id', id)
+      await db.from('email_signatures').delete().eq('id', id).eq('company_id', companyId)
       return NextResponse.json({ ok: true })
     }
 
