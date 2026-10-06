@@ -8,6 +8,7 @@
 //               rotating refresh token (colvy_rt_…, 60 days).
 // Only SHA-256 hashes are stored; the token itself is shown once.
 
+import { isStaffRow } from '@/lib/company-access'
 import crypto from 'crypto'
 import type { NextRequest } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
@@ -60,8 +61,10 @@ export async function roleIn(db: any, companyId: string, userId: string): Promis
   const { data: co } = await db.from('companies').select('owner_id').eq('id', companyId).maybeSingle()
   if (!co) return null
   if (co.owner_id === userId) return 'owner'
-  const { data: tm } = await db.from('team_members').select('role').eq('company_id', companyId).eq('user_id', userId).limit(1)
-  return tm?.[0]?.role || null
+  const { data: tm } = await db.from('team_members').select('role, status').eq('company_id', companyId).eq('user_id', userId).limit(5)
+  // Board visitors ('viewer') and removed members get no role here.
+  const staff = (tm || []).find(isStaffRow)
+  return staff ? (staff.role || 'editor') : null
 }
 export const canWrite = (role: string | null) => ['owner', 'admin', 'editor'].includes(String(role))
 

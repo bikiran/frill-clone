@@ -1,5 +1,6 @@
 'use client'
 
+import { authFetch } from '@/lib/auth-fetch'
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { isValidSlug, isSlugAvailable } from '@/lib/board'
@@ -49,7 +50,7 @@ export default function NewWorkspacePage() {
     if (slugStatus !== 'available') { setError('Please choose a valid, available board URL'); return }
     setLoading(true)
     try {
-      const res = await fetch('/api/companies', {
+      const res = await authFetch('/api/companies', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: user.id, slug: slug.toLowerCase(), name: companyName.trim(), industry, accentColor }),

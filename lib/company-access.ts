@@ -16,11 +16,31 @@ export async function requireCompanyAccess(req: NextRequest, db: any, companyId:
     if (!user) return { ok: false }
     if (user.email === SUPER_ADMIN) return { ok: true, userId: user.id }
     // Owner and team checks run together rather than one after the other.
-    const [{ data: co }, { data: tm }] = await Promise.all([
+    const [{ data: co }, staff] = await Promise.all([
       db.from('companies').select('id').eq('id', companyId).eq('owner_id', user.id).maybeSingle(),
-      db.from('team_members').select('id').eq('company_id', companyId).eq('user_id', user.id).limit(1),
+      isStaffMember(db, companyId, user.id),
     ])
-    if (co || tm?.length) return { ok: true, userId: user.id }
+    if (co || staff) return { ok: true, userId: user.id }
     return { ok: false }
   } catch { return { ok: false } }
+}
+
+// Staff are team rows that aren't board visitors and haven't been removed.
+// Anyone who signs up on a business's subdomain is added to its team as a
+// 'viewer' (app/auth/callback), and the admin already keeps viewers out
+// (only owner / admin / editor get in), so a viewer row is not membership.
+export function isStaffRow(r: any): boolean {
+  if (!r) return false
+  const role = String(r.role || '').toLowerCase()
+  const status = String(r.status || '').toLowerCase()
+  return role !== 'viewer' && status !== 'removed'
+}
+
+export async function isStaffMember(db: any, companyId: string | null | undefined, userId: string | null | undefined): Promise<boolean> {
+  if (!companyId || !userId) return false
+  try {
+    const { data } = await db.from('team_members').select('id, role, status')
+      .eq('company_id', companyId).eq('user_id', userId).limit(5)
+    return (data || []).some(isStaffRow)
+  } catch { return false }
 }

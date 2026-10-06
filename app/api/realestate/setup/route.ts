@@ -1,3 +1,4 @@
+import { isStaffMember } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { reaConfigured, createEnquirySubscription, deleteSubscription } from '@/lib/rea'
@@ -26,7 +27,7 @@ async function memberOf(db: any, uid: string | null, companyId: string): Promise
   if (!uid || !companyId) return false
   const { data: owned } = await db.from('companies').select('id').eq('id', companyId).eq('owner_id', uid).maybeSingle()
   if (owned) return true
-  const { data: member } = await db.from('team_members').select('id').eq('company_id', companyId).eq('user_id', uid).maybeSingle()
+  const member = (await isStaffMember(db, companyId, uid)) ? { id: true } : null
   return !!member
 }
 

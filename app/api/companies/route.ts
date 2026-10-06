@@ -2,11 +2,27 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { provisionSubdomain } from '@/lib/provision-domain'
 
+const SUPER_ADMIN_EMAIL = 'bishalstha76@gmail.com'
+
 export async function POST(req: NextRequest) {
   try {
-    const { userId, slug, name, industry, accentColor, description, plan } = await req.json()
+    const body = await req.json()
+    const { slug, name, industry, accentColor, description } = body
+    // The owner is whoever is signed in. Anyone could create a workspace for any
+    // user id on any plan (paid plans for free). Only the platform admin may
+    // provision for someone else or choose the plan.
+    const token = (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '')
+    const authDb = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    }) as any
+    const { data: who } = token ? await authDb.auth.getUser(token) : { data: null }
+    const caller = who?.user
+    if (!caller) return NextResponse.json({ error: 'Please sign in again.' }, { status: 401 })
+    const platformAdmin = caller.email === SUPER_ADMIN_EMAIL
+    const userId: string = platformAdmin && body.userId ? body.userId : caller.id
+    const plan: string | undefined = platformAdmin ? body.plan : undefined
 
-    if (!userId || !slug || !name) {
+    if (!slug || !name) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 

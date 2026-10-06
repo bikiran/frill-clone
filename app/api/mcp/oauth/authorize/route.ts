@@ -1,3 +1,4 @@
+import { isStaffRow } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { adminDb, CODE_TTL_S, canWrite, normaliseScope, originOf, randomToken, roleIn, sha256 } from '@/lib/mcp/auth'
 
@@ -16,8 +17,8 @@ async function workspaces(db: any, user: any) {
   const out = new Map<string, { id: string; name: string; slug: string | null; role: string }>()
   const { data: own } = await db.from('companies').select('id, name, slug').eq('owner_id', user.id)
   for (const c of own || []) out.set(c.id, { id: c.id, name: c.name, slug: c.slug, role: 'owner' })
-  const { data: tm } = await db.from('team_members').select('company_id, role').eq('user_id', user.id)
-  const ids = (tm || []).map((t: any) => t.company_id).filter((id: string) => id && !out.has(id))
+  const { data: tm } = await db.from('team_members').select('company_id, role, status').eq('user_id', user.id)
+  const ids = (tm || []).filter(isStaffRow).map((t: any) => t.company_id).filter((id: string) => id && !out.has(id))
   if (ids.length) {
     const { data: cos } = await db.from('companies').select('id, name, slug').in('id', ids)
     for (const c of cos || []) out.set(c.id, { id: c.id, name: c.name, slug: c.slug, role: (tm || []).find((t: any) => t.company_id === c.id)?.role || 'viewer' })

@@ -1,5 +1,6 @@
 'use client'
 
+import { authFetch } from '@/lib/auth-fetch'
 import { useCallback, useEffect, useState } from 'react'
 
 type Suggestion = {
@@ -51,7 +52,7 @@ export default function CustomerMatchCard({
     if (!applicable) { setResult(null); return }
     setLoading(true); setError('')
     try {
-      const res = await fetch('/api/inbox/customer-match', {
+      const res = await authFetch('/api/inbox/customer-match', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'suggest', conversationId, userId }),
       })
@@ -67,7 +68,7 @@ export default function CustomerMatchCard({
   const act = async (action: string, extra: any) => {
     setBusy(action + (extra.contactId || ''))
     try {
-      const res = await fetch('/api/inbox/customer-match', {
+      const res = await authFetch('/api/inbox/customer-match', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action, conversationId, userId, userName, ...extra }),
       })
@@ -91,7 +92,7 @@ export default function CustomerMatchCard({
   const openMerge = async (contactId: string) => {
     setBusy('find-dupes'); setError('')
     try {
-      const res = await fetch('/api/inbox/customer-match', {
+      const res = await authFetch('/api/inbox/customer-match', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'find-duplicates', conversationId, contactId }),
       })

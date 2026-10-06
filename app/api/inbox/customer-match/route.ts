@@ -1,3 +1,4 @@
+import { requireCompanyAccess } from '@/lib/company-access'
 import { internalHeaders } from '@/lib/internal-call'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
@@ -48,8 +49,12 @@ export async function POST(req: NextRequest) {
     const platform = String(conv.channel || '') as MatchSignals['platform']
     const platformUserId = conv.meta_user_id || null
 
+    // Members only, and the role comes from the signed-in caller — it used to
+    // come from body.userId, so passing the owner's id made anyone the owner.
+    const access = await requireCompanyAccess(req, db, companyId)
+    if (!access.ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     // Role: viewers can look but not act, and see masked PII.
-    const role = await resolveRole(db, body.userId, companyId)
+    const role = await resolveRole(db, access.userId, companyId)
 
     const WRITE = ['confirm', 'unlink', 'reject', 'merge', 'request-details']
     if (WRITE.includes(action) && !canEdit(role)) {

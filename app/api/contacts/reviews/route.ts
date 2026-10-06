@@ -1,3 +1,4 @@
+import { isStaffMember } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { linkedContacts } from '@/lib/identity'
@@ -23,7 +24,7 @@ async function callerInCompany(req: NextRequest, db: any, companyId: string): Pr
     if (!uid) return false
     const { data: owned } = await db.from('companies').select('id').eq('id', companyId).eq('owner_id', uid).maybeSingle()
     if (owned) return true
-    const { data: mem } = await db.from('team_members').select('id').eq('company_id', companyId).eq('user_id', uid).limit(1)
+    const mem = (await isStaffMember(db, companyId, uid)) ? [{ id: true }] : []
     return !!(mem && mem.length)
   } catch { return false }
 }

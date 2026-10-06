@@ -1,5 +1,6 @@
 'use client'
 
+import { newInviteToken } from '@/lib/invite-token'
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
@@ -249,12 +250,14 @@ export default function TeamPage() {
         return
       }
 
+      const invite = await newInviteToken()
       const { error } = await (supabase as any).from('team_members').insert({
         email: inviteEmail.trim().toLowerCase(),
         role: inviteRole,
         status: 'invited',
         invited_by: user?.id,
         company_id: company.id,
+        invite_token_hash: invite.hash,
       })
       if (error) throw error
 
@@ -262,7 +265,7 @@ export default function TeamPage() {
       // consumed by email prefetch bots, causing "otp_expired"). This link points
       // to /team/join, which handles sign-up/sign-in and membership acceptance.
       const origin = typeof window !== 'undefined' ? window.location.origin : 'https://colvy.com'
-      const inviteLink = `${origin}/team/join?company=${encodeURIComponent(company?.slug || '')}&email=${encodeURIComponent(inviteEmail.trim().toLowerCase())}&role=${inviteRole}`
+      const inviteLink = `${origin}/team/join?company=${encodeURIComponent(company?.slug || '')}&email=${encodeURIComponent(inviteEmail.trim().toLowerCase())}&role=${inviteRole}&token=${invite.token}`
       const invitedEmail = inviteEmail.trim().toLowerCase()
       let emailed = false
       try {
@@ -411,8 +414,14 @@ export default function TeamPage() {
       if (!m.company_id && company.id) {
         try { await (supabase as any).from('team_members').update({ company_id: company.id }).eq('id', m.id) } catch {}
       }
+      // A fresh token each resend; the old link stops working.
+      const invite = await newInviteToken()
+      {
+        const { error: tokErr } = await (supabase as any).from('team_members').update({ invite_token_hash: invite.hash }).eq('id', m.id)
+        if (tokErr) throw tokErr
+      }
       const origin = typeof window !== 'undefined' ? window.location.origin : 'https://colvy.com'
-      const inviteLink = `${origin}/team/join?company=${encodeURIComponent(company.slug)}&email=${encodeURIComponent(m.email)}&role=${m.role}`
+      const inviteLink = `${origin}/team/join?company=${encodeURIComponent(company.slug)}&email=${encodeURIComponent(m.email)}&role=${m.role}&token=${invite.token}`
       const res = await fetch('/api/send-team-invite', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
