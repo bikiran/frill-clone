@@ -40,6 +40,7 @@ export const PRODUCT_FEATURES: string[] = [
   'ideas', 'roadmap', 'announcements', 'knowledgebase', 'inbox', 'crm', 'gallery',
   'notes', 'orders', 'payments', 'links', 'insights', 'calendar', 'tasks',
   'broadcasts', 'automation', 'booking', 'waitlists', 'abandoned-carts',
+  'voice-typing',
 ]
 export const CHANNEL_SLUGS: string[] = [
   'meta', 'email', 'phones', 'chat-widget', 'google-reviews', 'whatsapp', 'sms',

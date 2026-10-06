@@ -142,6 +142,7 @@ const MENUS: Menu[] = [
         { icon: 'user', title: 'Contacts & CRM', desc: 'Full profile & history', href: '/product/crm' },
         { icon: 'folder', title: 'Media gallery', desc: 'Every photo & file', href: '/product/gallery' },
         { icon: 'pen', title: 'Notes', desc: 'Internal notes & @mentions', href: '/product/notes' },
+        { icon: 'mic', title: 'Voice typing', desc: 'Speak it, send it polished', href: '/product/voice-typing' },
         { icon: 'link', title: 'Link reports', desc: 'See who clicked what', href: '/product/links' },
       ] },
       { heading: 'Commerce', items: [
