@@ -1,3 +1,4 @@
+import { internalHeaders } from '@/lib/internal-call'
 import { NextRequest, NextResponse } from 'next/server'
 import { log } from '@/lib/log'
 import { createClient } from '@supabase/supabase-js'
@@ -1115,7 +1116,7 @@ export async function POST(req: NextRequest) {
             try {
               fetch(`${req.nextUrl.origin}/api/telnyx/transcribe`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: internalHeaders({ 'Content-Type': 'application/json' }),
                 body: JSON.stringify({
                   callId: recRow.id,
                   companyId: recRow.company_id,

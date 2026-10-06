@@ -1,5 +1,6 @@
 'use client'
 
+import { authFetch } from '@/lib/auth-fetch'
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import RegulatoryForm from '@/components/RegulatoryForm'
@@ -33,7 +34,7 @@ export default function TelnyxIntegration() {
     if (!companyId) return
     setCallBusy('check'); setCallSteps([])
     try {
-      const res = await fetch(`/api/telnyx/setup-calling?companyId=${companyId}`)
+      const res = await authFetch(`/api/telnyx/setup-calling?companyId=${companyId}`)
       setCallSetup(await res.json())
     } catch (e: any) { setCallSetup({ verdict: 'Could not check: ' + e.message }) }
     finally { setCallBusy('') }
@@ -43,7 +44,7 @@ export default function TelnyxIntegration() {
     if (!companyId) return
     setCallBusy('setup'); setCallSteps([])
     try {
-      const res = await fetch('/api/telnyx/setup-calling', {
+      const res = await authFetch('/api/telnyx/setup-calling', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ companyId }),
       })
@@ -121,13 +122,13 @@ export default function TelnyxIntegration() {
         const attempt = async () => {
           tries++
           try {
-            const res = await fetch(`/api/${provParam}/number-finalize`, {
+            const res = await authFetch(`/api/${provParam}/number-finalize`, {
               method: 'POST', headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ companyId: cid, sessionId, ...freeBody }),
             })
             const d = await res.json()
             if (res.ok && d.phoneNumber) {
-              const r2 = await fetch(`/api/${provParam}/setup?companyId=${cid}`)
+              const r2 = await authFetch(`/api/${provParam}/setup?companyId=${cid}`)
               const s2 = await r2.json()
               if (s2.integration) setIntegration(s2.integration)
               setSuccess(`Your business number ${d.phoneNumber} is live.`)
@@ -154,7 +155,7 @@ export default function TelnyxIntegration() {
 
   const loadIntegration = async (cid: string) => {
     try {
-      const res = await fetch(`/api/telnyx/setup?companyId=${cid}`)
+      const res = await authFetch(`/api/telnyx/setup?companyId=${cid}`)
       const data = await res.json()
       if (data.integration) setIntegration(data.integration)
     } catch {}
@@ -163,7 +164,7 @@ export default function TelnyxIntegration() {
 
   const loadNumbers = async (cid: string) => {
     try {
-      const res = await fetch(`/api/telnyx/numbers?companyId=${cid}`)
+      const res = await authFetch(`/api/telnyx/numbers?companyId=${cid}`)
       const data = await res.json()
       setNumbers(data.numbers || [])
       setLocations(data.locations || [])
@@ -172,7 +173,7 @@ export default function TelnyxIntegration() {
 
   const assignNumberToLocation = async (numberId: string, locationId: string) => {
     if (!companyId) return
-    await fetch('/api/telnyx/numbers', {
+    await authFetch('/api/telnyx/numbers', {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ numberId, companyId, locationId: locationId || null }),
     })
@@ -181,7 +182,7 @@ export default function TelnyxIntegration() {
 
   const makePrimary = async (numberId: string) => {
     if (!companyId) return
-    await fetch('/api/telnyx/numbers', {
+    await authFetch('/api/telnyx/numbers', {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ numberId, companyId, isPrimary: true }),
     })
@@ -191,7 +192,7 @@ export default function TelnyxIntegration() {
   const searchNumbers = async () => {
     setSearching(true); setError(''); setAvailable([])
     try {
-      const res = await fetch(`/api/${numProvider}/number?type=${numberType}${numberType === 'local' ? `&city=${encodeURIComponent(numberCity)}` : ''}`)
+      const res = await authFetch(`/api/${numProvider}/number?type=${numberType}${numberType === 'local' ? `&city=${encodeURIComponent(numberCity)}` : ''}`)
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Could not search numbers')
       // Belt-and-braces: drop anything that isn't a complete number so a blank
@@ -226,7 +227,7 @@ export default function TelnyxIntegration() {
     try {
       // Get the user's email for the checkout
       const { data: { session } } = await supabase.auth.getSession()
-      const res = await fetch(`/api/${numProvider}/number-checkout`, {
+      const res = await authFetch(`/api/${numProvider}/number-checkout`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ companyId, email: session?.user?.email, phoneNumber, numberType, locationId: assignLocationId || undefined }),
       })

@@ -1,5 +1,6 @@
 'use client'
 
+import { authFetch } from '@/lib/auth-fetch'
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { setActiveCall, clearActiveCall } from '@/lib/active-call'
@@ -103,7 +104,7 @@ export default function CallHandoff({ companyId, userId, agentName }: { companyI
       if (!accept.ok) throw new Error(accept.data?.error || 'Could not take over the call')
       const { handoffToken, conferenceName } = accept.data
 
-      const tokRes = await fetch('/api/twilio/token', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, userId }) })
+      const tokRes = await authFetch('/api/twilio/token', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, userId }) })
       const tok = await tokRes.json()
       if (!tok?.token) throw new Error('No calling token')
 

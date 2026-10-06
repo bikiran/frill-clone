@@ -1,5 +1,6 @@
 'use client'
 
+import { authFetch } from '@/lib/auth-fetch'
 import React from 'react'
 import UploadQueueIndicator from '@/components/UploadQueueIndicator'
 import Link from 'next/link'
@@ -322,7 +323,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       // still reports a busy agent as unavailable.
       try {
         const { data: { session } } = await supabase.auth.getSession()
-        fetch('/api/telnyx/presence', {
+        authFetch('/api/telnyx/presence', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}) },
           body: JSON.stringify({ companyId: company.id, available: !onCall }),

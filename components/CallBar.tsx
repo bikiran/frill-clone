@@ -1,5 +1,6 @@
 'use client'
 
+import { authFetch } from '@/lib/auth-fetch'
 import { useState, useRef, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { getVoiceProvider } from '@/lib/voice-provider-client'
@@ -244,7 +245,7 @@ export default function CallBar({ companyId, toNumber, contactName, contactId, c
 
       // Transcribe → AI summary → post the call card into the thread the call
       // belonged to (frozen at dial time — NOT wherever the agent navigated to).
-      fetch('/api/telnyx/transcribe', {
+      authFetch('/api/telnyx/transcribe', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ callId: rowId, companyId, conversationId: callConvIdRef.current }),
       }).catch(() => {})
@@ -302,7 +303,7 @@ export default function CallBar({ companyId, toNumber, contactName, contactId, c
       }
       const { data: sess } = await supabase.auth.getSession()
       const userId = sess?.session?.user?.id || null
-      const res = await fetch('/api/twilio/token', {
+      const res = await authFetch('/api/twilio/token', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ companyId, userId }),
       })
@@ -391,7 +392,7 @@ export default function CallBar({ companyId, toNumber, contactName, contactId, c
       const { data: sess } = await supabase.auth.getSession()
       const userId = sess?.session?.user?.id || null
 
-      const res = await fetch('/api/telnyx/token', {
+      const res = await authFetch('/api/telnyx/token', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ companyId, conversationId: callConvIdRef.current, userId }),
       })

@@ -1,5 +1,6 @@
 'use client'
 
+import { authFetch } from '@/lib/auth-fetch'
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import PageHeader from '@/components/PageHeader'
@@ -65,7 +66,7 @@ export default function LocationsPage() {
     const { data } = await (supabase as any).from('company_locations').select('*').eq('company_id', cid).order('is_primary', { ascending: false })
     setLocations(data || [])
     try {
-      const res = await fetch(`/api/telnyx/numbers?companyId=${cid}`)
+      const res = await authFetch(`/api/telnyx/numbers?companyId=${cid}`)
       const nd = await res.json()
       setNumbers(nd.numbers || [])
     } catch {}

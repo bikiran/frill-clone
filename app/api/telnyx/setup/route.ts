@@ -1,3 +1,4 @@
+import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { TelnyxService } from '@/lib/telnyx-service'
@@ -17,6 +18,8 @@ export async function POST(req: NextRequest) {
     if (!companyId) return NextResponse.json({ error: 'Missing companyId' }, { status: 400 })
 
     const db = admin()
+    // Workspace members only.
+    if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
 
     // If a new key was provided, verify it works
     let verifiedKey = apiKey
@@ -63,14 +66,17 @@ export async function GET(req: NextRequest) {
     const companyId = req.nextUrl.searchParams.get('companyId')
     if (!companyId) return NextResponse.json({ error: 'Missing companyId' }, { status: 400 })
     const db = admin()
+    // Workspace members only.
+    if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     const { data } = await db.from('telnyx_integrations').select('*').eq('company_id', companyId).maybeSingle()
     if (!data) return NextResponse.json({ integration: null })
     // Mask the API key
+    // Never send stored secrets back (SIP passwords let anyone register as the line).
+    const safe: any = Object.fromEntries(Object.entries(data).filter(([k]) => !/pass|secret|token/i.test(k)))
     return NextResponse.json({
       integration: {
-        ...data,
+        ...safe,
         api_key: data.api_key ? `••••••••${String(data.api_key).slice(-4)}` : null,
-        sip_password: undefined,
       },
     })
   } catch (err: any) {

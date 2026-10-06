@@ -1,3 +1,4 @@
+import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { TelnyxService } from '@/lib/telnyx-service'
@@ -41,6 +42,8 @@ export async function POST(req: NextRequest) {
     }
 
     const db = admin()
+    // Workspace members only.
+    if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     const { data: call } = await db.from('calls')
       .select('*').eq('id', callId).eq('company_id', companyId).maybeSingle()
     if (!call) return NextResponse.json({ error: 'Call not found' }, { status: 404 })

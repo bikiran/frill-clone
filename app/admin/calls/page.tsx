@@ -1,4 +1,5 @@
 'use client'
+import { authFetch } from '@/lib/auth-fetch'
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { peekCompanyUser, readCache, writeCache } from '@/lib/client-cache'
@@ -285,7 +286,7 @@ export default function CallsPage() {
   const summarize = async (c: Call) => {
     setSummarizing(s => new Set(s).add(c.id))
     try {
-      const res = await fetch('/api/telnyx/call-summary', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ callId: c.id }) })
+      const res = await authFetch('/api/telnyx/call-summary', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ callId: c.id }) })
       const d = await res.json()
       if (d.summary) setCalls(cs => cs.map(x => x.id === c.id ? { ...x, ai_summary: d.summary } : x))
     } catch {} finally { setSummarizing(s => { const n = new Set(s); n.delete(c.id); return n }) }

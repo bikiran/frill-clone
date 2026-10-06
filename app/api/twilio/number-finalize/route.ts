@@ -1,3 +1,4 @@
+import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { createClient } from '@supabase/supabase-js'
@@ -25,8 +26,10 @@ export async function POST(req: NextRequest) {
     if (!companyId) return NextResponse.json({ error: 'Missing companyId' }, { status: 400 })
 
     const db = admin()
+    // Workspace members only.
+    if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
 
-    let paid = true
+    let paid = false
     let phoneNumberWanted: string | undefined
     let subscriptionId: string | undefined
     let locationId: string | undefined
@@ -56,7 +59,24 @@ export async function POST(req: NextRequest) {
         numberType = (session.metadata?.numberType as string) || 'local'
         subscriptionId = (session.subscription as string) || undefined
         if (!paid) return NextResponse.json({ error: 'Payment not completed yet', pending: true }, { status: 202 })
+        // The checkout must be this workspace's own number purchase…
+        if (session.metadata?.kind !== 'phone_number' || session.metadata?.companyId !== companyId) {
+          return NextResponse.json({ error: 'This payment is for a different purchase.' }, { status: 403 })
+        }
+        // …and each paid checkout buys one number, once.
+        if (subscriptionId) {
+          const { data: used } = await db.from('phone_numbers').select('phone_number').eq('stripe_subscription_id', subscriptionId).maybeSingle()
+          if (used) return NextResponse.json({ ok: true, phoneNumber: used.phone_number, alreadyDone: true })
+        }
+      } else {
+        return NextResponse.json({ error: 'Payments are not configured on the server.' }, { status: 500 })
       }
+    }
+
+    // A number is only provisioned against a verified payment or a free credit.
+    // (paid used to start as true, so a request with neither bought one free.)
+    if (!freeConsumed && !paid) {
+      return NextResponse.json({ error: 'Payment required.' }, { status: 402 })
     }
 
     // Idempotency: already provisioned this number?

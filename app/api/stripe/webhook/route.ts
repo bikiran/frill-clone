@@ -1,3 +1,4 @@
+import { internalHeaders } from '@/lib/internal-call'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { logWebhookEvent } from '@/lib/webhook-log'
@@ -232,7 +233,7 @@ export async function POST(req: NextRequest) {
             // take the same shape; the customer never learns which one ran.
             const prov = meta.provider === 'twilio' ? 'twilio' : 'telnyx'
             await fetch(`${origin}/api/${prov}/number`, {
-              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
               body: JSON.stringify({
                 companyId: meta.companyId,
                 phoneNumber: meta.phoneNumber || undefined,

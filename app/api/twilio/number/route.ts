@@ -1,3 +1,5 @@
+import { callerUser } from '@/lib/company-access'
+import { isInternalCall } from '@/lib/internal-call'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { platformTwilio, platformTwilioConfigured, TWILIO_MASTER, colvyBaseUrl } from '@/lib/twilio-platform'
@@ -16,6 +18,8 @@ const NOT_CONFIGURED = 'Twilio number provisioning is not configured yet. The pl
 // /api/telnyx/number so the "Get a business number" UI is provider-agnostic.
 export async function GET(req: NextRequest) {
   try {
+    // Searching numbers needs a signed-in Colvy user.
+    if (!(await callerUser(req, createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, { auth: { autoRefreshToken: false, persistSession: false } })))) return NextResponse.json({ error: 'Please sign in again.' }, { status: 401 })
     const svc = platformTwilio()
     if (!svc) return NextResponse.json({ error: NOT_CONFIGURED }, { status: 503 })
     const type = (req.nextUrl.searchParams.get('type') as any) || 'local'
@@ -44,6 +48,9 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     if (!platformTwilioConfigured()) return NextResponse.json({ error: NOT_CONFIGURED }, { status: 503 })
+    // Buys a number on Colvy's own account with no payment check of its own:
+    // only the Stripe webhook (after a verified payment) may call it.
+    if (!isInternalCall(req)) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     const { companyId, phoneNumber, numberType, locationId, stripeSubscriptionId } = await req.json()
     if (!companyId) return NextResponse.json({ error: 'Missing companyId' }, { status: 400 })
 

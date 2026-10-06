@@ -1,3 +1,4 @@
+import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { createClient } from '@supabase/supabase-js'
@@ -18,6 +19,9 @@ export async function POST(req: NextRequest) {
   try {
     const { companyId, email, phoneNumber, numberType, locationId, locality, areaCode } = await req.json()
     if (!companyId) return NextResponse.json({ error: 'Missing companyId' }, { status: 400 })
+
+    // Workspace members only.
+    if (!(await requireCompanyAccess(req, admin(), companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
 
     // Free number credit granted by a platform admin? Skip payment entirely —
     // the finalize route consumes the credit and provisions directly. The credit

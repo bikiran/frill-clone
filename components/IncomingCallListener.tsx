@@ -1,5 +1,6 @@
 'use client'
 
+import { authFetch } from '@/lib/auth-fetch'
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
@@ -252,7 +253,7 @@ export default function IncomingCallListener({ companyId, agentName, showStatusP
           const { data: sess } = await supabase.auth.getSession()
           const userId = sess?.session?.user?.id || null
           userIdRef.current = userId
-          const tRes = await fetch('/api/twilio/token', {
+          const tRes = await authFetch('/api/twilio/token', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ companyId, userId }),
           })
@@ -272,7 +273,7 @@ export default function IncomingCallListener({ companyId, agentName, showStatusP
           // so a long-idle tab keeps its registration instead of silently dying.
           device.on('tokenWillExpire', async () => {
             try {
-              const r = await fetch('/api/twilio/token', {
+              const r = await authFetch('/api/twilio/token', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ companyId, userId }),
               })
@@ -319,7 +320,7 @@ export default function IncomingCallListener({ companyId, agentName, showStatusP
         const userId = sess?.session?.user?.id || null
         userIdRef.current = userId
 
-        const res = await fetch('/api/telnyx/token', {
+        const res = await authFetch('/api/telnyx/token', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ companyId, userId }),
         })
@@ -560,7 +561,7 @@ export default function IncomingCallListener({ companyId, agentName, showStatusP
         if (prov === 'twilio') {
           const device = clientRef.current
           if (!device) { fallback(); return }
-          const tRes = await fetch('/api/twilio/token', {
+          const tRes = await authFetch('/api/twilio/token', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ companyId, userId }),
           })
@@ -596,7 +597,7 @@ export default function IncomingCallListener({ companyId, agentName, showStatusP
         }
 
         // ── Telnyx: ask the server to place the call and ring us back ────────────
-        const res = await fetch('/api/telnyx/outbound-start', {
+        const res = await authFetch('/api/telnyx/outbound-start', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             companyId, to: number, name: d.name, contactName: d.name,
@@ -891,7 +892,7 @@ export default function IncomingCallListener({ companyId, agentName, showStatusP
     const callId = rowId || incoming?.callRowId || (incoming?.outbound ? incoming?.id : undefined)
     const callSid = incoming?.outbound ? undefined : incoming?.id
     if (!callId && !callSid) return
-    fetch('/api/twilio/call-transfer', {
+    authFetch('/api/twilio/call-transfer', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ companyId, action: 'hangup', callId: callId || undefined, callSid }),
     }).catch(() => {})
@@ -914,7 +915,7 @@ export default function IncomingCallListener({ companyId, agentName, showStatusP
     try {
       // Twilio identifies the call by the browser leg's Call SID (which the
       // transfer route resolves to the row); Telnyx uses its own call id.
-      const res = await fetch(provider === 'twilio' ? '/api/twilio/call-transfer' : '/api/telnyx/call-transfer', {
+      const res = await authFetch(provider === 'twilio' ? '/api/twilio/call-transfer' : '/api/telnyx/call-transfer', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(provider === 'twilio'
           // Prefer the exact calls-row id from the custom parameter; fall back to

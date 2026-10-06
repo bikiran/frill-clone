@@ -1,3 +1,5 @@
+import { isInternalCall } from '@/lib/internal-call'
+import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { ensureCallCard } from '@/lib/call-card'
@@ -114,6 +116,8 @@ export async function POST(req: NextRequest) {
 
     const db = admin()
     const { data: call } = await db.from('calls').select('*').eq('id', callId).maybeSingle()
+    // Members of the call's workspace, or our own server (call webhooks).
+    if (!call || (!isInternalCall(req) && !(await requireCompanyAccess(req, db, call.company_id)).ok)) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     if (!call?.recording_url && !call?.conference_recording_url) {
       return NextResponse.json({ ok: false, reason: 'No recording for this call.' })
     }

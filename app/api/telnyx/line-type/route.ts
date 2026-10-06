@@ -1,3 +1,4 @@
+import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { toE164, TelnyxService } from '@/lib/telnyx-service'
@@ -40,6 +41,8 @@ export async function POST(req: NextRequest) {
     if (!e164) return unknown
 
     const db = admin()
+    // Workspace members only.
+    if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
 
     // Cached on the contact, if we have been asked about this person before.
     if (contactId) {
