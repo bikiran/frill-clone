@@ -23,10 +23,13 @@ interface Props {
   onSent: () => void
   onAiAssist?: () => void       // fired (once) when the draft is written/improved with AI
   keyterms?: string[]           // names etc. that help voice typing spell things right
+  // The inbox's action buttons (+ menu, review request, short link, booking…)
+  // — given a function that inserts text at the caret in this email body.
+  extraTools?: (insert: (text: string) => void) => React.ReactNode
 }
 
 export default function EmailComposer({
-  conversationId, companyId, toEmail, defaultSubject, fromLabel, signature, agentName, onSent, onAiAssist, keyterms,
+  conversationId, companyId, toEmail, defaultSubject, fromLabel, signature, agentName, onSent, onAiAssist, keyterms, extraTools,
 }: Props) {
   const [to, setTo] = useState(toEmail)
   const [cc, setCc] = useState('')
@@ -359,7 +362,9 @@ export default function EmailComposer({
       )}
 
       {/* Rich-text formatting toolbar */}
-      <style>{`.email-rte[data-empty="true"]:before{content:attr(data-ph);color:#9ca3af;pointer-events:none;}`}</style>
+      <style>{`.email-rte[data-empty="true"]:before{content:attr(data-ph);color:#9ca3af;pointer-events:none;}
+        .email-extra-tools .cmp-tool { width: 28px !important; height: 28px !important; border-radius: 6px !important; background: transparent !important; }
+        .email-extra-tools .cmp-tool:hover { background: var(--canvas, #f5f6f8) !important; }`}</style>
       <div style={{ display: 'flex', alignItems: 'center', gap: 2, padding: '6px 8px', borderBottom: '1px solid var(--border)', flexWrap: 'wrap', position: 'relative' }}>
         {/* Colvy Voice — dictate the email (same as the chat reply box). */}
         <VoiceDictationButton size={28} soft title="Voice type" keyterms={keyterms} onText={insertDictation} />
@@ -397,6 +402,12 @@ export default function EmailComposer({
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
         </button>
         <input ref={attInputRef} type="file" multiple style={{ display: 'none' }} onChange={e => onPickFiles(e.target.files)} />
+        {extraTools && (
+          <>
+            <span style={{ width: 1, height: 18, background: 'var(--border)', margin: '0 4px' }} />
+            <div className="email-extra-tools" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>{extraTools(insertDictation)}</div>
+          </>
+        )}
         {templates.length > 0 && (
           <button type="button" title="Insert a saved template" onMouseDown={e => { e.preventDefault(); setShowTemplates(v => !v) }}
             style={{ width: 28, height: 28, borderRadius: 6, border: 'none', background: showTemplates ? 'var(--peach)' : 'transparent', cursor: 'pointer', color: 'var(--slate)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>

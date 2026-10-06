@@ -4046,7 +4046,7 @@ export default function InboxPage() {
   }
 
   // Turn a pasted URL into a branded short link and drop it into the reply.
-  const shortenIntoReply = async () => {
+  const shortenIntoReply = async (insert?: (t: string) => void) => {
     const raw = shortenInput.trim()
     if (!raw || !companyId) return
     setShortenBusy(true); setShortenError('')
@@ -4061,12 +4061,127 @@ export default function InboxPage() {
       })
       const d = await res.json()
       if (!res.ok) throw new Error(d.error || 'Could not shorten that URL')
-      setReply(r => (r.trim() ? `${r.trimEnd()} ${d.url}` : d.url))
+      if (insert) insert(d.url)
+      else setReply(r => (r.trim() ? `${r.trimEnd()} ${d.url}` : d.url))
       setShowShortener(false); setShortenInput('')
     } catch (e: any) {
       setShortenError(e.message)
     } finally { setShortenBusy(false) }
   }
+
+  // ── Composer action buttons ──────────────────────────────────────────────
+  // Shared by the chat/SMS reply box and the email composer, so both have the
+  // same tools: the + menu (poll, survey, form, payment link, charge/save card,
+  // schedule delivery, request media), review request, short link and booking
+  // link. Every send here is channel-aware (deliverToCustomer etc.), so on an
+  // email thread it goes out by email. `insert` puts text (a short link, a
+  // booking link) into whichever composer is showing; the voice note and
+  // "Upload from your phone" stage media in the chat box, so they're chat-only.
+  const renderSendMenu = (forEmail = false) => (
+    <>
+                  {/* Send poll/survey/form/payment */}
+                  <div ref={sendMenuRef} style={{ position: 'relative' }}>
+                    <button type="button" className="cmp-tool" onClick={() => setShowSendMenu(v => !v)} title="Send a payment link, form, poll or request media" aria-label="More actions"
+                      style={toolBtn(showSendMenu)}>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                    </button>
+                    {showSendMenu && (
+                      <div style={{ position: 'absolute', bottom: '120%', left: 0, width: 200, background: '#fff', borderRadius: 12, border: '1px solid var(--border)', boxShadow: '0 12px 32px rgba(0,0,0,0.12)', zIndex: 50, overflow: 'hidden' }}>
+                        {[['poll', Icon.poll(), 'Send Poll'], ['survey', Icon.survey(), 'Send Survey'], ['form', Icon.form(), 'Send Form']].map(([k, icon, label]: any) => (
+                          <button key={k} type="button" onClick={() => openPicker(k as any)}
+                            style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}><span style={{ color: 'var(--slate)', display: 'inline-flex' }}>{icon}</span>{label}</button>
+                        ))}
+
+                        <div style={{ borderTop: '1px solid var(--border)' }} />
+
+                        <button type="button" onClick={() => openPicker('payment' as any)}
+                          style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}>
+                          <span style={{ color: 'var(--slate)', display: 'inline-flex' }}>{Icon.payment()}</span>Send Payment Link
+                        </button>
+
+                        <button type="button" onClick={() => { setShowSendMenu(false); setShowChargeCard(true); loadSavedCards() }}
+                          style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}>
+                          <span style={{ color: 'var(--slate)', display: 'inline-flex' }}>
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+                          </span>Charge Card
+                        </button>
+
+                        <button type="button" onClick={() => { setShowSendMenu(false); openSchedule() }}
+                          style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}>
+                          <span style={{ color: 'var(--slate)', display: 'inline-flex' }}>
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="3" width="15" height="13" rx="2"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+                          </span>Schedule delivery
+                        </button>
+
+                        <button type="button" onClick={() => { setShowSendMenu(false); saveCard() }}
+                          style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}>
+                          <span style={{ color: 'var(--slate)', display: 'inline-flex' }}>
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/><path d="M16 15h3"/></svg>
+                          </span>Save Card
+                        </button>
+
+                        <div style={{ borderTop: '1px solid var(--border)' }} />
+
+                        {!forEmail && (<>
+                        <button type="button" onClick={() => { setShowSendMenu(false); if (!voiceUploading) startVoiceNote() }} disabled={voiceUploading || recording}
+                          style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}>
+                          <span style={{ color: 'var(--slate)', display: 'inline-flex' }}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3.5" fill="currentColor"/></svg></span>Record voice note
+                        </button>
+                        <button type="button" onClick={() => { setShowSendMenu(false); setShowInboxQR(true) }}
+                          style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}>
+                          <span style={{ color: 'var(--slate)', display: 'inline-flex' }}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M11 18h2"/></svg></span>Upload from your phone
+                        </button>
+                        </>)}
+                        <button type="button" onClick={() => { setShowSendMenu(false); setShowMediaRequest(true) }}
+                          style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}>
+                          <span style={{ color: 'var(--slate)', display: 'inline-flex' }}>{Icon.media(15)}</span>Request Media
+                        </button>
+                      </div>
+                    )}
+                  </div>
+    </>
+  )
+  const renderLinkTools = (forEmail = false, insert?: (t: string) => void) => (
+    <>
+                  {/* Review request */}
+                  <button type="button" className="cmp-tool" onClick={sendReviewRequest} title="Send a review request" aria-label="Send a review request"
+                    style={toolBtn()}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                  </button>
+                  {/* Shorten a URL straight into the reply */}
+                  <div style={{ position: 'relative' }}>
+                    <button type="button" className="cmp-tool" onClick={() => setShowShortener(v => !v)}
+                      title="Create a short, trackable link" aria-label="Create a short link"
+                      style={toolBtn(showShortener)}>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                    </button>
+                    {showShortener && (
+                      <div style={{ position: 'absolute', bottom: '120%', left: 0, zIndex: 90, width: 320, maxWidth: '80vw', background: '#fff', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 12px 32px rgba(0,0,0,0.16)', padding: 12 }}>
+                        <p style={{ margin: '0 0 8px', fontSize: 12.5, fontWeight: 700, color: 'var(--ink)' }}>Create short URL</p>
+                        <p style={{ margin: '0 0 8px', fontSize: 11.5, color: 'var(--slate)', lineHeight: 1.4 }}>
+                          Paste a long URL — it becomes a short link on your own domain and records clicks.
+                        </p>
+                        <input value={shortenInput} onChange={e => setShortenInput(e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); shortenIntoReply(insert) } }}
+                          placeholder="https://roxyaquarium.com.au/..." autoFocus
+                          style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 12.5, boxSizing: 'border-box' }} />
+                        {shortenError && <p style={{ margin: '6px 0 0', fontSize: 11.5, color: '#dc2626' }}>{shortenError}</p>}
+                        <div style={{ display: 'flex', gap: 6, marginTop: 9 }}>
+                          <button type="button" onClick={() => shortenIntoReply(insert)} disabled={shortenBusy || !shortenInput.trim()}
+                            style={{ flex: 1, padding: '7px 12px', borderRadius: 8, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', opacity: shortenBusy || !shortenInput.trim() ? 0.5 : 1 }}>
+                            {shortenBusy ? 'Shortening…' : 'Shorten & insert'}
+                          </button>
+                          <button type="button" onClick={() => { setShowShortener(false); setShortenInput(''); setShortenError('') }}
+                            style={{ padding: '7px 12px', borderRadius: 8, background: '#fff', border: '1px solid var(--border)', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', color: 'var(--slate)' }}>
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  {!internalMode && <BookingLinkButton iconOnly height={34} companyId={companyId} conversationId={selected?.id || null} contactId={selected?.contact_id || null} onInsert={t => insert ? insert(t) : setReply(r => (r.trim() ? r.trimEnd() + '\n' : '') + t)} />}
+    </>
+  )
 
   // Refund a paid order. This moves real money through the payment gateway, so
   // it always confirms first and states the amount.
@@ -9178,6 +9293,7 @@ export default function InboxPage() {
                   signature={emailSignature}
                   agentName={myName}
                   keyterms={[contact?.name, (contact as any)?.company_name].filter(Boolean) as string[]}
+                  extraTools={(insert) => <>{renderSendMenu(true)}{renderLinkTools(true, insert)}</>}
                   onAiAssist={() => logAiUpdate('Reply drafted with Colvy AI')}
                   onSent={async () => {
                     const { data: msgs } = await (supabase as any).from('messages').select('*').eq('conversation_id', selected.id).order('created_at', { ascending: true })
@@ -9564,64 +9680,7 @@ export default function InboxPage() {
                     keyterms={[contact?.name, (contact as any)?.company_name].filter(Boolean) as string[]}
                     onText={(t) => setReply(prev => (prev.trim() ? prev.replace(/\s*$/, ' ') : '') + t)}
                   />
-                  {/* Send poll/survey/form/payment */}
-                  <div ref={sendMenuRef} style={{ position: 'relative' }}>
-                    <button type="button" className="cmp-tool" onClick={() => setShowSendMenu(v => !v)} title="Send a payment link, form, poll or request media" aria-label="More actions"
-                      style={toolBtn(showSendMenu)}>
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                    </button>
-                    {showSendMenu && (
-                      <div style={{ position: 'absolute', bottom: '120%', left: 0, width: 200, background: '#fff', borderRadius: 12, border: '1px solid var(--border)', boxShadow: '0 12px 32px rgba(0,0,0,0.12)', zIndex: 50, overflow: 'hidden' }}>
-                        {[['poll', Icon.poll(), 'Send Poll'], ['survey', Icon.survey(), 'Send Survey'], ['form', Icon.form(), 'Send Form']].map(([k, icon, label]: any) => (
-                          <button key={k} type="button" onClick={() => openPicker(k as any)}
-                            style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}><span style={{ color: 'var(--slate)', display: 'inline-flex' }}>{icon}</span>{label}</button>
-                        ))}
-
-                        <div style={{ borderTop: '1px solid var(--border)' }} />
-
-                        <button type="button" onClick={() => openPicker('payment' as any)}
-                          style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}>
-                          <span style={{ color: 'var(--slate)', display: 'inline-flex' }}>{Icon.payment()}</span>Send Payment Link
-                        </button>
-
-                        <button type="button" onClick={() => { setShowSendMenu(false); setShowChargeCard(true); loadSavedCards() }}
-                          style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}>
-                          <span style={{ color: 'var(--slate)', display: 'inline-flex' }}>
-                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
-                          </span>Charge Card
-                        </button>
-
-                        <button type="button" onClick={() => { setShowSendMenu(false); openSchedule() }}
-                          style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}>
-                          <span style={{ color: 'var(--slate)', display: 'inline-flex' }}>
-                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="3" width="15" height="13" rx="2"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
-                          </span>Schedule delivery
-                        </button>
-
-                        <button type="button" onClick={() => { setShowSendMenu(false); saveCard() }}
-                          style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}>
-                          <span style={{ color: 'var(--slate)', display: 'inline-flex' }}>
-                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/><path d="M16 15h3"/></svg>
-                          </span>Save Card
-                        </button>
-
-                        <div style={{ borderTop: '1px solid var(--border)' }} />
-
-                        <button type="button" onClick={() => { setShowSendMenu(false); if (!voiceUploading) startVoiceNote() }} disabled={voiceUploading || recording}
-                          style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}>
-                          <span style={{ color: 'var(--slate)', display: 'inline-flex' }}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3.5" fill="currentColor"/></svg></span>Record voice note
-                        </button>
-                        <button type="button" onClick={() => { setShowSendMenu(false); setShowInboxQR(true) }}
-                          style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}>
-                          <span style={{ color: 'var(--slate)', display: 'inline-flex' }}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M11 18h2"/></svg></span>Upload from your phone
-                        </button>
-                        <button type="button" onClick={() => { setShowSendMenu(false); setShowMediaRequest(true) }}
-                          style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}>
-                          <span style={{ color: 'var(--slate)', display: 'inline-flex' }}>{Icon.media(15)}</span>Request Media
-                        </button>
-                      </div>
-                    )}
-                  </div>
+                  {renderSendMenu(false)}
                   {/* Attach */}
                   <button type="button" className="cmp-tool" onClick={() => fileInputRef.current?.click()} title="Attach a file" aria-label="Attach a file"
                     style={toolBtn()}>
@@ -9635,43 +9694,7 @@ export default function InboxPage() {
                   {/* Emoji */}
                   <button type="button" className="cmp-tool" onClick={() => setShowEmoji(v => !v)} title="Emoji" aria-label="Emoji"
                     style={toolBtn(showEmoji)}>{Icon.smile(17)}</button>
-                  {/* Review request */}
-                  <button type="button" className="cmp-tool" onClick={sendReviewRequest} title="Send a review request" aria-label="Send a review request"
-                    style={toolBtn()}>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-                  </button>
-                  {/* Shorten a URL straight into the reply */}
-                  <div style={{ position: 'relative' }}>
-                    <button type="button" className="cmp-tool" onClick={() => setShowShortener(v => !v)}
-                      title="Create a short, trackable link" aria-label="Create a short link"
-                      style={toolBtn(showShortener)}>
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-                    </button>
-                    {showShortener && (
-                      <div style={{ position: 'absolute', bottom: '120%', left: 0, zIndex: 90, width: 320, maxWidth: '80vw', background: '#fff', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 12px 32px rgba(0,0,0,0.16)', padding: 12 }}>
-                        <p style={{ margin: '0 0 8px', fontSize: 12.5, fontWeight: 700, color: 'var(--ink)' }}>Create short URL</p>
-                        <p style={{ margin: '0 0 8px', fontSize: 11.5, color: 'var(--slate)', lineHeight: 1.4 }}>
-                          Paste a long URL — it becomes a short link on your own domain and records clicks.
-                        </p>
-                        <input value={shortenInput} onChange={e => setShortenInput(e.target.value)}
-                          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); shortenIntoReply() } }}
-                          placeholder="https://roxyaquarium.com.au/..." autoFocus
-                          style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 12.5, boxSizing: 'border-box' }} />
-                        {shortenError && <p style={{ margin: '6px 0 0', fontSize: 11.5, color: '#dc2626' }}>{shortenError}</p>}
-                        <div style={{ display: 'flex', gap: 6, marginTop: 9 }}>
-                          <button type="button" onClick={shortenIntoReply} disabled={shortenBusy || !shortenInput.trim()}
-                            style={{ flex: 1, padding: '7px 12px', borderRadius: 8, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', opacity: shortenBusy || !shortenInput.trim() ? 0.5 : 1 }}>
-                            {shortenBusy ? 'Shortening…' : 'Shorten & insert'}
-                          </button>
-                          <button type="button" onClick={() => { setShowShortener(false); setShortenInput(''); setShortenError('') }}
-                            style={{ padding: '7px 12px', borderRadius: 8, background: '#fff', border: '1px solid var(--border)', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', color: 'var(--slate)' }}>
-                            Cancel
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                  {!internalMode && <BookingLinkButton iconOnly height={34} companyId={companyId} conversationId={selected?.id || null} contactId={selected?.contact_id || null} onInsert={t => setReply(r => (r.trim() ? r.trimEnd() + '\n' : '') + t)} />}
+                  {renderLinkTools(false)}
                 </div>
                 <div className="cmp-send">
                   {!internalMode && <AiDraftButton orb height={38} busy={aiDraft.busy} onClick={() => aiDraft.run()} />}
