@@ -10,7 +10,7 @@ import { SkeletonList } from '@/components/Skeleton'
 import WaitlistAddModal from '@/components/WaitlistAddModal'
 import Pagination, { usePagination } from '@/components/Pagination'
 import { confirmDialog } from '@/components/ConfirmDialog'
-import { BellIcon, GearIcon, PlusIcon, ChatIcon, TagIcon, XIcon, EditIcon, ExternalIcon } from '@/components/booking/icons'
+import { BellIcon, GearIcon, PlusIcon, ChatIcon, TagIcon, XIcon, EditIcon, ExternalIcon, ChevronDownIcon } from '@/components/booking/icons'
 
 // Back-in-stock waitlists. Customers who asked for something that's out of
 // stock are grouped by item; when it's back, everyone waiting gets one SMS —
@@ -243,6 +243,21 @@ export default function WaitlistsPage() {
     <div style={{ padding: 24, maxWidth: 1280, margin: '0 auto' }}>
       <style>{`
         @media (max-width: 560px) { .wl-hide-sm { display: none } }
+        /* Open/close: the panel's height eases between 0 and its content, and
+           each customer row slides up in turn as it opens. */
+        .wl-panel { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .38s cubic-bezier(.16,1,.3,1) }
+        .wl-panel.open { grid-template-rows: 1fr }
+        .wl-panel > div { overflow: hidden; min-height: 0 }
+        .wl-row { opacity: 0; transform: translateY(-6px); transition: opacity .22s ease, transform .3s cubic-bezier(.16,1,.3,1) }
+        .wl-panel.open .wl-row { opacity: 1; transform: none; transition-delay: calc(var(--i, 0) * 35ms + 60ms) }
+        .wl-chev { margin-left: auto; width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--border); background: var(--surface, #fff); color: var(--slate, #6b7280); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; transition: background .2s ease, color .2s ease, border-color .2s ease }
+        .wl-chev:hover { background: var(--peach, #fff1ee); color: var(--coral, #ff7a6b); border-color: transparent }
+        .wl-chev svg { transition: transform .38s cubic-bezier(.16,1,.3,1) }
+        .wl-chev.open svg { transform: rotate(180deg) }
+        @media (prefers-reduced-motion: reduce) {
+          .wl-panel, .wl-row, .wl-chev svg { transition: none !important }
+          .wl-panel.open .wl-row { transition-delay: 0s !important }
+        }
         @media (max-width: 640px) {
           .wl-stats { display: flex !important; overflow-x: auto; scroll-snap-type: x mandatory; margin-left: -24px; margin-right: -24px; padding: 0 24px 4px; scroll-padding-left: 24px; scrollbar-width: none; -webkit-overflow-scrolling: touch }
           .wl-stats::-webkit-scrollbar { display: none }
@@ -334,7 +349,6 @@ export default function WaitlistsPage() {
                         <span style={{ fontSize: 12.5, color: 'var(--slate)' }}>
                           {g.waiting} waiting · {g.entries.length} total
                           {g.potential != null && g.waiting > 0 && <> · <span style={{ color: '#059669', fontWeight: 700 }}>{money(g.potential)} potential</span></>}
-                          {' '}{isOpen ? '▴' : '▾'}
                         </span>
                       </div>
                     </div>
@@ -348,10 +362,15 @@ export default function WaitlistsPage() {
                       {busy === g.key ? 'Sending…' : `Notify ${g.waiting} now`}
                     </button>
                   )}
+                  <button className={`wl-chev${isOpen ? ' open' : ''}`} onClick={() => setOpen(o => ({ ...o, [g.key]: !isOpen }))}
+                    aria-expanded={isOpen} aria-label={isOpen ? `Hide customers waiting for ${g.name}` : `Show customers waiting for ${g.name}`}>
+                    <ChevronDownIcon size={20} strokeWidth={2.4} />
+                  </button>
                 </div>
-                {isOpen && (
+                <div className={`wl-panel${isOpen ? ' open' : ''}`} aria-hidden={!isOpen}>
+                  <div inert={!isOpen}>
                   <div style={{ borderTop: '1px solid var(--border)' }}>
-                    {g.entries.map((e: any) => {
+                    {g.entries.map((e: any, i: number) => {
                       const pill = STATUS_PILL[e.status] || STATUS_PILL.waiting
                       if (editing === e.id) return (
                         <EditEntry key={e.id} entry={e} companyId={companyId}
@@ -359,7 +378,7 @@ export default function WaitlistsPage() {
                           onSaved={async () => { setEditing(null); flash('Customer details saved.'); await load(companyId) }} />
                       )
                       return (
-                        <div key={e.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', borderBottom: '1px solid var(--border)', flexWrap: 'wrap' }}>
+                        <div key={e.id} className="wl-row" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', borderBottom: '1px solid var(--border)', flexWrap: 'wrap', ['--i' as any]: Math.min(i, 12) }}>
                           <div style={{ flex: '1 1 200px', minWidth: 0 }}>
                             <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--ink)' }}>
                               {e.customer_name || 'Customer'}
@@ -387,7 +406,7 @@ export default function WaitlistsPage() {
                       )
                     })}
                     {g.waiting > 0 && (
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '10px 16px', background: 'var(--canvas, #fafafa)', flexWrap: 'wrap' }}>
+                      <div className="wl-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '10px 16px', background: 'var(--canvas, #fafafa)', flexWrap: 'wrap', ['--i' as any]: Math.min(g.entries.length, 13) }}>
                         <span style={{ fontSize: 12.5, color: 'var(--slate)' }}>
                           {g.price != null
                             ? <>Potential revenue · {g.waiting} waiting × {money(g.price)} each{g.approx ? ' (starting price — estimate)' : ''}</>
@@ -397,7 +416,8 @@ export default function WaitlistsPage() {
                       </div>
                     )}
                   </div>
-                )}
+                  </div>
+                </div>
               </div>
             )
           })}

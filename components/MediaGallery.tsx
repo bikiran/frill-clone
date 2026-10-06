@@ -116,11 +116,17 @@ export default function MediaGallery({ items, index, onClose, onIndex, onViewDet
             <button key={i} onClick={() => onIndex(i)}
               style={{ flexShrink: 0, width: 56, height: 56, borderRadius: 8, overflow: 'hidden', border: i === index ? '2px solid #fff' : '2px solid transparent', background: '#000', cursor: 'pointer', padding: 0, opacity: i === index ? 1 : 0.55 }}>
               {it.kind === 'video' ? (
-                it.poster ? (
-                  <img loading="lazy" decoding="async" src={it.poster} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                ) : (
-                  <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#222', color: '#fff', fontSize: 18 }}>▶</div>
-                )
+                <span style={{ position: 'relative', display: 'block', width: '100%', height: '100%' }}>
+                  {it.poster
+                    ? <img loading="lazy" decoding="async" src={it.poster} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    // No still frame stored → let the browser pull the first frame.
+                    : <video src={`${it.url}#t=0.1`} preload="metadata" muted playsInline style={{ width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' }} />}
+                  <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
+                    <span style={{ width: 20, height: 20, borderRadius: '50%', background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <svg width="9" height="9" viewBox="0 0 24 24" fill="#fff"><polygon points="6 3 20 12 6 21 6 3" /></svg>
+                    </span>
+                  </span>
+                </span>
               ) : (
                 <img loading="lazy" decoding="async" src={it.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
               )}
