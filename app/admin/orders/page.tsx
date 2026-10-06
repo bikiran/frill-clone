@@ -22,15 +22,10 @@ import { notifyIntegrations } from '@/lib/integrations-notify'
 
 type Order = any
 
-// WooCommerce brand mark — the same file the integrations pages use, so the
-// orders list and order detail match the current logo. Same footprint as the
-// old hand-drawn badge (size + 6) so table rows don't shift.
+// WooCommerce brand mark — the official Woo logo (public/logos/woocommerce.svg).
 function WooLogo({ size = 16 }: { size?: number }) {
   const box = size + 6
-  return (
-    <img src="/logos/woocommerce.svg" alt="" title="WooCommerce" width={box} height={box}
-      style={{ width: box, height: box, flexShrink: 0, display: 'inline-block', verticalAlign: 'middle' }} />
-  )
+  return <img src="/logos/woocommerce.svg" alt="WooCommerce" title="WooCommerce" width={box} height={box} style={{ width: box, height: box, borderRadius: 6, flexShrink: 0, display: 'inline-block' }} />
 }
 export function ChannelIcon({ channel, size = 15 }: { channel?: string | null; size?: number }) {
   if (channel === 'woocommerce') return <WooLogo size={size} />

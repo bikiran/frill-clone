@@ -3,6 +3,7 @@ import { preconnect } from 'react-dom'
 import './globals.css'
 import AppChrome from './AppChrome'
 import JsonLd from '@/components/JsonLd'
+import PhoneHost from '@/components/PhoneHost'
 
 // The public marketing site lives on this origin; used to resolve canonical and
 // Open Graph URLs. Falls back to the production domain when the env var is unset.
@@ -121,6 +122,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
         <JsonLd data={structuredData} />
         <AppChrome>{children}</AppChrome>
+        {/* Outside AppChrome on purpose: AppChrome swaps between two trees
+            (full-page vs app chrome), which would remount — and hang up — a
+            live call. Here the phone persists across every route in the tab. */}
+        <PhoneHost />
       </body>
     </html>
   )

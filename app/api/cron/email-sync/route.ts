@@ -57,7 +57,10 @@ export async function GET(req: NextRequest) {
       if (mins < every) continue                      // synced recently enough
     }
     try {
-      const r = await syncGmailChannel(ch.id)
+      // Share the function's time across mailboxes; each leaves a few seconds
+      // spare and carries on next run if its inbox was busier than that.
+      if (Date.now() - t0 > 50_000) break
+      const r = await syncGmailChannel(ch.id, { deadline: t0 + 50_000 })
       results.push({ channel: ch.id, ...r })
     } catch (e: any) {
       results.push({ channel: ch.id, error: e.message })

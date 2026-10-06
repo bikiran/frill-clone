@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { requireCompanyAccess, resolveWaitlistSettings, isMissingTable } from '@/lib/waitlist'
+import { requireCompanyAccess, resolveWaitlistSettings, isMissingTable, openWaitlistConversation } from '@/lib/waitlist'
+import { toE164, emailKey } from '@/lib/phone'
+import { variationStock, pricing, type ItemStock } from '@/lib/waitlist-stock'
 
 export const dynamic = 'force-dynamic'
 
@@ -40,11 +42,19 @@ export async function GET(req: NextRequest) {
     }
 
     const productIds = Array.from(new Set((entries || []).map((e: any) => e.woo_product_id).filter(Boolean)))
-    const stock: Record<string, { stock_status: string | null; stock_quantity: number | null }> = {}
+    // Live stock + current price from the synced catalogue (price drives the
+    // "potential revenue" figures — what the waitlist is worth once it's back).
+    const stock: Record<string, ItemStock> = {}
     if (productIds.length) {
       const { data: prods } = await db.from('woocommerce_products')
-        .select('woo_product_id, stock_status, stock_quantity').eq('company_id', companyId).in('woo_product_id', productIds)
-      ;(prods || []).forEach((p: any) => { stock[String(p.woo_product_id)] = { stock_status: p.stock_status, stock_quantity: p.stock_quantity } })
+        .select('woo_product_id, stock_status, stock_quantity, permalink, price, regular_price, sale_price, on_sale').eq('company_id', companyId).in('woo_product_id', productIds)
+      ;(prods || []).forEach((p: any) => {
+        stock[String(p.woo_product_id)] = { ...pricing(p), stock_status: p.stock_status, stock_quantity: p.stock_quantity, permalink: p.permalink || null }
+      })
+      // Website sign-ups store the size/variation id, which isn't in the synced
+      // catalogue — look those up through their parent product.
+      const variations = productIds.map(Number).filter(id => !stock[String(id)])
+      if (variations.length) Object.assign(stock, await variationStock(db, companyId!, variations))
     }
     return NextResponse.json({ entries: entries || [], settings, stock })
   } catch (e: any) {
@@ -122,6 +132,9 @@ export async function POST(req: NextRequest) {
 }
 
 // PATCH — { companyId, id, action: 'cancel' } removes someone from a waitlist;
+// { companyId, id, action: 'chat' } finds or starts their conversation;
+// { companyId, id, action: 'edit', customerName?, phone?, email?, note? } fixes
+// a waiting customer's details (the alert goes to the entry's own phone/email);
 // { companyId, settings: { auto_notify?, template?, timezone? } } saves settings.
 export async function PATCH(req: NextRequest) {
   try {
@@ -140,6 +153,45 @@ export async function PATCH(req: NextRequest) {
       const { error } = await db.from('companies').update({ waitlist_settings: next }).eq('id', companyId)
       if (error) return NextResponse.json({ error: isMissingTable(error) ? NEEDS_MIGRATION : error.message }, { status: 400 })
       return NextResponse.json({ ok: true, settings: resolveWaitlistSettings(next) })
+    }
+
+    // Open (or start) the customer's conversation, e.g. for a website sign-up.
+    if (b.id && b.action === 'chat') {
+      const r = await openWaitlistConversation(db, companyId, String(b.id))
+      if (!r.conversationId) return NextResponse.json({ error: r.error || 'Could not open a chat.' }, { status: 400 })
+      return NextResponse.json({ ok: true, conversationId: r.conversationId })
+    }
+
+    if (b.id && b.action === 'edit') {
+      const { data: cur } = await db.from('stock_waitlist').select('id, status, phone, email, error')
+        .eq('id', b.id).eq('company_id', companyId).maybeSingle()
+      if (!cur) return NextResponse.json({ error: 'That waitlist entry no longer exists.' }, { status: 404 })
+      if (!['waiting', 'queued', 'failed'].includes(cur.status)) return NextResponse.json({ error: 'They’ve already been notified, so their details can’t be changed here.' }, { status: 400 })
+      const patch: any = {}
+      if (b.customerName !== undefined) patch.customer_name = String(b.customerName || '').trim().slice(0, 120) || null
+      if (b.note !== undefined) patch.note = String(b.note || '').trim().slice(0, 500) || null
+      if (b.phone !== undefined) {
+        const raw = String(b.phone || '').trim()
+        const phone = raw ? toE164(raw) : ''
+        if (raw && phone.replace(/\D/g, '').length < 8) return NextResponse.json({ error: 'That phone number doesn’t look right.' }, { status: 400 })
+        patch.phone = phone || null
+      }
+      if (b.email !== undefined) {
+        const raw = String(b.email || '').trim()
+        if (raw && !emailKey(raw)) return NextResponse.json({ error: 'That email address doesn’t look right.' }, { status: 400 })
+        patch.email = raw ? raw.toLowerCase() : null
+      }
+      const phone = patch.phone !== undefined ? patch.phone : cur.phone
+      const email = patch.email !== undefined ? patch.email : cur.email
+      if (!phone && !email) return NextResponse.json({ error: 'Keep a phone number or an email so they can be told it’s back.' }, { status: 400 })
+      // A failed send with fixed contact details goes back on the list.
+      if (cur.status === 'failed' && (patch.phone !== undefined || patch.email !== undefined)) { patch.status = 'waiting'; patch.error = null }
+      const { data, error } = await db.from('stock_waitlist').update(patch).eq('id', b.id).eq('company_id', companyId).select('*').maybeSingle()
+      if (error) {
+        if ((error as any).code === '23505') return NextResponse.json({ error: 'Someone with those details is already waiting for this item.' }, { status: 409 })
+        return NextResponse.json({ error: error.message }, { status: 500 })
+      }
+      return NextResponse.json({ ok: true, entry: data })
     }
 
     if (b.id && b.action === 'cancel') {

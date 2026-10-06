@@ -7,8 +7,9 @@ import { resolveCompanyUser } from '@/lib/client-cache'
 import PageHeader from '@/components/PageHeader'
 import { SkeletonList } from '@/components/Skeleton'
 import WaitlistAddModal from '@/components/WaitlistAddModal'
+import Pagination, { usePagination } from '@/components/Pagination'
 import { confirmDialog } from '@/components/ConfirmDialog'
-import { BellIcon, GearIcon, PlusIcon, ChatIcon, TagIcon, XIcon } from '@/components/booking/icons'
+import { BellIcon, GearIcon, PlusIcon, ChatIcon, TagIcon, XIcon, EditIcon, ExternalIcon } from '@/components/booking/icons'
 
 // Back-in-stock waitlists. Customers who asked for something that's out of
 // stock are grouped by item; when it's back, everyone waiting gets one SMS —
@@ -33,7 +34,11 @@ async function authHeaders(): Promise<Record<string, string>> {
 }
 
 const groupKey = (e: any) => e.woo_product_id ? `p:${e.woo_product_id}` : `n:${String(e.item_name || '').trim().toLowerCase()}`
+// Only real web links open in a new tab (staff can type an item link by hand).
+const webUrl = (u?: string | null) => (u && /^https?:\/\//i.test(u) ? u : null)
 const fmtDate = (d: string) => new Date(d).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })
+const money = (n: number) => new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' }).format(n)
+const isWaiting = (e: any) => e.status === 'waiting' || e.status === 'queued'
 
 export default function WaitlistsPage() {
   const router = useRouter()
@@ -47,6 +52,7 @@ export default function WaitlistsPage() {
   const [tab, setTab] = useState<'waiting' | 'notified' | 'all'>('waiting')
   const [search, setSearch] = useState('')
   const [open, setOpen] = useState<Record<string, boolean>>({})
+  const [editing, setEditing] = useState<string | null>(null)
 
   // Opening Waitlists clears the side-menu "new sign-ups" badge.
   useEffect(() => {
@@ -106,20 +112,39 @@ export default function WaitlistsPage() {
       map.set(k, g)
     }
     const list = Array.from(map.values())
-    list.forEach(g => { g.waiting = g.entries.filter((e: any) => e.status === 'waiting' || e.status === 'queued').length })
+    list.forEach(g => { g.url = webUrl(g.url) || webUrl(g.productId ? stock[String(g.productId)]?.permalink : null) })
+    list.forEach(g => {
+      g.waiting = g.entries.filter(isWaiting).length
+      // Current price from the store, and what the waitlist is worth if each
+      // person waiting buys one once it's back.
+      const p = g.productId ? stock[String(g.productId)] : null
+      g.price = p?.price ?? null
+      g.regular = p?.on_sale ? p.regular_price : null
+      g.approx = !!p?.approx
+      g.potential = g.price != null ? g.price * g.waiting : null
+    })
     return list.sort((a, b) => b.waiting - a.waiting || b.entries.length - a.entries.length)
-  }, [entries, tab, search])
+  }, [entries, tab, search, stock])
 
   const stats = useMemo(() => {
     const monthAgo = Date.now() - 30 * 86400000
-    const waiting = entries.filter(e => e.status === 'waiting' || e.status === 'queued')
+    const waiting = entries.filter(isWaiting)
+    let potential = 0, unpriced = 0
+    for (const e of waiting) {
+      const price = e.woo_product_id ? stock[String(e.woo_product_id)]?.price : null
+      if (price != null) potential += price; else unpriced++
+    }
     return {
+      potential, unpriced,
       waiting: waiting.length,
       items: new Set(waiting.map(groupKey)).size,
       queued: entries.filter(e => e.status === 'queued').length,
       notified30: entries.filter(e => e.status === 'notified' && e.notified_at && new Date(e.notified_at).getTime() > monthAgo).length,
     }
-  }, [entries])
+  }, [entries, stock])
+
+  // One card per item; page through them once the list gets long.
+  const pg = usePagination(groups, { key: 'waitlists', defaultSize: 25, resetOn: [tab, search] })
 
   const notifyGroup = async (g: any) => {
     const ids = g.entries.filter((e: any) => e.status === 'waiting' || e.status === 'queued').map((e: any) => e.id)
@@ -138,6 +163,18 @@ export default function WaitlistsPage() {
     } catch (e: any) { flash(e.message) } finally { setBusy('') }
   }
 
+  // Website sign-ups have no thread yet: find or create their contact and
+  // conversation, then open it in the inbox.
+  const openChat = async (e: any) => {
+    setBusy(`chat:${e.id}`)
+    try {
+      const res = await fetch('/api/waitlist', { method: 'PATCH', headers: await authHeaders(), body: JSON.stringify({ companyId, id: e.id, action: 'chat' }) })
+      const d = await res.json()
+      if (!res.ok || !d.conversationId) throw new Error(d.error || 'Could not open a chat')
+      router.push(`/admin/inbox?conversation=${d.conversationId}`)
+    } catch (err: any) { flash(err.message); setBusy('') }
+  }
+
   const removeEntry = async (e: any) => {
     if (!await confirmDialog({ title: 'Remove from waitlist?', message: `${e.customer_name || e.phone || 'This customer'} won't be told when ${e.item_name} is back.`, confirmLabel: 'Remove', tone: 'danger' })) return
     setBusy(e.id)
@@ -151,7 +188,7 @@ export default function WaitlistsPage() {
   const stockBadge = (g: any) => {
     if (!g.productId) return { label: 'Not listed online', bg: '#f3f4f6', c: '#6b7280' }
     const s = stock[String(g.productId)]
-    if (!s) return { label: 'Linked product', bg: '#f3f4f6', c: '#6b7280' }
+    if (!s || !s.stock_status) return { label: 'Linked product', bg: '#f3f4f6', c: '#6b7280' }
     if (s.stock_status === 'instock') return { label: `In stock${s.stock_quantity != null ? ` · ${s.stock_quantity}` : ''}`, bg: '#f0fdf4', c: '#059669' }
     if (s.stock_status === 'onbackorder') return { label: 'On backorder', bg: '#fffbeb', c: '#b45309' }
     return { label: 'Out of stock', bg: '#fef2f2', c: '#dc2626' }
@@ -161,6 +198,15 @@ export default function WaitlistsPage() {
 
   return (
     <div style={{ padding: 24, maxWidth: 1280, margin: '0 auto' }}>
+      <style>{`
+        @media (max-width: 560px) { .wl-hide-sm { display: none } }
+        @media (max-width: 640px) {
+          .wl-stats { display: flex !important; overflow-x: auto; scroll-snap-type: x mandatory; margin-left: -24px; margin-right: -24px; padding: 0 24px 4px; scroll-padding-left: 24px; scrollbar-width: none; -webkit-overflow-scrolling: touch }
+          .wl-stats::-webkit-scrollbar { display: none }
+          .wl-stats > div { flex: 0 0 72%; scroll-snap-align: start }
+          .wl-title { white-space: normal !important; line-height: 1.3 }
+        }
+      `}</style>
       <PageHeader
         title="Back-in-stock waitlists"
         subtitle="Customers waiting for an item. When it's back, they get one SMS."
@@ -178,17 +224,24 @@ export default function WaitlistsPage() {
 
       {showSettings && <SettingsPanel companyId={companyId} businessName={businessName} settings={settings} onSaved={s => { setSettings(s); flash('Settings saved.') }} />}
 
-      {/* Stat tiles */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12, marginBottom: 18 }}>
+      {/* Stat tiles — a swipeable row on phones */}
+      <div className="wl-stats" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 12, marginBottom: 18 }}>
         {[
-          { label: 'Customers waiting', value: stats.waiting, c: '#2563eb', bg: '#eff6ff' },
-          { label: 'Items with a waitlist', value: stats.items, c: '#7c3aed', bg: '#f5f3ff' },
-          { label: 'Queued for 9am', value: stats.queued, c: '#b45309', bg: '#fffbeb' },
-          { label: 'Notified (30 days)', value: stats.notified30, c: '#059669', bg: '#f0fdf4' },
-        ].map(s => (
-          <div key={s.label} style={{ ...card, display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px' }}>
-            <div style={{ width: 38, height: 38, borderRadius: 10, background: s.bg, color: s.c, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 15 }}>{s.value}</div>
-            <div style={{ fontSize: 13, color: 'var(--slate)', fontWeight: 600 }}>{s.label}</div>
+          { label: 'Customers waiting', value: String(stats.waiting), c: '#2563eb', bg: '#eff6ff' },
+          { label: 'Items with a waitlist', value: String(stats.items), c: '#7c3aed', bg: '#f5f3ff' },
+          { label: 'Potential revenue', value: money(stats.potential), c: '#059669', bg: '#f0fdf4',
+            sub: stats.unpriced ? `${stats.unpriced} without a price` : 'If everyone waiting buys one',
+            title: 'Current store price × each customer waiting. Items not listed online have no price, so they aren’t counted.' },
+          ...(stats.queued ? [{ label: 'Texts queued for 9am', value: String(stats.queued), c: '#b45309', bg: '#fffbeb',
+            sub: 'Back in stock overnight', title: 'Texts only go out 9am–8pm. Anything back in stock overnight is sent at 9am.' }] : []),
+          { label: 'Notified (30 days)', value: String(stats.notified30), c: '#0891b2', bg: '#ecfeff' },
+        ].map((s: any) => (
+          <div key={s.label} title={s.title} style={{ ...card, display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px' }}>
+            <div style={{ minWidth: 38, height: 38, padding: s.value.length > 3 ? '0 10px' : 0, borderRadius: 10, background: s.bg, color: s.c, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 15, flexShrink: 0, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{s.value}</div>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 13, color: 'var(--slate)', fontWeight: 600 }}>{s.label}</div>
+              {s.sub && <div style={{ fontSize: 11.5, color: 'var(--slate)', marginTop: 1, opacity: 0.85 }}>{s.sub}</div>}
+            </div>
           </div>
         ))}
       </div>
@@ -214,7 +267,7 @@ export default function WaitlistsPage() {
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {groups.map(g => {
+          {pg.items.map(g => {
             const badge = stockBadge(g)
             const isOpen = open[g.key] ?? groups.length <= 3
             return (
@@ -225,13 +278,28 @@ export default function WaitlistsPage() {
                       ? <img src={g.image} alt="" style={{ width: 48, height: 48, borderRadius: 10, objectFit: 'cover', border: '1px solid var(--border)', flexShrink: 0 }} />
                       : <div style={{ width: 48, height: 48, borderRadius: 10, background: 'var(--peach)', color: 'var(--coral)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}><TagIcon size={22} /></div>}
                     <div style={{ minWidth: 0 }}>
-                      <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{g.name}</div>
+                      <div className="wl-title" style={{ fontSize: 15, fontWeight: 800, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {g.name}
+                        {g.price != null && (
+                          <span style={{ fontWeight: 700, color: 'var(--ink)' }} title={g.approx ? 'Couldn’t reach your store for this size, so this is the product’s starting price' : undefined}> – {g.approx ? 'from ' : ''}{money(g.price)}
+                            {g.regular != null && <span style={{ fontWeight: 500, fontSize: 13, color: 'var(--slate)', textDecoration: 'line-through', marginLeft: 6 }}>{money(g.regular)}</span>}
+                          </span>
+                        )}
+                      </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4, flexWrap: 'wrap' }}>
                         <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 999, background: badge.bg, color: badge.c }}>{badge.label}</span>
-                        <span style={{ fontSize: 12.5, color: 'var(--slate)' }}>{g.waiting} waiting · {g.entries.length} total {isOpen ? '▴' : '▾'}</span>
+                        <span style={{ fontSize: 12.5, color: 'var(--slate)' }}>
+                          {g.waiting} waiting · {g.entries.length} total
+                          {g.potential != null && g.waiting > 0 && <> · <span style={{ color: '#059669', fontWeight: 700 }}>{money(g.potential)} potential</span></>}
+                          {' '}{isOpen ? '▴' : '▾'}
+                        </span>
                       </div>
                     </div>
                   </button>
+                  {g.url && (
+                    <a href={g.url} target="_blank" rel="noopener noreferrer" title="View product on your website" aria-label={`View ${g.name} on your website`}
+                      style={{ ...btnGhost, textDecoration: 'none', padding: '9px 12px' }}><ExternalIcon size={15} /> <span className="wl-hide-sm">View product</span></a>
+                  )}
                   {g.waiting > 0 && (
                     <button onClick={() => notifyGroup(g)} disabled={busy === g.key} style={{ ...btnPrimary, opacity: busy === g.key ? 0.6 : 1 }}>
                       {busy === g.key ? 'Sending…' : `Notify ${g.waiting} now`}
@@ -242,6 +310,11 @@ export default function WaitlistsPage() {
                   <div style={{ borderTop: '1px solid var(--border)' }}>
                     {g.entries.map((e: any) => {
                       const pill = STATUS_PILL[e.status] || STATUS_PILL.waiting
+                      if (editing === e.id) return (
+                        <EditEntry key={e.id} entry={e} companyId={companyId}
+                          onCancel={() => setEditing(null)}
+                          onSaved={async () => { setEditing(null); flash('Customer details saved.'); await load(companyId) }} />
+                      )
                       return (
                         <div key={e.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', borderBottom: '1px solid var(--border)', flexWrap: 'wrap' }}>
                           <div style={{ flex: '1 1 200px', minWidth: 0 }}>
@@ -256,23 +329,88 @@ export default function WaitlistsPage() {
                             {e.status === 'notified' && e.notified_at ? `${e.notified_via === 'email' ? 'Emailed' : 'Texted'} ${fmtDate(e.notified_at)}` : `Added ${fmtDate(e.created_at)}`}{e.source === 'inbox' ? ' · from inbox' : e.source === 'website' ? ' · from website' : ''}
                           </span>
                           <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 999, background: pill.bg, color: pill.c, whiteSpace: 'nowrap' }}>{pill.label}</span>
-                          {e.conversation_id && <a href={`/admin/inbox?conversation=${e.conversation_id}`} title="Open conversation" style={{ ...iconBtn, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: 'var(--slate, #6b7280)' }}><ChatIcon size={15} /></a>}
+                          {e.conversation_id
+                            ? <a href={`/admin/inbox?conversation=${e.conversation_id}`} title="Open conversation" aria-label="Open conversation" style={{ ...iconBtn, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: 'var(--slate, #6b7280)' }}><ChatIcon size={15} /></a>
+                            : (e.phone || e.email || e.contact_id) && (
+                              <button onClick={() => openChat(e)} disabled={busy === `chat:${e.id}`} title="Chat with this customer" aria-label="Chat with this customer" style={{ ...iconBtn, opacity: busy === `chat:${e.id}` ? 0.5 : 1 }}><ChatIcon size={15} /></button>
+                            )}
+                          {['waiting', 'queued', 'failed'].includes(e.status) && (
+                            <button onClick={() => setEditing(e.id)} title="Edit customer details" aria-label="Edit customer details" style={iconBtn}><EditIcon size={14} /></button>
+                          )}
                           {['waiting', 'queued', 'failed'].includes(e.status) && (
                             <button onClick={() => removeEntry(e)} disabled={busy === e.id} title="Remove from waitlist" style={{ ...iconBtn, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><XIcon size={13} /></button>
                           )}
                         </div>
                       )
                     })}
+                    {g.waiting > 0 && (
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '10px 16px', background: 'var(--canvas, #fafafa)', flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 12.5, color: 'var(--slate)' }}>
+                          {g.price != null
+                            ? <>Potential revenue · {g.waiting} waiting × {money(g.price)} each{g.approx ? ' (starting price — estimate)' : ''}</>
+                            : g.productId ? 'No price on this product in your store yet' : 'Not listed online, so there’s no price to estimate from'}
+                        </span>
+                        {g.potential != null && <span style={{ fontSize: 14, fontWeight: 800, color: '#059669', fontVariantNumeric: 'tabular-nums' }}>{money(g.potential)}</span>}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
             )
           })}
+          <Pagination {...pg} noun="items" />
         </div>
       )}
 
       {showAdd && <WaitlistAddModal companyId={companyId} onClose={() => setShowAdd(false)} onAdded={async (dup) => { setShowAdd(false); flash(dup ? 'Already on that waitlist.' : 'Added to the waitlist.'); await load(companyId) }} />}
     </div>
+  )
+}
+
+// ── Edit a waiting customer ───────────────────────────────────────────────────
+function EditEntry({ entry, companyId, onCancel, onSaved }: { entry: any; companyId: string; onCancel: () => void; onSaved: () => void }) {
+  const [name, setName] = useState<string>(entry.customer_name || '')
+  const [phone, setPhone] = useState<string>(entry.phone || '')
+  const [email, setEmail] = useState<string>(entry.email || '')
+  const [note, setNote] = useState<string>(entry.note || '')
+  const [saving, setSaving] = useState(false)
+  const [err, setErr] = useState('')
+
+  const save = async (ev: React.FormEvent) => {
+    ev.preventDefault()
+    if (!phone.trim() && !email.trim()) { setErr('Add a phone number or an email so they can be told it’s back.'); return }
+    setSaving(true); setErr('')
+    try {
+      const res = await fetch('/api/waitlist', { method: 'PATCH', headers: await authHeaders(), body: JSON.stringify({ companyId, id: entry.id, action: 'edit', customerName: name, phone, email, note }) })
+      const d = await res.json()
+      if (!res.ok) throw new Error(d.error || 'Could not save')
+      onSaved()
+    } catch (e: any) { setErr(e.message) } finally { setSaving(false) }
+  }
+
+  const field = (label: string, el: React.ReactNode) => (
+    <label style={{ display: 'block', flex: '1 1 180px', minWidth: 0 }}>
+      <span style={{ display: 'block', fontSize: 11.5, fontWeight: 700, color: 'var(--slate)', marginBottom: 4 }}>{label}</span>
+      {el}
+    </label>
+  )
+  return (
+    <form onSubmit={save} style={{ padding: '12px 16px 14px', borderBottom: '1px solid var(--border)', background: 'var(--canvas, #fafafa)' }}>
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+        {field('Name', <input value={name} onChange={e => setName(e.target.value)} placeholder="Customer name" autoFocus style={{ ...inp, fontSize: 16 }} />)}
+        {field('Mobile', <input value={phone} onChange={e => setPhone(e.target.value)} placeholder="0412 345 678" inputMode="tel" autoComplete="off" style={{ ...inp, fontSize: 16 }} />)}
+        {field('Email', <input value={email} onChange={e => setEmail(e.target.value)} placeholder="name@example.com" type="email" inputMode="email" autoComplete="off" style={{ ...inp, fontSize: 16 }} />)}
+      </div>
+      <div style={{ marginTop: 10 }}>
+        {field('Note (staff only)', <input value={note} onChange={e => setNote(e.target.value)} placeholder="e.g. wants 2, happy to pick up" style={{ ...inp, fontSize: 16 }} />)}
+      </div>
+      <p style={{ fontSize: 12, color: 'var(--slate)', margin: '8px 0 0' }}>They’re texted when it’s back, or emailed if there’s no mobile.</p>
+      {err && <p role="alert" style={{ fontSize: 12.5, color: '#dc2626', margin: '6px 0 0' }}>{err}</p>}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 10 }}>
+        <button type="button" onClick={onCancel} style={btnGhost}>Cancel</button>
+        <button type="submit" disabled={saving} style={{ ...btnPrimary, opacity: saving ? 0.7 : 1 }}>{saving ? 'Saving…' : 'Save'}</button>
+      </div>
+    </form>
   )
 }
 

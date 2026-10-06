@@ -7,6 +7,7 @@
 import { isWithinSendingHours } from '@/lib/campaign-sender'
 import { sendCustomerEmail } from '@/lib/customer-email'
 import { shortenUrl } from '@/lib/short-link'
+import { phoneKey } from '@/lib/phone'
 export { requireCompanyAccess } from '@/lib/company-access'
 
 export const DEFAULT_WAITLIST_TEMPLATE =
@@ -53,6 +54,92 @@ async function ensureConversation(db: any, companyId: string, row: any, contact:
     last_message: '', last_message_at: new Date().toISOString(),
   }).select('id').maybeSingle()
   return created?.id || null
+}
+
+/**
+ * The inbox conversation for a waitlist entry, creating what's missing.
+ *
+ * Website sign-ups arrive with just a name and a mobile/email, so there's no
+ * thread to open. This finds their contact (by mobile, then email) or creates
+ * one, reuses their latest conversation or starts an SMS/email thread, links
+ * the entry to both, and leaves a staff-only note saying what they're waiting
+ * for. Nothing is sent to the customer.
+ */
+export async function openWaitlistConversation(db: any, companyId: string, entryId: string): Promise<{ conversationId?: string; error?: string }> {
+  const { data: row } = await db.from('stock_waitlist').select('*').eq('id', entryId).eq('company_id', companyId).maybeSingle()
+  if (!row) return { error: 'That waitlist entry no longer exists.' }
+
+  if (row.conversation_id) {
+    const { data: cv } = await db.from('conversations').select('id').eq('id', row.conversation_id).eq('company_id', companyId).maybeSingle()
+    if (cv?.id) return { conversationId: cv.id }
+  }
+
+  // Their contact: the one already linked, else match by mobile, then email.
+  let contact: any = null
+  if (row.contact_id) {
+    const { data } = await db.from('contacts').select('id, name, phone, email').eq('id', row.contact_id).eq('company_id', companyId).maybeSingle()
+    contact = data
+  }
+  if (!contact && row.phone) {
+    // Match on the last 9 digits, however the number was saved ("0431 562 737",
+    // "+61431562737"…): the indexed phone_norm first, then a digits check.
+    const key = phoneKey(row.phone)
+    if (key.length >= 8) {
+      try {
+        const { data } = await db.from('contacts').select('id, name, phone, email').eq('company_id', companyId).eq('phone_norm', key).limit(1)
+        contact = data?.[0] || null
+      } catch {}
+      if (!contact) {
+        const { data: cands } = await db.from('contacts').select('id, name, phone, email').eq('company_id', companyId).ilike('phone', `%${key.slice(-3)}`).limit(200)
+        contact = (cands || []).find((c: any) => phoneKey(c.phone) === key) || null
+      }
+    }
+    if (!contact) {
+      const base = { company_id: companyId, name: row.customer_name || null, phone: row.phone, email: row.email || null, source: 'waitlist' }
+      let { data: created, error } = await db.from('contacts').insert({ ...base, phone_norm: key || null }).select('id, name, phone, email').maybeSingle()
+      if (error) ({ data: created } = await db.from('contacts').insert(base).select('id, name, phone, email').maybeSingle())
+      contact = created
+    }
+  }
+  if (!contact && row.email) {
+    const { data: hit } = await db.from('contacts').select('id, name, phone, email').eq('company_id', companyId).ilike('email', String(row.email).trim()).limit(1)
+    contact = hit?.[0] || null
+    if (!contact) {
+      const { data: created } = await db.from('contacts').insert({ company_id: companyId, name: row.customer_name || null, email: row.email, source: 'waitlist' }).select('id, name, phone, email').maybeSingle()
+      contact = created
+    }
+  }
+  if (!contact) return { error: 'This customer has no mobile or email to chat on.' }
+
+  // Fill gaps on the contact only, never overwrite what's saved.
+  const fill: any = {}
+  if (!contact.name && row.customer_name) fill.name = row.customer_name
+  if (!contact.email && row.email) fill.email = row.email
+  if (!contact.phone && row.phone) fill.phone = row.phone
+  if (Object.keys(fill).length) { try { await db.from('contacts').update(fill).eq('id', contact.id) } catch {} }
+
+  const phone = row.phone || contact.phone || null
+  const conversationId = await ensureConversation(db, companyId, { ...row, conversation_id: null }, { ...contact, ...fill }, phone)
+  if (!conversationId) return { error: 'Could not start a conversation.' }
+
+  // Link the entry. If linking the contact would clash with another open
+  // entry for the same person and item, link just the conversation.
+  const { error: linkErr } = await db.from('stock_waitlist').update({ contact_id: contact.id, conversation_id: conversationId }).eq('id', row.id)
+  if (linkErr) { try { await db.from('stock_waitlist').update({ conversation_id: conversationId }).eq('id', row.id) } catch {} }
+
+  // A staff-only note so the thread says why it exists.
+  try {
+    const { data: prior } = await db.from('messages').select('id').eq('conversation_id', conversationId).contains('metadata', { waitlist_id: row.id }).limit(1)
+    if (!prior?.length) {
+      const when = new Date(row.created_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })
+      await db.from('messages').insert({
+        conversation_id: conversationId, company_id: companyId, sender_type: 'system', is_internal: true,
+        content: `Waiting for ${row.item_name} — joined the back-in-stock waitlist${row.source === 'website' ? ' on your website' : ''} on ${when}.`,
+        metadata: { internal: true, waitlist: true, waitlist_id: row.id },
+      })
+    }
+  } catch {}
+  return { conversationId }
 }
 
 export type NotifyResult = { sent: number; failed: number; queued: number; skipped: number }

@@ -19,7 +19,31 @@ function twErr(e: any): string {
 interface Props {
   companyId: string | null
   agentName?: string
+  // The "Phone ready" pill is admin chrome; on public pages only calls show.
+  showStatusPill?: boolean
 }
+
+// What the call panel needs to come back after a reload. The Telnyx SDK
+// reattaches the call itself (hangupOnBeforeUnload: false + its own per-tab
+// recovery markers); this is OUR context — who it is, the calls-row id, when it
+// started — kept per tab in sessionStorage while a call is live.
+const CALL_CTX_KEY = 'colvy-call-ctx'
+type CallCtx = { sdkCallId: string | null; incoming: any; caller: any; outboundCallId: string | null; inboundRowId: string | null; startedAt: number; savedAt: number }
+function saveCallCtx(c: CallCtx | null) {
+  try { c ? sessionStorage.setItem(CALL_CTX_KEY, JSON.stringify(c)) : sessionStorage.removeItem(CALL_CTX_KEY) } catch {}
+}
+function readCallCtx(): CallCtx | null {
+  try {
+    const c = JSON.parse(sessionStorage.getItem(CALL_CTX_KEY) || 'null') as CallCtx | null
+    // Only a call from moments ago can be reattached; anything older is stale.
+    return c && Date.now() - c.savedAt < 10 * 60_000 ? c : null
+  } catch { return null }
+}
+// The serialisable part of the ringing/answered call for the panel.
+const incomingSnapshot = (inc: any) => inc ? {
+  id: inc.id ?? null, callRowId: inc.callRowId ?? null, outbound: !!inc.outbound,
+  from: inc.from || inc.options?.remoteCallerNumber || inc.remoteCallerNumber || null,
+} : null
 
 // A caller's known origin/channel, made human. A plain phone call carries no
 // referrer — so on a shared number we can't prove THIS call came from Google;
@@ -41,7 +65,7 @@ const prettySource = (s?: string | null): string | null => {
 
 // Registers the Telnyx WebRTC client and listens for INBOUND calls, showing a
 // Coax-style popup with caller context (name, past orders) before answering.
-export default function IncomingCallListener({ companyId, agentName }: Props) {
+export default function IncomingCallListener({ companyId, agentName, showStatusPill = true }: Props) {
   const router = useRouter()
   const [incoming, setIncoming] = useState<any>(null)   // the ringing call
   // The calls-row id for a ringing INBOUND call, used by the incoming-ring
@@ -142,6 +166,22 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
   }, [inCall, caller])
   useEffect(() => () => clearActiveCall(), [])
 
+  // Keep the live call's context in this tab so a reload can restore the panel.
+  useEffect(() => {
+    if (!inCall) return
+    saveCallCtx({
+      sdkCallId: callIdRef.current, incoming: incomingSnapshot(incoming), caller,
+      outboundCallId, inboundRowId, startedAt: startedAtRef.current || Date.now(), savedAt: Date.now(),
+    })
+  }, [inCall, incoming, caller, outboundCallId, inboundRowId])
+  // Keep it fresh during a long call (the SDK's own window is short; ours just
+  // has to outlive a reload).
+  useEffect(() => {
+    if (!inCall) return
+    const t = setInterval(() => { const c = readCallCtx(); if (c) saveCallCtx({ ...c, savedAt: Date.now() }) }, 60_000)
+    return () => clearInterval(t)
+  }, [inCall])
+
   useEffect(() => {
     if (!companyId) return
     ;(async () => {
@@ -155,6 +195,15 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
   // Telnyx WebRTC client or the Twilio Voice SDK, and how answer/decline/hangup
   // are actioned. Warm-transfer/hold is Telnyx-only for now.
   const [provider, setProvider] = useState<'telnyx' | 'twilio'>('telnyx')
+
+  // Twilio calls can't be reattached after a reload — warn before the page
+  // unloads instead of silently dropping the customer.
+  useEffect(() => {
+    if (!inCall || provider !== 'twilio') return
+    const warn = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = '' }
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [inCall, provider])
   const clientRef = useRef<any>(null)
   const callRef = useRef<any>(null)
   const timerRef = useRef<any>(null)
@@ -284,9 +333,14 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
         // but never registers against this connection (it showed "Unregistered"),
         // so inbound invites were never delivered. Credential login fixes that.
         // Falls back to the token if the SIP creds aren't stored yet.
+        // hangupOnBeforeUnload: false — a reload, the Back button or any other
+        // page unload must NOT end the call. The SDK instead leaves recovery
+        // markers in this tab's sessionStorage, logs back in with the same
+        // session after the reload and Telnyx reattaches the live call (picked
+        // up by the 'recovering'/'active' handling below).
         const client = (data.sipUser && data.sipPassword)
-          ? new TelnyxRTC({ login: data.sipUser, password: data.sipPassword })
-          : new TelnyxRTC({ login_token: data.token })
+          ? new TelnyxRTC({ login: data.sipUser, password: data.sipPassword, hangupOnBeforeUnload: false })
+          : new TelnyxRTC({ login_token: data.token, hangupOnBeforeUnload: false })
         // Route the far end's audio to our always-mounted element — without
         // this, answered calls connect but have no sound.
         ;(client as any).remoteElement = 'colvy-inbound-audio'
@@ -315,6 +369,34 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
           // Inbound invite — accept several state spellings across SDK versions.
           const st = call.state
           const dir = call.direction
+
+          // ── A call reattached after a reload / Back / page change ──────────
+          // The SDK brings the live call back on its own; we didn't see it ring
+          // in this page, so adopt it and restore the panel from the saved
+          // context (caller, calls-row id, start time).
+          if ((st === 'recovering' || st === 'active') && call.id && callRef.current?.id !== call.id && !liveRef.current.incoming) {
+            const ctx = readCallCtx()
+            if (ctx || st === 'recovering') {
+              console.log('[telnyx] reattached live call', call.id)
+              callRef.current = call
+              callIdRef.current = call.id
+              answeredHereRef.current = true
+              const inc = ctx?.incoming || { id: call.id, from: call.options?.remoteCallerNumber || call.remoteCallerNumber || null }
+              setIncoming(inc)
+              setCaller(ctx?.caller || { number: inc.from })
+              if (ctx?.outboundCallId) { setOutboundCallId(ctx.outboundCallId) }
+              if (ctx?.inboundRowId) setInboundRowId(ctx.inboundRowId)
+              stopRing()
+              setInCall(true)
+              // Carry on the timer from when the call really started.
+              const startedAt = ctx?.startedAt || Date.now()
+              startedAtRef.current = startedAt
+              if (timerRef.current) clearInterval(timerRef.current)
+              setSeconds(Math.max(0, Math.round((Date.now() - startedAt) / 1000)))
+              timerRef.current = setInterval(() => setSeconds(Math.max(0, Math.round((Date.now() - startedAtRef.current) / 1000))), 1000)
+              return
+            }
+          }
           if ((st === 'ringing' || st === 'new' || st === 'early') && (dir === 'inbound' || dir === 'incoming')) {
             // Is this the callback leg for an outbound call WE placed? If so,
             // auto-answer it and show the in-call panel straight away — no
@@ -379,7 +461,7 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
               } catch {}
             })()
           }
-          if (call.state === 'active') {
+          if (call.state === 'active' && !(liveRef.current.inCall && callRef.current?.id === call.id && startedAtRef.current > 0)) {
             answeredHereRef.current = true
             stopRing()
             setInCall(true); startTimer()
@@ -933,6 +1015,7 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
     setShowKeypad(false)
     startedAtRef.current = 0
     callRef.current = null
+    saveCallCtx(null)
   }
 
   const fmtDur = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
@@ -1018,7 +1101,7 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
     {/* Tiny phone-status indicator so it's visible whether the WebRTC client is
         actually connected to receive inbound calls (green = ready). Dismissable
         — hovering reveals a cross that hides it until the next page refresh. */}
-    {!pillDismissed && (
+    {!pillDismissed && showStatusPill && (
       <div
         onMouseEnter={() => setPillHover(true)}
         onMouseLeave={() => setPillHover(false)}

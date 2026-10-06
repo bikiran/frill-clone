@@ -6,11 +6,10 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useEffect, useState, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
-import IncomingCallListener from '@/components/IncomingCallListener'
 import SidebarSearch, { SearchItem } from '@/components/SidebarSearch'
 import CallHandoff from '@/components/CallHandoff'
 import GlobalDialer from '@/components/GlobalDialer'
-import GlobalCallBar from '@/components/GlobalCallBar'
+import { setPhoneHost } from '@/lib/phone-host'
 import { getActiveCall, subscribeActiveCall } from '@/lib/active-call'
 import AdminBanner from '@/components/AdminBanner'
 import TrialBanner from '@/components/TrialBanner'
@@ -548,6 +547,14 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [user, setUser] = useState<any>(null)
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
 
+  // The browser phone lives in the ROOT layout (components/PhoneHost) so a live
+  // call survives leaving /admin — Back, the Ideas/Roadmap links, a reload.
+  // Tell it whose phone it is.
+  const phoneAgent = user?.user_metadata?.display_name || user?.email?.split('@')[0]
+  useEffect(() => {
+    if (company?.id && user?.id) setPhoneHost({ companyId: company.id, agentName: phoneAgent, userId: user.id })
+  }, [company?.id, user?.id, phoneAgent])
+
   // The top-bar hamburger (in the root layout) fires this event on admin pages
   // so the single top-left hamburger opens the admin sidebar.
   useEffect(() => {
@@ -801,12 +808,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           {demoMsg}
         </div>
       )}
-      {/* Inbound calls: the WebRTC client used to register ONLY on the inbox
-          page. Anywhere else in the admin, no endpoint was registered with
-          Telnyx — so a customer ringing the business number got a BUSY tone
-          ("engaged"). Registering here means the agent can be reached from any
-          admin page. */}
-      <IncomingCallListener companyId={company?.id || null} agentName={user?.user_metadata?.display_name || user?.email?.split('@')[0]} />
+      {/* The phone itself (inbound calls + the outbound call panel) is mounted
+          in the root layout by PhoneHost, so calls survive leaving the admin. */}
       {/* Registers this browser as a call device and shows the "Take over call"
           banner when a live call is handed to it from another device. */}
       <CallHandoff companyId={company?.id || null} userId={user?.id || null} agentName={user?.user_metadata?.display_name || user?.email?.split('@')[0]} />
@@ -815,9 +818,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           placed inside Colvy instead of the browser handing off to a `tel:`
           link and asking the OS to pick a phone app. */}
       <GlobalDialer companyId={company?.id || null} agentName={user?.user_metadata?.display_name || user?.email?.split('@')[0]} />
-      {/* Draggable floating panel that hosts outbound calls so they survive
-          navigation and can be moved out of the way. */}
-      <GlobalCallBar companyId={company?.id || null} agentName={user?.user_metadata?.display_name || user?.email?.split('@')[0]} />
       <style>{`
         @media (max-width: 860px) {
           .admin-sidebar { transform: translateX(-100%); transition: transform 0.25s ease; box-shadow: 0 0 0 transparent; }
