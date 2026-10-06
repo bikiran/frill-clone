@@ -29,7 +29,8 @@ const STARTS_PER_MINUTE = 5
  *
  *   • match an existing contact on email, then on the last 8 phone digits
  *   • fill in blanks on that contact, never overwrite what's already there
- *   • reuse their most recent conversation, reopening it if it was closed
+ *   • reuse the most recent conversation this browser started with them,
+ *     reopening it if it was closed (never another channel's thread)
  *   • note the reopen on the timeline so the agent sees why it came back
  */
 export async function POST(req: NextRequest) {
@@ -100,9 +101,13 @@ export async function POST(req: NextRequest) {
     let conv: any = null
     let reopened = false
 
-    if (contactId) {
+    // Only a conversation THIS browser started is resumed. Matching on the
+    // contact alone let anyone who typed a customer's email (or phone) open that
+    // customer's latest thread in any channel, read it, and point its SMS replies
+    // at their own number. Otherwise a new chat is opened on the same contact.
+    if (contactId && visitorKey) {
       const { data: prior } = await db.from('conversations')
-        .select('id, status').eq('company_id', companyId).eq('contact_id', contactId)
+        .select('id, status').eq('company_id', companyId).eq('contact_id', contactId).eq('visitor_id', visitorKey)
         .order('last_message_at', { ascending: false }).limit(1)
       if (prior?.[0]?.id) {
         const p = prior[0]

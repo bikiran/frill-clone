@@ -20,6 +20,8 @@ function colvywp_wc_endpoint() { return get_option( 'colvy_ac_endpoint', '' ) ?:
 function colvywp_wc_base()     { $p = wp_parse_url( colvywp_wc_endpoint() ); return ( isset( $p['scheme'] ) ? $p['scheme'] : 'https' ) . '://' . ( isset( $p['host'] ) ? $p['host'] : 'colvy.com' ) . ( isset( $p['port'] ) ? ':' . (int) $p['port'] : '' ); }
 function colvywp_wc_interval() { return (int) get_option( 'colvy_ac_interval', 8 ); }
 function colvywp_wc_ready()    { return colvywp_wc_company_id() !== '' && function_exists( 'WC' ); }
+/** Signs cart calls with the plugin key so Colvy knows they're really from this store. */
+function colvywp_wc_headers() { $h = array( 'Content-Type' => 'application/json' ); $k = (string) colvywp_get( 'api_key' ); if ( $k ) $h['X-Colvy-Key'] = $k; return $h; }
 function colvywp_wc_carts_on() { return get_option( 'colvywp_carts', 'on' ) !== 'off'; }
 
 // Bridge-only installs had just the Company ID — carry it into the shared connection.
@@ -146,7 +148,7 @@ function colvywp_wc_send_cart( $data ) {
 		'page_history' => array_values( is_array( $history ) ? $history : array() ),
 	);
 	wp_remote_post( add_query_arg( 'company', colvywp_wc_company_id(), colvywp_wc_endpoint() ), array(
-		'timeout' => 5, 'blocking' => false, 'headers' => array( 'Content-Type' => 'application/json' ), 'body' => wp_json_encode( $payload ),
+		'timeout' => 5, 'blocking' => false, 'headers' => colvywp_wc_headers(), 'body' => wp_json_encode( $payload ),
 	) );
 }
 
@@ -155,7 +157,7 @@ function colvywp_wc_recovered( $order_id ) {
 	$sid = colvywp_wc_session_id();
 	if ( ! $sid ) return;
 	wp_remote_post( add_query_arg( array( 'company' => colvywp_wc_company_id(), 'recovered' => 1 ), colvywp_wc_endpoint() ), array(
-		'timeout' => 5, 'blocking' => false, 'headers' => array( 'Content-Type' => 'application/json' ),
+		'timeout' => 5, 'blocking' => false, 'headers' => colvywp_wc_headers(),
 		'body'    => wp_json_encode( array( 'external_id' => $sid, 'status' => 'recovered', 'recovered_order_id' => is_object( $order_id ) ? $order_id->get_id() : $order_id ) ),
 	) );
 }
@@ -242,7 +244,7 @@ function colvywp_page_woocommerce() {
 		if ( isset( $_POST['hooks'] ) ) $hooks = colvywp_wc_register_webhooks();
 		if ( isset( $_POST['test'] ) ) {
 			$r = wp_remote_post( add_query_arg( 'company', colvywp_wc_company_id(), colvywp_wc_endpoint() ), array(
-				'timeout' => 15, 'headers' => array( 'Content-Type' => 'application/json' ),
+				'timeout' => 15, 'headers' => colvywp_wc_headers(),
 				'body'    => wp_json_encode( array(
 					'external_id' => 'test_' . time(), 'name' => 'Colvy Test Customer', 'email' => 'carttest@example.com', 'phone' => '0400000000',
 					'items' => array( array( 'name' => 'Test Product', 'quantity' => 1, 'price' => 9.99 ) ), 'total' => 9.99,

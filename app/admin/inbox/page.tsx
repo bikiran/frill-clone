@@ -2615,7 +2615,7 @@ export default function InboxPage() {
         try {
           const p = new URLSearchParams({ companyId })
           if (email) p.set('email', email); else if (phone) p.set('phone', phone)
-          const res = await fetch(`/api/abandoned-carts?${p}`)
+          const res = await authFetch(`/api/abandoned-carts?${p}`)
           const data = await res.json()
           if (!isCurrent()) return
           setAbandonedCarts(data.carts || [])
