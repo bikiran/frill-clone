@@ -176,7 +176,7 @@ export default function TeamPage() {
       const ids = Array.from(new Set(rows.map((m: any) => m.user_id).filter(Boolean)))
       if (ids.length) {
         try {
-          const res = await fetch('/api/team/names', {
+          const res = await authFetch('/api/team/names', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ userIds: ids }),
           })

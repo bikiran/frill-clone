@@ -190,7 +190,7 @@ export default function EmailComposer({
     if (!text) { setErr('Write a draft first, then improve it with AI'); return }
     setAiBusy(true); setErr('')
     try {
-      const res = await fetch('/api/ai', {
+      const res = await authFetch('/api/ai', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ companyId, task: 'improve', text, tone: 'professional' }),
       })

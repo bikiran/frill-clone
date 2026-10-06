@@ -684,7 +684,7 @@ export default function IncomingCallListener({ companyId, agentName, showStatusP
     if (!callId) { setTimeout(() => setEnded(null), 900); return }
     try {
       const { data: sess } = await supabase.auth.getSession()
-      await fetch('/api/calls/feedback', {
+      await authFetch('/api/calls/feedback', {
         method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${sess?.session?.access_token || ''}` },
         body: JSON.stringify({ callId, rating }),
       })

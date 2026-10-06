@@ -1,5 +1,6 @@
 'use client'
 
+import { authFetch } from '@/lib/auth-fetch'
 import { useState, useEffect } from 'react'
 import { useParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
@@ -171,7 +172,7 @@ export default function FormResults() {
       const ids = Array.from(selectedResponses)
       // Delete server-side (service role) — a client-side delete is blocked by
       // RLS and silently removes nothing, so they'd reappear on reload.
-      const res = await fetch('/api/forms/responses', {
+      const res = await authFetch('/api/forms/responses', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'delete', formId, companyId: form?.company_id, ids }),
       })

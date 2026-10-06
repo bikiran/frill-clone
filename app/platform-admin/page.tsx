@@ -274,7 +274,7 @@ function BusinessDetail({ co, onClose, onAction }: { co: any; onClose: () => voi
     let totalFixed = 0
     try {
       for (let round = 0; round < 40; round++) {
-        const res = await fetch('/api/email/backfill-inline', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId: co.id, limit: 50 }) })
+        const res = await authFetch('/api/email/backfill-inline', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId: co.id, limit: 50 }) })
         const d = await res.json()
         if (!res.ok) { setRepair({ busy: false, log: `Error: ${d.error || 'failed'}` }); return }
         totalFixed += d.updated || 0

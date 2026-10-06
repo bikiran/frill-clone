@@ -1,3 +1,4 @@
+import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
@@ -39,6 +40,13 @@ export async function POST(req: NextRequest) {
     const deviceId = String(body?.deviceId || '').slice(0, 128)
     const companyId = String(body?.companyId || '')
     if (!deviceId || !companyId) return NextResponse.json({ error: 'deviceId and companyId are required' }, { status: 400 })
+    // Staff of that workspace only, and a device already registered to someone
+    // else can't be taken over (the upsert is keyed on the device id).
+    if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+    {
+      const { data: prior } = await db.from('call_devices').select('user_id').eq('device_id', deviceId).maybeSingle()
+      if (prior?.user_id && prior.user_id !== userId) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+    }
 
     const platform = ['web', 'ios', 'android'].includes(body?.platform) ? body.platform : 'web'
     const row: any = {

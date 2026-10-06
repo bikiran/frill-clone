@@ -46,6 +46,10 @@ export async function GET(req: NextRequest) {
 
     const db = admin()
     if (!(await callerInCompany(req, db, companyId))) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+    {
+      const { data: own } = await db.from('contacts').select('company_id').eq('id', contactId).maybeSingle()
+      if (!own || own.company_id !== companyId) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+    }
 
     // Resolve the whole customer — every contact row that is the same person —
     // so a review/comment linked to ANY of their channel rows shows on ALL of

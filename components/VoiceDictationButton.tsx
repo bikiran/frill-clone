@@ -1,5 +1,6 @@
 'use client'
 
+import { authFetch } from '@/lib/auth-fetch'
 import { useEffect, useRef, useState } from 'react'
 
 // Colvy Voice for the web — the Whispr-Flow-style dictation the mobile app has.
@@ -90,7 +91,7 @@ export default function VoiceDictationButton({ onText, keyterms, title = 'Voice 
       if (!blob.size) { setErr('Nothing recorded — try again.'); setPhase('idle'); return }
       const audio = await blobToBase64(blob)
       const isMp4 = (mimeRef.current || '').includes('mp4')
-      const res = await fetch('/api/transcribe', {
+      const res = await authFetch('/api/transcribe', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           audio,

@@ -275,7 +275,7 @@ export default function CampaignEditorPage() {
     if (!message.trim()) return
     setAiBusy(true)
     try {
-      const res = await fetch('/api/ai', {
+      const res = await authFetch('/api/ai', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ companyId,
           task: 'improve_writing',

@@ -1,6 +1,7 @@
 'use client'
 
 
+import { authFetch } from '@/lib/auth-fetch'
 import React, { useState, useEffect, useRef } from 'react'
 import { StatusMark } from '@/components/StatusMark'
 import { compressImage, uploadDirect } from '@/lib/upload-attachment'
@@ -524,7 +525,7 @@ function WidgetContent() {
     setAiError('')
     
     try {
-      const res = await fetch('/api/ai', {
+      const res = await authFetch('/api/ai', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ companyId: company?.id,

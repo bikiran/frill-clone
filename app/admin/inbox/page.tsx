@@ -2471,7 +2471,7 @@ export default function InboxPage() {
             const params = new URLSearchParams({ companyId })
             if (c.email) params.set('email', c.email)
             if (c.phone) params.set('phone', c.phone)
-            const res = await fetch(`/api/doa/match?${params.toString()}`)
+            const res = await authFetch(`/api/doa/match?${params.toString()}`)
             const data = await res.json()
             if (data.match) setDoaMatch(true)
           } catch {}
@@ -2502,7 +2502,7 @@ export default function InboxPage() {
               const params = new URLSearchParams({ companyId })
               if (matched.email) params.set('email', matched.email)
               if (matched.phone) params.set('phone', matched.phone)
-              const res = await fetch(`/api/doa/match?${params.toString()}`)
+              const res = await authFetch(`/api/doa/match?${params.toString()}`)
               const data = await res.json()
               if (data.match) setDoaMatch(true)
             } catch {}
@@ -3803,7 +3803,7 @@ export default function InboxPage() {
     if (!selected || messages.length === 0) return
     setGeneratingAi(true)
     try {
-      const res = await fetch('/api/inbox/ai-summary', {
+      const res = await authFetch('/api/inbox/ai-summary', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ companyId,

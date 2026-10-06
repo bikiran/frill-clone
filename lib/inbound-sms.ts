@@ -182,7 +182,7 @@ export async function ingestInboundSms(params: {
     if (text) fetch(`${origin}/api/inbox/capture-contact`, { method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ companyId, conversationId: conv.id, from, text }) })
     // Detect language + translate to English (fire-and-forget) so a non-English
     // text shows a "Translated · English / View original" toggle in the inbox.
-    if (text && insertedMsg?.id) fetch(`${origin}/api/inbox/translate-message`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messageId: insertedMsg.id }) })
+    if (text && insertedMsg?.id) fetch(`${origin}/api/inbox/translate-message`, { method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ messageId: insertedMsg.id }) })
   } catch {}
 
   // "C" / "R" answering a booking reminder — confirm, or send the reschedule link.

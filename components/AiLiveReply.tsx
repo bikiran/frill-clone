@@ -1,5 +1,6 @@
 'use client'
 
+import { authFetch } from '@/lib/auth-fetch'
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 
@@ -57,7 +58,7 @@ export default function AiLiveReply({ conv, onEdit, onChange }: { conv: Conv | n
     setBusy(action); setError('')
     try {
       const { data: { session } } = await supabase.auth.getSession()
-      const res = await fetch('/api/ai/pending', {
+      const res = await authFetch('/api/ai/pending', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}) },
         body: JSON.stringify({ conversationId: conv.id, draftId, action }),

@@ -242,7 +242,7 @@ export default function ImportPage() {
     setLoading(true)
     setError('')
     try {
-      const res = await fetch('/api/import/analyze', {
+      const res = await authFetch('/api/import/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url, platform: detected.id, credentials }),

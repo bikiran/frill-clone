@@ -264,7 +264,7 @@ export default function SettingsPage() {
           // survive a reload without relying on the user having saved settings.
           const recheck = (key: string, dom?: string) => {
             if (!dom) return
-            fetch(`/api/verify-domain?domain=${encodeURIComponent(dom)}`)
+            authFetch(`/api/verify-domain?domain=${encodeURIComponent(dom)}&companyId=${co.id}`)
               .then(r => r.json())
               .then(d => { if (d.verified) setDomainStatus(p => ({ ...p, [key]: 'verified' })) })
               .catch(() => {})
@@ -2386,7 +2386,7 @@ export default function SettingsPage() {
                       if (!boardDomain) return
                       setDomainStatus(p => ({ ...p, board: 'verifying' }))
                       try {
-                        const res = await fetch(`/api/verify-domain?domain=${boardDomain}`)
+                        const res = await authFetch(`/api/verify-domain?domain=${encodeURIComponent(boardDomain)}&companyId=${company?.id}`)
                         const data = await res.json()
                         const ok = !!data.verified
                         setDomainStatus(p => ({ ...p, board: ok ? 'verified' : 'error' }))
@@ -2446,7 +2446,7 @@ export default function SettingsPage() {
                       if (!helpDomain) return
                       setDomainStatus(p => ({ ...p, help: 'verifying' }))
                       try {
-                        const res = await fetch(`/api/verify-domain?domain=${helpDomain}`)
+                        const res = await authFetch(`/api/verify-domain?domain=${encodeURIComponent(helpDomain)}&companyId=${company?.id}`)
                         const data = await res.json()
                         const ok = !!data.verified
                         setDomainStatus(p => ({ ...p, help: ok ? 'verified' : 'error' }))

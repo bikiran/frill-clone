@@ -399,7 +399,7 @@ export default function PublicForm() {
       const res = await fetch('/api/contacts/scan', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ companyId: form?.company_id, image: base64, mediaType: 'image/jpeg' }),
+        body: JSON.stringify({ companyId: form?.company_id, formId: form?.id, image: base64, mediaType: 'image/jpeg' }),
       })
       const json = await res.json().catch(() => ({}))
       if (!res.ok || !json?.contact) {

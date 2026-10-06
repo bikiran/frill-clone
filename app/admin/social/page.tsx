@@ -125,7 +125,7 @@ export default function SocialEngagementPage() {
     if (!companyId || syncing) return
     setSyncing(true); setSyncMsg('')
     try {
-      const res = await fetch('/api/social/sync', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId }) })
+      const res = await authFetch('/api/social/sync', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId }) })
       const d = await res.json()
       if (!res.ok) throw new Error(d.error || 'Sync failed')
       setSyncMsg(`Synced ${d.posts} post(s), ${d.comments} new comment(s), ${d.classified} classified.`)

@@ -88,7 +88,7 @@ export async function POST(req: NextRequest) {
     // Remember the WC customer on the Colvy contact so the next order reuses the
     // same account instead of matching/creating again.
     if (customerId && contactId) {
-      try { await db.from('contacts').update({ woo_customer_id: customerId }).eq('id', contactId) } catch {}
+      try { await db.from('contacts').update({ woo_customer_id: customerId }).eq('id', contactId).eq('company_id', companyId) } catch {}
     }
 
     // ── Assemble line items (respect custom price via a per-item override).

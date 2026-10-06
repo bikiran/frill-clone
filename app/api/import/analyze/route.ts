@@ -1,3 +1,5 @@
+import { createClient } from '@supabase/supabase-js'
+import { callerUser } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 
 async function analyzeCanny(url: string, apiKey?: string) {
@@ -228,6 +230,8 @@ function analyzeGenericKB(name: string, supports: string[]) {
 
 export async function POST(req: NextRequest) {
   try {
+    // Signed-in users only (this fetches other sites on our behalf).
+    if (!(await callerUser(req, createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, { auth: { autoRefreshToken: false, persistSession: false } })))) return NextResponse.json({ error: 'Please sign in again.' }, { status: 401 })
     const { url, platform, credentials } = await req.json()
     if (!url || !platform) return NextResponse.json({ error: 'url and platform are required' }, { status: 400 })
     let result: any

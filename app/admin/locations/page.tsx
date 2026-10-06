@@ -16,7 +16,7 @@ export default function LocationsPage() {
     if (!companyId) return
     setGeocoding(true)
     try {
-      const res = await fetch('/api/locations/geocode', {
+      const res = await authFetch('/api/locations/geocode', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ companyId, force: true }),
       })

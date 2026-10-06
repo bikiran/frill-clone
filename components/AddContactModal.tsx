@@ -1,5 +1,6 @@
 'use client'
 
+import { authFetch } from '@/lib/auth-fetch'
 import { useRef, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 
@@ -94,7 +95,7 @@ export default function AddContactModal({
     setScanning(true)
     try {
       const { data, mediaType } = await toScaledImage(file)
-      const res = await fetch('/api/contacts/scan-card', {
+      const res = await authFetch('/api/contacts/scan-card', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ companyId, image: data, mediaType }),

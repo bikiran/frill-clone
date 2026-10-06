@@ -1,5 +1,6 @@
 'use client'
 
+import { authFetch } from '@/lib/auth-fetch'
 import React, { useState, useRef, useEffect } from 'react'
 
 interface MentionItem {
@@ -63,7 +64,7 @@ export default function MentionTextarea({
     if (!companyId) return
 
     try {
-      const res = await fetch(`/api/users/search?q=${encodeURIComponent(q)}&company_id=${companyId}`)
+      const res = await authFetch(`/api/users/search?q=${encodeURIComponent(q)}&company_id=${companyId}`)
       const data = await res.json()
       setSuggestions([...(data.specialGroups || []), ...(data.users || [])])
     } catch (e) {

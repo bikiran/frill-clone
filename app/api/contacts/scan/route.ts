@@ -14,12 +14,20 @@ export const maxDuration = 60
  */
 export async function POST(req: NextRequest) {
   try {
-    const { companyId, image, mediaType } = await req.json()
+    const { companyId, image, mediaType, formId } = await req.json()
     if (!image || typeof image !== 'string') {
       return NextResponse.json({ error: 'No image provided' }, { status: 400 })
     }
 
-    const guard = await guardAiRequest(req, companyId, 'contact-scan')
+    // The team, or a visitor on one of this business's public forms.
+    let publicOk = false
+    if (formId && companyId) {
+      const { createClient } = await import('@supabase/supabase-js')
+      const db = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, { auth: { autoRefreshToken: false, persistSession: false } })
+      const { data: form } = await db.from('forms').select('company_id').eq('id', formId).maybeSingle()
+      publicOk = !!form && form.company_id === companyId
+    }
+    const guard = await guardAiRequest(req, companyId, 'contact-scan', true, publicOk)
     if (!guard.ok) return guard.response!
 
     const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY

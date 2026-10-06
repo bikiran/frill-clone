@@ -1,3 +1,4 @@
+import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { guardAiRequest } from '@/lib/rate-limit'
 import { createClient } from '@supabase/supabase-js'
@@ -24,6 +25,8 @@ export async function POST(req: NextRequest) {
     if (!key) return NextResponse.json({ error: 'AI is not configured (ANTHROPIC_API_KEY missing).' }, { status: 500 })
 
     const db = admin()
+    // Workspace members only.
+    if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     const { data: review } = await db.from('google_reviews')
       .select('*').eq('company_id', companyId).eq('review_id', reviewId).maybeSingle()
     if (!review) return NextResponse.json({ error: 'Review not found' }, { status: 404 })

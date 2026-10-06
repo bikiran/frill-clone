@@ -1,3 +1,4 @@
+import { memberOr403 } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { syncSocial } from '@/lib/social-sync'
 
@@ -9,6 +10,7 @@ export async function POST(req: NextRequest) {
   try {
     const { companyId } = await req.json()
     if (!companyId) return NextResponse.json({ error: 'companyId required' }, { status: 400 })
+    { const deny = await memberOr403(req, companyId); if (deny) return deny }
     const result = await syncSocial(companyId)
     return NextResponse.json({ ok: true, ...result })
   } catch (e: any) {

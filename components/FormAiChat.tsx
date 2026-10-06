@@ -1,5 +1,6 @@
 'use client'
 
+import { authFetch } from '@/lib/auth-fetch'
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 
@@ -102,7 +103,7 @@ export default function FormAiChat({ open, onClose, formId, current, apply }: {
     try {
       const { data: { session } } = await supabase.auth.getSession()
       const base = currentRef.current
-      const res = await fetch('/api/ai/form', {
+      const res = await authFetch('/api/ai/form', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}) },
         body: JSON.stringify({

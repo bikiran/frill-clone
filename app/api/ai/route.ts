@@ -12,7 +12,11 @@ export async function POST(req: NextRequest) {
 
     // This endpoint calls a paid model. It previously accepted any request from
     // anyone, with no ceiling — a URL anyone could find and hold open.
-    const guard = await guardAiRequest(req, companyId, 'ai')
+    // Tidying up a short text is offered on the public board and the widget;
+    // everything else is for the business's team.
+    const PUBLIC_TASKS = ['improve_writing', 'fix_formatting', 'summarize']
+    const publicOk = PUBLIC_TASKS.includes(task) && typeof text === 'string' && text.length <= 4000
+    const guard = await guardAiRequest(req, companyId, 'ai', true, publicOk)
     if (!guard.ok) return guard.response!
 
     try {

@@ -1,3 +1,4 @@
+import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { DEFAULT_SOCIAL_CATEGORIES, categorySlug } from '@/lib/social'
@@ -17,6 +18,8 @@ export async function GET(req: NextRequest) {
     const companyId = req.nextUrl.searchParams.get('companyId')
     if (!companyId) return NextResponse.json({ error: 'companyId required' }, { status: 400 })
     const db = admin()
+    // Workspace members only.
+    if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
 
     let { data: cats } = await db.from('social_comment_categories')
       .select('*').eq('company_id', companyId).order('sort_order', { ascending: true })
@@ -56,6 +59,8 @@ export async function POST(req: NextRequest) {
     const { companyId, id } = body
     if (!companyId || !id) return NextResponse.json({ error: 'companyId and id required' }, { status: 400 })
     const db = admin()
+    // Workspace members only.
+    if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
 
     const patch: any = { updated_at: new Date().toISOString() }
     for (const f of ['reply_ai_enabled', 'reply_guidelines', 'dm_enabled', 'dm_guidelines']) {

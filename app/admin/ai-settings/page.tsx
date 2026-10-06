@@ -69,7 +69,7 @@ export default function AiSettingsPage() {
   const loadIndex = async (cid: string) => {
     try {
       const { data: { session } } = await supabase.auth.getSession()
-      const res = await fetch(`/api/ai/index-knowledge?companyId=${cid}`, { headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {} })
+      const res = await authFetch(`/api/ai/index-knowledge?companyId=${cid}`, { headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {} })
       setIndex(await res.json())
     } catch {}
   }

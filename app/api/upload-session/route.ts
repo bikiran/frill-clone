@@ -1,3 +1,4 @@
+import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
@@ -23,6 +24,8 @@ export async function POST(req: NextRequest) {
     if (!companyId) return NextResponse.json({ error: 'companyId required' }, { status: 400 })
 
     const db = admin()
+    // Workspace members only.
+    if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     const token = makeToken()
     // Short-lived by design: a QR left on a screen shouldn't stay usable.
     const expiresAt = new Date(Date.now() + (Number(minutes) || 30) * 60 * 1000).toISOString()

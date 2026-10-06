@@ -366,7 +366,7 @@ export default function OrdersPage() {
         members.push({ id: uid, name: m.name || m.display_name || m.email?.split('@')[0] || 'Teammate' })
       }
       const needIds = members.filter(m => !m.name || m.name === 'Teammate').map(m => m.id)
-      if (needIds.length) { try { const r = await fetch('/api/team/names', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userIds: needIds }) }); const names = (await r.json()).names || {}; for (const m of members) if (names[m.id]?.name) m.name = names[m.id].name } catch {} }
+      if (needIds.length) { try { const r = await authFetch('/api/team/names', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userIds: needIds }) }); const names = (await r.json()).names || {}; for (const m of members) if (names[m.id]?.name) m.name = names[m.id].name } catch {} }
       setTeam(members)
 
       loadTagDefs(cid)

@@ -66,7 +66,7 @@ export default function ContactsPage() {
     if (!companyId) return
     setLinkBusy(true)
     try {
-      const res = await fetch('/api/contacts/backfill-identity', {
+      const res = await authFetch('/api/contacts/backfill-identity', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ companyId }),
       })

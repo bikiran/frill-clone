@@ -1,5 +1,6 @@
 'use client'
 
+import { authFetch } from '@/lib/auth-fetch'
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { peekCompanyUser } from '@/lib/client-cache'
@@ -202,7 +203,7 @@ export default function CommandCentrePage() {
     const uids = Array.from(byId.keys())
     if (uids.length) {
       try {
-        const r = await fetch('/api/team/names', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userIds: uids }) })
+        const r = await authFetch('/api/team/names', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userIds: uids }) })
         const d = await r.json(); names = d.names || {}
       } catch {}
     }
