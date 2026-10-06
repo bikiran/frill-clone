@@ -109,7 +109,7 @@ export async function POST(req: NextRequest) {
         const base = String(process.env.NEXT_PUBLIC_SITE_URL || '').replace(/\/$/, '')
         if (base && deliverVia === 'sms') {
           await fetch(`${base}/api/telnyx/sms/send`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({ companyId, conversationId, to: conv?.sms_number, text: content, senderName: createdByName || 'Support', skipChatMessage: true }),
           })
         } else if (base && deliverVia === 'email') {

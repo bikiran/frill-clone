@@ -1,3 +1,4 @@
+import { internalHeaders } from '@/lib/internal-call'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { notifyCompany } from '@/lib/notify'
@@ -136,7 +137,7 @@ async function run(req: NextRequest) {
               if (mem?.phone) {
                 const origin = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
                 await fetch(`${origin}/api/telnyx/sms/send`, {
-                  method: 'POST', headers: { 'Content-Type': 'application/json' },
+                  method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
                   body: JSON.stringify({ companyId, to: mem.phone, text: line, skipChatMessage: true }),
                 })
               }
@@ -157,7 +158,7 @@ async function run(req: NextRequest) {
                 const origin = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
                 if (ct.phone) {
                   await fetch(`${origin}/api/telnyx/sms/send`, {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
                     body: JSON.stringify({ companyId, to: ct.phone, text: custLine, skipChatMessage: true }),
                   })
                 }

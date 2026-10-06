@@ -1,3 +1,4 @@
+import { internalHeaders } from '@/lib/internal-call'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { holidaySet, wallClock, isBlockedDay, nextOpenSlot } from '@/lib/holidays'
@@ -221,7 +222,7 @@ async function run(req: NextRequest) {
           try {
             const base = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
             const res = await fetch(`${base}/api/telnyx/sms/send`, {
-              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
               body: JSON.stringify({ companyId: rr.company_id, conversationId: rr.conversation_id, to: contact.phone, text, senderName: business, skipChatMessage: true }),
             })
             smsSent = res.ok

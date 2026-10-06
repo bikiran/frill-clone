@@ -1051,7 +1051,7 @@ export default function InboxPage() {
 
         if (smsNumber) {
           try {
-            await fetch('/api/telnyx/sms/send', {
+            await authFetch('/api/telnyx/sms/send', {
               method: 'POST', headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ companyId, conversationId: selected.id, to: smsNumber, text, senderName: me, skipChatMessage: true }),
             })
@@ -1161,7 +1161,7 @@ export default function InboxPage() {
       // Shorten the product link for SMS so it isn't a huge ugly URL.
       let smsText = content
       if (smsNumber) {
-        const r = await fetch('/api/telnyx/sms/send', {
+        const r = await authFetch('/api/telnyx/sms/send', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             companyId, conversationId: selected.id, to: smsNumber,
@@ -1849,7 +1849,7 @@ export default function InboxPage() {
       let smsError = ''
       if (phone) {
         try {
-          const res = await fetch('/api/telnyx/sms/send', {
+          const res = await authFetch('/api/telnyx/sms/send', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               companyId, conversationId: convId, to: phone,
@@ -2935,7 +2935,7 @@ export default function InboxPage() {
     }
 
     if (ch === 'instagram' || ch === 'facebook') {
-      const res = await fetch('/api/meta/send', {
+      const res = await authFetch('/api/meta/send', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ conversationId: selected.id, content: fullBody, agentName: me, skipChatMessage: !!opts.silent }),
       })
@@ -2946,7 +2946,7 @@ export default function InboxPage() {
 
     const smsNumber = smsDestination()
     if (ch === 'sms' && smsNumber) {
-      const res = await fetch('/api/telnyx/sms/send', {
+      const res = await authFetch('/api/telnyx/sms/send', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ companyId, conversationId: selected.id, to: smsNumber, text: fullBody, senderName: me, skipChatMessage: !!opts.silent }),
       })
@@ -2967,7 +2967,7 @@ export default function InboxPage() {
     }
     if (smsNumber) {
       try {
-        await fetch('/api/telnyx/sms/send', {
+        await authFetch('/api/telnyx/sms/send', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ companyId, conversationId: selected.id, to: smsNumber, text: fullBody, senderName: me, skipChatMessage: true }),
         })
@@ -3157,7 +3157,7 @@ export default function InboxPage() {
         // to the raw media URL only if the short link couldn't be created).
         if (smsNumber) {
           try {
-            const r = await fetch('/api/telnyx/sms/send', {
+            const r = await authFetch('/api/telnyx/sms/send', {
               method: 'POST', headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 companyId, conversationId: selected.id, to: smsNumber,
@@ -3231,7 +3231,7 @@ export default function InboxPage() {
       if (galleryUrl) parts.push(galleryUrl)
       for (const f of plainFiles) parts.push(`📎 ${f.name}: ${f.url}`)
       try {
-        const r = await fetch('/api/telnyx/sms/send', {
+        const r = await authFetch('/api/telnyx/sms/send', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             companyId, conversationId: convId, to: smsNumber,
@@ -3246,7 +3246,7 @@ export default function InboxPage() {
     } else if (metaCh === 'instagram' || metaCh === 'facebook') {
       for (const a of attachments) {
         try {
-          const r = await fetch('/api/meta/send', {
+          const r = await authFetch('/api/meta/send', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               conversationId: convId, attachmentUrl: a.url, attachmentKind: a.kind,
@@ -3755,7 +3755,7 @@ export default function InboxPage() {
         delivered = 'email'
       } else if (metaCh === 'instagram' || metaCh === 'facebook') {
         try {
-          const r = await fetch('/api/meta/send', {
+          const r = await authFetch('/api/meta/send', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ conversationId: selected.id, content: body, agentName: me, skipChatMessage: true }),
           })
@@ -3764,7 +3764,7 @@ export default function InboxPage() {
         delivered = metaCh
       } else if (smsNumber) {
         try {
-          const r = await fetch('/api/telnyx/sms/send', {
+          const r = await authFetch('/api/telnyx/sms/send', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ companyId, conversationId: selected.id, to: smsNumber, text: body, senderName: me, skipChatMessage: true }),
           })
@@ -4016,7 +4016,7 @@ export default function InboxPage() {
       const me = myName
       if (smsNumber) {
         try {
-          await fetch('/api/telnyx/sms/send', {
+          await authFetch('/api/telnyx/sms/send', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ companyId, conversationId: selected.id, to: smsNumber, text, senderName: me, skipChatMessage: true }),
           })
@@ -4087,7 +4087,7 @@ export default function InboxPage() {
       // On an SMS conversation, text the customer a link to the invoice.
       if (smsNumber) {
         try {
-          await fetch('/api/telnyx/sms/send', {
+          await authFetch('/api/telnyx/sms/send', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ companyId, conversationId: selected.id, to: smsNumber, text: `Invoice #${invoicePreview.orderNumber}`, attachments: [attachment], senderName: me, skipChatMessage: true }),
           })
@@ -4721,7 +4721,7 @@ export default function InboxPage() {
       // doesn't append a second link). Otherwise let the route build the link.
       if (smsNumber) {
         try {
-          await fetch('/api/telnyx/sms/send', {
+          await authFetch('/api/telnyx/sms/send', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               companyId, conversationId: selected.id, to: smsNumber,
@@ -5204,7 +5204,7 @@ export default function InboxPage() {
     // Instagram / Messenger conversations reply through the Meta Send API.
     if ((selected as any).channel === 'instagram' || (selected as any).channel === 'facebook') {
       try {
-        const res = await fetch('/api/meta/send', {
+        const res = await authFetch('/api/meta/send', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ conversationId: selected.id, content, agentName: senderName }),
         })
@@ -5358,7 +5358,7 @@ export default function InboxPage() {
         try { await (supabase as any).from('conversations').update({ active_channel: 'sms' }).eq('id', selected.id) } catch {}
       }
       try {
-        const res = await fetch('/api/telnyx/sms/send', {
+        const res = await authFetch('/api/telnyx/sms/send', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ companyId, conversationId: selected.id, to: smsNumber, text: content, senderName }),
         })
@@ -5487,7 +5487,7 @@ export default function InboxPage() {
       if (smsNumber) {
         // The link is already in the text, so don't pass attachments — the SMS
         // route would append a second link.
-        await fetch('/api/telnyx/sms/send', {
+        await authFetch('/api/telnyx/sms/send', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             companyId, conversationId: selected.id, to: smsNumber,

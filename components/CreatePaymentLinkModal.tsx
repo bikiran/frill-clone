@@ -74,7 +74,7 @@ export default function CreatePaymentLinkModal({
       if (payLink) {
         try {
           if (channel === 'sms' && picked.phone) {
-            await fetch('/api/telnyx/sms/send', {
+            await authFetch('/api/telnyx/sms/send', {
               method: 'POST', headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ companyId, conversationId: convId, to: picked.phone, text: `Here's your secure payment link${description.trim() ? ` for ${description.trim()}` : ''}: ${payLink}`, senderName, skipChatMessage: true }),
             })

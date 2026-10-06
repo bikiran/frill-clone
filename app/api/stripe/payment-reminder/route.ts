@@ -65,13 +65,13 @@ export async function POST(req: NextRequest) {
         sent = 'email'
       } else if (['facebook', 'instagram', 'messenger'].includes(channel)) {
         await fetch(`${base}/api/meta/send`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({ conversationId: pay.conversation_id, content: text, agentName: senderName }),
         })
         sent = channel
       } else if (phone) {
         await fetch(`${base}/api/telnyx/sms/send`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({ companyId, conversationId: pay.conversation_id, to: phone, text, senderName }),
         })
         sent = 'sms'

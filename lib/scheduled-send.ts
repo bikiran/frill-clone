@@ -27,7 +27,7 @@ export async function deliverScheduled(db: any, base: string, sm: any): Promise<
   try {
     if (channel === 'instagram' || channel === 'facebook') {
       const r = await fetch(`${base}/api/meta/send`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ conversationId: conv.id, content, agentName }),
       })
       return r.ok ? { ok: true } : { ok: false, error: (await r.json().catch(() => ({})))?.error || `meta send ${r.status}` }
@@ -53,7 +53,7 @@ export async function deliverScheduled(db: any, base: string, sm: any): Promise<
       }
       if (!to) return { ok: false, error: 'no phone number on this conversation' }
       const r = await fetch(`${base}/api/telnyx/sms/send`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ companyId: conv.company_id, conversationId: conv.id, to, text: content, senderName: agentName }),
       })
       return r.ok ? { ok: true } : { ok: false, error: (await r.json().catch(() => ({})))?.error || `sms ${r.status}` }

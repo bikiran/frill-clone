@@ -123,7 +123,7 @@ export async function deliverAutomatedMessage(params: {
   if (phone) {
     try {
       const res = await fetch(`${origin}/api/telnyx/sms/send`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           companyId, conversationId, to: phone, text,
           senderName: senderName || null,

@@ -1,3 +1,4 @@
+import { internalHeaders } from '@/lib/internal-call'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { computeMatches, maskEmail, maskPhone, type Candidate, type MatchSignals, type IdentityKind } from '@/lib/customer-match'
@@ -321,7 +322,7 @@ async function requestDetails(db: any, conv: any, body: any, req: NextRequest) {
   const message = (body.message && String(body.message).trim()) || REQUEST_DETAILS_MESSAGE
   const base = (process.env.NEXT_PUBLIC_SITE_URL || new URL(req.url).origin).replace(/\/$/, '')
   const res = await fetch(`${base}/api/meta/send`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ conversationId: conv.id, content: message, agentName: body.userName || 'Agent' }),
   })
   const data = await res.json().catch(() => ({}))

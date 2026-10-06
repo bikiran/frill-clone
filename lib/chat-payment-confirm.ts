@@ -126,13 +126,13 @@ export async function confirmChatPayment(
         })
       } else if (['facebook', 'instagram', 'messenger'].includes(channel)) {
         await fetch(`${base}/api/meta/send`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({ conversationId: pay.conversation_id, content: custMsg, agentName: senderName }),
         })
       } else if (phone) {
         // SMS (and the default). The send route logs the outbound bubble itself.
         await fetch(`${base}/api/telnyx/sms/send`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({ companyId: pay.company_id, conversationId: pay.conversation_id, to: phone, text: custMsg, senderName }),
         })
       } else {

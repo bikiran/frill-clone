@@ -1,3 +1,4 @@
+import { internalHeaders } from '@/lib/internal-call'
 // Back-in-stock waitlists ("Notify me when it arrives").
 //
 // Server-only helpers shared by the /api/waitlist routes, the WooCommerce
@@ -228,7 +229,7 @@ export async function notifyWaitlist(db: any, opts: {
       let ok = false, via: 'sms' | 'email' = phone ? 'sms' : 'email', err = ''
       if (phone) {
         const res = await fetch(`${origin}/api/telnyx/sms/send`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({ companyId, conversationId, to: phone, text, senderName: business }),
         })
         const d = await res.json().catch(() => ({}))

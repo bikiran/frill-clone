@@ -1,3 +1,4 @@
+import { internalHeaders } from '@/lib/internal-call'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
@@ -114,7 +115,7 @@ export async function POST(req: NextRequest) {
         try {
           const text = `${mentionedBy || 'A teammate'} mentioned you in ${where}${safe ? `: ${String(safe).slice(0, 120)}` : ''}\n${link}`
           const r = await fetch(`${siteBase}/api/telnyx/sms/send`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({ companyId, to: m.phone, text, skipChatMessage: true }),
           })
           if (r.ok) smsSent++

@@ -5,6 +5,8 @@ import { resolveSmsSender, isLandlineRejection } from '@/lib/sms-provider'
 import { trackLinks, applyTrackedLinks, type TrackedLink } from '@/lib/link-tracking'
 import { isExternalSendBlocked, DEMO_BLOCK_MESSAGE, logBlockedSend } from '@/lib/demo-guard'
 import { SmsQuotaError } from '@/lib/sms-quota'
+import { requireCompanyAccess } from '@/lib/company-access'
+import { isInternalCall } from '@/lib/internal-call'
 
 function admin() {
   return createClient(
@@ -30,6 +32,16 @@ export async function POST(req: NextRequest) {
     if (!companyId) return NextResponse.json({ error: 'Missing companyId' }, { status: 400 })
 
     const db = admin()
+    // Texts go out on the workspace's own number (and cost money), so only its
+    // members (Bearer) or our own server routes may send. A conversation id
+    // must belong to the same workspace.
+    if (!isInternalCall(req) && !(await requireCompanyAccess(req, db, companyId)).ok) {
+      return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+    }
+    if (conversationId) {
+      const { data: owner } = await db.from('conversations').select('company_id').eq('id', conversationId).maybeSingle()
+      if (owner && owner.company_id !== companyId) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+    }
     if (await isExternalSendBlocked(companyId, db)) { logBlockedSend(companyId, 'sms', db); return NextResponse.json({ error: DEMO_BLOCK_MESSAGE }, { status: 403 }) }
 
     // Resolve whichever provider this company sends SMS through (Telnyx by

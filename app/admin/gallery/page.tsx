@@ -282,7 +282,7 @@ export default function GalleryPage() {
       if (phone) {
         for (const att of attachments) {
           try {
-            await fetch('/api/telnyx/sms/send', {
+            await authFetch('/api/telnyx/sms/send', {
               method: 'POST', headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ companyId, conversationId: convId, to: phone, text: '', attachments: [att], senderName: me, skipChatMessage: true }),
             })
