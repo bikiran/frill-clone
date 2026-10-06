@@ -21,6 +21,8 @@ const FEATURES = [
   { icon: 'pen', title: 'Auto-summaries', desc: 'Every long thread and call, TL;DR’d in a line.' },
   { icon: 'target', title: 'Auto-routing', desc: 'Sends each conversation to the right person or team.' },
   { icon: 'bell', title: 'Follow-ups', desc: 'Creates reminders and tasks so nothing slips.' },
+  { icon: 'mic', title: 'Voice typing', desc: 'Speak a reply; Colvy Voice writes it up clean, punctuated and ready to send.' },
+  { icon: 'phone', title: 'Call transcripts', desc: 'Every call transcribed, with the key points pulled out for you.' },
 ]
 
 // Concrete, grounded actions the assistant can take.
