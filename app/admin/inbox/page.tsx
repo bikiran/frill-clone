@@ -9177,6 +9177,7 @@ export default function InboxPage() {
                   fromLabel={emailFromLabel}
                   signature={emailSignature}
                   agentName={myName}
+                  keyterms={[contact?.name, (contact as any)?.company_name].filter(Boolean) as string[]}
                   onAiAssist={() => logAiUpdate('Reply drafted with Colvy AI')}
                   onSent={async () => {
                     const { data: msgs } = await (supabase as any).from('messages').select('*').eq('conversation_id', selected.id).order('created_at', { ascending: true })

@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useAiDraft, AiDraftButton, AiDraftInfo } from '@/components/AiDraft'
 import { uploadDirect } from '@/lib/upload-attachment'
 import { supabase } from '@/lib/supabase'
+import VoiceDictationButton from '@/components/VoiceDictationButton'
 
 // Coax-style email composer: From (the mailbox) · To · Cc · Subject · Signature
 // · body. The signature is chosen from the company's saved library (or "None"),
@@ -21,10 +22,11 @@ interface Props {
   agentName?: string
   onSent: () => void
   onAiAssist?: () => void       // fired (once) when the draft is written/improved with AI
+  keyterms?: string[]           // names etc. that help voice typing spell things right
 }
 
 export default function EmailComposer({
-  conversationId, companyId, toEmail, defaultSubject, fromLabel, signature, agentName, onSent, onAiAssist,
+  conversationId, companyId, toEmail, defaultSubject, fromLabel, signature, agentName, onSent, onAiAssist, keyterms,
 }: Props) {
   const [to, setTo] = useState(toEmail)
   const [cc, setCc] = useState('')
@@ -45,6 +47,31 @@ export default function EmailComposer({
   const bodyText = () => (editorRef.current?.innerText || '').trim()
   const exec = (cmd: string, val?: string) => { editorRef.current?.focus(); document.execCommand(cmd, false, val); syncBody() }
   const insertAtCursor = (text: string) => { editorRef.current?.focus(); document.execCommand('insertText', false, text); syncBody() }
+
+  // Voice typing is asynchronous (record → stop → transcribe), and clicking the
+  // mic takes focus out of the body. Remember where the caret was in the body
+  // and drop the dictated text back there; with no caret yet, append at the end.
+  const lastRangeRef = useRef<Range | null>(null)
+  const rememberCaret = () => {
+    const sel = typeof window !== 'undefined' ? window.getSelection() : null
+    if (sel && sel.rangeCount && editorRef.current?.contains(sel.anchorNode)) lastRangeRef.current = sel.getRangeAt(0).cloneRange()
+  }
+  const insertDictation = (text: string) => {
+    const el = editorRef.current
+    if (!el || !text.trim()) return
+    el.focus()
+    const sel = window.getSelection()
+    const r = lastRangeRef.current
+    if (sel && r && el.contains(r.startContainer)) { sel.removeAllRanges(); sel.addRange(r) }
+    else if (sel) { const end = document.createRange(); end.selectNodeContents(el); end.collapse(false); sel.removeAllRanges(); sel.addRange(end) }
+    // A space between the existing text and the new words, unless at a line start.
+    const before = (() => {
+      try { const rr = sel?.getRangeAt(0); if (!rr) return ''; const pre = rr.cloneRange(); pre.selectNodeContents(el); pre.setEnd(rr.startContainer, rr.startOffset); return pre.toString() } catch { return '' }
+    })()
+    const needsSpace = before.length > 0 && !/\s$/.test(before)
+    document.execCommand('insertText', false, (needsSpace ? ' ' : '') + text.trim())
+    syncBody(); rememberCaret()
+  }
   const EMOJIS = ['😀', '😊', '🙏', '👍', '🎉', '✅', '❤️', '🐟', '📦', '⭐', '😅', '🙌']
 
   // ── Draft persistence ───────────────────────────────────────────────────────
@@ -334,6 +361,9 @@ export default function EmailComposer({
       {/* Rich-text formatting toolbar */}
       <style>{`.email-rte[data-empty="true"]:before{content:attr(data-ph);color:#9ca3af;pointer-events:none;}`}</style>
       <div style={{ display: 'flex', alignItems: 'center', gap: 2, padding: '6px 8px', borderBottom: '1px solid var(--border)', flexWrap: 'wrap', position: 'relative' }}>
+        {/* Colvy Voice — dictate the email (same as the chat reply box). */}
+        <VoiceDictationButton size={28} soft title="Voice type" keyterms={keyterms} onText={insertDictation} />
+        <span style={{ width: 1, height: 18, background: 'var(--border)', margin: '0 4px' }} />
         {([
           ['bold', 'B', { fontWeight: 800 }],
           ['italic', 'i', { fontStyle: 'italic', fontFamily: 'Georgia, serif' }],
@@ -394,7 +424,8 @@ export default function EmailComposer({
           </div>
         )}
       </div>
-      <div ref={editorRef} contentEditable suppressContentEditableWarning onInput={syncBody}
+      <div ref={editorRef} contentEditable suppressContentEditableWarning onInput={() => { syncBody(); rememberCaret() }}
+        onKeyUp={rememberCaret} onMouseUp={rememberCaret} onBlur={rememberCaret}
         className="email-rte" data-ph="Write your reply…" data-empty={(!bodyHtml || bodyHtml === '<br>') ? 'true' : 'false'}
         style={{ minHeight: 130, maxHeight: 300, overflowY: 'auto', outline: 'none', padding: '12px', fontSize: 13.5, lineHeight: 1.55, color: 'var(--ink)' }} />
 
