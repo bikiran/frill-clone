@@ -74,13 +74,13 @@ export async function GET(req: NextRequest) {
     if (byId.size) {
       try {
         const { data: clicks } = await db.from('link_clicks')
-          .select('link_id, created_at, device, os, browser, city, region, country')
-          .in('link_id', Array.from(byId.keys())).order('created_at', { ascending: false }).limit(400)
+          .select('link_id, clicked_at, device, os, browser, city, region, country')
+          .in('link_id', Array.from(byId.keys())).order('clicked_at', { ascending: false }).limit(400)
         for (const c of clicks || []) {
           const code = byId.get(c.link_id)
           if (!code) continue
           const l = links[code]
-          if (l.events.length < 12) l.events.push({ at: c.created_at, device: c.device, os: c.os, browser: c.browser, city: c.city, region: c.region, country: c.country })
+          if (l.events.length < 12) l.events.push({ at: c.clicked_at, device: c.device, os: c.os, browser: c.browser, city: c.city, region: c.region, country: c.country })
         }
         // Counter can lag the event table (or vice-versa for old links) — show the larger.
         for (const code of Object.keys(links)) links[code].clicks = Math.max(links[code].clicks, links[code].events.length)
