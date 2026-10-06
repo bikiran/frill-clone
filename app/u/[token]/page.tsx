@@ -1,5 +1,6 @@
 'use client'
 
+import { authFetch } from '@/lib/auth-fetch'
 import { useEffect, useState, useRef } from 'react'
 import { useParams } from 'next/navigation'
 import { uploadDirect, compressImage } from '@/lib/upload-attachment'
@@ -89,7 +90,7 @@ export default function UploadPage() {
     if (!token) return
     ;(async () => {
       try {
-        const res = await fetch(`/api/media-requests?token=${token}`)
+        const res = await authFetch(`/api/media-requests?token=${token}`)
         const d = await res.json()
         if (!res.ok) { setError(d.error === 'not_found' ? 'This upload link is invalid.' : (d.error || 'Something went wrong.')); }
         else setData(d)
@@ -127,7 +128,7 @@ export default function UploadPage() {
         fd.append('file', file)
         patch(item.id, { progress: 0.9 })
       }
-      const res = await fetch('/api/media-requests/upload', { method: 'POST', body: fd })
+      const res = await authFetch('/api/media-requests/upload', { method: 'POST', body: fd })
       const d = await res.json().catch(() => ({}))
       if (!res.ok) {
         // 410 = expired or cancelled, 404 = no such link: the link is the

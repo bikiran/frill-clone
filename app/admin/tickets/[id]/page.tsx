@@ -1,5 +1,6 @@
 'use client'
 
+import { authFetch } from '@/lib/auth-fetch'
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
@@ -47,7 +48,7 @@ export default function TicketDetail() {
   }
 
   const loadThread = async () => {
-    try { const r = await fetch(`/api/tickets/${ticketId}/reply`); const d = await r.json(); setMessages(d.messages || []) } catch {}
+    try { const r = await authFetch(`/api/tickets/${ticketId}/reply`); const d = await r.json(); setMessages(d.messages || []) } catch {}
   }
 
   useEffect(() => {
@@ -58,7 +59,7 @@ export default function TicketDetail() {
       if (data?.company_id) {
         try { const { data: co } = await (supabase as any).from('companies').select('id,name,slug,accent_color').eq('id', data.company_id).maybeSingle(); setCompany(co) } catch {}
         try {
-          const r = await fetch(`/api/tickets/settings?companyId=${data.company_id}`, { headers: await authed() })
+          const r = await authFetch(`/api/tickets/settings?companyId=${data.company_id}`, { headers: await authed() })
           if (r.ok) { const d = await r.json(); setSla(resolveSla(d.sla)); setTeam(d.team || []) }
         } catch {}
         try { const { data: arts } = await (supabase as any).from('help_articles').select('id,title,slug').eq('company_id', data.company_id).eq('status', 'published').limit(4); setArticles(arts || []) } catch {}
@@ -82,7 +83,7 @@ export default function TicketDetail() {
     const prev = ticket
     setTicket((t: any) => ({ ...t, ...patch }))
     try {
-      const res = await fetch(`/api/tickets/${ticketId}`, { method: 'PATCH', headers: await authed(), body: JSON.stringify(patch) })
+      const res = await authFetch(`/api/tickets/${ticketId}`, { method: 'PATCH', headers: await authed(), body: JSON.stringify(patch) })
       const d = await res.json()
       if (!res.ok) throw new Error(d.error || 'Could not update')
       if (d.ticket) setTicket(d.ticket)
@@ -95,7 +96,7 @@ export default function TicketDetail() {
     setSending(true); setToast('')
     try {
       const { data: { session } } = await supabase.auth.getSession()
-      const res = await fetch(`/api/tickets/${ticketId}/reply`, {
+      const res = await authFetch(`/api/tickets/${ticketId}/reply`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}) },
         body: JSON.stringify({ kind: tab, body: draft.trim(), authorName: session?.user?.email?.split('@')[0] || 'Agent' }),

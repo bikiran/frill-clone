@@ -215,7 +215,7 @@ export default function CampaignEditorPage() {
     debounce.current = setTimeout(async () => {
       setPreviewing(true); setPreviewError('')
       try {
-        const res = await fetch('/api/campaigns/audience', {
+        const res = await authFetch('/api/campaigns/audience', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ companyId, filter: buildFilter(), channel: campaign?.channel || 'sms' }),
         })
@@ -314,7 +314,7 @@ export default function CampaignEditorPage() {
     if (!companyId) return
     setPickBusy(true)
     try {
-      const res = await fetch(
+      const res = await authFetch(
         `/api/campaigns/contacts?companyId=${companyId}&q=${encodeURIComponent(pickQuery)}&channel=${campaign?.channel || 'sms'}`
       )
       const d = await res.json()
@@ -345,7 +345,7 @@ export default function CampaignEditorPage() {
     if (!cCode.trim() || !cAmount || !companyId) return
     setCouponBusy(true)
     try {
-      const res = await fetch('/api/campaigns/coupon', {
+      const res = await authFetch('/api/campaigns/coupon', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           companyId, code: cCode.trim(), discountType: cType, amount: cAmount,
@@ -496,7 +496,7 @@ export default function CampaignEditorPage() {
         updated_at: new Date().toISOString(),
       }).eq('id', campaignId)
 
-      const res = await fetch('/api/campaigns/send', {
+      const res = await authFetch('/api/campaigns/send', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ companyId, campaignId, confirm: 'SEND' }),
       })

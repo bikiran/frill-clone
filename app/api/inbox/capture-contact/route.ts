@@ -1,3 +1,4 @@
+import { isInternalCall } from '@/lib/internal-call'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { captureContactFromSms } from '@/lib/contact-capture'
@@ -17,6 +18,8 @@ function admin() {
 // message ingestion is never delayed or blocked by it.
 export async function POST(req: NextRequest) {
   try {
+    // Only our own server (inbound SMS handling) calls this.
+    if (!isInternalCall(req)) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     const { companyId, conversationId, from, text } = await req.json()
     if (!companyId || !conversationId || !from) {
       return NextResponse.json({ ok: false, error: 'Missing companyId, conversationId or from' }, { status: 400 })

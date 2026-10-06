@@ -1,4 +1,5 @@
 'use client'
+import { authFetch } from '@/lib/auth-fetch'
 import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
@@ -98,7 +99,7 @@ export default function SocialEngagementPage() {
     setComments(cs => cs.map(x => x.id === c.id ? { ...x, contact_id: contact?.id || null, contact_name: contact?.name || null } : x))
     setLinkFor(null)
     try {
-      await fetch('/api/social/comments', {
+      await authFetch('/api/social/comments', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ companyId, action: 'link_contact', commentId: c.id, contactId: contact?.id || null }),
       })
@@ -137,7 +138,7 @@ export default function SocialEngagementPage() {
   const act = async (c: Comment, action: string, extra: any = {}) => {
     if (!companyId) return
     try {
-      const res = await fetch('/api/social/comments', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, action, commentId: c.id, ...extra }) })
+      const res = await authFetch('/api/social/comments', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, action, commentId: c.id, ...extra }) })
       const d = await res.json()
       if (!res.ok) throw new Error(d.error || 'Action failed')
       return d

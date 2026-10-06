@@ -1,5 +1,6 @@
 'use client'
 
+import { authFetch } from '@/lib/auth-fetch'
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -191,7 +192,7 @@ export default function NewAnnouncementPage() {
 
       // Fire subscriber notifications (in-app + email) in the background
       if (shouldNotify && savedId) {
-        fetch('/api/announcements/notify', {
+        authFetch('/api/announcements/notify', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ announcementId: savedId, companyId: company.id }),

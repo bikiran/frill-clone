@@ -1,3 +1,4 @@
+import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { notifyCompany } from '@/lib/notify'
@@ -31,6 +32,8 @@ export async function POST(req: NextRequest) {
     if (!companyId || !subject) return NextResponse.json({ error: 'Missing companyId or subject' }, { status: 400 })
 
     const db = admin()
+    // Workspace members only.
+    if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
 
     // The contact's details, in case a legacy NOT NULL column (e.g. "email")
     // needs filling — see FALLBACK 0 below.
@@ -183,6 +186,8 @@ export async function GET(req: NextRequest) {
     const conversationId = req.nextUrl.searchParams.get('conversationId')
     if (!companyId) return NextResponse.json({ error: 'Missing companyId' }, { status: 400 })
     const db = admin()
+    // Workspace members only.
+    if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     let q = db.from('support_tickets').select('*').eq('company_id', companyId)
     if (conversationId) q = q.eq('conversation_id', conversationId)
     const { data } = await q.order('created_at', { ascending: false })

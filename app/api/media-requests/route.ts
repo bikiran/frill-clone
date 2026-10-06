@@ -1,3 +1,5 @@
+import { isInternalCall } from '@/lib/internal-call'
+import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { resolveSmsSender } from '@/lib/sms-provider'
@@ -23,6 +25,8 @@ export async function POST(req: NextRequest) {
     const { companyId, conversationId, contactId, prompt, accept, maxFiles, expiryHours, createdBy, deliveryChannel } = await req.json()
     if (!companyId) return NextResponse.json({ error: 'Missing companyId' }, { status: 400 })
     const db = admin()
+    // Workspace members only.
+    if (!isInternalCall(req) && !(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
 
     const token = genToken()
     const expires_at = expiryHours && Number(expiryHours) > 0 ? new Date(Date.now() + Number(expiryHours) * 3600 * 1000).toISOString() : null

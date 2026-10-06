@@ -1,3 +1,5 @@
+import { isInternalCall } from '@/lib/internal-call'
+import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { trackLinksInText } from '@/lib/link-tracking'
@@ -27,6 +29,9 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
   try {
     const { id } = await ctx.params
     const db = admin()
+    // Members of the ticket's workspace only.
+    const { data: tk } = await db.from('support_tickets').select('company_id').eq('id', id).maybeSingle()
+    if (!tk || !(await requireCompanyAccess(req, db, tk.company_id)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     // If the table isn't there yet (migration not run), degrade to an empty thread.
     const { data, error } = await db.from('ticket_messages').select('*').eq('ticket_id', id).order('created_at', { ascending: true })
     if (error) return NextResponse.json({ messages: [], needsMigration: true })
@@ -51,6 +56,8 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
 
     const { data: ticket } = await db.from('support_tickets').select('*').eq('id', id).maybeSingle()
     if (!ticket) return NextResponse.json({ error: 'Ticket not found' }, { status: 404 })
+    // Emails the customer from the business's mailbox: members, or our own server (Colvy AI).
+    if (!isInternalCall(req) && !(await requireCompanyAccess(req, db, ticket.company_id)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
 
     let emailed = false
     let emailNote: string | null = null

@@ -1,3 +1,4 @@
+import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getGoogleToken, listLocations, syncReviews, replyToReview } from '@/lib/google-business'
@@ -18,6 +19,8 @@ export async function GET(req: NextRequest) {
     const wantLocations = req.nextUrl.searchParams.get('locations') === '1'
     if (!companyId) return NextResponse.json({ error: 'companyId required' }, { status: 400 })
     const db = admin()
+    // Workspace members only.
+    if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
 
     const { data: accs } = await db.from('google_business_accounts')
       .select('*').eq('company_id', companyId).limit(1)
@@ -51,6 +54,8 @@ export async function POST(req: NextRequest) {
     const { companyId, action } = body
     if (!companyId || !action) return NextResponse.json({ error: 'companyId and action required' }, { status: 400 })
     const db = admin()
+    // Workspace members only.
+    if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
 
     if (action === 'select_location') {
       const { accountName, locationName, title } = body

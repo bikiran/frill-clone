@@ -3403,7 +3403,7 @@ export default function InboxPage() {
               mentioned_user: uid, mentioned_by: author, preview: body.slice(0, 140),
             }))
           )
-          fetch('/api/mentions/notify', {
+          authFetch('/api/mentions/notify', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               companyId, conversationId: selected.id, userIds: ids,
@@ -4752,7 +4752,7 @@ export default function InboxPage() {
     if (!companyId || !ticketSubject.trim()) return
     setTicketSaving(true)
     try {
-      const res = await fetch('/api/tickets', {
+      const res = await authFetch('/api/tickets', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           companyId, conversationId: selected?.id, contactId: contact?.id,
@@ -5162,7 +5162,7 @@ export default function InboxPage() {
           )
           // Also email them. Fire-and-forget: the in-app notification is already
           // saved, so a mail problem must not block the note being posted.
-          fetch('/api/mentions/notify', {
+          authFetch('/api/mentions/notify', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               companyId, conversationId: selected.id, userIds: mentionedIds,

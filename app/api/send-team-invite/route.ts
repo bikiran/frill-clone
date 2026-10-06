@@ -1,12 +1,31 @@
+import { createClient } from '@supabase/supabase-js'
+import { memberOr403 } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 
 export const dynamic = 'force-dynamic'
 
 export async function POST(req: NextRequest) {
   try {
-    const { email, companyName, role, inviteLink, inviterName } = await req.json()
-
+    const body = await req.json()
+    const { email, companyId } = body
     if (!email) return NextResponse.json({ error: 'Email required' }, { status: 400 })
+    // Members only. This sent any words and any link from invites@updates.colvy.com
+    // to anyone, so the business name now comes from the database, the link must
+    // be a Colvy join link, and everything shown is escaped.
+    { const deny = await memberOr403(req, companyId); if (deny) return deny }
+    const esc = (v: any) => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' } as any)[c])
+    const db = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, { auth: { autoRefreshToken: false, persistSession: false } }) as any
+    const { data: co } = await db.from('companies').select('name').eq('id', companyId).maybeSingle()
+    const companyName = esc(co?.name || 'the team')
+    const inviterName = esc(String(body.inviterName || 'A teammate').slice(0, 80))
+    const role = ['viewer', 'editor', 'admin'].includes(body.role) ? body.role : 'editor'
+    let inviteLink = ''
+    try {
+      const u = new URL(String(body.inviteLink || ''))
+      const okHost = u.hostname === 'colvy.com' || u.hostname.endsWith('.colvy.com') || u.hostname === 'localhost'
+      if (okHost && u.pathname === '/team/join') inviteLink = esc(u.toString())
+    } catch {}
+    if (!inviteLink) return NextResponse.json({ error: 'Invalid invite link' }, { status: 400 })
 
     // Send via Resend if API key available
     if (process.env.RESEND_API_KEY) {

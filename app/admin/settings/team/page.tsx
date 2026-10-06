@@ -1,5 +1,6 @@
 'use client'
 
+import { authFetch } from '@/lib/auth-fetch'
 import { newInviteToken } from '@/lib/invite-token'
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
@@ -68,10 +69,11 @@ export default function TeamPage() {
       try {
         const inviteLink = `${typeof window !== 'undefined' ? window.location.origin : 'https://colvy.com'}/team/join?company=${company.slug}&email=${encodeURIComponent(inviteEmail)}&token=${invite.token}`
         
-        await fetch('/api/send-team-invite', {
+        await authFetch('/api/send-team-invite', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
+            companyId: company.id,
             email: inviteEmail,
             companyName: company.name,
             role: inviteRole,

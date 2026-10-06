@@ -62,3 +62,17 @@ export async function callerStripeCustomer(req: NextRequest, db: any): Promise<s
   const { data } = await db.from('subscriptions').select('stripe_customer_id').eq('user_id', user.id).maybeSingle()
   return data?.stripe_customer_id || null
 }
+
+// For routes without a db client at hand: a 403 response unless the caller is
+// a workspace member (or our own server, when allowInternal), else null.
+export async function memberOr403(req: NextRequest, companyId: string | null | undefined, opts?: { allowInternal?: boolean }) {
+  const { NextResponse } = await import('next/server')
+  if (opts?.allowInternal) {
+    const { isInternalCall } = await import('@/lib/internal-call')
+    if (isInternalCall(req)) return null
+  }
+  const { createClient } = await import('@supabase/supabase-js')
+  const db = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, { auth: { autoRefreshToken: false, persistSession: false } })
+  if ((await requireCompanyAccess(req, db, companyId)).ok) return null
+  return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+}

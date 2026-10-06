@@ -1,5 +1,6 @@
 'use client'
 
+import { authFetch } from '@/lib/auth-fetch'
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { confirmDialog } from '@/components/ConfirmDialog'
@@ -42,7 +43,7 @@ export default function MetaChannelsPage() {
   }, [])
 
   const load = async (cid: string) => {
-    const res = await fetch(`/api/meta/channels?companyId=${cid}`)
+    const res = await authFetch(`/api/meta/channels?companyId=${cid}`)
     const d = await res.json()
     setConfigured(d.configured !== false)
     setMetaRootOrigin(d.rootOrigin || '')
@@ -53,7 +54,7 @@ export default function MetaChannelsPage() {
   }
 
   const api = async (body: any) => {
-    await fetch('/api/meta/channels', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+    await authFetch('/api/meta/channels', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
     if (companyId) await load(companyId)
   }
 

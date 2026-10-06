@@ -1,5 +1,6 @@
 'use client'
 
+import { authFetch } from '@/lib/auth-fetch'
 import { newInviteToken } from '@/lib/invite-token'
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
@@ -269,9 +270,10 @@ export default function TeamPage() {
       const invitedEmail = inviteEmail.trim().toLowerCase()
       let emailed = false
       try {
-        const res = await fetch('/api/send-team-invite', {
+        const res = await authFetch('/api/send-team-invite', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
+            companyId: company.id,
             email: invitedEmail,
             companyName: company?.name || 'the team',
             role: inviteRole,
@@ -422,10 +424,10 @@ export default function TeamPage() {
       }
       const origin = typeof window !== 'undefined' ? window.location.origin : 'https://colvy.com'
       const inviteLink = `${origin}/team/join?company=${encodeURIComponent(company.slug)}&email=${encodeURIComponent(m.email)}&role=${m.role}&token=${invite.token}`
-      const res = await fetch('/api/send-team-invite', {
+      const res = await authFetch('/api/send-team-invite', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          email: m.email, companyName: company?.name || 'the team', role: m.role, inviteLink,
+          companyId: company.id, email: m.email, companyName: company?.name || 'the team', role: m.role, inviteLink,
           inviterName: user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'A teammate',
         }),
       })

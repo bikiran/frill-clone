@@ -29,9 +29,9 @@ export async function GET(req: NextRequest) {
   try {
     const secret = process.env.CRON_SECRET
     if (secret) {
+      // Header only: a ?secret= in the URL ends up in logs.
       const auth = req.headers.get('authorization')
-      const provided = req.nextUrl.searchParams.get('secret')
-      if (auth !== `Bearer ${secret}` && provided !== secret) {
+      if (auth !== `Bearer ${secret}`) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
       }
     }

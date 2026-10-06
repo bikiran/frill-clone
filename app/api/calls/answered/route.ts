@@ -1,3 +1,4 @@
+import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
@@ -47,10 +48,14 @@ async function agentName(db: any, userId: string, companyId: string, fallback?: 
  */
 export async function POST(req: NextRequest) {
   try {
-    const { companyId, userId, from, callId, callSid, name: nameIn } = await req.json().catch(() => ({}))
-    if (!companyId || !userId) return NextResponse.json({ error: 'companyId and userId required' }, { status: 400 })
+    const { companyId, from, callId, callSid, name: nameIn } = await req.json().catch(() => ({}))
+    if (!companyId) return NextResponse.json({ error: 'companyId required' }, { status: 400 })
 
     const db = admin()
+    // Members only, and who answered comes from the sign-in, not the request.
+    const access = await requireCompanyAccess(req, db, companyId)
+    if (!access.ok || !access.userId) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+    const userId: string = access.userId
     const name = await agentName(db, userId, companyId, nameIn)
 
     // Find the call row to claim: the specific one by sid/id if given, else the

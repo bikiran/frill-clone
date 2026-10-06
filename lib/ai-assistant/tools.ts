@@ -1213,7 +1213,7 @@ export async function executeAction(db: SupabaseClient, ctx: AssistantContext, n
     if (!t) return { ok: false, error: 'Ticket not found.' }
     let d: any = {}
     try {
-      const res = await fetch(`${siteBase(ctx)}/api/tickets/${t.id}/reply`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind: 'reply', body: text, authorName: ctx.userName }) })
+      const res = await fetch(`${siteBase(ctx)}/api/tickets/${t.id}/reply`, { method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ kind: 'reply', body: text, authorName: ctx.userName }) })
       d = await res.json().catch(() => ({}))
       if (!res.ok) return { ok: false, error: d?.error || `Reply failed (${res.status})` }
     } catch (e: any) { return { ok: false, error: e?.message || 'Reply failed' } }
@@ -1236,7 +1236,7 @@ export async function executeAction(db: SupabaseClient, ctx: AssistantContext, n
     const { data: c } = await D.from('social_comments').select('id, author_name, platform').eq('company_id', ctx.companyId).eq('id', String(args?.commentId || '')).maybeSingle()
     if (!c || !text) return { ok: false, error: 'Comment not found.' }
     try {
-      const res = await fetch(`${siteBase(ctx)}/api/social/comments`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId: ctx.companyId, action: 'reply', commentId: c.id, message: text, byAi: true }) })
+      const res = await fetch(`${siteBase(ctx)}/api/social/comments`, { method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ companyId: ctx.companyId, action: 'reply', commentId: c.id, message: text, byAi: true }) })
       const d = await res.json().catch(() => ({}))
       if (!res.ok || d?.ok === false) return { ok: false, error: d?.error || `Reply failed (${res.status})` }
     } catch (e: any) { return { ok: false, error: e?.message || 'Reply failed' } }
@@ -1279,7 +1279,7 @@ export async function executeAction(db: SupabaseClient, ctx: AssistantContext, n
       const text = String(args?.text || '').trim() || 'Could you send us a few photos?'
       let link = '', texted = false
       try {
-        const res = await fetch(`${siteBase(ctx)}/api/media-requests`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId: ctx.companyId, conversationId, contactId: r.contact?.id || null, prompt: text, accept: args?.photosOnly ? ['image'] : ['image', 'video'], maxFiles: 10, expiryHours: null, createdBy: ctx.userName, deliveryChannel: channel }) })
+        const res = await fetch(`${siteBase(ctx)}/api/media-requests`, { method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ companyId: ctx.companyId, conversationId, contactId: r.contact?.id || null, prompt: text, accept: args?.photosOnly ? ['image'] : ['image', 'video'], maxFiles: 10, expiryHours: null, createdBy: ctx.userName, deliveryChannel: channel }) })
         const d = await res.json().catch(() => ({}))
         if (!res.ok || !d?.link) return { ok: false, error: d?.error || 'Could not create the upload link.' }
         link = d.link; texted = !!d.texted
