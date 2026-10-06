@@ -862,6 +862,24 @@ export default function InboxPage() {
   const [showScheduleMsg, setShowScheduleMsg] = useState(false)
   const [scheduleMsgAt, setScheduleMsgAt] = useState('')
   const [schedulingMsg, setSchedulingMsg] = useState(false)
+  // Replies scheduled on the open conversation, shown above the reply box so
+  // they can be edited, sent now or cancelled.
+  const [scheduledList, setScheduledList] = useState<any[]>([])
+  const [editingScheduled, setEditingScheduled] = useState<{ id: string; message: string; at: string } | null>(null)
+  const [scheduledBusy, setScheduledBusy] = useState('')
+  const selectedIdRef = useRef<string | null>(null)
+  selectedIdRef.current = selected?.id || null
+  // Load them when a conversation opens, and keep checking while any are
+  // waiting so ones the scheduler sends drop off the list on their own.
+  useEffect(() => {
+    const id = selected?.id
+    setScheduledList([]); setEditingScheduled(null)
+    if (!id) return
+    loadScheduled(id)
+    const iv = setInterval(() => { if (document.visibilityState === 'visible') loadScheduled(id) }, 60000)
+    return () => clearInterval(iv)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected?.id])
 
   useEffect(() => {
     if (!companyId) return
@@ -899,6 +917,68 @@ export default function InboxPage() {
     setShowScheduleMsg(true)
   }
 
+  const loadScheduled = async (convId?: string | null) => {
+    if (!convId) { setScheduledList([]); return }
+    try {
+      const r = await authFetch(`/api/inbox/scheduled?conversationId=${convId}`)
+      const d = await r.json().catch(() => ({}))
+      if (r.ok && selectedIdRef.current === convId) setScheduledList(d.scheduled || [])
+    } catch {}
+  }
+  // Wall-clock value for a datetime-local input.
+  const toLocalInput = (iso: string) => { const t = new Date(iso); return new Date(t.getTime() - t.getTimezoneOffset() * 60000).toISOString().slice(0, 16) }
+  const scheduledWhen = (iso: string) => {
+    const t = new Date(iso), now = new Date()
+    const day = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
+    const diff = Math.round((day(t) - day(now)) / 864e5)
+    const time = t.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+    if (diff === 0) return `Today, ${time}`
+    if (diff === 1) return `Tomorrow, ${time}`
+    return `${t.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' })}, ${time}`
+  }
+  const saveScheduledEdit = async () => {
+    if (!editingScheduled || scheduledBusy) return
+    const when = new Date(editingScheduled.at)
+    if (!editingScheduled.message.trim()) { showToast('The message can’t be empty.'); return }
+    if (isNaN(when.getTime())) { showToast('Pick a valid date and time.'); return }
+    if (when.getTime() < Date.now() + 30000) { showToast('Pick a time in the future.'); return }
+    setScheduledBusy(editingScheduled.id)
+    try {
+      const r = await authFetch('/api/inbox/scheduled', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: editingScheduled.id, message: editingScheduled.message, scheduledFor: when.toISOString() }) })
+      const d = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(d.error || 'Could not save')
+      setEditingScheduled(null)
+      showToast(`Rescheduled for ${scheduledWhen(when.toISOString())}`)
+    } catch (e: any) { showToast(e?.message || 'Could not save') }
+    finally { setScheduledBusy(''); loadScheduled(selected?.id) }
+  }
+  const sendScheduledNow = async (sm: any) => {
+    if (scheduledBusy) return
+    setScheduledBusy(sm.id)
+    try {
+      const r = await authFetch('/api/inbox/scheduled', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: sm.id, action: 'send-now' }) })
+      const d = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(d.error || 'Could not send')
+      setEditingScheduled(e => (e?.id === sm.id ? null : e))
+      showToast('Sent')
+    } catch (e: any) { showToast(e?.message || 'Could not send') }
+    finally { setScheduledBusy(''); loadScheduled(selected?.id) }
+  }
+  const deleteScheduled = async (sm: any) => {
+    if (scheduledBusy) return
+    if (!await confirmDialog({ title: 'Delete scheduled message?', message: `It won’t be sent${sm.scheduled_for ? ` on ${scheduledWhen(sm.scheduled_for)}` : ''}.`, confirmLabel: 'Delete', tone: 'danger' })) return
+    setScheduledBusy(sm.id)
+    try {
+      const r = await authFetch(`/api/inbox/scheduled?id=${sm.id}`, { method: 'DELETE' })
+      const d = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(d.error || 'Could not delete')
+      setScheduledList(list => list.filter(x => x.id !== sm.id))
+      setEditingScheduled(e => (e?.id === sm.id ? null : e))
+      showToast('Scheduled message deleted')
+    } catch (e: any) { showToast(e?.message || 'Could not delete') }
+    finally { setScheduledBusy(''); loadScheduled(selected?.id) }
+  }
+
   const scheduleMessage = async () => {
     if (!selected || !user || schedulingMsg) return
     const content = reply.trim()
@@ -923,6 +1003,7 @@ export default function InboxPage() {
       setShowScheduleMsg(false)
       setReply(''); setReplyTo(null); draft.discard()
       showToast(`Message scheduled for ${when.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}`)
+      loadScheduled(selected.id)
     } catch (e: any) {
       showToast('Could not schedule: ' + (e?.message || 'error'))
     } finally {
@@ -6010,6 +6091,13 @@ export default function InboxPage() {
   return (
     <div className={`inbox-root inbox-pane-${mobilePane}${tabletContact ? ' tablet-contact-open' : ''}`} style={{ display: 'flex', height: '100vh', maxHeight: 'calc(100vh - 56px)', overflow: 'hidden', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
       <style>{`
+        .sched-btn { display: inline-flex; align-items: center; gap: 5px; height: 30px; padding: 0 11px; border-radius: 8px; border: 1px solid var(--border); background: #fff; color: var(--ink); font-size: 12.5px; font-weight: 700; cursor: pointer; white-space: nowrap; transition: background .15s ease, border-color .15s ease, color .15s ease; }
+        .sched-btn:hover:not(:disabled) { background: var(--canvas, #fafafa); }
+        .sched-btn.primary { background: var(--coral); border-color: var(--coral); color: #fff; }
+        .sched-btn.primary:hover:not(:disabled) { background: var(--coral); filter: brightness(0.95); }
+        .sched-btn.icon { width: 30px; padding: 0; justify-content: center; color: var(--slate); }
+        .sched-btn.icon:hover:not(:disabled) { color: #dc2626; border-color: #fecaca; background: #fef2f2; }
+        .sched-btn:disabled { cursor: default; }
         /* Composer resize grip: reveal the "drag to resize" pill on hover. */
         .composer-grip:hover .composer-grip-pill { opacity: 1 !important; transform: translateY(0) !important; }
         .composer-grip::before {
@@ -6212,6 +6300,7 @@ export default function InboxPage() {
              under 30px and hard to hit accurately. */
           .inbox-root button { min-height: 36px; }
           .inbox-composer button { min-height: 40px; }
+          .sched-list .sched-btn { min-height: 34px; }
 
           /* Slimmer composer on a phone: the reply box was a fixed 3 rows, which
              ate a big chunk of the screen even when empty. Start at ~2 rows and
@@ -6430,6 +6519,34 @@ export default function InboxPage() {
               <button type="button" onClick={scheduleMessage} disabled={schedulingMsg || !reply.trim()}
                 style={{ padding: '10px 18px', borderRadius: 10, border: 'none', background: 'var(--coral)', color: '#fff', fontSize: 13.5, fontWeight: 700, cursor: (schedulingMsg || !reply.trim()) ? 'default' : 'pointer', opacity: (schedulingMsg || !reply.trim()) ? 0.6 : 1 }}>
                 {schedulingMsg ? 'Scheduling…' : 'Schedule'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit a scheduled reply */}
+      {editingScheduled && selected && (
+        <div onClick={() => setEditingScheduled(null)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 320, padding: 16 }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ width: 460, maxWidth: '100%', background: '#fff', borderRadius: 18, padding: 22, boxSizing: 'border-box' }}>
+            <h3 style={{ margin: '0 0 4px', fontSize: 18, fontWeight: 800, color: 'var(--ink)' }}>Edit scheduled message</h3>
+            <p style={{ margin: '0 0 14px', fontSize: 13, color: 'var(--slate)', lineHeight: 1.5 }}>Change the wording or the time. It still sends on this conversation&rsquo;s channel.</p>
+            <label style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: 'var(--ink)', marginBottom: 6 }}>Message</label>
+            <textarea value={editingScheduled.message} autoFocus rows={5}
+              onChange={e => setEditingScheduled(s => (s ? { ...s, message: e.target.value } : s))}
+              style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 14, lineHeight: 1.5, resize: 'vertical', marginBottom: 14, boxSizing: 'border-box', fontFamily: 'inherit' }} />
+            <label style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: 'var(--ink)', marginBottom: 6 }}>Send at</label>
+            <input type="datetime-local" value={editingScheduled.at}
+              onChange={e => setEditingScheduled(s => (s ? { ...s, at: e.target.value } : s))}
+              style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 14, marginBottom: 18, boxSizing: 'border-box' }} />
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+              <button type="button" onClick={() => setEditingScheduled(null)}
+                style={{ padding: '10px 16px', borderRadius: 10, border: '1px solid var(--border)', background: '#fff', color: 'var(--slate)', fontSize: 13.5, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
+              <button type="button" onClick={saveScheduledEdit} disabled={!!scheduledBusy || !editingScheduled.message.trim()}
+                style={{ padding: '10px 18px', borderRadius: 10, border: 'none', background: 'var(--coral)', color: '#fff', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', opacity: (scheduledBusy || !editingScheduled.message.trim()) ? 0.6 : 1 }}>
+                {scheduledBusy === editingScheduled.id ? 'Saving…' : 'Save changes'}
               </button>
             </div>
           </div>
@@ -9564,6 +9681,51 @@ export default function InboxPage() {
               {/* Smart prompt: a recent message reads like a payment — offer to log
                   the sale. Suppressed once a sale is recorded for this thread or the
                   customer already matches an ecommerce order (already on record). */}
+              {/* Scheduled replies on this conversation — what's queued, when it
+                  goes, and Edit / Send now / Delete for each. */}
+              {selected && scheduledList.length > 0 && (
+                <div className="sched-list" style={{ margin: '0 0 8px', borderRadius: 12, border: '1px solid var(--border)', background: 'var(--canvas, #fafafa)', overflow: 'hidden' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 12px', fontSize: 11.5, fontWeight: 800, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg>
+                    Scheduled · {scheduledList.length}
+                  </div>
+                  <div style={{ maxHeight: 168, overflowY: 'auto' }}>
+                    {scheduledList.map(sm => {
+                      const busy = scheduledBusy === sm.id
+                      const failed = sm.status === 'failed'
+                      const sending = sm.status === 'sending'
+                      return (
+                        <div key={sm.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderTop: '1px solid var(--border)', background: '#fff', flexWrap: 'wrap', opacity: busy ? 0.6 : 1, transition: 'opacity .2s ease' }}>
+                          <div style={{ flex: '1 1 220px', minWidth: 0 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                              <span style={{ fontSize: 12.5, fontWeight: 800, color: failed ? '#dc2626' : 'var(--ink)' }}>{failed ? 'Couldn’t send' : sending ? 'Sending…' : scheduledWhen(sm.scheduled_for)}</span>
+                              {sm.channel && <span style={{ fontSize: 10.5, fontWeight: 700, padding: '1px 7px', borderRadius: 999, background: 'var(--peach, #fff1ee)', color: 'var(--coral)', textTransform: 'uppercase' }}>{String(sm.channel) === 'widget' ? 'Chat' : sm.channel}</span>}
+                            </div>
+                            <div style={{ fontSize: 12.5, color: 'var(--slate)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 2 }} title={sm.message}>{sm.message}</div>
+                          </div>
+                          {!sending && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                              <button type="button" className="sched-btn" disabled={busy}
+                                onClick={() => setEditingScheduled({ id: sm.id, message: sm.message || '', at: toLocalInput(failed && new Date(sm.scheduled_for).getTime() < Date.now() + 60000 ? new Date(Date.now() + 3600000).toISOString() : sm.scheduled_for) })}>
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
+                                Edit
+                              </button>
+                              <button type="button" className="sched-btn primary" disabled={busy} onClick={() => sendScheduledNow(sm)}>
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                                {busy ? 'Sending…' : failed ? 'Retry now' : 'Send now'}
+                              </button>
+                              <button type="button" className="sched-btn icon" disabled={busy} onClick={() => deleteScheduled(sm)} title="Delete" aria-label="Delete scheduled message">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+
               {/* SMS upsell — shown exactly when an agent could be texting this
                   customer (a mobile is on file) but the plan doesn't include SMS.
                   This is the highest-intent moment to convert, so link straight to
