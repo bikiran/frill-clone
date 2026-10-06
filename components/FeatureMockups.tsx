@@ -10,14 +10,14 @@ import React from 'react'
 export type MockKind =
   | 'inbox' | 'crm' | 'gallery' | 'notes' | 'orders' | 'payments' | 'links'
   | 'insights' | 'calendar' | 'tasks' | 'broadcasts' | 'automation'
-  | 'ideas' | 'roadmap' | 'announcements' | 'kb' | 'booking' | 'waitlist' | 'carts'
+  | 'ideas' | 'roadmap' | 'announcements' | 'kb' | 'booking' | 'waitlist' | 'carts' | 'voice'
 
 const TITLES: Record<MockKind, string> = {
   inbox: 'Shared inbox', crm: 'Customer profile', gallery: 'Media gallery', notes: 'Internal notes',
   orders: 'Orders', payments: 'Payments', links: 'Link analytics', insights: 'Insights',
   calendar: 'Calendar', tasks: 'Tasks', broadcasts: 'Broadcast', automation: 'Automation',
   ideas: 'Ideas board', roadmap: 'Roadmap', announcements: 'Changelog', kb: 'Help centre', booking: 'Book online',
-  waitlist: 'Back-in-stock waitlists', carts: 'Abandoned carts',
+  waitlist: 'Back-in-stock waitlists', carts: 'Abandoned carts', voice: 'Colvy Voice',
 }
 
 interface Theme { bg: string; panel: string; ink: string; sub: string; border: string; accent: string; soft: string; dark: boolean }
@@ -228,7 +228,7 @@ function Waitlist(T: Theme) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
-        {[['Customers waiting', '29'], ['Told it’s back · 30d', '41']].map(([a, b]) => (
+        {[['Customers waiting', '29'], ['Potential revenue', '$2,184']].map(([a, b]) => (
           <Card key={a} T={T} style={{ padding: 8 }}><div style={{ fontSize: 9, color: T.sub, fontWeight: 700 }}>{a}</div><div style={{ fontSize: 15, fontWeight: 900, color: T.ink }}>{b}</div></Card>
         ))}
       </div>
@@ -243,6 +243,33 @@ function Waitlist(T: Theme) {
         )
       })}
       <div style={{ background: T.accent, color: '#fff', borderRadius: 9, padding: '9px 10px', fontSize: 10.5, fontWeight: 700, lineHeight: 1.45 }}>SMS sent to 6 people: “Hi Mia, the CO2 refill 2.6kg is back in stock at Roxy Aquarium.”</div>
+    </div>
+  )
+}
+
+// Dictating a reply: the rambling take on top, the polished text it becomes below.
+function Voice(T: Theme) {
+  const bars = [5, 9, 14, 8, 18, 11, 6, 15, 20, 12, 7, 16, 10, 5, 13, 9, 17, 8, 12, 6]
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ display: 'flex', gap: 7, alignItems: 'flex-end' }}>
+        <Avatar t="MA" c={AV[2]} s={22} />
+        <div style={{ background: T.panel, color: T.ink, borderRadius: '10px 10px 10px 3px', padding: '7px 10px', fontSize: 10.5, lineHeight: 1.45, maxWidth: '82%' }}>Do you have the Fluval 307 in stock? And can I pick up Saturday?</div>
+      </div>
+      <Card T={T} style={{ padding: 9, display: 'flex', alignItems: 'center', gap: 9, borderColor: T.accent, background: T.soft }}>
+        <div style={{ width: 26, height: 26, borderRadius: '50%', background: T.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="2" width="6" height="12" rx="3" /><path d="M19 10v1a7 7 0 0 1-14 0v-1" /><line x1="12" y1="18" x2="12" y2="22" /></svg>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 2, flex: 1, height: 22 }}>
+          {bars.map((h, i) => <span key={i} style={{ width: 3, height: h, borderRadius: 2, background: T.accent, opacity: 0.45 + (h / 40) }} />)}
+        </div>
+        <span style={{ fontSize: 9.5, fontWeight: 800, color: T.accent }}>0:07</span>
+      </Card>
+      <div style={{ fontSize: 9.5, color: T.sub, fontStyle: 'italic', lineHeight: 1.45, padding: '0 2px' }}>“um yeah hi Mia so the uh 307 came in this morning and yep Saturday’s fine we’re open till four”</div>
+      <Card T={T} style={{ padding: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5 }}><Chip bg={T.soft} fg={T.accent}>Polished</Chip><span style={{ fontSize: 9, color: T.sub, fontWeight: 700 }}>Fillers removed · punctuated</span></div>
+        <div style={{ fontSize: 10.5, color: T.ink, lineHeight: 1.5 }}>Hi Mia, the Fluval 307 came in this morning. Saturday is fine, we’re open until 4pm.</div>
+      </Card>
     </div>
   )
 }
@@ -359,7 +386,7 @@ function Kb(T: Theme) {
 const RENDER: Record<MockKind, (T: Theme) => React.ReactNode> = {
   inbox: Inbox, crm: Crm, gallery: Gallery, notes: Notes, orders: Orders, payments: Payments,
   links: Links, insights: Insights, calendar: Calendar, broadcasts: Broadcasts, automation: Automation,
-  ideas: Ideas, announcements: Announcements, kb: Kb, booking: Booking, waitlist: Waitlist, carts: Carts,
+  ideas: Ideas, announcements: Announcements, kb: Kb, booking: Booking, waitlist: Waitlist, carts: Carts, voice: Voice,
   tasks: (T) => Kanban(T, [['To do', '#6b7280'], ['Doing', T.accent], ['Done', '#10b981']], { 0: 2, 1: 2, 2: 1 }),
   roadmap: (T) => Kanban(T, [['Planned', '#6b7280'], ['Building', T.accent], ['Shipped', '#10b981']], { 0: 2, 1: 1, 2: 2 }),
 }

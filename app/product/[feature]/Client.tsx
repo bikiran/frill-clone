@@ -212,6 +212,20 @@ const PAGES: Record<string, any> = {
     ],
     cta: 'Start a waitlist',
   },
+  'voice-typing': {
+    icon: 'mic', color: TEAL, mock: 'voice', subtitle: 'Colvy Voice',
+    title: 'Talk your replies, send them polished',
+    hero: 'Tap the mic in any composer and just speak. Colvy Voice turns it into a clean, punctuated reply, with the “ums” gone and your product and customer names spelled right.',
+    features: [
+      { icon: 'mic', title: 'In every composer', desc: 'Chat, SMS, WhatsApp, email and internal notes, on the web and in the mobile app.' },
+      { icon: 'pen', title: 'Polished, not just transcribed', desc: 'Fillers removed, punctuation and capitals added, so it reads like you typed it.' },
+      { icon: 'tag', title: 'Knows your names', desc: 'Your products, brands and the customer’s name are recognised and spelled correctly.' },
+      { icon: 'bolt', title: 'Faster than typing', desc: 'Answer a long question in seconds, even on your phone between jobs.' },
+      { icon: 'inbox', title: 'Lands where your cursor is', desc: 'Dictation drops into the reply at the cursor, ready to edit before you send.' },
+      { icon: 'lock', title: 'Nothing sends by itself', desc: 'You always see the text first. Voice drafts it, you hit send.' },
+    ],
+    cta: 'Try voice typing',
+  },
   'abandoned-carts': {
     icon: 'cart', color: '#d97706', mock: 'carts', subtitle: 'Abandoned carts',
     title: 'Win back the checkouts you lose',
@@ -300,6 +314,7 @@ const ALL = [
   { label: 'Contacts & CRM', href: '/product/crm', icon: 'user', color: BLUE },
   { label: 'Media Gallery', href: '/product/gallery', icon: 'folder', color: PURPLE },
   { label: 'Notes', href: '/product/notes', icon: 'pen', color: PINK },
+  { label: 'Voice typing', href: '/product/voice-typing', icon: 'mic', color: TEAL },
   { label: 'Orders', href: '/product/orders', icon: 'tag', color: CORAL },
   { label: 'Payments', href: '/product/payments', icon: 'bolt', color: GREEN },
   { label: 'Waitlists', href: '/product/waitlists', icon: 'bell', color: PURPLE },

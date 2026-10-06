@@ -16,6 +16,7 @@ const META: Record<string, { title: string; description: string }> = {
   links: { title: 'Secure Links & Uploads', description: 'Send secure upload and payment links, and collect files from customers, right from Colvy.' },
   insights: { title: 'Analytics & Insights', description: 'Track response times, volume and team performance with Colvy analytics.' },
   waitlists: { title: 'Back-in-Stock Waitlists for WooCommerce', description: 'Add a “Notify me” form to sold-out WooCommerce products and text everyone automatically when stock returns, with replies in your Colvy inbox.' },
+  'voice-typing': { title: 'AI Voice Typing for Customer Replies', description: 'Dictate chat, SMS, WhatsApp and email replies with Colvy Voice. Fillers removed, punctuation added and your product names spelled right, ready to send.' },
   'abandoned-carts': { title: 'Abandoned Cart Recovery for WooCommerce', description: 'See every abandoned WooCommerce checkout in your Colvy inbox, follow up by SMS or email, convert it to an order and track recovered revenue.' },
   booking: { title: 'Online Booking & Appointments', description: 'Let customers book services online with Colvy: live staff availability, deposits with Stripe, SMS reminders and self-serve rescheduling, all in your inbox.' },
   calendar: { title: 'Bookings & Calendar', description: 'Schedule and manage appointments alongside your conversations in Colvy.' },

@@ -120,6 +120,7 @@ const MENUS: Menu[] = [
         { icon: 'ai', title: 'AI replies', desc: 'Draft answers in a blink', href: '/ai-assistant/ai-replies' },
         { icon: 'book', title: 'Knowledge base', desc: 'Teach it your docs', href: '/ai-assistant/knowledge-base' },
         { icon: 'pen', title: 'Auto-summaries', desc: 'Every thread, TL;DR’d', href: '/ai-assistant/auto-summaries' },
+        { icon: 'mic', title: 'Voice typing', desc: 'Speak it, send it polished', href: '/product/voice-typing' },
       ] },
       { heading: 'Act', items: [
         { icon: 'bolt', title: 'AI actions', desc: 'Look up orders, take action', href: '/ai-assistant/ai-actions' },
@@ -142,6 +143,7 @@ const MENUS: Menu[] = [
         { icon: 'user', title: 'Contacts & CRM', desc: 'Full profile & history', href: '/product/crm' },
         { icon: 'folder', title: 'Media gallery', desc: 'Every photo & file', href: '/product/gallery' },
         { icon: 'pen', title: 'Notes', desc: 'Internal notes & @mentions', href: '/product/notes' },
+        { icon: 'mic', title: 'Voice typing', desc: 'Speak it, send it polished', href: '/product/voice-typing' },
         { icon: 'link', title: 'Link reports', desc: 'See who clicked what', href: '/product/links' },
       ] },
       { heading: 'Commerce', items: [
