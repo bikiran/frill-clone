@@ -20,7 +20,8 @@ export async function GET(req: NextRequest) {
   try {
     const db = admin()
     const companyId = req.nextUrl.searchParams.get('companyId')
-    if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+    const op = req.nextUrl.searchParams.get('op')
+    if (op && !(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
 
     // Side-menu badge: people who joined a waitlist since this browser last opened Waitlists.
     if (req.nextUrl.searchParams.get('op') === 'newcount') {
@@ -40,10 +41,14 @@ export async function GET(req: NextRequest) {
     }
     const live = req.nextUrl.searchParams.get('live') !== '0'
 
-    const [{ data: co }, { data: entries, error }] = await Promise.all([
+    // The access check runs alongside the reads (nothing is returned until it
+    // passes), so the list costs one round trip instead of three.
+    const [access, { data: co }, { data: entries, error }] = await Promise.all([
+      requireCompanyAccess(req, db, companyId),
       db.from('companies').select('waitlist_settings, name').eq('id', companyId).maybeSingle(),
       db.from('stock_waitlist').select('*').eq('company_id', companyId).order('created_at', { ascending: false }).limit(2000),
     ])
+    if (!access.ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     const settings = resolveWaitlistSettings((co as any)?.waitlist_settings)
     const businessName = (co as any)?.name || ''
     if (error) {
@@ -56,15 +61,23 @@ export async function GET(req: NextRequest) {
     // "potential revenue" figures — what the waitlist is worth once it's back).
     const stock: Record<string, ItemStock> = {}
     if (productIds.length) {
-      const { data: prods } = await db.from('woocommerce_products')
+      const productsReq = db.from('woocommerce_products')
         .select('woo_product_id, stock_status, stock_quantity, permalink, price, regular_price, sale_price, on_sale').eq('company_id', companyId).in('woo_product_id', productIds)
+      // Website sign-ups store the size/variation id, which isn't in the synced
+      // catalogue — look those up through their parent product. For a normal
+      // list that lookup runs alongside the catalogue read (a product id never
+      // matches a parent's variation list, so asking for all ids is harmless).
+      const together = productIds.length <= 100
+      const [{ data: prods }, early] = await Promise.all([
+        productsReq,
+        together ? variationStock(db, companyId!, productIds.map(Number), { live }) : Promise.resolve(null),
+      ])
       ;(prods || []).forEach((p: any) => {
         stock[String(p.woo_product_id)] = { ...pricing(p), stock_status: p.stock_status, stock_quantity: p.stock_quantity, permalink: p.permalink || null }
       })
-      // Website sign-ups store the size/variation id, which isn't in the synced
-      // catalogue — look those up through their parent product.
       const variations = productIds.map(Number).filter(id => !stock[String(id)])
-      if (variations.length) Object.assign(stock, await variationStock(db, companyId!, variations, { live }))
+      const vs = early ?? (variations.length ? await variationStock(db, companyId!, variations, { live }) : {})
+      for (const id of variations) if (vs[String(id)]) stock[String(id)] = vs[String(id)]
     }
     return NextResponse.json({ entries: entries || [], settings, stock, businessName })
   } catch (e: any) {
