@@ -15,10 +15,12 @@ export async function requireCompanyAccess(req: NextRequest, db: any, companyId:
     const user = data?.user
     if (!user) return { ok: false }
     if (user.email === SUPER_ADMIN) return { ok: true, userId: user.id }
-    const { data: co } = await db.from('companies').select('id').eq('id', companyId).eq('owner_id', user.id).maybeSingle()
-    if (co) return { ok: true, userId: user.id }
-    const { data: tm } = await db.from('team_members').select('id').eq('company_id', companyId).eq('user_id', user.id).limit(1)
-    if (tm?.length) return { ok: true, userId: user.id }
+    // Owner and team checks run together rather than one after the other.
+    const [{ data: co }, { data: tm }] = await Promise.all([
+      db.from('companies').select('id').eq('id', companyId).eq('owner_id', user.id).maybeSingle(),
+      db.from('team_members').select('id').eq('company_id', companyId).eq('user_id', user.id).limit(1),
+    ])
+    if (co || tm?.length) return { ok: true, userId: user.id }
     return { ok: false }
   } catch { return { ok: false } }
 }

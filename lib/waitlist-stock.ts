@@ -7,7 +7,9 @@
 //   2. ask WooCommerce for those variations — one request per parent
 //   3. if the store doesn't answer, fall back to the parent's price, marked
 //      `approx` (a variable product's price is its cheapest size)
-// Results are cached per warm server instance for 10 minutes.
+// Results are cached per warm server instance for 10 minutes. With
+// `live: false` step 2 is skipped (cache hits still count), so a page can paint
+// from the database straight away and ask for live sizes in a second request.
 
 export type ItemStock = {
   stock_status: string | null
@@ -35,7 +37,7 @@ export function pricing(p: any): Pick<ItemStock, 'price' | 'regular_price' | 'on
 const TTL = 10 * 60_000
 const cache = new Map<string, { at: number; v: ItemStock }>()
 
-export async function variationStock(db: any, companyId: string, ids: number[], opts: { fetchImpl?: typeof fetch; timeoutMs?: number } = {}): Promise<Record<string, ItemStock>> {
+export async function variationStock(db: any, companyId: string, ids: number[], opts: { fetchImpl?: typeof fetch; timeoutMs?: number; live?: boolean } = {}): Promise<Record<string, ItemStock>> {
   const out: Record<string, ItemStock> = {}
   const doFetch = opts.fetchImpl || fetch
   const now = Date.now()
@@ -72,7 +74,7 @@ export async function variationStock(db: any, companyId: string, ids: number[], 
 
   // 2. Live variation data from the store, one request per parent.
   const live = new Map<number, any>()
-  try {
+  if (opts.live !== false) try {
     const { data: integ } = await db.from('woocommerce_integrations')
       .select('store_url, consumer_key, consumer_secret')
       .eq('company_id', companyId).eq('is_active', true)

@@ -38,6 +38,10 @@ const CAPS = [
   { c: YELLOW, t: 'Google reviews', d: 'Request reviews automatically and reply from the same inbox.', p: 'M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z' },
   { c: CYAN, t: 'Link tracking', d: 'Trackable links with clicks, unique customers and revenue.', p: 'M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7 M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7' },
   { c: CORAL, t: 'Automations', d: 'Workflows and follow-ups that run while you sleep or are away.', p: 'M12 2v4 M12 18v4 M4.9 4.9l2.8 2.8 M16.3 16.3l2.8 2.8 M2 12h4 M18 12h4 M4.9 19.1l2.8-2.8 M16.3 7.7l2.8-2.8' },
+  { c: BLUE, t: 'Voice typing', d: 'Speak a reply and Colvy Voice writes it up polished, in chat, SMS or email.', p: 'M12 2a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z M19 10v1a7 7 0 0 1-14 0v-1 M12 18v4' },
+  { c: PURPLE, t: 'Back-in-stock waitlists', d: 'Customers join from sold-out products; everyone is texted when stock returns.', p: 'M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9 M13.73 21a2 2 0 0 1-3.46 0' },
+  { c: GREEN, t: 'Abandoned carts', d: 'Lost checkouts land in the inbox so you can follow up and recover the sale.', p: 'M9 21a1 1 0 1 0 0-2 1 1 0 0 0 0 2z M20 21a1 1 0 1 0 0-2 1 1 0 0 0 0 2z M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6' },
+  { c: PINK, t: 'Online booking', d: 'Customers book, pay a deposit and get SMS reminders, all tied to their thread.', p: 'M3 4h18v18H3z M16 2v4 M8 2v4 M3 10h18' },
 ]
 
 const AISTEPS = [
@@ -51,7 +55,7 @@ const AISTEPS = [
 const BLOCKS = (dark: boolean, border: string, ink: string, sub: string) => [
   { id: 'inbox', tag: 'Shared inbox', title: 'One inbox for every channel',
     body: 'WhatsApp, Instagram, Messenger, email, SMS and website chat land in a single shared queue. Assign threads to teammates, leave private notes, @mention colleagues and never lose a conversation between apps again.',
-    points: ['Assign, snooze and resolve like a team', 'Private notes, @mentions and internal tasks', 'Typing indicators, read receipts and reactions'],
+    points: ['Assign, snooze and resolve like a team', 'Private notes, @mentions and internal tasks', 'Voice typing: speak a reply, send it polished'],
     mock: (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%', maxWidth: 420 }}>
         {[['SR', 'Sam Rivera', 'Do you still have the 4ft…', '#25D366', '2'], ['MO', 'Mia Okafor', 'Thanks — order received!', '#E1306C', ''], ['JL', 'Jon Lee', 'Can I get a refund on…', PURPLE, '1']].map(([in_, nm, msg, cl, b]) => (
@@ -94,7 +98,7 @@ const BLOCKS = (dark: boolean, border: string, ink: string, sub: string) => [
     ) },
   { id: 'woo', tag: 'Advanced WooCommerce', title: 'Orders, refunds & carts — in the thread',
     body: 'Look up a live WooCommerce order, issue a refund, or follow up an abandoned cart without switching tabs. Sold-out products get a “Notify me” form, and everyone waiting is texted when stock returns.',
-    points: ['Live order lookup & one-click refunds', 'Abandoned carts in the inbox, ready to follow up', 'Back-in-stock waitlists with automatic texts'],
+    points: ['Live order lookup & one-click refunds', 'Abandoned carts in the inbox, ready to follow up', 'Back-in-stock waitlists with automatic texts and potential revenue'],
     mock: (
       <div style={{ padding: 18, borderRadius: 16, background: dark ? '#171826' : '#fff', border: `1px solid ${border}`, width: '100%', maxWidth: 340, boxShadow: '0 14px 40px rgba(15,17,25,0.08)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10 }}><span style={{ fontSize: 12.5, fontWeight: 700, color: ink }}>Order #10428</span><span style={{ fontSize: 10.5, fontWeight: 800, padding: '2px 9px', borderRadius: 999, background: GREEN + '22', color: GREEN }}>PAID</span></div>

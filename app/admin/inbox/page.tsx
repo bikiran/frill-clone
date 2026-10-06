@@ -1337,7 +1337,9 @@ export default function InboxPage() {
   // subject as a person's name on those channels — fall back to Visitor, matching
   // the info panel. Web/email subjects are real titles, so keep them there.
   const nameFromSubject = ['sms', 'phone', 'voice'].includes(activeChannel) ? null : (selected as any)?.subject
-  const headerName = contact?.name || nameFromSubject || 'Visitor'
+  // No saved contact on a text/call thread → show the number, not "Visitor".
+  const threadNumber: string | null = (selected as any)?.sms_number || null
+  const headerName = contact?.name || nameFromSubject || (contact ? null : threadNumber) || contact?.phone || 'Visitor'
 
   // Is a payment in this thread still awaiting settlement?
   const hasPendingPayment = useMemo(
@@ -2419,7 +2421,8 @@ export default function InboxPage() {
         }
       } else {
         setContact(null)
-        setEditContact({})
+        // "+ Create" starts with the number they texted/called from.
+        setEditContact((conv as any).sms_number ? { phone: (conv as any).sms_number } : {})
       }
     }
     // Load timeline events, notes, tasks
@@ -10014,7 +10017,7 @@ export default function InboxPage() {
                         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                       </button>
                     )}
-                    <button type="button" onClick={() => { setShowContactEdit(v => !v); setEditContact(contact || {}) }}
+                    <button type="button" onClick={() => { setShowContactEdit(v => !v); setEditContact(contact || ((selected as any)?.sms_number ? { phone: (selected as any).sms_number } : {})) }}
                       style={{ fontSize: 11, color: 'var(--coral)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>
                       {showContactEdit ? 'Cancel' : (contact ? '' : '+ Create')}
                     </button>
@@ -10397,7 +10400,15 @@ export default function InboxPage() {
                     <style>{`.contact-field-row:hover .contact-field-actions { opacity: 1 !important; }`}</style>
                   </div>
                 ) : (
-                  <p style={{ fontSize: 13, color: '#9ca3af', margin: 0 }}>No contact linked yet. Click &ldquo;+ Create&rdquo; to create one.</p>
+                  (selected as any)?.sms_number ? (
+                    <div>
+                      <p style={{ margin: '0 0 2px', fontSize: 11, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Phone</p>
+                      <p style={{ margin: '0 0 8px', fontSize: 14, color: 'var(--ink)' }}>{(selected as any).sms_number}</p>
+                      <p style={{ fontSize: 12.5, color: '#9ca3af', margin: 0 }}>Not saved as a contact yet. Click &ldquo;+ Create&rdquo; to add their name and details.</p>
+                    </div>
+                  ) : (
+                    <p style={{ fontSize: 13, color: '#9ca3af', margin: 0 }}>No contact linked yet. Click &ldquo;+ Create&rdquo; to create one.</p>
+                  )
                 )}
 
                 {/* Delivery address book — every address the customer has used,

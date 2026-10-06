@@ -22,8 +22,9 @@ const CORAL = '#ff6a4d', BLUE = '#2b59ff', PURPLE = '#7c5cff', GREEN = '#00c48c'
 // Standard capability row order for every table. Comms rows first, then the
 // product-feedback suite — where Colvy is unique among these tools. A competitor
 // with a shorter `comp` array shows ✗ for the rows it doesn't declare.
-// Booking is the last row: only Podium (via integrations) and Birdeye
-// (Appointments) declare it.
+// Booking: only Podium (via integrations) and Birdeye (Appointments) declare
+// it. The waitlist and voice-typing rows after it are Colvy-only, so no
+// competitor declares them.
 const FEAT = [
   'SMS (Australian 🇦🇺 numbers)', 'WhatsApp', 'Instagram DMs', 'Facebook / Meta DMs',
   'Email (Gmail / Outlook)', 'Phone calls & voicemail', 'Google Reviews', 'Live chat widget',
@@ -32,6 +33,7 @@ const FEAT = [
   'Ideas & feedback board', 'Public roadmap', 'Announcements / changelog', 'Polls & surveys',
   'Media gallery', 'Team notes', 'Shared calendar', 'Tasks & reminders',
   'Online booking, deposits & reminders',
+  'Back-in-stock waitlists & restock texts', 'AI voice typing',
 ]
 
 type Val = boolean | string

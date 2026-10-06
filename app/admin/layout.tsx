@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useEffect, useState, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
+import { readLocal, writeLocal } from '@/lib/local-cache'
 import SidebarSearch, { SearchItem } from '@/components/SidebarSearch'
 import CallHandoff from '@/components/CallHandoff'
 import GlobalDialer from '@/components/GlobalDialer'
@@ -179,6 +180,31 @@ const SEARCH_EXTRAS: SearchItem[] = [
   { label: 'Terminology', href: '/admin/terminology', section: 'Settings', keywords: 'wording labels rename' },
   { label: 'Audit logs', href: '/admin/settings/audit-logs', section: 'Settings', keywords: 'security history' },
 ]
+
+// A few seconds after the admin opens, fetch the Waitlists list in the
+// background (database only, no store calls) and keep it on this device. Once
+// per company per page load, and skipped when a copy under 10 minutes old is
+// already here. Lives outside the component so a layout remount during start-up
+// can't cancel it.
+const warmed = new Set<string>()
+function warmWaitlists(cid: string) {
+  if (warmed.has(cid) || typeof window === 'undefined') return
+  warmed.add(cid)
+  setTimeout(async () => {
+    try {
+      if (window.location.pathname.startsWith('/admin/waitlists')) return
+      const { data } = await supabase.auth.getSession()
+      const s = data?.session
+      if (!s) return
+      if (readLocal('waitlists', s.user.id, 10 * 60_000)?.companyId === cid) return
+      const r = await fetch(`/api/waitlist?companyId=${cid}&live=0`, { headers: { Authorization: `Bearer ${s.access_token}` } })
+      if (!r.ok) return
+      const d = await r.json()
+      if (d.needsMigration || d.error) return
+      writeLocal('waitlists', s.user.id, cid, { entries: d.entries || [], stock: d.stock || {}, settings: d.settings, businessName: d.businessName || '' })
+    } catch {}
+  }, 4000)
+}
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
@@ -519,6 +545,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     window.addEventListener('focus', load)
     return () => { active = false; clearInterval(iv); window.removeEventListener('waitlist-seen', onSeen); window.removeEventListener('storage', onStorage); window.removeEventListener('focus', load) }
   }, [company?.id])
+
+  // Warm the Waitlists page so even the first visit opens instantly.
+  useEffect(() => { if (company?.id) warmWaitlists(company.id) }, [company?.id])
 
   const [showWorkspaces, setShowWorkspaces] = useState(false)
   const [workspaces, setWorkspaces] = useState<any[]>([])

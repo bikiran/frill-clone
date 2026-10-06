@@ -1,9 +1,10 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { resolveCompanyUser } from '@/lib/client-cache'
+import { readLocal, writeLocal } from '@/lib/local-cache'
 import PageHeader from '@/components/PageHeader'
 import { SkeletonList } from '@/components/Skeleton'
 import WaitlistAddModal from '@/components/WaitlistAddModal'
@@ -65,33 +66,75 @@ export default function WaitlistsPage() {
 
   const flash = (m: string) => { setToast(m); setTimeout(() => setToast(''), 5000) }
 
+  const userIdRef = useRef<string | null>(null)
+  const stockRef = useRef(stock)
+  stockRef.current = stock
+  // Two steps so the list never waits on WooCommerce: the database first
+  // (sizes priced from their product for now), then live size prices from the
+  // store, merged in when they arrive. The result is kept on this device so the
+  // next visit paints straight away.
   const load = async (cid: string) => {
     try {
-      const res = await fetch(`/api/waitlist?companyId=${cid}`, { headers: await authHeaders() })
+      const headers = await authHeaders()
+      const res = await fetch(`/api/waitlist?companyId=${cid}&live=0`, { headers })
       const d = await res.json()
       if (d.needsMigration) setSetupMsg(d.error)
-      else if (!res.ok) setSetupMsg(d.error || 'Could not load waitlists')
+      else if (!res.ok) { setSetupMsg(d.error || 'Could not load waitlists'); return }
       else setSetupMsg('')
+      const fresh: Record<string, any> = d.stock || {}
+      // Keep a live size price we already know until the new one arrives, so
+      // prices don't flick to "from $…" and back.
+      const known = stockRef.current
+      const shown = { ...fresh }
+      for (const k in shown) if (shown[k]?.approx && known[k] && !known[k].approx) shown[k] = known[k]
+      setStock(shown)
       setEntries(d.entries || [])
-      setStock(d.stock || {})
       if (d.settings) setSettings(d.settings)
-    } catch { setSetupMsg('Could not load waitlists') }
+      if (d.businessName) setBusinessName(d.businessName)
+      setLoading(false)
+      const snap = { entries: d.entries || [], stock: fresh, settings: d.settings, businessName: d.businessName || '' }
+      writeLocal('waitlists', userIdRef.current, cid, snap)
+      const approxIds = Object.keys(fresh).filter(k => fresh[k]?.approx)
+      if (!approxIds.length) return
+      const lr = await fetch(`/api/waitlist?companyId=${cid}&op=variation-stock&ids=${approxIds.join(',')}`, { headers })
+      const ld = await lr.json().catch(() => ({}))
+      const liveStock: Record<string, any> = ld.stock || {}
+      const merged = { ...fresh }
+      for (const k of approxIds) merged[k] = (liveStock[k] && !liveStock[k].approx) ? liveStock[k] : (known[k] && !known[k].approx ? known[k] : fresh[k])
+      setStock(merged)
+      writeLocal('waitlists', userIdRef.current, cid, { ...snap, stock: merged })
+    } catch { setSetupMsg(s => s || 'Could not load waitlists') }
   }
 
   useEffect(() => {
     ;(async () => {
+      // Paint the last list seen on this device straight away.
+      const { data: sess } = await supabase.auth.getSession()
+      const uid = sess.session?.user?.id || null
+      userIdRef.current = uid
+      const cached = readLocal<any>('waitlists', uid)
+      let cid: string | null = null
+      if (cached) {
+        cid = cached.companyId
+        setCompanyId(cid)
+        setEntries(cached.data.entries || []); setStock(cached.data.stock || {})
+        if (cached.data.settings) setSettings(cached.data.settings)
+        setBusinessName(cached.data.businessName || '')
+        setLoading(false)
+        load(cid)
+      }
       const { companyId: cidRaw, user } = await resolveCompanyUser()
       if (!user) { router.push('/signin'); return }
-      let cid = cidRaw
-      if (!cid) {
+      let resolved = cidRaw
+      if (!resolved) {
         const { data: tm } = await (supabase as any).from('team_members').select('company_id').eq('user_id', user.id).limit(1)
-        cid = tm?.[0]?.company_id || null
+        resolved = tm?.[0]?.company_id || null
       }
-      if (cid) {
-        setCompanyId(cid)
-        const { data: co } = await (supabase as any).from('companies').select('name').eq('id', cid).maybeSingle()
-        setBusinessName(co?.name || '')
-        await load(cid)
+      if (resolved && resolved !== cid) {
+        // First visit on this device, or a different workspace — start clean.
+        setEntries([]); setStock({})
+        setCompanyId(resolved)
+        await load(resolved)
       }
       setLoading(false)
     })()

@@ -389,6 +389,59 @@ export default function GalleryPage() {
 
   useEffect(() => { load() }, [load])
 
+  // ── Live updates ──────────────────────────────────────────────────────────
+  // Uploads from the mobile app (or a teammate) appear here without a reload,
+  // and a video's "Processing" badge clears the moment its transcode finishes.
+  // A finished transcode is patched in place; anything else (new, moved,
+  // deleted) refreshes the current view through the same API, so folder and
+  // search filters still apply. New tiles fade in.
+  const loadRef = useRef(load)
+  useEffect(() => { loadRef.current = load }, [load])
+  const [freshIds, setFreshIds] = useState<Set<string>>(new Set())
+  const knownIdsRef = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    const ids = new Set(items.map((it: any) => it.id))
+    const added = knownIdsRef.current.size ? items.filter((it: any) => !knownIdsRef.current.has(it.id)).map((it: any) => it.id) : []
+    knownIdsRef.current = ids
+    if (added.length) {
+      setFreshIds(prev => new Set([...prev, ...added]))
+      setTimeout(() => setFreshIds(prev => { const n = new Set(prev); added.forEach((id: string) => n.delete(id)); return n }), 1600)
+    }
+  }, [items])
+  useEffect(() => { knownIdsRef.current = new Set() }, [companyId, activeFolder, search])
+
+  useEffect(() => {
+    if (!companyId) return
+    let timer: any = null
+    const refresh = () => { clearTimeout(timer); timer = setTimeout(() => loadRef.current(), 500) }
+    const channel = (supabase as any)
+      .channel(`gallery-${companyId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'media_items', filter: `company_id=eq.${companyId}` }, (payload: any) => {
+        const row = payload.new || {}
+        if (payload.eventType === 'UPDATE' && row.id) {
+          // Same item, new state (processed, renamed…): patch it straight away.
+          setItems(prev => prev.some((x: any) => x.id === row.id) ? prev.map((x: any) => x.id === row.id ? { ...x, ...row } : x) : prev)
+        }
+        refresh()
+      })
+      .subscribe()
+    return () => { clearTimeout(timer); try { (supabase as any).removeChannel(channel) } catch {} }
+  }, [companyId])
+
+  // Safety net for a dropped realtime connection: while anything is still
+  // processing, re-check every 10s; and refresh when the tab comes back.
+  const anyProcessing = items.some((it: any) => isVideoProcessing(it))
+  useEffect(() => {
+    if (!anyProcessing) return
+    const t = setInterval(() => { if (document.visibilityState === 'visible') loadRef.current() }, 10_000)
+    return () => clearInterval(t)
+  }, [anyProcessing])
+  useEffect(() => {
+    const onVis = () => { if (document.visibilityState === 'visible') loadRef.current() }
+    document.addEventListener('visibilitychange', onVis)
+    return () => document.removeEventListener('visibilitychange', onVis)
+  }, [])
+
   // Favourites are per-user, so they load once we know who's viewing.
   const loadFavorites = useCallback(async () => {
     if (!companyId || !userId) return
@@ -683,6 +736,9 @@ export default function GalleryPage() {
         @keyframes gal-spin-kf { to { transform: rotate(360deg); } }
         /* Smoother cards: lift on hover, gentle image zoom, softer shadows. */
         .gal-card { transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease; }
+        .gal-fresh { animation: gal-fresh-kf .5s ease-out both; }
+        @keyframes gal-fresh-kf { from { opacity: 0; transform: translateY(6px) scale(.98); } to { opacity: 1; transform: none; } }
+        @media (prefers-reduced-motion: reduce) { .gal-fresh { animation: none; } }
         .gal-thumb:hover .gal-playbadge { opacity: 0; }
         /* Heart: hidden until hover, but a set favourite stays lit always. */
         .gal-heart { opacity: 0; transition: opacity 0.15s ease, transform 0.15s ease, background 0.15s ease; }
@@ -956,7 +1012,7 @@ export default function GalleryPage() {
               {visibleItems.map((item, i) => {
                 const isSelected = selected.has(item.id)
                 return (
-                <div key={item.id} className="gal-card" style={{ border: `1px solid ${isSelected ? 'var(--coral)' : 'var(--border)'}`, borderRadius: 12, background: '#fff', boxShadow: isSelected ? '0 0 0 2px var(--peach)' : 'none', position: 'relative' }}>
+                <div key={item.id} className={`gal-card${freshIds.has(item.id) ? ' gal-fresh' : ''}`} style={{ border: `1px solid ${isSelected ? 'var(--coral)' : 'var(--border)'}`, borderRadius: 12, background: '#fff', boxShadow: isSelected ? '0 0 0 2px var(--peach)' : 'none', position: 'relative' }}>
                   <div className="gal-thumb" style={{ position: 'relative', paddingTop: '75%', cursor: 'pointer', background: 'var(--canvas)', overflow: 'hidden', borderRadius: '12px 12px 0 0' }}
                     onClick={() => selectMode ? toggleSelect(item.id) : setLightboxIndex(i)}
                     onMouseEnter={item.kind === 'video' ? () => setHoverVid(item.id) : undefined}

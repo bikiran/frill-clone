@@ -13,7 +13,8 @@ import MentionInput, { resolveMentions } from '@/components/MentionInput'
 import { enrichNames } from '@/lib/team-names'
 import { useDraft } from '@/lib/drafts'
 import PageGreeting from '@/components/PageGreeting'
-import { peekCompanyUser, readCache, writeCache } from '@/lib/client-cache'
+import { peekCompanyUser, resolveCompanyUser, readCache, writeCache } from '@/lib/client-cache'
+import { readLocal, writeLocal } from '@/lib/local-cache'
 import { confirmDialog } from '@/components/ConfirmDialog'
 
 function parseTs(d: string | null | undefined): Date | null {
@@ -132,68 +133,50 @@ const COLUMNS = [
   { key: 'done', label: 'Done' },
 ] as const
 
+// What the page opens on: the saved default view and names, the user's default
+// outlet, and the team-member defaults (assigned to me / home outlet).
+type StartPrefs = { view: ViewMode | null; names: Record<string, string>; outlet: string | null; mine: boolean; homeOutlet: string | null }
+const EMPTY_PREFS: StartPrefs = { view: null, names: {}, outlet: null, mine: false, homeOutlet: null }
+const startOutlet = (p?: StartPrefs | null) => (p ? p.outlet || p.homeOutlet || null : null)
+
 export default function TasksPage() {
   const router = useRouter()
   // Seed identity + the last task list from cache so a revisit paints instantly
   // instead of blanking to a skeleton while the company re-resolves and refetches.
   const seed = peekCompanyUser()
   const seededTasks = seed?.companyId ? readCache<any[]>(`tasks:${seed.companyId}`) : undefined
+  const seedPrefs = seed?.companyId ? readCache<StartPrefs>(`tasks:prefs:${seed.companyId}`) : undefined
   const [loading, setLoading] = useState(!seededTasks)
+  // The page only shows once the saved view and filters are known, so it opens
+  // straight on the final screen instead of List → Timeline → filtered.
+  const [prefsReady, setPrefsReady] = useState(!!seedPrefs)
+  const prefsRef = useRef<StartPrefs | null>(seedPrefs ?? null)
   const [companyId, setCompanyId] = useState<string | null>(seed?.companyId ?? null)
   const [userId, setUserId] = useState<string | null>(null)
   const [me, setMe] = useState('')
   const [tasks, setTasks] = useState<any[]>(seededTasks ?? [])
   const [convs, setConvs] = useState<Record<string, any>>({})
   const [team, setTeam] = useState<any[]>([])
+  const userIdRef = useRef<string | null>(null)
 
   const [bucket, setBucket] = useState<Bucket>('today')
   const [bucketDate, setBucketDate] = useState('')   // for the "Date" bucket
-  const [view, setView] = useState<ViewMode>('list')
+  const [view, setView] = useState<ViewMode>(seedPrefs?.view || 'list')
   // Per-user view preferences: a saved default view (applied wherever they sign
   // in, incl. mobile) and custom names — set via right-clicking a view tab.
   const VIEW_LABELS: Record<ViewMode, string> = { list: 'List', board: 'Board', timeline: 'Timeline', calendar: 'Calendar' }
-  const [viewNames, setViewNames] = useState<Record<string, string>>({})
-  const [defaultView, setDefaultView] = useState<ViewMode | null>(null)
+  const [viewNames, setViewNames] = useState<Record<string, string>>(seedPrefs?.names || {})
+  const [defaultView, setDefaultView] = useState<ViewMode | null>(seedPrefs?.view ?? null)
   const [viewMenu, setViewMenu] = useState<{ view: ViewMode; x: number; y: number } | null>(null)
-  const viewPrefsApplied = useRef(false)
-  const [defaultOutlet, setDefaultOutlet] = useState<string | null>(null)
-  const outletPrefApplied = useRef(false)
+  const [defaultOutlet, setDefaultOutlet] = useState<string | null>(seedPrefs?.outlet ?? null)
   const [outletMenu, setOutletMenu] = useState<{ x: number; y: number; value: string } | null>(null)
   const labelOf = (v: ViewMode) => viewNames[v] || VIEW_LABELS[v]
   const dfltDot: React.CSSProperties = { display: 'inline-block', width: 5, height: 5, borderRadius: '50%', background: 'var(--coral)', marginLeft: 5, verticalAlign: 'middle' }
   const viewMenuItem: React.CSSProperties = { display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', borderRadius: 7, border: 'none', background: 'transparent', color: 'var(--ink)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }
 
-  // Load saved view prefs once we know the user/company: localStorage for an
-  // instant paint, then the server (so the choice follows them across devices).
-  useEffect(() => {
-    if (!companyId || !userId) return
-    const lsKey = `tasks:viewPrefs:${companyId}:${userId}`
-    const apply = (p: any, allowSwitch: boolean) => {
-      if (!p) return
-      if (p.names && typeof p.names === 'object') setViewNames(p.names)
-      if ('defaultView' in p) setDefaultView(p.defaultView || null)
-      if (allowSwitch && p.defaultView && !viewPrefsApplied.current) { setView(p.defaultView); viewPrefsApplied.current = true }
-    }
-    try { const raw = localStorage.getItem(lsKey); if (raw) apply(JSON.parse(raw), true) } catch {}
-    ;(async () => {
-      try {
-        const res = await fetch(`/api/user-prefs?userId=${userId}&companyId=${companyId}`)
-        const d = await res.json()
-        apply(d?.prefs?.tasks_view, true)
-        // Default outlet (shared with the Calendar page). It wins over the team
-        // membership default; only marks itself applied when it actually sets one.
-        const dv = d?.prefs?.default_outlet
-        if (dv && typeof dv === 'object') {
-          setDefaultOutlet(dv.id || null)
-          if (dv.id && !outletPrefApplied.current) { setOutletFilter([dv.id]); outletPrefApplied.current = true }
-        }
-      } catch {}
-      viewPrefsApplied.current = true
-    })()
-  }, [companyId, userId])
-
   const setDefaultOutletPref = (id: string | null) => {
     setDefaultOutlet(id)
+    savePrefs({ outlet: id })
     if (id) setOutletFilter([id]); else setOutletFilter([])
     if (companyId && userId) fetch('/api/user-prefs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId, companyId, key: 'default_outlet', value: { id } }) }).catch(() => {})
     setOutletMenu(null)
@@ -201,7 +184,7 @@ export default function TasksPage() {
 
   const persistViewPrefs = (names: Record<string, string>, dflt: ViewMode | null) => {
     const payload = { names, defaultView: dflt }
-    try { if (companyId && userId) localStorage.setItem(`tasks:viewPrefs:${companyId}:${userId}`, JSON.stringify(payload)) } catch {}
+    savePrefs({ names, view: dflt })
     if (companyId && userId) {
       fetch('/api/user-prefs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId, companyId, key: 'tasks_view', value: payload }) }).catch(() => {})
     }
@@ -230,10 +213,10 @@ export default function TasksPage() {
   }, [viewMenu])
 
   const [search, setSearch] = useState('')
-  const [assigneeFilter, setAssigneeFilter] = useState<string[]>([])  // [] = anyone; else match any
+  const [assigneeFilter, setAssigneeFilter] = useState<string[]>(seedPrefs?.mine ? ['me'] : [])  // [] = anyone; else match any
   const [priorityFilter, setPriorityFilter] = useState<string[]>([])  // [] = any priority
   const [colorFilter, setColorFilter] = useState<string[]>([])        // [] = any colour ('' = no colour)
-  const [outletFilter, setOutletFilter] = useState<string[]>([])  // [] = all outlets; else match any
+  const [outletFilter, setOutletFilter] = useState<string[]>(startOutlet(seedPrefs) ? [startOutlet(seedPrefs)!] : [])  // [] = all outlets; else match any
   const [dateFilter, setDateFilter] = useState('')         // '' = any; else a reference YYYY-MM-DD
   const [datePeriod, setDatePeriod] = useState<'day' | 'week' | 'month'>('day')
   const [sortBy, setSortBy] = useState<'due' | 'priority' | 'created'>('due')
@@ -258,6 +241,24 @@ export default function TasksPage() {
     return () => window.removeEventListener('resize', check)
   }, [])
 
+  // Apply saved start-up prefs in one go. With `prev` (what's already on screen)
+  // only the parts whose saved default actually changed are touched, so a
+  // background refresh never yanks the view or filters around.
+  const applyPrefs = (p: StartPrefs, prev: StartPrefs | null) => {
+    setViewNames(p.names || {}); setDefaultView(p.view || null); setDefaultOutlet(p.outlet || null)
+    if (!prev || prev.view !== p.view) setView(p.view || 'list')
+    if (!prev || startOutlet(prev) !== startOutlet(p)) { const o = startOutlet(p); setOutletFilter(o ? [o] : []) }
+    if (!prev || prev.mine !== p.mine) setAssigneeFilter(p.mine ? ['me'] : [])
+    prefsRef.current = p
+  }
+  const savePrefs = (patch: Partial<StartPrefs>) => {
+    const cid = companyId; if (!cid) return
+    const next: StartPrefs = { ...EMPTY_PREFS, ...(prefsRef.current || {}), ...patch }
+    prefsRef.current = next
+    writeCache(`tasks:prefs:${cid}`, next)
+    writeLocal('tasks-prefs', userIdRef.current, cid, next)
+  }
+
   useEffect(() => {
     ;(async () => {
       try {
@@ -266,30 +267,44 @@ export default function TasksPage() {
           setUserId(session.user.id)
           setMe(session.user.user_metadata?.display_name || session.user.email?.split('@')[0] || 'Me')
         }
-        let cid: string | null = null
-        if (typeof window !== 'undefined') {
-          const host = window.location.hostname
-          if (host.endsWith('.colvy.com') && host !== 'colvy.com') {
-            const slug = host.replace('.colvy.com', '')
-            const { data: co } = await (supabase as any).from('companies').select('id').eq('slug', slug).maybeSingle()
-            if (co) cid = co.id
+        userIdRef.current = session?.user?.id || null
+        // Paint the last task list seen on this device (survives a reload) and
+        // start refreshing it straight away, before the workspace lookup.
+        let started: string | null = companyId && seededTasks ? companyId : null
+        if (started) loadTasks(started)
+        else {
+          const cached = readLocal<any[]>('tasks', session?.user?.id)
+          if (cached) {
+            started = cached.companyId
+            setCompanyId(started); setTasks(cached.data || []); setLoading(false)
+            const cc = readLocal<Record<string, any>>('tasks-convs', session?.user?.id)
+            if (cc && cc.companyId === started) setConvs(cc.data || {})
+            const cp = readLocal<StartPrefs>('tasks-prefs', session?.user?.id)
+            if (cp && cp.companyId === started) { applyPrefs(cp.data, null); setPrefsReady(true) }
+            loadTasks(started)
           }
         }
+        let cid: string | null = (await resolveCompanyUser()).companyId
         if (!cid && session?.user) {
-          const { data: own } = await (supabase as any).from('companies').select('id').eq('owner_id', session.user.id).maybeSingle()
-          if (own?.id) cid = own.id
-          else {
-            const { data: mem } = await (supabase as any).from('team_members').select('company_id').eq('user_id', session.user.id).limit(1)
-            if (mem?.length) cid = mem[0].company_id
-          }
+          const { data: mem } = await (supabase as any).from('team_members').select('company_id').eq('user_id', session.user.id).limit(1)
+          if (mem?.length) cid = mem[0].company_id
         }
-        if (!cid) { setLoading(false); return }
-        setCompanyId(cid)
+        if (!cid) { setLoading(false); setPrefsReady(true); return }
+        if (cid !== started) {
+          // First visit on this device, or a different workspace — start clean.
+          prefsRef.current = null; setPrefsReady(false); setLoading(true)
+          setCompanyId(cid); setTasks([])
+          loadTasks(cid)
+        }
 
         const members: any[] = []
-        const { data: co } = await (supabase as any).from('companies').select('owner_id, name').eq('id', cid).maybeSingle()
-        if (co?.owner_id) members.push({ id: co.owner_id, user_id: co.owner_id, name: co.name ? `${co.name} (Owner)` : 'Owner' })
-        const { data: tm } = await (supabase as any).from('team_members').select('*')
+        const uid = session?.user?.id
+        // Saved view/outlet prefs, the owner and the team all load together.
+        const [savedPrefs, { data: co }, { data: tm }] = await Promise.all([
+          uid ? fetch(`/api/user-prefs?userId=${uid}&companyId=${cid}`).then(r => r.ok ? r.json() : null).catch(() => null) : Promise.resolve(null),
+          (supabase as any).from('companies').select('owner_id, name').eq('id', cid).maybeSingle(),
+          (supabase as any).from('team_members').select('*').or(`company_id.eq.${cid},company_id.is.null`),
+        ])
         for (const m of (tm || [])) {
           if (cid && m.company_id && m.company_id !== cid) continue
           const uid = m.user_id || m.id
@@ -303,13 +318,19 @@ export default function TasksPage() {
 
         // Team members land on their own work: default to "assigned to me" and,
         // if they have a home outlet set, pre-filter to it. The owner sees
-        // everything (no defaults).
-        const uid = session?.user?.id
+        // everything (no defaults). A saved default outlet wins over the home one.
         const myMembership = (tm || []).find((m: any) => (m.user_id || m.id) === uid && (!m.company_id || m.company_id === cid))
-        if (uid && co?.owner_id !== uid && myMembership) {
-          setAssigneeFilter(['me'])
-          if (myMembership.default_location_id && !outletPrefApplied.current) setOutletFilter([myMembership.default_location_id])
-        }
+        const isMember = !!(uid && co?.owner_id !== uid && myMembership)
+        let tv: any = savedPrefs?.prefs?.tasks_view
+        if (!savedPrefs) { try { tv = JSON.parse(localStorage.getItem(`tasks:viewPrefs:${cid}:${uid}`) || 'null') } catch {} }
+        const dv = savedPrefs?.prefs?.default_outlet
+        const fresh: StartPrefs = savedPrefs || !prefsRef.current
+          ? { view: tv?.defaultView || null, names: (tv?.names && typeof tv.names === 'object') ? tv.names : {}, outlet: (dv && typeof dv === 'object' && dv.id) || null, mine: isMember, homeOutlet: isMember ? (myMembership.default_location_id || null) : null }
+          : { ...prefsRef.current, mine: isMember, homeOutlet: isMember ? (myMembership.default_location_id || null) : null }
+        applyPrefs(fresh, prefsRef.current)
+        setPrefsReady(true)
+        writeCache(`tasks:prefs:${cid}`, fresh)
+        writeLocal('tasks-prefs', uid, cid, fresh)
 
         // Outlets load in the background too — not needed for the first paint.
         ;(async () => {
@@ -319,8 +340,7 @@ export default function TasksPage() {
             setOutlets(locs || [])
           } catch {}
         })()
-        await loadTasks(cid)
-      } finally { setLoading(false) }
+      } catch { setLoading(false); setPrefsReady(true) }
     })()
   }, [])
 
@@ -355,19 +375,29 @@ export default function TasksPage() {
     // (recurring series pre-generate up to 60 dated rows each), so the oldest
     // occurrences silently dropped off the board. Page until a short page or a
     // safety cap.
+    // The first page also returns the total, so the rest are fetched in parallel
+    // rather than one after another.
     const fetchAllTasks = async (cols: string) => {
       const PAGE = 1000, MAX = 8000
-      let all: any[] = [], offset = 0, error: any = null
-      while (offset < MAX) {
-        const res = await (supabase as any).from('conversation_tasks')
-          .select(cols).eq('company_id', cid).order('created_at', { ascending: false }).range(offset, offset + PAGE - 1)
-        if (res.error) { error = res.error; break }
-        all = all.concat(res.data || [])
-        if (!res.data || res.data.length < PAGE) break
-        offset += PAGE
+      const page = (offset: number, count?: boolean) => (supabase as any).from('conversation_tasks')
+        .select(cols, count ? { count: 'exact' } : undefined).eq('company_id', cid).order('created_at', { ascending: false }).range(offset, offset + PAGE - 1)
+      const first = await page(0, true)
+      if (first.error) return { data: [], error: first.error }
+      let all: any[] = first.data || []
+      const total = Math.min(first.count ?? all.length, MAX)
+      if (all.length === PAGE && total > PAGE) {
+        const offsets: number[] = []
+        for (let o = PAGE; o < total; o += PAGE) offsets.push(o)
+        const rest = await Promise.all(offsets.map(o => page(o)))
+        for (const r of rest) { if (r.error) return { data: all, error: null }; all = all.concat(r.data || []) }
       }
-      return { data: all, error }
+      return { data: all, error: null }
     }
+    // The calendar items load alongside the tasks instead of after them.
+    const calFrom = new Date(); calFrom.setMonth(calFrom.getMonth() - 6)
+    const calTo = new Date(); calTo.setMonth(calTo.getMonth() + 12)
+    const calendarReq = authFetch(`/api/calendar?${new URLSearchParams({ companyId: cid, from: calFrom.toISOString(), to: calTo.toISOString() })}`)
+      .then(r => r.json()).catch(() => null)
     let data: any[] | null = null
     const full = await fetchAllTasks('*')
     if (full.error) {
@@ -390,14 +420,8 @@ export default function TasksPage() {
     // so edits route back to the calendar rather than trying to write a
     // conversation_tasks row that doesn't exist.
     try {
-      const from = new Date(); from.setMonth(from.getMonth() - 6)
-      const to = new Date(); to.setMonth(to.getMonth() + 12)
-      const params = new URLSearchParams({
-        companyId: cid,
-        from: from.toISOString(), to: to.toISOString(),
-      })
-      const res = await authFetch(`/api/calendar?${params}`)
-      const d = await res.json()
+      const d = await calendarReq
+      if (!d) throw new Error('calendar unavailable')
       const calTasks = (d.events || []).map((e: any) => ({
         id: `cal:${e.id}`,
         _calendarId: e.id,
@@ -460,27 +484,25 @@ export default function TasksPage() {
 
     setTasks(rows)
     writeCache(`tasks:${cid}`, rows)
+    writeLocal('tasks', userIdRef.current, cid, rows)
 
     const convIds = Array.from(new Set(rows.map((t: any) => t.conversation_id).filter(Boolean)))
     if (convIds.length) {
       const m: Record<string, any> = {}
       const contactIds = new Set<string>()
-      for (let i = 0; i < convIds.length; i += 100) {
-        // conversations has no contact_name column — the customer's name lives on
-        // contacts (via contact_id), so pull the id here and resolve names below.
-        const { data: cs } = await (supabase as any).from('conversations')
-          .select('id, subject, contact_id, channel').in('id', convIds.slice(i, i + 100))
-        for (const c of (cs || [])) { m[c.id] = c; if (c.contact_id) contactIds.add(c.contact_id) }
-      }
-      const ids = Array.from(contactIds)
+      const chunks = (arr: string[]) => { const out: string[][] = []; for (let i = 0; i < arr.length; i += 100) out.push(arr.slice(i, i + 100)); return out }
+      // conversations has no contact_name column — the customer's name lives on
+      // contacts (via contact_id), so pull the id here and resolve names below.
+      const convRes = await Promise.all(chunks(convIds as string[]).map(ids => (supabase as any).from('conversations')
+        .select('id, subject, contact_id, channel').in('id', ids)))
+      for (const { data: cs } of convRes) for (const c of (cs || [])) { m[c.id] = c; if (c.contact_id) contactIds.add(c.contact_id) }
       const names: Record<string, string> = {}
-      for (let i = 0; i < ids.length; i += 100) {
-        const { data: cts } = await (supabase as any).from('contacts')
-          .select('id, name').in('id', ids.slice(i, i + 100))
-        for (const ct of (cts || [])) names[ct.id] = ct.name
-      }
+      const ctRes = await Promise.all(chunks(Array.from(contactIds)).map(ids => (supabase as any).from('contacts')
+        .select('id, name').in('id', ids)))
+      for (const { data: cts } of ctRes) for (const ct of (cts || [])) names[ct.id] = ct.name
       for (const id in m) { const cid = m[id].contact_id; if (cid && names[cid]) m[id].contact_name = names[cid] }
       setConvs(m)
+      writeLocal('tasks-convs', userIdRef.current, cid, m)
     }
   }, [])
 
@@ -932,7 +954,7 @@ export default function TasksPage() {
     if (companyId) loadTasks(companyId)
   }
 
-  if (loading) return <div style={{ padding: 20 }}><SkeletonList rows={7} /></div>
+  if (loading || !prefsReady) return <div style={{ padding: 20 }}><SkeletonList rows={7} /></div>
 
   const BUCKETS: { key: Bucket; label: string; n: number }[] = [
     { key: 'today', label: 'Today', n: counts.today },

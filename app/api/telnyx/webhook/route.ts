@@ -9,7 +9,7 @@ import { TelnyxService } from '@/lib/telnyx-service'
 import { logWebhookEvent } from '@/lib/webhook-log'
 import { ensureCallCard, setCallPreview } from '@/lib/call-card'
 import { companyForInboundNumber } from '@/lib/inbound-company'
-import { ensureContactByPhone } from '@/lib/contact-capture'
+import { ensureContactByPhone, findContactByPhone } from '@/lib/contact-capture'
 import { logEnquiryReopened } from '@/lib/conversation-timeline'
 import { emitInboundEvent, emitCallEvent } from '@/lib/integration-hooks'
 
@@ -228,11 +228,8 @@ export async function POST(req: NextRequest) {
       let matchedContactId: string | null = conv?.contact_id || null
       let matchedContactName: string | null = null
       if (!conv && fromDigits && fromDigits.length >= 8) {
-        const tail = fromDigits.slice(-9)
-        const { data: contacts } = await db.from('contacts')
-          .select('id, phone, name').eq('company_id', companyId)
-          .ilike('phone', `%${tail}%`).limit(10)
-        const contact = (contacts || []).find((c: any) => c.phone && digits(c.phone).endsWith(tail))
+        // Matches however the number was saved ("0455 123 456", "+61455…").
+        const contact = await findContactByPhone(db, companyId, from)
         if (contact) {
           matchedContactId = contact.id
           matchedContactName = contact.name || null
@@ -252,6 +249,14 @@ export async function POST(req: NextRequest) {
             }
           }
         }
+      }
+
+      // 3) A number we've never seen becomes a contact straight away (as an
+      //    inbound call already does), so the thread and CRM have them; Colvy AI
+      //    fills their name in from the message when it can. Also links a
+      //    contact to an older SMS thread that never had one.
+      if (!matchedContactId && fromDigits && fromDigits.length >= 8) {
+        try { matchedContactId = await ensureContactByPhone(db, companyId, from, { source: 'sms' }) } catch {}
       }
 
       if (!conv) {
