@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { useClickOutside } from '@/lib/use-click-outside'
 import { TerminologyProvider } from '@/lib/terminologyContext'
@@ -138,6 +138,7 @@ export default function AppChrome({
   const [unreadCount, setUnreadCount] = useState(0)
   const [freshContent] = useState({ ideas: false, roadmap: false, updates: false, help: false })
   const pathname = usePathname()
+  const router = useRouter()
   const [user, setUser] = useState<any>(null)
   const [isAdmin, setIsAdmin] = useState(false)
   const [avatarUrl, setAvatarUrl] = useState<string>('')
