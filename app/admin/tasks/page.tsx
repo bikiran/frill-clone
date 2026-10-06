@@ -133,13 +133,24 @@ const COLUMNS = [
   { key: 'done', label: 'Done' },
 ] as const
 
+// What the page opens on: the saved default view and names, the user's default
+// outlet, and the team-member defaults (assigned to me / home outlet).
+type StartPrefs = { view: ViewMode | null; names: Record<string, string>; outlet: string | null; mine: boolean; homeOutlet: string | null }
+const EMPTY_PREFS: StartPrefs = { view: null, names: {}, outlet: null, mine: false, homeOutlet: null }
+const startOutlet = (p?: StartPrefs | null) => (p ? p.outlet || p.homeOutlet || null : null)
+
 export default function TasksPage() {
   const router = useRouter()
   // Seed identity + the last task list from cache so a revisit paints instantly
   // instead of blanking to a skeleton while the company re-resolves and refetches.
   const seed = peekCompanyUser()
   const seededTasks = seed?.companyId ? readCache<any[]>(`tasks:${seed.companyId}`) : undefined
+  const seedPrefs = seed?.companyId ? readCache<StartPrefs>(`tasks:prefs:${seed.companyId}`) : undefined
   const [loading, setLoading] = useState(!seededTasks)
+  // The page only shows once the saved view and filters are known, so it opens
+  // straight on the final screen instead of List → Timeline → filtered.
+  const [prefsReady, setPrefsReady] = useState(!!seedPrefs)
+  const prefsRef = useRef<StartPrefs | null>(seedPrefs ?? null)
   const [companyId, setCompanyId] = useState<string | null>(seed?.companyId ?? null)
   const [userId, setUserId] = useState<string | null>(null)
   const [me, setMe] = useState('')
@@ -150,52 +161,22 @@ export default function TasksPage() {
 
   const [bucket, setBucket] = useState<Bucket>('today')
   const [bucketDate, setBucketDate] = useState('')   // for the "Date" bucket
-  const [view, setView] = useState<ViewMode>('list')
+  const [view, setView] = useState<ViewMode>(seedPrefs?.view || 'list')
   // Per-user view preferences: a saved default view (applied wherever they sign
   // in, incl. mobile) and custom names — set via right-clicking a view tab.
   const VIEW_LABELS: Record<ViewMode, string> = { list: 'List', board: 'Board', timeline: 'Timeline', calendar: 'Calendar' }
-  const [viewNames, setViewNames] = useState<Record<string, string>>({})
-  const [defaultView, setDefaultView] = useState<ViewMode | null>(null)
+  const [viewNames, setViewNames] = useState<Record<string, string>>(seedPrefs?.names || {})
+  const [defaultView, setDefaultView] = useState<ViewMode | null>(seedPrefs?.view ?? null)
   const [viewMenu, setViewMenu] = useState<{ view: ViewMode; x: number; y: number } | null>(null)
-  const viewPrefsApplied = useRef(false)
-  const [defaultOutlet, setDefaultOutlet] = useState<string | null>(null)
-  const outletPrefApplied = useRef(false)
+  const [defaultOutlet, setDefaultOutlet] = useState<string | null>(seedPrefs?.outlet ?? null)
   const [outletMenu, setOutletMenu] = useState<{ x: number; y: number; value: string } | null>(null)
   const labelOf = (v: ViewMode) => viewNames[v] || VIEW_LABELS[v]
   const dfltDot: React.CSSProperties = { display: 'inline-block', width: 5, height: 5, borderRadius: '50%', background: 'var(--coral)', marginLeft: 5, verticalAlign: 'middle' }
   const viewMenuItem: React.CSSProperties = { display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', borderRadius: 7, border: 'none', background: 'transparent', color: 'var(--ink)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }
 
-  // Load saved view prefs once we know the user/company: localStorage for an
-  // instant paint, then the server (so the choice follows them across devices).
-  useEffect(() => {
-    if (!companyId || !userId) return
-    const lsKey = `tasks:viewPrefs:${companyId}:${userId}`
-    const apply = (p: any, allowSwitch: boolean) => {
-      if (!p) return
-      if (p.names && typeof p.names === 'object') setViewNames(p.names)
-      if ('defaultView' in p) setDefaultView(p.defaultView || null)
-      if (allowSwitch && p.defaultView && !viewPrefsApplied.current) { setView(p.defaultView); viewPrefsApplied.current = true }
-    }
-    try { const raw = localStorage.getItem(lsKey); if (raw) apply(JSON.parse(raw), true) } catch {}
-    ;(async () => {
-      try {
-        const res = await fetch(`/api/user-prefs?userId=${userId}&companyId=${companyId}`)
-        const d = await res.json()
-        apply(d?.prefs?.tasks_view, true)
-        // Default outlet (shared with the Calendar page). It wins over the team
-        // membership default; only marks itself applied when it actually sets one.
-        const dv = d?.prefs?.default_outlet
-        if (dv && typeof dv === 'object') {
-          setDefaultOutlet(dv.id || null)
-          if (dv.id && !outletPrefApplied.current) { setOutletFilter([dv.id]); outletPrefApplied.current = true }
-        }
-      } catch {}
-      viewPrefsApplied.current = true
-    })()
-  }, [companyId, userId])
-
   const setDefaultOutletPref = (id: string | null) => {
     setDefaultOutlet(id)
+    savePrefs({ outlet: id })
     if (id) setOutletFilter([id]); else setOutletFilter([])
     if (companyId && userId) fetch('/api/user-prefs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId, companyId, key: 'default_outlet', value: { id } }) }).catch(() => {})
     setOutletMenu(null)
@@ -203,7 +184,7 @@ export default function TasksPage() {
 
   const persistViewPrefs = (names: Record<string, string>, dflt: ViewMode | null) => {
     const payload = { names, defaultView: dflt }
-    try { if (companyId && userId) localStorage.setItem(`tasks:viewPrefs:${companyId}:${userId}`, JSON.stringify(payload)) } catch {}
+    savePrefs({ names, view: dflt })
     if (companyId && userId) {
       fetch('/api/user-prefs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId, companyId, key: 'tasks_view', value: payload }) }).catch(() => {})
     }
@@ -232,10 +213,10 @@ export default function TasksPage() {
   }, [viewMenu])
 
   const [search, setSearch] = useState('')
-  const [assigneeFilter, setAssigneeFilter] = useState<string[]>([])  // [] = anyone; else match any
+  const [assigneeFilter, setAssigneeFilter] = useState<string[]>(seedPrefs?.mine ? ['me'] : [])  // [] = anyone; else match any
   const [priorityFilter, setPriorityFilter] = useState<string[]>([])  // [] = any priority
   const [colorFilter, setColorFilter] = useState<string[]>([])        // [] = any colour ('' = no colour)
-  const [outletFilter, setOutletFilter] = useState<string[]>([])  // [] = all outlets; else match any
+  const [outletFilter, setOutletFilter] = useState<string[]>(startOutlet(seedPrefs) ? [startOutlet(seedPrefs)!] : [])  // [] = all outlets; else match any
   const [dateFilter, setDateFilter] = useState('')         // '' = any; else a reference YYYY-MM-DD
   const [datePeriod, setDatePeriod] = useState<'day' | 'week' | 'month'>('day')
   const [sortBy, setSortBy] = useState<'due' | 'priority' | 'created'>('due')
@@ -260,6 +241,24 @@ export default function TasksPage() {
     return () => window.removeEventListener('resize', check)
   }, [])
 
+  // Apply saved start-up prefs in one go. With `prev` (what's already on screen)
+  // only the parts whose saved default actually changed are touched, so a
+  // background refresh never yanks the view or filters around.
+  const applyPrefs = (p: StartPrefs, prev: StartPrefs | null) => {
+    setViewNames(p.names || {}); setDefaultView(p.view || null); setDefaultOutlet(p.outlet || null)
+    if (!prev || prev.view !== p.view) setView(p.view || 'list')
+    if (!prev || startOutlet(prev) !== startOutlet(p)) { const o = startOutlet(p); setOutletFilter(o ? [o] : []) }
+    if (!prev || prev.mine !== p.mine) setAssigneeFilter(p.mine ? ['me'] : [])
+    prefsRef.current = p
+  }
+  const savePrefs = (patch: Partial<StartPrefs>) => {
+    const cid = companyId; if (!cid) return
+    const next: StartPrefs = { ...EMPTY_PREFS, ...(prefsRef.current || {}), ...patch }
+    prefsRef.current = next
+    writeCache(`tasks:prefs:${cid}`, next)
+    writeLocal('tasks-prefs', userIdRef.current, cid, next)
+  }
+
   useEffect(() => {
     ;(async () => {
       try {
@@ -280,6 +279,8 @@ export default function TasksPage() {
             setCompanyId(started); setTasks(cached.data || []); setLoading(false)
             const cc = readLocal<Record<string, any>>('tasks-convs', session?.user?.id)
             if (cc && cc.companyId === started) setConvs(cc.data || {})
+            const cp = readLocal<StartPrefs>('tasks-prefs', session?.user?.id)
+            if (cp && cp.companyId === started) { applyPrefs(cp.data, null); setPrefsReady(true) }
             loadTasks(started)
           }
         }
@@ -288,15 +289,19 @@ export default function TasksPage() {
           const { data: mem } = await (supabase as any).from('team_members').select('company_id').eq('user_id', session.user.id).limit(1)
           if (mem?.length) cid = mem[0].company_id
         }
-        if (!cid) { setLoading(false); return }
+        if (!cid) { setLoading(false); setPrefsReady(true); return }
         if (cid !== started) {
           // First visit on this device, or a different workspace — start clean.
+          prefsRef.current = null; setPrefsReady(false); setLoading(true)
           setCompanyId(cid); setTasks([])
           loadTasks(cid)
         }
 
         const members: any[] = []
-        const [{ data: co }, { data: tm }] = await Promise.all([
+        const uid = session?.user?.id
+        // Saved view/outlet prefs, the owner and the team all load together.
+        const [savedPrefs, { data: co }, { data: tm }] = await Promise.all([
+          uid ? fetch(`/api/user-prefs?userId=${uid}&companyId=${cid}`).then(r => r.ok ? r.json() : null).catch(() => null) : Promise.resolve(null),
           (supabase as any).from('companies').select('owner_id, name').eq('id', cid).maybeSingle(),
           (supabase as any).from('team_members').select('*').or(`company_id.eq.${cid},company_id.is.null`),
         ])
@@ -313,13 +318,19 @@ export default function TasksPage() {
 
         // Team members land on their own work: default to "assigned to me" and,
         // if they have a home outlet set, pre-filter to it. The owner sees
-        // everything (no defaults).
-        const uid = session?.user?.id
+        // everything (no defaults). A saved default outlet wins over the home one.
         const myMembership = (tm || []).find((m: any) => (m.user_id || m.id) === uid && (!m.company_id || m.company_id === cid))
-        if (uid && co?.owner_id !== uid && myMembership) {
-          setAssigneeFilter(['me'])
-          if (myMembership.default_location_id && !outletPrefApplied.current) setOutletFilter([myMembership.default_location_id])
-        }
+        const isMember = !!(uid && co?.owner_id !== uid && myMembership)
+        let tv: any = savedPrefs?.prefs?.tasks_view
+        if (!savedPrefs) { try { tv = JSON.parse(localStorage.getItem(`tasks:viewPrefs:${cid}:${uid}`) || 'null') } catch {} }
+        const dv = savedPrefs?.prefs?.default_outlet
+        const fresh: StartPrefs = savedPrefs || !prefsRef.current
+          ? { view: tv?.defaultView || null, names: (tv?.names && typeof tv.names === 'object') ? tv.names : {}, outlet: (dv && typeof dv === 'object' && dv.id) || null, mine: isMember, homeOutlet: isMember ? (myMembership.default_location_id || null) : null }
+          : { ...prefsRef.current, mine: isMember, homeOutlet: isMember ? (myMembership.default_location_id || null) : null }
+        applyPrefs(fresh, prefsRef.current)
+        setPrefsReady(true)
+        writeCache(`tasks:prefs:${cid}`, fresh)
+        writeLocal('tasks-prefs', uid, cid, fresh)
 
         // Outlets load in the background too — not needed for the first paint.
         ;(async () => {
@@ -329,7 +340,7 @@ export default function TasksPage() {
             setOutlets(locs || [])
           } catch {}
         })()
-      } catch { setLoading(false) }
+      } catch { setLoading(false); setPrefsReady(true) }
     })()
   }, [])
 
@@ -943,7 +954,7 @@ export default function TasksPage() {
     if (companyId) loadTasks(companyId)
   }
 
-  if (loading) return <div style={{ padding: 20 }}><SkeletonList rows={7} /></div>
+  if (loading || !prefsReady) return <div style={{ padding: 20 }}><SkeletonList rows={7} /></div>
 
   const BUCKETS: { key: Bucket; label: string; n: number }[] = [
     { key: 'today', label: 'Today', n: counts.today },
