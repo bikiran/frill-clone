@@ -18,6 +18,30 @@ export default function ProfileSettings() {
   })
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  // Inbox time format is company-wide (companies.inbox_settings.hour12), so the
+  // whole team sees the same clock. Saved straight away when picked.
+  const [hour12, setHour12] = useState(true)
+  const [inboxSettings, setInboxSettings] = useState<any>({})
+  const [formatSaved, setFormatSaved] = useState(false)
+
+  useEffect(() => {
+    if (!companyId) return
+    ;(async () => {
+      const { data } = await (supabase as any).from('companies').select('inbox_settings').eq('id', companyId).maybeSingle()
+      const st = data?.inbox_settings || {}
+      setInboxSettings(st)
+      if (typeof st.hour12 === 'boolean') setHour12(st.hour12)
+    })()
+  }, [companyId])
+
+  const changeHour12 = async (v: boolean) => {
+    if (!companyId || v === hour12) return
+    setHour12(v)
+    const next = { ...inboxSettings, hour12: v }
+    setInboxSettings(next)
+    const { error } = await (supabase as any).from('companies').update({ inbox_settings: next }).eq('id', companyId)
+    if (!error) { setFormatSaved(true); setTimeout(() => setFormatSaved(false), 2000) }
+  }
 
   useEffect(() => {
     if (!companyId || !user) return
@@ -89,6 +113,23 @@ export default function ProfileSettings() {
         <h2 style={S.h2}>Customisation</h2>
         <ToggleRow title="Show Message Detail" desc="Show a preview of individual message details, e.g. date & time." checked={s.show_message_detail} onChange={v => set('show_message_detail', v)} />
         <ToggleRow title="Enable Dialer" desc="Enable or disable the phone call feature for your account. This change only affects you." checked={s.dialer_enabled} onChange={v => set('dialer_enabled', v)} />
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, padding: '12px 0', flexWrap: 'wrap' }}>
+          <div style={{ minWidth: 0, flex: '1 1 260px' }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink)' }}>Inbox time format</div>
+            <div style={{ fontSize: 12.5, color: 'var(--slate)', marginTop: 2 }}>
+              How message times show in the inbox. Applies to everyone on the team.
+              {formatSaved && <span style={{ color: '#059669', fontWeight: 600 }}> Saved.</span>}
+            </div>
+          </div>
+          <div role="radiogroup" aria-label="Inbox time format" style={{ display: 'flex', gap: 6, background: 'var(--canvas,#f5f6f8)', borderRadius: 9, padding: 3 }}>
+            {[{ v: true, label: '12-hour', hint: '1:30 PM' }, { v: false, label: '24-hour', hint: '13:30' }].map(o => (
+              <button key={o.label} type="button" role="radio" aria-checked={hour12 === o.v} onClick={() => changeHour12(o.v)}
+                style={{ border: 'none', borderRadius: 7, padding: '7px 14px', cursor: 'pointer', background: hour12 === o.v ? '#fff' : 'transparent', boxShadow: hour12 === o.v ? '0 1px 3px rgba(0,0,0,0.12)' : 'none', color: hour12 === o.v ? 'var(--coral)' : 'var(--slate)', fontWeight: 700, fontSize: 12.5, lineHeight: 1.25, transition: 'background .15s, color .15s' }}>
+                {o.label}<br /><span style={{ fontSize: 10.5, fontWeight: 500, color: 'var(--slate)' }}>{o.hint}</span>
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
       {/* Notifications */}
