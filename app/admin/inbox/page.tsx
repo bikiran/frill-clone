@@ -1003,7 +1003,7 @@ export default function InboxPage() {
     setProductSearching(true)
     setProductError('')
     try {
-      const res = await fetch(`/api/orders/products?companyId=${companyId}&q=${encodeURIComponent(productQuery.trim())}`)
+      const res = await authFetch(`/api/orders/products?companyId=${companyId}&q=${encodeURIComponent(productQuery.trim())}`)
       const d = await res.json()
       if (!res.ok) {
         // Say WHY instead of silently showing "no products found".
@@ -1050,7 +1050,7 @@ export default function InboxPage() {
     let productUrl = p.permalink || ''
     if (productUrl) {
       try {
-        const r = await fetch('/api/short-links/create', {
+        const r = await authFetch('/api/short-links/create', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ companyId, kind: 'redirect', conversationId: selected.id, url: productUrl }),
         })
@@ -3049,7 +3049,7 @@ export default function InboxPage() {
         const expiresAt: string | null = item._expiresAt || null
         let viewerUrl = ''
         try {
-          const lr = await fetch('/api/short-links/create', {
+          const lr = await authFetch('/api/short-links/create', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               companyId, kind: 'media', conversationId: selected.id,
@@ -3121,7 +3121,7 @@ export default function InboxPage() {
     let galleryUrl = ''
     if (media.length > 0) {
       try {
-        const res = await fetch('/api/short-links/create', {
+        const res = await authFetch('/api/short-links/create', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             companyId, kind: 'media',
@@ -3638,7 +3638,7 @@ export default function InboxPage() {
       // configured yet.
       let reviewShortLink = ''
       try {
-        const res = await fetch('/api/short-links/create', {
+        const res = await authFetch('/api/short-links/create', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ companyId, kind: 'review', conversationId: selected.id }),
         })
@@ -4054,7 +4054,7 @@ export default function InboxPage() {
     if (!raw || !companyId) return
     setShortenBusy(true); setShortenError('')
     try {
-      const res = await fetch('/api/short-links/create', {
+      const res = await authFetch('/api/short-links/create', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           companyId, kind: 'redirect', url: raw,
@@ -4597,7 +4597,7 @@ export default function InboxPage() {
       let galleryUrl = ''
       if (attachments.length > 0) {
         try {
-          const res = await fetch('/api/short-links/create', {
+          const res = await authFetch('/api/short-links/create', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               companyId, kind: 'media',

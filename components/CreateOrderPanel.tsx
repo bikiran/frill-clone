@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import AddressAutocomplete from '@/components/AddressAutocomplete'
+import { authFetch } from '@/lib/auth-fetch'
 
 type Item = {
   key: string
@@ -134,7 +135,7 @@ export default function CreateOrderPanel({ companyId, conversationId, contactId,
     const t = setTimeout(async () => {
       setSearching(true)
       try {
-        const res = await fetch(`/api/orders/products?companyId=${companyId}&integrationId=${source.id}&q=${encodeURIComponent(search.trim())}`)
+        const res = await authFetch(`/api/orders/products?companyId=${companyId}&integrationId=${source.id}&q=${encodeURIComponent(search.trim())}`)
         const data = await res.json()
         setResults(data.products || [])
       } catch {} finally { setSearching(false) }
@@ -145,7 +146,7 @@ export default function CreateOrderPanel({ companyId, conversationId, contactId,
   const addProduct = async (p: any) => {
     if (p.has_variations) {
       setVariationFor(p)
-      const res = await fetch(`/api/orders/products?companyId=${companyId}&integrationId=${source.id}&productId=${p.id}`)
+      const res = await authFetch(`/api/orders/products?companyId=${companyId}&integrationId=${source.id}&productId=${p.id}`)
       const data = await res.json()
       setVariations(data.variations || [])
       return

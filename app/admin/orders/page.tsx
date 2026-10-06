@@ -19,6 +19,7 @@ import { CARRIERS as TRACK_CARRIERS, carrierByKey } from '@/lib/carriers'
 import { barcodeSVG } from '@/lib/barcode'
 import { confirmDialog } from '@/components/ConfirmDialog'
 import { notifyIntegrations } from '@/lib/integrations-notify'
+import { authFetch } from '@/lib/auth-fetch'
 
 type Order = any
 
@@ -1569,7 +1570,7 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
       let shortUrl = ''
       if (targetUrl) {
         try {
-          const r = await fetch('/api/short-links/create', {
+          const r = await authFetch('/api/short-links/create', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ companyId, kind: 'redirect', url: targetUrl, label: `${carrier.label} tracking — order ${order.order_number}`, conversationId: order.conversation_id || undefined, sentBy: me.name }),
           })

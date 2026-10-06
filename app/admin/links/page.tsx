@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { peekCompanyUser, readCache, writeCache } from '@/lib/client-cache'
 import { SkeletonList } from '@/components/Skeleton'
+import { authFetch } from '@/lib/auth-fetch'
 
 function parseTs(d: string | null | undefined): Date | null {
   if (!d) return null
@@ -85,7 +86,7 @@ export default function LinksGeneratorPage() {
     setBusy(true); setError(''); setResult(null)
     try {
       const { data: { session } } = await supabase.auth.getSession()
-      const res = await fetch('/api/short-links/create', {
+      const res = await authFetch('/api/short-links/create', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           companyId, kind: 'redirect', url: url.trim(),

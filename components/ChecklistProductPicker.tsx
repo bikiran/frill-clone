@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { authFetch } from '@/lib/auth-fetch'
 
 // Product search + barcode scan for adding store products to a note's checklist.
 // Mirrors the mobile "Add products" sheet: search WooCommerce by name/SKU, or
@@ -38,7 +39,7 @@ export default function ChecklistProductPicker({ companyId, open, onClose, added
     setLoading(true)
     const t = setTimeout(async () => {
       try {
-        const res = await fetch(`/api/orders/products?companyId=${companyId}&q=${encodeURIComponent(s)}`)
+        const res = await authFetch(`/api/orders/products?companyId=${companyId}&q=${encodeURIComponent(s)}`)
         const d = await res.json()
         if (!res.ok) { setErr(d?.error || 'Search failed'); setResults([]) }
         else { setErr(''); setResults(d.products || []) }

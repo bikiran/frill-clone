@@ -8,6 +8,7 @@ import EmojiPicker from '@/components/EmojiPicker'
 import { analyseSms, renderVariables, SMS_VARIABLES } from '@/lib/sms-segments'
 import { calculateCost, DEFAULT_PRICING, SmsPricing, aud, audRate, resolveSmsPricing } from '@/lib/sms-pricing'
 import { confirmDialog } from '@/components/ConfirmDialog'
+import { authFetch } from '@/lib/auth-fetch'
 
 const AUDIENCE_TYPES: [string, string, string][] = [
   ['all_subscribed', 'All subscribed contacts', 'Everyone with marketing consent'],
@@ -326,7 +327,7 @@ export default function CampaignEditorPage() {
     if (!prodQuery.trim() || !companyId) return
     setProdBusy(true)
     try {
-      const res = await fetch(`/api/orders/products?companyId=${companyId}&q=${encodeURIComponent(prodQuery)}`)
+      const res = await authFetch(`/api/orders/products?companyId=${companyId}&q=${encodeURIComponent(prodQuery)}`)
       const d = await res.json()
       setProdResults(d.products || [])
     } catch { setProdResults([]) }
