@@ -13,7 +13,8 @@ import MentionInput, { resolveMentions } from '@/components/MentionInput'
 import { enrichNames } from '@/lib/team-names'
 import { useDraft } from '@/lib/drafts'
 import PageGreeting from '@/components/PageGreeting'
-import { peekCompanyUser, readCache, writeCache } from '@/lib/client-cache'
+import { peekCompanyUser, resolveCompanyUser, readCache, writeCache } from '@/lib/client-cache'
+import { readLocal, writeLocal } from '@/lib/local-cache'
 import { confirmDialog } from '@/components/ConfirmDialog'
 
 function parseTs(d: string | null | undefined): Date | null {
@@ -145,6 +146,7 @@ export default function TasksPage() {
   const [tasks, setTasks] = useState<any[]>(seededTasks ?? [])
   const [convs, setConvs] = useState<Record<string, any>>({})
   const [team, setTeam] = useState<any[]>([])
+  const userIdRef = useRef<string | null>(null)
 
   const [bucket, setBucket] = useState<Bucket>('today')
   const [bucketDate, setBucketDate] = useState('')   // for the "Date" bucket
@@ -266,30 +268,38 @@ export default function TasksPage() {
           setUserId(session.user.id)
           setMe(session.user.user_metadata?.display_name || session.user.email?.split('@')[0] || 'Me')
         }
-        let cid: string | null = null
-        if (typeof window !== 'undefined') {
-          const host = window.location.hostname
-          if (host.endsWith('.colvy.com') && host !== 'colvy.com') {
-            const slug = host.replace('.colvy.com', '')
-            const { data: co } = await (supabase as any).from('companies').select('id').eq('slug', slug).maybeSingle()
-            if (co) cid = co.id
+        userIdRef.current = session?.user?.id || null
+        // Paint the last task list seen on this device (survives a reload) and
+        // start refreshing it straight away, before the workspace lookup.
+        let started: string | null = companyId && seededTasks ? companyId : null
+        if (started) loadTasks(started)
+        else {
+          const cached = readLocal<any[]>('tasks', session?.user?.id)
+          if (cached) {
+            started = cached.companyId
+            setCompanyId(started); setTasks(cached.data || []); setLoading(false)
+            const cc = readLocal<Record<string, any>>('tasks-convs', session?.user?.id)
+            if (cc && cc.companyId === started) setConvs(cc.data || {})
+            loadTasks(started)
           }
         }
+        let cid: string | null = (await resolveCompanyUser()).companyId
         if (!cid && session?.user) {
-          const { data: own } = await (supabase as any).from('companies').select('id').eq('owner_id', session.user.id).maybeSingle()
-          if (own?.id) cid = own.id
-          else {
-            const { data: mem } = await (supabase as any).from('team_members').select('company_id').eq('user_id', session.user.id).limit(1)
-            if (mem?.length) cid = mem[0].company_id
-          }
+          const { data: mem } = await (supabase as any).from('team_members').select('company_id').eq('user_id', session.user.id).limit(1)
+          if (mem?.length) cid = mem[0].company_id
         }
         if (!cid) { setLoading(false); return }
-        setCompanyId(cid)
+        if (cid !== started) {
+          // First visit on this device, or a different workspace — start clean.
+          setCompanyId(cid); setTasks([])
+          loadTasks(cid)
+        }
 
         const members: any[] = []
-        const { data: co } = await (supabase as any).from('companies').select('owner_id, name').eq('id', cid).maybeSingle()
-        if (co?.owner_id) members.push({ id: co.owner_id, user_id: co.owner_id, name: co.name ? `${co.name} (Owner)` : 'Owner' })
-        const { data: tm } = await (supabase as any).from('team_members').select('*')
+        const [{ data: co }, { data: tm }] = await Promise.all([
+          (supabase as any).from('companies').select('owner_id, name').eq('id', cid).maybeSingle(),
+          (supabase as any).from('team_members').select('*').or(`company_id.eq.${cid},company_id.is.null`),
+        ])
         for (const m of (tm || [])) {
           if (cid && m.company_id && m.company_id !== cid) continue
           const uid = m.user_id || m.id
@@ -319,8 +329,7 @@ export default function TasksPage() {
             setOutlets(locs || [])
           } catch {}
         })()
-        await loadTasks(cid)
-      } finally { setLoading(false) }
+      } catch { setLoading(false) }
     })()
   }, [])
 
@@ -355,19 +364,29 @@ export default function TasksPage() {
     // (recurring series pre-generate up to 60 dated rows each), so the oldest
     // occurrences silently dropped off the board. Page until a short page or a
     // safety cap.
+    // The first page also returns the total, so the rest are fetched in parallel
+    // rather than one after another.
     const fetchAllTasks = async (cols: string) => {
       const PAGE = 1000, MAX = 8000
-      let all: any[] = [], offset = 0, error: any = null
-      while (offset < MAX) {
-        const res = await (supabase as any).from('conversation_tasks')
-          .select(cols).eq('company_id', cid).order('created_at', { ascending: false }).range(offset, offset + PAGE - 1)
-        if (res.error) { error = res.error; break }
-        all = all.concat(res.data || [])
-        if (!res.data || res.data.length < PAGE) break
-        offset += PAGE
+      const page = (offset: number, count?: boolean) => (supabase as any).from('conversation_tasks')
+        .select(cols, count ? { count: 'exact' } : undefined).eq('company_id', cid).order('created_at', { ascending: false }).range(offset, offset + PAGE - 1)
+      const first = await page(0, true)
+      if (first.error) return { data: [], error: first.error }
+      let all: any[] = first.data || []
+      const total = Math.min(first.count ?? all.length, MAX)
+      if (all.length === PAGE && total > PAGE) {
+        const offsets: number[] = []
+        for (let o = PAGE; o < total; o += PAGE) offsets.push(o)
+        const rest = await Promise.all(offsets.map(o => page(o)))
+        for (const r of rest) { if (r.error) return { data: all, error: null }; all = all.concat(r.data || []) }
       }
-      return { data: all, error }
+      return { data: all, error: null }
     }
+    // The calendar items load alongside the tasks instead of after them.
+    const calFrom = new Date(); calFrom.setMonth(calFrom.getMonth() - 6)
+    const calTo = new Date(); calTo.setMonth(calTo.getMonth() + 12)
+    const calendarReq = authFetch(`/api/calendar?${new URLSearchParams({ companyId: cid, from: calFrom.toISOString(), to: calTo.toISOString() })}`)
+      .then(r => r.json()).catch(() => null)
     let data: any[] | null = null
     const full = await fetchAllTasks('*')
     if (full.error) {
@@ -390,14 +409,8 @@ export default function TasksPage() {
     // so edits route back to the calendar rather than trying to write a
     // conversation_tasks row that doesn't exist.
     try {
-      const from = new Date(); from.setMonth(from.getMonth() - 6)
-      const to = new Date(); to.setMonth(to.getMonth() + 12)
-      const params = new URLSearchParams({
-        companyId: cid,
-        from: from.toISOString(), to: to.toISOString(),
-      })
-      const res = await authFetch(`/api/calendar?${params}`)
-      const d = await res.json()
+      const d = await calendarReq
+      if (!d) throw new Error('calendar unavailable')
       const calTasks = (d.events || []).map((e: any) => ({
         id: `cal:${e.id}`,
         _calendarId: e.id,
@@ -460,27 +473,25 @@ export default function TasksPage() {
 
     setTasks(rows)
     writeCache(`tasks:${cid}`, rows)
+    writeLocal('tasks', userIdRef.current, cid, rows)
 
     const convIds = Array.from(new Set(rows.map((t: any) => t.conversation_id).filter(Boolean)))
     if (convIds.length) {
       const m: Record<string, any> = {}
       const contactIds = new Set<string>()
-      for (let i = 0; i < convIds.length; i += 100) {
-        // conversations has no contact_name column — the customer's name lives on
-        // contacts (via contact_id), so pull the id here and resolve names below.
-        const { data: cs } = await (supabase as any).from('conversations')
-          .select('id, subject, contact_id, channel').in('id', convIds.slice(i, i + 100))
-        for (const c of (cs || [])) { m[c.id] = c; if (c.contact_id) contactIds.add(c.contact_id) }
-      }
-      const ids = Array.from(contactIds)
+      const chunks = (arr: string[]) => { const out: string[][] = []; for (let i = 0; i < arr.length; i += 100) out.push(arr.slice(i, i + 100)); return out }
+      // conversations has no contact_name column — the customer's name lives on
+      // contacts (via contact_id), so pull the id here and resolve names below.
+      const convRes = await Promise.all(chunks(convIds as string[]).map(ids => (supabase as any).from('conversations')
+        .select('id, subject, contact_id, channel').in('id', ids)))
+      for (const { data: cs } of convRes) for (const c of (cs || [])) { m[c.id] = c; if (c.contact_id) contactIds.add(c.contact_id) }
       const names: Record<string, string> = {}
-      for (let i = 0; i < ids.length; i += 100) {
-        const { data: cts } = await (supabase as any).from('contacts')
-          .select('id, name').in('id', ids.slice(i, i + 100))
-        for (const ct of (cts || [])) names[ct.id] = ct.name
-      }
+      const ctRes = await Promise.all(chunks(Array.from(contactIds)).map(ids => (supabase as any).from('contacts')
+        .select('id, name').in('id', ids)))
+      for (const { data: cts } of ctRes) for (const ct of (cts || [])) names[ct.id] = ct.name
       for (const id in m) { const cid = m[id].contact_id; if (cid && names[cid]) m[id].contact_name = names[cid] }
       setConvs(m)
+      writeLocal('tasks-convs', userIdRef.current, cid, m)
     }
   }, [])
 
