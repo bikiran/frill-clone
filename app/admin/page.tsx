@@ -170,7 +170,7 @@ export default function AdminDashboard() {
     if (ideas === 0) {
       try {
         const { data: co } = await (supabase as any).from('companies').select('name').eq('id', cid).maybeSingle()
-        fetch('/api/seed-company', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId: cid, companyName: co?.name }) }).catch(() => {})
+        authFetch('/api/seed-company', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId: cid, companyName: co?.name }) }).catch(() => {})
       } catch {}
     }
   }

@@ -178,7 +178,7 @@ export default function SettingsPage() {
     const cid = company?.id
     if (activeSettingsTab !== 'overview' || !cid) return
     setOverviewLoading(true)
-    fetch(`/api/company/overview?companyId=${cid}&days=${overviewDays}`)
+    authFetch(`/api/company/overview?companyId=${cid}&days=${overviewDays}`)
       .then(r => r.json())
       .then(d => setOverview(d))
       .catch(() => {})
@@ -282,7 +282,7 @@ export default function SettingsPage() {
         let settingsData: any = null
         console.log('[SETTINGS LOAD] Looking for settings with company_id:', co?.id)
         if (co?.id) {
-          const res = await fetch(`/api/admin/settings?company_id=${co.id}`)
+          const res = await authFetch(`/api/admin/settings?company_id=${co.id}`)
           const result = await res.json()
           console.log('[SETTINGS LOAD] Query result:', { found: !!result.settings, error: result.error })
           settingsData = result.settings || null
@@ -469,7 +469,7 @@ export default function SettingsPage() {
     
     try {
       // Save via server-side API (service role key + read-back verification)
-      const res = await fetch('/api/admin/settings', {
+      const res = await authFetch('/api/admin/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ company_id: companyId, value: siteSettingsValue }),

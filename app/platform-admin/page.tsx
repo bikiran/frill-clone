@@ -1,5 +1,6 @@
 'use client'
 
+import { authFetch } from '@/lib/auth-fetch'
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import LegalAdminPage from '../admin/legal/page'
@@ -2675,7 +2676,7 @@ function CompaniesPage() {
       setMsg(`${co.name} reactivated`)
     }
     if (type === 'seed') {
-      await fetch('/api/seed-company', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId: co.id, companyName: co.name, clearFirst: true }) })
+      await authFetch('/api/seed-company', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId: co.id, companyName: co.name, clearFirst: true }) })
       setMsg(`Sample data seeded for ${co.name}`)
     }
   }

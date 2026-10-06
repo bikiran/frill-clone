@@ -1,5 +1,6 @@
 'use client'
 
+import { useAttachmentToken } from '@/lib/useAttachmentToken'
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import AiLiveReply from '@/components/AiLiveReply'
 import { supabase } from '@/lib/supabase'
@@ -558,6 +559,8 @@ export default function InboxPage() {
   }, [user?.id, companyId])
   const [conversations, setConversations] = useState<Conversation[]>(seededConvs ?? [])
   const [selected, setSelected] = useState<Conversation | null>(null)
+  // Token for this conversation's Gmail attachment links (members only).
+  const attToken = useAttachmentToken(selected?.id)
   const selectedRef = useRef<Conversation | null>(null)
 
   // Publish the open conversation + contact so the floating Colvy AI assistant
@@ -1467,7 +1470,7 @@ export default function InboxPage() {
     let cancelled = false
     ;(async () => {
       try {
-        const res = await fetch(`/api/contacts/linked?contactId=${cid}`)
+        const res = await authFetch(`/api/contacts/linked?contactId=${cid}`)
         const d = await res.json()
         if (!cancelled) setLinkedChannels(d.channels || [])
       } catch { if (!cancelled) setLinkedChannels([]) }
@@ -10767,7 +10770,7 @@ export default function InboxPage() {
                   const emailAtts: any[] = []
                   messages.forEach(m => (Array.isArray(m.email_attachments) ? m.email_attachments : []).forEach((a: any) => {
                     const url = a.url || (m.gmail_message_id && a.attachmentId
-                      ? `/api/email/attachment?messageId=${encodeURIComponent(m.gmail_message_id)}&attachmentId=${encodeURIComponent(a.attachmentId)}&name=${encodeURIComponent(a.name || 'file')}&conversationId=${encodeURIComponent(m.conversation_id)}`
+                      ? `/api/email/attachment?messageId=${encodeURIComponent(m.gmail_message_id)}&attachmentId=${encodeURIComponent(a.attachmentId)}&name=${encodeURIComponent(a.name || 'file')}&conversationId=${encodeURIComponent(m.conversation_id)}${attToken ? `&t=${encodeURIComponent(attToken)}` : ''}`
                       : null)
                     if (!url) return
                     const mime = String(a.mime || a.type || '')

@@ -1,5 +1,6 @@
 'use client'
 
+import { authFetch } from '@/lib/auth-fetch'
 import { useEffect, useRef, useState } from 'react'
 
 // A lightweight discussion thread shown at the bottom of a note — the owner and
@@ -70,8 +71,8 @@ export default function NoteComments({ code, noteId, companyId, accent = '#ff7a6
     setBusy(true)
     try {
       const res = isPublic
-        ? await fetch('/api/notes/public', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code, action: 'comment', comment: { name: name.trim(), email: email.trim(), body: bodyText } }) })
-        : await fetch('/api/notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'comment', id: noteId, companyId, name: name.trim() || authorName || 'Me', body: bodyText }) })
+        ? await authFetch('/api/notes/public', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code, action: 'comment', comment: { name: name.trim(), email: email.trim(), body: bodyText } }) })
+        : await authFetch('/api/notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'comment', id: noteId, companyId, name: name.trim() || authorName || 'Me', body: bodyText }) })
       const d = await res.json()
       if (d.comment) { setList(l => [...l, d.comment]); setText('') }
       if (isPublic) { try { localStorage.setItem('colvy_guest', JSON.stringify({ name: name.trim(), email: email.trim() })) } catch {} }

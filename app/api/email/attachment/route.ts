@@ -1,3 +1,5 @@
+import { readValue } from '@/lib/oauth-state'
+import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getGmailToken } from '@/lib/gmail'
@@ -30,6 +32,15 @@ export async function GET(req: NextRequest) {
     const { data: conv } = await db.from('conversations')
       .select('email_channel_id, company_id').eq('id', conversationId).maybeSingle()
     if (!conv) return NextResponse.json({ error: 'Conversation not found' }, { status: 404 })
+    // A member of the conversation's workspace, or a link carrying this
+    // conversation's attachment token (see ./token). And the Gmail message must
+    // really be one of this conversation's.
+    const t = readValue(url.searchParams.get('t'), 'att')
+    if (!(t && t.conversationId === conversationId) && !(await requireCompanyAccess(req, db, conv.company_id)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+    {
+      const { data: own } = await db.from('messages').select('id').eq('conversation_id', conversationId).eq('gmail_message_id', messageId).limit(1)
+      if (!own?.length) return NextResponse.json({ error: 'Attachment not found' }, { status: 404 })
+    }
 
     let channel: any = null
     if (conv.email_channel_id) {

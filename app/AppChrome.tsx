@@ -1,5 +1,6 @@
 'use client'
 
+import { authFetch } from '@/lib/auth-fetch'
 import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
@@ -624,7 +625,7 @@ export default function AppChrome({
         localStorage.setItem(KEY, String(Date.now()))
         fetch('/api/reviews/dispatch').catch(() => {})
         // Calendar reminders ride along on the same throttle.
-        fetch('/api/calendar/reminders').catch(() => {})
+        authFetch('/api/calendar/reminders').catch(() => {})
       } catch {}
     }
     const t = setTimeout(tick, 8000)          // shortly after load

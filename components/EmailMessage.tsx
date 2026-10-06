@@ -1,5 +1,6 @@
 'use client'
 
+import { useAttachmentToken } from '@/lib/useAttachmentToken'
 import { useState } from 'react'
 
 // Coax-style email card. Emails used to render as one flattened blob of
@@ -43,6 +44,7 @@ function cleanPreview(raw: string): string {
 }
 
 export default function EmailMessage({ msg, agentColor }: { msg: any; agentColor?: string }) {
+  const attToken = useAttachmentToken(msg?.gmail_message_id ? msg?.conversation_id : null)
   const [showFull, setShowFull] = useState(false)
   const isAgent = msg.sender_type === 'agent'
 
@@ -112,7 +114,7 @@ export default function EmailMessage({ msg, agentColor }: { msg: any; agentColor
             <div style={{ marginTop: 12, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
               {attachments.map((a, i) => {
                 const dl = a.url || (msg.gmail_message_id && a.attachmentId
-                  ? `/api/email/attachment?messageId=${encodeURIComponent(msg.gmail_message_id)}&attachmentId=${encodeURIComponent(a.attachmentId)}&name=${encodeURIComponent(a.name || 'file')}&conversationId=${encodeURIComponent(msg.conversation_id)}`
+                  ? `/api/email/attachment?messageId=${encodeURIComponent(msg.gmail_message_id)}&attachmentId=${encodeURIComponent(a.attachmentId)}&name=${encodeURIComponent(a.name || 'file')}&conversationId=${encodeURIComponent(msg.conversation_id)}${attToken ? `&t=${encodeURIComponent(attToken)}` : ''}`
                   : null)
                 const chip = (
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '7px 11px', borderRadius: 9, border: '1px solid #e3e9f2', background: '#f9fbfd', color: 'var(--ink)', fontSize: 12.5, maxWidth: 240 }}>

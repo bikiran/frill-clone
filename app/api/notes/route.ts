@@ -1,3 +1,4 @@
+import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
@@ -22,13 +23,18 @@ const genCode = () => Math.random().toString(36).slice(2, 9)
 export async function GET(req: NextRequest) {
   const companyId = req.nextUrl.searchParams.get('companyId')
   const id = req.nextUrl.searchParams.get('id')
-  const userId = req.nextUrl.searchParams.get('userId')
+  // Who is asking comes from the sign-in (set below). A ?userId= used to decide
+  // this, and leaving it out showed everyone's private notes.
+  let userId: string | null = null
   // A note is visible to a user if they created it, or its owner shared it with
-  // the team. (No userId → return all, for backward compatibility.)
-  const visible = (n: any) => !userId || n.created_by === userId || n.shared_with_team || (Array.isArray(n.shared_members) && n.shared_members.some((m: any) => m?.id === userId))
+  // the team.
+  const visible = (n: any) => !!userId && (n.created_by === userId || n.shared_with_team || (Array.isArray(n.shared_members) && n.shared_members.some((m: any) => m?.id === userId)))
   if (!companyId) return NextResponse.json({ error: 'companyId required' }, { status: 400 })
   try {
     const db = admin()
+    const access = await requireCompanyAccess(req, db, companyId)
+    if (!access.ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+    userId = access.userId || null
     if (id) {
       const { data, error } = await db.from('notes').select('*').eq('id', id).eq('company_id', companyId).maybeSingle()
       if (error) { if (missing(error.message)) return NextResponse.json({ note: null, needsMigration: true }); throw error }
@@ -54,6 +60,10 @@ export async function POST(req: NextRequest) {
     const { companyId, action } = body
     if (!companyId || !action) return NextResponse.json({ error: 'companyId and action required' }, { status: 400 })
     const db = admin()
+    // Members only; the acting user is the signed-in one, whatever the body says.
+    const access = await requireCompanyAccess(req, db, companyId)
+    if (!access.ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+    body.userId = access.userId
 
     if (action === 'create') {
       const { data, error } = await db.from('notes').insert({

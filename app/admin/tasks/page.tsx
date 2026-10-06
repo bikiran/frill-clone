@@ -1910,7 +1910,7 @@ function TaskDetail({ task, conv, team, outlets = [], companyId, me, userId, onP
   useEffect(() => {
     if (!notePicker || !companyId) return
     ;(async () => {
-      try { const r = await fetch(`/api/notes?companyId=${companyId}&userId=${userId || ''}`); const d = await r.json(); setNoteList(d.notes || []) } catch { setNoteList([]) }
+      try { const r = await authFetch(`/api/notes?companyId=${companyId}&userId=${userId || ''}`); const d = await r.json(); setNoteList(d.notes || []) } catch { setNoteList([]) }
     })()
   }, [notePicker, companyId, userId])
   const linkNote = (n: any) => { if (linkedNotes.some(x => x.id === n.id)) return; patch({ linked_notes: [...linkedNotes, { id: n.id, title: n.title || 'Untitled' }] }); setNotePicker(false); setNoteQuery('') }

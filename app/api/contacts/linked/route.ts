@@ -1,3 +1,4 @@
+import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { linkedContacts } from '@/lib/identity'
@@ -28,6 +29,11 @@ export async function GET(req: NextRequest) {
   if (!contactId) return NextResponse.json({ error: 'contactId required' }, { status: 400 })
 
   const db = admin()
+  // Members of the contact's workspace only.
+  {
+    const { data: owner } = await db.from('contacts').select('company_id').eq('id', contactId).maybeSingle()
+    if (!owner || !(await requireCompanyAccess(req, db, owner.company_id)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+  }
   const linked = await linkedContacts(db, contactId)
   const byId = new Map(linked.map((c: any) => [c.id, c]))
   const ids = linked.map((c: any) => c.id)

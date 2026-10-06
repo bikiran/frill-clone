@@ -1,5 +1,6 @@
 'use client'
 
+import { authFetch } from '@/lib/auth-fetch'
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
@@ -83,7 +84,7 @@ export default function ContactsPage() {
     if (!companyId) return
     setDupBusy(true)
     try {
-      const res = await fetch(`/api/contacts/duplicates?companyId=${companyId}`)
+      const res = await authFetch(`/api/contacts/duplicates?companyId=${companyId}`)
       const d = await res.json()
       if (!res.ok) throw new Error(d.error || 'Could not check')
       setDupGroups(d.groups || [])
@@ -97,7 +98,7 @@ export default function ContactsPage() {
     if (!await confirmDialog(`Merge ${mergeIds.length} duplicate${mergeIds.length === 1 ? '' : 's'} into this contact? All their conversations and history move across — nothing is lost.`)) return
     setDupBusy(true)
     try {
-      const res = await fetch('/api/contacts/duplicates', {
+      const res = await authFetch('/api/contacts/duplicates', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ companyId, keepId, mergeIds }),
       })

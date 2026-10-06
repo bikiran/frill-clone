@@ -76,7 +76,7 @@ export default function DoaPanel({ companyId, conversationId, contactId, contact
     if (!orderNumber.trim()) return
     setLooking(true); setError(''); setOrder(null)
     try {
-      const res = await fetch(`/api/doa/order?companyId=${companyId}&order=${encodeURIComponent(orderNumber.trim())}`)
+      const res = await authFetch(`/api/doa/order?companyId=${companyId}&order=${encodeURIComponent(orderNumber.trim())}`)
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Order not found')
       setOrder(data.order)
@@ -98,7 +98,7 @@ export default function DoaPanel({ companyId, conversationId, contactId, contact
     setProcessing(true); setError('')
     try {
       const amount = customAmount ? customAmount : (resolution === 'refund' ? refundDefault.toFixed(2) : undefined)
-      const res = await fetch('/api/doa/process', {
+      const res = await authFetch('/api/doa/process', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           companyId, conversationId, contactId, order, resolution,

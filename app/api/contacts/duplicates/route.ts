@@ -1,3 +1,4 @@
+import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
@@ -27,6 +28,8 @@ export async function GET(req: NextRequest) {
     const companyId = req.nextUrl.searchParams.get('companyId')
     if (!companyId) return NextResponse.json({ error: 'companyId required' }, { status: 400 })
     const db = admin()
+    // Workspace members only.
+    if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
 
     const { data: contacts } = await db.from('contacts')
       .select('id, name, email, phone, identity_group_id, created_at')
@@ -98,6 +101,14 @@ export async function POST(req: NextRequest) {
     }
 
     const db = admin()
+    // Workspace members only.
+    if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+    // Every contact being merged, and the one kept, must be this workspace's.
+    {
+      const ids = Array.from(new Set([keepId, ...mergeIds].map(String)))
+      const { data: rows } = await db.from('contacts').select('id, company_id').in('id', ids)
+      if ((rows || []).length !== ids.length || (rows || []).some((r: any) => r.company_id !== companyId)) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+    }
 
     const { data: keep } = await db.from('contacts').select('*').eq('id', keepId).maybeSingle()
     if (!keep) return NextResponse.json({ error: 'Contact to keep not found' }, { status: 404 })
