@@ -109,10 +109,10 @@ export default function CreateCompanyPage() {
 
       // 5. Auto-register subdomain in Vercel
       try {
-        await fetch('/api/domains', {
+        await authFetch('/api/domains', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ domain: `${slug.toLowerCase()}.colvy.com` }),
+          body: JSON.stringify({ domain: `${slug.toLowerCase()}.colvy.com`, companyId: coResult.company?.id }),
         })
       } catch {}
 

@@ -1,4 +1,5 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { internalHeaders } from '@/lib/internal-call'
+import { NextRequest, NextResponse, after } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { checkBurst, callerKey } from '@/lib/rate-limit'
 import { notifyCompany, pushInboundMessage } from '@/lib/notify'
@@ -139,8 +140,24 @@ export async function POST(req: NextRequest) {
       // "Translated · English / View original" toggle.
       if (content && message?.id) {
         const base = (process.env.NEXT_PUBLIC_SITE_URL || new URL(req.url).origin).replace(/\/$/, '')
-        fetch(`${base}/api/inbox/translate-message`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messageId: message.id }) }).catch(() => {})
+        fetch(`${base}/api/inbox/translate-message`, { method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ messageId: message.id }) }).catch(() => {})
       }
+      // What the widget used to fire from the visitor's browser: smart triggers,
+      // keyword replies, Colvy AI and the thank-you auto-reply. They run here,
+      // only after the message really landed, with the internal header, so those
+      // routes no longer have to accept anonymous calls.
+      const site = (process.env.NEXT_PUBLIC_SITE_URL || new URL(req.url).origin).replace(/\/$/, '')
+      const post = (path: string, payload: any) => fetch(`${site}${path}`, {
+        method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify(payload),
+      }).catch(() => {})
+      after(async () => {
+        await Promise.all([
+          content ? post('/api/inbox/smart-trigger', { conversationId, text: content }) : null,
+          content ? post('/api/inbox/keyword-reply', { conversationId, text: content, companyId }) : null,
+          post('/api/ai/reply', { conversationId, companyId }),
+          post('/api/inbox/auto-reply', { conversationId }),
+        ])
+      })
     }
 
     return NextResponse.json({ ok: true, message })

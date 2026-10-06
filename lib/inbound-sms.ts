@@ -175,7 +175,7 @@ export async function ingestInboundSms(params: {
   }
   if (!senderLabel || /^\+?\d[\d\s-]*$/.test(senderLabel)) senderLabel = from
   try {
-    fetch(`${origin}/api/push/send`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, title: `New SMS from ${senderLabel}`, body: summary, conversationId: conv.id, from }) })
+    fetch(`${origin}/api/push/send`, { method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ companyId, title: `New SMS from ${senderLabel}`, body: summary, conversationId: conv.id, from }) })
     fetch(`${origin}/api/inbox/smart-trigger`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ conversationId: conv.id, text }) })
     // Colvy AI: extract the sender's name/suburb and create/link their contact.
     // Fire-and-forget so the LLM call never delays ingestion.

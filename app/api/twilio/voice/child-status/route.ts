@@ -1,3 +1,4 @@
+import { internalHeaders } from '@/lib/internal-call'
 import { twilioSignatureOk } from '@/lib/twilio-signature'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
@@ -121,7 +122,7 @@ export async function POST(req: NextRequest) {
         try {
           await fetch(`${base}/api/push/send`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: internalHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({
               companyId,
               title: 'Call answered',

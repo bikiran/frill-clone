@@ -856,7 +856,7 @@ export default function IncomingCallListener({ companyId, agentName, showStatusP
   const notifyTeamCallAccepted = () => {
     if (!companyId) return
     const who = agentName || 'a teammate'
-    fetch('/api/push/send', {
+    authFetch('/api/push/send', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         companyId,

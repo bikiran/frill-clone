@@ -1,3 +1,4 @@
+import { internalHeaders } from '@/lib/internal-call'
 import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
@@ -96,7 +97,7 @@ export async function POST(req: NextRequest) {
       const base = String(process.env.NEXT_PUBLIC_SITE_URL || new URL(req.url).origin).replace(/\/$/, '')
       try {
         await fetch(`${base}/api/push/send`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({
             companyId,
             title: 'Call answered',

@@ -1,3 +1,4 @@
+import { twilioSignatureOk } from '@/lib/twilio-signature'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { TwilioService } from '@/lib/twilio-service'
@@ -29,6 +30,8 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ callId: st
   try {
     const { callId } = await ctx.params
     const form = await req.formData().catch(() => null)
+    // Only Twilio (signed with the account's auth token).
+    if (!(await twilioSignatureOk(req, form))) return new NextResponse('Forbidden', { status: 403 })
     const get = (k: string) => { const v = form?.get(k); return v == null ? '' : String(v) }
     const event = get('StatusCallbackEvent')       // 'participant-join' | 'participant-leave' | …
     const joinedSid = get('CallSid')

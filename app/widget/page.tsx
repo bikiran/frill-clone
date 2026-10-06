@@ -2168,10 +2168,7 @@ function WidgetContent() {
                             const _d = await _r.json().catch(() => ({}))
                             const msgErr = _r.ok ? null : new Error(_d.error || 'Message could not be sent')
                             setWidgetReplyTo(null)
-                            try { fetch('/api/push/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId: company?.id, title: `New message from ${chatName || 'a visitor'}`, body: content, conversationId: chatConvId }) }) } catch {}; try { fetch('/api/notify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId: company?.id, type: 'chat', message: `New message from ${chatName || 'a visitor'}: ${content.slice(0, 80)}`, actorName: chatName }) }) } catch {}; try { fetch('/api/inbox/smart-trigger', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ conversationId: chatConvId, text: content }) }) } catch {}; try { fetch('/api/inbox/keyword-reply', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ conversationId: chatConvId, text: content, companyId: company?.id }) }) } catch {}; try { fetch('/api/ai/reply', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ conversationId: chatConvId, companyId: company?.id }) }) } catch {}
-                            // Auto-reply fires now, on the customer's message (the
-                            // route only sends once per conversation via auto_replied).
-                            try { fetch('/api/inbox/auto-reply', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ conversationId: chatConvId }) }) } catch {}
+                            // Notifications, smart triggers, keyword replies, Colvy AI and the auto-reply run on the server (/api/widget/message).
                             // The conversation summary and reopen are handled by
                             // /api/widget/message, which this send now uses.
                           } catch (err) {
@@ -2205,7 +2202,7 @@ function WidgetContent() {
                           const sendData = await sendRes.json().catch(() => ({}))
                           const msgErr = sendRes.ok ? null : new Error(sendData.error || 'Message could not be sent')
                           const _wr = widgetReplyTo; setWidgetReplyTo(null)
-                          try { fetch('/api/push/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId: company?.id, title: `New message from ${chatName || 'a visitor'}`, body: content, conversationId: chatConvId }) }) } catch {}; try { fetch('/api/notify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId: company?.id, type: 'chat', message: `New message from ${chatName || 'a visitor'}: ${content.slice(0, 80)}`, actorName: chatName }) }) } catch {}; try { fetch('/api/inbox/smart-trigger', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ conversationId: chatConvId, text: content }) }) } catch {}; try { fetch('/api/inbox/keyword-reply', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ conversationId: chatConvId, text: content, companyId: company?.id }) }) } catch {}; try { fetch('/api/ai/reply', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ conversationId: chatConvId, companyId: company?.id }) }) } catch {}; try { fetch('/api/inbox/auto-reply', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ conversationId: chatConvId }) }) } catch {}
+                          // Notifications, smart triggers, keyword replies, Colvy AI and the auto-reply run on the server (/api/widget/message).
                           if (msgErr) throw msgErr
                         } catch (err) {
                           console.error('Widget message send error:', err)

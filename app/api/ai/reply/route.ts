@@ -1,3 +1,5 @@
+import { isInternalCall } from '@/lib/internal-call'
+import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { runAiAgent } from '@/lib/ai-agent'
 import { createClient } from '@supabase/supabase-js'
@@ -18,10 +20,16 @@ const admin = () => createClient(
 // answerable instead of a mystery.
 export async function POST(req: NextRequest) {
   try {
-    const { conversationId, companyId } = await req.json()
+    // Only our own server (widget messages, inbound SMS) triggers a reply. And
+    // the workspace is the conversation's own: a companyId in the body used to
+    // let another workspace's AI settings answer this customer.
+    if (!isInternalCall(req)) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+    const { conversationId } = await req.json()
     if (!conversationId) return NextResponse.json({ error: 'conversationId required' }, { status: 400 })
+    const { data: owner } = await admin().from('conversations').select('company_id').eq('id', conversationId).maybeSingle()
+    if (!owner?.company_id) return NextResponse.json({ error: 'Conversation not found' }, { status: 404 })
 
-    const result = await runAiAgent({ conversationId, companyId })
+    const result = await runAiAgent({ conversationId, companyId: owner.company_id })
 
     // Log a skip so the business can see why nothing happened.
     if (!result.replied && result.reason) {
@@ -64,6 +72,8 @@ export async function GET(req: NextRequest) {
       const { data } = await db.from('conversations').select('company_id').eq('id', conversationId).maybeSingle()
       cid = data?.company_id
     }
+    // Workspace members only.
+    if (!cid || !(await requireCompanyAccess(req, db, cid)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
 
     if (cid) {
       const { data: co } = await db.from('companies').select('ai_settings').eq('id', cid).maybeSingle()

@@ -148,7 +148,7 @@ export async function confirmChatPayment(
   // ── 5. Push a phone notification to the team.
   try {
     await fetch(`${base}/api/push/send`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({
         companyId: pay.company_id,
         title: 'Payment received',

@@ -362,7 +362,7 @@ export async function POST(req: NextRequest) {
         // Alert agents' phones
         try {
           const origin = req.headers.get('host') ? `${req.headers.get('x-forwarded-proto') || 'https'}://${req.headers.get('host')}` : (process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com')
-          fetch(`${origin}/api/push/send`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, title: `New SMS from ${from}`, body: summary, conversationId: conv.id }) })
+          fetch(`${origin}/api/push/send`, { method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ companyId, title: `New SMS from ${from}`, body: summary, conversationId: conv.id }) })
           fetch(`${origin}/api/inbox/smart-trigger`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ conversationId: conv.id, text }) })
           // Colvy AI: extract the sender's name/suburb and create/link their
           // contact (fire-and-forget — never delays ingestion).

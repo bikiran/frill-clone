@@ -1,3 +1,4 @@
+import { memberOr403 } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
@@ -30,6 +31,8 @@ export async function POST(req: NextRequest) {
       channelId,
     } = await req.json()
     if (!companyId || !body) return NextResponse.json({ error: 'Missing companyId or body' }, { status: 400 })
+    // Our own server, or a member of the workspace (the browser call alert).
+    { const deny = await memberOr403(req, companyId, { allowInternal: true }); if (deny) return deny }
 
     const db = admin()
     let q = db.from('push_tokens').select('expo_token, user_id, platform').eq('company_id', companyId)

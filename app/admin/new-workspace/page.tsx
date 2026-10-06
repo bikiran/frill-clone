@@ -60,10 +60,10 @@ export default function NewWorkspacePage() {
 
       // Register subdomain in Vercel so slug.colvy.com works immediately
       try {
-        await fetch('/api/domains', {
+        await authFetch('/api/domains', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ domain: `${slug.toLowerCase()}.colvy.com` }),
+          body: JSON.stringify({ domain: `${slug.toLowerCase()}.colvy.com`, companyId: result.company?.id }),
         })
       } catch {}
 

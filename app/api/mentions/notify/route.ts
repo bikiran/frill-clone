@@ -71,7 +71,7 @@ export async function POST(req: NextRequest) {
       const origin = req.nextUrl.origin
       fetch(`${origin}/api/push/send`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: internalHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           companyId,
           userIds,

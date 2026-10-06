@@ -1,3 +1,4 @@
+import { provisionSubdomain } from '@/lib/provision-domain'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
@@ -97,13 +98,9 @@ export async function GET(req: NextRequest) {
       if (co.data?.slug) {
         const domain = `${co.data.slug}.colvy.com`
         try {
-          const r = await fetch(`${origin}/api/domains`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ domain }),
-          })
-          const dr = await r.json().catch(() => ({}))
-          if (!r.ok || dr?.vercel?.error) {
+          // Straight to the provisioner (the /api/domains route is members-only).
+          const dr: any = await provisionSubdomain(domain)
+          if (!dr?.ok || dr?.vercel?.error) {
             console.warn('[auth/callback] subdomain registration issue for', domain, JSON.stringify(dr))
           }
         } catch (e) {

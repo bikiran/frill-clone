@@ -1,5 +1,6 @@
 'use client'
 
+import { authFetch } from '@/lib/auth-fetch'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
@@ -1063,7 +1064,7 @@ export default function SettingsPage() {
                         setCompany((prev: any) => prev ? { ...prev, slug: slugEdit } : prev)
                         setSlugStatus('idle')
                         // Register new subdomain with Vercel
-                        fetch('/api/domains', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ domain: `${slugEdit}.colvy.com` }) }).catch(() => {})
+                        authFetch('/api/domains', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ domain: `${slugEdit}.colvy.com`, companyId: company.id }) }).catch(() => {})
                       }}
                         className="px-3 py-2 text-xs font-bold cursor-pointer text-white flex-shrink-0"
                         style={{ background: '#10b981', border: 'none' }}>
@@ -1121,10 +1122,10 @@ export default function SettingsPage() {
                         if (!boardDomain) return
                         setDomainStatus(p => ({ ...p, board: 'verifying' }))
                         try {
-                          const res = await fetch('/api/domains', {
+                          const res = await authFetch('/api/domains', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ domain: boardDomain }),
+                            body: JSON.stringify({ domain: boardDomain, companyId: company?.id }),
                           })
                           const data = await res.json()
                           if (data.manual) {
@@ -1167,10 +1168,10 @@ export default function SettingsPage() {
                         if (!helpDomain) return
                         setDomainStatus(p => ({ ...p, help: 'verifying' }))
                         try {
-                          const res = await fetch('/api/domains', {
+                          const res = await authFetch('/api/domains', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ domain: helpDomain }),
+                            body: JSON.stringify({ domain: helpDomain, companyId: company?.id }),
                           })
                           const data = await res.json()
                           if (data.manual) {
