@@ -24,7 +24,8 @@ const CORAL = '#ff6a4d', BLUE = '#2b59ff', PURPLE = '#7c5cff', GREEN = '#00c48c'
 // with a shorter `comp` array shows ✗ for the rows it doesn't declare.
 // Booking: only Podium (via integrations) and Birdeye (Appointments) declare
 // it. The waitlist and voice-typing rows after it are Colvy-only, so no
-// competitor declares them.
+// competitor declares them. Rows added later are set per competitor in `extra`
+// (keyed by the row label) instead of growing every comp array.
 const FEAT = [
   'SMS (Australian 🇦🇺 numbers)', 'WhatsApp', 'Instagram DMs', 'Facebook / Meta DMs',
   'Email (Gmail / Outlook)', 'Phone calls & voicemail', 'Google Reviews', 'Live chat widget',
@@ -34,6 +35,7 @@ const FEAT = [
   'Media gallery', 'Team notes', 'Shared calendar', 'Tasks & reminders',
   'Online booking, deposits & reminders',
   'Back-in-stock waitlists & restock texts', 'AI voice typing',
+  'Scheduled replies (edit, send now or cancel)',
 ]
 
 type Val = boolean | string
@@ -41,6 +43,7 @@ type Cmp = {
   name: string; accent: string; heroTitle: string; heroAccent: string; heroSub: string
   stats: { big: string; label: string }[]
   comp: Val[]                    // aligned to FEAT; Colvy is always ✓
+  extra?: Record<string, Val>    // later rows, by FEAT label (missing → ✗)
   tableNote: string
   wins: { t: string; d: string }[]
   checklist: string[]
@@ -51,6 +54,7 @@ const CMP: Record<string, Cmp> = {
     name: 'Podium', accent: GREEN, heroTitle: 'The Podium alternative built for', heroAccent: 'Australian 🇦🇺 business', heroSub: 'More channels, AI that learns from every chat, Australian support and real results — everything Podium locks behind contracts and add-ons, Colvy includes.',
     stats: [{ big: 'No', label: 'lock-in contracts' }, { big: '14', label: 'channels included' }, { big: '45 min', label: 'full migration' }],
     comp: [true, false, true, true, false, true, true, true, 'Limited', true, false, 'Limited', true, true, 'Overseas', false, false, false, false, false, false, false, false, false, 'Via integrations'],
+    extra: { 'Scheduled replies (edit, send now or cancel)': true },
     tableNote: 'Colvy covers more channels, deeper AI and genuine Australian 🇦🇺 support.',
     wins: [
       { t: 'One conversation, nothing siloed', d: 'Every channel lives in one thread per customer — SMS, calls, email, WhatsApp, Instagram, reviews. Not separate inboxes.' },
@@ -96,6 +100,7 @@ const CMP: Record<string, Cmp> = {
     name: 'Zendesk', accent: BLUE, heroTitle: 'The Zendesk alternative built for', heroAccent: 'Australian 🇦🇺 business', heroSub: 'Threads, not tickets. Every channel included. Set up in 45 minutes, not weeks. Colvy replaces Zendesk with simplicity, speed and AI.',
     stats: [{ big: 'Threads', label: 'not tickets' }, { big: '45 min', label: 'setup vs weeks' }, { big: '$0', label: 'add-on fees' }],
     comp: ['Add-on', 'Add-on', 'Add-on', true, true, 'Add-on', false, true, 'Add-on', false, false, 'Limited', false, 'Limited', false, false],
+    extra: { 'Scheduled replies (edit, send now or cancel)': 'Add-on' },
     tableNote: 'Zendesk charges extra for nearly everything. Colvy includes it all.',
     wins: [
       { t: 'Threads, not tickets', d: 'Zendesk forces every interaction into a ticket. Colvy gives each customer one conversation thread across all channels.' },
@@ -142,6 +147,7 @@ const CMP: Record<string, Cmp> = {
     stats: [{ big: '1', label: 'platform for comms + product' }, { big: '14', label: 'channels included' }, { big: '45 min', label: 'full migration' }],
     // Coax is a strong comms peer (all comms rows ✓); Colvy adds the feedback suite (auto ✗ for Coax).
     comp: [true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true],
+    extra: { 'Scheduled replies (edit, send now or cancel)': true },
     tableNote: 'Colvy matches Coax on conversations — and adds the product-feedback suite Coax doesn’t have.',
     wins: [
       { t: 'A built-in feedback board', d: 'Capture, prioritise and vote on ideas right inside Colvy. Coax has no ideas board.' },
@@ -157,6 +163,7 @@ const CMP: Record<string, Cmp> = {
     name: 'ManyChat', accent: INDIGO, heroTitle: 'The ManyChat alternative that', heroAccent: 'closes the loop', heroSub: 'ManyChat automates chat-marketing flows. Colvy is a full inbox, CRM, calls and feedback platform — real conversations and real revenue, not just automations.',
     stats: [{ big: 'Inbox', label: '+ CRM, not just flows' }, { big: '14', label: 'channels included' }, { big: '45 min', label: 'full migration' }],
     comp: ['Add-on', true, true, true, 'Basic', false, false, true, 'Flows', false, false, 'Limited', 'Add-on', false, false, false],
+    extra: { 'Scheduled replies (edit, send now or cancel)': 'Broadcasts only' },
     tableNote: 'ManyChat is built for chat-marketing flows. Colvy is a full communication + feedback platform.',
     wins: [
       { t: 'A real shared inbox', d: 'A true team inbox with a CRM profile beside every chat — not just automated flows.' },
@@ -174,6 +181,7 @@ const CMP: Record<string, Cmp> = {
     // Birdeye leads on reviews/surveys (✓), but has no built-in phone system and
     // no product-feedback board; Colvy adds those. Feedback rows auto-✗ except surveys.
     comp: [true, true, true, true, 'Marketing', false, true, true, 'BirdAI', false, false, 'Limited', true, false, false, false, false, false, false, true, false, false, false, false, 'Appointments'],
+    extra: { 'Scheduled replies (edit, send now or cancel)': true },
     tableNote: 'Birdeye leads on reviews and surveys — Colvy matches that and adds real calling, a shared inbox and a product-feedback suite, at SMB pricing.',
     wins: [
       { t: 'A real phone system', d: 'Colvy includes voice calls, voicemail and call intelligence. Birdeye has no built-in phone system.' },
@@ -292,7 +300,7 @@ export default function ComparePage() {
               <div key={f} className="cmp-row" style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr 1fr', alignItems: 'center', borderTop: `1px solid ${rowLine}`, transition: 'background 0.15s' }}>
                 <div style={{ padding: '13px 18px', fontSize: 14, fontWeight: 600, color: text }}>{f}</div>
                 <div style={{ padding: '13px 12px', display: 'flex', justifyContent: 'center' }}><Check c={GREEN} /></div>
-                <div style={{ padding: '13px 12px', display: 'flex', justifyContent: 'center', textAlign: 'center' }}>{cell(c.comp[i] ?? false)}</div>
+                <div style={{ padding: '13px 12px', display: 'flex', justifyContent: 'center', textAlign: 'center' }}>{cell(c.comp[i] ?? c.extra?.[f] ?? false)}</div>
               </div>
             ))}
           </div>
