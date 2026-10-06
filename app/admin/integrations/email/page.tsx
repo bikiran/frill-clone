@@ -87,7 +87,7 @@ export default function EmailPage() {
     setBusy('sync-' + a.id)
     try {
       const d = await api({ action: 'sync', id: a.id })
-      setMsg(`Imported ${d.imported} new email${d.imported === 1 ? '' : 's'} from ${a.inbound_address}.`)
+      setMsg(`Imported ${d.imported} new email${d.imported === 1 ? '' : 's'} from ${a.inbound_address}${d.more ? ' — the inbox is busy, press Sync now again to fetch the rest' : ''}.`)
       if (companyId) await load(companyId)
     } catch (e: any) { setMsg(e.message) } finally { setBusy('') }
   }
