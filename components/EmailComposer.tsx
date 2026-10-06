@@ -26,10 +26,12 @@ interface Props {
   // The inbox's action buttons (+ menu, review request, short link, booking…)
   // — given a function that inserts text at the caret in this email body.
   extraTools?: (insert: (text: string) => void) => React.ReactNode
+  header?: React.ReactNode       // the inbox's Reply / Note switch, shown on top
+  bodyHeight?: number            // set by the inbox's drag-to-resize grip
 }
 
 export default function EmailComposer({
-  conversationId, companyId, toEmail, defaultSubject, fromLabel, signature, agentName, onSent, onAiAssist, keyterms, extraTools,
+  conversationId, companyId, toEmail, defaultSubject, fromLabel, signature, agentName, onSent, onAiAssist, keyterms, extraTools, header, bodyHeight,
 }: Props) {
   const [to, setTo] = useState(toEmail)
   const [cc, setCc] = useState('')
@@ -290,8 +292,9 @@ export default function EmailComposer({
   const sigPreview = selectedSigBody()
 
   return (
-    <div style={{ border: '1px solid var(--border)', borderRadius: 12, background: '#fff', overflow: 'hidden' }}>
-      <div style={{ ...row, background: 'var(--canvas)' }}>
+    <div className={header ? 'cmp-card' : undefined} style={header ? { overflow: 'hidden' } : { border: '1px solid var(--border)', borderRadius: 12, background: '#fff', overflow: 'hidden' }}>
+      {header}
+      <div style={{ ...row, background: header ? 'transparent' : 'var(--canvas)' }}>
         <span style={rowLabel}>From</span>
         <span style={{ ...field, color: 'var(--slate)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fromLabel || 'Your mailbox'}</span>
       </div>
@@ -438,7 +441,7 @@ export default function EmailComposer({
       <div ref={editorRef} contentEditable suppressContentEditableWarning onInput={() => { syncBody(); rememberCaret() }}
         onKeyUp={rememberCaret} onMouseUp={rememberCaret} onBlur={rememberCaret}
         className="email-rte" data-ph="Write your reply…" data-empty={(!bodyHtml || bodyHtml === '<br>') ? 'true' : 'false'}
-        style={{ minHeight: 130, maxHeight: 300, overflowY: 'auto', outline: 'none', padding: '12px', fontSize: 13.5, lineHeight: 1.55, color: 'var(--ink)' }} />
+        style={{ ...(bodyHeight ? { height: bodyHeight } : { minHeight: 130, maxHeight: 300 }), overflowY: 'auto', outline: 'none', padding: '12px', fontSize: 13.5, lineHeight: 1.55, color: 'var(--ink)', background: '#fff' }} />
 
       {(attachments.length > 0 || attBusy) && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '0 12px 8px' }}>

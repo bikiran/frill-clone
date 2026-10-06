@@ -4077,6 +4077,23 @@ export default function InboxPage() {
   // email thread it goes out by email. `insert` puts text (a short link, a
   // booking link) into whichever composer is showing; the voice note and
   // "Upload from your phone" stage media in the chat box, so they're chat-only.
+  // Reply / Note switch on top of the reply box — shared by the chat box and
+  // the email composer (on an email thread, Note swaps in the note box).
+  const renderModeHead = () => (
+                <div className="cmp-head">
+                  <div className="cmp-mode" role="tablist" aria-label="Reply or internal note">
+                    <span className="cmp-mode-thumb" style={{ transform: internalMode ? 'translateX(100%)' : 'none' }} />
+                    <button type="button" role="tab" aria-selected={!internalMode} onClick={() => setInternalMode(false)}>Reply</button>
+                    <button type="button" role="tab" aria-selected={internalMode} onClick={() => setInternalMode(true)}>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 1 1 3 3L7 19l-4 1 1-4z"/></svg>
+                      Note
+                    </button>
+                  </div>
+                  <span className="cmp-via">
+                    {internalMode ? 'Only your team sees this' : <>Sending by <b>{({ sms: 'SMS', email: 'email', chat: 'live chat', instagram: 'Instagram', messenger: 'Messenger', whatsapp: 'WhatsApp', call: 'SMS' } as Record<string, string>)[sendChannel !== 'auto' ? sendChannel : activeChannel] || 'chat'}</b> {sendChannelGlyph(sendChannel !== 'auto' ? sendChannel : activeChannel, 13)}</>}
+                  </span>
+                </div>
+  )
   const renderSendMenu = (forEmail = false) => (
     <>
                   {/* Send poll/survey/form/payment */}
@@ -9252,37 +9269,37 @@ export default function InboxPage() {
             {/* Reply box */}
             <div className="inbox-composer" style={{ padding: '10px 14px', background: '#fff', borderTop: '1px solid var(--border)', position: 'relative' }}>
               {/* Coax-style resize grip: drag the top border of the composer up
-                  or down to grow/shrink the reply box. Email uses its own
-                  composer, so the grip is only shown for the chat box. */}
-              {activeChannel !== 'email' && (
-                <div
-                  onMouseDown={(e) => { e.preventDefault(); startComposerResize(e.clientY) }}
-                  onTouchStart={(e) => { if (e.touches[0]) startComposerResize(e.touches[0].clientY) }}
-                  onDoubleClick={() => { setComposerH(96); try { localStorage.setItem('colvy_composer_h', '96') } catch {} }}
-                  title="Drag up or down to resize"
-                  className="composer-grip"
-                  style={{
-                    position: 'absolute', top: -11, left: 0, right: 0, height: 22,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    cursor: 'ns-resize', zIndex: 30, touchAction: 'none',
-                  }}>
-                  <span className="composer-grip-pill" style={{
-                    display: 'inline-flex', alignItems: 'center', gap: 7,
-                    padding: composerDragging ? '5px 12px' : '3px 9px', borderRadius: 999,
-                    background: '#1f2430', color: '#fff', fontSize: 12, fontWeight: 600,
-                    boxShadow: '0 6px 18px rgba(0,0,0,0.22)', whiteSpace: 'nowrap',
-                    opacity: composerDragging ? 1 : 0, transform: composerDragging ? 'translateY(0)' : 'translateY(2px)',
-                    transition: 'opacity .12s ease, transform .12s ease, padding .12s ease', pointerEvents: 'none',
-                  }}>
-                    <svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor" aria-hidden><circle cx="2.5" cy="2.5" r="1.3"/><circle cx="7.5" cy="2.5" r="1.3"/><circle cx="2.5" cy="7" r="1.3"/><circle cx="7.5" cy="7" r="1.3"/><circle cx="2.5" cy="11.5" r="1.3"/><circle cx="7.5" cy="11.5" r="1.3"/></svg>
-                    {composerDragging ? `${composerH}px` : 'Drag up or down to resize'}
-                  </span>
-                </div>
-              )}
+                  or down to grow/shrink the reply box — the chat box and the
+                  email body share the same remembered height. */}
+              <div
+                onMouseDown={(e) => { e.preventDefault(); startComposerResize(e.clientY) }}
+                onTouchStart={(e) => { if (e.touches[0]) startComposerResize(e.touches[0].clientY) }}
+                onDoubleClick={() => { setComposerH(96); try { localStorage.setItem('colvy_composer_h', '96') } catch {} }}
+                title="Drag up or down to resize"
+                className="composer-grip"
+                style={{
+                  position: 'absolute', top: -11, left: 0, right: 0, height: 22,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  cursor: 'ns-resize', zIndex: 30, touchAction: 'none',
+                }}>
+                <span className="composer-grip-pill" style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 7,
+                  padding: composerDragging ? '5px 12px' : '3px 9px', borderRadius: 999,
+                  background: '#1f2430', color: '#fff', fontSize: 12, fontWeight: 600,
+                  boxShadow: '0 6px 18px rgba(0,0,0,0.22)', whiteSpace: 'nowrap',
+                  opacity: composerDragging ? 1 : 0, transform: composerDragging ? 'translateY(0)' : 'translateY(2px)',
+                  transition: 'opacity .12s ease, transform .12s ease, padding .12s ease', pointerEvents: 'none',
+                }}>
+                  <svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor" aria-hidden><circle cx="2.5" cy="2.5" r="1.3"/><circle cx="7.5" cy="2.5" r="1.3"/><circle cx="2.5" cy="7" r="1.3"/><circle cx="7.5" cy="7" r="1.3"/><circle cx="2.5" cy="11.5" r="1.3"/><circle cx="7.5" cy="11.5" r="1.3"/></svg>
+                  {composerDragging ? `${composerH}px` : 'Drag up or down to resize'}
+                </span>
+              </div>
               {/* Email threads get a proper email composer (To/Cc/Subject +
                   signature) instead of the plain chat box. */}
-              {activeChannel === 'email' ? (
+              {activeChannel === 'email' && !internalMode ? (
                 <EmailComposer
+                  header={renderModeHead()}
+                  bodyHeight={composerH + 44}
                   conversationId={selected.id}
                   companyId={companyId}
                   toEmail={contact?.email || ''}
@@ -9619,19 +9636,7 @@ export default function InboxPage() {
                 onChange={e => { handleFileUpload(e.target.files); e.target.value = '' }} />
 
               <div className={`cmp-card${internalMode ? ' note' : ''}`}>
-                <div className="cmp-head">
-                  <div className="cmp-mode" role="tablist" aria-label="Reply or internal note">
-                    <span className="cmp-mode-thumb" style={{ transform: internalMode ? 'translateX(100%)' : 'none' }} />
-                    <button type="button" role="tab" aria-selected={!internalMode} onClick={() => setInternalMode(false)}>Reply</button>
-                    <button type="button" role="tab" aria-selected={internalMode} onClick={() => setInternalMode(true)}>
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 1 1 3 3L7 19l-4 1 1-4z"/></svg>
-                      Note
-                    </button>
-                  </div>
-                  <span className="cmp-via">
-                    {internalMode ? 'Only your team sees this' : <>Sending by <b>{({ sms: 'SMS', email: 'email', chat: 'live chat', instagram: 'Instagram', messenger: 'Messenger', whatsapp: 'WhatsApp', call: 'SMS' } as Record<string, string>)[sendChannel !== 'auto' ? sendChannel : activeChannel] || 'chat'}</b> {sendChannelGlyph(sendChannel !== 'auto' ? sendChannel : activeChannel, 13)}</>}
-                  </span>
-                </div>
+                {renderModeHead()}
               <textarea ref={textareaRef} value={reply} onChange={e => {
                   const v = e.target.value
                   setReply(v)
