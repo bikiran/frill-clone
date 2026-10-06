@@ -31,13 +31,23 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ count: error ? 0 : (count || 0) }, { headers: { 'Cache-Control': 'no-store' } })
     }
 
-    const { data: co } = await db.from('companies').select('waitlist_settings').eq('id', companyId).maybeSingle()
-    const settings = resolveWaitlistSettings((co as any)?.waitlist_settings)
+    // Live size/variation prices straight from the store. The page asks for
+    // these in a second request so the list never waits on WooCommerce.
+    if (req.nextUrl.searchParams.get('op') === 'variation-stock') {
+      const ids = String(req.nextUrl.searchParams.get('ids') || '').split(',').map(Number).filter(n => Number.isFinite(n) && n > 0).slice(0, 200)
+      const stock = ids.length ? await variationStock(db, companyId!, ids) : {}
+      return NextResponse.json({ stock }, { headers: { 'Cache-Control': 'no-store' } })
+    }
+    const live = req.nextUrl.searchParams.get('live') !== '0'
 
-    const { data: entries, error } = await db.from('stock_waitlist').select('*')
-      .eq('company_id', companyId).order('created_at', { ascending: false }).limit(2000)
+    const [{ data: co }, { data: entries, error }] = await Promise.all([
+      db.from('companies').select('waitlist_settings, name').eq('id', companyId).maybeSingle(),
+      db.from('stock_waitlist').select('*').eq('company_id', companyId).order('created_at', { ascending: false }).limit(2000),
+    ])
+    const settings = resolveWaitlistSettings((co as any)?.waitlist_settings)
+    const businessName = (co as any)?.name || ''
     if (error) {
-      if (isMissingTable(error)) return NextResponse.json({ needsMigration: true, error: NEEDS_MIGRATION, entries: [], settings, stock: {} })
+      if (isMissingTable(error)) return NextResponse.json({ needsMigration: true, error: NEEDS_MIGRATION, entries: [], settings, stock: {}, businessName })
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
@@ -54,9 +64,9 @@ export async function GET(req: NextRequest) {
       // Website sign-ups store the size/variation id, which isn't in the synced
       // catalogue — look those up through their parent product.
       const variations = productIds.map(Number).filter(id => !stock[String(id)])
-      if (variations.length) Object.assign(stock, await variationStock(db, companyId!, variations))
+      if (variations.length) Object.assign(stock, await variationStock(db, companyId!, variations, { live }))
     }
-    return NextResponse.json({ entries: entries || [], settings, stock })
+    return NextResponse.json({ entries: entries || [], settings, stock, businessName })
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || 'Failed' }, { status: 500 })
   }
