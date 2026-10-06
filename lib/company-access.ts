@@ -44,3 +44,21 @@ export async function isStaffMember(db: any, companyId: string | null | undefine
     return (data || []).some(isStaffRow)
   } catch { return false }
 }
+
+// The signed-in user behind the request's Bearer token, or null.
+export async function callerUser(req: NextRequest, db: any): Promise<{ id: string; email?: string } | null> {
+  try {
+    const token = (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '')
+    if (!token) return null
+    const { data } = await db.auth.getUser(token)
+    return data?.user ? { id: data.user.id, email: data.user.email || undefined } : null
+  } catch { return null }
+}
+
+// The caller's own Stripe billing customer (subscriptions.stripe_customer_id).
+export async function callerStripeCustomer(req: NextRequest, db: any): Promise<string | null> {
+  const user = await callerUser(req, db)
+  if (!user) return null
+  const { data } = await db.from('subscriptions').select('stripe_customer_id').eq('user_id', user.id).maybeSingle()
+  return data?.stripe_customer_id || null
+}

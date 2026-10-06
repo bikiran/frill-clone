@@ -1264,7 +1264,7 @@ export async function executeAction(db: SupabaseClient, ctx: AssistantContext, n
       const description = String(args?.description || '').trim().slice(0, 120)
       let link = ''
       try {
-        const res = await fetch(`${siteBase(ctx)}/api/stripe/chat-payment`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId: ctx.companyId, conversationId, amount, description: description || undefined, senderName: ctx.companyName, channel }) })
+        const res = await fetch(`${siteBase(ctx)}/api/stripe/chat-payment`, { method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ companyId: ctx.companyId, conversationId, amount, description: description || undefined, senderName: ctx.companyName, channel }) })
         const d = await res.json().catch(() => ({}))
         if (!res.ok || !(d?.checkoutUrl || d?.fullUrl)) return { ok: false, error: d?.error || 'Could not create the payment link. Is Stripe connected?' }
         link = d.checkoutUrl || d.fullUrl

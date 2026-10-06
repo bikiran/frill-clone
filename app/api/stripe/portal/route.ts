@@ -1,8 +1,12 @@
+import { callerStripeCustomer } from '@/lib/company-access'
+import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 
 export async function POST(req: NextRequest) {
   try {
-    const { customerId } = await req.json()
+    // The caller's own billing customer — never one named in the request.
+    const customerId = await callerStripeCustomer(req, createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, { auth: { autoRefreshToken: false, persistSession: false } }))
+    if (!customerId) return NextResponse.json({ error: 'No billing account found for you.' }, { status: 404 })
     const secret = process.env.STRIPE_SECRET_KEY || ''
     if (!secret.startsWith('sk_')) return NextResponse.json({ error: 'Stripe not configured' }, { status: 400 })
 

@@ -1,3 +1,5 @@
+import { internalHeaders } from '@/lib/internal-call'
+import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
@@ -27,11 +29,13 @@ export async function POST(req: NextRequest) {
     const startPhase = scope === 'products' ? 'products' : 'customers'
     if (!companyId) return NextResponse.json({ error: 'Missing companyId' }, { status: 400 })
     const db = admin()
+    // Workspace members only.
+    if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
 
     // Resolve the target store: the given integrationId, or the company's first.
     let integ: any = null
     if (integrationId) {
-      const r = await db.from('woocommerce_integrations').select('id, last_full_sync_at').eq('id', integrationId).maybeSingle()
+      const r = await db.from('woocommerce_integrations').select('id, last_full_sync_at').eq('id', integrationId).eq('company_id', companyId).maybeSingle()
       integ = r.data
     } else {
       const r = await db.from('woocommerce_integrations').select('id, last_full_sync_at').eq('company_id', companyId).order('created_at', { ascending: true }).limit(1)
@@ -61,7 +65,7 @@ export async function POST(req: NextRequest) {
 
     // Fire-and-forget the first batch (don't await — returns immediately)
     fetch(`${origin(req)}/api/woocommerce/sync-run`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ jobId: job?.id }),
     }).catch(() => {})
 

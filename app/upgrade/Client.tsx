@@ -1,5 +1,6 @@
 'use client'
 
+import { authFetch } from '@/lib/auth-fetch'
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
@@ -108,7 +109,7 @@ export default function UpgradePage() {
     setLoading(tier.id)
     setSetupNeeded(false)
     try {
-      const res = await fetch('/api/stripe/create-checkout', {
+      const res = await authFetch('/api/stripe/create-checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         // trial:true → 14-day free trial, no card up front (matches the pricing promise).

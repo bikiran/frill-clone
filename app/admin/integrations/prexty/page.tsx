@@ -1,5 +1,6 @@
 'use client'
 
+import { authFetch } from '@/lib/auth-fetch'
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { confirmDialog } from '@/components/ConfirmDialog'
@@ -39,7 +40,7 @@ export default function PrextyIntegration() {
         const cid = shellCompanyId
         if (cid) {
           setCompanyId(cid)
-          const res = await fetch(`/api/prexty/setup?companyId=${cid}`)
+          const res = await authFetch(`/api/prexty/setup?companyId=${cid}`)
           const d = await res.json()
           if (d.data) {
             setIntegration(d.data)
@@ -58,7 +59,7 @@ export default function PrextyIntegration() {
     if (!integration && !apiKey.trim()) { setError('Enter your Prexty API key.'); return }
     setSaving(true)
     try {
-      const res = await fetch('/api/prexty/setup', {
+      const res = await authFetch('/api/prexty/setup', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           companyId,
@@ -119,7 +120,7 @@ export default function PrextyIntegration() {
     if (!companyId || !await confirmDialog('Disconnect Prexty from this company?')) return
     setSaving(true); setError(''); setSuccess('')
     try {
-      const res = await fetch(`/api/prexty/setup?companyId=${companyId}`, { method: 'DELETE' })
+      const res = await authFetch(`/api/prexty/setup?companyId=${companyId}`, { method: 'DELETE' })
       const d = await res.json()
       if (!res.ok) throw new Error(d.error || 'Failed to disconnect')
       setIntegration(null); setApiKey(''); setBaseUrl(DEFAULT_BASE); setActive('prexty', false)

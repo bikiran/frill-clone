@@ -1,3 +1,4 @@
+import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import Stripe from 'stripe'
@@ -50,10 +51,13 @@ export async function POST(req: NextRequest) {
     if (!companyId || !action) return NextResponse.json({ error: 'companyId and action required' }, { status: 400 })
 
     const db = admin()
+    // Workspace members only.
+    if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     const { s, opts } = await stripeFor(db, companyId)
 
     // The customer this is for.
     const { data: conv } = await db.from('conversations').select('*').eq('id', conversationId).maybeSingle()
+    if (conv && conv.company_id !== companyId) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     const { data: contact } = conv?.contact_id
       ? await db.from('contacts').select('*').eq('id', conv.contact_id).maybeSingle()
       : { data: null as any }
@@ -108,7 +112,7 @@ export async function POST(req: NextRequest) {
       // Which card?
       let card: any = null
       if (cardId) {
-        const { data } = await db.from('saved_cards').select('*').eq('id', cardId).maybeSingle()
+        const { data } = await db.from('saved_cards').select('*').eq('id', cardId).eq('company_id', companyId).eq('contact_id', contact.id).maybeSingle()
         card = data
       } else {
         const { data } = await db.from('saved_cards').select('*')

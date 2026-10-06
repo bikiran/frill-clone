@@ -301,7 +301,7 @@ export default function OrdersPage() {
         try {
           const since = new Date(Date.now() - 60 * 864e5).toISOString()
           for (let page = 1; page <= 30; page++) {
-            const wr = await fetch('/api/woocommerce/sync', { method: 'POST', headers: authH, body: JSON.stringify({ companyId: cid, mode: 'orders', page, modifiedAfter: since }) })
+            const wr = await authFetch('/api/woocommerce/sync', { method: 'POST', headers: authH, body: JSON.stringify({ companyId: cid, mode: 'orders', page, modifiedAfter: since }) })
             const wd = await wr.json().catch(() => ({}))
             if (!wr.ok || wd.error || wd.done) break
           }

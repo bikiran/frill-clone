@@ -1,3 +1,5 @@
+import { callerUser, requireCompanyAccess } from '@/lib/company-access'
+import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 
 const STRIPE_SECRET = process.env.STRIPE_SECRET_KEY || ''
@@ -42,10 +44,20 @@ const PRICE_IDS: Record<string, Record<string, string>> = {
 
 export async function POST(req: NextRequest) {
   try {
-    const { userId, tier, billing = 'monthly', email, trial = false, companyId = null } = await req.json()
+    const body = await req.json()
+    const { tier, billing = 'monthly', trial = false } = body
+    // Who is subscribing comes from the sign-in, not the request: a body userId
+    // let anyone attach a checkout to someone else's subscription row.
+    const db = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, { auth: { autoRefreshToken: false, persistSession: false } })
+    const caller = await callerUser(req, db)
+    if (!caller) return NextResponse.json({ error: 'Please sign in again.' }, { status: 401 })
+    const userId = caller.id
+    const email = body.email || caller.email
+    let companyId: string | null = body.companyId || null
+    if (companyId && !(await requireCompanyAccess(req, db, companyId)).ok) companyId = null
 
-    if (!userId || !tier) {
-      return NextResponse.json({ error: 'Missing userId or tier' }, { status: 400 })
+    if (!tier) {
+      return NextResponse.json({ error: 'Missing tier' }, { status: 400 })
     }
 
     const stripeKey = (STRIPE_SECRET || '').trim()

@@ -1,3 +1,4 @@
+import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { ShopifyService } from '@/lib/shopify-service'
@@ -29,6 +30,8 @@ export async function POST(req: NextRequest) {
     if (!normalizedDomain.includes('.')) normalizedDomain = `${normalizedDomain}.myshopify.com`
 
     const db = admin()
+    // Workspace members only.
+    if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     const { data, error } = await db.from('shopify_integrations').upsert({
       company_id: companyId,
       store_domain: normalizedDomain,
@@ -53,6 +56,8 @@ export async function GET(req: NextRequest) {
     const companyId = req.nextUrl.searchParams.get('companyId')
     if (!companyId) return NextResponse.json({ error: 'Missing companyId' }, { status: 400 })
     const db = admin()
+    // Workspace members only.
+    if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     const { data } = await db.from('shopify_integrations')
       .select('id, company_id, store_domain, store_name, is_active, last_synced_at, last_full_sync_at, created_at')
       .eq('company_id', companyId).order('created_at', { ascending: true })
@@ -68,6 +73,8 @@ export async function DELETE(req: NextRequest) {
     const { companyId, integrationId } = await req.json()
     if (!companyId) return NextResponse.json({ error: 'Missing companyId' }, { status: 400 })
     const db = admin()
+    // Workspace members only.
+    if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     let q = db.from('shopify_integrations').delete()
     q = integrationId ? q.eq('id', integrationId).eq('company_id', companyId) : q.eq('company_id', companyId)
     const { error } = await q

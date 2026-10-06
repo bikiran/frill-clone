@@ -62,7 +62,7 @@ export default function CreatePaymentLinkModal({
       }
       if (!convId) throw new Error('Could not open a conversation for that customer')
 
-      const res = await fetch('/api/stripe/chat-payment', {
+      const res = await authFetch('/api/stripe/chat-payment', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ companyId, conversationId: convId, amount: amt, description: description.trim() || null, senderName, channel }),
       })

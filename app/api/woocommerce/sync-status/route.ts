@@ -1,3 +1,5 @@
+import { internalHeaders } from '@/lib/internal-call'
+import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
@@ -17,6 +19,8 @@ export async function GET(req: NextRequest) {
     const companyId = req.nextUrl.searchParams.get('companyId')
     if (!companyId) return NextResponse.json({ error: 'Missing companyId' }, { status: 400 })
     const db = admin()
+    // Workspace members only.
+    if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
 
     const { data: job } = await db.from('woo_sync_jobs')
       .select('*').eq('company_id', companyId)
@@ -33,7 +37,7 @@ export async function GET(req: NextRequest) {
           ? `${req.headers.get('x-forwarded-proto') || 'https'}://${req.headers.get('host')}`
           : (process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com')
         fetch(`${origin}/api/woocommerce/sync-run`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({ jobId: job.id }),
         }).catch(() => {})
       }

@@ -20,9 +20,13 @@ export async function POST(req: NextRequest) {
 
     let event: any
     try {
-      event = STRIPE_WEBHOOK_SECRET
-        ? stripe.webhooks.constructEvent(body, sig, STRIPE_WEBHOOK_SECRET)
-        : JSON.parse(body)
+      // Always verified. Without the secret this used to accept any JSON, so a
+      // forged "checkout completed" could mark payments paid or buy numbers.
+      if (!STRIPE_WEBHOOK_SECRET) {
+        console.error('[stripe/webhook] STRIPE_WEBHOOK_SECRET is not set; rejecting the event')
+        return NextResponse.json({ error: 'Webhook secret not configured' }, { status: 500 })
+      }
+      event = stripe.webhooks.constructEvent(body, sig, STRIPE_WEBHOOK_SECRET)
     } catch (err: any) {
       await logWebhookEvent({ source: 'stripe', status: 'rejected', error: 'signature verification failed' })
       return NextResponse.json({ error: 'Webhook signature failed' }, { status: 400 })

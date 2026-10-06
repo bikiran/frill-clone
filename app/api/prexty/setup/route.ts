@@ -1,3 +1,4 @@
+import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { PrextyService } from '@/lib/prexty-service'
@@ -26,6 +27,8 @@ export async function POST(req: NextRequest) {
     if (!companyId) return NextResponse.json({ error: 'Missing companyId' }, { status: 400 })
 
     const db = admin()
+    // Workspace members only.
+    if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     const normalizedBase = (baseUrl || DEFAULT_BASE).replace(/\/+$/, '')
 
     // Resolve the key to test with: a freshly-entered one, or the stored one on
@@ -34,8 +37,12 @@ export async function POST(req: NextRequest) {
     if (!keyToUse) {
       if (!isUpdate) return NextResponse.json({ error: 'API key is required' }, { status: 400 })
       const { data: existing } = await db.from('prexty_integrations')
-        .select('api_key').eq('company_id', companyId).maybeSingle()
+        .select('api_key, base_url').eq('company_id', companyId).maybeSingle()
       if (!existing?.api_key) return NextResponse.json({ error: 'Prexty is not connected yet. Enter your API key.' }, { status: 400 })
+      // The saved key is only ever sent to the address it was saved for.
+      if (String(existing.base_url || DEFAULT_BASE).replace(/\/+$/, '') !== normalizedBase) {
+        return NextResponse.json({ error: 'Enter the API key again to change the Prexty address.' }, { status: 400 })
+      }
       keyToUse = existing.api_key
     }
 
@@ -81,6 +88,8 @@ export async function GET(req: NextRequest) {
     const companyId = req.nextUrl.searchParams.get('companyId')
     if (!companyId) return NextResponse.json({ error: 'Missing companyId' }, { status: 400 })
     const db = admin()
+    // Workspace members only.
+    if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     const { data } = await db.from('prexty_integrations')
       .select('id, company_id, base_url, store_name, is_active, webhook_token, last_synced_at, created_at, updated_at')
       .eq('company_id', companyId).maybeSingle()
@@ -98,6 +107,8 @@ export async function DELETE(req: NextRequest) {
     const companyId = req.nextUrl.searchParams.get('companyId') || (await req.json().catch(() => ({})))?.companyId
     if (!companyId) return NextResponse.json({ error: 'Missing companyId' }, { status: 400 })
     const db = admin()
+    // Workspace members only.
+    if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     const { error } = await db.from('prexty_integrations').delete().eq('company_id', companyId)
     if (error) return NextResponse.json({ error: 'Failed to disconnect' }, { status: 500 })
     return NextResponse.json({ success: true })

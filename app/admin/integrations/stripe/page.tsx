@@ -1,5 +1,6 @@
 'use client'
 
+import { authFetch } from '@/lib/auth-fetch'
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
@@ -29,7 +30,7 @@ export default function StripeIntegration() {
       setCompanyId(cid)
       if (cid) {
         try {
-          const res = await fetch(`/api/stripe/connect?companyId=${cid}`)
+          const res = await authFetch(`/api/stripe/connect?companyId=${cid}`)
           const data = await res.json()
           setConnected(!!data.connected)
         } catch {}
@@ -43,7 +44,7 @@ export default function StripeIntegration() {
     if (!companyId) return
     setConnecting(true); setError('')
     try {
-      const res = await fetch('/api/stripe/connect', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId }) })
+      const res = await authFetch('/api/stripe/connect', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId }) })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Could not start Stripe onboarding')
       window.location.href = data.url

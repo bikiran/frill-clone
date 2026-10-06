@@ -1,3 +1,4 @@
+import { authFetch } from '@/lib/auth-fetch'
 import { supabase } from '@/lib/supabase'
 
 // Only publishable key is safe on client side
@@ -63,7 +64,7 @@ export async function canAccessFeature(userId: string, feature: 'whiteListing' |
 export async function createCheckoutSession(userId: string, tier: 'pro' | 'enterprise', returnUrl: string) {
   try {
     // Call backend to create Stripe session
-    const response = await fetch('/api/stripe/create-checkout', {
+    const response = await authFetch('/api/stripe/create-checkout', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ userId, tier, returnUrl }),

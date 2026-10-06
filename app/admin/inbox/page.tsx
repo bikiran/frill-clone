@@ -1302,7 +1302,7 @@ export default function InboxPage() {
   }
 
   const cardsApi = async (body: any) => {
-    const res = await fetch('/api/stripe/cards', {
+    const res = await authFetch('/api/stripe/cards', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ companyId, conversationId: selected?.id, ...body }),
     })
@@ -1443,7 +1443,7 @@ export default function InboxPage() {
     let stopped = false
     const tick = async () => {
       try {
-        const r = await fetch('/api/stripe/verify-payment', {
+        const r = await authFetch('/api/stripe/verify-payment', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ conversationId: convId, companyId }),
         })
@@ -1710,7 +1710,7 @@ export default function InboxPage() {
         if (contact.id) p.set('contactId', String(contact.id))
         if (contact.email) p.set('email', contact.email)
         if (contact.phone) p.set('phone', contact.phone)
-        const res = await fetch(`/api/prexty/customer?${p.toString()}`)
+        const res = await authFetch(`/api/prexty/customer?${p.toString()}`)
         const d = await res.json()
         if (!cancelled && d?.connected && d?.customer) setPrextyCustomer(d.customer)
       } catch { /* Prexty is best-effort; never blocks the panel */ }
@@ -2387,7 +2387,7 @@ export default function InboxPage() {
     // may not be configured (or a delivery was missed), which would otherwise
     // leave a paid order showing as "pending" in the chat forever.
     try {
-      fetch('/api/stripe/verify-payment', {
+      authFetch('/api/stripe/verify-payment', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ conversationId: conv.id }),
       }).then(r => r.json()).then(d => {
@@ -4418,7 +4418,7 @@ export default function InboxPage() {
     // that when the customer pays, the order is marked processing.
     try {
       const amount = (parseFloat(payload.total) || 0).toFixed(2)
-      const res = await fetch('/api/stripe/chat-payment', {
+      const res = await authFetch('/api/stripe/chat-payment', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ companyId, conversationId: selected.id, amount, description: `Order #${payload.order_number}`, senderName: myName, orderId: payload.order_id, integrationId: payload.integration_id }),
       })
@@ -4817,7 +4817,7 @@ export default function InboxPage() {
     const senderName = myName
     try {
       const isWidgetActive = activeChannel === 'widget' || activeChannel === 'chat'
-      const res = await fetch('/api/stripe/chat-payment', {
+      const res = await authFetch('/api/stripe/chat-payment', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ companyId, conversationId: selected.id, amount: payAmount, description: payDesc, senderName, channel: isWidgetActive ? 'chat' : activeChannel }),
       })
@@ -5575,7 +5575,7 @@ export default function InboxPage() {
     // Push the change back to WooCommerce if this contact matches a woo customer
     try {
       if (companyId && contact.email) {
-        fetch('/api/woocommerce/update-customer', {
+        authFetch('/api/woocommerce/update-customer', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ companyId, email: contact.email, field, value }),
         })

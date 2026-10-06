@@ -1,3 +1,4 @@
+import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
@@ -17,6 +18,8 @@ export async function POST(req: NextRequest) {
     if (!companyId || !email || !field) return NextResponse.json({ error: 'Missing params' }, { status: 400 })
 
     const db = admin()
+    // Workspace members only.
+    if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     // With multiple stores, pick the first active one (best-effort push-back).
     const { data: integs } = await db.from('woocommerce_integrations').select('*').eq('company_id', companyId).eq('is_active', true).order('created_at', { ascending: true })
     const integ = integs?.[0]

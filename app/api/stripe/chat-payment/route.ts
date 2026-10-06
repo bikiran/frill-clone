@@ -1,3 +1,5 @@
+import { isInternalCall } from '@/lib/internal-call'
+import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { randomUUID } from 'crypto'
 import { shortenUrl } from '@/lib/short-link'
@@ -30,6 +32,12 @@ export async function POST(req: NextRequest) {
     if (!cents || cents < 100) return NextResponse.json({ error: 'Amount must be at least $1.00' }, { status: 400 })
 
     const db = admin()
+    // Workspace members only.
+    if (!isInternalCall(req) && !(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+    {
+      const { data: owner } = await db.from('conversations').select('company_id').eq('id', conversationId).maybeSingle()
+      if (!owner || owner.company_id !== companyId) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+    }
     const { data: company } = await db.from('companies').select('*').eq('id', companyId).maybeSingle()
     // The customer's widget page URL is stored on the conversation when the chat
     // started — that's the trustworthy origin (the agent initiates payment, so

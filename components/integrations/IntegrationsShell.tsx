@@ -1,5 +1,6 @@
 'use client'
 
+import { authFetch } from '@/lib/auth-fetch'
 import { createContext, Suspense, useCallback, useContext, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
@@ -91,7 +92,7 @@ export default function IntegrationsShell({ children }: { children: React.ReactN
         setActiveMap(s.active); setGeneric(s.generic)
         if (s.stripePending) {
           // The flag is refreshed when the Stripe page checks the account; check now too.
-          fetch(`/api/stripe/connect?companyId=${cid}`).then(r => r.json()).then(d => {
+          authFetch(`/api/stripe/connect?companyId=${cid}`).then(r => r.json()).then(d => {
             if (d?.connected) setActiveMap(prev => ({ ...prev, stripe: true }))
           }).catch(() => {})
         }
