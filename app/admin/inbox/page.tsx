@@ -15,6 +15,11 @@ import VoiceDictationButton from '@/components/VoiceDictationButton'
 import { useDraft } from '@/lib/drafts'
 import { uploadQueue } from '@/lib/upload-queue'
 import { toPublicUrl } from '@/lib/storage-url'
+
+// A video attachment's still frame, when it has a real image thumbnail (some
+// carry the video URL itself as the "thumbnail", which can't be shown as one).
+const videoPoster = (a: any): string | undefined =>
+  a?.thumbUrl && a.thumbUrl !== a.url && !/\.(mp4|mov|webm|m4v)(\?|$)/i.test(a.thumbUrl) ? toPublicUrl(a.thumbUrl) : undefined
 import { broadcastMessage } from '@/lib/chat-broadcast'
 import FilePickerButton from '@/components/FilePickerButton'
 import PhoneUploadQR from '@/components/PhoneUploadQR'
@@ -6301,6 +6306,8 @@ export default function InboxPage() {
           .inbox-root button { min-height: 36px; }
           .inbox-composer button { min-height: 40px; }
           .sched-list .sched-btn { min-height: 34px; }
+          /* Attachment tiles keep a round remove button (a bit larger for a thumb). */
+          .inbox-composer .staged-strip button { min-height: 0; width: 24px !important; height: 24px !important; }
 
           /* Slimmer composer on a phone: the reply box was a fixed 3 rows, which
              ate a big chunk of the screen even when empty. Start at ~2 rows and
@@ -7546,7 +7553,7 @@ export default function InboxPage() {
       {galleryIndex !== null && (() => {
         const media: MediaItem[] = []
         messages.forEach(m => (Array.isArray(m.attachments) ? m.attachments : []).forEach((a: any) => {
-          { const isImg = a.kind === 'image' || String(a.type||'').startsWith('image'); const isVid = a.kind === 'video' || String(a.type||'').startsWith('video'); if ((isImg || isVid) && a.url) media.push({ url: a.url, name: a.name, kind: isVid ? 'video' : 'image' }) }
+          { const isImg = a.kind === 'image' || String(a.type||'').startsWith('image'); const isVid = a.kind === 'video' || String(a.type||'').startsWith('video'); if ((isImg || isVid) && a.url) media.push({ url: a.url, name: a.name, kind: isVid ? 'video' : 'image', poster: videoPoster(a) }) }
         }))
         return <MediaGallery items={media} index={galleryIndex} onClose={() => setGalleryIndex(null)} onIndex={setGalleryIndex} />
       })()}
@@ -8877,7 +8884,7 @@ export default function InboxPage() {
                             messages.forEach((mm: any) => (Array.isArray(mm.attachments) ? mm.attachments : []).forEach((a: any) => {
                               const isImg = a.kind === 'image' || String(a.type || '').startsWith('image')
                               const isVid = a.kind === 'video' || String(a.type || '').startsWith('video')
-                              if ((isImg || isVid) && a.url && a.url !== url) chatMedia.push({ url: a.url, name: a.name, kind: isVid ? 'video' : 'image' })
+                              if ((isImg || isVid) && a.url && a.url !== url) chatMedia.push({ url: a.url, name: a.name, kind: isVid ? 'video' : 'image', poster: videoPoster(a) })
                             }))
                             setStoryView({ items: [{ url, kind, name: 'Story' }, ...chatMedia], index: 0 })
                           }
@@ -9534,12 +9541,18 @@ export default function InboxPage() {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 8 }}>
                   {/* Bulk expiry — set one expiry for every staged item at once
                       (mirrors the mobile app). Only worth showing for 2+ items. */}
-                  {!internalMode && expirable.length > 1 && (
+                  {((!internalMode && expirable.length > 1) || stagedMedia.length > 3) && (
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '2px 2px 0' }}>
-                      <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--slate)' }}>
+                      <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--slate)', display: 'inline-flex', alignItems: 'center', gap: 10 }}>
                         {stagedMedia.length} attachments
+                        {stagedMedia.length > 3 && (
+                          <button type="button" onClick={() => { setStagedMedia([]); setStagedExpiry({}) }}
+                            style={{ border: 'none', background: 'none', padding: 0, color: 'var(--coral)', fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}>
+                            Remove all
+                          </button>
+                        )}
                       </span>
-                      <div data-bulk-expiry style={{ position: 'relative', flexShrink: 0 }}>
+                      {!internalMode && expirable.length > 1 && <div data-bulk-expiry style={{ position: 'relative', flexShrink: 0 }}>
                         <button type="button"
                           onClick={() => { setBulkExpiryOpen(v => !v); setBulkCustomDate(false) }}
                           title="Set when all of these expire"
@@ -9574,10 +9587,50 @@ export default function InboxPage() {
                             )}
                           </div>
                         )}
-                      </div>
+                      </div>}
                     </div>
                   )}
-                  {stagedMedia.map((m: any) => {
+                  {/* Lots of attachments → a compact strip of thumbnails (scrolls
+                      after two rows) so the reply box stays usable. Expiry for
+                      these is set with "Set expiry for all" above. */}
+                  {stagedMedia.length > 3 && (
+                    <div className="staged-strip" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, maxHeight: 148, overflowY: 'auto', padding: 2 }}>
+                      {stagedMedia.map((m: any) => {
+                        const imgThumb = m.thumbnail_url && m.thumbnail_url !== m.url && !/\.(mp4|mov|webm|m4v)(\?|$)/i.test(m.thumbnail_url) ? m.thumbnail_url : null
+                        const code = stagedExpiry[m.id]
+                        const isDoc = !!m.kind && !['image', 'video', 'audio'].includes(m.kind)
+                        return (
+                          <div key={m.id} title={m.title || 'media'} style={{ position: 'relative', width: 64, height: 64, borderRadius: 10, overflow: 'hidden', border: '1px solid var(--border)', background: m.kind === 'audio' ? 'var(--peach)' : 'var(--canvas)', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            {m.kind === 'audio'
+                              ? <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--coral)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>
+                              : m.kind === 'video'
+                              ? (imgThumb
+                                  ? <img src={imgThumb} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                  : <video src={m.url + '#t=0.1'} preload="metadata" muted playsInline style={{ width: '100%', height: '100%', objectFit: 'cover' }} />)
+                              : isDoc
+                              ? <span style={{ fontSize: 10.5, fontWeight: 800, color: 'var(--slate)' }}>{String(m.title || '').split('.').pop()?.toUpperCase().slice(0, 4) || 'FILE'}</span>
+                              : <img src={imgThumb || m.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
+                            {m.kind === 'video' && (
+                              <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
+                                <span style={{ width: 20, height: 20, borderRadius: '50%', background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                  <svg width="9" height="9" viewBox="0 0 24 24" fill="#fff"><polygon points="6 3 20 12 6 21 6 3"/></svg>
+                                </span>
+                              </span>
+                            )}
+                            {!internalMode && code && code !== 'forever' && (
+                              <span style={{ position: 'absolute', left: 3, bottom: 3, fontSize: 9.5, fontWeight: 800, padding: '1px 5px', borderRadius: 999, background: 'var(--coral)', color: '#fff' }}>{expiryChip(code)}</span>
+                            )}
+                            <button type="button" title="Remove" aria-label={`Remove ${m.title || 'attachment'}`}
+                              onClick={() => { setStagedMedia(prev => prev.filter((x: any) => x.id !== m.id)); setStagedExpiry(prev => { const n = { ...prev }; delete n[m.id]; return n }) }}
+                              style={{ position: 'absolute', top: 3, right: 3, width: 20, height: 20, borderRadius: '50%', background: 'rgba(15,17,25,0.65)', color: '#fff', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}>
+                              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                            </button>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                  {stagedMedia.length <= 3 && stagedMedia.map((m: any) => {
                     const imgThumb = m.thumbnail_url && m.thumbnail_url !== m.url && !/\.(mp4|mov|webm|m4v)(\?|$)/i.test(m.thumbnail_url) ? m.thumbnail_url : null
                     const code = stagedExpiry[m.id]
                     const isDoc = !!m.kind && !['image', 'video', 'audio'].includes(m.kind)
