@@ -1,5 +1,6 @@
 'use client'
 
+import { authFetch } from '@/lib/auth-fetch'
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { peekCompanyUser } from '@/lib/client-cache'
@@ -95,7 +96,7 @@ export default function OrderDetailPage() {
     let cancelled = false
     ;(async () => {
       try {
-        const res = await fetch(`/api/orders/details?companyId=${encodeURIComponent(companyId)}&orderId=${encodeURIComponent(order.order_number)}`)
+        const res = await authFetch(`/api/orders/details?companyId=${encodeURIComponent(companyId)}&orderId=${encodeURIComponent(order.order_number)}`)
         const j = await res.json().catch(() => ({}))
         const lines: any[] = j?.order?.line_items || []
         if (cancelled || !lines.length) return

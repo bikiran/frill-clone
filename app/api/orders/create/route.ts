@@ -1,3 +1,4 @@
+import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { WooCommerceService } from '@/lib/woocommerce-service'
@@ -28,9 +29,15 @@ export async function POST(req: NextRequest) {
     if (!companyId || !items?.length) return NextResponse.json({ error: 'Missing companyId or items' }, { status: 400 })
 
     const db = admin()
+    // Workspace members only (customer details, orders and refunds).
+    if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+    if (conversationId) {
+      const { data: owner } = await db.from('conversations').select('company_id').eq('id', conversationId).maybeSingle()
+      if (!owner || owner.company_id !== companyId) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+    }
     let integ: any = null
     if (integrationId) {
-      const r = await db.from('woocommerce_integrations').select('*').eq('id', integrationId).maybeSingle()
+      const r = await db.from('woocommerce_integrations').select('*').eq('id', integrationId).eq('company_id', companyId).maybeSingle()
       integ = r.data
     } else {
       const r = await db.from('woocommerce_integrations').select('*').eq('company_id', companyId).eq('is_active', true).order('created_at', { ascending: true }).limit(1)

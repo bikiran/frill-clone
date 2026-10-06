@@ -1,5 +1,6 @@
 'use client'
 
+import { authFetch } from '@/lib/auth-fetch'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useSearchParams, useRouter } from 'next/navigation'
@@ -140,7 +141,7 @@ export default function CustomerProfilePage() {
           // blank just because the background sync hasn't caught up.
           if (ordersData.length === 0 && email) {
             try {
-              const res = await fetch(`/api/orders/list?companyId=${resolvedCompanyId}&email=${encodeURIComponent(email)}`)
+              const res = await authFetch(`/api/orders/list?companyId=${resolvedCompanyId}&email=${encodeURIComponent(email)}`)
               const live = await res.json()
               if (live.orders?.length) {
                 ordersData = live.orders.map((o: any) => ({

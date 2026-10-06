@@ -1,5 +1,6 @@
 'use client'
 
+import { authFetch } from '@/lib/auth-fetch'
 import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
 import { SkeletonList } from '@/components/Skeleton'
@@ -53,7 +54,7 @@ export default function CustomerInsightsPage() {
       } catch {}
       if (loaded.length === 0) {
         try {
-          const res = await fetch('/api/orders/all')
+          const res = await authFetch('/api/orders/all')
           const j = await res.json()
           if (Array.isArray(j.orders)) loaded = j.orders
           const { orders: _drop, ...rest } = j || {}

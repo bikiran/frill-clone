@@ -15,7 +15,7 @@ async function wooFor(companyId: string, integrationId?: string) {
   const db = admin()
   let integ: any = null
   if (integrationId) {
-    const r = await db.from('woocommerce_integrations').select('*').eq('id', integrationId).maybeSingle()
+    const r = await db.from('woocommerce_integrations').select('*').eq('id', integrationId).eq('company_id', companyId).maybeSingle()
     integ = r.data
   } else {
     const r = await db.from('woocommerce_integrations').select('*').eq('company_id', companyId).eq('is_active', true).order('created_at', { ascending: true }).limit(1)

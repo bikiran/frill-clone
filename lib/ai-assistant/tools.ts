@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { getUserRole, canEdit, canAccessBilling } from '@/lib/permissions'
 import { deliverAutomatedMessage } from '@/lib/channel-fallback'
+import { internalHeaders } from '@/lib/internal-call'
 import { logAiEvent } from '@/lib/ai-assistant/audit'
 import { mapWooStatus, mapWooPayment, statusMeta } from '@/lib/orders'
 import { WooCommerceService } from '@/lib/woocommerce-service'
@@ -1131,7 +1132,7 @@ export async function executeAction(db: SupabaseClient, ctx: AssistantContext, n
     let ok = false, err = ''
     try {
       const res = await fetch(`${base}/api/orders/status`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ companyId: ctx.companyId, orderId: order.external_order_id, status: wooStatus, conversationId: order.conversation_id || undefined }),
       })
       const data = await res.json().catch(() => ({}))
@@ -1177,7 +1178,7 @@ export async function executeAction(db: SupabaseClient, ctx: AssistantContext, n
     let ok = false, err = ''
     try {
       const res = await fetch(`${base}/api/orders/refund`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ companyId: ctx.companyId, orderId: order.external_order_id, amount: amount != null ? String(amount) : undefined, reason: args?.reason || undefined, conversationId: order.conversation_id || undefined }),
       })
       const data = await res.json().catch(() => ({}))

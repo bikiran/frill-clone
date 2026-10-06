@@ -1,5 +1,6 @@
 'use client'
 
+import { authFetch } from '@/lib/auth-fetch'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { orderAge } from '@/lib/orders'
@@ -95,7 +96,7 @@ export default function OutOfStockModal({
     const needSkus = Array.from(new Set(rows.filter(r => !r.image_url && r.sku).map(r => r.sku as string)))
     if (!needSkus.length || !companyId) return
     try {
-      const res = await fetch('/api/orders/product-images', {
+      const res = await authFetch('/api/orders/product-images', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ companyId, skus: needSkus }),
       })

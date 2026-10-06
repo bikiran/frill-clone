@@ -1590,7 +1590,7 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
     if (!await confirmDialog(`Mark order ${order.order_number} as completed in WooCommerce?`)) return
     setActBusy('done')
     try {
-      const res = await fetch('/api/orders/status', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, orderId: order.external_order_id, status: 'completed', conversationId: order.conversation_id || undefined }) })
+      const res = await authFetch('/api/orders/status', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, orderId: order.external_order_id, status: 'completed', conversationId: order.conversation_id || undefined }) })
       const j = await res.json().catch(() => ({}))
       if (!res.ok || j.error) onFlash(`Failed: ${j.error || res.status}`)
       else { onPatch({ status: 'shipped', fulfilment_status: 'fulfilled' }, { type: 'status_changed', detail: 'Marked completed in WooCommerce' }); order.status = 'shipped'; onFlash('Order marked completed') }
@@ -1633,7 +1633,7 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
   const genInvoice = async () => {
     setActBusy('invoice')
     try {
-      const res = await fetch(`/api/orders/details?companyId=${companyId}&orderId=${order.external_order_id}`)
+      const res = await authFetch(`/api/orders/details?companyId=${companyId}&orderId=${order.external_order_id}`)
       const data = await res.json(); if (!res.ok) throw new Error(data.error || 'Could not load order')
       const o = data.order || {}, co = data.company || {}
       const { jsPDF } = await import('jspdf')
@@ -1836,7 +1836,7 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
     if (order.sales_channel !== 'woocommerce' || !order.order_number) return
     ;(async () => {
       try {
-        const res = await fetch(`/api/orders/details?companyId=${encodeURIComponent(companyId)}&orderId=${encodeURIComponent(order.order_number)}`)
+        const res = await authFetch(`/api/orders/details?companyId=${encodeURIComponent(companyId)}&orderId=${encodeURIComponent(order.order_number)}`)
         const j = await res.json().catch(() => ({}))
         if (cancelled) return
         const o = j?.order

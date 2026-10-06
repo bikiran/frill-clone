@@ -1,3 +1,4 @@
+import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
@@ -26,6 +27,8 @@ export async function GET(req: NextRequest) {
     }
 
     const db = admin()
+    // Workspace members only (customer details, orders and refunds).
+    if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
 
     // Try the stored row first — but only trust it if it's actually complete:
     // it must have line items, each with a product image, and a shipping total.
@@ -44,7 +47,7 @@ export async function GET(req: NextRequest) {
     // Otherwise fetch live.
     let integ: any = null
     if (integrationId) {
-      const r = await db.from('woocommerce_integrations').select('*').eq('id', integrationId).maybeSingle()
+      const r = await db.from('woocommerce_integrations').select('*').eq('id', integrationId).eq('company_id', companyId).maybeSingle()
       integ = r.data
     }
     if (!integ) {

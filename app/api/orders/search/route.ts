@@ -1,3 +1,4 @@
+import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
@@ -23,6 +24,8 @@ export async function GET(req: NextRequest) {
     if (!companyId || q.length < 2) return NextResponse.json({ orders: [] })
 
     const db = admin()
+    // Workspace members only (customer details, orders and refunds).
+    if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     const like = `%${q}%`
     const digits = q.replace(/\D/g, '')
 

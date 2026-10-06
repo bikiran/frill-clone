@@ -1,5 +1,6 @@
 'use client'
 
+import { authFetch } from '@/lib/auth-fetch'
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 
@@ -61,7 +62,7 @@ export default function DoaPanel({ companyId, conversationId, contactId, contact
     const email = contact?.email
     if (!email || !companyId) return
     setLoadingRecent(true)
-    fetch(`/api/orders/list?companyId=${companyId}&email=${encodeURIComponent(email)}`)
+    authFetch(`/api/orders/list?companyId=${companyId}&email=${encodeURIComponent(email)}`)
       .then(r => r.json())
       .then(d => {
         const list = (d.orders || []).slice().sort((a: any, b: any) => new Date(b.date_created || b.created_at || 0).getTime() - new Date(a.date_created || a.created_at || 0).getTime())

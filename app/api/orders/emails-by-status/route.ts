@@ -1,3 +1,4 @@
+import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
@@ -28,6 +29,8 @@ export async function GET(req: NextRequest) {
     if (!companyId || !status) return NextResponse.json({ emails: [] })
 
     const db = admin()
+    // Workspace members only (customer details, orders and refunds).
+    if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     const emails = new Set<string>()
 
     // Woo stores the status bare ("processing") or wc-prefixed ("wc-processing")

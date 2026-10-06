@@ -1597,7 +1597,7 @@ export default function InboxPage() {
         // WooCommerce live, so it still finds orders that were never synced
         // (which is why "Processing" used to show nothing on some stores).
         try {
-          const res = await fetch(`/api/orders/emails-by-status?companyId=${encodeURIComponent(companyId)}&status=${encodeURIComponent(status)}`)
+          const res = await authFetch(`/api/orders/emails-by-status?companyId=${encodeURIComponent(companyId)}&status=${encodeURIComponent(status)}`)
           if (res.ok) { const d = await res.json(); for (const e of (d.emails || [])) emails.add(String(e).toLowerCase()) }
         } catch { /* fall back to the direct read below */ }
 
@@ -2719,7 +2719,7 @@ export default function InboxPage() {
     if (email) {
       ;(async () => {
       try {
-        const res = await fetch(`/api/orders/list?companyId=${companyId}&email=${encodeURIComponent(email!)}`)
+        const res = await authFetch(`/api/orders/list?companyId=${companyId}&email=${encodeURIComponent(email!)}`)
         const data = await res.json()
         if (data.orders && data.orders.length > 0) {
           // Synced rows carry woo_order_id; live ones carry `number`. Keying the
@@ -3901,7 +3901,7 @@ export default function InboxPage() {
   const generateInvoice = async (payload: any) => {
     if (!companyId || !payload?.order_id) return
     try {
-      const res = await fetch(`/api/orders/details?companyId=${companyId}&orderId=${payload.order_id}`)
+      const res = await authFetch(`/api/orders/details?companyId=${companyId}&orderId=${payload.order_id}`)
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Could not load order')
       const { order, company } = data
@@ -4060,7 +4060,7 @@ export default function InboxPage() {
         const id = String(o.order_id)
         enrichedOrdersRef.current.add(id)
         try {
-          const res = await fetch(`/api/orders/detail?companyId=${companyId}&orderId=${id}` + (o.integration_id ? `&integrationId=${o.integration_id}` : ''))
+          const res = await authFetch(`/api/orders/detail?companyId=${companyId}&orderId=${id}` + (o.integration_id ? `&integrationId=${o.integration_id}` : ''))
           const d = await res.json()
           if (res.ok && d.order) updates[id] = d.order
         } catch { /* leave this order as-is */ }
@@ -4117,7 +4117,7 @@ export default function InboxPage() {
     if (!orderId) { showToast('No order id for this order'); return }
     if (!await confirmDialog(`Mark order #${payload.order_number || orderId} as completed?\n\nThis updates WooCommerce and may send the customer a completion email.`)) return
     try {
-      const res = await fetch('/api/orders/status', {
+      const res = await authFetch('/api/orders/status', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           companyId, orderId, status: 'completed',
@@ -4304,7 +4304,7 @@ export default function InboxPage() {
     let orderTotal = Number(payload.total || 0)
     let alreadyRefunded = Math.abs(Number(payload.total_refunded ?? payload.refunded_total ?? 0))
     try {
-      const res = await fetch(
+      const res = await authFetch(
         `/api/orders/detail?companyId=${companyId}&orderId=${orderId}` +
         (payload.integration_id ? `&integrationId=${payload.integration_id}` : ''))
       const d = await res.json()
@@ -4367,7 +4367,7 @@ export default function InboxPage() {
 
     setRefundModal((v) => ({ ...v, busy: true }))
     try {
-      const res = await fetch('/api/orders/refund', {
+      const res = await authFetch('/api/orders/refund', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           companyId, orderId: m.orderId,
@@ -4450,7 +4450,7 @@ export default function InboxPage() {
     if (!companyId || !payload?.order_id) return
     setEditOrder(payload); setEditOrderData(null); setEditOrderLoading(true)
     try {
-      const res = await fetch(`/api/orders/details?companyId=${companyId}&orderId=${payload.order_id}${payload.integration_id ? `&integrationId=${payload.integration_id}` : ''}`)
+      const res = await authFetch(`/api/orders/details?companyId=${companyId}&orderId=${payload.order_id}${payload.integration_id ? `&integrationId=${payload.integration_id}` : ''}`)
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Could not load order')
       // Normalize into an editable structure
@@ -4469,7 +4469,7 @@ export default function InboxPage() {
     if (!companyId || !editOrderData) return
     setEditOrderSaving(true)
     try {
-      const res = await fetch('/api/orders/edit', {
+      const res = await authFetch('/api/orders/edit', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           companyId, integrationId: editOrderData.integration_id, orderId: editOrderData.order_id,
@@ -4492,7 +4492,7 @@ export default function InboxPage() {
     const verb = status === 'cancelled' ? 'cancel' : 'mark paid'
     if (!await confirmDialog(`Are you sure you want to ${verb} order #${payload.order_number}?${status !== 'cancelled' ? ' This records payment and reduces stock in WooCommerce.' : ''}`)) return
     try {
-      const res = await fetch('/api/orders/status', {
+      const res = await authFetch('/api/orders/status', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ companyId, orderId: payload.order_id, status, conversationId: selected?.id }),
       })

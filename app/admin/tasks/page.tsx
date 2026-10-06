@@ -2320,7 +2320,7 @@ function OrderSearchModal({ companyId, onClose, onPick }: any) {
     if (q.trim().length < 2) { setResults([]); return }
     const t = setTimeout(async () => {
       setLoading(true)
-      try { const res = await fetch(`/api/orders/search?companyId=${companyId}&q=${encodeURIComponent(q.trim())}`); const d = await res.json(); setResults(d.orders || []) }
+      try { const res = await authFetch(`/api/orders/search?companyId=${companyId}&q=${encodeURIComponent(q.trim())}`); const d = await res.json(); setResults(d.orders || []) }
       catch { setResults([]) } finally { setLoading(false) }
     }, 300)
     return () => clearTimeout(t)
