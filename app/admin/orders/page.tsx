@@ -341,7 +341,7 @@ export default function OrdersPage() {
       // Default outlet — shared with the Tasks/Calendar pages. Pre-filters the board.
       if (session?.user) {
         try {
-          const r = await fetch(`/api/user-prefs?userId=${session.user.id}&companyId=${cid}`)
+          const r = await authFetch(`/api/user-prefs?userId=${session.user.id}&companyId=${cid}`)
           const j = await r.json()
           const dv = j?.prefs?.default_outlet
           if (dv?.id && (locs || []).some((l: any) => l.id === dv.id)) { setDefaultOutlet(dv.id); setFStore(dv.id) }
@@ -509,16 +509,16 @@ export default function OrdersPage() {
   const outletName = (id: string | null) => locations.find(l => l.id === id)?.name || null
   const setDefaultOutletPref = (id: string | null) => {
     setDefaultOutlet(id); setFStore(id || 'all')
-    if (companyId && me.id) fetch('/api/user-prefs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: me.id, companyId, key: 'default_outlet', value: { id } }) }).catch(() => {})
+    if (companyId && me.id) authFetch('/api/user-prefs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: me.id, companyId, key: 'default_outlet', value: { id } }) }).catch(() => {})
   }
   const setDefaultStatusPref = (key: string | null) => {
     setDefaultStatus(key); if (key) setTab(key)
-    if (companyId && me.id) fetch('/api/user-prefs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: me.id, companyId, key: 'default_status', value: { key } }) }).catch(() => {})
+    if (companyId && me.id) authFetch('/api/user-prefs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: me.id, companyId, key: 'default_status', value: { key } }) }).catch(() => {})
   }
   // Saved views — a named combination of filters (like ShipStation).
   const persistViews = (views: { id: string; name: string; f: any }[]) => {
     setSavedViews(views)
-    if (companyId && me.id) fetch('/api/user-prefs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: me.id, companyId, key: 'order_views', value: { views } }) }).catch(() => {})
+    if (companyId && me.id) authFetch('/api/user-prefs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: me.id, companyId, key: 'order_views', value: { views } }) }).catch(() => {})
   }
   const saveView = () => setSaveViewName('')
   const confirmSaveView = () => {

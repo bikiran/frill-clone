@@ -178,7 +178,7 @@ export default function TasksPage() {
     setDefaultOutlet(id)
     savePrefs({ outlet: id })
     if (id) setOutletFilter([id]); else setOutletFilter([])
-    if (companyId && userId) fetch('/api/user-prefs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId, companyId, key: 'default_outlet', value: { id } }) }).catch(() => {})
+    if (companyId && userId) authFetch('/api/user-prefs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId, companyId, key: 'default_outlet', value: { id } }) }).catch(() => {})
     setOutletMenu(null)
   }
 
@@ -186,7 +186,7 @@ export default function TasksPage() {
     const payload = { names, defaultView: dflt }
     savePrefs({ names, view: dflt })
     if (companyId && userId) {
-      fetch('/api/user-prefs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId, companyId, key: 'tasks_view', value: payload }) }).catch(() => {})
+      authFetch('/api/user-prefs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId, companyId, key: 'tasks_view', value: payload }) }).catch(() => {})
     }
   }
   const openViewMenu = (e: React.MouseEvent, v: ViewMode) => {
@@ -301,7 +301,7 @@ export default function TasksPage() {
         const uid = session?.user?.id
         // Saved view/outlet prefs, the owner and the team all load together.
         const [savedPrefs, { data: co }, { data: tm }] = await Promise.all([
-          uid ? fetch(`/api/user-prefs?userId=${uid}&companyId=${cid}`).then(r => r.ok ? r.json() : null).catch(() => null) : Promise.resolve(null),
+          uid ? authFetch(`/api/user-prefs?userId=${uid}&companyId=${cid}`).then(r => r.ok ? r.json() : null).catch(() => null) : Promise.resolve(null),
           (supabase as any).from('companies').select('owner_id, name').eq('id', cid).maybeSingle(),
           (supabase as any).from('team_members').select('*').or(`company_id.eq.${cid},company_id.is.null`),
         ])
