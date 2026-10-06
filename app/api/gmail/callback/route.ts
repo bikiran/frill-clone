@@ -1,3 +1,4 @@
+import { readValue, safeReturn } from '@/lib/oauth-state'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
@@ -18,13 +19,12 @@ export async function GET(req: NextRequest) {
   const base = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
 
   let companyId = '', locationId = '', returnTo = ''
-  try {
-    const s = JSON.parse(Buffer.from(String(stateRaw), 'base64url').toString())
-    companyId = s.companyId; locationId = s.locationId || ''; returnTo = s.returnTo || ''
-  } catch {}
+  // Only a state this server signed for a member (lib/oauth-state).
+  const s = readValue(stateRaw, 'state')
+  if (s && s.purpose === 'gmail') { companyId = s.companyId; locationId = s.locationId || ''; returnTo = safeReturn(s.returnTo) }
 
   const back = (q: string) => {
-    const dest = returnTo && /^https:\/\/([a-z0-9-]+\.)?colvy\.com/i.test(returnTo)
+    const dest = returnTo
       ? returnTo
       : `${base}/admin/integrations/email`
     return NextResponse.redirect(`${dest}${dest.includes('?') ? '&' : '?'}${q}`)

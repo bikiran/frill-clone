@@ -1,3 +1,4 @@
+import { readValue, signValue, safeReturn } from '@/lib/oauth-state'
 import { NextRequest, NextResponse } from 'next/server'
 import { metaLoginUrl, isMetaConfigured, META_PAGE_SCOPES, META_MESSAGING_SCOPES, META_SCOPES, META_LOGIN_CONFIG_ID } from '@/lib/meta'
 
@@ -19,10 +20,15 @@ export async function GET(req: NextRequest) {
   // rely on the request host here because this route now runs on the root
   // domain (colvy.com) — the host would always be root and we'd lose which
   // company's subdomain to return the user to.
-  const origin = url.searchParams.get('origin')
+  const origin = safeReturn(url.searchParams.get('origin')
     || req.headers.get('origin')
-    || (req.headers.get('host') ? `https://${req.headers.get('host')}` : '')
-  const state = Buffer.from(JSON.stringify({ companyId, origin, t: Date.now() })).toString('base64url')
+    || (req.headers.get('host') ? `https://${req.headers.get('host')}` : ''))
+  // Only a member of this workspace can start a connection (see lib/oauth-state).
+  const ticket = readValue(url.searchParams.get('ticket'), 'ticket')
+  if (!ticket || ticket.purpose !== 'meta' || ticket.companyId !== companyId) {
+    return NextResponse.json({ error: 'Open Settings → Channels and press Connect again.' }, { status: 401 })
+  }
+  const state = signValue({ kind: 'state', purpose: 'meta', companyId, userId: ticket.userId, origin }, 30 * 60 * 1000)
 
   // Which permissions to ask for. Default is the four approved Page scopes
   // (what the Social-Engagement comments feature needs); `?scopes=full` also
@@ -70,7 +76,7 @@ export async function GET(req: NextRequest) {
   // the callback can still return them to their own subdomain instead of the
   // bare root domain.
   const res = NextResponse.redirect(loginUrl)
-  if (origin && /^https?:\/\//.test(origin)) {
+  if (origin) {
     res.cookies.set('colvy_meta_origin', origin, { httpOnly: true, secure: true, sameSite: 'lax', path: '/', maxAge: 900 })
   }
   return res

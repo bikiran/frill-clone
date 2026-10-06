@@ -1,5 +1,6 @@
 'use client'
 
+import { withConnectTicket } from '@/lib/oauth-ticket-client'
 import { authFetch } from '@/lib/auth-fetch'
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
@@ -109,10 +110,12 @@ export default function GoogleReviewsPage() {
     } catch {}
   }
 
-  const connect = () => {
+  const connect = async () => {
     if (!companyId) return
     const returnTo = window.location.href.split('?')[0]
-    window.location.href = `https://colvy.com/api/google/reviews/start?companyId=${companyId}&returnTo=${encodeURIComponent(returnTo)}`
+    try {
+      window.location.href = await withConnectTicket(`https://colvy.com/api/google/reviews/start?companyId=${companyId}&returnTo=${encodeURIComponent(returnTo)}`, companyId, 'google_reviews')
+    } catch (e: any) { alert(e.message) }
   }
 
   const loadLocations = async () => {

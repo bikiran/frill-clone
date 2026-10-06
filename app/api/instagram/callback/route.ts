@@ -1,3 +1,4 @@
+import { readValue, safeReturn } from '@/lib/oauth-state'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { exchangeInstagramCode, instagramLongLivedToken, getInstagramProfile, subscribeInstagramWebhooks } from '@/lib/instagram-login'
@@ -25,16 +26,18 @@ export async function GET(req: NextRequest) {
 
   let companyId = ''
   let origin = ''
-  try {
-    const parsed = JSON.parse(Buffer.from(state || '', 'base64url').toString())
-    companyId = parsed.companyId || ''
-    origin = parsed.origin || ''
-  } catch {}
+  // Only a state this server signed for a member (lib/oauth-state); a plain
+  // base64 company id is no longer trusted.
+  const signed = readValue(state, 'state')
+  if (signed && signed.purpose === 'instagram') {
+    companyId = signed.companyId || ''
+    origin = safeReturn(signed.origin)
+  }
 
   const cookieOrigin = req.cookies.get('colvy_meta_origin')?.value || ''
   const home = (params: string) => {
-    const base = origin && /^https?:\/\//.test(origin) ? origin
-      : cookieOrigin && /^https?:\/\//.test(cookieOrigin) ? cookieOrigin
+    const base = origin ? origin
+      : safeReturn(cookieOrigin) ? cookieOrigin
       : new URL(req.url).origin
     return `${base}${settingsPath}?${params}`
   }

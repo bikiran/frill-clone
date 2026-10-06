@@ -1,3 +1,4 @@
+import { readValue, safeReturn } from '@/lib/oauth-state'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { exchangeCodeForToken, longLivedToken, listManagedPages, subscribePageWebhooks } from '@/lib/meta'
@@ -25,19 +26,21 @@ export async function GET(req: NextRequest) {
   // the shared root domain, colvy.com).
   let companyId = ''
   let origin = ''
-  try {
-    const parsed = JSON.parse(Buffer.from(state || '', 'base64url').toString())
-    companyId = parsed.companyId || ''
-    origin = parsed.origin || ''
-  } catch {}
+  // Only a state this server signed for a member (lib/oauth-state); a plain
+  // base64 company id is no longer trusted.
+  const signed = readValue(state, 'state')
+  if (signed && signed.purpose === 'meta') {
+    companyId = signed.companyId || ''
+    origin = safeReturn(signed.origin)
+  }
 
   // Where to send the user when we're done. Their own subdomain if we know it —
   // from the state, or (when Facebook bounced back without state) from the
   // cookie the connect route set — otherwise back here on root.
   const cookieOrigin = req.cookies.get('colvy_meta_origin')?.value || ''
   const home = (params: string) => {
-    const base = origin && /^https?:\/\//.test(origin) ? origin
-      : cookieOrigin && /^https?:\/\//.test(cookieOrigin) ? cookieOrigin
+    const base = origin ? origin
+      : safeReturn(cookieOrigin) ? cookieOrigin
       : new URL(req.url).origin
     return `${base}${settingsPath}?${params}`
   }

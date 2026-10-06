@@ -1,5 +1,6 @@
 'use client'
 
+import { withConnectTicket } from '@/lib/oauth-ticket-client'
 import { authFetch } from '@/lib/auth-fetch'
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
@@ -68,10 +69,12 @@ export default function EmailPage() {
     return d
   }
 
-  const connectGmail = (locationId?: string) => {
+  const connectGmail = async (locationId?: string) => {
     if (!companyId) return
     const returnTo = window.location.href.split('?')[0]
-    window.location.href = `https://colvy.com/api/gmail/start?companyId=${companyId}&locationId=${locationId || ''}&returnTo=${encodeURIComponent(returnTo)}`
+    try {
+      window.location.href = await withConnectTicket(`https://colvy.com/api/gmail/start?companyId=${companyId}&locationId=${locationId || ''}&returnTo=${encodeURIComponent(returnTo)}`, companyId, 'gmail')
+    } catch (e: any) { alert(e.message) }
   }
 
   const saveDomain = async () => {
