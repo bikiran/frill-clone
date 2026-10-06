@@ -27,7 +27,7 @@ const INK = '#0f1119'
 // Rotating hero noun — "Turn every chat into a ___".
 const HERO_WORDS = ['customer.', 'sale.', 'booking.', 'callback.', 'repeat order.', '5★ review.']
 // Rotating capability line for the brand band.
-const CAPABILITIES = ['making sales', 'every channel', 'phone calls', 'call summaries', 'voice typing', 'restock alerts', 'follow-ups', 'happy customers']
+const CAPABILITIES = ['making sales', 'every channel', 'phone calls', 'call summaries', 'voice typing', 'scheduled replies', 'restock alerts', 'follow-ups', 'happy customers']
 
 // Opaque floating chat bubbles — positioned to the RIGHT half + corners so they
 // never sit on the headline or body copy.
@@ -40,7 +40,7 @@ const BUBBLES = [
 ]
 
 // Big-text ticker just above the feature bands.
-const MARQUEE_WORDS = ['One inbox for every channel', 'Sell inside the chat', 'Reply in seconds', 'Speak it, send it polished', 'Record every sale', 'Text them when it’s back', 'Automate the follow-up', 'Never miss a customer']
+const MARQUEE_WORDS = ['One inbox for every channel', 'Sell inside the chat', 'Reply in seconds', 'Schedule it for later', 'Speak it, send it polished', 'Record every sale', 'Text them when it’s back', 'Automate the follow-up', 'Never miss a customer']
 
 const BRANDS = [
   { name: 'WhatsApp', logo: 'https://cdn.jsdelivr.net/npm/simple-icons@v9/icons/whatsapp.svg' },
@@ -371,7 +371,7 @@ export default function LandingPage() {
     { color: CORAL, band: dark ? 'rgba(255,106,77,0.10)' : '#fff1ec', tag: 'One shared inbox', title: 'Every channel. One conversation.', body: 'WhatsApp, Instagram, Messenger, email, SMS and live chat land in a single shared inbox — each message tied to a full customer profile, so anyone on your team can pick up the thread.', bullets: ['Unified omnichannel inbox', 'Full customer profile beside every chat', 'Voice typing: speak a reply, send it polished'], href: '/inbox-crm', visual: 'demo' as const },
     { color: BLUE, band: dark ? 'rgba(43,89,255,0.10)' : '#eef2ff', tag: 'Sell inside the chat', title: 'Turn a message into money.', body: 'Look up live WooCommerce orders, take payments, recover abandoned carts, text everyone on a waitlist the moment stock is back and record off-Stripe sales — right where the customer is talking to you. Then see the real revenue each conversation drove.', bullets: ['Live orders, refunds & payment links', 'Abandoned carts & back-in-stock waitlists', 'Revenue-per-conversation reporting'], href: '/inbox-crm#woo', visual: 'sale' as const },
     { color: GREEN, band: dark ? 'rgba(0,196,140,0.10)' : '#eafaf4', tag: 'Online booking', title: 'Bookings that fill themselves.', body: 'Customers book a service, a time and a team member on your own booking page, pay a deposit, and get SMS reminders. If plans change, they move it themselves. Every booking lands in the same thread as their messages.', bullets: ['Live staff & location availability', 'Stripe deposits and SMS reminders', 'Self-serve reschedule & cancel'], href: '/product/booking', visual: 'booking' as const },
-    { color: PURPLE, band: dark ? 'rgba(124,92,255,0.10)' : '#f3efff', tag: 'Work less, close more', title: 'Automations that never sleep.', body: 'Auto-reply, route and follow up. Turn any conversation into an assignable task on a calendar, trigger order updates, and let AI draft the reply — you stay in control.', bullets: ['Order-status & follow-up automations', 'Tasks, calendar & reminders', 'AI-assisted replies with an undo'], href: '/inbox-crm#tasks', visual: 'flow' as const },
+    { color: PURPLE, band: dark ? 'rgba(124,92,255,0.10)' : '#f3efff', tag: 'Work less, close more', title: 'Automations that never sleep.', body: 'Auto-reply, route and follow up. Schedule a reply for the right moment, turn any conversation into an assignable task on a calendar, trigger order updates, and let AI draft the reply — you stay in control.', bullets: ['Order-status & follow-up automations', 'Scheduled replies — edit, send now or cancel', 'Tasks, calendar & reminders', 'AI-assisted replies with an undo'], href: '/inbox-crm#tasks', visual: 'flow' as const },
   ]
 
   const btnPrimary: React.CSSProperties = { padding: '15px 30px', borderRadius: 999, background: CORAL, color: '#fff', fontWeight: 800, fontSize: 16, cursor: 'pointer', border: 'none', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 8, boxShadow: `0 10px 30px ${CORAL}55` }

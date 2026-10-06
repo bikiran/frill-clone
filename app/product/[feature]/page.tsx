@@ -7,7 +7,7 @@ const META: Record<string, { title: string; description: string }> = {
   roadmap: { title: 'Public Product Roadmap', description: 'Share what you’re building with a public Colvy roadmap and keep customers in the loop as work progresses.' },
   announcements: { title: 'Changelog & Announcements', description: 'Announce new releases with a beautiful Colvy changelog and notify the customers who asked for each feature.' },
   knowledgebase: { title: 'Knowledge Base & Help Center', description: 'Answer common questions with a searchable Colvy help center that deflects tickets around the clock.' },
-  inbox: { title: 'Omnichannel Shared Inbox', description: 'Bring Messenger, Instagram, WhatsApp, SMS, email and live chat into one shared, assignable inbox with Colvy.' },
+  inbox: { title: 'Omnichannel Shared Inbox', description: 'Bring Messenger, Instagram, WhatsApp, SMS, email and live chat into one shared, assignable inbox with Colvy, with scheduled replies and voice typing.' },
   crm: { title: 'Lightweight CRM', description: 'Keep every customer’s profile, channels, orders and history together in Colvy’s built-in CRM.' },
   gallery: { title: 'Shared Media Gallery', description: 'Every image, video and file a customer sends, organised and searchable in Colvy.' },
   notes: { title: 'Internal Notes', description: 'Add private team notes to any conversation in Colvy so context never gets lost.' },

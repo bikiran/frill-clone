@@ -55,7 +55,7 @@ const AISTEPS = [
 const BLOCKS = (dark: boolean, border: string, ink: string, sub: string) => [
   { id: 'inbox', tag: 'Shared inbox', title: 'One inbox for every channel',
     body: 'WhatsApp, Instagram, Messenger, email, SMS and website chat land in a single shared queue. Assign threads to teammates, leave private notes, @mention colleagues and never lose a conversation between apps again.',
-    points: ['Assign, snooze and resolve like a team', 'Private notes, @mentions and internal tasks', 'Voice typing: speak a reply, send it polished'],
+    points: ['Assign, snooze and resolve like a team', 'Private notes, @mentions and internal tasks', 'Schedule replies, then edit, send now or cancel', 'Voice typing: speak a reply, send it polished'],
     mock: (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%', maxWidth: 420 }}>
         {[['SR', 'Sam Rivera', 'Do you still have the 4ft…', '#25D366', '2'], ['MO', 'Mia Okafor', 'Thanks — order received!', '#E1306C', ''], ['JL', 'Jon Lee', 'Can I get a refund on…', PURPLE, '1']].map(([in_, nm, msg, cl, b]) => (
