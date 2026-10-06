@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse, after } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { requireCompanyAccess } from '@/lib/company-access'
 import { uploadToR2, r2Configured } from '@/lib/r2'
 import { processJobById } from '@/lib/transcode'
 
@@ -38,6 +39,8 @@ export async function POST(req: NextRequest) {
     const folderId = (form.get('folderId') as string | null) || null
     const title = (form.get('title') as string | null) || null
     const sku = (form.get('sku') as string | null) || null
+    if (!companyId) return NextResponse.json({ error: 'Missing companyId' }, { status: 400 })
+    if (!(await requireCompanyAccess(req, admin(), companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     // A large file (video) may already be uploaded to R2 via a presigned URL —
     // then we just register the media_items row instead of receiving bytes.
     const preUrl = form.get('url') as string | null

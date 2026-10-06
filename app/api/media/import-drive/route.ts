@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { requireCompanyAccess } from '@/lib/company-access'
 
 function admin() {
   return createClient(
@@ -25,6 +26,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Missing companyId, accessToken or files' }, { status: 400 })
     }
     const db = admin()
+    if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
 
     // Ensure the media bucket exists.
     try {

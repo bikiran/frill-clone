@@ -2787,7 +2787,7 @@ export default function InboxPage() {
     if (!companyId) return
     setGallerySelected(new Set()); setShowMediaPicker(true)
     try {
-      const res = await fetch(`/api/media?companyId=${companyId}`)
+      const res = await authFetch(`/api/media?companyId=${companyId}`)
       const data = await res.json()
       setGalleryFolders(data.folders || [])
       setGalleryItems(data.items || [])
@@ -2800,7 +2800,7 @@ export default function InboxPage() {
     const params = new URLSearchParams({ companyId })
     if (folderId) params.set('folderId', folderId)
     if (q.trim()) params.set('q', q.trim())
-    const res = await fetch(`/api/media?${params}`)
+    const res = await authFetch(`/api/media?${params}`)
     const data = await res.json()
     setGalleryItems(data.items || [])
   }
@@ -4466,7 +4466,7 @@ export default function InboxPage() {
     if (!companyId || !selected || quickMrBusy) return
     setQuickMrBusy(true)
     try {
-      const res = await fetch('/api/media-requests', {
+      const res = await authFetch('/api/media-requests', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           companyId, conversationId: selected.id, contactId: contact?.id,
@@ -4491,7 +4491,7 @@ export default function InboxPage() {
     if (mrAccept.length === 0) { showToast('Select at least one file type'); return }
     setMrSaving(true)
     try {
-      const res = await fetch('/api/media-requests', {
+      const res = await authFetch('/api/media-requests', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           companyId, conversationId: selected.id, contactId: contact?.id,

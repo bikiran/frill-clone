@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { requireCompanyAccess } from '@/lib/company-access'
 
 function admin() {
   return createClient(
@@ -35,6 +36,7 @@ export async function POST(req: NextRequest) {
   try {
     const { companyId } = await req.json()
     if (!companyId) return NextResponse.json({ error: 'Missing companyId' }, { status: 400 })
+    if (!(await requireCompanyAccess(req, admin(), companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
 
     // Not yet implemented — return a clear, honest status the UI can display.
     return NextResponse.json({

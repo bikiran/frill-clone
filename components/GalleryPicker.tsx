@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { authFetch } from '@/lib/auth-fetch'
 
 export type PickedMedia = { url: string; name?: string; type?: string; kind?: string }
 
@@ -22,7 +23,7 @@ export default function GalleryPicker({ companyId, onClose, onPick }: {
       try {
         // Go through the service-role API (same as the Gallery page) — a direct
         // browser query to media_items is blocked by RLS and comes back empty.
-        const res = await fetch(`/api/media?companyId=${companyId}`)
+        const res = await authFetch(`/api/media?companyId=${companyId}`)
         const d = await res.json()
         setItems(Array.isArray(d.items) ? d.items : [])
       } catch { /* empty gallery */ } finally { setLoading(false) }
