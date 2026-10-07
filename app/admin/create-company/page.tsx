@@ -72,7 +72,7 @@ export default function CreateCompanyPage() {
     setLoading(true)
     try {
       // 1. Create the owner's auth account
-      const res = await fetch('/api/admin/create-user', {
+      const res = await authFetch('/api/admin/create-user', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: ownerEmail, password: ownerPassword, name: ownerName, role: 'owner' }),
