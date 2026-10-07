@@ -1,4 +1,4 @@
-import { requireCompanyAccess } from '@/lib/company-access'
+import { requireCompanyAccess, isStaffRow } from '@/lib/company-access'
 import { internalHeaders } from '@/lib/internal-call'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
@@ -41,16 +41,27 @@ export async function POST(req: NextRequest) {
   try {
     const b = await req.json()
     const companyId = b.companyId
-    const ids: string[] = Array.from(new Set((b.userIds || []).filter(uuidOrNull))) as string[]
+    let ids: string[] = Array.from(new Set((b.userIds || []).filter(uuidOrNull))) as string[]
     if (!companyId) return NextResponse.json({ error: 'companyId required' }, { status: 400 })
     const db = admin()
     // Emails and texts the team from the workspace's own mailbox and number, with
     // the caller's words: a teammate only, never an outsider.
     if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+    // Only this workspace's own staff (and owner) — not any account id passed in.
+    if (ids.length) {
+      const [{ data: team }, { data: co }] = await Promise.all([
+        db.from('team_members').select('user_id, role, status').eq('company_id', companyId).in('user_id', ids),
+        db.from('companies').select('owner_id').eq('id', companyId).maybeSingle(),
+      ])
+      const ok = new Set<string>((team || []).filter(isStaffRow).map((r: any) => r.user_id))
+      if ((co as any)?.owner_id) ok.add((co as any).owner_id)
+      ids = ids.filter(id => ok.has(id))
+    }
     if (ids.length === 0) return NextResponse.json({ ok: true, notified: 0 })
-    const title: string = b.title || 'Colvy update'
-    const body: string = b.body || ''
-    const link: string = b.link || '/admin'
+    const title: string = String(b.title || 'Colvy update').slice(0, 200)
+    const body: string = String(b.body || '')
+    // A path inside Colvy, never an outside address.
+    const link: string = typeof b.link === 'string' && /^\/(?!\/)/.test(b.link) ? b.link : '/admin'
     const type: string = b.type || 'mention'
     const channels: string[] = Array.isArray(b.channels) ? b.channels : ['in_app', 'email', 'sms']
 
