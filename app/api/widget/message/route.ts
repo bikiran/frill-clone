@@ -1,3 +1,4 @@
+import { visitorConversation } from '@/lib/widget-access'
 import { internalHeaders } from '@/lib/internal-call'
 import { NextRequest, NextResponse, after } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
@@ -71,12 +72,9 @@ export async function POST(req: NextRequest) {
 
     // The conversation must exist AND belong to the company being claimed —
     // otherwise a caller could post into another business's inbox by guessing.
-    const { data: conv } = await db.from('conversations')
-      .select('id, company_id, status')
-      .eq('id', conversationId).maybeSingle()
-    if (!conv || conv.company_id !== companyId) {
-      return NextResponse.json({ error: 'Conversation not found' }, { status: 404 })
-    }
+    // …and be the thread this visitor started (lib/widget-access.ts).
+    const conv = await visitorConversation(req, db, companyId, conversationId, 'status')
+    if (!conv) return NextResponse.json({ error: 'Conversation not found' }, { status: 404 })
 
     // A visitor messaging a closed enquiry from the live-chat widget reopens it
     // — log that before we flip the status below, so the reopen shows on the

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { uploadToR2, r2Configured } from '@/lib/r2'
+import { checkUpload } from '@/lib/upload-scope'
 
 function admin() {
   return createClient(
@@ -12,7 +13,8 @@ function admin() {
 
 // Uploads a chat attachment server-side (creates the bucket if missing) and
 // returns a public URL. Accepts multipart/form-data with `file`, `companyId`,
-// `conversationId`.
+// `conversationId`. Staff (Bearer token) of the company, or the widget visitor
+// who started that conversation — see lib/upload-scope.ts.
 export async function POST(req: NextRequest) {
   try {
     const form = await req.formData()
@@ -20,11 +22,13 @@ export async function POST(req: NextRequest) {
     const companyId = form.get('companyId') as string | null
     const conversationId = form.get('conversationId') as string | null
     if (!file || !companyId) return NextResponse.json({ error: 'Missing file or companyId' }, { status: 400 })
+    const check = await checkUpload(req, admin(), `chat-attachments/${companyId}/${conversationId || 'misc'}`, file.type, file.size)
+    if (!check.ok) return NextResponse.json({ error: check.error }, { status: check.status })
 
     const arrayBuffer = await file.arrayBuffer()
     const bytes = new Uint8Array(arrayBuffer)
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
-    const path = `${companyId}/${conversationId || 'misc'}/${Date.now()}-${safeName}`
+    const path = `${check.prefix.replace(/^chat-attachments\//, '')}/${Date.now()}-${safeName}`
     const kind = file.type.startsWith('image/') ? 'image' : file.type.startsWith('video/') ? 'video' : 'file'
 
     // Prefer Cloudflare R2 when configured (bytes served from media.colvy.com,

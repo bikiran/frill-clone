@@ -1,3 +1,4 @@
+import { chatKeyFor } from '@/lib/widget-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { checkBurst, callerKey } from '@/lib/rate-limit'
@@ -194,6 +195,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       ok: true,
       conversationId: conv.id,
+      // Proves this browser started the thread (lib/widget-access.ts).
+      chatKey: chatKeyFor(conv.id),
       contactId,
       reopened,
     })

@@ -62,14 +62,18 @@ export async function uploadToR2(key: string, body: Uint8Array | Buffer, content
  * would time out on big videos). The client must PUT with the same Content-Type.
  */
 export async function presignPutUrl(
-  key: string, contentType: string, expiresIn = 600
+  key: string, contentType: string, expiresIn = 600, contentLength?: number | null
 ): Promise<{ uploadUrl: string; publicUrl: string; key: string }> {
   const cleanKey = key.replace(/^\/+/, '')
   const cmd = new PutObjectCommand({
     Bucket: R2_BUCKET(),
     Key: cleanKey,
     ContentType: contentType || 'application/octet-stream',
+    // Signed, so the upload must be exactly this many bytes.
+    ...(contentLength ? { ContentLength: contentLength } : {}),
   })
-  const uploadUrl = await getSignedUrl(client(), cmd, { expiresIn })
+  // Sign the content type too, or the uploader could store the approved file
+  // as text/html.
+  const uploadUrl = await getSignedUrl(client(), cmd, { expiresIn, signableHeaders: new Set(['content-type']) })
   return { uploadUrl, publicUrl: `${R2_DOMAIN()}/${cleanKey}`, key: cleanKey }
 }

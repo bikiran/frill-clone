@@ -124,16 +124,14 @@ export default function PublicForm() {
       notifyIntegrations('form.submitted', { id: formId })
 
       // Trigger email notification to form admin (best-effort, background).
+      // The server works out who that is from the form.
       try {
         if (form && form.company_id) {
-          const { data: company } = await (supabase as any).from('companies').select('owner_id').eq('id', form.company_id).single()
-          if (company?.owner_id) {
-            await fetch('/api/form-notifications', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ formId, userId: company.owner_id }),
-            })
-          }
+          await fetch('/api/form-notifications', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ formId }),
+          })
         }
       } catch (error) {
         console.error('Failed to send notification:', error)

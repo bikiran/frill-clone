@@ -1,4 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
+import { checkBurst, callerKey } from '@/lib/rate-limit'
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const esc = (v: any) => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' } as any)[c])
+
+/**
+ * Who may ask for a confirmation email: only someone who already signed up and
+ * hasn't confirmed yet, and who knows the password they signed up with.
+ *
+ * This used to take any address. generateLink({ type: 'signup' }) creates the
+ * account when it doesn't exist, so anyone could create accounts for other
+ * people's addresses and have Colvy mail them. Signing in with the password
+ * tells us both things at once: GoTrue checks the password first and only then
+ * answers "email not confirmed".
+ */
+async function unconfirmedWithPassword(email: string, password: string): Promise<'ok' | 'confirmed' | 'denied'> {
+  const anon = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  })
+  const { data, error } = await anon.auth.signInWithPassword({ email, password })
+  if (data?.session) return 'confirmed'
+  const code = String((error as any)?.code || '')
+  if (code === 'email_not_confirmed' || /email not confirmed/i.test(error?.message || '')) return 'ok'
+  return 'denied'
+}
 
 // Direct email sending via Resend API
 // This bypasses Supabase's built-in email rate limit (2/hour in dev mode)
@@ -7,8 +33,21 @@ export async function POST(req: NextRequest) {
   try {
     // mode: 'code' is the mobile app asking for the six-digit code rather than
     // a link — it has no browser for a link to land in.
-    const { email, slug, name, companyId, type, mode, password } = await req.json()
-    const wantCode = mode === 'code'
+    const body = await req.json()
+    const email = typeof body.email === 'string' ? body.email.trim() : ''
+    const password = typeof body.password === 'string' ? body.password : ''
+    const slug = typeof body.slug === 'string' && /^[a-z0-9-]{1,40}$/.test(body.slug) ? body.slug : ''
+    const name = typeof body.name === 'string' ? body.name.slice(0, 80) : ''
+    const companyId = typeof body.companyId === 'string' && UUID.test(body.companyId) ? body.companyId : null
+    const wantCode = body.mode === 'code'
+
+    if (!email || !password) return NextResponse.json({ error: 'Email and password are required' }, { status: 400 })
+    if (!checkBurst(`send-confirmation:${email.toLowerCase()}`, 3) || !checkBurst(`send-confirmation:${callerKey(req)}`, 10)) {
+      return NextResponse.json({ error: 'Please wait a minute before asking again.' }, { status: 429 })
+    }
+    const state = await unconfirmedWithPassword(email, password)
+    if (state === 'confirmed') return NextResponse.json({ ok: true, alreadyConfirmed: true })
+    if (state === 'denied') return NextResponse.json({ error: 'Check the email and password you signed up with.' }, { status: 401 })
     
     const RESEND_KEY = process.env.RESEND_API_KEY
     if (!RESEND_KEY) {
@@ -22,10 +61,9 @@ export async function POST(req: NextRequest) {
       : `${baseUrl}/auth/callback?slug=${encodeURIComponent(slug || '')}&name=${encodeURIComponent(name || '')}`
 
     // Build the confirmation link — we use Supabase's admin API to generate it
-    const { createClient } = await import('@supabase/supabase-js')
     const adminClient = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!,
       { auth: { autoRefreshToken: false, persistSession: false } }
     )
 
@@ -36,7 +74,7 @@ export async function POST(req: NextRequest) {
     const { data: linkData, error: linkError } = await (adminClient.auth.admin as any).generateLink({
       type: 'signup',
       email,
-      ...(password ? { password } : {}),
+      password,
       options: { redirectTo },
     })
 
@@ -47,7 +85,6 @@ export async function POST(req: NextRequest) {
 
     const confirmLink = linkData.properties.action_link
     const emailOtp = linkData.properties.email_otp
-    const boardName = name || 'Your Board'
     const boardUrl = slug ? `${slug}.colvy.com` : 'colvy.com'
 
     // A link is no use to a screen waiting for six digits, so fail loudly
@@ -97,13 +134,13 @@ export async function POST(req: NextRequest) {
             </div>
             ` : ''}
 
-            <a href="${confirmLink}"
+            <a href="${esc(confirmLink)}"
               style="display:block;background:#ff7a6b;color:#fff;text-align:center;padding:16px 0;border-radius:12px;font-weight:700;font-size:16px;text-decoration:none;margin-bottom:24px">
               ✓ Confirm my email address
             </a>
             
             <p style="font-size:13px;color:#9ca3af;margin:0 0 8px">If the button above doesn't work, copy and paste this link into your browser:</p>
-            <p style="font-size:12px;color:#9ca3af;word-break:break-all;margin:0 0 32px">${confirmLink}</p>
+            <p style="font-size:12px;color:#9ca3af;word-break:break-all;margin:0 0 32px">${esc(confirmLink)}</p>
             
             <hr style="border:none;border-top:1px solid #f0f0f0;margin:32px 0">
             <p style="font-size:12px;color:#9ca3af;margin:0">

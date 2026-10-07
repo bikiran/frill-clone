@@ -1,4 +1,5 @@
 'use client'
+import { authFetch } from '@/lib/auth-fetch'
 
 import { useRef, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
@@ -199,7 +200,7 @@ export default function RichTextEditor({
           const ext = (r.mimeType || '').includes('mp4') ? 'm4a' : 'webm'
           const file = new File([new Blob(chunksRef.current, { type: r.mimeType || 'audio/webm' })], `Voice ${Date.now()}.${ext}`, { type: r.mimeType || 'audio/webm' })
           const fd = new FormData(); fd.append('file', file); fd.append('companyId', companyId); fd.append('conversationId', 'notes')
-          const res = await fetch('/api/inbox/upload', { method: 'POST', body: fd })
+          const res = await authFetch('/api/inbox/upload', { method: 'POST', body: fd })
           const d = await res.json()
           if (d.url) insertVoiceBlock(d.url, dur)
         } catch {} finally { setRec('idle'); setRecSecs(0) }

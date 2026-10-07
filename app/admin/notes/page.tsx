@@ -248,7 +248,7 @@ export default function NotesPage() {
     setChkUploading(id)
     try {
       const fd = new FormData(); fd.append('file', file); fd.append('companyId', companyId); fd.append('conversationId', 'notes')
-      const res = await fetch('/api/inbox/upload', { method: 'POST', body: fd })
+      const res = await authFetch('/api/inbox/upload', { method: 'POST', body: fd })
       const d = await res.json()
       if (d?.url) patchCheck(id, { image: d.url })
     } catch {} finally { setChkUploading(null) }
@@ -414,7 +414,7 @@ export default function NotesPage() {
     showToast('Uploading cover…')
     try {
       const fd = new FormData(); fd.append('file', files[0]); fd.append('companyId', companyId); fd.append('conversationId', 'notes')
-      const res = await fetch('/api/inbox/upload', { method: 'POST', body: fd })
+      const res = await authFetch('/api/inbox/upload', { method: 'POST', body: fd })
       const d = await res.json()
       if (d.url) queueSave({ ...note, cover_image: d.url })
     } catch { showToast('Upload failed') }

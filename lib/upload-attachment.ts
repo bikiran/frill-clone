@@ -1,3 +1,4 @@
+import { authFetch } from '@/lib/auth-fetch'
 import { supabase } from './supabase'
 import { toPublicUrl } from './storage-url'
 
@@ -38,14 +39,17 @@ const MIN_QUALITY = 0.5
  * or null if presigning isn't available (caller then falls back to the server).
  */
 export async function uploadDirect(
-  file: File | Blob, prefix: string, filename?: string, onProgress?: (p: number) => void
+  file: File | Blob, prefix: string, filename?: string, onProgress?: (p: number) => void,
+  extraHeaders?: Record<string, string>,
 ): Promise<string | null> {
   try {
     const name = filename || (file as File).name || 'file'
     const contentType = (file as File).type || 'application/octet-stream'
-    const res = await fetch('/api/storage/presign', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prefix, filename: name, contentType }),
+    // Signed in: the token proves staff. The widget passes its chat key instead
+    // (extraHeaders). The size is signed into the upload URL.
+    const res = await authFetch('/api/storage/presign', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', ...(extraHeaders || {}) },
+      body: JSON.stringify({ prefix, filename: name, contentType, size: file.size }),
     })
     const d = await res.json().catch(() => ({}))
     if (!d.ok || !d.uploadUrl) return null
@@ -180,7 +184,7 @@ export async function uploadAttachment(
     const fd = new FormData()
     fd.append('file', f)
     fd.append('prefix', pfx)
-    const res = await fetch('/api/storage/put', { method: 'POST', body: fd })
+    const res = await authFetch('/api/storage/put', { method: 'POST', body: fd })
     const data = await res.json().catch(() => ({}))
     if (!res.ok || !data?.url) throw new Error(data?.error || 'Upload failed')
     return data.url as string

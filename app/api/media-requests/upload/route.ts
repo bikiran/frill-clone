@@ -1,3 +1,4 @@
+import { r2PublicBase } from '@/lib/r2'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
@@ -55,7 +56,11 @@ export async function POST(req: NextRequest) {
 
     let publicUrl: string
     if (preUrl) {
-      // Already stored (browser → storage). Just register the URL.
+      // Already stored (browser → storage). Just register the URL — but only
+      // one this link's own upload put there, not any address on the web.
+      if (!preUrl.startsWith(`${r2PublicBase()}/media-requests/${token}/`)) {
+        return NextResponse.json({ error: 'Upload failed' }, { status: 400 })
+      }
       publicUrl = preUrl
     } else {
       // Small file routed through the function — store it in Supabase.
