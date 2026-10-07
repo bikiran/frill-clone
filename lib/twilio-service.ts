@@ -54,6 +54,15 @@ export class TwilioService {
     return data
   }
 
+  // ── Line type (Lookup v2, line_type_intelligence) ───────────────────────
+  // A paid lookup per number. Answers 'landline', 'mobile', 'fixedVoip',
+  // 'nonFixedVoip', 'tollFree', … — lower-cased here, or null when unknown.
+  async lookupLineType(e164: string): Promise<string | null> {
+    const data = await this.req(`https://lookups.twilio.com/v2/PhoneNumbers/${encodeURIComponent(e164)}?Fields=line_type_intelligence`, 'GET')
+    const t = data?.line_type_intelligence?.type
+    return t ? String(t).toLowerCase() : null
+  }
+
   // ── Credential check ────────────────────────────────────────────────────
   // Fetching the account resource throws on bad credentials — used to verify a
   // key the moment it's entered.

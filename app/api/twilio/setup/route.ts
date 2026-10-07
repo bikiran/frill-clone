@@ -94,8 +94,8 @@ export async function GET(req: NextRequest) {
     let smsProvider = 'telnyx', voiceProvider = 'telnyx'
     try {
       const { data: co } = await db.from('companies').select('sms_provider, voice_provider').eq('id', companyId).maybeSingle()
-      smsProvider = co?.sms_provider || 'telnyx'
-      voiceProvider = co?.voice_provider || 'telnyx'
+      smsProvider = co?.sms_provider || 'twilio'
+      voiceProvider = co?.voice_provider || 'twilio'
     } catch {}
 
     const mask = (s?: string | null) => (s ? `••••••••${String(s).slice(-4)}` : null)

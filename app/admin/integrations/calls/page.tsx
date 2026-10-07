@@ -12,7 +12,7 @@ export default function TelnyxIntegration() {
   // Which carrier backs THIS company's number purchasing. Transparent to the
   // customer — they always see the same "Get a business number" flow; only the
   // API endpoints differ. Set per-company by a platform admin (default Telnyx).
-  const [numProvider, setNumProvider] = useState<'telnyx' | 'twilio'>('telnyx')
+  const [numProvider, setNumProvider] = useState<'telnyx' | 'twilio'>('twilio')
   // Whether the signed-in user is the platform super-admin. Only they see the
   // internal carrier indicator; customers never learn which carrier backs them.
   const [isSuperAdmin, setIsSuperAdmin] = useState(false)
@@ -85,11 +85,12 @@ export default function TelnyxIntegration() {
         if (ownCo) cid = ownCo.id
       }
       setCompanyId(cid)
-      // Resolve which carrier this company provisions through (default Telnyx).
+      // Resolve which carrier this company provisions through (Twilio unless a
+      // company is still explicitly on legacy Telnyx).
       if (cid) {
         try {
           const { data: co } = await (supabase as any).from('companies').select('number_provider, free_number_credits').eq('id', cid).maybeSingle()
-          if (co?.number_provider === 'twilio') setNumProvider('twilio')
+          setNumProvider(co?.number_provider === 'telnyx' ? 'telnyx' : 'twilio')
           setFreeCredits(Number(co?.free_number_credits || 0))
         } catch {}
       }
@@ -107,7 +108,7 @@ export default function TelnyxIntegration() {
         const qp = new URLSearchParams(window.location.search)
         const sessionId = qp.get('session_id') || undefined
         // The return URL carries which carrier to finalize against.
-        const provParam = qp.get('provider') === 'twilio' ? 'twilio' : 'telnyx'
+        const provParam = qp.get('provider') === 'telnyx' ? 'telnyx' : 'twilio'
         // Free path (admin-granted): no Stripe session — the number details ride
         // on the URL and the server consumes a credit.
         const isFree = qp.get('free') === '1'

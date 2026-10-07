@@ -2,6 +2,8 @@ import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { toE164, TelnyxService } from '@/lib/telnyx-service'
+import { TwilioService } from '@/lib/twilio-service'
+import { getSmsProvider } from '@/lib/sms-provider'
 
 export const dynamic = 'force-dynamic'
 
@@ -27,7 +29,11 @@ const TTL_DAYS = 90
  * front, but it is a paid lookup per number, so the answer is cached on the
  * contact and re-used.
  *
- * Never fails the caller. Any error — no Telnyx key, lookup down, column not yet
+ * Asks the company's SMS provider (Twilio Lookup; Telnyx only for a legacy
+ * company still on it). The path keeps its old /api/telnyx/ name because the
+ * mobile app calls it.
+ *
+ * Never fails the caller. Any error — no provider key, lookup down, column not yet
  * migrated — answers "unknown, assume it can receive a text", so this can only
  * ever save a doomed send, never block a good one.
  */
@@ -61,11 +67,18 @@ export async function POST(req: NextRequest) {
       } catch { /* column not migrated yet — fall through and look it up */ }
     }
 
-    const { data: integ } = await db.from('telnyx_integrations')
-      .select('api_key').eq('company_id', companyId).maybeSingle()
-    if (!integ?.api_key) return unknown
-
-    const lineType = await new TelnyxService(integ.api_key).lookupLineType(e164)
+    let lineType: string | null = null
+    if (await getSmsProvider(db, companyId) === 'twilio') {
+      const { data: tw } = await db.from('twilio_integrations')
+        .select('account_sid, auth_token').eq('company_id', companyId).maybeSingle()
+      if (!tw?.account_sid || !tw?.auth_token) return unknown
+      lineType = await new TwilioService(tw.account_sid, tw.auth_token).lookupLineType(e164)
+    } else {
+      const { data: integ } = await db.from('telnyx_integrations')
+        .select('api_key').eq('company_id', companyId).maybeSingle()
+      if (!integ?.api_key) return unknown
+      lineType = await new TelnyxService(integ.api_key).lookupLineType(e164)
+    }
     if (!lineType) return unknown
 
     if (contactId) {

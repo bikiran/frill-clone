@@ -76,7 +76,7 @@ export default function CallBar({ companyId, toNumber, contactName, contactId, c
   // Reading the ref gives the true duration no matter who ended the call.
   const secondsRef = useRef(0)
   const [muted, setMuted] = useState(false)
-  const providerRef = useRef<'telnyx' | 'twilio'>('telnyx')
+  const providerRef = useRef<'telnyx' | 'twilio'>('twilio')
   const clientRef = useRef<any>(null)
   const callRef = useRef<any>(null)
   const timerRef = useRef<any>(null)

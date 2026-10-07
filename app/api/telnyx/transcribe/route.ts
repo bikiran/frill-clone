@@ -83,7 +83,7 @@ async function transcribeWhisper(audio: ArrayBuffer, key: string) {
 // Translate a transcript to English (best-effort). Returns null on any failure —
 // the caller then just shows the original.
 async function translateToEnglish(text: string, key: string): Promise<string | null> {
-  for (const model of ['claude-sonnet-4-6', 'claude-3-5-haiku-20241022']) {
+  for (const model of ['claude-sonnet-4-6', 'claude-haiku-4-5']) {
     try {
       const res = await fetchWithTimeout('https://api.anthropic.com/v1/messages', {
         method: 'POST',
@@ -186,7 +186,7 @@ export async function POST(req: NextRequest) {
       // Model names get retired. Rather than fail silently on a stale one, try
       // current models in order and report the REAL upstream error if all fail —
       // "the summary step failed" told us nothing about why.
-      const MODELS = ['claude-sonnet-4-6', 'claude-3-5-haiku-20241022']   // 4-6 is what the rest of Colvy's AI uses and is known to work with this key
+      const MODELS = ['claude-sonnet-4-6', 'claude-haiku-4-5']   // 4-6 is what the rest of Colvy's AI uses and is known to work with this key
       // Frame the call around the contact's relationship type, so a call with a
       // supplier / wholesaler / business contact isn't summarised as if they
       // were a customer. Default to customer when unset.

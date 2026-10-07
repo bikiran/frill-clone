@@ -51,7 +51,7 @@ export default function ChannelsSettings() {
     ;(async () => {
       const status: Record<string, boolean> = {}
 
-      // SMS / Calls — a Telnyx integration with a number.
+      // SMS / Calls — a number on Twilio (below), or a legacy Telnyx integration.
       try {
         const { data: telnyx } = await (supabase as any).from('telnyx_integrations')
           .select('api_key, phone_number').eq('company_id', companyId).maybeSingle()
@@ -63,6 +63,7 @@ export default function ChannelsSettings() {
         const { data: twilio } = await (supabase as any).from('twilio_integrations')
           .select('account_sid, phone_number').eq('company_id', companyId).maybeSingle()
         status.twilio = !!(twilio?.account_sid && twilio?.phone_number)
+        if (status.twilio) { status.sms = true; status.phone = true }
       } catch {}
 
       // Email — an active inbound address.

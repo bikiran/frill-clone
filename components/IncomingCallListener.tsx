@@ -195,7 +195,7 @@ export default function IncomingCallListener({ companyId, agentName, showStatusP
   // Which calling backend this company uses. Drives whether we register the
   // Telnyx WebRTC client or the Twilio Voice SDK, and how answer/decline/hangup
   // are actioned. Warm-transfer/hold is Telnyx-only for now.
-  const [provider, setProvider] = useState<'telnyx' | 'twilio'>('telnyx')
+  const [provider, setProvider] = useState<'telnyx' | 'twilio'>('twilio')
 
   // Twilio calls can't be reattached after a reload — warn before the page
   // unloads instead of silently dropping the customer.

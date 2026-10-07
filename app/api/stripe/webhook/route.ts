@@ -231,7 +231,7 @@ export async function POST(req: NextRequest) {
             const origin = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
             // Provision on whichever carrier this purchase was for. Both endpoints
             // take the same shape; the customer never learns which one ran.
-            const prov = meta.provider === 'twilio' ? 'twilio' : 'telnyx'
+            const prov = meta.provider === 'telnyx' ? 'telnyx' : 'twilio'
             await fetch(`${origin}/api/${prov}/number`, {
               method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
               body: JSON.stringify({

@@ -6,19 +6,20 @@ import type { NextRequest } from 'next/server'
  * (header telnyx-signature-ed25519). The public key is in the Telnyx portal
  * (Account → Keys & Credentials → Public Key); set it as TELNYX_PUBLIC_KEY.
  *
- * Until that variable is set the check can't run, so events are let through
- * with a warning. Once it is set, unsigned or forged events are refused
- * (TELNYX_WEBHOOK_VERIFY=log turns enforcement off as an emergency switch).
+ * Colvy no longer uses Telnyx (everything is on Twilio), so with no key set
+ * every event is refused — an unused webhook shouldn't accept forged inbound
+ * texts or calls. If Telnyx is ever brought back, set TELNYX_PUBLIC_KEY.
+ * TELNYX_WEBHOOK_VERIFY=log turns enforcement off as an emergency switch.
  */
 const MAX_AGE_SEC = 5 * 60
 
 export function telnyxSignatureOk(req: NextRequest, rawBody: string): boolean {
   const key = (process.env.TELNYX_PUBLIC_KEY || '').trim()
-  if (!key) {
-    console.warn('[telnyx] TELNYX_PUBLIC_KEY is not set; webhook signatures are not being checked')
-    return true
-  }
   const mode = (process.env.TELNYX_WEBHOOK_VERIFY || 'enforce').toLowerCase()
+  if (!key) {
+    console.warn('[telnyx] webhook refused: Telnyx is not in use (TELNYX_PUBLIC_KEY is not set)')
+    return mode === 'log' || mode === 'off'
+  }
   let ok = false
   try {
     const sig = req.headers.get('telnyx-signature-ed25519') || ''

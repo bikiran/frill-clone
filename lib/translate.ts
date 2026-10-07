@@ -19,7 +19,7 @@ Respond with ONLY JSON, no preamble, no markdown fences:
 Message:
 ${clean.slice(0, 4000)}`
 
-  for (const model of ['claude-3-5-haiku-20241022', 'claude-sonnet-4-6']) {
+  for (const model of ['claude-haiku-4-5', 'claude-sonnet-4-6']) {
     try {
       const ctrl = new AbortController()
       const t = setTimeout(() => ctrl.abort(), 20000)
