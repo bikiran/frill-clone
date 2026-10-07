@@ -1,3 +1,4 @@
+import { cronOr401 } from '@/lib/cron-auth'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { runBookingSweep } from '@/lib/booking-sweep'
@@ -16,10 +17,11 @@ const admin = () => createClient(
  *
  * Booking reminders, wrap-up (completed + review request), rebook nudges and
  * expired holds — see lib/booking-sweep.ts. Vercel Cron runs it every 10
- * minutes; the admin app also pings it. Open like the other sweep crons: it
- * only sends messages that are due, each exactly once.
+ * minutes; CRON_SECRET guards it like the other crons.
  */
 export async function GET(req: NextRequest) {
+  const denied = cronOr401(req)
+  if (denied) return denied
   try {
     const result = await runBookingSweep(admin(), req.nextUrl.origin)
     return NextResponse.json({ ok: true, ...result })

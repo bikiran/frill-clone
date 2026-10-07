@@ -1,3 +1,4 @@
+import { cronOr401 } from '@/lib/cron-auth'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { notifyWaitlist, resolveWaitlistSettings } from '@/lib/waitlist'
@@ -17,12 +18,11 @@ const admin = () => createClient(
  *
  * Sends back-in-stock texts that were held because the stock arrived outside
  * sending hours (e.g. a WooCommerce update at 11pm → texts go out at 9am).
- * Pinged from the admin app every couple of minutes alongside email-sync (see
- * app/admin/layout.tsx). Deliberately open: calling it can only send texts that
- * customers asked for and that are already queued, and only once their company
- * is inside its sending window — the same thing that would happen anyway.
+ * Vercel Cron runs it every five minutes (vercel.json); CRON_SECRET guards it.
  */
-export async function GET(_req: NextRequest) {
+export async function GET(req: NextRequest) {
+  const denied = cronOr401(req)
+  if (denied) return denied
   try {
     const db = admin()
 

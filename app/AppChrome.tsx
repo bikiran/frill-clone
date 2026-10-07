@@ -1,6 +1,5 @@
 'use client'
 
-import { authFetch } from '@/lib/auth-fetch'
 import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
@@ -612,26 +611,6 @@ export default function AppChrome({
     return () => clearTimeout(t)
   }, [user])
 
-  // Flush any due review requests. Vercel Hobby plans don't allow frequent
-  // crons, so instead we opportunistically dispatch whenever an admin is using
-  // the app (throttled to once every 10 minutes per browser).
-  useEffect(() => {
-    if (!user) return
-    const KEY = 'colvy_last_review_dispatch'
-    const tick = () => {
-      try {
-        const last = Number(localStorage.getItem(KEY) || 0)
-        if (Date.now() - last < 10 * 60 * 1000) return
-        localStorage.setItem(KEY, String(Date.now()))
-        fetch('/api/reviews/dispatch').catch(() => {})
-        // Calendar reminders ride along on the same throttle.
-        authFetch('/api/calendar/reminders').catch(() => {})
-      } catch {}
-    }
-    const t = setTimeout(tick, 8000)          // shortly after load
-    const iv = setInterval(tick, 10 * 60 * 1000) // and while the tab stays open
-    return () => { clearTimeout(t); clearInterval(iv) }
-  }, [user])
 
   // Fetch notifications when dropdown opens. Also declared before any early
   // return to keep the hook order stable (see #300 note above).

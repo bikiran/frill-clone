@@ -1,3 +1,4 @@
+import { cronOr401 } from '@/lib/cron-auth'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { notifyCompany } from '@/lib/notify'
@@ -16,11 +17,13 @@ const admin = () => createClient(
  * GET /api/cron/ticket-sla
  *
  * Alerts the team ONCE when a ticket misses its deadline (no first reply in
- * time, or not resolved in time). Pinged from the admin app every couple of
- * minutes alongside email-sync. Safe to call often: each ticket is alerted at
+ * time, or not resolved in time). Vercel Cron runs it every five minutes
+ * (vercel.json). Safe to call often: each ticket is alerted at
  * most once (sla_breach_notified_at), and it only reads/updates tickets.
  */
-export async function GET(_req: NextRequest) {
+export async function GET(req: NextRequest) {
+  const denied = cronOr401(req)
+  if (denied) return denied
   try {
     const db = admin()
     const { data: tickets, error } = await db.from('support_tickets')

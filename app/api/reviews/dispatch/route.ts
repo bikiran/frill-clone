@@ -1,3 +1,4 @@
+import { cronOr401 } from '@/lib/cron-auth'
 import { isInternalCall } from '@/lib/internal-call'
 import { internalHeaders } from '@/lib/internal-call'
 import { NextRequest, NextResponse } from 'next/server'
@@ -15,8 +16,8 @@ const admin = () => createClient(
   { auth: { autoRefreshToken: false, persistSession: false } }
 )
 
-// Sends any review requests whose delay has elapsed. Call this on a schedule
-// (Vercel Cron: /api/reviews/dispatch every 15 min, or hourly).
+// Sends any review requests whose delay has elapsed. Vercel Cron runs it every
+// ten minutes (vercel.json); CRON_SECRET guards it.
 //
 // Delivers over the channels the business enabled: chat (always available),
 // SMS (Telnyx) and/or email (Resend).
@@ -28,6 +29,8 @@ export async function POST(req: NextRequest) {
 }
 
 async function run(req: NextRequest) {
+  const denied = cronOr401(req)
+  if (denied) return denied
   try {
     const db = admin()
     const now = new Date().toISOString()

@@ -1,3 +1,4 @@
+import { cronOr401 } from '@/lib/cron-auth'
 import { internalHeaders } from '@/lib/internal-call'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
@@ -19,13 +20,14 @@ const admin = () => createClient(
  * switched on. Each event is only ever announced once — a reminder that nags
  * every few minutes is worse than no reminder at all.
  *
- * Vercel Hobby can't run frequent crons, so this is called opportunistically
- * while an admin has the app open (throttled), and can also be hit manually.
+ * Vercel Cron runs it every ten minutes (vercel.json); CRON_SECRET guards it.
  */
 export async function GET(req: NextRequest) { return run(req) }
 export async function POST(req: NextRequest) { return run(req) }
 
 async function run(req: NextRequest) {
+  const denied = cronOr401(req)
+  if (denied) return denied
   try {
     const db = admin()
     const now = new Date()
