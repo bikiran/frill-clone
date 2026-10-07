@@ -103,23 +103,37 @@ export default function ReviewsPage() {
     writeCache(`reviews:${cid}`, data || [])
   }
 
+  // A sync saves only new or changed reviews and stops before the server's time
+  // limit; when it reports `partial` we simply call it again to carry on.
+  const [syncNote, setSyncNote] = useState('')
+  const [syncError, setSyncError] = useState(false)
   const sync = async () => {
-    if (!companyId) return
-    setSyncing(true)
+    if (!companyId || syncing) return
+    setSyncing(true); setSyncNote(''); setSyncError(false)
     try {
-      const res = await fetch('/api/google/reviews', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ companyId, action: 'sync' }),
-      })
-      // The sync can be slow; if it times out the body may not be JSON, so read
-      // text and parse defensively rather than crashing with "not valid JSON".
-      const text = await res.text()
-      let d: any = {}
-      try { d = text ? JSON.parse(text) : {} } catch { d = { error: res.ok ? 'The sync took too long — it may still be running. Give it a minute and refresh.' : (text.slice(0, 160) || 'Sync failed') } }
-      if (!res.ok || d.error) throw new Error(d.error || 'Sync failed')
+      let added = 0
+      for (let round = 0; round < 6; round++) {
+        const res = await fetch('/api/google/reviews', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ companyId, action: 'sync' }),
+        })
+        // A timed-out request comes back as a plain-text platform error, not
+        // JSON — never show that raw text to the user.
+        const text = await res.text()
+        let d: any = {}
+        try { d = text ? JSON.parse(text) : {} } catch { d = { error: 'Google took too long to answer. Your reviews are saved so far — tap Sync again to carry on.' } }
+        if (!res.ok || d.error) throw new Error(d.error || 'Sync failed')
+        added += d.new || 0
+        if (!d.partial) break
+        setSyncNote(`Syncing… ${added} new so far`)
+      }
       await load(companyId)
+      setSyncNote(added ? `${added} new review${added === 1 ? '' : 's'} synced` : 'Up to date')
+      setTimeout(() => setSyncNote(''), 4000)
     } catch (e: any) {
-      alert(e.message || 'Could not sync reviews')
+      await load(companyId).catch(() => {})
+      setSyncError(true)
+      setSyncNote(e.message || 'Could not sync reviews')
     } finally { setSyncing(false) }
   }
 
@@ -323,9 +337,12 @@ export default function ReviewsPage() {
         bleed={32}
         bleedTop={28}
         action={
-          <button onClick={sync} disabled={syncing} className="rv-btn rv-btn-primary">
-            {syncing ? 'Syncing…' : 'Sync Google reviews'}
-          </button>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            {syncNote && <span role="status" style={{ fontSize: 12.5, fontWeight: 600, color: syncError ? '#dc2626' : 'var(--slate)', maxWidth: 320 }}>{syncNote}</span>}
+            <button onClick={sync} disabled={syncing} className="rv-btn rv-btn-primary">
+              {syncing ? 'Syncing…' : 'Sync Google reviews'}
+            </button>
+          </span>
         }
       />
 
