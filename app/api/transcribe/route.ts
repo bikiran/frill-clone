@@ -41,7 +41,10 @@ function stripFillers(text: string): string {
 }
 
 async function transcribeDeepgram(audio: ArrayBuffer, contentType: string, key: string, keyterms: string[]) {
-  const params = new URLSearchParams({ model: 'nova-3', smart_format: 'true', punctuate: 'true' })
+  // mip_opt_out: Deepgram may otherwise keep the audio to improve its models.
+  // Dictation is our users' (and their customers') data — it is used for the
+  // transcript and nothing else (privacy policy, App Store 5.1.2).
+  const params = new URLSearchParams({ model: 'nova-3', smart_format: 'true', punctuate: 'true', mip_opt_out: 'true' })
   // nova-3 keyterm boosting: bias the model toward brand/product/contact names.
   const kt = keyterms.filter(Boolean).slice(0, 40).map(k => `&keyterm=${encodeURIComponent(k)}`).join('')
   const res = await fetchWithTimeout(

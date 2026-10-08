@@ -39,7 +39,9 @@ async function transcribeDeepgram(audio: ArrayBuffer, key: string) {
   // detect_language=true → Deepgram returns the spoken language, so a non-English
   // call can be transcribed in its own language and then translated to English.
   const res = await fetchWithTimeout(
-    'https://api.deepgram.com/v1/listen?model=nova-2&smart_format=true&diarize=true&punctuate=true&detect_language=true',
+    // mip_opt_out: don't let Deepgram keep call audio to improve its models —
+    // it is used for the transcript and nothing else (privacy policy).
+    'https://api.deepgram.com/v1/listen?model=nova-2&smart_format=true&diarize=true&punctuate=true&detect_language=true&mip_opt_out=true',
     {
       method: 'POST',
       headers: { Authorization: `Token ${key}`, 'Content-Type': 'audio/webm' },
