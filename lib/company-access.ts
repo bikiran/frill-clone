@@ -16,11 +16,63 @@ export async function requireCompanyAccess(req: NextRequest, db: any, companyId:
     if (!user) return { ok: false }
     if (user.email === SUPER_ADMIN) return { ok: true, userId: user.id }
     // Owner and team checks run together rather than one after the other.
-    const [{ data: co }, { data: tm }] = await Promise.all([
+    const [{ data: co }, staff] = await Promise.all([
       db.from('companies').select('id').eq('id', companyId).eq('owner_id', user.id).maybeSingle(),
-      db.from('team_members').select('id').eq('company_id', companyId).eq('user_id', user.id).limit(1),
+      isStaffMember(db, companyId, user.id),
     ])
-    if (co || tm?.length) return { ok: true, userId: user.id }
+    if (co || staff) return { ok: true, userId: user.id }
     return { ok: false }
   } catch { return { ok: false } }
+}
+
+// Staff are team rows that aren't board visitors and haven't been removed.
+// Anyone who signs up on a business's subdomain is added to its team as a
+// 'viewer' (app/auth/callback), and the admin already keeps viewers out
+// (only owner / admin / editor get in), so a viewer row is not membership.
+export function isStaffRow(r: any): boolean {
+  if (!r) return false
+  const role = String(r.role || '').toLowerCase()
+  const status = String(r.status || '').toLowerCase()
+  return role !== 'viewer' && status !== 'removed'
+}
+
+export async function isStaffMember(db: any, companyId: string | null | undefined, userId: string | null | undefined): Promise<boolean> {
+  if (!companyId || !userId) return false
+  try {
+    const { data } = await db.from('team_members').select('id, role, status')
+      .eq('company_id', companyId).eq('user_id', userId).limit(5)
+    return (data || []).some(isStaffRow)
+  } catch { return false }
+}
+
+// The signed-in user behind the request's Bearer token, or null.
+export async function callerUser(req: NextRequest, db: any): Promise<{ id: string; email?: string } | null> {
+  try {
+    const token = (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '')
+    if (!token) return null
+    const { data } = await db.auth.getUser(token)
+    return data?.user ? { id: data.user.id, email: data.user.email || undefined } : null
+  } catch { return null }
+}
+
+// The caller's own Stripe billing customer (subscriptions.stripe_customer_id).
+export async function callerStripeCustomer(req: NextRequest, db: any): Promise<string | null> {
+  const user = await callerUser(req, db)
+  if (!user) return null
+  const { data } = await db.from('subscriptions').select('stripe_customer_id').eq('user_id', user.id).maybeSingle()
+  return data?.stripe_customer_id || null
+}
+
+// For routes without a db client at hand: a 403 response unless the caller is
+// a workspace member (or our own server, when allowInternal), else null.
+export async function memberOr403(req: NextRequest, companyId: string | null | undefined, opts?: { allowInternal?: boolean }) {
+  const { NextResponse } = await import('next/server')
+  if (opts?.allowInternal) {
+    const { isInternalCall } = await import('@/lib/internal-call')
+    if (isInternalCall(req)) return null
+  }
+  const { createClient } = await import('@supabase/supabase-js')
+  const db = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, { auth: { autoRefreshToken: false, persistSession: false } })
+  if ((await requireCompanyAccess(req, db, companyId)).ok) return null
+  return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
 }

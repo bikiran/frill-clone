@@ -1,3 +1,4 @@
+import { memberOr403 } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
@@ -10,6 +11,8 @@ export async function POST(req: NextRequest) {
     if (!announcementId || !companyId) {
       return NextResponse.json({ error: 'Missing announcementId or companyId' }, { status: 400 })
     }
+    // Workspace members only, and only for this workspace's own announcement.
+    { const deny = await memberOr403(req, companyId); if (deny) return deny }
 
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
     const admin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceKey, {
@@ -17,7 +20,7 @@ export async function POST(req: NextRequest) {
     })
 
     const { data: announcement } = await admin.from('announcements').select('*').eq('id', announcementId).maybeSingle()
-    if (!announcement) return NextResponse.json({ error: 'Announcement not found' }, { status: 404 })
+    if (!announcement || announcement.company_id !== companyId) return NextResponse.json({ error: 'Announcement not found' }, { status: 404 })
 
     const { data: company } = await admin.from('companies').select('name, slug, logo_url, accent_color').eq('id', companyId).maybeSingle()
     const companyName = company?.name || 'Colvy'

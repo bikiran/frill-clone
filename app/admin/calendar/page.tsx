@@ -203,7 +203,7 @@ export default function CalendarPage() {
     if (!companyId || !userId) return
     ;(async () => {
       try {
-        const res = await fetch(`/api/user-prefs?userId=${userId}&companyId=${companyId}&key=default_outlet`)
+        const res = await authFetch(`/api/user-prefs?userId=${userId}&companyId=${companyId}&key=default_outlet`)
         const d = await res.json()
         const dv = d?.prefs?.default_outlet
         if (dv && typeof dv === 'object') {
@@ -217,7 +217,7 @@ export default function CalendarPage() {
   const setDefaultOutletPref = (id: string | null) => {
     setDefaultOutlet(id)
     setLocationFilter(id || '')
-    if (companyId && userId) fetch('/api/user-prefs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId, companyId, key: 'default_outlet', value: { id } }) }).catch(() => {})
+    if (companyId && userId) authFetch('/api/user-prefs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId, companyId, key: 'default_outlet', value: { id } }) }).catch(() => {})
   }
 
   useEffect(() => {

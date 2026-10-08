@@ -1,5 +1,6 @@
 'use client'
 
+import { authFetch } from '@/lib/auth-fetch'
 import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
@@ -70,7 +71,7 @@ export default function FormVersionsPage() {
       if (error) throw error
 
       // Create new version for the rollback action
-      await fetch('/api/form-versions', {
+      await authFetch('/api/form-versions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

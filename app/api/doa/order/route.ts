@@ -1,3 +1,4 @@
+import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { WooCommerceService } from '@/lib/woocommerce-service'
@@ -19,6 +20,8 @@ export async function GET(req: NextRequest) {
     if (!companyId || !orderNumber) return NextResponse.json({ error: 'Missing companyId or order' }, { status: 400 })
 
     const db = admin()
+    // Workspace members only.
+    if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     // Use the company's first active WooCommerce store
     const { data: integs } = await db.from('woocommerce_integrations')
       .select('*').eq('company_id', companyId).eq('is_active', true).order('created_at', { ascending: true })

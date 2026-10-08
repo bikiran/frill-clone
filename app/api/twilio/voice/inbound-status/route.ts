@@ -1,3 +1,5 @@
+import { internalHeaders } from '@/lib/internal-call'
+import { twilioSignatureOk } from '@/lib/twilio-signature'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { xmlEscape } from '@/lib/twilio-service'
@@ -23,6 +25,8 @@ const twiml = (body: string) => new NextResponse(`<?xml version="1.0" encoding="
 export async function POST(req: NextRequest) {
   try {
     const form = await req.formData()
+    // Only Twilio (signed with the account's auth token).
+    if (!(await twilioSignatureOk(req, form))) return new NextResponse('Forbidden', { status: 403 })
     const get = (k: string) => { const v = form.get(k); return v == null ? '' : String(v) }
     const sp = req.nextUrl.searchParams
     const callRowId = sp.get('callRowId') || ''
@@ -93,7 +97,7 @@ export async function POST(req: NextRequest) {
                 const caller = String(row.contact_name || row.caller_name || row.from_number || '').trim()
                 try {
                   await fetch(`${base}/api/push/send`, {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
                     body: JSON.stringify({
                       companyId,
                       title: 'Call answered',

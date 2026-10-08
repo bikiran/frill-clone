@@ -43,7 +43,7 @@ export async function GET(req: NextRequest) {
     const contactIds = Array.from(new Set((events || []).map(e => e.contact_id).filter(Boolean)))
     let contacts: Record<string, any> = {}
     if (contactIds.length) {
-      const { data } = await db.from('contacts').select('id, name, email, phone').in('id', contactIds)
+      const { data } = await db.from('contacts').select('id, name, email, phone').in('id', contactIds).eq('company_id', companyId)
       for (const c of data || []) contacts[c.id] = c
     }
 
@@ -82,6 +82,17 @@ export async function POST(req: NextRequest) {
 
       if (!title || !starts_at) {
         return NextResponse.json({ error: 'Title and a start time are required' }, { status: 400 })
+      }
+      // Linked customer, chat and outlets must be this workspace's own (another
+      // workspace's ids used to leak that customer's details and post into their chat).
+      {
+        const checks: [string, any][] = [['contacts', contact_id], ['contacts', customer_contact_id], ['conversations', conversation_id], ['company_locations', location_id],
+          ...((Array.isArray(location_ids) ? location_ids : []).map((l: any) => ['company_locations', l] as [string, any]))]
+        for (const [table, rid] of checks) {
+          if (!rid || typeof rid !== 'string') continue
+          const { data: owner } = await db.from(table).select('company_id').eq('id', rid).maybeSingle()
+          if (owner && owner.company_id !== companyId) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+        }
       }
 
       const row: any = {

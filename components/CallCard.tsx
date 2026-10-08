@@ -1,5 +1,6 @@
 'use client'
 
+import { authFetch } from '@/lib/auth-fetch'
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import DraftTasks from './DraftTasks'
@@ -67,7 +68,7 @@ export default function CallCard({ callId, meta, timestamp, highlight, accent = 
   const runTranscription = async () => {
     setRetrying(true); setRetryMsg('')
     try {
-      const res = await fetch('/api/telnyx/transcribe', {
+      const res = await authFetch('/api/telnyx/transcribe', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ callId }),
       })

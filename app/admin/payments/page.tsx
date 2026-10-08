@@ -1,5 +1,6 @@
 'use client'
 
+import { authFetch } from '@/lib/auth-fetch'
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
@@ -301,7 +302,7 @@ export default function PaymentsPage() {
     if (!await confirmDialog(`Refund ${money(askCents, p.currency || 'AUD')} to ${customerOf(p).name}? This cannot be undone.`)) return
     setBusy(p.id)
     try {
-      const res = await fetch('/api/stripe/refund', {
+      const res = await authFetch('/api/stripe/refund', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ companyId, paymentId: p.id, amount: amount != null ? amount : undefined }),
       })
@@ -317,7 +318,7 @@ export default function PaymentsPage() {
   const doResend = async (p: Payment) => {
     setBusy(p.id)
     try {
-      const res = await fetch('/api/stripe/resend-receipt', {
+      const res = await authFetch('/api/stripe/resend-receipt', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, paymentId: p.id }),
       })
       const j = await res.json().catch(() => ({}))
@@ -330,7 +331,7 @@ export default function PaymentsPage() {
   const doRemind = async (p: Payment) => {
     setBusy(p.id)
     try {
-      const res = await fetch('/api/stripe/payment-reminder', {
+      const res = await authFetch('/api/stripe/payment-reminder', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, paymentId: p.id }),
       })
       const j = await res.json().catch(() => ({}))
@@ -364,7 +365,7 @@ export default function PaymentsPage() {
       } catch {}
     })()
     try {
-      const res = await fetch('/api/stripe/payment-details', {
+      const res = await authFetch('/api/stripe/payment-details', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, paymentId: p.id }),
       })
       const j = await res.json().catch(() => ({}))

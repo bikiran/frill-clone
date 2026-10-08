@@ -1,3 +1,4 @@
+import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
@@ -15,12 +16,12 @@ export async function POST(req: NextRequest) {
   try {
     const { callId, transcription } = await req.json()
     const db = admin()
+    if (!callId) return NextResponse.json({ error: 'callId required' }, { status: 400 })
+    // Members of the workspace the call belongs to (this was an open AI proxy).
+    const { data: call } = await db.from('calls').select('company_id, transcription').eq('id', callId).maybeSingle()
+    if (!call || !(await requireCompanyAccess(req, db, call.company_id)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
 
-    let text = transcription
-    if (!text && callId) {
-      const { data: call } = await db.from('calls').select('transcription').eq('id', callId).maybeSingle()
-      text = call?.transcription
-    }
+    let text = transcription || call.transcription
     if (!text) return NextResponse.json({ summary: 'No transcript available for this call yet.' })
 
     const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY
@@ -32,7 +33,7 @@ export async function POST(req: NextRequest) {
       method: 'POST',
       headers: { 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
       body: JSON.stringify({
-        model: 'claude-3-5-haiku-20241022',
+        model: 'claude-haiku-4-5',
         max_tokens: 350,
         messages: [{
           role: 'user',

@@ -1,3 +1,5 @@
+import { requireCompanyAccess } from '@/lib/company-access'
+import { internalHeaders } from '@/lib/internal-call'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
@@ -27,6 +29,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true, sent: 0, skipped: 'nothing to send' })
     }
     const db = admin()
+    // Workspace members only.
+    if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
 
     // Resolve the mentioned users' email addresses and the company details.
     const { data: members } = await db
@@ -67,7 +71,7 @@ export async function POST(req: NextRequest) {
       const origin = req.nextUrl.origin
       fetch(`${origin}/api/push/send`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: internalHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           companyId,
           userIds,
@@ -114,7 +118,7 @@ export async function POST(req: NextRequest) {
         try {
           const text = `${mentionedBy || 'A teammate'} mentioned you in ${where}${safe ? `: ${String(safe).slice(0, 120)}` : ''}\n${link}`
           const r = await fetch(`${siteBase}/api/telnyx/sms/send`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({ companyId, to: m.phone, text, skipChatMessage: true }),
           })
           if (r.ok) smsSent++

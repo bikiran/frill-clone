@@ -1,5 +1,6 @@
 'use client'
 
+import { authFetch } from '@/lib/auth-fetch'
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -25,7 +26,7 @@ export default function WooCommerceIntegration() {
     if (!companyId) return
     setRegisteringHooks(true)
     try {
-      const res = await fetch('/api/woocommerce/register-webhooks', {
+      const res = await authFetch('/api/woocommerce/register-webhooks', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ companyId }),
       })
@@ -72,7 +73,7 @@ export default function WooCommerceIntegration() {
         await fetchIntegration(cid)
         // If a background sync is already running, resume showing progress
         try {
-          const sres = await fetch(`/api/woocommerce/sync-status?companyId=${cid}`)
+          const sres = await authFetch(`/api/woocommerce/sync-status?companyId=${cid}`)
           const { job } = await sres.json()
           if (job && job.status === 'running') { setSyncing(true); setSuccess(job.message || 'Syncing…'); pollSyncStatusFor(cid) }
         } catch {}
@@ -87,7 +88,7 @@ export default function WooCommerceIntegration() {
 
   const fetchIntegration = async (cid: string) => {
     try {
-      const res = await fetch(`/api/woocommerce/setup?companyId=${cid}`)
+      const res = await authFetch(`/api/woocommerce/setup?companyId=${cid}`)
       const result = await res.json()
       setStores(result.stores || [])
       setActive('woocommerce', (result.stores || []).some((x: any) => x.is_active !== false))
@@ -137,7 +138,7 @@ export default function WooCommerceIntegration() {
         return
       }
 
-      const res = await fetch('/api/woocommerce/setup', {
+      const res = await authFetch('/api/woocommerce/setup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -183,7 +184,7 @@ export default function WooCommerceIntegration() {
     try {
       // Kick off the background sync job (runs server-side; keeps going even if
       // you close this tab or your laptop).
-      const res = await fetch('/api/woocommerce/sync-start', {
+      const res = await authFetch('/api/woocommerce/sync-start', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ companyId, incremental, integrationId, scope }),
       })
@@ -201,7 +202,7 @@ export default function WooCommerceIntegration() {
   const pollSyncStatusFor = (cid: string) => {
     const tick = async () => {
       try {
-        const res = await fetch(`/api/woocommerce/sync-status?companyId=${cid}`)
+        const res = await authFetch(`/api/woocommerce/sync-status?companyId=${cid}`)
         const { job } = await res.json()
         if (!job) { setSyncing(false); return }
         if (job.status === 'running') {
@@ -226,7 +227,7 @@ export default function WooCommerceIntegration() {
   const disconnectStore = async (integrationId: string) => {
     if (!await confirmDialog('Remove this store? Its synced customers stay, but it will stop syncing.')) return
     try {
-      await fetch('/api/woocommerce/setup', {
+      await authFetch('/api/woocommerce/setup', {
         method: 'DELETE', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ companyId, integrationId }),
       })
@@ -240,7 +241,7 @@ export default function WooCommerceIntegration() {
     if (!await confirmDialog('Are you sure you want to disconnect WooCommerce?')) return
 
     try {
-      const res = await fetch('/api/woocommerce/setup', {
+      const res = await authFetch('/api/woocommerce/setup', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ companyId })

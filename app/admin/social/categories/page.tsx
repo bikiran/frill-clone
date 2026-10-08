@@ -1,4 +1,5 @@
 'use client'
+import { authFetch } from '@/lib/auth-fetch'
 import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
 import { useCompanyUser } from '../../crm-settings/_shared'
@@ -25,7 +26,7 @@ export default function SocialCategoriesPage() {
     if (!companyId) return
     setLoadingData(true)
     try {
-      const res = await fetch(`/api/social/categories?companyId=${companyId}`)
+      const res = await authFetch(`/api/social/categories?companyId=${companyId}`)
       const d = await res.json()
       setCats(d.categories || [])
     } catch {} finally { setLoadingData(false) }
@@ -41,7 +42,7 @@ export default function SocialCategoriesPage() {
     patch(cat.id, changes)
     setSavingId(cat.id); setSavedId(null)
     try {
-      await fetch('/api/social/categories', {
+      await authFetch('/api/social/categories', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ companyId, id: cat.id, ...changes }),
       })

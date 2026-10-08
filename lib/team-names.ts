@@ -7,13 +7,14 @@
  * user ids and rewrites each member's `name` in place — but only when the
  * member doesn't already have an explicit team_members.name.
  */
+import { authFetch } from '@/lib/auth-fetch'
 export async function enrichNames(
   members: { user_id?: string; id: string; name: string; email?: string; avatar?: string | null; _explicitName?: boolean }[]
 ): Promise<void> {
   const ids = Array.from(new Set(members.map(m => m.user_id).filter(Boolean))) as string[]
   if (ids.length === 0) return
   try {
-    const res = await fetch('/api/team/names', {
+    const res = await authFetch('/api/team/names', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ userIds: ids }),
     })

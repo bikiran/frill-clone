@@ -1,3 +1,4 @@
+import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { WooCommerceService } from '@/lib/woocommerce-service'
@@ -19,10 +20,12 @@ export async function GET(req: NextRequest) {
     const integrationId = req.nextUrl.searchParams.get('integrationId') || undefined
     if (!companyId) return NextResponse.json({ shippingMethods: [] })
     const db = admin()
+    // Workspace members only (customer details, orders and refunds).
+    if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
 
     let integ: any = null
     if (integrationId) {
-      const r = await db.from('woocommerce_integrations').select('*').eq('id', integrationId).maybeSingle()
+      const r = await db.from('woocommerce_integrations').select('*').eq('id', integrationId).eq('company_id', companyId).maybeSingle()
       integ = r.data
     }
     if (!integ) {

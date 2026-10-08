@@ -1,3 +1,4 @@
+import { internalHeaders } from '@/lib/internal-call'
 import { mapWooStatus, mapWooPayment, wooDateToISO, variationFromMeta, statusMeta } from '@/lib/orders'
 import { emitIntegrationEvent } from '@/lib/integration-events'
 
@@ -126,7 +127,7 @@ function notifyNewOrder(companyId: string, src: any): void {
     const money = src.total != null ? ` · ${new Intl.NumberFormat('en-AU', { style: 'currency', currency: src.currency || 'AUD' }).format(Number(src.total))}` : ''
     void fetch(`${base}/api/push/send`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: internalHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({
         companyId,
         title: 'New order',

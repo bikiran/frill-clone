@@ -1,3 +1,4 @@
+import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { TwilioService, createVoiceAccessToken, twilioIdentity } from '@/lib/twilio-service'
@@ -34,11 +35,16 @@ function resolveFcmSecret(): string | null {
 // exposes the account credentials — only this JWT, scoped to the TwiML App.
 export async function POST(req: NextRequest) {
   try {
-    const { companyId, userId, platform } = await req.json()
+    const { companyId, platform } = await req.json()
     if (!companyId) return NextResponse.json({ error: 'Missing companyId' }, { status: 400 })
     const isIos = String(platform || '').toLowerCase() === 'ios'
 
     const db = admin()
+    // Workspace members only.
+    const access = await requireCompanyAccess(req, db, companyId)
+    if (!access.ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+    // Whose line this is comes from the sign-in, never the request.
+    const userId: string | undefined = access.userId
     const { data: integ } = await db.from('twilio_integrations').select('*').eq('company_id', companyId).maybeSingle()
     if (!integ?.account_sid || !integ.auth_token) {
       return NextResponse.json({ error: 'Twilio isn\'t connected. Add your credentials in Integrations → Twilio.' }, { status: 400 })

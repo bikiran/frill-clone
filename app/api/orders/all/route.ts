@@ -1,3 +1,4 @@
+import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
@@ -38,6 +39,9 @@ export async function GET(req: NextRequest) {
       }
     }
     if (!companyId) return NextResponse.json({ orders: [], count: 0, debug: { reason: 'no_company_resolved' } })
+    // Every order with names and addresses: workspace members only, even when the
+    // company comes from the subdomain.
+    if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     const { data: integs } = await db.from('woocommerce_integrations')
       .select('*').eq('company_id', companyId).eq('is_active', true).order('created_at', { ascending: true })
     if (!integs || integs.length === 0) return NextResponse.json({ orders: [], count: 0, debug: { reason: 'no_active_woocommerce_integration' } })

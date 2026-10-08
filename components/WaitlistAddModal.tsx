@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { XIcon, TagIcon } from '@/components/booking/icons'
+import { authFetch } from '@/lib/auth-fetch'
 
 // "Add to waitlist" dialog — shared by the Waitlists page and the inbox
 // contact panel (where it's pre-filled with the customer being chatted to).
@@ -54,7 +55,7 @@ export default function WaitlistAddModal({ companyId, onClose, onAdded, presetCo
     if (product || pq.trim().length < 2) { setProducts([]); return }
     const t = setTimeout(async () => {
       try {
-        const res = await fetch(`/api/orders/products?companyId=${companyId}&q=${encodeURIComponent(pq.trim())}`)
+        const res = await authFetch(`/api/orders/products?companyId=${companyId}&q=${encodeURIComponent(pq.trim())}`)
         const d = await res.json()
         setProducts((d.products || []).slice(0, 8))
       } catch { setProducts([]) }
@@ -68,7 +69,7 @@ export default function WaitlistAddModal({ companyId, onClose, onAdded, presetCo
     if (!product?.has_variations) { setVariations([]); return }
     let alive = true
     setVariations(null)
-    fetch(`/api/orders/products?companyId=${companyId}&productId=${product.id}`)
+    authFetch(`/api/orders/products?companyId=${companyId}&productId=${product.id}`)
       .then(r => r.json()).then(d => { if (alive) setVariations(Array.isArray(d.variations) ? d.variations : []) })
       .catch(() => { if (alive) setVariations([]) })
     return () => { alive = false }

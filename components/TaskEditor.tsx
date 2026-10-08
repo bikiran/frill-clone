@@ -5,6 +5,7 @@
 // Keeping it here means the two can't drift apart. It writes straight to
 // conversation_tasks so a task created anywhere shows up everywhere.
 
+import { authFetch } from '@/lib/auth-fetch'
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import AssigneePicker from '@/components/AssigneePicker'
@@ -74,7 +75,7 @@ function OrderSearchModal({ companyId, onClose, onPick }: any) {
     if (q.trim().length < 2) { setResults([]); return }
     const t = setTimeout(async () => {
       setLoading(true)
-      try { const res = await fetch(`/api/orders/search?companyId=${companyId}&q=${encodeURIComponent(q.trim())}`); const d = await res.json(); setResults(d.orders || []) }
+      try { const res = await authFetch(`/api/orders/search?companyId=${companyId}&q=${encodeURIComponent(q.trim())}`); const d = await res.json(); setResults(d.orders || []) }
       catch { setResults([]) } finally { setLoading(false) }
     }, 300)
     return () => clearTimeout(t)
@@ -217,7 +218,7 @@ export default function TaskEditor({ companyId, team, outlets = [], me, userId, 
       const notifyMembers = async (ids: string[], titleText: string, type: string) => {
         if (ids.length === 0) return
         try {
-          await fetch('/api/notify/members', {
+          await authFetch('/api/notify/members', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               companyId, userIds: ids, type,

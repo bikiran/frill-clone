@@ -1,4 +1,5 @@
 'use client'
+import { authFetch } from '@/lib/auth-fetch'
 
 import { useRef, useState } from 'react'
 
@@ -59,7 +60,7 @@ export default function VoiceRecorder({ companyId, onRecorded }: {
       const blob = new Blob(chunks.current, { type: mime })
       const file = new File([blob], `Voice note ${stamp}.${ext}`, { type: mime })
       const fd = new FormData(); fd.append('file', file); fd.append('companyId', companyId); fd.append('conversationId', 'notes')
-      const res = await fetch('/api/inbox/upload', { method: 'POST', body: fd })
+      const res = await authFetch('/api/inbox/upload', { method: 'POST', body: fd })
       const d = await res.json()
       if (res.ok && d.url) onRecorded({ url: d.url, name: `Voice note ${stamp}`, type: mime, kind: 'audio' })
       else setErr(d.error || 'Upload failed')

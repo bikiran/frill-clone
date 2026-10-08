@@ -1,5 +1,6 @@
 'use client'
 
+import { authFetch } from '@/lib/auth-fetch'
 import { useState, useEffect, useRef } from 'react'
 import ImageViewer from './ImageViewer'
 import { supabase } from '@/lib/supabase'
@@ -385,7 +386,7 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
       let names: Record<string, { name: string | null; avatar_url: string | null; email: string | null }> = {}
       if (ids.length) {
         try {
-          const res = await fetch('/api/team/names', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userIds: ids }) })
+          const res = await authFetch('/api/team/names', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userIds: ids }) })
           names = (await res.json()).names || {}
         } catch { /* fall back to email */ }
       }

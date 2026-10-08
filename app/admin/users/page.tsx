@@ -1,5 +1,6 @@
 'use client'
 
+import { authFetch } from '@/lib/auth-fetch'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -313,7 +314,7 @@ export default function UsersPage() {
         // Only load customers if WooCommerce is integrated
         if (wooIntegration) {
           // Trigger auto-sync in background (don't wait)
-          fetch('/api/customers/auto-sync', {
+          authFetch('/api/customers/auto-sync', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ companyId: company.id, force: false })

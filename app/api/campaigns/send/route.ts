@@ -1,3 +1,4 @@
+import { memberOr403 } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { prepareCampaign, processCampaignBatch, isWithinSendingHours } from '@/lib/campaign-sender'
 import { isExternalSendBlocked, DEMO_BLOCK_MESSAGE, logBlockedSend } from '@/lib/demo-guard'
@@ -20,6 +21,8 @@ export async function POST(req: NextRequest) {
     if (!companyId || !campaignId) {
       return NextResponse.json({ error: 'Missing companyId or campaignId' }, { status: 400 })
     }
+    // Workspace members only (this texts / emails the whole audience).
+    { const deny = await memberOr403(req, companyId); if (deny) return deny }
     // A deliberate speed bump — nothing sends without this.
     if (confirm !== 'SEND') {
       return NextResponse.json({ error: 'Confirmation required' }, { status: 400 })

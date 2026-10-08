@@ -1,5 +1,7 @@
 'use client'
 
+import { withConnectTicket } from '@/lib/oauth-ticket-client'
+import { authFetch } from '@/lib/auth-fetch'
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
@@ -33,7 +35,7 @@ export default function GoogleReviewsPage() {
     if (!companyId) return
     setAiBusy(reviewId)
     try {
-      const res = await fetch('/api/google/reviews/ai-reply', {
+      const res = await authFetch('/api/google/reviews/ai-reply', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ companyId, reviewId }),
       })
@@ -99,7 +101,7 @@ export default function GoogleReviewsPage() {
 
   const load = async (cid: string) => {
     try {
-      const res = await fetch(`/api/google/reviews?companyId=${cid}`)
+      const res = await authFetch(`/api/google/reviews?companyId=${cid}`)
       const d = await res.json()
       setConnected(!!d.connected)
       setLocation(d.location || null)
@@ -108,17 +110,19 @@ export default function GoogleReviewsPage() {
     } catch {}
   }
 
-  const connect = () => {
+  const connect = async () => {
     if (!companyId) return
     const returnTo = window.location.href.split('?')[0]
-    window.location.href = `https://colvy.com/api/google/reviews/start?companyId=${companyId}&returnTo=${encodeURIComponent(returnTo)}`
+    try {
+      window.location.href = await withConnectTicket(`https://colvy.com/api/google/reviews/start?companyId=${companyId}&returnTo=${encodeURIComponent(returnTo)}`, companyId, 'google_reviews')
+    } catch (e: any) { alert(e.message) }
   }
 
   const loadLocations = async () => {
     if (!companyId) return
     setBusy('locations'); setMsg('')
     try {
-      const res = await fetch(`/api/google/reviews?companyId=${companyId}&locations=1`)
+      const res = await authFetch(`/api/google/reviews?companyId=${companyId}&locations=1`)
       const d = await res.json()
       if (d.error) throw new Error(d.error)
       setLocations(d.locations || [])
@@ -131,7 +135,7 @@ export default function GoogleReviewsPage() {
     if (!companyId) return
     setBusy('select')
     try {
-      await fetch('/api/google/reviews', {
+      await authFetch('/api/google/reviews', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ companyId, action: 'select_location', accountName: loc.accountName, locationName: loc.locationName, title: loc.title }),
       })
@@ -145,7 +149,7 @@ export default function GoogleReviewsPage() {
     if (!companyId) return
     setBusy('sync'); setMsg('')
     try {
-      const res = await fetch('/api/google/reviews', {
+      const res = await authFetch('/api/google/reviews', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ companyId, action: 'sync' }),
       })
@@ -165,7 +169,7 @@ export default function GoogleReviewsPage() {
     if (!comment) return
     setBusy('reply-' + reviewId)
     try {
-      const res = await fetch('/api/google/reviews', {
+      const res = await authFetch('/api/google/reviews', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ companyId, action: 'reply', reviewId, comment }),
       })
@@ -183,7 +187,7 @@ export default function GoogleReviewsPage() {
     try {
       await (supabase as any).from('companies').update({ review_request_settings: rr }).eq('id', companyId)
       if (rr.review_link) {
-        await fetch('/api/google/reviews', {
+        await authFetch('/api/google/reviews', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ companyId, action: 'save_review_link', reviewLink: rr.review_link }),
         })

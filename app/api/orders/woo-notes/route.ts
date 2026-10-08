@@ -1,3 +1,4 @@
+import { isStaffMember } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { createWooCommerceService } from '@/lib/woocommerce-service'
@@ -19,7 +20,7 @@ async function isMember(db: any, req: NextRequest, companyId: string): Promise<b
     if (!uid) return false
     const { data: co } = await db.from('companies').select('owner_id').eq('id', companyId).maybeSingle()
     if (co?.owner_id === uid) return true
-    const { data: tm } = await db.from('team_members').select('id').eq('company_id', companyId).eq('user_id', uid).maybeSingle()
+    const tm = (await isStaffMember(db, companyId, uid)) ? { id: true } : null
     return !!tm?.id
   } catch { return false }
 }

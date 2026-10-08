@@ -19,6 +19,7 @@ import { CARRIERS as TRACK_CARRIERS, carrierByKey } from '@/lib/carriers'
 import { barcodeSVG } from '@/lib/barcode'
 import { confirmDialog } from '@/components/ConfirmDialog'
 import { notifyIntegrations } from '@/lib/integrations-notify'
+import { authFetch } from '@/lib/auth-fetch'
 
 type Order = any
 
@@ -300,7 +301,7 @@ export default function OrdersPage() {
         try {
           const since = new Date(Date.now() - 60 * 864e5).toISOString()
           for (let page = 1; page <= 30; page++) {
-            const wr = await fetch('/api/woocommerce/sync', { method: 'POST', headers: authH, body: JSON.stringify({ companyId: cid, mode: 'orders', page, modifiedAfter: since }) })
+            const wr = await authFetch('/api/woocommerce/sync', { method: 'POST', headers: authH, body: JSON.stringify({ companyId: cid, mode: 'orders', page, modifiedAfter: since }) })
             const wd = await wr.json().catch(() => ({}))
             if (!wr.ok || wd.error || wd.done) break
           }
@@ -340,7 +341,7 @@ export default function OrdersPage() {
       // Default outlet — shared with the Tasks/Calendar pages. Pre-filters the board.
       if (session?.user) {
         try {
-          const r = await fetch(`/api/user-prefs?userId=${session.user.id}&companyId=${cid}`)
+          const r = await authFetch(`/api/user-prefs?userId=${session.user.id}&companyId=${cid}`)
           const j = await r.json()
           const dv = j?.prefs?.default_outlet
           if (dv?.id && (locs || []).some((l: any) => l.id === dv.id)) { setDefaultOutlet(dv.id); setFStore(dv.id) }
@@ -365,7 +366,7 @@ export default function OrdersPage() {
         members.push({ id: uid, name: m.name || m.display_name || m.email?.split('@')[0] || 'Teammate' })
       }
       const needIds = members.filter(m => !m.name || m.name === 'Teammate').map(m => m.id)
-      if (needIds.length) { try { const r = await fetch('/api/team/names', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userIds: needIds }) }); const names = (await r.json()).names || {}; for (const m of members) if (names[m.id]?.name) m.name = names[m.id].name } catch {} }
+      if (needIds.length) { try { const r = await authFetch('/api/team/names', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userIds: needIds }) }); const names = (await r.json()).names || {}; for (const m of members) if (names[m.id]?.name) m.name = names[m.id].name } catch {} }
       setTeam(members)
 
       loadTagDefs(cid)
@@ -508,16 +509,16 @@ export default function OrdersPage() {
   const outletName = (id: string | null) => locations.find(l => l.id === id)?.name || null
   const setDefaultOutletPref = (id: string | null) => {
     setDefaultOutlet(id); setFStore(id || 'all')
-    if (companyId && me.id) fetch('/api/user-prefs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: me.id, companyId, key: 'default_outlet', value: { id } }) }).catch(() => {})
+    if (companyId && me.id) authFetch('/api/user-prefs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: me.id, companyId, key: 'default_outlet', value: { id } }) }).catch(() => {})
   }
   const setDefaultStatusPref = (key: string | null) => {
     setDefaultStatus(key); if (key) setTab(key)
-    if (companyId && me.id) fetch('/api/user-prefs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: me.id, companyId, key: 'default_status', value: { key } }) }).catch(() => {})
+    if (companyId && me.id) authFetch('/api/user-prefs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: me.id, companyId, key: 'default_status', value: { key } }) }).catch(() => {})
   }
   // Saved views — a named combination of filters (like ShipStation).
   const persistViews = (views: { id: string; name: string; f: any }[]) => {
     setSavedViews(views)
-    if (companyId && me.id) fetch('/api/user-prefs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: me.id, companyId, key: 'order_views', value: { views } }) }).catch(() => {})
+    if (companyId && me.id) authFetch('/api/user-prefs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: me.id, companyId, key: 'order_views', value: { views } }) }).catch(() => {})
   }
   const saveView = () => setSaveViewName('')
   const confirmSaveView = () => {
@@ -1569,7 +1570,7 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
       let shortUrl = ''
       if (targetUrl) {
         try {
-          const r = await fetch('/api/short-links/create', {
+          const r = await authFetch('/api/short-links/create', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ companyId, kind: 'redirect', url: targetUrl, label: `${carrier.label} tracking — order ${order.order_number}`, conversationId: order.conversation_id || undefined, sentBy: me.name }),
           })
@@ -1589,7 +1590,7 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
     if (!await confirmDialog(`Mark order ${order.order_number} as completed in WooCommerce?`)) return
     setActBusy('done')
     try {
-      const res = await fetch('/api/orders/status', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, orderId: order.external_order_id, status: 'completed', conversationId: order.conversation_id || undefined }) })
+      const res = await authFetch('/api/orders/status', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, orderId: order.external_order_id, status: 'completed', conversationId: order.conversation_id || undefined }) })
       const j = await res.json().catch(() => ({}))
       if (!res.ok || j.error) onFlash(`Failed: ${j.error || res.status}`)
       else { onPatch({ status: 'shipped', fulfilment_status: 'fulfilled' }, { type: 'status_changed', detail: 'Marked completed in WooCommerce' }); order.status = 'shipped'; onFlash('Order marked completed') }
@@ -1632,7 +1633,7 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
   const genInvoice = async () => {
     setActBusy('invoice')
     try {
-      const res = await fetch(`/api/orders/details?companyId=${companyId}&orderId=${order.external_order_id}`)
+      const res = await authFetch(`/api/orders/details?companyId=${companyId}&orderId=${order.external_order_id}`)
       const data = await res.json(); if (!res.ok) throw new Error(data.error || 'Could not load order')
       const o = data.order || {}, co = data.company || {}
       const { jsPDF } = await import('jspdf')
@@ -1835,7 +1836,7 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
     if (order.sales_channel !== 'woocommerce' || !order.order_number) return
     ;(async () => {
       try {
-        const res = await fetch(`/api/orders/details?companyId=${encodeURIComponent(companyId)}&orderId=${encodeURIComponent(order.order_number)}`)
+        const res = await authFetch(`/api/orders/details?companyId=${encodeURIComponent(companyId)}&orderId=${encodeURIComponent(order.order_number)}`)
         const j = await res.json().catch(() => ({}))
         if (cancelled) return
         const o = j?.order

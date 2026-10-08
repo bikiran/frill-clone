@@ -1,3 +1,4 @@
+import { callerUser, isStaffRow } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
@@ -25,7 +26,26 @@ export async function POST(req: NextRequest) {
     })
 
     const names: Record<string, { name: string | null; avatar_url: string | null; email: string | null }> = {}
-    const wanted = new Set(userIds.filter(Boolean))
+
+    // Only people who share a workspace with the signed-in caller (this resolved
+    // any user id on the platform to an email address for anyone).
+    const caller = await callerUser(req, admin)
+    if (!caller) return NextResponse.json({ names: {} }, { status: 401 })
+    const [{ data: owned }, { data: mine }] = await Promise.all([
+      admin.from('companies').select('id').eq('owner_id', caller.id),
+      admin.from('team_members').select('company_id, role, status').eq('user_id', caller.id),
+    ])
+    const myCompanies = Array.from(new Set([...(owned || []).map((c: any) => c.id), ...(mine || []).filter(isStaffRow).map((m: any) => m.company_id)].filter(Boolean)))
+    const allowed = new Set<string>([caller.id])
+    if (myCompanies.length) {
+      const [{ data: owners }, { data: mates }] = await Promise.all([
+        admin.from('companies').select('owner_id').in('id', myCompanies),
+        admin.from('team_members').select('user_id').in('company_id', myCompanies),
+      ])
+      for (const o of owners || []) if ((o as any).owner_id) allowed.add((o as any).owner_id)
+      for (const m of mates || []) if ((m as any).user_id) allowed.add((m as any).user_id)
+    }
+    const wanted = new Set(userIds.filter((id: any) => id && allowed.has(id)))
 
     // getUserById is the precise lookup, but only when we have a real UUID.
     await Promise.all(Array.from(wanted).map(async (id) => {

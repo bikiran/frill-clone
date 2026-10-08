@@ -1,3 +1,4 @@
+import { internalHeaders } from '@/lib/internal-call'
 // Shared "a chat payment just succeeded" handler, used by BOTH the Stripe
 // webhook and the verify-payment reconciler so the two paths can't diverge or
 // double-fire. It:
@@ -120,18 +121,18 @@ export async function confirmChatPayment(
     try {
       if (channel === 'email' && email) {
         await fetch(`${base}/api/email/reply`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({ conversationId: pay.conversation_id, to: email, subject: subject || 'Payment received', content: custMsg, agentName: senderName }),
         })
       } else if (['facebook', 'instagram', 'messenger'].includes(channel)) {
         await fetch(`${base}/api/meta/send`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({ conversationId: pay.conversation_id, content: custMsg, agentName: senderName }),
         })
       } else if (phone) {
         // SMS (and the default). The send route logs the outbound bubble itself.
         await fetch(`${base}/api/telnyx/sms/send`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({ companyId: pay.company_id, conversationId: pay.conversation_id, to: phone, text: custMsg, senderName }),
         })
       } else {
@@ -147,7 +148,7 @@ export async function confirmChatPayment(
   // ── 5. Push a phone notification to the team.
   try {
     await fetch(`${base}/api/push/send`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({
         companyId: pay.company_id,
         title: 'Payment received',

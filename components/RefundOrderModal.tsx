@@ -1,5 +1,6 @@
 'use client'
 
+import { authFetch } from '@/lib/auth-fetch'
 import { useEffect, useState } from 'react'
 import { confirmDialog } from '@/components/ConfirmDialog'
 
@@ -40,7 +41,7 @@ export default function RefundOrderModal({
       let rawItems = order.line_items || order.items || []
       let shippingTotal = Number(order.shipping_total || 0)
       try {
-        const res = await fetch(`/api/orders/detail?companyId=${companyId}&orderId=${orderId}${order.integration_id ? `&integrationId=${order.integration_id}` : ''}`)
+        const res = await authFetch(`/api/orders/detail?companyId=${companyId}&orderId=${orderId}${order.integration_id ? `&integrationId=${order.integration_id}` : ''}`)
         const d = await res.json().catch(() => ({}))
         if (res.ok && d.order) {
           if (Array.isArray(d.order.line_items) && d.order.line_items.length) rawItems = d.order.line_items
@@ -96,7 +97,7 @@ export default function RefundOrderModal({
         tax: it.qty > 0 ? +((it.tax / it.qty) * it.refundQty).toFixed(2) : 0,
         taxId: it.taxId,
       }))
-      const res = await fetch('/api/orders/refund', {
+      const res = await authFetch('/api/orders/refund', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           companyId, orderId, integrationId: order.integration_id || undefined,

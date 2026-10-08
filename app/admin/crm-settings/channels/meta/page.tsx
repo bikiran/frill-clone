@@ -1,5 +1,7 @@
 'use client'
 
+import { withConnectTicket } from '@/lib/oauth-ticket-client'
+import { authFetch } from '@/lib/auth-fetch'
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { confirmDialog } from '@/components/ConfirmDialog'
@@ -42,7 +44,7 @@ export default function MetaChannelsPage() {
   }, [])
 
   const load = async (cid: string) => {
-    const res = await fetch(`/api/meta/channels?companyId=${cid}`)
+    const res = await authFetch(`/api/meta/channels?companyId=${cid}`)
     const d = await res.json()
     setConfigured(d.configured !== false)
     setMetaRootOrigin(d.rootOrigin || '')
@@ -53,7 +55,7 @@ export default function MetaChannelsPage() {
   }
 
   const api = async (body: any) => {
-    await fetch('/api/meta/channels', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+    await authFetch('/api/meta/channels', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
     if (companyId) await load(companyId)
   }
 
@@ -121,7 +123,12 @@ export default function MetaChannelsPage() {
             Connect a Facebook Page — its linked Instagram business account comes along automatically.
           </p>
           <a href={configured && companyId ? `${metaRootOrigin}/api/meta/connect?companyId=${companyId}&origin=${encodeURIComponent(typeof window !== 'undefined' ? window.location.origin : '')}` : undefined}
-            onClick={e => { if (!configured) { e.preventDefault(); setMsg('Configure the Meta app first (see above).') } }}
+            onClick={async e => {
+              e.preventDefault()
+              if (!configured) { setMsg('Configure the Meta app first (see above).'); return }
+              const href = (e.currentTarget as HTMLAnchorElement).href
+              try { window.location.href = await withConnectTicket(href, companyId!, 'meta') } catch (er: any) { setMsg(er.message) }
+            }}
             style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '11px 16px', borderRadius: 10, background: '#1877F2', color: '#fff', fontSize: 13.5, fontWeight: 700, textDecoration: 'none', opacity: configured ? 1 : 0.6 }}>
             Connect Facebook &amp; Instagram
           </a>
@@ -143,6 +150,12 @@ export default function MetaChannelsPage() {
               Sign in with Instagram — no Facebook Page needed. Best for Instagram-only businesses.
             </p>
             <a href={companyId ? `${igRootOrigin}/api/instagram/connect?companyId=${companyId}&origin=${encodeURIComponent(typeof window !== 'undefined' ? window.location.origin : '')}` : undefined}
+              onClick={async e => {
+                e.preventDefault()
+                const href = (e.currentTarget as HTMLAnchorElement).href
+                if (!href || !companyId) return
+                try { window.location.href = await withConnectTicket(href, companyId, 'instagram') } catch (er: any) { setMsg(er.message) }
+              }}
               style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '11px 16px', borderRadius: 10, background: 'linear-gradient(45deg,#feda75,#d62976,#4f5bd5)', color: '#fff', fontSize: 13.5, fontWeight: 700, textDecoration: 'none' }}>
               Connect Instagram directly
             </a>

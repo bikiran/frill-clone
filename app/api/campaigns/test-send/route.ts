@@ -1,3 +1,5 @@
+import { requireCompanyAccess } from '@/lib/company-access'
+import { internalHeaders } from '@/lib/internal-call'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { renderVariables } from '@/lib/sms-segments'
@@ -27,6 +29,8 @@ export async function POST(req: NextRequest) {
     if (!companyId || !campaignId || !to) {
       return NextResponse.json({ error: 'Missing companyId, campaignId or destination' }, { status: 400 })
     }
+    // Texts from the workspace's number on its credit: members only.
+    if (!(await requireCompanyAccess(req, admin(), companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     if (await isExternalSendBlocked(companyId)) { logBlockedSend(companyId, 'campaign_test'); return NextResponse.json({ error: DEMO_BLOCK_MESSAGE }, { status: 403 }) }
 
     // One destination only. Reject anything that looks like a list.
@@ -73,7 +77,7 @@ export async function POST(req: NextRequest) {
     const origin = req.nextUrl.origin
     const res = await fetch(`${origin}/api/telnyx/sms/send`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: internalHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({
         companyId,
         to,

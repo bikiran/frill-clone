@@ -1,5 +1,6 @@
 'use client'
 
+import { authFetch } from '@/lib/auth-fetch'
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { getCompanyByOwner } from '@/lib/board'
@@ -49,7 +50,7 @@ export default function OnboardingPage() {
         try {
           const pending = JSON.parse(localStorage.getItem('pending_company') || 'null')
           if (pending?.slug && pending?.name) {
-            const r = await fetch('/api/companies', {
+            const r = await authFetch('/api/companies', {
               method: 'POST', headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ userId: u.id, slug: pending.slug, name: pending.name, industry: pending.industry }),
             })

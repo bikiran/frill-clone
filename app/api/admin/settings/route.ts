@@ -1,3 +1,4 @@
+import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
@@ -21,6 +22,8 @@ export async function GET(req: NextRequest) {
     const supabase = getDb()
     const companyId = req.nextUrl.searchParams.get('company_id')
     if (!companyId) return NextResponse.json({ error: 'company_id required' }, { status: 400 })
+    // Workspace members only.
+    if (!(await requireCompanyAccess(req, supabase, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
 
     const { data: rows, error } = await (supabase as any)
       .from('site_settings')
@@ -47,6 +50,8 @@ export async function POST(req: NextRequest) {
     const supabase = getDb()
     const { company_id, value } = await req.json()
     if (!company_id) return NextResponse.json({ error: 'company_id required' }, { status: 400 })
+    // Workspace members only (this is the public site's name, logo and scripts).
+    if (!(await requireCompanyAccess(req, supabase, company_id)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     if (!value || typeof value !== 'object') return NextResponse.json({ error: 'value object required' }, { status: 400 })
 
     console.log('[SETTINGS API POST] Saving for company:', company_id)

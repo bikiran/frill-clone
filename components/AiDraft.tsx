@@ -1,5 +1,6 @@
 'use client'
 
+import { authFetch } from '@/lib/auth-fetch'
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { confirmDialog } from '@/components/ConfirmDialog'
@@ -33,7 +34,7 @@ export function useAiDraft(opts: {
     try {
       const { data } = await supabase.auth.getSession()
       const token = data?.session?.access_token
-      const res = await fetch('/api/ai/draft', {
+      const res = await authFetch('/api/ai/draft', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         body: JSON.stringify({ companyId: opts.companyId, conversationId: opts.conversationId || null, ticketId: opts.ticketId || null, instruction: instruction || null, previousDraft: instruction ? current || null : null }),

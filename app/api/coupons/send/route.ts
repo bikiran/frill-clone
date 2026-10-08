@@ -1,7 +1,9 @@
+import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { WooCommerceService } from '@/lib/woocommerce-service'
 import { isExternalSendBlocked, DEMO_BLOCK_MESSAGE, logBlockedSend } from '@/lib/demo-guard'
+import { internalHeaders } from '@/lib/internal-call'
 
 function admin() {
   return createClient(
@@ -23,10 +25,17 @@ export async function POST(req: NextRequest) {
     if (!companyId || !conversationId || !amount) return NextResponse.json({ error: 'Missing companyId, conversationId or amount' }, { status: 400 })
 
     const db = admin()
+    // Creates real discount codes in the shop: members only, and only on their
+    // own store and conversations.
+    if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+    {
+      const { data: owner } = await db.from('conversations').select('company_id').eq('id', conversationId).maybeSingle()
+      if (!owner || owner.company_id !== companyId) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+    }
     if (await isExternalSendBlocked(companyId, db)) { logBlockedSend(companyId, 'coupon', db); return NextResponse.json({ error: DEMO_BLOCK_MESSAGE }, { status: 403 }) }
     let integ: any = null
     if (integrationId) {
-      const r = await db.from('woocommerce_integrations').select('*').eq('id', integrationId).maybeSingle()
+      const r = await db.from('woocommerce_integrations').select('*').eq('id', integrationId).eq('company_id', companyId).maybeSingle()
       integ = r.data
     }
     if (!integ) {
@@ -108,12 +117,12 @@ export async function POST(req: NextRequest) {
         const base = String(process.env.NEXT_PUBLIC_SITE_URL || '').replace(/\/$/, '')
         if (base && deliverVia === 'sms') {
           await fetch(`${base}/api/telnyx/sms/send`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({ companyId, conversationId, to: conv?.sms_number, text: content, senderName: createdByName || 'Support', skipChatMessage: true }),
           })
         } else if (base && deliverVia === 'email') {
           await fetch(`${base}/api/email/reply`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({ conversationId, content, to: email, subject: 'Your coupon', agentName: createdByName || 'Support' }),
           })
         }

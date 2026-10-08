@@ -1,3 +1,4 @@
+import { isStaffRow } from '@/lib/company-access'
 import type { NextRequest } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import type { AssistantContext } from '@/lib/ai-assistant/tools'
@@ -37,8 +38,9 @@ export async function resolveCaller(req: NextRequest, companyId?: string): Promi
   if (company.owner_id === user.id) role = 'owner'
   else {
     const { data: member } = await db.from('team_members')
-      .select('role').eq('company_id', companyId).eq('user_id', user.id).maybeSingle()
-    role = (member?.role as string) || null
+      .select('role, status').eq('company_id', companyId).eq('user_id', user.id).maybeSingle()
+    // A board visitor ('viewer') or a removed member is not staff.
+    role = isStaffRow(member) ? ((member?.role as string) || 'editor') : null
   }
   // Platform super admin can operate in any workspace.
   if (!role && user.email === PLATFORM_SUPER_ADMIN) role = 'owner'

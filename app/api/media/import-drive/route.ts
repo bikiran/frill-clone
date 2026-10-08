@@ -27,6 +27,11 @@ export async function POST(req: NextRequest) {
     }
     const db = admin()
     if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+    // The folder must be one of this workspace's own.
+    if (folderId) {
+      const { data: folder } = await db.from('media_folders').select('id').eq('id', folderId).eq('company_id', companyId).maybeSingle()
+      if (!folder) return NextResponse.json({ error: 'Folder not found' }, { status: 404 })
+    }
 
     // Ensure the media bucket exists.
     try {
@@ -38,6 +43,7 @@ export async function POST(req: NextRequest) {
     for (const f of files) {
       try {
         // Download the file bytes from Google Drive.
+        if (!/^[A-Za-z0-9_-]+$/.test(String(f.id || ''))) continue
         const res = await fetch(`https://www.googleapis.com/drive/v3/files/${f.id}?alt=media`, {
           headers: { Authorization: `Bearer ${accessToken}` },
         })

@@ -1,3 +1,4 @@
+import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
@@ -16,6 +17,8 @@ export async function POST(req: NextRequest) {
     const { companyId, force } = await req.json()
     if (!companyId) return NextResponse.json({ error: 'companyId required' }, { status: 400 })
     const db = admin()
+    // Workspace members only.
+    if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
 
     const { data: locations } = await db.from('company_locations').select('*').eq('company_id', companyId)
     if (!locations || locations.length === 0) return NextResponse.json({ ok: true, geocoded: 0, message: 'No outlets to geocode' })

@@ -1,3 +1,4 @@
+import { visitorConversation } from '@/lib/widget-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
@@ -46,12 +47,9 @@ export async function POST(req: NextRequest) {
 
     const db = admin()
 
-    // The thread must belong to the company being claimed.
-    const { data: conv } = await db.from('conversations')
-      .select('id, company_id').eq('id', conversationId).maybeSingle()
-    if (!conv || conv.company_id !== companyId) {
-      return NextResponse.json({ error: 'Conversation not found' }, { status: 404 })
-    }
+    // The thread must belong to the company being claimed, and be this visitor's.
+    const conv = await visitorConversation(req, db, companyId, conversationId)
+    if (!conv) return NextResponse.json({ error: 'Conversation not found' }, { status: 404 })
 
     // ── Message reaction ────────────────────────────────────────────────────
     if (b.messageId) {

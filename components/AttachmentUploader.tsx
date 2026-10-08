@@ -1,4 +1,5 @@
 'use client'
+import { authFetch } from '@/lib/auth-fetch'
 
 import { useRef, useState } from 'react'
 import MediaLightbox from '@/components/MediaLightbox'
@@ -38,7 +39,7 @@ export default function AttachmentUploader({
         fd.append('file', file)
         fd.append('companyId', companyId)
         fd.append('conversationId', folder)
-        const res = await fetch('/api/inbox/upload', { method: 'POST', body: fd })
+        const res = await authFetch('/api/inbox/upload', { method: 'POST', body: fd })
         const d = await res.json()
         if (res.ok && d.url) added.push({ url: d.url, name: d.name || file.name, type: d.type || file.type, kind: d.kind, size: d.size })
         else setErr(d.error || 'Upload failed')

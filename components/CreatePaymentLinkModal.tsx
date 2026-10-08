@@ -1,5 +1,6 @@
 'use client'
 
+import { authFetch } from '@/lib/auth-fetch'
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 
@@ -61,7 +62,7 @@ export default function CreatePaymentLinkModal({
       }
       if (!convId) throw new Error('Could not open a conversation for that customer')
 
-      const res = await fetch('/api/stripe/chat-payment', {
+      const res = await authFetch('/api/stripe/chat-payment', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ companyId, conversationId: convId, amount: amt, description: description.trim() || null, senderName, channel }),
       })
@@ -73,12 +74,12 @@ export default function CreatePaymentLinkModal({
       if (payLink) {
         try {
           if (channel === 'sms' && picked.phone) {
-            await fetch('/api/telnyx/sms/send', {
+            await authFetch('/api/telnyx/sms/send', {
               method: 'POST', headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ companyId, conversationId: convId, to: picked.phone, text: `Here's your secure payment link${description.trim() ? ` for ${description.trim()}` : ''}: ${payLink}`, senderName, skipChatMessage: true }),
             })
           } else if (channel === 'email' && picked.email) {
-            await fetch('/api/email/reply', {
+            await authFetch('/api/email/reply', {
               method: 'POST', headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ conversationId: convId, to: picked.email, subject: 'Your payment link', content: `Here's your secure payment link${description.trim() ? ` for ${description.trim()}` : ''}: ${payLink}`, agentName: senderName, skipChatMessage: true }),
             })

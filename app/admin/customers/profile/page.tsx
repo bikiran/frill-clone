@@ -1,5 +1,6 @@
 'use client'
 
+import { authFetch } from '@/lib/auth-fetch'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useSearchParams, useRouter } from 'next/navigation'
@@ -140,7 +141,7 @@ export default function CustomerProfilePage() {
           // blank just because the background sync hasn't caught up.
           if (ordersData.length === 0 && email) {
             try {
-              const res = await fetch(`/api/orders/list?companyId=${resolvedCompanyId}&email=${encodeURIComponent(email)}`)
+              const res = await authFetch(`/api/orders/list?companyId=${resolvedCompanyId}&email=${encodeURIComponent(email)}`)
               const live = await res.json()
               if (live.orders?.length) {
                 ordersData = live.orders.map((o: any) => ({
@@ -755,7 +756,7 @@ export default function CustomerProfilePage() {
                   )}
                   {call.recording_url && !call.ai_summary && (
                     <button onClick={async () => {
-                      const res = await fetch('/api/telnyx/call-summary', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ callId: call.id }) })
+                      const res = await authFetch('/api/telnyx/call-summary', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ callId: call.id }) })
                       const d = await res.json()
                       if (d.summary) setCalls(cs => cs.map(c => c.id === call.id ? { ...c, ai_summary: d.summary } : c))
                     }} style={{ marginTop: 8, fontSize: 12, color: '#7c3aed', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>

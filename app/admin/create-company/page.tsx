@@ -1,5 +1,6 @@
 'use client'
 
+import { authFetch } from '@/lib/auth-fetch'
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { isValidSlug, isSlugAvailable } from '@/lib/board'
@@ -71,7 +72,7 @@ export default function CreateCompanyPage() {
     setLoading(true)
     try {
       // 1. Create the owner's auth account
-      const res = await fetch('/api/admin/create-user', {
+      const res = await authFetch('/api/admin/create-user', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: ownerEmail, password: ownerPassword, name: ownerName, role: 'owner' }),
@@ -85,7 +86,7 @@ export default function CreateCompanyPage() {
       const userId = result.userId
 
       // 3. Create the company via API route
-      const coRes = await fetch('/api/companies', {
+      const coRes = await authFetch('/api/companies', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -108,10 +109,10 @@ export default function CreateCompanyPage() {
 
       // 5. Auto-register subdomain in Vercel
       try {
-        await fetch('/api/domains', {
+        await authFetch('/api/domains', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ domain: `${slug.toLowerCase()}.colvy.com` }),
+          body: JSON.stringify({ domain: `${slug.toLowerCase()}.colvy.com`, companyId: coResult.company?.id }),
         })
       } catch {}
 

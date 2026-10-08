@@ -1,3 +1,4 @@
+import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { isMetaConfigured } from '@/lib/meta'
@@ -16,6 +17,8 @@ export async function GET(req: NextRequest) {
   const companyId = new URL(req.url).searchParams.get('companyId')
   if (!companyId) return NextResponse.json({ error: 'companyId required' }, { status: 400 })
   const db = admin()
+  // Workspace members only.
+  if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
 
   const { data: channels } = await db.from('meta_channels')
     .select('id, platform, page_id, page_name, ig_username, location_id, is_active, last_error, token_expires_at')
@@ -52,6 +55,13 @@ export async function POST(req: NextRequest) {
     const { action, id } = body
     if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
     const db = admin()
+    // Members of the workspace that owns the channel; an outlet must be theirs too.
+    const { data: ch } = await db.from('meta_channels').select('company_id').eq('id', id).maybeSingle()
+    if (!ch || !(await requireCompanyAccess(req, db, ch.company_id)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+    if (body.location_id) {
+      const { data: loc } = await db.from('company_locations').select('company_id').eq('id', body.location_id).maybeSingle()
+      if (!loc || loc.company_id !== ch.company_id) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+    }
 
     if (action === 'map_location') {
       await db.from('meta_channels').update({ location_id: body.location_id || null }).eq('id', id)

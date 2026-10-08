@@ -1,3 +1,4 @@
+import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse, after } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { processJobById } from '@/lib/transcode'
@@ -33,6 +34,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: 'Missing companyId or mediaItemId' }, { status: 400 })
     }
     const db = admin()
+    // Workspace members only.
+    if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
 
     // Only act on a real video row for this company — never trust the caller to
     // name an arbitrary target.

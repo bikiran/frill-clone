@@ -1,5 +1,6 @@
 'use client'
 
+import { authFetch } from '@/lib/auth-fetch'
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { usePathname } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
@@ -209,7 +210,7 @@ export default function ColvyAssistant({ companyId, userId, agentName }: { compa
     setMsgs(m => [...m, { role: 'user', text: message }, { role: 'assistant', pending: true }])
     setBusy(true)
     try {
-      const res = await fetch('/api/ai/assistant', {
+      const res = await authFetch('/api/ai/assistant', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
         body: JSON.stringify({ message, history, context: buildContext(), companyId }),
@@ -240,7 +241,7 @@ export default function ColvyAssistant({ companyId, userId, agentName }: { compa
     if (busy || !companyId) return
     setBusy(true)
     try {
-      const res = await fetch('/api/ai/assistant/execute', {
+      const res = await authFetch('/api/ai/assistant/execute', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
         body: JSON.stringify({ tool: confirm.tool, args: editedText != null && confirm.args && 'text' in confirm.args ? { ...confirm.args, text: editedText } : confirm.args, context: buildContext(), companyId }),

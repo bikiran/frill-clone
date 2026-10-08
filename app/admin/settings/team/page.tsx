@@ -1,5 +1,7 @@
 'use client'
 
+import { authFetch } from '@/lib/auth-fetch'
+import { newInviteToken } from '@/lib/invite-token'
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
@@ -49,6 +51,7 @@ export default function TeamPage() {
     if (!inviteEmail || !company?.id) return
     setInviting(true)
     try {
+      const invite = await newInviteToken()
       const { data, error } = await (supabase as any)
         .from('team_members')
         .insert({
@@ -57,18 +60,20 @@ export default function TeamPage() {
           role: inviteRole,
           status: 'pending',
           invited_at: new Date().toISOString(),
+          invite_token_hash: invite.hash,
         })
 
       if (error) throw error
       
       // Send invitation email via Resend
       try {
-        const inviteLink = `${typeof window !== 'undefined' ? window.location.origin : 'https://colvy.com'}/team/join?company=${company.slug}&email=${encodeURIComponent(inviteEmail)}`
+        const inviteLink = `${typeof window !== 'undefined' ? window.location.origin : 'https://colvy.com'}/team/join?company=${company.slug}&email=${encodeURIComponent(inviteEmail)}&token=${invite.token}`
         
-        await fetch('/api/send-team-invite', {
+        await authFetch('/api/send-team-invite', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
+            companyId: company.id,
             email: inviteEmail,
             companyName: company.name,
             role: inviteRole,

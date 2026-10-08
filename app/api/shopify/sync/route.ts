@@ -1,3 +1,4 @@
+import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { ShopifyService } from '@/lib/shopify-service'
@@ -19,11 +20,13 @@ export async function POST(req: NextRequest) {
     const { companyId, integrationId } = await req.json()
     if (!companyId) return NextResponse.json({ error: 'Missing companyId' }, { status: 400 })
     const db = admin()
+    // Workspace members only.
+    if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
 
     // Resolve the target store
     let integ: any = null
     if (integrationId) {
-      const r = await db.from('shopify_integrations').select('*').eq('id', integrationId).maybeSingle()
+      const r = await db.from('shopify_integrations').select('*').eq('id', integrationId).eq('company_id', companyId).maybeSingle()
       integ = r.data
     } else {
       const r = await db.from('shopify_integrations').select('*').eq('company_id', companyId).order('created_at', { ascending: true }).limit(1)

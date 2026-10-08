@@ -1,3 +1,4 @@
+import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { log } from '@/lib/log'
 import { createClient } from '@supabase/supabase-js'
@@ -17,10 +18,15 @@ export async function POST(req: NextRequest) {
   try {
     // userId lets each client get its own credential, so several devices can be
     // registered at once. Omitted callers still work on the shared credential.
-    const { companyId, conversationId, userId } = await req.json()
+    const { companyId, conversationId } = await req.json()
     if (!companyId) return NextResponse.json({ error: 'Missing companyId' }, { status: 400 })
 
     const db = admin()
+    // Workspace members only.
+    const access = await requireCompanyAccess(req, db, companyId)
+    if (!access.ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+    // Whose line this is comes from the sign-in, never the request.
+    const userId: string | undefined = access.userId
     const { data: integ } = await db.from('telnyx_integrations').select('*').eq('company_id', companyId).maybeSingle()
     if (!integ?.api_key) return NextResponse.json({ error: 'Calling isn\'t set up yet. Add a number in Integrations → Phone & SMS.' }, { status: 400 })
     if (!integ.connection_id) return NextResponse.json({ error: 'No WebRTC connection configured' }, { status: 400 })

@@ -3,6 +3,8 @@ import { createClient } from '@supabase/supabase-js'
 import { sendMetaMessage, sendMetaAttachment } from '@/lib/meta'
 import { isIgLoginChannel, sendInstagramMessage, sendInstagramAttachment } from '@/lib/instagram-login'
 import { isExternalSendBlocked, DEMO_BLOCK_MESSAGE, logBlockedSend } from '@/lib/demo-guard'
+import { requireCompanyAccess } from '@/lib/company-access'
+import { isInternalCall } from '@/lib/internal-call'
 
 export const dynamic = 'force-dynamic'
 
@@ -23,6 +25,11 @@ export async function POST(req: NextRequest) {
     const db = admin()
     const { data: conv } = await db.from('conversations').select('*').eq('id', conversationId).maybeSingle()
     if (!conv) return NextResponse.json({ error: 'Conversation not found' }, { status: 404 })
+    // Replies as the workspace's Page / Instagram account: members (Bearer) or
+    // our own server routes only.
+    if (!isInternalCall(req) && !(await requireCompanyAccess(req, db, conv.company_id)).ok) {
+      return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+    }
     if (await isExternalSendBlocked(conv.company_id, db)) { logBlockedSend(conv.company_id, 'meta', db); return NextResponse.json({ error: DEMO_BLOCK_MESSAGE }, { status: 403 }) }
     if (!['instagram', 'facebook'].includes(conv.channel)) {
       return NextResponse.json({ error: 'Not a Meta conversation' }, { status: 400 })

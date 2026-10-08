@@ -178,7 +178,7 @@ export default function TasksPage() {
     setDefaultOutlet(id)
     savePrefs({ outlet: id })
     if (id) setOutletFilter([id]); else setOutletFilter([])
-    if (companyId && userId) fetch('/api/user-prefs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId, companyId, key: 'default_outlet', value: { id } }) }).catch(() => {})
+    if (companyId && userId) authFetch('/api/user-prefs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId, companyId, key: 'default_outlet', value: { id } }) }).catch(() => {})
     setOutletMenu(null)
   }
 
@@ -186,7 +186,7 @@ export default function TasksPage() {
     const payload = { names, defaultView: dflt }
     savePrefs({ names, view: dflt })
     if (companyId && userId) {
-      fetch('/api/user-prefs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId, companyId, key: 'tasks_view', value: payload }) }).catch(() => {})
+      authFetch('/api/user-prefs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId, companyId, key: 'tasks_view', value: payload }) }).catch(() => {})
     }
   }
   const openViewMenu = (e: React.MouseEvent, v: ViewMode) => {
@@ -301,7 +301,7 @@ export default function TasksPage() {
         const uid = session?.user?.id
         // Saved view/outlet prefs, the owner and the team all load together.
         const [savedPrefs, { data: co }, { data: tm }] = await Promise.all([
-          uid ? fetch(`/api/user-prefs?userId=${uid}&companyId=${cid}`).then(r => r.ok ? r.json() : null).catch(() => null) : Promise.resolve(null),
+          uid ? authFetch(`/api/user-prefs?userId=${uid}&companyId=${cid}`).then(r => r.ok ? r.json() : null).catch(() => null) : Promise.resolve(null),
           (supabase as any).from('companies').select('owner_id, name').eq('id', cid).maybeSingle(),
           (supabase as any).from('team_members').select('*').or(`company_id.eq.${cid},company_id.is.null`),
         ])
@@ -1910,7 +1910,7 @@ function TaskDetail({ task, conv, team, outlets = [], companyId, me, userId, onP
   useEffect(() => {
     if (!notePicker || !companyId) return
     ;(async () => {
-      try { const r = await fetch(`/api/notes?companyId=${companyId}&userId=${userId || ''}`); const d = await r.json(); setNoteList(d.notes || []) } catch { setNoteList([]) }
+      try { const r = await authFetch(`/api/notes?companyId=${companyId}&userId=${userId || ''}`); const d = await r.json(); setNoteList(d.notes || []) } catch { setNoteList([]) }
     })()
   }, [notePicker, companyId, userId])
   const linkNote = (n: any) => { if (linkedNotes.some(x => x.id === n.id)) return; patch({ linked_notes: [...linkedNotes, { id: n.id, title: n.title || 'Untitled' }] }); setNotePicker(false); setNoteQuery('') }
@@ -1937,7 +1937,7 @@ function TaskDetail({ task, conv, team, outlets = [], companyId, me, userId, onP
     ))
     if (mentionIds.length) {
       try {
-        await fetch('/api/notify/members', {
+        await authFetch('/api/notify/members', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             companyId, userIds: mentionIds, type: 'task_comment',
@@ -2129,7 +2129,7 @@ function TaskDetail({ task, conv, team, outlets = [], companyId, me, userId, onP
             .filter(id => isUuid(id) && !before.has(id) && id !== userId)
           if (added.length) {
             try {
-              await fetch('/api/notify/members', {
+              await authFetch('/api/notify/members', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                   companyId, userIds: added, type: 'task_assigned',
@@ -2320,7 +2320,7 @@ function OrderSearchModal({ companyId, onClose, onPick }: any) {
     if (q.trim().length < 2) { setResults([]); return }
     const t = setTimeout(async () => {
       setLoading(true)
-      try { const res = await fetch(`/api/orders/search?companyId=${companyId}&q=${encodeURIComponent(q.trim())}`); const d = await res.json(); setResults(d.orders || []) }
+      try { const res = await authFetch(`/api/orders/search?companyId=${companyId}&q=${encodeURIComponent(q.trim())}`); const d = await res.json(); setResults(d.orders || []) }
       catch { setResults([]) } finally { setLoading(false) }
     }, 300)
     return () => clearTimeout(t)

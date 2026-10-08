@@ -1,3 +1,4 @@
+import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { TelnyxService } from '@/lib/telnyx-service'
@@ -28,6 +29,8 @@ export async function POST(req: NextRequest) {
     if (!companyId) return NextResponse.json({ error: 'companyId required' }, { status: 400 })
 
     const db = admin()
+    // Workspace members only.
+    if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     const { data: integ } = await db.from('telnyx_integrations')
       .select('*').eq('company_id', companyId).maybeSingle()
 
@@ -124,6 +127,8 @@ export async function GET(req: NextRequest) {
     const companyId = req.nextUrl.searchParams.get('companyId')
     if (!companyId) return NextResponse.json({ error: 'companyId required' }, { status: 400 })
     const db = admin()
+    // Workspace members only.
+    if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
 
     const { data: integ } = await db.from('telnyx_integrations')
       .select('*').eq('company_id', companyId).maybeSingle()

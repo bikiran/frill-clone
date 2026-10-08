@@ -1,5 +1,6 @@
 'use client'
 
+import { authFetch } from '@/lib/auth-fetch'
 import React from 'react'
 import UploadQueueIndicator from '@/components/UploadQueueIndicator'
 import Link from 'next/link'
@@ -286,29 +287,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     })
   }
 
-  // ── Email auto-sync ───────────────────────────────────────────────────────
-  // Email only arrived when someone pressed "Sync now". A Vercel cron would be
-  // the clean way to do this, but the Hobby plan only allows DAILY crons — a
-  // */5 schedule is an invalid config and blocks the whole deployment. So we
-  // drive it from the client instead: while any admin has Colvy open, ping the
-  // sync endpoint every 2 minutes. The endpoint itself honours each mailbox's
-  // configured interval, so this can't over-sync, and it's idempotent.
-  //
-  // (If you upgrade to Vercel Pro, add vercel.json with a */5 cron on
-  // /api/cron/email-sync and this becomes a redundant backstop.)
+  // ── Agent presence ────────────────────────────────────────────────────────
+  // Email sync, back-in-stock texts, ticket deadlines and booking reminders used
+  // to be pinged from here while an admin had Colvy open; Vercel Cron runs them
+  // now (vercel.json), behind CRON_SECRET.
   useEffect(() => {
     if (!company?.id) return
-    let stop = false
-    const sync = () => {
-      if (document.visibilityState !== 'visible') return   // don't sync in a background tab
-      fetch('/api/cron/email-sync', { method: 'GET' }).catch(() => {})
-      // Back-in-stock texts that arrived overnight go out once sending hours open.
-      fetch('/api/cron/waitlist', { method: 'GET' }).catch(() => {})
-      // One alert per ticket that misses its reply/resolution deadline.
-      fetch('/api/cron/ticket-sla', { method: 'GET' }).catch(() => {})
-      // Booking reminders, wrap-ups and rebook nudges (Vercel Cron runs it too).
-      fetch('/api/cron/booking-reminders', { method: 'GET' }).catch(() => {})
-    }
     // Agent presence heartbeat — records that this agent is online so an inbound
     // call can ring them. "Online" = seen in the last ~2 minutes.
     const beat = async () => {
@@ -322,25 +306,24 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       // still reports a busy agent as unavailable.
       try {
         const { data: { session } } = await supabase.auth.getSession()
-        fetch('/api/telnyx/presence', {
+        authFetch('/api/telnyx/presence', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}) },
           body: JSON.stringify({ companyId: company.id, available: !onCall }),
         }).catch(() => {})
       } catch {}
     }
-    const t = setTimeout(() => { sync(); beat() }, 4000)   // shortly after load
-    const iv = setInterval(sync, 120000)                    // email every 2 minutes
+    const t = setTimeout(beat, 4000)                        // shortly after load
     const hb = setInterval(beat, 45000)                     // presence every 45s
     // Flip availability the instant a call starts or ends, so the 45s cadence
     // doesn't leave a window where a busy agent still gets rung.
     const unsubCall = subscribeActiveCall(() => { beat() })
-    document.addEventListener('visibilitychange', () => { sync(); beat() })
+    const onVisible = () => { beat() }
+    document.addEventListener('visibilitychange', onVisible)
     return () => {
-      stop = true
-      clearTimeout(t); clearInterval(iv); clearInterval(hb)
+      clearTimeout(t); clearInterval(hb)
       unsubCall()
-      document.removeEventListener('visibilitychange', sync)
+      document.removeEventListener('visibilitychange', onVisible)
     }
   }, [company?.id])
   const [inboxUnread, setInboxUnread] = useState(0)

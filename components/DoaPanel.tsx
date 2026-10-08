@@ -1,5 +1,6 @@
 'use client'
 
+import { authFetch } from '@/lib/auth-fetch'
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 
@@ -61,7 +62,7 @@ export default function DoaPanel({ companyId, conversationId, contactId, contact
     const email = contact?.email
     if (!email || !companyId) return
     setLoadingRecent(true)
-    fetch(`/api/orders/list?companyId=${companyId}&email=${encodeURIComponent(email)}`)
+    authFetch(`/api/orders/list?companyId=${companyId}&email=${encodeURIComponent(email)}`)
       .then(r => r.json())
       .then(d => {
         const list = (d.orders || []).slice().sort((a: any, b: any) => new Date(b.date_created || b.created_at || 0).getTime() - new Date(a.date_created || a.created_at || 0).getTime())
@@ -75,7 +76,7 @@ export default function DoaPanel({ companyId, conversationId, contactId, contact
     if (!orderNumber.trim()) return
     setLooking(true); setError(''); setOrder(null)
     try {
-      const res = await fetch(`/api/doa/order?companyId=${companyId}&order=${encodeURIComponent(orderNumber.trim())}`)
+      const res = await authFetch(`/api/doa/order?companyId=${companyId}&order=${encodeURIComponent(orderNumber.trim())}`)
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Order not found')
       setOrder(data.order)
@@ -97,7 +98,7 @@ export default function DoaPanel({ companyId, conversationId, contactId, contact
     setProcessing(true); setError('')
     try {
       const amount = customAmount ? customAmount : (resolution === 'refund' ? refundDefault.toFixed(2) : undefined)
-      const res = await fetch('/api/doa/process', {
+      const res = await authFetch('/api/doa/process', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           companyId, conversationId, contactId, order, resolution,

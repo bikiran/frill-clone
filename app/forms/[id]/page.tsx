@@ -124,16 +124,14 @@ export default function PublicForm() {
       notifyIntegrations('form.submitted', { id: formId })
 
       // Trigger email notification to form admin (best-effort, background).
+      // The server works out who that is from the form.
       try {
         if (form && form.company_id) {
-          const { data: company } = await (supabase as any).from('companies').select('owner_id').eq('id', form.company_id).single()
-          if (company?.owner_id) {
-            await fetch('/api/form-notifications', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ formId, userId: company.owner_id }),
-            })
-          }
+          await fetch('/api/form-notifications', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ formId }),
+          })
         }
       } catch (error) {
         console.error('Failed to send notification:', error)
@@ -399,7 +397,7 @@ export default function PublicForm() {
       const res = await fetch('/api/contacts/scan', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ companyId: form?.company_id, image: base64, mediaType: 'image/jpeg' }),
+        body: JSON.stringify({ companyId: form?.company_id, formId: form?.id, image: base64, mediaType: 'image/jpeg' }),
       })
       const json = await res.json().catch(() => ({}))
       if (!res.ok || !json?.contact) {

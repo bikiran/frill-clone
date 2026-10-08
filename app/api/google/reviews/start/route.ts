@@ -1,3 +1,4 @@
+import { readValue, signValue, safeReturn } from '@/lib/oauth-state'
 import { NextRequest, NextResponse } from 'next/server'
 
 export const dynamic = 'force-dynamic'
@@ -10,6 +11,12 @@ export async function GET(req: NextRequest) {
   const companyId = req.nextUrl.searchParams.get('companyId')
   const returnTo = req.nextUrl.searchParams.get('returnTo') || ''
   if (!companyId) return NextResponse.json({ error: 'companyId required' }, { status: 400 })
+
+  // Only a member of this workspace can start a connection (see lib/oauth-state).
+  const ticket = readValue(req.nextUrl.searchParams.get('ticket'), 'ticket')
+  if (!ticket || ticket.purpose !== 'google_reviews' || ticket.companyId !== companyId) {
+    return NextResponse.json({ error: 'Open the integration page and press Connect again.' }, { status: 401 })
+  }
 
   const clientId = process.env.GOOGLE_CLIENT_ID || process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID
   if (!clientId) {
@@ -25,7 +32,7 @@ export async function GET(req: NextRequest) {
   const redirectUri = process.env.GOOGLE_REVIEWS_REDIRECT_URI
     || `${process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'}/api/google/reviews/callback`
 
-  const state = Buffer.from(JSON.stringify({ companyId, returnTo })).toString('base64url')
+  const state = signValue({ kind: 'state', purpose: 'google_reviews', companyId, userId: ticket.userId, returnTo: safeReturn(returnTo) }, 30 * 60 * 1000)
 
   const params = new URLSearchParams({
     client_id: clientId,

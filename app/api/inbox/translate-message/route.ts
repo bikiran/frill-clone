@@ -1,3 +1,4 @@
+import { isInternalCall } from '@/lib/internal-call'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { detectAndTranslate } from '@/lib/translate'
@@ -17,6 +18,8 @@ const admin = () => createClient(
 // message that already has content_lang set.
 export async function POST(req: NextRequest) {
   try {
+    // Only our own server (message intake) asks for translations.
+    if (!isInternalCall(req)) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     const { messageId } = await req.json()
     if (!messageId) return NextResponse.json({ error: 'messageId required' }, { status: 400 })
 

@@ -1,3 +1,4 @@
+import { isStaffMember } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
@@ -33,7 +34,7 @@ export async function POST(req: NextRequest) {
     const { data: company } = await db.from('companies').select('id, owner_id').eq('id', chan.company_id).maybeSingle()
     let allowed = company?.owner_id === uid
     if (!allowed) {
-      const { data: tm } = await db.from('team_members').select('id').eq('company_id', chan.company_id).eq('user_id', uid).limit(1)
+      const tm = (await isStaffMember(db, chan.company_id, uid)) ? [{ id: true }] : []
       allowed = !!(tm && tm.length)
     }
     if (!allowed) return NextResponse.json({ error: 'Not authorized for this address' }, { status: 403 })

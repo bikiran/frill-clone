@@ -1,3 +1,5 @@
+import { callerUser } from '@/lib/company-access'
+import { isInternalCall } from '@/lib/internal-call'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { TelnyxService } from '@/lib/telnyx-service'
@@ -19,6 +21,8 @@ const PLATFORM_CONNECTION = process.env.TELNYX_CONNECTION_ID
 // GET: search available AU numbers to show the user before they buy
 export async function GET(req: NextRequest) {
   try {
+    // Searching numbers needs a signed-in Colvy user.
+    if (!(await callerUser(req, createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, { auth: { autoRefreshToken: false, persistSession: false } })))) return NextResponse.json({ error: 'Please sign in again.' }, { status: 401 })
     if (!PLATFORM_KEY) return NextResponse.json({ error: 'Number provisioning is not configured yet. The platform admin needs to set TELNYX_MASTER_API_KEY, TELNYX_MESSAGING_PROFILE_ID and TELNYX_CONNECTION_ID in the environment.' }, { status: 503 })
     const type = (req.nextUrl.searchParams.get('type') as any) || 'local'
     const areaCode = req.nextUrl.searchParams.get('areaCode') || undefined
@@ -58,6 +62,9 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     if (!PLATFORM_KEY) return NextResponse.json({ error: 'Number provisioning is not configured yet. The platform admin needs to set TELNYX_MASTER_API_KEY, TELNYX_MESSAGING_PROFILE_ID and TELNYX_CONNECTION_ID in the environment.' }, { status: 503 })
+    // Buys a number on Colvy's own account with no payment check of its own:
+    // only the Stripe webhook (after a verified payment) may call it.
+    if (!isInternalCall(req)) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     const { companyId, phoneNumber, stripeSubscriptionId } = await req.json()
     if (!companyId) return NextResponse.json({ error: 'Missing companyId' }, { status: 400 })
 

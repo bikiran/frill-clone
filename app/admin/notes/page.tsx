@@ -1,5 +1,6 @@
 'use client'
 
+import { authFetch } from '@/lib/auth-fetch'
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
@@ -123,8 +124,8 @@ export default function NotesPage() {
     setLoadingList(true)
     try {
       const [a, b] = await Promise.all([
-        fetch(`/api/notes?companyId=${companyId}&userId=${uid}`).then(r => r.json()),
-        fetch(`/api/notes?companyId=${companyId}&userId=${uid}&trashed=1`).then(r => r.json()),
+        authFetch(`/api/notes?companyId=${companyId}&userId=${uid}`).then(r => r.json()),
+        authFetch(`/api/notes?companyId=${companyId}&userId=${uid}&trashed=1`).then(r => r.json()),
       ])
       setNeedsMigration(!!a.needsMigration)
       setList(a.notes || [])
@@ -159,7 +160,7 @@ export default function NotesPage() {
       } catch {}
       try {
         const from = new Date(); from.setMonth(from.getMonth() - 3); const to = new Date(); to.setMonth(to.getMonth() + 6)
-        const r = await fetch(`/api/calendar?companyId=${companyId}&from=${from.toISOString()}&to=${to.toISOString()}`)
+        const r = await authFetch(`/api/calendar?companyId=${companyId}&from=${from.toISOString()}&to=${to.toISOString()}`)
         const d = await r.json()
         ;(d.events || []).forEach((e: any) => acc.push({ id: `cal:${e.id}`, title: e.title || 'Untitled', done: e.status === 'completed' }))
       } catch {}
@@ -195,7 +196,7 @@ export default function NotesPage() {
     if (!companyId || !activeId) { setNote(null); return }
     ;(async () => {
       try {
-        const res = await fetch(`/api/notes?companyId=${companyId}&userId=${uid}&id=${activeId}`)
+        const res = await authFetch(`/api/notes?companyId=${companyId}&userId=${uid}&id=${activeId}`)
         const d = await res.json()
         if (d.note) setNote({ ...d.note, checklist: d.note.checklist || [], attachments: d.note.attachments || [], tags: d.note.tags || [], shared_members: d.note.shared_members || [], comments: d.note.comments || [], edit_log: d.note.edit_log || [], linked_tasks: d.note.linked_tasks || [] })
       } catch {}
@@ -221,7 +222,7 @@ export default function NotesPage() {
       if (!companyId) return
       setSaving(true)
       try {
-        await fetch('/api/notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+        await authFetch('/api/notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
           companyId, action: 'update', id: next.id, userId: uid, title: next.title, body: next.body,
           checklist: next.checklist, attachments: next.attachments, cover_image: next.cover_image ?? null,
           allow_public_edit: !!next.allow_public_edit, tags: next.tags || [], reminder_at: next.reminder_at ?? null, pinned: !!next.pinned, shared_with_team: !!next.shared_with_team, shared_members: next.shared_members || [], linked_tasks: next.linked_tasks || [], notebook: next.notebook ?? null,
@@ -247,7 +248,7 @@ export default function NotesPage() {
     setChkUploading(id)
     try {
       const fd = new FormData(); fd.append('file', file); fd.append('companyId', companyId); fd.append('conversationId', 'notes')
-      const res = await fetch('/api/inbox/upload', { method: 'POST', body: fd })
+      const res = await authFetch('/api/inbox/upload', { method: 'POST', body: fd })
       const d = await res.json()
       if (d?.url) patchCheck(id, { image: d.url })
     } catch {} finally { setChkUploading(null) }
@@ -291,7 +292,7 @@ export default function NotesPage() {
   const refreshActiveNote = useCallback(async (id: string) => {
     if (!companyId) return
     try {
-      const res = await fetch(`/api/notes?companyId=${companyId}&userId=${uid}&id=${id}`)
+      const res = await authFetch(`/api/notes?companyId=${companyId}&userId=${uid}&id=${id}`)
       const d = await res.json()
       if (d.note && activeIdRef.current === id && !dirtyRef.current) {
         // Only remount the editor (bump remoteVer) when the body actually changed
@@ -322,7 +323,7 @@ export default function NotesPage() {
   const createNote = async () => {
     if (!companyId) return
     try {
-      const res = await fetch('/api/notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, action: 'create', userId: user?.id, userName: me, title: '' }) })
+      const res = await authFetch('/api/notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, action: 'create', userId: user?.id, userName: me, title: '' }) })
       const d = await res.json()
       if (d.needsMigration) { setNeedsMigration(true); return }
       if (d.note) { setTab('notes'); setList(prev => [d.note, ...prev]); setActiveId(d.note.id); setNote({ ...d.note, checklist: [], attachments: [], tags: [] }) }
@@ -335,27 +336,27 @@ export default function NotesPage() {
     setList(prev => prev.filter(x => x.id !== id))
     if (n) setTrashList(prev => [{ ...n, trashed_at: new Date().toISOString() }, ...prev])
     if (activeId === id) { setActiveId(null); setNote(null) }
-    try { await fetch('/api/notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, action: 'trash', id }) }) } catch {}
+    try { await authFetch('/api/notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, action: 'trash', id }) }) } catch {}
     showToast('Moved to Trash')
   }
   const restoreNote = async (id: string) => {
     const n = trashList.find(x => x.id === id)
     setTrashList(prev => prev.filter(x => x.id !== id))
     if (n) setList(prev => [{ ...n, trashed_at: null }, ...prev])
-    try { await fetch('/api/notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, action: 'restore', id }) }) } catch {}
+    try { await authFetch('/api/notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, action: 'restore', id }) }) } catch {}
     showToast('Restored')
   }
   const deleteForever = async (id: string) => {
     if (!await confirmDialog('Delete this note permanently? This can’t be undone.')) return
     setTrashList(prev => prev.filter(x => x.id !== id))
     if (activeId === id) { setActiveId(null); setNote(null) }
-    try { await fetch('/api/notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, action: 'delete', id }) }) } catch {}
+    try { await authFetch('/api/notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, action: 'delete', id }) }) } catch {}
   }
   const duplicateNote = async () => {
     if (!companyId || !note) return
     setMoreOpen(false)
     try {
-      const res = await fetch('/api/notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, action: 'duplicate', id: note.id, userId: user?.id, userName: me }) })
+      const res = await authFetch('/api/notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, action: 'duplicate', id: note.id, userId: user?.id, userName: me }) })
       const d = await res.json()
       if (d.note) { setList(prev => [d.note, ...prev]); setActiveId(d.note.id); setNote({ ...d.note, checklist: d.note.checklist || [], attachments: d.note.attachments || [], tags: d.note.tags || [] }); showToast('Duplicated') }
     } catch {}
@@ -387,7 +388,7 @@ export default function NotesPage() {
     const w = window.open('', '_blank')
     showToast('Preparing preview…')
     try {
-      const res = await fetch('/api/notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, action: 'share', id: note.id }) })
+      const res = await authFetch('/api/notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, action: 'share', id: note.id }) })
       const d = await res.json()
       if (!d.code) throw new Error()
       setNote({ ...note, is_public: true, public_code: d.code })
@@ -399,7 +400,7 @@ export default function NotesPage() {
     if (!companyId || !note) return
     showToast('Creating link…')
     try {
-      const res = await fetch('/api/notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, action: 'share', id: note.id }) })
+      const res = await authFetch('/api/notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, action: 'share', id: note.id }) })
       const d = await res.json()
       if (!d.url) throw new Error()
       setNote({ ...note, is_public: true, public_code: d.code })
@@ -413,7 +414,7 @@ export default function NotesPage() {
     showToast('Uploading cover…')
     try {
       const fd = new FormData(); fd.append('file', files[0]); fd.append('companyId', companyId); fd.append('conversationId', 'notes')
-      const res = await fetch('/api/inbox/upload', { method: 'POST', body: fd })
+      const res = await authFetch('/api/inbox/upload', { method: 'POST', body: fd })
       const d = await res.json()
       if (d.url) queueSave({ ...note, cover_image: d.url })
     } catch { showToast('Upload failed') }

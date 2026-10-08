@@ -1,3 +1,4 @@
+import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { log } from '@/lib/log'
 import { createClient } from '@supabase/supabase-js'
@@ -39,7 +40,7 @@ const admin = () => createClient(
  */
 export async function POST(req: NextRequest) {
   try {
-    const { companyId, to: toRaw, from, conversationId, contactId, contactName, agentName, userId } = await req.json()
+    const { companyId, to: toRaw, from, conversationId, contactId, contactName, agentName } = await req.json()
     if (!companyId || !toRaw) return NextResponse.json({ error: 'Missing companyId or to' }, { status: 400 })
     // Normalise the customer number to E.164 before it's stored or dialled. The
     // webhook dials the customer with this stored value, and Telnyx can't route a
@@ -48,9 +49,14 @@ export async function POST(req: NextRequest) {
     // direct-dial and Twilio paths already normalise; this closes the gap for the
     // Telnyx server-bridge path. (toE164 returns an already-E.164 number as-is.)
     const to = toE164(String(toRaw)) || String(toRaw)
-    if (!userId) return NextResponse.json({ error: 'Missing userId (needed to ring your device back)' }, { status: 400 })
 
     const db = admin()
+    // Workspace members only.
+    const access = await requireCompanyAccess(req, db, companyId)
+    if (!access.ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+    // Whose line this is comes from the sign-in, never the request.
+    const userId: string | undefined = access.userId
+    if (!userId) return NextResponse.json({ error: 'Please sign in again (needed to ring your device back)' }, { status: 400 })
     const { data: integ } = await db.from('telnyx_integrations').select('*').eq('company_id', companyId).maybeSingle()
     if (!integ?.api_key) return NextResponse.json({ error: 'Telnyx is not configured' }, { status: 400 })
 

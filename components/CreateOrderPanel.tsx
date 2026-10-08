@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import AddressAutocomplete from '@/components/AddressAutocomplete'
+import { authFetch } from '@/lib/auth-fetch'
 
 type Item = {
   key: string
@@ -91,7 +92,7 @@ export default function CreateOrderPanel({ companyId, conversationId, contactId,
     ;(async () => {
       setSourcesLoading(true)
       try {
-        const res = await fetch(`/api/orders/sources?companyId=${companyId}`)
+        const res = await authFetch(`/api/orders/sources?companyId=${companyId}`)
         const data = await res.json()
         setSources(data.sources || [])
         setLocations(data.locations || [])
@@ -100,7 +101,7 @@ export default function CreateOrderPanel({ companyId, conversationId, contactId,
         setSource(chosen)
         // Fetch shipping methods in the background — don't block the panel.
         if (chosen?.platform === 'woocommerce') {
-          fetch(`/api/orders/shipping?companyId=${companyId}&integrationId=${chosen.id}`)
+          authFetch(`/api/orders/shipping?companyId=${companyId}&integrationId=${chosen.id}`)
             .then(r => r.json()).then(d => setShippingMethods(d.shippingMethods || [])).catch(() => {})
         }
       } catch {} finally { setSourcesLoading(false) }
@@ -134,7 +135,7 @@ export default function CreateOrderPanel({ companyId, conversationId, contactId,
     const t = setTimeout(async () => {
       setSearching(true)
       try {
-        const res = await fetch(`/api/orders/products?companyId=${companyId}&integrationId=${source.id}&q=${encodeURIComponent(search.trim())}`)
+        const res = await authFetch(`/api/orders/products?companyId=${companyId}&integrationId=${source.id}&q=${encodeURIComponent(search.trim())}`)
         const data = await res.json()
         setResults(data.products || [])
       } catch {} finally { setSearching(false) }
@@ -145,7 +146,7 @@ export default function CreateOrderPanel({ companyId, conversationId, contactId,
   const addProduct = async (p: any) => {
     if (p.has_variations) {
       setVariationFor(p)
-      const res = await fetch(`/api/orders/products?companyId=${companyId}&integrationId=${source.id}&productId=${p.id}`)
+      const res = await authFetch(`/api/orders/products?companyId=${companyId}&integrationId=${source.id}&productId=${p.id}`)
       const data = await res.json()
       setVariations(data.variations || [])
       return
@@ -185,7 +186,7 @@ export default function CreateOrderPanel({ companyId, conversationId, contactId,
     if (!couponCode.trim()) return
     setCouponError('')
     try {
-      const res = await fetch('/api/orders/coupon', {
+      const res = await authFetch('/api/orders/coupon', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ companyId, integrationId: source?.id, code: couponCode.trim(), subtotal, email: cust.email, productIds: items.map(i => i.product_id).filter(Boolean) }),
       })
@@ -201,7 +202,7 @@ export default function CreateOrderPanel({ companyId, conversationId, contactId,
     try {
       const billing = { first_name: cust.first_name, last_name: cust.last_name, email: cust.email, phone: cust.phone, address_1: cust.address_1, city: cust.city, state: cust.state, postcode: cust.postcode, company: cust.company, country: 'AU' }
       const shipping = cust.ship_same ? billing : { first_name: cust.first_name, last_name: cust.last_name, address_1: cust.ship_address_1, city: cust.ship_city, state: cust.ship_state, postcode: cust.ship_postcode, country: 'AU' }
-      const res = await fetch('/api/orders/create', {
+      const res = await authFetch('/api/orders/create', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           companyId, integrationId: source?.id, conversationId, contactId, source: source?.platform,

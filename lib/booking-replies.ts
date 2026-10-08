@@ -1,3 +1,4 @@
+import { internalHeaders } from '@/lib/internal-call'
 // Customers answering a booking reminder by text: "C" confirms, "R" gets the
 // reschedule link. Only kicks in when that number has a confirmed booking in
 // the next 3 days that was reminded — so a stray "C" in a normal chat is left
@@ -50,7 +51,7 @@ export async function handleBookingSmsReply(params: {
       await notifyCompany({ db, companyId, type: 'booking', conversationId, message: `🔁 ${b.customer_name || 'Customer'} wants to reschedule ${b.service_name}, ${when}` })
     }
     await fetch(`${origin}/api/telnyx/sms/send`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ companyId, conversationId, to: from, text: reply, senderName: company.name }),
     })
     return true

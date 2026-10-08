@@ -1,5 +1,6 @@
 'use client'
 
+import { authFetch } from '@/lib/auth-fetch'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 
@@ -27,7 +28,7 @@ export default function RegulatoryForm({ companyId, numberType, provider = 'teln
     // Prefill from any existing bundle
     ;(async () => {
       try {
-        const res = await fetch(`/api/${provider}/regulatory?companyId=${companyId}`)
+        const res = await authFetch(`/api/${provider}/regulatory?companyId=${companyId}`)
         const data = await res.json()
         if (data.bundle) setForm((f: any) => ({ ...f, ...data.bundle, number_type: numberType }))
       } catch {}
@@ -57,7 +58,7 @@ export default function RegulatoryForm({ companyId, numberType, provider = 'teln
     try {
       const proofUrl = await uploadProof()
       const payload = { ...form, companyId, number_type: numberType, proof_of_address_url: proofUrl, action: 'submit' }
-      const res = await fetch(`/api/${provider}/regulatory`, {
+      const res = await authFetch(`/api/${provider}/regulatory`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
       })
       const data = await res.json()

@@ -1,5 +1,6 @@
 'use client'
 
+import { authFetch } from '@/lib/auth-fetch'
 import { useCallback, useEffect, useState } from 'react'
 
 type Address = {
@@ -30,7 +31,7 @@ export default function CustomerAddresses({ contactId, canEdit = true, userName 
     if (!contactId) { setAddresses([]); return }
     setLoading(true)
     try {
-      const res = await fetch(`/api/contacts/addresses?contactId=${contactId}`)
+      const res = await authFetch(`/api/contacts/addresses?contactId=${contactId}`)
       const d = await res.json()
       setAddresses(d.addresses || [])
     } catch {} finally { setLoading(false) }
@@ -41,7 +42,7 @@ export default function CustomerAddresses({ contactId, canEdit = true, userName 
   const post = async (payload: any, key: string) => {
     setBusy(key)
     try {
-      await fetch('/api/contacts/addresses', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+      await authFetch('/api/contacts/addresses', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
       await load()
     } catch {} finally { setBusy(null) }
   }

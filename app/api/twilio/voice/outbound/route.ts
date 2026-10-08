@@ -1,3 +1,4 @@
+import { twilioSignatureOk } from '@/lib/twilio-signature'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { xmlEscape, twilioIdentity } from '@/lib/twilio-service'
@@ -73,6 +74,8 @@ async function handoffJoinTwiml(req: NextRequest, get: (k: string) => string): P
 //   companyId, conversationId – threaded through to the callbacks
 export async function POST(req: NextRequest) {
   const form = await req.formData()
+  // Only Twilio (signed with the account's auth token).
+  if (!(await twilioSignatureOk(req, form))) return new NextResponse('Forbidden', { status: 403 })
   const get = (k: string) => { const v = form.get(k); return v == null ? '' : String(v) }
 
   // Device handoff: a second device self-joining the live call's conference.

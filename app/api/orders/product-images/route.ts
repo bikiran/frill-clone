@@ -1,3 +1,4 @@
+import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { WooCommerceService } from '@/lib/woocommerce-service'
@@ -28,6 +29,7 @@ export async function POST(req: NextRequest) {
   try {
     const { companyId, skus } = await req.json()
     if (!companyId || !Array.isArray(skus) || skus.length === 0) return NextResponse.json({ images: {} })
+    if (!(await requireCompanyAccess(req, admin(), companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     const woo = await wooFor(companyId)
     if (!woo) return NextResponse.json({ images: {} })
     const images = await woo.imagesForSkus(skus.map(String))

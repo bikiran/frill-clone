@@ -1,5 +1,6 @@
 'use client'
 
+import { authFetch } from '@/lib/auth-fetch'
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
@@ -32,7 +33,7 @@ export default function AiSettingsPage() {
     if (!companyId) return
     setChecking(true)
     try {
-      const res = await fetch(`/api/ai/reply?companyId=${companyId}`)
+      const res = await authFetch(`/api/ai/reply?companyId=${companyId}`)
       setDiag(await res.json())
     } catch (e: any) { setDiag({ ok: false, error: e.message }) }
     finally { setChecking(false) }
@@ -68,7 +69,7 @@ export default function AiSettingsPage() {
   const loadIndex = async (cid: string) => {
     try {
       const { data: { session } } = await supabase.auth.getSession()
-      const res = await fetch(`/api/ai/index-knowledge?companyId=${cid}`, { headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {} })
+      const res = await authFetch(`/api/ai/index-knowledge?companyId=${cid}`, { headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {} })
       setIndex(await res.json())
     } catch {}
   }

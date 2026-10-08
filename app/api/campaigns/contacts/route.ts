@@ -1,3 +1,4 @@
+import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { isValidAuMobile } from '@/lib/campaign-audience'
@@ -25,6 +26,8 @@ export async function GET(req: NextRequest) {
     if (!companyId) return NextResponse.json({ error: 'Missing companyId' }, { status: 400 })
 
     const db = admin()
+    // Workspace members only.
+    if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     let query = db.from('contacts')
       .select('id, name, email, phone, is_blocked, subscribed_to_marketing, consent_basis, unsubscribed_at')
       .eq('company_id', companyId)

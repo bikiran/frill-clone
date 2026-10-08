@@ -1,3 +1,5 @@
+import { createClient } from '@supabase/supabase-js'
+import { memberOr403 } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { provisionCustomDomain } from '@/lib/provision-domain'
 
@@ -10,6 +12,14 @@ export const dynamic = 'force-dynamic'
 export async function GET(req: NextRequest) {
   const domain = req.nextUrl.searchParams.get('domain')
   if (!domain) return NextResponse.json({ verified: false, error: 'No domain' }, { status: 400 })
+  // Members only, for their own workspace (this registers domains on Colvy's
+  // Vercel project); a colvy.com subdomain must be the workspace's own.
+  const companyId = req.nextUrl.searchParams.get('companyId')
+  { const deny = await memberOr403(req, companyId); if (deny) return deny }
+  if (domain.toLowerCase().endsWith('.colvy.com')) {
+    const { data: co } = await (createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, { auth: { autoRefreshToken: false, persistSession: false } }) as any).from('companies').select('slug').eq('id', companyId).maybeSingle()
+    if (!co?.slug || domain.toLowerCase() !== `${String(co.slug).toLowerCase()}.colvy.com`) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+  }
   try {
     const r = await provisionCustomDomain(domain)
     return NextResponse.json({

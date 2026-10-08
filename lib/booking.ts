@@ -1,3 +1,4 @@
+import { internalHeaders } from '@/lib/internal-call'
 // Online booking & appointments — server core.
 //
 // Shared by the public booking API (/api/book), the customer's manage link
@@ -884,7 +885,7 @@ export async function customerMessage(db: any, company: any, settings: BookingSe
   if (settings.notify_sms && allow('sms') && b.customer_phone && !optedOut) {
     try {
       const r = await fetch(`${origin}/api/telnyx/sms/send`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ companyId: company.id, conversationId: b.conversation_id || undefined, to: b.customer_phone, text: sms[kind], senderName: business }),
       })
       sent.sms = r.ok

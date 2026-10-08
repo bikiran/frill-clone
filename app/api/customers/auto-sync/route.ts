@@ -1,3 +1,4 @@
+import { memberOr403 } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { autoSyncWooCommerceCustomers } from '@/lib/customer-sync-service'
 
@@ -16,6 +17,7 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       )
     }
+    { const deny = await memberOr403(req, companyId); if (deny) return deny }
 
     const result = await autoSyncWooCommerceCustomers(
       companyId,
@@ -47,6 +49,7 @@ export async function GET(req: NextRequest) {
         { status: 400 }
       )
     }
+    { const deny = await memberOr403(req, companyId); if (deny) return deny }
 
     // Just trigger a sync without force
     const result = await autoSyncWooCommerceCustomers(companyId, false)

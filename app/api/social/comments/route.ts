@@ -1,3 +1,5 @@
+import { isInternalCall } from '@/lib/internal-call'
+import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { admin, getFacebookChannel, replyToComment, setCommentHidden, privateReply, replyToIgComment, setIgCommentHidden } from '@/lib/social-sync'
 import { isIgLoginChannel, replyInstagramComment, hideInstagramComment, sendInstagramCommentPrivateReply } from '@/lib/instagram-login'
@@ -12,6 +14,8 @@ export async function POST(req: NextRequest) {
     const { companyId, action, commentId } = body
     if (!companyId || !action || !commentId) return NextResponse.json({ error: 'companyId, action and commentId required' }, { status: 400 })
     const db = admin()
+    // Workspace members only.
+    if (!isInternalCall(req) && !(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
 
     const { data: comment } = await db.from('social_comments').select('*').eq('id', commentId).eq('company_id', companyId).maybeSingle()
     if (!comment) return NextResponse.json({ error: 'Comment not found' }, { status: 404 })

@@ -1,10 +1,12 @@
+import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
 export async function GET(req: NextRequest) {
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { autoRefreshToken: false, persistSession: false } }
   )
 
   const { searchParams } = new URL(req.url)
@@ -14,6 +16,8 @@ export async function GET(req: NextRequest) {
   if (!companyId) {
     return NextResponse.json({ users: [] })
   }
+  // Workspace members only (team emails).
+  if (!(await requireCompanyAccess(req, supabase, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
 
   if (q.length < 1) {
     // Return all active members of the company, sorted by username

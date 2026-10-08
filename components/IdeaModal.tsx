@@ -1,5 +1,6 @@
 'use client'
 
+import { authFetch } from '@/lib/auth-fetch'
 import { useState, useEffect, useRef } from 'react'
 import ImageViewer from './ImageViewer'
 import { supabase } from '@/lib/supabase'
@@ -440,7 +441,7 @@ export default function IdeaModal({ onClose, onSubmitted }: {
     setAiError('')
     
     try {
-      const res = await fetch('/api/ai', {
+      const res = await authFetch('/api/ai', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ companyId, 

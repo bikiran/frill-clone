@@ -1,6 +1,8 @@
+import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { shortenUrl } from '@/lib/short-link'
+import { internalHeaders } from '@/lib/internal-call'
 
 function admin() {
   return createClient(
@@ -19,6 +21,7 @@ export async function POST(req: NextRequest) {
     if (!companyId || !paymentId) return NextResponse.json({ error: 'Missing companyId or paymentId' }, { status: 400 })
 
     const db = admin()
+    if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     const { data: pay } = await db.from('chat_payments').select('*').eq('id', paymentId).eq('company_id', companyId).maybeSingle()
     if (!pay) return NextResponse.json({ error: 'Payment not found' }, { status: 404 })
     if (pay.status !== 'pending') return NextResponse.json({ error: 'Only pending payments can be reminded' }, { status: 400 })
@@ -58,19 +61,19 @@ export async function POST(req: NextRequest) {
     try {
       if (channel === 'email' && email) {
         await fetch(`${base}/api/email/reply`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({ conversationId: pay.conversation_id, to: email, subject: conv?.subject || 'Payment reminder', content: text, agentName: senderName }),
         })
         sent = 'email'
       } else if (['facebook', 'instagram', 'messenger'].includes(channel)) {
         await fetch(`${base}/api/meta/send`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({ conversationId: pay.conversation_id, content: text, agentName: senderName }),
         })
         sent = channel
       } else if (phone) {
         await fetch(`${base}/api/telnyx/sms/send`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({ companyId, conversationId: pay.conversation_id, to: phone, text, senderName }),
         })
         sent = 'sms'

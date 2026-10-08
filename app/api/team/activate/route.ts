@@ -45,8 +45,11 @@ export async function POST(req: NextRequest) {
     }
 
     const email = user.email.toLowerCase()
+    // Only an open invitation: a removed member must not be able to switch
+    // themselves back on by opening an old link.
     const { data: rows } = await (db as any).from('team_members')
-      .select('*').ilike('email', email).order('created_at', { ascending: false })
+      .select('*').ilike('email', email).in('status', ['invited', 'pending'])
+      .order('created_at', { ascending: false })
     const invite = (rows || []).find((r: any) => companyId && r.company_id === companyId)
       || (rows || []).find((r: any) => r.company_id == null)
       || (rows || [])[0]
@@ -55,7 +58,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Invitation not found. Ask your inviter to resend it.' }, { status: 404 })
     }
 
-    const patch: any = { status: 'active', user_id: user.id, joined_at: new Date().toISOString() }
+    const patch: any = { status: 'active', user_id: user.id, joined_at: new Date().toISOString(), invite_token_hash: null }
     // Backfill the company link when the invite was written without one.
     if (invite.company_id == null && companyId) patch.company_id = companyId
 

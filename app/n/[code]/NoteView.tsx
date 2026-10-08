@@ -1,5 +1,6 @@
 'use client'
 
+import { authFetch } from '@/lib/auth-fetch'
 import { useEffect, useRef, useState } from 'react'
 import RichTextEditor from '@/components/RichTextEditor'
 
@@ -42,7 +43,7 @@ export default function NoteView({ code, accent, allowEdit, initialBody, initial
     clearTimeout(timer.current)
     timer.current = setTimeout(async () => {
       try {
-        const res = await fetch('/api/notes/public', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code, body: p.body, checklist: p.list, editor: who }) })
+        const res = await authFetch('/api/notes/public', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code, body: p.body, checklist: p.list, editor: who }) })
         if (res.ok) { setStatus('Saved'); setLog(l => { const last = l[l.length - 1]; const e = { name: who.name, email: who.email, at: new Date().toISOString() }; return (last && last.name === who.name && last.email === who.email) ? [...l.slice(0, -1), e] : [...l, e] }) }
         else setStatus('Couldn’t save')
       } catch { setStatus('Couldn’t save') }

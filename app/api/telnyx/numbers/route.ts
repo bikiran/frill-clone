@@ -1,3 +1,4 @@
+import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
@@ -15,6 +16,8 @@ export async function GET(req: NextRequest) {
     const companyId = req.nextUrl.searchParams.get('companyId')
     if (!companyId) return NextResponse.json({ error: 'Missing companyId' }, { status: 400 })
     const db = admin()
+    // Workspace members only.
+    if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     const { data: numbers } = await db.from('phone_numbers')
       .select('*').eq('company_id', companyId).neq('status', 'released')
       .order('is_primary', { ascending: false }).order('created_at', { ascending: true })
@@ -32,6 +35,8 @@ export async function PATCH(req: NextRequest) {
     const { numberId, companyId, locationId, isPrimary, label } = await req.json()
     if (!numberId || !companyId) return NextResponse.json({ error: 'Missing numberId or companyId' }, { status: 400 })
     const db = admin()
+    // Workspace members only, and only on the workspace's own numbers and outlets.
+    if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
 
     const patch: any = { updated_at: new Date().toISOString() }
     if (locationId !== undefined) patch.location_id = locationId || null
@@ -41,13 +46,13 @@ export async function PATCH(req: NextRequest) {
       await db.from('phone_numbers').update({ is_primary: false }).eq('company_id', companyId)
       patch.is_primary = true
     }
-    await db.from('phone_numbers').update(patch).eq('id', numberId)
+    await db.from('phone_numbers').update(patch).eq('id', numberId).eq('company_id', companyId)
 
     // Keep the location's back-reference in sync
     if (locationId !== undefined) {
       // Clear this number from any other location first
-      await db.from('company_locations').update({ phone_number_id: null }).eq('phone_number_id', numberId)
-      if (locationId) await db.from('company_locations').update({ phone_number_id: numberId }).eq('id', locationId)
+      await db.from('company_locations').update({ phone_number_id: null }).eq('phone_number_id', numberId).eq('company_id', companyId)
+      if (locationId) await db.from('company_locations').update({ phone_number_id: numberId }).eq('id', locationId).eq('company_id', companyId)
     }
 
     return NextResponse.json({ ok: true })
@@ -62,6 +67,9 @@ export async function DELETE(req: NextRequest) {
     const numberId = req.nextUrl.searchParams.get('numberId')
     if (!numberId) return NextResponse.json({ error: 'Missing numberId' }, { status: 400 })
     const db = admin()
+    // Members of the workspace that owns the number.
+    const { data: num } = await db.from('phone_numbers').select('company_id').eq('id', numberId).maybeSingle()
+    if (!num || !(await requireCompanyAccess(req, db, num.company_id)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     await db.from('phone_numbers').update({ status: 'released', is_primary: false, updated_at: new Date().toISOString() }).eq('id', numberId)
     await db.from('company_locations').update({ phone_number_id: null }).eq('phone_number_id', numberId)
     return NextResponse.json({ ok: true })

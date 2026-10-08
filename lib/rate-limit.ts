@@ -1,3 +1,4 @@
+import { isInternalCall } from '@/lib/internal-call'
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 import { companyHasFeature, effectivePlan } from './plan'
@@ -68,6 +69,7 @@ export async function guardAiRequest(
   companyId: string | null | undefined,
   endpoint = 'ai',
   requireAiPlan = true,
+  publicOk = false,
 ): Promise<GuardResult> {
   // 1. No company, no service. These endpoints previously accepted anything.
   if (!companyId) {
@@ -77,6 +79,17 @@ export async function guardAiRequest(
         { error: 'companyId is required' },
         { status: 400 },
       ),
+    }
+  }
+
+  // 1b. Who's asking. These spend the business's AI quota and our model credits,
+  // so they're for its team (or our own server), except the few public uses that
+  // pass publicOk (text tidy-up on the public board / widget, a public form's
+  // card scan), which still get the burst and daily limits below.
+  if (!publicOk && !isInternalCall(req)) {
+    const { requireCompanyAccess } = await import('@/lib/company-access')
+    if (!(await requireCompanyAccess(req, admin(), companyId)).ok) {
+      return { ok: false, response: NextResponse.json({ error: 'Not authorized' }, { status: 403 }) }
     }
   }
 

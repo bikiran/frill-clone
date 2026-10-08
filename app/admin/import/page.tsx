@@ -1,5 +1,6 @@
 'use client'
 
+import { authFetch } from '@/lib/auth-fetch'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
@@ -241,7 +242,7 @@ export default function ImportPage() {
     setLoading(true)
     setError('')
     try {
-      const res = await fetch('/api/import/analyze', {
+      const res = await authFetch('/api/import/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url, platform: detected.id, credentials }),
@@ -288,7 +289,7 @@ export default function ImportPage() {
     }, 600)
 
     try {
-      const res = await fetch('/api/import/run', {
+      const res = await authFetch('/api/import/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

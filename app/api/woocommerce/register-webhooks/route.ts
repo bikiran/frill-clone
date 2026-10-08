@@ -1,3 +1,5 @@
+import { wooIntegrationSecret } from '@/lib/woo-webhook'
+import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { WooCommerceService } from '@/lib/woocommerce-service'
@@ -18,6 +20,8 @@ export async function POST(req: NextRequest) {
     const { companyId } = await req.json()
     if (!companyId) return NextResponse.json({ error: 'companyId required' }, { status: 400 })
     const db = admin()
+    // Workspace members only.
+    if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
 
     const { data: integs } = await db
       .from('woocommerce_integrations')
@@ -40,7 +44,8 @@ export async function POST(req: NextRequest) {
           consumerKey: integ.consumer_key,
           consumerSecret: integ.consumer_secret,
         })
-        const results = await woo.ensureColvyWebhooks(deliveryUrl)
+        // Each store's webhooks are signed with its own secret.
+        const results = await woo.ensureColvyWebhooks(deliveryUrl, wooIntegrationSecret(integ.id))
         summary.push({ store: integ.store_url, deliveryUrl, results })
       } catch (e: any) {
         summary.push({ store: integ.store_url, error: e.message })

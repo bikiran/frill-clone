@@ -7,6 +7,7 @@ import { supabase } from './supabase'
 export async function getVoiceProvider(companyId: string): Promise<'telnyx' | 'twilio'> {
   try {
     const { data } = await (supabase as any).from('companies').select('voice_provider').eq('id', companyId).maybeSingle()
-    return data?.voice_provider === 'twilio' ? 'twilio' : 'telnyx'
-  } catch { return 'telnyx' }
+    // Twilio unless a company is still explicitly on legacy Telnyx.
+    return data?.voice_provider === 'telnyx' ? 'telnyx' : 'twilio'
+  } catch { return 'twilio' }
 }

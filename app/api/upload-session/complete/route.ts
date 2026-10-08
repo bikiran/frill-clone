@@ -22,6 +22,14 @@ export async function POST(req: NextRequest) {
     const { data: session } = await db.from('upload_sessions')
       .select('*').eq('token', token).maybeSingle()
     if (!session) return NextResponse.json({ error: 'This upload link is not valid.' }, { status: 404 })
+    // The link must still be live, and the file must be in this workspace's area
+    // of the gallery (any path used to be accepted, another workspace's included).
+    if (session.expires_at && new Date(session.expires_at).getTime() < Date.now()) {
+      return NextResponse.json({ error: 'This upload link has expired.' }, { status: 410 })
+    }
+    if (typeof path !== 'string' || !path.startsWith(`${session.company_id}/`) || path.includes('..')) {
+      return NextResponse.json({ error: 'Invalid file path' }, { status: 400 })
+    }
 
     const kind = String(contentType || '').startsWith('video/') ? 'video'
       : String(contentType || '').startsWith('image/') ? 'image'

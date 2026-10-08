@@ -1,3 +1,4 @@
+import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { notifyCompany } from '@/lib/notify'
@@ -105,6 +106,20 @@ export async function POST(req: NextRequest) {
     if (!companyId) return NextResponse.json({ error: 'Missing company id (x-company-id header or ?company=)' }, { status: 400 })
     const body = await req.json()
     const db = admin()
+
+    // The store's plugin key (companies.api_key, sent as X-Colvy-Key by plugin
+    // 3.0.3+). A wrong key is always refused; a missing one is logged and let
+    // through until CART_KEY_VERIFY=enforce, so stores on older plugins keep
+    // working until they update.
+    {
+      const key = req.headers.get('x-colvy-key') || ''
+      const { data: co } = await db.from('companies').select('api_key').eq('id', companyId).maybeSingle()
+      if (!co) return NextResponse.json({ error: 'Unknown company' }, { status: 404 })
+      if (key ? key !== co.api_key : (process.env.CART_KEY_VERIFY || '').toLowerCase() === 'enforce') {
+        return NextResponse.json({ error: 'Invalid or missing plugin key' }, { status: 401 })
+      }
+      if (!key) console.warn('[abandoned-carts] cart without a plugin key for company', companyId)
+    }
 
     // Diagnostic breadcrumb: record that a POST arrived (even if later rejected),
     // so ?diag=1 can confirm the WooCommerce bridge is actually reaching Colvy.
@@ -278,6 +293,8 @@ export async function GET(req: NextRequest) {
     const phone = req.nextUrl.searchParams.get('phone')
     if (!companyId) return NextResponse.json({ error: 'Missing companyId' }, { status: 400 })
     const db = admin()
+    // Workspace members only (customer names, emails, phones and addresses).
+    if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
 
     // Diagnostic: ?diag=1 returns recent carts + counts so you can verify the
     // bridge is delivering, without needing a matching contact.

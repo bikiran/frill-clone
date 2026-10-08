@@ -1,3 +1,4 @@
+import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
@@ -25,6 +26,13 @@ export async function POST(req: NextRequest) {
     if (!b.companyId) return NextResponse.json({ error: 'companyId required' }, { status: 400 })
 
     const db = admin()
+    // Members only; the chat and customer must be the workspace's own.
+    if (!(await requireCompanyAccess(req, db, b.companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+    for (const [table, rid] of [['conversations', b.conversationId], ['contacts', b.contactId]] as const) {
+      if (!rid || typeof rid !== 'string') continue
+      const { data: row } = await db.from(table).select('company_id').eq('id', rid).maybeSingle()
+      if (row && row.company_id !== b.companyId) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+    }
     const { error } = await db.from('shipments').insert({
       company_id: b.companyId,
       conversation_id: uuidOrNull(b.conversationId),

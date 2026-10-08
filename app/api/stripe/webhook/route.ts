@@ -1,3 +1,4 @@
+import { internalHeaders } from '@/lib/internal-call'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { logWebhookEvent } from '@/lib/webhook-log'
@@ -20,9 +21,13 @@ export async function POST(req: NextRequest) {
 
     let event: any
     try {
-      event = STRIPE_WEBHOOK_SECRET
-        ? stripe.webhooks.constructEvent(body, sig, STRIPE_WEBHOOK_SECRET)
-        : JSON.parse(body)
+      // Always verified. Without the secret this used to accept any JSON, so a
+      // forged "checkout completed" could mark payments paid or buy numbers.
+      if (!STRIPE_WEBHOOK_SECRET) {
+        console.error('[stripe/webhook] STRIPE_WEBHOOK_SECRET is not set; rejecting the event')
+        return NextResponse.json({ error: 'Webhook secret not configured' }, { status: 500 })
+      }
+      event = stripe.webhooks.constructEvent(body, sig, STRIPE_WEBHOOK_SECRET)
     } catch (err: any) {
       await logWebhookEvent({ source: 'stripe', status: 'rejected', error: 'signature verification failed' })
       return NextResponse.json({ error: 'Webhook signature failed' }, { status: 400 })
@@ -226,9 +231,9 @@ export async function POST(req: NextRequest) {
             const origin = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
             // Provision on whichever carrier this purchase was for. Both endpoints
             // take the same shape; the customer never learns which one ran.
-            const prov = meta.provider === 'twilio' ? 'twilio' : 'telnyx'
+            const prov = meta.provider === 'telnyx' ? 'telnyx' : 'twilio'
             await fetch(`${origin}/api/${prov}/number`, {
-              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
               body: JSON.stringify({
                 companyId: meta.companyId,
                 phoneNumber: meta.phoneNumber || undefined,

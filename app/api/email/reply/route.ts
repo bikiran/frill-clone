@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { sendGmail, sanitizeEmailHtml } from '@/lib/gmail'
 import { isExternalSendBlocked, DEMO_BLOCK_MESSAGE, logBlockedSend } from '@/lib/demo-guard'
+import { requireCompanyAccess } from '@/lib/company-access'
+import { isInternalCall } from '@/lib/internal-call'
 
 export const dynamic = 'force-dynamic'
 
@@ -32,6 +34,11 @@ export async function POST(req: NextRequest) {
 
     const { data: conv } = await db.from('conversations').select('*').eq('id', conversationId).maybeSingle()
     if (!conv) return NextResponse.json({ error: 'Conversation not found' }, { status: 404 })
+    // Sends from the workspace's own mailbox, so only its members (Bearer) or our
+    // own server routes (scheduler, reminders, notifications) may call it.
+    if (!isInternalCall(req) && !(await requireCompanyAccess(req, db, conv.company_id)).ok) {
+      return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+    }
     if (await isExternalSendBlocked(conv.company_id, db)) { logBlockedSend(conv.company_id, 'email', db); return NextResponse.json({ error: DEMO_BLOCK_MESSAGE }, { status: 403 }) }
 
     // Recipient = the composer's To field, falling back to the contact's email.

@@ -1,3 +1,5 @@
+import { cronOr401 } from '@/lib/cron-auth'
+import { internalHeaders } from '@/lib/internal-call'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { notifyCompany } from '@/lib/notify'
@@ -18,13 +20,14 @@ const admin = () => createClient(
  * switched on. Each event is only ever announced once — a reminder that nags
  * every few minutes is worse than no reminder at all.
  *
- * Vercel Hobby can't run frequent crons, so this is called opportunistically
- * while an admin has the app open (throttled), and can also be hit manually.
+ * Vercel Cron runs it every ten minutes (vercel.json); CRON_SECRET guards it.
  */
 export async function GET(req: NextRequest) { return run(req) }
 export async function POST(req: NextRequest) { return run(req) }
 
 async function run(req: NextRequest) {
+  const denied = cronOr401(req)
+  if (denied) return denied
   try {
     const db = admin()
     const now = new Date()
@@ -136,7 +139,7 @@ async function run(req: NextRequest) {
               if (mem?.phone) {
                 const origin = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
                 await fetch(`${origin}/api/telnyx/sms/send`, {
-                  method: 'POST', headers: { 'Content-Type': 'application/json' },
+                  method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
                   body: JSON.stringify({ companyId, to: mem.phone, text: line, skipChatMessage: true }),
                 })
               }
@@ -157,7 +160,7 @@ async function run(req: NextRequest) {
                 const origin = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
                 if (ct.phone) {
                   await fetch(`${origin}/api/telnyx/sms/send`, {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
                     body: JSON.stringify({ companyId, to: ct.phone, text: custLine, skipChatMessage: true }),
                   })
                 }

@@ -1,4 +1,5 @@
-// Which provider sends/receives SMS for a company — Telnyx (default) or Twilio.
+// Which provider sends/receives SMS for a company — Twilio (default) or, for
+// legacy rows, Telnyx.
 //
 // Both integrations can be configured at once; companies.sms_provider decides
 // which is live. This resolver hands back a single uniform `send()` so callers
@@ -61,14 +62,14 @@ export function explainSmsFailure(raw: unknown): string {
   return msg
 }
 
-/** The company's chosen SMS provider, defaulting to Telnyx (and tolerant of the
- *  sms_provider column not existing yet on an un-migrated database). */
+/** The company's SMS provider. Colvy runs on Twilio; Telnyx is legacy and only
+ *  used when a company is still explicitly set to it (V338 moves them all). */
 export async function getSmsProvider(db: any, companyId: string): Promise<SmsProvider> {
   try {
     const { data } = await db.from('companies').select('sms_provider').eq('id', companyId).maybeSingle()
-    if (data?.sms_provider === 'twilio') return 'twilio'
+    if (data?.sms_provider === 'telnyx') return 'telnyx'
   } catch { /* column missing → default */ }
-  return 'telnyx'
+  return 'twilio'
 }
 
 // Wrap a sender so every send passes the plan/allowance gate first and a

@@ -1,3 +1,4 @@
+import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { TwilioService, twilioIdentity, xmlEscape } from '@/lib/twilio-service'
@@ -60,6 +61,8 @@ export async function POST(req: NextRequest) {
     }
 
     const db = admin()
+    // Workspace members only.
+    if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     const { data: rows } = callId
       ? await db.from('calls').select('*').eq('company_id', companyId).eq('id', callId).limit(1)
       : await db.from('calls').select('*').eq('company_id', companyId)

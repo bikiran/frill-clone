@@ -1,3 +1,4 @@
+import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
@@ -25,6 +26,8 @@ export async function POST(req: NextRequest) {
     const authHeader = req.headers.get('authorization') || ''
     const token = authHeader.replace('Bearer ', '')
     const db = admin()
+    // Workspace members only.
+    if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     let userId: string | null = null
     if (token) {
       const { data } = await db.auth.getUser(token)

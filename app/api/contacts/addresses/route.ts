@@ -1,3 +1,4 @@
+import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { linkedContacts } from '@/lib/identity'
@@ -23,6 +24,8 @@ export async function GET(req: NextRequest) {
     const { data: contact } = await db.from('contacts').select('*').eq('id', contactId).maybeSingle()
     if (!contact) return NextResponse.json({ addresses: [] })
     const companyId = contact.company_id
+    // Members of the contact's workspace only.
+    if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
 
     // Resolve linked identities to gather orders across channels.
     const linked = await linkedContacts(db, contactId)
@@ -56,6 +59,21 @@ export async function POST(req: NextRequest) {
     const body = await req.json()
     const db = admin()
     const action = body.action
+    // Members of the workspace that owns the address (or the contact, for add).
+    {
+      let owner: string | null = null
+      if (action === 'add') {
+        const { data } = await db.from('contacts').select('company_id').eq('id', body.contactId).maybeSingle()
+        owner = data?.company_id || null
+      } else if (body.addressId) {
+        const { data } = await db.from('contact_addresses').select('contact_id').eq('id', body.addressId).maybeSingle()
+        if (data?.contact_id) {
+          const { data: c } = await db.from('contacts').select('company_id').eq('id', data.contact_id).maybeSingle()
+          owner = c?.company_id || null
+        }
+      }
+      if (!owner || !(await requireCompanyAccess(req, db, owner)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+    }
 
     if (action === 'set-default') {
       const { data: addr } = await db.from('contact_addresses').select('contact_id').eq('id', body.addressId).maybeSingle()

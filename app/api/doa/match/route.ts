@@ -1,3 +1,4 @@
+import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
@@ -19,6 +20,8 @@ export async function GET(req: NextRequest) {
     if (!companyId || (!email && !phone)) return NextResponse.json({ match: false })
 
     const db = admin()
+    // Workspace members only.
+    if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     // Check WooCommerce customers first (DOA refunds run against WooCommerce)
     if (email) {
       const { data } = await db.from('woocommerce_customers').select('id').eq('company_id', companyId).ilike('email', email).limit(1)

@@ -1,5 +1,6 @@
 'use client'
 
+import { authFetch } from '@/lib/auth-fetch'
 import { useState, useEffect } from 'react'
 
 // Shows one person's entire history across every channel — live chat, SMS,
@@ -34,7 +35,7 @@ export default function ContactTimeline({ contactId, contactName, onClose }: { c
   useEffect(() => {
     ;(async () => {
       try {
-        const res = await fetch(`/api/contacts/timeline?contactId=${contactId}`)
+        const res = await authFetch(`/api/contacts/timeline?contactId=${contactId}`)
         const d = await res.json()
         setMessages(d.messages || [])
         setActivity(d.activity || [])

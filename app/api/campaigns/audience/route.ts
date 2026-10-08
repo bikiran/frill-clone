@@ -1,3 +1,4 @@
+import { memberOr403 } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { resolveAudience, AudienceFilter } from '@/lib/campaign-audience'
 
@@ -16,6 +17,8 @@ export async function POST(req: NextRequest) {
     if (!companyId || !filter?.type) {
       return NextResponse.json({ error: 'Missing companyId or filter' }, { status: 400 })
     }
+    // Workspace members only (this lists customers' contact details).
+    { const deny = await memberOr403(req, companyId); if (deny) return deny }
 
     const result = await resolveAudience(
       companyId,

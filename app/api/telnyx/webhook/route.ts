@@ -1,3 +1,5 @@
+import { telnyxSignatureOk } from '@/lib/telnyx-signature'
+import { internalHeaders } from '@/lib/internal-call'
 import { NextRequest, NextResponse } from 'next/server'
 import { log } from '@/lib/log'
 import { createClient } from '@supabase/supabase-js'
@@ -41,7 +43,10 @@ async function companyFromConnection(db: any, connId: string | null | undefined)
 //   https://<your-domain>/api/telnyx/webhook
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json()
+    const rawBody = await req.text()
+    // Only Telnyx (Ed25519-signed; see lib/telnyx-signature.ts).
+    if (!telnyxSignatureOk(req, rawBody)) return NextResponse.json({ error: 'Invalid signature' }, { status: 403 })
+    const body = JSON.parse(rawBody || '{}')
     const event = body?.data
     const eventType: string = event?.event_type || ''
     const db = admin()
@@ -357,11 +362,11 @@ export async function POST(req: NextRequest) {
         // Alert agents' phones
         try {
           const origin = req.headers.get('host') ? `${req.headers.get('x-forwarded-proto') || 'https'}://${req.headers.get('host')}` : (process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com')
-          fetch(`${origin}/api/push/send`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, title: `New SMS from ${from}`, body: summary, conversationId: conv.id }) })
+          fetch(`${origin}/api/push/send`, { method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ companyId, title: `New SMS from ${from}`, body: summary, conversationId: conv.id }) })
           fetch(`${origin}/api/inbox/smart-trigger`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ conversationId: conv.id, text }) })
           // Colvy AI: extract the sender's name/suburb and create/link their
           // contact (fire-and-forget — never delays ingestion).
-          if (text) fetch(`${origin}/api/inbox/capture-contact`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, conversationId: conv.id, from, text }) })
+          if (text) fetch(`${origin}/api/inbox/capture-contact`, { method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ companyId, conversationId: conv.id, from, text }) })
         } catch {}
 
         // "C" / "R" answering a booking reminder takes priority over keyword rules.
@@ -394,7 +399,7 @@ export async function POST(req: NextRequest) {
         // Nothing canned answered it → Colvy AI (only if switched on for SMS;
         // the agent checks). It shows live in the inbox with a countdown.
         if (!bookingHandled && !keywordAnswered && text) {
-          try { fetch(`${req.nextUrl.origin}/api/ai/reply`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ conversationId: conv.id, companyId }) }) } catch {}
+          try { fetch(`${req.nextUrl.origin}/api/ai/reply`, { method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ conversationId: conv.id, companyId }) }) } catch {}
         }
 
         // Auto-reply to a failed media attempt: text the customer a secure upload
@@ -410,7 +415,7 @@ export async function POST(req: NextRequest) {
             if (!recentReq || recentReq.length === 0) {
               const origin = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
               const mr = await fetch(`${origin}/api/media-requests`, {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
                 body: JSON.stringify({
                   companyId, conversationId: conv.id, contactId: conv.contact_id || matchedContactId || null,
                   prompt: 'It looks like you tried to send us a photo or video. Please upload it here.',
@@ -1121,7 +1126,7 @@ export async function POST(req: NextRequest) {
             try {
               fetch(`${req.nextUrl.origin}/api/telnyx/transcribe`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: internalHeaders({ 'Content-Type': 'application/json' }),
                 body: JSON.stringify({
                   callId: recRow.id,
                   companyId: recRow.company_id,

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { requireCompanyAccess } from '@/lib/company-access'
 
 export const dynamic = 'force-dynamic'
 
@@ -13,6 +14,14 @@ const admin = () => createClient(
   { auth: { autoRefreshToken: false, persistSession: false } }
 )
 
+// The caller may only read or write their OWN preferences, in a workspace they
+// belong to. Both used to be open: anyone could read or overwrite any user's
+// saved views and defaults by passing their userId.
+async function allowed(req: NextRequest, db: any, userId: string, companyId: string) {
+  const access = await requireCompanyAccess(req, db, companyId)
+  return access.ok && access.userId === userId
+}
+
 const missing = (msg?: string) => !!msg && /does not exist|schema cache|relation .* does not exist/i.test(msg)
 
 export async function GET(req: NextRequest) {
@@ -22,6 +31,7 @@ export async function GET(req: NextRequest) {
   if (!userId || !companyId) return NextResponse.json({ error: 'userId and companyId required' }, { status: 400 })
   try {
     const db = admin()
+    if (!(await allowed(req, db, userId, companyId))) return NextResponse.json({ error: 'Not authorized', prefs: {} }, { status: 403 })
     let query = db.from('user_preferences').select('key, value').eq('user_id', userId).eq('company_id', companyId)
     if (key) query = query.eq('key', key)
     const { data, error } = await query
@@ -39,6 +49,7 @@ export async function POST(req: NextRequest) {
     const { userId, companyId, key, value } = await req.json()
     if (!userId || !companyId || !key) return NextResponse.json({ error: 'userId, companyId and key required' }, { status: 400 })
     const db = admin()
+    if (!(await allowed(req, db, userId, companyId))) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     const { error } = await db.from('user_preferences')
       .upsert({ user_id: userId, company_id: companyId, key, value: value ?? {}, updated_at: new Date().toISOString() }, { onConflict: 'user_id,company_id,key' })
     if (error && !missing(error.message)) throw error

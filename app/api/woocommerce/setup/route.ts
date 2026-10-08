@@ -1,3 +1,4 @@
+import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { WooCommerceService } from '@/lib/woocommerce-service'
@@ -16,6 +17,11 @@ export async function POST(req: NextRequest) {
         { error: 'Missing company ID or store URL' },
         { status: 400 }
       )
+    }
+    // Workspace members only.
+    {
+      const gateDb = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL || '', process.env.SUPABASE_SERVICE_ROLE_KEY || '')
+      if (!(await requireCompanyAccess(req, gateDb, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     }
 
     // For new integrations, require both keys
@@ -42,13 +48,15 @@ export async function POST(req: NextRequest) {
       
       const { data: existing, error: fetchError } = await sb
         .from('woocommerce_integrations')
-        .select('consumer_key, consumer_secret')
+        .select('consumer_key, consumer_secret, store_url')
         .eq('company_id', companyId)
+        .eq('store_url', normalizedUrl)
         .maybeSingle()
       
       if (!existing) {
+        // The saved keys are only ever sent to the store they were saved for.
         return NextResponse.json(
-          { error: 'WooCommerce integration not found. Please configure it first.' },
+          { error: 'Enter the consumer key and secret again to connect this store address.' },
           { status: 400 }
         )
       }
@@ -147,6 +155,11 @@ export async function GET(req: NextRequest) {
     if (!companyId) {
       return NextResponse.json({ error: 'Missing companyId' }, { status: 400 })
     }
+    // Workspace members only.
+    {
+      const gateDb = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL || '', process.env.SUPABASE_SERVICE_ROLE_KEY || '')
+      if (!(await requireCompanyAccess(req, gateDb, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+    }
 
     // Lazy load Supabase
     const supabase = createClient(
@@ -186,6 +199,11 @@ export async function DELETE(req: NextRequest) {
 
     if (!companyId) {
       return NextResponse.json({ error: 'Missing companyId' }, { status: 400 })
+    }
+    // Workspace members only.
+    {
+      const gateDb = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL || '', process.env.SUPABASE_SERVICE_ROLE_KEY || '')
+      if (!(await requireCompanyAccess(req, gateDb, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     }
 
     // Lazy load Supabase

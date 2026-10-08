@@ -6,6 +6,7 @@
 // resolveSmsSender, so whichever provider owns the company answers on its own
 // carrier — a Twilio company never tries to reply with a Telnyx key.
 
+import { internalHeaders } from '@/lib/internal-call'
 import { notifyCompany } from './notify'
 import { runKeywordReply } from './keyword-reply'
 import { resolveSmsSender } from './sms-provider'
@@ -174,14 +175,14 @@ export async function ingestInboundSms(params: {
   }
   if (!senderLabel || /^\+?\d[\d\s-]*$/.test(senderLabel)) senderLabel = from
   try {
-    fetch(`${origin}/api/push/send`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, title: `New SMS from ${senderLabel}`, body: summary, conversationId: conv.id, from }) })
+    fetch(`${origin}/api/push/send`, { method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ companyId, title: `New SMS from ${senderLabel}`, body: summary, conversationId: conv.id, from }) })
     fetch(`${origin}/api/inbox/smart-trigger`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ conversationId: conv.id, text }) })
     // Colvy AI: extract the sender's name/suburb and create/link their contact.
     // Fire-and-forget so the LLM call never delays ingestion.
-    if (text) fetch(`${origin}/api/inbox/capture-contact`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, conversationId: conv.id, from, text }) })
+    if (text) fetch(`${origin}/api/inbox/capture-contact`, { method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ companyId, conversationId: conv.id, from, text }) })
     // Detect language + translate to English (fire-and-forget) so a non-English
     // text shows a "Translated · English / View original" toggle in the inbox.
-    if (text && insertedMsg?.id) fetch(`${origin}/api/inbox/translate-message`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messageId: insertedMsg.id }) })
+    if (text && insertedMsg?.id) fetch(`${origin}/api/inbox/translate-message`, { method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ messageId: insertedMsg.id }) })
   } catch {}
 
   // "C" / "R" answering a booking reminder — confirm, or send the reschedule link.
@@ -203,7 +204,7 @@ export async function ingestInboundSms(params: {
   // Nothing canned answered it → Colvy AI (only if the business switched AI on
   // for SMS; the agent checks). It shows live in the inbox with a countdown.
   if (!bookingHandled && !keywordAnswered && text) {
-    try { fetch(`${origin}/api/ai/reply`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ conversationId: conv.id, companyId }) }) } catch {}
+    try { fetch(`${origin}/api/ai/reply`, { method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ conversationId: conv.id, companyId }) }) } catch {}
   }
 
   // Failed-media hint auto-reply (only fires when a media attempt truly failed;
@@ -216,7 +217,7 @@ export async function ingestInboundSms(params: {
         .eq('message_type', 'media_request').gte('created_at', sixHoursAgo).limit(1)
       if (!recentReq || recentReq.length === 0) {
         const mr = await fetch(`${origin}/api/media-requests`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({
             companyId, conversationId: conv.id, contactId: conv.contact_id || matchedContactId || null,
             prompt: 'It looks like you tried to send us a photo or video. Please upload it here.',

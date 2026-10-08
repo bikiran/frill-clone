@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { requireCompanyAccess } from '@/lib/company-access'
+import { requireCompanyAccess, isStaffMember } from '@/lib/company-access'
 import { emitTicketEvent } from '@/lib/integration-hooks'
 
 export const dynamic = 'force-dynamic'
@@ -42,7 +42,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
       else {
         // Only someone in this company: a teammate or the owner.
         const uid = String(b.assigned_to)
-        const { data: tm } = await db.from('team_members').select('id').eq('company_id', ticket.company_id).eq('user_id', uid).limit(1)
+        const tm = (await isStaffMember(db, ticket.company_id, uid)) ? [{ id: true }] : []
         const { data: co } = await db.from('companies').select('owner_id').eq('id', ticket.company_id).maybeSingle()
         if (!tm?.length && co?.owner_id !== uid) return NextResponse.json({ error: 'That person isn’t on this team' }, { status: 400 })
         patch.assigned_to = uid

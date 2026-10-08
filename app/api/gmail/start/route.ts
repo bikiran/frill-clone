@@ -1,3 +1,4 @@
+import { readValue, signValue, safeReturn } from '@/lib/oauth-state'
 import { NextRequest, NextResponse } from 'next/server'
 
 export const dynamic = 'force-dynamic'
@@ -11,6 +12,12 @@ export async function GET(req: NextRequest) {
   const returnTo = req.nextUrl.searchParams.get('returnTo') || ''
   if (!companyId) return NextResponse.json({ error: 'companyId required' }, { status: 400 })
 
+  // Only a member of this workspace can start a connection (see lib/oauth-state).
+  const ticket = readValue(req.nextUrl.searchParams.get('ticket'), 'ticket')
+  if (!ticket || ticket.purpose !== 'gmail' || ticket.companyId !== companyId) {
+    return NextResponse.json({ error: 'Open the integration page and press Connect again.' }, { status: 401 })
+  }
+
   const clientId = process.env.GOOGLE_CLIENT_ID || process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID
   if (!clientId) {
     return NextResponse.json({ error: 'Google is not configured (GOOGLE_CLIENT_ID missing).' }, { status: 500 })
@@ -18,7 +25,7 @@ export async function GET(req: NextRequest) {
 
   const base = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
   const redirectUri = `${base}/api/gmail/callback`
-  const state = Buffer.from(JSON.stringify({ companyId, locationId, returnTo })).toString('base64url')
+  const state = signValue({ kind: 'state', purpose: 'gmail', companyId, userId: ticket.userId, locationId, returnTo: safeReturn(returnTo) }, 30 * 60 * 1000)
 
   const params = new URLSearchParams({
     client_id: clientId,

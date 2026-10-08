@@ -1,3 +1,6 @@
+import { cronOr401 } from '@/lib/cron-auth'
+import { isInternalCall } from '@/lib/internal-call'
+import { internalHeaders } from '@/lib/internal-call'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { holidaySet, wallClock, isBlockedDay, nextOpenSlot } from '@/lib/holidays'
@@ -13,8 +16,8 @@ const admin = () => createClient(
   { auth: { autoRefreshToken: false, persistSession: false } }
 )
 
-// Sends any review requests whose delay has elapsed. Call this on a schedule
-// (Vercel Cron: /api/reviews/dispatch every 15 min, or hourly).
+// Sends any review requests whose delay has elapsed. Vercel Cron runs it every
+// ten minutes (vercel.json); CRON_SECRET guards it.
 //
 // Delivers over the channels the business enabled: chat (always available),
 // SMS (Telnyx) and/or email (Resend).
@@ -26,6 +29,8 @@ export async function POST(req: NextRequest) {
 }
 
 async function run(req: NextRequest) {
+  const denied = cronOr401(req)
+  if (denied) return denied
   try {
     const db = admin()
     const now = new Date().toISOString()
@@ -221,7 +226,7 @@ async function run(req: NextRequest) {
           try {
             const base = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
             const res = await fetch(`${base}/api/telnyx/sms/send`, {
-              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
               body: JSON.stringify({ companyId: rr.company_id, conversationId: rr.conversation_id, to: contact.phone, text, senderName: business, skipChatMessage: true }),
             })
             smsSent = res.ok
@@ -273,7 +278,9 @@ async function run(req: NextRequest) {
       }
     }
 
-    return NextResponse.json({ ok: true, sent, results })
+    // Anyone can nudge this (the admin shell pings it), but the per-request
+    // details — ids, sentiment reasons, errors — are only for our own calls.
+    return NextResponse.json(isInternalCall(req) ? { ok: true, sent, results } : { ok: true, sent })
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 })
   }

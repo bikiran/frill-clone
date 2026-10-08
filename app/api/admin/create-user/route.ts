@@ -43,6 +43,9 @@ export async function POST(req: NextRequest) {
       }
       if (!allowed) return NextResponse.json({ error: 'Forbidden — you must be an owner or admin of this workspace.' }, { status: 403 })
     }
+    // Only these roles; making someone an owner is for the super admin alone.
+    const ROLES = callerEmail === SUPER_ADMIN ? ['owner', 'admin', 'editor', 'viewer'] : ['admin', 'editor', 'viewer']
+    if (role && !ROLES.includes(String(role))) return NextResponse.json({ error: 'Invalid role' }, { status: 400 })
 
     let userId: string | null = null
     let userEmail = email.trim().toLowerCase()

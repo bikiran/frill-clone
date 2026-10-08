@@ -1,3 +1,5 @@
+import { createClient } from '@supabase/supabase-js'
+import { callerUser } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 
 export const dynamic = 'force-dynamic'
@@ -39,7 +41,10 @@ function stripFillers(text: string): string {
 }
 
 async function transcribeDeepgram(audio: ArrayBuffer, contentType: string, key: string, keyterms: string[]) {
-  const params = new URLSearchParams({ model: 'nova-3', smart_format: 'true', punctuate: 'true' })
+  // mip_opt_out: Deepgram may otherwise keep the audio to improve its models.
+  // Dictation is our users' (and their customers') data — it is used for the
+  // transcript and nothing else (privacy policy, App Store 5.1.2).
+  const params = new URLSearchParams({ model: 'nova-3', smart_format: 'true', punctuate: 'true', mip_opt_out: 'true' })
   // nova-3 keyterm boosting: bias the model toward brand/product/contact names.
   const kt = keyterms.filter(Boolean).slice(0, 40).map(k => `&keyterm=${encodeURIComponent(k)}`).join('')
   const res = await fetchWithTimeout(
@@ -103,6 +108,8 @@ async function polishText(text: string, key: string): Promise<string> {
 
 export async function POST(req: NextRequest) {
   try {
+    // Signed-in users only (paid speech-to-text and AI polish).
+    if (!(await callerUser(req, createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, { auth: { autoRefreshToken: false, persistSession: false } })))) return NextResponse.json({ error: 'Please sign in again.' }, { status: 401 })
     const DEEPGRAM = process.env.DEEPGRAM_API_KEY
     const OPENAI = process.env.OPENAI_API_KEY
     const ANTHROPIC = process.env.ANTHROPIC_API_KEY

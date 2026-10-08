@@ -1,3 +1,5 @@
+import { isInternalCall } from '@/lib/internal-call'
+import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { ensureCallCard } from '@/lib/call-card'
@@ -37,7 +39,9 @@ async function transcribeDeepgram(audio: ArrayBuffer, key: string) {
   // detect_language=true → Deepgram returns the spoken language, so a non-English
   // call can be transcribed in its own language and then translated to English.
   const res = await fetchWithTimeout(
-    'https://api.deepgram.com/v1/listen?model=nova-2&smart_format=true&diarize=true&punctuate=true&detect_language=true',
+    // mip_opt_out: don't let Deepgram keep call audio to improve its models —
+    // it is used for the transcript and nothing else (privacy policy).
+    'https://api.deepgram.com/v1/listen?model=nova-2&smart_format=true&diarize=true&punctuate=true&detect_language=true&mip_opt_out=true',
     {
       method: 'POST',
       headers: { Authorization: `Token ${key}`, 'Content-Type': 'audio/webm' },
@@ -81,7 +85,7 @@ async function transcribeWhisper(audio: ArrayBuffer, key: string) {
 // Translate a transcript to English (best-effort). Returns null on any failure —
 // the caller then just shows the original.
 async function translateToEnglish(text: string, key: string): Promise<string | null> {
-  for (const model of ['claude-sonnet-4-6', 'claude-3-5-haiku-20241022']) {
+  for (const model of ['claude-sonnet-4-6', 'claude-haiku-4-5']) {
     try {
       const res = await fetchWithTimeout('https://api.anthropic.com/v1/messages', {
         method: 'POST',
@@ -114,6 +118,8 @@ export async function POST(req: NextRequest) {
 
     const db = admin()
     const { data: call } = await db.from('calls').select('*').eq('id', callId).maybeSingle()
+    // Members of the call's workspace, or our own server (call webhooks).
+    if (!call || (!isInternalCall(req) && !(await requireCompanyAccess(req, db, call.company_id)).ok)) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     if (!call?.recording_url && !call?.conference_recording_url) {
       return NextResponse.json({ ok: false, reason: 'No recording for this call.' })
     }
@@ -182,7 +188,7 @@ export async function POST(req: NextRequest) {
       // Model names get retired. Rather than fail silently on a stale one, try
       // current models in order and report the REAL upstream error if all fail —
       // "the summary step failed" told us nothing about why.
-      const MODELS = ['claude-sonnet-4-6', 'claude-3-5-haiku-20241022']   // 4-6 is what the rest of Colvy's AI uses and is known to work with this key
+      const MODELS = ['claude-sonnet-4-6', 'claude-haiku-4-5']   // 4-6 is what the rest of Colvy's AI uses and is known to work with this key
       // Frame the call around the contact's relationship type, so a call with a
       // supplier / wholesaler / business contact isn't summarised as if they
       // were a customer. Default to customer when unset.

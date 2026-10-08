@@ -1,5 +1,6 @@
 'use client'
 
+import { authFetch } from '@/lib/auth-fetch'
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 
@@ -25,7 +26,7 @@ export default function PhoneUploadQR({
   useEffect(() => {
     ;(async () => {
       try {
-        const res = await fetch('/api/upload-session', {
+        const res = await authFetch('/api/upload-session', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ companyId, folderId, minutes: 30 }),
         })
@@ -41,7 +42,7 @@ export default function PhoneUploadQR({
     if (!token) return
     const iv = setInterval(async () => {
       try {
-        const res = await fetch(`/api/upload-session?token=${token}`)
+        const res = await authFetch(`/api/upload-session?token=${token}`)
         const d = await res.json()
         if (d.ok) {
           setUploaded(d.uploaded || 0)

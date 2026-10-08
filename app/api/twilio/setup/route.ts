@@ -1,3 +1,4 @@
+import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { TwilioService } from '@/lib/twilio-service'
@@ -24,6 +25,8 @@ export async function POST(req: NextRequest) {
     if (!companyId) return NextResponse.json({ error: 'Missing companyId' }, { status: 400 })
 
     const db = admin()
+    // Workspace members only.
+    if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
 
     // Update provider selection alone (no credential change) — e.g. flipping the
     // toggle back to Telnyx.
@@ -83,22 +86,25 @@ export async function GET(req: NextRequest) {
     const companyId = req.nextUrl.searchParams.get('companyId')
     if (!companyId) return NextResponse.json({ error: 'Missing companyId' }, { status: 400 })
     const db = admin()
+    // Workspace members only.
+    if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
 
     const { data } = await db.from('twilio_integrations').select('*').eq('company_id', companyId).maybeSingle()
 
     let smsProvider = 'telnyx', voiceProvider = 'telnyx'
     try {
       const { data: co } = await db.from('companies').select('sms_provider, voice_provider').eq('id', companyId).maybeSingle()
-      smsProvider = co?.sms_provider || 'telnyx'
-      voiceProvider = co?.voice_provider || 'telnyx'
+      smsProvider = co?.sms_provider || 'twilio'
+      voiceProvider = co?.voice_provider || 'twilio'
     } catch {}
 
     const mask = (s?: string | null) => (s ? `••••••••${String(s).slice(-4)}` : null)
     return NextResponse.json({
       smsProvider,
       voiceProvider,
+      // Never send stored secrets back; the masked ones are enough for the page.
       integration: data ? {
-        ...data,
+        ...Object.fromEntries(Object.entries(data).filter(([k]) => !/pass|secret|token/i.test(k))),
         auth_token: mask(data.auth_token),
         api_key_secret: mask(data.api_key_secret),
       } : null,

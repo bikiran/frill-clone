@@ -1,3 +1,4 @@
+import { requireCompanyAccess } from '@/lib/company-access'
 import { decodeEntities } from '@/lib/decode-entities'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
@@ -30,6 +31,8 @@ async function upsertRetry(run: () => any, tries = 4): Promise<void> {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
+    // Workspace members only (the cron and sync-run call syncPage directly).
+    if (!(await requireCompanyAccess(req, createClient(process.env.NEXT_PUBLIC_SUPABASE_URL || '', process.env.SUPABASE_SERVICE_ROLE_KEY || ''), body?.companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     const result = await syncPage(body)
     return NextResponse.json(result.body, { status: result.status || 200 })
   } catch (error: any) {
@@ -60,7 +63,7 @@ export async function syncPage(body: any): Promise<{ status: number; body: any }
     let integration: any = null
     let integrationError: any = null
     if (body.integrationId) {
-      const r = await supabase.from('woocommerce_integrations').select('*').eq('id', body.integrationId).maybeSingle()
+      const r = await supabase.from('woocommerce_integrations').select('*').eq('id', body.integrationId).eq('company_id', companyId).maybeSingle()
       integration = r.data; integrationError = r.error
     } else {
       const r = await supabase.from('woocommerce_integrations').select('*').eq('company_id', companyId).order('created_at', { ascending: true }).limit(1)

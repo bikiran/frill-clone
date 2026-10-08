@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { requireCompanyAccess } from '@/lib/company-access'
 
 export const dynamic = 'force-dynamic'
 
@@ -33,6 +34,8 @@ export async function POST(req: NextRequest) {
     const { companyId, kind, conversationId, url, label, customCode, sentBy, mediaUrls, note, channel, expiresAt, expiryMode } = await req.json()
     if (!companyId) return NextResponse.json({ error: 'companyId required' }, { status: 400 })
     const db = admin()
+    // Anyone could mint links on any workspace's domain; only its members now.
+    if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
 
     let target = url as string | undefined
     if (kind === 'review') {

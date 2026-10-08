@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { checkBurst } from '@/lib/rate-limit'
 
 export const dynamic = 'force-dynamic'
 
@@ -9,6 +10,8 @@ function getDb() {
   if (!url || !key) throw new Error('Supabase env vars missing')
   return createClient(url, key)
 }
+
+const esc = (v: any) => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' } as any)[c])
 
 async function sendEmailNotification(adminEmail: string, formTitle: string, responseCount: number, companyName: string) {
   try {
@@ -23,7 +26,7 @@ async function sendEmailNotification(adminEmail: string, formTitle: string, resp
         body: JSON.stringify({
           from: 'Colvy <notifications@updates.colvy.com>',
           to: adminEmail,
-          subject: `New response to "${formTitle}" • ${companyName}`,
+          subject: `New response to "${String(formTitle).slice(0, 120)}" • ${String(companyName).slice(0, 80)}`,
           html: `
             <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 600px; margin: 0 auto;">
               <div style="padding: 24px; background: #f8f8f8; border-radius: 12px; margin-bottom: 20px;">
@@ -33,10 +36,10 @@ async function sendEmailNotification(adminEmail: string, formTitle: string, resp
               
               <div style="background: white; border: 1px solid #f0f0f0; border-radius: 12px; padding: 24px; margin-bottom: 20px;">
                 <p style="margin: 0 0 12px 0; color: #6b7280; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em;">Form Name</p>
-                <h3 style="margin: 0 0 16px 0; color: #0d0d0d; font-size: 18px;">${formTitle}</h3>
+                <h3 style="margin: 0 0 16px 0; color: #0d0d0d; font-size: 18px;">${esc(formTitle)}</h3>
                 
                 <p style="margin: 0 0 12px 0; color: #6b7280; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em;">Total Responses</p>
-                <p style="margin: 0 0 24px 0; color: #ff7a6b; font-size: 28px; font-weight: 700;">${responseCount}</p>
+                <p style="margin: 0 0 24px 0; color: #ff7a6b; font-size: 28px; font-weight: 700;">${Number(responseCount) || 0}</p>
               </div>
               
               <div style="text-align: center;">
@@ -70,24 +73,40 @@ async function sendEmailNotification(adminEmail: string, formTitle: string, resp
   }
 }
 
+/**
+ * POST /api/form-notifications { formId }
+ *
+ * Called by the public form page after a submission. It used to take the
+ * recipient's user id from the body too, so anyone could have Colvy email any
+ * account, as often as they liked. Now the email always goes to the form's
+ * owner (the company owner), only when the form really has a fresh response,
+ * and at most a few times a minute per form. `userId` in the body is ignored.
+ */
 export async function POST(req: NextRequest) {
   try {
     const supabase = getDb()
-    const { formId, userId } = await req.json()
-    
-    if (!formId || !userId) {
-      return NextResponse.json({ error: 'formId and userId required' }, { status: 400 })
+    const { formId } = await req.json()
+
+    if (!formId || typeof formId !== 'string') {
+      return NextResponse.json({ error: 'formId required' }, { status: 400 })
     }
+    if (!checkBurst(`form-notify:${formId}`, 3)) return NextResponse.json({ ok: true, skipped: 'rate' })
 
     // Get form details
-    const { data: form } = await (supabase as any).from('forms').select('*').eq('id', formId).single()
+    const { data: form } = await (supabase as any).from('forms').select('*').eq('id', formId).maybeSingle()
     if (!form) return NextResponse.json({ error: 'Form not found' }, { status: 404 })
 
     // Get company info
-    const { data: company } = await (supabase as any).from('companies').select('*').eq('id', form.company_id).single()
-    if (!company) return NextResponse.json({ error: 'Company not found' }, { status: 404 })
+    const { data: company } = await (supabase as any).from('companies').select('*').eq('id', form.company_id).maybeSingle()
+    if (!company?.owner_id) return NextResponse.json({ error: 'Company not found' }, { status: 404 })
 
-    // Get user (admin) email
+    // Only for a response that just arrived — not on demand.
+    const recent = new Date(Date.now() - 5 * 60 * 1000).toISOString()
+    const { data: fresh } = await (supabase as any).from('form_responses').select('id')
+      .eq('form_id', formId).gte('created_at', recent).limit(1)
+    if (!fresh?.length) return NextResponse.json({ ok: true, skipped: 'no_new_response' })
+
+    const userId = company.owner_id as string
     const { data: { user } } = await supabase.auth.admin.getUserById(userId)
     if (!user?.email) return NextResponse.json({ error: 'User email not found' }, { status: 404 })
 

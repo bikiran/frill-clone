@@ -54,6 +54,15 @@ export class TwilioService {
     return data
   }
 
+  // ── Line type (Lookup v2, line_type_intelligence) ───────────────────────
+  // A paid lookup per number. Answers 'landline', 'mobile', 'fixedVoip',
+  // 'nonFixedVoip', 'tollFree', … — lower-cased here, or null when unknown.
+  async lookupLineType(e164: string): Promise<string | null> {
+    const data = await this.req(`https://lookups.twilio.com/v2/PhoneNumbers/${encodeURIComponent(e164)}?Fields=line_type_intelligence`, 'GET')
+    const t = data?.line_type_intelligence?.type
+    return t ? String(t).toLowerCase() : null
+  }
+
   // ── Credential check ────────────────────────────────────────────────────
   // Fetching the account resource throws on bad credentials — used to verify a
   // key the moment it's entered.
@@ -93,6 +102,13 @@ export class TwilioService {
   // bytes server-side so we can re-host them somewhere public and show the photo
   // in the thread instead of a broken, auth-gated link.
   async fetchMedia(mediaUrl: string): Promise<{ bytes: Uint8Array; contentType: string }> {
+    // The account's credentials go only to Twilio itself. The URL comes from the
+    // webhook, so a forged one used to receive the SID and auth token.
+    let host = ''
+    try { const u = new URL(mediaUrl); host = u.protocol === 'https:' ? u.hostname.toLowerCase() : '' } catch {}
+    if (!(host === 'api.twilio.com' || host.endsWith('.twilio.com'))) {
+      throw new Error('Twilio media fetch: not a Twilio URL')
+    }
     const res = await fetch(mediaUrl, { headers: { 'Authorization': this.basicAuth() } })
     if (!res.ok) throw new Error(`Twilio media fetch: ${res.status}`)
     const contentType = res.headers.get('content-type') || 'application/octet-stream'

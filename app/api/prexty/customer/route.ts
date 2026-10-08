@@ -1,3 +1,4 @@
+import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { PrextyService } from '@/lib/prexty-service'
@@ -28,6 +29,8 @@ export async function GET(req: NextRequest) {
     if (!companyId) return NextResponse.json({ error: 'Missing companyId' }, { status: 400 })
 
     const db = admin()
+    // Workspace members only.
+    if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     const { data: integ } = await db.from('prexty_integrations')
       .select('api_key, base_url, is_active').eq('company_id', companyId).maybeSingle()
     if (!integ?.api_key || integ.is_active === false) {
@@ -43,13 +46,13 @@ export async function GET(req: NextRequest) {
 
     if ((!email || !phone) && !contactId && conversationId) {
       const { data: conv } = await db.from('conversations')
-        .select('contact_id, sms_number').eq('id', conversationId).maybeSingle()
+        .select('contact_id, sms_number').eq('id', conversationId).eq('company_id', companyId).maybeSingle()
       if (conv?.contact_id) contactId = conv.contact_id
       if (!phone && conv?.sms_number) phone = conv.sms_number
     }
     if ((!email || !phone) && contactId) {
       const { data: c } = await db.from('contacts')
-        .select('email, phone').eq('id', contactId).maybeSingle()
+        .select('email, phone').eq('id', contactId).eq('company_id', companyId).maybeSingle()
       if (!email && c?.email) email = c.email
       if (!phone && c?.phone) phone = c.phone
     }

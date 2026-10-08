@@ -1,3 +1,4 @@
+import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
@@ -19,6 +20,8 @@ export async function GET(req: NextRequest) {
     const days = parseInt(req.nextUrl.searchParams.get('days') || '30', 10)
     if (!companyId) return NextResponse.json({ error: 'companyId required' }, { status: 400 })
     const db = admin()
+    // Workspace members only.
+    if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
 
     const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString()
 

@@ -1,5 +1,6 @@
 'use client'
 
+import { authFetch } from '@/lib/auth-fetch'
 import React, { useState } from 'react'
 
 interface AITextEditorProps {
@@ -18,7 +19,7 @@ export default function AITextEditor({ value, onChange, placeholder, companyId }
     setLoading(task)
     setError('')
     try {
-      const res = await fetch('/api/ai', {
+      const res = await authFetch('/api/ai', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ companyId, task, text: value, ...params }),

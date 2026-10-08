@@ -1,5 +1,7 @@
 'use client'
 
+import { withConnectTicket } from '@/lib/oauth-ticket-client'
+import { authFetch } from '@/lib/auth-fetch'
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { confirmDialog } from '@/components/ConfirmDialog'
@@ -48,7 +50,7 @@ export default function EmailPage() {
   }, [])
 
   const load = async (cid: string) => {
-    const res = await fetch(`/api/email/accounts?companyId=${cid}`)
+    const res = await authFetch(`/api/email/accounts?companyId=${cid}`)
     const d = await res.json()
     setAccounts(d.accounts || [])
     setRules(d.rules || [])
@@ -58,7 +60,7 @@ export default function EmailPage() {
   }
 
   const api = async (body: any) => {
-    const res = await fetch('/api/email/accounts', {
+    const res = await authFetch('/api/email/accounts', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ companyId, ...body }),
     })
@@ -67,10 +69,12 @@ export default function EmailPage() {
     return d
   }
 
-  const connectGmail = (locationId?: string) => {
+  const connectGmail = async (locationId?: string) => {
     if (!companyId) return
     const returnTo = window.location.href.split('?')[0]
-    window.location.href = `https://colvy.com/api/gmail/start?companyId=${companyId}&locationId=${locationId || ''}&returnTo=${encodeURIComponent(returnTo)}`
+    try {
+      window.location.href = await withConnectTicket(`https://colvy.com/api/gmail/start?companyId=${companyId}&locationId=${locationId || ''}&returnTo=${encodeURIComponent(returnTo)}`, companyId, 'gmail')
+    } catch (e: any) { alert(e.message) }
   }
 
   const saveDomain = async () => {

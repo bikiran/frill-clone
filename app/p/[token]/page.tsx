@@ -1,5 +1,6 @@
 'use client'
 
+import { authFetch } from '@/lib/auth-fetch'
 import { useEffect, useRef, useState } from 'react'
 import { useParams } from 'next/navigation'
 
@@ -37,7 +38,7 @@ export default function PhoneUpload() {
   useEffect(() => {
     ;(async () => {
       try {
-        const res = await fetch(`/api/upload-session?token=${token}`)
+        const res = await authFetch(`/api/upload-session?token=${token}`)
         const d = await res.json()
         if (!res.ok || d.expired) setExpired(true)
       } catch { setExpired(true) }
@@ -93,7 +94,7 @@ export default function PhoneUpload() {
       // 1. Ask for a signed URL. The file itself goes STRAIGHT to storage —
       //    routing it through our API capped uploads at a few megabytes, which
       //    is why every video failed.
-      const signRes = await fetch('/api/upload-session/sign', {
+      const signRes = await authFetch('/api/upload-session/sign', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token, fileName: file.name, contentType: file.type }),
       })
@@ -122,7 +123,7 @@ export default function PhoneUpload() {
         }
         try {
           // 3. Record it in the gallery.
-          const doneRes = await fetch('/api/upload-session/complete', {
+          const doneRes = await authFetch('/api/upload-session/complete', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ token, path: sign.path, fileName: file.name, contentType: file.type }),
           })

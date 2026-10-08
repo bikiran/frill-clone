@@ -1,3 +1,4 @@
+import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
@@ -16,6 +17,11 @@ export async function POST(req: NextRequest) {
     const { formId, questions, title, description, theme } = await req.json()
 
     if (!formId) return NextResponse.json({ error: 'formId required' }, { status: 400 })
+    // Members of the form's workspace only.
+    {
+      const { data: f } = await (supabase as any).from('forms').select('company_id').eq('id', formId).maybeSingle()
+      if (!f || !(await requireCompanyAccess(req, supabase, f.company_id)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+    }
 
     // Get current version count
     const { count } = await (supabase as any)
@@ -51,6 +57,11 @@ export async function GET(req: NextRequest) {
     const formId = searchParams.get('formId')
 
     if (!formId) return NextResponse.json({ error: 'formId required' }, { status: 400 })
+    // Members of the form's workspace only.
+    {
+      const { data: f } = await (supabase as any).from('forms').select('company_id').eq('id', formId).maybeSingle()
+      if (!f || !(await requireCompanyAccess(req, supabase, f.company_id)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+    }
 
     const { data, error } = await (supabase as any)
       .from('form_versions')

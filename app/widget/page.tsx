@@ -1,6 +1,7 @@
 'use client'
 
 
+import { authFetch } from '@/lib/auth-fetch'
 import React, { useState, useEffect, useRef } from 'react'
 import { StatusMark } from '@/components/StatusMark'
 import { compressImage, uploadDirect } from '@/lib/upload-attachment'
@@ -10,6 +11,15 @@ import { supabase } from '@/lib/supabase'
 import { widgetChannelName } from '@/lib/chat-broadcast'
 import ImageViewer from '@/components/ImageViewer'
 import { getRelativeTime } from '@/lib/time-utils'
+
+// Proof that this browser started the chat (lib/widget-access.ts): the key
+// /api/widget/start returned, and — for chats saved before keys existed — this
+// browser's visitor id. Sent on every call about the conversation.
+const chatAuth = { key: '', visitor: '' }
+const chatHeaders = (): Record<string, string> => ({
+  ...(chatAuth.key ? { 'x-colvy-chat': chatAuth.key } : {}),
+  ...(chatAuth.visitor ? { 'x-colvy-visitor': chatAuth.visitor } : {}),
+})
 
 function WidgetContent() {
   const params = useSearchParams()
@@ -71,6 +81,15 @@ function WidgetContent() {
   const [chatMobile, setChatMobile] = useState('')
   const [smsOptIn, setSmsOptIn] = useState(false)
   const [chatStep, setChatStep] = useState<'form' | 'chat'>('form')
+  // The server no longer recognises this browser as the one that started the
+  // saved chat (e.g. it was saved before chat keys) — start over at the form.
+  const forgetChat = () => {
+    try { localStorage.removeItem(`colvy-chat-${slug}`) } catch {}
+    chatAuth.key = ''
+    setChatConvId(null)
+    setChatMessages2([])
+    setChatStep('form')
+  }
   const [chatCreating, setChatCreating] = useState(false)
   const [chatCreateError, setChatCreateError] = useState('')
   const [selectedItem, setSelectedItem] = useState<{ type: 'idea' | 'announcement' | 'help'; id: string } | null>(null)
@@ -136,7 +155,7 @@ function WidgetContent() {
         setOutletInfo({ isVic: !!data.isVic, nearest: data.nearest || null, outlets: data.outlets || [] })
         if (data.isVic && data.nearest) {
           setAssignedOutlet(data.nearest)
-          try { await fetch('/api/widget/update', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId: company?.id, conversationId: chatConvId, fields: { assigned_location_id: data.nearest.id, assigned_auto: true } }) }) } catch {}
+          try { await fetch('/api/widget/update', { method: 'POST', headers: { 'Content-Type': 'application/json', ...chatHeaders() }, body: JSON.stringify({ companyId: company?.id, conversationId: chatConvId, fields: { assigned_location_id: data.nearest.id, assigned_auto: true } }) }) } catch {}
         }
       } catch {}
     })()
@@ -146,7 +165,7 @@ function WidgetContent() {
     setAssignedOutlet(outlet)
     setShowOutletPicker(false)
     if (chatConvId) {
-      try { await fetch('/api/widget/update', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId: company?.id, conversationId: chatConvId, fields: { assigned_location_id: outlet.id, assigned_auto: false } }) }) } catch {}
+      try { await fetch('/api/widget/update', { method: 'POST', headers: { 'Content-Type': 'application/json', ...chatHeaders() }, body: JSON.stringify({ companyId: company?.id, conversationId: chatConvId, fields: { assigned_location_id: outlet.id, assigned_auto: false } }) }) } catch {}
     }
   }
 
@@ -195,7 +214,7 @@ function WidgetContent() {
           return d.history
         })
         if (chatConvId) {
-          fetch('/api/widget/update', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId: company?.id, conversationId: chatConvId, fields: { page_url: d.url, page_title: d.title || null, page_history: d.history, page_seen_at: new Date().toISOString() } }) }).catch(() => {})
+          fetch('/api/widget/update', { method: 'POST', headers: { 'Content-Type': 'application/json', ...chatHeaders() }, body: JSON.stringify({ companyId: company?.id, conversationId: chatConvId, fields: { page_url: d.url, page_title: d.title || null, page_history: d.history, page_seen_at: new Date().toISOString() } }) }).catch(() => {})
         }
         return
       }
@@ -203,7 +222,7 @@ function WidgetContent() {
         if (prev.length && prev[prev.length - 1].url === d.url) return prev
         const next = [...prev, { url: d.url, title: d.title || null, ts: new Date().toISOString() }]
         if (chatConvId) {
-          fetch('/api/widget/update', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId: company?.id, conversationId: chatConvId, fields: { page_url: d.url, page_title: d.title || null, page_history: next, page_seen_at: new Date().toISOString() } }) }).catch(() => {})
+          fetch('/api/widget/update', { method: 'POST', headers: { 'Content-Type': 'application/json', ...chatHeaders() }, body: JSON.stringify({ companyId: company?.id, conversationId: chatConvId, fields: { page_url: d.url, page_title: d.title || null, page_history: next, page_seen_at: new Date().toISOString() } }) }).catch(() => {})
         }
         return next
       })
@@ -261,6 +280,8 @@ function WidgetContent() {
       if (saved) {
         const parsed = JSON.parse(saved)
         if (parsed.convId && parsed.name) {
+          chatAuth.key = parsed.chatKey || ''
+          try { chatAuth.visitor = localStorage.getItem(`colvy-visitor-${slug}`) || '' } catch {}
           setChatConvId(parsed.convId)
           setChatName(parsed.name)
           setChatEmail(parsed.email || '')
@@ -291,7 +312,8 @@ function WidgetContent() {
     ;(async () => {
       let msgs: any[] | null = null
       try {
-        const r = await fetch(`/api/widget/messages?companyId=${companyId}&conversationId=${chatConvId}`)
+        const r = await fetch(`/api/widget/messages?companyId=${companyId}&conversationId=${chatConvId}`, { headers: chatHeaders() })
+        if (r.status === 403) { forgetChat(); return }
         const d = await r.json()
         msgs = d.messages || []
       } catch { msgs = [] }
@@ -354,7 +376,8 @@ function WidgetContent() {
       // a reconnect) — nothing depends on every broadcast arriving.
       let msgs: any[] | null = null
       try {
-        const r = await fetch(`/api/widget/messages?companyId=${companyId}&conversationId=${chatConvId}`)
+        const r = await fetch(`/api/widget/messages?companyId=${companyId}&conversationId=${chatConvId}`, { headers: chatHeaders() })
+        if (r.status === 403) { forgetChat(); return }
         const d = await r.json()
         msgs = d.messages || []
       } catch { return }
@@ -524,7 +547,7 @@ function WidgetContent() {
     setAiError('')
     
     try {
-      const res = await fetch('/api/ai', {
+      const res = await authFetch('/api/ai', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ companyId: company?.id,
@@ -573,7 +596,7 @@ function WidgetContent() {
     else updated = [...reactions, { emoji, by: 'visitor', at: new Date().toISOString() }]
     setChatMessages2(prev => prev.map((m: any) => m.id === msg.id ? { ...m, reactions: updated } : m))
     setWidgetReactPicker(null)
-    try { await fetch('/api/widget/update', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId: company?.id, conversationId: chatConvId, messageId: msg.id, reactions: updated }) }) } catch {}
+    try { await fetch('/api/widget/update', { method: 'POST', headers: { 'Content-Type': 'application/json', ...chatHeaders() }, body: JSON.stringify({ companyId: company?.id, conversationId: chatConvId, messageId: msg.id, reactions: updated }) }) } catch {}
   }
 
   const uploadChatFile = async (file: File | undefined) => {
@@ -592,7 +615,7 @@ function WidgetContent() {
       const isLarge = toSend.type.startsWith('video/') || toSend.size > 4 * 1024 * 1024
       if (isLarge) {
         setChatUploadPct(0)
-        const url = await uploadDirect(toSend, `chat-attachments/${company.id}/${chatConvId}`, file.name, p => setChatUploadPct(Math.round(p * 100)))
+        const url = await uploadDirect(toSend, `chat-attachments/${company.id}/${chatConvId}`, file.name, p => setChatUploadPct(Math.round(p * 100)), chatHeaders())
         if (url) att = { url, name: file.name, type: toSend.type, kind: toSend.type.startsWith('video/') ? 'video' : 'file' }
       }
 
@@ -601,7 +624,7 @@ function WidgetContent() {
         fd.append('file', toSend)
         fd.append('companyId', company.id)
         fd.append('conversationId', chatConvId)
-        const res = await fetch('/api/inbox/upload', { method: 'POST', body: fd })
+        const res = await fetch('/api/inbox/upload', { method: 'POST', body: fd, headers: chatHeaders() })
         const data = await res.json()
         if (!res.ok) { alert('Attachment failed: ' + (data.error || 'upload error')); setChatUploading(false); return }
         att = { url: data.url, name: data.name, type: data.type, kind: data.kind }
@@ -610,7 +633,7 @@ function WidgetContent() {
       const newMsg: any = { sender_type: 'visitor', sender_name: chatName, content: att.kind === 'file' ? `📎 ${att.name}` : '', attachments: [att], created_at: new Date().toISOString() }
       setChatMessages2(prev => [...prev, newMsg])
       await fetch('/api/widget/message', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json', ...chatHeaders() },
         body: JSON.stringify({
           companyId: company.id, conversationId: chatConvId,
           content: newMsg.content, attachments: [att],
@@ -1812,6 +1835,7 @@ function WidgetContent() {
                           localStorage.setItem(vk, visitorId)
                         }
                       } catch { /* private browsing — a new thread, as before */ }
+                      chatAuth.visitor = visitorId
                       const startRes = await fetch('/api/widget/start', {
                         method: 'POST', headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
@@ -1830,17 +1854,18 @@ function WidgetContent() {
                         throw new Error(startData.error || 'Could not start the chat')
                       }
                       const conv = { id: startData.conversationId }
+                      chatAuth.key = startData.chatKey || ''
                       contactId = startData.contactId || null
 
                       if (conv) {
                         setChatConvId(conv.id)
                         // Persist so a page reload restores this chat
                         try {
-                          localStorage.setItem(`colvy-chat-${slug}`, JSON.stringify({ convId: conv.id, name: chatName, email: chatEmail, companyId: company?.id || null }))
+                          localStorage.setItem(`colvy-chat-${slug}`, JSON.stringify({ convId: conv.id, chatKey: chatAuth.key, name: chatName, email: chatEmail, companyId: company?.id || null }))
                         } catch {}
                         // Insert a system greeting
                         await fetch('/api/widget/message', {
-                          method: 'POST', headers: { 'Content-Type': 'application/json' },
+                          method: 'POST', headers: { 'Content-Type': 'application/json', ...chatHeaders() },
                           body: JSON.stringify({
                             companyId: company?.id, conversationId: conv.id,
                             senderType: 'system',
@@ -2158,7 +2183,7 @@ function WidgetContent() {
                           setChatMessages2(prev => [...prev, newMsg])
                           try {
                             const _r = await fetch('/api/widget/message', {
-                              method: 'POST', headers: { 'Content-Type': 'application/json' },
+                              method: 'POST', headers: { 'Content-Type': 'application/json', ...chatHeaders() },
                               body: JSON.stringify({
                                 companyId: company?.id, conversationId: chatConvId,
                                 content, senderName: chatName, senderEmail: chatEmail || null,
@@ -2168,10 +2193,7 @@ function WidgetContent() {
                             const _d = await _r.json().catch(() => ({}))
                             const msgErr = _r.ok ? null : new Error(_d.error || 'Message could not be sent')
                             setWidgetReplyTo(null)
-                            try { fetch('/api/push/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId: company?.id, title: `New message from ${chatName || 'a visitor'}`, body: content, conversationId: chatConvId }) }) } catch {}; try { fetch('/api/notify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId: company?.id, type: 'chat', message: `New message from ${chatName || 'a visitor'}: ${content.slice(0, 80)}`, actorName: chatName }) }) } catch {}; try { fetch('/api/inbox/smart-trigger', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ conversationId: chatConvId, text: content }) }) } catch {}; try { fetch('/api/inbox/keyword-reply', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ conversationId: chatConvId, text: content, companyId: company?.id }) }) } catch {}; try { fetch('/api/ai/reply', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ conversationId: chatConvId, companyId: company?.id }) }) } catch {}
-                            // Auto-reply fires now, on the customer's message (the
-                            // route only sends once per conversation via auto_replied).
-                            try { fetch('/api/inbox/auto-reply', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ conversationId: chatConvId }) }) } catch {}
+                            // Notifications, smart triggers, keyword replies, Colvy AI and the auto-reply run on the server (/api/widget/message).
                             // The conversation summary and reopen are handled by
                             // /api/widget/message, which this send now uses.
                           } catch (err) {
@@ -2195,7 +2217,7 @@ function WidgetContent() {
                           // closed to direct writes, the conversation is checked
                           // against the company, and flooding is rate limited.
                           const sendRes = await fetch('/api/widget/message', {
-                            method: 'POST', headers: { 'Content-Type': 'application/json' },
+                            method: 'POST', headers: { 'Content-Type': 'application/json', ...chatHeaders() },
                             body: JSON.stringify({
                               companyId: company?.id, conversationId: chatConvId,
                               content, senderName: chatName, senderEmail: chatEmail || null,
@@ -2205,7 +2227,7 @@ function WidgetContent() {
                           const sendData = await sendRes.json().catch(() => ({}))
                           const msgErr = sendRes.ok ? null : new Error(sendData.error || 'Message could not be sent')
                           const _wr = widgetReplyTo; setWidgetReplyTo(null)
-                          try { fetch('/api/push/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId: company?.id, title: `New message from ${chatName || 'a visitor'}`, body: content, conversationId: chatConvId }) }) } catch {}; try { fetch('/api/notify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId: company?.id, type: 'chat', message: `New message from ${chatName || 'a visitor'}: ${content.slice(0, 80)}`, actorName: chatName }) }) } catch {}; try { fetch('/api/inbox/smart-trigger', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ conversationId: chatConvId, text: content }) }) } catch {}; try { fetch('/api/inbox/keyword-reply', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ conversationId: chatConvId, text: content, companyId: company?.id }) }) } catch {}; try { fetch('/api/ai/reply', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ conversationId: chatConvId, companyId: company?.id }) }) } catch {}; try { fetch('/api/inbox/auto-reply', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ conversationId: chatConvId }) }) } catch {}
+                          // Notifications, smart triggers, keyword replies, Colvy AI and the auto-reply run on the server (/api/widget/message).
                           if (msgErr) throw msgErr
                         } catch (err) {
                           console.error('Widget message send error:', err)
@@ -2488,7 +2510,7 @@ function WidgetInteractive({ msg, companyId, conversationId, respondent, accentC
         summary = Object.entries(response.answers).map(([k, v]) => `${k}: ${v}`).join(' · ')
       } else summary = JSON.stringify(response)
       await fetch('/api/widget/message', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json', ...chatHeaders() },
         body: JSON.stringify({
           companyId, conversationId,
           content: `✅ Responded: ${summary}`, senderName: respondent,

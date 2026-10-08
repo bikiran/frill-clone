@@ -113,6 +113,14 @@ export async function POST(req: NextRequest) {
     if (body.token) {
       const { data } = await db.from('signup_verifications').select('*').eq('token', token).maybeSingle()
       existing = data
+      // A made-up token would skip the "email already registered" check above.
+      if (!existing) return NextResponse.json({ error: 'This sign-up has expired. Please start again.', code: 'restart' }, { status: 400 })
+      // A resend keeps the email it started with. Changing it here used to leave
+      // email_verified set, so an address the person never received a code at
+      // could end up on a confirmed account.
+      if (String(existing.email || '').toLowerCase() !== email) {
+        return NextResponse.json({ error: 'To use a different email, start the sign-up again.', code: 'restart' }, { status: 400 })
+      }
       if (existing?.last_sent_at && Date.now() - new Date(existing.last_sent_at).getTime() < RESEND_COOLDOWN_MS) {
         return NextResponse.json({ error: 'Please wait a moment before requesting another code.' }, { status: 429 })
       }
@@ -131,6 +139,10 @@ export async function POST(req: NextRequest) {
     // Only (re)issue the code for the channel(s) being sent; keep the other.
     if (channel === 'both' || channel === 'email') { row.email_code = sha(emailCode); row.email_verified = false }
     if (channel === 'both' || channel === 'sms') { row.sms_code = sha(smsCode); row.sms_verified = false }
+    // A different mobile number must be verified again, whatever was resent.
+    const phoneChanged = !!existing && (existing.phone || '') !== (phone || existing.phone || '')
+    if (phoneChanged && !(channel === 'both' || channel === 'sms')) { row.sms_code = sha(smsCode); row.sms_verified = false }
+    if (!phone && existing?.phone) row.phone = existing.phone
 
     // Upsert on the unique token.
     const { error: upErr } = await db.from('signup_verifications').upsert(row, { onConflict: 'token' })

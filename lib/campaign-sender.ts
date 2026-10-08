@@ -1,3 +1,4 @@
+import { internalHeaders } from '@/lib/internal-call'
 import { createClient } from '@supabase/supabase-js'
 import { resolveAudience, AudienceFilter, isValidAuMobile } from './campaign-audience'
 import { renderVariables, analyseSms } from './sms-segments'
@@ -259,7 +260,7 @@ export async function processCampaignBatch(campaignId: string, batchSize = 60) {
 
       const res = await fetch(`${baseUrl}/api/telnyx/sms/send`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: internalHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           companyId: campaign.company_id,
           to: r.phone,

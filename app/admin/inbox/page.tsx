@@ -1,5 +1,6 @@
 'use client'
 
+import { useAttachmentToken } from '@/lib/useAttachmentToken'
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import AiLiveReply from '@/components/AiLiveReply'
 import { supabase } from '@/lib/supabase'
@@ -558,6 +559,8 @@ export default function InboxPage() {
   }, [user?.id, companyId])
   const [conversations, setConversations] = useState<Conversation[]>(seededConvs ?? [])
   const [selected, setSelected] = useState<Conversation | null>(null)
+  // Token for this conversation's Gmail attachment links (members only).
+  const attToken = useAttachmentToken(selected?.id)
   const selectedRef = useRef<Conversation | null>(null)
 
   // Publish the open conversation + contact so the floating Colvy AI assistant
@@ -1051,7 +1054,7 @@ export default function InboxPage() {
 
         if (smsNumber) {
           try {
-            await fetch('/api/telnyx/sms/send', {
+            await authFetch('/api/telnyx/sms/send', {
               method: 'POST', headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ companyId, conversationId: selected.id, to: smsNumber, text, senderName: me, skipChatMessage: true }),
             })
@@ -1089,7 +1092,7 @@ export default function InboxPage() {
     setProductSearching(true)
     setProductError('')
     try {
-      const res = await fetch(`/api/orders/products?companyId=${companyId}&q=${encodeURIComponent(productQuery.trim())}`)
+      const res = await authFetch(`/api/orders/products?companyId=${companyId}&q=${encodeURIComponent(productQuery.trim())}`)
       const d = await res.json()
       if (!res.ok) {
         // Say WHY instead of silently showing "no products found".
@@ -1136,7 +1139,7 @@ export default function InboxPage() {
     let productUrl = p.permalink || ''
     if (productUrl) {
       try {
-        const r = await fetch('/api/short-links/create', {
+        const r = await authFetch('/api/short-links/create', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ companyId, kind: 'redirect', conversationId: selected.id, url: productUrl }),
         })
@@ -1161,7 +1164,7 @@ export default function InboxPage() {
       // Shorten the product link for SMS so it isn't a huge ugly URL.
       let smsText = content
       if (smsNumber) {
-        const r = await fetch('/api/telnyx/sms/send', {
+        const r = await authFetch('/api/telnyx/sms/send', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             companyId, conversationId: selected.id, to: smsNumber,
@@ -1302,7 +1305,7 @@ export default function InboxPage() {
   }
 
   const cardsApi = async (body: any) => {
-    const res = await fetch('/api/stripe/cards', {
+    const res = await authFetch('/api/stripe/cards', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ companyId, conversationId: selected?.id, ...body }),
     })
@@ -1453,7 +1456,7 @@ export default function InboxPage() {
     let stopped = false
     const tick = async () => {
       try {
-        const r = await fetch('/api/stripe/verify-payment', {
+        const r = await authFetch('/api/stripe/verify-payment', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ conversationId: convId, companyId }),
         })
@@ -1477,7 +1480,7 @@ export default function InboxPage() {
     let cancelled = false
     ;(async () => {
       try {
-        const res = await fetch(`/api/contacts/linked?contactId=${cid}`)
+        const res = await authFetch(`/api/contacts/linked?contactId=${cid}`)
         const d = await res.json()
         if (!cancelled) setLinkedChannels(d.channels || [])
       } catch { if (!cancelled) setLinkedChannels([]) }
@@ -1607,7 +1610,7 @@ export default function InboxPage() {
         // WooCommerce live, so it still finds orders that were never synced
         // (which is why "Processing" used to show nothing on some stores).
         try {
-          const res = await fetch(`/api/orders/emails-by-status?companyId=${encodeURIComponent(companyId)}&status=${encodeURIComponent(status)}`)
+          const res = await authFetch(`/api/orders/emails-by-status?companyId=${encodeURIComponent(companyId)}&status=${encodeURIComponent(status)}`)
           if (res.ok) { const d = await res.json(); for (const e of (d.emails || [])) emails.add(String(e).toLowerCase()) }
         } catch { /* fall back to the direct read below */ }
 
@@ -1720,7 +1723,7 @@ export default function InboxPage() {
         if (contact.id) p.set('contactId', String(contact.id))
         if (contact.email) p.set('email', contact.email)
         if (contact.phone) p.set('phone', contact.phone)
-        const res = await fetch(`/api/prexty/customer?${p.toString()}`)
+        const res = await authFetch(`/api/prexty/customer?${p.toString()}`)
         const d = await res.json()
         if (!cancelled && d?.connected && d?.customer) setPrextyCustomer(d.customer)
       } catch { /* Prexty is best-effort; never blocks the panel */ }
@@ -1859,7 +1862,7 @@ export default function InboxPage() {
       let smsError = ''
       if (phone) {
         try {
-          const res = await fetch('/api/telnyx/sms/send', {
+          const res = await authFetch('/api/telnyx/sms/send', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               companyId, conversationId: convId, to: phone,
@@ -2397,7 +2400,7 @@ export default function InboxPage() {
     // may not be configured (or a delivery was missed), which would otherwise
     // leave a paid order showing as "pending" in the chat forever.
     try {
-      fetch('/api/stripe/verify-payment', {
+      authFetch('/api/stripe/verify-payment', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ conversationId: conv.id }),
       }).then(r => r.json()).then(d => {
@@ -2478,7 +2481,7 @@ export default function InboxPage() {
             const params = new URLSearchParams({ companyId })
             if (c.email) params.set('email', c.email)
             if (c.phone) params.set('phone', c.phone)
-            const res = await fetch(`/api/doa/match?${params.toString()}`)
+            const res = await authFetch(`/api/doa/match?${params.toString()}`)
             const data = await res.json()
             if (data.match) setDoaMatch(true)
           } catch {}
@@ -2509,7 +2512,7 @@ export default function InboxPage() {
               const params = new URLSearchParams({ companyId })
               if (matched.email) params.set('email', matched.email)
               if (matched.phone) params.set('phone', matched.phone)
-              const res = await fetch(`/api/doa/match?${params.toString()}`)
+              const res = await authFetch(`/api/doa/match?${params.toString()}`)
               const data = await res.json()
               if (data.match) setDoaMatch(true)
             } catch {}
@@ -2622,7 +2625,7 @@ export default function InboxPage() {
         try {
           const p = new URLSearchParams({ companyId })
           if (email) p.set('email', email); else if (phone) p.set('phone', phone)
-          const res = await fetch(`/api/abandoned-carts?${p}`)
+          const res = await authFetch(`/api/abandoned-carts?${p}`)
           const data = await res.json()
           if (!isCurrent()) return
           setAbandonedCarts(data.carts || [])
@@ -2729,7 +2732,7 @@ export default function InboxPage() {
     if (email) {
       ;(async () => {
       try {
-        const res = await fetch(`/api/orders/list?companyId=${companyId}&email=${encodeURIComponent(email!)}`)
+        const res = await authFetch(`/api/orders/list?companyId=${companyId}&email=${encodeURIComponent(email!)}`)
         const data = await res.json()
         if (data.orders && data.orders.length > 0) {
           // Synced rows carry woo_order_id; live ones carry `number`. Keying the
@@ -2935,7 +2938,7 @@ export default function InboxPage() {
     const fullBody = opts.url ? `${opts.body}\n${opts.url}` : opts.body
 
     if (ch === 'email') {
-      const res = await fetch('/api/email/reply', {
+      const res = await authFetch('/api/email/reply', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ conversationId: selected.id, content: fullBody, agentName: me, subject: opts.subject }),
       })
@@ -2945,7 +2948,7 @@ export default function InboxPage() {
     }
 
     if (ch === 'instagram' || ch === 'facebook') {
-      const res = await fetch('/api/meta/send', {
+      const res = await authFetch('/api/meta/send', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ conversationId: selected.id, content: fullBody, agentName: me, skipChatMessage: !!opts.silent }),
       })
@@ -2956,7 +2959,7 @@ export default function InboxPage() {
 
     const smsNumber = smsDestination()
     if (ch === 'sms' && smsNumber) {
-      const res = await fetch('/api/telnyx/sms/send', {
+      const res = await authFetch('/api/telnyx/sms/send', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ companyId, conversationId: selected.id, to: smsNumber, text: fullBody, senderName: me, skipChatMessage: !!opts.silent }),
       })
@@ -2977,7 +2980,7 @@ export default function InboxPage() {
     }
     if (smsNumber) {
       try {
-        await fetch('/api/telnyx/sms/send', {
+        await authFetch('/api/telnyx/sms/send', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ companyId, conversationId: selected.id, to: smsNumber, text: fullBody, senderName: me, skipChatMessage: true }),
         })
@@ -3145,7 +3148,7 @@ export default function InboxPage() {
         const expiresAt: string | null = item._expiresAt || null
         let viewerUrl = ''
         try {
-          const lr = await fetch('/api/short-links/create', {
+          const lr = await authFetch('/api/short-links/create', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               companyId, kind: 'media', conversationId: selected.id,
@@ -3167,7 +3170,7 @@ export default function InboxPage() {
         // to the raw media URL only if the short link couldn't be created).
         if (smsNumber) {
           try {
-            const r = await fetch('/api/telnyx/sms/send', {
+            const r = await authFetch('/api/telnyx/sms/send', {
               method: 'POST', headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 companyId, conversationId: selected.id, to: smsNumber,
@@ -3217,7 +3220,7 @@ export default function InboxPage() {
     let galleryUrl = ''
     if (media.length > 0) {
       try {
-        const res = await fetch('/api/short-links/create', {
+        const res = await authFetch('/api/short-links/create', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             companyId, kind: 'media',
@@ -3241,7 +3244,7 @@ export default function InboxPage() {
       if (galleryUrl) parts.push(galleryUrl)
       for (const f of plainFiles) parts.push(`📎 ${f.name}: ${f.url}`)
       try {
-        const r = await fetch('/api/telnyx/sms/send', {
+        const r = await authFetch('/api/telnyx/sms/send', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             companyId, conversationId: convId, to: smsNumber,
@@ -3256,7 +3259,7 @@ export default function InboxPage() {
     } else if (metaCh === 'instagram' || metaCh === 'facebook') {
       for (const a of attachments) {
         try {
-          const r = await fetch('/api/meta/send', {
+          const r = await authFetch('/api/meta/send', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               conversationId: convId, attachmentUrl: a.url, attachmentKind: a.kind,
@@ -3272,7 +3275,7 @@ export default function InboxPage() {
         const body = galleryUrl
           ? `${media.length > 1 ? `${media.length} photos` : 'Photo'} attached:\n${galleryUrl}`
           : attachments.map(a => `${a.name}:\n${a.url}`).join('\n\n')
-        const r = await fetch('/api/email/reply', {
+        const r = await authFetch('/api/email/reply', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ conversationId: convId, agentName: me, content: body }),
         })
@@ -3413,7 +3416,7 @@ export default function InboxPage() {
               mentioned_user: uid, mentioned_by: author, preview: body.slice(0, 140),
             }))
           )
-          fetch('/api/mentions/notify', {
+          authFetch('/api/mentions/notify', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               companyId, conversationId: selected.id, userIds: ids,
@@ -3734,7 +3737,7 @@ export default function InboxPage() {
       // configured yet.
       let reviewShortLink = ''
       try {
-        const res = await fetch('/api/short-links/create', {
+        const res = await authFetch('/api/short-links/create', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ companyId, kind: 'review', conversationId: selected.id }),
         })
@@ -3757,7 +3760,7 @@ export default function InboxPage() {
       if (metaCh === 'email') {
         // The email route inserts the thread message itself — pass the metadata
         // so it still renders as the review card. Don't also insert below.
-        const r = await fetch('/api/email/reply', {
+        const r = await authFetch('/api/email/reply', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ conversationId: selected.id, content: body, agentName: me, subject: "We'd love your feedback ⭐", metadata: { review_request: true } }),
         })
@@ -3765,7 +3768,7 @@ export default function InboxPage() {
         delivered = 'email'
       } else if (metaCh === 'instagram' || metaCh === 'facebook') {
         try {
-          const r = await fetch('/api/meta/send', {
+          const r = await authFetch('/api/meta/send', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ conversationId: selected.id, content: body, agentName: me, skipChatMessage: true }),
           })
@@ -3774,7 +3777,7 @@ export default function InboxPage() {
         delivered = metaCh
       } else if (smsNumber) {
         try {
-          const r = await fetch('/api/telnyx/sms/send', {
+          const r = await authFetch('/api/telnyx/sms/send', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ companyId, conversationId: selected.id, to: smsNumber, text: body, senderName: me, skipChatMessage: true }),
           })
@@ -3810,7 +3813,7 @@ export default function InboxPage() {
     if (!selected || messages.length === 0) return
     setGeneratingAi(true)
     try {
-      const res = await fetch('/api/inbox/ai-summary', {
+      const res = await authFetch('/api/inbox/ai-summary', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ companyId,
@@ -3911,7 +3914,7 @@ export default function InboxPage() {
   const generateInvoice = async (payload: any) => {
     if (!companyId || !payload?.order_id) return
     try {
-      const res = await fetch(`/api/orders/details?companyId=${companyId}&orderId=${payload.order_id}`)
+      const res = await authFetch(`/api/orders/details?companyId=${companyId}&orderId=${payload.order_id}`)
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Could not load order')
       const { order, company } = data
@@ -4026,7 +4029,7 @@ export default function InboxPage() {
       const me = myName
       if (smsNumber) {
         try {
-          await fetch('/api/telnyx/sms/send', {
+          await authFetch('/api/telnyx/sms/send', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ companyId, conversationId: selected.id, to: smsNumber, text, senderName: me, skipChatMessage: true }),
           })
@@ -4070,7 +4073,7 @@ export default function InboxPage() {
         const id = String(o.order_id)
         enrichedOrdersRef.current.add(id)
         try {
-          const res = await fetch(`/api/orders/detail?companyId=${companyId}&orderId=${id}` + (o.integration_id ? `&integrationId=${o.integration_id}` : ''))
+          const res = await authFetch(`/api/orders/detail?companyId=${companyId}&orderId=${id}` + (o.integration_id ? `&integrationId=${o.integration_id}` : ''))
           const d = await res.json()
           if (res.ok && d.order) updates[id] = d.order
         } catch { /* leave this order as-is */ }
@@ -4097,7 +4100,7 @@ export default function InboxPage() {
       // On an SMS conversation, text the customer a link to the invoice.
       if (smsNumber) {
         try {
-          await fetch('/api/telnyx/sms/send', {
+          await authFetch('/api/telnyx/sms/send', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ companyId, conversationId: selected.id, to: smsNumber, text: `Invoice #${invoicePreview.orderNumber}`, attachments: [attachment], senderName: me, skipChatMessage: true }),
           })
@@ -4127,7 +4130,7 @@ export default function InboxPage() {
     if (!orderId) { showToast('No order id for this order'); return }
     if (!await confirmDialog(`Mark order #${payload.order_number || orderId} as completed?\n\nThis updates WooCommerce and may send the customer a completion email.`)) return
     try {
-      const res = await fetch('/api/orders/status', {
+      const res = await authFetch('/api/orders/status', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           companyId, orderId, status: 'completed',
@@ -4150,7 +4153,7 @@ export default function InboxPage() {
     if (!raw || !companyId) return
     setShortenBusy(true); setShortenError('')
     try {
-      const res = await fetch('/api/short-links/create', {
+      const res = await authFetch('/api/short-links/create', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           companyId, kind: 'redirect', url: raw,
@@ -4314,7 +4317,7 @@ export default function InboxPage() {
     let orderTotal = Number(payload.total || 0)
     let alreadyRefunded = Math.abs(Number(payload.total_refunded ?? payload.refunded_total ?? 0))
     try {
-      const res = await fetch(
+      const res = await authFetch(
         `/api/orders/detail?companyId=${companyId}&orderId=${orderId}` +
         (payload.integration_id ? `&integrationId=${payload.integration_id}` : ''))
       const d = await res.json()
@@ -4377,7 +4380,7 @@ export default function InboxPage() {
 
     setRefundModal((v) => ({ ...v, busy: true }))
     try {
-      const res = await fetch('/api/orders/refund', {
+      const res = await authFetch('/api/orders/refund', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           companyId, orderId: m.orderId,
@@ -4428,7 +4431,7 @@ export default function InboxPage() {
     // that when the customer pays, the order is marked processing.
     try {
       const amount = (parseFloat(payload.total) || 0).toFixed(2)
-      const res = await fetch('/api/stripe/chat-payment', {
+      const res = await authFetch('/api/stripe/chat-payment', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ companyId, conversationId: selected.id, amount, description: `Order #${payload.order_number}`, senderName: myName, orderId: payload.order_id, integrationId: payload.integration_id }),
       })
@@ -4460,7 +4463,7 @@ export default function InboxPage() {
     if (!companyId || !payload?.order_id) return
     setEditOrder(payload); setEditOrderData(null); setEditOrderLoading(true)
     try {
-      const res = await fetch(`/api/orders/details?companyId=${companyId}&orderId=${payload.order_id}${payload.integration_id ? `&integrationId=${payload.integration_id}` : ''}`)
+      const res = await authFetch(`/api/orders/details?companyId=${companyId}&orderId=${payload.order_id}${payload.integration_id ? `&integrationId=${payload.integration_id}` : ''}`)
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Could not load order')
       // Normalize into an editable structure
@@ -4479,7 +4482,7 @@ export default function InboxPage() {
     if (!companyId || !editOrderData) return
     setEditOrderSaving(true)
     try {
-      const res = await fetch('/api/orders/edit', {
+      const res = await authFetch('/api/orders/edit', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           companyId, integrationId: editOrderData.integration_id, orderId: editOrderData.order_id,
@@ -4502,7 +4505,7 @@ export default function InboxPage() {
     const verb = status === 'cancelled' ? 'cancel' : 'mark paid'
     if (!await confirmDialog(`Are you sure you want to ${verb} order #${payload.order_number}?${status !== 'cancelled' ? ' This records payment and reduces stock in WooCommerce.' : ''}`)) return
     try {
-      const res = await fetch('/api/orders/status', {
+      const res = await authFetch('/api/orders/status', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ companyId, orderId: payload.order_id, status, conversationId: selected?.id }),
       })
@@ -4620,7 +4623,7 @@ export default function InboxPage() {
     if (!companyId || !selected || !couponAmount.trim()) return
     setCouponSaving(true)
     try {
-      const res = await fetch('/api/coupons/send', {
+      const res = await authFetch('/api/coupons/send', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           companyId, conversationId: selected.id, contactId: contact?.id,
@@ -4693,7 +4696,7 @@ export default function InboxPage() {
       let galleryUrl = ''
       if (attachments.length > 0) {
         try {
-          const res = await fetch('/api/short-links/create', {
+          const res = await authFetch('/api/short-links/create', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               companyId, kind: 'media',
@@ -4731,7 +4734,7 @@ export default function InboxPage() {
       // doesn't append a second link). Otherwise let the route build the link.
       if (smsNumber) {
         try {
-          await fetch('/api/telnyx/sms/send', {
+          await authFetch('/api/telnyx/sms/send', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               companyId, conversationId: selected.id, to: smsNumber,
@@ -4762,7 +4765,7 @@ export default function InboxPage() {
     if (!companyId || !ticketSubject.trim()) return
     setTicketSaving(true)
     try {
-      const res = await fetch('/api/tickets', {
+      const res = await authFetch('/api/tickets', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           companyId, conversationId: selected?.id, contactId: contact?.id,
@@ -4831,7 +4834,7 @@ export default function InboxPage() {
     const senderName = myName
     try {
       const isWidgetActive = outboundChannel === 'widget' || outboundChannel === 'chat'
-      const res = await fetch('/api/stripe/chat-payment', {
+      const res = await authFetch('/api/stripe/chat-payment', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ companyId, conversationId: selected.id, amount: payAmount, description: payDesc, senderName, channel: isWidgetActive ? 'chat' : outboundChannel }),
       })
@@ -5177,7 +5180,7 @@ export default function InboxPage() {
           )
           // Also email them. Fire-and-forget: the in-app notification is already
           // saved, so a mail problem must not block the note being posted.
-          fetch('/api/mentions/notify', {
+          authFetch('/api/mentions/notify', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               companyId, conversationId: selected.id, userIds: mentionedIds,
@@ -5219,7 +5222,7 @@ export default function InboxPage() {
     // Instagram / Messenger conversations reply through the Meta Send API.
     if ((selected as any).channel === 'instagram' || (selected as any).channel === 'facebook') {
       try {
-        const res = await fetch('/api/meta/send', {
+        const res = await authFetch('/api/meta/send', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ conversationId: selected.id, content, agentName: senderName }),
         })
@@ -5240,7 +5243,7 @@ export default function InboxPage() {
     // original message), not through the chat widget.
     if ((selected as any).channel === 'email' || sendChannel === 'email') {
       try {
-        const res = await fetch('/api/email/reply', {
+        const res = await authFetch('/api/email/reply', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ conversationId: selected.id, content, agentName: senderName }),
         })
@@ -5324,7 +5327,7 @@ export default function InboxPage() {
         } else if ((selected as any).active_channel !== 'email') {
           await (supabase as any).from('conversations').update({ active_channel: 'email' }).eq('id', selected.id)
         }
-        const res = await fetch('/api/email/reply', {
+        const res = await authFetch('/api/email/reply', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ conversationId: selected.id, content, agentName: senderName, to: emailTo }),
         })
@@ -5373,7 +5376,7 @@ export default function InboxPage() {
         try { await (supabase as any).from('conversations').update({ active_channel: 'sms' }).eq('id', selected.id) } catch {}
       }
       try {
-        const res = await fetch('/api/telnyx/sms/send', {
+        const res = await authFetch('/api/telnyx/sms/send', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ companyId, conversationId: selected.id, to: smsNumber, text: content, senderName }),
         })
@@ -5502,7 +5505,7 @@ export default function InboxPage() {
       if (smsNumber) {
         // The link is already in the text, so don't pass attachments — the SMS
         // route would append a second link.
-        await fetch('/api/telnyx/sms/send', {
+        await authFetch('/api/telnyx/sms/send', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             companyId, conversationId: selected.id, to: smsNumber,
@@ -5590,7 +5593,7 @@ export default function InboxPage() {
     // Push the change back to WooCommerce if this contact matches a woo customer
     try {
       if (companyId && contact.email) {
-        fetch('/api/woocommerce/update-customer', {
+        authFetch('/api/woocommerce/update-customer', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ companyId, email: contact.email, field, value }),
         })
@@ -10782,7 +10785,7 @@ export default function InboxPage() {
                   const emailAtts: any[] = []
                   messages.forEach(m => (Array.isArray(m.email_attachments) ? m.email_attachments : []).forEach((a: any) => {
                     const url = a.url || (m.gmail_message_id && a.attachmentId
-                      ? `/api/email/attachment?messageId=${encodeURIComponent(m.gmail_message_id)}&attachmentId=${encodeURIComponent(a.attachmentId)}&name=${encodeURIComponent(a.name || 'file')}&conversationId=${encodeURIComponent(m.conversation_id)}`
+                      ? `/api/email/attachment?messageId=${encodeURIComponent(m.gmail_message_id)}&attachmentId=${encodeURIComponent(a.attachmentId)}&name=${encodeURIComponent(a.name || 'file')}&conversationId=${encodeURIComponent(m.conversation_id)}${attToken ? `&t=${encodeURIComponent(attToken)}` : ''}`
                       : null)
                     if (!url) return
                     const mime = String(a.mime || a.type || '')

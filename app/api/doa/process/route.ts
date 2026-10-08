@@ -1,3 +1,4 @@
+import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { WooCommerceService } from '@/lib/woocommerce-service'
@@ -26,6 +27,14 @@ export async function POST(req: NextRequest) {
     }
 
     const db = admin()
+    // Workspace members only.
+    if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+    // The chat and customer this posts into / refunds for must be this workspace's.
+    for (const [table, rid] of [['conversations', conversationId], ['contacts', contactId]] as const) {
+      if (!rid) continue
+      const { data: row } = await db.from(table).select('company_id').eq('id', rid).maybeSingle()
+      if (!row || row.company_id !== companyId) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+    }
     const { data: integs } = await db.from('woocommerce_integrations')
       .select('*').eq('company_id', companyId).eq('is_active', true).order('created_at', { ascending: true })
     const integ = integs?.[0]

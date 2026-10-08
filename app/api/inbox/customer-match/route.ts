@@ -1,3 +1,5 @@
+import { requireCompanyAccess } from '@/lib/company-access'
+import { internalHeaders } from '@/lib/internal-call'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { computeMatches, maskEmail, maskPhone, type Candidate, type MatchSignals, type IdentityKind } from '@/lib/customer-match'
@@ -47,8 +49,12 @@ export async function POST(req: NextRequest) {
     const platform = String(conv.channel || '') as MatchSignals['platform']
     const platformUserId = conv.meta_user_id || null
 
+    // Members only, and the role comes from the signed-in caller — it used to
+    // come from body.userId, so passing the owner's id made anyone the owner.
+    const access = await requireCompanyAccess(req, db, companyId)
+    if (!access.ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     // Role: viewers can look but not act, and see masked PII.
-    const role = await resolveRole(db, body.userId, companyId)
+    const role = await resolveRole(db, access.userId, companyId)
 
     const WRITE = ['confirm', 'unlink', 'reject', 'merge', 'request-details']
     if (WRITE.includes(action) && !canEdit(role)) {
@@ -321,7 +327,7 @@ async function requestDetails(db: any, conv: any, body: any, req: NextRequest) {
   const message = (body.message && String(body.message).trim()) || REQUEST_DETAILS_MESSAGE
   const base = (process.env.NEXT_PUBLIC_SITE_URL || new URL(req.url).origin).replace(/\/$/, '')
   const res = await fetch(`${base}/api/meta/send`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ conversationId: conv.id, content: message, agentName: body.userName || 'Agent' }),
   })
   const data = await res.json().catch(() => ({}))

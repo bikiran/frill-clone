@@ -1,3 +1,5 @@
+import { isInternalCall } from '@/lib/internal-call'
+import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import Stripe from 'stripe'
@@ -29,6 +31,12 @@ export async function POST(req: NextRequest) {
 
     const { data: pending } = await q.limit(25)
     if (!pending || pending.length === 0) return NextResponse.json({ ok: true, checked: 0, updated: 0 })
+    // Members of the workspace the payments belong to (or our own server).
+    if (!isInternalCall(req)) {
+      for (const cid of Array.from(new Set(pending.map((p: any) => p.company_id)))) {
+        if (!(await requireCompanyAccess(req, db, cid as string)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+      }
+    }
 
     let updated = 0
     const results: any[] = []

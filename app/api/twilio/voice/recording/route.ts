@@ -1,3 +1,5 @@
+import { twilioSignatureOk } from '@/lib/twilio-signature'
+import { internalHeaders } from '@/lib/internal-call'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { TwilioService } from '@/lib/twilio-service'
@@ -23,6 +25,8 @@ function admin() {
 export async function POST(req: NextRequest) {
   try {
     const form = await req.formData()
+    // Only Twilio (signed with the account's auth token).
+    if (!(await twilioSignatureOk(req, form))) return new NextResponse('Forbidden', { status: 403 })
     const get = (k: string) => { const v = form.get(k); return v == null ? '' : String(v) }
     const sp = req.nextUrl.searchParams
     const callRowId = sp.get('callRowId') || ''
@@ -83,7 +87,7 @@ export async function POST(req: NextRequest) {
       await ensureCallCard(db, rowId)
       try {
         const base = (process.env.NEXT_PUBLIC_SITE_URL || new URL(req.url).origin).replace(/\/$/, '')
-        fetch(`${base}/api/telnyx/transcribe`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ callId: rowId, companyId, conversationId: conversationId || null }) }).catch(() => {})
+        fetch(`${base}/api/telnyx/transcribe`, { method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ callId: rowId, companyId, conversationId: conversationId || null }) }).catch(() => {})
       } catch {}
       return NextResponse.json({ ok: true })
     }
@@ -105,7 +109,7 @@ export async function POST(req: NextRequest) {
     // Transcribe → AI summary (reuses the existing transcriber).
     try {
       const base = (process.env.NEXT_PUBLIC_SITE_URL || new URL(req.url).origin).replace(/\/$/, '')
-      fetch(`${base}/api/telnyx/transcribe`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ callId: rowId, companyId, conversationId: conversationId || null }) }).catch(() => {})
+      fetch(`${base}/api/telnyx/transcribe`, { method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ callId: rowId, companyId, conversationId: conversationId || null }) }).catch(() => {})
     } catch {}
     return NextResponse.json({ ok: true })
   } catch (err: any) {

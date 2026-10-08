@@ -1,5 +1,6 @@
 'use client'
 
+import { authFetch } from '@/lib/auth-fetch'
 import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
 import { SkeletonList } from '@/components/Skeleton'
@@ -55,7 +56,7 @@ export default function LocationInsightsPage() {
       } catch {}
       if (loaded.length === 0) {
         try {
-          const res = await fetch('/api/orders/all')
+          const res = await authFetch('/api/orders/all')
           const j = await res.json()
           if (Array.isArray(j.orders)) loaded = j.orders
           if (loaded.length) { try { sessionStorage.setItem(CK, JSON.stringify({ t: Date.now(), orders: loaded })) } catch {} }

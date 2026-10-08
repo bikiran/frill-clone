@@ -1,3 +1,4 @@
+import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
@@ -220,6 +221,8 @@ export async function POST(req: NextRequest) {
     if (!companyId) return NextResponse.json({ error: 'companyId required' }, { status: 400 })
 
     const db = getDb()
+    // Workspace members only.
+    if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
 
     // Check for duplicate import (same platform + company within last hour)
     const oneHourAgo = new Date(Date.now() - 3600000).toISOString()

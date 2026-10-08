@@ -1,3 +1,4 @@
+import { internalHeaders } from '@/lib/internal-call'
 import { createClient } from '@supabase/supabase-js'
 
 function admin() {
@@ -48,7 +49,7 @@ export async function pushInboundMessage(params: {
     const base = params.baseUrl || process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
     await fetch(`${base}/api/push/send`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: internalHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({
         companyId: params.companyId,
         conversationId: params.conversationId,

@@ -1,5 +1,6 @@
 'use client'
 
+import { authFetch } from '@/lib/auth-fetch'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
@@ -177,7 +178,7 @@ export default function SettingsPage() {
     const cid = company?.id
     if (activeSettingsTab !== 'overview' || !cid) return
     setOverviewLoading(true)
-    fetch(`/api/company/overview?companyId=${cid}&days=${overviewDays}`)
+    authFetch(`/api/company/overview?companyId=${cid}&days=${overviewDays}`)
       .then(r => r.json())
       .then(d => setOverview(d))
       .catch(() => {})
@@ -263,7 +264,7 @@ export default function SettingsPage() {
           // survive a reload without relying on the user having saved settings.
           const recheck = (key: string, dom?: string) => {
             if (!dom) return
-            fetch(`/api/verify-domain?domain=${encodeURIComponent(dom)}`)
+            authFetch(`/api/verify-domain?domain=${encodeURIComponent(dom)}&companyId=${co.id}`)
               .then(r => r.json())
               .then(d => { if (d.verified) setDomainStatus(p => ({ ...p, [key]: 'verified' })) })
               .catch(() => {})
@@ -281,7 +282,7 @@ export default function SettingsPage() {
         let settingsData: any = null
         console.log('[SETTINGS LOAD] Looking for settings with company_id:', co?.id)
         if (co?.id) {
-          const res = await fetch(`/api/admin/settings?company_id=${co.id}`)
+          const res = await authFetch(`/api/admin/settings?company_id=${co.id}`)
           const result = await res.json()
           console.log('[SETTINGS LOAD] Query result:', { found: !!result.settings, error: result.error })
           settingsData = result.settings || null
@@ -468,7 +469,7 @@ export default function SettingsPage() {
     
     try {
       // Save via server-side API (service role key + read-back verification)
-      const res = await fetch('/api/admin/settings', {
+      const res = await authFetch('/api/admin/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ company_id: companyId, value: siteSettingsValue }),
@@ -1063,7 +1064,7 @@ export default function SettingsPage() {
                         setCompany((prev: any) => prev ? { ...prev, slug: slugEdit } : prev)
                         setSlugStatus('idle')
                         // Register new subdomain with Vercel
-                        fetch('/api/domains', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ domain: `${slugEdit}.colvy.com` }) }).catch(() => {})
+                        authFetch('/api/domains', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ domain: `${slugEdit}.colvy.com`, companyId: company.id }) }).catch(() => {})
                       }}
                         className="px-3 py-2 text-xs font-bold cursor-pointer text-white flex-shrink-0"
                         style={{ background: '#10b981', border: 'none' }}>
@@ -1121,10 +1122,10 @@ export default function SettingsPage() {
                         if (!boardDomain) return
                         setDomainStatus(p => ({ ...p, board: 'verifying' }))
                         try {
-                          const res = await fetch('/api/domains', {
+                          const res = await authFetch('/api/domains', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ domain: boardDomain }),
+                            body: JSON.stringify({ domain: boardDomain, companyId: company?.id }),
                           })
                           const data = await res.json()
                           if (data.manual) {
@@ -1167,10 +1168,10 @@ export default function SettingsPage() {
                         if (!helpDomain) return
                         setDomainStatus(p => ({ ...p, help: 'verifying' }))
                         try {
-                          const res = await fetch('/api/domains', {
+                          const res = await authFetch('/api/domains', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ domain: helpDomain }),
+                            body: JSON.stringify({ domain: helpDomain, companyId: company?.id }),
                           })
                           const data = await res.json()
                           if (data.manual) {
@@ -2385,7 +2386,7 @@ export default function SettingsPage() {
                       if (!boardDomain) return
                       setDomainStatus(p => ({ ...p, board: 'verifying' }))
                       try {
-                        const res = await fetch(`/api/verify-domain?domain=${boardDomain}`)
+                        const res = await authFetch(`/api/verify-domain?domain=${encodeURIComponent(boardDomain)}&companyId=${company?.id}`)
                         const data = await res.json()
                         const ok = !!data.verified
                         setDomainStatus(p => ({ ...p, board: ok ? 'verified' : 'error' }))
@@ -2445,7 +2446,7 @@ export default function SettingsPage() {
                       if (!helpDomain) return
                       setDomainStatus(p => ({ ...p, help: 'verifying' }))
                       try {
-                        const res = await fetch(`/api/verify-domain?domain=${helpDomain}`)
+                        const res = await authFetch(`/api/verify-domain?domain=${encodeURIComponent(helpDomain)}&companyId=${company?.id}`)
                         const data = await res.json()
                         const ok = !!data.verified
                         setDomainStatus(p => ({ ...p, help: ok ? 'verified' : 'error' }))

@@ -1,5 +1,6 @@
 'use client'
 
+import { authFetch } from '@/lib/auth-fetch'
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
@@ -46,7 +47,7 @@ export default function TicketsList() {
   useEffect(() => { const iv = setInterval(() => setTick(t => t + 1), 60000); return () => clearInterval(iv) }, [])
 
   const load = async (cid: string) => {
-    const res = await fetch(`/api/tickets?companyId=${cid}`)
+    const res = await authFetch(`/api/tickets?companyId=${cid}`)
     const data = await res.json()
     setTickets(data.tickets || [])
     if (data.sla) setSla(resolveSla(data.sla))
@@ -295,7 +296,7 @@ function NewTicketModal({ companyId, onClose, onCreated }: { companyId: string; 
     setBusy(true); setErr('')
     try {
       const desc = `${description.trim() || '(no message)'}${name || email ? `\n\n— From: ${name || 'Customer'} <${email}>` : ''}`
-      const res = await fetch('/api/tickets', {
+      const res = await authFetch('/api/tickets', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ companyId, subject: subject.trim(), description: desc, priority }),
       })
@@ -350,7 +351,7 @@ function SlaSettingsModal({ companyId, sla, onClose, onSaved }: { companyId: str
     setSaving(true); setErr('')
     try {
       const { data: { session } } = await supabase.auth.getSession()
-      const res = await fetch('/api/tickets/settings', {
+      const res = await authFetch('/api/tickets/settings', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}) },
         body: JSON.stringify({ companyId, settings: form }),

@@ -8,6 +8,7 @@ import EmojiPicker from '@/components/EmojiPicker'
 import { analyseSms, renderVariables, SMS_VARIABLES } from '@/lib/sms-segments'
 import { calculateCost, DEFAULT_PRICING, SmsPricing, aud, audRate, resolveSmsPricing } from '@/lib/sms-pricing'
 import { confirmDialog } from '@/components/ConfirmDialog'
+import { authFetch } from '@/lib/auth-fetch'
 
 const AUDIENCE_TYPES: [string, string, string][] = [
   ['all_subscribed', 'All subscribed contacts', 'Everyone with marketing consent'],
@@ -214,7 +215,7 @@ export default function CampaignEditorPage() {
     debounce.current = setTimeout(async () => {
       setPreviewing(true); setPreviewError('')
       try {
-        const res = await fetch('/api/campaigns/audience', {
+        const res = await authFetch('/api/campaigns/audience', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ companyId, filter: buildFilter(), channel: campaign?.channel || 'sms' }),
         })
@@ -274,7 +275,7 @@ export default function CampaignEditorPage() {
     if (!message.trim()) return
     setAiBusy(true)
     try {
-      const res = await fetch('/api/ai', {
+      const res = await authFetch('/api/ai', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ companyId,
           task: 'improve_writing',
@@ -313,7 +314,7 @@ export default function CampaignEditorPage() {
     if (!companyId) return
     setPickBusy(true)
     try {
-      const res = await fetch(
+      const res = await authFetch(
         `/api/campaigns/contacts?companyId=${companyId}&q=${encodeURIComponent(pickQuery)}&channel=${campaign?.channel || 'sms'}`
       )
       const d = await res.json()
@@ -326,7 +327,7 @@ export default function CampaignEditorPage() {
     if (!prodQuery.trim() || !companyId) return
     setProdBusy(true)
     try {
-      const res = await fetch(`/api/orders/products?companyId=${companyId}&q=${encodeURIComponent(prodQuery)}`)
+      const res = await authFetch(`/api/orders/products?companyId=${companyId}&q=${encodeURIComponent(prodQuery)}`)
       const d = await res.json()
       setProdResults(d.products || [])
     } catch { setProdResults([]) }
@@ -344,7 +345,7 @@ export default function CampaignEditorPage() {
     if (!cCode.trim() || !cAmount || !companyId) return
     setCouponBusy(true)
     try {
-      const res = await fetch('/api/campaigns/coupon', {
+      const res = await authFetch('/api/campaigns/coupon', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           companyId, code: cCode.trim(), discountType: cType, amount: cAmount,
@@ -417,7 +418,7 @@ export default function CampaignEditorPage() {
     if (!testNumber.trim() || !companyId) return
     setTestBusy(true); setTestResult('')
     try {
-      const res = await fetch('/api/campaigns/test-send', {
+      const res = await authFetch('/api/campaigns/test-send', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ companyId, campaignId, to: testNumber.trim() }),
       })
@@ -495,7 +496,7 @@ export default function CampaignEditorPage() {
         updated_at: new Date().toISOString(),
       }).eq('id', campaignId)
 
-      const res = await fetch('/api/campaigns/send', {
+      const res = await authFetch('/api/campaigns/send', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ companyId, campaignId, confirm: 'SEND' }),
       })

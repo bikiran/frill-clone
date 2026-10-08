@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { CARRIERS, carrierByKey } from '@/lib/carriers'
+import { authFetch } from '@/lib/auth-fetch'
 
 /**
  * Send a tracking link to the customer.
@@ -48,7 +49,7 @@ export default function SendTrackingModal({
       let shortUrl = ''
       let shortCode = ''
       if (targetUrl) {
-        const res = await fetch('/api/short-links/create', {
+        const res = await authFetch('/api/short-links/create', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             companyId,
@@ -72,7 +73,7 @@ export default function SendTrackingModal({
 
       // Record the shipment so the conversation keeps a history.
       try {
-        await fetch('/api/shipments/create', {
+        await authFetch('/api/shipments/create', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             companyId, conversationId, contactId, orderId: orderNumber || null,

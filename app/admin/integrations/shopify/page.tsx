@@ -1,5 +1,6 @@
 'use client'
 
+import { authFetch } from '@/lib/auth-fetch'
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -45,7 +46,7 @@ export default function ShopifyIntegrationPage() {
 
   const loadStores = async (cid: string) => {
     try {
-      const res = await fetch(`/api/shopify/setup?companyId=${cid}`)
+      const res = await authFetch(`/api/shopify/setup?companyId=${cid}`)
       const data = await res.json()
       setStores(data.stores || [])
     } catch {}
@@ -56,7 +57,7 @@ export default function ShopifyIntegrationPage() {
     if (!companyId) return
     setConnecting(true); setError(''); setSuccess('')
     try {
-      const res = await fetch('/api/shopify/setup', {
+      const res = await authFetch('/api/shopify/setup', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ companyId, storeDomain, accessToken }),
       })
@@ -75,7 +76,7 @@ export default function ShopifyIntegrationPage() {
       // Loop until the sync reports done (cursor-based, budgeted per call)
       let done = false, guard = 0
       while (!done && guard < 40) {
-        const res = await fetch('/api/shopify/sync', {
+        const res = await authFetch('/api/shopify/sync', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ companyId, integrationId }),
         })
@@ -94,7 +95,7 @@ export default function ShopifyIntegrationPage() {
     if (!companyId) return
     if (!await confirmDialog('Remove this Shopify store? Synced customers stay, but it stops syncing.')) return
     try {
-      await fetch('/api/shopify/setup', {
+      await authFetch('/api/shopify/setup', {
         method: 'DELETE', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ companyId, integrationId }),
       })

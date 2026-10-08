@@ -1,3 +1,4 @@
+import { isStaffMember } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
@@ -64,6 +65,6 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ callId: st
 
 async function isCompanyMember(db: any, companyId: string, userId: string): Promise<boolean> {
   try { const { data: co } = await db.from('companies').select('owner_id').eq('id', companyId).maybeSingle(); if (co?.owner_id === userId) return true } catch {}
-  try { const { data: tm } = await db.from('team_members').select('id').eq('company_id', companyId).eq('user_id', userId).maybeSingle(); if (tm?.id) return true } catch {}
+  try { const tm = (await isStaffMember(db, companyId, userId)) ? { id: true } : null; if (tm?.id) return true } catch {}
   return false
 }

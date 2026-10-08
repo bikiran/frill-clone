@@ -1,4 +1,5 @@
 'use client'
+import { authFetch } from '@/lib/auth-fetch'
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { peekCompanyUser, readCache, writeCache } from '@/lib/client-cache'
@@ -113,7 +114,7 @@ export default function ReviewsPage() {
     try {
       let added = 0
       for (let round = 0; round < 6; round++) {
-        const res = await fetch('/api/google/reviews', {
+        const res = await authFetch('/api/google/reviews', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ companyId, action: 'sync' }),
         })
@@ -141,7 +142,7 @@ export default function ReviewsPage() {
     if (!companyId) return
     setDrafting(review.id)
     try {
-      const res = await fetch('/api/google/reviews/ai-reply', {
+      const res = await authFetch('/api/google/reviews/ai-reply', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ companyId, reviewId: review.review_id }),
       })
@@ -158,7 +159,7 @@ export default function ReviewsPage() {
     if (!companyId || !replyText.trim()) return
     setPosting(true)
     try {
-      const res = await fetch('/api/google/reviews', {
+      const res = await authFetch('/api/google/reviews', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ companyId, action: 'reply', reviewId: review.review_id, comment: replyText.trim() }),
       })
@@ -175,7 +176,7 @@ export default function ReviewsPage() {
     if (!companyId) return
     setSavingLink(true); setLinkSaved(false)
     try {
-      await fetch('/api/google/reviews', {
+      await authFetch('/api/google/reviews', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ companyId, action: 'save_review_link', reviewLink: reviewLink.trim() }),
       })
@@ -226,7 +227,7 @@ export default function ReviewsPage() {
     setReviews(rs => rs.map(r => r.id === review.id ? { ...r, ...patch } : r))
     setLinkFor(null)
     try {
-      await fetch('/api/google/reviews', {
+      await authFetch('/api/google/reviews', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ companyId, action: 'link_contact', reviewId: review.review_id, contactId: contact?.id || null, contactName: contact?.name || null }),
       })

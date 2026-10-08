@@ -1,3 +1,4 @@
+import { internalHeaders, isInternalCall } from '@/lib/internal-call'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { syncPage } from '../sync/route'
@@ -81,6 +82,8 @@ async function finishJob(
 // next batch (fire-and-forget) so the whole sync runs server-side in the
 // background. Resumable: always reads current_page from the job row.
 export async function POST(req: NextRequest) {
+  // Only our own server starts and chains sync runs.
+  if (!isInternalCall(req)) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
   const db = admin()
   let jobId: string | undefined
   try {
@@ -169,7 +172,7 @@ export async function POST(req: NextRequest) {
 
     // Chain the next batch (fire-and-forget) so it continues in the background
     fetch(`${origin(req)}/api/woocommerce/sync-run`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ jobId }),
     }).catch(() => {})
 

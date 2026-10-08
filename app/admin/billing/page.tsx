@@ -1,5 +1,6 @@
 'use client'
 
+import { authFetch } from '@/lib/auth-fetch'
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
@@ -94,7 +95,7 @@ export default function BillingPage() {
       // Load billing history from Stripe via API
       if (sub?.stripe_customer_id) {
         try {
-          const res = await fetch(`/api/stripe/billing-history?customerId=${sub.stripe_customer_id}`)
+          const res = await authFetch(`/api/stripe/billing-history?customerId=${sub.stripe_customer_id}`)
           const data = await res.json()
           setBillingHistory(data.invoices || [])
         } catch {}
@@ -143,7 +144,7 @@ export default function BillingPage() {
       // Plan subscriptions start a 14-day trial (no card up front); the branding
       // add-on is a straight charge, not a trial.
       const trial = planId !== 'branding_removal'
-      const res = await fetch('/api/stripe/create-checkout', {
+      const res = await authFetch('/api/stripe/create-checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: user.id, tier: planId, billing, email: user.email, currency, trial }),
@@ -163,7 +164,7 @@ export default function BillingPage() {
     if (!subscription?.stripe_customer_id) return
     setPortalLoading(true)
     try {
-      const res = await fetch('/api/stripe/portal', {
+      const res = await authFetch('/api/stripe/portal', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ customerId: subscription.stripe_customer_id }),

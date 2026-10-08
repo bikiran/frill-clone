@@ -1,3 +1,4 @@
+import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
@@ -27,6 +28,8 @@ export async function POST(req: NextRequest) {
     // Verify the form belongs to the company before touching its responses.
     const { data: form } = await db.from('forms').select('id, company_id').eq('id', formId).maybeSingle()
     if (!form || form.company_id !== companyId) return NextResponse.json({ error: 'Not allowed' }, { status: 403 })
+    // Members of the form's workspace only (form and company ids are public).
+    if (!(await requireCompanyAccess(req, db, form.company_id)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
 
     const { data, error } = await db.from('form_responses').delete()
       .eq('form_id', formId).in('id', ids).select('id')

@@ -1,3 +1,4 @@
+import { internalHeaders } from '@/lib/internal-call'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { logJobRun } from '@/lib/job-log'
@@ -55,7 +56,7 @@ export async function GET(req: NextRequest) {
     if (!companyId || userIds.length === 0) return
     try {
       await fetch(`${base}/api/push/send`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           companyId, userIds,
           title: 'Task due',

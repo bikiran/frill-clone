@@ -228,7 +228,7 @@ export default function GalleryPage() {
     setSharing(true); showToast('Creating link…')
     try {
       const mediaUrls = list.map((it: any) => ({ url: it.url, name: it.title || 'File', type: it.type || (it.kind === 'video' ? 'video/mp4' : 'image/jpeg') }))
-      const res = await fetch('/api/short-links/create', {
+      const res = await authFetch('/api/short-links/create', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         // `url` is the required target; the full set rides along in mediaUrls.
         body: JSON.stringify({ companyId, kind: 'media', channel: 'gallery', url: list[0].url, mediaUrls, sentBy: me, label: list.length === 1 ? (list[0].title || 'Shared media') : `${list.length} items` }),
@@ -282,7 +282,7 @@ export default function GalleryPage() {
       if (phone) {
         for (const att of attachments) {
           try {
-            await fetch('/api/telnyx/sms/send', {
+            await authFetch('/api/telnyx/sms/send', {
               method: 'POST', headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ companyId, conversationId: convId, to: phone, text: '', attachments: [att], senderName: me, skipChatMessage: true }),
             })
@@ -1683,7 +1683,7 @@ function MediaDetailsPanel({ item, folders, categories, itemCats, companyId, use
     ))
     if (ids.length && companyId) {
       try {
-        await fetch('/api/notify/members', {
+        await authFetch('/api/notify/members', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             companyId, userIds: ids, type: 'media_note',

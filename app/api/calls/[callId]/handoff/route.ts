@@ -1,3 +1,4 @@
+import { isStaffMember } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { newHandoffToken, HANDOFF_TTL_MS, logHandoff } from '@/lib/call-handoff'
@@ -161,7 +162,7 @@ async function isCompanyMember(db: any, companyId: string, userId: string): Prom
     if (co?.owner_id === userId) return true
   } catch {}
   try {
-    const { data: tm } = await db.from('team_members').select('id').eq('company_id', companyId).eq('user_id', userId).maybeSingle()
+    const tm = (await isStaffMember(db, companyId, userId)) ? { id: true } : null
     if (tm?.id) return true
   } catch {}
   return false

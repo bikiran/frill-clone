@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { requireCompanyAccess } from '@/lib/company-access'
 import { WooCommerceService } from '@/lib/woocommerce-service'
 
 function admin() {
@@ -14,7 +15,7 @@ async function wooFor(companyId: string, integrationId?: string) {
   const db = admin()
   let integ: any = null
   if (integrationId) {
-    const r = await db.from('woocommerce_integrations').select('*').eq('id', integrationId).maybeSingle()
+    const r = await db.from('woocommerce_integrations').select('*').eq('id', integrationId).eq('company_id', companyId).maybeSingle()
     integ = r.data
   } else {
     const r = await db.from('woocommerce_integrations').select('*').eq('company_id', companyId).eq('is_active', true).order('created_at', { ascending: true }).limit(1)
@@ -97,6 +98,8 @@ export async function GET(req: NextRequest) {
     const q = req.nextUrl.searchParams.get('q')
     const productId = req.nextUrl.searchParams.get('productId')
     if (!companyId) return NextResponse.json({ error: 'Missing companyId' }, { status: 400 })
+    // It searched any workspace's store for whoever asked; only its members now.
+    if (!(await requireCompanyAccess(req, admin(), companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
 
     const woo = await wooFor(companyId, integrationId)
     if (!woo) return NextResponse.json({ error: 'No WooCommerce store connected' }, { status: 404 })

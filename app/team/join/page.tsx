@@ -11,6 +11,7 @@ function JoinTeamContent() {
   const router = useRouter()
   const company = params.get('company')
   const email = params.get('email')
+  const inviteToken = params.get('token')
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -129,7 +130,7 @@ function JoinTeamContent() {
 
       const res = await fetch('/api/team/accept-invite', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password, companySlug: company }),
+        body: JSON.stringify({ email, password, companySlug: company, token: inviteToken }),
       })
       const out = await res.json()
       if (!res.ok) throw new Error(out.error || 'Could not accept the invitation.')
@@ -236,6 +237,7 @@ function JoinTeamContent() {
           <div style={{ background: '#fef2f2', color: '#dc2626', padding: '10px 14px', borderRadius: 10, fontSize: 13, marginBottom: 14, lineHeight: 1.4 }}>
             {acceptError}
             {/rese?t/i.test(acceptError) && <> <a href="/reset-password" style={{ color: '#dc2626', fontWeight: 700 }}>Reset password</a></>}
+            {/sign in with it/i.test(acceptError) && <> <a href="/signin" style={{ color: '#dc2626', fontWeight: 700 }}>Sign in</a></>}
           </div>
         )}
 

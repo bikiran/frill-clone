@@ -1,3 +1,4 @@
+import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
@@ -24,6 +25,11 @@ export async function POST(req: NextRequest) {
     const callId = body?.callId
     const rating = Number(body?.rating)
     if (!callId || ![1, -1].includes(rating)) return NextResponse.json({ error: 'Bad request' }, { status: 400 })
+    // Staff of the call's workspace only.
+    {
+      const { data: call } = await db.from('calls').select('company_id').eq('id', callId).maybeSingle()
+      if (!call || !(await requireCompanyAccess(req, db, call.company_id)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+    }
 
     const { error } = await db.from('calls').update({
       rating, rating_by_user_id: userId, rating_at: new Date().toISOString(),

@@ -1,3 +1,4 @@
+import { requireCompanyAccess, callerUser } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
@@ -10,6 +11,14 @@ export async function POST(req: NextRequest) {
     const db = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceKey, {
       auth: { autoRefreshToken: false, persistSession: false }
     }) as any
+
+    // Members only; wiping existing content first is for the platform admin.
+    const access = await requireCompanyAccess(req, db, companyId)
+    if (!access.ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+    if (clearFirst) {
+      const who = await callerUser(req, db)
+      if (who?.email !== 'bishalstha76@gmail.com') return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+    }
 
     const n = companyName || 'Your Company'
     const errors: string[] = []

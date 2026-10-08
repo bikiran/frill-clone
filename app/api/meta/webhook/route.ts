@@ -1,3 +1,4 @@
+import { internalHeaders } from '@/lib/internal-call'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import crypto from 'crypto'
@@ -251,7 +252,7 @@ export async function POST(req: NextRequest) {
         // "Translated · English / View original" toggle.
         if (text && insertedMsg?.id) {
           const base = (process.env.NEXT_PUBLIC_SITE_URL || new URL(req.url).origin).replace(/\/$/, '')
-          fetch(`${base}/api/inbox/translate-message`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messageId: insertedMsg.id }) }).catch(() => {})
+          fetch(`${base}/api/inbox/translate-message`, { method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ messageId: insertedMsg.id }) }).catch(() => {})
         }
 
         // Customer-matching: if they shared an email/phone (e.g. in reply to a

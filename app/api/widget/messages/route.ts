@@ -1,3 +1,4 @@
+import { visitorConversation } from '@/lib/widget-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
@@ -20,7 +21,8 @@ const uuid = (v: any): string | null =>
  * The widget used to SELECT from `messages` directly with the anon key, which
  * is why that table had to stay readable by anyone. Serving it here means the
  * table can be closed: the server checks the conversation belongs to the
- * company being claimed and returns only that thread.
+ * company being claimed, and that the caller is the visitor who started it
+ * (lib/widget-access.ts), and returns only that thread.
  *
  * `since` (an ISO timestamp) fetches just what's newer — used to catch up after
  * a reconnect without re-sending the whole conversation.
@@ -39,12 +41,10 @@ export async function GET(req: NextRequest) {
 
     const db = admin()
 
-    // Confirm the thread belongs to this company before returning anything.
-    const { data: conv } = await db.from('conversations')
-      .select('id, company_id').eq('id', conversationId).maybeSingle()
-    if (!conv || conv.company_id !== companyId) {
-      return NextResponse.json({ messages: [] }, { status: 404 })
-    }
+    // Only the visitor who started this chat (their chat key, or for older
+    // sessions their browser's visitor id) gets the thread.
+    const conv = await visitorConversation(req, db, companyId, conversationId)
+    if (!conv) return NextResponse.json({ messages: [], error: 'not_your_chat' }, { status: 403 })
 
     let q = db.from('messages')
       .select('*')
