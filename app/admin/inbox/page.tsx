@@ -1324,8 +1324,8 @@ export default function InboxPage() {
   const saveCard = async () => {
     if (!selected || !companyId) return
     try {
-      const isWidgetActive = activeChannel === 'widget' || activeChannel === 'chat'
-      const d = await cardsApi({ action: 'save_card', channel: isWidgetActive ? 'chat' : activeChannel })
+      const isWidgetActive = outboundChannel === 'widget' || outboundChannel === 'chat'
+      const d = await cardsApi({ action: 'save_card', channel: isWidgetActive ? 'chat' : outboundChannel })
       // Off-site (SMS/email/Messenger): the in-chat card can't be tapped, so send
       // the secure save-card link over the real channel. `silent` = the card is
       // already the thread record (correct delivery_channel), no duplicate.
@@ -1416,6 +1416,16 @@ export default function InboxPage() {
   }, [messages, selected?.id, (selected as any)?.channel])
 
   const isWebChat = ['widget', 'chat'].includes(activeChannel)
+  // Where a reply or an action (payment link, coupon, form…) actually goes. A
+  // phone-call thread has no text channel of its own, so we text the caller
+  // (or email them if there's no mobile) instead of treating it as live chat.
+  const outboundChannel = useMemo(() => {
+    if (!['phone', 'call', 'voice'].includes(activeChannel)) return activeChannel
+    const s = selected as any
+    if (s?.sms_number || s?.phone || contact?.phone || s?.contacts?.phone) return 'sms'
+    if (contact?.email || s?.customer_email) return 'email'
+    return 'chat'
+  }, [activeChannel, selected, contact?.phone, contact?.email])
 
   // The name shown in the conversation header. On SMS/phone the "subject" is
   // often a stale auto-detected name (e.g. from an AI guess), so clearing the
@@ -2921,7 +2931,7 @@ export default function InboxPage() {
   const deliverToCustomer = async (opts: { body: string; url?: string | null; subject?: string; silent?: boolean }): Promise<string> => {
     if (!selected || !companyId) throw new Error('No conversation selected')
     const me = myName
-    const ch = activeChannel
+    const ch = outboundChannel
     const fullBody = opts.url ? `${opts.body}\n${opts.url}` : opts.body
 
     if (ch === 'email') {
@@ -4179,7 +4189,7 @@ export default function InboxPage() {
                     </button>
                   </div>
                   <span className="cmp-via">
-                    {internalMode ? 'Only your team sees this' : <>Sending by <b>{({ sms: 'SMS', email: 'email', chat: 'live chat', instagram: 'Instagram', messenger: 'Messenger', whatsapp: 'WhatsApp', call: 'SMS' } as Record<string, string>)[sendChannel !== 'auto' ? sendChannel : activeChannel] || 'chat'}</b> {sendChannelGlyph(sendChannel !== 'auto' ? sendChannel : activeChannel, 13)}</>}
+                    {internalMode ? 'Only your team sees this' : <>Sending by <b>{({ sms: 'SMS', email: 'email', chat: 'live chat', instagram: 'Instagram', messenger: 'Messenger', whatsapp: 'WhatsApp', call: 'SMS' } as Record<string, string>)[sendChannel !== 'auto' ? sendChannel : outboundChannel] || 'chat'}</b> {sendChannelGlyph(sendChannel !== 'auto' ? sendChannel : outboundChannel, 13)}</>}
                   </span>
                 </div>
   )
@@ -4618,7 +4628,7 @@ export default function InboxPage() {
           discountType: couponType === 'percent' ? 'percent' : 'fixed',
           code: couponCode.trim() || undefined, oneTime: couponOneTime,
           expiryDays: couponExpiry ? Number(couponExpiry) : undefined,
-          createdByName: myName, channel: activeChannel,
+          createdByName: myName, channel: outboundChannel,
         }),
       })
       const data = await res.json()
@@ -4628,7 +4638,7 @@ export default function InboxPage() {
       // On a non-widget channel, the in-chat coupon card can't render — send the
       // code and a shop link over whatever channel the customer is on.
       let how = 'sent'
-      if (activeChannel !== 'widget' && activeChannel !== 'chat') {
+      if (outboundChannel !== 'widget' && outboundChannel !== 'chat') {
         const shop = (companyInfo as any)?.store_url || ''
         const amount = couponType === 'percent' ? `${couponAmount.trim()}%` : `$${couponAmount.trim()}`
         try {
@@ -4783,7 +4793,7 @@ export default function InboxPage() {
     // (SMS / email / Messenger / Instagram) just send a tap-to-respond LINK over
     // their real channel — like sending a photo — with no misleading "sent to
     // Live Chat" card.
-    const isWidgetActive = activeChannel === 'widget' || activeChannel === 'chat'
+    const isWidgetActive = outboundChannel === 'widget' || outboundChannel === 'chat'
 
     if (isWidgetActive) {
       await (supabase as any).from('messages').insert({
@@ -4811,15 +4821,19 @@ export default function InboxPage() {
     setMessages(msgs || []); scrollBottom()
   }
 
-  // Send a payment request into the chat
+  // Send a payment request into the chat. Locked while it's in flight, so a
+  // double click can't create and text two payment links.
+  const [paySending, setPaySending] = useState(false)
+  const paySendingRef = useRef(false)
   const sendPayment = async () => {
-    if (!selected || !companyId || !payAmount) return
+    if (!selected || !companyId || !payAmount || paySendingRef.current) return
+    paySendingRef.current = true; setPaySending(true)
     const senderName = myName
     try {
-      const isWidgetActive = activeChannel === 'widget' || activeChannel === 'chat'
+      const isWidgetActive = outboundChannel === 'widget' || outboundChannel === 'chat'
       const res = await fetch('/api/stripe/chat-payment', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ companyId, conversationId: selected.id, amount: payAmount, description: payDesc, senderName, channel: isWidgetActive ? 'chat' : activeChannel }),
+        body: JSON.stringify({ companyId, conversationId: selected.id, amount: payAmount, description: payDesc, senderName, channel: isWidgetActive ? 'chat' : outboundChannel }),
       })
       const data = await res.json()
       if (!res.ok) { alert(data.error || 'Could not create payment'); return }
@@ -4841,6 +4855,7 @@ export default function InboxPage() {
       const { data: msgs } = await (supabase as any).from('messages').select('*').eq('conversation_id', selected.id).order('created_at', { ascending: true })
       setMessages(msgs || []); scrollBottom()
     } catch (e: any) { alert('Payment error: ' + e.message) }
+    finally { paySendingRef.current = false; setPaySending(false) }
   }
 
   // Send the composer text. Channel is auto-routed unless the agent forces one
@@ -7255,8 +7270,8 @@ export default function InboxPage() {
           conversationId={selected.id}
           contactId={contact?.id}
           contact={contact}
-          channel={['widget', 'chat'].includes(activeChannel) ? null : activeChannel}
-          channelLabel={['widget', 'chat'].includes(activeChannel) ? null : (CHANNEL_NAME[activeChannel] || activeChannel)}
+          channel={['widget', 'chat'].includes(outboundChannel) ? null : outboundChannel}
+          channelLabel={['widget', 'chat'].includes(outboundChannel) ? null : (CHANNEL_NAME[outboundChannel] || outboundChannel)}
           onDeliver={deliverToCustomer}
           onClose={() => setShowDoa(false)}
           onDone={() => { if (selected) selectConversation(selected) }}
@@ -7272,8 +7287,8 @@ export default function InboxPage() {
           staffName={myName}
           staffId={user?.id}
           prefillCart={orderPrefillCart}
-          channel={['widget', 'chat'].includes(activeChannel) ? null : activeChannel}
-          channelLabel={['widget', 'chat'].includes(activeChannel) ? null : (CHANNEL_NAME[activeChannel] || activeChannel)}
+          channel={['widget', 'chat'].includes(outboundChannel) ? null : outboundChannel}
+          channelLabel={['widget', 'chat'].includes(outboundChannel) ? null : (CHANNEL_NAME[outboundChannel] || outboundChannel)}
           onDeliver={deliverToCustomer}
           onClose={() => { setShowCreateOrder(false); setOrderPrefillCart(null) }}
           onCreated={(order) => {
@@ -7625,8 +7640,8 @@ export default function InboxPage() {
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#059669" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
                   Secure payment via Stripe. Card details are never stored by Colvy.
                 </div>
-                <button type="button" onClick={sendPayment} disabled={!payAmount} style={{ padding: '11px 0', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
-                  Send payment request
+                <button type="button" onClick={sendPayment} disabled={!payAmount || paySending} style={{ padding: '11px 0', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 14, fontWeight: 700, cursor: (!payAmount || paySending) ? 'default' : 'pointer', opacity: paySending ? 0.7 : 1 }}>
+                  {paySending ? 'Sending…' : 'Send payment request'}
                 </button>
               </div>
             ) : pickerItems.length === 0 ? (
@@ -9935,7 +9950,7 @@ export default function InboxPage() {
                           ? 'Add note'
                           : (
                             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                              Send {sendChannelGlyph(sendChannel !== 'auto' ? sendChannel : activeChannel, 15)}
+                              Send {sendChannelGlyph(sendChannel !== 'auto' ? sendChannel : outboundChannel, 15)}
                             </span>
                           )}
                     </button>
