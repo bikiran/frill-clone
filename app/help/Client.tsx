@@ -284,18 +284,19 @@ export default function HelpCentrePage() {
       {/* Stats card overlapping the hero */}
       <div className="mx-auto px-6" style={{ maxWidth: 1240 }}>
         <div className="grid grid-cols-3 bg-white overflow-hidden" style={{ borderRadius: 20, boxShadow: '0 10px 34px rgba(15,23,42,0.08)', border: '1px solid var(--border)', marginTop: -56, position: 'relative', zIndex: 2 }}>
+          <style>{`@media (max-width: 640px) { .hc-stat { flex-direction: column; gap: 8px !important; padding: 16px 6px !important; text-align: center } .hc-stat-ic { width: 36px !important; height: 36px !important; border-radius: 10px !important } .hc-stat-ic svg { width: 18px; height: 18px } .hc-stat-txt { text-align: center !important } .hc-stat-n { font-size: 20px !important } .hc-stat-l { font-size: 12px !important; white-space: nowrap } }`}</style>
           {[
             { n: articles.length, l: 'Articles', icon: <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/> },
             { n: allCategories.length, l: 'Categories', icon: <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/> },
             { n: totalViews, l: 'Total views', icon: <><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></> },
           ].map((s, i) => (
-            <div key={s.l} className="flex items-center justify-center gap-3.5" style={{ padding: '22px 16px', borderLeft: i ? '1px solid var(--border)' : 'none' }}>
-              <span className="flex items-center justify-center shrink-0" style={{ width: 44, height: 44, borderRadius: 12, background: 'var(--peach)', color: 'var(--coral)' }}>
+            <div key={s.l} className="hc-stat flex items-center justify-center gap-3.5" style={{ padding: '22px 16px', borderLeft: i ? '1px solid var(--border)' : 'none' }}>
+              <span className="hc-stat-ic flex items-center justify-center shrink-0" style={{ width: 44, height: 44, borderRadius: 12, background: 'var(--peach)', color: 'var(--coral)' }}>
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">{s.icon}</svg>
               </span>
-              <div className="text-left">
-                <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--ink)', lineHeight: 1 }}>{s.n}</div>
-                <div style={{ fontSize: 13, color: 'var(--slate)', marginTop: 3 }}>{s.l}</div>
+              <div className="hc-stat-txt text-left">
+                <div className="hc-stat-n" style={{ fontSize: 22, fontWeight: 800, color: 'var(--ink)', lineHeight: 1 }}>{s.n}</div>
+                <div className="hc-stat-l" style={{ fontSize: 13, color: 'var(--slate)', marginTop: 3 }}>{s.l}</div>
               </div>
             </div>
           ))}
