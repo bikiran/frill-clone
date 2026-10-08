@@ -4077,8 +4077,9 @@ export default function SuperAdmin() {
     supabase.auth.getSession().then(async ({ data: s }: any) => {
       const u = s?.session?.user
       if (!u || u.email !== SUPER_ADMIN) {
-        // Redirect to main signin (admin.colvy.com/signin would 404)
-        window.location.href = 'https://colvy.com/signin'
+        // Redirect to main signin (admin.colvy.com/signin would 404). to=console
+        // brings the super admin back here afterwards instead of to a workspace.
+        window.location.href = 'https://colvy.com/signin?to=console'
         return
       }
       setAuthed(true)
@@ -4117,7 +4118,7 @@ export default function SuperAdmin() {
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#0a0a0a', gap: 16 }}>
       <div style={{ width: 36, height: 36, border: '2px solid #ff7a6b', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
       <p style={{ color: '#6b6b70', fontSize: 14 }}>Checking authentication...</p>
-      <a href="https://colvy.com/signin" style={{ color: '#ff7a6b', fontSize: 13, textDecoration: 'underline' }}>Sign in at colvy.com →</a>
+      <a href="https://colvy.com/signin?to=console" style={{ color: '#ff7a6b', fontSize: 13, textDecoration: 'underline' }}>Sign in at colvy.com →</a>
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
     </div>
   )
