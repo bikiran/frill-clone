@@ -5,6 +5,8 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { signInWithGoogle, signInWithGitHub } from '@/lib/auth'
 
+const SUPER_ADMIN_EMAIL = 'bishalstha76@gmail.com'
+
 const TESTIMONIALS = [
   { quote: "Colvy replaced our messy spreadsheet overnight. Customers finally feel heard.", name: 'Jordan Mills', role: 'Founder, Prexty', avatar: 'https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?w=80&h=80&fit=crop&crop=face' },
   { quote: "The public roadmap doubled our trial-to-paid conversion. Our users love the transparency.", name: 'Aiko Tanaka', role: 'Product Lead, nePlay', avatar: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=80&h=80&fit=crop&crop=face' },
@@ -66,6 +68,20 @@ function SignInForm() {
   const getRedirectUrl = async () => {
     const { data: { session } } = await supabase.auth.getSession()
     const user = session?.user
+
+    // Sent here by the platform console (admin.colvy.com) — go back there, not
+    // to a workspace. Its session lives on its own origin, so hand it over the
+    // same way as a subdomain. Super admin only: anyone else would be bounced
+    // straight back here by the console, in a loop.
+    const host = window.location.hostname
+    const onColvy = host.endsWith('colvy.com') && !host.includes('localhost')
+    if (user && params.get('to') === 'console' && (user.email || '').toLowerCase() === SUPER_ADMIN_EMAIL) {
+      if (!onColvy) return '/platform-admin'
+      if (session?.access_token && session?.refresh_token) {
+        return `https://admin.colvy.com/auth/handoff#access_token=${encodeURIComponent(session.access_token)}&refresh_token=${encodeURIComponent(session.refresh_token)}&next=${encodeURIComponent('/')}`
+      }
+      return 'https://admin.colvy.com/'
+    }
 
     // Always try to find the user's own company first (they should land on their admin)
     if (user) {

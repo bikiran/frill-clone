@@ -14,6 +14,13 @@ export default function LegalAdminPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState('')
+  // The legal pages live on colvy.com. This editor also runs inside the console
+  // on admin.colvy.com, where a relative /privacy is a console route (404).
+  const [publicOrigin, setPublicOrigin] = useState('')
+  useEffect(() => {
+    const h = window.location.hostname
+    if (h === 'colvy.com' || h.endsWith('.colvy.com')) setPublicOrigin('https://colvy.com')
+  }, [])
 
   const load = async (s: 'privacy' | 'terms') => {
     setLoading(true); setMsg('')
@@ -69,7 +76,7 @@ export default function LegalAdminPage() {
         {(['privacy', 'terms'] as const).map(s => (
           <button key={s} onClick={() => setSlug(s)} style={{ padding: '8px 16px', borderRadius: 9, border: slug === s ? '2px solid var(--coral)' : '1px solid var(--border)', background: slug === s ? 'var(--peach)' : '#fff', color: slug === s ? 'var(--coral)' : 'var(--ink)', fontSize: 13.5, fontWeight: 600, cursor: 'pointer', textTransform: 'capitalize' }}>{s === 'privacy' ? 'Privacy Policy' : 'Terms of Service'}</button>
         ))}
-        <a href={`/${slug}`} target="_blank" rel="noopener" style={{ marginLeft: 'auto', alignSelf: 'center', fontSize: 13, color: '#6366f1' }}>View page ↗</a>
+        <a href={`${publicOrigin}/${slug}`} target="_blank" rel="noopener" style={{ marginLeft: 'auto', alignSelf: 'center', fontSize: 13, color: '#6366f1' }}>View page ↗</a>
       </div>
 
       {msg && <div style={{ padding: '9px 13px', borderRadius: 9, background: msg === 'Saved.' ? '#ecfdf5' : '#fee2e2', color: msg === 'Saved.' ? '#059669' : '#dc2626', fontSize: 13, marginBottom: 16 }}>{msg}</div>}
