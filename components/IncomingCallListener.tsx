@@ -214,6 +214,24 @@ export default function IncomingCallListener({ companyId, agentName, showStatusP
   // and restarted the ringtone, so Decline looked like it did nothing.
   const callIdRef = useRef<string | null>(null)
   const declinedIds = useRef<Set<string>>(new Set())
+  // Call waiting: a second call that rings while we're already on one is held
+  // here (not hung up) so the agent can see it, and it rings properly the moment
+  // the first call ends. `waiting` is the display copy for the in-call banner.
+  const waitingRef = useRef<any>(null)
+  const [waiting, setWaiting] = useState<{ from: string; name?: string | null } | null>(null)
+  const waitBeepRef = useRef<any>(null)
+  // "End & answer": the promotion that follows the hang-up answers straight away.
+  const answerOnPromoteRef = useRef(false)
+  // A busy agent is never dialled, so usually there's no second leg to hold —
+  // the waiting call is only visible in the calls table (ringing teammates).
+  // `queued` is that call; ending the live call rings us into it (ring-me), and
+  // after "End & answer" the leg that arrives is answered without a click.
+  const [queued, setQueued] = useState<{ rowId: string; from: string; name?: string | null } | null>(null)
+  const dismissedQueued = useRef<Set<string>>(new Set())
+  const autoAnswerRef = useRef<{ from: string; at: number } | null>(null)
+  const ringMeCallIdRef = useRef<string | null>(null)
+  // Handlers registered once at connect time read the provider through this.
+  const providerRef = useRef(provider); providerRef.current = provider
   // True once THIS device answers the ringing call, so the incoming-ring backstop
   // (which watches the calls row for "answered/ended elsewhere") never tears down
   // a call we picked up here in the brief window before inCall re-renders.
@@ -229,6 +247,7 @@ export default function IncomingCallListener({ companyId, agentName, showStatusP
   // the CURRENT caller/incoming instead of a stale closure value.
   const callerRef = useRef<any>(null); callerRef.current = caller
   const incomingRef = useRef<any>(null); incomingRef.current = incoming
+  const inboundRowIdRef = useRef<string | null>(null); inboundRowIdRef.current = inboundRowId
   // Publish whether the rich (bridged/incoming) panel owns a call, so the direct
   // dialler (GlobalCallBar) never opens a second panel on top of it.
   useEffect(() => { try { (window as any).__colvyRichCallActive = !!incoming || inCall } catch {} }, [incoming, inCall])
@@ -436,31 +455,55 @@ export default function IncomingCallListener({ companyId, agentName, showStatusP
               try { call.hangup?.() } catch {}
               return
             }
-            // Already on a call? Reject this second leg so it rings the other
-            // available agents instead of interrupting the live call.
-            if (liveRef.current.inCall) { try { call.hangup?.() } catch {}; return }
+            // Already on a call? Hold this second leg as "call waiting" instead of
+            // hanging it up. Hanging up used to end the leg — which could send the
+            // caller to voicemail while teammates were still ringing — and left
+            // nothing to answer once the first call ended. Kept ringing quietly,
+            // the agent sees who it is and gets the full ring after hanging up.
+            // The same invite reported again (new → ringing) — it's already shown.
+            if (call.id && callRef.current?.id === call.id) return
+            if (liveRef.current.inCall) {
+              if (waitingRef.current) {
+                if (waitingRef.current.id !== call.id) { try { call.hangup?.() } catch {} }
+                return
+              }
+              holdWaiting(call)
+              return
+            }
             console.log('[telnyx] INCOMING CALL received by browser client')
             callRef.current = call
             callIdRef.current = call.id || null
             setIncoming(call)
-            startRing()
             const telFrom = call.options?.remoteCallerNumber || call.remoteCallerNumber || ''
+            // The waiting call we just chose "End & answer" for — pick it up.
+            const aa = autoAnswerRef.current
+            const tail = (s: string) => (s || '').replace(/\D/g, '').slice(-9)
+            if (aa && Date.now() - aa.at < 20000 && tail(aa.from) && tail(aa.from) === tail(telFrom)) {
+              autoAnswerRef.current = null
+              answeredHereRef.current = true
+              try { call.answer?.() } catch (err) { console.error('[call] answer failed', err) }
+              setInCall(true)
+              notifyTeamCallAccepted()
+            } else {
+              startRing()
+            }
             resolveCaller(telFrom)
-            // Telnyx inbound calls don't carry our calls-row id, so resolve it from
-            // the caller number for the incoming-ring backstop (so the ringtone
-            // stops when the call is answered on another device, e.g. mobile, or
-            // ends — Telnyx doesn't always send this browser leg a cancel).
-            ;(async () => {
-              try {
-                const digits = String(telFrom).replace(/\D/g, '').slice(-9)
-                if (!digits || !companyId) return
-                const { data } = await (supabase as any).from('calls')
-                  .select('id').eq('company_id', companyId).eq('direction', 'inbound')
-                  .ilike('from_number', `%${digits}%`)
-                  .order('created_at', { ascending: false }).limit(1).maybeSingle()
-                if (data?.id) setInboundRowId(data.id)
-              } catch {}
-            })()
+            findInboundRow(telFrom)
+          }
+          // The waiting call has its own lifecycle until it's promoted — its
+          // state changes must not touch the live call's panel.
+          const isWaiting = !!call.id && waitingRef.current?.id === call.id
+          if (isWaiting && ['hangup', 'destroy', 'purge', 'done'].includes(String(call.state))) {
+            declinedIds.current.delete(call.id)
+            clearWaiting()
+            return
+          }
+          if (isWaiting) return
+          // A terminal state for some OTHER leg (an old call's late 'destroy', a
+          // leg we turned away) must not end the call that's on screen now.
+          if (call.id && callRef.current?.id && callRef.current.id !== call.id) {
+            if (['hangup', 'destroy', 'purge', 'done'].includes(String(call.state))) declinedIds.current.delete(call.id)
+            return
           }
           if (call.state === 'active' && !(liveRef.current.inCall && callRef.current?.id === call.id && startedAtRef.current > 0)) {
             answeredHereRef.current = true
@@ -483,6 +526,7 @@ export default function IncomingCallListener({ companyId, agentName, showStatusP
 
     return () => {
       cancelled = true
+      clearWaiting()
       if (timerRef.current) clearInterval(timerRef.current)
       try { clientRef.current?.disconnect?.() } catch {}
       try { clientRef.current?.destroy?.() } catch {}   // Twilio Device teardown
@@ -615,6 +659,22 @@ export default function IncomingCallListener({ companyId, agentName, showStatusP
     return () => window.removeEventListener('colvy:outbound-bridge', onBridge as EventListener)
   }, [companyId, agentName])
 
+  // Telnyx inbound calls don't carry our calls-row id, so resolve it from the
+  // caller number for the incoming-ring backstop (so the ringtone stops when the
+  // call is answered on another device, e.g. mobile, or ends — Telnyx doesn't
+  // always send this browser leg a cancel).
+  const findInboundRow = async (telFrom: string) => {
+    try {
+      const digits = String(telFrom).replace(/\D/g, '').slice(-9)
+      if (!digits || !companyId) return
+      const { data } = await (supabase as any).from('calls')
+        .select('id').eq('company_id', companyId).eq('direction', 'inbound')
+        .ilike('from_number', `%${digits}%`)
+        .order('created_at', { ascending: false }).limit(1).maybeSingle()
+      if (data?.id) setInboundRowId(data.id)
+    } catch {}
+  }
+
   const resolveCaller = async (fromNumber: string) => {
     setCaller({ number: fromNumber, loading: true })
     if (!companyId || !fromNumber) { setCaller({ number: fromNumber }); return }
@@ -667,7 +727,14 @@ export default function IncomingCallListener({ companyId, agentName, showStatusP
     const inc = incomingRef.current
     const cal = callerRef.current
     const snap = { callId: outboundCallIdRef.current || inc?.callRowId || inc?.id || undefined, name: cal?.name, number: cal?.number || inc?.from, seconds: secs }
+    const w = waitingRef.current
     reset()
+    // A call was waiting: it becomes the ringing call now (or is answered
+    // straight away after "End & answer"). No review card in the way.
+    if (w) { promoteWaiting(w); return }
+    // Free again. If a teammate's call is still ringing that skipped us while
+    // we were busy, ask the server to ring us into it too.
+    if (wasLive && providerRef.current !== 'twilio') ringMeIfWaiting()
     if (!wasLive) return
     setEnded(snap); setEndedRating(0); setEndedCountdown(3)
     let n = 3
@@ -677,6 +744,150 @@ export default function IncomingCallListener({ companyId, agentName, showStatusP
     }, 1000)
   }
   const dismissEnded = () => { try { clearInterval(endedTimerRef.current) } catch {}; setEnded(null) }
+
+  // ── Call waiting ────────────────────────────────────────────────────────────
+  // A soft double beep every few seconds while a second call waits — the usual
+  // phone call-waiting tone, quiet enough to talk over.
+  const startWaitBeep = () => {
+    stopWaitBeep()
+    try {
+      const AC = (window as any).AudioContext || (window as any).webkitAudioContext
+      if (!AC) return
+      const ctx = new AC()
+      const pip = (at: number) => {
+        const o = ctx.createOscillator(); const g = ctx.createGain()
+        o.frequency.value = 440; o.type = 'sine'
+        g.gain.setValueAtTime(0.0001, ctx.currentTime + at)
+        g.gain.exponentialRampToValueAtTime(0.08, ctx.currentTime + at + 0.03)
+        g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + at + 0.2)
+        o.connect(g); g.connect(ctx.destination)
+        o.start(ctx.currentTime + at); o.stop(ctx.currentTime + at + 0.25)
+      }
+      const beep = () => { pip(0); pip(0.35) }
+      beep()
+      waitBeepRef.current = { ctx, timer: setInterval(beep, 4000) }
+    } catch {}
+  }
+  const stopWaitBeep = () => {
+    const b = waitBeepRef.current
+    waitBeepRef.current = null
+    if (!b) return
+    try { clearInterval(b.timer) } catch {}
+    try { b.ctx?.close?.() } catch {}
+  }
+  const holdWaiting = (call: any) => {
+    console.log('[telnyx] call waiting', call.id)
+    waitingRef.current = call
+    const from = call.options?.remoteCallerNumber || call.remoteCallerNumber || ''
+    setWaiting({ from })
+    // Put a name to the number if we know them; the number shows until then.
+    ;(async () => {
+      try {
+        const digits = String(from).replace(/\D/g, '').slice(-9)
+        if (!digits || !companyId) return
+        const { data } = await (supabase as any).from('contacts')
+          .select('name').eq('company_id', companyId).ilike('phone', `%${digits}%`).limit(1).maybeSingle()
+        if (data?.name && waitingRef.current === call) setWaiting({ from, name: data.name })
+      } catch {}
+    })()
+  }
+  const clearWaiting = () => {
+    waitingRef.current = null
+    setWaiting(null)
+  }
+  // The live call ended with a call waiting: show it as the ringing call.
+  const promoteWaiting = (w: any) => {
+    clearWaiting()
+    const answerNow = answerOnPromoteRef.current
+    answerOnPromoteRef.current = false
+    callRef.current = w
+    callIdRef.current = w.id || null
+    setIncoming(w)
+    const from = w.options?.remoteCallerNumber || w.remoteCallerNumber || ''
+    resolveCaller(from)
+    findInboundRow(from)
+    if (answerNow) {
+      answeredHereRef.current = true
+      try { w.answer?.() } catch (e) { console.error('[call] answer failed', e) }
+      setInCall(true)
+      notifyTeamCallAccepted()
+    } else {
+      startRing()
+    }
+  }
+  const declineWaiting = () => {
+    const w = waitingRef.current
+    if (!w) return
+    if (w.id) declinedIds.current.add(w.id)
+    clearWaiting()
+    try { w.hangup?.() } catch {}
+  }
+  const endAndAnswer = () => {
+    if (waitingRef.current) {
+      answerOnPromoteRef.current = true
+      hangup()   // finishCall() promotes the waiting call and answers it
+      return
+    }
+    if (!queued) return
+    // Hanging up rings us into the waiting call (ring-me); answer that leg on
+    // arrival instead of making the agent click Answer as well.
+    autoAnswerRef.current = { from: queued.from, at: Date.now() }
+    ringMeCallIdRef.current = queued.rowId
+    hangup()
+  }
+  const dismissQueued = () => {
+    if (queued) dismissedQueued.current.add(queued.rowId)
+    setQueued(null)
+  }
+  const ringMeIfWaiting = async () => {
+    if (!companyId) return
+    const callId = ringMeCallIdRef.current
+    ringMeCallIdRef.current = null
+    try {
+      const { data: sess } = await supabase.auth.getSession()
+      const token = sess?.session?.access_token
+      if (!token) return
+      await fetch('/api/telnyx/ring-me', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ companyId, callId: callId || undefined }),
+      })
+    } catch {}
+  }
+
+  // While on a call, look for an inbound call that's ringing teammates (it
+  // skipped us because we're busy) so the agent knows someone is waiting.
+  useEffect(() => {
+    if (!inCall || provider === 'twilio' || !companyId) { setQueued(null); return }
+    let stop = false
+    const check = async () => {
+      try {
+        const since = new Date(Date.now() - 90_000).toISOString()
+        const { data } = await (supabase as any).from('calls')
+          .select('id, from_number, caller_name')
+          .eq('company_id', companyId).eq('direction', 'inbound').eq('status', 'ringing_agents')
+          .gte('created_at', since).order('created_at', { ascending: true }).limit(5)
+        if (stop) return
+        const mine = new Set([incomingRef.current?.callRowId, inboundRowIdRef.current, outboundCallIdRef.current].filter(Boolean))
+        // The call we're on can still read 'ringing_agents' for a moment after
+        // it's answered — never offer the current caller as "waiting".
+        const tail = (s: any) => String(s || '').replace(/\D/g, '').slice(-9)
+        const cur = tail(callerRef.current?.number || incomingSnapshot(incomingRef.current)?.from)
+        const row = (data || []).find((r: any) => !mine.has(r.id) && !dismissedQueued.current.has(r.id) && !(cur && tail(r.from_number) === cur))
+        setQueued(prev => row
+          ? (prev?.rowId === row.id && prev.name === (row.caller_name || null) ? prev : { rowId: row.id, from: row.from_number || '', name: row.caller_name || null })
+          : null)
+      } catch {}
+    }
+    check()
+    const iv = setInterval(check, 4000)
+    return () => { stop = true; clearInterval(iv) }
+  }, [inCall, provider, companyId])
+
+  // The call-waiting tone plays while either kind of waiting call is shown.
+  const beepOn = inCall && !!(waiting || queued)
+  useEffect(() => { if (beepOn) startWaitBeep(); else stopWaitBeep() }, [beepOn])
+  useEffect(() => () => stopWaitBeep(), [])
   const rateCall = async (rating: 1 | -1) => {
     setEndedRating(rating)
     try { clearInterval(endedTimerRef.current) } catch {}   // stop the countdown once they engage
@@ -899,10 +1110,14 @@ export default function IncomingCallListener({ companyId, agentName, showStatusP
   }
 
   const hangup = () => {
+    const c = callRef.current
     stopRing()
     if (provider === 'twilio') twilioServerHangup()
-    try { provider === 'twilio' ? callRef.current?.disconnect?.() : callRef.current?.hangup?.() } catch {}
-    finishCall()
+    try { provider === 'twilio' ? c?.disconnect?.() : c?.hangup?.() } catch {}
+    // The SDK can report the hangup synchronously, and that handler already ran
+    // finishCall() (and may have promoted a waiting call into callRef) — don't
+    // finish a second time and wipe it.
+    if (callRef.current === c) finishCall()
   }
 
   // ── Hold and warm transfer ───────────────────────────────────────────────
@@ -1018,6 +1233,13 @@ export default function IncomingCallListener({ companyId, agentName, showStatusP
     callRef.current = null
     saveCallCtx(null)
   }
+
+  // Backstop: if the panel empties by any other path (transfer completed, ended
+  // elsewhere) while a call is waiting, that call rings now.
+  useEffect(() => {
+    if (waiting && !inCall && !incoming && waitingRef.current) promoteWaiting(waitingRef.current)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [waiting, inCall, incoming])
 
   const fmtDur = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
 
@@ -1228,6 +1450,45 @@ export default function IncomingCallListener({ companyId, agentName, showStatusP
           )}
         </div>
       )}
+
+      {/* Call waiting: a second caller is ringing while we're on this call. It
+          rings in full as soon as this call ends; or switch to it now. */}
+      {inCall && (waiting || queued) && (() => {
+        const w = (waiting || queued)!
+        return (
+        <div className="cw-banner" role="status" aria-live="polite"
+          style={{ margin: '0 20px 8px', padding: 10, borderRadius: 12, background: 'rgba(251,191,36,0.12)', border: '1px solid rgba(251,191,36,0.35)' }}>
+          <style>{`@keyframes cwIn { from { opacity: 0; transform: translateY(-4px) } to { opacity: 1; transform: none } } .cw-banner { animation: cwIn .22s ease-out } @media (prefers-reduced-motion: reduce) { .cw-banner { animation: none } }`}</style>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#fbbf24', flexShrink: 0, animation: 'pulse 1.2s infinite' }} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <p style={{ margin: 0, fontSize: 10.5, fontWeight: 800, letterSpacing: '0.04em', textTransform: 'uppercase', color: '#fbbf24' }}>Call waiting</p>
+              <p style={{ margin: '1px 0 0', fontSize: 13, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {w.name || w.from || 'Unknown caller'}
+                {w.name && w.from && <span style={{ fontWeight: 500, opacity: 0.65 }}> · {w.from}</span>}
+              </p>
+            </div>
+          </div>
+          <p style={{ margin: '6px 0 8px', fontSize: 11.5, opacity: 0.7, lineHeight: 1.35 }}>
+            {waiting ? 'Rings here as soon as you hang up.' : 'Ringing your team. It rings here too once you hang up.'}
+          </p>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button type="button" onClick={waiting ? declineWaiting : dismissQueued}
+              style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '8px 10px', borderRadius: 9, border: 'none', background: 'rgba(255,255,255,0.1)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" style={{ flexShrink: 0 }}><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              {waiting ? 'Decline' : 'Dismiss'}
+            </button>
+            <button type="button" onClick={endAndAnswer}
+              style={{ flex: 1.4, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '8px 10px', borderRadius: 9, border: 'none', background: '#059669', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" style={{ flexShrink: 0 }}>
+                <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>
+              </svg>
+              End &amp; answer
+            </button>
+          </div>
+        </div>
+        )
+      })()}
 
       {/* What's happening with hold / transfer, stated plainly */}
       {inCall && (onHold || transferState !== 'none' || transferMsg) && (

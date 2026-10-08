@@ -854,6 +854,12 @@ export async function POST(req: NextRequest) {
                 if (fanoutTargets.length) upd.routing_state = { pending: true, targets: fanoutTargets, ring, connId: dialConnectionId, from: fromNum }
                 const { error: updErr } = await db.from('calls').update(upd).eq('telnyx_call_control_id', callControlId)
                 if (updErr) console.error('[telnyx inbound] could not store ringing legs', updErr.message)
+                // Remember how to dial one more agent into this call, so an agent
+                // who was busy can be rung once they hang up (/api/telnyx/ring-me).
+                // Separate write: never put the ringing legs above at risk.
+                if (!fanoutTargets.length) {
+                  try { await db.from('calls').update({ routing_state: { pending: false, ring, connId: dialConnectionId, from: fromNum } }).eq('telnyx_call_control_id', callControlId) } catch {}
+                }
                 log.info('[telnyx inbound] ringing devices', { count: legIds.length, priority: fanoutTargets.length > 0 })
               } else {
                 // Every dial attempt failed — fall back to voicemail so the
@@ -1183,6 +1189,21 @@ export async function POST(req: NextRequest) {
               // while the call is still ringing (not bridged) and a fan-out is
               // pending — otherwise this is a normal no-answer → voicemail.
               const rs: any = (parentRow as any).routing_state
+              // An agent who came free mid-ring was dialled in late
+              // (/api/telnyx/ring-me). While that leg is still ringing, another
+              // leg ending must NOT send the caller to voicemail.
+              const late: any[] = Array.isArray(rs?.late_legs) ? rs.late_legs : []
+              if (late.length) {
+                const mine = late.find(l => l.leg === callControlId)
+                const othersRinging = late.some(l => l.leg !== callControlId && !l.ended)
+                if (mine) {
+                  try { await db.from('calls').update({ routing_state: { ...rs, late_legs: late.map(l => l.leg === callControlId ? { ...l, ended: true } : l) } }).eq('id', parentRow.id) } catch {}
+                }
+                if (othersRinging && parentRow.status === 'ringing_agents') {
+                  log.info('[telnyx hangup] a leg ended but a late agent is still ringing — keeping the caller', { callControlId })
+                  return NextResponse.json({ ok: true })
+                }
+              }
               if (rs?.pending && parentRow.status === 'ringing_agents' && Array.isArray(rs.targets) && rs.targets.length) {
                 const newLegs: string[] = []
                 for (const sipTarget of rs.targets) {

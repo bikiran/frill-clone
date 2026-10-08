@@ -18,18 +18,22 @@ export default function AuthHandoffPage() {
         const params = new URLSearchParams(hash)
         const access_token = params.get('access_token')
         const refresh_token = params.get('refresh_token')
-        const next = params.get('next') || '/admin'
+        // Same-site paths only — never forward the fresh session to another site.
+        const rawNext = params.get('next') || '/admin'
+        const next = rawNext.startsWith('/') && !rawNext.startsWith('//') ? rawNext : '/admin'
+        // The console host has no /signin of its own (it would 404).
+        const signin = window.location.hostname === 'admin.colvy.com' ? 'https://colvy.com/signin?to=console' : '/signin'
 
         if (!access_token || !refresh_token) {
           setStatus('Missing session tokens. Redirecting to sign in…')
-          setTimeout(() => { window.location.href = '/signin' }, 1200)
+          setTimeout(() => { window.location.href = signin }, 1200)
           return
         }
 
         const { error } = await supabase.auth.setSession({ access_token, refresh_token })
         if (error) {
           setStatus('Could not restore session. Redirecting to sign in…')
-          setTimeout(() => { window.location.href = '/signin' }, 1200)
+          setTimeout(() => { window.location.href = signin }, 1200)
           return
         }
 
@@ -38,7 +42,7 @@ export default function AuthHandoffPage() {
         setStatus('Success! Redirecting…')
         window.location.href = next
       } catch {
-        window.location.href = '/signin'
+        window.location.href = window.location.hostname === 'admin.colvy.com' ? 'https://colvy.com/signin?to=console' : '/signin'
       }
     }
     run()
