@@ -39,7 +39,14 @@ export function proxy(req: NextRequest) {
       url.pathname = '/'
       return NextResponse.redirect(url)
     }
-    url.pathname = `/platform-admin${path === '/' ? '' : path}`
+    // The console is a single page (sections are #hashes), so any other path
+    // here is a public link opened from inside it — a blog post, /privacy,
+    // /pricing — that would rewrite to /platform-admin/<path> and 404. Those
+    // pages live on colvy.com.
+    if (path !== '/') {
+      return NextResponse.redirect(new URL(`${path}${url.search}`, 'https://colvy.com'))
+    }
+    url.pathname = '/platform-admin'
     return NextResponse.rewrite(url)
   }
 
