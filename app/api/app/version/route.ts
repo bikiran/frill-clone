@@ -28,7 +28,7 @@ export async function GET() {
     ios: {
       latest: process.env.APP_IOS_LATEST || CURRENT,
       min: process.env.APP_IOS_MIN || '0.0.0',
-      url: process.env.APP_IOS_URL || 'https://apps.apple.com/app/colvy/id0000000000',
+      url: process.env.APP_IOS_URL || 'https://apps.apple.com/app/id6803380512',
     },
   })
 }
