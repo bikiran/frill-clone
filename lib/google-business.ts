@@ -117,7 +117,13 @@ async function notifyNewReviews(db: any, companyId: string, reviews: any[]) {
 }
 
 // Fetches reviews for the connected location and upserts them into Colvy.
-export async function syncReviews(companyId: string) {
+// A sync has to finish inside the serverless time limit (60s). It saves only
+// reviews that are new or have changed since the last sync, in batches, and if
+// it runs short of time it stops cleanly and reports `partial` — the next call
+// carries on from there, because anything not yet saved still reads as changed.
+export async function syncReviews(companyId: string, opts: { deadline?: number } = {}) {
+  const deadline = opts.deadline ?? Date.now() + 45_000
+  const outOfTime = () => Date.now() > deadline
   const db = admin()
   const auth = await getGoogleToken(companyId)
   if (!auth) throw new Error('Google Business Profile is not connected (or the connection expired — reconnect it).')
@@ -146,7 +152,7 @@ export async function syncReviews(companyId: string) {
     if (data.averageRating != null) averageRating = data.averageRating
     if (data.totalReviewCount != null) totalReviewCount = data.totalReviewCount
     pageToken = data.nextPageToken
-  } while (pageToken && ++pages < 200)
+  } while (pageToken && ++pages < 200 && !outOfTime())
 
   const STAR: Record<string, number> = { ONE: 1, TWO: 2, THREE: 3, FOUR: 4, FIVE: 5 }
   let saved = 0
@@ -185,21 +191,30 @@ export async function syncReviews(companyId: string) {
   // Pre-fetch existing reviews ONCE (id + current link), so the loop below does
   // a single write per review instead of a SELECT + write. A full sync of
   // hundreds of reviews was doing ~2 queries each, which timed the request out.
-  const existingMap = new Map<string, { id: string; contact_id: string | null }>()
+  // `sig` is what Google last told us about the review (its own update time and
+  // its reply's) — when it hasn't moved, there's nothing to write.
+  const sigOf = (r: any) => `${r?.updateTime || ''}|${r?.reviewReply?.updateTime || ''}|${r?.reviewReply?.comment ? 1 : 0}`
+  const existingMap = new Map<string, { id: string; contact_id: string | null; sig: string }>()
   {
-    let r = await db.from('google_reviews').select('id, review_id, contact_id').eq('company_id', companyId).limit(10000)
+    let r: any = await db.from('google_reviews').select('id, review_id, contact_id, upd:raw->>updateTime, rupd:raw->reviewReply->>updateTime, rcom:raw->reviewReply->>comment').eq('company_id', companyId).limit(10000)
+    if (r.error) r = await db.from('google_reviews').select('id, review_id, contact_id').eq('company_id', companyId).limit(10000)
     if (missingCol(r.error)) r = await db.from('google_reviews').select('id, review_id').eq('company_id', companyId).limit(10000)
-    for (const row of (r.data || [])) existingMap.set(row.review_id, { id: row.id, contact_id: (row as any).contact_id ?? null })
+    for (const row of (r.data || [])) existingMap.set(row.review_id, {
+      id: row.id, contact_id: (row as any).contact_id ?? null,
+      sig: row.upd !== undefined ? `${row.upd || ''}|${row.rupd || ''}|${row.rcom ? 1 : 0}` : '',
+    })
   }
 
   const newReviews: any[] = []   // freshly inserted this run — for the email notification
-
+  const inserts: any[] = []
+  const updates: { id: string; row: any }[] = []
   for (const r of allReviews) {
     const reviewerName = r.reviewer?.displayName || 'Anonymous'
-    const match = findMatch(reviewerName)
     const reviewId = r.reviewId || r.name
     const existing = existingMap.get(reviewId)
-
+    const match = findMatch(reviewerName)
+    // Unchanged on Google, and no new customer link to add → skip it.
+    if (existing && existing.sig && existing.sig === sigOf(r) && (existing.contact_id || !match)) continue
     const row: any = {
       company_id: companyId,
       review_id: reviewId,
@@ -216,53 +231,71 @@ export async function syncReviews(companyId: string) {
       contact_id: existing?.contact_id || match?.id || null,
       contact_name: match?.name || null,
     }
+    if (existing?.id) updates.push({ id: existing.id, row })
+    else inserts.push({ ...row, _match: match })
+  }
 
-    // Resilient write: strip the match columns and retry if they're not migrated.
-    const write = async (payload: any) => existing?.id
-      ? db.from('google_reviews').update(payload).eq('id', existing.id)
-      : db.from('google_reviews').insert(payload)
-    let res = await write(row)
-    if (missingCol(res.error)) {
-      const { contact_id, contact_name, match_checked_at, ...base } = row
-      res = await write(base)
+  const stripMatch = ({ contact_id, contact_name, match_checked_at, ...base }: any) => base
+  let partial = false
+  // New reviews: one insert per 100.
+  for (let i = 0; i < inserts.length; i += 100) {
+    if (outOfTime()) { partial = true; break }
+    const chunk = inserts.slice(i, i + 100)
+    const rows = chunk.map(({ _match, ...row }: any) => row)
+    let res = await db.from('google_reviews').insert(rows)
+    if (missingCol(res.error)) res = await db.from('google_reviews').insert(rows.map(stripMatch))
+    // Only what actually saved counts as new (and gets notified); the rest is
+    // picked up by the next sync.
+    if (!res.error) { saved += chunk.length; newReviews.push(...chunk) }
+  }
+  // Changed reviews: a handful of writes at a time.
+  for (let i = 0; i < updates.length; i += 10) {
+    if (outOfTime()) { partial = true; break }
+    await Promise.all(updates.slice(i, i + 10).map(async ({ id, row }) => {
+      let res = await db.from('google_reviews').update(row).eq('id', id)
+      if (missingCol(res.error)) res = await db.from('google_reviews').update(stripMatch(row)).eq('id', id)
+    }))
+  }
+
+  // Side effects for genuinely new reviews — only recent ones matter, so the
+  // first sync (years of history) doesn't do hundreds of lookups.
+  for (const row of newReviews) {
+    if (outOfTime()) break
+    const created = row.review_created_at ? Date.parse(row.review_created_at) : 0
+    const reviewerName = row.reviewer_name
+    const match = row._match
+    // Integrations hear about genuinely new reviews only — the first sync
+    // imports years of history, which shouldn't flood Slack.
+    if (created && Date.now() - created < 7 * 86400_000) {
+      const stars = row.star_rating ? `${row.star_rating}-star ` : ''
+      emitIntegrationEvent(companyId, 'review.received', {
+        title: `New ${stars}Google review from ${reviewerName || 'a customer'}`,
+        summary: row.comment ? `“${String(row.comment).slice(0, 800)}”` : null,
+        path: '/admin/reviews',
+        customer: match ? { name: match.name || reviewerName || null, email: (match as any).email || null, phone: (match as any).phone || null } : { name: reviewerName || null },
+        fields: { Rating: row.star_rating ? `${row.star_rating} / 5` : null, Replied: row.reply_comment ? 'Yes' : 'Not yet' },
+        data: { review: { rating: row.star_rating, comment: row.comment, reviewer: reviewerName, created_at: row.review_created_at } },
+        dedupeKey: `review:${row.review_id || reviewerName}:${row.review_created_at}`,
+      }, { db })
     }
-    if (!existing?.id) {
-      saved++
-      newReviews.push(row)
-      // Integrations hear about genuinely new reviews only — the first sync
-      // imports years of history, which shouldn't flood Slack.
-      if (row.review_created_at && Date.now() - Date.parse(row.review_created_at) < 7 * 86400_000) {
-        const stars = row.star_rating ? `${row.star_rating}-star ` : ''
-        emitIntegrationEvent(companyId, 'review.received', {
-          title: `New ${stars}Google review from ${reviewerName || 'a customer'}`,
-          summary: row.comment ? `“${String(row.comment).slice(0, 800)}”` : null,
-          path: '/admin/reviews',
-          customer: match ? { name: match.name || reviewerName || null, email: (match as any).email || null, phone: (match as any).phone || null } : { name: reviewerName || null },
-          fields: { Rating: row.star_rating ? `${row.star_rating} / 5` : null, Replied: row.reply_comment ? 'Yes' : 'Not yet' },
-          data: { review: { rating: row.star_rating, comment: row.comment, reviewer: reviewerName, created_at: row.review_created_at } },
-          dedupeKey: `review:${(r as any).reviewId || (r as any).name || reviewerName}:${row.review_created_at}`,
-        }, { db })
-      }
-      // Tie a new review back to a review request we sent, so the agent's
-      // review card can show it was completed.
-      try {
-        if (match && row.star_rating) {
-          const { data: convs } = await db.from('conversations').select('id').eq('contact_id', match.id).limit(20)
-          const convIds = (convs || []).map((c: any) => c.id)
-          if (convIds.length) {
-            const { data: reqMsg } = await db.from('messages')
-              .select('id, metadata').in('conversation_id', convIds)
-              .contains('metadata', { review_request: true })
-              .order('created_at', { ascending: false }).limit(1).maybeSingle()
-            if (reqMsg && !reqMsg.metadata?.review_completed) {
-              await db.from('messages').update({
-                metadata: { ...(reqMsg.metadata || {}), review_completed: true, review_rating: row.star_rating },
-              }).eq('id', reqMsg.id)
-            }
-          }
+    // Tie a new review back to a review request we sent, so the agent's
+    // review card can show it was completed.
+    if (!match || !row.star_rating || !created || Date.now() - created > 60 * 86400_000) continue
+    try {
+      const { data: convs } = await db.from('conversations').select('id').eq('contact_id', match.id).limit(20)
+      const convIds = (convs || []).map((c: any) => c.id)
+      if (convIds.length) {
+        const { data: reqMsg } = await db.from('messages')
+          .select('id, metadata').in('conversation_id', convIds)
+          .contains('metadata', { review_request: true })
+          .order('created_at', { ascending: false }).limit(1).maybeSingle()
+        if (reqMsg && !reqMsg.metadata?.review_completed) {
+          await db.from('messages').update({
+            metadata: { ...(reqMsg.metadata || {}), review_completed: true, review_rating: row.star_rating },
+          }).eq('id', reqMsg.id)
         }
-      } catch { /* non-fatal */ }
-    }
+      }
+    } catch { /* non-fatal */ }
   }
 
   // Email the business about brand-new, RECENT reviews only — so the first sync
@@ -276,7 +309,8 @@ export async function syncReviews(companyId: string) {
 
   // Round the average here so every consumer shows 4.6★, not 4.599999…★.
   const avgRounded = averageRating != null ? Math.round(Number(averageRating) * 10) / 10 : null
-  return { total: allReviews.length, new: saved, averageRating: avgRounded, totalReviewCount: totalReviewCount ?? allReviews.length }
+  if (pageToken) partial = true   // stopped paging early for time
+  return { total: allReviews.length, new: saved, changed: updates.length, partial, averageRating: avgRounded, totalReviewCount: totalReviewCount ?? allReviews.length }
 }
 
 // Posts (or updates) the business's reply to a review.

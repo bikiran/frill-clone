@@ -46,8 +46,12 @@ export async function GET(req: NextRequest) {
   for (const acc of (accounts || [])) {
     if (seen.has(acc.company_id)) continue
     seen.add(acc.company_id)
+    // Leave headroom under the 300s limit; each business gets up to 45s and
+    // carries on next run if it needs more.
+    const budgetLeft = t0 + 270_000 - Date.now()
+    if (budgetLeft < 5_000) break
     try {
-      const r = await syncReviews(acc.company_id)
+      const r = await syncReviews(acc.company_id, { deadline: Date.now() + Math.min(45_000, budgetLeft) })
       results.push({ companyId: acc.company_id, ...r })
     } catch (e: any) {
       results.push({ companyId: acc.company_id, error: e.message })
