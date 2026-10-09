@@ -321,9 +321,13 @@ export async function runOrderAutomation(db: any, companyId: string, o: NormalOr
       if (cart?.length) attribution = 'cart_recovered'
     }
     if (!attribution && o.chatConversationId) attribution = 'chat_order'
+    // A real conversation before the order — not Colvy's own automatic messages
+    // (the thank-you above is an agent message too), and not chat after it.
     if (!attribution && conv?.id) {
-      const { data: realMsgs } = await db.from('messages').select('id').eq('conversation_id', conv.id).in('sender_type', ['visitor', 'agent']).limit(1)
-      if (realMsgs?.length) attribution = 'chat_assisted'
+      let q = db.from('messages').select('id, metadata').eq('conversation_id', conv.id).in('sender_type', ['visitor', 'agent'])
+      if (o.createdAt) q = q.lte('created_at', o.createdAt)
+      const { data: realMsgs } = await q.limit(50)
+      if ((realMsgs || []).some((m: any) => !m.metadata?.auto)) attribution = 'chat_assisted'
     }
     await hooks.persist(db, companyId, o, { conversationId: conv?.id || null, contactId: contact?.id || null, attribution, badgeStatus })
   } catch (e) { console.error('[order automation] attribution failed', e) }

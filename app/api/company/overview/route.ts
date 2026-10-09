@@ -103,6 +103,25 @@ export async function GET(req: NextRequest) {
         byAttribution[key].amount += amt
       }
     } catch {}
+    // Shopify orders carry the same attribution on the operational orders row.
+    try {
+      const { data: shopOrders } = await db
+        .from('orders')
+        .select('total, attribution, status, payment_status')
+        .eq('company_id', companyId).eq('sales_channel', 'shopify')
+        .not('attribution', 'is', null)
+        .gte('order_date', since)
+      for (const o of shopOrders || []) {
+        if (['cancelled', 'refunded'].includes(String(o.status || '')) || ['refunded', 'failed'].includes(String(o.payment_status || ''))) continue
+        const amt = parseFloat(o.total as any) || 0
+        salesConverted++
+        salesAmount += amt
+        const key = o.attribution || 'other'
+        if (!byAttribution[key]) byAttribution[key] = { count: 0, amount: 0 }
+        byAttribution[key].count++
+        byAttribution[key].amount += amt
+      }
+    } catch {}
 
     // Total store orders in range (for a conversion share, when available).
     let totalOrders = 0

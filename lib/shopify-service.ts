@@ -49,6 +49,7 @@ export const orderFields = (lines = 20) => `
   id legacyResourceId name createdAt updatedAt processedAt cancelledAt cancelReason closed test
   displayFinancialStatus displayFulfillmentStatus
   email phone note tags sourceName statusPageUrl discountCodes paymentGatewayNames
+  customAttributes { key value }
   currencyCode
   customer { id legacyResourceId firstName lastName }
   totalPriceSet { ${MONEY} }
@@ -211,6 +212,39 @@ export class ShopifyService {
     const gid = String(id).startsWith('gid://') ? String(id) : `gid://shopify/Product/${id}`
     const { data } = await this.gql<any>(`query One($id: ID!) { product(id: $id) { ${productFields(250)} } }`, { id: gid })
     return data?.product || null
+  }
+
+  /**
+   * Abandoned checkouts (stores without webhooks are caught up this way). No
+   * token here — keyed on the checkout's own id. Eight per page keeps the
+   * requested cost under Shopify's 1000-point limit.
+   */
+  async getAbandonedCheckoutsPage(opts: { after?: string | null; query?: string } = {}): Promise<{ checkouts: any[]; endCursor: string | null; hasNextPage: boolean }> {
+    const { data } = await this.gql<any>(
+      `query Abandoned($after: String, $query: String) {
+        abandonedCheckouts(first: 8, after: $after, query: $query) {
+          pageInfo { hasNextPage endCursor }
+          nodes {
+            id abandonedCheckoutUrl createdAt updatedAt completedAt
+            customer { firstName lastName defaultEmailAddress { emailAddress } defaultPhoneNumber { phoneNumber } }
+            shippingAddress { ${ADDRESS} }
+            billingAddress { ${ADDRESS} }
+            totalPriceSet { ${MONEY} }
+            subtotalPriceSet { ${MONEY} }
+            lineItems(first: 20) { nodes {
+              title variantTitle quantity sku
+              originalUnitPriceSet { shopMoney { amount } }
+              variant { legacyResourceId }
+              product { legacyResourceId }
+              image { url }
+            } }
+          }
+        }
+      }`,
+      { after: opts.after || null, query: opts.query || null },
+    )
+    const conn = data?.abandonedCheckouts
+    return { checkouts: conn?.nodes || [], endCursor: conn?.pageInfo?.endCursor || null, hasNextPage: !!conn?.pageInfo?.hasNextPage }
   }
 
   /** inventory_levels/update only names an inventory item; find its product. */

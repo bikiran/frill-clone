@@ -6,6 +6,8 @@ import { getAccessToken, STORE_WEBHOOK_TOPICS, webhookUri } from '@/lib/shopify-
 import { saveShopifyCustomers } from '@/lib/shopify-customers'
 import { saveShopifyProducts } from '@/lib/shopify-products'
 import { upsertShopifyOrder } from '@/lib/shopify-orders'
+import { runShopifyOrderAutomations } from '@/lib/shopify-automation'
+import { promoteDueCheckouts, stageCheckout, stageFromGraphql } from '@/lib/shopify-checkouts'
 
 export const SYNC_PHASES = ['customers', 'products', 'orders'] as const
 export type SyncPhase = typeof SYNC_PHASES[number]
@@ -105,7 +107,13 @@ export async function runImportStep(db: any, integ: any, job: any, svc: ShopifyS
  * Catch up anything webhooks missed (and keep pasted-token stores, which get no
  * webhooks, current): orders and products updated since the last run, a few
  * pages each. Orders here are NOT quiet — a new one found this way still pings
- * the team (the 24h rule in notifyNewOrder stops old ones).
+ * the team (the 24h rule in notifyNewOrder stops old ones) and runs the order
+ * automations, which dedupe per order + status, so an order the webhook
+ * already handled isn't messaged twice.
+ *
+ * Abandoned checkouts: app-installed stores get them by webhook; pasted-token
+ * stores have them pulled here. Either way, checkouts past the hold are
+ * promoted to abandoned carts at the end.
  */
 export async function reconcileStore(db: any, integ: any, opts: { maxPages?: number } = {}) {
   const svc = await serviceFor(db, integ)
@@ -121,7 +129,11 @@ export async function reconcileStore(db: any, integ: any, opts: { maxPages?: num
     let after: string | null = null
     for (let i = 0; i < maxPages; i++) {
       const page = await svc.getOrdersPage({ after, query: `updated_at:>'${oSince}'` })
-      for (const o of page.orders) { if (await upsertShopifyOrder(db, integ.company_id, o, { svc })) orders++ }
+      for (const o of page.orders) {
+        if (!(await upsertShopifyOrder(db, integ.company_id, o, { svc }))) continue
+        orders++
+        try { await runShopifyOrderAutomations(db, integ.company_id, o) } catch (e: any) { console.error('[shopify reconcile] order automation failed', e?.message || e) }
+      }
       if (!page.hasNextPage) break
       after = page.endCursor
     }
@@ -136,9 +148,24 @@ export async function reconcileStore(db: any, integ: any, opts: { maxPages?: num
       after = page.endCursor
     }
   }
+  let checkouts = 0
+  const pullCheckouts = integ.auth_type !== 'oauth' && !!oSince
+  if (pullCheckouts) {
+    // First run: the last two days (older ones are past promoting anyway).
+    const cSince = since(integ.checkouts_synced_at) || new Date(Date.now() - 48 * 3600_000).toISOString()
+    let after: string | null = null
+    for (let i = 0; i < maxPages; i++) {
+      const page = await svc.getAbandonedCheckoutsPage({ after, query: `updated_at:>'${cSince}'` })
+      for (const n of page.checkouts) { await stageCheckout(db, stageFromGraphql(n, integ.company_id, integ.id)); checkouts++ }
+      if (!page.hasNextPage) break
+      after = page.endCursor
+    }
+  }
   const patch: any = { last_synced_at: startedAt }
   if (oSince) patch.orders_synced_at = startedAt
   if (pSince) patch.products_synced_at = startedAt
+  if (pullCheckouts) patch.checkouts_synced_at = startedAt
   await db.from('shopify_integrations').update(patch).eq('id', integ.id)
-  return { orders, products }
+  const carts = await promoteDueCheckouts(db, integ.company_id)
+  return { orders, products, checkouts, carts }
 }
