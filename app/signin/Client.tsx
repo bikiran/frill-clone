@@ -37,6 +37,13 @@ function SignInForm() {
   const [oauthLoading, setOAuthLoading] = useState('')
   const [slide, setSlide] = useState(0)
   const [companyContext, setCompanyContext] = useState<any>(null)
+  // Back from installing Colvy in Shopify (see lib/shopify-install): the store waits for a workspace.
+  const [shopifyStore, setShopifyStore] = useState<string | null>(null)
+  useEffect(() => {
+    if (params.get('shopify') !== 'connect') return
+    const m = document.cookie.match(/(?:^|;\s*)colvy_shopify_pending=([^;]*)/)
+    if (m) { try { setShopifyStore(decodeURIComponent(m[1]) || 'your Shopify store') } catch { setShopifyStore('your Shopify store') } }
+  }, [params])
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data }: any) => {
@@ -190,6 +197,12 @@ function SignInForm() {
 
           <h1 style={{ fontSize: 26, fontWeight: 800, color: '#0d0d0d', marginBottom: 6, letterSpacing: '-0.01em' }}>Welcome back</h1>
           <p style={{ fontSize: 14, color: '#6b6b70', marginBottom: 28 }}>Sign in to manage your board.</p>
+
+          {shopifyStore && (
+            <div role="status" style={{ padding: '10px 14px', borderRadius: 10, background: '#ecfdf3', border: '1px solid #abefc6', color: '#067647', fontSize: 13, marginBottom: 16, lineHeight: 1.5 }}>
+              Colvy is installed on <strong>{shopifyStore}</strong>. Sign in, or create a free account, to finish connecting it.
+            </div>
+          )}
 
           {error && (
             <div style={{ padding: '10px 14px', borderRadius: 10, background: '#fef2f2', border: '1px solid #fca5a5', color: '#dc2626', fontSize: 13, marginBottom: 16 }}>

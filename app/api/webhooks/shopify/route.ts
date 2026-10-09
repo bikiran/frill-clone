@@ -46,6 +46,9 @@ export async function POST(req: NextRequest) {
   if (!shopDomain) return NextResponse.json({ ok: true, ignored: 'no shop' })
 
   const db = admin()
+  // An install nobody claimed in Colvy yet (lib/shopify-install) holds tokens
+  // for an hour; a store redaction removes it too.
+  if (topic === 'shop/redact') await db.from('shopify_pending_installs').delete().eq('shop', shopDomain)
   // Normally one workspace per store; legacy pasted-token connections could
   // have the same store in more than one, so act for each.
   const { data: integs } = await db.from('shopify_integrations').select('*').eq('store_domain', shopDomain)

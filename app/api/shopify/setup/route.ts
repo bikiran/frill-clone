@@ -1,8 +1,7 @@
 import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { ShopifyService } from '@/lib/shopify-service'
-import { normalizeShop, shopifyAppConfigured } from '@/lib/shopify-auth'
+import { shopifyAppConfigured } from '@/lib/shopify-auth'
 import { ensureStoreWebhooks } from '@/lib/shopify-sync'
 
 export const dynamic = 'force-dynamic'
@@ -16,37 +15,6 @@ function admin() {
 }
 
 const SAFE_COLS = 'id, company_id, store_domain, store_name, is_active, auth_type, needs_reauth, last_error, scopes, webhooks_registered_at, uninstalled_at, last_synced_at, last_full_sync_at, orders_synced_at, products_synced_at, created_at'
-
-// POST: connect with a pasted Admin API token. Only for custom apps a store
-// created in its Shopify admin before 1 Jan 2026 — new stores use Install.
-export async function POST(req: NextRequest) {
-  try {
-    const { companyId, storeDomain, accessToken } = await req.json().catch(() => ({}))
-    const db = admin()
-    if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
-    const shop = normalizeShop(storeDomain)
-    if (!shop || !accessToken) return NextResponse.json({ error: 'Your myshopify.com address and the Admin API access token are both needed.' }, { status: 400 })
-
-    const svc = new ShopifyService({ storeDomain: shop, accessToken: String(accessToken).trim() })
-    const info = await svc.getShopInfo()
-    if (!info.ok) return NextResponse.json({ error: `Couldn't connect: ${info.error || 'check the store address and token.'}` }, { status: 401 })
-
-    const { data, error } = await db.from('shopify_integrations').upsert({
-      company_id: companyId,
-      store_domain: shop,
-      store_name: info.name || shop,
-      access_token: String(accessToken).trim(),
-      auth_type: 'token',
-      refresh_token: null, token_expires_at: null, refresh_expires_at: null,
-      is_active: true, needs_reauth: false, last_error: null, uninstalled_at: null,
-      updated_at: new Date().toISOString(),
-    }, { onConflict: 'company_id,store_domain' }).select(SAFE_COLS).single()
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-    return NextResponse.json({ ok: true, store: data })
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 })
-  }
-}
 
 // GET: a workspace's stores (never tokens), customer counts, and whether the
 // Colvy Shopify app is configured on this deployment (shows Install vs not).

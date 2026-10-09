@@ -5,7 +5,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { confirmDialog } from '@/components/ConfirmDialog'
 import { useIntegrations } from '@/components/integrations/IntegrationsShell'
-import { IntegrationPage, IntegrationHeader, Card, Notice, Icon, btn, inputCls, inputStyle } from '@/components/integrations/ui'
+import { IntegrationPage, IntegrationHeader, Card, Notice, Icon, btn } from '@/components/integrations/ui'
 
 // Permissions added after the first install (order changes from Colvy). A store
 // installed before them is asked to approve them once — see lib/shopify-auth.
@@ -25,12 +25,10 @@ export default function ShopifyIntegrationPage() {
   const [appConfigured, setAppConfigured] = useState(true)
   const [apiKey, setApiKey] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
-  const [shop, setShop] = useState(params.get('shop') || '')
   const [installing, setInstalling] = useState<string | null>(null)
-  const [showToken, setShowToken] = useState(false)
-  const [tokenShop, setTokenShop] = useState('')
-  const [token, setToken] = useState('')
-  const [connecting, setConnecting] = useState(false)
+  // A store installed in Shopify that's waiting for a workspace (see lib/shopify-install).
+  const [pending, setPending] = useState<{ shop: string; store_name: string } | null>(null)
+  const [claiming, setClaiming] = useState(false)
   const [adding, setAdding] = useState(false)
   const [sync, setSync] = useState<Record<string, { running: boolean; phase: string; counts: { customers: number; products: number; orders: number; created: number }; note?: string | null }>>({})
   const [error, setError] = useState(params.get('shopify_error') || '')
@@ -56,12 +54,17 @@ export default function ShopifyIntegrationPage() {
         const list = await load(companyId)
         // Back from Shopify's install screen: say so, and start the first sync.
         const connected = params.get('shopify') === 'connected' ? params.get('store') : null
-        if (params.get('shopify') || params.get('shopify_error') || params.get('shop')) { try { window.history.replaceState(null, '', '/admin/integrations/shopify') } catch {} }
+        if (params.get('shopify') || params.get('shopify_error') || params.get('store')) { try { window.history.replaceState(null, '', '/admin/integrations/shopify') } catch {} }
         if (connected && !autoSynced.current) {
           autoSynced.current = true
           const s = list.find((x: any) => x.id === connected)
           setSuccess(`${s?.store_name || 'Your store'} is connected. Importing customers now.`)
           runSync(connected)
+        }
+        if (document.cookie.includes('colvy_shopify_pending=')) {
+          const r = await authFetch(`/api/shopify/claim?companyId=${companyId}`)
+          const p = await r.json().catch(() => ({}))
+          if (r.ok && p.pending) setPending(p.pending)
         }
       } catch (e: any) { setError(e.message) }
       setLoading(false)
@@ -69,14 +72,16 @@ export default function ShopifyIntegrationPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, companyId])
 
-  // Hand the browser to Shopify's install/consent screen.
-  const install = async (domain: string) => {
+  // No store: "Install from Shopify" — Colvy remembers this workspace and opens
+  // the Colvy listing, where the merchant picks their store. A store already
+  // here: back through Shopify's permission screen (reconnect, new permissions).
+  const install = async (domain?: string) => {
     if (!companyId) return
     setInstalling(domain || 'new'); setError(''); setSuccess('')
     try {
       const res = await authFetch('/api/shopify/install', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ companyId, shop: domain, returnTo: `${window.location.origin}/admin/integrations/shopify` }),
+        body: JSON.stringify({ companyId, shop: domain || undefined, returnTo: `${window.location.origin}/admin/integrations/shopify` }),
       })
       const d = await res.json()
       if (!res.ok || !d.url) throw new Error(d.error || 'Could not start the install')
@@ -84,22 +89,37 @@ export default function ShopifyIntegrationPage() {
     } catch (e: any) { setError(e.message); setInstalling(null) }
   }
 
-  const connectWithToken = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!companyId) return
-    setConnecting(true); setError(''); setSuccess('')
+  const claim = async () => {
+    if (!companyId || !pending) return
+    setClaiming(true); setError(''); setSuccess('')
     try {
-      const res = await authFetch('/api/shopify/setup', {
+      const res = await authFetch('/api/shopify/claim', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ companyId, storeDomain: tokenShop, accessToken: token }),
+        body: JSON.stringify({ companyId }),
       })
-      const d = await res.json()
-      if (!res.ok) throw new Error(d.error || 'Could not connect')
-      setToken(''); setTokenShop(''); setShowToken(false); setAdding(false)
+      const d = await res.json().catch(() => ({}))
+      if (res.status === 410) setPending(null)
+      if (!res.ok || !d.store?.id) throw new Error(d.error || 'Could not connect the store')
+      setPending(null); setAdding(false)
       await load(companyId)
-      setSuccess(`${d.store?.store_name || 'Store'} connected. Importing customers now.`)
-      if (d.store?.id) runSync(d.store.id)
-    } catch (e: any) { setError(e.message) } finally { setConnecting(false) }
+      setSuccess(`${d.store.store_name || 'Your store'} is connected. Importing customers now.`)
+      runSync(d.store.id)
+    } catch (e: any) { setError(e.message) } finally { setClaiming(false) }
+  }
+
+  const dismissClaim = async () => {
+    if (!companyId || !pending) return
+    const ok = await confirmDialog({
+      title: `Don’t connect ${pending.store_name}?`,
+      message: 'Colvy forgets this install. To connect the store later, open Colvy from your Shopify admin under Apps.',
+      confirmLabel: 'Don’t connect',
+    })
+    if (!ok) return
+    await authFetch('/api/shopify/claim', {
+      method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ companyId }),
+    }).catch(() => null)
+    setPending(null)
   }
 
   // Resumable: keep calling with the job id until Shopify has no more pages.
@@ -165,57 +185,42 @@ export default function ShopifyIntegrationPage() {
   if (loading) return <IntegrationPage><div style={{ color: 'var(--slate)', fontSize: 14 }}>Loading…</div></IntegrationPage>
 
   const anyActive = stores.some(s => s.is_active)
-  const showConnect = !stores.length || adding
+
+  const showConnect = (!stores.length || adding) && !pending
+
+  const claimCard = pending && (
+    <Card title={`Finish connecting ${pending.store_name}`} icon="store"
+      sub="You installed Colvy in Shopify. Connect the store to this workspace to bring in its customers, orders and products.">
+      <div className="flex gap-2 flex-wrap">
+        <button type="button" onClick={claim} disabled={claiming} {...btn('primary', 'md')} style={{ ...btn('primary').style, background: '#008060', borderColor: '#008060' }}>
+          {claiming ? 'Connecting…' : 'Connect store'}
+        </button>
+        <button type="button" onClick={dismissClaim} disabled={claiming} {...btn('secondary', 'md')}>Don’t connect</button>
+      </div>
+    </Card>
+  )
 
   const connectCard = (
     <Card title={stores.length ? 'Add another store' : 'Connect your Shopify store'} icon="store"
-      sub="Install the Colvy app on your store. Shopify asks you to approve access, then brings you back here."
+      sub="Install the Colvy app from the Shopify App Store. You pick your store and approve access in Shopify, then come straight back here."
       right={stores.length ? <button type="button" onClick={() => setAdding(false)} {...btn('secondary', 'sm')}>Cancel</button> : undefined}>
       {appConfigured ? (
-        <form onSubmit={e => { e.preventDefault(); install(shop) }} className="sh-row">
-          <input value={shop} onChange={e => setShop(e.target.value)} placeholder="your-store.myshopify.com" aria-label="Shopify store address"
-            autoCapitalize="none" autoCorrect="off" spellCheck={false} className={inputCls} style={inputStyle} required />
-          <button type="submit" disabled={!!installing} {...btn('primary', 'md', 'sh-install')} style={{ ...btn('primary').style, background: '#008060', borderColor: '#008060' }}>
-            {installing ? 'Opening Shopify…' : 'Install on Shopify'}
-          </button>
-        </form>
+        <button type="button" onClick={() => install()} disabled={!!installing} {...btn('primary', 'md', 'sh-install')} style={{ ...btn('primary').style, background: '#008060', borderColor: '#008060' }}>
+          {installing === 'new' ? 'Opening Shopify…' : <>Install from Shopify <Icon name="external" size={13} /></>}
+        </button>
       ) : (
-        <Notice tone="info">The Colvy Shopify app isn’t set up on this deployment yet, so the one-click install is unavailable. A store with an older custom app can still connect with its token below.</Notice>
+        <Notice tone="info">The Colvy Shopify app isn’t set up on this deployment yet.</Notice>
       )}
       <p className="text-xs" style={{ color: 'var(--slate)', margin: '10px 0 0' }}>
-        Find it in Shopify under Settings → Domains, or in your admin address: admin.shopify.com/store/<strong>your-store</strong>.
+        Already installed Colvy in Shopify? Open it from your Shopify admin under <strong>Apps → Colvy</strong> and it connects here.
       </p>
-
-      <button type="button" onClick={() => setShowToken(v => !v)} aria-expanded={showToken}
-        className="inline-flex items-center gap-1.5 text-sm font-semibold mt-4" style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'var(--slate)' }}>
-        <Icon name="chevron" size={14} style={{ transform: showToken ? 'rotate(90deg)' : 'none', transition: 'transform .2s ease' }} />
-        Store already has a custom app from before 2026?
-      </button>
-      <div className="sh-reveal" data-open={showToken ? '1' : '0'}>
-        <div style={{ overflow: 'hidden' }}>
-          <form onSubmit={connectWithToken} className="mt-3 p-4 rounded-xl" style={{ background: 'var(--canvas, #f8f8fa)', border: '1px solid var(--border)' }}>
-            <p className="text-sm" style={{ color: 'var(--slate)', margin: '0 0 12px', lineHeight: 1.5 }}>
-              Custom apps made in a store’s Shopify admin before 1 January 2026 still work. Open it under Settings → Apps → Develop apps and copy its Admin API access token (starts with <code>shpat_</code>). Stores connected this way sync when you press Sync, without live updates.
-            </p>
-            <div className="grid gap-2.5" style={{ gridTemplateColumns: '1fr' }}>
-              <input value={tokenShop} onChange={e => setTokenShop(e.target.value)} placeholder="your-store.myshopify.com" aria-label="Store address" className={inputCls} style={inputStyle} required />
-              <input type="password" value={token} onChange={e => setToken(e.target.value)} placeholder="shpat_…" aria-label="Admin API access token" className={inputCls} style={inputStyle} required autoComplete="off" />
-            </div>
-            <button type="submit" disabled={connecting} {...btn('secondary', 'md', 'mt-3')}>{connecting ? 'Connecting…' : 'Connect with token'}</button>
-          </form>
-        </div>
-      </div>
     </Card>
   )
 
   return (
     <IntegrationPage>
       <style>{`
-        .sh-row { display: flex; gap: 8px; }
-        .sh-row input { flex: 1; min-width: 0; }
         .sh-install { white-space: nowrap; }
-        .sh-reveal { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .28s cubic-bezier(.16,1,.3,1); }
-        .sh-reveal[data-open="1"] { grid-template-rows: 1fr; }
         .sh-bar { height: 6px; border-radius: 99px; background: var(--canvas, #f1f1f4); overflow: hidden; position: relative; }
         .sh-bar span { position: absolute; inset: 0 auto 0 0; width: 40%; border-radius: 99px; background: #008060; animation: shSlide 1.2s ease-in-out infinite; }
         @keyframes shSlide { 0% { left: -40%; } 100% { left: 100%; } }
@@ -228,28 +233,29 @@ export default function ShopifyIntegrationPage() {
         @media (max-width: 560px) {
           .sh-front-row { grid-template-columns: 32px minmax(0, 1fr); align-items: start; }
           .sh-front-row a { grid-column: 1 / -1; width: 100%; justify-content: center; margin-top: 6px; }
-          .sh-row { flex-direction: column; }
           .sh-stats { grid-template-columns: 1fr 1fr; }
+          .sh-install { width: 100%; justify-content: center; }
           .sh-add-desktop { display: none !important; }
           .sh-add-mobile { display: flex; width: 100%; margin: -8px 0 16px; }
         }
-        @media (prefers-reduced-motion: reduce) { .sh-reveal, .sh-bar span { transition: none; animation: none; } }
+        @media (prefers-reduced-motion: reduce) { .sh-bar span { animation: none; } }
       `}</style>
 
       <IntegrationHeader id="shopify" connected={anyActive} badge={stores.length > 1 ? `${stores.length} stores` : 'Connected'}
         desc="Your Shopify customers, orders and products in Colvy, kept up to date automatically.">
         {stores.length > 0 && !adding && (
-          <button type="button" onClick={() => { setAdding(true); setShop('') }} {...btn('secondary', 'sm', 'sh-add-desktop')}><Icon name="plus" size={14} /> Add store</button>
+          <button type="button" onClick={() => setAdding(true)} {...btn('secondary', 'sm', 'sh-add-desktop')}><Icon name="plus" size={14} /> Add store</button>
         )}
       </IntegrationHeader>
       {stores.length > 0 && !adding && (
-        <button type="button" onClick={() => { setAdding(true); setShop('') }} {...btn('secondary', 'md', 'sh-add-mobile')}><Icon name="plus" size={14} /> Add another store</button>
+        <button type="button" onClick={() => setAdding(true)} {...btn('secondary', 'md', 'sh-add-mobile')}><Icon name="plus" size={14} /> Add another store</button>
       )}
 
       {error && <Notice tone="error">{error}</Notice>}
       {success && <Notice tone="success">{success}</Notice>}
 
       <div className="flex flex-col gap-4">
+        {claimCard}
         {showConnect && connectCard}
 
         {stores.map(s => {

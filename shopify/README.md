@@ -48,6 +48,26 @@ Two things stay in the Dev Dashboard: **protected customer data** access
 `client_id` must match `SHOPIFY_API_KEY` in Vercel (and the app's secret is
 `SHOPIFY_API_SECRET`).
 
+## How a store connects
+
+Shopify's App Store rules: installs start in Shopify (never by typing a
+myshopify.com address into Colvy), and Shopify's permission screen comes
+before any Colvy page. The flow (`lib/shopify-install.ts`):
+
+1. The merchant installs Colvy from the App Store listing (or, for a
+   development store, from the Dev Dashboard → Colvy → Install app).
+2. Shopify opens the App URL (`/api/shopify/app`), which goes straight to
+   Shopify's permission screen unless the store is already connected with
+   every permission.
+3. The callback saves the store to its workspace: the one that clicked
+   **Install from Shopify** in Colvy (a cookie shared across colvy.com), or
+   the one it was connected to before. If neither, the store waits for an
+   hour while the merchant signs in or signs up to Colvy, and the Shopify page
+   asks **Finish connecting {store}**.
+
+`SHOPIFY_APP_LISTING_URL` (Vercel) is where **Install from Shopify** goes;
+it defaults to `https://apps.shopify.com/colvy`.
+
 ## Using it on a store
 
 In Colvy → Integrations → Shopify, a connected store shows **On your store**:
