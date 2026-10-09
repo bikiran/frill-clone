@@ -1,9 +1,9 @@
 import { internalHeaders } from '@/lib/internal-call'
 // Back-in-stock waitlists ("Notify me when it arrives").
 //
-// Server-only helpers shared by the /api/waitlist routes, the WooCommerce
-// product webhook and the waitlist cron. Requires stock_waitlist +
-// companies.waitlist_settings (migrations/COLVY_V321_STOCK_WAITLIST.sql).
+// Server-only helpers shared by the /api/waitlist routes, the WooCommerce and
+// Shopify product webhooks, the Shopify storefront proxy and the waitlist cron.
+// Requires stock_waitlist + companies.waitlist_settings (V321; Shopify ids V342).
 
 import { isWithinSendingHours } from '@/lib/campaign-sender'
 import { sendCustomerEmail } from '@/lib/customer-email'
@@ -148,8 +148,8 @@ export type NotifyResult = { sent: number; failed: number; queued: number; skipp
 /**
  * Notify everyone waiting on an item.
  *
- * Select rows by explicit ids, by WooCommerce product id(s), or by a free-text
- * item name. `respectHours` is used for AUTOMATIC triggers (a stock update at
+ * Select rows by explicit ids, by WooCommerce product id(s), by Shopify
+ * variant/product ids, or by a free-text item name. `respectHours` is used for AUTOMATIC triggers (a stock update at
  * 11pm queues the texts until the next 9am window); a manual "Notify now" press
  * sends immediately.
  */
@@ -157,6 +157,10 @@ export async function notifyWaitlist(db: any, opts: {
   companyId: string
   ids?: string[]
   wooProductIds?: (string | number)[]
+  // Shopify: entries for these variants, plus "any option" entries (no
+  // variant) for these products.
+  shopifyVariantIds?: (string | number)[]
+  shopifyProductIds?: (string | number)[]
   itemName?: string
   respectHours: boolean
 }): Promise<NotifyResult> {
@@ -166,13 +170,27 @@ export async function notifyWaitlist(db: any, opts: {
   const settings = resolveWaitlistSettings(co?.waitlist_settings)
   const business = co?.name || 'us'
 
-  let q = db.from('stock_waitlist').select('*').eq('company_id', companyId).in('status', ['waiting', 'queued'])
-  if (opts.ids?.length) q = q.in('id', opts.ids)
-  else if (opts.wooProductIds?.length) q = q.in('woo_product_id', opts.wooProductIds.map(Number).filter(n => Number.isFinite(n)))
-  else if (opts.itemName) q = q.is('woo_product_id', null).ilike('item_name', opts.itemName)
-  else return result
-  const { data: rows, error } = await q.limit(500)
-  if (error || !rows?.length) return result
+  const ids = (xs?: (string | number)[]) => (xs || []).map(Number).filter(n => Number.isFinite(n) && n > 0)
+  const open = () => db.from('stock_waitlist').select('*').eq('company_id', companyId).in('status', ['waiting', 'queued'])
+  let rows: any[] = []
+  if (opts.ids?.length || opts.wooProductIds?.length || opts.itemName) {
+    let q = open()
+    if (opts.ids?.length) q = q.in('id', opts.ids)
+    else if (opts.wooProductIds?.length) q = q.in('woo_product_id', ids(opts.wooProductIds))
+    else q = q.is('woo_product_id', null).ilike('item_name', opts.itemName)
+    const { data, error } = await q.limit(500)
+    if (error) return result
+    rows = data || []
+  } else if (opts.shopifyVariantIds?.length || opts.shopifyProductIds?.length) {
+    const vids = ids(opts.shopifyVariantIds), pids = ids(opts.shopifyProductIds)
+    const [a, b] = await Promise.all([
+      vids.length ? open().in('shopify_variant_id', vids).limit(500) : Promise.resolve({ data: [] }),
+      pids.length ? open().is('shopify_variant_id', null).in('shopify_product_id', pids).limit(500) : Promise.resolve({ data: [] }),
+    ])
+    const seen = new Set<string>()
+    for (const r of [...((a as any).data || []), ...((b as any).data || [])]) if (!seen.has(r.id)) { seen.add(r.id); rows.push(r) }
+  } else return result
+  if (!rows.length) return result
 
   // Outside sending hours → hold them until the next window (the cron sends).
   if (opts.respectHours && !isWithinSendingHours(new Date(), settings.timezone)) {

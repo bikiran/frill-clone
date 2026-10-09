@@ -10,11 +10,12 @@ import { SkeletonList } from '@/components/Skeleton'
 import WaitlistAddModal from '@/components/WaitlistAddModal'
 import Pagination, { usePagination } from '@/components/Pagination'
 import { confirmDialog } from '@/components/ConfirmDialog'
+import { waitlistItemKey } from '@/lib/waitlist-keys'
 import { BellIcon, GearIcon, PlusIcon, ChatIcon, TagIcon, XIcon, EditIcon, ExternalIcon, ChevronDownIcon } from '@/components/booking/icons'
 
 // Back-in-stock waitlists. Customers who asked for something that's out of
 // stock are grouped by item; when it's back, everyone waiting gets one SMS —
-// automatically for products linked to WooCommerce, or with "Notify now".
+// automatically for products linked to WooCommerce or Shopify, or with "Notify now".
 
 const DEFAULT_TEMPLATE = 'Hi {name}, good news — {item} is back in stock at {business}! {link} Reply STOP to opt out.'
 const OPEN = ['waiting', 'queued', 'sending', 'failed']
@@ -34,7 +35,7 @@ async function authHeaders(): Promise<Record<string, string>> {
   return t ? { Authorization: `Bearer ${t}`, 'Content-Type': 'application/json' } : { 'Content-Type': 'application/json' }
 }
 
-const groupKey = (e: any) => e.woo_product_id ? `p:${e.woo_product_id}` : `n:${String(e.item_name || '').trim().toLowerCase()}`
+const groupKey = (e: any) => { const k = waitlistItemKey(e); return k ? `p:${k}` : `n:${String(e.item_name || '').trim().toLowerCase()}` }
 // Only real web links open in a new tab (staff can type an item link by hand).
 const webUrl = (u?: string | null) => (u && /^https?:\/\//i.test(u) ? u : null)
 const fmtDate = (d: string) => new Date(d).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })
@@ -148,7 +149,7 @@ export default function WaitlistsPage() {
       if (!inTab) continue
       if (q && ![e.item_name, e.customer_name, e.phone, e.email].some(v => String(v || '').toLowerCase().includes(q))) continue
       const k = groupKey(e)
-      const g = map.get(k) || { key: k, name: e.item_name, image: e.item_image, url: e.item_url, productId: e.woo_product_id, entries: [] as any[] }
+      const g = map.get(k) || { key: k, name: e.item_name, image: e.item_image, url: e.item_url, productId: waitlistItemKey(e), entries: [] as any[] }
       g.image = g.image || e.item_image
       g.url = g.url || e.item_url
       g.entries.push(e)
@@ -174,7 +175,8 @@ export default function WaitlistsPage() {
     const waiting = entries.filter(isWaiting)
     let potential = 0, unpriced = 0
     for (const e of waiting) {
-      const price = e.woo_product_id ? stock[String(e.woo_product_id)]?.price : null
+      const k = waitlistItemKey(e)
+      const price = k ? stock[k]?.price : null
       if (price != null) potential += price; else unpriced++
     }
     return {
@@ -513,8 +515,8 @@ function SettingsPanel({ companyId, businessName, settings, onSaved }: { company
         <span>
           <span style={{ display: 'block', fontSize: 13.5, fontWeight: 700, color: 'var(--ink)' }}>Text customers automatically when a linked product is back in stock</span>
           <span style={{ display: 'block', fontSize: 12.5, color: 'var(--slate)', marginTop: 2, lineHeight: 1.5 }}>
-            Triggered by WooCommerce stock updates. Texts only go out 9am–8pm; anything that arrives overnight is sent at 9am.
-            Items not listed online are sent with <b>Notify now</b>. If stock changes don't come through, re-register webhooks under Integrations → WooCommerce.
+            Triggered by WooCommerce or Shopify stock updates. Texts only go out 9am–8pm; anything that arrives overnight is sent at 9am.
+            Items not listed online are sent with <b>Notify now</b>. If stock changes don't come through, re-register webhooks under Integrations → WooCommerce, or sync the store under Integrations → Shopify.
           </span>
         </span>
       </label>

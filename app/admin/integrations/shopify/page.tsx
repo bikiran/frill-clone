@@ -15,6 +15,7 @@ export default function ShopifyIntegrationPage() {
 
   const [stores, setStores] = useState<any[]>([])
   const [appConfigured, setAppConfigured] = useState(true)
+  const [apiKey, setApiKey] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [shop, setShop] = useState(params.get('shop') || '')
   const [installing, setInstalling] = useState<string | null>(null)
@@ -34,6 +35,7 @@ export default function ShopifyIntegrationPage() {
     if (!res.ok) throw new Error(d.error || 'Could not load stores')
     setStores(d.stores || [])
     setAppConfigured(d.appConfigured !== false)
+    setApiKey(d.apiKey || null)
     setActive('shopify', (d.stores || []).some((s: any) => s.is_active))
     return d.stores || []
   }
@@ -211,7 +213,13 @@ export default function ShopifyIntegrationPage() {
         @keyframes shSlide { 0% { left: -40%; } 100% { left: 100%; } }
         .sh-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
         .sh-add-mobile { display: none; }
+        .sh-front { display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: 12px; border: 1px solid var(--border, #ececf1); }
+        .sh-front-row { display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; align-items: center; gap: 4px 12px; }
+        .sh-front-ic { flex: 0 0 auto; width: 32px; height: 32px; border-radius: 10px; display: flex; align-items: center; justify-content: center; color: #008060; background: #e3f1ec; }
+        .sh-front-row a { white-space: nowrap; flex: 0 0 auto; }
         @media (max-width: 560px) {
+          .sh-front-row { grid-template-columns: 32px minmax(0, 1fr); align-items: start; }
+          .sh-front-row a { grid-column: 1 / -1; width: 100%; justify-content: center; margin-top: 6px; }
           .sh-row { flex-direction: column; }
           .sh-stats { grid-template-columns: 1fr 1fr; }
           .sh-add-desktop { display: none !important; }
@@ -276,6 +284,28 @@ export default function ShopifyIntegrationPage() {
                     <> <button type="button" onClick={() => retryWebhooks(s.id)} className="font-semibold underline" style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'inherit' }}>Try again</button></>
                   )}
                 </Notice></div>
+              )}
+
+              {s.is_active && !s.needs_reauth && s.auth_type === 'oauth' && apiKey && (
+                <div className="sh-front mt-4">
+                  <div className="text-xs font-semibold" style={{ color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: '.04em' }}>On your store</div>
+                  {[
+                    { icon: 'chat', title: 'Chat bubble', sub: 'Your Colvy chat on every page of the store.', label: 'Turn on',
+                      href: `https://${s.store_domain}/admin/themes/current/editor?context=apps&template=index&activateAppId=${apiKey}/chat-widget` },
+                    { icon: 'bell', title: '“Notify me” on sold-out products', sub: 'Shoppers leave a mobile or email; Colvy texts them when it’s back. Shows in Waitlists.', label: 'Add to product page',
+                      href: `https://${s.store_domain}/admin/themes/current/editor?template=product&addAppBlockId=${apiKey}/back-in-stock&target=mainSection` },
+                  ].map(x => (
+                    <div key={x.title} className="sh-front-row">
+                      <span className="sh-front-ic" aria-hidden="true"><Icon name={x.icon} size={16} /></span>
+                      <div style={{ minWidth: 0 }}>
+                        <div className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>{x.title}</div>
+                        <div className="text-xs" style={{ color: 'var(--slate)' }}>{x.sub}</div>
+                      </div>
+                      <a href={x.href} target="_blank" rel="noopener noreferrer" {...btn('secondary', 'sm')}>{x.label} <Icon name="external" size={12} /></a>
+                    </div>
+                  ))}
+                  <p className="text-xs" style={{ color: 'var(--slate)', margin: 0 }}>Opens your theme editor with it added — press Save there to publish.</p>
+                </div>
               )}
 
               <div className="flex gap-2 flex-wrap mt-4">

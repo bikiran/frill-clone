@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { exchangeCode, isShopDomain, tokenColumns, verifyQueryHmac } from '@/lib/shopify-auth'
-import { ensureStoreWebhooks } from '@/lib/shopify-sync'
+import { ensureAppMetafields, ensureStoreWebhooks } from '@/lib/shopify-sync'
 import { ShopifyService } from '@/lib/shopify-service'
 
 export const dynamic = 'force-dynamic'
@@ -71,6 +71,9 @@ export async function GET(req: NextRequest) {
     } catch (e: any) {
       await db.from('shopify_integrations').update({ last_error: `Webhooks: ${e?.message || 'failed'}`.slice(0, 500) }).eq('id', integ.id)
     }
+    // The theme extension's settings (workspace slug, brand colour); the
+    // reconcile cron retries if this fails.
+    try { await ensureAppMetafields(db, { id: integ.id, company_id: st.company_id, auth_type: 'oauth', app_metafields: null }, svc) } catch {}
 
     return back(returnTo, { shopify: 'connected', store: integ.id })
   } catch (e: any) {

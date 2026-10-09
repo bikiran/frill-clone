@@ -5,6 +5,7 @@
 // product the same whichever store it came from.
 
 import type { ShopifyService } from '@/lib/shopify-service'
+import { notifyShopifyRestock } from '@/lib/shopify-waitlist'
 
 const num = (v: any): number | null => { const n = parseFloat(v); return Number.isFinite(n) ? n : null }
 const idOf = (gid: any): number | null => { const m = String(gid ?? '').match(/(\d+)$/); return m ? Number(m[1]) : null }
@@ -62,9 +63,10 @@ export type ShopifyProductRow = NonNullable<ReturnType<typeof mapShopifyProduct>
 /**
  * Map and upsert a page of product nodes. A product with more variants than a
  * list page carries (variants.pageInfo.hasNextPage) is fetched on its own with
- * the full set first.
+ * the full set first. `restock` (live updates, never the bulk import) then
+ * texts anyone waiting on a variant that can be sold again.
  */
-export async function saveShopifyProducts(db: any, svc: ShopifyService | null, companyId: string, integrationId: string, nodes: any[]): Promise<number> {
+export async function saveShopifyProducts(db: any, svc: ShopifyService | null, companyId: string, integrationId: string, nodes: any[], opts: { restock?: boolean } = {}): Promise<number> {
   const full: any[] = []
   for (const n of nodes) {
     if (n?.variants?.pageInfo?.hasNextPage && svc) {
@@ -76,6 +78,9 @@ export async function saveShopifyProducts(db: any, svc: ShopifyService | null, c
   if (!rows.length) return 0
   const { error } = await db.from('shopify_products').upsert(rows, { onConflict: 'company_id,shopify_product_id' })
   if (error) throw new Error(`shopify_products: ${error.message}`)
+  if (opts.restock) {
+    try { await notifyShopifyRestock(db, companyId, rows) } catch (e: any) { console.error('[shopify] restock alerts failed', e?.message || e) }
+  }
   return rows.length
 }
 
