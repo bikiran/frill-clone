@@ -27,7 +27,7 @@ You need Node 20+ and a Shopify Partner / Dev Dashboard login.
 ```bash
 cd shopify
 npm install                               # the Shopify CLI + esbuild, once
-npx shopify app config link               # choose the Colvy app (or create it); fills client_id
+npx shopify app config link               # once: log in and pick the Colvy app (client_id is already set)
 npm run deploy                            # builds, then pushes config + theme extension as a new version
 ```
 

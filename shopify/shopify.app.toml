@@ -4,10 +4,10 @@
 #   npx @shopify/cli@latest app config link   ← once: pick or create the app
 #   npx @shopify/cli@latest app deploy        ← config + the theme extension
 #
-# `client_id` is written by `app config link`. It is the app's public API key,
-# the same value as SHOPIFY_API_KEY in Vercel.
+# `client_id` is the Colvy app's public API key (Dev Dashboard → Colvy → App
+# settings → Client ID), the same value as SHOPIFY_API_KEY in Vercel.
 
-client_id = ""
+client_id = "1991c35f9e866666d158439c905f046c"
 name = "Colvy"
 handle = "colvy"
 application_url = "https://colvy.com/api/shopify/app"
