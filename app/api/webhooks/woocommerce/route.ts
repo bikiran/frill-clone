@@ -13,6 +13,7 @@ import { DEFAULT_ORDER_MESSAGES, isStaleOrderMessage } from '@/lib/order-message
 import { findCustomerGoogleReview } from '@/lib/review-match'
 import { logEnquiryReopened } from '@/lib/conversation-timeline'
 import { notifyWaitlist, resolveWaitlistSettings } from '@/lib/waitlist'
+import { recoverAbandonedCarts } from '@/lib/abandoned-carts'
 
 // A product changed in WooCommerce. Keep the synced catalogue's stock current,
 // and when it's back IN stock, text everyone on its back-in-stock waitlist
@@ -98,112 +99,6 @@ async function fetchLiveWooStatus(db: any, companyId: string, orderId: any): Pro
     const live = await res.json()
     return String(live?.status || '').toLowerCase() || null
   } catch { return null }
-}
-
-// ── Recover abandoned carts by email/phone ──────────────────────────────────
-// The WordPress bridge only marks a cart recovered when the SAME browser
-// session converts. Customers routinely abandon on mobile and buy on desktop,
-// so we also match on contact details. This runs at the TOP LEVEL of the
-// webhook (not buried inside the chat automation, whose early returns —
-// missing conversation, etc. — used to silently skip it). It also counts
-// 'pending' as a conversion: WooCommerce's order.created webhook fires with
-// status=pending for most gateways, and if that's the only webhook configured,
-// a successful order would otherwise never be matched.
-async function recoverAbandonedCarts(db: any, companyId: string, order: any) {
-  try {
-    const status = (order.status || '').toLowerCase()
-    // A failed / cancelled / refunded order did NOT recover the cart.
-    const converting = ['pending', 'processing', 'completed', 'on-hold'].includes(status)
-    if (!converting) return
-
-    const email = (order.billing?.email || '').trim()
-    const phone = (order.billing?.phone || '').trim()
-    if (!email && !phone) return
-
-    const { data: openCarts } = await db.from('abandoned_carts')
-      .select('id, email, phone, conversation_id')
-      .eq('company_id', companyId)
-      .eq('status', 'abandoned')
-
-    const norm = (p: string) => (p || '').replace(/\D/g, '').slice(-8) // last 8 digits
-    const wantEmail = email.toLowerCase()
-    const wantPhone = norm(phone)
-
-    const matches = (openCarts || []).filter((c: any) => {
-      const cEmail = (c.email || '').trim().toLowerCase()
-      const cPhone = norm(c.phone || '')
-      if (wantEmail && cEmail && cEmail === wantEmail) return true
-      if (wantPhone && cPhone && cPhone === wantPhone) return true
-      return false
-    })
-
-    // Fallback: also recover any OPEN conversation for the same contact that is
-    // still flagged as an abandoned cart. The cart-record match above can miss
-    // (e.g. the cart stored a different/blank email than the billing email), yet
-    // the customer clearly converted — so flip their conversation too.
-    try {
-      const digits = (s: string) => (s || '').replace(/\D/g, '').slice(-9)
-      const { data: contacts } = await db.from('contacts')
-        .select('id').eq('company_id', companyId)
-        .or([
-          wantEmail ? `email.ilike.${wantEmail}` : '',
-          phone ? `phone.ilike.%${digits(phone)}%` : '',
-        ].filter(Boolean).join(','))
-      const contactIds = (contacts || []).map((c: any) => c.id)
-      if (contactIds.length) {
-        const { data: cartConvs } = await db.from('conversations')
-          .select('id, subject, order_status, cart_status')
-          .in('contact_id', contactIds)
-          .ilike('subject', 'abandoned cart%')
-        for (const cc of cartConvs || []) {
-          if (cc.cart_status === 'recovered') continue
-          if (!matches.find((m: any) => m.conversation_id === cc.id)) {
-            matches.push({ id: null, conversation_id: cc.id, _viaContact: true })
-          }
-        }
-      }
-    } catch {}
-
-    for (const m of matches) {
-      if (m.id) {
-        await db.from('abandoned_carts').update({
-          status: 'recovered',
-          recovered_order_id: String(order.id),
-          updated_at: new Date().toISOString(),
-        }).eq('id', m.id)
-      }
-      // Note the win in the cart's conversation thread, so the agent sees it.
-      if (m.conversation_id) {
-        try {
-          await db.from('messages').insert({
-            conversation_id: m.conversation_id, company_id: companyId, sender_type: 'system',
-            content: `🛒→✅ Abandoned cart recovered — order #${order.number || order.id} placed ($${order.total})`,
-            metadata: { cart_recovered: true, order_id: order.id },
-          })
-          // Stamp the CONVERSATION too — the abandoned-cart badge reads the
-          // conversation's order_status / cart_status, not the cart record.
-          // Without this the thread stayed "Abandoned Cart" forever even after
-          // the sale (which is exactly what happened for this customer).
-          await db.from('conversations').update({
-            order_status: (order.status || 'processing'),
-            cart_status: 'recovered',
-            woo_order_id: String(order.id),
-            last_message: `Order #${order.number || order.id} — ${order.status || 'processing'} · $${order.total}`,
-            last_message_at: new Date().toISOString(),
-          }).eq('id', m.conversation_id)
-        } catch {}
-      }
-    }
-
-    // Diagnostic breadcrumb: how many carts this order recovered (visible via ?diag=1).
-    try {
-      await db.from('abandoned_cart_hits').insert({
-        company_id: companyId, had_email: !!email, had_phone: !!phone,
-        item_count: matches.length,
-        raw_keys: `CART_RECOVERY order=${order.id} status=${status} matched=${matches.length}`,
-      })
-    } catch {}
-  } catch (e) { console.error('[cart recovery] match failed', e) }
 }
 
 // Find-or-create a contact + conversation for an order's customer, then post a

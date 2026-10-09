@@ -84,6 +84,16 @@ export async function runCartRecovery(db: any, opts: { origin: string; now?: Dat
           const { data } = await db.from('woocommerce_orders').select('woo_order_id').eq('company_id', co.id).eq('billing_phone_norm', tail).gte('order_date', since).limit(1)
           bought = !!data?.length
         }
+        // Orders from any store (Shopify lives only here; WooCommerce is mirrored
+        // here too). Cancelled ones don't count as having bought.
+        if (!bought && (mail || tail)) {
+          try {
+            const or = [mail ? `customer_email.eq.${mail}` : '', tail ? `customer_phone_norm.eq.${tail}` : ''].filter(Boolean).join(',')
+            const { data } = await db.from('orders').select('id').eq('company_id', co.id).or(or)
+              .gte('order_date', since).neq('status', 'cancelled').limit(1)
+            bought = !!data?.length
+          } catch {}
+        }
         if (bought) { await mark({ recovery_error: 'Already ordered' }); out.skipped++; continue }
 
         // Blocked or replied STOP → never message them.

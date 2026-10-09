@@ -5,6 +5,8 @@ import { saveShopifyCustomers } from '@/lib/shopify-customers'
 import { saveShopifyProducts } from '@/lib/shopify-products'
 import { upsertShopifyOrder } from '@/lib/shopify-orders'
 import { serviceFor } from '@/lib/shopify-sync'
+import { runShopifyOrderAutomations } from '@/lib/shopify-automation'
+import { stageCheckout, stageFromWebhook } from '@/lib/shopify-checkouts'
 import { notifyCompany } from '@/lib/notify'
 
 export const dynamic = 'force-dynamic'
@@ -23,7 +25,8 @@ const admin = () => createClient(
  * X-Shopify-Shop-Domain, the event from X-Shopify-Topic.
  *
  * Store topics (subscribed per store at install): customers/create|update|delete,
- * orders/create|updated, products/create|update|delete, inventory_levels/update,
+ * orders/create|updated, checkouts/create|update, products/create|update|delete,
+ * inventory_levels/update,
  * app/uninstalled. Compliance topics (declared in the app config, required by
  * Shopify): customers/data_request, customers/redact, shop/redact.
  *
@@ -66,7 +69,20 @@ export async function POST(req: NextRequest) {
           if (!integ.is_active || !payload?.id) break
           const svc = await serviceFor(db, integ)
           const order = await svc.getOrder(payload.id)
-          if (order) await upsertShopifyOrder(db, companyId, order, { svc })
+          if (order) {
+            await upsertShopifyOrder(db, companyId, order, { svc })
+            // Cart recovery, the order thread + customer message, attribution,
+            // review request — the same automations a WooCommerce order gets.
+            try { await runShopifyOrderAutomations(db, companyId, order) } catch (e: any) { console.error('[shopify webhook] order automation failed', e?.message || e) }
+          }
+          break
+        }
+        // A checkout started or changed: held, and promoted to an abandoned
+        // cart only if it's still unpaid after a while (lib/shopify-checkouts).
+        case 'checkouts/create':
+        case 'checkouts/update': {
+          if (!integ.is_active || !payload?.token) break
+          await stageCheckout(db, stageFromWebhook(payload, companyId, integ.id))
           break
         }
         case 'products/create':
