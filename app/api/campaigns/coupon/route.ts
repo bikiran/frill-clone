@@ -1,6 +1,7 @@
 import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { shopifyCreateDiscountCode, shopifyStoreFor, ShopifyCreateError } from '@/lib/shopify-create'
 
 export const dynamic = 'force-dynamic'
 
@@ -11,7 +12,8 @@ const admin = () => createClient(
 )
 
 /**
- * POST — create a coupon in WooCommerce for a campaign.
+ * POST — create a coupon in WooCommerce (or a Shopify discount code, for a
+ * Shopify store) for a campaign.
  *
  * Creates a REAL, redeemable discount, so it's only reachable from an explicit
  * staff action in the campaign builder. Existing codes are returned rather than
@@ -47,8 +49,28 @@ export async function POST(req: NextRequest) {
         .order('created_at', { ascending: true }).limit(1)
       integ = r.data?.[0] || null
     }
+    // Shopify: asked for by id, or the only kind of store connected.
+    const shop = integrationId
+      ? (await db.from('shopify_integrations').select('*').eq('id', integrationId).eq('company_id', companyId).eq('is_active', true).maybeSingle()).data
+      : integ ? null : await shopifyStoreFor(db, companyId)
+    if (shop) {
+      try {
+        const r = await shopifyCreateDiscountCode(db, shop, {
+          code: String(code).trim(), amount: Number(amount),
+          discountType: discountType === 'percent' ? 'percent' : 'fixed',
+          endsAt: expiryDate ? new Date(`${expiryDate}T23:59:59`).toISOString() : null,
+          minimumAmount: minimumSpend ? Number(minimumSpend) : null,
+          usageLimit: usageLimit ? Number(usageLimit) : null,
+          oncePerCustomer: usageLimitPerUser ? Number(usageLimitPerUser) <= 1 : false,
+          title: description || 'Created from a Colvy campaign',
+        })
+        return NextResponse.json({ ok: true, coupon: { code: r.code, amount: String(amount), discount_type: discountType, channel: 'shopify' }, existing: r.existing })
+      } catch (e: any) {
+        return NextResponse.json({ error: e.message }, { status: e instanceof ShopifyCreateError ? e.status : 502 })
+      }
+    }
     if (!integ?.store_url) {
-      return NextResponse.json({ error: 'No WooCommerce store connected' }, { status: 404 })
+      return NextResponse.json({ error: 'No WooCommerce or Shopify store connected' }, { status: 404 })
     }
 
     const auth = `Basic ${Buffer.from(`${integ.consumer_key}:${integ.consumer_secret}`).toString('base64')}`

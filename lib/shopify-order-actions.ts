@@ -40,6 +40,9 @@ export type ShopifyOrderRef = { row: any | null; integ: any; externalId: string 
  */
 export async function resolveShopifyOrderRef(db: any, companyId: string, ref: { orderId?: any; channel?: any; orderRowId?: any }): Promise<ShopifyOrderRef | null> {
   const raw = String(ref.orderId ?? '').trim()
+  // A Shopify draft (an unpaid order created from Colvy, "shopify-draft-<id>")
+  // isn't an order yet — never let it fall through to WooCommerce.
+  if (/^shopify-draft-/i.test(raw)) throw new ShopifyActionError('That’s still a Shopify draft order (awaiting payment) — change it in Shopify, or wait until the customer pays.', 409)
   let row: any = null
   let externalId = ''
   const rowId = ref.orderRowId && UUID.test(String(ref.orderRowId)) ? String(ref.orderRowId) : UUID.test(raw) ? raw : ''

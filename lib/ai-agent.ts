@@ -4,6 +4,7 @@ import { logUnanswered } from '@/lib/ai-unanswered'
 import { findProducts } from '@/lib/product-search'
 import { markThinking, clearThinking, queueDraft, claimDraft, answeredSince, sendAiReply, sleep, replyInFlight, DEFAULT_SEND_DELAY_S } from '@/lib/ai-live-reply'
 import { WooCommerceService } from '@/lib/woocommerce-service'
+import { shopifyCreateDiscountCode, shopifyCreateOrder, shopifyStoreFor } from '@/lib/shopify-create'
 import { trackLinksInText } from '@/lib/link-tracking'
 
 const admin = () => createClient(
@@ -97,18 +98,39 @@ async function issueCoupon(db: any, ctx: any, req: { discount_type: string; amou
     }
   }
 
-  // Create it in WooCommerce so it's a real, redeemable coupon.
+  // Create it in the store so it's a real, redeemable code: WooCommerce, or
+  // a Shopify discount code when Shopify is the store connected.
   const { data: integ } = await db.from('woocommerce_integrations')
     .select('*').eq('company_id', ctx.companyId).eq('is_active', true).limit(1)
   const store = integ?.[0]
-  if (!store?.store_url) {
-    await log(db, { ...base, allowed: false, blocked_reason: 'No WooCommerce store connected' })
+  const shopStore = store?.store_url ? null : await shopifyStoreFor(db, ctx.companyId)
+  if (!store?.store_url && !shopStore) {
+    await log(db, { ...base, allowed: false, blocked_reason: 'No WooCommerce or Shopify store connected' })
     return { ok: false, message: null }
   }
 
   const days = Number(cap.expires_days ?? 7)
   const expires = new Date(Date.now() + days * 86400000)
   const code = `AI${Math.random().toString(36).slice(2, 8).toUpperCase()}`
+  const nice = type === 'percent' ? `${amount}% off` : `$${amount} off`
+
+  if (shopStore) {
+    try {
+      await shopifyCreateDiscountCode(db, shopStore, {
+        code, amount, discountType: type === 'percent' ? 'percent' : 'fixed', email: ctx.contact?.email || null,
+        oneTime: true, endsAt: expires.toISOString(), title: `Issued by Colvy AI — ${req.reason || 'customer enquiry'}`.slice(0, 255),
+      })
+      await db.from('ai_coupons').insert({
+        company_id: ctx.companyId, conversation_id: ctx.conversationId, contact_id: ctx.contact?.id || null,
+        code, discount_type: type, amount, expires_at: expires.toISOString(),
+      })
+      await log(db, { ...base, allowed: true, payload: { code, type, amount, store: 'shopify' } })
+      return { ok: true, message: `Here's a code for ${nice}: **${code}**\nIt's valid for ${days} day${days === 1 ? '' : 's'} and can be used once.` }
+    } catch (e: any) {
+      await log(db, { ...base, allowed: false, blocked_reason: e?.message || 'Shopify rejected the discount code' })
+      return { ok: false, message: null }
+    }
+  }
 
   try {
     const auth = Buffer.from(`${store.consumer_key}:${store.consumer_secret}`).toString('base64')
@@ -138,7 +160,6 @@ async function issueCoupon(db: any, ctx: any, req: { discount_type: string; amou
     })
     await log(db, { ...base, allowed: true, payload: { code, type, amount } })
 
-    const nice = type === 'percent' ? `${amount}% off` : `$${amount} off`
     return {
       ok: true,
       message: `Here's a code for ${nice}: **${code}**\nIt's valid for ${days} day${days === 1 ? '' : 's'} and can be used once.`,
@@ -236,9 +257,57 @@ async function createDraftOrder(db: any, ctx: any, req: any) {
   const { data: integ } = await db.from('woocommerce_integrations')
     .select('*').eq('company_id', ctx.companyId).eq('is_active', true).limit(1)
   const store = integ?.[0]
-  if (!store?.store_url) {
-    await log(db, { ...base, allowed: false, blocked_reason: 'No WooCommerce store connected' })
+  const shopStore = store?.store_url ? null : await shopifyStoreFor(db, ctx.companyId)
+  if (!store?.store_url && !shopStore) {
+    await log(db, { ...base, allowed: false, blocked_reason: 'No WooCommerce or Shopify store connected' })
     return { ok: false, message: null }
+  }
+
+  // Shopify: a draft order priced from the synced catalogue (never from what
+  // the model says), for a team member to check and send the payment link.
+  if (shopStore) {
+    try {
+      const pids = Array.from(new Set(items.slice(0, 20).map((it: any) => Number(it.product_id)).filter(Boolean)))
+      const { data: prods } = pids.length
+        ? await db.from('shopify_products').select('shopify_product_id, name, price, status').eq('company_id', ctx.companyId).in('shopify_product_id', pids)
+        : { data: [] }
+      const byId = new Map((prods || []).filter((p: any) => !p.status || p.status === 'ACTIVE').map((p: any) => [Number(p.shopify_product_id), p]))
+      let totalCents = 0
+      const lines: any[] = []
+      for (const it of items.slice(0, 20)) {
+        const p: any = byId.get(Number(it.product_id))
+        if (!p) continue
+        const qty = Math.max(1, Math.min(50, Number(it.quantity) || 1))
+        totalCents += Math.round((parseFloat(p.price) || 0) * 100) * qty
+        lines.push({ product_id: p.shopify_product_id, quantity: qty, name: p.name })
+      }
+      if (!lines.length) {
+        await log(db, { ...base, allowed: false, blocked_reason: 'No valid products' })
+        return { ok: false, message: null }
+      }
+      const maxCents = Number(cap.max_order_cents ?? 0)
+      if (maxCents && totalCents > maxCents) {
+        await log(db, { ...base, allowed: false, blocked_reason: `Order total $${(totalCents / 100).toFixed(2)} exceeds the $${(maxCents / 100).toFixed(2)} limit` })
+        return { ok: false, message: `That comes to more than I'm able to put together on my own. Let me get a colleague to finish this with you.`, handoff: true }
+      }
+      const addr = { first_name: req.first_name || ctx.contact?.name?.split(' ')[0] || '', last_name: req.last_name || '', email: ctx.contact?.email || req.email || '', phone: ctx.contact?.phone || req.phone || '', address_1: req.address || '', city: req.city || '', state: req.state || '', postcode: req.postcode || '', country: 'AU' }
+      const r: any = await shopifyCreateOrder(db, shopStore, {
+        conversationId: ctx.conversationId, contactId: ctx.contact?.id || null,
+        customer: { email: addr.email, first_name: addr.first_name, last_name: addr.last_name, phone: addr.phone, billing: addr, shipping: addr },
+        items: lines, internalNote: 'Draft prepared by Colvy AI from a chat — please review before sending payment.',
+        status: 'draft', createdByName: 'Colvy AI', ignoreStockWarnings: true,
+      })
+      const o = r.order
+      await log(db, { ...base, allowed: true, payload: { order_id: o?.id, total_cents: totalCents, store: 'shopify' } })
+      return {
+        ok: true,
+        message: `I've put together a draft order (#${o?.number}) totalling $${(totalCents / 100).toFixed(2)}. A team member will check it over and send you a payment link shortly.`,
+        handoff: true,
+      }
+    } catch (e: any) {
+      await log(db, { ...base, allowed: false, blocked_reason: e?.message || 'Shopify rejected the order' })
+      return { ok: false, message: null }
+    }
   }
 
   try {
@@ -488,7 +557,9 @@ export async function runAiAgent(opts: {
     ? products.map((p: any) => {
         const price = p.on_sale && p.sale_price ? `$${p.sale_price} (on sale, was $${p.price})` : (p.price ? `$${p.price}` : 'price on request')
         const stock = p.stock_status === 'instock' ? `in stock${p.stock_quantity != null ? ` (${p.stock_quantity} available)` : ''}` : p.stock_status === 'onbackorder' ? 'on backorder' : 'out of stock'
-        return `- ${p.name}: ${price}, ${stock}${p.permalink ? ` — ${p.permalink}` : ''}`
+        // The id is for create_draft_order only (never shown to the customer).
+        const pid = caps.create_order?.enabled ? (p.woo_product_id || p.shopify_product_id) : null
+        return `- ${p.name}: ${price}, ${stock}${p.permalink ? ` — ${p.permalink}` : ''}${pid ? ` [product_id ${pid} — internal, don't mention]` : ''}`
       }).join('\n')
     : '(no matching products found in the store for this message)'
 
