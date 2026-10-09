@@ -1,5 +1,6 @@
 'use client'
 
+import { statusMeta } from '@/lib/orders'
 import { authFetch } from '@/lib/auth-fetch'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
@@ -89,7 +90,23 @@ export default function CustomerProfilePage() {
                 .eq('company_id', resolvedCompanyId).ilike('email', contact.email).maybeSingle()
               if (byEmail) customerData = byEmail
             }
-            // No matching woo customer — show the contact as a minimal customer
+            // A Shopify customer for this contact (linked, or by email).
+            if (!customerData) {
+              let sq = (supabase as any).from('shopify_customers').select('*').eq('company_id', resolvedCompanyId)
+              sq = contact.email ? sq.or(`contact_id.eq.${contact.id},email.eq.${String(contact.email).toLowerCase()}`) : sq.eq('contact_id', contact.id)
+              const { data: shopRows } = await sq.limit(1)
+              const sc = shopRows?.[0]
+              if (sc) {
+                const a = sc.address || {}
+                customerData = {
+                  ...sc, id: contact.id, contact_id: contact.id, _channel: 'shopify',
+                  email: /@no-email\.colvy\.internal$/i.test(sc.email || '') ? contact.email : sc.email,
+                  items_purchased: [],
+                  address: { address_1: a.address1 || '', address_2: a.address2 || '', city: a.city || '', state: a.provinceCode || a.province_code || a.province || '', postcode: a.zip || '', country: a.countryCodeV2 || a.country_code || a.country || '' },
+                }
+              }
+            }
+            // No matching store customer — show the contact as a minimal customer
             if (!customerData) {
               customerData = {
                 id: contact.id, email: contact.email,
@@ -134,6 +151,24 @@ export default function CustomerProfilePage() {
               if (!seen.has(o.woo_order_id)) { ordersData.push(o); seen.add(o.woo_order_id) }
             }
           }
+          // Shopify orders from the operational orders table, shaped like the
+          // WooCommerce rows this page renders.
+          try {
+            const cidForOrders = customerData.is_contact_only || customerData._channel === 'shopify' ? customerData.id : (customerData.contact_id || null)
+            const ors = [cidForOrders ? `contact_id.eq.${cidForOrders}` : '', email ? `customer_email.eq.${String(email).toLowerCase()}` : ''].filter(Boolean).join(',')
+            if (ors) {
+              const { data: shopOrders } = await (supabase as any).from('orders')
+                .select('id, order_number, status, payment_status, total, currency, order_date, customer_email, shipping_address, order_items(product_name, quantity, sku, total_price, image_url)')
+                .eq('company_id', resolvedCompanyId).eq('sales_channel', 'shopify').or(ors)
+                .order('order_date', { ascending: false }).limit(100)
+              for (const o of shopOrders || []) ordersData.push({
+                woo_order_id: o.order_number, order_number: o.order_number, _channel: 'shopify', _orderId: o.id,
+                status: statusMeta(o.status).label.toLowerCase(), total: o.total, currency: o.currency, order_date: o.order_date,
+                customer_email: o.customer_email, billing: o.shipping_address || null,
+                line_items: (o.order_items || []).map((li: any) => ({ name: li.product_name, quantity: li.quantity, sku: li.sku, total: li.total_price, image: li.image_url ? { src: li.image_url } : null })),
+              })
+            }
+          } catch {}
           ordersData.sort((a: any, b: any) => (b.order_date || '').localeCompare(a.order_date || ''))
 
           // Live fallback: if nothing has synced yet, pull orders straight from

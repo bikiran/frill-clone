@@ -695,11 +695,16 @@ export default function IncomingCallListener({ companyId, agentName, showStatusP
         contact = matchDigits(more)
       }
       if (contact) {
-        // Pull WooCommerce context if their email matches
+        // Pull store context (WooCommerce, else Shopify) if their email matches
         let woo: any = null
         if (contact.email) {
           const { data } = await (supabase as any).from('woocommerce_customers').select('total_orders,total_spend').eq('company_id', companyId).ilike('email', contact.email).maybeSingle()
           woo = data
+          // Same totals from a Shopify store when there's no WooCommerce match.
+          if (!woo) {
+            const { data: shop } = await (supabase as any).from('shopify_customers').select('total_orders,total_spend').eq('company_id', companyId).eq('email', String(contact.email).toLowerCase()).limit(1)
+            woo = shop?.[0] || null
+          }
         }
         setCaller({ number: fromNumber, name: contact.name, email: contact.email, contactId: contact.id, woo, source: contact.source || null, channels: Array.isArray(contact.channels_seen) ? contact.channels_seen : null })
       } else {

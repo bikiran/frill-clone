@@ -133,7 +133,7 @@ export async function resolveAudience(
         Array.isArray(c.tags) && c.tags.some((t: string) => want.includes(String(t).toLowerCase())))
     }
 
-    // Filters that need WooCommerce data.
+    // Filters that need store (WooCommerce / Shopify) customer data.
     const needsCommerce = ['segment', 'woocommerce', 'purchased_category', 'lapsed'].includes(filter.type)
       || filter.minSpend != null || filter.minOrders != null || filter.state || filter.postcode
     if (needsCommerce) {
@@ -147,13 +147,30 @@ export async function resolveAudience(
         if (cu.email) byEmail.set(String(cu.email).toLowerCase(), cu)
         if (cu.phone_norm) byPhone.set(cu.phone_norm, cu)
       }
+      // Shopify customers too, for anyone not already known from WooCommerce —
+      // same spend/orders/last-order fields; the address is reshaped to the
+      // state/postcode the location filters read. (Not for the explicit
+      // "WooCommerce customers" filter below.)
+      try {
+        const shop = await fetchAll(() =>
+          db.from('shopify_customers').select('*')
+            .eq('company_id', companyId).order('id', { ascending: true })
+        )
+        for (const sc of shop) {
+          const a = sc.address || {}
+          const cu = { ...sc, _src: 'shopify', items_purchased: null, address: { state: a.provinceCode || a.province_code || a.province || '', postcode: a.zip || '' } }
+          const em = sc.email && !/@no-email\.colvy\.internal$/i.test(sc.email) ? String(sc.email).toLowerCase() : ''
+          if (em && !byEmail.has(em)) byEmail.set(em, cu)
+          if (sc.phone_norm && !byPhone.has(sc.phone_norm)) byPhone.set(sc.phone_norm, cu)
+        }
+      } catch {}
       const custFor = (c: any) =>
         (c.email && byEmail.get(String(c.email).toLowerCase()))
         || (c.phone && byPhone.get(digits(c.phone)))
         || null
 
       if (filter.type === 'woocommerce') {
-        candidates = candidates.filter(c => !!custFor(c))
+        candidates = candidates.filter(c => { const cu = custFor(c); return !!cu && cu._src !== 'shopify' })
       }
 
       if (filter.type === 'segment' && filter.segment) {

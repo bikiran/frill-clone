@@ -17,6 +17,8 @@ import { retrieve } from '@/lib/ai-agent'
 import { findProducts } from '@/lib/product-search'
 import { logUnanswered } from '@/lib/ai-unanswered'
 
+import { statusMeta } from '@/lib/orders'
+
 const MODEL = 'claude-opus-5-5'
 
 export type DraftSource = { id: string; kind: 'knowledge' | 'product' | 'order'; label: string; url?: string | null }
@@ -39,7 +41,23 @@ async function findOrders(db: any, companyId: string, email: string | null, phon
       .eq('billing_phone_norm', tail).order('order_date', { ascending: false }).limit(5)
     rows = data || []
   }
-  return rows
+  // Shopify orders live in the operational orders table; shape them the same.
+  try {
+    let q = db.from('orders').select('order_number, status, payment_status, total, currency, order_date, order_items(product_name, quantity)')
+      .eq('company_id', companyId).eq('sales_channel', 'shopify')
+    if (email) q = q.eq('customer_email', email.toLowerCase())
+    else if (tail.length >= 8) q = q.eq('customer_phone_norm', tail)
+    else q = null as any
+    if (q) {
+      const { data } = await q.order('order_date', { ascending: false }).limit(5)
+      for (const o of data || []) rows.push({
+        woo_order_id: o.order_number, status: [statusMeta(o.status).label, o.payment_status].filter(Boolean).join(', '),
+        total: o.total, currency: o.currency, order_date: o.order_date,
+        line_items: (o.order_items || []).map((i: any) => ({ name: i.product_name, quantity: i.quantity })),
+      })
+    }
+  } catch {}
+  return rows.sort((a, b) => String(b.order_date || '').localeCompare(String(a.order_date || ''))).slice(0, 5)
 }
 
 type Turn = { who: 'Customer' | 'Us'; text: string }

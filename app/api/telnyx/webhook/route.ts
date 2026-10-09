@@ -632,6 +632,15 @@ export async function POST(req: NextRequest) {
                 if (b) callerName = `${b.first_name || ''} ${b.last_name || ''}`.trim() || null
               } catch {}
             }
+            // Shopify customers (phone_norm is the last nine digits, indexed).
+            if (!callerName && t.length >= 8) {
+              try {
+                const { data: shopC } = await db.from('shopify_customers')
+                  .select('first_name, last_name').eq('company_id', companyId).eq('phone_norm', t.slice(-9)).limit(1)
+                const c = (shopC || [])[0]
+                if (c) callerName = `${c.first_name || ''} ${c.last_name || ''}`.trim() || null
+              } catch {}
+            }
           }
 
           // Unknown caller → save the number as a contact now (with any name we

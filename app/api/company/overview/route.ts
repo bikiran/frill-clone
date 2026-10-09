@@ -120,6 +120,19 @@ export async function GET(req: NextRequest) {
         totalOrderAmount += parseFloat(o.total as any) || 0
       }
     } catch {}
+    // Shopify orders (operational orders table) count toward the store total too.
+    try {
+      const { data: shopOrders } = await db
+        .from('orders')
+        .select('total, status, payment_status')
+        .eq('company_id', companyId).eq('sales_channel', 'shopify')
+        .gte('order_date', since)
+      for (const o of shopOrders || []) {
+        if (['cancelled', 'refunded'].includes(String(o.status || '')) || ['refunded', 'failed'].includes(String(o.payment_status || ''))) continue
+        totalOrders++
+        totalOrderAmount += parseFloat(o.total as any) || 0
+      }
+    } catch {}
 
     // Recovered abandoned carts.
     let cartsRecovered = 0

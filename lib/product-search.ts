@@ -15,11 +15,27 @@ export async function findProducts(db: any, companyId: string, text: string) {
   const words = keywords(text).map(stemWord).filter(w => w.length >= 3)
   if (!words.length) return []
   const ors = words.map(w => `name.ilike.%${w.replace(/[%,()]/g, '')}%`).join(',')
-  const { data } = await db.from('woocommerce_products')
-    .select('woo_product_id, name, price, sale_price, on_sale, stock_status, stock_quantity, permalink')
-    .eq('company_id', companyId).or(ors).limit(80)
+  // Both catalogues, in the same shape (a Shopify product's id is its
+  // shopify_product_id; on_sale/sale_price derive from compare-at price).
+  const [{ data: woo }, { data: shop }] = await Promise.all([
+    db.from('woocommerce_products')
+      .select('woo_product_id, name, price, sale_price, on_sale, stock_status, stock_quantity, permalink')
+      .eq('company_id', companyId).or(ors).limit(80),
+    db.from('shopify_products')
+      .select('shopify_product_id, name, price, compare_at_price, stock_status, stock_quantity, permalink, status')
+      .eq('company_id', companyId).or(ors).limit(80),
+  ])
+  const shopRows = (shop || []).filter((p: any) => p.status !== 'ARCHIVED' && p.status !== 'DRAFT').map((p: any) => {
+    const onSale = !!(p.compare_at_price && p.price != null && Number(p.compare_at_price) > Number(p.price))
+    return {
+      shopify_product_id: p.shopify_product_id, name: p.name,
+      price: p.price != null ? String(onSale ? p.compare_at_price : p.price) : null,
+      sale_price: onSale ? String(p.price) : null, on_sale: onSale,
+      stock_status: p.stock_status, stock_quantity: p.stock_quantity, permalink: p.permalink,
+    }
+  })
   const lower = String(text).toLowerCase()
-  return (data || [])
+  return [...(woo || []), ...shopRows]
     .map((p: any) => {
       const name = String(p.name || '').toLowerCase()
       let score = words.filter(w => name.includes(w)).length

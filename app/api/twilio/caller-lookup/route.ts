@@ -76,6 +76,17 @@ export async function GET(req: NextRequest) {
     const custName = [cust?.first_name, cust?.last_name].filter(Boolean).join(' ').trim()
     if (custName) return NextResponse.json({ name: custName, source: 'woocommerce_customer' })
 
+    // Shopify customer, then the latest Shopify order (guest checkouts).
+    const { data: shopC } = await db.from('shopify_customers')
+      .select('first_name, last_name').eq('company_id', companyId).eq('phone_norm', tail).limit(1)
+    const shopName = [shopC?.[0]?.first_name, shopC?.[0]?.last_name].filter(Boolean).join(' ').trim()
+    if (shopName) return NextResponse.json({ name: shopName, source: 'shopify_customer' })
+    const { data: shopO } = await db.from('orders')
+      .select('customer_name').eq('company_id', companyId).eq('sales_channel', 'shopify').eq('customer_phone_norm', tail)
+      .order('order_date', { ascending: false }).limit(1)
+    const shopOrderName = String(shopO?.[0]?.customer_name || '').trim()
+    if (shopOrderName && shopOrderName !== 'Customer' && !shopOrderName.includes('@')) return NextResponse.json({ name: shopOrderName, source: 'shopify_order' })
+
     // A guest checkout creates no customer record, so the billing name on the
     // most recent order is the last place the caller can be recognised.
     const { data: orders } = await db.from('woocommerce_orders')
