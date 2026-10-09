@@ -2661,7 +2661,7 @@ export default function InboxPage() {
         id: r.id, woo_order_id: `shopify-${r.external_order_id}`, order_number: r.order_number,
         status: panelStatus(r), total: r.total, currency: r.currency, order_date: r.order_date,
         customer_email: r.customer_email, customer_name: r.customer_name, billing: r.shipping_address || null,
-        shipping_method: r.shipping_method, shipping_total: r.shipping_total, total_refunded: 0,
+        shipping_method: r.shipping_method, shipping_total: r.shipping_total, total_refunded: Number(r.metadata?.shopify?.refunded) || 0,
         line_items: (r.order_items || []).map((li: any) => ({ name: li.product_name, quantity: li.quantity, sku: li.sku, total: li.total_price, product_id: li.product_id, image: li.image_url ? { src: li.image_url } : null })),
         _channel: 'shopify', shop: r.metadata?.shopify?.shop || null, status_url: r.metadata?.shopify?.status_url || null, external_order_id: r.external_order_id,
       }))
@@ -4170,7 +4170,10 @@ export default function InboxPage() {
     if (!companyId) return
     const orderId = payload.order_id || payload.id
     if (!orderId) { showToast('No order id for this order'); return }
-    if (!await confirmDialog(`Mark order #${payload.order_number || orderId} as completed?\n\nThis updates WooCommerce and may send the customer a completion email.`)) return
+    const isShopify = /^shopify-/.test(String(orderId))
+    if (!await confirmDialog(isShopify
+      ? `Mark order #${payload.order_number || orderId} as completed?\n\nThis marks it paid (if it isn't yet) and fulfilled in Shopify.`
+      : `Mark order #${payload.order_number || orderId} as completed?\n\nThis updates WooCommerce and may send the customer a completion email.`)) return
     try {
       const res = await authFetch('/api/orders/status', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -11174,10 +11177,21 @@ export default function InboxPage() {
                             </div>
                           )
                         })()}
-                        {/* Per-order actions. Shopify orders are changed in Shopify for
-                            now — the edit/complete/refund actions below talk to WooCommerce. */}
+                        {/* Per-order actions. Shopify orders get the same actions —
+                            the routes see the "shopify-<id>" order id and make the
+                            change in Shopify (lib/shopify-order-actions). */}
                         {o._channel === 'shopify' ? (
                         <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--border)' }}>
+                          {!['cancelled', 'refunded'].includes(String(o.status || '').toLowerCase()) && (
+                            <button type="button" onClick={() => openOrderEditor(payload)} style={miniBtn('var(--coral)')}>Edit</button>
+                          )}
+                          {['processing', 'pending'].includes(String(o.status || '').toLowerCase()) && (
+                            <button type="button" onClick={() => markOrderCompleted(payload)} style={miniBtn('#15803d')}>Mark completed</button>
+                          )}
+                          {['processing', 'completed'].includes(String(o.status || '').toLowerCase()) && (
+                            <button type="button" onClick={() => issueOrderRefund(payload)} style={miniBtn('#b45309')}>Issue refund</button>
+                          )}
+                          <button type="button" onClick={() => generateInvoice(payload)} style={miniBtn('var(--ink)')}>Invoice</button>
                           {o.shop && <a href={`https://${o.shop}/admin/orders/${o.external_order_id}`} target="_blank" rel="noopener noreferrer" style={{ ...miniBtn('#008060'), textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}>Open in Shopify</a>}
                           {o.status_url && <button type="button" onClick={() => { navigator.clipboard?.writeText(o.status_url); showToast('Order status link copied') }} style={miniBtn('var(--slate)')}>Copy status link</button>}
                         </div>

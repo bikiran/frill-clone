@@ -15,7 +15,7 @@ embedded = false
 
 [access_scopes]
 # Keep in step with SHOPIFY_SCOPES in lib/shopify-auth.ts.
-scopes = "read_customers,write_customers,read_orders,write_orders,read_draft_orders,write_draft_orders,read_products,read_inventory,read_locations,read_discounts,write_discounts"
+scopes = "read_customers,write_customers,read_orders,write_orders,write_order_edits,read_merchant_managed_fulfillment_orders,write_merchant_managed_fulfillment_orders,read_draft_orders,write_draft_orders,read_products,read_inventory,read_locations,read_discounts,write_discounts"
 
 [auth]
 redirect_urls = [ "https://colvy.com/api/shopify/callback" ]

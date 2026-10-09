@@ -1585,15 +1585,21 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
     setTrkSending(false)
   }
 
-  // ── WooCommerce order actions ─────────────────────────────────────────────
+  // ── Store order actions (WooCommerce or Shopify) ──────────────────────────
+  // The order routes take "shopify-<id>" for a Shopify order and act in Shopify.
+  const isShopifyOrder = order.sales_channel === 'shopify'
+  const storeRef = isShopifyOrder ? `shopify-${order.external_order_id}` : order.external_order_id
+  const storeName = isShopifyOrder ? 'Shopify' : 'WooCommerce'
   const markCompleted = async () => {
-    if (!await confirmDialog(`Mark order ${order.order_number} as completed in WooCommerce?`)) return
+    if (!await confirmDialog(isShopifyOrder
+      ? `Mark order ${order.order_number} as completed?\n\nThis marks it paid (if it isn't yet) and fulfilled in Shopify.`
+      : `Mark order ${order.order_number} as completed in WooCommerce?`)) return
     setActBusy('done')
     try {
-      const res = await authFetch('/api/orders/status', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, orderId: order.external_order_id, status: 'completed', conversationId: order.conversation_id || undefined }) })
+      const res = await authFetch('/api/orders/status', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, orderId: storeRef, status: 'completed', conversationId: order.conversation_id || undefined }) })
       const j = await res.json().catch(() => ({}))
       if (!res.ok || j.error) onFlash(`Failed: ${j.error || res.status}`)
-      else { onPatch({ status: 'shipped', fulfilment_status: 'fulfilled' }, { type: 'status_changed', detail: 'Marked completed in WooCommerce' }); order.status = 'shipped'; onFlash('Order marked completed') }
+      else { onPatch({ status: 'shipped', fulfilment_status: 'fulfilled' }, { type: 'status_changed', detail: `Marked completed in ${storeName}` }); order.status = 'shipped'; onFlash('Order marked completed') }
     } catch (e: any) { onFlash(`Error: ${e?.message || e}`) }
     setActBusy('')
   }
@@ -1633,7 +1639,7 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
   const genInvoice = async () => {
     setActBusy('invoice')
     try {
-      const res = await authFetch(`/api/orders/details?companyId=${companyId}&orderId=${order.external_order_id}`)
+      const res = await authFetch(`/api/orders/details?companyId=${companyId}&orderId=${encodeURIComponent(storeRef)}`)
       const data = await res.json(); if (!res.ok) throw new Error(data.error || 'Could not load order')
       const o = data.order || {}, co = data.company || {}
       const { jsPDF } = await import('jspdf')
@@ -2187,11 +2193,14 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
               {(() => { const b = (color: string): React.CSSProperties => ({ fontSize: 12, fontWeight: 700, color, background: 'var(--card,#fff)', border: '1px solid var(--border)', borderRadius: 8, padding: '7px 12px', cursor: 'pointer' })
                 const isWoo = order.sales_channel === 'woocommerce'
+                const isStore = isWoo || (isShopifyOrder && !!order.external_order_id)
+                const shopDomain = order.metadata?.shopify?.shop
                 return <>
                   {isWoo && wooStoreUrl && <button type="button" onClick={editInWoo} style={b(ACCENT)}>Edit</button>}
-                  {isWoo && !['shipped', 'cancelled'].includes(order.status) && <button type="button" disabled={actBusy === 'done'} onClick={markCompleted} style={b('#15803d')}>{actBusy === 'done' ? '…' : 'Mark completed'}</button>}
+                  {isShopifyOrder && shopDomain && order.external_order_id && <a href={`https://${shopDomain}/admin/orders/${order.external_order_id}`} target="_blank" rel="noopener noreferrer" style={{ ...b('#008060'), textDecoration: 'none' }}>Open in Shopify</a>}
+                  {isStore && !['shipped', 'cancelled', 'refunded'].includes(order.status) && <button type="button" disabled={actBusy === 'done'} onClick={markCompleted} style={b('#15803d')}>{actBusy === 'done' ? '…' : 'Mark completed'}</button>}
                   {isClickCollect(order) && order.status !== 'shipped' && order.status !== 'cancelled' && <button type="button" disabled={actBusy === 'notify'} onClick={notifyPickup} style={b('#2563eb')}>{actBusy === 'notify' ? '…' : 'Ready for pickup'}</button>}
-                  {isWoo && <button type="button" disabled={actBusy === 'refund'} onClick={issueRefund} style={b('#b45309')}>{actBusy === 'refund' ? '…' : 'Issue refund'}</button>}
+                  {isStore && order.status !== 'refunded' && <button type="button" disabled={actBusy === 'refund'} onClick={issueRefund} style={b('#b45309')}>{actBusy === 'refund' ? '…' : 'Issue refund'}</button>}
                   <button type="button" disabled={actBusy === 'invoice'} onClick={genInvoice} style={b('var(--ink)')}>{actBusy === 'invoice' ? '…' : 'Invoice'}</button>
                   <button type="button" onClick={copyOrderLink} style={b('var(--slate)')}>Copy link</button>
                 </>

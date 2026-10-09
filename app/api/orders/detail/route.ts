@@ -1,6 +1,7 @@
 import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { resolveShopifyOrderRef, shopifyOrderForUi, ShopifyActionError } from '@/lib/shopify-order-actions'
 
 export const dynamic = 'force-dynamic'
 
@@ -13,7 +14,8 @@ const admin = () => createClient(
 /**
  * GET /api/orders/detail?companyId=&orderId=&integrationId=
  *
- * Returns a single order with its line items, fetched live from WooCommerce.
+ * Returns a single order with its line items, fetched live from WooCommerce
+ * (or Shopify, for a Shopify order reference).
  * The synced order rows frequently have an empty line_items array, so anything
  * that needs the actual items (the refund modal) reads them here instead.
  */
@@ -22,6 +24,7 @@ export async function GET(req: NextRequest) {
     const companyId = req.nextUrl.searchParams.get('companyId')
     const orderId = req.nextUrl.searchParams.get('orderId')
     const integrationId = req.nextUrl.searchParams.get('integrationId')
+    const channel = req.nextUrl.searchParams.get('channel')
     if (!companyId || !orderId) {
       return NextResponse.json({ error: 'Missing companyId or orderId' }, { status: 400 })
     }
@@ -29,6 +32,14 @@ export async function GET(req: NextRequest) {
     const db = admin()
     // Workspace members only (customer details, orders and refunds).
     if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+
+    // Shopify orders come straight from Shopify (WooCommerce's shape).
+    try {
+      const shop = await resolveShopifyOrderRef(db, companyId, { orderId, channel })
+      if (shop) return NextResponse.json({ order: await shopifyOrderForUi(db, shop) })
+    } catch (e: any) {
+      return NextResponse.json({ error: e.message }, { status: e instanceof ShopifyActionError ? e.status : 502 })
+    }
 
     // Try the stored row first — but only trust it if it's actually complete:
     // it must have line items, each with a product image, and a shipping total.

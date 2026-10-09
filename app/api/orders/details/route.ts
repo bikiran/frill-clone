@@ -1,6 +1,7 @@
 import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { resolveShopifyOrderRef, shopifyOrderForUi, ShopifyActionError } from '@/lib/shopify-order-actions'
 import { WooCommerceService } from '@/lib/woocommerce-service'
 
 function admin() {
@@ -12,29 +13,42 @@ function admin() {
 }
 
 // GET: full order detail (line items, totals, billing) for invoice generation.
+// WooCommerce, or Shopify for a Shopify order reference.
 export async function GET(req: NextRequest) {
   try {
     const companyId = req.nextUrl.searchParams.get('companyId')
     const orderId = req.nextUrl.searchParams.get('orderId')
     const integrationId = req.nextUrl.searchParams.get('integrationId') || undefined
+    const channel = req.nextUrl.searchParams.get('channel')
     if (!companyId || !orderId) return NextResponse.json({ error: 'Missing companyId or orderId' }, { status: 400 })
 
     const db = admin()
     // Workspace members only (customer details, orders and refunds).
     if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
-    let integ: any = null
-    if (integrationId) {
-      const r = await db.from('woocommerce_integrations').select('*').eq('id', integrationId).eq('company_id', companyId).maybeSingle()
-      integ = r.data
+    // A Shopify order (orderId "shopify-<id>", an `orders` row id, or
+    // channel=shopify) is read from Shopify in the same shape.
+    let order: any = null
+    try {
+      const shop = await resolveShopifyOrderRef(db, companyId, { orderId, channel })
+      if (shop) order = await shopifyOrderForUi(db, shop)
+    } catch (e: any) {
+      return NextResponse.json({ error: e.message }, { status: e instanceof ShopifyActionError ? e.status : 502 })
     }
-    if (!integ) {
-      const r = await db.from('woocommerce_integrations').select('*').eq('company_id', companyId).eq('is_active', true).order('created_at', { ascending: true }).limit(1)
-      integ = r.data?.[0] || null
-    }
-    if (!integ?.store_url) return NextResponse.json({ error: 'No WooCommerce store connected' }, { status: 404 })
+    if (!order) {
+      let integ: any = null
+      if (integrationId) {
+        const r = await db.from('woocommerce_integrations').select('*').eq('id', integrationId).eq('company_id', companyId).maybeSingle()
+        integ = r.data
+      }
+      if (!integ) {
+        const r = await db.from('woocommerce_integrations').select('*').eq('company_id', companyId).eq('is_active', true).order('created_at', { ascending: true }).limit(1)
+        integ = r.data?.[0] || null
+      }
+      if (!integ?.store_url) return NextResponse.json({ error: 'No WooCommerce store connected' }, { status: 404 })
 
-    const woo = new WooCommerceService({ storeUrl: integ.store_url, consumerKey: integ.consumer_key, consumerSecret: integ.consumer_secret })
-    const order = await woo.getOrderByNumber(orderId)
+      const woo = new WooCommerceService({ storeUrl: integ.store_url, consumerKey: integ.consumer_key, consumerSecret: integ.consumer_secret })
+      order = await woo.getOrderByNumber(orderId)
+    }
     if (!order) return NextResponse.json({ error: 'Order not found' }, { status: 404 })
 
     // Company details for the invoice header

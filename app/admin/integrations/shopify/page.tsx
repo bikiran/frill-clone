@@ -7,6 +7,14 @@ import { confirmDialog } from '@/components/ConfirmDialog'
 import { useIntegrations } from '@/components/integrations/IntegrationsShell'
 import { IntegrationPage, IntegrationHeader, Card, Notice, Icon, btn, inputCls, inputStyle } from '@/components/integrations/ui'
 
+// Permissions added after the first install (order changes from Colvy). A store
+// installed before them is asked to approve them once — see lib/shopify-auth.
+const NEWER_SCOPES = ['write_order_edits', 'write_merchant_managed_fulfillment_orders']
+const missingScopes = (s: any) => {
+  const have = String(s?.scopes || '').split(',').map((x: string) => x.trim()).filter(Boolean)
+  return s?.auth_type === 'oauth' && have.length ? NEWER_SCOPES.filter(x => !have.includes(x)) : []
+}
+
 const fmt = (d?: string | null) => (d ? new Date(d).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : '')
 
 export default function ShopifyIntegrationPage() {
@@ -277,6 +285,14 @@ export default function ShopifyIntegrationPage() {
                     Importing {st.phase}… {st.counts.customers.toLocaleString()} customers, {st.counts.products.toLocaleString()} products, {st.counts.orders.toLocaleString()} orders so far. You can leave this page; press Resume to carry on later.
                   </p>
                 </div>
+              )}
+              {s.is_active && !s.needs_reauth && appConfigured && missingScopes(s).length > 0 && (
+                <div className="mt-4"><Notice tone="info">
+                  Approve Colvy’s new permissions so you can fulfil, refund and edit this store’s orders from Colvy.{' '}
+                  <button type="button" onClick={() => install(s.store_domain)} disabled={!!installing} className="font-semibold underline" style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'inherit' }}>
+                    {installing === s.store_domain ? 'Opening Shopify…' : 'Approve in Shopify'}
+                  </button>
+                </Notice></div>
               )}
               {(st?.note || (s.last_error && s.is_active)) && !running && (
                 <div className="mt-4"><Notice tone="info">{st?.note || s.last_error}
