@@ -90,7 +90,7 @@ export async function POST(req: NextRequest) {
           if (!integ.is_active || !payload?.id) break
           const svc = await serviceFor(db, integ)
           const product = await svc.getProduct(payload.id)
-          if (product) await saveShopifyProducts(db, svc, companyId, integ.id, [product])
+          if (product) await saveShopifyProducts(db, svc, companyId, integ.id, [product], { restock: true })
           break
         }
         case 'products/delete': {
@@ -107,7 +107,7 @@ export async function POST(req: NextRequest) {
           const pid = known?.[0]?.shopify_product_id || await svc.productIdForInventoryItem(payload.inventory_item_id)
           if (!pid) break
           const product = await svc.getProduct(pid)
-          if (product) await saveShopifyProducts(db, svc, companyId, integ.id, [product])
+          if (product) await saveShopifyProducts(db, svc, companyId, integ.id, [product], { restock: true })
           break
         }
         case 'customers/delete': {

@@ -50,7 +50,7 @@ export default function WaitlistAddModal({ companyId, onClose, onAdded, presetCo
     return () => clearTimeout(t)
   }, [cq, contact, companyId])
 
-  // Product search (synced WooCommerce catalogue)
+  // Product search (the synced WooCommerce or Shopify catalogue)
   useEffect(() => {
     if (product || pq.trim().length < 2) { setProducts([]); return }
     const t = setTimeout(async () => {
@@ -93,7 +93,10 @@ export default function WaitlistAddModal({ companyId, onClose, onAdded, presetCo
         method: 'POST', headers: await authHeaders(),
         body: JSON.stringify({
           companyId, itemName,
-          wooProductId: picked?.id || product?.id || null, itemImage: picked?.image || product?.image || null, itemUrl: product?.permalink || null,
+          ...(product?.source === 'shopify'
+            ? { shopifyProductId: product.id, shopifyVariantId: picked?.id || null }
+            : { wooProductId: picked?.id || product?.id || null }),
+          itemImage: picked?.image || product?.image || null, itemUrl: product?.permalink || null,
           contactId: contact?.id || null, conversationId: conversationId || null,
           customerName: contact ? null : (manualName.trim() || null), phone: contact ? null : manualPhone.trim(),
           note: note.trim() || null, source: conversationId ? 'inbox' : 'manual',

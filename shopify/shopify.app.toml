@@ -1,0 +1,44 @@
+# Colvy — Shopify app configuration.
+#
+# Deployed with the Shopify CLI from this folder (see shopify/README.md):
+#   npx @shopify/cli@latest app config link   ← once: pick or create the app
+#   npx @shopify/cli@latest app deploy        ← config + the theme extension
+#
+# `client_id` is the Colvy app's public API key (Dev Dashboard → Colvy → App
+# settings → Client ID), the same value as SHOPIFY_API_KEY in Vercel.
+
+client_id = "1991c35f9e866666d158439c905f046c"
+name = "Colvy"
+handle = "colvy"
+application_url = "https://colvy.com/api/shopify/app"
+embedded = false
+
+[access_scopes]
+# Keep in step with SHOPIFY_SCOPES in lib/shopify-auth.ts.
+scopes = "read_customers,write_customers,read_orders,write_orders,read_draft_orders,write_draft_orders,read_products,read_inventory,read_locations,read_discounts,write_discounts"
+
+[auth]
+redirect_urls = [ "https://colvy.com/api/shopify/callback" ]
+
+[webhooks]
+api_version = "2026-10"
+
+# Required for every app: customer data requests and erasure. Store topics
+# (orders, products, checkouts…) are subscribed per store by Colvy itself.
+[[webhooks.subscriptions]]
+compliance_topics = [ "customers/data_request", "customers/redact", "shop/redact" ]
+uri = "https://colvy.com/api/webhooks/shopify"
+
+# The storefront "Notify me" form posts to https://{store}/apps/colvy/waitlist;
+# Shopify signs it and forwards it to Colvy.
+[app_proxy]
+url = "https://colvy.com/api/shopify/proxy"
+subpath = "colvy"
+prefix = "apps"
+
+[pos]
+embedded = false
+
+[build]
+automatically_update_urls_on_dev = false
+include_config_on_deploy = true

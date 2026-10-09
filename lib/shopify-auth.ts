@@ -95,6 +95,23 @@ export function verifyQueryHmac(params: URLSearchParams, secret = process.env.SH
   return safeEqual(digest, given)
 }
 
+// App proxy (storefront → /apps/colvy/* → us): drop `signature`, join each
+// repeated key's values with commas, sort the key=value pairs and concatenate
+// them with NO separator; HMAC-SHA256 hex with the app secret. Requests older
+// than `maxAgeSec` are refused so a captured URL can't be replayed for long.
+export function verifyProxySignature(params: URLSearchParams, opts: { secret?: string; maxAgeSec?: number; now?: number } = {}): boolean {
+  const secret = opts.secret ?? process.env.SHOPIFY_API_SECRET ?? ''
+  const given = params.get('signature') || ''
+  if (!given || !secret) return false
+  const keys = Array.from(new Set(Array.from(params.keys()))).filter(k => k !== 'signature')
+  const msg = keys.map(k => `${k}=${params.getAll(k).join(',')}`).sort().join('')
+  const digest = crypto.createHmac('sha256', secret).update(msg).digest('hex')
+  if (!safeEqual(digest, given)) return false
+  const ts = Number(params.get('timestamp'))
+  const maxAge = opts.maxAgeSec ?? 3600
+  return Number.isFinite(ts) && Math.abs((opts.now ?? Date.now()) / 1000 - ts) <= maxAge
+}
+
 // Webhooks: base64 HMAC-SHA256 of the RAW body in X-Shopify-Hmac-Sha256.
 export function verifyWebhookHmac(rawBody: string, header: string | null, secret = process.env.SHOPIFY_API_SECRET || ''): boolean {
   if (!header || !secret) return false

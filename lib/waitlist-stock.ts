@@ -34,6 +34,27 @@ export function pricing(p: any): Pick<ItemStock, 'price' | 'regular_price' | 'on
   return { price, regular_price: regular, on_sale: !!p?.on_sale && price != null && regular != null && price < regular }
 }
 
+export { waitlistItemKey } from '@/lib/waitlist-keys'
+
+/** Stock + price for a Shopify variant (or the whole product, for "any option"). */
+export function shopifyItemStock(p: any, variantId: number | null): ItemStock {
+  const v = variantId ? (p.variants || []).find((x: any) => Number(x.id) === variantId) : null
+  if (v) {
+    const price = priceNum(v.price), cmp = priceNum(v.compare_at_price)
+    const onSale = price != null && cmp != null && cmp > price
+    const base = p.permalink || null
+    return {
+      stock_status: v.available ? 'instock' : 'outofstock',
+      stock_quantity: typeof v.inventory_quantity === 'number' ? v.inventory_quantity : null,
+      permalink: base && p.has_variations ? `${base}${base.includes('?') ? '&' : '?'}variant=${v.id}` : base,
+      price, regular_price: onSale ? cmp : price, on_sale: onSale,
+    }
+  }
+  const price = priceNum(p.price), cmp = priceNum(p.compare_at_price)
+  const onSale = price != null && cmp != null && cmp > price
+  return { stock_status: p.stock_status || null, stock_quantity: p.stock_quantity ?? null, permalink: p.permalink || null, price, regular_price: onSale ? cmp : price, on_sale: onSale }
+}
+
 const TTL = 10 * 60_000
 const cache = new Map<string, { at: number; v: ItemStock }>()
 

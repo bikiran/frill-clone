@@ -1,0 +1,15 @@
+{
+  "name": "colvy-shopify-app",
+  "private": true,
+  "description": "Colvy's Shopify app configuration and theme app extension, deployed with the Shopify CLI.",
+  "scripts": {
+    "build": "esbuild src/colvy-bis.js --minify --target=es2017 --legal-comments=none --banner:js=\"/* Colvy back in stock \u2014 built from shopify/src/colvy-bis.js (npm run build). */\" --outfile=extensions/colvy-theme/assets/colvy-bis.js",
+    "link": "shopify app config link",
+    "deploy": "npm run build && shopify app deploy",
+    "info": "shopify app info"
+  },
+  "devDependencies": {
+    "@shopify/cli": "^3.80.0",
+    "esbuild": "^0.25.0"
+  }
+}

@@ -259,6 +259,25 @@ export class ShopifyService {
    * subscriptions to the same topic+uri are left alone; returns what was
    * created and any per-topic errors (a missing scope shows up here).
    */
+  /**
+   * Write app-data metafields (owned by this app's installation) — what the
+   * theme app extension reads as app.metafields.<namespace>.<key>.
+   */
+  async setAppMetafields(namespace: string, values: Record<string, string>): Promise<{ ok: boolean; errors: string[] }> {
+    const { data: inst } = await this.gql<any>(`{ currentAppInstallation { id } }`)
+    const ownerId = inst?.currentAppInstallation?.id
+    if (!ownerId) return { ok: false, errors: ['No app installation (pasted-token connection)'] }
+    const metafields = Object.entries(values).map(([key, value]) => ({ ownerId, namespace, key, type: 'single_line_text_field', value: String(value) }))
+    const { data } = await this.gql<any>(
+      `mutation Set($metafields: [MetafieldsSetInput!]!) {
+        metafieldsSet(metafields: $metafields) { metafields { key } userErrors { field message } }
+      }`,
+      { metafields },
+    )
+    const ue = data?.metafieldsSet?.userErrors || []
+    return { ok: !ue.length, errors: ue.map((u: any) => u.message) }
+  }
+
   async ensureWebhooks(uri: string, topics: string[]): Promise<{ created: string[]; existing: string[]; errors: string[] }> {
     const out = { created: [] as string[], existing: [] as string[], errors: [] as string[] }
     const { data } = await this.gql<any>(`{ webhookSubscriptions(first: 100) { nodes { id topic uri } } }`)

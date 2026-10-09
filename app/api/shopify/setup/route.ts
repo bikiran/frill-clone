@@ -67,7 +67,9 @@ export async function GET(req: NextRequest) {
       ])
       return { ...s, customers: customers || 0, linked: linked || 0, products: products || 0, orders: orders || 0, lastJob: job?.[0] || null }
     }))
-    return NextResponse.json({ stores, appConfigured: shopifyAppConfigured() })
+    // The app's API key is public (it's in every install URL); the theme editor
+    // deep links for the storefront blocks need it.
+    return NextResponse.json({ stores, appConfigured: shopifyAppConfigured(), apiKey: process.env.SHOPIFY_API_KEY || null })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }

@@ -44,6 +44,28 @@ export async function ensureStoreWebhooks(db: any, integ: any, svc?: ShopifyServ
 }
 
 /**
+ * Keep the store's app metafields (read by the theme app extension: the chat
+ * widget's workspace slug, the brand colour for the "Notify me" block) in
+ * step with the workspace. Written only when something changed.
+ */
+export async function ensureAppMetafields(db: any, integ: any, svc?: ShopifyService): Promise<boolean> {
+  if (integ.auth_type !== 'oauth') return false
+  const { data: co } = await db.from('companies').select('slug, accent_color').eq('id', integ.company_id).maybeSingle()
+  const want: Record<string, string> = {}
+  if (co?.slug) want.slug = String(co.slug)
+  if (co?.accent_color && /^#[0-9a-f]{6}$/i.test(co.accent_color)) want.accent = co.accent_color
+  if (!Object.keys(want).length) return false
+  const have = integ.app_metafields || {}
+  if (Object.keys(want).every(k => have[k] === want[k])) return false
+  const s = svc || await serviceFor(db, integ)
+  const r = await s.setAppMetafields('colvy', want)
+  if (!r.ok) throw new Error(`App metafields: ${r.errors.join('; ')}`)
+  await db.from('shopify_integrations').update({ app_metafields: want }).eq('id', integ.id)
+  integ.app_metafields = want
+  return true
+}
+
+/**
  * Advance an import job by pages until `budgetMs` runs out or it finishes.
  * job.phase walks customers → products → orders; job.page_info is the cursor
  * within the phase, saved after every page so a later call resumes exactly.
@@ -76,7 +98,7 @@ export async function runImportStep(db: any, integ: any, job: any, svc: ShopifyS
       cursor = page.endCursor; hasNext = page.hasNextPage
     } else if (phase === 'products') {
       const page = await svc.getProductsPage({ after: cursor })
-      counts.products += await saveShopifyProducts(db, svc, integ.company_id, integ.id, page.products)
+      counts.products += await saveShopifyProducts(db, svc, integ.company_id, integ.id, page.products, { restock: true })
       cursor = page.endCursor; hasNext = page.hasNextPage
     } else {
       const page = await svc.getOrdersPage({ after: cursor })
@@ -118,6 +140,7 @@ export async function runImportStep(db: any, integ: any, job: any, svc: ShopifyS
 export async function reconcileStore(db: any, integ: any, opts: { maxPages?: number } = {}) {
   const svc = await serviceFor(db, integ)
   try { await ensureStoreWebhooks(db, integ, svc) } catch {}
+  try { await ensureAppMetafields(db, integ, svc) } catch (e: any) { console.error('[shopify reconcile] app metafields', e?.message || e) }
   const maxPages = opts.maxPages || 5
   const startedAt = new Date().toISOString()
   // A 10-minute overlap: Shopify's updated_at and our clock may disagree a little.
@@ -143,7 +166,7 @@ export async function reconcileStore(db: any, integ: any, opts: { maxPages?: num
     let after: string | null = null
     for (let i = 0; i < maxPages; i++) {
       const page = await svc.getProductsPage({ after, query: `updated_at:>'${pSince}'` })
-      products += await saveShopifyProducts(db, svc, integ.company_id, integ.id, page.products)
+      products += await saveShopifyProducts(db, svc, integ.company_id, integ.id, page.products, { restock: true })
       if (!page.hasNextPage) break
       after = page.endCursor
     }

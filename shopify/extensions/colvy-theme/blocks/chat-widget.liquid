@@ -1,0 +1,24 @@
+{%- comment -%}
+  Colvy — chat widget. Adds the Colvy chat bubble to every storefront page,
+  the same widget as colvy.com/widget.js on any other site. The workspace is
+  filled in by Colvy when the store is connected (an app metafield), so there
+  is nothing to type; the setting below only overrides it.
+{%- endcomment -%}
+{%- assign slug = block.settings.slug | strip | default: app.metafields.colvy.slug.value -%}
+{%- if slug != blank -%}
+  {%- # theme-check-disable RemoteAsset -%}
+  {%- comment -%} The chat widget is Colvy's own script, versioned with Colvy (not this extension), so it loads from colvy.com. {%- endcomment -%}
+  <script src="https://colvy.com/widget.js" data-slug="{{ slug | escape }}" async></script>
+  {%- # theme-check-enable RemoteAsset -%}
+{%- endif -%}
+
+{% schema %}
+{
+  "name": "Colvy chat",
+  "target": "body",
+  "settings": [
+    { "type": "paragraph", "content": "Shows your Colvy chat on every page. Change its colour, label and position in Colvy → Settings → Chat widget." },
+    { "type": "text", "id": "slug", "label": "Workspace (optional)", "info": "Filled in automatically when this store is connected to Colvy. Only set it to show a different workspace's chat." }
+  ]
+}
+{% endschema %}

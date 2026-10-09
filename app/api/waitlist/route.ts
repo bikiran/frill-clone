@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { requireCompanyAccess, resolveWaitlistSettings, isMissingTable, openWaitlistConversation } from '@/lib/waitlist'
 import { toE164, emailKey } from '@/lib/phone'
-import { variationStock, pricing, type ItemStock } from '@/lib/waitlist-stock'
+import { variationStock, pricing, waitlistItemKey, shopifyItemStock, type ItemStock } from '@/lib/waitlist-stock'
+import { describeShopifyItem } from '@/lib/shopify-waitlist'
 
 export const dynamic = 'force-dynamic'
 
@@ -79,6 +80,20 @@ export async function GET(req: NextRequest) {
       const vs = early ?? (variations.length ? await variationStock(db, companyId!, variations, { live }) : {})
       for (const id of variations) if (vs[String(id)]) stock[String(id)] = vs[String(id)]
     }
+    // Shopify items: stock + price of the variant asked for (or the product,
+    // for "any option"), keyed like the page groups them — see waitlistItemKey.
+    const shopIds = Array.from(new Set((entries || []).map((e: any) => e.shopify_product_id).filter(Boolean)))
+    if (shopIds.length) {
+      const { data: sp } = await db.from('shopify_products').select('shopify_product_id, stock_status, stock_quantity, permalink, price, compare_at_price, has_variations, variants')
+        .eq('company_id', companyId).in('shopify_product_id', shopIds)
+      const byId = new Map((sp || []).map((p: any) => [String(p.shopify_product_id), p]))
+      for (const e of entries || []) {
+        const p: any = e.shopify_product_id ? byId.get(String(e.shopify_product_id)) : null
+        const key = waitlistItemKey(e)
+        if (!p || !key || stock[key]) continue
+        stock[key] = shopifyItemStock(p, e.shopify_variant_id ? Number(e.shopify_variant_id) : null)
+      }
+    }
     return NextResponse.json({ entries: entries || [], settings, stock, businessName })
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || 'Failed' }, { status: 500 })
@@ -86,8 +101,9 @@ export async function GET(req: NextRequest) {
 }
 
 // POST — add a customer to a waitlist.
-// { companyId, itemName, wooProductId?, itemImage?, itemUrl?, contactId?,
-//   conversationId?, customerName?, phone?, email?, note?, source? }
+// { companyId, itemName, wooProductId? | shopifyProductId? + shopifyVariantId?,
+//   itemImage?, itemUrl?, contactId?, conversationId?, customerName?, phone?,
+//   email?, note?, source? }
 export async function POST(req: NextRequest) {
   try {
     const db = admin()
@@ -105,6 +121,18 @@ export async function POST(req: NextRequest) {
       const { data: p } = await db.from('woocommerce_products').select('name, image, permalink')
         .eq('company_id', companyId).eq('woo_product_id', wooProductId).maybeSingle()
       if (p) { itemName = itemName || p.name; itemImage = itemImage || p.image || null; itemUrl = itemUrl || p.permalink || null }
+    }
+    // A Shopify product (and size/variant, or any option when none is given).
+    const shopifyProductId = !wooProductId && b.shopifyProductId ? Number(b.shopifyProductId) || null : null
+    let shopifyVariantId = shopifyProductId && b.shopifyVariantId ? Number(b.shopifyVariantId) || null : null
+    if (shopifyProductId) {
+      const { data: p } = await db.from('shopify_products').select('shopify_product_id, name, image, permalink, has_variations, variants')
+        .eq('company_id', companyId).eq('shopify_product_id', shopifyProductId).maybeSingle()
+      if (p) {
+        const it = describeShopifyItem(p, shopifyVariantId)
+        if (!it.variant) shopifyVariantId = null
+        itemName = itemName || it.name; itemImage = itemImage || it.image; itemUrl = it.url || itemUrl
+      }
     }
     if (!itemName) return NextResponse.json({ error: 'What are they waiting for? Pick a product or type the item.' }, { status: 400 })
 
@@ -127,6 +155,7 @@ export async function POST(req: NextRequest) {
     const { data, error } = await db.from('stock_waitlist').insert({
       company_id: companyId, contact_id: contactId, conversation_id: conversationId,
       woo_product_id: wooProductId, item_name: itemName, item_image: itemImage, item_url: itemUrl,
+      ...(shopifyProductId ? { shopify_product_id: shopifyProductId, shopify_variant_id: shopifyVariantId } : {}),
       customer_name: customerName, phone, email,
       note: b.note ? String(b.note).slice(0, 500) : null,
       source: ['inbox', 'widget', 'manual'].includes(b.source) ? b.source : 'manual',
