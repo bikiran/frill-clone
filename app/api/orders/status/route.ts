@@ -3,6 +3,7 @@ import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { resolveShopifyOrderRef, shopifyChangeStatus, ShopifyActionError } from '@/lib/shopify-order-actions'
+import { shopifyDraftAction, shopifyStoreFor, ShopifyCreateError } from '@/lib/shopify-create'
 
 function admin() {
   return createClient(
@@ -46,6 +47,23 @@ export async function POST(req: NextRequest) {
           })
         }
       } catch {}
+    }
+
+    // A Shopify draft created from Colvy (the in-chat order card).
+    const draft = String(orderId).match(/^shopify-draft-(\d+)$/i)
+    if (draft) {
+      try {
+        const integ = await shopifyStoreFor(db, companyId, integrationId)
+        if (!integ) return NextResponse.json({ error: 'No Shopify store connected' }, { status: 404 })
+        const r = await shopifyDraftAction(db, integ, draft[1], status)
+        if (conversationId) {
+          const content = r.status === 'cancelled' ? `🛒 Shopify draft order deleted.` : `🛒 Order #${r.number} ${status === 'completed' ? 'marked paid & completed' : status === 'on-hold' ? 'created — awaiting payment' : 'marked paid'}.`
+          try { await db.from('messages').insert({ conversation_id: conversationId, company_id: companyId, sender_type: 'system', content, is_read: true }) } catch {}
+        }
+        return NextResponse.json({ ok: true, status: r.status, channel: 'shopify', orderId: (r as any).orderId || null })
+      } catch (e: any) {
+        return NextResponse.json({ error: e.message }, { status: e instanceof ShopifyCreateError || e instanceof ShopifyActionError ? e.status : 502 })
+      }
     }
 
     try {

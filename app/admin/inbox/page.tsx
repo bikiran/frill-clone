@@ -4547,8 +4547,9 @@ export default function InboxPage() {
 
   const updateOrderStatus = async (payload: any, status: string) => {
     if (!companyId || !payload?.order_id) return
-    const verb = status === 'cancelled' ? 'cancel' : 'mark paid'
-    if (!await confirmDialog(`Are you sure you want to ${verb} order #${payload.order_number}?${status !== 'cancelled' ? ' This records payment and reduces stock in WooCommerce.' : ''}`)) return
+    const shopify = payload.channel === 'shopify' || /^shopify-/.test(String(payload.order_id))
+    const verb = status === 'cancelled' ? (payload.draft ? 'delete draft' : 'cancel') : status === 'completed' ? 'mark paid and complete' : 'mark paid'
+    if (!await confirmDialog(`Are you sure you want to ${verb} order #${payload.order_number}?${status !== 'cancelled' ? ` This records payment and reduces stock in ${shopify ? 'Shopify' : 'WooCommerce'}.` : ''}`)) return
     try {
       const res = await authFetch('/api/orders/status', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -9271,6 +9272,26 @@ export default function InboxPage() {
                               <span style={{ marginLeft: 'auto', fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 6, background: '#eef2ff', color: '#4f46e5', textTransform: 'uppercase' }}>{msg.message_payload.status}</span>
                             </div>
                             <p style={{ margin: '0 0 8px', fontSize: 13, color: 'var(--slate)' }}>{msg.message_payload.currency || 'AUD'} ${msg.message_payload.total}</p>
+                            {msg.message_payload.channel === 'shopify' ? (
+                            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                              {msg.message_payload.admin_url && <a href={msg.message_payload.admin_url} target="_blank" rel="noopener noreferrer"
+                                style={{ fontSize: 12, fontWeight: 600, color: '#008060', textDecoration: 'none', padding: '5px 10px', border: '1px solid var(--border)', borderRadius: 7 }}>Open in Shopify</a>}
+                              {msg.message_payload.pay_link && (
+                                <button type="button" onClick={() => { navigator.clipboard?.writeText(msg.message_payload.pay_link); showToast('Payment link copied') }}
+                                  style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)', background: '#fff', border: '1px solid var(--border)', borderRadius: 7, padding: '5px 10px', cursor: 'pointer' }}>Copy payment link</button>
+                              )}
+                              {!msg.message_payload.draft && (
+                                <button type="button" onClick={() => generateInvoice(msg.message_payload)}
+                                  style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)', background: '#fff', border: '1px solid var(--border)', borderRadius: 7, padding: '5px 10px', cursor: 'pointer' }}>Invoice PDF</button>
+                              )}
+                              <button type="button" onClick={() => updateOrderStatus(msg.message_payload, 'processing')}
+                                style={{ fontSize: 12, fontWeight: 600, color: '#4f46e5', background: '#fff', border: '1px solid #c7d2fe', borderRadius: 7, padding: '5px 10px', cursor: 'pointer' }}>Mark paid (bank/other)</button>
+                              <button type="button" onClick={() => updateOrderStatus(msg.message_payload, 'completed')}
+                                style={{ fontSize: 12, fontWeight: 600, color: '#059669', background: '#fff', border: '1px solid #bbf7d0', borderRadius: 7, padding: '5px 10px', cursor: 'pointer' }}>Mark completed</button>
+                              <button type="button" onClick={() => updateOrderStatus(msg.message_payload, 'cancelled')}
+                                style={{ fontSize: 12, fontWeight: 600, color: '#dc2626', background: '#fff', border: '1px solid #fecaca', borderRadius: 7, padding: '5px 10px', cursor: 'pointer' }}>{msg.message_payload.draft ? 'Delete draft' : 'Cancel'}</button>
+                            </div>
+                            ) : (
                             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                               <a href={`${msg.message_payload.store_url}/wp-admin/post.php?post=${msg.message_payload.order_id}&action=edit`} target="_blank" rel="noopener"
                                 style={{ fontSize: 12, fontWeight: 600, color: 'var(--coral)', textDecoration: 'none', padding: '5px 10px', border: '1px solid var(--border)', borderRadius: 7 }}>View order</a>
@@ -9289,6 +9310,7 @@ export default function InboxPage() {
                               <button type="button" onClick={() => updateOrderStatus(msg.message_payload, 'cancelled')}
                                 style={{ fontSize: 12, fontWeight: 600, color: '#dc2626', background: '#fff', border: '1px solid #fecaca', borderRadius: 7, padding: '5px 10px', cursor: 'pointer' }}>Cancel</button>
                             </div>
+                            )}
                           </div>
                         )}
                       </div>

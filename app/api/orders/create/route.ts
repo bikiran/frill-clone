@@ -4,6 +4,7 @@ import { createClient } from '@supabase/supabase-js'
 import { WooCommerceService } from '@/lib/woocommerce-service'
 import { notifyCompany } from '@/lib/notify'
 import { shortenUrl } from '@/lib/short-link'
+import { shopifyCreateOrder, shopifyStoreFor, ShopifyCreateError } from '@/lib/shopify-create'
 
 function admin() {
   return createClient(
@@ -13,7 +14,9 @@ function admin() {
   )
 }
 
-// POST: create a WooCommerce order from the chat.
+// POST: create a WooCommerce (or Shopify) order from the chat. A Shopify store
+// (source 'shopify', or a Shopify integrationId) gets a Shopify draft order —
+// lib/shopify-create — with the same audit message and payment link.
 // body: {
 //   companyId, integrationId?, conversationId?, contactId?, source: 'woocommerce',
 //   customer: { existingId?, createAccount, email, first_name, last_name, phone, billing, shipping },
@@ -35,6 +38,38 @@ export async function POST(req: NextRequest) {
       const { data: owner } = await db.from('conversations').select('company_id').eq('id', conversationId).maybeSingle()
       if (!owner || owner.company_id !== companyId) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     }
+    // ── Shopify
+    const shopInteg = body.source === 'shopify'
+      ? await shopifyStoreFor(db, companyId, integrationId)
+      : integrationId ? (await db.from('shopify_integrations').select('*').eq('id', integrationId).eq('company_id', companyId).eq('is_active', true).maybeSingle()).data : null
+    if (body.source === 'shopify' && !shopInteg) return NextResponse.json({ error: 'No Shopify store connected' }, { status: 404 })
+    if (shopInteg) {
+      let r: any
+      try {
+        r = await shopifyCreateOrder(db, shopInteg, { ...body, conversationId, contactId })
+      } catch (e: any) {
+        return NextResponse.json({ error: e.message }, { status: e instanceof ShopifyCreateError ? e.status : 502 })
+      }
+      if (r.stockWarning) return NextResponse.json({ stockWarning: true, problems: r.problems }, { status: 409 })
+      const o = r.order
+      const payLink = o.pay_link ? await shortenUrl(o.pay_link, { companyId, kind: 'payment', conversationId }) : null
+      try { await notifyCompany({ db, companyId, type: 'order', message: `${o.draft ? 'Draft order' : 'Order'} #${o.number} created — ${o.currency} $${o.total}`, actorName: createdByName }) } catch {}
+      if (conversationId) {
+        try {
+          const noun = isQuote ? 'Quote' : o.draft ? 'Shopify draft order' : 'Shopify order'
+          const content = `🛒 ${noun} #${o.number} created\nTotal: ${o.currency} $${o.total}\nStatus: ${o.draft ? (isQuote ? 'quote' : 'awaiting payment') : o.status}${createdByName ? `\nCreated by: ${createdByName}` : ''}`
+          await db.from('messages').insert({
+            conversation_id: conversationId, company_id: companyId, sender_type: 'system',
+            content,
+            message_type: 'order',
+            message_payload: { kind: 'order', channel: 'shopify', draft: !!o.draft, is_quote: !!isQuote, order_id: o.id, order_number: o.number, total: o.total, currency: o.currency, status: o.status, pay_link: payLink, admin_url: o.admin_url, store_url: `https://${shopInteg.store_domain}` },
+          })
+          await db.from('conversations').update({ last_message: `🛒 ${noun} #${o.number} created`, last_message_at: new Date().toISOString() }).eq('id', conversationId)
+        } catch {}
+      }
+      return NextResponse.json({ ok: true, order: { ...o, pay_link: payLink } })
+    }
+
     let integ: any = null
     if (integrationId) {
       const r = await db.from('woocommerce_integrations').select('*').eq('id', integrationId).eq('company_id', companyId).maybeSingle()

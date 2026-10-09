@@ -130,7 +130,7 @@ export default function CreateOrderPanel({ companyId, conversationId, contactId,
 
   // Debounced product search
   useEffect(() => {
-    if (!source || source.platform !== 'woocommerce') return
+    if (!source || !['woocommerce', 'shopify'].includes(source.platform)) return
     if (search.trim().length < 2) { setResults([]); return }
     const t = setTimeout(async () => {
       setSearching(true)
@@ -206,7 +206,7 @@ export default function CreateOrderPanel({ companyId, conversationId, contactId,
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           companyId, integrationId: source?.id, conversationId, contactId, source: source?.platform,
-          customer: { existingId: contact?.woo_customer_id, createAccount: cust.createAccount, email: cust.email, first_name: cust.first_name, last_name: cust.last_name, phone: cust.phone, billing, shipping },
+          customer: { existingId: source?.platform === 'woocommerce' ? contact?.woo_customer_id : undefined, createAccount: cust.createAccount, email: cust.email, first_name: cust.first_name, last_name: cust.last_name, phone: cust.phone, billing, shipping },
           items: items.map(it => ({ product_id: it.product_id, variation_id: it.variation_id, quantity: it.quantity, name: it.name, price: it.price, custom_price: it.custom_price, custom_name: it.product_id ? undefined : it.name })),
           coupons: appliedCoupon ? [appliedCoupon.code] : [],
           orderDiscount: orderDiscAmount ? { type: 'fixed', amount: orderDiscountValue.toFixed(2), label: orderDiscLabel || 'Discount' } : null,
@@ -288,7 +288,7 @@ export default function CreateOrderPanel({ companyId, conversationId, contactId,
               <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
             </div>
           ) : !source ? (
-            <p style={{ color: 'var(--slate)', fontSize: 13.5 }}>No e-commerce store connected. Connect WooCommerce first.</p>
+            <p style={{ color: 'var(--slate)', fontSize: 13.5 }}>No e-commerce store connected. Connect WooCommerce or Shopify first.</p>
           ) : (
             <>
               {error && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 9, padding: '9px 12px', marginBottom: 10, fontSize: 12.5, color: '#dc2626' }}>{error}</div>}
@@ -297,14 +297,19 @@ export default function CreateOrderPanel({ companyId, conversationId, contactId,
               {sources.length > 1 && (
                 <>
                   <label style={L}>Store</label>
-                  <select value={source.id} onChange={e => setSource(sources.find(s => s.id === e.target.value))} style={I}>
-                    {sources.map(s => <option key={s.id} value={s.id} disabled={s.unsupported}>{s.label}{s.platform === 'shopify' ? ' (Shopify — not yet supported)' : ''}</option>)}
+                  <select value={source.id} onChange={e => {
+                    const next = sources.find(s => s.id === e.target.value)
+                    setSource(next); setResults([]); setShippingMethods([]); setAppliedCoupon(null)
+                    // Store shipping methods are WooCommerce's; Shopify uses the options below.
+                    if (next?.platform === 'woocommerce') authFetch(`/api/orders/shipping?companyId=${companyId}&integrationId=${next.id}`).then(r => r.json()).then(d => setShippingMethods(d.shippingMethods || [])).catch(() => {})
+                  }} style={I}>
+                    {sources.map(s => <option key={s.id} value={s.id}>{s.label}{s.platform === 'shopify' ? ' (Shopify)' : ''}</option>)}
                   </select>
                 </>
               )}
               {source.platform === 'shopify' && (
-                <div style={{ background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 9, padding: 12, marginTop: 10, fontSize: 12.5, color: '#9a3412' }}>
-                  Order creation currently supports WooCommerce. Shopify order writing is coming next.
+                <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 9, padding: 12, marginTop: 10, fontSize: 12.5, color: '#166534', lineHeight: 1.5 }}>
+                  An unpaid order is saved as a Shopify draft and its payment link opens Shopify’s checkout. When the customer pays, it becomes a Shopify order in this chat.
                 </div>
               )}
 
@@ -356,7 +361,7 @@ export default function CreateOrderPanel({ companyId, conversationId, contactId,
 
               {/* Products */}
               <label style={L}>Products</label>
-              <input style={I} value={search} onChange={e => setSearch(e.target.value)} placeholder="Search WooCommerce products by name or SKU…" />
+              <input style={I} value={search} onChange={e => setSearch(e.target.value)} placeholder="Search products by name or SKU…" />
               {searching && <p style={{ fontSize: 12, color: 'var(--slate)', marginTop: 4 }}>Searching…</p>}
               {results.length > 0 && (
                 <div style={{ border: '1px solid var(--border)', borderRadius: 10, marginTop: 6, maxHeight: 220, overflowY: 'auto' }}>
@@ -548,7 +553,9 @@ export default function CreateOrderPanel({ companyId, conversationId, contactId,
                 </button>
               </div>
               <p style={{ fontSize: 11, color: 'var(--slate)', marginTop: 10, lineHeight: 1.5 }}>
-                Orders are created unpaid (set_paid: false). GST shown is an inclusive estimate — WooCommerce calculates the authoritative tax based on your store's tax settings.
+                {source.platform === 'shopify'
+                  ? 'Unpaid orders are Shopify drafts until the customer pays; “Processing” or “Completed” records it as paid. GST shown is an inclusive estimate — Shopify calculates the tax from your store’s settings.'
+                  : 'Orders are created unpaid (set_paid: false). GST shown is an inclusive estimate — WooCommerce calculates the authoritative tax based on your store\'s tax settings.'}
               </p>
             </>
           )}

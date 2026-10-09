@@ -34,7 +34,7 @@ export async function GET(req: NextRequest) {
     const { data: shop } = await db.from('shopify_integrations')
       .select('id, store_domain, store_name').eq('company_id', companyId).eq('is_active', true).order('created_at', { ascending: true })
     for (const s of (shop || [])) {
-      sources.push({ platform: 'shopify', id: s.id, label: s.store_name || s.store_domain, unsupported: true })
+      sources.push({ platform: 'shopify', id: s.id, label: s.store_name || s.store_domain })
     }
 
     // NOTE: shipping methods are intentionally NOT fetched here — they require
