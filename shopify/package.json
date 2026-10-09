@@ -9,7 +9,7 @@
     "info": "shopify app info"
   },
   "devDependencies": {
-    "@shopify/cli": "^3.80.0",
+    "@shopify/cli": "latest",
     "esbuild": "^0.25.0"
   }
 }
