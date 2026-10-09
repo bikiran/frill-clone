@@ -35,11 +35,15 @@ export const shopifyAppConfigured = () => !!(process.env.SHOPIFY_API_KEY && proc
 export const shopifyRedirectUri = () => process.env.SHOPIFY_REDIRECT_URI || 'https://colvy.com/api/shopify/callback'
 const scopes = () => process.env.SHOPIFY_SCOPES || SHOPIFY_SCOPES
 
-// Webhooks Colvy subscribes each store to. Later phases add orders, products,
-// inventory and checkouts. The compliance topics (customers/data_request,
+// Webhooks Colvy subscribes each store to (a later phase adds checkouts). The compliance topics (customers/data_request,
 // customers/redact, shop/redact) are declared in the app's configuration, not
 // per store, and arrive at the same endpoint.
-export const STORE_WEBHOOK_TOPICS = ['CUSTOMERS_CREATE', 'CUSTOMERS_UPDATE', 'CUSTOMERS_DELETE', 'APP_UNINSTALLED']
+export const STORE_WEBHOOK_TOPICS = [
+  'CUSTOMERS_CREATE', 'CUSTOMERS_UPDATE', 'CUSTOMERS_DELETE',
+  'ORDERS_CREATE', 'ORDERS_UPDATED',
+  'PRODUCTS_CREATE', 'PRODUCTS_UPDATE', 'PRODUCTS_DELETE', 'INVENTORY_LEVELS_UPDATE',
+  'APP_UNINSTALLED',
+]
 export const webhookUri = () => `${new URL(shopifyRedirectUri()).origin}/api/webhooks/shopify`
 
 // Shopify's documented pattern, anchored at both ends.

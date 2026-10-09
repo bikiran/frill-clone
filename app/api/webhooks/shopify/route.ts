@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { verifyWebhookHmac } from '@/lib/shopify-auth'
+import { ShopifyAuthError, verifyWebhookHmac } from '@/lib/shopify-auth'
 import { saveShopifyCustomers } from '@/lib/shopify-customers'
+import { saveShopifyProducts } from '@/lib/shopify-products'
+import { upsertShopifyOrder } from '@/lib/shopify-orders'
+import { serviceFor } from '@/lib/shopify-sync'
 import { notifyCompany } from '@/lib/notify'
 
 export const dynamic = 'force-dynamic'
@@ -20,6 +23,7 @@ const admin = () => createClient(
  * X-Shopify-Shop-Domain, the event from X-Shopify-Topic.
  *
  * Store topics (subscribed per store at install): customers/create|update|delete,
+ * orders/create|updated, products/create|update|delete, inventory_levels/update,
  * app/uninstalled. Compliance topics (declared in the app config, required by
  * Shopify): customers/data_request, customers/redact, shop/redact.
  *
@@ -52,6 +56,42 @@ export async function POST(req: NextRequest) {
         case 'customers/update': {
           if (!integ.is_active) break
           await saveShopifyCustomers(db, companyId, integ.id, [payload])
+          break
+        }
+        // Orders and products: re-read the current record rather than trusting
+        // the payload, so out-of-order deliveries can't leave stale data and
+        // line items carry images (webhook payloads don't).
+        case 'orders/create':
+        case 'orders/updated': {
+          if (!integ.is_active || !payload?.id) break
+          const svc = await serviceFor(db, integ)
+          const order = await svc.getOrder(payload.id)
+          if (order) await upsertShopifyOrder(db, companyId, order, { svc })
+          break
+        }
+        case 'products/create':
+        case 'products/update': {
+          if (!integ.is_active || !payload?.id) break
+          const svc = await serviceFor(db, integ)
+          const product = await svc.getProduct(payload.id)
+          if (product) await saveShopifyProducts(db, svc, companyId, integ.id, [product])
+          break
+        }
+        case 'products/delete': {
+          if (payload?.id) await db.from('shopify_products').delete().eq('company_id', companyId).eq('shopify_product_id', Number(payload.id))
+          break
+        }
+        case 'inventory_levels/update': {
+          // Names an inventory item + location, not a product: find the product
+          // (catalogue first, Shopify if it's new to us) and refresh its stock.
+          if (!integ.is_active || !payload?.inventory_item_id) break
+          const svc = await serviceFor(db, integ)
+          const { data: known } = await db.from('shopify_products').select('shopify_product_id')
+            .eq('company_id', companyId).contains('inventory_item_ids', [Number(payload.inventory_item_id)]).limit(1)
+          const pid = known?.[0]?.shopify_product_id || await svc.productIdForInventoryItem(payload.inventory_item_id)
+          if (!pid) break
+          const product = await svc.getProduct(pid)
+          if (product) await saveShopifyProducts(db, svc, companyId, integ.id, [product])
           break
         }
         case 'customers/delete': {
@@ -101,6 +141,9 @@ export async function POST(req: NextRequest) {
     }
   } catch (e: any) {
     console.error('[shopify webhook]', topic, shopDomain, e?.message || e)
+    // Lost access isn't fixed by retrying — and Shopify deletes a subscription
+    // that keeps failing. The store is already flagged for reconnecting.
+    if (e instanceof ShopifyAuthError) return NextResponse.json({ ok: false, reauth: true })
     return NextResponse.json({ error: 'Failed' }, { status: 500 })
   }
   return NextResponse.json({ ok: true })

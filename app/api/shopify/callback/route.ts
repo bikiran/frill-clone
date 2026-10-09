@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { exchangeCode, isShopDomain, STORE_WEBHOOK_TOPICS, tokenColumns, verifyQueryHmac, webhookUri } from '@/lib/shopify-auth'
+import { exchangeCode, isShopDomain, tokenColumns, verifyQueryHmac } from '@/lib/shopify-auth'
+import { ensureStoreWebhooks } from '@/lib/shopify-sync'
 import { ShopifyService } from '@/lib/shopify-service'
 
 export const dynamic = 'force-dynamic'
@@ -66,10 +67,7 @@ export async function GET(req: NextRequest) {
     // Webhooks keep Colvy current without polling. A failure here doesn't undo
     // the install — it's recorded and the store page offers a retry.
     try {
-      const wh = await svc.ensureWebhooks(webhookUri(), STORE_WEBHOOK_TOPICS)
-      await db.from('shopify_integrations').update(wh.errors.length
-        ? { last_error: `Some Shopify updates couldn’t be subscribed: ${wh.errors.join('; ')}`.slice(0, 500) }
-        : { webhooks_registered_at: new Date().toISOString() }).eq('id', integ.id)
+      await ensureStoreWebhooks(db, { id: integ.id, auth_type: 'oauth', webhook_topics: [] }, svc)
     } catch (e: any) {
       await db.from('shopify_integrations').update({ last_error: `Webhooks: ${e?.message || 'failed'}`.slice(0, 500) }).eq('id', integ.id)
     }

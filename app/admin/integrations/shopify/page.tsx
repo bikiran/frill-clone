@@ -23,7 +23,7 @@ export default function ShopifyIntegrationPage() {
   const [token, setToken] = useState('')
   const [connecting, setConnecting] = useState(false)
   const [adding, setAdding] = useState(false)
-  const [sync, setSync] = useState<Record<string, { running: boolean; synced: number; created: number; note?: string | null }>>({})
+  const [sync, setSync] = useState<Record<string, { running: boolean; phase: string; counts: { customers: number; products: number; orders: number; created: number }; note?: string | null }>>({})
   const [error, setError] = useState(params.get('shopify_error') || '')
   const [success, setSuccess] = useState('')
   const autoSynced = useRef(false)
@@ -96,7 +96,8 @@ export default function ShopifyIntegrationPage() {
   const runSync = async (integrationId: string, resumeJobId?: string) => {
     if (!companyId) return
     setError('')
-    setSync(s => ({ ...s, [integrationId]: { running: true, synced: 0, created: 0 } }))
+    const zero = { customers: 0, products: 0, orders: 0, created: 0 }
+    setSync(s => ({ ...s, [integrationId]: { running: true, phase: 'customers', counts: zero } }))
     let jobId = resumeJobId || undefined
     try {
       for (let i = 0; i < 500; i++) {
@@ -107,15 +108,16 @@ export default function ShopifyIntegrationPage() {
         const d = await res.json().catch(() => ({}))
         if (!res.ok) throw new Error(d.error || 'Sync failed')
         jobId = d.jobId
-        setSync(s => ({ ...s, [integrationId]: { running: !d.done, synced: d.synced || 0, created: d.created || 0, note: d.note } }))
+        const c = d.counts || zero
+        setSync(s => ({ ...s, [integrationId]: { running: !d.done, phase: d.phase || 'customers', counts: c, note: d.note } }))
         if (d.done) {
-          setSuccess(`Imported ${d.synced} customer${d.synced === 1 ? '' : 's'}${d.created ? `, ${d.created} new contact${d.created === 1 ? '' : 's'}` : ''}.`)
+          setSuccess(`Imported ${c.customers.toLocaleString()} customers, ${c.products.toLocaleString()} products and ${c.orders.toLocaleString()} orders${c.created ? ` (${c.created.toLocaleString()} new contacts)` : ''}.`)
           break
         }
       }
     } catch (e: any) {
       setError(e.message)
-      setSync(s => ({ ...s, [integrationId]: { ...(s[integrationId] || { synced: 0, created: 0 }), running: false } }))
+      setSync(s => ({ ...s, [integrationId]: { ...(s[integrationId] || { phase: 'customers', counts: zero }), running: false } }))
     }
     try { await load(companyId) } catch {}
   }
@@ -207,12 +209,11 @@ export default function ShopifyIntegrationPage() {
         .sh-bar { height: 6px; border-radius: 99px; background: var(--canvas, #f1f1f4); overflow: hidden; position: relative; }
         .sh-bar span { position: absolute; inset: 0 auto 0 0; width: 40%; border-radius: 99px; background: #008060; animation: shSlide 1.2s ease-in-out infinite; }
         @keyframes shSlide { 0% { left: -40%; } 100% { left: 100%; } }
-        .sh-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+        .sh-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
         .sh-add-mobile { display: none; }
         @media (max-width: 560px) {
           .sh-row { flex-direction: column; }
           .sh-stats { grid-template-columns: 1fr 1fr; }
-          .sh-stats > :last-child { grid-column: 1 / -1; }
           .sh-add-desktop { display: none !important; }
           .sh-add-mobile { display: flex; width: 100%; margin: -8px 0 16px; }
         }
@@ -220,7 +221,7 @@ export default function ShopifyIntegrationPage() {
       `}</style>
 
       <IntegrationHeader id="shopify" connected={anyActive} badge={stores.length > 1 ? `${stores.length} stores` : 'Connected'}
-        desc="Bring your Shopify customers into Colvy as contacts, kept up to date automatically.">
+        desc="Your Shopify customers, orders and products in Colvy, kept up to date automatically.">
         {stores.length > 0 && !adding && (
           <button type="button" onClick={() => { setAdding(true); setShop('') }} {...btn('secondary', 'sm', 'sh-add-desktop')}><Icon name="plus" size={14} /> Add store</button>
         )}
@@ -249,8 +250,9 @@ export default function ShopifyIntegrationPage() {
               sub={s.store_domain}>
               <div className="sh-stats">
                 {[
-                  { n: (running ? st.synced : s.customers || 0).toLocaleString(), l: 'Customers imported' },
-                  { n: (s.linked || 0).toLocaleString(), l: 'Linked to contacts' },
+                  { n: (running ? st.counts.customers : s.customers || 0).toLocaleString(), l: s.linked ? `Customers · ${s.linked.toLocaleString()} linked` : 'Customers' },
+                  { n: (running ? st.counts.products : s.products || 0).toLocaleString(), l: 'Products' },
+                  { n: (running ? st.counts.orders : s.orders || 0).toLocaleString(), l: 'Orders' },
                   { n: s.last_synced_at ? fmt(s.last_synced_at) : 'Never', l: 'Last sync' },
                 ].map(x => (
                   <div key={x.l} className="p-3 rounded-xl" style={{ background: 'var(--canvas, #f8f8fa)' }}>
@@ -264,7 +266,7 @@ export default function ShopifyIntegrationPage() {
                 <div className="mt-4" role="status" aria-live="polite">
                   <div className="sh-bar"><span /></div>
                   <p className="text-xs mt-2" style={{ color: 'var(--slate)', margin: '8px 0 0' }}>
-                    Importing… {st.synced.toLocaleString()} customers so far{st.created ? `, ${st.created.toLocaleString()} new contacts` : ''}. You can leave this page; press Resume to carry on later.
+                    Importing {st.phase}… {st.counts.customers.toLocaleString()} customers, {st.counts.products.toLocaleString()} products, {st.counts.orders.toLocaleString()} orders so far. You can leave this page; press Resume to carry on later.
                   </p>
                 </div>
               )}
