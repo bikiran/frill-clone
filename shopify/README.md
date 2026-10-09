@@ -20,15 +20,24 @@ signs that request and forwards it to `https://colvy.com/api/shopify/proxy/waitl
 gets the workspace from an app metafield Colvy writes when a store connects,
 so merchants don't type anything.
 
-## Deploying (once, then after changing anything here)
+## Deploying
 
-You need Node 20+ and a Shopify Partner / Dev Dashboard login.
+**From GitHub (no terminal):** the "Deploy Shopify app" workflow
+(`.github/workflows/shopify-deploy.yml`) deploys on every push to `main` that
+changes this folder, or by hand from GitHub → Actions → Deploy Shopify app →
+Run workflow. It needs one repository secret, `SHOPIFY_APP_AUTOMATION_TOKEN`:
+Dev Dashboard → Colvy → Settings → App automation token → Create, then GitHub
+→ Settings → Secrets and variables → Actions → New repository secret. The
+token expires (1–6 months); rotate it in the Dev Dashboard and update the
+secret.
+
+**From a computer** (Node 20+, Shopify login):
 
 ```bash
 cd shopify
-npm install                               # the Shopify CLI + esbuild, once
-npx shopify app config link               # once: log in and pick the Colvy app (client_id is already set)
-npm run deploy                            # builds, then pushes config + theme extension as a new version
+npm install
+npx shopify app config link   # once: log in and pick the Colvy app
+npm run deploy                # builds, then pushes config + theme extension
 ```
 
 `app deploy` makes this file the source of truth for the app's URLs, scopes,
