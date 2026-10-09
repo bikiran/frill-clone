@@ -218,6 +218,17 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   // Mirror of `authed` for the backstop timeout to read the latest value.
   const authedRef = useRef<boolean | null>(null)
   useEffect(() => { authedRef.current = authed }, [authed])
+
+  // Just installed Colvy in Shopify and signed in: take them to the Shopify
+  // page to connect the store (once per tab — they can still go elsewhere).
+  useEffect(() => {
+    if (!authed || pathname === '/admin/integrations/shopify') return
+    try {
+      if (!document.cookie.includes('colvy_shopify_pending=') || sessionStorage.getItem('colvy_shopify_pending_seen')) return
+      sessionStorage.setItem('colvy_shopify_pending_seen', '1')
+      router.replace('/admin/integrations/shopify')
+    } catch {}
+  }, [authed, pathname, router])
   const [adminCollapsed, setAdminCollapsed] = useState(false)
   // Adapt the sidebar to the window width as it changes. Below 860px the sidebar
   // is an off-canvas drawer (CSS), so we keep it EXPANDED there for full labels

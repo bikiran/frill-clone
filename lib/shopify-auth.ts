@@ -2,10 +2,10 @@
 // signature checks, and expiring offline tokens.
 //
 // How a store connects (since 1 Jan 2026 merchants can't create custom apps in
-// their admin any more): someone in a Colvy workspace enters their
-// my-store.myshopify.com and clicks Install. We send them to Shopify's consent
-// screen with a one-time state; Shopify redirects back to /api/shopify/callback
-// with a code, which we exchange for tokens.
+// their admin any more): the merchant installs the Colvy app in Shopify, the
+// App URL sends them to Shopify's permission screen with a one-time state, and
+// Shopify redirects back to /api/shopify/callback with a code, which we
+// exchange for tokens. Which workspace the store joins: lib/shopify-install.
 //
 // New apps must use EXPIRING offline tokens: a 1-hour access token plus a
 // 90-day refresh token that rotates on every refresh. getAccessToken() hands
