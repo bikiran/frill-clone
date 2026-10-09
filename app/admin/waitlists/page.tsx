@@ -250,6 +250,10 @@ export default function WaitlistsPage() {
         .wl-panel > div { overflow: hidden; min-height: 0 }
         .wl-row { opacity: 0; transform: translateY(-6px); transition: opacity .22s ease, transform .3s cubic-bezier(.16,1,.3,1) }
         .wl-panel.open .wl-row { opacity: 1; transform: none; transition-delay: calc(var(--i, 0) * 35ms + 60ms) }
+        @media (max-width: 640px) {
+          .wl-acts { width: 100%; margin-left: 0 !important }
+          .wl-when { flex: 1 1 auto; white-space: normal !important; line-height: 1.35 }
+        }
         .wl-chev { margin-left: auto; width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--border); background: var(--surface, #fff); color: var(--slate, #6b7280); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; transition: background .2s ease, color .2s ease, border-color .2s ease }
         .wl-chev:hover { background: var(--peach, #fff1ee); color: var(--coral, #ff7a6b); border-color: transparent }
         .wl-chev svg { transition: transform .38s cubic-bezier(.16,1,.3,1) }
@@ -387,10 +391,13 @@ export default function WaitlistsPage() {
                             {e.note && <div style={{ fontSize: 12, color: 'var(--slate)', marginTop: 2, fontStyle: 'italic' }}>“{e.note}”</div>}
                             {e.status === 'failed' && e.error && <div style={{ fontSize: 12, color: '#dc2626', marginTop: 2 }}>{e.error}</div>}
                           </div>
-                          <span style={{ fontSize: 12, color: 'var(--slate)', whiteSpace: 'nowrap' }}>
+                          {/* Date, status and actions stay together on one line — on a phone
+                              the remove button used to wrap onto a line of its own. */}
+                          <div className="wl-acts" style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto', minWidth: 0 }}>
+                          <span className="wl-when" style={{ fontSize: 12, color: 'var(--slate)', whiteSpace: 'nowrap', minWidth: 0 }}>
                             {e.status === 'notified' && e.notified_at ? `${e.notified_via === 'email' ? 'Emailed' : 'Texted'} ${fmtDate(e.notified_at)}` : `Added ${fmtDate(e.created_at)}`}{e.source === 'inbox' ? ' · from inbox' : e.source === 'website' ? ' · from website' : ''}
                           </span>
-                          <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 999, background: pill.bg, color: pill.c, whiteSpace: 'nowrap' }}>{pill.label}</span>
+                          <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 999, background: pill.bg, color: pill.c, whiteSpace: 'nowrap', flexShrink: 0 }}>{pill.label}</span>
                           {e.conversation_id
                             ? <a href={`/admin/inbox?conversation=${e.conversation_id}`} title="Open conversation" aria-label="Open conversation" style={{ ...iconBtn, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: 'var(--slate, #6b7280)' }}><ChatIcon size={15} /></a>
                             : (e.phone || e.email || e.contact_id) && (
@@ -402,6 +409,7 @@ export default function WaitlistsPage() {
                           {['waiting', 'queued', 'failed'].includes(e.status) && (
                             <button onClick={() => removeEntry(e)} disabled={busy === e.id} title="Remove from waitlist" style={{ ...iconBtn, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><XIcon size={13} /></button>
                           )}
+                          </div>
                         </div>
                       )
                     })}

@@ -205,18 +205,19 @@ export default function CustomDomainPage() {
       <div style={{ maxWidth: 1240, margin: '0 auto', padding: '0 24px' }}>
         {/* Stats card overlapping the hero */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', background: '#fff', borderRadius: 20, boxShadow: '0 10px 34px rgba(15,23,42,0.08)', border: '1px solid var(--border,#eef0f3)', marginTop: -56, position: 'relative', zIndex: 2, overflow: 'hidden' }}>
+          <style>{`@media (max-width: 640px) { .hc-stat { flex-direction: column; gap: 8px !important; padding: 16px 6px !important; text-align: center } .hc-stat-ic { width: 36px !important; height: 36px !important; border-radius: 10px !important } .hc-stat-ic svg { width: 18px; height: 18px } .hc-stat-txt { text-align: center !important } .hc-stat-n { font-size: 20px !important } .hc-stat-l { font-size: 12px !important; white-space: nowrap } }`}</style>
           {[
             { n: articles.length, l: 'Articles', icon: <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/> },
             { n: realCats.length, l: 'Categories', icon: <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/> },
             { n: totalViews, l: 'Total views', icon: <><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></> },
           ].map((s, i) => (
-            <div key={s.l} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 14, padding: '22px 16px', borderLeft: i ? '1px solid var(--border,#eef0f3)' : 'none' }}>
-              <span style={{ width: 44, height: 44, borderRadius: 12, background: accent + '15', color: accent, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <div key={s.l} className="hc-stat" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 14, padding: '22px 16px', borderLeft: i ? '1px solid var(--border,#eef0f3)' : 'none' }}>
+              <span className="hc-stat-ic" style={{ width: 44, height: 44, borderRadius: 12, background: accent + '15', color: accent, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">{s.icon}</svg>
               </span>
-              <div style={{ textAlign: 'left' }}>
-                <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--ink,#1a1a1a)', lineHeight: 1 }}>{s.n}</div>
-                <div style={{ fontSize: 13, color: 'var(--slate,#6b6b70)', marginTop: 3 }}>{s.l}</div>
+              <div className="hc-stat-txt" style={{ textAlign: 'left' }}>
+                <div className="hc-stat-n" style={{ fontSize: 22, fontWeight: 800, color: 'var(--ink,#1a1a1a)', lineHeight: 1 }}>{s.n}</div>
+                <div className="hc-stat-l" style={{ fontSize: 13, color: 'var(--slate,#6b6b70)', marginTop: 3 }}>{s.l}</div>
               </div>
             </div>
           ))}
