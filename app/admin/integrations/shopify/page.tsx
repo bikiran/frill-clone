@@ -24,6 +24,7 @@ export default function ShopifyIntegrationPage() {
   const [stores, setStores] = useState<any[]>([])
   const [appConfigured, setAppConfigured] = useState(true)
   const [apiKey, setApiKey] = useState<string | null>(null)
+  const [billing, setBilling] = useState<{ integrationId: string; needsPlan: boolean; planUrl: string } | null>(null)
   const [loading, setLoading] = useState(true)
   const [installing, setInstalling] = useState<string | null>(null)
   // A store installed in Shopify that's waiting for a workspace (see lib/shopify-install).
@@ -42,6 +43,7 @@ export default function ShopifyIntegrationPage() {
     setStores(d.stores || [])
     setAppConfigured(d.appConfigured !== false)
     setApiKey(d.apiKey || null)
+    setBilling(d.billing || null)
     setActive('shopify', (d.stores || []).some((s: any) => s.is_active))
     return d.stores || []
   }
@@ -298,6 +300,12 @@ export default function ShopifyIntegrationPage() {
                   <button type="button" onClick={() => install(s.store_domain)} disabled={!!installing} className="font-semibold underline" style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'inherit' }}>
                     {installing === s.store_domain ? 'Opening Shopify…' : 'Approve in Shopify'}
                   </button>
+                </Notice></div>
+              )}
+              {s.is_active && billing?.integrationId === s.id && billing.needsPlan && (
+                <div className="mt-4"><Notice tone="info">
+                  Your Colvy plan is billed through this store’s Shopify bill.{' '}
+                  <a href={billing.planUrl} className="font-semibold underline" style={{ color: 'inherit' }}>Choose a plan in Shopify</a>
                 </Notice></div>
               )}
               {(st?.note || (s.last_error && s.is_active)) && !running && (

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { reconcileStore } from '@/lib/shopify-sync'
 import { promoteDueCheckouts } from '@/lib/shopify-checkouts'
+import { syncDueShopifyBilling } from '@/lib/shopify-billing'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
@@ -46,5 +47,8 @@ export async function GET(req: NextRequest) {
       results.push({ store: s.store_domain, error: e?.message || 'failed' })
     }
   }
-  return NextResponse.json({ ok: true, stores: results.length, results })
+  // Plans billed through Shopify: no webhooks for cancellations, so ask.
+  let billing: any = null
+  try { billing = await syncDueShopifyBilling(db) } catch (e: any) { billing = { error: e?.message || 'failed' } }
+  return NextResponse.json({ ok: true, stores: results.length, results, billing })
 }

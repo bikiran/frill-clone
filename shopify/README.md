@@ -68,6 +68,30 @@ before any Colvy page. The flow (`lib/shopify-install.ts`):
 `SHOPIFY_APP_LISTING_URL` (Vercel) is where **Install from Shopify** goes;
 it defaults to `https://apps.shopify.com/colvy`.
 
+## Billing (Shopify App Pricing)
+
+A workspace using Colvy through the Shopify app pays for Colvy through
+Shopify, not Stripe (App Store requirement 1.2.1; `lib/shopify-billing.ts`).
+A workspace on its trial or Free plan with no Stripe subscription becomes
+Shopify-billed when it connects a store through the app; its **Billing** page
+then sends people to Shopify's plan page, and Stripe checkout is refused.
+Workspaces already paying with Stripe keep Stripe.
+
+Set up once in the Partner Dashboard (Apps → Colvy → Distribution → Manage
+listing → Pricing content → Manage):
+
+- Pricing method: **Shopify App Pricing**.
+- Public plans whose names contain **Free**, **Feedback**, **Inbox** and
+  **Everything** (Colvy maps them by name, or by the standard prices).
+- Each plan's **Welcome link**: `https://colvy.com/api/shopify/billing/return`.
+
+Vercel env: `SHOPIFY_PARTNER_API_TOKEN` (Partner Dashboard → Settings →
+Partner API clients, with **Manage apps**). `SHOPIFY_PARTNER_ORG_ID` and
+`SHOPIFY_APP_GID` default to Colvy's (`5242426`, `gid://shopify/App/433393926145`).
+Shopify sends no webhooks for plan changes, so Colvy re-reads the
+subscription on the welcome link, when the Billing page opens, and every six
+hours from the shopify-sync cron.
+
 ## Using it on a store
 
 In Colvy → Integrations → Shopify, a connected store shows **On your store**:

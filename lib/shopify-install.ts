@@ -21,6 +21,7 @@ import type { NextRequest, NextResponse } from 'next/server'
 import { SHOPIFY_SCOPES, tokenColumns, type ShopifyTokenSet } from '@/lib/shopify-auth'
 import { ensureAppMetafields, ensureStoreWebhooks } from '@/lib/shopify-sync'
 import { ShopifyService } from '@/lib/shopify-service'
+import { adoptShopifyBilling } from '@/lib/shopify-billing'
 
 export const INTENT_COOKIE = 'colvy_shopify_intent'   // httpOnly: an intent nonce
 export const CLAIM_COOKIE = 'colvy_shopify_claim'     // httpOnly: a pending-install claim token
@@ -110,6 +111,8 @@ export async function connectStore(db: any, a: { companyId: string; userId?: str
     await db.from('shopify_integrations').update({ last_error: `Webhooks: ${e?.message || 'failed'}`.slice(0, 500) }).eq('id', integ.id)
   }
   try { await ensureAppMetafields(db, { id: integ.id, company_id: a.companyId, auth_type: 'oauth', app_metafields: null }, svc) } catch {}
+  // Through the app, the Colvy plan is billed by Shopify (lib/shopify-billing).
+  try { await adoptShopifyBilling(db, a.companyId, integ.id) } catch {}
   return integ.id
 }
 

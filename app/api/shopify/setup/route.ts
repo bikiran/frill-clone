@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { shopifyAppConfigured } from '@/lib/shopify-auth'
 import { ensureStoreWebhooks } from '@/lib/shopify-sync'
+import { planSelectionUrl } from '@/lib/shopify-billing'
 
 export const dynamic = 'force-dynamic'
 
@@ -37,7 +38,14 @@ export async function GET(req: NextRequest) {
     }))
     // The app's API key is public (it's in every install URL); the theme editor
     // deep links for the storefront blocks need it.
-    return NextResponse.json({ stores, appConfigured: shopifyAppConfigured(), apiKey: process.env.SHOPIFY_API_KEY || null })
+    // Colvy billed through Shopify: which store, and whether a plan is picked yet.
+    const { data: co } = await db.from('companies').select('plan, billing_provider, billing_integration_id').eq('id', companyId).maybeSingle()
+    let billing: any = null
+    if (co?.billing_provider === 'shopify') {
+      const { data: b } = await db.from('shopify_integrations').select('store_domain, billing').eq('id', co.billing_integration_id).maybeSingle()
+      if (b) billing = { integrationId: co.billing_integration_id, needsPlan: !b.billing?.plan, planUrl: planSelectionUrl(b.store_domain) }
+    }
+    return NextResponse.json({ stores, appConfigured: shopifyAppConfigured(), apiKey: process.env.SHOPIFY_API_KEY || null, billing })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
