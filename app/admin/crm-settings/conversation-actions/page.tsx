@@ -10,7 +10,7 @@ const ACTION_CATALOGUE: { key: string; label: string; desc: string; icon: string
   { key: 'doa', label: 'DOA Claim', desc: 'Dead-on-arrival / faulty item claims with order lookup and refund.', icon: '📦' },
   { key: 'warranty', label: 'Warranty Claim', desc: 'Collect warranty claim details from the customer.', icon: '🛡️', formBased: true },
   { key: 'return_refund', label: 'Return / Refund', desc: 'Process returns and refunds against an order.', icon: '↩️' },
-  { key: 'create_order', label: 'Create Order', desc: 'Build a WooCommerce or Shopify order from the chat.', icon: '🛒' },
+  { key: 'create_order', label: 'Create Order', desc: 'Build a WooCommerce order from the chat (Shopify coming soon).', icon: '🛒' },
   { key: 'booking', label: 'Booking', desc: 'Take a booking or appointment from the conversation.', icon: '📅', formBased: true },
   { key: 'support_ticket', label: 'Support Ticket', desc: 'Raise a support ticket with a number and link.', icon: '🎫' },
   { key: 'send_coupon', label: 'Send Coupon', desc: 'Create a WooCommerce coupon and send it to the customer as a copyable code.', icon: '🎟️' },
