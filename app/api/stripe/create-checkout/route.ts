@@ -60,6 +60,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Missing tier' }, { status: 400 })
     }
 
+    // A workspace using Colvy through the Shopify app pays through Shopify
+    // (App Store rule, lib/shopify-billing) — never a second, Stripe charge.
+    {
+      const q = db.from('companies').select('id').eq('billing_provider', 'shopify').limit(1)
+      const { data: viaShopify } = await (companyId ? q.eq('id', companyId) : q.eq('owner_id', userId))
+      if (viaShopify?.length) return NextResponse.json({ error: 'Your Colvy plan is billed through Shopify. Change it from Billing → Choose plan in Shopify.', shopify: true }, { status: 409 })
+    }
+
     const stripeKey = (STRIPE_SECRET || '').trim()
     if (!stripeKey || (!stripeKey.startsWith('sk_live_') && !stripeKey.startsWith('sk_test_'))) {
       return NextResponse.json({

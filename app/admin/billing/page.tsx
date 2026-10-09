@@ -45,6 +45,94 @@ const CheckIcon = () => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
 )
 
+const ShopifyBagIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M5 8h14l-1.2 11.2a2 2 0 0 1-2 1.8H8.2a2 2 0 0 1-2-1.8L5 8z"/><path d="M9 10V6a3 3 0 0 1 6 0v4"/></svg>
+)
+
+const PLAN_LABEL: Record<string, string> = { free: 'Free', trial: '14-day trial', feedback: 'Feedback', omnichannel: 'Inbox', everything: 'Everything', pro: 'Everything', enterprise: 'Enterprise' }
+const fmtDate = (d?: string | null) => (d ? new Date(d).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : '')
+
+// A workspace using Colvy through the Shopify app is billed by Shopify (App
+// Store rule): plans are picked on Shopify's own plan page, never Stripe.
+function ShopifyBilling({ info }: { info: any }) {
+  const sub = info.subscription
+  const plan = info.plan || 'free'
+  const returned = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('shopify_plan') : null
+  const period = sub?.billing_period === 'ANNUAL' || /year|annual/i.test(String(sub?.billing_period || '')) ? 'year' : 'month'
+  const price = sub?.amount ? `${Number(sub.amount).toLocaleString(undefined, { style: 'currency', currency: sub.currency || 'USD' })}/${period}` : ''
+  const status = !sub?.plan
+    ? (plan === 'trial'
+      ? `You’re on the 14-day trial${info.trialEndsAt ? ` until ${fmtDate(info.trialEndsAt)}` : ''}. Choose a plan in Shopify to keep your features after it ends.`
+      : 'You’re on the Free plan. Choose a plan in Shopify to unlock more.')
+    : sub.trial_ends_at ? `Free trial until ${fmtDate(sub.trial_ends_at)}${price ? `, then ${price}` : ''}.`
+    : sub.cancel_at_end ? `Ends on ${fmtDate(sub.period_end)}.`
+    : `${price ? `${price}. ` : ''}${sub.period_end ? `Renews ${fmtDate(sub.period_end)}.` : ''}`
+  return (
+    <div className="max-w-4xl mx-auto px-4 md:px-6 py-8">
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold" style={{ color: 'var(--ink)' }}>Billing</h1>
+        <p className="text-sm mt-1" style={{ color: 'var(--slate)' }}>
+          Current plan: <span className="font-semibold" style={{ color: 'var(--coral)' }}>{PLAN_LABEL[plan] || plan}</span>
+        </p>
+      </div>
+
+      {returned === 'updated' && (
+        <div role="status" className="mb-5 p-3.5 rounded-xl text-sm" style={{ background: '#ecfdf3', border: '1px solid #abefc6', color: '#067647' }}>Your plan is updated.</div>
+      )}
+      {returned === 'pending' && (
+        <div role="status" className="mb-5 p-3.5 rounded-xl text-sm" style={{ background: 'var(--canvas)', border: '1px solid var(--border)', color: 'var(--slate)' }}>Shopify is still confirming your plan. It shows here within a few minutes.</div>
+      )}
+      {info.note && <div className="mb-5 p-3.5 rounded-xl text-sm" style={{ background: 'var(--canvas)', border: '1px solid var(--border)', color: 'var(--slate)' }}>{info.note}</div>}
+
+      <div className="bg-white rounded-2xl border p-5 md:p-6 mb-6" style={{ borderColor: 'var(--border)' }}>
+        <div className="flex items-start gap-3">
+          <span className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: '#e3f1ec', color: '#008060' }}><ShopifyBagIcon /></span>
+          <div style={{ minWidth: 0 }}>
+            <p className="font-bold" style={{ color: 'var(--ink)' }}>Billed through Shopify</p>
+            <p className="text-sm mt-0.5" style={{ color: 'var(--slate)', lineHeight: 1.5 }}>
+              Your Colvy plan is charged on {info.store?.name ? <strong style={{ color: 'var(--ink)' }}>{info.store.name}</strong> : 'your store'}’s Shopify bill.
+            </p>
+          </div>
+        </div>
+        <div className="mt-5 p-4 rounded-xl" style={{ background: 'var(--canvas)' }}>
+          <p className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>{sub?.name || PLAN_LABEL[sub?.plan || plan] || plan}</p>
+          <p className="text-sm mt-0.5" style={{ color: 'var(--slate)', lineHeight: 1.5 }}>{status}</p>
+        </div>
+        {info.planUrl && info.store?.active ? (
+          <a href={info.planUrl} className="mt-5 w-full md:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold text-white transition-opacity hover:opacity-90" style={{ background: '#008060' }}>
+            {sub?.plan ? 'Change plan in Shopify' : 'Choose a plan in Shopify'}
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M7 17 17 7M8 7h9v9"/></svg>
+          </a>
+        ) : (
+          <p className="mt-4 text-sm" style={{ color: 'var(--slate)' }}>Reconnect your Shopify store under Integrations → Shopify to change your plan.</p>
+        )}
+        <p className="text-xs mt-4" style={{ color: 'var(--slate)', lineHeight: 1.5 }}>
+          Plans, invoices and your payment method are in your Shopify admin under Settings → Billing. To cancel, choose the Free plan in Shopify or uninstall Colvy from your store.
+        </p>
+      </div>
+
+      <div className="grid md:grid-cols-3 gap-4">
+        {PLANS.map(p => (
+          <div key={p.id} className="bg-white rounded-2xl border p-5" style={{ borderColor: (sub?.plan || plan) === p.id ? p.color : 'var(--border)' }}>
+            <div className="flex items-center justify-between mb-1">
+              <h3 className="font-bold" style={{ color: 'var(--ink)' }}>{p.name}</h3>
+              {(sub?.plan || plan) === p.id && <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ background: '#dcfce7', color: '#16a34a' }}>Current</span>}
+            </div>
+            <p className="text-xs mb-3" style={{ color: 'var(--slate)' }}>{p.desc}</p>
+            <div className="space-y-2">
+              {p.features.map(f => (
+                <div key={f} className="flex items-center gap-2 text-sm" style={{ color: 'var(--ink)' }}>
+                  <span style={{ color: p.color, flexShrink: 0 }}><CheckIcon /></span>{f}
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 const CreditCardIcon = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
 )
@@ -61,6 +149,7 @@ export default function BillingPage() {
   const [pageLoading, setPageLoading] = useState(true)
   const [portalLoading, setPortalLoading] = useState(false)
   const [showCurrencyMenu, setShowCurrencyMenu] = useState(false)
+  const [shopifyBilling, setShopifyBilling] = useState<any>(null)
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data }: any) => {
@@ -87,6 +176,16 @@ export default function BillingPage() {
         co = coByOwner
       }
       setCompany(co)
+
+      // Billed through Shopify? (lib/shopify-billing)
+      if (co?.billing_provider === 'shopify') {
+        try {
+          const back = new URLSearchParams(window.location.search).get('shopify_plan')
+          const r = await authFetch(`/api/shopify/billing?companyId=${co.id}${back ? '&refresh=1' : ''}`)
+          const d = await r.json()
+          if (r.ok && d.provider === 'shopify') { setShopifyBilling(d); setPageLoading(false); return }
+        } catch {}
+      }
 
       // Load subscription
       const { data: sub } = await (supabase as any).from('subscriptions').select('*').eq('user_id', u.id).maybeSingle()
@@ -180,6 +279,8 @@ export default function BillingPage() {
       <div className="w-8 h-8 rounded-full border-2 animate-spin" style={{ borderColor: 'var(--coral)', borderTopColor: 'transparent' }} />
     </div>
   )
+
+  if (shopifyBilling) return <ShopifyBilling info={shopifyBilling} />
 
   const currentPlanId = subscription?.tier || company?.plan || 'free'
   const isOnPlan = (id: string) => currentPlanId === id

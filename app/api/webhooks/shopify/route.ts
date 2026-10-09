@@ -8,6 +8,7 @@ import { serviceFor } from '@/lib/shopify-sync'
 import { runShopifyOrderAutomations } from '@/lib/shopify-automation'
 import { stageCheckout, stageFromWebhook } from '@/lib/shopify-checkouts'
 import { notifyCompany } from '@/lib/notify'
+import { onShopifyUninstalled } from '@/lib/shopify-billing'
 
 export const dynamic = 'force-dynamic'
 
@@ -127,6 +128,8 @@ export async function POST(req: NextRequest) {
             updated_at: new Date().toISOString(),
           }).eq('id', integ.id)
           try { await notifyCompany({ db, companyId, type: 'integration', message: `Colvy was uninstalled from the Shopify store ${integ.store_name || shopDomain}. Reinstall it under Integrations → Shopify to keep syncing.` }) } catch {}
+          // Shopify ends the app's subscription on uninstall.
+          try { await onShopifyUninstalled(db, integ) } catch {}
           break
         }
         case 'customers/data_request': {
