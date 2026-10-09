@@ -456,6 +456,14 @@ function reportWindow(range: string): { start: string | null; end: string | null
 
 // Resolve an order the user names — by our local id, or by the human order
 // number (RA-10284). Scoped to the caller's company.
+// Status changes and refunds go through the WooCommerce routes. An order from
+// another channel (Shopify, POS) must not be sent there — its id means nothing
+// to WooCommerce, or worse, matches a different order.
+const notWooOrder = (o: any) => !!o?.sales_channel && o.sales_channel !== 'woocommerce'
+const notWooMessage = (o: any, refund: boolean) => o?.sales_channel === 'shopify'
+  ? `That's a Shopify order — ${refund ? 'refund it' : 'change its status'} in Shopify for now. Doing it from Colvy is coming soon.`
+  : `That order came from ${o?.sales_channel || 'another channel'}, so it can't be ${refund ? 'refunded' : 'changed'} through the store from here.`
+
 async function resolveOrder(db: any, companyId: string, ref: string): Promise<any | null> {
   const r = String(ref || '').trim()
   if (!r) return null
@@ -620,7 +628,7 @@ export async function runReadTool(db: SupabaseClient, ctx: AssistantContext, nam
       orders: rows.map((o: any) => ({
         id: o.id, orderNumber: o.order_number, status: o.status, paymentStatus: o.payment_status,
         total: money(o.total, o.currency), customer: o.customer_name, items: o.item_count,
-        placed: fmtDate(o.order_date), channel: o.sales_channel, canWriteBack: !!o.external_order_id,
+        placed: fmtDate(o.order_date), channel: o.sales_channel, canWriteBack: !!o.external_order_id && !notWooOrder(o),
         outlet: o.store_location_id ? outlets[o.store_location_id] || 'Outlet' : null,
       })),
     }
@@ -639,7 +647,7 @@ export async function runReadTool(db: SupabaseClient, ctx: AssistantContext, nam
         subtotal: money(o.subtotal, o.currency), shipping: money(o.shipping_total, o.currency),
         discount: money(o.discount_total, o.currency), tax: money(o.tax_total, o.currency), total: money(o.total, o.currency),
         placed: fmtDateTime(o.order_date), tracking: o.tracking_number || null, carrier: o.carrier || null,
-        canWriteBack: !!o.external_order_id, contactId: o.contact_id, conversationId: o.conversation_id,
+        canWriteBack: !!o.external_order_id && !notWooOrder(o), contactId: o.contact_id, conversationId: o.conversation_id,
         items: (items || []).map((i: any) => ({ name: i.product_name, sku: i.sku, qty: i.quantity, price: money(i.unit_price, o.currency) })),
       },
     }
@@ -1127,6 +1135,7 @@ export async function executeAction(db: SupabaseClient, ctx: AssistantContext, n
     const order = await resolveOrder(D, ctx.companyId, args?.orderId || ctx.orderId)
     if (!order) return { ok: false, error: 'Order not found.' }
     if (!order.external_order_id) return { ok: false, error: 'That\'s a manual order — change its status on the Orders page.' }
+    if (notWooOrder(order)) return { ok: false, error: notWooMessage(order, false) }
 
     const base = ctx.siteOrigin || process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
     let ok = false, err = ''
@@ -1171,6 +1180,7 @@ export async function executeAction(db: SupabaseClient, ctx: AssistantContext, n
     const order = await resolveOrder(D, ctx.companyId, args?.orderId || ctx.orderId)
     if (!order) return { ok: false, error: 'Order not found.' }
     if (!order.external_order_id) return { ok: false, error: 'That\'s a manual order — it can\'t be refunded through the store.' }
+    if (notWooOrder(order)) return { ok: false, error: notWooMessage(order, true) }
     const amount = args?.amount != null ? Number(args.amount) : undefined
     if (amount != null && (!isFinite(amount) || amount <= 0)) return { ok: false, error: 'The refund amount looks wrong.' }
 
@@ -1345,6 +1355,7 @@ export async function buildConfirmPreview(db: SupabaseClient, ctx: AssistantCont
     const order = await resolveOrder(D, ctx.companyId, args?.orderId || ctx.orderId)
     if (!order) return { ok: false, error: 'Tell me which order — the order number.' }
     if (!order.external_order_id) return { ok: false, error: financial ? "That's a manual order — it can't be refunded through the store." : "That's a manual order — change its status on the Orders page." }
+    if (notWooOrder(order)) return { ok: false, error: notWooMessage(order, financial) }
     const orderLabel = `Order ${order.order_number || ''}`.trim()
     const total = money(order.total, order.currency)
     if (name === 'refund_order') {

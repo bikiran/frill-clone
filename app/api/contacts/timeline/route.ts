@@ -1,3 +1,4 @@
+import { statusMeta } from '@/lib/orders'
 import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
@@ -80,6 +81,16 @@ export async function GET(req: NextRequest) {
       if (phones.length) {
         const { data } = await db.from('woocommerce_orders').select('id, woo_order_id, total, currency, status, order_date').eq('company_id', companyId).in('billing_phone_norm', phones).order('order_date', { ascending: false }).limit(50)
         for (const o of (data || [])) if (!seen.has(o.id)) { seen.add(o.id); pushOrder(o) }
+      }
+      // Shopify orders (operational orders table): by linked contact, email or phone.
+      const ors = [
+        contactIds.length ? `contact_id.in.(${contactIds.join(',')})` : '',
+        ...emails.map(e => `customer_email.eq.${e.replace(/[,()]/g, '')}`),
+        phones.length ? `customer_phone_norm.in.(${phones.join(',')})` : '',
+      ].filter(Boolean).join(',')
+      if (ors) {
+        const { data } = await db.from('orders').select('id, order_number, total, currency, status, order_date').eq('company_id', companyId).eq('sales_channel', 'shopify').or(ors).order('order_date', { ascending: false }).limit(50)
+        for (const o of (data || [])) activity.push({ id: 'order-' + o.id, kind: 'order', source: 'Shopify', date: o.order_date, title: `Order #${o.order_number}`, detail: [money(o.total, o.currency), statusMeta(o.status).label].filter(Boolean).join(' · '), link: `/admin/orders/${o.id}` })
       }
     } catch {}
   }

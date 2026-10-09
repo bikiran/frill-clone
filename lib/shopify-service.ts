@@ -38,6 +38,56 @@ export const CUSTOMER_FIELDS = `
   tags createdAt updatedAt
 `
 
+const MONEY = 'shopMoney { amount currencyCode }'
+const ADDRESS = 'firstName lastName name company address1 address2 city province provinceCode country countryCodeV2 zip phone'
+
+// Shopify rejects a query whose *requested* cost tops 1000 points (each object
+// in a connection counts once per `first`). So list pages ask for few nested
+// items, and the rare order/product with more is re-fetched on its own with
+// the full list (`linesMore` / `variantsMore` say when).
+export const orderFields = (lines = 20) => `
+  id legacyResourceId name createdAt updatedAt processedAt cancelledAt cancelReason closed test
+  displayFinancialStatus displayFulfillmentStatus
+  email phone note tags sourceName statusPageUrl discountCodes paymentGatewayNames
+  currencyCode
+  customer { id legacyResourceId firstName lastName }
+  totalPriceSet { ${MONEY} }
+  currentTotalPriceSet { ${MONEY} }
+  subtotalPriceSet { ${MONEY} }
+  totalShippingPriceSet { ${MONEY} }
+  totalTaxSet { ${MONEY} }
+  totalDiscountsSet { ${MONEY} }
+  totalRefundedSet { ${MONEY} }
+  shippingAddress { ${ADDRESS} }
+  billingAddress { ${ADDRESS} }
+  shippingLines(first: 3) { nodes { title code } }
+  lineItems(first: ${lines}) {
+    pageInfo { hasNextPage }
+    nodes {
+      id name title variantTitle sku quantity currentQuantity
+      originalUnitPriceSet { shopMoney { amount } }
+      variant { legacyResourceId }
+      product { legacyResourceId }
+      image { url }
+    }
+  }
+`
+
+export const productFields = (variants = 30) => `
+  id legacyResourceId title handle status onlineStoreUrl totalInventory tracksInventory hasOnlyDefaultVariant
+  productType vendor tags updatedAt
+  featuredMedia { preview { image { url } } }
+  priceRangeV2 { minVariantPrice { amount currencyCode } maxVariantPrice { amount currencyCode } }
+  variants(first: ${variants}) {
+    pageInfo { hasNextPage }
+    nodes {
+      id legacyResourceId title sku price compareAtPrice inventoryQuantity availableForSale inventoryPolicy
+      selectedOptions { name value }
+      inventoryItem { id tracked }
+    }
+  }
+`
+
 export class ShopifyService {
   private domain: string
   private token: string
@@ -120,6 +170,54 @@ export class ShopifyService {
     )
     const conn = data?.customers
     return { customers: conn?.nodes || [], endCursor: conn?.pageInfo?.endCursor || null, hasNextPage: !!conn?.pageInfo?.hasNextPage, errors }
+  }
+
+  /** One page of orders, oldest-updated first so a resumed sync never skips. */
+  async getOrdersPage(opts: { after?: string | null; first?: number; query?: string } = {}): Promise<{ orders: any[]; endCursor: string | null; hasNextPage: boolean; errors: any[] }> {
+    const { data, errors } = await this.gql<any>(
+      `query Orders($first: Int!, $after: String, $query: String) {
+        orders(first: $first, after: $after, query: $query, sortKey: UPDATED_AT) {
+          pageInfo { hasNextPage endCursor }
+          nodes { ${orderFields(20)} }
+        }
+      }`,
+      { first: opts.first || 6, after: opts.after || null, query: opts.query || null },
+    )
+    const conn = data?.orders
+    return { orders: conn?.nodes || [], endCursor: conn?.pageInfo?.endCursor || null, hasNextPage: !!conn?.pageInfo?.hasNextPage, errors }
+  }
+
+  async getOrder(id: string | number): Promise<any | null> {
+    const gid = String(id).startsWith('gid://') ? String(id) : `gid://shopify/Order/${id}`
+    const { data } = await this.gql<any>(`query One($id: ID!) { order(id: $id) { ${orderFields(100)} } }`, { id: gid })
+    return data?.order || null
+  }
+
+  async getProductsPage(opts: { after?: string | null; first?: number; query?: string } = {}): Promise<{ products: any[]; endCursor: string | null; hasNextPage: boolean; errors: any[] }> {
+    const { data, errors } = await this.gql<any>(
+      `query Products($first: Int!, $after: String, $query: String) {
+        products(first: $first, after: $after, query: $query, sortKey: ID) {
+          pageInfo { hasNextPage endCursor }
+          nodes { ${productFields(30)} }
+        }
+      }`,
+      { first: opts.first || 8, after: opts.after || null, query: opts.query || null },
+    )
+    const conn = data?.products
+    return { products: conn?.nodes || [], endCursor: conn?.pageInfo?.endCursor || null, hasNextPage: !!conn?.pageInfo?.hasNextPage, errors }
+  }
+
+  async getProduct(id: string | number): Promise<any | null> {
+    const gid = String(id).startsWith('gid://') ? String(id) : `gid://shopify/Product/${id}`
+    const { data } = await this.gql<any>(`query One($id: ID!) { product(id: $id) { ${productFields(250)} } }`, { id: gid })
+    return data?.product || null
+  }
+
+  /** inventory_levels/update only names an inventory item; find its product. */
+  async productIdForInventoryItem(inventoryItemId: string | number): Promise<string | null> {
+    const gid = String(inventoryItemId).startsWith('gid://') ? String(inventoryItemId) : `gid://shopify/InventoryItem/${inventoryItemId}`
+    const { data } = await this.gql<any>(`query Inv($id: ID!) { inventoryItem(id: $id) { variant { product { id } } } }`, { id: gid })
+    return data?.inventoryItem?.variant?.product?.id || null
   }
 
   /**

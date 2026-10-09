@@ -28,7 +28,7 @@ export function matchOutletId(locations: { id: string; label?: string | null; su
   }
   return null
 }
-async function loadLocations(db: any, companyId: string): Promise<{ id: string; label?: string | null; suburb?: string | null }[]> {
+export async function loadLocations(db: any, companyId: string): Promise<{ id: string; label?: string | null; suburb?: string | null }[]> {
   try { const { data } = await db.from('company_locations').select('id, label, suburb').eq('company_id', companyId); return data || [] } catch { return [] }
 }
 
@@ -36,11 +36,17 @@ async function loadLocations(db: any, companyId: string): Promise<{ id: string; 
 // the schema cache". A schema that predates a newer optional column (e.g.
 // primary_sku) would otherwise fail the whole insert — so strip the offending
 // column and retry, a few times, instead of forcing another migration.
+// Last 9 digits — how the inbox matches a phone across formats (+61 4… / 04…).
+export const phoneNorm = (p?: string | null): string | null => {
+  const d = String(p || '').replace(/\D/g, '')
+  return d.length >= 8 ? d.slice(-9) : null
+}
+
 const missingCol = (err: any): string | null => {
   const m = String(err?.message || '').match(/Could not find the '([\w]+)' column/)
   return m ? m[1] : null
 }
-async function insertResilient(db: any, table: string, rows: any[], select?: string): Promise<any[]> {
+export async function insertResilient(db: any, table: string, rows: any[], select?: string): Promise<any[]> {
   let cur = rows
   for (let attempt = 0; attempt < 5; attempt++) {
     const q = db.from(table).insert(cur)
@@ -52,7 +58,7 @@ async function insertResilient(db: any, table: string, rows: any[], select?: str
   }
   throw new Error(`${table} insert failed: unresolved unknown columns`)
 }
-async function updateResilient(db: any, table: string, patch: any, id: string): Promise<void> {
+export async function updateResilient(db: any, table: string, patch: any, id: string): Promise<void> {
   let cur = patch
   for (let attempt = 0; attempt < 5; attempt++) {
     const { error } = await db.from(table).update(cur).eq('id', id)
@@ -92,6 +98,7 @@ function sourceFields(companyId: string, o: any, contactId: string | null) {
     customer_name: name,
     customer_email: email || null,
     customer_phone: b.phone || null,
+    customer_phone_norm: phoneNorm(b.phone),
     customer_note: o.customer_note || o.note || null,
     shipping_address: (o.shipping && Object.keys(o.shipping).length ? o.shipping : b) || null,
     // The woocommerce_orders row's order_date is already a proper timestamptz.
@@ -117,7 +124,7 @@ function isRecentOrder(src: any): boolean {
 // Ping the team's phones about a genuinely-new order (Orders tab badge + push).
 // Fire-and-forget; never blocks or throws the sync. Shared by the webhook
 // (upsertWooOrder) and the periodic bulk sync so both paths notify.
-function notifyNewOrder(companyId: string, src: any): void {
+export function notifyNewOrder(companyId: string, src: any): void {
   try {
     // Only a genuinely-new order — never an old order first seen on completion.
     if (!isRecentOrder(src)) return
@@ -325,7 +332,7 @@ export async function syncWooOrders(db: any, companyId: string, wooRows: any[], 
 }
 
 // An order as integrations (Slack, webhooks, Zapier…) see it.
-function orderEvent(src: any, orderId: string, title: string, extra: Record<string, any> = {}, items: any[] = []) {
+export function orderEvent(src: any, orderId: string, title: string, extra: Record<string, any> = {}, items: any[] = []) {
   const money = (n: any) => n != null ? `$${Number(n).toFixed(2)}` : null
   return {
     title, path: `/admin/orders/${orderId}`,

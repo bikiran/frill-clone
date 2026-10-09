@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { requireCompanyAccess } from '@/lib/company-access'
 import { WooCommerceService } from '@/lib/woocommerce-service'
+import { productForUi, variationsForUi } from '@/lib/shopify-products'
 
 function admin() {
   return createClient(
@@ -53,28 +54,10 @@ async function searchLocal(companyId: string, query: string): Promise<any[] | nu
   // A missing table or any other failure means "fall back", never "no results".
   if (error || !data || data.length === 0) return null
 
-  const ql = query.toLowerCase()
-  const score = (p: any): number => {
-    const name = String(p.name || '').toLowerCase()
-    const sku = String(p.sku || '').toLowerCase()
-    if (sku === ql) return 0
-    if (name === ql) return 1
-    if (name.startsWith(ql)) return 2
-    if (name.includes(ql)) return 3
-    if (sku.startsWith(ql)) return 4
-    const hit = terms.filter(t => name.includes(t)).length
-    if (hit === terms.length) return 5
-    if (hit > 0) return 6 + (terms.length - hit)
-    return 50
-  }
-
-  return data
-    .map((p: any, i: number) => ({ p, s: score(p), i }))
-    .sort((a, b) => (a.s - b.s) || (a.i - b.i))
-    .slice(0, 20)
+  return rankProducts(data, query)
     // Shaped exactly like WooCommerceService.searchProducts, so the picker and
     // Create Order cannot tell which source answered.
-    .map(({ p }) => ({
+    .map((p: any) => ({
       id: p.woo_product_id,
       name: p.name, sku: p.sku, type: p.type,
       price: p.price, regular_price: p.regular_price, sale_price: p.sale_price,
@@ -89,6 +72,51 @@ async function searchLocal(companyId: string, query: string): Promise<any[] | nu
     }))
 }
 
+// "Starts with what you typed" outranks "mentioned somewhere" — shared by the
+// WooCommerce and Shopify catalogues.
+function rankProducts(rows: any[], query: string): any[] {
+  const terms = query.toLowerCase().split(/\s+/).filter(Boolean)
+  const ql = query.toLowerCase()
+  const score = (p: any): number => {
+    const name = String(p.name || '').toLowerCase()
+    const sku = String(p.sku || '').toLowerCase()
+    const skus = String(p.skus || '').toLowerCase().split(/\s+/)
+    if (sku === ql || skus.includes(ql)) return 0
+    if (name === ql) return 1
+    if (name.startsWith(ql)) return 2
+    if (name.includes(ql)) return 3
+    if (sku.startsWith(ql) || skus.some(x => x.startsWith(ql))) return 4
+    const hit = terms.filter(t => name.includes(t)).length
+    if (hit === terms.length) return 5
+    if (hit > 0) return 6 + (terms.length - hit)
+    return 50
+  }
+  return rows
+    .map((p: any, i: number) => ({ p, s: score(p), i }))
+    .sort((a, b) => (a.s - b.s) || (a.i - b.i))
+    .slice(0, 20)
+    .map(x => x.p)
+}
+
+// The Shopify store to answer from: the one asked for, else the first active.
+async function shopifyFor(companyId: string, integrationId?: string) {
+  const db = admin()
+  let q = db.from('shopify_integrations').select('id').eq('company_id', companyId).eq('is_active', true)
+  if (integrationId) q = q.eq('id', integrationId)
+  const { data } = await q.order('created_at', { ascending: true }).limit(1)
+  return data?.[0] || null
+}
+
+async function searchShopify(companyId: string, integrationId: string, query: string): Promise<any[]> {
+  const first = query.toLowerCase().split(/\s+/).filter(Boolean)[0]?.replace(/[%,()]/g, ' ').trim()
+  if (!first) return []
+  const { data } = await admin().from('shopify_products').select('*')
+    .eq('company_id', companyId).eq('integration_id', integrationId).neq('status', 'ARCHIVED')
+    .or(`name.ilike.%${first}%,skus.ilike.%${first}%`)
+    .limit(300)
+  return rankProducts(data || [], query).map(productForUi)
+}
+
 // GET ?companyId=&q=  → product search
 // GET ?companyId=&productId=  → variations for a variable product
 export async function GET(req: NextRequest) {
@@ -101,8 +129,20 @@ export async function GET(req: NextRequest) {
     // It searched any workspace's store for whoever asked; only its members now.
     if (!(await requireCompanyAccess(req, admin(), companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
 
-    const woo = await wooFor(companyId, integrationId)
-    if (!woo) return NextResponse.json({ error: 'No WooCommerce store connected' }, { status: 404 })
+    // A Shopify store asked for by id, or the only kind of store connected,
+    // answers from the synced Shopify catalogue.
+    const asked = integrationId ? await shopifyFor(companyId, integrationId) : null
+    const woo = asked ? null : await wooFor(companyId, integrationId)
+    const shop = asked || (woo ? null : await shopifyFor(companyId))
+    if (shop) {
+      if (productId) {
+        const { data: p } = await admin().from('shopify_products').select('*').eq('company_id', companyId).eq('shopify_product_id', Number(productId)).maybeSingle()
+        return NextResponse.json({ variations: p ? variationsForUi(p) : [] })
+      }
+      if (!q || q.trim().length < 2) return NextResponse.json({ products: [] })
+      return NextResponse.json({ products: await searchShopify(companyId, shop.id, q.trim()), source: 'shopify' })
+    }
+    if (!woo) return NextResponse.json({ error: 'No store connected' }, { status: 404 })
 
     if (productId) {
       const variations = await woo.getProductVariations(Number(productId))

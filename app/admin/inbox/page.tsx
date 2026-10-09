@@ -2639,6 +2639,40 @@ export default function InboxPage() {
       })()
     }
     const norm = (p: string) => (p || '').replace(/\D/g, '').slice(-9)
+    // Shopify orders live in the operational orders table. Shape them like the
+    // WooCommerce rows this panel renders (WooCommerce status words, so the
+    // badges work; line_items[].image.src; billing) and tag them so the
+    // WooCommerce-only actions and enrichment leave them alone.
+    const shopifyOrders = async (e: string | null, p: string | null): Promise<any[]> => {
+      if (!e && !p) return []
+      const or = [e ? `customer_email.eq.${e.toLowerCase()}` : '', p && norm(p).length >= 8 ? `customer_phone_norm.eq.${norm(p)}` : ''].filter(Boolean).join(',')
+      if (!or) return []
+      const { data, error } = await (supabase as any).from('orders')
+        .select('id, external_order_id, order_number, status, payment_status, fulfilment_status, total, currency, order_date, customer_email, customer_name, customer_phone, shipping_address, shipping_method, shipping_total, metadata, order_items(product_name, quantity, sku, total_price, image_url, product_id)')
+        .eq('company_id', companyId).eq('sales_channel', 'shopify').or(or)
+        .order('order_date', { ascending: false }).limit(50)
+      if (error) return []
+      const panelStatus = (r: any) => r.status === 'cancelled' ? 'cancelled'
+        : (r.status === 'refunded' || r.payment_status === 'refunded') ? 'refunded'
+        : r.payment_status === 'failed' ? 'failed'
+        : (r.status === 'shipped' || r.status === 'delivered' || r.fulfilment_status === 'fulfilled') ? 'completed'
+        : r.payment_status === 'pending' ? 'pending' : 'processing'
+      return (data || []).map((r: any) => ({
+        id: r.id, woo_order_id: `shopify-${r.external_order_id}`, order_number: r.order_number,
+        status: panelStatus(r), total: r.total, currency: r.currency, order_date: r.order_date,
+        customer_email: r.customer_email, customer_name: r.customer_name, billing: r.shipping_address || null,
+        shipping_method: r.shipping_method, shipping_total: r.shipping_total, total_refunded: 0,
+        line_items: (r.order_items || []).map((li: any) => ({ name: li.product_name, quantity: li.quantity, sku: li.sku, total: li.total_price, product_id: li.product_id, image: li.image_url ? { src: li.image_url } : null })),
+        _channel: 'shopify', shop: r.metadata?.shopify?.shop || null, status_url: r.metadata?.shopify?.status_url || null, external_order_id: r.external_order_id,
+      }))
+    }
+    // The Shopify customer for the card when there's no WooCommerce one.
+    const shopifyCustomer = async (e: string | null, p: string | null) => {
+      let q = (supabase as any).from('shopify_customers').select('*').eq('company_id', companyId)
+      if (e) q = q.eq('email', e.toLowerCase()); else if (p && norm(p).length >= 8) q = q.eq('phone_norm', norm(p)); else return null
+      const { data } = await q.limit(1)
+      return data?.[0] ? { ...data[0], _channel: 'shopify' } : null
+    }
     // Look orders up by email. Prefer the index-backed normalised column
     // (V265) — an exact eq the (company_id, customer_email_norm) index serves
     // directly — instead of a case-insensitive ilike, which can't use the index
@@ -2666,8 +2700,9 @@ export default function InboxPage() {
     if (email) {
       ordersPromise = Promise.all([ordersByEmail(email), phone ? ordersByPhone(phone) : Promise.resolve({ data: [] })])
       ;(async () => {
-        const { data } = await (supabase as any).from('woocommerce_customers')
+        const { data: wooRow } = await (supabase as any).from('woocommerce_customers')
           .select('*').eq('company_id', companyId).ilike('email', email as string).maybeSingle()
+        const data = wooRow || await shopifyCustomer(email, phone).catch(() => null)
         if (!isCurrent() || !data) return
         setWooCustomer(data)
         if (contactId) {
@@ -2681,7 +2716,7 @@ export default function InboxPage() {
       // indexed normalised column from the V186 migration.
       const { data } = await (supabase as any).from('woocommerce_customers')
         .select('*').eq('company_id', companyId).eq('phone_norm', norm(phone)).maybeSingle()
-      const woo = data || null
+      const woo = data || await shopifyCustomer(null, phone).catch(() => null)
       if (!isCurrent()) return
       if (woo) setWooCustomer(woo)
       if (woo?.email && contactId) {
@@ -2718,6 +2753,12 @@ export default function InboxPage() {
       }
       orders.sort((a: any, b: any) => new Date(b.order_date || 0).getTime() - new Date(a.order_date || 0).getTime())
     }
+    try {
+      const shop = await shopifyOrders(email, phone)
+      if (shop.length) {
+        orders = [...orders, ...shop].sort((a: any, b: any) => new Date(b.order_date || 0).getTime() - new Date(a.order_date || 0).getTime())
+      }
+    } catch {}
     if (!isCurrent()) return
     setWooOrders(orders)
     setWooOrdersLoading(false)
@@ -4057,6 +4098,7 @@ export default function InboxPage() {
   useEffect(() => {
     if (!companyId || wooOrders.length === 0) return
     const toEnrich = wooOrders.filter((o: any) => {
+      if (o._channel === 'shopify') return false   // already complete; not a WooCommerce order
       const id = String(o.order_id)
       if (!id || enrichedOrdersRef.current.has(id)) return false
       const needsImg = !Array.isArray(o.line_items) || o.line_items.some((li: any) => !li?.image?.src)
@@ -10938,12 +10980,12 @@ export default function InboxPage() {
 
             {activePanel === 'orders' && (
               <>
-                {/* WooCommerce customer summary */}
+                {/* Store customer summary (WooCommerce, or Shopify when there's no WooCommerce match) */}
                 {wooCustomer && (
                   <div style={{ marginBottom: 16, padding: '14px 16px', borderRadius: 12, background: 'linear-gradient(135deg, #f5f3ff, #ede9fe)', border: '1px solid #ddd6fe' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
                       <span style={{ color: "var(--coral)", display: "inline-flex" }}>{Icon.cart(16)}</span>
-                      <span style={{ fontSize: 13, fontWeight: 700, color: '#6d28d9' }}>WooCommerce Customer</span>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: '#6d28d9' }}>{wooCustomer._channel === 'shopify' ? 'Shopify Customer' : 'WooCommerce Customer'}</span>
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                       <div>
@@ -11132,7 +11174,14 @@ export default function InboxPage() {
                             </div>
                           )
                         })()}
-                        {/* Per-order actions */}
+                        {/* Per-order actions. Shopify orders are changed in Shopify for
+                            now — the edit/complete/refund actions below talk to WooCommerce. */}
+                        {o._channel === 'shopify' ? (
+                        <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--border)' }}>
+                          {o.shop && <a href={`https://${o.shop}/admin/orders/${o.external_order_id}`} target="_blank" rel="noopener noreferrer" style={{ ...miniBtn('#008060'), textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}>Open in Shopify</a>}
+                          {o.status_url && <button type="button" onClick={() => { navigator.clipboard?.writeText(o.status_url); showToast('Order status link copied') }} style={miniBtn('var(--slate)')}>Copy status link</button>}
+                        </div>
+                        ) : (
                         <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--border)' }}>
                           <button type="button" onClick={() => openOrderEditor(payload)} style={miniBtn('var(--coral)')}>Edit</button>
                           {/* A paid order doesn't need a payment request — the
@@ -11151,6 +11200,7 @@ export default function InboxPage() {
                           <button type="button" onClick={() => generateInvoice(payload)} style={miniBtn('var(--ink)')}>Invoice</button>
                           {payload.pay_link && <button type="button" onClick={() => { navigator.clipboard?.writeText(payload.pay_link!); showToast('Pay link copied') }} style={miniBtn('var(--slate)')}>Copy link</button>}
                         </div>
+                        )}
                       </div>
                     )})}
                   </div>
