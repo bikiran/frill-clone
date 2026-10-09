@@ -1,7 +1,7 @@
 import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { notifyCompany } from '@/lib/notify'
+import { ingestAbandonedCart, normalizeCart } from '@/lib/abandoned-carts'
 
 function admin() {
   return createClient(
@@ -9,44 +9,6 @@ function admin() {
     process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     { auth: { autoRefreshToken: false, persistSession: false } }
   )
-}
-
-// Normalize a variety of possible payload shapes (raw WooCommerce checkout, an
-// abandonment plugin, or a custom snippet) into our columns.
-function normalize(body: any) {
-  const billing = body.billing || body.customer || {}
-  const name = body.name || `${billing.first_name || ''} ${billing.last_name || ''}`.trim() || null
-  const items = (body.items || body.line_items || body.cart || []).map((it: any) => ({
-    product_id: it.product_id || it.id || null,
-    variation_id: it.variation_id || null,
-    name: it.name || it.product_name || 'Item',
-    sku: it.sku || null,
-    quantity: it.quantity || it.qty || 1,
-    price: it.price || it.line_total || it.total || null,
-    // Use an image if the payload already carries one (some bridges do); if not,
-    // enrichItemImages() backfills it from the WooCommerce product catalog.
-    image: it.image || it.image_url || it.thumbnail || it.img || null,
-  }))
-  const address = {
-    address_1: billing.address_1 || body.address || null,
-    city: billing.city || null,
-    state: billing.state || null,
-    postcode: billing.postcode || null,
-    country: billing.country || 'AU',
-  }
-  return {
-    external_id: body.external_id || body.cart_id || body.session_id || null,
-    name, email: body.email || billing.email || null, phone: body.phone || billing.phone || null,
-    address,
-    items,
-    coupon: body.coupon || (Array.isArray(body.coupons) ? body.coupons[0] : null) || null,
-    shipping: body.shipping_line || (body.shipping ? { method: body.shipping.method, label: body.shipping.label || body.shipping.method_title, cost: body.shipping.cost || body.shipping.total } : null),
-    notes: body.notes || body.customer_note || null,
-    subtotal: body.subtotal != null ? Number(body.subtotal) : null,
-    total: body.total != null ? Number(body.total) : (items.reduce((s: number, it: any) => s + (parseFloat(it.price) || 0) * (it.quantity || 1), 0) || null),
-    currency: body.currency || 'AUD',
-    cart_url: body.cart_url || body.recovery_url || body.checkout_url || null,
-  }
 }
 
 // Fill each cart item's `image` from the WooCommerce product catalog when the
@@ -143,144 +105,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true, recovered: true })
     }
 
-    const norm = normalize(body)
+    const norm = normalizeCart(body)
     if (!norm.email && !norm.phone) return NextResponse.json({ error: 'Cart needs at least an email or phone to be useful' }, { status: 400 })
 
     // Backfill product images before saving, so the stored items JSON carries
     // them (the app reads abandoned_carts straight from the DB).
     await enrichItemImages(db, companyId, norm.items)
 
-    // Find-or-create the contact, then find-or-create a conversation, so the
-    // abandoned cart appears as a chat in the inbox (not just a silent record).
-    let conversationId: string | null = null
-    let contact: any = null
-    let contactIsNew = false
-    try {
-      if (norm.email) {
-        const { data } = await db.from('contacts').select('id, name').eq('company_id', companyId).ilike('email', norm.email).limit(1)
-        contact = data?.[0] || null
-      }
-      if (!contact && norm.phone) {
-        const { data } = await db.from('contacts').select('id, name').eq('company_id', companyId).eq('phone', norm.phone).limit(1)
-        contact = data?.[0] || null
-      }
-      if (!contact) {
-        const { data: created } = await db.from('contacts').insert({
-          company_id: companyId, name: norm.name || norm.email || norm.phone, email: norm.email || null, phone: norm.phone || null,
-        }).select('id, name').maybeSingle()
-        contact = created; contactIsNew = true
-      }
-      if (contact?.id) {
-        const { data: conv } = await db.from('conversations').select('id').eq('company_id', companyId).eq('contact_id', contact.id).order('last_message_at', { ascending: false }).limit(1)
-        conversationId = conv?.[0]?.id || null
-      }
-    } catch {}
-
-    const row: any = { company_id: companyId, ...norm, status: 'abandoned', conversation_id: conversationId, updated_at: new Date().toISOString() }
-
-    // Save the cart. The unique index on (company_id, external_id) is PARTIAL
-    // (WHERE external_id IS NOT NULL), which Postgres ON CONFLICT can't target —
-    // so we do an explicit find-then-update-or-insert instead of upsert. (The
-    // previous upsert failed silently, leaving nothing saved.)
-    let saved: any = null
-    let isNew = false
-    let saveError: string | null = null
-    if (norm.external_id) {
-      const { data: existing } = await db.from('abandoned_carts').select('id').eq('company_id', companyId).eq('external_id', norm.external_id).maybeSingle()
-      if (existing?.id) {
-        const { data, error } = await db.from('abandoned_carts').update(row).eq('id', existing.id).select().maybeSingle()
-        saved = data; saveError = error?.message || null; isNew = false
-      } else {
-        const { data, error } = await db.from('abandoned_carts').insert(row).select().maybeSingle()
-        saved = data; saveError = error?.message || null; isNew = true
-      }
-    } else {
-      // No external_id to key on — the bridge sometimes posts the same cart
-      // twice (cart update, then checkout). Without a fallback every post
-      // inserted a new row and posted the summary again, so the customer's
-      // thread showed the identical cart message twice. Treat a cart for the
-      // same contact with the same total in the last 6 hours as the same cart.
-      let existingId: string | null = null
-      try {
-        const since = new Date(Date.now() - 6 * 3600 * 1000).toISOString()
-        let q = db.from('abandoned_carts').select('id, total, created_at')
-          .eq('company_id', companyId).eq('status', 'abandoned')
-          .gte('created_at', since).order('created_at', { ascending: false }).limit(5)
-        // abandoned_carts has no contact_id column — it's matched by email/phone.
-        if (norm.email) q = q.eq('email', norm.email)
-        else if (norm.phone) q = q.eq('phone', norm.phone)
-        const { data: recent } = await q
-        const match = (recent || []).find((c: any) =>
-          Math.abs((Number(c.total) || 0) - (Number(norm.total) || 0)) < 0.01)
-        existingId = match?.id || null
-      } catch { /* fall through to insert */ }
-
-      if (existingId) {
-        const { data, error } = await db.from('abandoned_carts').update(row).eq('id', existingId).select().maybeSingle()
-        saved = data; saveError = error?.message || null; isNew = false
-      } else {
-        const { data, error } = await db.from('abandoned_carts').insert(row).select().maybeSingle()
-        saved = data; saveError = error?.message || null; isNew = true
-      }
-    }
-
-    if (saveError || !saved) {
-      // Record the failure reason on the most recent hit so ?diag=1 reveals it.
-      try {
-        const { data: lastHit } = await db.from('abandoned_cart_hits').select('id').eq('company_id', companyId).order('created_at', { ascending: false }).limit(1).maybeSingle()
-        if (lastHit?.id) await db.from('abandoned_cart_hits').update({ save_error: saveError || 'insert returned no row' }).eq('id', lastHit.id)
-      } catch {}
-      return NextResponse.json({ ok: false, error: saveError || 'Cart could not be saved', norm }, { status: 500 })
-    }
-
-    // For a NEW cart: create a conversation if the contact has none, post a
-    // system message with the cart summary, and notify — so it shows as a chat.
-    if (isNew) {
-      try {
-        if (!conversationId && contact?.id) {
-          // The pages they browsed before abandoning. These come from the
-          // WooCommerce bridge — the chat widget never saw them, which is why
-          // cart conversations used to show "no page history recorded".
-          const browsed = Array.isArray(body.page_history) ? body.page_history : []
-          const lastPage = browsed.length ? browsed[browsed.length - 1] : null
-
-          const { data: newConv } = await db.from('conversations').insert({
-            company_id: companyId, channel: 'chat', subject: 'Abandoned cart',
-            contact_id: contact.id, status: 'open', is_unread: true, unread_count: 1,
-            page_url: lastPage?.url || norm.cart_url || null,
-            page_title: lastPage?.title || null,
-            page_history: browsed,
-            last_message: '', last_message_at: new Date().toISOString(),
-          }).select('id').maybeSingle()
-          conversationId = newConv?.id || null
-          // Link the cart to the new conversation.
-          if (conversationId) await db.from('abandoned_carts').update({ conversation_id: conversationId }).eq('id', saved.id)
-        }
-        if (conversationId) {
-          const itemLines = (norm.items || []).map((it: any) => `• ${it.quantity || 1}× ${it.name || 'item'}`).join('\n')
-          const summary = `🛒 Abandoned cart — ${norm.currency || 'AUD'} $${norm.total || 0}${itemLines ? `\n${itemLines}` : ''}${norm.cart_url ? `\n\nCart: ${norm.cart_url}` : ''}`
-
-          // Belt and braces: even if two carts slip through as "new", don't post
-          // the same summary into the thread twice.
-          const since = new Date(Date.now() - 6 * 3600 * 1000).toISOString()
-          const { data: dupe } = await db.from('messages')
-            .select('id').eq('conversation_id', conversationId)
-            .eq('content', summary).gte('created_at', since).limit(1)
-
-          if (!dupe || dupe.length === 0) {
-            await db.from('messages').insert({
-              conversation_id: conversationId, company_id: companyId, sender_type: 'system',
-              content: summary, metadata: { abandoned_cart: true, cart_id: saved.id },
-            })
-            await db.from('conversations').update({ last_message: `🛒 Abandoned cart — ${norm.currency || 'AUD'} $${norm.total || 0}`, last_message_at: new Date().toISOString(), is_unread: true }).eq('id', conversationId)
-          }
-        }
-      } catch (e) { console.error('[abandoned-cart] conversation create failed', e) }
-
-      try { await notifyCompany({ db, companyId, type: 'cart', message: `Abandoned cart from ${norm.name || norm.email || norm.phone || 'a customer'} — ${norm.currency || 'AUD'} $${(norm.total || 0)}`, actorName: norm.name || undefined, conversationId: conversationId || undefined }) } catch {}
-    }
-
-    return NextResponse.json({ ok: true, id: saved?.id })
+    const r = await ingestAbandonedCart(db, companyId, norm, body.page_history)
+    if (!r.ok) return NextResponse.json({ ok: false, error: r.error, norm }, { status: 500 })
+    return NextResponse.json({ ok: true, id: r.id })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
