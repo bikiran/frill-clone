@@ -75,6 +75,10 @@
     {
       "path": "/api/calendar/reminders",
       "schedule": "*/10 * * * *"
+    },
+    {
+      "path": "/api/cron/shopify-tokens",
+      "schedule": "40 4 * * *"
     }
   ]
 }

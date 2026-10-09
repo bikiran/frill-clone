@@ -2,110 +2,111 @@ import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { ShopifyService } from '@/lib/shopify-service'
+import { getAccessToken, ShopifyAuthError } from '@/lib/shopify-auth'
+import { saveShopifyCustomers } from '@/lib/shopify-customers'
+
+export const dynamic = 'force-dynamic'
+export const maxDuration = 60
 
 function admin() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
     { auth: { autoRefreshToken: false, persistSession: false } }
   )
 }
 
-const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
+const BUDGET_MS = 40_000
 
-// POST: run a Shopify customer sync for one store. Loops through cursor pages
-// within a time budget so it completes without a self-HTTP-call (no 508 risk).
+// Protected customer data the app isn't approved for comes back as null fields
+// plus an ACCESS_DENIED-style error. Worth telling the merchant, not fatal.
+const hiddenFieldsNote = (errors: any[]) =>
+  errors.some(e => /access|approved|protected/i.test(String(e?.message || '')) || e?.extensions?.code === 'ACCESS_DENIED')
+    ? 'Shopify is hiding some customer details (name, email, phone or address) until the Colvy app is approved for protected customer data.'
+    : null
+
+/**
+ * POST { companyId, integrationId?, jobId? } — sync a store's customers.
+ *
+ * Resumable: each call works for up to ~40s and saves the Shopify cursor on the
+ * job. While `done` is false, call again with the returned jobId and it carries
+ * on from that cursor (the old version restarted at page 1 every call and could
+ * report "complete" on a big store that wasn't). Each page also links/creates
+ * Colvy contacts.
+ */
 export async function POST(req: NextRequest) {
   try {
-    const { companyId, integrationId } = await req.json()
+    const { companyId, integrationId, jobId } = await req.json().catch(() => ({}))
     if (!companyId) return NextResponse.json({ error: 'Missing companyId' }, { status: 400 })
     const db = admin()
-    // Workspace members only.
     if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
 
-    // Resolve the target store
     let integ: any = null
     if (integrationId) {
-      const r = await db.from('shopify_integrations').select('*').eq('id', integrationId).eq('company_id', companyId).maybeSingle()
-      integ = r.data
+      integ = (await db.from('shopify_integrations').select('*').eq('id', integrationId).eq('company_id', companyId).maybeSingle()).data
     } else {
-      const r = await db.from('shopify_integrations').select('*').eq('company_id', companyId).order('created_at', { ascending: true }).limit(1)
-      integ = r.data?.[0] || null
+      integ = (await db.from('shopify_integrations').select('*').eq('company_id', companyId).eq('is_active', true).order('created_at', { ascending: true }).limit(1)).data?.[0] || null
     }
-    if (!integ?.access_token) return NextResponse.json({ error: 'Shopify store not connected' }, { status: 404 })
+    if (!integ) return NextResponse.json({ error: 'Shopify store not connected' }, { status: 404 })
+    if (!integ.is_active || !integ.access_token) return NextResponse.json({ error: 'This store is disconnected. Reinstall the Colvy app to sync it.', reauth: true }, { status: 409 })
+    if (integ.needs_reauth) return NextResponse.json({ error: 'Shopify access expired. Reconnect this store to sync it.', reauth: true }, { status: 409 })
 
-    const svc = new ShopifyService({ storeDomain: integ.store_domain, accessToken: integ.access_token })
+    const token = await getAccessToken(db, integ)
+    const svc = new ShopifyService({ storeDomain: integ.store_domain, accessToken: token, onUnauthorized: () => getAccessToken(db, integ, { force: true }) })
 
-    // Create a job row for progress tracking
-    const { data: job } = await db.from('shopify_sync_jobs').insert({
-      company_id: companyId, integration_id: integ.id, status: 'running', phase: 'customers', message: 'Syncing customers…',
-    }).select().maybeSingle()
+    // Continue the given job, or start a new one.
+    let job: any = null
+    if (jobId) {
+      job = (await db.from('shopify_sync_jobs').select('*').eq('id', jobId).eq('company_id', companyId).eq('integration_id', integ.id).maybeSingle()).data
+      if (!job) return NextResponse.json({ error: 'Sync job not found' }, { status: 404 })
+      if (job.status === 'done') return NextResponse.json({ ok: true, done: true, jobId: job.id, synced: job.customers_synced || 0, created: job.contacts_linked || 0 })
+      if (job.status !== 'running') await db.from('shopify_sync_jobs').update({ status: 'running', error: null }).eq('id', job.id)
+    } else {
+      job = (await db.from('shopify_sync_jobs').insert({
+        company_id: companyId, integration_id: integ.id, status: 'running', phase: 'customers', message: 'Syncing customers…',
+      }).select('*').single()).data
+    }
+    if (!job) return NextResponse.json({ error: 'Could not start the sync' }, { status: 500 })
 
     const START = Date.now()
-    const BUDGET_MS = 45000
-    let pageInfo: string | undefined = undefined
-    let totalSynced = 0
-    let pages = 0
+    let cursor: string | null = job.page_info || null
+    let synced = Number(job.customers_synced) || 0
+    let created = Number(job.contacts_linked) || 0
+    let note: string | null = null
 
     try {
       while (Date.now() - START < BUDGET_MS) {
-        let result
-        let attempt = 0
-        while (true) {
-          try {
-            result = await svc.getCustomersPage(pageInfo, 100)
-            break
-          } catch (e: any) {
-            // Shopify rate limit is 429 — back off and retry
-            if (e.status === 429 && attempt < 5) { attempt++; await sleep(attempt * 2000); continue }
-            throw e
-          }
+        const page = await svc.getCustomersPage({ after: cursor, first: 100 })
+        const res = await saveShopifyCustomers(db, companyId, integ.id, page.customers)
+        synced += res.saved
+        created += res.created
+        note = note || hiddenFieldsNote(page.errors)
+        cursor = page.endCursor
+
+        if (!page.hasNextPage) {
+          const now = new Date().toISOString()
+          await db.from('shopify_sync_jobs').update({
+            status: 'done', page_info: null, customers_synced: synced, contacts_linked: created,
+            message: `Synced ${synced} customers${created ? `, ${created} new contacts` : ''}.`, finished_at: now, updated_at: now,
+          }).eq('id', job.id)
+          await db.from('shopify_integrations').update({ last_synced_at: now, last_full_sync_at: now, last_error: note, updated_at: now }).eq('id', integ.id)
+          return NextResponse.json({ ok: true, done: true, jobId: job.id, synced, created, note })
         }
-
-        const rows = (result.customers || []).map((c: any) => ({
-          company_id: companyId,
-          integration_id: integ.id,
-          shopify_customer_id: c.id,
-          email: c.email?.trim() || `shopify-customer-${c.id}@no-email.colvy.internal`,
-          first_name: c.first_name || c.default_address?.first_name || '',
-          last_name: c.last_name || c.default_address?.last_name || '',
-          phone: c.phone || c.default_address?.phone || '',
-          address: c.default_address || null,
-          total_spend: parseFloat(c.total_spent || '0') || 0,
-          total_orders: c.orders_count || 0,
-          synced_at: new Date().toISOString(),
-        }))
-
-        if (rows.length > 0) {
-          const { error } = await db.from('shopify_customers').upsert(rows, { onConflict: 'company_id,shopify_customer_id' })
-          if (error) throw new Error(error.message)
-          totalSynced += rows.length
-        }
-        pages++
-
-        if (job) await db.from('shopify_sync_jobs').update({
-          customers_synced: totalSynced, page_info: result.nextPageInfo || null,
-          message: `Synced ${totalSynced} customers…`, updated_at: new Date().toISOString(),
+        await db.from('shopify_sync_jobs').update({
+          page_info: cursor, customers_synced: synced, contacts_linked: created,
+          message: `Synced ${synced} customers…`, updated_at: new Date().toISOString(),
         }).eq('id', job.id)
-
-        if (!result.nextPageInfo) {
-          // Done
-          if (job) await db.from('shopify_sync_jobs').update({ status: 'done', message: `Synced ${totalSynced} customers.`, updated_at: new Date().toISOString() }).eq('id', job.id)
-          await db.from('shopify_integrations').update({ last_synced_at: new Date().toISOString(), last_full_sync_at: new Date().toISOString() }).eq('id', integ.id)
-          return NextResponse.json({ ok: true, done: true, synced: totalSynced, pages })
-        }
-        pageInfo = result.nextPageInfo
       }
-
-      // Budget exhausted but more remain — client should call again with the cursor.
-      if (job) await db.from('shopify_sync_jobs').update({ status: 'running', message: `Synced ${totalSynced} so far…`, updated_at: new Date().toISOString() }).eq('id', job.id)
       await db.from('shopify_integrations').update({ last_synced_at: new Date().toISOString() }).eq('id', integ.id)
-      return NextResponse.json({ ok: true, done: false, synced: totalSynced, pages, nextPageInfo: pageInfo, jobId: job?.id })
+      return NextResponse.json({ ok: true, done: false, jobId: job.id, synced, created, note })
     } catch (e: any) {
-      if (job) await db.from('shopify_sync_jobs').update({ status: 'error', error: e.message, updated_at: new Date().toISOString() }).eq('id', job.id)
-      return NextResponse.json({ error: e.message }, { status: 500 })
+      // Keep the cursor so a retry resumes rather than restarts.
+      await db.from('shopify_sync_jobs').update({ status: 'error', error: e.message, page_info: cursor, customers_synced: synced, contacts_linked: created, updated_at: new Date().toISOString() }).eq('id', job.id)
+      const reauth = e instanceof ShopifyAuthError && e.reauth
+      return NextResponse.json({ error: e.message, reauth, jobId: job.id }, { status: reauth ? 409 : 500 })
     }
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 })
+    const reauth = err instanceof ShopifyAuthError && err.reauth
+    return NextResponse.json({ error: err.message, reauth }, { status: reauth ? 409 : 500 })
   }
 }

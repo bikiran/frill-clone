@@ -1,187 +1,300 @@
 'use client'
 
 import { authFetch } from '@/lib/auth-fetch'
-import { useState, useEffect } from 'react'
-import { supabase } from '@/lib/supabase'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useState, useEffect, useRef } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { confirmDialog } from '@/components/ConfirmDialog'
-import Link from 'next/link'
-import { Icon } from '@/components/integrations/ui'
+import { useIntegrations } from '@/components/integrations/IntegrationsShell'
+import { IntegrationPage, IntegrationHeader, Card, Notice, Icon, btn, inputCls, inputStyle } from '@/components/integrations/ui'
+
+const fmt = (d?: string | null) => (d ? new Date(d).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : '')
 
 export default function ShopifyIntegrationPage() {
-  const router = useRouter()
-  const searchParams = useSearchParams()
-  const slug = searchParams.get('slug') || ''
+  const params = useSearchParams()
+  const { companyId, ready, setActive } = useIntegrations()
 
-  const [companyId, setCompanyId] = useState<string | null>(null)
   const [stores, setStores] = useState<any[]>([])
+  const [appConfigured, setAppConfigured] = useState(true)
   const [loading, setLoading] = useState(true)
-  const [addingStore, setAddingStore] = useState(false)
-  const [storeDomain, setStoreDomain] = useState('')
-  const [accessToken, setAccessToken] = useState('')
+  const [shop, setShop] = useState(params.get('shop') || '')
+  const [installing, setInstalling] = useState<string | null>(null)
+  const [showToken, setShowToken] = useState(false)
+  const [tokenShop, setTokenShop] = useState('')
+  const [token, setToken] = useState('')
   const [connecting, setConnecting] = useState(false)
-  const [syncing, setSyncing] = useState<string | null>(null)
-  const [error, setError] = useState('')
+  const [adding, setAdding] = useState(false)
+  const [sync, setSync] = useState<Record<string, { running: boolean; synced: number; created: number; note?: string | null }>>({})
+  const [error, setError] = useState(params.get('shopify_error') || '')
   const [success, setSuccess] = useState('')
+  const autoSynced = useRef(false)
 
-  useEffect(() => {
-    const init = async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.user) { router.push('/signin'); return }
-      let cid: string | null = null
-      if (slug) {
-        const { data: co } = await (supabase as any).from('companies').select('id').eq('slug', slug).maybeSingle()
-        cid = co?.id || null
-      }
-      if (!cid) {
-        const { data: ownCo } = await (supabase as any).from('companies').select('id').eq('owner_id', session.user.id).maybeSingle()
-        cid = ownCo?.id || null
-      }
-      setCompanyId(cid)
-      if (cid) await loadStores(cid)
-      setLoading(false)
-    }
-    init()
-  }, [slug])
-
-  const loadStores = async (cid: string) => {
-    try {
-      const res = await authFetch(`/api/shopify/setup?companyId=${cid}`)
-      const data = await res.json()
-      setStores(data.stores || [])
-    } catch {}
+  const load = async (cid: string) => {
+    const res = await authFetch(`/api/shopify/setup?companyId=${cid}`)
+    const d = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(d.error || 'Could not load stores')
+    setStores(d.stores || [])
+    setAppConfigured(d.appConfigured !== false)
+    setActive('shopify', (d.stores || []).some((s: any) => s.is_active))
+    return d.stores || []
   }
 
-  const connect = async (e: React.FormEvent) => {
+  useEffect(() => {
+    if (!ready) return
+    if (!companyId) { setError('Workspace not found. Please sign in again.'); setLoading(false); return }
+    ;(async () => {
+      try {
+        const list = await load(companyId)
+        // Back from Shopify's install screen: say so, and start the first sync.
+        const connected = params.get('shopify') === 'connected' ? params.get('store') : null
+        if (params.get('shopify') || params.get('shopify_error') || params.get('shop')) { try { window.history.replaceState(null, '', '/admin/integrations/shopify') } catch {} }
+        if (connected && !autoSynced.current) {
+          autoSynced.current = true
+          const s = list.find((x: any) => x.id === connected)
+          setSuccess(`${s?.store_name || 'Your store'} is connected. Importing customers now.`)
+          runSync(connected)
+        }
+      } catch (e: any) { setError(e.message) }
+      setLoading(false)
+    })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, companyId])
+
+  // Hand the browser to Shopify's install/consent screen.
+  const install = async (domain: string) => {
+    if (!companyId) return
+    setInstalling(domain || 'new'); setError(''); setSuccess('')
+    try {
+      const res = await authFetch('/api/shopify/install', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId, shop: domain, returnTo: `${window.location.origin}/admin/integrations/shopify` }),
+      })
+      const d = await res.json()
+      if (!res.ok || !d.url) throw new Error(d.error || 'Could not start the install')
+      window.location.href = d.url
+    } catch (e: any) { setError(e.message); setInstalling(null) }
+  }
+
+  const connectWithToken = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!companyId) return
     setConnecting(true); setError(''); setSuccess('')
     try {
       const res = await authFetch('/api/shopify/setup', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ companyId, storeDomain, accessToken }),
+        body: JSON.stringify({ companyId, storeDomain: tokenShop, accessToken: token }),
       })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Could not connect')
-      setSuccess('Shopify store connected!')
-      setStoreDomain(''); setAccessToken(''); setAddingStore(false)
-      await loadStores(companyId)
+      const d = await res.json()
+      if (!res.ok) throw new Error(d.error || 'Could not connect')
+      setToken(''); setTokenShop(''); setShowToken(false); setAdding(false)
+      await load(companyId)
+      setSuccess(`${d.store?.store_name || 'Store'} connected. Importing customers now.`)
+      if (d.store?.id) runSync(d.store.id)
     } catch (e: any) { setError(e.message) } finally { setConnecting(false) }
   }
 
-  const syncStore = async (integrationId: string) => {
+  // Resumable: keep calling with the job id until Shopify has no more pages.
+  const runSync = async (integrationId: string, resumeJobId?: string) => {
     if (!companyId) return
-    setSyncing(integrationId); setError(''); setSuccess('')
+    setError('')
+    setSync(s => ({ ...s, [integrationId]: { running: true, synced: 0, created: 0 } }))
+    let jobId = resumeJobId || undefined
     try {
-      // Loop until the sync reports done (cursor-based, budgeted per call)
-      let done = false, guard = 0
-      while (!done && guard < 40) {
+      for (let i = 0; i < 500; i++) {
         const res = await authFetch('/api/shopify/sync', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ companyId, integrationId }),
+          body: JSON.stringify({ companyId, integrationId, jobId }),
         })
-        const data = await res.json()
-        if (!res.ok) throw new Error(data.error || 'Sync failed')
-        done = data.done
-        guard++
-        if (!done) setSuccess(`Synced ${data.synced} customers so far…`)
+        const d = await res.json().catch(() => ({}))
+        if (!res.ok) throw new Error(d.error || 'Sync failed')
+        jobId = d.jobId
+        setSync(s => ({ ...s, [integrationId]: { running: !d.done, synced: d.synced || 0, created: d.created || 0, note: d.note } }))
+        if (d.done) {
+          setSuccess(`Imported ${d.synced} customer${d.synced === 1 ? '' : 's'}${d.created ? `, ${d.created} new contact${d.created === 1 ? '' : 's'}` : ''}.`)
+          break
+        }
       }
-      setSuccess('Sync complete!')
-      await loadStores(companyId)
-    } catch (e: any) { setError(e.message) } finally { setSyncing(null) }
+    } catch (e: any) {
+      setError(e.message)
+      setSync(s => ({ ...s, [integrationId]: { ...(s[integrationId] || { synced: 0, created: 0 }), running: false } }))
+    }
+    try { await load(companyId) } catch {}
   }
 
-  const removeStore = async (integrationId: string) => {
+  const retryWebhooks = async (integrationId: string) => {
     if (!companyId) return
-    if (!await confirmDialog('Remove this Shopify store? Synced customers stay, but it stops syncing.')) return
-    try {
-      await authFetch('/api/shopify/setup', {
-        method: 'DELETE', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ companyId, integrationId }),
-      })
-      await loadStores(companyId)
-    } catch (e: any) { setError(e.message) }
+    setError(''); setSuccess('')
+    const res = await authFetch('/api/shopify/setup', {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ companyId, integrationId, action: 'webhooks' }),
+    })
+    const d = await res.json().catch(() => ({}))
+    if (!res.ok) setError(d.error || 'Could not set up live updates')
+    else setSuccess('Live updates from Shopify are on.')
+    try { await load(companyId) } catch {}
   }
 
-  if (loading) return <div style={{ padding: 24, color: 'var(--slate)' }}>Loading…</div>
+  const remove = async (s: any) => {
+    if (!companyId) return
+    const ok = await confirmDialog({
+      title: `Remove ${s.store_name || s.store_domain}?`,
+      message: `Colvy stops syncing this store and deletes its imported Shopify customer records. Contacts and conversations stay.${s.auth_type === 'oauth' ? ' To stop Shopify sending anything at all, also uninstall the Colvy app in your Shopify admin.' : ''}`,
+      confirmLabel: 'Remove store', tone: 'danger',
+    })
+    if (!ok) return
+    const res = await authFetch('/api/shopify/setup', {
+      method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ companyId, integrationId: s.id }),
+    })
+    const d = await res.json().catch(() => ({}))
+    if (!res.ok) setError(d.error || 'Could not remove the store')
+    try { await load(companyId) } catch {}
+  }
 
-  return (
-    <div className="w-full max-w-[1200px] mx-auto px-4 md:px-8 py-6 md:py-8">
-      <Link href="/admin/integrations" className="inline-flex items-center gap-1.5 text-sm mb-5 hover:opacity-70 transition-opacity" style={{ color: 'var(--slate)' }}>
-        <Icon name="back" size={15} /> All integrations
-      </Link>
+  if (loading) return <IntegrationPage><div style={{ color: 'var(--slate)', fontSize: 14 }}>Loading…</div></IntegrationPage>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
-        <img src="/logos/shopify.svg" alt="" width={48} height={48} style={{ width: 48, height: 48, flexShrink: 0 }} />
-        <div>
-          <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: 'var(--ink)' }}>Shopify</h1>
-          <p style={{ margin: 0, fontSize: 13, color: 'var(--slate)' }}>Sync your Shopify customers into Colvy</p>
-        </div>
-        {stores.length > 0 && <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, fontWeight: 600, background: '#dcfce7', color: '#15803d', padding: '3px 10px', borderRadius: 20 }}><Icon name="check" size={12} /> {stores.length} store{stores.length > 1 ? 's' : ''}</span>}
-      </div>
+  const anyActive = stores.some(s => s.is_active)
+  const showConnect = !stores.length || adding
 
-      {error && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 10, padding: '10px 14px', marginBottom: 14, fontSize: 13, color: '#dc2626' }}>{error}</div>}
-      {success && <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 10, padding: '10px 14px', marginBottom: 14, fontSize: 13, color: '#059669' }}>{success}</div>}
-
-      {(stores.length === 0 || addingStore) ? (
-        <form onSubmit={connect} style={{ borderRadius: 12, border: '1px solid var(--border)', padding: 24, background: '#fff' }}>
-          {addingStore && <button type="button" onClick={() => setAddingStore(false)} style={{ background: 'none', border: 'none', color: 'var(--slate)', fontSize: 13, cursor: 'pointer', marginBottom: 12, padding: 0 }}>Back to my stores</button>}
-          <h2 style={{ fontSize: 16, fontWeight: 700, marginBottom: 6, color: 'var(--ink)' }}>{addingStore ? 'Add another store' : 'Connect your Shopify store'}</h2>
-
-          <div style={{ background: '#f9fafb', borderRadius: 10, padding: 14, margin: '14px 0', fontSize: 12.5, color: 'var(--slate)', lineHeight: 1.6 }}>
-            <strong style={{ color: 'var(--ink)' }}>How to get your access token:</strong>
-            <ol style={{ margin: '6px 0 0', paddingLeft: 18 }}>
-              <li>In Shopify admin, go to <strong>Settings → Apps and sales channels → Develop apps</strong>.</li>
-              <li>Click <strong>Create an app</strong>, name it "Colvy".</li>
-              <li>Under <strong>Configuration → Admin API</strong>, grant <strong>read_customers</strong> (and <strong>read_orders</strong> if you want order totals).</li>
-              <li>Click <strong>Install app</strong>, then copy the <strong>Admin API access token</strong> (starts with <code>shpat_</code>).</li>
-            </ol>
-          </div>
-
-          <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--ink)', marginBottom: 5 }}>Store domain</label>
-          <input value={storeDomain} onChange={e => setStoreDomain(e.target.value)} placeholder="your-store.myshopify.com" required
-            style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 14, boxSizing: 'border-box', marginBottom: 14 }} />
-
-          <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--ink)', marginBottom: 5 }}>Admin API access token</label>
-          <input type="password" value={accessToken} onChange={e => setAccessToken(e.target.value)} placeholder="shpat_…" required
-            style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 14, boxSizing: 'border-box', marginBottom: 18 }} />
-
-          <button type="submit" disabled={connecting}
-            style={{ padding: '11px 20px', borderRadius: 10, background: '#95BF47', color: '#fff', border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer', opacity: connecting ? 0.7 : 1 }}>
-            {connecting ? 'Connecting…' : 'Connect store'}
+  const connectCard = (
+    <Card title={stores.length ? 'Add another store' : 'Connect your Shopify store'} icon="store"
+      sub="Install the Colvy app on your store. Shopify asks you to approve access, then brings you back here."
+      right={stores.length ? <button type="button" onClick={() => setAdding(false)} {...btn('secondary', 'sm')}>Cancel</button> : undefined}>
+      {appConfigured ? (
+        <form onSubmit={e => { e.preventDefault(); install(shop) }} className="sh-row">
+          <input value={shop} onChange={e => setShop(e.target.value)} placeholder="your-store.myshopify.com" aria-label="Shopify store address"
+            autoCapitalize="none" autoCorrect="off" spellCheck={false} className={inputCls} style={inputStyle} required />
+          <button type="submit" disabled={!!installing} {...btn('primary', 'md', 'sh-install')} style={{ ...btn('primary').style, background: '#008060', borderColor: '#008060' }}>
+            {installing ? 'Opening Shopify…' : 'Install on Shopify'}
           </button>
         </form>
       ) : (
-        <div style={{ borderRadius: 12, border: '1px solid var(--border)', padding: 24, background: 'var(--canvas)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
-            <h2 style={{ fontSize: 16, fontWeight: 700, margin: 0, color: 'var(--ink)' }}>Connected {stores.length > 1 ? `— ${stores.length} stores` : ''}</h2>
-            <button onClick={() => { setAddingStore(true); setStoreDomain(''); setAccessToken('') }}
-              style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid #95BF47', background: '#fff', color: '#5c8a1b', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>+ Add another store</button>
-          </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {stores.map((s: any) => (
-              <div key={s.id} style={{ padding: '14px 16px', background: '#fff', borderRadius: 8, border: '1px solid var(--border)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
-                  <div>
-                    <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: 'var(--ink)' }}>{s.store_name || s.store_domain}</p>
-                    <p style={{ margin: '2px 0 0', fontSize: 12, color: '#888' }}>{s.store_domain}</p>
-                    {s.last_synced_at && <p style={{ margin: '4px 0 0', fontSize: 11.5, color: '#999' }}>Last synced {new Date(s.last_synced_at).toLocaleString()}</p>}
-                  </div>
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    <button onClick={() => syncStore(s.id)} disabled={syncing === s.id}
-                      style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid #95BF47', background: '#eefbe0', color: '#5c8a1b', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
-                      {syncing === s.id ? 'Syncing…' : 'Sync'}
-                    </button>
-                    <button onClick={() => removeStore(s.id)}
-                      style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid #fecaca', background: '#fff', color: '#dc2626', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Remove</button>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+        <Notice tone="info">The Colvy Shopify app isn’t set up on this deployment yet, so the one-click install is unavailable. A store with an older custom app can still connect with its token below.</Notice>
       )}
-    </div>
+      <p className="text-xs" style={{ color: 'var(--slate)', margin: '10px 0 0' }}>
+        Find it in Shopify under Settings → Domains, or in your admin address: admin.shopify.com/store/<strong>your-store</strong>.
+      </p>
+
+      <button type="button" onClick={() => setShowToken(v => !v)} aria-expanded={showToken}
+        className="inline-flex items-center gap-1.5 text-sm font-semibold mt-4" style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'var(--slate)' }}>
+        <Icon name="chevron" size={14} style={{ transform: showToken ? 'rotate(90deg)' : 'none', transition: 'transform .2s ease' }} />
+        Store already has a custom app from before 2026?
+      </button>
+      <div className="sh-reveal" data-open={showToken ? '1' : '0'}>
+        <div style={{ overflow: 'hidden' }}>
+          <form onSubmit={connectWithToken} className="mt-3 p-4 rounded-xl" style={{ background: 'var(--canvas, #f8f8fa)', border: '1px solid var(--border)' }}>
+            <p className="text-sm" style={{ color: 'var(--slate)', margin: '0 0 12px', lineHeight: 1.5 }}>
+              Custom apps made in a store’s Shopify admin before 1 January 2026 still work. Open it under Settings → Apps → Develop apps and copy its Admin API access token (starts with <code>shpat_</code>). Stores connected this way sync when you press Sync, without live updates.
+            </p>
+            <div className="grid gap-2.5" style={{ gridTemplateColumns: '1fr' }}>
+              <input value={tokenShop} onChange={e => setTokenShop(e.target.value)} placeholder="your-store.myshopify.com" aria-label="Store address" className={inputCls} style={inputStyle} required />
+              <input type="password" value={token} onChange={e => setToken(e.target.value)} placeholder="shpat_…" aria-label="Admin API access token" className={inputCls} style={inputStyle} required autoComplete="off" />
+            </div>
+            <button type="submit" disabled={connecting} {...btn('secondary', 'md', 'mt-3')}>{connecting ? 'Connecting…' : 'Connect with token'}</button>
+          </form>
+        </div>
+      </div>
+    </Card>
+  )
+
+  return (
+    <IntegrationPage>
+      <style>{`
+        .sh-row { display: flex; gap: 8px; }
+        .sh-row input { flex: 1; min-width: 0; }
+        .sh-install { white-space: nowrap; }
+        .sh-reveal { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .28s cubic-bezier(.16,1,.3,1); }
+        .sh-reveal[data-open="1"] { grid-template-rows: 1fr; }
+        .sh-bar { height: 6px; border-radius: 99px; background: var(--canvas, #f1f1f4); overflow: hidden; position: relative; }
+        .sh-bar span { position: absolute; inset: 0 auto 0 0; width: 40%; border-radius: 99px; background: #008060; animation: shSlide 1.2s ease-in-out infinite; }
+        @keyframes shSlide { 0% { left: -40%; } 100% { left: 100%; } }
+        .sh-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+        .sh-add-mobile { display: none; }
+        @media (max-width: 560px) {
+          .sh-row { flex-direction: column; }
+          .sh-stats { grid-template-columns: 1fr 1fr; }
+          .sh-stats > :last-child { grid-column: 1 / -1; }
+          .sh-add-desktop { display: none !important; }
+          .sh-add-mobile { display: flex; width: 100%; margin: -8px 0 16px; }
+        }
+        @media (prefers-reduced-motion: reduce) { .sh-reveal, .sh-bar span { transition: none; animation: none; } }
+      `}</style>
+
+      <IntegrationHeader id="shopify" connected={anyActive} badge={stores.length > 1 ? `${stores.length} stores` : 'Connected'}
+        desc="Bring your Shopify customers into Colvy as contacts, kept up to date automatically.">
+        {stores.length > 0 && !adding && (
+          <button type="button" onClick={() => { setAdding(true); setShop('') }} {...btn('secondary', 'sm', 'sh-add-desktop')}><Icon name="plus" size={14} /> Add store</button>
+        )}
+      </IntegrationHeader>
+      {stores.length > 0 && !adding && (
+        <button type="button" onClick={() => { setAdding(true); setShop('') }} {...btn('secondary', 'md', 'sh-add-mobile')}><Icon name="plus" size={14} /> Add another store</button>
+      )}
+
+      {error && <Notice tone="error">{error}</Notice>}
+      {success && <Notice tone="success">{success}</Notice>}
+
+      <div className="flex flex-col gap-4">
+        {showConnect && connectCard}
+
+        {stores.map(s => {
+          const st = sync[s.id]
+          const running = !!st?.running
+          const resumable = !running && s.lastJob && ['running', 'error'].includes(s.lastJob.status)
+          const status = !s.is_active ? { tone: '#b42318', bg: '#fef3f2', text: s.uninstalled_at ? 'App uninstalled in Shopify' : 'Disconnected' }
+            : s.needs_reauth ? { tone: '#b42318', bg: '#fef3f2', text: 'Needs reconnecting' }
+            : { tone: '#067647', bg: '#ecfdf3', text: s.auth_type === 'oauth' ? 'Connected · live updates' : 'Connected · token' }
+          return (
+            <Card key={s.id} icon="store"
+              title={<span className="flex items-center gap-2 flex-wrap">{s.store_name || s.store_domain}
+                <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={{ background: status.bg, color: status.tone }}>{status.text}</span></span>}
+              sub={s.store_domain}>
+              <div className="sh-stats">
+                {[
+                  { n: (running ? st.synced : s.customers || 0).toLocaleString(), l: 'Customers imported' },
+                  { n: (s.linked || 0).toLocaleString(), l: 'Linked to contacts' },
+                  { n: s.last_synced_at ? fmt(s.last_synced_at) : 'Never', l: 'Last sync' },
+                ].map(x => (
+                  <div key={x.l} className="p-3 rounded-xl" style={{ background: 'var(--canvas, #f8f8fa)' }}>
+                    <div className="font-bold" style={{ color: 'var(--ink)', fontSize: 15 }}>{x.n}</div>
+                    <div className="text-xs" style={{ color: 'var(--slate)' }}>{x.l}</div>
+                  </div>
+                ))}
+              </div>
+
+              {running && (
+                <div className="mt-4" role="status" aria-live="polite">
+                  <div className="sh-bar"><span /></div>
+                  <p className="text-xs mt-2" style={{ color: 'var(--slate)', margin: '8px 0 0' }}>
+                    Importing… {st.synced.toLocaleString()} customers so far{st.created ? `, ${st.created.toLocaleString()} new contacts` : ''}. You can leave this page; press Resume to carry on later.
+                  </p>
+                </div>
+              )}
+              {(st?.note || (s.last_error && s.is_active)) && !running && (
+                <div className="mt-4"><Notice tone="info">{st?.note || s.last_error}
+                  {s.auth_type === 'oauth' && s.last_error && /subscrib|webhook/i.test(s.last_error) && (
+                    <> <button type="button" onClick={() => retryWebhooks(s.id)} className="font-semibold underline" style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'inherit' }}>Try again</button></>
+                  )}
+                </Notice></div>
+              )}
+
+              <div className="flex gap-2 flex-wrap mt-4">
+                {(!s.is_active || s.needs_reauth) ? (
+                  appConfigured && <button type="button" onClick={() => install(s.store_domain)} disabled={!!installing} {...btn('primary', 'sm')} style={{ ...btn('primary', 'sm').style, background: '#008060', borderColor: '#008060' }}>
+                    {installing === s.store_domain ? 'Opening Shopify…' : s.uninstalled_at ? 'Reinstall app' : 'Reconnect'}
+                  </button>
+                ) : (
+                  <button type="button" onClick={() => runSync(s.id, resumable ? s.lastJob.id : undefined)} disabled={running} {...btn('secondary', 'sm')}>
+                    <Icon name="sync" size={13} /> {running ? 'Importing…' : resumable ? 'Resume import' : 'Sync now'}
+                  </button>
+                )}
+                {s.is_active && s.auth_type !== 'oauth' && appConfigured && (
+                  <button type="button" onClick={() => install(s.store_domain)} disabled={!!installing} {...btn('secondary', 'sm')}>Switch to the Colvy app</button>
+                )}
+                <button type="button" onClick={() => remove(s)} disabled={running} {...btn('danger', 'sm')}><Icon name="trash" size={13} /> Remove</button>
+              </div>
+            </Card>
+          )
+        })}
+      </div>
+    </IntegrationPage>
   )
 }
