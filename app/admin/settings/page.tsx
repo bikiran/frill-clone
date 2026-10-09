@@ -53,6 +53,17 @@ const SIDEBAR_ITEMS = [
   ]},
 ]
 
+// Shopify's App Store rules: merchants mustn't edit theme code. Shopify stores
+// add Colvy from the theme editor (app embed) instead of pasting the snippet.
+function ShopifyNote() {
+  return (
+    <div className="flex items-start gap-2 mb-3 p-2.5 rounded-lg text-xs" style={{ background: 'var(--canvas, #f8f8fa)', color: 'var(--slate)', lineHeight: 1.5 }}>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#008060" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 1 }} aria-hidden="true"><path d="M5 8h14l-1.2 11.2a2 2 0 0 1-2 1.8H8.2a2 2 0 0 1-2-1.8L5 8z"/><path d="M9 10V6a3 3 0 0 1 6 0v4"/></svg>
+      <span>On Shopify? Don’t paste code into your theme. Turn Colvy on from <Link href="/admin/integrations/shopify" className="font-semibold underline" style={{ color: 'var(--ink)' }}>Integrations → Shopify</Link> → On your store.</span>
+    </div>
+  )
+}
+
 export default function SettingsPage() {
   const router = useRouter()
   const { toasts, showToast, removeToast } = useToast()
@@ -1089,6 +1100,7 @@ export default function SettingsPage() {
                 <div className="p-4 rounded-xl border" style={{ borderColor: 'var(--border)' }}>
                   <p className="text-sm font-semibold mb-1" style={{ color: 'var(--ink)' }}>Feedback widget</p>
                   <p className="text-xs mb-3" style={{ color: 'var(--slate)' }}>Add a floating feedback button to any website. Paste this snippet before {`</body>`}.</p>
+                  <ShopifyNote />
                   {company?.slug && (<>
                     <div className="rounded-lg p-3 font-mono text-xs overflow-x-auto" style={{ background: '#0d0d0d', color: '#a3e635' }}>
                       {`<script src="https://colvy.com/widget.js" data-slug="${company.slug}" async></script>`}
@@ -1583,6 +1595,7 @@ export default function SettingsPage() {
               <div className="mb-5">
                 <p className="text-sm font-semibold mb-2" style={{ color: 'var(--ink)' }}>Embed on your website</p>
                 <p className="text-xs mb-3" style={{ color: 'var(--slate)' }}>Paste this snippet anywhere before the <code>{`</body>`}</code> tag on your website.</p>
+                <ShopifyNote />
                 {company?.slug ? (
                   <>
                     <div className="rounded-xl p-4 font-mono text-xs overflow-x-auto" style={{ background: '#0d0d0d', color: '#a3e635', lineHeight: 1.6 }}>
