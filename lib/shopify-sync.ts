@@ -63,7 +63,8 @@ export async function runImportStep(db: any, integ: any, job: any, svc: ShopifyS
     message: `Importing ${phase}…`, updated_at: new Date().toISOString(), ...extra,
   }).eq('id', job.id)
 
-  while (Date.now() - START < budgetMs) {
+  // At least one page per call, so a tight budget still makes progress.
+  for (let first = true; first || Date.now() - START < budgetMs; first = false) {
     let hasNext = false
     if (phase === 'customers') {
       const page = await svc.getCustomersPage({ after: cursor, first: 100 })
