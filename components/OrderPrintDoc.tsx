@@ -38,7 +38,9 @@ export default function OrderPrintDoc({ doc, companyId, ids, onLoaded }: { doc: 
         // Only for orders still missing it do we pull it live from WooCommerce —
         // and that whole enrichment is time-boxed so a slow store API can't stall
         // the slip; the slip prints with whatever's stored if the note is slow.
-        const needNote = rows.filter((o: any) => !(o.customer_note || o.note) && o.external_order_id).slice(0, 20)
+        // WooCommerce orders only: a Shopify order's note is already stored, and
+        // its id would match an unrelated WooCommerce order.
+        const needNote = rows.filter((o: any) => !(o.customer_note || o.note) && o.external_order_id && (!o.sales_channel || o.sales_channel === 'woocommerce')).slice(0, 20)
         if (needNote.length) {
           const enrich = (async () => {
             const pairs = await Promise.all(needNote.map(async (o: any) => {

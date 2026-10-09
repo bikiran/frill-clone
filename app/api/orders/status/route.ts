@@ -2,6 +2,7 @@ import { isInternalCall } from '@/lib/internal-call'
 import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { resolveShopifyOrderRef, shopifyChangeStatus, ShopifyActionError } from '@/lib/shopify-order-actions'
 
 function admin() {
   return createClient(
@@ -14,9 +15,12 @@ function admin() {
 // POST: update a WooCommerce order's status (e.g. mark paid → completed/processing,
 // or cancel). Marking paid sets set_paid:true which, in WooCommerce, records the
 // payment and reduces stock — so we only do it on explicit staff action.
+// Shopify orders (orderId "shopify-<id>", an `orders` row id, or channel
+// 'shopify') get the same status words applied in Shopify — paid, fulfilled,
+// on hold, cancelled (lib/shopify-order-actions).
 export async function POST(req: NextRequest) {
   try {
-    const { companyId, integrationId, orderId, status, conversationId } = await req.json()
+    const { companyId, integrationId, orderId, status, conversationId, channel, orderRowId, reason } = await req.json()
     if (!companyId || !orderId || !status) return NextResponse.json({ error: 'Missing companyId, orderId or status' }, { status: 400 })
 
     const db = admin()
@@ -26,6 +30,35 @@ export async function POST(req: NextRequest) {
       const { data: owner } = await db.from('conversations').select('company_id').eq('id', conversationId).maybeSingle()
       if (!owner || owner.company_id !== companyId) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     }
+    // The note posted in the thread once the change is made (either store).
+    const postNote = async (number: string) => {
+      if (!conversationId) return
+      try {
+        const label = status === 'cancelled' ? 'cancelled' : status === 'completed' ? 'marked paid & completed' : `set to ${status}`
+        const content = `🛒 Order #${number} ${label}.`
+        const { data: dup } = await db.from('messages').select('id')
+          .eq('conversation_id', conversationId).eq('sender_type', 'system').eq('content', content)
+          .gte('created_at', new Date(Date.now() - 10 * 60 * 1000).toISOString()).limit(1)
+        if (!dup || dup.length === 0) {
+          await db.from('messages').insert({
+            conversation_id: conversationId, company_id: companyId, sender_type: 'system',
+            content, is_read: true,
+          })
+        }
+      } catch {}
+    }
+
+    try {
+      const shop = await resolveShopifyOrderRef(db, companyId, { orderId, channel, orderRowId })
+      if (shop) {
+        const r = await shopifyChangeStatus(db, shop, status, { reason })
+        await postNote(String(r.order?.name || shop.row?.order_number || shop.externalId).replace(/^#/, ''))
+        return NextResponse.json({ ok: true, status: r.status, channel: 'shopify' })
+      }
+    } catch (e: any) {
+      return NextResponse.json({ error: e.message }, { status: e instanceof ShopifyActionError ? e.status : 502 })
+    }
+
     let integ: any = null
     if (integrationId) {
       const r = await db.from('woocommerce_integrations').select('*').eq('id', integrationId).eq('company_id', companyId).maybeSingle()
@@ -55,23 +88,9 @@ export async function POST(req: NextRequest) {
     if (!result.ok || !result.order) return NextResponse.json({ error: result.error }, { status: 502 })
 
     // Post a system note in the conversation — but only once. A double-click or a
-    // retriggered status change was inserting the same pill twice, so skip it if
-    // an identical system line already landed on this thread in the last 10 min.
-    if (conversationId) {
-      try {
-        const label = status === 'cancelled' ? 'cancelled' : status === 'completed' ? 'marked paid & completed' : `set to ${status}`
-        const content = `🛒 Order #${result.order.number || orderId} ${label}.`
-        const { data: dup } = await db.from('messages').select('id')
-          .eq('conversation_id', conversationId).eq('sender_type', 'system').eq('content', content)
-          .gte('created_at', new Date(Date.now() - 10 * 60 * 1000).toISOString()).limit(1)
-        if (!dup || dup.length === 0) {
-          await db.from('messages').insert({
-            conversation_id: conversationId, company_id: companyId, sender_type: 'system',
-            content, is_read: true,
-          })
-        }
-      } catch {}
-    }
+    // retriggered status change was inserting the same pill twice, so postNote
+    // skips it if an identical system line landed in the last 10 minutes.
+    await postNote(String(result.order.number || orderId))
 
     return NextResponse.json({ ok: true, status: result.order.status })
   } catch (err: any) {

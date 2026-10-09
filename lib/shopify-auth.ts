@@ -25,7 +25,8 @@ import crypto from 'crypto'
 // later phases don't send every merchant back through a re-consent screen.
 export const SHOPIFY_SCOPES = [
   'read_customers', 'write_customers',
-  'read_orders', 'write_orders',
+  'read_orders', 'write_orders', 'write_order_edits',
+  'read_merchant_managed_fulfillment_orders', 'write_merchant_managed_fulfillment_orders',
   'read_draft_orders', 'write_draft_orders',
   'read_products', 'read_inventory', 'read_locations',
   'read_discounts', 'write_discounts',

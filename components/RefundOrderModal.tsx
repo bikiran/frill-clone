@@ -19,7 +19,10 @@ export default function RefundOrderModal({
   onClose: () => void
   onDone?: (amount: number) => void
 }) {
-  const orderId = order.external_order_id || order.order_id || order.id
+  // A Shopify order is refunded through Shopify — the routes recognise "shopify-<id>".
+  const orderId = order.sales_channel === 'shopify' && order.external_order_id
+    ? `shopify-${order.external_order_id}`
+    : order.external_order_id || order.order_id || order.id
   const currency = order.currency || 'AUD'
   const [loading, setLoading] = useState(true)
   const [items, setItems] = useState<RItem[]>([])

@@ -261,12 +261,12 @@ export const ASSISTANT_TOOLS: ToolDef[] = [
   },
   {
     name: 'update_order_status', safety: 'confirm',
-    description: "Change an order's status in the store (WooCommerce). REQUIRES confirmation. Use for 'mark this order completed / on hold / processing'. To cancel use cancel_order; to refund use refund_order.",
+    description: "Change an order's status in the store (WooCommerce or Shopify). REQUIRES confirmation. Use for 'mark this order completed / on hold / processing'. On Shopify, completed = marked paid and fulfilled, on-hold = fulfilment put on hold. To cancel use cancel_order; to refund use refund_order.",
     input_schema: {
       type: 'object',
       properties: {
         orderId: { type: 'string', description: 'order id or order number' },
-        status: { type: 'string', enum: ['processing', 'completed', 'on-hold'], description: 'the WooCommerce status to set' },
+        status: { type: 'string', enum: ['processing', 'completed', 'on-hold'], description: 'the status to set (WooCommerce words; mapped for Shopify)' },
       },
       required: ['orderId', 'status'],
     },
@@ -456,13 +456,14 @@ function reportWindow(range: string): { start: string | null; end: string | null
 
 // Resolve an order the user names — by our local id, or by the human order
 // number (RA-10284). Scoped to the caller's company.
-// Status changes and refunds go through the WooCommerce routes. An order from
-// another channel (Shopify, POS) must not be sent there — its id means nothing
-// to WooCommerce, or worse, matches a different order.
-const notWooOrder = (o: any) => !!o?.sales_channel && o.sales_channel !== 'woocommerce'
-const notWooMessage = (o: any, refund: boolean) => o?.sales_channel === 'shopify'
-  ? `That's a Shopify order — ${refund ? 'refund it' : 'change its status'} in Shopify for now. Doing it from Colvy is coming soon.`
-  : `That order came from ${o?.sales_channel || 'another channel'}, so it can't be ${refund ? 'refunded' : 'changed'} through the store from here.`
+// Status changes and refunds go through the store routes — WooCommerce, or
+// Shopify for a Shopify order (the routes take "shopify-<id>", see storeRef).
+// An order from another channel (POS, manual) must not be sent there — its id
+// means nothing to the store, or worse, matches a different order.
+const notWooOrder = (o: any) => !!o?.sales_channel && !['woocommerce', 'shopify'].includes(o.sales_channel)
+const notWooMessage = (o: any, refund: boolean) =>
+  `That order came from ${o?.sales_channel || 'another channel'}, so it can't be ${refund ? 'refunded' : 'changed'} through the store from here.`
+const storeRef = (o: any) => o?.sales_channel === 'shopify' ? `shopify-${o.external_order_id}` : o.external_order_id
 
 async function resolveOrder(db: any, companyId: string, ref: string): Promise<any | null> {
   const r = String(ref || '').trim()
@@ -1142,7 +1143,7 @@ export async function executeAction(db: SupabaseClient, ctx: AssistantContext, n
     try {
       const res = await fetch(`${base}/api/orders/status`, {
         method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify({ companyId: ctx.companyId, orderId: order.external_order_id, status: wooStatus, conversationId: order.conversation_id || undefined }),
+        body: JSON.stringify({ companyId: ctx.companyId, orderId: storeRef(order), status: wooStatus, conversationId: order.conversation_id || undefined }),
       })
       const data = await res.json().catch(() => ({}))
       ok = res.ok && data?.ok !== false
@@ -1150,8 +1151,9 @@ export async function executeAction(db: SupabaseClient, ctx: AssistantContext, n
     } catch (e: any) { err = e?.message || 'Store update failed' }
     if (!ok) return { ok: false, error: err }
 
-    // Reflect it locally straight away (the Woo webhook will also sync back).
-    try { await D.from('orders').update({ status: mapWooStatus(wooStatus), payment_status: ['processing', 'completed'].includes(wooStatus) ? 'paid' : order.payment_status, updated_at: new Date().toISOString() }).eq('id', order.id) } catch {}
+    // Reflect it locally straight away (the Woo webhook will also sync back;
+    // the Shopify route has already re-read the order from Shopify).
+    if (order.sales_channel !== 'shopify') try { await D.from('orders').update({ status: mapWooStatus(wooStatus), payment_status: ['processing', 'completed'].includes(wooStatus) ? 'paid' : order.payment_status, updated_at: new Date().toISOString() }).eq('id', order.id) } catch {}
 
     const label = wooStatus === 'cancelled' ? 'cancelled' : wooStatus === 'completed' ? 'marked paid & completed' : wooStatus === 'processing' ? 'set to processing' : 'put on hold'
     const card = { kind: 'order', title: `Order ${order.order_number || ''} ${label}`.trim(), lines: [order.customer_name, money(order.total, order.currency)].filter(Boolean), href: '/admin/orders' }
@@ -1189,7 +1191,7 @@ export async function executeAction(db: SupabaseClient, ctx: AssistantContext, n
     try {
       const res = await fetch(`${base}/api/orders/refund`, {
         method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify({ companyId: ctx.companyId, orderId: order.external_order_id, amount: amount != null ? String(amount) : undefined, reason: args?.reason || undefined, conversationId: order.conversation_id || undefined }),
+        body: JSON.stringify({ companyId: ctx.companyId, orderId: storeRef(order), amount: amount != null ? String(amount) : undefined, reason: args?.reason || undefined, conversationId: order.conversation_id || undefined }),
       })
       const data = await res.json().catch(() => ({}))
       ok = res.ok && data?.ok !== false
@@ -1198,7 +1200,7 @@ export async function executeAction(db: SupabaseClient, ctx: AssistantContext, n
     if (!ok) return { ok: false, error: err }
 
     const full = amount == null || amount >= Number(order.total || 0)
-    try { await D.from('orders').update({ payment_status: 'refunded', ...(full ? { status: 'refunded' } : {}), updated_at: new Date().toISOString() }).eq('id', order.id) } catch {}
+    if (order.sales_channel !== 'shopify') try { await D.from('orders').update({ payment_status: 'refunded', ...(full ? { status: 'refunded' } : {}), updated_at: new Date().toISOString() }).eq('id', order.id) } catch {}
 
     const refunded = amount != null ? money(amount, order.currency) : money(order.total, order.currency)
     const card = { kind: 'order', title: `Refunded ${refunded}`, lines: [`Order ${order.order_number || ''}`.trim(), order.customer_name].filter(Boolean), href: '/admin/orders' }

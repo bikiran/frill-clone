@@ -141,7 +141,7 @@ export async function upsertShopifyOrder(db: any, companyId: string, o: any, opt
   const src = sourceFields(companyId, o, cid)
   const ext = src.external_order_id
 
-  const { data: prev } = await db.from('orders').select('id, status, shipped_at, contact_id')
+  const { data: prev } = await db.from('orders').select('id, status, shipped_at, contact_id, metadata')
     .eq('company_id', companyId).eq('sales_channel', 'shopify').eq('external_order_id', ext).maybeSingle()
 
   let orderId: string
@@ -149,6 +149,13 @@ export async function upsertShopifyOrder(db: any, companyId: string, o: any, opt
   const refunded = upper(o.displayFinancialStatus) === 'REFUNDED'
   if (prev?.id) {
     const patch: any = { ...src }
+    // Keep the refunded total current (the panel's "Partially refunded").
+    const refundedNow = parseFloat(o.totalRefundedSet?.shopMoney?.amount) || 0
+    const pm = prev.metadata || {}
+    const shopNow = pm.shopify?.shop || opts.shop || opts.svc?.shop || null
+    if (Number(pm.shopify?.refunded || 0) !== refundedNow || (shopNow && !pm.shopify?.shop)) {
+      patch.metadata = { ...pm, shopify: { ...(pm.shopify || {}), shop: shopNow, refunded: refundedNow } }
+    }
     if (o.cancelledAt) {
       if (prev.status !== 'cancelled') patch.status = 'cancelled'
     } else if (refunded) {
@@ -180,7 +187,7 @@ export async function upsertShopifyOrder(db: any, companyId: string, o: any, opt
       fulfilment_status: ful === 'FULFILLED' ? 'fulfilled' : 'unfulfilled',
       flagged: mapPayment(o) === 'failed' || ful === 'ON_HOLD',
       ...(st === 'shipped' ? { shipped_at: new Date().toISOString() } : {}),
-      metadata: { shopify: { shop: opts.shop || opts.svc?.shop || null, status_url: o.statusPageUrl || null, test: !!o.test } },
+      metadata: { shopify: { shop: opts.shop || opts.svc?.shop || null, status_url: o.statusPageUrl || null, test: !!o.test, refunded: parseFloat(o.totalRefundedSet?.shopMoney?.amount) || 0 } },
     }], 'id')
     if (!ins[0]?.id) return null
     orderId = ins[0].id
