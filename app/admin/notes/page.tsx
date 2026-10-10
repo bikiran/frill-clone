@@ -9,7 +9,7 @@ import RichTextEditor from '@/components/RichTextEditor'
 import AttachmentUploader from '@/components/AttachmentUploader'
 import GalleryPicker from '@/components/GalleryPicker'
 import VoiceRecorder from '@/components/VoiceRecorder'
-import AudioDock from '@/components/AudioDock'
+import AudioDock, { playAudio } from '@/components/AudioDock'
 import VoiceBlocks from '@/components/VoiceBlocks'
 import NoteComments from '@/components/NoteComments'
 import ChecklistProductPicker, { type PickerProduct } from '@/components/ChecklistProductPicker'
@@ -946,7 +946,7 @@ export default function NotesPage() {
                   return (
                     <div key={gi} data-vrow style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '9px 12px', border: '1px solid var(--border)', borderRadius: 12, marginBottom: 8, background: '#fff', boxShadow: '0 1px 2px rgba(0,0,0,0.03)' }}>
                       {/* Play feeds the bottom AudioDock (no inline player). */}
-                      <button title="Play" onClick={e => { const r = e.currentTarget.closest('[data-vrow]'); (r?.querySelector('audio') as HTMLAudioElement)?.play().catch(() => {}) }}
+                      <button title="Play" onClick={e => { const r = e.currentTarget.closest('[data-vrow]'); playAudio(r?.querySelector('audio') as HTMLAudioElement) }}
                         style={{ flexShrink: 0, width: 34, height: 34, borderRadius: '50%', border: 'none', background: 'var(--coral)', color: '#fff', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
                         <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor" style={{ marginLeft: 1 }}><path d="M7 5.5v13a1 1 0 0 0 1.5.87l11-6.5a1 1 0 0 0 0-1.74l-11-6.5A1 1 0 0 0 7 5.5z"/></svg>
                       </button>
