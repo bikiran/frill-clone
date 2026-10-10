@@ -1,8 +1,10 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import AddressAutocomplete from '@/components/AddressAutocomplete'
+import ProductResults, { useProductSearch } from '@/components/ProductResults'
 import { authFetch } from '@/lib/auth-fetch'
+import { supabase } from '@/lib/supabase'
 
 type Item = {
   key: string
@@ -20,7 +22,7 @@ type Item = {
 
 const GST_RATE = 0.10 // Australia
 
-export default function CreateOrderPanel({ companyId, conversationId, contactId, contact, staffName, staffId, prefillCart, channel, channelLabel, onDeliver, onClose, onCreated }: {
+export default function CreateOrderPanel({ companyId, conversationId, contactId, contact, staffName, staffId, prefillCart, draft, channel, channelLabel, onDeliver, onClose, onCreated, onDraftSaved }: {
   companyId: string
   conversationId?: string | null
   contactId?: string | null
@@ -28,11 +30,14 @@ export default function CreateOrderPanel({ companyId, conversationId, contactId,
   staffName?: string
   staffId?: string
   prefillCart?: any
+  // A saved draft (order_drafts row) to reopen and keep editing.
+  draft?: any
   channel?: string | null
   channelLabel?: string | null
   onDeliver?: (opts: { body: string; url?: string | null; subject?: string }) => Promise<string>
   onClose: () => void
   onCreated?: (order: any) => void
+  onDraftSaved?: (draft: any) => void
 }) {
   const [sendState, setSendState] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle')
   const [sendMsg, setSendMsg] = useState('')
@@ -59,10 +64,17 @@ export default function CreateOrderPanel({ companyId, conversationId, contactId,
   // Products
   const [items, setItems] = useState<Item[]>([])
   const [search, setSearch] = useState('')
-  const [results, setResults] = useState<any[]>([])
-  const [searching, setSearching] = useState(false)
-  const [variationFor, setVariationFor] = useState<any>(null)
-  const [variations, setVariations] = useState<any[]>([])
+
+  // Customer search (contacts in this workspace)
+  const [custQuery, setCustQuery] = useState('')
+  const [custResults, setCustResults] = useState<any[]>([])
+  const [custSearching, setCustSearching] = useState(false)
+  const [picked, setPicked] = useState<any>(contact || null)
+
+  // Drafts
+  const [draftId, setDraftId] = useState<string | null>(draft?.id || null)
+  const [draftState, setDraftState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [draftMsg, setDraftMsg] = useState('')
 
   // Discounts / fees / shipping
   const [couponCode, setCouponCode] = useState('')
@@ -97,7 +109,8 @@ export default function CreateOrderPanel({ companyId, conversationId, contactId,
         setSources(data.sources || [])
         setLocations(data.locations || [])
         const firstWoo = (data.sources || []).find((s: any) => s.platform === 'woocommerce')
-        const chosen = firstWoo || (data.sources || [])[0] || null
+        const fromDraft = draft?.payload?.source_id ? (data.sources || []).find((s: any) => s.id === draft.payload.source_id) : null
+        const chosen = fromDraft || firstWoo || (data.sources || [])[0] || null
         setSource(chosen)
         // Fetch shipping methods in the background — don't block the panel.
         if (chosen?.platform === 'woocommerce') {
@@ -128,36 +141,66 @@ export default function CreateOrderPanel({ companyId, conversationId, contactId,
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prefillCart])
 
-  // Debounced product search
+  // Reopen a saved draft exactly as it was left.
+  const restored = useRef(false)
   useEffect(() => {
-    if (!source || !['woocommerce', 'shopify'].includes(source.platform)) return
-    if (search.trim().length < 2) { setResults([]); return }
-    const t = setTimeout(async () => {
-      setSearching(true)
-      try {
-        const res = await authFetch(`/api/orders/products?companyId=${companyId}&integrationId=${source.id}&q=${encodeURIComponent(search.trim())}`)
-        const data = await res.json()
-        setResults(data.products || [])
-      } catch {} finally { setSearching(false) }
-    }, 350)
-    return () => clearTimeout(t)
-  }, [search, source, companyId])
+    if (!draft?.payload || restored.current) return
+    restored.current = true
+    const d = draft.payload
+    if (d.cust) setCust((c: any) => ({ ...c, ...d.cust }))
+    if (Array.isArray(d.items)) setItems(d.items)
+    if (d.picked) setPicked(d.picked)
+    setCouponCode(d.couponCode || ''); setAppliedCoupon(d.appliedCoupon || null)
+    setOrderDiscType(d.orderDiscType || 'fixed'); setOrderDiscAmount(d.orderDiscAmount || ''); setOrderDiscLabel(d.orderDiscLabel || '')
+    setFees(Array.isArray(d.fees) ? d.fees : [])
+    setShipMethod(d.shipMethod || 'flat'); setShipLabel(d.shipLabel || 'Shipping'); setShipCost(d.shipCost || '')
+    setPickupLocationId(d.pickupLocationId || '')
+    setCustomerNote(d.customerNote || ''); setInternalNote(d.internalNote || '')
+    if (d.status) setStatus(d.status)
+  }, [draft])
 
-  const addProduct = async (p: any) => {
-    if (p.has_variations) {
-      setVariationFor(p)
-      const res = await authFetch(`/api/orders/products?companyId=${companyId}&integrationId=${source.id}&productId=${p.id}`)
-      const data = await res.json()
-      setVariations(data.variations || [])
-      return
+  // Products: searched on the device from the synced catalogue.
+  const productSearchOn = !!source && ['woocommerce', 'shopify'].includes(source.platform)
+  const { results, loading: searching } = useProductSearch(companyId, search, { integrationId: source?.id || null, enabled: productSearchOn })
+
+  const addProduct = (p: any, v?: any) => {
+    if (v) {
+      setItems(prev => [...prev, { key: `${p.id}-${v.id}-${Date.now()}`, product_id: p.id, variation_id: v.id, name: v.attributes ? `${p.name} (${v.attributes})` : p.name, sku: v.sku || p.sku, price: v.price || '0', quantity: 1, image: v.image || p.image, stock_status: v.stock_status }])
+    } else {
+      setItems(prev => [...prev, { key: `${p.id}-${Date.now()}`, product_id: p.id, name: p.name, sku: p.sku, price: p.price || '0', quantity: 1, image: p.image, stock_status: p.stock_status }])
     }
-    setItems(prev => [...prev, { key: `${p.id}-${Date.now()}`, product_id: p.id, name: p.name, sku: p.sku, price: p.price || '0', quantity: 1, image: p.image, stock_status: p.stock_status }])
-    setSearch(''); setResults([])
+    setSearch('')
   }
 
-  const addVariation = (v: any) => {
-    setItems(prev => [...prev, { key: `${variationFor.id}-${v.id}-${Date.now()}`, product_id: variationFor.id, variation_id: v.id, name: `${variationFor.name} (${v.attributes})`, sku: v.sku, price: v.price || '0', quantity: 1, image: v.image || variationFor.image, stock_status: v.stock_status }])
-    setVariationFor(null); setVariations([]); setSearch(''); setResults([])
+  // Customer search: name, email or phone, from this workspace's contacts.
+  useEffect(() => {
+    const q = custQuery.trim().replace(/[%,()]/g, ' ').trim()
+    if (q.length < 2) { setCustResults([]); setCustSearching(false); return }
+    setCustSearching(true)
+    const t = setTimeout(async () => {
+      try {
+        const digits = q.replace(/\D/g, '')
+        const ors = [`name.ilike.%${q}%`, `email.ilike.%${q}%`]
+        if (digits.length >= 3) ors.push(`phone.ilike.%${digits.slice(-9)}%`)
+        const { data } = await (supabase as any).from('contacts')
+          .select('id, name, email, phone, address, city, suburb, state, postcode, woo_customer_id')
+          .eq('company_id', companyId).or(ors.join(',')).order('updated_at', { ascending: false }).limit(8)
+        setCustResults(data || [])
+      } catch { setCustResults([]) } finally { setCustSearching(false) }
+    }, 250)
+    return () => clearTimeout(t)
+  }, [custQuery, companyId])
+
+  const pickCustomer = (c: any) => {
+    const parts = String(c.name || '').trim().split(/\s+/)
+    setPicked(c)
+    setCust(prev => ({
+      ...prev,
+      first_name: parts[0] || '', last_name: parts.slice(1).join(' '),
+      email: c.email || '', phone: c.phone || '',
+      address_1: c.address || '', city: c.suburb || c.city || '', state: c.state || '', postcode: c.postcode || '',
+    }))
+    setCustQuery(''); setCustResults([])
   }
 
   const addCustomItem = () => {
@@ -205,8 +248,8 @@ export default function CreateOrderPanel({ companyId, conversationId, contactId,
       const res = await authFetch('/api/orders/create', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          companyId, integrationId: source?.id, conversationId, contactId, source: source?.platform,
-          customer: { existingId: source?.platform === 'woocommerce' ? contact?.woo_customer_id : undefined, createAccount: cust.createAccount, email: cust.email, first_name: cust.first_name, last_name: cust.last_name, phone: cust.phone, billing, shipping },
+          companyId, integrationId: source?.id, conversationId, contactId: picked?.id || contactId, source: source?.platform,
+          customer: { existingId: source?.platform === 'woocommerce' ? (picked?.woo_customer_id ?? contact?.woo_customer_id) : undefined, createAccount: cust.createAccount, email: cust.email, first_name: cust.first_name, last_name: cust.last_name, phone: cust.phone, billing, shipping },
           items: items.map(it => ({ product_id: it.product_id, variation_id: it.variation_id, quantity: it.quantity, name: it.name, price: it.price, custom_price: it.custom_price, custom_name: it.product_id ? undefined : it.name })),
           coupons: appliedCoupon ? [appliedCoupon.code] : [],
           orderDiscount: orderDiscAmount ? { type: 'fixed', amount: orderDiscountValue.toFixed(2), label: orderDiscLabel || 'Discount' } : null,
@@ -229,7 +272,38 @@ export default function CreateOrderPanel({ companyId, conversationId, contactId,
       if (!res.ok) throw new Error(data.error || 'Could not create order')
       setResult({ ...data.order, withPaymentLink })
       onCreated?.(data.order)
+      // The draft became a real order.
+      if (draftId) { try { await (supabase as any).from('order_drafts').delete().eq('id', draftId) } catch {} }
     } catch (e: any) { setError(e.message) } finally { setCreating(false) }
+  }
+
+  // Keep the half-built order in Colvy (Orders → Drafts) to finish later.
+  const saveDraft = async () => {
+    setDraftState('saving'); setDraftMsg('')
+    const name = `${cust.first_name} ${cust.last_name}`.trim()
+    const row: any = {
+      company_id: companyId, contact_id: picked?.id || contactId || null, conversation_id: conversationId || null,
+      customer_name: name || null, customer_email: cust.email || null,
+      item_count: items.reduce((n, it) => n + (it.quantity || 1), 0), total: Number(total.toFixed(2)),
+      payload: {
+        source_id: source?.id || null, cust, items, picked: picked ? { id: picked.id, name: picked.name, email: picked.email, phone: picked.phone, woo_customer_id: picked.woo_customer_id ?? null } : null,
+        couponCode, appliedCoupon, orderDiscType, orderDiscAmount, orderDiscLabel, fees,
+        shipMethod, shipLabel, shipCost, pickupLocationId, customerNote, internalNote, status,
+      },
+      updated_by_name: staffName || null, updated_at: new Date().toISOString(),
+    }
+    try {
+      const q = draftId
+        ? (supabase as any).from('order_drafts').update(row).eq('id', draftId).select().single()
+        : (supabase as any).from('order_drafts').insert({ ...row, created_by: staffId || null, created_by_name: staffName || null }).select().single()
+      const { data, error } = await q
+      if (error) throw error
+      setDraftId(data.id); setDraftState('saved'); setDraftMsg('Draft saved. Find it under Orders → Drafts.')
+      onDraftSaved?.(data)
+    } catch (e: any) {
+      setDraftState('error')
+      setDraftMsg(/order_drafts/.test(String(e?.message || '')) ? 'Drafts need a one-time database update (COLVY_V346_ORDER_DRAFTS.sql).' : `Could not save the draft: ${e?.message || 'try again'}`)
+    }
   }
 
   const L: React.CSSProperties = { display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--ink)', marginBottom: 4, marginTop: 12 }
@@ -240,14 +314,16 @@ export default function CreateOrderPanel({ companyId, conversationId, contactId,
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 10000, display: 'flex', justifyContent: 'flex-end' }} onClick={onClose}>
       <div onClick={e => e.stopPropagation()} style={{ width: 480, maxWidth: '100%', height: '100%', background: '#fff', overflowY: 'auto', boxShadow: '-8px 0 32px rgba(0,0,0,0.2)' }}>
         <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'sticky', top: 0, background: '#fff', zIndex: 3 }}>
-          <h2 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: 'var(--ink)' }}>🛒 Create Order</h2>
+          <h2 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: 'var(--ink)' }}>{draft ? 'Edit draft order' : 'Create Order'}</h2>
           <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: 'var(--slate)' }}>✕</button>
         </div>
 
         <div style={{ padding: 20 }}>
           {result ? (
             <div style={{ textAlign: 'center', padding: '20px 6px' }}>
-              <div style={{ fontSize: 40, marginBottom: 10 }}>🛒</div>
+              <div style={{ width: 56, height: 56, margin: '0 auto 12px', borderRadius: '50%', background: '#dcfce7', color: '#15803d', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+              </div>
               <p style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink)' }}>Order #{result.number} created</p>
               <p style={{ fontSize: 13.5, color: 'var(--slate)', marginTop: 4 }}>{result.currency || 'AUD'} {money(parseFloat(result.total) || 0)} · {result.status}</p>
               {result.withPaymentLink && result.pay_link && (
@@ -299,7 +375,7 @@ export default function CreateOrderPanel({ companyId, conversationId, contactId,
                   <label style={L}>Store</label>
                   <select value={source.id} onChange={e => {
                     const next = sources.find(s => s.id === e.target.value)
-                    setSource(next); setResults([]); setShippingMethods([]); setAppliedCoupon(null)
+                    setSource(next); setSearch(''); setShippingMethods([]); setAppliedCoupon(null)
                     // Store shipping methods are WooCommerce's; Shopify uses the options below.
                     if (next?.platform === 'woocommerce') authFetch(`/api/orders/shipping?companyId=${companyId}&integrationId=${next.id}`).then(r => r.json()).then(d => setShippingMethods(d.shippingMethods || [])).catch(() => {})
                   }} style={I}>
@@ -317,13 +393,45 @@ export default function CreateOrderPanel({ companyId, conversationId, contactId,
               <div style={{ marginTop: 16, border: '1px solid var(--border)', borderRadius: 12, padding: 14 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <p style={{ margin: 0, fontSize: 12.5, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase' }}>Customer</p>
-                  <button onClick={() => setEditingCustomer(v => !v)} style={{ background: 'none', border: 'none', color: 'var(--coral)', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>{editingCustomer ? 'Done' : 'Edit'}</button>
+                  <button onClick={() => setEditingCustomer(v => !v)} style={{ background: 'none', border: 'none', color: 'var(--coral)', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>{editingCustomer ? 'Done' : (cust.first_name || cust.email ? 'Edit' : 'New customer')}</button>
+                </div>
+                <div style={{ position: 'relative', marginTop: 10 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, border: '1px solid var(--border)', borderRadius: 10, padding: '8px 11px', background: '#fff' }}>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+                    <input value={custQuery} onChange={e => setCustQuery(e.target.value)} placeholder="Search customers by name, email or phone…"
+                      style={{ flex: 1, border: 'none', outline: 'none', fontSize: 13.5, background: 'transparent', color: 'var(--ink)', fontFamily: 'inherit', minWidth: 0 }} />
+                    {custQuery && <button type="button" onClick={() => setCustQuery('')} aria-label="Clear" style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--slate)', fontSize: 16, lineHeight: 1, padding: 0 }}>×</button>}
+                  </div>
+                  {custQuery.trim().length >= 2 && (
+                    <div className="co-pop" style={{ position: 'absolute', left: 0, right: 0, top: 'calc(100% + 6px)', zIndex: 5, background: '#fff', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 12px 32px rgba(0,0,0,.12)', padding: 4, maxHeight: 280, overflowY: 'auto' }}>
+                      {custSearching && custResults.length === 0 && <p style={{ margin: 0, padding: '10px 12px', fontSize: 12.5, color: 'var(--slate)' }}>Searching…</p>}
+                      {!custSearching && custResults.length === 0 && (
+                        <button type="button" onClick={() => { const q = custQuery.trim(); setCust(c => ({ ...c, ...(q.includes('@') ? { email: q, first_name: '', last_name: '' } : /^[+\d\s()-]+$/.test(q) ? { phone: q, first_name: '', last_name: '' } : { first_name: q.split(' ')[0], last_name: q.split(' ').slice(1).join(' '), email: '', phone: '' }) })); setPicked(null); setCustQuery(''); setEditingCustomer(true) }}
+                          className="prd-row" style={{ display: 'block', width: '100%', textAlign: 'left', padding: '10px 12px', border: 'none', background: 'none', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 700, color: 'var(--coral)' }}>
+                          + New customer &ldquo;{custQuery.trim()}&rdquo;
+                        </button>
+                      )}
+                      {custResults.map(c => (
+                        <button type="button" key={c.id} onClick={() => pickCustomer(c)} className="prd-row"
+                          style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left', padding: '8px 10px', border: 'none', background: 'none', borderRadius: 8, cursor: 'pointer' }}>
+                          <span style={{ width: 30, height: 30, borderRadius: '50%', background: 'var(--peach)', color: 'var(--coral)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 12.5, fontWeight: 800, flexShrink: 0 }}>{String(c.name || c.email || '?').trim().charAt(0).toUpperCase()}</span>
+                          <span style={{ flex: 1, minWidth: 0 }}>
+                            <span style={{ display: 'block', fontSize: 13, fontWeight: 700, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name || c.email || c.phone}</span>
+                            <span style={{ display: 'block', fontSize: 11.5, color: 'var(--slate)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{[c.email, c.phone].filter(Boolean).join(' · ') || 'No contact details'}</span>
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 {!editingCustomer ? (
-                  <div style={{ marginTop: 6, fontSize: 13.5, color: 'var(--ink)' }}>
-                    <div style={{ fontWeight: 600 }}>{cust.first_name} {cust.last_name}</div>
-                    <div style={{ color: 'var(--slate)', fontSize: 12.5 }}>{cust.email || 'no email'}{cust.phone ? ` · ${cust.phone}` : ''}</div>
-                  </div>
+                  (cust.first_name || cust.last_name || cust.email || cust.phone) ? (
+                    <div style={{ marginTop: 10, fontSize: 13.5, color: 'var(--ink)' }}>
+                      <div style={{ fontWeight: 600 }}>{cust.first_name} {cust.last_name}</div>
+                      <div style={{ color: 'var(--slate)', fontSize: 12.5 }}>{cust.email || 'No email'}{cust.phone ? ` · ${cust.phone}` : ''}</div>
+                      {(cust.address_1 || cust.city) && <div style={{ color: 'var(--slate)', fontSize: 12.5 }}>{[cust.address_1, cust.city, cust.state, cust.postcode].filter(Boolean).join(', ')}</div>}
+                    </div>
+                  ) : <p style={{ margin: '10px 0 0', fontSize: 12.5, color: 'var(--slate)' }}>Search for a customer, or add a new one.</p>
                 ) : (
                   <div>
                     <div style={{ display: 'flex', gap: 8 }}>
@@ -361,36 +469,22 @@ export default function CreateOrderPanel({ companyId, conversationId, contactId,
 
               {/* Products */}
               <label style={L}>Products</label>
-              <input style={I} value={search} onChange={e => setSearch(e.target.value)} placeholder="Search products by name or SKU…" />
-              {searching && <p style={{ fontSize: 12, color: 'var(--slate)', marginTop: 4 }}>Searching…</p>}
-              {results.length > 0 && (
-                <div style={{ border: '1px solid var(--border)', borderRadius: 10, marginTop: 6, maxHeight: 220, overflowY: 'auto' }}>
-                  {results.map(p => (
-                    <button key={p.id} onClick={() => addProduct(p)} style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '9px 12px', border: 'none', borderBottom: '1px solid var(--border)', background: '#fff', cursor: 'pointer', textAlign: 'left' }}>
-                      {p.image ? <img src={p.image} alt="" style={{ width: 34, height: 34, borderRadius: 6, objectFit: 'cover' }} /> : <div style={{ width: 34, height: 34, borderRadius: 6, background: 'var(--canvas)' }} />}
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</div>
-                        <div style={{ fontSize: 11.5, color: 'var(--slate)' }}>{p.sku ? `${p.sku} · ` : ''}${p.price}{p.has_variations ? ' · has options' : ''}{p.stock_status === 'outofstock' ? ' · out of stock' : ''}</div>
-                      </div>
-                    </button>
-                  ))}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, border: '1px solid var(--border)', borderRadius: 10, padding: '9px 11px', background: '#fff' }}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+                <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search products by name or SKU…"
+                  style={{ flex: 1, border: 'none', outline: 'none', fontSize: 13.5, background: 'transparent', color: 'var(--ink)', fontFamily: 'inherit', minWidth: 0 }} />
+                {search && <button type="button" onClick={() => setSearch('')} aria-label="Clear" style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--slate)', fontSize: 16, lineHeight: 1, padding: 0 }}>×</button>}
+              </div>
+              {search.trim().length >= 2 && (
+                <div className="co-pop" style={{ border: '1px solid var(--border)', borderRadius: 12, marginTop: 6, maxHeight: 340, overflowY: 'auto', padding: 4, background: '#fff' }}>
+                  {searching && results.length === 0 && <p style={{ margin: 0, padding: '10px 12px', fontSize: 12.5, color: 'var(--slate)' }}>Searching…</p>}
+                  {!searching && results.length === 0 && <p style={{ margin: 0, padding: '10px 12px', fontSize: 12.5, color: 'var(--slate)' }}>No products found.</p>}
+                  <ProductResults dense results={results} companyId={companyId} integrationId={source?.id || null}
+                    addedIds={new Set(items.flatMap(it => [it.variation_id, !it.variation_id ? it.product_id : undefined]).filter(x => x != null).map(String))}
+                    onAdd={addProduct} />
                 </div>
               )}
-
-              {/* Variation picker */}
-              {variationFor && (
-                <div style={{ border: '1px solid var(--coral)', borderRadius: 10, marginTop: 8, padding: 10 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                    <span style={{ fontSize: 12.5, fontWeight: 700 }}>Choose a variation of {variationFor.name}</span>
-                    <button onClick={() => { setVariationFor(null); setVariations([]) }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--slate)' }}>✕</button>
-                  </div>
-                  {variations.map(v => (
-                    <button key={v.id} onClick={() => addVariation(v)} style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 8, marginBottom: 6, background: '#fff', cursor: 'pointer', fontSize: 12.5 }}>
-                      {v.attributes} — ${v.price} {v.stock_status === 'outofstock' ? '(out of stock)' : ''}
-                    </button>
-                  ))}
-                </div>
-              )}
+              <style>{`.co-pop{animation:coPop .22s cubic-bezier(.32,.72,0,1)}@keyframes coPop{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}@media (prefers-reduced-motion: reduce){.co-pop{animation:none}}`}</style>
 
               {/* Added items */}
               {items.length > 0 && (
@@ -546,11 +640,12 @@ export default function CreateOrderPanel({ companyId, conversationId, contactId,
                   style={{ padding: '12px', borderRadius: 10, background: '#fff', color: 'var(--ink)', border: '1px solid var(--border)', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
                   Create & send payment link
                 </button>
-                <button onClick={() => create(false, false, 'draft')} disabled={creating || items.length === 0}
-                  title="Save as a draft order — nothing is charged; you can finish it later"
-                  style={{ padding: '12px', borderRadius: 10, background: '#fff', color: 'var(--slate)', border: '1px dashed var(--border)', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
-                  Save as draft
+                <button onClick={saveDraft} disabled={creating || draftState === 'saving' || (items.length === 0 && !cust.first_name && !cust.email)}
+                  title="Keep this order in Colvy to finish later — nothing is sent to the store"
+                  style={{ padding: '12px', borderRadius: 10, background: '#fff', color: 'var(--slate)', border: '1px solid var(--border)', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+                  {draftState === 'saving' ? 'Saving…' : draftId ? 'Save draft' : 'Save as draft'}
                 </button>
+                {draftMsg && <p style={{ margin: 0, fontSize: 12, color: draftState === 'error' ? '#dc2626' : '#059669', textAlign: 'center' }}>{draftMsg}</p>}
               </div>
               <p style={{ fontSize: 11, color: 'var(--slate)', marginTop: 10, lineHeight: 1.5 }}>
                 {source.platform === 'shopify'
