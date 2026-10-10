@@ -85,8 +85,8 @@ const BLOCKS = (dark: boolean, border: string, ink: string, sub: string) => [
       </div>
     ) },
   { id: 'gallery', tag: 'Unified media gallery', title: 'Send the right photo in one tap',
-    body: 'Keep a categorised library of product photos and videos. Drop them straight into a chat, add internal notes with @mentions, and reuse them across every channel.',
-    points: ['Categorised photos & videos, fully searchable', 'One-tap share into any conversation', 'Notes & @mentions per item for your team'],
+    body: 'Keep a categorised library of product photos and videos. Mark up a photo or trim a video right in Colvy, drop it straight into a chat, add internal notes with @mentions, and reuse it across every channel.',
+    points: ['Categorised photos & videos, fully searchable', 'Built-in photo markup and video trimming', 'One-tap share into any conversation', 'Notes & @mentions per item for your team'],
     mock: (
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8, width: '100%', maxWidth: 360 }}>
         {[BLUE, GREEN, YELLOW, PINK, CYAN, PURPLE].map((c, i) => (

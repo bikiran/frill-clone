@@ -633,7 +633,7 @@ type Step = { title: string; desc: string; href: string; channel: string; who: s
 const HIW_STEPS: Step[] = [
   { title: 'Every channel in one inbox', desc: 'WhatsApp, Instagram, Messenger, email & SMS — one thread.', href: '/inbox-crm', channel: 'WhatsApp', who: 'Sam Rivera', color: '#25D366',
     bubbles: [{ side: 'them', text: 'Hi! Do you still have the 4ft reef tank in stock? 🐠' }, { side: 'me', text: 'Hey Sam! Yes — 2 left in Sydney.' }] },
-  { title: 'Reply with media from your gallery', desc: 'Send saved photos & videos without leaving the chat.', href: '/inbox-crm#gallery', channel: 'WhatsApp', who: 'Sam Rivera', color: '#25D366',
+  { title: 'Reply with media from your gallery', desc: 'Send saved photos & videos in a tap — mark up a photo or trim a video first.', href: '/inbox-crm#gallery', channel: 'WhatsApp', who: 'Sam Rivera', color: '#25D366',
     bubbles: [{ side: 'them', text: 'Can you show me one?' }, { side: 'me', text: '', kind: 'image' }, { side: 'me', text: 'Here it is 📸' }] },
   { title: 'Take the payment in chat', desc: 'Send a payment link or record any method — right here.', href: '/inbox-crm#woo', channel: 'WhatsApp', who: 'Sam Rivera', color: '#25D366',
     bubbles: [{ side: 'me', text: 'Sent you a payment link 💳' }, { side: 'them', text: "I've sent the payment 🙌" }, { side: 'me', text: 'Order #123466 · Paid ✅', kind: 'pill' }] },

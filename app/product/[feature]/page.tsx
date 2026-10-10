@@ -9,7 +9,7 @@ const META: Record<string, { title: string; description: string }> = {
   knowledgebase: { title: 'Knowledge Base & Help Center', description: 'Answer common questions with a searchable Colvy help center that deflects tickets around the clock.' },
   inbox: { title: 'Omnichannel Shared Inbox', description: 'Bring Messenger, Instagram, WhatsApp, SMS, email and live chat into one shared, assignable inbox with Colvy, with scheduled replies and voice typing.' },
   crm: { title: 'Lightweight CRM', description: 'Keep every customer’s profile, channels, orders and history together in Colvy’s built-in CRM.' },
-  gallery: { title: 'Shared Media Gallery', description: 'Every image, video and file a customer sends, organised and searchable in Colvy.' },
+  gallery: { title: 'Shared Media Gallery', description: 'Photos, videos and files in one searchable library — mark up photos, trim videos and send them into any chat in a tap.' },
   notes: { title: 'Internal Notes', description: 'Add private team notes to any conversation in Colvy so context never gets lost.' },
   orders: { title: 'Orders in the Inbox', description: 'See a customer’s orders next to the conversation and act on them without leaving Colvy.' },
   payments: { title: 'Payments & Pay-by-Link', description: 'Request and collect payments inside any chat with secure Stripe pay-by-link in Colvy.' },
