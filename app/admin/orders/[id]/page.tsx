@@ -4,7 +4,7 @@ import { authFetch } from '@/lib/auth-fetch'
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { peekCompanyUser } from '@/lib/client-cache'
-import { statusMeta, channelMeta, orderAge, fmtMoney, isClickCollect, variationFromMeta } from '@/lib/orders'
+import { statusMeta, displayStatus, channelMeta, orderAge, fmtMoney, isClickCollect, variationFromMeta } from '@/lib/orders'
 import { ChannelIcon, CopyBtn, copyToClipboard, TagMenu, CreateLabelModal, TagChip, hashColor, PrintModal } from '../page'
 import OrderItemsPanel from '@/components/OrderItemsPanel'
 import { barcodeSVG } from '@/lib/barcode'
@@ -182,7 +182,7 @@ export default function OrderDetailPage() {
   if (loading) return <div style={{ padding: 24, color: 'var(--slate)' }}>Loading order…</div>
   if (notFound || !order) return <div style={{ padding: 24 }}><a href="/admin/orders" style={{ color: ACCENT, fontWeight: 700, textDecoration: 'none' }}>← Orders</a><p style={{ marginTop: 16, color: 'var(--slate)' }}>Order not found.</p></div>
 
-  const sm = statusMeta(order.status)
+  const sm = statusMeta(displayStatus(order))
   const age = orderAge(order.order_date)
   const addr = order.shipping_address || {}
   const contactHref = order.contact_id ? `/admin/customers/profile?id=${order.contact_id}` : null

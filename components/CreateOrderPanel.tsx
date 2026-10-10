@@ -5,6 +5,7 @@ import AddressAutocomplete from '@/components/AddressAutocomplete'
 import ProductResults, { useProductSearch } from '@/components/ProductResults'
 import { authFetch } from '@/lib/auth-fetch'
 import { supabase } from '@/lib/supabase'
+import { deliverToCustomer } from '@/lib/deliver-to-customer'
 
 type Item = {
   key: string
@@ -272,9 +273,31 @@ export default function CreateOrderPanel({ companyId, conversationId, contactId,
       if (!res.ok) throw new Error(data.error || 'Could not create order')
       setResult({ ...data.order, withPaymentLink })
       onCreated?.(data.order)
+      // "Create & send payment link" sends it straight away.
+      if (withPaymentLink && data.order?.pay_link) void sendLink(data.order)
       // The draft became a real order.
       if (draftId) { try { await (supabase as any).from('order_drafts').delete().eq('id', draftId) } catch {} }
     } catch (e: any) { setError(e.message) } finally { setCreating(false) }
+  }
+
+  // Send the payment link to the customer: on the conversation's channel when
+  // opened from a chat, otherwise by SMS and/or email to the order's customer.
+  const sendLink = async (order: any) => {
+    setSendState('sending'); setSendMsg('')
+    const subject = `Your order #${order.number} from us`
+    const body = `Here's your order #${order.number} for ${order.currency || 'AUD'} $${(parseFloat(order.total) || 0).toFixed(2)}. Pay securely here:`
+    try {
+      if (onDeliver) {
+        setSendMsg(await onDeliver({ subject, body, url: order.pay_link }))
+      } else {
+        const r = await deliverToCustomer(
+          { companyId, contactId: picked?.id || contactId || null, conversationId: conversationId || null, name: `${cust.first_name} ${cust.last_name}`.trim(), email: cust.email, phone: cust.phone },
+          { subject, body, url: order.pay_link, staffName },
+        )
+        setSendMsg(r.summary)
+      }
+      setSendState('sent')
+    } catch (e: any) { setSendState('error'); setSendMsg(e?.message || 'Could not send the link') }
   }
 
   // Keep the half-built order in Colvy (Orders → Drafts) to finish later.
@@ -329,27 +352,20 @@ export default function CreateOrderPanel({ companyId, conversationId, contactId,
               {result.withPaymentLink && result.pay_link && (
                 <div style={{ marginTop: 16 }}>
                   <input readOnly value={result.pay_link} style={{ ...I, fontSize: 12 }} onFocus={e => e.currentTarget.select()} />
+                  <p style={{ margin: '6px 0 0', fontSize: 11.5, color: 'var(--slate)', lineHeight: 1.45 }}>
+                    {source?.platform === 'shopify' ? 'Opens Shopify’s checkout for this order.' : 'Opens your WooCommerce checkout for this order, with your store’s payment options.'} Once paid, the order moves from Awaiting Payment to Awaiting Shipment by itself.
+                  </p>
                   <button onClick={() => { navigator.clipboard?.writeText(result.pay_link) }} style={{ marginTop: 8, padding: '9px 18px', borderRadius: 9, background: 'var(--peach)', color: 'var(--coral)', border: '1px solid var(--coral)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>Copy payment link</button>
 
-                  {/* Send the pay link straight to the customer on their channel. */}
-                  {onDeliver && (channel || contact?.email) && (
+                  {/* Sent automatically by "Create & send payment link"; resend or send here. */}
+                  {(onDeliver ? (channel || contact?.email) : (cust.email || cust.phone)) && (
                     <button
-                      disabled={sendState === 'sending' || sendState === 'sent'}
-                      onClick={async () => {
-                        setSendState('sending')
-                        try {
-                          const how = await onDeliver({
-                            subject: `Your order #${result.number} from us`,
-                            body: `Here's your order #${result.number} for ${result.currency || 'AUD'} ${money(parseFloat(result.total) || 0)}. Pay securely here:`,
-                            url: result.pay_link,
-                          })
-                          setSendState('sent'); setSendMsg(how)
-                        } catch (e: any) { setSendState('error'); setSendMsg(e.message) }
-                      }}
-                      style={{ marginTop: 8, marginLeft: 8, padding: '9px 18px', borderRadius: 9, background: sendState === 'sent' ? '#dcfce7' : 'var(--coral)', color: sendState === 'sent' ? '#15803d' : '#fff', border: 'none', fontSize: 13, fontWeight: 700, cursor: sendState === 'sent' ? 'default' : 'pointer' }}>
+                      disabled={sendState === 'sending'}
+                      onClick={() => sendLink(result)}
+                      style={{ marginTop: 8, marginLeft: 8, padding: '9px 18px', borderRadius: 9, background: sendState === 'sent' ? '#dcfce7' : 'var(--coral)', color: sendState === 'sent' ? '#15803d' : '#fff', border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
                       {sendState === 'sending' ? 'Sending…'
-                        : sendState === 'sent' ? `✓ ${sendMsg}`
-                        : `Send to customer${channelLabel ? ` on ${channelLabel}` : (contact?.email ? ' by email' : '')}`}
+                        : sendState === 'sent' ? `${sendMsg} · Send again`
+                        : `Send to customer${onDeliver ? (channelLabel ? ` on ${channelLabel}` : (contact?.email ? ' by email' : '')) : ''}`}
                     </button>
                   )}
                   {sendState === 'error' && <p style={{ fontSize: 11.5, color: '#dc2626', marginTop: 6 }}>{sendMsg}</p>}
