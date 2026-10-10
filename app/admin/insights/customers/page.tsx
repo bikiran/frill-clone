@@ -1,8 +1,7 @@
 'use client'
 
-import { authFetch } from '@/lib/auth-fetch'
+import { loadInsightsOrders } from '@/lib/insights-orders'
 import { useState, useEffect, useMemo } from 'react'
-import { supabase } from '@/lib/supabase'
 import { SkeletonList } from '@/components/Skeleton'
 
 type Order = {
@@ -40,54 +39,14 @@ export default function CustomerInsightsPage() {
   const [range, setRange] = useState<'week' | 'month' | 'all'>('all')
 
   useEffect(() => {
-    ;(async () => {
-      // 1) Live fetch FIRST. The endpoint resolves the company from the request
-      //    host, so no client-side company lookup is needed here. (That lookup
-      //    can throw under RLS and previously killed the whole load before the
-      //    fetch ever ran — the cause of the empty "loaded: 0".)
-      let loaded: any[] = []
-      // Reuse a recent fetch across the two Insights pages within the session.
-      const CK = 'insights_orders_v1'
-      try {
-        const c = sessionStorage.getItem(CK)
-        if (c) { const p = JSON.parse(c); if (Date.now() - p.t < 300000 && Array.isArray(p.orders) && p.orders.length) loaded = p.orders }
-      } catch {}
-      if (loaded.length === 0) {
-        try {
-          const res = await authFetch('/api/orders/all')
-          const j = await res.json()
-          if (Array.isArray(j.orders)) loaded = j.orders
-          const { orders: _drop, ...rest } = j || {}
-          setDiag({ httpOk: res.ok, httpStatus: res.status, ...rest })
-          if (loaded.length) { try { sessionStorage.setItem(CK, JSON.stringify({ t: Date.now(), orders: loaded })) } catch {} }
-        } catch (e: any) {
-          setDiag({ clientError: String(e?.message || e) })
-        }
-      }
-      // 2) Fallback to the synced table only if the live fetch was empty.
-      if (loaded.length === 0) {
-        try {
-          let cid: string | null = null
-          const host = typeof window !== 'undefined' ? window.location.hostname : ''
-          if (host.endsWith('.colvy.com') && host !== 'colvy.com') {
-            const slug = host.replace('.colvy.com', '')
-            const { data: co } = await (supabase as any).from('companies').select('id').eq('slug', slug).maybeSingle()
-            if (co) cid = co.id
-          }
-          if (cid) {
-            const { data } = await (supabase as any).from('woocommerce_orders')
-              .select('id, customer_email, woo_customer_id, total, order_date, status, billing')
-              .eq('company_id', cid).order('order_date', { ascending: false }).limit(3000)
-            loaded = data || []
-            setDiag((d: any) => ({ ...(d || {}), syncedTableRows: data?.length || 0 }))
-          }
-        } catch (e: any) {
-          setDiag((d: any) => ({ ...(d || {}), fallbackError: String(e?.message || e) }))
-        }
-      }
-      setOrders(loaded)
+    let live = true
+    loadInsightsOrders(({ orders: list, diag: d }) => {
+      if (!live) return
+      setOrders(list)
+      if (d) setDiag(d)
       setLoading(false)
-    })()
+    })
+    return () => { live = false }
   }, [])
 
   const window = useMemo(() => {
