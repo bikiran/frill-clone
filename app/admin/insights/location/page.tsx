@@ -1,8 +1,7 @@
 'use client'
 
-import { authFetch } from '@/lib/auth-fetch'
+import { loadInsightsOrders } from '@/lib/insights-orders'
 import { useState, useEffect, useMemo } from 'react'
-import { supabase } from '@/lib/supabase'
 import { SkeletonList } from '@/components/Skeleton'
 import { CustomerMap, MapPoint } from './CustomerMap'
 import { AU_BY_POSTCODE, AU_STATE_CAPITAL } from './auGeo'
@@ -37,7 +36,6 @@ const DEAD = ['cancelled', 'refunded', 'failed', 'trash', 'checkout-draft', 'dra
 
 export default function LocationInsightsPage() {
   const [loading, setLoading] = useState(true)
-  const [companyId, setCompanyId] = useState<string | null>(null)
   const [orders, setOrders] = useState<Order[]>([])
   const [range, setRange] = useState<'day' | 'week' | 'month' | 'all' | 'custom'>('month')
   const [from, setFrom] = useState('')
@@ -45,44 +43,13 @@ export default function LocationInsightsPage() {
   const [suburb, setSuburb] = useState('')
 
   useEffect(() => {
-    ;(async () => {
-      // Live fetch FIRST — endpoint resolves the company from the host, so no
-      // client-side lookup (which can throw under RLS) blocks it.
-      let loaded: any[] = []
-      const CK = 'insights_orders_v1'
-      try {
-        const c = sessionStorage.getItem(CK)
-        if (c) { const p = JSON.parse(c); if (Date.now() - p.t < 300000 && Array.isArray(p.orders) && p.orders.length) loaded = p.orders }
-      } catch {}
-      if (loaded.length === 0) {
-        try {
-          const res = await authFetch('/api/orders/all')
-          const j = await res.json()
-          if (Array.isArray(j.orders)) loaded = j.orders
-          if (loaded.length) { try { sessionStorage.setItem(CK, JSON.stringify({ t: Date.now(), orders: loaded })) } catch {} }
-        } catch { /* fall back below */ }
-      }
-      if (loaded.length === 0) {
-        try {
-          let cid: string | null = null
-          const host = typeof window !== 'undefined' ? window.location.hostname : ''
-          if (host.endsWith('.colvy.com') && host !== 'colvy.com') {
-            const slug = host.replace('.colvy.com', '')
-            const { data: co } = await (supabase as any).from('companies').select('id').eq('slug', slug).maybeSingle()
-            if (co) cid = co.id
-          }
-          if (cid) {
-            setCompanyId(cid)
-            const { data } = await (supabase as any).from('woocommerce_orders')
-              .select('id, customer_email, woo_customer_id, total, order_date, status, line_items, billing')
-              .eq('company_id', cid).order('order_date', { ascending: false }).limit(3000)
-            loaded = data || []
-          }
-        } catch { /* leave empty */ }
-      }
-      setOrders(loaded)
+    let live = true
+    loadInsightsOrders(({ orders: list }) => {
+      if (!live) return
+      setOrders(list)
       setLoading(false)
-    })()
+    })
+    return () => { live = false }
   }, [])
 
   // ── Date window ────────────────────────────────────────────────────────────
