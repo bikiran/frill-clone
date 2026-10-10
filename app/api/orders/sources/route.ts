@@ -26,15 +26,15 @@ export async function GET(req: NextRequest) {
     const { data: woo } = await db.from('woocommerce_integrations')
       .select('id, store_url, store_name, consumer_key, consumer_secret').eq('company_id', companyId).eq('is_active', true).order('created_at', { ascending: true })
     for (const w of (woo || [])) {
-      let label = w.store_name
-      if (!label) { try { label = new URL(w.store_url).hostname.replace(/^www\./, '') } catch { label = w.store_url } }
-      sources.push({ platform: 'woocommerce', id: w.id, label })
+      let domain = ''
+      try { domain = new URL(w.store_url).hostname.replace(/^www\./, '') } catch { domain = String(w.store_url || '') }
+      sources.push({ platform: 'woocommerce', id: w.id, label: w.store_name || domain, domain })
     }
 
     const { data: shop } = await db.from('shopify_integrations')
       .select('id, store_domain, store_name').eq('company_id', companyId).eq('is_active', true).order('created_at', { ascending: true })
     for (const s of (shop || [])) {
-      sources.push({ platform: 'shopify', id: s.id, label: s.store_name || s.store_domain })
+      sources.push({ platform: 'shopify', id: s.id, label: s.store_name || s.store_domain, domain: s.store_domain })
     }
 
     // NOTE: shipping methods are intentionally NOT fetched here — they require

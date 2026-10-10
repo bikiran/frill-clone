@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import AddressAutocomplete from '@/components/AddressAutocomplete'
+import { StoreLogo, platformName } from '@/components/StoreLogo'
 import ProductResults, { useProductSearch } from '@/components/ProductResults'
 import { authFetch } from '@/lib/auth-fetch'
 import { supabase } from '@/lib/supabase'
@@ -385,20 +386,13 @@ export default function CreateOrderPanel({ companyId, conversationId, contactId,
             <>
               {error && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 9, padding: '9px 12px', marginBottom: 10, fontSize: 12.5, color: '#dc2626' }}>{error}</div>}
 
-              {/* Source picker */}
-              {sources.length > 1 && (
-                <>
-                  <label style={L}>Store</label>
-                  <select value={source.id} onChange={e => {
-                    const next = sources.find(s => s.id === e.target.value)
-                    setSource(next); setSearch(''); setShippingMethods([]); setAppliedCoupon(null)
-                    // Store shipping methods are WooCommerce's; Shopify uses the options below.
-                    if (next?.platform === 'woocommerce') authFetch(`/api/orders/shipping?companyId=${companyId}&integrationId=${next.id}`).then(r => r.json()).then(d => setShippingMethods(d.shippingMethods || [])).catch(() => {})
-                  }} style={I}>
-                    {sources.map(s => <option key={s.id} value={s.id}>{s.label}{s.platform === 'shopify' ? ' (Shopify)' : ''}</option>)}
-                  </select>
-                </>
-              )}
+              {/* Store: the store's own logo with its platform badge */}
+              <label style={L}>Store</label>
+              <StorePicker sources={sources} value={source} onChange={next => {
+                setSource(next); setSearch(''); setShippingMethods([]); setAppliedCoupon(null)
+                // Store shipping methods are WooCommerce's; Shopify uses the options below.
+                if (next?.platform === 'woocommerce') authFetch(`/api/orders/shipping?companyId=${companyId}&integrationId=${next.id}`).then(r => r.json()).then(d => setShippingMethods(d.shippingMethods || [])).catch(() => {})
+              }} />
               {source.platform === 'shopify' && (
                 <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 9, padding: 12, marginTop: 10, fontSize: 12.5, color: '#166534', lineHeight: 1.5 }}>
                   An unpaid order is saved as a Shopify draft and its payment link opens Shopify’s checkout. When the customer pays, it becomes a Shopify order in this chat.
@@ -680,6 +674,53 @@ function Row({ label, value, bold, muted, color }: { label: string; value: strin
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 0', fontWeight: bold ? 800 : 500, color: color || (muted ? 'var(--slate)' : 'var(--ink)'), fontSize: bold ? 15 : 13 }}>
       <span>{label}</span><span>{value}</span>
+    </div>
+  )
+}
+
+function StorePicker({ sources, value, onChange }: { sources: any[]; value: any; onChange: (s: any) => void }) {
+  const [open, setOpen] = useState(false)
+  const many = sources.length > 1
+  useEffect(() => {
+    if (!open) return
+    const down = (e: PointerEvent) => { if (!(e.target as HTMLElement)?.closest?.('[data-store-picker]')) setOpen(false) }
+    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
+    document.addEventListener('pointerdown', down); document.addEventListener('keydown', key)
+    return () => { document.removeEventListener('pointerdown', down); document.removeEventListener('keydown', key) }
+  }, [open])
+  const row = (s: any, selected: boolean) => (
+    <>
+      <StoreLogo domain={s.domain} name={s.label} platform={s.platform} size={38} />
+      <span style={{ flex: 1, minWidth: 0, marginLeft: 4 }}>
+        <span style={{ display: 'block', fontSize: 14, fontWeight: 700, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.label}</span>
+        <span style={{ display: 'block', fontSize: 12, color: 'var(--slate)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{[platformName(s.platform), s.domain].filter(Boolean).join(' · ')}</span>
+      </span>
+      {selected && <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--coral)" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M20 6 9 17l-5-5" /></svg>}
+    </>
+  )
+  if (!value) return null
+  return (
+    <div data-store-picker style={{ position: 'relative' }}>
+      <button type="button" onClick={() => many && setOpen(o => !o)} aria-expanded={open} className="co-store"
+        style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px 10px 10px', borderRadius: 14, border: `1px solid ${open ? 'color-mix(in srgb, var(--coral) 45%, var(--border))' : 'var(--border)'}`, background: '#fff', cursor: many ? 'pointer' : 'default', textAlign: 'left', fontFamily: 'inherit', boxShadow: open ? '0 0 0 4px color-mix(in srgb, var(--coral) 12%, transparent)' : '0 1px 2px rgba(0,0,0,.04)', transition: 'box-shadow .2s ease, border-color .2s ease' }}>
+        <StoreLogo domain={value.domain} name={value.label} platform={value.platform} size={38} />
+        <span style={{ flex: 1, minWidth: 0, marginLeft: 4 }}>
+          <span style={{ display: 'block', fontSize: 14, fontWeight: 700, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{value.label}</span>
+          <span style={{ display: 'block', fontSize: 12, color: 'var(--slate)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{[platformName(value.platform), value.domain].filter(Boolean).join(' · ')}</span>
+        </span>
+        {many && <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .3s cubic-bezier(.32,.72,0,1)' }}><path d="m6 9 6 6 6-6" /></svg>}
+      </button>
+      {open && (
+        <div className="co-store-pop" role="listbox" style={{ position: 'absolute', left: 0, right: 0, top: 'calc(100% + 6px)', zIndex: 6, background: '#fff', border: '1px solid var(--border)', borderRadius: 14, boxShadow: '0 16px 40px rgba(15,23,42,.14)', padding: 5 }}>
+          {sources.map(s => (
+            <button key={s.id} type="button" role="option" aria-selected={s.id === value.id} className="co-store-opt" onClick={() => { onChange(s); setOpen(false) }}
+              style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px 9px 8px', borderRadius: 10, border: 'none', background: s.id === value.id ? 'var(--peach)' : 'transparent', cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit' }}>
+              {row(s, s.id === value.id)}
+            </button>
+          ))}
+        </div>
+      )}
+      <style>{`.co-store-pop{animation:coStorePop .22s cubic-bezier(.32,.72,0,1);transform-origin:top center}@keyframes coStorePop{from{opacity:0;transform:translateY(-4px) scale(.98)}to{opacity:1;transform:none}}.co-store-opt{transition:background .15s ease}.co-store-opt:hover{background:color-mix(in srgb, var(--slate) 7%, transparent)}.co-store:active{transform:scale(.995)}@media (prefers-reduced-motion: reduce){.co-store-pop{animation:none}}`}</style>
     </div>
   )
 }
