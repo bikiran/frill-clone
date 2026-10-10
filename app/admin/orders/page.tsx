@@ -12,6 +12,7 @@ import {
 import OrderPrintDoc from '@/components/OrderPrintDoc'
 import OrderItemsPanel from '@/components/OrderItemsPanel'
 import CreateOrderPanel from '@/components/CreateOrderPanel'
+import OrderDraftsPanel, { useOrderDraftCount } from '@/components/OrderDraftsPanel'
 import OutOfStockModal from '@/components/OutOfStockModal'
 import RefundOrderModal from '@/components/RefundOrderModal'
 import PageHeader from '@/components/PageHeader'
@@ -137,6 +138,10 @@ export default function OrdersPage() {
   const [tagMenuOpen, setTagMenuOpen] = useState(false)
   const [tagFilterOpen, setTagFilterOpen] = useState(false)
   const [showCreateOrder, setShowCreateOrder] = useState(false)
+  const [showDrafts, setShowDrafts] = useState(false)
+  const [openDraft, setOpenDraft] = useState<any>(null)
+  const [draftBump, setDraftBump] = useState(0)
+  const draftCount = useOrderDraftCount(companyId, draftBump)
   const [showOOS, setShowOOS] = useState(false)
   const [saveViewName, setSaveViewName] = useState<string | null>(null)
   const [labelOrder, setLabelOrder] = useState<Order | null>(null)
@@ -613,14 +618,20 @@ export default function OrdersPage() {
         title="Orders"
         subtitle={`Manage and fulfil customer orders${syncing ? ' · syncing…' : ''}`}
         bleed={24}
-        action={
-          <button type="button" onClick={() => setShowCreateOrder(true)} className="ord-create-btn" style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '10px 18px', borderRadius: 11, border: 'none', background: ACCENT, color: '#fff', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', letterSpacing: '-0.01em', whiteSpace: 'nowrap' }}>
+        action={<>
+          <button type="button" onClick={() => setShowDrafts(true)} className="ord-create-btn" title="Draft orders saved to finish later"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '10px 14px', borderRadius: 11, border: '1px solid var(--border)', background: 'var(--card,#fff)', color: 'var(--ink)', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><path d="M9 15h6" /></svg>
+            Drafts
+            {draftCount > 0 && <span style={{ minWidth: 18, height: 18, padding: '0 5px', borderRadius: 9, background: ACCENT, color: '#fff', fontSize: 11, fontWeight: 800, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}>{draftCount}</span>}
+          </button>
+          <button type="button" onClick={() => { setOpenDraft(null); setShowCreateOrder(true) }} className="ord-create-btn" style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '10px 18px', borderRadius: 11, border: 'none', background: ACCENT, color: '#fff', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', letterSpacing: '-0.01em', whiteSpace: 'nowrap' }}>
             <span className="ord-plus" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 18, height: 18 }}>
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
             </span>
             Create Order
           </button>
-        }>
+        </>}>
         {kpi('All Orders', counts.all, 'var(--ink)')}
         {kpi('Awaiting', (counts.awaiting_shipment || 0) + (counts.packed || 0) + (counts.click_and_collect || 0), ACCENT)}
         {kpi('On Hold', counts.on_hold || 0, '#d97706')}
@@ -916,9 +927,18 @@ export default function OrdersPage() {
       {labelPdf && <LabelPdfModal url={labelPdf} accent={ACCENT} onClose={() => setLabelPdf(null)} />}
 
       {showCreateOrder && companyId && (
-        <CreateOrderPanel companyId={companyId} staffName={me.name} staffId={me.id || undefined}
-          onClose={() => setShowCreateOrder(false)}
-          onCreated={() => { flash('Order created'); runSync(companyId) }} />
+        <CreateOrderPanel key={openDraft?.id || 'new'} companyId={companyId} staffName={me.name} staffId={me.id || undefined}
+          draft={openDraft} contactId={openDraft?.contact_id || undefined} conversationId={openDraft?.conversation_id || undefined}
+          onClose={() => { setShowCreateOrder(false); setOpenDraft(null); setDraftBump(b => b + 1) }}
+          onDraftSaved={() => setDraftBump(b => b + 1)}
+          onCreated={() => { flash('Order created'); runSync(companyId); setDraftBump(b => b + 1) }} />
+      )}
+
+      {showDrafts && companyId && (
+        <OrderDraftsPanel companyId={companyId} accent={ACCENT}
+          onClose={() => setShowDrafts(false)}
+          onChanged={() => setDraftBump(b => b + 1)}
+          onOpen={d => { setShowDrafts(false); setOpenDraft(d); setShowCreateOrder(true) }} />
       )}
 
       {showOOS && companyId && (

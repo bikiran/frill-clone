@@ -1,12 +1,13 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { authFetch } from '@/lib/auth-fetch'
+import ProductResults, { useProductSearch } from '@/components/ProductResults'
 
 // Product search + barcode scan for adding store products to a note's checklist.
-// Mirrors the mobile "Add products" sheet: search WooCommerce by name/SKU, or
-// scan a barcode (where the browser supports BarcodeDetector), then tap + to add.
-// The parent owns the checklist; this only surfaces products and calls onAdd.
+// Mirrors the mobile "Add products" sheet: the synced catalogue is searched on
+// the device as you type (lib/product-catalog), a variable product opens to
+// list its variations, and a barcode can be scanned where the browser supports
+// BarcodeDetector. The parent owns the checklist; this only calls onAdd.
 
 export type PickerProduct = { id: any; name: string; sku?: string; price?: string; image?: string | null; stock_status?: string; stock_quantity?: number | null }
 
@@ -18,9 +19,9 @@ export default function ChecklistProductPicker({ companyId, open, onClose, added
   onAdd: (p: PickerProduct) => void
 }) {
   const [q, setQ] = useState('')
-  const [results, setResults] = useState<PickerProduct[]>([])
-  const [loading, setLoading] = useState(false)
-  const [err, setErr] = useState('')
+  const [scanErr, setScanErr] = useState('')
+  const { results, loading, error } = useProductSearch(companyId, q, { enabled: open })
+  const err = scanErr || error
   const [scanning, setScanning] = useState(false)
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
@@ -28,26 +29,8 @@ export default function ChecklistProductPicker({ companyId, open, onClose, added
   const scanSupported = typeof window !== 'undefined' && 'BarcodeDetector' in window
 
   // Reset when opened; stop the camera when closed/unmounted.
-  useEffect(() => { if (open) { setQ(''); setResults([]); setErr('') } else { stopScan() } }, [open])
+  useEffect(() => { if (open) { setQ(''); setScanErr('') } else { stopScan() } }, [open])
   useEffect(() => () => stopScan(), [])
-
-  // Debounced search.
-  useEffect(() => {
-    if (!open) return
-    const s = q.trim()
-    if (s.length < 2) { setResults([]); setLoading(false); return }
-    setLoading(true)
-    const t = setTimeout(async () => {
-      try {
-        const res = await authFetch(`/api/orders/products?companyId=${companyId}&q=${encodeURIComponent(s)}`)
-        const d = await res.json()
-        if (!res.ok) { setErr(d?.error || 'Search failed'); setResults([]) }
-        else { setErr(''); setResults(d.products || []) }
-      } catch (e: any) { setErr(e?.message || 'Search failed'); setResults([]) }
-      finally { setLoading(false) }
-    }, 300)
-    return () => clearTimeout(t)
-  }, [q, open, companyId])
 
   function stopScan() {
     if (scanRaf.current) { cancelAnimationFrame(scanRaf.current); scanRaf.current = null }
@@ -57,7 +40,7 @@ export default function ChecklistProductPicker({ companyId, open, onClose, added
   }
   async function startScan() {
     if (!scanSupported) return
-    setErr('')
+    setScanErr('')
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
       streamRef.current = stream
@@ -77,13 +60,12 @@ export default function ChecklistProductPicker({ companyId, open, onClose, added
       }
       scanRaf.current = requestAnimationFrame(tick)
     } catch (e: any) {
-      setErr('Camera unavailable — you can still search by name or SKU.')
+      setScanErr('Camera unavailable — you can still search by name or SKU.')
       stopScan()
     }
   }
 
   if (!open) return null
-  const stockLabel = (p: PickerProduct) => p.stock_status === 'outofstock' ? 'Out of stock' : p.stock_status === 'onbackorder' ? 'On backorder' : 'In stock'
 
   return (
     <div onClick={() => { stopScan(); onClose() }} style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(15,23,42,0.45)', backdropFilter: 'blur(2px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
@@ -128,28 +110,14 @@ export default function ChecklistProductPicker({ companyId, open, onClose, added
           {loading && <p style={{ padding: 16, textAlign: 'center', color: 'var(--slate)', fontSize: 13 }}>Searching…</p>}
           {!loading && q.trim().length >= 2 && results.length === 0 && !err && <p style={{ padding: 16, textAlign: 'center', color: 'var(--slate)', fontSize: 13 }}>No products found.</p>}
           {!loading && q.trim().length < 2 && <p style={{ padding: 16, textAlign: 'center', color: 'var(--slate)', fontSize: 13 }}>Type at least 2 characters, or scan a barcode.</p>}
-          {results.map(p => {
-            const added = addedIds.has(String(p.id))
-            const oos = p.stock_status === 'outofstock'
-            return (
-              <div key={String(p.id)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 10px', borderRadius: 12 }}>
-                {p.image ? <img src={p.image} alt="" style={{ width: 44, height: 44, borderRadius: 9, objectFit: 'cover', flexShrink: 0, border: '1px solid var(--border)' }} /> : <div style={{ width: 44, height: 44, borderRadius: 9, background: 'var(--canvas)', flexShrink: 0 }} />}
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: 'var(--ink)', lineHeight: 1.3 }}>{p.name}</p>
-                  <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--slate)' }}>
-                    {p.sku ? `SKU ${p.sku} · ` : ''}<span style={{ color: oos ? '#b91c1c' : '#059669', fontWeight: 600 }}>{stockLabel(p)}</span>{p.stock_quantity != null ? ` · ${p.stock_quantity} available` : ''}
-                  </p>
-                </div>
-                {p.price != null && p.price !== '' && <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--ink)', flexShrink: 0 }}>${p.price}</span>}
-                <button onClick={() => onAdd(p)} aria-label={added ? 'Add another' : 'Add'} title={added ? 'Added — add another' : 'Add'}
-                  style={{ flexShrink: 0, width: 34, height: 34, borderRadius: '50%', border: added ? 'none' : '1.5px solid var(--coral)', background: added ? '#059669' : 'transparent', color: added ? '#fff' : 'var(--coral)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  {added
-                    ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
-                    : <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>}
-                </button>
-              </div>
-            )
-          })}
+          {companyId && (
+            <ProductResults results={results} companyId={companyId} addedIds={addedIds}
+              onAdd={(p, v) => onAdd(v ? {
+                id: v.id, name: v.attributes ? `${p.name} — ${v.attributes}` : p.name,
+                sku: v.sku || p.sku, price: v.price, image: v.image || p.image,
+                stock_status: v.stock_status, stock_quantity: v.stock_quantity,
+              } : p)} />
+          )}
         </div>
 
         <div style={{ padding: 12, borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end' }}>
