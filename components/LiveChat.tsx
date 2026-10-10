@@ -104,7 +104,8 @@ export default function LiveChat({ slug: slugProp }: { slug?: string } = {}) {
         aria-label={open ? 'Close chat' : 'Chat with us'}
         style={{
           position: 'fixed',
-          bottom: 24,
+          // Rides above the voice-note player while it's open (AudioDock sets --audio-dock-h).
+          bottom: 'calc(24px + var(--audio-dock-h, 0px))',
           right: 24,
           width: 56,
           height: 56,
@@ -118,7 +119,7 @@ export default function LiveChat({ slug: slugProp }: { slug?: string } = {}) {
           zIndex: 9999,
           cursor: 'pointer',
           boxShadow: '0 10px 30px rgba(0,0,0,0.2)',
-          transition: 'all 0.3s ease',
+          transition: 'transform 0.3s ease, bottom 0.42s cubic-bezier(.32,.72,0,1)',
         }}
         onMouseEnter={(e) => (e.currentTarget.style.transform = 'scale(1.1)')}
         onMouseLeave={(e) => (e.currentTarget.style.transform = 'scale(1)')}
@@ -139,7 +140,7 @@ export default function LiveChat({ slug: slugProp }: { slug?: string } = {}) {
             // Fit within the viewport on phones: cap width/height to the screen and
             // never let the panel run off the top or sides. On desktop it stays the
             // usual 384×600 floating panel above the launcher.
-            bottom: 88,
+            bottom: 'calc(88px + var(--audio-dock-h, 0px))',
             right: 24,
             width: 'min(384px, calc(100vw - 48px))',
             height: 'min(600px, calc(100dvh - 112px))',
