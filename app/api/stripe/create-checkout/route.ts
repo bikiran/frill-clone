@@ -1,6 +1,7 @@
 import { callerUser, requireCompanyAccess } from '@/lib/company-access'
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
+import { BRANDING_ADDON } from '@/lib/branding-addon'
 
 const STRIPE_SECRET = process.env.STRIPE_SECRET_KEY || ''
 
@@ -94,6 +95,31 @@ export async function POST(req: NextRequest) {
     const trialParams: any = trial
       ? { subscription_data: { trial_period_days: 14 }, payment_method_collection: 'if_required' }
       : {}
+
+    // The branding add-on is its own subscription on top of whatever plan the
+    // workspace has. Tag it (session AND subscription metadata) so the webhook
+    // grants the add-on instead of treating it as a plan change, and put it on
+    // the customer's existing Stripe customer so the billing portal shows both.
+    if (tier === BRANDING_ADDON) {
+      if (!companyId) {
+        const { data: own } = await db.from('companies').select('id').eq('owner_id', userId).limit(1)
+        companyId = own?.[0]?.id || null
+      }
+      if (!companyId) return NextResponse.json({ error: 'Couldn’t find your workspace. Refresh the page and try again.' }, { status: 400 })
+      const { data: sub } = await db.from('subscriptions').select('stripe_customer_id').eq('user_id', userId).maybeSingle()
+      const addonMeta = { kind: 'addon', addon: BRANDING_ADDON, companyId, userId }
+      const session = await stripe.checkout.sessions.create({
+        mode: 'subscription',
+        payment_method_types: ['card'],
+        ...(sub?.stripe_customer_id ? { customer: sub.stripe_customer_id } : { customer_email: email }),
+        line_items: [{ price: priceId, quantity: 1 }],
+        metadata: addonMeta,
+        subscription_data: { metadata: addonMeta },
+        success_url: `${origin}/admin/billing?addon=branding`,
+        cancel_url:  `${origin}/admin/billing`,
+      })
+      return NextResponse.json({ url: session.url, sessionId: session.id })
+    }
 
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',
