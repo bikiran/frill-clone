@@ -13,6 +13,7 @@ import OrderPrintDoc from '@/components/OrderPrintDoc'
 import OrderItemsPanel from '@/components/OrderItemsPanel'
 import CollapseSection from '@/components/CollapseSection'
 import CreateOrderPanel from '@/components/CreateOrderPanel'
+import { PlatformLogo } from '@/components/StoreLogo'
 import OrderDraftsPanel, { useOrderDraftCount } from '@/components/OrderDraftsPanel'
 import OutOfStockModal from '@/components/OutOfStockModal'
 import RefundOrderModal from '@/components/RefundOrderModal'
@@ -32,6 +33,7 @@ function WooLogo({ size = 16 }: { size?: number }) {
 }
 export function ChannelIcon({ channel, size = 15 }: { channel?: string | null; size?: number }) {
   if (channel === 'woocommerce') return <WooLogo size={size} />
+  if (channel === 'shopify') return <PlatformLogo platform="shopify" size={size + 6} />
   return <span style={{ fontSize: size + 1 }}>{channelMeta(channel).icon}</span>
 }
 // Click & Collect — a storefront/shopping bag with a check, in place of the 🏬 emoji.
