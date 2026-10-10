@@ -1,6 +1,7 @@
 'use client'
 
 import { authFetch } from '@/lib/auth-fetch'
+import VoicePlayer from '@/components/VoicePlayer'
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import DraftTasks from './DraftTasks'
@@ -264,13 +265,13 @@ export default function CallCard({ callId, meta, timestamp, highlight, accent = 
           <p style={{ margin: '0 0 7px', fontSize: 12.5, fontWeight: 700, color: '#2563eb', display: 'flex', alignItems: 'center', gap: 6 }}>
             <MicIcon /> {isVoicemail ? 'Voicemail' : 'Call Recording'}
           </p>
-          {call?.recording_url && <audio controls src={call.recording_url} style={{ width: '100%', height: 34 }} />}
+          {call?.recording_url && <VoicePlayer src={call.recording_url} name={isVoicemail ? 'Voicemail' : 'Call recording'} durationSec={duration || undefined} />}
           {/* A handed-over call (device switch / warm transfer) has a second
               recording for the part after the handoff — play it too. */}
           {(call as any)?.conference_recording_url && (
             <>
               {call?.recording_url && <p style={{ margin: '9px 0 5px', fontSize: 11, fontWeight: 600, color: 'var(--slate)' }}>After device switch / transfer</p>}
-              <audio controls src={(call as any).conference_recording_url} style={{ width: '100%', height: 34 }} />
+              <VoicePlayer src={(call as any).conference_recording_url} name="Call recording (after transfer)" />
             </>
           )}
           <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>

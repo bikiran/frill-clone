@@ -9,7 +9,9 @@ import RichTextEditor from '@/components/RichTextEditor'
 import AttachmentUploader from '@/components/AttachmentUploader'
 import GalleryPicker from '@/components/GalleryPicker'
 import VoiceRecorder from '@/components/VoiceRecorder'
-import AudioDock, { playAudio } from '@/components/AudioDock'
+import AudioDock from '@/components/AudioDock'
+import VoicePlayer from '@/components/VoicePlayer'
+import { toPublicUrl } from '@/lib/storage-url'
 import VoiceBlocks from '@/components/VoiceBlocks'
 import NoteComments from '@/components/NoteComments'
 import ChecklistProductPicker, { type PickerProduct } from '@/components/ChecklistProductPicker'
@@ -944,22 +946,19 @@ export default function NotesPage() {
                   const gi = (note.attachments || []).indexOf(a)
                   const nm = a.name || 'Voice note'
                   return (
-                    <div key={gi} data-vrow style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '9px 12px', border: '1px solid var(--border)', borderRadius: 12, marginBottom: 8, background: '#fff', boxShadow: '0 1px 2px rgba(0,0,0,0.03)' }}>
-                      {/* Play feeds the bottom AudioDock (no inline player). */}
-                      <button title="Play" onClick={e => { const r = e.currentTarget.closest('[data-vrow]'); playAudio(r?.querySelector('audio') as HTMLAudioElement) }}
-                        style={{ flexShrink: 0, width: 34, height: 34, borderRadius: '50%', border: 'none', background: 'var(--coral)', color: '#fff', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor" style={{ marginLeft: 1 }}><path d="M7 5.5v13a1 1 0 0 0 1.5.87l11-6.5a1 1 0 0 0 0-1.74l-11-6.5A1 1 0 0 0 7 5.5z"/></svg>
-                      </button>
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
-                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--coral)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+                    <div key={gi} style={{ border: '1px solid var(--border)', borderRadius: 12, marginBottom: 8, background: '#fff', boxShadow: '0 1px 2px rgba(0,0,0,0.03)', padding: '8px 10px 10px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--coral)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
                         <input value={nm} onChange={e => setAllAttachments((note.attachments || []).map((x, j) => j === gi ? { ...x, name: e.target.value } : x))}
                           title="Rename voice note" style={{ border: 'none', outline: 'none', fontSize: 13, fontWeight: 700, color: 'var(--ink)', flex: 1, minWidth: 0, background: 'transparent' }} />
-                      </span>
-                      <a href={a.url} target="_blank" rel="noopener" download={nm} title="Download" style={{ flexShrink: 0, width: 30, height: 30, borderRadius: 8, color: 'var(--slate)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                      </a>
-                      <button onClick={() => setAllAttachments((note.attachments || []).filter((_, j) => j !== gi))} title="Remove" style={{ flexShrink: 0, width: 30, height: 30, borderRadius: 8, background: 'none', border: 'none', color: 'var(--slate)', cursor: 'pointer', fontSize: 17, lineHeight: 1 }}>×</button>
-                      <audio src={a.url} data-name={nm} preload="metadata" style={{ display: 'none' }} />
+                        <a href={a.url} target="_blank" rel="noopener" download={nm} title="Download" style={{ flexShrink: 0, width: 28, height: 28, borderRadius: 8, color: 'var(--slate)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                        </a>
+                        <button onClick={() => setAllAttachments((note.attachments || []).filter((_, j) => j !== gi))} title="Remove" aria-label="Remove voice note" style={{ flexShrink: 0, width: 28, height: 28, borderRadius: 8, background: 'none', border: 'none', color: 'var(--slate)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                        </button>
+                      </div>
+                      <VoicePlayer src={toPublicUrl(a.url)} name={nm} />
                     </div>
                   )
                 })}
