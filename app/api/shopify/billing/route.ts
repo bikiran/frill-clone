@@ -12,7 +12,7 @@ const admin = () => createClient(
 )
 
 // GET ?companyId=[&refresh=1] → how this workspace's Colvy plan is billed.
-// Shopify-billed: { provider: 'shopify', plan, store, planUrl, subscription }
+// Shopify-billed: { provider: 'shopify', plan, complimentary, store, planUrl, subscription }
 // (re-read from Shopify when it's more than a couple of minutes old).
 // Otherwise: { provider: 'stripe' }.
 export async function GET(req: NextRequest) {
@@ -20,7 +20,7 @@ export async function GET(req: NextRequest) {
   const companyId = req.nextUrl.searchParams.get('companyId')
   if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
 
-  const { data: co } = await db.from('companies').select('id, plan, billing_provider, billing_integration_id').eq('id', companyId).maybeSingle()
+  const { data: co } = await db.from('companies').select('id, plan, is_complimentary, billing_provider, billing_integration_id').eq('id', companyId).maybeSingle()
   if (!co || co.billing_provider !== 'shopify' || !co.billing_integration_id) return NextResponse.json({ provider: 'stripe' })
 
   const { data: integ } = await db.from('shopify_integrations')
@@ -34,6 +34,8 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({
     provider: 'shopify',
     plan: after?.plan || co.plan,
+    // Given free by Colvy: no Shopify plan needed (the sync never overrides it).
+    complimentary: !!co.is_complimentary,
     trialEndsAt: after?.trial_ends_at || null,
     store: integ ? { name: integ.store_name || integ.store_domain, domain: integ.store_domain, active: !!integ.is_active } : null,
     planUrl: integ ? planSelectionUrl(integ.store_domain) : null,

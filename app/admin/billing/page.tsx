@@ -60,7 +60,16 @@ function ShopifyBilling({ info }: { info: any }) {
   const returned = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('shopify_plan') : null
   const period = sub?.billing_period === 'ANNUAL' || /year|annual/i.test(String(sub?.billing_period || '')) ? 'year' : 'month'
   const price = sub?.amount ? `${Number(sub.amount).toLocaleString(undefined, { style: 'currency', currency: sub.currency || 'USD' })}/${period}` : ''
-  const status = !sub?.plan
+  // Complimentary (given free by Colvy): nothing to choose or pay in Shopify.
+  // If they'd already picked a paid Shopify plan, say so, since Shopify still
+  // charges for it until it's changed to Free there.
+  const comp = !!info.complimentary
+  const paidInShopify = comp && !!sub?.plan && sub.plan !== 'free'
+  const status = comp
+    ? (paidInShopify
+      ? `Your ${PLAN_LABEL[plan] || plan} plan is complimentary, but you also have a paid ${sub.name || PLAN_LABEL[sub.plan] || 'Colvy'} plan in Shopify${price ? ` (${price})` : ''}. Choose the Free plan in Shopify so you’re not charged.`
+      : `Your ${PLAN_LABEL[plan] || plan} plan is complimentary. You won’t be charged.`)
+    : !sub?.plan
     ? (plan === 'trial'
       ? `You’re on the 14-day trial${info.trialEndsAt ? ` until ${fmtDate(info.trialEndsAt)}` : ''}. Choose a plan in Shopify to keep your features after it ends.`
       : 'You’re on the Free plan. Choose a plan in Shopify to unlock more.')
@@ -88,35 +97,39 @@ function ShopifyBilling({ info }: { info: any }) {
         <div className="flex items-start gap-3">
           <span className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: '#e3f1ec', color: '#008060' }}><ShopifyBagIcon /></span>
           <div style={{ minWidth: 0 }}>
-            <p className="font-bold" style={{ color: 'var(--ink)' }}>Billed through Shopify</p>
+            <p className="font-bold" style={{ color: 'var(--ink)' }}>{comp ? 'Complimentary — no charge' : 'Billed through Shopify'}</p>
             <p className="text-sm mt-0.5" style={{ color: 'var(--slate)', lineHeight: 1.5 }}>
-              Your Colvy plan is charged on {info.store?.name ? <strong style={{ color: 'var(--ink)' }}>{info.store.name}</strong> : 'your store'}’s Shopify bill.
+              {comp
+                ? <>Colvy has given this workspace its plan free of charge. Nothing is added to {info.store?.name ? <strong style={{ color: 'var(--ink)' }}>{info.store.name}</strong> : 'your store'}’s Shopify bill.</>
+                : <>Your Colvy plan is charged on {info.store?.name ? <strong style={{ color: 'var(--ink)' }}>{info.store.name}</strong> : 'your store'}’s Shopify bill.</>}
             </p>
           </div>
         </div>
         <div className="mt-5 p-4 rounded-xl" style={{ background: 'var(--canvas)' }}>
-          <p className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>{sub?.name || PLAN_LABEL[sub?.plan || plan] || plan}</p>
-          <p className="text-sm mt-0.5" style={{ color: 'var(--slate)', lineHeight: 1.5 }}>{status}</p>
+          <p className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>{comp ? (PLAN_LABEL[plan] || plan) : (sub?.name || PLAN_LABEL[sub?.plan || plan] || plan)}</p>
+          <p className="text-sm mt-0.5" style={{ color: paidInShopify ? '#b42318' : 'var(--slate)', lineHeight: 1.5 }}>{status}</p>
         </div>
-        {info.planUrl && info.store?.active ? (
+        {comp && !paidInShopify ? null : info.planUrl && info.store?.active ? (
           <a href={info.planUrl} className="mt-5 w-full md:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold text-white transition-opacity hover:opacity-90" style={{ background: '#008060' }}>
-            {sub?.plan ? 'Change plan in Shopify' : 'Choose a plan in Shopify'}
+            {paidInShopify ? 'Change to Free in Shopify' : sub?.plan ? 'Change plan in Shopify' : 'Choose a plan in Shopify'}
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M7 17 17 7M8 7h9v9"/></svg>
           </a>
         ) : (
           <p className="mt-4 text-sm" style={{ color: 'var(--slate)' }}>Reconnect your Shopify store under Integrations → Shopify to change your plan.</p>
         )}
-        <p className="text-xs mt-4" style={{ color: 'var(--slate)', lineHeight: 1.5 }}>
-          Plans, invoices and your payment method are in your Shopify admin under Settings → Billing. To cancel, choose the Free plan in Shopify or uninstall Colvy from your store.
-        </p>
+        {!comp && (
+          <p className="text-xs mt-4" style={{ color: 'var(--slate)', lineHeight: 1.5 }}>
+            Plans, invoices and your payment method are in your Shopify admin under Settings → Billing. To cancel, choose the Free plan in Shopify or uninstall Colvy from your store.
+          </p>
+        )}
       </div>
 
       <div className="grid md:grid-cols-3 gap-4">
         {PLANS.map(p => (
-          <div key={p.id} className="bg-white rounded-2xl border p-5" style={{ borderColor: (sub?.plan || plan) === p.id ? p.color : 'var(--border)' }}>
+          <div key={p.id} className="bg-white rounded-2xl border p-5" style={{ borderColor: ((comp ? plan : sub?.plan || plan) === p.id) ? p.color : 'var(--border)' }}>
             <div className="flex items-center justify-between mb-1">
               <h3 className="font-bold" style={{ color: 'var(--ink)' }}>{p.name}</h3>
-              {(sub?.plan || plan) === p.id && <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ background: '#dcfce7', color: '#16a34a' }}>Current</span>}
+              {(comp ? plan : sub?.plan || plan) === p.id && <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ background: '#dcfce7', color: '#16a34a' }}>Current</span>}
             </div>
             <p className="text-xs mb-3" style={{ color: 'var(--slate)' }}>{p.desc}</p>
             <div className="space-y-2">
