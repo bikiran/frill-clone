@@ -146,6 +146,14 @@ function ShopifyBilling({ info }: { info: any }) {
   )
 }
 
+const ReceiptIcon = () => (
+  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M5 3h14v18l-2.5-1.5L14 21l-2-1.5L10 21l-2.5-1.5L5 21V3z"/><path d="M9 8h6M9 12h6M9 16h3"/></svg>
+)
+
+// '#rrggbb' + alpha suffixes don't work on CSS variables ('var(--coral)30' is
+// invalid, so the browser fell back to a near-black border). Mix instead.
+const coralA = (pct: number) => `color-mix(in srgb, var(--coral) ${pct}%, transparent)`
+
 const CreditCardIcon = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
 )
@@ -298,15 +306,20 @@ export default function BillingPage() {
   const currentPlanId = subscription?.tier || company?.plan || 'free'
   const isOnPlan = (id: string) => currentPlanId === id
   const isPaid = ['feedback', 'omnichannel', 'everything', 'startup', 'business', 'growth', 'pro', 'enterprise'].includes(currentPlanId)
+  const planLabel = PLAN_LABEL[currentPlanId] || currentPlanId.charAt(0).toUpperCase() + currentPlanId.slice(1)
+  // Plans set up by the Colvy team (Enterprise, complimentary) have no Stripe
+  // customer, so there's no billing portal to open.
+  const hasStripe = !!subscription?.stripe_customer_id
+  const brandingIncluded = ['feedback', 'omnichannel', 'everything', 'business', 'growth', 'enterprise', 'pro'].includes(currentPlanId)
 
   return (
-    <div className="max-w-4xl mx-auto px-6 py-8">
+    <div className="max-w-4xl mx-auto px-4 md:px-6 py-8">
       {/* Header */}
-      <div className="flex items-center justify-between mb-8">
+      <div className="flex items-center justify-between gap-3 flex-wrap mb-8">
         <div>
           <h1 className="text-2xl font-bold" style={{ color: 'var(--ink)' }}>Billing</h1>
           <p className="text-sm mt-1" style={{ color: 'var(--slate)' }}>
-            Current plan: <span className="font-semibold capitalize" style={{ color: 'var(--coral)' }}>{currentPlanId}</span>
+            Current plan: <span className="font-semibold" style={{ color: 'var(--coral)' }}>{planLabel}</span>
           </p>
         </div>
 
@@ -351,7 +364,7 @@ export default function BillingPage() {
 
       {/* Trial / Current plan banner */}
       {(isPaid || currentPlanId === 'free' || currentPlanId === 'trial') && (
-        <div className="mb-8 p-5 rounded-2xl border" style={{ background: 'var(--peach)', borderColor: 'var(--coral)30' }}>
+        <div className="mb-8 p-5 rounded-2xl border" style={{ background: 'var(--peach)', borderColor: coralA(30) }}>
           {currentPlanId === 'trial' || currentPlanId === 'free' ? (
             <>
               <div className="flex items-center justify-between mb-3">
@@ -370,7 +383,7 @@ export default function BillingPage() {
                 </div>
                 <span className="px-3 py-1 rounded-full text-xs font-bold" style={{ background: 'var(--coral)', color: '#fff' }}>Trial</span>
               </div>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4 pt-4 border-t" style={{ borderColor: 'var(--coral)20' }}>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4 pt-4 border-t" style={{ borderColor: coralA(20) }}>
                 {[
                   { label: 'Ideas', value: '∞', sub: 'Unlimited' },
                   { label: 'Surveys', value: '∞', sub: 'Unlimited' },
@@ -386,21 +399,34 @@ export default function BillingPage() {
               </div>
             </>
           ) : (
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-bold" style={{ color: 'var(--coral)' }}>
-                  ✓ You&apos;re on the <span className="capitalize">{currentPlanId}</span> plan
-                </p>
-                <p className="text-sm mt-1" style={{ color: 'var(--slate)' }}>
-                  {subscription?.status === 'active' ? 'Your subscription is active.' : 'Manage your subscription below.'}
-                  {subscription?.current_period_end && ` Renews ${new Date(subscription.current_period_end * 1000).toLocaleDateString()}.`}
-                </p>
+            <div className="flex items-center justify-between gap-4 flex-wrap">
+              <div className="flex items-start gap-3" style={{ minWidth: 0 }}>
+                <span className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-white" style={{ background: 'var(--coral)' }}>
+                  <CheckIcon />
+                </span>
+                <div style={{ minWidth: 0 }}>
+                  <p className="font-bold" style={{ color: 'var(--ink)' }}>
+                    You&apos;re on the <span style={{ color: 'var(--coral)' }}>{planLabel}</span> plan
+                  </p>
+                  <p className="text-sm mt-0.5" style={{ color: 'var(--slate)', lineHeight: 1.5 }}>
+                    {!hasStripe
+                      ? 'Your plan is set up and managed by the Colvy team. Contact us for any billing changes.'
+                      : subscription?.status === 'active' ? 'Your subscription is active.' : 'Manage your subscription below.'}
+                    {hasStripe && subscription?.current_period_end && ` Renews ${new Date(subscription.current_period_end * 1000).toLocaleDateString()}.`}
+                  </p>
+                </div>
               </div>
-              <button onClick={handleManageBilling} disabled={portalLoading || !subscription?.stripe_customer_id}
-                className="px-4 py-2 rounded-xl text-sm font-semibold text-white cursor-pointer disabled:opacity-50"
-                style={{ background: 'var(--coral)' }}>
-                {portalLoading ? 'Loading...' : 'Manage →'}
-              </button>
+              {hasStripe ? (
+                <button onClick={handleManageBilling} disabled={portalLoading}
+                  className="px-4 py-2 rounded-xl text-sm font-semibold text-white cursor-pointer transition-opacity hover:opacity-90 disabled:opacity-70 disabled:cursor-default"
+                  style={{ background: 'var(--coral)' }}>
+                  {portalLoading ? 'Loading...' : 'Manage →'}
+                </button>
+              ) : (
+                <span className="px-3 py-1.5 rounded-full text-xs font-semibold" style={{ background: '#fff', color: 'var(--coral)', border: `1px solid ${coralA(30)}` }}>
+                  Managed by Colvy
+                </span>
+              )}
             </div>
           )}
         </div>
@@ -428,7 +454,7 @@ export default function BillingPage() {
           const active = isOnPlan(plan.id)
           return (
             <div key={plan.id} className="rounded-2xl border overflow-hidden"
-              style={{ borderColor: (plan as any).highlighted ? 'var(--coral)' : active ? plan.color : 'var(--border)', boxShadow: (plan as any).highlighted ? '0 0 0 2px var(--coral)20' : 'none' }}>
+              style={{ borderColor: (plan as any).highlighted ? 'var(--coral)' : active ? plan.color : 'var(--border)', boxShadow: (plan as any).highlighted ? `0 0 0 2px ${coralA(20)}` : 'none' }}>
               {(plan as any).highlighted && (
                 <div className="py-1.5 text-center text-xs font-bold text-white" style={{ background: 'var(--coral)' }}>
                   BEST VALUE
@@ -470,9 +496,9 @@ export default function BillingPage() {
 
       {/* Remove Branding Add-on */}
       <div className="bg-white rounded-2xl border p-6 mb-6" style={{ borderColor: 'var(--border)' }}>
-        <div className="flex items-center justify-between">
+        <div className="flex items-start md:items-center justify-between gap-4 flex-col md:flex-row">
           <div>
-            <div className="flex items-center gap-2 mb-1">
+            <div className="flex items-center gap-2 mb-1 flex-wrap">
               <h2 className="font-bold" style={{ color: 'var(--ink)' }}>Remove "Powered by Colvy" branding</h2>
               <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ background: '#fef3c7', color: '#ca8a04' }}>Add-on</span>
             </div>
@@ -480,7 +506,7 @@ export default function BillingPage() {
               Available on any plan. Hide the Colvy footer from your public board.
             </p>
           </div>
-          <div className="text-right shrink-0 ml-6">
+          <div className="md:text-right shrink-0">
             <div className="text-xl font-black mb-1" style={{ color: 'var(--ink)' }}>
               {/* Flat 5 in the shown currency — the branding add-on's Stripe price
                   is a fixed 5 (A$5), NOT a USD→local conversion, so don't run it
@@ -488,18 +514,23 @@ export default function BillingPage() {
                   A$5 and the button said +$5). */}
               {cur.symbol}5<span className="text-sm font-normal" style={{ color: 'var(--slate)' }}>/mo</span>
             </div>
+            {brandingIncluded ? (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold" style={{ background: '#dcfce7', color: '#16a34a' }}><CheckIcon />Included</span>
+            ) : (
             <button
               onClick={() => handleUpgrade('branding_removal')}
               disabled={company?.remove_branding || loading === 'branding_removal'}
               className="px-4 py-2 rounded-xl text-sm font-bold cursor-pointer disabled:opacity-60 transition-all hover:opacity-90"
               style={{ background: company?.remove_branding ? '#f3f4f6' : 'var(--coral)', color: company?.remove_branding ? 'var(--slate)' : '#fff' }}>
-              {loading === 'branding_removal' ? 'Redirecting...' : company?.remove_branding ? '✓ Active' : `Add for +${cur.symbol}5/mo`}
+              {loading === 'branding_removal' ? 'Redirecting...' : company?.remove_branding ? <span className="inline-flex items-center gap-1.5"><CheckIcon />Active</span> : `Add for +${cur.symbol}5/mo`}
             </button>
+            )}
           </div>
         </div>
-        {['feedback', 'omnichannel', 'everything', 'business', 'growth', 'enterprise', 'pro'].includes(currentPlanId) && (
-          <div className="mt-3 p-3 rounded-xl text-sm" style={{ background: '#dcfce7', color: '#16a34a' }}>
-            ✓ Branding removal is included free on your {currentPlanId} plan.
+        {brandingIncluded && (
+          <div className="mt-3 p-3 rounded-xl text-sm flex items-center gap-2" style={{ background: '#dcfce7', color: '#16a34a' }}>
+            <span className="shrink-0"><CheckIcon /></span>
+            Branding removal is included free on your {planLabel} plan.
           </div>
         )}
       </div>
@@ -508,17 +539,19 @@ export default function BillingPage() {
       <div className="bg-white rounded-2xl border p-6 mb-6" style={{ borderColor: 'var(--border)' }}>
         <div className="flex items-center justify-between mb-4">
           <h2 className="font-bold" style={{ color: 'var(--ink)' }}>Payment Method</h2>
-          {isPaid && subscription?.stripe_customer_id && (
+          {isPaid && hasStripe && (
             <button onClick={handleManageBilling} disabled={portalLoading}
               className="text-sm font-medium cursor-pointer hover:underline" style={{ color: 'var(--coral)' }}>
               {portalLoading ? 'Loading...' : 'Manage →'}
             </button>
           )}
         </div>
-        {isPaid && subscription?.stripe_customer_id ? (
+        {isPaid && hasStripe ? (
           <div className="flex items-center gap-3 p-4 rounded-xl" style={{ background: 'var(--canvas)' }}>
-            <div className="w-10 h-7 rounded-md flex items-center justify-center" style={{ background: '#1a1a2e' }}>
-              <svg width="20" height="14" viewBox="0 0 38 24" fill="none"><rect width="38" height="24" rx="3" fill="#1a1a2e"/><circle cx="15" cy="12" r="7" fill="#EB001B" opacity=".9"/><circle cx="23" cy="12" r="7" fill="#F79E1B" opacity=".9"/><path d="M19 6.8A7 7 0 0 1 22.2 12 7 7 0 0 1 19 17.2 7 7 0 0 1 15.8 12 7 7 0 0 1 19 6.8z" fill="#FF5F00"/></svg>
+            {/* We don't know the card brand here, so a neutral card — not a
+                hard-coded black Mastercard block. */}
+            <div className="w-10 h-7 rounded-md flex items-center justify-center bg-white border shrink-0" style={{ borderColor: 'var(--border)', color: 'var(--slate)' }}>
+              <CreditCardIcon />
             </div>
             <div>
               <p className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>Card on file</p>
@@ -529,7 +562,7 @@ export default function BillingPage() {
           <div className="text-center py-8">
             <div className="flex justify-center mb-3" style={{ color: 'var(--slate)', opacity: 0.4 }}><CreditCardIcon /></div>
             <p className="text-sm font-medium mb-1" style={{ color: 'var(--slate)' }}>No payment method on file</p>
-            <p className="text-xs mb-4" style={{ color: 'var(--slate)' }}>Subscribe to a plan above to add a payment method</p>
+            <p className="text-xs mb-4" style={{ color: 'var(--slate)' }}>{isPaid ? 'Your plan is managed by the Colvy team, so no card is needed.' : 'Subscribe to a plan above to add a payment method'}</p>
           </div>
         )}
       </div>
@@ -539,7 +572,7 @@ export default function BillingPage() {
         <h2 className="font-bold mb-4" style={{ color: 'var(--ink)' }}>Billing History</h2>
         {billingHistory.length === 0 ? (
           <div className="text-center py-10">
-            <div className="text-4xl mb-3 opacity-30">🧾</div>
+            <div className="flex justify-center mb-3" style={{ color: 'var(--slate)', opacity: 0.4 }}><ReceiptIcon /></div>
             <p className="text-sm" style={{ color: 'var(--slate)' }}>No billing history yet</p>
             <p className="text-xs mt-1" style={{ color: 'var(--slate)' }}>Invoices will appear here after your first payment</p>
           </div>
