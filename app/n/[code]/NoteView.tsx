@@ -80,7 +80,12 @@ export default function NoteView({ code, accent, allowEdit, initialBody, initial
   const tick = async (id: string) => {
     const before = checklist
     const item = checklist.find(x => x.id === id); if (!item) return
-    const next = checklist.map(x => x.id === id ? { ...x, done: !x.done } : x)
+    // Show who ticked it straight away — the server records the same, so it
+    // used to appear only after a reload.
+    const now = !item.done
+    const next = checklist.map(x => x.id === id
+      ? { ...x, done: now, done_by: now ? (identity?.name || 'Guest') : null, done_at: now ? new Date().toISOString() : null }
+      : x)
     setChecklist(next)
     if (allowEdit) pending.current = { body, list: next }
     try {
