@@ -27,12 +27,12 @@ const PLANS = [
   {
     id: 'feedback', name: 'Feedback', usdMonthly: 39, usdAnnual: 348, color: '#7c5cff',
     desc: 'For product & feedback teams',
-    features: ['Unlimited ideas & voting', 'Polls, surveys & forms', 'Private + public roadmaps', 'Unlimited help articles', 'Remove Colvy branding', '5 team members'],
+    features: ['Unlimited ideas & voting', 'Polls, surveys & forms', 'Private + public roadmaps', 'Unlimited help articles', 'Remove Colvy branding', 'Unlimited team members'],
   },
   {
     id: 'omnichannel', name: 'Inbox', usdMonthly: 179, usdAnnual: 1788, color: '#2b59ff',
     desc: 'For sales & support teams',
-    features: ['Live chat inbox', 'Contacts & CRM', 'WhatsApp, SMS & voice calls', '3,000 SMS / month included', 'WooCommerce sync', '10 team members'],
+    features: ['Live chat inbox', 'Contacts & CRM', 'WhatsApp, SMS & voice calls', '3,000 SMS / month included', 'WooCommerce sync', 'Unlimited team members'],
   },
   {
     id: 'everything', name: 'Everything', usdMonthly: 259, usdAnnual: 2508, color: 'var(--coral)', highlighted: true,

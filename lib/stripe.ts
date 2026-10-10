@@ -10,7 +10,7 @@ export const TIER_FEATURES = {
   free: {
     name: 'Free',
     price: 0,
-    features: ['Ideas board', 'Public feedback', '5 team members', 'Basic analytics'],
+    features: ['Ideas board', 'Public feedback', '2 team members', 'Basic analytics'],
     limits: { guestVoting: true, whiteListing: false, apiAccess: false },
   },
   pro: {
