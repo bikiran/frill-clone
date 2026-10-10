@@ -182,6 +182,12 @@ export default function HelpAdminPage() {
                   {seeding ? '⏳ Adding...' : '✨ Add Sample Articles'}
                 </button>
               )}
+              <Link href="/admin/help/import"
+                className="px-4 py-2.5 rounded-xl text-sm font-semibold border cursor-pointer hover:bg-gray-50 inline-flex items-center gap-2"
+                style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M2 12h20" /><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" /></svg>
+                Import from website
+              </Link>
               <Link href="/admin/help/new"
                 className="px-4 py-2.5 rounded-xl font-semibold text-white text-sm cursor-pointer"
                 style={{ background: 'var(--coral)' }}>
@@ -192,16 +198,22 @@ export default function HelpAdminPage() {
 
           {!selected ? (
             <div className="flex flex-col items-center justify-center py-24 text-center">
-              <div className="text-5xl mb-4">📚</div>
+              <div className="mb-4" style={{ width: 64, height: 64, borderRadius: 20, background: 'linear-gradient(135deg, var(--coral), color-mix(in srgb, var(--coral) 55%, #a855f7))', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 14px 30px color-mix(in srgb, var(--coral) 30%, transparent)' }}>
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /></svg>
+              </div>
               <h2 className="text-xl font-bold mb-2" style={{ color: 'var(--ink)' }}>Your Help Centre</h2>
-              <p className="mb-6" style={{ color: 'var(--slate)' }}>Create articles to help your users succeed</p>
+              <p className="mb-6" style={{ color: 'var(--slate)' }}>Start from your website, or write your first article.</p>
+              <Link href="/admin/help/import" className="mb-3 px-6 py-3 rounded-xl font-semibold text-white text-sm inline-flex items-center gap-2" style={{ background: 'var(--coral)', boxShadow: '0 8px 20px color-mix(in srgb, var(--coral) 28%, transparent)' }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M2 12h20" /><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" /></svg>
+                Import articles from your website with AI
+              </Link>
               <div className="flex gap-3">
                 <button onClick={seedArticles} disabled={seeding}
                   className="px-6 py-2.5 rounded-xl font-semibold border text-sm cursor-pointer hover:bg-gray-50"
                   style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
                   {seeding ? 'Adding...' : '✨ Add 9 Sample Articles'}
                 </button>
-                <Link href="/admin/help/new" className="px-6 py-2.5 rounded-xl font-semibold text-white text-sm" style={{ background: 'var(--coral)' }}>
+                <Link href="/admin/help/new" className="px-6 py-2.5 rounded-xl font-semibold border text-sm hover:bg-gray-50" style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
                   Write New Article
                 </Link>
               </div>
