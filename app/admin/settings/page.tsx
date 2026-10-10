@@ -139,7 +139,9 @@ export default function SettingsPage() {
   const [emailReplyTo, setEmailReplyTo] = useState('')
   const [emailSignature, setEmailSignature] = useState('')
   // White label
-  const [hidePoweredBy, setHidePoweredBy] = useState(false)
+  // On by default: plans that include branding removal hide the badge unless
+  // the workspace turns this off (saved as showPoweredBy; see lib/branding).
+  const [hidePoweredBy, setHidePoweredBy] = useState(true)
   const [customDomain, setCustomDomain] = useState('')
   const [boardDomain, setBoardDomain] = useState('')       // e.g. feedback.acme.com
   const [helpDomain, setHelpDomain] = useState('')         // e.g. help.acme.com
@@ -350,7 +352,9 @@ export default function SettingsPage() {
           if (s.emailFromName) setEmailFromName(s.emailFromName)
           if (s.emailReplyTo) setEmailReplyTo(s.emailReplyTo)
           if (s.emailSignature) setEmailSignature(s.emailSignature)
-          if (s.hidePoweredBy !== undefined) setHidePoweredBy(s.hidePoweredBy)
+          // The old hidePoweredBy key was auto-saved as false for everyone, so
+          // only an explicit showPoweredBy choice counts.
+          setHidePoweredBy(s.showPoweredBy !== true)
           if (s.domainStatus) setDomainStatus(s.domainStatus)
           if (s.guestVotingEnabled !== undefined) setGuestVotingEnabled(s.guestVotingEnabled)
           if (s.guestSubmitEnabled !== undefined) setGuestSubmitEnabled(s.guestSubmitEnabled)
@@ -447,7 +451,7 @@ export default function SettingsPage() {
       widgetChat, widgetFeedback, widgetRoadmap, widgetUpdates, widgetForms, widgetPolls, widgetSurveys, widgetKnowledgeBase, widgetOrder,
       accentColor, themeMode, borderRadius,
       emailFromName, emailReplyTo, emailSignature,
-      hidePoweredBy, customDomain, boardDomain, helpDomain, domainStatus,
+      hidePoweredBy, showPoweredBy: !hidePoweredBy, customDomain, boardDomain, helpDomain, domainStatus,
       guestVotingEnabled, guestSubmitEnabled, termValues, privacyMode, categories, defaultHomepage,
       allowAnnSubsc, allowAnnComments, showAnnComments, disableAnnReactions,
       disableAnimGifs, disableCommentReactions, allowIdeaComments, showIdeaMRR,
@@ -1028,7 +1032,7 @@ export default function SettingsPage() {
                       style={{ transform: hidePoweredBy ? 'translateX(24px)' : 'translateX(4px)' }} />
                   </button>
                 ) : (
-                  <Link href="/admin/billing" className="shrink-0 ml-4 text-xs font-semibold px-3 py-1.5 rounded-full" style={{ background: '#fff1ec', color: 'var(--coral)', textDecoration: 'none', whiteSpace: 'nowrap' }}>🔒 Upgrade to remove</Link>
+                  <Link href="/admin/billing" className="shrink-0 ml-4 text-xs font-semibold px-3 py-1.5 rounded-full" style={{ background: '#fff1ec', color: 'var(--coral)', textDecoration: 'none', whiteSpace: 'nowrap' }}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'inline', verticalAlign: '-1px', marginRight: 4 }}><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>Upgrade to remove</Link>
                 )}
               </div>
             </div>
@@ -2341,7 +2345,7 @@ export default function SettingsPage() {
                       style={{ transform: hidePoweredBy ? 'translateX(22px)' : 'translateX(2px)' }} />
                   </button>
                 ) : (
-                  <Link href="/admin/billing" className="shrink-0 ml-3 text-xs font-semibold px-3 py-1.5 rounded-full" style={{ background: '#fff1ec', color: 'var(--coral)', textDecoration: 'none', whiteSpace: 'nowrap' }}>🔒 Upgrade to remove</Link>
+                  <Link href="/admin/billing" className="shrink-0 ml-3 text-xs font-semibold px-3 py-1.5 rounded-full" style={{ background: '#fff1ec', color: 'var(--coral)', textDecoration: 'none', whiteSpace: 'nowrap' }}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'inline', verticalAlign: '-1px', marginRight: 4 }}><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>Upgrade to remove</Link>
                 )}
               </div>
 

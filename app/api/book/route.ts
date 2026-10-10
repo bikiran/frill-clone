@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { hidesPoweredBy } from '@/lib/branding'
 import { createClient } from '@supabase/supabase-js'
 import { checkBurst, callerKey } from '@/lib/rate-limit'
 import { addDays, dateInTz, isDate } from '@/lib/booking-time'
@@ -50,7 +51,7 @@ export async function GET(req: NextRequest) {
       const bookable = staff.filter(s => settings.staff[s.id]?.bookable)
       const payReady = stripeReady(company)
       return NextResponse.json({
-        company: { name: company.name, slug: company.slug, logo_url: company.logo_url, accent_color: company.accent_color },
+        company: { name: company.name, slug: company.slug, logo_url: company.logo_url, accent_color: company.accent_color, hide_powered_by: await hidesPoweredBy(db, company.id, company) },
         page: { show_in_widget: settings.show_in_widget, title: settings.page_title, intro: settings.intro, require_phone: settings.require_phone, require_email: settings.require_email, cancel_hours: settings.cancel_hours, refund_on_cancel: settings.refund_on_cancel, late_cancel: settings.late_cancel, allow_reschedule: settings.allow_reschedule },
         timezone: settings.timezone,
         // A paid service can't be booked until the business connects Stripe.

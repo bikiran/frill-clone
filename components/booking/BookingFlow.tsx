@@ -18,7 +18,7 @@ type Service = {
   color: string | null; image_url: string | null
 }
 type PageData = {
-  company: { name: string; slug: string; logo_url: string | null; accent_color: string | null }
+  company: { name: string; slug: string; logo_url: string | null; accent_color: string | null; hide_powered_by?: boolean }
   page: { title: string; intro: string; require_phone: boolean; require_email: boolean; cancel_hours: number; refund_on_cancel: boolean; late_cancel: string; allow_reschedule: boolean }
   timezone: string
   services: Service[]
@@ -325,7 +325,7 @@ export default function BookingFlow({ slug, domain, initialService }: { slug?: s
         </main>
       </div>
       <div className="bk-shell-foot" style={{ textAlign: 'center', fontSize: 12, color: '#9ca3af', margin: '18px 0 8px' }}>
-        Times shown in your timezone ({tzShort(viewerTz())}) · Powered by <a href="https://colvy.com" style={{ color: '#9ca3af' }}>Colvy</a>
+        Times shown in your timezone ({tzShort(viewerTz())}){!data.company.hide_powered_by && <> · Powered by <a href="https://colvy.com" style={{ color: '#9ca3af' }}>Colvy</a></>}
       </div>
     </Shell>
   )

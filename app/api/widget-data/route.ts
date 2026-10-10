@@ -131,7 +131,9 @@ export async function GET(req: NextRequest) {
         chat: v.widgetChat !== false,
         order: v.widgetOrder || null,
       }
-      hidePoweredBySetting = v.hidePoweredBy === true
+      // Branding-removal plans hide the badge unless the workspace chose to
+      // show it (lib/branding has the same rule for the other public pages).
+      hidePoweredBySetting = v.showPoweredBy !== true
     } catch {}
 
     // "Remove Colvy branding" is only honoured if the plan actually includes it

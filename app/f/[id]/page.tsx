@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { useShowPoweredBy } from '@/lib/use-powered-by'
 import { StatusMark } from '@/components/StatusMark'
 
 type Field = { key: string; label: string; type: string; required: boolean }
@@ -16,6 +17,7 @@ export default function PublicContactForm() {
   const [done, setDone] = useState(false)
   const [err, setErr] = useState('')
   const rootRef = useRef<HTMLDivElement>(null)
+  const showPoweredBy = useShowPoweredBy(form?.company_id)
 
   useEffect(() => {
     (async () => {
@@ -86,7 +88,7 @@ export default function PublicContactForm() {
             <button type="submit" disabled={submitting} style={{ width: '100%', padding: '13px', borderRadius: radius, background: accent, color: '#fff', fontWeight: 700, fontSize: 15, border: 'none', cursor: submitting ? 'default' : 'pointer', opacity: submitting ? 0.7 : 1 }}>
               {submitting ? 'Sending…' : (form.button_label || 'Send message')}
             </button>
-            <p style={{ textAlign: 'center', fontSize: 11.5, color: '#9ca3af', margin: '12px 0 0' }}>Powered by Colvy</p>
+            {showPoweredBy && <p style={{ textAlign: 'center', fontSize: 11.5, color: '#9ca3af', margin: '12px 0 0' }}>Powered by Colvy</p>}
           </form>
         )}
       </div>

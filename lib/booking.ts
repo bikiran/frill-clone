@@ -1,4 +1,5 @@
 import { internalHeaders } from '@/lib/internal-call'
+import { hidesPoweredBy } from '@/lib/branding'
 // Online booking & appointments — server core.
 //
 // Shared by the public booking API (/api/book), the customer's manage link
@@ -840,6 +841,7 @@ export async function customerMessage(db: any, company: any, settings: BookingSe
   const sent = { sms: false, email: false }
   if (!company) return sent
   if (await isExternalSendBlocked(company.id, db)) return sent
+  const hideBadge = await hidesPoweredBy(db, company.id, company)
   const allow = (c: 'sms' | 'email') => !extra.channels || extra.channels.includes(c)
   const business = company.name || 'us'
   const first = String(b.customer_name || '').trim().split(/\s+/)[0] || 'there'
@@ -943,7 +945,7 @@ export async function customerMessage(db: any, company: any, settings: BookingSe
     ${buttons}
     ${note}
   </div>
-  <p style="text-align:center;color:#9ca3af;font-size:12px;margin-top:14px">${esc(business)} · Powered by Colvy</p>
+  <p style="text-align:center;color:#9ca3af;font-size:12px;margin-top:14px">${esc(business)}${hideBadge ? '' : ' · Powered by Colvy'}</p>
 </div></body></html>`
     const text = `${headlines[kind]}\n\n${rows.map(([k, v]) => `${k}: ${v}`).join('\n')}\n\n${live ? `Manage your booking: ${manage}` : `Book: ${rebook}`}`
     const withIcs = kind === 'confirmed' || kind === 'rescheduled' || kind === 'cancelled'
@@ -959,7 +961,7 @@ const esc = (s: string) => String(s || '').replace(/[&<>"]/g, c => ({ '&': '&amp
 
 // ── Public view of one booking (manage page) ─────────────────────────────────
 
-export function publicBooking(b: any, company: any, service: any, settings: BookingSettings) {
+export function publicBooking(b: any, company: any, service: any, settings: BookingSettings, hidePoweredBy = false) {
   const pol = policyFor(b, settings)
   const holdLive = b.status === 'pending' && b.hold_expires_at && Date.parse(b.hold_expires_at) > Date.now()
   return {
@@ -984,7 +986,7 @@ export function publicBooking(b: any, company: any, service: any, settings: Book
     cancel_reason: b.status === 'cancelled' ? b.cancel_reason : null,
     policy: { ...pol, cancel_hours: settings.cancel_hours, late_cancel: settings.late_cancel, refund_on_cancel: settings.refund_on_cancel },
     confirmation_note: settings.confirmation_note,
-    company: { name: company.name, slug: company.slug, logo_url: company.logo_url, accent_color: company.accent_color },
+    company: { name: company.name, slug: company.slug, logo_url: company.logo_url, accent_color: company.accent_color, hide_powered_by: hidePoweredBy },
     book_again_url: bookingPageUrl(company, service?.active ? service.slug : undefined),
   }
 }
