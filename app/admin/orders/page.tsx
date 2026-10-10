@@ -6,7 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { peekCompanyUser } from '@/lib/client-cache'
 import { track } from '@/lib/analytics'
 import {
-  STATUS_TABS, statusMeta, channelMeta, orderAge, fmtMoney,
+  STATUS_TABS, statusMeta, displayStatus, isAwaitingPayment, channelMeta, orderAge, fmtMoney,
   CARRIERS, CARRIER_LABEL, CARRIER_SERVICES, isClickCollect, variationFromMeta,
 } from '@/lib/orders'
 import OrderPrintDoc from '@/components/OrderPrintDoc'
@@ -416,11 +416,11 @@ export default function OrdersPage() {
   // ── Counts for the tabs (scoped to the current Location filter) ─────────────
   const counts = useMemo(() => {
     const scoped = orders.filter(locMatch)
-    const c: Record<string, number> = { all: scoped.length, alerts: 0, awaiting_shipment: 0, on_hold: 0, manual: 0, shipped: 0, cancelled: 0, packed: 0, click_and_collect: 0 }
+    const c: Record<string, number> = { all: scoped.length, alerts: 0, awaiting_shipment: 0, awaiting_payment: 0, on_hold: 0, manual: 0, shipped: 0, cancelled: 0, packed: 0, click_and_collect: 0 }
     for (const o of scoped) {
       // An order that hasn't been PAID isn't ready to ship — keep it out of the
       // Awaiting Shipment queue (and its count). It still counts under All Orders.
-      const bucket = (o.status === 'awaiting_shipment' && (o.payment_status === 'pending' || o.payment_status === 'failed')) ? 'awaiting_payment' : o.status
+      const bucket = displayStatus(o)
       c[bucket] = (c[bucket] || 0) + 1
       if (isAlerted(o)) c.alerts++
     }
@@ -450,10 +450,11 @@ export default function OrdersPage() {
     let rows = orders.filter((o: any) => {
       const tabDef = STATUS_TABS.find(t => t.key === tab)
       if (tab === 'alerts') { if (!isAlerted(o)) return false }
+      else if (tab === 'awaiting_payment') { if (!isAwaitingPayment(o)) return false }
       else if (tabDef?.match) { if (!tabDef.match.includes(o.status)) return false }
-      // Unpaid orders aren't shippable — don't surface them in the Awaiting
-      // Shipment queue (they remain visible under All Orders).
-      if (tab === 'awaiting_shipment' && o.status === 'awaiting_shipment' && (o.payment_status === 'pending' || o.payment_status === 'failed')) return false
+      // Unpaid orders aren't shippable — they live under Awaiting Payment, not
+      // the Awaiting Shipment queue.
+      if (tab === 'awaiting_shipment' && isAwaitingPayment(o)) return false
       if (!locMatch(o)) return false
       if (fAssignee !== 'all') { if (fAssignee === 'none' ? o.assignee_id : o.assignee_id !== fAssignee) return false }
       if (fTag !== 'all' && !(Array.isArray(o.tags) && o.tags.includes(fTag))) return false
@@ -680,7 +681,7 @@ export default function OrdersPage() {
       {/* Status filter — collapsed into a Filters button + dropdown. Right-click
           (or the ★) sets a status as the default, applied on next visit. */}
       {(() => {
-        const countFor = (t: any) => t.key === 'all' ? counts.all : t.key === 'alerts' ? counts.alerts : (t.match as string[]).reduce((n: number, s: string) => n + (counts[s] || 0), 0)
+        const countFor = (t: any) => t.key === 'all' ? counts.all : t.key === 'alerts' ? counts.alerts : t.key === 'awaiting_payment' ? (counts.awaiting_payment || 0) : (t.match as string[]).reduce((n: number, s: string) => n + (counts[s] || 0), 0)
         const activeTab = STATUS_TABS.find(t => t.key === tab) || STATUS_TABS[0]
         return (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', position: 'relative' }}>
@@ -859,7 +860,7 @@ export default function OrdersPage() {
             <tbody>
               {pageRows.length === 0 && <tr><td colSpan={12} style={{ padding: 32, textAlign: 'center', color: 'var(--slate)' }}>No orders match.</td></tr>}
               {pageRows.map((o: any) => {
-                const sm = statusMeta(o.status)
+                const sm = statusMeta(displayStatus(o))
                 const age = orderAge(o.order_date)
                 const sel = selected.has(o.id)
                 return (
@@ -1976,7 +1977,7 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
   }
   const removeTag = (t: string) => { const next = (order.tags || []).filter((x: string) => x !== t); onPatch({ tags: next }); order.tags = next }
 
-  const sm = statusMeta(order.status)
+  const sm = statusMeta(displayStatus(order))
   const age = orderAge(order.order_date)
   const addr = order.shipping_address || {}
   const store = locations.find((l: any) => l.id === order.store_location_id)?.name

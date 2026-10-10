@@ -8,6 +8,7 @@ export type OrderStatus =
 // Colvy status styling — restrained, token-driven, no ShipStation green theme.
 export const STATUS_META: Record<string, { label: string; bg: string; fg: string }> = {
   awaiting_shipment: { label: 'Awaiting Shipment', bg: '#e0edff', fg: '#1d4ed8' },
+  awaiting_payment: { label: 'Awaiting Payment', bg: '#fff1e6', fg: '#c2410c' },
   packed: { label: 'Packed', bg: '#dcfce7', fg: '#15803d' },
   on_hold: { label: 'On Hold', bg: '#fef3c7', fg: '#b45309' },
   click_and_collect: { label: 'Click & Collect', bg: '#f3e8ff', fg: '#7c3aed' },
@@ -17,6 +18,14 @@ export const STATUS_META: Record<string, { label: string; bg: string; fg: string
   manual: { label: 'Manual', bg: '#e0edff', fg: '#1d4ed8' },
   alert: { label: 'Alert', bg: '#fee2e2', fg: '#dc2626' },
 }
+// An order the store hasn't been paid for yet (WooCommerce "Pending payment" or
+// a failed payment) isn't ready to ship. It keeps its stored status, so it moves
+// on by itself the moment payment lands, but everywhere it's shown and counted
+// as Awaiting Payment instead of Awaiting Shipment.
+export const isAwaitingPayment = (o: any) =>
+  ['awaiting_shipment', 'click_and_collect', 'packed'].includes(String(o?.status || '')) && ['pending', 'failed'].includes(String(o?.payment_status || ''))
+export const displayStatus = (o: any): string => isAwaitingPayment(o) ? 'awaiting_payment' : String(o?.status || '')
+
 export const statusMeta = (s?: string | null) => STATUS_META[String(s || '')] || { label: s || 'Unknown', bg: '#f3f4f6', fg: '#6b7280' }
 
 // WooCommerce line items carry their chosen variation in `meta_data`: an array of
@@ -56,6 +65,8 @@ export const STATUS_TABS: { key: string; label: string; match?: OrderStatus[] }[
   // (packed-but-not-shipped, or waiting for the customer to collect), so they
   // stay in this tab — otherwise a C&C order would vanish from the default view.
   { key: 'awaiting_shipment', label: 'Awaiting Shipment', match: ['awaiting_shipment', 'packed', 'click_and_collect'] },
+  // Unpaid store orders (see isAwaitingPayment): computed by the caller.
+  { key: 'awaiting_payment', label: 'Awaiting Payment' },
   { key: 'on_hold', label: 'On Hold', match: ['on_hold'] },
   { key: 'manual', label: 'Manual Orders', match: ['manual'] },
   { key: 'shipped', label: 'Shipped', match: ['shipped'] },
