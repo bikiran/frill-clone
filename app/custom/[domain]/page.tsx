@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { useShowPoweredBy } from '@/lib/use-powered-by'
 
 function CategorySVG({ cat, size = 15 }: { cat: string; size?: number }) {
   const p = { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const }
@@ -25,6 +26,7 @@ export default function CustomDomainPage() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [catFilter, setCatFilter] = useState('All')
+  const showPoweredBy = useShowPoweredBy(company?.id)
 
   useEffect(() => {
     if (!hostname) return
@@ -348,9 +350,11 @@ export default function CustomDomainPage() {
         </div>
       </div>
 
-      <div style={{ textAlign: 'center', padding: '24px', borderTop: '1px solid var(--border, #f0f0f0)', fontSize: 12, color: '#9ca3af' }}>
-        Powered by <a href="https://colvy.com" style={{ color: accent }}>Colvy</a>
-      </div>
+      {showPoweredBy && (
+        <div style={{ textAlign: 'center', padding: '24px', borderTop: '1px solid var(--border, #f0f0f0)', fontSize: 12, color: '#9ca3af' }}>
+          Powered by <a href="https://colvy.com" style={{ color: accent }}>Colvy</a>
+        </div>
+      )}
     </div>
   )
 }

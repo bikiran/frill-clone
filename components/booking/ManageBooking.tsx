@@ -277,7 +277,7 @@ export default function ManageBooking({ token }: { token: string }) {
           )}
         </div>
       </div>
-      <div className="bk-shell-foot" style={{ textAlign: 'center', fontSize: 12, color: '#9ca3af', margin: '18px 0 8px' }}>Powered by <a href="https://colvy.com" style={{ color: '#9ca3af' }}>Colvy</a></div>
+      {!b.company?.hide_powered_by && <div className="bk-shell-foot" style={{ textAlign: 'center', fontSize: 12, color: '#9ca3af', margin: '18px 0 8px' }}>Powered by <a href="https://colvy.com" style={{ color: '#9ca3af' }}>Colvy</a></div>}
     </Shell>
   )
 }

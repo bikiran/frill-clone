@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { hidesPoweredBy } from '@/lib/branding'
 import { createClient } from '@supabase/supabase-js'
 import { checkBurst, callerKey } from '@/lib/rate-limit'
 import { addDays, dateInTz, isDate } from '@/lib/booking-time'
@@ -75,7 +76,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ timezone: tz, slots: slots.map(s => ({ start: new Date(s.start).toISOString() })) }, { headers: { 'Cache-Control': 'no-store' } })
     }
 
-    return NextResponse.json({ booking: publicBooking(b, company, service, settings) }, { headers: { 'Cache-Control': 'no-store' } })
+    return NextResponse.json({ booking: publicBooking(b, company, service, settings, await hidesPoweredBy(db, company.id, company)) }, { headers: { 'Cache-Control': 'no-store' } })
   } catch (e: any) {
     if (isMissingBookingSchema(e)) return NextResponse.json({ error: 'Booking not found' }, { status: 404 })
     return NextResponse.json({ error: e?.message || 'Failed' }, { status: 500 })
@@ -93,7 +94,7 @@ export async function POST(req: NextRequest) {
     const origin = req.nextUrl.origin
     const reply = async () => {
       const fresh = await load(db, body.token)
-      return NextResponse.json({ ok: true, booking: fresh ? publicBooking(fresh.b, fresh.company, fresh.service, fresh.settings) : null })
+      return NextResponse.json({ ok: true, booking: fresh ? publicBooking(fresh.b, fresh.company, fresh.service, fresh.settings, await hidesPoweredBy(db, fresh.company.id, fresh.company)) : null })
     }
 
     if (body.action === 'verify') {
