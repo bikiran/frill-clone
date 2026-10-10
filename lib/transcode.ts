@@ -60,6 +60,18 @@ type Item = {
   source_url?: string | null
   thumbnail_url?: string | null
   transcode_attempts?: number | null
+  trim_start?: number | string | null   // a trimmed copy: keep source [trim_start, trim_end)
+  trim_end?: number | string | null
+}
+
+// ffmpeg input options for a trimmed copy: seek before -i (fast, and frame-
+// accurate because we re-encode) and keep `duration` seconds. Empty for a plain
+// transcode.
+export function trimArgs(item: Pick<Item, 'trim_start' | 'trim_end'>): { input: string[]; posterAt: number } {
+  const start = Number(item.trim_start), end = Number(item.trim_end)
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start || start < 0) return { input: [], posterAt: 1 }
+  const dur = end - start
+  return { input: ['-ss', start.toFixed(3), '-t', dur.toFixed(3)], posterAt: start + Math.min(1, dur / 2) }
 }
 
 function runFfmpeg(args: string[]): Promise<void> {
@@ -119,6 +131,7 @@ export async function processTranscodeJob(db: Db, item: Item): Promise<void> {
     const source = item.source_url || item.url
     if (!isR2PublicUrl(source)) throw new Error('refusing to transcode a non-R2 source')
     await download(source, inPath)
+    const trim = trimArgs(item)
 
     // ≤1080p, even dimensions, H.264 High + AAC, faststart for instant start.
     // `format=yuv420p` + `-pix_fmt yuv420p` force 8-bit 4:2:0: phone HDR / 10-bit
@@ -127,7 +140,7 @@ export async function processTranscodeJob(db: Db, item: Item): Promise<void> {
     // layout, exotic input), fall back to a simpler, maximally-tolerant encode.
     try {
       await runFfmpeg([
-        '-y', '-i', inPath,
+        '-y', ...trim.input, '-i', inPath,
         '-vf', "scale='min(1920,iw)':'min(1080,ih)':force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p",
         '-c:v', 'libx264', '-profile:v', 'high', '-preset', 'veryfast', '-crf', '23', '-pix_fmt', 'yuv420p',
         '-c:a', 'aac', '-b:a', '128k', '-ac', '2',
@@ -137,7 +150,7 @@ export async function processTranscodeJob(db: Db, item: Item): Promise<void> {
     } catch (primaryErr) {
       console.warn('[transcode] primary encode failed, trying fallback:', primaryErr)
       await runFfmpeg([
-        '-y', '-i', inPath,
+        '-y', ...trim.input, '-i', inPath,
         '-map', '0:v:0', '-map', '0:a:0?',
         '-vf', 'scale=trunc(min(1920\\,iw)/2)*2:-2,format=yuv420p',
         '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '26', '-pix_fmt', 'yuv420p',
@@ -149,7 +162,7 @@ export async function processTranscodeJob(db: Db, item: Item): Promise<void> {
 
     // Poster frame ~1s in (best-effort — a missing poster never fails the job).
     await runFfmpeg([
-      '-y', '-ss', '1', '-i', inPath, '-frames:v', '1',
+      '-y', '-ss', String(trim.posterAt), '-i', inPath, '-frames:v', '1',
       '-vf', "scale='min(720,iw)':-2", posterPath,
     ]).catch(() => {})
 
@@ -174,6 +187,9 @@ export async function processTranscodeJob(db: Db, item: Item): Promise<void> {
       playback_url: playbackUrl,
       thumbnail_url: thumbUrl,
       source_url: item.source_url || item.url,
+      // A trimmed copy's `url` pointed at the untrimmed source until now; from
+      // here every use of it (sending, downloading) gets the trimmed video.
+      ...(trim.input.length ? { url: playbackUrl } : {}),
       processing_status: 'ready',
       transcode_error: null,
       variants,

@@ -8,6 +8,7 @@ import { readCache, writeCache } from '@/lib/client-cache'
 import { useCompanyUser } from '../crm-settings/_shared'
 import MediaGallery from '@/components/MediaGallery'
 import ImageAnnotator from '@/components/ImageAnnotator'
+import VideoTrimmer from '@/components/VideoTrimmer'
 import MentionInput, { resolveMentions } from '@/components/MentionInput'
 import { useGoogleDrivePicker } from '@/components/GoogleDrivePicker'
 import PhoneUploadQR from '@/components/PhoneUploadQR'
@@ -336,6 +337,10 @@ export default function GalleryPage() {
       showToast('Could not save the edit')
     } finally { setSavingEdit(false) }
   }
+
+  // Video trimming: saves a trimmed copy server-side (the original is kept).
+  const [trimmingItem, setTrimmingItem] = useState<any>(null)
+  const canTrim = (it: any) => it?.kind === 'video' && !isVideoProcessing(it) && it.processing_status !== 'failed'
 
   const [dragOver, setDragOver] = useState(false)
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null)
@@ -1056,6 +1061,19 @@ export default function GalleryPage() {
 
                     {/* Edit (Markup) — images only. Opens the annotator to crop-free
                         draw/arrow/text, saved back as a new image. */}
+                    {canTrim(item) && !selectMode && (
+                      <button type="button"
+                        onClick={e => { e.stopPropagation(); setTrimmingItem(item) }}
+                        title="Trim video" aria-label="Trim video"
+                        style={{
+                          position: 'absolute', top: 8, right: 8, width: 26, height: 26, borderRadius: 8,
+                          border: 'none', background: 'rgba(0,0,0,0.42)', color: '#fff',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          cursor: 'pointer', padding: 0, backdropFilter: 'blur(3px)',
+                        }}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><line x1="20" y1="4" x2="8.12" y2="15.88"/><line x1="14.47" y1="14.48" x2="20" y2="20"/><line x1="8.12" y1="8.12" x2="12" y2="12"/></svg>
+                      </button>
+                    )}
                     {item.kind !== 'video' && !selectMode && (
                       <button type="button"
                         onClick={e => { e.stopPropagation(); setEditingItem(item) }}
@@ -1231,6 +1249,8 @@ export default function GalleryPage() {
           team={team}
           onClose={() => setDetailsOpen(false)}
           onEdit={(it) => { setDetailsOpen(false); setLightboxIndex(null); setEditingItem(it) }}
+          onTrim={(it) => { setDetailsOpen(false); setLightboxIndex(null); setTrimmingItem(it) }}
+          canTrim={canTrim}
         />
       )}
 
@@ -1464,6 +1484,11 @@ export default function GalleryPage() {
       {/* Image editor (Markup) — draw / arrow / text over the photo, then save
           as a new image. Loaded through the same-origin proxy so the canvas can
           export on Save. */}
+      {trimmingItem && companyId && (
+        <VideoTrimmer item={trimmingItem} companyId={companyId}
+          onClose={() => setTrimmingItem(null)}
+          onSaved={async () => { setTrimmingItem(null); await load(); showToast('Trimming… the new video appears in a moment') }} />
+      )}
       {editingItem && (
         <ImageAnnotator
           imageSrc={`/api/media/proxy?url=${encodeURIComponent(editingItem.url)}`}
@@ -1622,11 +1647,13 @@ function ShareLinkDialog({ url, count, raw, onClose, onCopied }: {
 // A right-hand panel showing everything we know (and can measure) about one
 // media item. Dimensions, duration and file size are read live in the browser,
 // since they aren't stored on the row.
-function MediaDetailsPanel({ item, folders, categories, itemCats, companyId, userId, me, team, onClose, onEdit }: {
+function MediaDetailsPanel({ item, folders, categories, itemCats, companyId, userId, me, team, onClose, onEdit, onTrim, canTrim }: {
   item: any; folders: any[]; categories: any[]; itemCats: Record<string, string[]>
   companyId: string | null; userId: string | null; me: string; team: { id: string; user_id: string; name: string; email?: string }[]
   onClose: () => void
   onEdit?: (item: any) => void
+  onTrim?: (item: any) => void
+  canTrim?: (item: any) => boolean
 }) {
   const [dims, setDims] = useState<{ w: number; h: number } | null>(null)
   const [duration, setDuration] = useState<number | null>(null)
@@ -1835,6 +1862,13 @@ function MediaDetailsPanel({ item, folders, categories, itemCats, companyId, use
                 style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '9px 14px', borderRadius: 10, border: 'none', background: 'var(--coral)', color: '#fff', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
                 Edit image
+              </button>
+            )}
+            {onTrim && canTrim?.(item) && (
+              <button onClick={() => onTrim(item)}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '9px 14px', borderRadius: 10, border: 'none', background: 'var(--coral)', color: '#fff', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><line x1="20" y1="4" x2="8.12" y2="15.88"/><line x1="14.47" y1="14.48" x2="20" y2="20"/><line x1="8.12" y1="8.12" x2="12" y2="12"/></svg>
+                Trim video
               </button>
             )}
           </div>

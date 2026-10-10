@@ -36,6 +36,7 @@ const FEAT = [
   'Online booking, deposits & reminders',
   'Back-in-stock waitlists & restock texts', 'AI voice typing',
   'Scheduled replies (edit, send now or cancel)',
+  'Photo markup & video trimming',
 ]
 
 type Val = boolean | string
