@@ -746,6 +746,9 @@ export default function InboxPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected?.id, draft.restoredFor])
   const [sending, setSending] = useState(false)
+  // "Sending…" belongs to the chat the send started in; a newly opened chat's
+  // composer is free straight away (the earlier send finishes on its own).
+  useEffect(() => { setSending(false) }, [selected?.id])
   const [searchTerm, setSearchTerm] = useState('')
   const [locationFilter, setLocationFilter] = useState<string>('all')
   // All / Assigned to me / Unassigned tabs above the conversation list.
@@ -877,6 +880,15 @@ export default function InboxPage() {
   const [scheduledBusy, setScheduledBusy] = useState('')
   const selectedIdRef = useRef<string | null>(null)
   selectedIdRef.current = selected?.id || null
+  // Re-read a thread after an action and show it — only if that conversation is
+  // still the one open. Sends take a few seconds and agents jump between chats;
+  // without this check the previous chat's messages replaced the one just opened.
+  const reloadThread = async (convId: string): Promise<boolean> => {
+    const { data } = await (supabase as any).from('messages').select('*').eq('conversation_id', convId).order('created_at', { ascending: true })
+    if (selectedIdRef.current !== convId) return false
+    setMessages(data || [])
+    return true
+  }
   // Load them when a conversation opens, and keep checking while any are
   // waiting so ones the scheduler sends drop off the list on their own.
   useEffect(() => {
@@ -1009,7 +1021,8 @@ export default function InboxPage() {
       })
       if (error) throw error
       setShowScheduleMsg(false)
-      setReply(''); setReplyTo(null); draft.discard()
+      draft.discard()
+      if (selectedIdRef.current === selected.id) { setReply(''); setReplyTo(null) }
       showToast(`Message scheduled for ${when.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}`)
       loadScheduled(selected.id)
     } catch (e: any) {
@@ -1074,8 +1087,7 @@ export default function InboxPage() {
       }
 
       setShowSchedule(false)
-      const { data: msgs } = await (supabase as any).from('messages').select('*').eq('conversation_id', selected.id).order('created_at', { ascending: true })
-      setMessages(msgs || [])
+      await reloadThread(selected.id)
       loadConversationExtras(selected.id)
       scrollBottom()
       showToast('Delivery scheduled — it\'s on the team calendar')
@@ -1195,8 +1207,7 @@ export default function InboxPage() {
         last_message: content.split('\n')[0], last_message_at: new Date().toISOString(),
       }).eq('id', selected.id)
 
-      const { data: msgs } = await (supabase as any).from('messages').select('*').eq('conversation_id', selected.id).order('created_at', { ascending: true })
-      setMessages(msgs || [])
+      await reloadThread(selected.id)
       scrollBottom()
       setProductSent(`${p.id}-${kind}`)
       setTimeout(() => setProductSent(''), 1800)
@@ -1341,8 +1352,7 @@ export default function InboxPage() {
           })
         } catch (e: any) { showToast(`Saved, but sending failed: ${e.message}`) }
       }
-      const { data: msgs } = await (supabase as any).from('messages').select('*').eq('conversation_id', selected.id).order('created_at', { ascending: true })
-      setMessages(msgs || [])
+      await reloadThread(selected.id)
       scrollBottom()
       showToast('Card-save link sent to the customer')
     } catch (e: any) {
@@ -1357,8 +1367,7 @@ export default function InboxPage() {
     try {
       const d = await cardsApi({ action: 'charge_card', amount: chargeAmount, description: chargeDesc, cardId: chargeCardId || undefined })
       setShowChargeCard(false); setChargeAmount(''); setChargeDesc('')
-      const { data: msgs } = await (supabase as any).from('messages').select('*').eq('conversation_id', selected.id).order('created_at', { ascending: true })
-      setMessages(msgs || [])
+      await reloadThread(selected.id)
       scrollBottom()
       showToast(d.paid ? 'Card charged successfully' : `Charge status: ${d.status}`)
     } catch (e: any) {
@@ -2439,6 +2448,8 @@ export default function InboxPage() {
     setAiTodos((conv as any).ai_todos || [])
     // Load messages
     const { data: msgs } = await (supabase as any).from('messages').select('*').eq('conversation_id', conv.id).order('created_at', { ascending: true })
+    // Clicked through several chats quickly: only the last one's messages show.
+    if (selectedRef.current?.id !== conv.id) return
     setMessages(msgs || [])
     scrollBottom()
     // Load this conversation's calls so any that lack a timeline card (historical
@@ -2817,6 +2828,8 @@ export default function InboxPage() {
       (supabase as any).from('conversation_notes').select('*').eq('conversation_id', convId).order('created_at', { ascending: false }),
       (supabase as any).from('conversation_tasks').select('*').eq('conversation_id', convId).order('created_at', { ascending: false }),
     ])
+    // Moved to another chat while this loaded: don't show this one's timeline there.
+    if (selectedIdRef.current !== convId) return
     setEvents(evts || [])
     setNotes(nts || [])
     setTasks(tsks || [])
@@ -3233,8 +3246,7 @@ export default function InboxPage() {
         })
       }
       await (supabase as any).from('conversations').update({ last_message: '🖼️ Media', last_message_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', selected.id)
-      const { data: msgs } = await (supabase as any).from('messages').select('*').eq('conversation_id', selected.id).order('created_at', { ascending: true })
-      setMessages(msgs || [])
+      await reloadThread(selected.id)
       scrollBottom()
     } catch (e: any) { showToast('Could not send media') }
     finally { sendingMediaRef.current = false }
@@ -3348,9 +3360,7 @@ export default function InboxPage() {
 
     // Only refresh the thread if the agent is still looking at it.
     if (selectedRef.current?.id === convId) {
-      const { data: msgs } = await (supabase as any).from('messages')
-        .select('*').eq('conversation_id', convId).order('created_at', { ascending: true })
-      setMessages(msgs || [])
+      await reloadThread(convId)
       scrollBottom()
     }
     loadConversations()
@@ -3841,8 +3851,7 @@ export default function InboxPage() {
       }
       await (supabase as any).from('conversations').update({ review_requested: true, last_message_at: new Date().toISOString() }).eq('id', selected.id)
       logEvent('review_request', 'Review request sent')
-      const { data: msgs } = await (supabase as any).from('messages').select('*').eq('conversation_id', selected.id).order('created_at', { ascending: true })
-      setMessages(msgs || [])
+      await reloadThread(selected.id)
       scrollBottom()
     } finally {
       setReviewSending(false)
@@ -4082,8 +4091,7 @@ export default function InboxPage() {
         content: text, delivery_channel: smsNumber ? 'sms' : 'chat',
       })
       await (supabase as any).from('conversations').update({ last_message: text, last_message_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', selected.id)
-      const { data: msgs } = await (supabase as any).from('messages').select('*').eq('conversation_id', selected.id).order('created_at', { ascending: true })
-      setMessages(msgs || [])
+      await reloadThread(selected.id)
       showToast('Pickup notification sent')
       setPickupModal(null); scrollBottom()
     } catch (e: any) {
@@ -4155,8 +4163,7 @@ export default function InboxPage() {
         delivery_channel: smsNumber ? 'sms' : 'chat',
       })
       await (supabase as any).from('conversations').update({ last_message: '📄 Invoice', last_message_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', selected.id)
-      const { data: msgs } = await (supabase as any).from('messages').select('*').eq('conversation_id', selected.id).order('created_at', { ascending: true })
-      setMessages(msgs || [])
+      await reloadThread(selected.id)
       showToast('Invoice sent in chat')
       setInvoicePreview(null); scrollBottom()
     } catch (e: any) {
@@ -4866,8 +4873,7 @@ export default function InboxPage() {
       } catch (e: any) { showToast(`Could not send the ${kind}: ${e.message}`) }
     }
     setSendPicker(null)
-    const { data: msgs } = await (supabase as any).from('messages').select('*').eq('conversation_id', selected.id).order('created_at', { ascending: true })
-    setMessages(msgs || []); scrollBottom()
+    if (await reloadThread(selected.id)) scrollBottom()
   }
 
   // Send a payment request into the chat. Locked while it's in flight, so a
@@ -4901,8 +4907,7 @@ export default function InboxPage() {
         } catch (e) { showToast(`Payment created, but sending failed: ${(e as any).message}`) }
       }
       setSendPicker(null); setPayAmount(''); setPayDesc('')
-      const { data: msgs } = await (supabase as any).from('messages').select('*').eq('conversation_id', selected.id).order('created_at', { ascending: true })
-      setMessages(msgs || []); scrollBottom()
+      if (await reloadThread(selected.id)) scrollBottom()
     } catch (e: any) { alert('Payment error: ' + e.message) }
     finally { paySendingRef.current = false; setPaySending(false) }
   }
@@ -5141,6 +5146,16 @@ export default function InboxPage() {
     setSending(true)
     let content = reply.trim()
     const senderName = myName
+    // A send takes a few seconds and the agent may open another chat meanwhile.
+    // When it finishes, forget THIS conversation's draft, but only reset the
+    // composer if this conversation is still open — otherwise it belongs to the
+    // chat they moved to (and whatever they've started typing there).
+    const sentFrom = selected.id
+    const sendDone = () => {
+      draft.discard()
+      if (selectedIdRef.current !== sentFrom) return
+      setReply(''); setReplyTo(null); setSending(false)
+    }
 
     // An internal note isn't taking the customer on, so it doesn't claim the
     // conversation — only a customer-facing reply does.
@@ -5152,7 +5167,7 @@ export default function InboxPage() {
     if (!internalMode && ['closed', 'resolved'].includes(String((selected as any).status || ''))) {
       const who = senderName || 'A team member'
       try { await (supabase as any).from('conversations').update({ status: 'open' }).eq('id', selected.id) } catch {}
-      setSelected(s => s ? ({ ...s, status: 'open' } as any) : s)
+      setSelected(s => s && s.id === sentFrom ? ({ ...s, status: 'open' } as any) : s)
       logEvent('reopened', `Reopened when ${who} replied.`)
     }
 
@@ -5238,10 +5253,9 @@ export default function InboxPage() {
         // Deliberately NOT touching conversations.last_message — an internal
         // note shouldn't change what the conversation list shows the customer
         // said, and shouldn't mark the thread as newly active for them.
-        setReply(''); setReplyTo(null); setSending(false); draft.discard()
-        setInternalMode(false); setMentionedUsers([])
-        const { data: msgs } = await (supabase as any).from('messages').select('*').eq('conversation_id', selected.id).order('created_at', { ascending: true })
-        setMessages(msgs || [])
+        sendDone()
+        if (selectedIdRef.current === sentFrom) { setInternalMode(false); setMentionedUsers([]) }
+        await reloadThread(selected.id)
         scrollBottom()
       } catch (e: any) {
         setSending(false)
@@ -5274,9 +5288,8 @@ export default function InboxPage() {
         })
         const data = await res.json()
         if (!res.ok) throw new Error(data.error || 'Message failed to send')
-        setReply(''); setReplyTo(null); setSending(false); draft.discard()
-        const { data: msgs } = await (supabase as any).from('messages').select('*').eq('conversation_id', selected.id).order('created_at', { ascending: true })
-        setMessages(msgs || [])
+        sendDone()
+        await reloadThread(selected.id)
         scrollBottom()
       } catch (e: any) {
         setSending(false)
@@ -5295,9 +5308,8 @@ export default function InboxPage() {
         })
         const data = await res.json()
         if (!res.ok) throw new Error(data.error || 'Email failed to send')
-        setReply(''); setReplyTo(null); setSending(false); draft.discard()
-        const { data: msgs } = await (supabase as any).from('messages').select('*').eq('conversation_id', selected.id).order('created_at', { ascending: true })
-        setMessages(msgs || [])
+        sendDone()
+        await reloadThread(selected.id)
         scrollBottom()
       } catch (e: any) {
         setSending(false)
@@ -5379,9 +5391,8 @@ export default function InboxPage() {
         })
         const data = await res.json()
         if (!res.ok) throw new Error(data.error || 'Email failed to send')
-        setReply(''); setReplyTo(null); setSending(false); draft.discard()
-        const { data: msgs } = await (supabase as any).from('messages').select('*').eq('conversation_id', selected.id).order('created_at', { ascending: true })
-        setMessages(msgs || [])
+        sendDone()
+        await reloadThread(selected.id)
         scrollBottom()
       } catch (e: any) {
         // Don't silently record a "Live Chat" the customer can't see — surface
@@ -5428,9 +5439,8 @@ export default function InboxPage() {
         })
         const data = await res.json()
         if (!res.ok) throw new Error(data.error || 'SMS failed')
-        setReply(''); setReplyTo(null); setSending(false); draft.discard()
-        const { data: msgs } = await (supabase as any).from('messages').select('*').eq('conversation_id', selected.id).order('created_at', { ascending: true })
-        setMessages(msgs || [])
+        sendDone()
+        await reloadThread(selected.id)
         scrollBottom()
       } catch (e: any) {
         // Do NOT silently drop the reply into a live chat nobody is watching —
@@ -5490,6 +5500,9 @@ export default function InboxPage() {
       // Remember the channel so the next reply continues on it.
       active_channel: 'chat',
     }).eq('id', selected.id)
+    draft.discard()
+    // Still on this chat? Reset the composer. Moved on? Leave theirs alone.
+    if (selectedIdRef.current !== selected.id) return
     setReply('')
     setReplyTo(null)
     setSending(false)
@@ -5560,9 +5573,7 @@ export default function InboxPage() {
         })
       }
       showToast('Tracking sent')
-      const { data: msgs } = await (supabase as any).from('messages')
-        .select('*').eq('conversation_id', selected.id).order('created_at', { ascending: true })
-      setMessages(msgs || [])
+      await reloadThread(selected.id)
       scrollBottom()
     } catch (e: any) {
       showToast(e.message || 'Could not send tracking')
@@ -9525,8 +9536,7 @@ export default function InboxPage() {
                   extraTools={(insert) => <>{renderSendMenu(true)}{renderLinkTools(true, insert)}</>}
                   onAiAssist={() => logAiUpdate('Reply drafted with Colvy AI')}
                   onSent={async () => {
-                    const { data: msgs } = await (supabase as any).from('messages').select('*').eq('conversation_id', selected.id).order('created_at', { ascending: true })
-                    setMessages(msgs || [])
+                    await reloadThread(selected.id)
                     scrollBottom()
                     loadConversations()
                   }}
