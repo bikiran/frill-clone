@@ -35,10 +35,15 @@ const ToolIcon = ({ tool, active }: { tool: ToolType; active: boolean }) => {
 export default function ImageAnnotator({
   imageSrc,
   onSave,
+  onSaveBlob,
+  exportType = 'image/png',
   onClose,
 }: {
   imageSrc: string
-  onSave: (dataUrl: string) => void
+  onSave?: (dataUrl: string) => void
+  // Faster path: an encoded Blob (no base64 data URL), e.g. a JPEG for photos.
+  onSaveBlob?: (blob: Blob) => void
+  exportType?: 'image/png' | 'image/jpeg'
   onClose: () => void
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -285,7 +290,12 @@ export default function ImageAnnotator({
           Markup
         </span>
         <button type="button"
-          onClick={() => { const c = canvasRef.current; if (c) onSave(c.toDataURL('image/png')) }}
+          onClick={() => {
+            const c = canvasRef.current
+            if (!c) return
+            if (onSaveBlob) c.toBlob(b => { if (b) onSaveBlob(b) }, exportType, 0.92)
+            else onSave?.(c.toDataURL('image/png'))
+          }}
           style={{
             background: '#0A84FF', color: '#fff', border: 'none',
             padding: '8px 22px', borderRadius: 999, fontSize: 13, fontWeight: 600, cursor: 'pointer',

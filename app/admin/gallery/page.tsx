@@ -211,7 +211,9 @@ export default function GalleryPage() {
   }
   // Lightweight toast for share/send feedback.
   const [toast, setToast] = useState('')
-  const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(''), 2600) }
+  // Each message gets its full time on screen; an older one's timer can't clear a newer one.
+  const toastTimer = useRef<any>(null)
+  const showToast = (m: string) => { setToast(m); clearTimeout(toastTimer.current); toastTimer.current = setTimeout(() => setToast(''), 2600) }
 
   const toAttachment = (it: any) => ({ url: it.url, kind: it.kind || ((it.type || '').startsWith('video/') ? 'video' : 'image'), name: it.title || it.name || '', type: it.type })
 
@@ -314,28 +316,47 @@ export default function GalleryPage() {
   const changeView = (v: 'compact' | 'comfortable' | 'large') => { setViewMode(v); try { localStorage.setItem('gallery-view', v) } catch {} }
 
   // Image editing (Markup). Opens the shared annotator on a same-origin proxied
-  // copy of the image so the canvas can be exported on Save.
+  // copy of the image so the canvas can be exported on Save. Saving is instant:
+  // the editor closes and the new image shows as a tile straight away, while it
+  // uploads straight to storage in the background (photos as JPEG, images that
+  // may be transparent as PNG).
   const [editingItem, setEditingItem] = useState<any>(null)
-  const [savingEdit, setSavingEdit] = useState(false)
-  const saveEditedImage = async (item: any, dataUrl: string) => {
-    if (!companyId || savingEdit) return
-    setSavingEdit(true); showToast('Saving edited image…')
-    try {
-      const blob = await (await fetch(dataUrl)).blob()
-      const base = (item.title || 'image').replace(/\.[a-z0-9]+$/i, '')
-      const file = new File([blob], `${base}-edited.png`, { type: 'image/png' })
-      const fd = new FormData()
-      fd.append('file', file); fd.append('companyId', companyId)
-      if (item.folder_id) fd.append('folderId', item.folder_id)
-      fd.append('title', `${base} (edited)`)
-      const res = await authFetch('/api/media/upload', { method: 'POST', body: fd })
-      if (!res.ok) throw new Error('upload failed')
-      setEditingItem(null)
-      await load()
-      showToast('Saved as a new image')
-    } catch {
-      showToast('Could not save the edit')
-    } finally { setSavingEdit(false) }
+  const editExportType = (it: any): 'image/png' | 'image/jpeg' =>
+    /png|gif|webp|svg/i.test(String(it?.type || '')) || /\.(png|gif|webp|svg)(\?|#|$)/i.test(String(it?.url || '')) ? 'image/png' : 'image/jpeg'
+  const saveEditedImage = (item: any, blob: Blob) => {
+    if (!companyId) return
+    const base = (item.title || 'image').replace(/\.[a-z0-9]+$/i, '').replace(/\s*\(edited\)$/i, '')
+    const ext = blob.type === 'image/png' ? 'png' : 'jpg'
+    const file = new File([blob], `${base}-edited.${ext}`, { type: blob.type })
+    const draftId = `edit-${Date.now()}`
+    const previewUrl = URL.createObjectURL(file)
+    setPending(prev => [{ id: draftId, previewUrl, kind: 'image', name: `${base} (edited)`, status: 'uploading', source: 'edit' }, ...prev])
+    setEditingItem(null)
+    showToast('Saved as a new image')
+    ;(async () => {
+      let ok = false
+      try {
+        const folder = item.folder_id || null
+        const url = await uploadDirect(file, `media-gallery/${companyId}/${folder || 'unfiled'}`, file.name)
+        const fd = new FormData()
+        fd.append('companyId', companyId); fd.append('title', `${base} (edited)`)
+        if (folder) fd.append('folderId', folder)
+        // Straight to storage, then just register it; if presigning isn't
+        // available, fall back to uploading through the server.
+        if (url) { fd.append('url', url); fd.append('name', file.name); fd.append('type', file.type) }
+        else fd.append('file', file)
+        const res = await authFetch('/api/media/upload', { method: 'POST', body: fd })
+        ok = res.ok
+      } catch { ok = false }
+      if (ok) {
+        await load()
+        setPending(prev => prev.filter(p => p.id !== draftId))
+        try { URL.revokeObjectURL(previewUrl) } catch {}
+      } else {
+        setPending(prev => prev.map(p => p.id === draftId ? { ...p, status: 'error' } : p))
+        showToast('Could not save the edited image')
+      }
+    })()
   }
 
   // Video trimming: saves a trimmed copy server-side (the original is kept).
@@ -612,8 +633,10 @@ export default function GalleryPage() {
     // object URLs we created to avoid leaking them.
     if (anySucceeded) await load()
     setPending(prev => {
-      const keep = prev.filter(p => p.status === 'error')
-      prev.forEach(p => { if (p.status !== 'error') { try { URL.revokeObjectURL(p.previewUrl) } catch {} } })
+      // An edited image still saving in the background isn't part of this batch.
+      const mine = (p: any) => p.status !== 'error' && p.source !== 'edit'
+      const keep = prev.filter(p => !mine(p))
+      prev.forEach(p => { if (mine(p)) { try { URL.revokeObjectURL(p.previewUrl) } catch {} } })
       return keep
     })
 
@@ -1493,7 +1516,8 @@ export default function GalleryPage() {
         <ImageAnnotator
           imageSrc={`/api/media/proxy?url=${encodeURIComponent(editingItem.url)}`}
           onClose={() => setEditingItem(null)}
-          onSave={(dataUrl) => saveEditedImage(editingItem, dataUrl)}
+          exportType={editExportType(editingItem)}
+          onSaveBlob={(blob) => saveEditedImage(editingItem, blob)}
         />
       )}
     </div>
