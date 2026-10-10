@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { fmtMoney, buildOrderLineKeys, gstInclFactor, variationLabel } from '@/lib/orders'
+import CollapseSection from '@/components/CollapseSection'
 
 /**
  * Per-line-item fulfilment + ShipStation-style split shipments.
@@ -18,7 +19,7 @@ import { fmtMoney, buildOrderLineKeys, gstInclFactor, variationLabel } from '@/l
 type Ful = { line_key: string; sent: boolean; sent_at: string | null; ship_group: number; picked: boolean; picked_at: string | null }
 
 export default function OrderItemsPanel({
-  order, companyId, items, accent, onLog, onFlash, onOpenItem, pickMode = false, onExitPick,
+  order, companyId, items, accent, onLog, onFlash, onOpenItem, pickMode = false, onExitPick, onAllSent,
 }: {
   order: any
   companyId: string
@@ -29,6 +30,8 @@ export default function OrderItemsPanel({
   onOpenItem?: (index: number) => void
   pickMode?: boolean
   onExitPick?: () => void
+  // Someone just marked the last unsent item sent (not on load).
+  onAllSent?: () => void
 }) {
   const ACCENT = accent || 'var(--coral)'
   const currency = order?.currency || 'AUD'
@@ -40,6 +43,15 @@ export default function OrderItemsPanel({
   const [splitMode, setSplitMode] = useState(false)
   const [sel, setSel] = useState<Set<string>>(new Set())
   const [reassign, setReassign] = useState<string | null>(null)
+  // The "move to shipment" popout closes on any click outside it, or Esc.
+  useEffect(() => {
+    if (!reassign) return
+    const onDown = (e: PointerEvent) => { if (!(e.target as HTMLElement)?.closest?.('[data-reassign]')) setReassign(null) }
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setReassign(null) }
+    document.addEventListener('pointerdown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => { document.removeEventListener('pointerdown', onDown); document.removeEventListener('keydown', onKey) }
+  }, [reassign])
   // Line keys currently flagged out of stock (status='pending'). Lives in its
   // own table so the "Out of Stock List" view is one cheap denormalised query.
   const [oos, setOos] = useState<Set<string>>(new Set())
@@ -149,8 +161,13 @@ export default function OrderItemsPanel({
   }
   const writeMany = async (its: any[], patch: Partial<Ful>) => { for (const it of its) await write(it, patch) }
 
+  // Set when a person marks items sent, so reaching "all sent" from their click
+  // (not from loading an already-sent order) can offer to complete the order.
+  const userSentRef = useRef(false)
+
   const toggleSent = async (it: any) => {
     const now = !sentOf(it)
+    if (now) userSentRef.current = true
     await write(it, { sent: now, sent_at: now ? new Date().toISOString() : null })
     // Sending a line resolves any out-of-stock flag on it — the customer got it,
     // so it should drop off the Out of Stock List (shown struck through there).
@@ -178,6 +195,11 @@ export default function OrderItemsPanel({
     if (!items.length || !order?.id) return
     const s = items.reduce((n, it) => n + (sentOf(it) ? 1 : 0), 0)
     const status = s === 0 ? 'unfulfilled' : s >= items.length ? 'fulfilled' : 'partial'
+    if (status === 'fulfilled' && userSentRef.current) {
+      userSentRef.current = false
+      // Let the last tick land before asking.
+      setTimeout(() => onAllSent?.(), 350)
+    }
     if (status === lastStatusRef.current || status === order.fulfilment_status) { lastStatusRef.current = status; return }
     lastStatusRef.current = status
     ;(async () => { try { await (supabase as any).from('orders').update({ fulfilment_status: status }).eq('id', order.id) } catch {} })()
@@ -203,11 +225,11 @@ export default function OrderItemsPanel({
   }
   const moveTo = async (it: any, g: number) => { await write(it, { ship_group: g }); setReassign(null); onLog?.('order_split', `Moved ${it.product_name} to Shipment ${g}`) }
   const markGroup = async (rows: { it: any }[], sent: boolean) => {
+    if (sent) userSentRef.current = true
     await writeMany(rows.map(r => r.it), { sent, sent_at: sent ? new Date().toISOString() : null })
     onLog?.(sent ? 'item_sent' : 'item_unsent', `${sent ? 'Marked all sent' : 'Unmarked all'} · ${rows.length} item${rows.length === 1 ? '' : 's'}`)
   }
 
-  const kick: any = { margin: 0, fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--slate)' }
   const sentTotal = items.reduce((n, it) => n + (sentOf(it) ? 1 : 0), 0)
   const pickedTotal = items.reduce((n, it) => n + (pickedOf(it) ? 1 : 0), 0)
   const allPicked = items.length > 0 && pickedTotal >= items.length
@@ -245,7 +267,7 @@ export default function OrderItemsPanel({
             <span style={{ display: 'inline-block', margin: '2px 0 0', padding: '1px 8px', borderRadius: 20, background: 'var(--peach)', color: 'var(--coral)', fontSize: 10.5, fontWeight: 700, maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{variationLabel(it)}</span>
           )}
           <p style={{ margin: '2px 0 0', fontSize: 11, color: 'var(--slate)', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-            {it.sku ? <span>SKU: {it.sku}</span> : null}
+            {it.sku ? <span title={`SKU: ${it.sku}`} style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>SKU: {it.sku}</span> : null}
             {oosFlag && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 7px', borderRadius: 20, background: '#fee2e2', color: '#b91c1c', fontWeight: 800, fontSize: 10, letterSpacing: '0.02em', whiteSpace: 'nowrap' }}>⚠ OUT OF STOCK</span>}
             {sent && !pickMode && <span style={{ color: '#059669', fontWeight: 700 }}>✓ Sent</span>}
             {picked && !pickMode && <span style={{ color: '#059669', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 3 }}>✓ Picked</span>}
@@ -261,15 +283,27 @@ export default function OrderItemsPanel({
           </span>
         )}
         {!pickMode && multi && !splitMode && (
-          <div style={{ position: 'relative', flexShrink: 0 }}>
-            <button type="button" title="Move to another shipment" onClick={() => setReassign(r => r === it.id ? null : it.id)}
-              style={{ width: 24, height: 24, borderRadius: 7, border: '1px solid var(--border)', background: 'var(--card,#fff)', color: 'var(--slate)', cursor: 'pointer', fontSize: 12 }}>⇄</button>
+          <div data-reassign style={{ position: 'relative', flexShrink: 0 }}>
+            <button type="button" title="Move to another shipment" aria-label="Move to another shipment" aria-expanded={reassign === it.id} onClick={() => setReassign(r => r === it.id ? null : it.id)}
+              style={{ width: 30, height: 30, borderRadius: 8, border: `1px solid ${reassign === it.id ? ACCENT : 'var(--border)'}`, background: 'var(--card,#fff)', color: reassign === it.id ? ACCENT : 'var(--slate)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3l4 4-4 4" /><path d="M3 7h18" /><path d="M7 21l-4-4 4-4" /><path d="M21 17H3" /></svg>
+            </button>
             {reassign === it.id && (
-              <div style={{ position: 'absolute', top: 28, right: 0, zIndex: 40, background: 'var(--card,#fff)', border: '1px solid var(--border)', borderRadius: 9, boxShadow: '0 10px 30px rgba(0,0,0,.14)', padding: 6, minWidth: 130 }}>
+              <div className="ord-reassign" role="menu" style={{ position: 'absolute', top: 36, right: 0, zIndex: 40, background: 'var(--card,#fff)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 12px 32px rgba(0,0,0,.14)', padding: 5, minWidth: 170, transformOrigin: 'top right' }}>
+                <p style={{ margin: 0, padding: '6px 9px 4px', fontSize: 10.5, fontWeight: 800, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--slate)', whiteSpace: 'nowrap' }}>Move to</p>
                 {groupNums.filter(g => g !== groupOf(it)).map(g => (
-                  <button key={g} type="button" onClick={() => moveTo(it, g)} style={{ display: 'block', width: '100%', textAlign: 'left', padding: '6px 8px', borderRadius: 7, border: 'none', background: 'none', fontSize: 12.5, fontWeight: 600, color: 'var(--ink)', cursor: 'pointer' }}>Shipment {g}</button>
+                  <button key={g} type="button" role="menuitem" className="ord-reassign-opt" onClick={() => moveTo(it, g)} style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '7px 9px', borderRadius: 8, border: 'none', background: 'none', fontSize: 12.5, fontWeight: 600, color: 'var(--ink)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 18, height: 18, borderRadius: 5, background: ACCENT, color: '#fff', fontSize: 10.5, fontWeight: 800 }}>{g}</span>
+                    Shipment {g}
+                  </button>
                 ))}
-                <button type="button" onClick={() => moveTo(it, (Math.max(...groupNums)) + 1)} style={{ display: 'block', width: '100%', textAlign: 'left', padding: '6px 8px', borderRadius: 7, border: 'none', background: 'none', fontSize: 12.5, fontWeight: 700, color: ACCENT, cursor: 'pointer' }}>+ New shipment</button>
+                <button type="button" role="menuitem" className="ord-reassign-opt" onClick={() => moveTo(it, (Math.max(...groupNums)) + 1)} style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '7px 9px', borderRadius: 8, border: 'none', background: 'none', fontSize: 12.5, fontWeight: 700, color: ACCENT, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 18, height: 18, borderRadius: 5, border: `1.5px dashed ${ACCENT}`, boxSizing: 'border-box' }}>
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
+                  </span>
+                  New shipment
+                </button>
+                <style>{`.ord-reassign{animation:ordPop .2s cubic-bezier(.32,.72,0,1)}@keyframes ordPop{from{opacity:0;transform:scale(.96) translateY(-4px)}to{opacity:1;transform:none}}.ord-reassign-opt:hover{background:color-mix(in srgb, var(--slate) 8%, transparent)!important}@media (prefers-reduced-motion: reduce){.ord-reassign{animation:none}}`}</style>
               </div>
             )}
           </div>
@@ -303,27 +337,32 @@ export default function OrderItemsPanel({
         </div>
       )}
 
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-        <p style={kick}>Items ({items.length}{items.length ? ` · ${sentTotal} sent` : ''}{pickedTotal ? ` · ${pickedTotal} picked` : ''}){gstF > 1 ? <span style={{ textTransform: 'none', fontWeight: 600, color: 'var(--slate)' }}> · incl GST</span> : null}</p>
-        {!pickMode && items.length > 1 && (
-          splitMode ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <button type="button" onClick={moveToNewShipment} disabled={!sel.size}
-                style={{ fontSize: 12, fontWeight: 700, color: sel.size ? '#fff' : 'var(--slate)', background: sel.size ? ACCENT : 'var(--border)', border: 'none', borderRadius: 8, padding: '5px 10px', cursor: sel.size ? 'pointer' : 'default' }}>Move {sel.size || ''} to new shipment</button>
-              <button type="button" onClick={() => { setSplitMode(false); setSel(new Set()) }} style={{ fontSize: 12, fontWeight: 700, color: 'var(--slate)', background: 'none', border: 'none', cursor: 'pointer' }}>Cancel</button>
-            </div>
-          ) : (
-            <button type="button" onClick={() => setSplitMode(true)} title="Split this order into multiple shipments"
-              style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 700, color: ACCENT, background: 'none', border: 'none', cursor: 'pointer' }}>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="6" y1="3" x2="6" y2="15" /><circle cx="18" cy="6" r="3" /><circle cx="6" cy="18" r="3" /><path d="M18 9a9 9 0 0 1-9 9" /></svg>
-              Split ship
-            </button>
-          )
-        )}
-      </div>
+      <CollapseSection storageKey="order-items"
+        title={<>Items · {items.length}{items.length ? ` · ${sentTotal} sent` : ''}{pickedTotal ? ` · ${pickedTotal} picked` : ''}{gstF > 1 ? <span style={{ textTransform: 'none', fontWeight: 600 }}> · incl GST</span> : null}</>}
+        right={!pickMode && items.length > 1 && !splitMode ? (
+          <button type="button" onClick={() => setSplitMode(true)} title="Split this order into multiple shipments"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 700, color: ACCENT, background: 'none', border: 'none', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="6" y1="3" x2="6" y2="15" /><circle cx="18" cy="6" r="3" /><circle cx="6" cy="18" r="3" /><path d="M18 9a9 9 0 0 1-9 9" /></svg>
+            Split ship
+          </button>
+        ) : null}>
 
       {splitMode && (
-        <p style={{ margin: '8px 0 0', fontSize: 11.5, color: 'var(--slate)' }}>Tick the items to move into a separate shipment, then “Move to new shipment”.</p>
+        <div className="ord-split-bar" style={{ marginTop: 10, padding: '10px 12px', borderRadius: 12, background: `color-mix(in srgb, ${ACCENT} 7%, transparent)`, border: `1px solid color-mix(in srgb, ${ACCENT} 22%, transparent)` }}>
+          <p style={{ margin: 0, fontSize: 12.5, fontWeight: 700, color: 'var(--ink)' }}>
+            {sel.size ? `${sel.size} item${sel.size === 1 ? '' : 's'} selected` : 'Select items for a new shipment'}
+          </p>
+          <p style={{ margin: '2px 0 0', fontSize: 11.5, color: 'var(--slate)' }}>They&rsquo;ll ship separately from the rest of the order.</p>
+          <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+            <button type="button" onClick={() => { setSplitMode(false); setSel(new Set()) }}
+              style={{ flex: 1, padding: '8px 10px', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--card,#fff)', color: 'var(--slate)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>Cancel</button>
+            <button type="button" onClick={moveToNewShipment} disabled={!sel.size}
+              style={{ flex: 2, padding: '8px 10px', borderRadius: 9, border: 'none', background: sel.size ? ACCENT : 'color-mix(in srgb, var(--slate) 22%, transparent)', color: '#fff', fontSize: 12.5, fontWeight: 700, cursor: sel.size ? 'pointer' : 'default', whiteSpace: 'nowrap', transition: 'background .2s ease' }}>
+              Move to new shipment
+            </button>
+          </div>
+          <style>{`.ord-split-bar{animation:ordSplitIn .32s cubic-bezier(.32,.72,0,1)}@keyframes ordSplitIn{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}@media (prefers-reduced-motion: reduce){.ord-split-bar{animation:none}}`}</style>
+        </div>
       )}
 
       {!multi && (
@@ -351,6 +390,7 @@ export default function OrderItemsPanel({
           </div>
         )
       })}
+      </CollapseSection>
     </div>
   )
 }

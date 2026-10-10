@@ -11,6 +11,7 @@ import {
 } from '@/lib/orders'
 import OrderPrintDoc from '@/components/OrderPrintDoc'
 import OrderItemsPanel from '@/components/OrderItemsPanel'
+import CollapseSection from '@/components/CollapseSection'
 import CreateOrderPanel from '@/components/CreateOrderPanel'
 import OutOfStockModal from '@/components/OutOfStockModal'
 import RefundOrderModal from '@/components/RefundOrderModal'
@@ -1590,10 +1591,19 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
   const isShopifyOrder = order.sales_channel === 'shopify'
   const storeRef = isShopifyOrder ? `shopify-${order.external_order_id}` : order.external_order_id
   const storeName = isShopifyOrder ? 'Shopify' : 'WooCommerce'
-  const markCompleted = async () => {
-    if (!await confirmDialog(isShopifyOrder
-      ? `Mark order ${order.order_number} as completed?\n\nThis marks it paid (if it isn't yet) and fulfilled in Shopify.`
-      : `Mark order ${order.order_number} as completed in WooCommerce?`)) return
+  const markCompleted = async (opts: { allSent?: boolean } = {}) => {
+    const ok = opts.allSent
+      ? await confirmDialog({
+          title: 'All items sent. Order completed?',
+          message: isShopifyOrder
+            ? `Mark order ${order.order_number} as completed? This marks it paid (if it isn't yet) and fulfilled in Shopify.`
+            : `Mark order ${order.order_number} as completed in ${storeName}?`,
+          confirmLabel: 'Yes, complete', cancelLabel: 'No', tone: 'primary',
+        })
+      : await confirmDialog(isShopifyOrder
+        ? `Mark order ${order.order_number} as completed?\n\nThis marks it paid (if it isn't yet) and fulfilled in Shopify.`
+        : `Mark order ${order.order_number} as completed in WooCommerce?`)
+    if (!ok) return
     setActBusy('done')
     try {
       const res = await authFetch('/api/orders/status', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, orderId: storeRef, status: 'completed', conversationId: order.conversation_id || undefined }) })
@@ -1602,6 +1612,16 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
       else { onPatch({ status: 'shipped', fulfilment_status: 'fulfilled' }, { type: 'status_changed', detail: `Marked completed in ${storeName}` }); order.status = 'shipped'; onFlash('Order marked completed') }
     } catch (e: any) { onFlash(`Error: ${e?.message || e}`) }
     setActBusy('')
+  }
+  // Every item just got marked sent: offer to complete the order.
+  const onAllItemsSent = async () => {
+    if (['shipped', 'cancelled', 'refunded'].includes(order.status)) return
+    const isStore = order.sales_channel === 'woocommerce' || (isShopifyOrder && !!order.external_order_id)
+    if (isStore) return markCompleted({ allSent: true })
+    // Manual / POS orders complete in Colvy only.
+    if (!await confirmDialog({ title: 'All items sent. Order completed?', message: `Mark order ${order.order_number} as completed?`, confirmLabel: 'Yes, complete', cancelLabel: 'No', tone: 'primary' })) return
+    onPatch({ status: 'shipped', fulfilment_status: 'fulfilled' }, { type: 'status_changed', detail: 'Marked completed' }); order.status = 'shipped'
+    onFlash('Order marked completed')
   }
   // ── Click & Collect actions ───────────────────────────────────────────────
   const notifyPickup = async () => {
@@ -2050,8 +2070,7 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
           </div>
 
           {/* Customer */}
-          <div style={sect}>
-            <p style={kick}>Customer</p>
+          <CollapseSection style={sect} storageKey="order-customer" title="Customer">
             <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
               {contactHref ? <a href={contactHref} style={{ fontSize: 15, fontWeight: 700, color: ACCENT, textDecoration: 'none' }}>{order.customer_name}</a> : <span style={{ fontSize: 15, fontWeight: 700 }}>{order.customer_name}</span>}
               {order.customer_name && <CopyBtn onClick={() => copyToClipboard(order.customer_name, onFlash)} title="Copy name" />}
@@ -2062,27 +2081,23 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
             {convHref
               ? <a href={convHref} style={{ display: 'inline-block', marginTop: 8, fontSize: 12.5, fontWeight: 700, color: ACCENT, textDecoration: 'none' }}>Open conversation →</a>
               : canContact && <button onClick={startConversation} style={{ display: 'inline-block', marginTop: 8, fontSize: 12.5, fontWeight: 700, color: ACCENT, textDecoration: 'none', background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'inherit' }}>Start a conversation →</button>}
-          </div>
+          </CollapseSection>
 
           {/* Shipping address */}
           {(addr.address_1 || addr.city) && (
-            <div style={sect}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <p style={kick}>Shipping Address</p>
-                <CopyBtn title="Copy address" onClick={() => copyToClipboard([order.customer_name, [addr.address_1, addr.address_2].filter(Boolean).join(', '), [addr.city, (addr.state || '').toUpperCase(), addr.postcode].filter(Boolean).join(' '), addr.country].filter(Boolean).join('\n'), onFlash)} />
-              </div>
+            <CollapseSection style={sect} storageKey="order-address" title="Shipping Address"
+              right={<CopyBtn title="Copy address" onClick={() => copyToClipboard([order.customer_name, [addr.address_1, addr.address_2].filter(Boolean).join(', '), [addr.city, (addr.state || '').toUpperCase(), addr.postcode].filter(Boolean).join(' '), addr.country].filter(Boolean).join('\n'), onFlash)} />}>
               <p onClick={() => copyToClipboard([order.customer_name, [addr.address_1, addr.address_2].filter(Boolean).join(', '), [addr.city, (addr.state || '').toUpperCase(), addr.postcode].filter(Boolean).join(' '), addr.country].filter(Boolean).join('\n'), onFlash)} title="Click to copy address" style={{ margin: '8px 0 0', fontSize: 13, color: 'var(--ink)', lineHeight: 1.6, cursor: 'copy' }}>
                 {order.customer_name}<br />
                 {[addr.address_1, addr.address_2].filter(Boolean).join(', ')}<br />
                 {[addr.city, (addr.state || '').toUpperCase(), addr.postcode].filter(Boolean).join(' ')}<br />
                 {addr.country}
               </p>
-            </div>
+            </CollapseSection>
           )}
 
           {/* Order summary */}
-          <div style={sect}>
-            <p style={kick}>Order Summary</p>
+          <CollapseSection style={sect} storageKey="order-summary" title="Order Summary">
             <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 7 }}>
               {([
                 ['Outlet', store || 'No outlet'],
@@ -2105,7 +2120,7 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
                 </div>
               ))}
             </div>
-          </div>
+          </CollapseSection>
 
           {/* Order barcode — scannable Code128 of the order number, under the order details */}
           {order.order_number && (
@@ -2120,13 +2135,12 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
           <div style={sect} id="ord-items-panel">
             <OrderItemsPanel order={order} companyId={companyId} items={items} accent={ACCENT}
               pickMode={pickMode} onExitPick={() => setPickMode(false)}
-              onLog={logEvent} onFlash={onFlash} onOpenItem={(idx: number) => setGalleryIdx(idx)} />
+              onLog={logEvent} onFlash={onFlash} onOpenItem={(idx: number) => setGalleryIdx(idx)} onAllSent={onAllItemsSent} />
           </div>
 
           {/* Tags */}
-          <div style={sect}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <p style={kick}>Tags</p>
+          <CollapseSection style={sect} storageKey="order-tags" title="Tags"
+            right={
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, position: 'relative' }}>
                 <button type="button" onClick={() => onManageTags?.()} style={{ fontSize: 12, fontWeight: 700, color: 'var(--slate)', background: 'none', border: 'none', cursor: 'pointer' }}>Manage</button>
                 <button type="button" onClick={() => setAddingTag(v => !v)} style={{ fontSize: 12, fontWeight: 700, color: ACCENT, background: 'none', border: 'none', cursor: 'pointer' }}>{addingTag ? 'Cancel' : '+ Add'}</button>
@@ -2135,25 +2149,24 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
                     onClose={() => setAddingTag(false)} onPick={t => addTag(t)} />
                 )}
               </div>
-            </div>
+            }>
             <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
               {(order.tags || []).map((t: string) => (
                 <TagChip key={t} name={t} color={tagColor?.(t)} onRemove={() => removeTag(t)} />
               ))}
               {(order.tags || []).length === 0 && !addingTag && <span style={{ fontSize: 12, color: 'var(--slate)' }}>No tags</span>}
             </div>
-          </div>
+          </CollapseSection>
 
           {/* Assign Outlet */}
           {locations && locations.length > 0 && (
-            <div style={sect}>
-              <p style={kick}>Assign Outlet</p>
+            <CollapseSection style={sect} storageKey="order-outlet" title="Assign Outlet">
               <select value={order.store_location_id || ''} onChange={e => { const v = e.target.value || null; onPatch({ store_location_id: v }, { type: 'outlet', detail: v ? `Assigned to ${outletName?.(v) || 'outlet'}` : 'Outlet cleared' }); order.store_location_id = v }}
                 style={{ width: '100%', marginTop: 8, padding: '9px 11px', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--card,#fff)', color: 'var(--ink)', fontSize: 13, fontWeight: 600, cursor: 'pointer', outline: 'none' }}>
                 <option value="">No outlet</option>
                 {locations.map((l: any) => <option key={l.id} value={l.id}>{l.name}</option>)}
               </select>
-            </div>
+            </CollapseSection>
           )}
 
           {/* Send tracking — expands an inline box below (no popup) */}
@@ -2187,30 +2200,29 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
             )}
           </div>
 
-          {/* Order actions */}
-          <div style={sect}>
-            <p style={kick}>Order Actions</p>
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
-              {(() => { const b = (color: string): React.CSSProperties => ({ fontSize: 12, fontWeight: 700, color, background: 'var(--card,#fff)', border: '1px solid var(--border)', borderRadius: 8, padding: '7px 12px', cursor: 'pointer' })
+          {/* Order actions — one row; scrolls sideways if a store adds more */}
+          <CollapseSection style={sect} storageKey="order-actions" title="Order Actions">
+            <div className="ord-actions" style={{ display: 'flex', gap: 6, marginTop: 8, overflowX: 'auto', scrollbarWidth: 'none' }}>
+              {(() => { const b = (color: string): React.CSSProperties => ({ flex: '1 0 auto', fontSize: 12, fontWeight: 700, color, background: 'var(--card,#fff)', border: '1px solid var(--border)', borderRadius: 9, padding: '7px 10px', cursor: 'pointer', whiteSpace: 'nowrap', textAlign: 'center' })
                 const isWoo = order.sales_channel === 'woocommerce'
                 const isStore = isWoo || (isShopifyOrder && !!order.external_order_id)
                 const shopDomain = order.metadata?.shopify?.shop
                 return <>
                   {isWoo && wooStoreUrl && <button type="button" onClick={editInWoo} style={b(ACCENT)}>Edit</button>}
-                  {isShopifyOrder && shopDomain && order.external_order_id && <a href={`https://${shopDomain}/admin/orders/${order.external_order_id}`} target="_blank" rel="noopener noreferrer" style={{ ...b('#008060'), textDecoration: 'none' }}>Open in Shopify</a>}
-                  {isStore && !['shipped', 'cancelled', 'refunded'].includes(order.status) && <button type="button" disabled={actBusy === 'done'} onClick={markCompleted} style={b('#15803d')}>{actBusy === 'done' ? '…' : 'Mark completed'}</button>}
-                  {isClickCollect(order) && order.status !== 'shipped' && order.status !== 'cancelled' && <button type="button" disabled={actBusy === 'notify'} onClick={notifyPickup} style={b('#2563eb')}>{actBusy === 'notify' ? '…' : 'Ready for pickup'}</button>}
-                  {isStore && order.status !== 'refunded' && <button type="button" disabled={actBusy === 'refund'} onClick={issueRefund} style={b('#b45309')}>{actBusy === 'refund' ? '…' : 'Issue refund'}</button>}
+                  {isShopifyOrder && shopDomain && order.external_order_id && <a href={`https://${shopDomain}/admin/orders/${order.external_order_id}`} target="_blank" rel="noopener noreferrer" style={{ ...b('#008060'), textDecoration: 'none' }}>Shopify</a>}
+                  {isStore && !['shipped', 'cancelled', 'refunded'].includes(order.status) && <button type="button" disabled={actBusy === 'done'} onClick={() => markCompleted()} style={b('#15803d')}>{actBusy === 'done' ? '…' : 'Complete'}</button>}
+                  {isClickCollect(order) && order.status !== 'shipped' && order.status !== 'cancelled' && <button type="button" disabled={actBusy === 'notify'} onClick={notifyPickup} style={b('#2563eb')}>{actBusy === 'notify' ? '…' : 'Ready'}</button>}
+                  {isStore && order.status !== 'refunded' && <button type="button" disabled={actBusy === 'refund'} onClick={issueRefund} style={b('#b45309')}>{actBusy === 'refund' ? '…' : 'Refund'}</button>}
                   <button type="button" disabled={actBusy === 'invoice'} onClick={genInvoice} style={b('var(--ink)')}>{actBusy === 'invoice' ? '…' : 'Invoice'}</button>
                   <button type="button" onClick={copyOrderLink} style={b('var(--slate)')}>Copy link</button>
                 </>
               })()}
             </div>
-          </div>
+            <style>{`.ord-actions::-webkit-scrollbar{display:none}`}</style>
+          </CollapseSection>
 
           {/* Tasks */}
-          <div style={sect}>
-            <p style={kick}>Tasks</p>
+          <CollapseSection style={sect} storageKey="order-tasks" title="Tasks">
             <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
               <input value={taskText} onChange={e => setTaskText(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') addTask() }} placeholder="Add a task (e.g. Pack aquarium)…" style={{ flex: 1, padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 12.5, outline: 'none' }} />
               <button type="button" onClick={addTask} disabled={!taskText.trim()} style={{ padding: '7px 12px', borderRadius: 8, border: 'none', background: taskText.trim() ? ACCENT : 'var(--border)', color: '#fff', fontSize: 12.5, fontWeight: 700, cursor: taskText.trim() ? 'pointer' : 'default' }}>Add</button>
@@ -2223,7 +2235,7 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
                 </div>
               ) })}
             </div>}
-          </div>
+          </CollapseSection>
 
           {/* WooCommerce customer notes — the checkout note + notes-to-customer
               (the private system/stock/payment logs are hidden). */}
@@ -2232,8 +2244,7 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
             const checkoutNote = (order.customer_note || wooCustomerNote || '').trim()
             const hasCheckout = !!checkoutNote
             return (
-              <div style={sect}>
-                <p style={kick}>Customer Notes</p>
+              <CollapseSection style={sect} storageKey="order-cust-notes" title="Customer Notes">
                 {wooNotes === null && !hasCheckout && <p style={{ margin: '8px 0 0', fontSize: 12.5, color: 'var(--slate)' }}>Loading notes…</p>}
                 {wooNotes !== null && customerWoo.length === 0 && !hasCheckout && <p style={{ margin: '8px 0 0', fontSize: 12.5, color: 'var(--slate)' }}>No customer notes.</p>}
                 <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -2255,13 +2266,12 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
                     </div>
                   ))}
                 </div>
-              </div>
+              </CollapseSection>
             )
           })()}
 
           {/* Timeline + notes */}
-          <div style={{ ...sect, borderBottom: 'none' }}>
-            <p style={kick}>Order Timeline</p>
+          <CollapseSection style={{ ...sect, borderBottom: 'none' }} storageKey="order-timeline" title="Order Timeline">
             <div style={{ display: 'flex', gap: 6, margin: '10px 0' }}>
               <textarea id="ord-note" value={noteBody} onChange={e => setNoteBody(e.target.value)} placeholder="Add a note… use @ to mention someone" rows={2} style={{ flex: 1, padding: '8px 10px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 12.5, resize: 'vertical', outline: 'none', fontFamily: 'inherit' }} />
               <button type="button" onClick={addNote} disabled={!noteBody.trim()} style={{ padding: '0 12px', borderRadius: 9, border: 'none', background: noteBody.trim() ? ACCENT : 'var(--border)', color: '#fff', fontSize: 12.5, fontWeight: 700, cursor: noteBody.trim() ? 'pointer' : 'default' }}>Note</button>
@@ -2301,7 +2311,7 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
               ))}
               {notes.length === 0 && events.length === 0 && <p style={{ margin: 0, fontSize: 12.5, color: 'var(--slate)' }}>No activity yet.</p>}
             </div>
-          </div>
+          </CollapseSection>
         </div>
       </div>
 
