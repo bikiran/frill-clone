@@ -53,6 +53,7 @@ import { useAiDraft, AiDraftButton, AiDraftInfo } from '@/components/AiDraft'
 import BookingLinkButton from '@/components/booking/BookingLinkButton'
 import LinkCards, { linkCodesIn, useLinkStats, LastOpen } from '@/components/LinkCards'
 import { confirmDialog } from '@/components/ConfirmDialog'
+import PrextyMark, { PREXTY } from '@/components/PrextyMark'
 import { notifyIntegrations } from '@/lib/integrations-notify'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -8042,7 +8043,7 @@ export default function InboxPage() {
                     <Highlight text={displayName} q={searchTerm} accent={accent} />
                   </span>
                   {contact.prexty_customer_id && (
-                    <span title="Prexty POS customer" style={{ flexShrink: 0, width: 15, height: 15, borderRadius: 4, background: '#4f46e5', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 9.5, fontWeight: 800 }}>P</span>
+                    <PrextyMark size={14} title="Prexty POS customer" />
                   )}
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, marginLeft: 6 }}>
@@ -11048,10 +11049,12 @@ export default function InboxPage() {
                 {/* Prexty POS customer summary (order history activates when
                     Prexty's /orders endpoint ships; for now we show aggregates). */}
                 {prextyCustomer && (
-                  <div style={{ marginBottom: 16, padding: '14px 16px', borderRadius: 12, background: 'linear-gradient(135deg, #eef2ff, #e0e7ff)', border: '1px solid #c7d2fe' }}>
+                  <div style={{ marginBottom: 16, padding: '14px 16px', borderRadius: 12, background: `linear-gradient(135deg, ${PREXTY.tint}, ${PREXTY.tint2})`, border: `1px solid ${PREXTY.border}` }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-                      <span style={{ width: 18, height: 18, borderRadius: 5, background: '#4f46e5', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800 }}>P</span>
-                      <span style={{ fontSize: 13, fontWeight: 700, color: '#4338ca' }}>Prexty POS Customer</span>
+                      <span style={{ width: 24, height: 24, borderRadius: 7, background: '#fff', border: `1px solid ${PREXTY.border}`, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <PrextyMark size={15} />
+                      </span>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: PREXTY.ink }}>Prexty POS Customer</span>
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                       <div>
@@ -11078,7 +11081,7 @@ export default function InboxPage() {
                       )}
                     </div>
                     {(prextyCustomer.city || prextyCustomer.state || prextyCustomer.memberSince) && (
-                      <p style={{ margin: '10px 0 0', fontSize: 11.5, color: '#6366f1' }}>
+                      <p style={{ margin: '10px 0 0', fontSize: 11.5, color: PREXTY.ink }}>
                         {[prextyCustomer.city, prextyCustomer.state].filter(Boolean).join(', ')}
                         {prextyCustomer.memberSince ? `${(prextyCustomer.city || prextyCustomer.state) ? ' · ' : ''}Member since ${new Date(prextyCustomer.memberSince).toLocaleDateString('en-AU', { month: 'short', year: 'numeric' })}` : ''}
                       </p>
