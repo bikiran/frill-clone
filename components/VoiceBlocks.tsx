@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { playAudio } from '@/components/AudioDock'
 
 // Wires the buttons on inline `.rte-voice` cards (which live inside
 // contentEditable / dangerouslySetInnerHTML, where React can't mount directly)
@@ -41,7 +42,7 @@ export default function VoiceBlocks() {
       const block = btn.closest('.rte-voice') as HTMLElement | null
       if (!block) return
       e.preventDefault(); e.stopPropagation()
-      if (btn.classList.contains('rte-voice-play')) { audioOf(block)?.play().catch(() => {}); return }
+      if (btn.classList.contains('rte-voice-play')) { playAudio(audioOf(block)); return }
       const va = btn.getAttribute('data-va')
       if (va === 'download') download(block)
       else if (va === 'rename') { if (editableRoot(block)) setRenaming({ block, value: nameOf(block) }) }
