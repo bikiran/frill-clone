@@ -51,6 +51,18 @@ const MARKETING_NAV = [
   { href: '/pricing', label: 'Pricing', icon: 'pricing' },
 ]
 
+// Which company a host belongs to: a workspace subdomain (roxy.colvy.com) or a
+// custom help/board domain (help.roxyaquarium.com.au). Colvy's own hosts,
+// localhost and Vercel previews are neither. Every check in this file uses this,
+// so no later check can flip a custom domain back to Colvy's marketing header.
+function companyHost(hostname: string): { slug: string | null; customHost: string | null } {
+  const h = String(hostname || '').toLowerCase()
+  if (!h || h.includes('localhost') || h.endsWith('vercel.app') || !h.includes('.')) return { slug: null, customHost: null }
+  if (h === 'colvy.com' || h === 'www.colvy.com' || h === 'admin.colvy.com') return { slug: null, customHost: null }
+  if (h.endsWith('.colvy.com')) return { slug: h.replace('.colvy.com', ''), customHost: null }
+  return { slug: null, customHost: h }
+}
+
 const NavIcon = ({ type, size = 18 }: { type: string; size?: number }) => {
   const p = { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const }
   switch (type) {
@@ -171,14 +183,11 @@ export default function AppChrome({
   useEffect(() => {
     try {
       const h = window.location.hostname
-      const sub = h.endsWith('.colvy.com') && h !== 'colvy.com' && h !== 'www.colvy.com' && !h.includes('localhost')
       // A custom help/board domain (e.g. help.roxyaquarium.com.au) is a company
       // host too — it should show the company's brand + board nav, not Colvy's.
-      const isColvyRoot = h === 'colvy.com' || h === 'www.colvy.com' || h === 'admin.colvy.com'
-      const isLocal = h.includes('localhost') || h.endsWith('vercel.app')
-      const isCustomHost = !sub && !isColvyRoot && !isLocal && h.includes('.')
-      setIsSubdomain(sub || isCustomHost)
-      const slug = sub ? h.replace('.colvy.com', '') : null
+      const { slug, customHost } = companyHost(h)
+      const isCustomHost = !!customHost
+      setIsSubdomain(!!slug || isCustomHost)
       if (slug) {
         const cached = localStorage.getItem(`company_${slug}`)
         if (cached) setCompany(JSON.parse(cached))
@@ -251,13 +260,10 @@ export default function AppChrome({
       try {
         // Detect company from hostname
         const h = typeof window !== 'undefined' ? window.location.hostname : ''
-        const isSubdomain = h.endsWith('.colvy.com') && h !== 'colvy.com' && h !== 'www.colvy.com'
-        const isColvyRoot = h === 'colvy.com' || h === 'www.colvy.com' || h === 'admin.colvy.com'
-        const isLocal = h.includes('localhost') || h.endsWith('vercel.app')
-        const slug = isSubdomain ? h.replace('.colvy.com', '') : null
         // Custom help/board domains resolve their company by domain, so the nav,
         // logo, name and accent all belong to the customer, not Colvy.
-        const isCustomHost = !isSubdomain && !isColvyRoot && !isLocal && h.includes('.')
+        const { slug, customHost } = companyHost(h)
+        const isCustomHost = !!customHost
 
         // Load settings for this specific company
         let q = (supabase as any).from('site_settings').select('*').eq('key', 'general')
@@ -397,7 +403,8 @@ export default function AppChrome({
       setIsAdmin(u.email === SUPER_ADMIN)
       // Also check if user is on a subdomain - they're probably the owner
       const currentHost = typeof window !== 'undefined' ? window.location.hostname : ''
-      const onSubdomain = currentHost.endsWith('.colvy.com') && currentHost !== 'colvy.com' && currentHost !== 'www.colvy.com'
+      const host = companyHost(currentHost)
+      const onSubdomain = !!(host.slug || host.customHost)
 
       try {
         let data: any = null
@@ -406,9 +413,9 @@ export default function AppChrome({
         if (onSubdomain) {
           // On a company subdomain: the company shown is the SUBDOMAIN's company.
           // The user is only an admin here if they actually own it or are an elevated team member.
-          const h = typeof window !== 'undefined' ? window.location.hostname : ''
-          const slug = h.replace('.colvy.com', '')
-          const { data: coBySlug } = await (supabase as any).from('companies').select('*').eq('slug', slug).maybeSingle()
+          const { data: coBySlug } = host.slug
+            ? await (supabase as any).from('companies').select('*').eq('slug', host.slug).maybeSingle()
+            : await (supabase as any).from('companies').select('*').or(`help_domain.eq.${host.customHost},board_domain.eq.${host.customHost}`).maybeSingle()
           if (coBySlug) {
             if (coBySlug.owner_id === u.id) {
               data = coBySlug
@@ -456,11 +463,8 @@ export default function AppChrome({
 
     // Detect subdomain
     if (typeof window !== 'undefined') {
-      const h = window.location.hostname
-      const sub = h !== 'colvy.com' && h !== 'www.colvy.com' &&
-        !h.includes('localhost') && !h.includes('vercel.app') &&
-        h.endsWith('.colvy.com')
-      setIsSubdomain(sub)
+      const { slug, customHost } = companyHost(window.location.hostname)
+      setIsSubdomain(!!(slug || customHost))
     }
 
     supabase.auth.getSession().then(async ({ data }) => {
@@ -867,7 +871,8 @@ export default function AppChrome({
                   if (pathname?.startsWith('/admin')) return false
                   if (isOnBoard && navVisibility[item.label as keyof typeof navVisibility] === false) return false
                   const isBoardItem = ['Ideas', 'Roadmap', 'Updates', 'Help'].includes(item.label) && item.href.startsWith('/') && !item.href.startsWith('/product')
-                  const isMarketingItem = item.label === 'Features' || item.label === 'Product'
+                  // Colvy's own sales items never belong on a company's board/help site.
+                  const isMarketingItem = item.label === 'Features' || item.label === 'Product' || item.label === 'Pricing'
                   if (!isOnBoard && isBoardItem) return false
                   if (isOnBoard && isMarketingItem) return false
                   // Pricing is unnecessary once the user is logged in
@@ -1086,13 +1091,13 @@ export default function AppChrome({
                     style={{ color: 'var(--slate)' }}>
                     Sign in
                   </Link>
-                  <Link
+                  {!isSubdomain && <Link
                     href="/signup"
                     onClick={() => setShowDrawer(false)}
                     className="hidden md:inline-flex px-3 py-1.5 md:px-5 md:py-2.5 rounded-lg text-xs md:text-sm font-semibold text-white transition-smooth press-effect cursor-pointer"
                     style={{ background: 'var(--coral)' }}>
                     Get started
-                  </Link>
+                  </Link>}
                 </>
               )}
 
@@ -1177,11 +1182,11 @@ export default function AppChrome({
                       style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
                       Sign in
                     </Link>
-                    <Link href="/signup" onClick={() => setShowDrawer(false)}
+                    {!isSubdomain && <Link href="/signup" onClick={() => setShowDrawer(false)}
                       className="block px-4 py-3 rounded-lg text-sm font-semibold text-white text-center cursor-pointer"
                       style={{ background: 'var(--coral)' }}>
                       Get started
-                    </Link>
+                    </Link>}
                   </div>
                 )}
                 {user && (
