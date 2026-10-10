@@ -16,6 +16,46 @@ function resolveName(a: HTMLAudioElement): string {
   try { const f = decodeURIComponent(new URL(a.src).pathname.split('/').pop() || ''); return f.replace(/^\d{10,}-/, '') || 'Audio' } catch { return 'Audio' }
 }
 
+// Waveform bars for the dock, decoded from the recording itself (cached per
+// URL). If the file can't be fetched or decoded here, a steady pseudo-wave
+// seeded from the URL stands in, so the dock always has a waveform to scrub.
+const BARS = 56
+const peaksCache = new Map<string, Promise<number[]>>()
+function fallbackPeaks(src: string): number[] {
+  let h = 2166136261
+  for (let i = 0; i < src.length; i++) h = Math.imul(h ^ src.charCodeAt(i), 16777619)
+  return Array.from({ length: BARS }, (_, i) => {
+    h = Math.imul(h ^ (h >>> 13), 1274126177)
+    const r = ((h >>> 0) % 1000) / 1000
+    return 0.25 + 0.55 * Math.abs(Math.sin(i * 0.45)) * (0.55 + 0.45 * r)
+  })
+}
+function loadPeaks(src: string): Promise<number[]> {
+  if (!src) return Promise.resolve(fallbackPeaks('x'))
+  const hit = peaksCache.get(src); if (hit) return hit
+  const job = (async () => {
+    const AC = (window as any).AudioContext || (window as any).webkitAudioContext
+    if (!AC) throw new Error('no audio context')
+    const buf = await (await fetch(src)).arrayBuffer()
+    const ctx = new AC()
+    try {
+      const audio: AudioBuffer = await new Promise((res, rej) => { const p = ctx.decodeAudioData(buf, res, rej); if (p?.then) p.then(res, rej) })
+      const data = audio.getChannelData(0)
+      const step = Math.max(1, Math.floor(data.length / BARS))
+      const out: number[] = []
+      for (let b = 0; b < BARS; b++) {
+        let sum = 0, n = 0
+        for (let i = b * step; i < Math.min(data.length, (b + 1) * step); i += 16) { sum += data[i] * data[i]; n++ }
+        out.push(Math.sqrt(sum / Math.max(1, n)))
+      }
+      const max = Math.max(...out, 1e-4)
+      return out.map(v => 0.14 + 0.86 * Math.min(1, v / max))
+    } finally { try { ctx.close() } catch {} }
+  })().catch(() => fallbackPeaks(src))
+  peaksCache.set(src, job)
+  return job
+}
+
 /**
  * Play a voice note through the dock. The dock opens straight away (with a
  * spinner while it loads) and, if this browser can't play the recording,
@@ -41,6 +81,9 @@ export default function AudioDock() {
   const [failed, setFailed] = useState(false)
   const [mounted, setMounted] = useState(false)
   useEffect(() => setMounted(true), [])
+  const [peaks, setPeaks] = useState<number[]>([])
+  const waveRef = useRef<HTMLDivElement | null>(null)
+  const dragging = useRef(false)
   const hideT = useRef<any>(null)
   const boxRef = useRef<HTMLDivElement | null>(null)
 
@@ -90,6 +133,15 @@ export default function AudioDock() {
 
   useEffect(() => {
     if (!el) return
+    const src = el.currentSrc || el.src
+    let live = true
+    setPeaks(fallbackPeaks(src))
+    loadPeaks(src).then(p => { if (live) setPeaks(p) })
+    return () => { live = false }
+  }, [el])
+
+  useEffect(() => {
+    if (!el) return
     const onTime = () => { setCur(el.currentTime); if (el.currentTime > 0) setLoading(false) }
     const onDur = () => setDur(el.duration || 0)
     const onPause = () => setPlaying(false)
@@ -117,6 +169,14 @@ export default function AudioDock() {
   }
   const pct = dur ? (cur / dur) * 100 : 0
   const seek = (t: number) => { setCur(t); if (el) el.currentTime = t }
+  const seekAt = (clientX: number) => {
+    const box = waveRef.current?.getBoundingClientRect(); if (!box || !dur) return
+    seek(Math.min(1, Math.max(0, (clientX - box.left) / box.width)) * dur)
+  }
+  const onKey = (e: React.KeyboardEvent) => {
+    if (e.key === 'ArrowRight') { e.preventDefault(); seek(Math.min(dur, cur + 5)) }
+    else if (e.key === 'ArrowLeft') { e.preventDefault(); seek(Math.max(0, cur - 5)) }
+  }
 
   // Rendered on <body>: inside an animated/transformed page wrapper a
   // position:fixed element is pinned to that wrapper instead of the screen,
@@ -142,14 +202,22 @@ export default function AudioDock() {
             : <span className="ad-time ad-time-sm">{fmt(cur)} / {fmt(dur)}</span>}
         </span>
 
-        {/* Seek bar: inline on wider screens, a thin line along the bottom on phones. */}
-        {!failed && <div className="ad-seek">
-          <div className="ad-track" />
-          <div className="ad-fill" style={{ width: `${pct}%` }} />
-          <div className="ad-knob" style={{ left: `${pct}%` }} />
-          <input type="range" min={0} max={dur || 0} step={0.1} value={cur} aria-label="Seek"
-            onChange={e => seek(Number(e.target.value))} />
-        </div>}
+        {/* Waveform — tap or drag anywhere on it to jump. Inline on wider
+            screens, its own full-width row on phones. */}
+        {!failed && (
+          <div ref={waveRef} className="ad-wave" role="slider" tabIndex={0} aria-label="Seek"
+            aria-valuemin={0} aria-valuemax={Math.round(dur)} aria-valuenow={Math.round(cur)} aria-valuetext={`${fmt(cur)} of ${fmt(dur)}`}
+            onKeyDown={onKey}
+            onPointerDown={e => { dragging.current = true; e.currentTarget.setPointerCapture(e.pointerId); seekAt(e.clientX) }}
+            onPointerMove={e => { if (dragging.current) seekAt(e.clientX) }}
+            onPointerUp={e => { dragging.current = false; try { e.currentTarget.releasePointerCapture(e.pointerId) } catch {} }}
+            onPointerCancel={() => { dragging.current = false }}>
+            {peaks.map((h, i) => (
+              <span key={i} className={`ad-bar${(i + 0.5) / peaks.length * 100 <= pct ? ' on' : ''}`}
+                style={{ height: `${Math.round(h * 100)}%` }} />
+            ))}
+          </div>
+        )}
 
         {!failed && <span className="ad-time ad-time-lg">{fmt(cur)} / {fmt(dur)}</span>}
 
@@ -174,31 +242,24 @@ const CSS = `
 .ad-title{font-size:12.5px;font-weight:700;color:var(--ink,#1a1a1a);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .ad-time{font-size:11.5px;font-weight:600;color:var(--slate,#6b7280);font-variant-numeric:tabular-nums;flex-shrink:0;white-space:nowrap}
 .ad-time-sm{display:none;margin-top:1px;font-size:11px}
-.ad-seek{position:relative;flex:1;height:18px;display:flex;align-items:center;min-width:60px}
-.ad-track{position:absolute;left:0;right:0;height:5px;border-radius:3px;background:#e9ebf0}
-.ad-fill{position:absolute;left:0;height:5px;border-radius:3px;background:var(--coral,#ff7a6b);transition:width .25s linear}
-.ad-knob{position:absolute;top:50%;width:12px;height:12px;margin:-6px 0 0 -6px;border-radius:50%;background:#fff;border:2px solid var(--coral,#ff7a6b);box-shadow:0 1px 3px rgba(0,0,0,.18);pointer-events:none;transition:left .25s linear,transform .15s ease}
-.ad-seek:hover .ad-knob,.ad-seek:active .ad-knob{transform:scale(1.2)}
-.ad-seek input{position:absolute;left:0;right:0;width:100%;margin:0;appearance:none;-webkit-appearance:none;background:transparent;height:18px;cursor:pointer}
-.ad-seek input::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:24px;height:24px;opacity:0;cursor:pointer}
-.ad-seek input::-moz-range-thumb{width:24px;height:24px;opacity:0;border:none;cursor:pointer}
-.ad-seek input::-webkit-slider-runnable-track{background:transparent}
-.ad-seek input::-moz-range-track{background:transparent}
+.ad-wave{position:relative;flex:1;height:30px;min-width:80px;display:flex;align-items:center;gap:2px;cursor:pointer;touch-action:none;outline:none;border-radius:6px}
+.ad-wave:focus-visible{box-shadow:0 0 0 2px color-mix(in srgb,var(--coral,#ff7a6b) 35%,transparent)}
+.ad-bar{flex:1;min-width:2px;max-width:4px;border-radius:2px;background:#d9dce3;transition:background-color .2s ease,transform .2s cubic-bezier(.32,.72,0,1);transform-origin:center}
+.ad-bar.on{background:var(--coral,#ff7a6b)}
+@media (hover:hover){.ad-wave:hover .ad-bar{transform:scaleY(1.08)}}
 .ad-spin{width:16px;height:16px;border-radius:50%;border:2px solid rgba(255,255,255,.45);border-top-color:#fff;animation:adSpin .8s linear infinite}
 @keyframes adSpin{to{transform:rotate(360deg)}}
 .ad-fail{display:block;font-size:11.5px;color:#b45309;margin-top:1px;white-space:normal;line-height:1.35}
 .ad-fail button{border:none;background:none;padding:0;color:var(--coral,#ff7a6b);font:inherit;font-weight:700;cursor:pointer;text-decoration:underline}
 .ad-close{flex-shrink:0;background:none;border:none;color:var(--slate,#6b7280);cursor:pointer;display:flex;padding:4px;border-radius:50%}
 @media (max-width: 560px){
-  .ad-pill{gap:10px;padding:9px 8px 17px 9px;border-radius:22px}
+  .ad-pill{gap:10px;border-radius:22px}
   .ad-meta{flex:1 1 auto}
   .ad-time-sm{display:block}
   .ad-time-lg{display:none}
-  /* Thin progress line along the bottom edge, still draggable. */
-  .ad-seek{position:absolute;left:18px;right:18px;bottom:4px;height:14px;min-width:0}
-  .ad-track,.ad-fill{height:3px;border-radius:2px}
-  .ad-knob{width:9px;height:9px;margin:-4.5px 0 0 -4.5px;border-width:1.5px}
-  .ad-seek input{height:22px;top:-4px}
+  /* Waveform gets its own full-width row under the controls. */
+  .ad-pill{flex-wrap:wrap;row-gap:6px;padding:9px 10px 10px 9px}
+  .ad-wave{order:5;flex:1 1 100%;height:26px;min-width:0;padding:0 4px}
 }
-@media (prefers-reduced-motion: reduce){.ad-wrap{animation:none}.ad-fill,.ad-knob{transition:none}}
+@media (prefers-reduced-motion: reduce){.ad-wrap{animation:none}.ad-bar{transition:none}}
 `
