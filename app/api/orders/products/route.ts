@@ -72,6 +72,39 @@ async function searchLocal(companyId: string, query: string): Promise<any[] | nu
     }))
 }
 
+/**
+ * The whole synced WooCommerce catalogue, compact, for searching ON the device.
+ * A per-keystroke round trip (auth, store lookup, query) was the slow part of
+ * the app's product picker; with the catalogue in hand the app matches as you
+ * type with no network at all, and refreshes this in the background. Paged in
+ * 1000s (PostgREST's row cap). Returns null when nothing is synced yet.
+ */
+async function localCatalog(companyId: string): Promise<any[] | null> {
+  const db = admin()
+  const out: any[] = []
+  for (let from = 0; from < 20000; from += 1000) {
+    const { data, error } = await db
+      .from('woocommerce_products')
+      .select('woo_product_id, name, sku, type, price, regular_price, sale_price, on_sale, stock_status, stock_quantity, manage_stock, image, variation_ids')
+      .eq('company_id', companyId)
+      .order('woo_product_id', { ascending: true })
+      .range(from, from + 999)
+    if (error) return out.length ? out : null
+    if (!data?.length) break
+    for (const p of data as any[]) {
+      out.push({
+        id: p.woo_product_id, name: p.name, sku: p.sku, type: p.type,
+        price: p.price, regular_price: p.regular_price, sale_price: p.sale_price, on_sale: !!p.on_sale,
+        stock_status: p.stock_status, stock_quantity: p.stock_quantity, manage_stock: p.manage_stock,
+        image: p.image,
+        has_variations: p.type === 'variable' && (p.variation_ids?.length || 0) > 0,
+      })
+    }
+    if (data.length < 1000) break
+  }
+  return out.length ? out : null
+}
+
 // "Starts with what you typed" outranks "mentioned somewhere" — shared by the
 // WooCommerce and Shopify catalogues.
 function rankProducts(rows: any[], query: string): any[] {
@@ -119,12 +152,14 @@ async function searchShopify(companyId: string, integrationId: string, query: st
 
 // GET ?companyId=&q=  → product search
 // GET ?companyId=&productId=  → variations for a variable product
+// GET ?companyId=&catalog=1  → the whole synced catalogue (on-device search)
 export async function GET(req: NextRequest) {
   try {
     const companyId = req.nextUrl.searchParams.get('companyId')
     const integrationId = req.nextUrl.searchParams.get('integrationId') || undefined
     const q = req.nextUrl.searchParams.get('q')
     const productId = req.nextUrl.searchParams.get('productId')
+    const wantCatalog = req.nextUrl.searchParams.get('catalog') === '1'
     if (!companyId) return NextResponse.json({ error: 'Missing companyId' }, { status: 400 })
     // It searched any workspace's store for whoever asked; only its members now.
     if (!(await requireCompanyAccess(req, admin(), companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
@@ -139,6 +174,12 @@ export async function GET(req: NextRequest) {
         const { data: p } = await admin().from('shopify_products').select('*').eq('company_id', companyId).eq('shopify_product_id', Number(productId)).maybeSingle()
         return NextResponse.json({ variations: p ? variationsForUi(p) : [] })
       }
+      if (wantCatalog) {
+        const { data } = await admin().from('shopify_products').select('*')
+          .eq('company_id', companyId).eq('integration_id', shop.id).neq('status', 'ARCHIVED').limit(10000)
+        // skus: the variant SKUs, so a scanned variant barcode matches on the device too.
+        return NextResponse.json({ products: (data || []).map((r: any) => ({ ...productForUi(r), skus: r.skus || '' })), source: 'shopify' })
+      }
       if (!q || q.trim().length < 2) return NextResponse.json({ products: [] })
       return NextResponse.json({ products: await searchShopify(companyId, shop.id, q.trim()), source: 'shopify' })
     }
@@ -147,6 +188,11 @@ export async function GET(req: NextRequest) {
     if (productId) {
       const variations = await woo.getProductVariations(Number(productId))
       return NextResponse.json({ variations })
+    }
+    if (wantCatalog) {
+      // Nothing synced yet → an empty list tells the app to keep using live search.
+      const products = await localCatalog(companyId)
+      return NextResponse.json({ products: products || [], source: products ? 'local' : 'none' })
     }
     if (!q || q.trim().length < 2) return NextResponse.json({ products: [] })
 

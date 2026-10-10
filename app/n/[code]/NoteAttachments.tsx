@@ -8,7 +8,9 @@ const isVid = (a: Item) => a.kind === 'video' || (a.type || '').startsWith('vide
 
 // A grid of a note's attachments that expand into an in-page lightbox — never a
 // raw storage URL in a new tab.
-export default function NoteAttachments({ items, accent }: { items: Item[]; accent: string }) {
+// `compact`: a row of small thumbnails — a checklist step's own photos, under
+// the step, rather than the note's full attachments grid.
+export default function NoteAttachments({ items, accent, compact }: { items: Item[]; accent: string; compact?: boolean }) {
   const [lb, setLb] = useState<number | null>(null)
   useEffect(() => {
     if (lb === null) return
@@ -25,9 +27,11 @@ export default function NoteAttachments({ items, accent }: { items: Item[]; acce
 
   return (
     <>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 10 }}>
+      <div style={compact
+        ? { display: 'flex', flexWrap: 'wrap', gap: 6 }
+        : { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 10 }}>
         {items.map((a, i) => (
-          <button key={i} onClick={() => setLb(i)} style={{ display: 'block', aspectRatio: '1 / 1', borderRadius: 10, overflow: 'hidden', background: '#000', position: 'relative', padding: 0, border: 'none', cursor: 'pointer' }}>
+          <button key={i} onClick={() => setLb(i)} style={{ display: 'block', aspectRatio: '1 / 1', ...(compact ? { width: 56, height: 56 } : {}), borderRadius: compact ? 8 : 10, overflow: 'hidden', background: '#000', position: 'relative', padding: 0, border: 'none', cursor: 'pointer' }}>
             {isVid(a)
               ? <video src={a.url + '#t=0.1'} preload="metadata" muted style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
               : <img src={a.url} alt={a.name || ''} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
