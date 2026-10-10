@@ -23,7 +23,7 @@ const TIERS = [
     price: 39,
     annualPrice: 29,
     color: '#7c5cff',
-    features: ['Unlimited ideas & voting','Polls, surveys & forms','Private + public roadmaps','Unlimited help articles','Remove Colvy branding','5 team members'],
+    features: ['Unlimited ideas & voting','Polls, surveys & forms','Private + public roadmaps','Unlimited help articles','Remove Colvy branding','Unlimited team members'],
     limits: [],
   },
   {
@@ -32,7 +32,7 @@ const TIERS = [
     price: 179,
     annualPrice: 149,
     color: '#2b59ff',
-    features: ['Live chat inbox','Contacts & CRM','WhatsApp, SMS & voice calls','3,000 SMS / month included','WooCommerce sync','10 team members'],
+    features: ['Live chat inbox','Contacts & CRM','WhatsApp, SMS & voice calls','3,000 SMS / month included','WooCommerce sync','Unlimited team members'],
     limits: [],
   },
   {

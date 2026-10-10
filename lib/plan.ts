@@ -41,8 +41,8 @@ export const PLAN_FEATURES: Record<Plan, string[]> = {
 // allowance (metered beyond it); 0 means the plan cannot send SMS at all.
 export const PLAN_LIMITS: Record<Plan, Record<string, any>> = {
   free:        { teamMembers: 2,        smsPerMonth: 0,        polls: 1,        surveys: 1,        helpArticles: 10 },
-  feedback:    { teamMembers: 5,        smsPerMonth: 0,        polls: Infinity, surveys: Infinity, helpArticles: Infinity },
-  omnichannel: { teamMembers: 10,       smsPerMonth: 3000,     polls: 0,        surveys: 0,        helpArticles: 0 },
+  feedback:    { teamMembers: Infinity, smsPerMonth: 0,        polls: Infinity, surveys: Infinity, helpArticles: Infinity },
+  omnichannel: { teamMembers: Infinity, smsPerMonth: 3000,     polls: 0,        surveys: 0,        helpArticles: 0 },
   everything:  { teamMembers: Infinity, smsPerMonth: 3000,     polls: Infinity, surveys: Infinity, helpArticles: Infinity },
   trial:       { teamMembers: Infinity, smsPerMonth: 3000,     polls: Infinity, surveys: Infinity, helpArticles: Infinity },
   pro:         { teamMembers: Infinity, smsPerMonth: 3000,     polls: Infinity, surveys: Infinity, helpArticles: Infinity },
