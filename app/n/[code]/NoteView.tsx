@@ -215,8 +215,19 @@ function ItemRow({ item: c, accent, onToggle, onText, onQty, onRemove }: {
             <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, marginTop: 4 }}>
               {meta ? <span style={{ fontSize: 12.5, color: '#6b7280' }}>{meta}</span> : null}
               {due ? <span style={{ fontSize: 11.5, fontWeight: 700, padding: '2px 8px', borderRadius: 999, background: due.overdue ? '#fef2f2' : '#f1f5f9', color: due.overdue ? '#dc2626' : '#475569' }}>{due.text}</span> : null}
-              {c.flagged ? <span style={{ fontSize: 11.5, fontWeight: 700, padding: '2px 8px', borderRadius: 999, background: '#fff7ed', color: '#ea580c' }}>⚑ Flagged</span> : null}
-              {c.done && c.done_by ? <span style={{ fontSize: 11.5, fontWeight: 700, color: '#15803d' }}>✓ {c.done_by}{c.done_at ? ` · ${ago(c.done_at)}` : ''}</span> : null}
+              {c.flagged ? (
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11.5, fontWeight: 700, padding: '2px 8px', borderRadius: 999, background: '#fff7ed', color: '#ea580c' }}>
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" aria-hidden><path d="M5 2a1 1 0 0 1 1 1v.5h11.2a1 1 0 0 1 .8 1.6L15.6 8.5l2.4 3.4a1 1 0 0 1-.8 1.6H6V21a1 1 0 1 1-2 0V3a1 1 0 0 1 1-1z"/></svg>
+                  Flagged
+                </span>
+              ) : null}
+              {/* Who ticked it: an iOS-style filled check circle, not a text ✓. */}
+              {c.done && c.done_by ? (
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 600, color: '#6b7280' }}>
+                  <svg width="15" height="15" viewBox="0 0 24 24" aria-hidden><circle cx="12" cy="12" r="11" fill="#34c759"/><path d="M7 12.5l3.2 3.2L17.2 8.8" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                  <span><span style={{ color: '#1a1a1a', fontWeight: 700 }}>{c.done_by}</span>{c.done_at ? ` · ${ago(c.done_at)}` : ''}</span>
+                </span>
+              ) : null}
             </div>
           ) : null}
         </div>
