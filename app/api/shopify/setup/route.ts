@@ -39,11 +39,11 @@ export async function GET(req: NextRequest) {
     // The app's API key is public (it's in every install URL); the theme editor
     // deep links for the storefront blocks need it.
     // Colvy billed through Shopify: which store, and whether a plan is picked yet.
-    const { data: co } = await db.from('companies').select('plan, billing_provider, billing_integration_id').eq('id', companyId).maybeSingle()
+    const { data: co } = await db.from('companies').select('plan, is_complimentary, billing_provider, billing_integration_id').eq('id', companyId).maybeSingle()
     let billing: any = null
     if (co?.billing_provider === 'shopify') {
       const { data: b } = await db.from('shopify_integrations').select('store_domain, billing').eq('id', co.billing_integration_id).maybeSingle()
-      if (b) billing = { integrationId: co.billing_integration_id, needsPlan: !b.billing?.plan, planUrl: planSelectionUrl(b.store_domain) }
+      if (b) billing = { integrationId: co.billing_integration_id, needsPlan: !b.billing?.plan && !co.is_complimentary, planUrl: planSelectionUrl(b.store_domain) }
     }
     return NextResponse.json({ stores, appConfigured: shopifyAppConfigured(), apiKey: process.env.SHOPIFY_API_KEY || null, billing })
   } catch (err: any) {
