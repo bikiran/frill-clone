@@ -14,6 +14,7 @@ type ChecklistItem = {
   flagged?: boolean; due?: string | null
   attachments?: { url: string; name?: string; type?: string; kind?: string }[]
   qty?: number; image?: string; sku?: string; price?: string; productId?: number | string
+  done_by?: string | null; done_at?: string | null
 }
 type EditEntry = { name: string; email?: string; at: string }
 const rid = () => Math.random().toString(36).slice(2, 9)
@@ -75,6 +76,22 @@ export default function NoteView({ code, accent, allowEdit, initialBody, initial
     flush(who)
   }
 
+  // Tick / untick one item — on any shared note, no sign-in step, saved at once.
+  const tick = async (id: string) => {
+    const before = checklist
+    const item = checklist.find(x => x.id === id); if (!item) return
+    const next = checklist.map(x => x.id === id ? { ...x, done: !x.done } : x)
+    setChecklist(next)
+    if (allowEdit) pending.current = { body, list: next }
+    try {
+      const res = await authFetch('/api/notes/public', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code, action: 'tick', itemId: id, done: !item.done, editor: identity }) })
+      if (!res.ok) throw new Error()
+    } catch {
+      setChecklist(before)
+      setStatus('Couldn’t save that tick'); setTimeout(() => setStatus(''), 2000)
+    }
+  }
+
   const setB = (html: string) => { setBody(html); save(html, checklist) }
   const setL = (next: ChecklistItem[]) => { setChecklist(next); save(body, next) }
   const done = checklist.filter(c => c.done).length
@@ -88,7 +105,8 @@ export default function NoteView({ code, accent, allowEdit, initialBody, initial
         {checklist.length > 0 && (
           <div style={{ marginTop: 22 }}>
             <ChecklistHead done={done} total={checklist.length} accent={accent} />
-            {checklist.map(c => <ItemRow key={c.id} item={c} accent={accent} />)}
+            {checklist.map(c => <ItemRow key={c.id} item={c} accent={accent} onToggle={() => tick(c.id)} />)}
+            {status ? <p style={{ margin: '6px 0 0', fontSize: 12.5, color: '#dc2626' }}>{status}</p> : null}
           </div>
         )}
       </>
@@ -113,7 +131,7 @@ export default function NoteView({ code, accent, allowEdit, initialBody, initial
         <ChecklistHead done={done} total={checklist.length} accent={accent} />
         {checklist.map(c => (
           <ItemRow key={c.id} item={c} accent={accent}
-            onToggle={() => setL(checklist.map(x => x.id === c.id ? { ...x, done: !x.done } : x))}
+            onToggle={() => tick(c.id)}
             onText={text => setL(checklist.map(x => x.id === c.id ? { ...x, text } : x))}
             onQty={qty => setL(checklist.map(x => x.id === c.id ? { ...x, qty } : x))}
             onRemove={() => setL(checklist.filter(x => x.id !== c.id))} />
@@ -174,7 +192,8 @@ function ItemRow({ item: c, accent, onToggle, onText, onQty, onRemove }: {
   item: ChecklistItem; accent: string
   onToggle?: () => void; onText?: (t: string) => void; onQty?: (q: number) => void; onRemove?: () => void
 }) {
-  const editable = !!onToggle
+  const editable = !!onText
+  const tickable = !!onToggle
   const media = (Array.isArray(c.attachments) ? c.attachments : []).filter(a => a?.url)
   const due = dueText(c.due)
   const isProduct = !!(c.productId || c.image || c.qty != null)
@@ -184,19 +203,20 @@ function ItemRow({ item: c, accent, onToggle, onText, onQty, onRemove }: {
   return (
     <div style={{ border: '1px solid #ececef', borderRadius: 14, padding: '10px 12px', marginBottom: 8, background: c.done ? '#fafafa' : '#fff' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
-        <input type="checkbox" checked={c.done} readOnly={!editable} onChange={onToggle}
-          style={{ width: 19, height: 19, accentColor: accent, flexShrink: 0, cursor: editable ? 'pointer' : 'default' }} />
+        <input type="checkbox" checked={c.done} readOnly={!tickable} onChange={onToggle}
+          style={{ width: 22, height: 22, accentColor: accent, flexShrink: 0, cursor: tickable ? 'pointer' : 'default' }} />
         {c.image ? <img src={c.image} alt="" style={{ width: 48, height: 48, borderRadius: 9, objectFit: 'cover', flexShrink: 0, background: '#f4f4f5' }} /> : null}
         <div style={{ flex: 1, minWidth: 0 }}>
           {editable
             ? <input value={c.text} onChange={e => onText?.(e.target.value)} placeholder="List item"
                 style={{ width: '100%', border: 'none', outline: 'none', fontSize: 15.5, color: c.done ? '#9ca3af' : '#1a1a1a', textDecoration: c.done ? 'line-through' : 'none', background: 'transparent', padding: 0 }} />
             : <div style={{ fontSize: 15.5, lineHeight: 1.35, color: c.done ? '#9ca3af' : '#1a1a1a', textDecoration: c.done ? 'line-through' : 'none', wordBreak: 'break-word' }}>{c.text}</div>}
-          {(meta || due || c.flagged) ? (
+          {(meta || due || c.flagged || (c.done && c.done_by)) ? (
             <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, marginTop: 4 }}>
               {meta ? <span style={{ fontSize: 12.5, color: '#6b7280' }}>{meta}</span> : null}
               {due ? <span style={{ fontSize: 11.5, fontWeight: 700, padding: '2px 8px', borderRadius: 999, background: due.overdue ? '#fef2f2' : '#f1f5f9', color: due.overdue ? '#dc2626' : '#475569' }}>{due.text}</span> : null}
               {c.flagged ? <span style={{ fontSize: 11.5, fontWeight: 700, padding: '2px 8px', borderRadius: 999, background: '#fff7ed', color: '#ea580c' }}>⚑ Flagged</span> : null}
+              {c.done && c.done_by ? <span style={{ fontSize: 11.5, fontWeight: 700, color: '#15803d' }}>✓ {c.done_by}{c.done_at ? ` · ${ago(c.done_at)}` : ''}</span> : null}
             </div>
           ) : null}
         </div>

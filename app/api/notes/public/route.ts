@@ -36,7 +36,7 @@ const genCode = () => Math.random().toString(36).slice(2, 9)
 
 export async function POST(req: NextRequest) {
   try {
-    const { code, action, body, checklist, editor, comment } = await req.json()
+    const { code, action, body, checklist, editor, comment, itemId, done } = await req.json()
     if (!code) return NextResponse.json({ error: 'code required' }, { status: 400 })
     const db = admin()
     const { data: note } = await db.from('notes').select('*').eq('public_code', code).maybeSingle()
@@ -51,6 +51,23 @@ export async function POST(req: NextRequest) {
       const { error } = await db.from('notes').update({ comments: [...list, entry] }).eq('id', note.id)
       if (error && !missing(error.message)) throw error
       return NextResponse.json({ ok: !error, degraded: !!error, comment: entry })
+    }
+
+    // Ticking a checklist item off. Allowed on any shared note — a shared
+    // checklist is for whoever has it to work through — even when the owner
+    // kept the text view-only. Changes only that item's tick (on the list as it
+    // is now, so it can't undo someone else's edit) and notes who and when.
+    if (action === 'tick') {
+      const list: any[] = Array.isArray(note.checklist) ? note.checklist : []
+      if (!itemId || !list.some(x => x?.id === itemId)) return NextResponse.json({ error: 'Item not found' }, { status: 404 })
+      const who = String(editor?.name || 'Guest').slice(0, 80)
+      const at = new Date().toISOString()
+      const next = list.map(x => x?.id === itemId
+        ? { ...x, done: !!done, done_by: done ? who : null, done_at: done ? at : null }
+        : x)
+      const { error } = await db.from('notes').update({ checklist: next, updated_at: at }).eq('id', note.id)
+      if (error) throw error
+      return NextResponse.json({ ok: true })
     }
 
     // A contribution (body/checklist edit). Only when the owner allowed it.
