@@ -1,12 +1,12 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import Link from 'next/link'
+import { WhyLink } from '@/components/WhyAgent'
 import { authFetch } from '@/lib/auth-fetch'
 
 // Inbox: a reply the Support Agent prepared for this conversation, waiting for
 // the team (Agent Engine "prepare"). Send it as is, edit it first, or dismiss
-// it. "Why?" opens the agent's run — what it looked up and why it said this.
+// it. "Why?" explains the agent's run — what it looked up and why it said this.
 
 const EASE = 'cubic-bezier(.22,1,.36,1)'
 const Spark = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 3l1.8 4.6L18.5 9l-4.7 1.4L12 15l-1.8-4.6L5.5 9l4.7-1.4z" /></svg>
@@ -37,7 +37,7 @@ export function SuggestionCard({ s, companyId, onDone, compact }: { s: Suggestio
           <p className="agsg-t">Support Agent suggests a reply</p>
           {!compact && s.run?.summary && <p className="agsg-s">{s.run.summary}</p>}
         </div>
-        <Link href={`/admin/agents?run=${s.run_id}`} className="agsg-why">Why?</Link>
+        <WhyLink companyId={companyId} runId={s.run_id} className="agsg-why" style={{ textDecoration: 'none' }} />
       </div>
       {editing
         ? <textarea className="agsg-edit" value={text} onChange={e => setText(e.target.value)} rows={Math.min(8, Math.max(3, Math.ceil(text.length / 60)))} autoFocus aria-label="Edit the reply" />
