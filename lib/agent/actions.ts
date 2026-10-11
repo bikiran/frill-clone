@@ -119,13 +119,15 @@ const sendMessage: ActionDef = {
 const escalateToHuman: ActionDef = {
   key: 'escalate_to_human',
   description: 'Hand this to the team when you are unsure, the customer is upset, it needs a decision or anything looks wrong. Always allowed.',
+  // Not called "reason": the engine adds a "reason" field to every action
+  // (the model's own explanation for the audit trail) and strips it out.
   input: obj({
-    reason: { type: 'string', description: 'Why a person is needed, in one or two sentences the team will read.' },
+    message_for_team: { type: 'string', description: 'Why a person is needed, in one or two sentences the team will read.' },
     urgency: { type: 'string', enum: ['normal', 'high'] },
-  }, ['reason']),
+  }, ['message_for_team']),
   category: 'communicate', risk: 'low', maxAutonomy: 'autonomous', customerSafe: true,
   async run(ctx, args) {
-    const why = String(args?.reason || '').trim().slice(0, 500) || 'Needs a person.'
+    const why = String(args?.message_for_team || '').trim().slice(0, 500) || 'Needs a person.'
     if (ctx.conversationId) {
       await ctx.db.from('conversation_events').insert({
         conversation_id: ctx.conversationId, company_id: ctx.companyId, event_type: 'ai_update',
