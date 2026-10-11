@@ -126,6 +126,32 @@ export function stageFor(orderStatus: string | null, shipments: TrackedShipment[
   return 'unknown'
 }
 
+// ShipStation carrier account ids (se-1870715) → their names (Team Global
+// Express IPEC). Cached for ten minutes; the list rarely changes.
+let carrierCache: { at: number; names: Record<string, string> } | null = null
+async function nameCarriers(shipments: TrackedShipment[]) {
+  if (!shipments.some(s => /^se-\d+$/i.test(s.carrier || '')) || !shipstation.shipstationConfigured()) return
+  try {
+    if (!carrierCache || Date.now() - carrierCache.at > 600_000) {
+      const list = await shipstation.listCarriers()
+      carrierCache = { at: Date.now(), names: Object.fromEntries(list.map(c => [c.id, c.name])) }
+    }
+    for (const s of shipments) if (s.carrier && carrierCache.names[s.carrier]) s.carrier = carrierCache.names[s.carrier]
+  } catch {}
+}
+
+/** Apply ShipStation's live tracking (status code, carrier text, ETA, latest event). */
+function applyTrack(s: TrackedShipment, t: shipstation.SSTrack | null) {
+  if (!t) return
+  const ev = (t.events || [])[0]
+  s.status = SS_STATUS[String(t.status_code || '')] || s.status
+  s.statusText = t.exception_description || t.carrier_status_description || t.status_description || s.statusText
+  s.estimatedDelivery = t.estimated_delivery_date || s.estimatedDelivery
+  s.deliveredAt = t.actual_delivery_date || s.deliveredAt
+  s.shippedAt = t.shipped_date || s.shippedAt
+  if (ev) s.lastEvent = { at: ev.occurred_at || null, text: String(ev.description || ''), place: [ev.city_locality, ev.state_province].filter(Boolean).join(', ') || null }
+}
+
 // ── Main ─────────────────────────────────────────────────────────────────────
 
 export async function getOrderTracking(db: any, companyId: string, order: any, opts: { live?: boolean; save?: boolean } = {}): Promise<OrderTracking> {
@@ -135,8 +161,14 @@ export async function getOrderTracking(db: any, companyId: string, order: any, o
   const add = (s: TrackedShipment) => {
     const key = s.trackingNumber ? norm(s.trackingNumber) : `${s.source}:${byNumber.size}`
     const prev = byNumber.get(key)
-    // Keep the richest record: live carrier status beats a bare tracking number.
-    if (!prev || (prev.status === 'label_created' || prev.status === 'unknown') && s.status !== 'unknown') byNumber.set(key, { ...prev, ...s, carrier: s.carrier || prev?.carrier || null, trackingUrl: s.trackingUrl || prev?.trackingUrl || null })
+    if (!prev) { byNumber.set(key, s); sources.add(s.source); return }
+    // Same parcel from two places: keep every known field, and let a live
+    // carrier status win over "label created" / "unknown".
+    const better = (prev.status === 'label_created' || prev.status === 'unknown') && s.status !== 'unknown' && s.status !== 'label_created'
+    const merged: any = { ...prev }
+    for (const [k, v] of Object.entries(s)) if (v != null && (merged[k] == null || better)) merged[k] = v
+    if (!better) merged.status = prev.status === 'unknown' ? s.status : prev.status
+    byNumber.set(key, merged)
     sources.add(s.source)
   }
 
@@ -149,6 +181,28 @@ export async function getOrderTracking(db: any, companyId: string, order: any, o
   }
   if (order.tracking_number) {
     add({ source: 'colvy', carrier: order.carrier || null, trackingNumber: order.tracking_number, trackingUrl: order.tracking_url || (order.carrier ? trackUrl(order.carrier, order.tracking_number) : null), status: order.delivered_at ? 'delivered' : 'label_created', statusText: null, shippedAt: order.shipped_at || null, estimatedDelivery: null, deliveredAt: order.delivered_at || null, lastEvent: null })
+  }
+
+  // 1b. Labels Colvy bought through ShipStation carry ShipStation's label id —
+  // ask ShipStation about those directly (this business's own labels, so no
+  // order-number matching needed).
+  if (shipstation.shipstationConfigured()) {
+    for (const s of Array.from(byNumber.values())) {
+      if (s.source !== 'colvy' || !s.labelId || !/^se-/i.test(s.labelId)) continue
+      try {
+        const lb = await shipstation.getLabel(s.labelId)
+        if (lb) {
+          if (lb.voided || lb.status === 'voided') { byNumber.delete(norm(s.trackingNumber)); continue }
+          s.carrier = lb.carrier_code || s.carrier
+          s.trackingUrl = lb.tracking_url || s.trackingUrl
+          const st = SS_TRACKING_STATUS[String(lb.tracking_status || '')]
+          if (st && st !== 'unknown') s.status = st
+          s.shippedAt = s.shippedAt || lb.ship_date || null
+        }
+        if (opts.live) applyTrack(s, await shipstation.trackLabel(s.labelId))
+        sources.add('shipstation')
+      } catch {}
+    }
   }
 
   // 2. ShipStation.
@@ -167,19 +221,7 @@ export async function getOrderTracking(db: any, companyId: string, order: any, o
             status: SS_TRACKING_STATUS[String(lb.tracking_status || '')] || 'label_created', statusText: null,
             shippedAt: lb.ship_date || sh.ship_date || null, estimatedDelivery: null, deliveredAt: null, lastEvent: null, labelId: lb.label_id,
           }
-          if (opts.live && lb.trackable !== false) {
-            const t = await shipstation.trackLabel(lb.label_id)
-            if (t) {
-              const ev = (t.events || [])[0]
-              ts.status = SS_STATUS[String(t.status_code || '')] || ts.status
-              ts.statusText = t.carrier_status_description || t.status_description || null
-              ts.estimatedDelivery = t.estimated_delivery_date || null
-              ts.deliveredAt = t.actual_delivery_date || null
-              ts.shippedAt = t.shipped_date || ts.shippedAt
-              if (t.exception_description) ts.statusText = t.exception_description
-              if (ev) ts.lastEvent = { at: ev.occurred_at || null, text: String(ev.description || ''), place: [ev.city_locality, ev.state_province].filter(Boolean).join(', ') || null }
-            }
-          }
+          if (opts.live && lb.trackable !== false) applyTrack(ts, await shipstation.trackLabel(lb.label_id))
           add(ts)
         }
       }
@@ -206,10 +248,11 @@ export async function getOrderTracking(db: any, companyId: string, order: any, o
   }
 
   const shipments = Array.from(byNumber.values())
+  await nameCarriers(shipments)
   const result: OrderTracking = {
     orderId: order.id, orderNumber: order.order_number || null, orderStatus: order.status || null,
     placedAt: order.order_date || order.created_at || null, stage: stageFor(order.status, shipments),
-    shipments, sources: Array.from(sources), checkedLive: !!opts.live && useShipStation, notes,
+    shipments, sources: Array.from(sources), checkedLive: !!opts.live && sources.has('shipstation'), notes,
   }
   if (opts.save !== false) await saveTracking(db, companyId, order, shipments).catch(() => {})
   return result
