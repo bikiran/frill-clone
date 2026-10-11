@@ -11,6 +11,8 @@
 //                     person; it only happens when called again with
 //                     confirmed: true
 
+import { agentsPaused } from '@/lib/agent/pilot'
+import { recordActivity } from '@/lib/agent/record'
 import {
   ASSISTANT_TOOLS, TOOL_SAFETY, runReadTool, executeAction, buildConfirmPreview, type AssistantContext,
 } from '@/lib/ai-assistant/tools'
@@ -109,18 +111,39 @@ export async function callTool(db: any, ctx: AssistantContext, auth: McpAuth, na
   if (!safety || HIDDEN.has(name)) return fail(`Unknown tool: ${name}`)
   if (safety === 'read') return okResult(await runReadTool(db, ctx, name, args))
   if (!write) return fail(auth.scope !== 'write' ? 'This connection is read only. Reconnect with "Read and act" access to make changes.' : "Your role in this business can't make changes.")
+  // The business's one pause switch covers connected apps too (reading still works).
+  if ((await agentsPaused(db, ctx.companyId)).paused) return fail('AI agents are paused for this business, so connected apps can’t make changes right now. An owner can resume them on the AI Agents page in Colvy.')
 
   if (safety === 'confirm') {
     const { confirmed, ...rest } = args
     const prev = await buildConfirmPreview(db, ctx, name, rest)
     if (!prev.ok) return fail(prev.error || 'Could not prepare that.')
     if (confirmed !== true) return { content: [text(previewText(name, prev.preview))], structuredContent: { status: 'preview', preview: Object.fromEntries(Object.entries(prev.preview || {}).filter(([k]) => k !== 'args')) } }
-    const r = await executeAction(db, ctx, name, prev.preview?.args || rest)
+    const finalArgs = prev.preview?.args || rest
+    const r = await executeAction(db, ctx, name, finalArgs)
+    await recordAppAction(db, ctx, auth, name, finalArgs, r, true)
     return r.ok ? okResult({ status: 'done', ...(r.card ? { result: r.card } : {}) }) : fail(r.error || 'Could not complete that.')
   }
 
   const r = await executeAction(db, ctx, name, args)
+  await recordAppAction(db, ctx, auth, name, args, r, false)
   return r.ok ? okResult({ status: 'done', ...(r.card ? { result: r.card } : {}), ...(r.entityId ? { id: r.entityId } : {}) }) : fail(r.error || 'Could not complete that.')
+}
+
+/** Every change a connected app makes lands in the AI Agents activity, with who it acted as. */
+async function recordAppAction(db: any, ctx: AssistantContext, auth: McpAuth, name: string, args: any, r: any, confirmed: boolean) {
+  const app = auth.name || (auth.kind === 'oauth' ? 'A connected app' : 'An API key')
+  const what = r?.card?.title || name.replace(/_/g, ' ')
+  await recordActivity(db, {
+    companyId: ctx.companyId, roleKey: 'connected_app', trigger: 'mcp',
+    conversationId: args?.conversationId || null, contactId: args?.contactId || null,
+    input: { app, tool: name, as: ctx.userName || null, kind: auth.kind },
+    summary: `${app} ${r?.ok ? 'did' : 'tried'} “${what}” as ${ctx.userName || 'a team member'}${confirmed ? ', after they approved a preview' : ''}.`,
+  }, [{
+    action_key: name, input: args || {}, output: r?.ok ? (r.card || { ok: true }) : { error: r?.error || 'Failed' }, status: r?.ok ? 'ok' : 'error',
+    decision_reason: `${app} is connected with “Read and act” access, acting as ${ctx.userName || 'a team member'} (${ctx.role})${confirmed ? '; they approved the preview first' : ''}.`,
+    entity_type: r?.entityType || null, entity_id: r?.entityId || null,
+  }], { status: r?.ok ? 'completed' : 'failed' })
 }
 
 const TZ = 'Australia/Melbourne'

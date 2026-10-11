@@ -146,7 +146,7 @@ async function sendOnItsOwn(ctx: ActionContext, args: any, limits: PolicyLimits)
   const perHour = limits.max_per_conversation_per_hour
   if (perHour) {
     const { count } = await ctx.db.from('agent_steps').select('id', { count: 'exact', head: true })
-      .eq('company_id', ctx.companyId).eq('action_key', 'send_message').eq('decision', 'allowed').eq('entity_id', ctx.conversationId)
+      .eq('company_id', ctx.companyId).eq('action_key', 'send_message').eq('decision', 'allowed').neq('autonomy', 'external').eq('entity_id', ctx.conversationId)
       .gte('created_at', new Date(Date.now() - 3600_000).toISOString())
     if ((count || 0) >= perHour) return `Already sent ${perHour} repl${perHour === 1 ? 'y' : 'ies'} on its own in this conversation this hour, so a person approves it.`
   }

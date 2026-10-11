@@ -1,3 +1,4 @@
+import { recordAssistantAction } from '@/lib/agent/record'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import {
   ASSISTANT_TOOLS, TOOL_SAFETY,
@@ -238,6 +239,7 @@ export async function runAssistant(opts: {
 
         // 'immediate' — reversible internal write; do it now.
         const r = await executeAction(db, ctx, tu.name, tu.input)
+        await recordAssistantAction(db, ctx, tu.name, tu.input, r, false)
         if (r.ok && r.card) cards.push({ ...r.card, undo: r.undo || null })
         if (r.ok && r.clientAction) clientActions.push(r.clientAction)
         toolResults.push({

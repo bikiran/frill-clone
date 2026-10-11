@@ -42,7 +42,7 @@ async function countToday(db: any, companyId: string, actionKey: string): Promis
   const since = new Date(Date.now() - 86_400_000)
   try {
     const { count } = await db.from('agent_steps').select('id', { count: 'exact', head: true })
-      .eq('company_id', companyId).eq('action_key', actionKey).eq('decision', 'allowed').eq('kind', 'action').gte('created_at', since.toISOString())
+      .eq('company_id', companyId).eq('action_key', actionKey).eq('decision', 'allowed').eq('kind', 'action').neq('autonomy', 'external').gte('created_at', since.toISOString())
     return count || 0
   } catch { return 0 }
 }

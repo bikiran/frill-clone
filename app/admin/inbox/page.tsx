@@ -9355,7 +9355,7 @@ export default function InboxPage() {
                           // Sent by an agent (Agent Engine): who let it go out, and why.
                           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: '#8b5cf6', fontWeight: 700 }}>
                             <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l1.6 5.3L19 9l-5.4 1.7L12 16l-1.6-5.3L5 9l5.4-1.7z"/></svg>
-                            Support Agent · {msg.metadata.approved_by ? `${msg.metadata.edited ? 'edited' : 'approved'} by ${msg.metadata.approved_by}` : 'sent on its own'}
+                            {msg.metadata.agent_name || 'Support Agent'} · {msg.metadata.approved_by ? `${msg.metadata.edited ? 'edited' : 'approved'} by ${msg.metadata.approved_by}` : 'sent on its own'}
                             <span aria-hidden="true">·</span>
                             <WhyLink companyId={companyId} runId={msg.metadata.agent_run_id} style={{ color: '#8b5cf6' }} />
                           </span>

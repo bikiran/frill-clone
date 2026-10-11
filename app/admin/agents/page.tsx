@@ -17,7 +17,7 @@ const EASE = 'cubic-bezier(.22,1,.36,1)'
 type Run = {
   id: string; role_key: string; mode: 'live' | 'sandbox'; trigger_type: string; status: string; outcome: string | null
   intent: string | null; summary: string | null; model: string | null; tokens_in: number; tokens_out: number
-  step_count: number; created_at: string; finished_at: string | null; input: any; conversation_id: string | null; context_refs?: any[]; started_at?: string | null; error?: string | null
+  step_count: number; created_at: string; finished_at: string | null; input: any; conversation_id: string | null; context_refs?: any[]; started_at?: string | null; error?: string | null; actor?: string
 }
 type Step = {
   id: string; seq: number; kind: string; action_key: string | null; input: any; output: any; reason: string | null
@@ -32,6 +32,8 @@ type Settings = {
 }
 type Waiting = Suggestion & { conversation?: { id: string; channel: string | null; customer: string | null } | null }
 const TOPIC_SHORT: Record<string, string> = { opening_hours: 'opening hours', order_status: 'order status (when tracking looks normal)', stock: 'stock', store_info: 'things your knowledge covers' }
+const WHO: { key: string; label: string }[] = [{ key: '', label: 'Everything' }, { key: 'support', label: 'Support Agent' }, { key: 'colvy_ai', label: 'Auto-reply' }, { key: 'assistant', label: 'Assistant' }, { key: 'connected_app', label: 'Connected apps' }]
+const actorOf = (r: { role_key: string; actor?: string }) => r.actor || (r.role_key === 'support' ? 'Support Agent' : r.role_key)
 const CHANNEL: Record<string, string> = { sms: 'SMS', widget: 'Website chat', chat: 'Website chat' }
 
 const ACTION_LABEL: Record<string, string> = {
@@ -40,6 +42,7 @@ const ACTION_LABEL: Record<string, string> = {
   search_conversations: 'Searched conversations', search_tasks: 'Searched tasks', create_task: 'Create a task',
   send_message: 'Reply to the customer', escalate_to_human: 'Hand to the team', finish: 'Finished',
   get_business_hours: 'Checked opening hours', find_customer_orders: 'Found the customer’s orders', check_order_status: 'Checked order tracking',
+  auto_reply: 'Replied to the customer', issue_coupon: 'Issued a coupon', start_doa_claim: 'Started a dead-on-arrival claim', create_draft_order: 'Created a draft order',
 }
 const STATUS: Record<string, { label: string; tone: string }> = {
   queued: { label: 'Queued', tone: 'muted' }, running: { label: 'Working', tone: 'live' }, completed: { label: 'Done', tone: 'ok' },
@@ -119,6 +122,7 @@ export default function AgentsPage() {
     } catch { setSupportOn(!next); setError('Couldn’t reach Colvy.') } finally { setSavingRole(false) }
   }
   const [reloadKey, setReloadKey] = useState(0)
+  const [who, setWho] = useState('')
 
   // Live pilot: kill switch, auto-send settings, and what's waiting for a person.
   const [settings, setSettings] = useState<Settings | null>(null)
@@ -151,7 +155,7 @@ export default function AgentsPage() {
   const pauseAll = async () => {
     const ok = await confirmDialog({
       title: 'Pause all agents?',
-      message: 'They stop straight away: nothing more is sent or changed, queued work is cancelled, and new messages wait for your team. Suggestions already waiting stay for you to send or dismiss. You can resume any time.',
+      message: 'Everything that acts on its own stops straight away — the Support Agent, Colvy AI’s auto-reply, and changes from connected apps. Queued work is cancelled and new messages wait for your team. Suggestions already waiting stay for you to send or dismiss, and the in-app assistant still works because a person approves each action. You can resume any time.',
       confirmLabel: 'Pause all agents', tone: 'danger',
     })
     if (ok) { await saveSettings({ paused: true }); loadRuns() }
@@ -160,13 +164,13 @@ export default function AgentsPage() {
   const loadRuns = useCallback(async () => {
     if (!companyId) return
     try {
-      const r = await authFetch(`/api/agent/runs?companyId=${companyId}`)
+      const r = await authFetch(`/api/agent/runs?companyId=${companyId}${who ? `&role=${who}` : ''}`)
       const d = await r.json()
       if (!r.ok) { setError(d.error || 'Couldn’t load agent runs.'); return }
       setRuns(d.runs || []); setNeedsMigration(!!d.needsMigration)
       setSelected(s => s || d.runs?.[0]?.id || null)
     } catch {} finally { setLoaded(true) }
-  }, [companyId])
+  }, [companyId, who])
   useEffect(() => { loadRuns() }, [loadRuns])
 
   // Recent conversations to try the agent against.
@@ -223,7 +227,7 @@ export default function AgentsPage() {
         <div style={{ marginBottom: 20, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
           <div style={{ minWidth: 0, flex: '1 1 320px' }}>
             <h1 style={{ margin: 0, fontSize: 'clamp(22px, 3.4vw, 28px)', fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--ink)' }}>AI Agents</h1>
-            <p style={{ margin: '4px 0 0', fontSize: 14, color: 'var(--slate)', maxWidth: 640 }}>Colvy’s AI employees. Every run is recorded — what the agent knew, what it decided, which permission allowed it, and why.</p>
+            <p style={{ margin: '4px 0 0', fontSize: 14, color: 'var(--slate)', maxWidth: 640 }}>Everything Colvy’s AI does, in one place — the Support Agent, the auto-reply, the assistant and connected apps. Each run shows what it knew, what it decided, which permission allowed it, and why.</p>
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <a href="/admin/agents/memory" className="ag-ghost" style={{ display: 'inline-flex', alignItems: 'center', height: 38, textDecoration: 'none' }}>Business memory</a>
@@ -238,7 +242,7 @@ export default function AgentsPage() {
             <span className="ag-paused-ic">{I.pause}</span>
             <div style={{ minWidth: 0, flex: 1 }}>
               <p className="ag-h">All agents are paused</p>
-              <p className="ag-p">{settings.pause.platform ? 'Colvy has paused agents for everyone while we look into something.' : `${settings.pause.byName ? `${settings.pause.byName} paused them` : 'Paused'}${settings.pause.at ? ` ${when(settings.pause.at)}` : ''}. Nothing is sent or changed, and new messages wait for your team.`}</p>
+              <p className="ag-p">{settings.pause.platform ? 'Colvy has paused agents for everyone while we look into something.' : `${settings.pause.byName ? `${settings.pause.byName} paused them` : 'Paused'}${settings.pause.at ? ` ${when(settings.pause.at)}` : ''}. The Support Agent, Colvy AI’s auto-reply and connected apps won’t send or change anything; new messages wait for your team.`}</p>
             </div>
             {!settings.pause.platform && <button type="button" className="ag-primary" onClick={() => saveSettings({ paused: false })} disabled={savingSettings}>{savingSettings ? 'Resuming…' : 'Resume'}</button>}
           </div>
@@ -310,9 +314,12 @@ export default function AgentsPage() {
         <div className="ag-grid">
           {/* Runs */}
           <div className="ag-card" style={{ padding: 0, overflow: 'hidden' }}>
-            <p className="ag-label" style={{ padding: '16px 16px 6px', margin: 0 }}>Runs</p>
+            <p className="ag-label" style={{ padding: '16px 16px 6px', margin: 0 }}>Activity</p>
+            <div className="ag-who" role="tablist" aria-label="Who did it">
+              {WHO.map(w => <button key={w.key} type="button" role="tab" aria-selected={who === w.key} className={who === w.key ? 'on' : ''} onClick={() => setWho(w.key)}>{w.label}</button>)}
+            </div>
             {!loaded && <p className="ag-p" style={{ padding: '8px 16px 18px' }}>Loading…</p>}
-            {loaded && runs.length === 0 && <p className="ag-p" style={{ padding: '8px 16px 18px' }}>No runs yet. Try the Support Agent above.</p>}
+            {loaded && runs.length === 0 && <p className="ag-p" style={{ padding: '8px 16px 18px' }}>{who ? 'Nothing here yet.' : 'No activity yet. Try the Support Agent above.'}</p>}
             <ul className="ag-runs">
               {runs.map(r => {
                 const st = STATUS[r.status] || { label: r.status, tone: 'muted' }
@@ -320,8 +327,8 @@ export default function AgentsPage() {
                   <li key={r.id}>
                     <button type="button" className={`ag-run ${selected === r.id ? 'on' : ''}`} onClick={() => setSelected(r.id)}>
                       <span style={{ minWidth: 0, flex: 1 }}>
-                        <span className="ag-run-t">{String(r.input?.message || r.summary || r.trigger_type).slice(0, 70)}</span>
-                        <span className="ag-run-s">{r.mode === 'sandbox' ? 'Sandbox · ' : ''}{when(r.created_at)}{r.step_count ? ` · ${r.step_count} steps` : ''}</span>
+                        <span className="ag-run-t">{String(r.input?.message || r.summary || r.input?.tool || r.trigger_type).slice(0, 70)}</span>
+                        <span className="ag-run-s">{actorOf(r)}{r.mode === 'sandbox' ? ' · Sandbox' : ''} · {when(r.created_at)}{r.step_count ? ` · ${r.step_count} step${r.step_count === 1 ? '' : 's'}` : ''}</span>
                       </span>
                       <span className={`ag-chip ${st.tone}`}>{st.label}</span>
                     </button>
@@ -431,7 +438,7 @@ function RunDetail({ run, steps, approvals, companyId, onDecided }: { run: Run; 
     <div key={run.id} className="ag-fade">
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
         <div style={{ minWidth: 0 }}>
-          <p className="ag-h">{run.role_key === 'support' ? 'Support Agent' : run.role_key}{run.mode === 'sandbox' && <span className="ag-chip muted" style={{ marginLeft: 8 }}>Sandbox</span>}</p>
+          <p className="ag-h">{actorOf(run)}{run.mode === 'sandbox' && <span className="ag-chip muted" style={{ marginLeft: 8 }}>Sandbox</span>}</p>
           {run.input?.message && <p className="ag-quote">“{String(run.input.message).slice(0, 300)}”</p>}
         </div>
         <span className={`ag-chip ${st.tone}`}>{isActive(run) && <span className="ag-dot" />}{st.label}</span>
@@ -482,7 +489,7 @@ function RunDetail({ run, steps, approvals, companyId, onDecided }: { run: Run; 
 
 function StepRow({ s }: { s: Step }) {
   const [open, setOpen] = useState(false)
-  const dec = s.kind === 'action' && s.action_key === 'send_message' && s.decision === 'allowed' && s.status === 'ok'
+  const dec = s.kind === 'action' && (s.action_key === 'send_message' || s.action_key === 'auto_reply') && s.decision === 'allowed' && s.status === 'ok'
     ? { label: 'Sent on its own', tone: 'ok' }
     : s.decision ? DECISION[s.decision] : null
   const title = useMemo(() => {
@@ -506,7 +513,7 @@ function StepRow({ s }: { s: Step }) {
         </button>
         {s.reason && <p className="ag-step-why">Why: {s.reason}</p>}
         {s.decision_reason && s.kind === 'action' && <p className="ag-step-dec">{s.decision_reason}</p>}
-        {s.kind === 'action' && s.action_key === 'send_message' && s.input?.text && <p className="ag-bubble">{String(s.input.text)}</p>}
+        {s.kind === 'action' && (s.action_key === 'send_message' || s.action_key === 'auto_reply') && s.input?.text && <p className="ag-bubble">{String(s.input.text)}</p>}
         {open && (
           <div className="ag-more">
             {s.kind === 'model' && text && <p style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{text}</p>}
@@ -579,6 +586,10 @@ const CSS = `
 .ag-note svg{flex-shrink:0;margin-top:2px}
 .ag-note.warn{background:#fffaeb;color:#93370d;border:1px solid #fedf89}
 .ag-note.err{background:#fef3f2;color:#b42318;border:1px solid #fecdca}
+.ag-who{display:flex;gap:6px;padding:4px 16px 10px;overflow-x:auto;scrollbar-width:none}
+.ag-who::-webkit-scrollbar{display:none}
+.ag-who button{flex-shrink:0;padding:6px 11px;border-radius:999px;border:1px solid var(--border);background:#fff;font-size:12.5px;font-weight:700;color:var(--slate);cursor:pointer;font-family:inherit;transition:background .2s ease,color .2s ease,border-color .2s ease}
+.ag-who button.on{background:var(--ink);border-color:var(--ink);color:#fff}
 .ag-kill{display:inline-flex;align-items:center;gap:7px;height:38px;padding:0 15px;border-radius:12px;border:1px solid #fecdca;background:#fff;color:#b42318;font-size:13.5px;font-weight:700;cursor:pointer;font-family:inherit;transition:background .2s ease,transform .15s ${EASE}}
 .ag-kill:hover:not(:disabled){background:#fef3f2}.ag-kill:active:not(:disabled){transform:scale(.97)}.ag-kill:disabled{opacity:.5;cursor:default}
 .ag-paused{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:16px;padding:16px 18px;border-radius:20px;background:#fef3f2;border:1px solid #fecdca}

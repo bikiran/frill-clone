@@ -123,7 +123,7 @@ export async function supportAutoSends(db: any, companyId: string): Promise<bool
 export async function autoSentToday(db: any, companyId: string): Promise<number> {
   try {
     const { count } = await db.from('agent_steps').select('id', { count: 'exact', head: true })
-      .eq('company_id', companyId).eq('action_key', 'send_message').eq('kind', 'action').eq('decision', 'allowed').eq('status', 'ok')
+      .eq('company_id', companyId).eq('action_key', 'send_message').eq('kind', 'action').eq('decision', 'allowed').eq('status', 'ok').neq('autonomy', 'external')
       .gte('created_at', new Date(Date.now() - 86_400_000).toISOString())
     return count || 0
   } catch { return 0 }
