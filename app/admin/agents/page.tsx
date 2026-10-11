@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { authFetch } from '@/lib/auth-fetch'
 import { supabase } from '@/lib/supabase'
 import { resolveCompanyUser, peekCompanyUser } from '@/lib/client-cache'
+import { SuggestionCard, type Suggestion } from '@/components/AgentSuggestion'
 
 // AI Agents (Phase 1 of the Agent Engine). Every agent run is recorded — what
 // it knew, every action it asked for, the permission decision and why, and the
@@ -65,7 +66,7 @@ const I = {
   chev: <Svg size={13} d={<polyline points="9 18 15 12 9 6" />} />,
   play: <Svg size={13} d={<polygon points="6 4 20 12 6 20 6 4" />} />,
 }
-const KIND_ICON: Record<string, React.ReactNode> = { context: I.layers, model: I.brain, action: I.bolt, finish: I.flag, error: I.alert }
+const KIND_ICON: Record<string, React.ReactNode> = { context: I.layers, model: I.brain, action: I.bolt, finish: I.flag, error: I.alert, approval: I.flag }
 
 export default function AgentsPage() {
   const [companyId, setCompanyId] = useState<string | null>(peekCompanyUser()?.companyId || null)
@@ -81,6 +82,29 @@ export default function AgentsPage() {
   const [error, setError] = useState('')
 
   useEffect(() => { resolveCompanyUser().then(r => setCompanyId(r.companyId)).catch(() => {}) }, [])
+  // "Why?" links from the inbox open a specific run.
+  useEffect(() => { try { const r = new URLSearchParams(window.location.search).get('run'); if (r) setSelected(r) } catch {} }, [])
+
+  // Support Agent switch: answers incoming SMS / chat with suggested replies.
+  const [supportOn, setSupportOn] = useState<boolean | null>(null)
+  const [savingRole, setSavingRole] = useState(false)
+  useEffect(() => {
+    if (!companyId) return
+    authFetch(`/api/agent/roles?companyId=${companyId}`).then(r => r.json()).then(d => {
+      const r = (d.roles || []).find((x: any) => x.key === 'support'); setSupportOn(!!r?.enabled)
+    }).catch(() => {})
+  }, [companyId])
+  const toggleSupport = async () => {
+    if (!companyId || supportOn == null) return
+    const next = !supportOn
+    setSavingRole(true); setSupportOn(next); setError('')
+    try {
+      const r = await authFetch('/api/agent/roles', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, roleKey: 'support', enabled: next }) })
+      const d = await r.json()
+      if (!r.ok || d.error) { setSupportOn(!next); setError(d.error || 'Couldn’t save.') }
+    } catch { setSupportOn(!next); setError('Couldn’t reach Colvy.') } finally { setSavingRole(false) }
+  }
+  const [reloadKey, setReloadKey] = useState(0)
 
   const loadRuns = useCallback(async () => {
     if (!companyId) return
@@ -126,7 +150,7 @@ export default function AgentsPage() {
     }
     tick()
     return () => { stop = true; clearTimeout(timer) }
-  }, [companyId, selected])
+  }, [companyId, selected, reloadKey])
 
   const tryIt = async () => {
     if (!companyId || !message.trim()) return
@@ -152,6 +176,17 @@ export default function AgentsPage() {
 
         {needsMigration && <div className="ag-note warn ag-fade" style={{ marginBottom: 16 }}>{I.alert}<span>Agents need a one-time database update (<b>COLVY_V353_AGENT_ENGINE.sql</b>).</span></div>}
         {error && <div className="ag-note err ag-fade" style={{ marginBottom: 16 }} role="alert">{I.alert}<span>{error}</span></div>}
+
+        {/* Live switch */}
+        <div className="ag-card ag-fade" style={{ marginBottom: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14, justifyContent: 'space-between' }}>
+            <div style={{ minWidth: 0 }}>
+              <p className="ag-h">Support Agent on incoming SMS and chat</p>
+              <p className="ag-p">When a customer texts or chats, the Support Agent works out what they need, checks their order and tracking, and suggests a reply in the conversation. Nothing is sent until someone on your team presses Send.</p>
+            </div>
+            <button type="button" role="switch" aria-checked={!!supportOn} aria-label="Support Agent on incoming SMS and chat" onClick={toggleSupport} disabled={supportOn == null || savingRole} className={`ag-switch ${supportOn ? 'on' : ''}`}><span /></button>
+          </div>
+        </div>
 
         {/* Try it */}
         <div className="ag-card ag-fade" style={{ marginBottom: 16 }}>
@@ -207,7 +242,7 @@ export default function AgentsPage() {
           {/* Detail */}
           <div className="ag-card" style={{ minWidth: 0 }}>
             {!detail && <p className="ag-p">Pick a run to see what the agent did and why.</p>}
-            {detail && <RunDetail run={detail.run} steps={detail.steps} />}
+            {detail && companyId && <RunDetail run={detail.run} steps={detail.steps} approvals={detail.approvals} companyId={companyId} onDecided={() => { setReloadKey(k => k + 1); loadRuns() }} />}
           </div>
         </div>
       </div>
@@ -215,7 +250,7 @@ export default function AgentsPage() {
   )
 }
 
-function RunDetail({ run, steps }: { run: Run; steps: Step[] }) {
+function RunDetail({ run, steps, approvals, companyId, onDecided }: { run: Run; steps: Step[]; approvals: any[]; companyId: string; onDecided: () => void }) {
   const st = STATUS[run.status] || { label: run.status, tone: 'muted' }
   const dur = secs(run.started_at || run.created_at, run.finished_at)
   const refs: any[] = Array.isArray(run.context_refs) ? run.context_refs : []
@@ -235,6 +270,17 @@ function RunDetail({ run, steps }: { run: Run; steps: Step[] }) {
           <p style={{ margin: 0, fontSize: 14, lineHeight: 1.55, color: 'var(--ink)' }}>{run.summary}</p>
         </div>
       )}
+
+      {(approvals || []).filter(a => a.status === 'pending' && a.action_key === 'send_message').map(a => (
+        <div key={a.id} style={{ marginTop: 14 }}>
+          <SuggestionCard s={{ ...a, run_id: run.id } as Suggestion} companyId={companyId} compact onDone={onDecided} />
+        </div>
+      ))}
+      {(approvals || []).filter(a => a.status !== 'pending').map(a => (
+        <p key={a.id} className="ag-step-dec" style={{ marginTop: 10 }}>
+          Suggested reply {a.status === 'executed' ? 'sent by the team' : a.status === 'edited' ? 'edited and sent by the team' : a.status === 'rejected' ? 'dismissed by the team' : a.status}.
+        </p>
+      ))}
 
       <div className="ag-stats">
         <span>{run.step_count || steps.length} steps</span>
@@ -268,6 +314,7 @@ function StepRow({ s }: { s: Step }) {
     if (s.kind === 'model') return 'Thought it through'
     if (s.kind === 'finish') return `Finished${s.input?.outcome ? ` — ${OUTCOME[s.input.outcome] || s.input.outcome}` : ''}`
     if (s.kind === 'error') return 'Stopped'
+    if (s.kind === 'approval') return s.decision === 'denied' ? 'Team dismissed the suggestion' : 'Team approved and sent it'
     return ACTION_LABEL[s.action_key || ''] || s.action_key || s.kind
   }, [s])
   const text = s.kind === 'model' ? String(s.output?.text || '') : ''
@@ -349,6 +396,10 @@ const CSS = `
 .ag-spin{width:13px;height:13px;border-radius:50%;border:2px solid color-mix(in srgb,#fff 40%,transparent);border-top-color:#fff;animation:agSpin .8s linear infinite;display:inline-block}
 .ag-spin.dark{border-color:color-mix(in srgb,var(--coral) 25%,transparent);border-top-color:var(--coral)}
 @keyframes agSpin{to{transform:rotate(360deg)}}
+.ag-switch{position:relative;width:46px;height:28px;flex-shrink:0;border-radius:999px;border:none;cursor:pointer;background:color-mix(in srgb,var(--slate) 28%,transparent);transition:background .3s ${EASE}}
+.ag-switch span{position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.2);transition:transform .3s ${EASE}}
+.ag-switch.on{background:var(--coral)}.ag-switch.on span{transform:translateX(18px)}
+.ag-switch:disabled{opacity:.6;cursor:default}
 .ag-note{display:flex;gap:10px;align-items:flex-start;padding:12px 14px;border-radius:14px;font-size:13.5px;line-height:1.45}
 .ag-note svg{flex-shrink:0;margin-top:2px}
 .ag-note.warn{background:#fffaeb;color:#93370d;border:1px solid #fedf89}

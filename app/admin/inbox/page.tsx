@@ -4,6 +4,7 @@ import { useAttachmentToken } from '@/lib/useAttachmentToken'
 import VoicePlayer from '@/components/VoicePlayer'
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import AiLiveReply from '@/components/AiLiveReply'
+import AgentSuggestion from '@/components/AgentSuggestion'
 import { supabase } from '@/lib/supabase'
 import { authFetch } from '@/lib/auth-fetch'
 import { peekCompanyUser, readCache, writeCache } from '@/lib/client-cache'
@@ -9429,6 +9430,12 @@ export default function InboxPage() {
                 conv={selected as any}
                 onEdit={(text) => { setReply(text); setTimeout(() => textareaRef.current?.focus(), 30) }}
                 onChange={() => setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }), 60)}
+              />
+              {/* Support Agent (Agent Engine): a suggested reply waiting for the team. */}
+              <AgentSuggestion
+                companyId={companyId}
+                conversationId={selected?.id || null}
+                onChange={() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })}
               />
               <div ref={messagesEndRef} />
             </div>
