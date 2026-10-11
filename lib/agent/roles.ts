@@ -114,7 +114,37 @@ const SALES: RoleDef = {
   ].join('\n'),
 }
 
-export const ROLES: Record<string, RoleDef> = { support: SUPPORT, reputation: REPUTATION, reception: RECEPTION, sales: SALES }
+const OPERATIONS: RoleDef = {
+  key: 'operations',
+  name: 'Colvy Operations Agent',
+  goal: 'Catch orders that are late, stuck or held up by stock before customers have to chase them, and bring the team a clear next step.',
+  instructions: [
+    'You work behind the scenes for the business’s team. Colvy flagged one order that may be in trouble. Start with get_exception.',
+    'Check the facts before deciding: check_order_tracking for anything shipped or meant to have shipped; check_stock for an out-of-stock item (it may be back in stock).',
+    'If it turns out fine (delivered, moving normally, or the item is back and nothing else is wrong), say so and finish with no_action — or, for an item back in stock, create_task so someone ships it.',
+    'Otherwise create_task with one clear next step for the team: what’s wrong, the facts you found (carrier, last scan, days waiting, item), and what to do — chase the carrier, ship it, offer a substitute, or contact the customer. Set priority high when the carrier reports a problem or it is a week or more overdue.',
+    'If the customer would otherwise be left wondering (late, stuck, or waiting on stock) and customer.canMessage is true, also write them a short, honest update with send_order_update: their first name, the order number, what’s happening in plain words, and that the team is on it. Never promise refunds, compensation, discounts or dates you haven’t confirmed. Don’t message about a carrier problem a person needs to sort out first — escalate_to_human instead.',
+    'Don’t create a task if openTasks already covers it. Never invent tracking, stock or dates.',
+    'Plain text, no markdown, no emojis. Sound the way the business asks below. End with finish.',
+  ].join('\n'),
+  customerFacing: false,   // works for the team; staff lookups are fine
+  actions: ['get_exception', 'check_order_tracking', 'check_stock', 'get_order', 'search_tasks', 'ask_knowledge', 'create_task', 'send_order_update', 'escalate_to_human', 'finish'],
+  defaultAutonomy: {
+    create_task: { autonomy: 'act_within_limits', limits: { max_per_day: 40 } },
+    send_order_update: { autonomy: 'prepare' },              // the business can let it send on its own
+    escalate_to_human: { autonomy: 'autonomous' },
+  },
+  modelTier: 'smart',
+  maxSteps: 8,
+  opener: (run: any) => [
+    run.input?.kind === 'stock'
+      ? `Order #${run.input?.orderNumber || '?'} is waiting on ${run.input?.product || 'an item'} that was flagged out of stock.`
+      : `Colvy flagged order #${run.input?.orderNumber || '?'}${run.input?.reasons?.[0] ? `: ${run.input.reasons[0]}` : ' to check'}.`,
+    'Look at it with get_exception, check the facts, and bring the team a clear next step.',
+  ].join('\n'),
+}
+
+export const ROLES: Record<string, RoleDef> = { support: SUPPORT, reputation: REPUTATION, reception: RECEPTION, sales: SALES, operations: OPERATIONS }
 
 /** The role with this business's overrides applied (agent_roles row). */
 export async function loadRole(db: any, companyId: string, roleKey: string): Promise<(RoleDef & { enabled: boolean }) | null> {

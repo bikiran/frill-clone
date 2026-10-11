@@ -26,17 +26,30 @@ type Step = {
 }
 
 type SalesAuto = { enabled: boolean; max_per_day: number }
+type DailyAuto = SalesAuto
 type ReviewAuto = { enabled: boolean; min_rating: number; max_per_day: number }
 type AutoSend = { enabled: boolean; topics: string[]; max_per_day: number; max_per_conversation_per_hour: number; require_verified_customer: boolean }
 type Settings = {
   pause: { paused: boolean; byName?: string | null; at?: string | null; platform?: boolean }
-  autoSend: AutoSend; receptionAuto?: AutoSend; reviewAuto?: ReviewAuto; salesAuto?: SalesAuto; sentToday: number; waiting: number; topics: { key: string; label: string }[]
+  autoSend: AutoSend; receptionAuto?: AutoSend; reviewAuto?: ReviewAuto; salesAuto?: SalesAuto; opsAuto?: DailyAuto; sentToday: number; waiting: number; topics: { key: string; label: string }[]
 }
 type Waiting = Suggestion & { run?: any; conversation?: { id: string; channel: string | null; customer: string | null } | null }
 const TOPIC_SHORT: Record<string, string> = { opening_hours: 'opening hours', order_status: 'order status (when tracking looks normal)', stock: 'stock', store_info: 'things your knowledge covers' }
-const WHO: { key: string; label: string }[] = [{ key: '', label: 'Everything' }, { key: 'support', label: 'Support Agent' }, { key: 'reception', label: 'Reception' }, { key: 'reputation', label: 'Reputation' }, { key: 'sales', label: 'Sales' }, { key: 'colvy_ai', label: 'Auto-reply' }, { key: 'assistant', label: 'Assistant' }, { key: 'connected_app', label: 'Connected apps' }]
+const WHO: { key: string; label: string }[] = [{ key: '', label: 'Everything' }, { key: 'support', label: 'Support Agent' }, { key: 'reception', label: 'Reception' }, { key: 'reputation', label: 'Reputation' }, { key: 'sales', label: 'Sales' }, { key: 'operations', label: 'Operations' }, { key: 'colvy_ai', label: 'Auto-reply' }, { key: 'assistant', label: 'Assistant' }, { key: 'connected_app', label: 'Connected apps' }]
 const actorOf = (r: { role_key: string; actor?: string }) => r.actor || (r.role_key === 'support' ? 'Support Agent' : r.role_key)
 const CHANNEL: Record<string, string> = { sms: 'SMS', widget: 'Website chat', chat: 'Website chat' }
+
+type RoleKey = 'support' | 'reception' | 'reputation' | 'sales' | 'operations'
+const TRY_ROLES: { key: RoleKey; label: string; sample: string }[] = [
+  { key: 'support', label: 'Support', sample: 'Where is my order?' },
+  { key: 'reception', label: 'Reception', sample: 'Can I book a tank service for Saturday morning?' },
+  { key: 'reputation', label: 'Reputation', sample: 'Lovely shop and really helpful staff — they spent ages helping me choose fish for my new tank.' },
+  { key: 'sales', label: 'Sales', sample: 'Lemon Oscar\n4ft tank light' },
+  { key: 'operations', label: 'Operations', sample: '' },
+]
+// What agents prepare for a person (the waiting list), and what counts as "sent on its own".
+const WAITING_ACTIONS = ['send_message', 'reply_to_review', 'reschedule_booking', 'cancel_booking', 'send_cart_followup', 'send_order_update']
+const SENT_ACTIONS = ['send_message', 'auto_reply', 'reply_to_review', 'send_cart_followup', 'send_order_update']
 
 const ACTION_LABEL: Record<string, string> = {
   get_conversation: 'Read the conversation', get_contact: 'Looked up the customer', ask_knowledge: 'Searched your knowledge',
@@ -47,6 +60,7 @@ const ACTION_LABEL: Record<string, string> = {
   get_review: 'Read the review', reply_to_review: 'Replied to the review',
   list_services: 'Looked at your services', check_availability: 'Checked free times', find_my_bookings: 'Found the customer’s bookings', booking_link: 'Made a booking link', reschedule_booking: 'Move a booking', cancel_booking: 'Cancel a booking',
   get_cart: 'Read the cart', send_cart_followup: 'Follow up the cart',
+  get_exception: 'Looked at the flagged order', check_order_tracking: 'Checked live tracking', send_order_update: 'Update the customer',
   auto_reply: 'Replied to the customer', issue_coupon: 'Issued a coupon', start_doa_claim: 'Started a dead-on-arrival claim', create_draft_order: 'Created a draft order',
 }
 const STATUS: Record<string, { label: string; tone: string }> = {
@@ -98,7 +112,7 @@ export default function AgentsPage() {
   const [selected, setSelected] = useState<string | null>(null)
   const [detail, setDetail] = useState<{ run: Run; steps: Step[]; approvals: any[] } | null>(null)
   const [message, setMessage] = useState('Where is my order?')
-  const [tryRole, setTryRole] = useState<'support' | 'reception' | 'reputation' | 'sales'>('support')
+  const [tryRole, setTryRole] = useState<RoleKey>('support')
   const [tryRating, setTryRating] = useState(5)
   const [convs, setConvs] = useState<{ id: string; label: string }[]>([])
   const [convId, setConvId] = useState('')
@@ -117,17 +131,19 @@ export default function AgentsPage() {
   const [recOn, setRecOn] = useState<boolean | null>(null)
   // Sales Agent switch: personal follow-ups to abandoned carts.
   const [salesOn, setSalesOn] = useState<boolean | null>(null)
+  // Operations Agent switch: late, stuck and out-of-stock orders.
+  const [opsOn, setOpsOn] = useState<boolean | null>(null)
   const [savingRole, setSavingRole] = useState(false)
   useEffect(() => {
     if (!companyId) return
     authFetch(`/api/agent/roles?companyId=${companyId}`).then(r => r.json()).then(d => {
       const on = (k: string) => !!(d.roles || []).find((x: any) => x.key === k)?.enabled
-      setSupportOn(on('support')); setRepOn(on('reputation')); setRecOn(on('reception')); setSalesOn(on('sales'))
+      setSupportOn(on('support')); setRepOn(on('reputation')); setRecOn(on('reception')); setSalesOn(on('sales')); setOpsOn(on('operations'))
     }).catch(() => {})
   }, [companyId])
-  const toggleRole = async (roleKey: 'support' | 'reputation' | 'reception' | 'sales') => {
-    const cur = roleKey === 'support' ? supportOn : roleKey === 'reception' ? recOn : roleKey === 'sales' ? salesOn : repOn
-    const set = roleKey === 'support' ? setSupportOn : roleKey === 'reception' ? setRecOn : roleKey === 'sales' ? setSalesOn : setRepOn
+  const toggleRole = async (roleKey: RoleKey) => {
+    const cur = { support: supportOn, reception: recOn, sales: salesOn, operations: opsOn, reputation: repOn }[roleKey]
+    const set = { support: setSupportOn, reception: setRecOn, sales: setSalesOn, operations: setOpsOn, reputation: setRepOn }[roleKey]
     if (!companyId || cur == null) return
     const next = !cur
     setSavingRole(true); set(next); setError('')
@@ -151,7 +167,7 @@ export default function AgentsPage() {
   }, [companyId])
   const loadWaiting = useCallback(async () => {
     if (!companyId) return
-    try { const r = await authFetch(`/api/agent/approvals?companyId=${companyId}`); const d = await r.json(); if (r.ok) setWaiting((d.approvals || []).filter((a: Waiting) => ['send_message', 'reply_to_review', 'reschedule_booking', 'cancel_booking', 'send_cart_followup'].includes(a.action_key))) } catch {}
+    try { const r = await authFetch(`/api/agent/approvals?companyId=${companyId}`); const d = await r.json(); if (r.ok) setWaiting((d.approvals || []).filter((a: Waiting) => WAITING_ACTIONS.includes(a.action_key))) } catch {}
   }, [companyId])
   useEffect(() => {
     loadSettings(); loadWaiting()
@@ -318,13 +334,24 @@ export default function AgentsPage() {
             </div>
             <button type="button" role="switch" aria-checked={!!salesOn} aria-label="Sales Agent for abandoned carts" onClick={() => toggleRole('sales')} disabled={salesOn == null || savingRole} className={`ag-switch ${salesOn ? 'on' : ''}`}><span /></button>
           </div>
-          {salesOn && settings?.salesAuto && <SalesAutoPanel value={settings.salesAuto} saving={savingSettings} onSave={v => saveSettings({ salesAuto: v })} />}
+          {salesOn && settings?.salesAuto && <DailyAutoPanel value={settings.salesAuto} saving={savingSettings} onSave={v => saveSettings({ salesAuto: v })} copy={SALES_AUTO_COPY} />}
+        </div>
+
+        <div className="ag-card ag-fade" style={{ marginBottom: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14, justifyContent: 'space-between' }}>
+            <div style={{ minWidth: 0 }}>
+              <p className="ag-h">Operations Agent for late and stuck orders</p>
+              <p className="ag-p">Every few hours it checks recent orders against live tracking and your usual shipping times: orders not shipped yet, parcels that stopped moving or that the carrier has a problem with, and orders waiting on an out-of-stock item. For each real problem it gives your team a task with the facts and a next step, and can write the customer an honest update so they don’t have to chase you. Orders someone already has a task for are left alone.{settings?.opsAuto?.enabled ? ' It sends updates on its own; anything unusual waits for you.' : ' Every customer update waits for you to send it.'}</p>
+            </div>
+            <button type="button" role="switch" aria-checked={!!opsOn} aria-label="Operations Agent for late and stuck orders" onClick={() => toggleRole('operations')} disabled={opsOn == null || savingRole} className={`ag-switch ${opsOn ? 'on' : ''}`}><span /></button>
+          </div>
+          {opsOn && settings?.opsAuto && <DailyAutoPanel value={settings.opsAuto} saving={savingSettings} onSave={v => saveSettings({ opsAuto: v })} copy={OPS_AUTO_COPY} />}
         </div>
 
         {waiting.length > 0 && companyId && (
           <div className="ag-card ag-fade ag-wait" style={{ marginBottom: 16 }}>
             <p className="ag-h">Waiting for you <span className="ag-count">{waiting.length}</span></p>
-            <p className="ag-p">What your agents prepared — replies to customers and Google reviews, booking changes and cart follow-ups. Send, edit or dismiss them here. They expire after 24 hours.</p>
+            <p className="ag-p">What your agents prepared — replies to customers and Google reviews, booking changes, cart follow-ups and order updates. Send, edit or dismiss them here. They expire after 24 hours.</p>
             <ul className="ag-wait-list">
               {waiting.map(a => (
                 <li key={a.id}>
@@ -333,6 +360,12 @@ export default function AgentsPage() {
                       <span className="ag-wait-who">{a.run?.input?.reviewer || 'A customer'}</span>
                       <span className="ag-run-s" style={{ marginTop: 0 }}>{a.run?.input?.rating ? `${a.run.input.rating}★ ` : ''}Google review · {when(a.created_at)}</span>
                       <a className="ag-link" href="/admin/reviews">{I.inbox} Open reviews</a>
+                    </div>
+                  ) : a.action_key === 'send_order_update' ? (
+                    <div className="ag-wait-head">
+                      <span className="ag-wait-who">{a.conversation?.customer || 'Customer'}</span>
+                      <span className="ag-run-s" style={{ marginTop: 0 }}>Order #{a.run?.input?.orderNumber || '—'} · {when(a.created_at)}</span>
+                      {a.conversation?.id ? <a className="ag-link" href={`/admin/inbox?conversation=${a.conversation.id}`}>{I.inbox} Open conversation</a> : <a className="ag-link" href="/admin/orders">{I.inbox} Open orders</a>}
                     </div>
                   ) : a.action_key === 'send_cart_followup' ? (
                     <div className="ag-wait-head">
@@ -363,20 +396,21 @@ export default function AgentsPage() {
               <p className="ag-p">Sandbox — it reads your real data, but nothing is sent, posted or changed. Anything it would do is recorded as a suggestion.</p>
             </div>
           </div>
-          <div className="ag-seg four" role="radiogroup" aria-label="Which agent" style={{ marginTop: 14 }}>
-            <button type="button" role="radio" aria-checked={tryRole === 'support'} className={tryRole === 'support' ? 'on' : ''} onClick={() => { setTryRole('support'); setMessage('Where is my order?') }}>Support</button>
-            <button type="button" role="radio" aria-checked={tryRole === 'reception'} className={tryRole === 'reception' ? 'on' : ''} onClick={() => { setTryRole('reception'); setMessage('Can I book a tank service for Saturday morning?') }}>Reception</button>
-            <button type="button" role="radio" aria-checked={tryRole === 'reputation'} className={tryRole === 'reputation' ? 'on' : ''} onClick={() => { setTryRole('reputation'); setMessage('Lovely shop and really helpful staff — they spent ages helping me choose fish for my new tank.') }}>Reputation</button>
-            <button type="button" role="radio" aria-checked={tryRole === 'sales'} className={tryRole === 'sales' ? 'on' : ''} onClick={() => { setTryRole('sales'); setMessage('Lemon Oscar\n4ft tank light') }}>Sales</button>
-            <span className="ag-seg-pill four" style={{ transform: `translateX(${['support', 'reception', 'reputation', 'sales'].indexOf(tryRole) * 100}%)` }} />
+          <div className="ag-seg-scroll" style={{ marginTop: 14 }}>
+            <div className="ag-seg five" role="radiogroup" aria-label="Which agent">
+              {TRY_ROLES.map(t => (
+                <button key={t.key} type="button" role="radio" aria-checked={tryRole === t.key} className={tryRole === t.key ? 'on' : ''} onClick={() => { setTryRole(t.key); setMessage(t.sample) }}>{t.label}</button>
+              ))}
+              <span className="ag-seg-pill five" style={{ transform: `translateX(${TRY_ROLES.findIndex(t => t.key === tryRole) * 100}%)` }} />
+            </div>
           </div>
           <div className="ag-try">
             <div style={{ minWidth: 0 }}>
-              <label className="ag-label" htmlFor="ag-msg">{tryRole === 'reputation' ? 'Review' : tryRole === 'sales' ? 'What’s in the cart (one per line)' : 'Customer message'}</label>
-              <textarea id="ag-msg" className="ag-input" rows={2} value={message} onChange={e => setMessage(e.target.value)} placeholder={tryRole === 'reputation' ? 'e.g. Fish arrived dead and nobody called me back.' : tryRole === 'sales' ? 'e.g. Lemon Oscar' : 'e.g. Where is my order?'} />
+              <label className="ag-label" htmlFor="ag-msg">{tryRole === 'reputation' ? 'Review' : tryRole === 'sales' ? 'What’s in the cart (one per line)' : tryRole === 'operations' ? 'Order number to check' : 'Customer message'}</label>
+              <textarea id="ag-msg" className="ag-input" rows={2} value={message} onChange={e => setMessage(e.target.value)} placeholder={tryRole === 'reputation' ? 'e.g. Fish arrived dead and nobody called me back.' : tryRole === 'sales' ? 'e.g. Lemon Oscar' : tryRole === 'operations' ? 'e.g. 124424' : 'e.g. Where is my order?'} />
             </div>
-            {tryRole === 'sales' ? (
-              <p className="ag-step-dec" style={{ margin: 0, alignSelf: 'center' }}>As if a shopper called Sam left these an hour ago.</p>
+            {tryRole === 'sales' || tryRole === 'operations' ? (
+              <p className="ag-step-dec" style={{ margin: 0, alignSelf: 'center' }}>{tryRole === 'sales' ? 'As if a shopper called Sam left these an hour ago.' : 'One of your real orders, as if Colvy had flagged it. Nothing is sent or created.'}</p>
             ) : tryRole !== 'reputation' ? (
               <div style={{ minWidth: 0 }}>
                 <label className="ag-label" htmlFor="ag-conv">As if it came in on (optional)</label>
@@ -490,25 +524,35 @@ function ReviewAutoPanel({ value, saving, onSave }: { value: ReviewAuto; saving:
   )
 }
 
-function SalesAutoPanel({ value, saving, onSave }: { value: SalesAuto; saving: boolean; onSave: (v: SalesAuto) => Promise<boolean> }) {
-  const [d, setD] = useState<SalesAuto>(value)
+type DailyAutoCopy = { label: string; aria: string; perDay: string; note: string; confirmTitle: string; confirm: (n: number) => string }
+const SALES_AUTO_COPY: DailyAutoCopy = {
+  label: 'How it follows up', aria: 'How it follows up carts', perDay: 'Most follow-ups a day',
+  note: 'Each shopper gets one follow-up per cart. Anything that mentions a discount or coupon always waits for you, and so does a cart they’ve since bought or opted out of.',
+  confirmTitle: 'Let the Sales Agent send follow-ups on its own?',
+  confirm: n => `It will text or email shoppers about the cart they left, without waiting, up to ${n} a day and only within your sending hours. Follow-ups that offer a discount, or for carts it’s unsure about, still wait for you. Shoppers can reply STOP. You can pause it any time.`,
+}
+const OPS_AUTO_COPY: DailyAutoCopy = {
+  label: 'Customer updates', aria: 'How it updates customers', perDay: 'Most updates a day',
+  note: 'An update only goes out on its own after it has checked live tracking or stock in that run, and within your sending hours. Anything that mentions a refund, discount or credit waits for you, and so does an order it hands to your team. Tasks for your team are always created straight away.',
+  confirmTitle: 'Let the Operations Agent update customers on its own?',
+  confirm: n => `When an order is late, stuck or waiting on stock, it will text or email the customer a short, honest update without waiting — up to ${n} a day, only within your sending hours, and never about refunds or money. Orders it hands to your team still wait for you. You can pause it any time.`,
+}
+
+function DailyAutoPanel({ value, saving, onSave, copy }: { value: DailyAuto; saving: boolean; onSave: (v: DailyAuto) => Promise<boolean>; copy: DailyAutoCopy }) {
+  const [d, setD] = useState<DailyAuto>(value)
   const dirty = JSON.stringify(d) !== JSON.stringify(value)
   useEffect(() => { if (!dirty) setD(value) }, [value]) // eslint-disable-line react-hooks/exhaustive-deps
   const save = async () => {
     if (d.enabled && !value.enabled) {
-      const ok = await confirmDialog({
-        title: 'Let the Sales Agent send follow-ups on its own?',
-        message: `It will text or email shoppers about the cart they left, without waiting, up to ${d.max_per_day} a day and only within your sending hours. Follow-ups that offer a discount, or for carts it’s unsure about, still wait for you. Shoppers can reply STOP. You can pause it any time.`,
-        confirmLabel: 'Turn on', tone: 'primary',
-      })
+      const ok = await confirmDialog({ title: copy.confirmTitle, message: copy.confirm(d.max_per_day), confirmLabel: 'Turn on', tone: 'primary' })
       if (!ok) return
     }
     await onSave(d)
   }
   return (
     <div className="ag-auto">
-      <p className="ag-label" style={{ marginTop: 0 }}>How it follows up</p>
-      <div className="ag-seg" role="radiogroup" aria-label="How it follows up carts">
+      <p className="ag-label" style={{ marginTop: 0 }}>{copy.label}</p>
+      <div className="ag-seg" role="radiogroup" aria-label={copy.aria}>
         <button type="button" role="radio" aria-checked={!d.enabled} className={!d.enabled ? 'on' : ''} onClick={() => setD({ ...d, enabled: false })}>Draft for me</button>
         <button type="button" role="radio" aria-checked={d.enabled} className={d.enabled ? 'on' : ''} onClick={() => setD({ ...d, enabled: true })}>Send on its own</button>
         <span className="ag-seg-pill" style={{ transform: d.enabled ? 'translateX(100%)' : 'none' }} />
@@ -517,11 +561,11 @@ function SalesAutoPanel({ value, saving, onSave }: { value: SalesAuto; saving: b
         <div style={{ overflow: 'hidden' }}>
           <div className="ag-limits">
             <label className="ag-limit">
-              <span>Most follow-ups a day</span>
+              <span>{copy.perDay}</span>
               <input type="number" min={1} max={500} className="ag-input" value={d.max_per_day} onChange={e => setD({ ...d, max_per_day: Number(e.target.value) })} tabIndex={d.enabled ? 0 : -1} />
             </label>
           </div>
-          <p className="ag-step-dec" style={{ marginTop: 10 }}>Each shopper gets one follow-up per cart. Anything that mentions a discount or coupon always waits for you, and so does a cart they’ve since bought or opted out of.</p>
+          <p className="ag-step-dec" style={{ marginTop: 10 }}>{copy.note}</p>
         </div>
       </div>
       {dirty && (
@@ -638,7 +682,7 @@ function RunDetail({ run, steps, approvals, companyId, onDecided }: { run: Run; 
         </div>
       )}
 
-      {(approvals || []).filter(a => a.status === 'pending' && ['send_message', 'reply_to_review', 'reschedule_booking', 'cancel_booking', 'send_cart_followup'].includes(a.action_key)).map(a => (
+      {(approvals || []).filter(a => a.status === 'pending' && WAITING_ACTIONS.includes(a.action_key)).map(a => (
         <div key={a.id} style={{ marginTop: 14 }}>
           <SuggestionCard s={{ ...a, run_id: run.id, run: { role_key: run.role_key } } as Suggestion} companyId={companyId} compact onDone={onDecided} />
         </div>
@@ -676,7 +720,7 @@ function RunDetail({ run, steps, approvals, companyId, onDecided }: { run: Run; 
 
 function StepRow({ s }: { s: Step }) {
   const [open, setOpen] = useState(false)
-  const dec = s.kind === 'action' && ['send_message', 'auto_reply', 'reply_to_review', 'send_cart_followup'].includes(s.action_key || '') && s.decision === 'allowed' && s.status === 'ok'
+  const dec = s.kind === 'action' && SENT_ACTIONS.includes(s.action_key || '') && s.decision === 'allowed' && s.status === 'ok'
     ? { label: 'Sent on its own', tone: 'ok' }
     : s.decision ? DECISION[s.decision] : null
   const title = useMemo(() => {
@@ -700,7 +744,7 @@ function StepRow({ s }: { s: Step }) {
         </button>
         {s.reason && <p className="ag-step-why">Why: {s.reason}</p>}
         {s.decision_reason && s.kind === 'action' && <p className="ag-step-dec">{s.decision_reason}</p>}
-        {s.kind === 'action' && ['send_message', 'auto_reply', 'reply_to_review', 'send_cart_followup'].includes(s.action_key || '') && s.input?.text && <p className="ag-bubble">{String(s.input.text)}</p>}
+        {s.kind === 'action' && SENT_ACTIONS.includes(s.action_key || '') && s.input?.text && <p className="ag-bubble">{String(s.input.text)}</p>}
         {open && (
           <div className="ag-more">
             {s.kind === 'model' && text && <p style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{text}</p>}
@@ -791,9 +835,11 @@ const CSS = `
 .ag-seg button.on{color:var(--ink)}
 .ag-seg.three{grid-template-columns:1fr 1fr 1fr}
 .ag-seg-pill.three{width:calc(33.333% - 2px)}
-.ag-seg.four{grid-template-columns:repeat(4,1fr)}
-.ag-seg-pill.four{width:calc(25% - 1.5px)}
-@media (max-width:420px){.ag-seg.four button{padding:8px 10px;font-size:13px}}
+.ag-seg-scroll{max-width:100%;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.ag-seg-scroll::-webkit-scrollbar{display:none}
+.ag-seg.five{grid-template-columns:repeat(5,1fr);width:max-content;max-width:none}
+.ag-seg-pill.five{width:calc(20% - 1.2px)}
+@media (max-width:420px){.ag-seg.five button{padding:8px 12px;font-size:13px}}
 .ag-seg-pill{position:absolute;top:3px;bottom:3px;left:3px;width:calc(50% - 3px);border-radius:10px;background:#fff;box-shadow:0 1px 3px rgba(15,23,42,.12);transition:transform .35s ${EASE}}
 .ag-auto-body{display:grid;grid-template-rows:0fr;opacity:0;transition:grid-template-rows .45s ${EASE},opacity .3s ease}
 .ag-auto-body.open{grid-template-rows:1fr;opacity:1}

@@ -17,6 +17,7 @@ import { findCustomerOrders, checkOrderStatus } from './order-actions'
 import { getBusinessHours } from './business-actions'
 import { getReview, replyToReviewAction } from './review-actions'
 import { getCart, sendCartFollowup } from './sales-actions'
+import { getException, checkOrderTracking, sendOrderUpdate } from './ops-actions'
 import { listServices, checkAvailability, findMyBookings, bookingLink, rescheduleBookingAction, cancelBookingAction } from './booking-actions'
 import { sendAgentMessage } from './send'
 
@@ -102,7 +103,8 @@ const createTask: ActionDef = {
       company_id: ctx.companyId, title, text: details ? `${title}\n\n${details}` : title, done: false, status: 'todo',
       priority: ['low', 'high'].includes(args?.priority) ? args.priority : 'normal',
       due_date: args?.dueDate || null, assignees: [], mentions: [],
-      order_id: args?.orderId || null, conversation_id: ctx.conversationId,
+      // The Operations Agent's tasks link to the order it's looking at.
+      order_id: ctx.scratch.opsOrder?.id || (/^[0-9a-f-]{36}$/i.test(String(args?.orderId || '')) ? args.orderId : null), conversation_id: ctx.conversationId,
       created_by: ctx.roleName, source: 'agent',
     }
     const { data, error } = await ctx.db.from('conversation_tasks').insert(row).select('id').single()
@@ -210,7 +212,7 @@ export const FINISH_ACTION: ActionDef = {
   async run() { return { ok: true } },
 }
 
-const ALL: ActionDef[] = [...READS, findCustomerOrders, checkOrderStatus, getBusinessHours, getReview, replyToReviewAction, listServices, checkAvailability, findMyBookings, bookingLink, rescheduleBookingAction, cancelBookingAction, getCart, sendCartFollowup, createTask, sendMessage, escalateToHuman, FINISH_ACTION]
+const ALL: ActionDef[] = [...READS, findCustomerOrders, checkOrderStatus, getBusinessHours, getReview, replyToReviewAction, listServices, checkAvailability, findMyBookings, bookingLink, rescheduleBookingAction, cancelBookingAction, getCart, sendCartFollowup, getException, checkOrderTracking, sendOrderUpdate, createTask, sendMessage, escalateToHuman, FINISH_ACTION]
 export const ACTIONS: Record<string, ActionDef> = Object.fromEntries(ALL.map(a => [a.key, a]))
 
 export function getAction(key: string): ActionDef | null {
