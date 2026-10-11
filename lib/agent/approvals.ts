@@ -6,6 +6,7 @@ import { sendAgentMessage } from './send'
 import { postApprovedReviewReply } from './review-actions'
 import { runApprovedBookingAction } from './booking-actions'
 import { sendApprovedCartFollowup } from './sales-actions'
+import { sendApprovedOrderUpdate } from './ops-actions'
 
 export async function pendingApprovals(db: any, companyId: string, opts: { conversationId?: string | null; limit?: number } = {}) {
   let q = db.from('agent_approvals').select('id, run_id, action_key, args, status, created_at, expires_at').eq('company_id', companyId).eq('status', 'pending')
@@ -100,7 +101,7 @@ export async function decideApproval(db: any, opts: {
     return r.ok ? { ok: true, status: 'executed' } : { ok: false, error: r.error }
   }
 
-  if (!['send_message', 'reply_to_review', 'send_cart_followup'].includes(ap.action_key)) {
+  if (!['send_message', 'reply_to_review', 'send_cart_followup', 'send_order_update'].includes(ap.action_key)) {
     await db.from('agent_approvals').update({ status: 'failed', result: { error: 'Not supported yet' } }).eq('id', ap.id)
     return { ok: false, error: 'Approving this kind of action isn’t supported yet.' }
   }
@@ -112,6 +113,8 @@ export async function decideApproval(db: any, opts: {
     ? await postApprovedReviewReply(db, opts.companyId, run, text).then(r => ({ ...r, channel: r.ok ? 'google' : undefined }))
     : ap.action_key === 'send_cart_followup'
     ? await sendApprovedCartFollowup(db, opts.companyId, run, text, opts.user)
+    : ap.action_key === 'send_order_update'
+    ? await sendApprovedOrderUpdate(db, opts.companyId, run, text, opts.user)
     : await sendAgentMessage(db, { companyId: opts.companyId, conversationId: run.conversation_id, text, runId: run.id, approvedBy: opts.user, edited, agentName: run.role_key === 'reception' ? 'Reception Agent' : 'Support Agent' })
   await db.from('agent_approvals').update({ status: sent.ok ? (edited ? 'edited' : 'executed') : 'failed', result: sent.ok ? { channel: sent.channel, text, edited } : { error: sent.error } }).eq('id', ap.id)
   const verb = isReview ? (edited ? 'edited and posted' : 'approved and posted') : (edited ? 'edited and sent' : 'approved and sent')

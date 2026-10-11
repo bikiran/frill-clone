@@ -181,3 +181,22 @@ export async function setSalesAuto(db: any, companyId: string, raw: any, userId:
   await putPolicy(db, { company_id: companyId, role_key: 'sales', action_key: 'send_cart_followup', autonomy: s.enabled ? 'act_within_limits' : 'prepare', limits: { max_per_day: s.max_per_day }, updated_by: userId })
   return s
 }
+
+// ── Operations Agent: send order updates on its own ──────────────────────────
+
+export type OpsAuto = { enabled: boolean; max_per_day: number }
+export const DEFAULT_OPS_AUTO: OpsAuto = { enabled: false, max_per_day: 20 }
+
+export async function getOpsAuto(db: any, companyId: string): Promise<OpsAuto> {
+  try {
+    const { data } = await db.from('agent_policies').select('autonomy, limits').eq('company_id', companyId).eq('role_key', 'operations').eq('action_key', 'send_order_update').limit(1)
+    const row = data?.[0]
+    return row ? { enabled: row.autonomy === 'act_within_limits', max_per_day: clampInt(row.limits?.max_per_day, 1, 500, DEFAULT_OPS_AUTO.max_per_day) } : { ...DEFAULT_OPS_AUTO }
+  } catch { return { ...DEFAULT_OPS_AUTO } }
+}
+
+export async function setOpsAuto(db: any, companyId: string, raw: any, userId: string | null): Promise<OpsAuto> {
+  const s: OpsAuto = { enabled: !!raw?.enabled, max_per_day: clampInt(raw?.max_per_day, 1, 500, DEFAULT_OPS_AUTO.max_per_day) }
+  await putPolicy(db, { company_id: companyId, role_key: 'operations', action_key: 'send_order_update', autonomy: s.enabled ? 'act_within_limits' : 'prepare', limits: { max_per_day: s.max_per_day }, updated_by: userId })
+  return s
+}

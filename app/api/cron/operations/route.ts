@@ -1,0 +1,29 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
+import { queueOpsChecks } from '@/lib/agent/operations'
+
+export const dynamic = 'force-dynamic'
+export const maxDuration = 120
+
+/**
+ * GET /api/cron/operations
+ *
+ * The Operations Agent's sweep: for businesses that switched it on, checks
+ * recent orders that may be late, stuck or waiting on stock (live tracking +
+ * the business's thresholds) and queues a run for each real problem. The
+ * agent worker does the rest. See lib/agent/operations.ts.
+ * Runs on a schedule (see vercel.json). Honours CRON_SECRET like the others.
+ */
+export async function GET(req: NextRequest) {
+  const secret = process.env.CRON_SECRET
+  if (secret) {
+    const auth = req.headers.get('authorization') || ''
+    if (auth !== `Bearer ${secret}`) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+  try {
+    const db = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, { auth: { autoRefreshToken: false, persistSession: false } })
+    return NextResponse.json({ ok: true, ...(await queueOpsChecks(db)) })
+  } catch (e: any) {
+    return NextResponse.json({ ok: false, error: e?.message || 'Failed' }, { status: 500 })
+  }
+}

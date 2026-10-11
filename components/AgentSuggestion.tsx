@@ -23,6 +23,8 @@ export function SuggestionCard({ s, companyId, onDone, compact }: { s: Suggestio
   const isBooking = s.action_key === 'reschedule_booking' || s.action_key === 'cancel_booking'
   // A follow-up to a shopper who left a cart (Sales Agent), sent by SMS or email.
   const isCart = s.action_key === 'send_cart_followup'
+  // An update to a customer about a late or held-up order (Operations Agent).
+  const isOrder = s.action_key === 'send_order_update'
   const [error, setError] = useState('')
 
   const decide = async (action: 'approve' | 'reject') => {
@@ -40,7 +42,7 @@ export function SuggestionCard({ s, companyId, onDone, compact }: { s: Suggestio
       <div className="agsg-head">
         <span className="agsg-orb"><Spark /></span>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <p className="agsg-t">{isBooking ? `Reception Agent wants to ${s.action_key === 'cancel_booking' ? 'cancel a booking' : 'move a booking'}` : isReview ? 'Reputation Agent drafted a reply' : isCart ? 'Sales Agent wrote a cart follow-up' : s.run?.role_key === 'reception' ? 'Reception Agent suggests a reply' : 'Support Agent suggests a reply'}</p>
+          <p className="agsg-t">{isBooking ? `Reception Agent wants to ${s.action_key === 'cancel_booking' ? 'cancel a booking' : 'move a booking'}` : isReview ? 'Reputation Agent drafted a reply' : isCart ? 'Sales Agent wrote a cart follow-up' : isOrder ? 'Operations Agent wrote an order update' : s.run?.role_key === 'reception' ? 'Reception Agent suggests a reply' : 'Support Agent suggests a reply'}</p>
           {!compact && s.run?.summary && <p className="agsg-s">{s.run.summary}</p>}
         </div>
         <WhyLink companyId={companyId} runId={s.run_id} className="agsg-why" style={{ textDecoration: 'none' }} />
@@ -48,9 +50,10 @@ export function SuggestionCard({ s, companyId, onDone, compact }: { s: Suggestio
       {isBooking
         ? <p className="agsg-text">{String(s.args?._preview || (s.action_key === 'cancel_booking' ? 'Cancel this booking' : 'Move this booking'))}. The customer gets the usual booking message{s.action_key === 'cancel_booking' ? ', and your cancellation policy decides any refund' : ''}.</p>
         : editing
-        ? <textarea className="agsg-edit" value={text} onChange={e => setText(e.target.value)} rows={Math.min(8, Math.max(3, Math.ceil(text.length / 60)))} autoFocus aria-label={isReview ? 'Edit the public reply' : isCart ? 'Edit the follow-up' : 'Edit the reply'} />
+        ? <textarea className="agsg-edit" value={text} onChange={e => setText(e.target.value)} rows={Math.min(8, Math.max(3, Math.ceil(text.length / 60)))} autoFocus aria-label={isReview ? 'Edit the public reply' : isCart ? 'Edit the follow-up' : isOrder ? 'Edit the update' : 'Edit the reply'} />
         : <p className="agsg-text">{text}</p>}
       {isCart && <p className="agsg-note">Goes out by SMS, else email. {'{link}'} becomes their checkout link and “Reply STOP to opt out.” is added.</p>}
+      {isOrder && <p className="agsg-note">Goes to the customer by SMS, else email, and shows in their conversation.</p>}
       {error && <p className="agsg-err" role="alert">{error}</p>}
       <div className="agsg-actions">
         <button type="button" className="agsg-send" onClick={() => decide('approve')} disabled={!!busy || (!isBooking && !text.trim())}>{busy === 'send' ? (isBooking ? 'Approving…' : isReview ? 'Posting…' : 'Sending…') : isBooking ? (s.action_key === 'cancel_booking' ? 'Approve cancellation' : 'Approve move') : editing ? (isReview ? 'Post edited' : 'Send edited') : (isReview ? 'Post reply' : 'Send')}</button>
@@ -80,7 +83,7 @@ export default function AgentSuggestion({ companyId, conversationId, onChange }:
       if (!r.ok) return
       const d = await r.json()
       if (convRef.current !== conversationId) return
-      const next: Suggestion[] = (d.approvals || []).filter((a: Suggestion) => ['send_message', 'reschedule_booking', 'cancel_booking', 'send_cart_followup'].includes(a.action_key))
+      const next: Suggestion[] = (d.approvals || []).filter((a: Suggestion) => ['send_message', 'reschedule_booking', 'cancel_booking', 'send_cart_followup', 'send_order_update'].includes(a.action_key))
       const ids = next.map(a => a.id).join(',')
       if (ids === shownRef.current) return   // nothing new: leave the card alone
       const grew = next.some(a => !shownRef.current.split(',').includes(a.id))

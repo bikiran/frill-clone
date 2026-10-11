@@ -89,6 +89,10 @@
       "schedule": "* * * * *"
     },
     {
+      "path": "/api/cron/operations",
+      "schedule": "20 */3 * * *"
+    },
+    {
       "path": "/api/cron/agent-worker",
       "schedule": "* * * * *"
     }
