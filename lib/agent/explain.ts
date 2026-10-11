@@ -14,6 +14,7 @@ const LABEL: Record<string, string> = {
   get_business_hours: 'Checked opening hours', create_task: 'Created a task', send_message: 'Replied to the customer',
   escalate_to_human: 'Handed it to the team', search_orders: 'Searched orders', get_order: 'Looked up an order',
   get_review: 'Read the review', reply_to_review: 'Replied to the review',
+  get_cart: 'Read the cart', send_cart_followup: 'Followed up the cart',
   list_services: 'Looked at your services', check_availability: 'Checked free times', find_my_bookings: 'Found the customer’s bookings', booking_link: 'Made a booking link', reschedule_booking: 'Move a booking', cancel_booking: 'Cancel a booking',
   auto_reply: 'Replied to the customer', issue_coupon: 'Issued a coupon', start_doa_claim: 'Started a dead-on-arrival claim', create_draft_order: 'Created a draft order',
 }
@@ -44,7 +45,8 @@ function detailFor(action: string | null, input: any, output: any): string | nul
   const o = output || {}
   if (o.error) return clip(o.error)
   switch (action) {
-    case 'send_message': case 'auto_reply': case 'reply_to_review': return input?.text ? clip(input.text, 400) : null
+    case 'send_message': case 'auto_reply': case 'reply_to_review': case 'send_cart_followup': return input?.text ? clip(input.text, 400) : null
+    case 'get_cart': return o.summary ? clip(`${o.summary}${o.total ? ` · ${o.total}` : ''}${o.canMessage === false ? ` — not messaged: ${o.whyNot || 'not allowed'}` : ''}`, 220) : null
     case 'check_availability': return Array.isArray(o.free) ? (o.free.length ? clip(`${o.service}: ${o.free.slice(0, 3).map((d: any) => `${d.day} ${d.times.slice(0, 3).join(', ')}`).join(' · ')}`, 220) : clip(o.note || 'Nothing free')) : null
     case 'find_my_bookings': return Array.isArray(o.bookings) ? (o.bookings.length ? clip(o.bookings.map((b: any) => `${b.service} ${b.when}`).join(' · '), 220) : clip(o.note || o.needs || 'No bookings')) : null
     case 'booking_link': return o.link ? `Link${o.service ? ` for ${o.service}` : ''}: ${o.link}` : null
@@ -94,7 +96,7 @@ export async function explainRun(db: any, companyId: string, runId: string): Pro
   for (const s of (rows || []) as any[]) {
     if (s.kind === 'model' || s.kind === 'context' || s.kind === 'finish') continue
     if (s.kind === 'action' && ['get_conversation', 'get_contact'].includes(s.action_key) && s.status === 'ok') continue  // routine reads
-    const sentAlone = s.kind === 'action' && ['send_message', 'auto_reply', 'reply_to_review'].includes(s.action_key) && s.decision === 'allowed' && s.status === 'ok'
+    const sentAlone = s.kind === 'action' && ['send_message', 'auto_reply', 'reply_to_review', 'send_cart_followup'].includes(s.action_key) && s.decision === 'allowed' && s.status === 'ok'
     steps.push({
       kind: s.kind,
       action: s.action_key || null,

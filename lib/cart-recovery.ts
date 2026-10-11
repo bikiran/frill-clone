@@ -44,6 +44,9 @@ export async function runCartRecovery(db: any, opts: { origin: string; now?: Dat
   for (const co of cos || []) {
     const s = resolveCartRecovery(co.order_chat_automation?.cart_recovery)
     if (!s.enabled) continue
+    // The Sales Agent writes cart follow-ups itself when it's switched on.
+    const { data: sales } = await db.from('agent_roles').select('enabled').eq('company_id', co.id).eq('role_key', 'sales').maybeSingle().then((r: any) => r, () => ({ data: null }))
+    if (sales?.enabled) continue
     out.companies++
     // Hold everything until the business's sending hours.
     if (!isWithinSendingHours(now, s.timezone)) { out.waiting++; continue }
@@ -66,76 +69,13 @@ export async function runCartRecovery(db: any, opts: { origin: string; now?: Dat
       const mark = (patch: any) => db.from('abandoned_carts').update(patch).eq('id', cart.id)
 
       try {
-        if (!cart.conversation_id || (!cart.phone && !cart.email)) {
-          await mark({ recovery_error: 'No conversation or contact details' }); out.skipped++; continue
-        }
-
-        // Already bought? (The order webhook usually marks the cart recovered,
-        // but it can lag behind.)
-        const mail = String(cart.email || '').trim().toLowerCase()
-        const tail = String(cart.phone || '').replace(/\D/g, '').slice(-9)
-        const since = cart.created_at
-        let bought = false
-        if (mail) {
-          const { data } = await db.from('woocommerce_orders').select('woo_order_id').eq('company_id', co.id).eq('customer_email', mail).gte('order_date', since).limit(1)
-          bought = !!data?.length
-        }
-        if (!bought && tail) {
-          const { data } = await db.from('woocommerce_orders').select('woo_order_id').eq('company_id', co.id).eq('billing_phone_norm', tail).gte('order_date', since).limit(1)
-          bought = !!data?.length
-        }
-        // Orders from any store (Shopify lives only here; WooCommerce is mirrored
-        // here too). Cancelled ones don't count as having bought.
-        if (!bought && (mail || tail)) {
-          try {
-            const or = [mail ? `customer_email.eq.${mail}` : '', tail ? `customer_phone_norm.eq.${tail}` : ''].filter(Boolean).join(',')
-            const { data } = await db.from('orders').select('id').eq('company_id', co.id).or(or)
-              .gte('order_date', since).neq('status', 'cancelled').limit(1)
-            bought = !!data?.length
-          } catch {}
-        }
-        if (bought) { await mark({ recovery_error: 'Already ordered' }); out.skipped++; continue }
-
-        // Blocked or replied STOP → never message them.
-        const { data: conv } = await db.from('conversations').select('id, channel, contact_id').eq('id', cart.conversation_id).eq('company_id', co.id).maybeSingle()
-        if (!conv) { await mark({ recovery_error: 'Conversation not found' }); out.skipped++; continue }
-        let contact: any = null
-        if (conv.contact_id) {
-          const { data } = await db.from('contacts').select('name, phone, email, is_blocked, unsubscribed_at').eq('id', conv.contact_id).maybeSingle()
-          contact = data
-        }
-        if (contact?.is_blocked || contact?.unsubscribed_at) { await mark({ recovery_error: 'Customer opted out' }); out.skipped++; continue }
-
-        // Tracked link to their checkout, when the store sent one.
-        let link = /^https?:\/\//i.test(String(cart.cart_url || '')) ? String(cart.cart_url) : ''
-        if (link) {
-          try {
-            const short = await shortenUrl(link, { companyId: co.id, conversationId: conv.id, kind: 'cart' })
-            if (short) link = short
-          } catch {}
-        }
+        const pre = await cartPrecheck(db, co.id, cart)
+        if (!pre.ok) { await mark({ recovery_error: pre.reason }); out.skipped++; continue }
         const business = co.name || 'us'
+        const link = await cartLink(cart, co.id, pre.conv.id)
         const total = cart.total != null && !isNaN(Number(cart.total)) ? `$${Number(cart.total).toFixed(2)}` : ''
-        const text = fillCartMessage(s.message, { name: firstName(cart.name || contact?.name), items: cartItemsText(cart.items), total, business, link })
-
-        const { data: msg } = await db.from('messages').insert({
-          conversation_id: conv.id, company_id: co.id, sender_type: 'agent', sender_name: business,
-          content: text, message_type: 'text', is_read: true,
-          metadata: { auto: true, cart_recovery: cart.id },
-        }).select('id').maybeSingle()
-        await db.from('conversations').update({ last_message: text, last_message_at: now.toISOString() }).eq('id', conv.id)
-
-        const delivery = await deliverAutomatedMessage({
-          companyId: co.id, conversationId: conv.id, text,
-          phone: cart.phone || contact?.phone || null,
-          email: cart.email || contact?.email || null,
-          preferChannel: cart.phone || contact?.phone ? 'sms' : 'email',
-          senderName: business, subject: `You left something in your cart at ${business}`,
-          origin: opts.origin, db,
-        })
-        if (msg?.id && (delivery.channel === 'sms' || delivery.channel === 'email')) {
-          try { await db.from('messages').update({ delivery_channel: delivery.channel }).eq('id', msg.id) } catch {}
-        }
+        const text = fillCartMessage(s.message, { name: firstName(cart.name || pre.contact?.name), items: cartItemsText(cart.items), total, business, link })
+        const delivery = await deliverCartMessage(db, { companyId: co.id, business, cart, conv: pre.conv, contact: pre.contact, text, origin: opts.origin, now })
         await mark(delivery.sent ? { recovery_channel: delivery.channel, recovery_error: null } : { recovery_channel: 'none', recovery_error: delivery.error || 'Not delivered' })
         if (delivery.sent) out.sent++; else out.failed++
       } catch (e: any) {
@@ -145,4 +85,79 @@ export async function runCartRecovery(db: any, opts: { origin: string; now?: Dat
     }
   }
   return out
+}
+
+// ── Shared with the Sales Agent (lib/agent/sales-actions.ts) ────────────────
+
+/** Should this cart get a message at all? Already bought, opted out, no way to reach them → no. */
+export async function cartPrecheck(db: any, companyId: string, cart: any): Promise<{ ok: boolean; reason?: string; conv?: any; contact?: any }> {
+  if (!cart.conversation_id || (!cart.phone && !cart.email)) return { ok: false, reason: 'No conversation or contact details' }
+  // Already bought? (The order webhook usually marks the cart recovered, but it can lag behind.)
+  const mail = String(cart.email || '').trim().toLowerCase()
+  const tail = String(cart.phone || '').replace(/\D/g, '').slice(-9)
+  const since = cart.created_at
+  let bought = false
+  if (mail) {
+    const { data } = await db.from('woocommerce_orders').select('woo_order_id').eq('company_id', companyId).eq('customer_email', mail).gte('order_date', since).limit(1)
+    bought = !!data?.length
+  }
+  if (!bought && tail) {
+    const { data } = await db.from('woocommerce_orders').select('woo_order_id').eq('company_id', companyId).eq('billing_phone_norm', tail).gte('order_date', since).limit(1)
+    bought = !!data?.length
+  }
+  // Orders from any store (Shopify lives only here; WooCommerce is mirrored
+  // here too). Cancelled ones don't count as having bought.
+  if (!bought && (mail || tail)) {
+    try {
+      const or = [mail ? `customer_email.eq.${mail}` : '', tail ? `customer_phone_norm.eq.${tail}` : ''].filter(Boolean).join(',')
+      const { data } = await db.from('orders').select('id').eq('company_id', companyId).or(or).gte('order_date', since).neq('status', 'cancelled').limit(1)
+      bought = !!data?.length
+    } catch {}
+  }
+  if (bought) return { ok: false, reason: 'Already ordered' }
+  // Blocked or replied STOP → never message them.
+  const { data: conv } = await db.from('conversations').select('id, channel, contact_id').eq('id', cart.conversation_id).eq('company_id', companyId).maybeSingle()
+  if (!conv) return { ok: false, reason: 'Conversation not found' }
+  let contact: any = null
+  if (conv.contact_id) {
+    const { data } = await db.from('contacts').select('name, phone, email, is_blocked, unsubscribed_at').eq('id', conv.contact_id).maybeSingle()
+    contact = data
+  }
+  if (contact?.is_blocked || contact?.unsubscribed_at) return { ok: false, reason: 'Customer opted out' }
+  return { ok: true, conv, contact }
+}
+
+/** A tracked short link to their checkout, when the store sent one. */
+export async function cartLink(cart: any, companyId: string, conversationId: string): Promise<string> {
+  let link = /^https?:\/\//i.test(String(cart.cart_url || '')) ? String(cart.cart_url) : ''
+  if (link) {
+    try {
+      const short = await shortenUrl(link, { companyId, conversationId, kind: 'cart' })
+      if (short) link = short
+    } catch {}
+  }
+  return link
+}
+
+/** Post the message into their conversation and deliver it (SMS first, else email). */
+export async function deliverCartMessage(db: any, o: { companyId: string; business: string; cart: any; conv: any; contact: any; text: string; origin: string; now?: Date; meta?: Record<string, any> }): Promise<{ sent: boolean; channel?: string; error?: string }> {
+  const now = o.now || new Date()
+  const { data: msg } = await db.from('messages').insert({
+    conversation_id: o.conv.id, company_id: o.companyId, sender_type: 'agent', sender_name: o.business,
+    content: o.text, message_type: 'text', is_read: true,
+    metadata: { auto: true, cart_recovery: o.cart.id, ...(o.meta || {}) },
+  }).select('id').maybeSingle()
+  await db.from('conversations').update({ last_message: o.text, last_message_at: now.toISOString() }).eq('id', o.conv.id)
+  const delivery = await deliverAutomatedMessage({
+    companyId: o.companyId, conversationId: o.conv.id, text: o.text,
+    phone: o.cart.phone || o.contact?.phone || null,
+    email: o.cart.email || o.contact?.email || null,
+    preferChannel: o.cart.phone || o.contact?.phone ? 'sms' : 'email',
+    senderName: o.business, subject: `You left something in your cart at ${o.business}`,
+    origin: o.origin, db,
+  })
+  if (msg?.id && (delivery.channel === 'sms' || delivery.channel === 'email')) {
+    try { await db.from('messages').update({ delivery_channel: delivery.channel }).eq('id', msg.id) } catch {}
+  }
+  return { sent: !!delivery.sent, channel: delivery.channel, error: delivery.error }
 }
