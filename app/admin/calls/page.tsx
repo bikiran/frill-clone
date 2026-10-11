@@ -1,6 +1,7 @@
 'use client'
 import { authFetch } from '@/lib/auth-fetch'
-import { useState, useEffect, useMemo, useRef } from 'react'
+import VoicePlayer from '@/components/VoicePlayer'
+import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
 import { peekCompanyUser, readCache, writeCache } from '@/lib/client-cache'
 import PageHeader from '@/components/PageHeader'
@@ -28,39 +29,9 @@ type Call = {
   created_at: string
 }
 
-// ── Clean, compact call recording player (replaces the native audio slider) ──
+// Call recordings use the shared inline player (same as the mobile app).
 function CallPlayer({ url }: { url: string }) {
-  const ref = useRef<HTMLAudioElement>(null)
-  const trackRef = useRef<HTMLDivElement>(null)
-  const [playing, setPlaying] = useState(false)
-  const [cur, setCur] = useState(0)
-  const [dur, setDur] = useState(0)
-  const fmt = (s: number) => { if (!isFinite(s)) return '0:00'; const m = Math.floor(s / 60), ss = Math.floor(s % 60); return `${m}:${ss.toString().padStart(2, '0')}` }
-  const toggle = () => { const a = ref.current; if (!a) return; if (playing) { a.pause(); setPlaying(false) } else { a.play().then(() => setPlaying(true)).catch(() => {}) } }
-  const seek = (e: React.MouseEvent) => {
-    const a = ref.current, t = trackRef.current; if (!a || !t || !dur) return
-    const r = t.getBoundingClientRect()
-    a.currentTime = Math.min(dur, Math.max(0, ((e.clientX - r.left) / r.width) * dur))
-  }
-  const pct = dur ? (cur / dur) * 100 : 0
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 12, background: 'var(--canvas)', borderRadius: 12, padding: '10px 14px' }}>
-      <audio ref={ref} src={url} preload="metadata"
-        onLoadedMetadata={e => setDur(e.currentTarget.duration || 0)}
-        onTimeUpdate={e => setCur(e.currentTarget.currentTime)}
-        onEnded={() => { setPlaying(false); setCur(0) }} />
-      <button onClick={toggle} style={{ width: 38, height: 38, borderRadius: '50%', border: 'none', background: 'var(--coral)', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-        {playing
-          ? <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>
-          : <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" style={{ marginLeft: 2 }}><polygon points="6 4 20 12 6 20 6 4"/></svg>}
-      </button>
-      <div ref={trackRef} onClick={seek} style={{ flex: 1, height: 6, borderRadius: 3, background: 'var(--border)', cursor: 'pointer', position: 'relative', minWidth: 60 }}>
-        <div style={{ position: 'absolute', inset: 0, width: `${pct}%`, background: 'var(--coral)', borderRadius: 3 }} />
-        <div style={{ position: 'absolute', top: '50%', left: `${pct}%`, transform: 'translate(-50%,-50%)', width: 12, height: 12, borderRadius: '50%', background: '#fff', border: '2px solid var(--coral)', boxShadow: '0 1px 3px rgba(0,0,0,0.25)' }} />
-      </div>
-      <span style={{ fontSize: 11.5, color: 'var(--slate)', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>{fmt(cur)} / {fmt(dur)}</span>
-    </div>
-  )
+  return <VoicePlayer src={url} name="Call recording" />
 }
 
 export default function CallsPage() {

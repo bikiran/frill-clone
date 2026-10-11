@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { fallbackPeaks, loadPeaks } from '@/lib/audio-peaks'
 
 // A single, fancy "now playing" dock pinned to the bottom of the screen. It
 // hooks EVERY <audio> on the page (capture-phase play event), so it works for
@@ -14,46 +15,6 @@ function resolveName(a: HTMLAudioElement): string {
   const lbl = (a.closest('.rte-voice') as HTMLElement | null)?.querySelector('.rte-voice-lbl')?.textContent?.trim()
   if (lbl) return lbl
   try { const f = decodeURIComponent(new URL(a.src).pathname.split('/').pop() || ''); return f.replace(/^\d{10,}-/, '') || 'Audio' } catch { return 'Audio' }
-}
-
-// Waveform bars for the dock, decoded from the recording itself (cached per
-// URL). If the file can't be fetched or decoded here, a steady pseudo-wave
-// seeded from the URL stands in, so the dock always has a waveform to scrub.
-const BARS = 56
-const peaksCache = new Map<string, Promise<number[]>>()
-function fallbackPeaks(src: string): number[] {
-  let h = 2166136261
-  for (let i = 0; i < src.length; i++) h = Math.imul(h ^ src.charCodeAt(i), 16777619)
-  return Array.from({ length: BARS }, (_, i) => {
-    h = Math.imul(h ^ (h >>> 13), 1274126177)
-    const r = ((h >>> 0) % 1000) / 1000
-    return 0.25 + 0.55 * Math.abs(Math.sin(i * 0.45)) * (0.55 + 0.45 * r)
-  })
-}
-function loadPeaks(src: string): Promise<number[]> {
-  if (!src) return Promise.resolve(fallbackPeaks('x'))
-  const hit = peaksCache.get(src); if (hit) return hit
-  const job = (async () => {
-    const AC = (window as any).AudioContext || (window as any).webkitAudioContext
-    if (!AC) throw new Error('no audio context')
-    const buf = await (await fetch(src)).arrayBuffer()
-    const ctx = new AC()
-    try {
-      const audio: AudioBuffer = await new Promise((res, rej) => { const p = ctx.decodeAudioData(buf, res, rej); if (p?.then) p.then(res, rej) })
-      const data = audio.getChannelData(0)
-      const step = Math.max(1, Math.floor(data.length / BARS))
-      const out: number[] = []
-      for (let b = 0; b < BARS; b++) {
-        let sum = 0, n = 0
-        for (let i = b * step; i < Math.min(data.length, (b + 1) * step); i += 16) { sum += data[i] * data[i]; n++ }
-        out.push(Math.sqrt(sum / Math.max(1, n)))
-      }
-      const max = Math.max(...out, 1e-4)
-      return out.map(v => 0.14 + 0.86 * Math.min(1, v / max))
-    } finally { try { ctx.close() } catch {} }
-  })().catch(() => fallbackPeaks(src))
-  peaksCache.set(src, job)
-  return job
 }
 
 /**
@@ -82,6 +43,7 @@ export default function AudioDock() {
   const [mounted, setMounted] = useState(false)
   useEffect(() => setMounted(true), [])
   const [peaks, setPeaks] = useState<number[]>([])
+  const [rate, setRate] = useState(1)
   const waveRef = useRef<HTMLDivElement | null>(null)
   const dragging = useRef(false)
   const hideT = useRef<any>(null)
@@ -106,6 +68,8 @@ export default function AudioDock() {
       if (!(a instanceof HTMLAudioElement)) return
       // Solo playback — pause any other audio.
       document.querySelectorAll('audio').forEach(o => { if (o !== a && !(o as HTMLAudioElement).paused) (o as HTMLAudioElement).pause() })
+      // Inline players (VoicePlayer) show their own controls in place.
+      if (a.hasAttribute('data-inline')) return
       clearTimeout(hideT.current)
       setEl(a); setName(resolveName(a)); setDur(a.duration || 0); setCur(a.currentTime); setPlaying(true); setVisible(true); setFailed(false)
     }
@@ -130,6 +94,8 @@ export default function AudioDock() {
       document.removeEventListener('colvy-audio-failed', onFailed)
     }
   }, [])
+
+  useEffect(() => { if (el) el.playbackRate = rate }, [el, rate])
 
   useEffect(() => {
     if (!el) return
@@ -172,6 +138,10 @@ export default function AudioDock() {
   const seekAt = (clientX: number) => {
     const box = waveRef.current?.getBoundingClientRect(); if (!box || !dur) return
     seek(Math.min(1, Math.max(0, (clientX - box.left) / box.width)) * dur)
+  }
+  const cycleRate = () => {
+    const next = [1, 1.5, 2][([1, 1.5, 2].indexOf(rate) + 1) % 3]
+    setRate(next); if (el) el.playbackRate = next
   }
   const onKey = (e: React.KeyboardEvent) => {
     if (e.key === 'ArrowRight') { e.preventDefault(); seek(Math.min(dur, cur + 5)) }
@@ -219,6 +189,7 @@ export default function AudioDock() {
           </div>
         )}
 
+        {!failed && <button type="button" className="ad-rate" onClick={cycleRate} title="Playback speed" aria-label={`Playback speed ${rate}×`}>{rate}×</button>}
         {!failed && <span className="ad-time ad-time-lg">{fmt(cur)} / {fmt(dur)}</span>}
 
         <button onClick={() => { el.pause(); setVisible(false) }} title="Close" aria-label="Close player" className="ad-close">
@@ -247,6 +218,7 @@ const CSS = `
 .ad-bar{flex:1;min-width:2px;max-width:4px;border-radius:2px;background:#d9dce3;transition:background-color .2s ease,transform .2s cubic-bezier(.32,.72,0,1);transform-origin:center}
 .ad-bar.on{background:var(--coral,#ff7a6b)}
 @media (hover:hover){.ad-wave:hover .ad-bar{transform:scaleY(1.08)}}
+.ad-rate{flex-shrink:0;border:none;background:var(--peach,#fff4f1);color:var(--coral,#ff7a6b);border-radius:9px;padding:3px 7px;min-width:32px;font-size:11px;font-weight:800;cursor:pointer;font-variant-numeric:tabular-nums}
 .ad-spin{width:16px;height:16px;border-radius:50%;border:2px solid rgba(255,255,255,.45);border-top-color:#fff;animation:adSpin .8s linear infinite}
 @keyframes adSpin{to{transform:rotate(360deg)}}
 .ad-fail{display:block;font-size:11.5px;color:#b45309;margin-top:1px;white-space:normal;line-height:1.35}

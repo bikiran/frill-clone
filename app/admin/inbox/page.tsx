@@ -1,6 +1,7 @@
 'use client'
 
 import { useAttachmentToken } from '@/lib/useAttachmentToken'
+import VoicePlayer from '@/components/VoicePlayer'
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import AiLiveReply from '@/components/AiLiveReply'
 import { supabase } from '@/lib/supabase'
@@ -9115,11 +9116,8 @@ export default function InboxPage() {
                                 const isAudio = a.kind === 'audio' || /^audio\//.test(a.type || '') || /\.(webm|ogg|m4a|mp3|wav|aac)(\?|$)/i.test(a.url || '')
                                 if (isAudio) {
                                   return (
-                                    <div key={`f${ai}`} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: msg.content ? 6 : 0 }}>
-                                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, fontWeight: 700, color: isAgent ? '#fff' : 'var(--coral)', flexShrink: 0 }}>
-                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>
-                                      </span>
-                                      <audio src={toPublicUrl(a.url)} controls preload="metadata" style={{ height: 34, maxWidth: 220 }} />
+                                    <div key={`f${ai}`} style={{ marginBottom: msg.content ? 6 : 0, width: 'min(300px, 62vw)', maxWidth: '100%' }}>
+                                      <VoicePlayer src={toPublicUrl(a.url)} name={a.name || 'Voice message'} style={{ background: '#fff' }} />
                                     </div>
                                   )
                                 }

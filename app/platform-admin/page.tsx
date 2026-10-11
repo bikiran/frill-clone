@@ -1,6 +1,7 @@
 'use client'
 
 import { authFetch } from '@/lib/auth-fetch'
+import VoicePlayer from '@/components/VoicePlayer'
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import LegalAdminPage from '../admin/legal/page'
@@ -1053,9 +1054,9 @@ function CallDetail({ call, coName, onClose }: { call: any; coName: string; onCl
                 <p style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--sa-text)', margin: 0 }}>Recording{call.recording_duration ? ` · ${dur(call.recording_duration)}` : ''}</p>
                 <a href={call.recording_url} download target="_blank" rel="noopener noreferrer" style={{ fontSize: 11.5, fontWeight: 600, color: '#6366f1', textDecoration: 'none' }}>Download ↓</a>
               </div>
-              <audio controls src={call.recording_url} style={{ width: '100%' }} />
+              <VoicePlayer src={call.recording_url} name="Call recording" />
               {call.conference_recording_url && (
-                <audio controls src={call.conference_recording_url} style={{ width: '100%', marginTop: 8 }} />
+                <VoicePlayer src={call.conference_recording_url} name="Call recording (after transfer)" style={{ marginTop: 8 }} />
               )}
             </div>
           ) : call.recording_error ? (

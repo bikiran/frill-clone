@@ -3,6 +3,7 @@ import { toPublicUrl } from '@/lib/storage-url'
 import NoteView from './NoteView'
 import NoteAttachments from './NoteAttachments'
 import AudioDock from '@/components/AudioDock'
+import VoicePlayer from '@/components/VoicePlayer'
 import VoiceBlocks from '@/components/VoiceBlocks'
 import NoteComments from '@/components/NoteComments'
 
@@ -83,7 +84,7 @@ export default async function NotePublic({ params }: { params: Promise<{ code: s
         .note-body .rte-voice audio[controls] { height: 36px; flex: 1; min-width: 160px; display: block; }
       `}</style>
 
-      <div style={{ maxWidth: 720, margin: '0 auto' }}>
+      <div style={{ maxWidth: 720, margin: '0 auto', ['--coral' as any]: accent, ['--peach' as any]: `${accent}1a` }}>
         {/* Brand header */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18 }}>
           {company?.logo_url
@@ -110,20 +111,15 @@ export default async function NotePublic({ params }: { params: Promise<{ code: s
               <div style={{ marginTop: 26 }}>
                 <p style={{ margin: '0 0 10px', fontSize: 12.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: '#6b7280' }}>Voice notes</p>
                 {audios.map((a: any, i: number) => (
-                  <div key={i} className="rte-voice" style={{ margin: '0 0 8px' }}>
-                    <button className="rte-voice-play" type="button" title="Play" aria-label="Play">
-                      <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor"><path d="M7 5.5v13a1 1 0 0 0 1.5.87l11-6.5a1 1 0 0 0 0-1.74l-11-6.5A1 1 0 0 0 7 5.5z"/></svg>
-                    </button>
-                    <span className="rte-voice-lbl">
-                      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
-                      <span className="rte-voice-name">{a.name || 'Voice note'}</span>
-                    </span>
-                    <span className="rte-voice-act">
-                      <button className="rte-voice-btn" type="button" data-va="download" title="Download">
+                  <div key={i} style={{ border: '1px solid #e5e7eb', borderRadius: 12, background: '#fff', padding: '8px 10px 10px', margin: '0 0 8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, color: accent }}>
+                      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+                      <span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 700, color: '#1a1a1a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.name || 'Voice note'}</span>
+                      <a href={toPublicUrl(a.url)} download={a.name || 'voice-note'} target="_blank" rel="noopener" title="Download" aria-label="Download" style={{ width: 28, height: 28, borderRadius: 8, color: '#6b7280', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                         <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                      </button>
-                    </span>
-                    <audio src={toPublicUrl(a.url)} data-name={a.name || 'Voice note'} preload="metadata" style={{ display: 'none' }} />
+                      </a>
+                    </div>
+                    <VoicePlayer src={toPublicUrl(a.url)} name={a.name || 'Voice note'} />
                   </div>
                 ))}
               </div>

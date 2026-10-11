@@ -1,6 +1,7 @@
 'use client'
 
 import { authFetch } from '@/lib/auth-fetch'
+import VoicePlayer from '@/components/VoicePlayer'
 import { useState, useEffect } from 'react'
 import { useParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
@@ -324,7 +325,7 @@ export default function FormResults() {
     if (typeof url === 'string' && (url.startsWith('http') || url.startsWith('data:'))) {
       if (/\.(jpg|jpeg|png|gif|webp)$/i.test(url) || url.startsWith('data:image')) return <img src={url} alt="answer" style={{ maxWidth: '100%', maxHeight: 220, borderRadius: 8, border: '1px solid var(--border)' }} />
       if (/\.(mp4|webm|mov|m4v)$/i.test(url) || url.startsWith('data:video')) return <video src={url} controls style={{ maxWidth: '100%', maxHeight: 220, borderRadius: 8 }} />
-      if (/\.(mp3|wav|ogg|m4a|aac)$/i.test(url) || url.startsWith('data:audio')) return <audio src={url} controls style={{ width: '100%' }} />
+      if (/\.(mp3|wav|ogg|m4a|aac)$/i.test(url) || url.startsWith('data:audio')) return <VoicePlayer src={url} name="Voice answer" />
       return <a href={url} target="_blank" rel="noopener" className="text-sm" style={{ color: 'var(--coral)', textDecoration: 'underline' }}>📎 {(typeof answer === 'object' && answer.name) || url.split('/').pop() || 'Download'}</a>
     }
     if (Array.isArray(answer)) {
