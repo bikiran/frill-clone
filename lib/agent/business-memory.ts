@@ -3,6 +3,8 @@
 //
 //   tone        key 'voice'                    { style, first_name, sign_off, avoid }
 //   policy      key shipping|returns|pickup|live_arrival|payment|<custom>   { title?, text }
+//               (shown as “Must-know facts”: short, always in the prompt; full
+//               policies live in AI Knowledge / the help centre, searched on demand)
 //   instruction key <slug>                     { text }        rules the agent must follow
 //   rule        key 'order_status_thresholds'  { processing_days, transit_days, stale_days }
 //
@@ -19,11 +21,11 @@ export const TONE_STYLES: Record<string, { label: string; prompt: string; sample
 }
 
 export const POLICY_TEMPLATES: Record<string, { title: string; placeholder: string }> = {
-  shipping: { title: 'Shipping & delivery', placeholder: 'e.g. We ship Australia-wide with AusPost and Aramex. Orders before 1pm go out the same day. Live fish ship Monday–Wednesday only.' },
-  returns: { title: 'Returns & refunds', placeholder: 'e.g. Unopened dry goods can be returned within 30 days. Livestock can’t be returned.' },
-  pickup: { title: 'Click & collect', placeholder: 'e.g. Pick up from either store once you get the “ready” text. We hold orders for 7 days.' },
-  live_arrival: { title: 'Live arrival guarantee', placeholder: 'e.g. If fish arrive dead, send a photo within 2 hours of delivery and we’ll replace or refund them.' },
-  payment: { title: 'Payment', placeholder: 'e.g. We take card, PayPal and Afterpay. Pay-by-link is available over SMS.' },
+  shipping: { title: 'Shipping & delivery', placeholder: 'e.g. Live fish ship Monday–Wednesday only, never to WA or Tasmania.' },
+  returns: { title: 'Returns & refunds', placeholder: 'e.g. Livestock can’t be returned.' },
+  pickup: { title: 'Click & collect', placeholder: 'e.g. We hold click & collect orders for 7 days.' },
+  live_arrival: { title: 'Live arrival guarantee', placeholder: 'e.g. Dead on arrival: photo within 2 hours of delivery, then we replace or refund.' },
+  payment: { title: 'Payment', placeholder: 'e.g. No cash on delivery.' },
 }
 
 export const KINDS = ['tone', 'policy', 'instruction', 'rule', 'faq'] as const
@@ -84,7 +86,7 @@ export function renderMemory(rows: MemoryRow[]): { toneText: string; lines: stri
       refs.push({ type: 'business_memory', id: m.id, label: 'Tone of voice' })
     } else if (m.kind === 'policy' && c.text) {
       policies.push(`- ${policyTitle(m.key, c)}: ${clip(c.text, 1200)}`)
-      refs.push({ type: 'business_memory', id: m.id, label: `Policy: ${policyTitle(m.key, c)}` })
+      refs.push({ type: 'business_memory', id: m.id, label: `Fact: ${policyTitle(m.key, c)}` })
     } else if (m.kind === 'instruction' && c.text) {
       rules.push(`- ${clip(c.text, 600)}`)
       refs.push({ type: 'business_memory', id: m.id, label: `Rule: ${clip(c.text, 40)}${String(c.text).length > 40 ? '…' : ''}` })
@@ -100,7 +102,7 @@ export function renderMemory(rows: MemoryRow[]): { toneText: string; lines: stri
     }
   }
   const lines: string[] = []
-  if (policies.length) lines.push(`Policies (follow these exactly; don’t add to them):\n${policies.join('\n')}`)
+  if (policies.length) lines.push(`Must-know facts from the business (always true — if anything you find with ask_knowledge disagrees, these win):\n${policies.join('\n')}`)
   if (rules.length) lines.push(`Rules from the business (always follow):\n${rules.join('\n')}`)
   if (faqs.length) lines.push(`Answers the business has given before:\n${faqs.join('\n')}`)
   if (other.length) lines.push(`Also:\n${other.join('\n')}`)
@@ -160,4 +162,42 @@ export async function setMemoryStatus(db: any, companyId: string, id: string, st
   }
   const { error } = await db.from('business_memory').update(patch).eq('id', id)
   return !error
+}
+
+// ── What AI Knowledge already covers ─────────────────────────────────────────
+// Agents search AI Knowledge (help centre articles, facts, files, website) on
+// their own, so full policies belong there. This tells the owner which topics
+// already have an article, so they don't copy them into Business Memory.
+
+const TOPIC_MATCH: Record<string, RegExp> = {
+  shipping: /\b(shipping|delivery|deliveries|postage|freight|dispatch)\b/i,
+  returns: /\b(returns?|refunds?|exchanges?)\b/i,
+  pickup: /\b(click\s*(and|&)\s*collect|pick\s*-?\s*up|collection)\b/i,
+  live_arrival: /\b(live\s+arrival|dead\s+on\s+arrival|doa|arrive[sd]?\s+dead|livestock\s+guarantee)\b/i,
+  payment: /\b(payments?|afterpay|zip\s*pay|paypal|pay\s+later)\b/i,
+}
+const SOURCE_LABEL: Record<string, string> = { help: 'help centre', fact: 'AI Knowledge facts', website: 'website', file: 'uploaded files' }
+
+export type Coverage = {
+  counts: Record<string, number>
+  topics: Record<string, { title: string; source: string; where: string; url: string | null } | null>
+}
+
+export async function knowledgeCoverage(db: any, companyId: string): Promise<Coverage> {
+  const empty: Coverage = { counts: {}, topics: Object.fromEntries(Object.keys(TOPIC_MATCH).map(k => [k, null])) }
+  try {
+    const { data } = await db.from('ai_knowledge').select('source, title, url').eq('company_id', companyId).in('source', ['help', 'fact', 'website', 'file']).limit(2000)
+    const rows = (data || []) as { source: string; title: string | null; url: string | null }[]
+    const counts: Record<string, number> = {}
+    for (const r of rows) counts[r.source] = (counts[r.source] || 0) + 1
+    // Help articles first — they're written for customers — then facts, files, website.
+    const order = ['help', 'fact', 'file', 'website']
+    const sorted = [...rows].sort((a, b) => order.indexOf(a.source) - order.indexOf(b.source))
+    const topics: Coverage['topics'] = {}
+    for (const [k, re] of Object.entries(TOPIC_MATCH)) {
+      const hit = sorted.find(r => r.title && re.test(r.title))
+      topics[k] = hit ? { title: String(hit.title).slice(0, 90), source: hit.source, where: SOURCE_LABEL[hit.source] || hit.source, url: hit.url || null } : null
+    }
+    return { counts, topics }
+  } catch { return empty }
 }

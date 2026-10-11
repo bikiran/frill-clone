@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { agentAccess, staffName } from '@/lib/agent/access'
-import { listMemory, saveMemory, setMemoryStatus, POLICY_TEMPLATES, TONE_STYLES } from '@/lib/agent/business-memory'
+import { listMemory, saveMemory, setMemoryStatus, knowledgeCoverage, POLICY_TEMPLATES, TONE_STYLES } from '@/lib/agent/business-memory'
 import { DEFAULT_THRESHOLDS } from '@/lib/order-assess'
 
 export const dynamic = 'force-dynamic'
@@ -8,13 +8,14 @@ export const dynamic = 'force-dynamic'
 const missing = (e: any) => /business_memory/.test(String(e?.message || '')) && /does not exist|schema cache|relation/i.test(String(e?.message || ''))
 
 async function payload(db: any, companyId: string) {
-  const items = await listMemory(db, companyId)
+  const [items, coverage] = await Promise.all([listMemory(db, companyId), knowledgeCoverage(db, companyId)])
   // Who edited the reply a proposal was learned from.
   const ids = Array.from(new Set(items.map(i => i.content?.evidence?.edited_by).filter(Boolean)))
   const names: Record<string, string | null> = {}
   for (const uid of ids.slice(0, 20)) names[uid] = await staffName(db, companyId, uid)
   return {
     items: items.map(i => (i.content?.evidence?.edited_by ? { ...i, content: { ...i.content, evidence: { ...i.content.evidence, edited_by_name: names[i.content.evidence.edited_by] || null } } } : i)),
+    coverage,
     templates: { policies: POLICY_TEMPLATES, tones: Object.fromEntries(Object.entries(TONE_STYLES).map(([k, v]) => [k, { label: v.label, sample: v.sample }])), thresholds: DEFAULT_THRESHOLDS },
   }
 }

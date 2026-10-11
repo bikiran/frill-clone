@@ -16,6 +16,7 @@ const EASE = 'cubic-bezier(.22,1,.36,1)'
 type Item = { id: string; kind: string; key: string; content: any; status: string; source?: string; version?: number; updated_at?: string }
 type Templates = { policies: Record<string, { title: string; placeholder: string }>; tones: Record<string, { label: string; sample: string }>; thresholds: { processing_days: number; transit_days: number; stale_days: number } }
 type Save = (body: Record<string, any>) => Promise<boolean>
+type Coverage = { counts: Record<string, number>; topics: Record<string, { title: string; source: string; where: string; url: string | null } | null> }
 
 const when = (iso?: string | null) => {
   if (!iso) return ''
@@ -42,6 +43,7 @@ const I = {
   plus: <Svg size={13} d={<><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></>} />,
   trash: <Svg size={14} d={<><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /></>} />,
   check: <Svg size={12} d={<polyline points="20 6 9 17 4 12" />} />,
+  search: <Svg size={16} d={<><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></>} />,
   alert: <Svg d={<><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></>} />,
 }
 
@@ -49,12 +51,13 @@ export default function BusinessMemoryPage() {
   const [companyId, setCompanyId] = useState<string | null>(peekCompanyUser()?.companyId || null)
   const [items, setItems] = useState<Item[]>([])
   const [templates, setTemplates] = useState<Templates | null>(null)
+  const [coverage, setCoverage] = useState<Coverage | null>(null)
   const [loaded, setLoaded] = useState(false)
   const [needsMigration, setNeedsMigration] = useState(false)
   const [error, setError] = useState('')
 
   useEffect(() => { resolveCompanyUser().then(r => setCompanyId(r.companyId)).catch(() => {}) }, [])
-  const apply = (d: any) => { setItems(d.items || []); if (d.templates) setTemplates(d.templates); setNeedsMigration(!!d.needsMigration) }
+  const apply = (d: any) => { setItems(d.items || []); if (d.templates) setTemplates(d.templates); if (d.coverage) setCoverage(d.coverage); setNeedsMigration(!!d.needsMigration) }
   const load = useCallback(async () => {
     if (!companyId) return
     try {
@@ -91,8 +94,9 @@ export default function BusinessMemoryPage() {
         <Link href="/admin/agents" className="bm-back">{I.back} AI Agents</Link>
         <div style={{ margin: '10px 0 20px' }}>
           <h1 style={{ margin: 0, fontSize: 'clamp(22px, 3.4vw, 28px)', fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--ink)' }}>Business memory</h1>
-          <p style={{ margin: '4px 0 0', fontSize: 14, color: 'var(--slate)', maxWidth: 620, lineHeight: 1.55 }}>What your AI agents know about your business and always follow. It’s used in every conversation, and you can change it any time — the next message uses the new version.</p>
+          <p style={{ margin: '4px 0 0', fontSize: 14, color: 'var(--slate)', maxWidth: 620, lineHeight: 1.55 }}>How your AI agents sound and the rules they always follow. It’s part of every reply, and changes apply from the next message.</p>
         </div>
+        {loaded && <KnowledgeNote coverage={coverage} />}
 
         {needsMigration && <div className="bm-note warn">{I.alert}<span>Agents need a one-time database update (<b>COLVY_V353_AGENT_ENGINE.sql</b>).</span></div>}
         {error && <div className="bm-note err" role="alert">{I.alert}<span>{error}</span></div>}
@@ -102,13 +106,31 @@ export default function BusinessMemoryPage() {
           <>
             {proposals.length > 0 && <Proposals items={proposals} save={save} />}
             <ToneCard item={tone} tones={templates.tones} save={save} />
-            <PoliciesCard items={policies} templates={templates.policies} save={save} />
             <RulesCard items={rules} save={save} />
             <ThresholdsCard item={thresholds} defaults={templates.thresholds} save={save} />
-            <p className="bm-foot">Product details, FAQs and help articles live in <Link href="/admin/ai-knowledge">AI Knowledge</Link> — agents search it when they need to. Opening hours come from Google Business Profile.</p>
+            <PoliciesCard items={policies} templates={templates.policies} coverage={coverage} save={save} />
+            <p className="bm-foot">Opening hours come live from Google Business Profile, so there’s no need to add them here.</p>
           </>
         )}
       </div>
+    </div>
+  )
+}
+
+const SRC: [string, string, string][] = [['help', 'help centre article', 'help centre articles'], ['fact', 'saved fact', 'saved facts'], ['file', 'file', 'files'], ['website', 'website page', 'website pages']]
+
+function KnowledgeNote({ coverage }: { coverage: Coverage | null }) {
+  const parts = SRC.map(([k, one, many]) => { const n = coverage?.counts?.[k] || 0; return n ? `${n} ${n === 1 ? one : many}` : '' }).filter(Boolean)
+  return (
+    <div className="bm-know bm-fade">
+      <span className="bm-know-ic">{I.search}</span>
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <p className="bm-t" style={{ margin: 0 }}>Your policies and FAQs don’t need to be copied here</p>
+        <p className="bm-p">{parts.length
+          ? `Agents already search AI Knowledge before answering — ${parts.join(', ')}. Keep full policies there, where customers can read them too.`
+          : 'Agents search AI Knowledge before answering — your help centre articles, saved facts and website. Add your policies there, where customers can read them too.'}</p>
+      </div>
+      <Link href="/admin/ai-knowledge" className="bm-know-link">Open AI Knowledge</Link>
     </div>
   )
 }
@@ -161,7 +183,7 @@ function Proposal({ p, save }: { p: Item; save: Save }) {
   }
   return (
     <li className="bm-prop">
-      <span className="bm-tag">{p.kind === 'policy' ? `Policy${p.content?.title ? ` · ${p.content.title}` : ''}` : 'Rule'}</span>
+      <span className="bm-tag">{p.kind === 'policy' ? `Fact${p.content?.title ? ` · ${p.content.title}` : ''}` : 'Rule'}</span>
       <textarea className="bm-input" rows={rowsFor(text, 2, 6)} value={text} onChange={e => setText(e.target.value)} aria-label="Suggested memory" />
       <div className="bm-meta">
         Learned from a reply {ev.edited_by_name || 'your team'} edited · {when(p.updated_at)}
@@ -219,29 +241,36 @@ function ToneCard({ item, tones, save }: { item?: Item; tones: Templates['tones'
 
 // ── Policies ─────────────────────────────────────────────────────────────────
 
-function PoliciesCard({ items, templates, save }: { items: Item[]; templates: Templates['policies']; save: Save }) {
+function PoliciesCard({ items, templates, coverage, save }: { items: Item[]; templates: Templates['policies']; coverage: Coverage | null; save: Save }) {
   const [drafts, setDrafts] = useState<{ key: string | null; title: string; custom: boolean }[]>([])
   const used = new Set([...items.map(i => i.key), ...drafts.map(d => d.key).filter(Boolean) as string[]])
   const missing = Object.entries(templates).filter(([k]) => !used.has(k))
   return (
     <div className="bm-card bm-fade">
-      <CardHead icon={I.doc} title="Policies" sub="The facts agents give customers. They follow these exactly and won’t promise anything beyond them." />
-      {items.length === 0 && drafts.length === 0 && <p className="bm-empty">No policies yet. Add the ones customers ask about most.</p>}
+      <CardHead icon={I.doc} title="Must-know facts (optional)" sub="Short facts the agent must never get wrong, like “We don’t ship live fish to WA”. They’re in every reply and win over anything else, so keep them brief — full policies belong in your help centre." />
+      {items.length === 0 && drafts.length === 0 && <p className="bm-empty">Nothing here, and that’s fine — agents find your policies in AI Knowledge.</p>}
       <ul className="bm-list">
-        {items.map(i => <PolicyRow key={i.id} item={i} title={i.content?.title || templates[i.key]?.title || i.key} placeholder={templates[i.key]?.placeholder} save={save} />)}
+        {items.map(i => <PolicyRow key={i.id} item={i} title={i.content?.title || templates[i.key]?.title || i.key} placeholder={templates[i.key]?.placeholder} also={coverage?.topics?.[i.key] || null} save={save} />)}
         {drafts.map((d, n) => (
-          <PolicyRow key={`d${n}-${d.key || 'custom'}`} draftKey={d.key} title={d.title} custom={d.custom} placeholder={d.key ? templates[d.key]?.placeholder : 'What should customers be told?'} save={save} onDone={() => setDrafts(ds => ds.filter((_, j) => j !== n))} />
+          <PolicyRow key={`d${n}-${d.key || 'custom'}`} draftKey={d.key} title={d.title} custom={d.custom} placeholder={d.key ? templates[d.key]?.placeholder : 'One or two sentences the agent must never get wrong.'} also={d.key ? coverage?.topics?.[d.key] || null : null} save={save} onDone={() => setDrafts(ds => ds.filter((_, j) => j !== n))} />
         ))}
       </ul>
       <div className="bm-chips">
-        {missing.map(([k, t]) => <button key={k} type="button" className="bm-chip" onClick={() => setDrafts(ds => [...ds, { key: k, title: t.title, custom: false }])}>{I.plus} {t.title}</button>)}
+        {missing.map(([k, t]) => {
+          const cov = coverage?.topics?.[k]
+          return (
+            <button key={k} type="button" className={`bm-chip ${cov ? 'covered' : ''}`} onClick={() => setDrafts(ds => [...ds, { key: k, title: t.title, custom: false }])} title={cov ? `Already in your ${cov.where}: “${cov.title}”` : undefined}>
+              {cov ? I.check : I.plus} {t.title}{cov && <span className="bm-chip-note">in your {cov.where}</span>}
+            </button>
+          )
+        })}
         <button type="button" className="bm-chip" onClick={() => setDrafts(ds => [...ds, { key: null, title: '', custom: true }])}>{I.plus} Your own</button>
       </div>
     </div>
   )
 }
 
-function PolicyRow({ item, draftKey, title, custom, placeholder, save, onDone }: { item?: Item; draftKey?: string | null; title: string; custom?: boolean; placeholder?: string; save: Save; onDone?: () => void }) {
+function PolicyRow({ item, draftKey, title, custom, placeholder, also, save, onDone }: { item?: Item; draftKey?: string | null; title: string; custom?: boolean; placeholder?: string; also?: Coverage['topics'][string]; save: Save; onDone?: () => void }) {
   const saved = useMemo(() => ({ title: item?.content?.title || title, text: String(item?.content?.text || '') }), [item, title])
   const [d, setD] = useState(saved)
   const [busy, setBusy] = useState(false)
@@ -257,7 +286,7 @@ function PolicyRow({ item, draftKey, title, custom, placeholder, save, onDone }:
   }
   const remove = async () => {
     if (!item) { onDone?.(); return }
-    if (!await confirmDialog({ title: `Remove “${saved.title}”?`, message: 'Agents won’t use this policy any more.', confirmLabel: 'Remove', tone: 'danger' })) return
+    if (!await confirmDialog({ title: `Remove “${saved.title}”?`, message: 'Agents won’t see this in every reply any more. They can still find your help centre articles.', confirmLabel: 'Remove', tone: 'danger' })) return
     await save({ id: item.id, status: 'archived' })
   }
   return (
@@ -268,6 +297,7 @@ function PolicyRow({ item, draftKey, title, custom, placeholder, save, onDone }:
         {item && <span className="bm-meta" style={{ marginLeft: 'auto' }}>Updated {when(item.updated_at)}</span>}
         <button type="button" className="bm-icon" onClick={remove} aria-label={`Remove ${saved.title || 'policy'}`}>{I.trash}</button>
       </div>
+      {also && <p className="bm-also">Also in your {also.where}: “{also.title}”. If they disagree, this one wins — keep them in step, or just remove this.</p>}
       <textarea className="bm-input" style={{ minHeight: 78 }} rows={rowsFor(d.text, 3, 10)} value={d.text} onChange={e => setD({ ...d, text: e.target.value })} placeholder={placeholder} maxLength={2000} autoFocus={isNew && !custom} />
       <SaveBar dirty={dirty} busy={busy} onCancel={() => (isNew ? onDone?.() : setD(saved))} onSave={doSave} disabled={!d.text.trim() || (custom && !d.title.trim())} />
     </li>
@@ -401,6 +431,13 @@ textarea.bm-input{min-height:44px}
 .bm-prop .bm-meta{margin-top:8px}
 .bm-diff{display:grid;grid-template-columns:minmax(0,1fr);gap:10px;margin-top:10px}
 @media (min-width:640px){.bm-diff{grid-template-columns:1fr 1fr}}
+.bm-know{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px;padding:14px 16px;border-radius:18px;background:#fff;border:1px solid var(--border)}
+.bm-know-ic{width:34px;height:34px;flex-shrink:0;border-radius:11px;display:inline-flex;align-items:center;justify-content:center;background:var(--canvas,#f3f4f6);color:var(--slate)}
+.bm-know-link{flex-shrink:0;font-size:13px;font-weight:700;color:var(--coral);text-decoration:none;margin-left:auto}
+.bm-chip.covered{border-style:solid;border-color:var(--border);color:var(--slate)}
+.bm-chip.covered svg{color:#067647}
+.bm-chip-note{font-size:11.5px;font-weight:600;color:var(--slate);opacity:.85}
+.bm-also{margin:0 0 8px;padding:8px 11px;border-radius:10px;background:#fffaeb;color:#93370d;font-size:12.5px;line-height:1.45}
 .bm-foot{margin:6px 4px 0;font-size:13px;color:var(--slate);line-height:1.55}
 .bm-foot a{color:var(--coral);font-weight:700;text-decoration:none}
 .bm-note{display:flex;gap:10px;align-items:flex-start;padding:12px 14px;border-radius:14px;font-size:13.5px;line-height:1.45;margin-bottom:16px}
