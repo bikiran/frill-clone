@@ -41,7 +41,14 @@ type Summary = {
   }
   activity: { kind: string; at: string; title: string; detail?: string; href: string; rating?: number }[]
   tz: string
+  // What this member may see (Team → Permissions). Numbers for anything else
+  // aren't sent by the server at all.
+  access?: { full: boolean; features: Record<string, boolean> }
 }
+
+// Can the signed-in member see this area? Until the first summary arrives (or
+// from an old cached one without `access`) nothing is hidden.
+const canSee = (s: Summary | null, key: string) => !s?.access || s.access.full || s.access.features?.[key] !== false
 
 const money = (n: number, cents = false) => new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD', minimumFractionDigits: cents ? 2 : 0, maximumFractionDigits: cents ? 2 : 0 }).format(n || 0)
 const plural = (n: number, one: string, many = one + 's') => `${n} ${n === 1 ? one : many}`
@@ -80,7 +87,7 @@ const eyebrow = 'text-xs font-semibold uppercase tracking-wider'
 // Last numbers seen on this device, so the page paints instantly and refreshes
 // in the background instead of opening on empty tiles every visit. Scoped to
 // the signed-in user and this workspace's hostname.
-const CACHE_KEY = 'colvy-dash-v1'
+const CACHE_KEY = 'colvy-dash-v2'   // v2: summaries carry the member's access
 const CACHE_MAX_AGE = 7 * 864e5
 type DashCache = { host: string; userId: string; companyId: string; at: number; summary?: Summary; sales?: any; stats?: any }
 function readCache(userId: string | undefined): DashCache | null {
@@ -227,7 +234,7 @@ export default function AdminDashboard() {
         <Today s={summary} />
         <Performance s={summary} />
 
-        {sales && sales.count > 0 && (
+        {sales && sales.count > 0 && canSee(summary, 'payments') && (
           <section className="mb-8">
             <h2 className={`${eyebrow} mb-3`} style={{ color: 'var(--slate)' }}>Sales logged in Colvy · last 30 days</h2>
             <div className="grid md:grid-cols-3 gap-3">
@@ -251,13 +258,21 @@ export default function AdminDashboard() {
           </section>
         )}
 
-        <div className="grid lg:grid-cols-5 gap-6 mb-8">
-          <div className="lg:col-span-3 min-w-0"><LinkClicksCard companyId={companyId} /></div>
-          <div className="lg:col-span-2 min-w-0"><Activity s={summary} /></div>
-        </div>
+        {(() => {
+          const links = canSee(summary, 'link_reports')
+          const activity = !summary?.access || summary.access.full || summary.activity.length > 0
+          if (!links && !activity) return null
+          return (
+            <div className={`grid ${links && activity ? 'lg:grid-cols-5' : ''} gap-6 mb-8`}>
+              {links && <div className={`${activity ? 'lg:col-span-3' : ''} min-w-0`}><LinkClicksCard companyId={companyId} /></div>}
+              {activity && <div className={`${links ? 'lg:col-span-2' : ''} min-w-0`}><Activity s={summary} /></div>}
+            </div>
+          )
+        })()}
 
-        <FeedbackStrip stats={stats} />
-        {companyId && <SetupChecklist companyId={companyId} stats={stats} />}
+        <FeedbackStrip stats={stats} s={summary} />
+        {/* Workspace setup is for the people who run it, not restricted staff. */}
+        {companyId && (!summary?.access || summary.access.full) && <SetupChecklist companyId={companyId} stats={stats} />}
       </div>
     </main>
   )
@@ -268,25 +283,27 @@ export default function AdminDashboard() {
 function NeedsAttention({ s, refreshing }: { s: Summary | null; refreshing?: boolean }) {
   const a = s?.attention
   const tiles = a ? [
-    { key: 'unread', label: 'Unread messages', n: a.unread, urgent: true, href: '/admin/inbox?view=unread', icon: ChatI,
+    { key: 'unread', feature: 'inbox', label: 'Unread messages', n: a.unread, urgent: true, href: '/admin/inbox?view=unread', icon: ChatI,
       sub: a.unread ? 'Customers waiting on a reply' : 'Inbox is caught up' },
-    { key: 'calls', label: 'Missed calls today', n: a.missedCalls + a.voicemails, urgent: true, href: '/admin/command-centre', icon: PhoneMissI,
+    { key: 'calls', feature: 'calls', label: 'Missed calls today', n: a.missedCalls + a.voicemails, urgent: true, href: canSee(s, 'command_centre') ? '/admin/command-centre' : '/admin/calls', icon: PhoneMissI,
       sub: a.voicemails ? `${plural(a.voicemails, 'voicemail')} · ${plural(a.callsToday, 'call')} today` : `${plural(a.callsToday, 'call')} today` },
-    { key: 'orders', label: 'Orders to fulfil', n: a.awaiting, urgent: (a.oldestDays ?? 0) >= 3, href: '/admin/orders', icon: BoxI,
+    { key: 'orders', feature: 'orders', label: 'Orders to fulfil', n: a.awaiting, urgent: (a.oldestDays ?? 0) >= 3, href: '/admin/orders', icon: BoxI,
       sub: a.awaiting ? (a.oldestDays ? `Oldest waiting ${plural(a.oldestDays, 'day')}` : 'All from today') : 'Nothing waiting to ship' },
-    { key: 'tasks', label: 'Overdue tasks', n: a.overdueTasks, urgent: true, href: '/admin/tasks?bucket=overdue', icon: ClipboardI,
+    { key: 'tasks', feature: 'tasks', label: 'Overdue tasks', n: a.overdueTasks, urgent: true, href: '/admin/tasks?bucket=overdue', icon: ClipboardI,
       sub: a.dueToday ? `${a.dueToday} more due today` : 'Nothing else due today' },
-    { key: 'tickets', label: 'Tickets past deadline', n: a.ticketsOverdue, urgent: true, href: '/admin/tickets', icon: (p: any) => <TicketIcon size={p.size} color={p.color} />,
+    { key: 'tickets', feature: 'tickets', label: 'Tickets past deadline', n: a.ticketsOverdue, urgent: true, href: '/admin/tickets', icon: (p: any) => <TicketIcon size={p.size} color={p.color} />,
       sub: a.ticketsSoon ? `${a.ticketsSoon} due soon` : 'All within their deadline' },
-    { key: 'reviews', label: 'Reviews to answer', n: a.reviewsToAnswer, urgent: a.lowReviewsToAnswer > 0, href: '/admin/reviews', icon: (p: any) => <StarIcon size={p.size} color={p.color} />,
+    { key: 'reviews', feature: 'reviews', label: 'Reviews to answer', n: a.reviewsToAnswer, urgent: a.lowReviewsToAnswer > 0, href: '/admin/reviews', icon: (p: any) => <StarIcon size={p.size} color={p.color} />,
       sub: a.lowReviewsToAnswer ? `${a.lowReviewsToAnswer} rated 3 stars or less` : 'Google reviews from the last 30 days' },
-    { key: 'unassigned', label: 'Unassigned chats', n: a.unassigned, urgent: false, href: '/admin/inbox?view=unassigned', icon: UserPlusI,
+    { key: 'unassigned', feature: 'inbox', label: 'Unassigned chats', n: a.unassigned, urgent: false, href: '/admin/inbox?view=unassigned', icon: UserPlusI,
       sub: 'Active in the last 7 days' },
-    { key: 'waitlist', label: 'On a waitlist', n: a.waitlist, urgent: false, href: '/admin/waitlists', icon: ClockI,
+    { key: 'waitlist', feature: 'waitlists', label: 'On a waitlist', n: a.waitlist, urgent: false, href: '/admin/waitlists', icon: ClockI,
       sub: 'Customers waiting for stock' },
-    { key: 'carts', label: 'Abandoned carts', n: a.carts, urgent: false, href: '/admin/inbox', icon: CartI,
+    { key: 'carts', feature: 'orders', label: 'Abandoned carts', n: a.carts, urgent: false, href: '/admin/inbox', icon: CartI,
       sub: a.carts ? `${money(a.cartValue)} left in carts · 7 days` : 'None in the last 7 days' },
-  ] : []
+  ].filter(t => canSee(s, t.feature)) : []
+  // A member who can't open any of these areas doesn't get an empty section.
+  if (a && tiles.length === 0) return null
   // Things that need doing first; clear ones keep their place after.
   const ordered = [...tiles.filter(t => t.n > 0), ...tiles.filter(t => t.n === 0)]
   const outstanding = tiles.filter(t => t.n > 0).length
@@ -334,9 +351,11 @@ function Today({ s }: { s: Summary | null }) {
   if (!s) return null
   const { bookings, tasks } = s.today
   const time = (iso: string) => new Date(iso).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit', timeZone: s.tz })
+  const showBookings = canSee(s, 'bookings'), showTasks = canSee(s, 'tasks')
+  if (!showBookings && !showTasks) return null
   return (
-    <section className="mb-8 grid md:grid-cols-2 gap-3">
-      <div className={`${card} overflow-hidden`} style={cardStyle}>
+    <section className={`mb-8 grid ${showBookings && showTasks ? 'md:grid-cols-2' : ''} gap-3`}>
+      {showBookings && <div className={`${card} overflow-hidden`} style={cardStyle}>
         <div className="px-5 py-3.5 border-b flex items-center justify-between" style={cardStyle}>
           <h3 className="font-semibold text-sm flex items-center gap-2" style={{ color: 'var(--ink)' }}><CalendarI size={16} color="var(--slate)" /> Today’s bookings</h3>
           <Link href="/admin/bookings" className="text-xs font-semibold" style={{ color: 'var(--coral)' }}>All bookings</Link>
@@ -358,9 +377,9 @@ function Today({ s }: { s: Summary | null }) {
             {bookings.length > 6 && <li className="px-5 py-2.5 text-xs" style={{ color: 'var(--slate)' }}>+{bookings.length - 6} more</li>}
           </ul>
         )}
-      </div>
+      </div>}
 
-      <div className={`${card} overflow-hidden`} style={cardStyle}>
+      {showTasks && <div className={`${card} overflow-hidden`} style={cardStyle}>
         <div className="px-5 py-3.5 border-b flex items-center justify-between" style={cardStyle}>
           <h3 className="font-semibold text-sm flex items-center gap-2" style={{ color: 'var(--ink)' }}><ClipboardI size={16} color="var(--slate)" /> Tasks due</h3>
           <Link href="/admin/tasks?bucket=today" className="text-xs font-semibold" style={{ color: 'var(--coral)' }}>All tasks</Link>
@@ -384,7 +403,7 @@ function Today({ s }: { s: Summary | null }) {
             ))}
           </ul>
         )}
-      </div>
+      </div>}
     </section>
   )
 }
@@ -410,22 +429,25 @@ function Delta({ now, prev, invert = false }: { now: number; prev: number; inver
 function Performance({ s }: { s: Summary | null }) {
   if (!s) return null
   const p = s.perf
+  const reports = canSee(s, 'reports')
   const tiles = [
-    { label: 'Revenue', value: money(p.revenue.now), d: <Delta now={p.revenue.now} prev={p.revenue.prev} />, href: '/admin/orders/reports' },
-    { label: 'Orders', value: String(p.orders.now), d: <Delta now={p.orders.now} prev={p.orders.prev} />, href: '/admin/orders' },
-    { label: 'Avg order', value: money(p.aov.now), d: <Delta now={p.aov.now} prev={p.aov.prev} />, href: '/admin/orders/reports' },
-    { label: 'New chats', value: String(p.conversations.now), d: <Delta now={p.conversations.now} prev={p.conversations.prev} />, href: '/admin/inbox' },
-    { label: 'Calls', value: String(p.calls.now), d: <Delta now={p.calls.now} prev={p.calls.prev} />, href: '/admin/command-centre' },
-    { label: 'Google reviews', value: p.reviews.avgNow != null ? `${p.reviews.avgNow.toFixed(1)}` : '—', suffix: p.reviews.now ? ` from ${p.reviews.now}` : '',
+    { feature: 'orders', label: 'Revenue', value: money(p.revenue.now), d: <Delta now={p.revenue.now} prev={p.revenue.prev} />, href: reports ? '/admin/orders/reports' : '/admin/orders' },
+    { feature: 'orders', label: 'Orders', value: String(p.orders.now), d: <Delta now={p.orders.now} prev={p.orders.prev} />, href: '/admin/orders' },
+    { feature: 'orders', label: 'Avg order', value: money(p.aov.now), d: <Delta now={p.aov.now} prev={p.aov.prev} />, href: reports ? '/admin/orders/reports' : '/admin/orders' },
+    { feature: 'inbox', label: 'New chats', value: String(p.conversations.now), d: <Delta now={p.conversations.now} prev={p.conversations.prev} />, href: '/admin/inbox' },
+    { feature: 'calls', label: 'Calls', value: String(p.calls.now), d: <Delta now={p.calls.now} prev={p.calls.prev} />, href: canSee(s, 'command_centre') ? '/admin/command-centre' : '/admin/calls' },
+    { feature: 'reviews', label: 'Google reviews', value: p.reviews.avgNow != null ? `${p.reviews.avgNow.toFixed(1)}` : '—', suffix: p.reviews.now ? ` from ${p.reviews.now}` : '',
       d: <Delta now={p.reviews.now} prev={p.reviews.prev} />, href: '/admin/reviews', star: p.reviews.avgNow != null },
-  ]
+  ].filter(t => canSee(s, t.feature))
+  const chart = canSee(s, 'orders')
+  if (!tiles.length) return null
   return (
     <section className="mb-8">
       <div className="flex items-baseline justify-between mb-3 gap-3">
         <h2 className="text-xl font-bold" style={{ color: 'var(--ink)' }}>Last 30 days</h2>
-        <Link href="/admin/orders/reports" className="text-sm font-semibold" style={{ color: 'var(--coral)' }}>Full reports</Link>
+        {reports && <Link href="/admin/orders/reports" className="text-sm font-semibold" style={{ color: 'var(--coral)' }}>Full reports</Link>}
       </div>
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-3">
+      <div className={`grid grid-cols-2 md:grid-cols-3 ${tiles.length >= 6 ? 'lg:grid-cols-6' : ''} gap-3 mb-3`}>
         {tiles.map(t => (
           <Link key={t.label} href={t.href} className={`${card} p-4 hover:shadow-md transition-smooth min-w-0`} style={cardStyle}>
             <p className={`${eyebrow} mb-1.5 truncate`} style={{ color: 'var(--slate)' }}>{t.label}</p>
@@ -438,7 +460,7 @@ function Performance({ s }: { s: Summary | null }) {
           </Link>
         ))}
       </div>
-      <RevenueChart daily={p.daily} />
+      {chart && <RevenueChart daily={p.daily} />}
     </section>
   )
 }
@@ -552,13 +574,14 @@ function Activity({ s }: { s: Summary | null }) {
 
 // ── Feedback board ────────────────────────────────────────────────────────────
 
-function FeedbackStrip({ stats }: { stats: { ideas: number; announcements: number; surveys: number; polls: number } | null }) {
+function FeedbackStrip({ stats, s }: { stats: { ideas: number; announcements: number; surveys: number; polls: number } | null; s: Summary | null }) {
   const items = [
-    { label: 'Ideas', n: stats?.ideas, href: '/', icon: <LightbulbIcon size={16} color="var(--coral)" /> },
-    { label: 'Announcements', n: stats?.announcements, href: '/announcements', icon: <MegaphoneIcon size={16} color="var(--coral)" /> },
-    { label: 'Surveys', n: stats?.surveys, href: '/admin/surveys', icon: <SurveyIcon size={16} color="var(--coral)" /> },
-    { label: 'Polls', n: stats?.polls, href: '/admin/polls', icon: <PollIcon size={16} color="var(--coral)" /> },
-  ]
+    { feature: 'ideas', label: 'Ideas', n: stats?.ideas, href: '/', icon: <LightbulbIcon size={16} color="var(--coral)" /> },
+    { feature: 'announcements', label: 'Announcements', n: stats?.announcements, href: '/announcements', icon: <MegaphoneIcon size={16} color="var(--coral)" /> },
+    { feature: 'surveys', label: 'Surveys', n: stats?.surveys, href: '/admin/surveys', icon: <SurveyIcon size={16} color="var(--coral)" /> },
+    { feature: 'polls', label: 'Polls', n: stats?.polls, href: '/admin/polls', icon: <PollIcon size={16} color="var(--coral)" /> },
+  ].filter(it => canSee(s, it.feature))
+  if (!items.length) return null
   return (
     <section className="mb-8">
       <h2 className={`${eyebrow} mb-3`} style={{ color: 'var(--slate)' }}>Feedback board</h2>

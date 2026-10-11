@@ -87,6 +87,12 @@ export interface FeatureDef {
   // (e.g. /admin/orders/reports) is attributed to its own feature, not the
   // parent (/admin/orders).
   paths: string[]
+  // What a RESTRICTED member (one with a saved permission map) gets for this
+  // feature when their map has no entry for it — i.e. the feature was added
+  // after their permissions were last saved. Older features default to allowed
+  // so nobody lost access when this was introduced; features added since
+  // default to hidden, so a restricted member never silently gains a new page.
+  restrictedDefault?: boolean
 }
 
 export interface SuiteDef {
@@ -115,7 +121,7 @@ export const PERMISSION_SUITES: SuiteDef[] = [
       { key: 'statuses', label: 'Statuses', paths: ['/admin/statuses'] },
       { key: 'topics', label: 'Topics', paths: ['/admin/topics'] },
       { key: 'priorities', label: 'Priorities', paths: ['/admin/priorities'] },
-      { key: 'segments', label: 'Segments', paths: ['/admin/segments'] },
+      { key: 'segments', label: 'Segments', paths: ['/admin/segments', '/admin/customers/segments'] },
       { key: 'analytics', label: 'Analytics', paths: ['/admin/analytics'] },
     ],
   },
@@ -134,14 +140,16 @@ export const PERMISSION_SUITES: SuiteDef[] = [
     label: 'Inbox & CRM',
     features: [
       { key: 'inbox', label: 'Inbox', paths: ['/admin/inbox'] },
-      { key: 'contacts', label: 'Contacts', paths: ['/admin/contacts'] },
+      { key: 'contacts', label: 'Contacts', paths: ['/admin/contacts', '/admin/customers/profile'] },
       { key: 'tasks', label: 'Tasks', paths: ['/admin/tasks'] },
       { key: 'notes', label: 'Notes', paths: ['/admin/notes'] },
       { key: 'gallery', label: 'Gallery', paths: ['/admin/gallery'] },
       { key: 'calendar', label: 'Calendar', paths: ['/admin/calendar'] },
+      { key: 'bookings', label: 'Bookings', paths: ['/admin/bookings'], restrictedDefault: false },
       { key: 'scheduled', label: 'Scheduled', paths: ['/admin/scheduled'] },
       { key: 'calls', label: 'Call Logs', paths: ['/admin/calls'] },
       { key: 'campaigns', label: 'Campaigns', paths: ['/admin/campaigns'] },
+      { key: 'waitlists', label: 'Waitlists', paths: ['/admin/waitlists'], restrictedDefault: false },
       { key: 'links', label: 'Links Generator', paths: ['/admin/links'] },
       { key: 'link_reports', label: 'Link Reports', paths: ['/admin/link-reports'] },
       { key: 'reviews', label: 'Reviews', paths: ['/admin/reviews'] },
@@ -177,8 +185,12 @@ export const PERMISSION_SUITES: SuiteDef[] = [
       { key: 'locations', label: 'Locations', paths: ['/admin/locations'] },
       { key: 'integrations', label: 'Integrations', paths: ['/admin/integrations'] },
       { key: 'import', label: 'Import Data', paths: ['/admin/import'] },
-      { key: 'settings', label: 'Settings', paths: ['/admin/settings'] },
+      { key: 'settings', label: 'Settings', paths: ['/admin/settings', '/admin/legal'] },
+      { key: 'inbox_settings', label: 'Inbox settings', paths: ['/admin/crm-settings', '/admin/auto-replies'], restrictedDefault: false },
+      { key: 'ai_settings', label: 'AI settings', paths: ['/admin/ai-settings', '/admin/ai-knowledge', '/admin/crm-settings/ai', '/admin/crm-settings/ai-knowledge'], restrictedDefault: false },
+      { key: 'terminology', label: 'Terminology', paths: ['/admin/terminology'], restrictedDefault: false },
       { key: 'billing', label: 'Billing', paths: ['/admin/billing'] },
+      { key: 'referrals', label: 'Referrals', paths: ['/admin/referrals'], restrictedDefault: false },
     ],
   },
 ]
@@ -187,6 +199,12 @@ export type PermissionMap = Record<string, boolean> | null | undefined
 
 // Every feature key, flattened.
 export const ALL_FEATURE_KEYS: string[] = PERMISSION_SUITES.flatMap(s => s.features.map(f => f.key))
+const FEATURE_BY_KEY: Record<string, FeatureDef> = Object.fromEntries(PERMISSION_SUITES.flatMap(s => s.features.map(f => [f.key, f])))
+
+// A restricted member's access to a feature their saved map doesn't mention.
+export function restrictedDefault(featureKey: string): boolean {
+  return FEATURE_BY_KEY[featureKey]?.restrictedDefault ?? true
+}
 
 // Roles that always have full access regardless of the permission map.
 const FULL_ACCESS_ROLES = ['owner', 'admin']
@@ -200,8 +218,10 @@ export function canUseFeature(role: string | null | undefined, perms: Permission
   if (hasFullAccess(role)) return true
   // No map configured → unrestricted (don't lock existing members out).
   if (!perms || typeof perms !== 'object') return true
-  // Absent key defaults to allowed; only an explicit `false` blocks.
-  return perms[featureKey] !== false
+  // Saved choice wins; a feature the map doesn't mention yet falls back to its
+  // restrictedDefault (see FeatureDef).
+  if (featureKey in perms) return perms[featureKey] !== false
+  return restrictedDefault(featureKey)
 }
 
 // Find the feature that owns a pathname (longest matching prefix), or null when
