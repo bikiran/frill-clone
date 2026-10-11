@@ -143,7 +143,8 @@ async function nameCarriers(shipments: TrackedShipment[]) {
 /** Apply ShipStation's live tracking (status code, carrier text, ETA, latest event). */
 function applyTrack(s: TrackedShipment, t: shipstation.SSTrack | null) {
   if (!t) return
-  const ev = (t.events || [])[0]
+  // Carriers list events in either order — take the most recent one.
+  const ev = [...(t.events || [])].sort((a, b) => String(b.occurred_at || '').localeCompare(String(a.occurred_at || '')))[0]
   s.status = SS_STATUS[String(t.status_code || '')] || s.status
   s.statusText = t.exception_description || t.carrier_status_description || t.status_description || s.statusText
   s.estimatedDelivery = t.estimated_delivery_date || s.estimatedDelivery
