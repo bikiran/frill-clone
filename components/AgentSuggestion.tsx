@@ -21,6 +21,8 @@ export function SuggestionCard({ s, companyId, onDone, compact }: { s: Suggestio
   const isReview = s.action_key === 'reply_to_review'
   // A booking change the Reception Agent prepared: approve or dismiss (nothing to edit).
   const isBooking = s.action_key === 'reschedule_booking' || s.action_key === 'cancel_booking'
+  // A follow-up to a shopper who left a cart (Sales Agent), sent by SMS or email.
+  const isCart = s.action_key === 'send_cart_followup'
   const [error, setError] = useState('')
 
   const decide = async (action: 'approve' | 'reject') => {
@@ -38,7 +40,7 @@ export function SuggestionCard({ s, companyId, onDone, compact }: { s: Suggestio
       <div className="agsg-head">
         <span className="agsg-orb"><Spark /></span>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <p className="agsg-t">{isBooking ? `Reception Agent wants to ${s.action_key === 'cancel_booking' ? 'cancel a booking' : 'move a booking'}` : isReview ? 'Reputation Agent drafted a reply' : s.run?.role_key === 'reception' ? 'Reception Agent suggests a reply' : 'Support Agent suggests a reply'}</p>
+          <p className="agsg-t">{isBooking ? `Reception Agent wants to ${s.action_key === 'cancel_booking' ? 'cancel a booking' : 'move a booking'}` : isReview ? 'Reputation Agent drafted a reply' : isCart ? 'Sales Agent wrote a cart follow-up' : s.run?.role_key === 'reception' ? 'Reception Agent suggests a reply' : 'Support Agent suggests a reply'}</p>
           {!compact && s.run?.summary && <p className="agsg-s">{s.run.summary}</p>}
         </div>
         <WhyLink companyId={companyId} runId={s.run_id} className="agsg-why" style={{ textDecoration: 'none' }} />
@@ -46,8 +48,9 @@ export function SuggestionCard({ s, companyId, onDone, compact }: { s: Suggestio
       {isBooking
         ? <p className="agsg-text">{String(s.args?._preview || (s.action_key === 'cancel_booking' ? 'Cancel this booking' : 'Move this booking'))}. The customer gets the usual booking message{s.action_key === 'cancel_booking' ? ', and your cancellation policy decides any refund' : ''}.</p>
         : editing
-        ? <textarea className="agsg-edit" value={text} onChange={e => setText(e.target.value)} rows={Math.min(8, Math.max(3, Math.ceil(text.length / 60)))} autoFocus aria-label={isReview ? 'Edit the public reply' : 'Edit the reply'} />
+        ? <textarea className="agsg-edit" value={text} onChange={e => setText(e.target.value)} rows={Math.min(8, Math.max(3, Math.ceil(text.length / 60)))} autoFocus aria-label={isReview ? 'Edit the public reply' : isCart ? 'Edit the follow-up' : 'Edit the reply'} />
         : <p className="agsg-text">{text}</p>}
+      {isCart && <p className="agsg-note">Goes out by SMS, else email. {'{link}'} becomes their checkout link and “Reply STOP to opt out.” is added.</p>}
       {error && <p className="agsg-err" role="alert">{error}</p>}
       <div className="agsg-actions">
         <button type="button" className="agsg-send" onClick={() => decide('approve')} disabled={!!busy || (!isBooking && !text.trim())}>{busy === 'send' ? (isBooking ? 'Approving…' : isReview ? 'Posting…' : 'Sending…') : isBooking ? (s.action_key === 'cancel_booking' ? 'Approve cancellation' : 'Approve move') : editing ? (isReview ? 'Post edited' : 'Send edited') : (isReview ? 'Post reply' : 'Send')}</button>
@@ -77,7 +80,7 @@ export default function AgentSuggestion({ companyId, conversationId, onChange }:
       if (!r.ok) return
       const d = await r.json()
       if (convRef.current !== conversationId) return
-      const next: Suggestion[] = (d.approvals || []).filter((a: Suggestion) => ['send_message', 'reschedule_booking', 'cancel_booking'].includes(a.action_key))
+      const next: Suggestion[] = (d.approvals || []).filter((a: Suggestion) => ['send_message', 'reschedule_booking', 'cancel_booking', 'send_cart_followup'].includes(a.action_key))
       const ids = next.map(a => a.id).join(',')
       if (ids === shownRef.current) return   // nothing new: leave the card alone
       const grew = next.some(a => !shownRef.current.split(',').includes(a.id))
@@ -118,6 +121,7 @@ const CSS = `
 .agsg-text{margin:0;padding:12px 14px;font-size:14px;line-height:1.55;color:#18181b;white-space:pre-wrap}
 .agsg-edit{display:block;width:calc(100% - 24px);margin:10px 12px 0;box-sizing:border-box;padding:10px 12px;border-radius:12px;border:1px solid #e4e4e7;font-size:14px;line-height:1.5;font-family:inherit;color:#18181b;resize:vertical;outline:none;transition:border-color .2s ease,box-shadow .2s ease}
 .agsg-edit:focus{border-color:var(--coral,#e2553f);box-shadow:0 0 0 3px color-mix(in srgb,var(--coral,#e2553f) 15%,transparent)}
+.agsg-note{margin:0;padding:0 14px 4px;font-size:12px;color:#71717a;line-height:1.45}
 .agsg-err{margin:6px 14px 0;font-size:12.5px;color:#b42318}
 .agsg-actions{display:flex;gap:8px;flex-wrap:wrap;padding:10px 12px 12px}
 .agsg-send{padding:8px 16px;border-radius:11px;border:none;background:var(--coral,#e2553f);color:#fff;font-size:13px;font-weight:800;cursor:pointer;font-family:inherit;transition:transform .15s ${EASE},opacity .2s ease}

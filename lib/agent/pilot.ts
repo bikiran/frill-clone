@@ -162,3 +162,22 @@ export async function setReviewAuto(db: any, companyId: string, raw: any, userId
   await putPolicy(db, { company_id: companyId, role_key: 'reputation', action_key: 'reply_to_review', autonomy: s.enabled ? 'act_within_limits' : 'prepare', limits: { min_rating: s.min_rating, max_per_day: s.max_per_day }, updated_by: userId })
   return s
 }
+
+// ── Sales Agent: send cart follow-ups on its own ─────────────────────────────
+
+export type SalesAuto = { enabled: boolean; max_per_day: number }
+export const DEFAULT_SALES_AUTO: SalesAuto = { enabled: false, max_per_day: 30 }
+
+export async function getSalesAuto(db: any, companyId: string): Promise<SalesAuto> {
+  try {
+    const { data } = await db.from('agent_policies').select('autonomy, limits').eq('company_id', companyId).eq('role_key', 'sales').eq('action_key', 'send_cart_followup').limit(1)
+    const row = data?.[0]
+    return row ? { enabled: row.autonomy === 'act_within_limits', max_per_day: clampInt(row.limits?.max_per_day, 1, 500, DEFAULT_SALES_AUTO.max_per_day) } : { ...DEFAULT_SALES_AUTO }
+  } catch { return { ...DEFAULT_SALES_AUTO } }
+}
+
+export async function setSalesAuto(db: any, companyId: string, raw: any, userId: string | null): Promise<SalesAuto> {
+  const s: SalesAuto = { enabled: !!raw?.enabled, max_per_day: clampInt(raw?.max_per_day, 1, 500, DEFAULT_SALES_AUTO.max_per_day) }
+  await putPolicy(db, { company_id: companyId, role_key: 'sales', action_key: 'send_cart_followup', autonomy: s.enabled ? 'act_within_limits' : 'prepare', limits: { max_per_day: s.max_per_day }, updated_by: userId })
+  return s
+}

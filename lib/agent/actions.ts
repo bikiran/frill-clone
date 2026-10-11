@@ -16,6 +16,7 @@ import { AUTO_TOPICS } from './pilot'
 import { findCustomerOrders, checkOrderStatus } from './order-actions'
 import { getBusinessHours } from './business-actions'
 import { getReview, replyToReviewAction } from './review-actions'
+import { getCart, sendCartFollowup } from './sales-actions'
 import { listServices, checkAvailability, findMyBookings, bookingLink, rescheduleBookingAction, cancelBookingAction } from './booking-actions'
 import { sendAgentMessage } from './send'
 
@@ -209,7 +210,7 @@ export const FINISH_ACTION: ActionDef = {
   async run() { return { ok: true } },
 }
 
-const ALL: ActionDef[] = [...READS, findCustomerOrders, checkOrderStatus, getBusinessHours, getReview, replyToReviewAction, listServices, checkAvailability, findMyBookings, bookingLink, rescheduleBookingAction, cancelBookingAction, createTask, sendMessage, escalateToHuman, FINISH_ACTION]
+const ALL: ActionDef[] = [...READS, findCustomerOrders, checkOrderStatus, getBusinessHours, getReview, replyToReviewAction, listServices, checkAvailability, findMyBookings, bookingLink, rescheduleBookingAction, cancelBookingAction, getCart, sendCartFollowup, createTask, sendMessage, escalateToHuman, FINISH_ACTION]
 export const ACTIONS: Record<string, ActionDef> = Object.fromEntries(ALL.map(a => [a.key, a]))
 
 export function getAction(key: string): ActionDef | null {

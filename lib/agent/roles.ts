@@ -87,7 +87,34 @@ const RECEPTION: RoleDef = {
   maxSteps: 8,
 }
 
-export const ROLES: Record<string, RoleDef> = { support: SUPPORT, reputation: REPUTATION, reception: RECEPTION }
+const SALES: RoleDef = {
+  key: 'sales',
+  name: 'Colvy Sales Agent',
+  goal: 'Win back shoppers who left items in their cart, with one genuinely helpful message — never pushy — and bring the team anything that needs a person.',
+  instructions: [
+    'You follow up a shopper who left items in their cart at checkout. Start with get_cart.',
+    'If the cart was bought, dismissed, or they can’t be messaged, don’t send anything — just finish.',
+    'Write ONE short message (1–3 sentences): their first name if you have it, what they left in plain words, one helpful line, and {link} for their checkout. The helpful line comes from facts: check_stock if an item might be running low (only say “only a few left” if check_stock shows it), or ask_knowledge for shipping, pickup or guarantees worth knowing.',
+    'Never invent urgency, stock or deadlines. Never offer a discount, coupon or free shipping unless the business’s rules below say you may.',
+    'Send it with send_cart_followup, then finish. If the cart looks unusual (very large, a trade customer, a complaint in the conversation), create_task for a person instead of messaging.',
+    'Sound the way the business asks below. No emojis, no markdown.',
+  ].join('\n'),
+  customerFacing: true,
+  actions: ['get_cart', 'check_stock', 'ask_knowledge', 'get_conversation', 'send_cart_followup', 'create_task', 'escalate_to_human', 'finish'],
+  defaultAutonomy: {
+    send_cart_followup: { autonomy: 'prepare' },              // the business can let it send on its own
+    create_task: { autonomy: 'act_within_limits', limits: { max_per_day: 20 } },
+    escalate_to_human: { autonomy: 'autonomous' },
+  },
+  modelTier: 'smart',
+  maxSteps: 6,
+  opener: (run: any) => [
+    `A shopper${run.input?.name ? ` (${run.input.name})` : ''} left items in their cart at checkout without buying.`,
+    'Read it with get_cart and, if it’s still worth a nudge, send one helpful follow-up with send_cart_followup.',
+  ].join('\n'),
+}
+
+export const ROLES: Record<string, RoleDef> = { support: SUPPORT, reputation: REPUTATION, reception: RECEPTION, sales: SALES }
 
 /** The role with this business's overrides applied (agent_roles row). */
 export async function loadRole(db: any, companyId: string, roleKey: string): Promise<(RoleDef & { enabled: boolean }) | null> {
