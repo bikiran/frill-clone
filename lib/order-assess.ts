@@ -52,6 +52,9 @@ export function assessOrder(t: OrderTracking, th: Thresholds = DEFAULT_THRESHOLD
       if (facts.daysSinceShipped != null && facts.daysSinceShipped > th.transit_days) attention(`In transit for ${facts.daysSinceShipped} days (usually within ${th.transit_days}).`)
       if (facts.daysSinceLastEvent != null && facts.daysSinceLastEvent > th.stale_days) attention(`Tracking hasn’t updated for ${facts.daysSinceLastEvent} days.`)
       if (t.stage === 'shipped' && !t.shipments.some(s => s.trackingNumber)) attention('Marked shipped but there is no tracking number on file.')
+      // A label made days ago that the carrier has never scanned.
+      if (t.shipments.length && t.shipments.every(s => s.status === 'label_created') && facts.daysSinceShipped != null && facts.daysSinceShipped > th.stale_days)
+        attention(`Label made ${facts.daysSinceShipped} days ago but the carrier hasn’t scanned it yet.`)
       break
     case 'delivered':
       reasons.push('The carrier says it was delivered. If the customer says it hasn’t arrived, escalate.')

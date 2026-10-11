@@ -255,6 +255,10 @@ export async function labelsForShipment(shipmentId: string): Promise<SSLabel[]> 
   return (j?.labels || []) as SSLabel[]
 }
 
+export async function getLabel(labelId: string): Promise<SSLabel | null> {
+  try { return (await call(`/labels/${encodeURIComponent(labelId)}`, 'GET')) as SSLabel } catch { return null }
+}
+
 export async function trackLabel(labelId: string): Promise<SSTrack | null> {
   try { return (await call(`/labels/${encodeURIComponent(labelId)}/track`, 'GET')) as SSTrack } catch { return null }
 }
