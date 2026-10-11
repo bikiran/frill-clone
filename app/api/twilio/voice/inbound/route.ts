@@ -1,4 +1,5 @@
 import { twilioSignatureOk } from '@/lib/twilio-signature'
+import { filterUsersByFeature } from '@/lib/feature-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { xmlEscape, twilioIdentity } from '@/lib/twilio-service'
@@ -208,7 +209,11 @@ export async function POST(req: NextRequest) {
 
     // Keep the user ids alongside their Voice-SDK identities: the per-<Client>
     // status callback needs the user id to record WHO answered the call.
-    const ringUsers = Array.from(userIds)
+    // Only members allowed calls or chats (Team page permissions) — someone
+    // limited to, say, Tasks and Calendar shouldn't have their phone ring.
+    // Owners and admins always ring.
+    const permitted = await filterUsersByFeature(db, companyId, Array.from(userIds), ['calls', 'inbox'])
+    const ringUsers = Array.from(userIds).filter(uid => permitted.has(uid))
     const identities = ringUsers.map(uid => twilioIdentity(uid, companyId))
 
     // NOTE: we deliberately do NOT fire a separate /api/push/send "Ringing now"

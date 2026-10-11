@@ -1,5 +1,6 @@
 import { memberOr403 } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
+import { featuresForPush, filterUsersByFeature } from '@/lib/feature-access'
 import { createClient } from '@supabase/supabase-js'
 
 function admin() {
@@ -29,6 +30,9 @@ export async function POST(req: NextRequest) {
       // Optional Android notification channel (sound/importance). Defaults to
       // 'messages'; a caller can pass e.g. 'calls' for a distinct channel.
       channelId,
+      // Optional feature key (lib/permissions.ts) this push is about. Usually
+      // worked out from the rest (see featuresForPush).
+      feature,
     } = await req.json()
     if (!companyId || !body) return NextResponse.json({ error: 'Missing companyId or body' }, { status: 400 })
     // Our own server, or a member of the workspace (the browser call alert).
@@ -37,8 +41,18 @@ export async function POST(req: NextRequest) {
     const db = admin()
     let q = db.from('push_tokens').select('expo_token, user_id, platform').eq('company_id', companyId)
     if (Array.isArray(userIds) && userIds.length > 0) q = q.in('user_id', userIds)
-    const { data: tokens } = await q
-    if (!tokens || tokens.length === 0) return NextResponse.json({ ok: true, sent: 0 })
+    const { data: allTokens } = await q
+    if (!allTokens || allTokens.length === 0) return NextResponse.json({ ok: true, sent: 0 })
+
+    // Only members allowed the feature this push is about (Team page
+    // permissions): someone with Inbox switched off gets no message alerts,
+    // without Orders no order alerts, and so on. Owners and admins always do.
+    const features = featuresForPush({ feature, channelId, conversationId, route })
+    const allowed = features.length
+      ? await filterUsersByFeature(db, companyId, allTokens.map((t: any) => t.user_id).filter(Boolean), features)
+      : null
+    const tokens = allowed ? allTokens.filter((t: any) => !t.user_id || allowed.has(t.user_id)) : allTokens
+    if (tokens.length === 0) return NextResponse.json({ ok: true, sent: 0 })
 
     const category = categoryId || (conversationId ? 'message' : undefined)
     const text = body.slice(0, 500)
