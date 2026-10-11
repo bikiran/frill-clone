@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { agentAccess } from '@/lib/agent/access'
+import { activityName } from '@/lib/agent/record'
 
 export const dynamic = 'force-dynamic'
 
@@ -15,5 +16,5 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
     db.from('agent_steps').select('id, seq, kind, action_key, input, output, reason, decision, decision_reason, autonomy, status, entity_type, entity_id, duration_ms, tokens_in, tokens_out, created_at').eq('run_id', id).order('seq', { ascending: true }),
     db.from('agent_approvals').select('id, action_key, args, status, created_at, expires_at').eq('run_id', id).order('created_at', { ascending: true }),
   ])
-  return NextResponse.json({ run, steps: steps || [], approvals: approvals || [] })
+  return NextResponse.json({ run: { ...run, actor: activityName(run.role_key, run.input) }, steps: steps || [], approvals: approvals || [] })
 }

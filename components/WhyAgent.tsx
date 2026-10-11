@@ -72,7 +72,7 @@ export function WhySheet({ companyId, refs, onClose }: { companyId: string; refs
         <div className="why-head">
           <span className="why-orb"><Spark size={14} /></span>
           <div style={{ minWidth: 0, flex: 1 }}>
-            <p className="why-t">Why the {r?.role ? r.role.replace(/^Colvy /, '') : 'agent'} did this</p>
+            <p className="why-t">Why {!r?.role ? 'the agent' : /^Colvy /.test(r.role) ? `the ${r.role.slice(6)}` : r.role} did this</p>
             {r && <p className="why-s">{when(r.createdAt)}{r.mode === 'sandbox' ? ' · Sandbox' : ''}{r.outcome ? ` · ${OUTCOME[r.outcome] || r.outcome}` : ''}</p>}
           </div>
           <button type="button" className="why-x" onClick={close} aria-label="Close">{Close()}</button>
@@ -101,7 +101,7 @@ export function WhySheet({ companyId, refs, onClose }: { companyId: string; refs
                               <span className="why-step-t">{s.label}</span>
                               {d && s.kind === 'action' && !['allowed'].includes(s.decision || '') && <span className={`why-chip ${d.tone}`}>{d.label}</span>}
                             </div>
-                            {s.detail && (s.action === 'send_message' ? <p className="why-bubble">{s.detail}</p> : <p className="why-detail">{s.detail}</p>)}
+                            {s.detail && (s.action === 'send_message' || s.action === 'auto_reply' ? <p className="why-bubble">{s.detail}</p> : <p className="why-detail">{s.detail}</p>)}
                             {s.why && <p className="why-why">Why: {s.why}</p>}
                             {s.decisionReason && (s.kind === 'approval' || s.decision !== 'allowed') && <p className="why-rule">{s.decisionReason}</p>}
                           </div>

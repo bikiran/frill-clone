@@ -6,13 +6,14 @@
 // did and which permission allowed it, and who approved it. The full trail
 // stays on the AI Agents page.
 
-import { ROLES } from './roles'
+import { activityName } from './record'
 
 const LABEL: Record<string, string> = {
   get_conversation: 'Read the conversation', get_contact: 'Looked up the customer', ask_knowledge: 'Searched your knowledge',
   check_stock: 'Checked stock', find_customer_orders: 'Found the customer’s orders', check_order_status: 'Checked order tracking',
   get_business_hours: 'Checked opening hours', create_task: 'Created a task', send_message: 'Replied to the customer',
   escalate_to_human: 'Handed it to the team', search_orders: 'Searched orders', get_order: 'Looked up an order',
+  auto_reply: 'Replied to the customer', issue_coupon: 'Issued a coupon', start_doa_claim: 'Started a dead-on-arrival claim', create_draft_order: 'Created a draft order',
 }
 
 export type ExplainStep = {
@@ -41,7 +42,7 @@ function detailFor(action: string | null, input: any, output: any): string | nul
   const o = output || {}
   if (o.error) return clip(o.error)
   switch (action) {
-    case 'send_message': return input?.text ? clip(input.text, 400) : null
+    case 'send_message': case 'auto_reply': return input?.text ? clip(input.text, 400) : null
     case 'escalate_to_human': return input?.message_for_team ? clip(input.message_for_team) : null
     case 'create_task': return input?.title ? clip(input.title) : null
     case 'check_order_status': {
@@ -86,7 +87,7 @@ export async function explainRun(db: any, companyId: string, runId: string): Pro
   for (const s of (rows || []) as any[]) {
     if (s.kind === 'model' || s.kind === 'context' || s.kind === 'finish') continue
     if (s.kind === 'action' && ['get_conversation', 'get_contact'].includes(s.action_key) && s.status === 'ok') continue  // routine reads
-    const sentAlone = s.kind === 'action' && s.action_key === 'send_message' && s.decision === 'allowed' && s.status === 'ok'
+    const sentAlone = s.kind === 'action' && (s.action_key === 'send_message' || s.action_key === 'auto_reply') && s.decision === 'allowed' && s.status === 'ok'
     steps.push({
       kind: s.kind,
       action: s.action_key || null,
@@ -103,7 +104,7 @@ export async function explainRun(db: any, companyId: string, runId: string): Pro
 
   return {
     run: {
-      id: run.id, role: ROLES[run.role_key]?.name || run.role_key, mode: run.mode, status: run.status, outcome: run.outcome || null, intent: run.intent || null,
+      id: run.id, role: activityName(run.role_key, run.input), mode: run.mode, status: run.status, outcome: run.outcome || null, intent: run.intent || null,
       summary: run.summary || null, message: run.input?.message ? clip(run.input.message, 500) : null, createdAt: run.created_at, conversationId: run.conversation_id || null,
     },
     steps,

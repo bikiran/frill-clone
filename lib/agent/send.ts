@@ -25,6 +25,6 @@ export async function sendAgentMessage(db: any, opts: {
   }
   return sendAiReply(db, {
     conv, companyId: opts.companyId, businessName: co?.name || 'Us', text,
-    meta: { agent_run_id: opts.runId, approved_by: opts.approvedBy?.name || null, approved_by_id: opts.approvedBy?.id || null, edited: !!opts.edited },
+    meta: { agent_run_id: opts.runId, agent_name: 'Support Agent', approved_by: opts.approvedBy?.name || null, approved_by_id: opts.approvedBy?.id || null, edited: !!opts.edited },
   })
 }

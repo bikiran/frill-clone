@@ -2,6 +2,8 @@ import { createClient } from '@supabase/supabase-js'
 import { searchKnowledge } from '@/lib/ai-knowledge'
 import { logUnanswered } from '@/lib/ai-unanswered'
 import { findProducts } from '@/lib/product-search'
+import { agentsPaused } from '@/lib/agent/pilot'
+import { startActivity, finishActivity, type ActivityStep } from '@/lib/agent/record'
 import { markThinking, clearThinking, queueDraft, claimDraft, answeredSince, sendAiReply, sleep, replyInFlight, DEFAULT_SEND_DELAY_S } from '@/lib/ai-live-reply'
 import { WooCommerceService } from '@/lib/woocommerce-service'
 import { shopifyCreateDiscountCode, shopifyCreateOrder, shopifyStoreFor } from '@/lib/shopify-create'
@@ -406,6 +408,8 @@ export async function runAiAgent(opts: {
 
   const cfg = company?.ai_settings || {}
   if (!cfg.enabled || !cfg.auto_reply) return { replied: false, reason: 'AI auto-reply is off' }
+  // One pause switch for everything that acts on its own (AI Agents → Pause all agents).
+  if ((await agentsPaused(db, companyId)).paused) return { replied: false, reason: 'All AI agents are paused for this business' }
 
   // An agent can silence the AI in a single conversation without turning it off
   // for the whole business — the moment a chat gets delicate, that matters.
@@ -677,6 +681,7 @@ WHAT YOU CANNOT DO
     const toolUse = (data.content || []).find((c: any) => c.type === 'tool_use')
     let handoff = false
     let actionName: string | undefined
+    let actionResult: any = null
 
     if (toolUse) {
       actionName = toolUse.name
@@ -693,6 +698,7 @@ WHAT YOU CANNOT DO
         text = text || `Let me get one of the team to help you with this — they'll be with you shortly.`
       }
 
+      actionResult = result
       if (result) {
         if (result.message) text = text ? `${text}\n\n${result.message}` : result.message
         if (result.handoff) handoff = true
@@ -758,8 +764,29 @@ WHAT YOU CANNOT DO
       return { replied: false, reason: 'Someone answered while Colvy AI was writing' }
     }
 
+    // Recorded with the Support Agent's runs, so the AI Agents page shows it
+    // and "Why?" works on the message. Best effort: never blocks the reply.
+    const runId = await startActivity(db, {
+      companyId, roleKey: 'colvy_ai', trigger: 'inbound_message', conversationId: opts.conversationId, contactId: contact?.id || null,
+      input: { message: String(last.content || '').slice(0, 2000), channel: conv.channel },
+      contextRefs: [{ type: 'company', id: companyId, label: 'Business profile' }, ...(knowledge.length ? [{ type: 'knowledge', id: companyId, label: `${knowledge.length} knowledge match${knowledge.length === 1 ? '' : 'es'}` }] : [])],
+    })
+
     // Post it, clearly marked as AI (and text it, for an SMS conversation).
-    const sent = await sendAiReply(db, { conv, companyId, businessName: business, text, handoff, meta: { action: actionName || null } })
+    const sent = await sendAiReply(db, { conv, companyId, businessName: business, text, handoff, meta: { action: actionName || null, ...(runId ? { agent_run_id: runId, agent_name: 'Colvy AI' } : {}) } })
+    const steps: ActivityStep[] = [{
+      action_key: 'ask_knowledge', input: { question: String(last.content || '').slice(0, 300) },
+      output: knowledge.length ? { found: true, sources: knowledge.slice(0, 3).map((k: any) => ({ title: k.title || k.source })) } : { found: false },
+    }]
+    if (actionName && actionName !== 'hand_to_human') {
+      steps.push({ action_key: actionName, input: toolUse?.input || {}, output: actionResult || null, status: actionResult?.ok === false ? 'skipped' : 'ok', decision: actionResult?.ok === false ? 'denied' : 'allowed', decision_reason: actionResult?.ok === false ? (actionResult.reason || actionResult.message || 'Blocked by Colvy AI’s guardrails.') : 'Allowed by Colvy AI’s settings and guardrails.' })
+    }
+    steps.push({ action_key: 'auto_reply', input: { text }, status: sent.ok ? 'ok' : 'error', output: sent.ok ? { channel: sent.channel } : { error: sent.error }, decision_reason: '“Reply to customers automatically” is on in Colvy AI settings.', entity_type: 'conversation', entity_id: opts.conversationId })
+    if (handoff) steps.push({ action_key: 'escalate_to_human', input: { message_for_team: (toolUse?.input as any)?.reason || 'Colvy AI handed this conversation to a person.' }, entity_type: 'conversation', entity_id: opts.conversationId })
+    await finishActivity(db, runId, companyId, steps, {
+      status: !sent.ok ? 'failed' : handoff ? 'escalated' : 'completed', outcome: handoff ? 'escalated' : 'replied',
+      summary: `Answered “${String(last.content || '').replace(/\s+/g, ' ').slice(0, 120)}” automatically${knowledge.length ? ' using your knowledge' : ''}${actionName && actionName !== 'hand_to_human' ? ` and ran ${actionName.replace(/_/g, ' ')}` : ''}${handoff ? ', then handed it to the team' : ''}.`,
+    })
     if (!sent.ok) return { replied: false, reason: sent.error || 'Could not send the reply' }
 
     if (handoff) {

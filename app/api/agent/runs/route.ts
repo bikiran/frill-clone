@@ -2,6 +2,7 @@ import { NextRequest, NextResponse, after } from 'next/server'
 import { agentAccess, agentDb, missingAgentTables } from '@/lib/agent/access'
 import { enqueueRun, runAgent } from '@/lib/agent/engine'
 import { ROLES } from '@/lib/agent/roles'
+import { ACTIVITY_ROLES, activityName } from '@/lib/agent/record'
 import { guardAiRequest } from '@/lib/rate-limit'
 
 export const runtime = 'nodejs'
@@ -10,18 +11,22 @@ export const maxDuration = 300
 
 const RUN_COLS = 'id, role_key, mode, trigger_type, conversation_id, contact_id, status, outcome, intent, summary, model, tokens_in, tokens_out, step_count, created_at, finished_at, input'
 
-/** GET /api/agent/runs?companyId=&limit= — recent agent runs, newest first. */
+/** GET /api/agent/runs?companyId=&limit=&role= — recent AI activity, newest first. */
 export async function GET(req: NextRequest) {
   const companyId = req.nextUrl.searchParams.get('companyId')
   const { ok, db } = await agentAccess(req, companyId)
   if (!ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
   const limit = Math.min(Math.max(Number(req.nextUrl.searchParams.get('limit')) || 30, 1), 100)
-  const { data, error } = await db.from('agent_runs').select(RUN_COLS).eq('company_id', companyId).order('created_at', { ascending: false }).limit(limit)
+  // Everything the AI did, or one kind: support | colvy_ai | assistant | connected_app.
+  const role = req.nextUrl.searchParams.get('role')
+  let q = db.from('agent_runs').select(RUN_COLS).eq('company_id', companyId)
+  if (role && ACTIVITY_ROLES[role]) q = q.eq('role_key', role)
+  const { data, error } = await q.order('created_at', { ascending: false }).limit(limit)
   if (error) {
     if (missingAgentTables(error)) return NextResponse.json({ runs: [], needsMigration: true })
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
-  return NextResponse.json({ runs: data || [], roles: Object.values(ROLES).map(r => ({ key: r.key, name: r.name, goal: r.goal })) })
+  return NextResponse.json({ runs: (data || []).map((r: any) => ({ ...r, actor: activityName(r.role_key, r.input) })), roles: Object.values(ROLES).map(r => ({ key: r.key, name: r.name, goal: r.goal })) })
 }
 
 /**
