@@ -82,14 +82,16 @@ class Trail {
 
 // ── Prompt ───────────────────────────────────────────────────────────────────
 
-function toolSpec(a: ActionDef): ToolSpec {
+export function toolSpec(a: ActionDef): ToolSpec {
   const props = { ...a.input.properties }
-  const required = [...(a.input.required || [])]
-  if (a.key !== 'finish') {
+  const required = new Set(a.input.required || [])
+  // Every action also takes the model's own reason (recorded, then stripped
+  // before the action runs). Actions must not define a field with this name.
+  if (a.key !== 'finish' && !('reason' in props)) {
     props.reason = { type: 'string', description: 'Why you are doing this, in one short sentence. Shown to the business owner.' }
-    required.push('reason')
+    required.add('reason')
   }
-  return { name: a.key, description: a.description, input_schema: { type: 'object', properties: props, required, additionalProperties: false } }
+  return { name: a.key, description: a.description, input_schema: { type: 'object', properties: props, required: Array.from(required), additionalProperties: false } }
 }
 
 function systemPrompt(role: RoleDef, companyName: string, businessText: string, customerText: string): string {
