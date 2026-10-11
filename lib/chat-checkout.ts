@@ -1,4 +1,5 @@
 import Stripe from 'stripe'
+import { stripeSecretFor } from '@/lib/company-secrets'
 
 // Shared Stripe Checkout logic for customer "pay by link" payments, used by both
 // the send endpoint (/api/stripe/chat-payment) and the durable pay resolver
@@ -12,10 +13,11 @@ export function platformStripe(): Stripe {
 
 // The Stripe client + Connect options for a company's chat payments. Two modes:
 // the business's own keys, or the platform key charging their connected account.
-export function chatStripe(company: any): { s: Stripe; connectOpts: Stripe.RequestOptions | undefined; useOwnKeys: boolean } {
-  const useOwnKeys = company?.stripe_mode === 'keys' && !!company?.stripe_secret_key
-  const s = useOwnKeys
-    ? new Stripe(String(company.stripe_secret_key || '').trim(), { apiVersion: '2024-06-20' as any })
+export async function chatStripe(company: any): Promise<{ s: Stripe; connectOpts: Stripe.RequestOptions | undefined; useOwnKeys: boolean }> {
+  const ownKey = await stripeSecretFor(company)
+  const useOwnKeys = !!ownKey
+  const s = ownKey
+    ? new Stripe(ownKey, { apiVersion: '2024-06-20' as any })
     : platformStripe()
   const connectOpts = useOwnKeys ? undefined : (company?.stripe_account_id ? { stripeAccount: company.stripe_account_id } : undefined)
   return { s, connectOpts, useOwnKeys }
@@ -59,7 +61,7 @@ export type ChatCheckoutOpts = {
 // off our servers. Metadata carries everything the webhook and a later
 // regeneration need, so a fresh session can always be rebuilt from an old one.
 export async function createChatCheckoutSession(company: any, opts: ChatCheckoutOpts): Promise<Stripe.Checkout.Session> {
-  const { s, connectOpts, useOwnKeys } = chatStripe(company)
+  const { s, connectOpts, useOwnKeys } = await chatStripe(company)
   const colvyBase = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
   const { successBase, cancelUrl } = returnUrls(opts.originHost || null, !!opts.originVerified, colvyBase)
   const successUrl = opts.successUrl || `${successBase}?session_id={CHECKOUT_SESSION_ID}`

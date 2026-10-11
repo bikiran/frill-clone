@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
 
       const { data: company } = await db.from('companies').select('*').eq('id', form.company_id).maybeSingle()
       if (!company) return NextResponse.json({ error: 'Company not found' }, { status: 404 })
-      const stripeReady = (company.stripe_mode === 'keys' && company.stripe_secret_key) || company.stripe_connected || company.stripe_account_id
+      const stripeReady = company.stripe_mode === 'keys' || company.stripe_connected || company.stripe_account_id
       if (!stripeReady) return NextResponse.json({ error: 'Payments are not set up for this business yet.' }, { status: 400 })
 
       // The chat_payments row is the durable record the webhook + verify + admin
@@ -80,7 +80,7 @@ export async function POST(req: NextRequest) {
       if (!pay.stripe_session_id) return NextResponse.json({ ok: true, status: pay.status || 'pending', amountCents: pay.amount_cents, currency: pay.currency })
 
       const { data: company } = await db.from('companies').select('*').eq('id', pay.company_id).maybeSingle()
-      const { s, connectOpts } = chatStripe(company)
+      const { s, connectOpts } = await chatStripe(company)
       const session: any = await s.checkout.sessions.retrieve(pay.stripe_session_id, { expand: ['payment_intent.latest_charge'] } as any, connectOpts)
       const isPaid = session?.payment_status === 'paid' || session?.status === 'complete'
       if (!isPaid) return NextResponse.json({ ok: true, status: 'pending', amountCents: pay.amount_cents, currency: pay.currency })

@@ -34,7 +34,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     const { data: company } = await db.from('companies').select('*').eq('id', pay.company_id).maybeSingle()
     if (!company) return new NextResponse('Business unavailable', { status: 404 })
 
-    const { s, connectOpts } = chatStripe(company)
+    const { s, connectOpts } = await chatStripe(company)
 
     // Reuse the current session while it's still open; otherwise regenerate.
     let url: string | null = null

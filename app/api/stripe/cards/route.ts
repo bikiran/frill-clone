@@ -2,6 +2,7 @@ import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import Stripe from 'stripe'
+import { stripeSecretFor } from '@/lib/company-secrets'
 
 export const dynamic = 'force-dynamic'
 
@@ -14,8 +15,9 @@ const admin = () => createClient(
 // Resolve the right Stripe client + account options for a company.
 async function stripeFor(db: any, companyId: string) {
   const { data: company } = await db.from('companies').select('*').eq('id', companyId).maybeSingle()
-  const useOwnKeys = company?.stripe_mode === 'keys' && company?.stripe_secret_key
-  const key = useOwnKeys ? company.stripe_secret_key : process.env.STRIPE_SECRET_KEY
+  const ownKey = await stripeSecretFor(company)
+  const useOwnKeys = !!ownKey
+  const key = ownKey || process.env.STRIPE_SECRET_KEY
   if (!key) throw new Error('Stripe is not configured.')
   if (!useOwnKeys && (!company?.stripe_account_id || !company.stripe_connected)) {
     throw new Error('Connect your Stripe account first (Integrations → Stripe).')

@@ -169,8 +169,10 @@ export function amountDue(service: any): number {
   return 0
 }
 
+// 'keys' mode is only set once the business has saved its own secret key (kept
+// server-side in company_secrets, never on this row).
 export const stripeReady = (company: any) =>
-  !!((company?.stripe_mode === 'keys' && company?.stripe_secret_key) || company?.stripe_connected || company?.stripe_account_id)
+  !!(company?.stripe_mode === 'keys' || company?.stripe_connected || company?.stripe_account_id)
 
 // ── URLs ─────────────────────────────────────────────────────────────────────
 
@@ -193,7 +195,7 @@ export const manageUrl = (company: any, token: string) => `${companyBase(company
 
 // ── Lookups ──────────────────────────────────────────────────────────────────
 
-export const PUBLIC_COMPANY_COLS = 'id, name, slug, logo_url, accent_color, owner_id, booking_settings, stripe_mode, stripe_secret_key, stripe_connected, stripe_account_id'
+export const PUBLIC_COMPANY_COLS = 'id, name, slug, logo_url, accent_color, owner_id, booking_settings, stripe_mode, stripe_connected, stripe_account_id'
 
 export async function loadCompanyPublic(db: any, q: { slug?: string | null; domain?: string | null; id?: string | null }) {
   if (q.id) {
@@ -692,7 +694,7 @@ export async function refundBooking(db: any, company: any, b: any, cents: number
     if (!b.chat_payment_id) return { ok: false, error: 'No online payment on this booking' }
     const { data: pay } = await db.from('chat_payments').select('*').eq('id', b.chat_payment_id).maybeSingle()
     if (!pay) return { ok: false, error: 'Payment record not found' }
-    const { s, connectOpts } = chatStripe(company)
+    const { s, connectOpts } = await chatStripe(company)
     let pi: string | null = pay.stripe_payment_intent || b.stripe_payment_intent || null
     if (!pi && pay.stripe_session_id) {
       try { const sess: any = await s.checkout.sessions.retrieve(pay.stripe_session_id, {}, connectOpts); pi = (typeof sess?.payment_intent === 'string' ? sess.payment_intent : sess?.payment_intent?.id) || null } catch {}
