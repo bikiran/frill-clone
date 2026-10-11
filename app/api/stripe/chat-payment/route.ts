@@ -5,6 +5,7 @@ import { randomUUID } from 'crypto'
 import { shortenUrl } from '@/lib/short-link'
 import { createClient } from '@supabase/supabase-js'
 import { createChatCheckoutSession } from '@/lib/chat-checkout'
+import { stripeSecretFor } from '@/lib/company-secrets'
 
 function admin() {
   return createClient(
@@ -47,7 +48,7 @@ export async function POST(req: NextRequest) {
 
     // Two modes: (1) Connect — charge on the connected account with the platform
     // key; (2) Keys — the business supplied their own Stripe secret key.
-    const useOwnKeys = company?.stripe_mode === 'keys' && company?.stripe_secret_key
+    const useOwnKeys = !!(await stripeSecretFor(company))
     if (!useOwnKeys && (!company?.stripe_account_id || !company.stripe_connected)) {
       return NextResponse.json({ error: 'Connect your Stripe account first (Integrations → Stripe), or add your Stripe keys.' }, { status: 400 })
     }

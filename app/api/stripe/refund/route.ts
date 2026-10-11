@@ -2,6 +2,7 @@ import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { createClient } from '@supabase/supabase-js'
+import { stripeSecretFor } from '@/lib/company-secrets'
 
 function admin() {
   return createClient(
@@ -28,8 +29,9 @@ export async function POST(req: NextRequest) {
     if (pay.status !== 'paid') return NextResponse.json({ error: 'Only paid payments can be refunded' }, { status: 400 })
 
     const { data: company } = await db.from('companies').select('*').eq('id', companyId).maybeSingle()
-    const useOwnKeys = company?.stripe_mode === 'keys' && company?.stripe_secret_key
-    const key = useOwnKeys ? company.stripe_secret_key : process.env.STRIPE_SECRET_KEY
+    const ownKey = await stripeSecretFor(company)
+    const useOwnKeys = !!ownKey
+    const key = ownKey || process.env.STRIPE_SECRET_KEY
     if (!key) return NextResponse.json({ error: 'Stripe not configured' }, { status: 400 })
     const s = new Stripe(String(key).trim(), { apiVersion: '2024-06-20' as any })
     const acct: any = useOwnKeys ? undefined : (company?.stripe_account_id ? { stripeAccount: company.stripe_account_id } : undefined)

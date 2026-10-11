@@ -99,7 +99,7 @@ export async function POST(req: NextRequest) {
 
     if (body.action === 'verify') {
       if ((b.status === 'pending' || b.status === 'expired') && b.stripe_session_id) {
-        const { s, connectOpts } = chatStripe(company)
+        const { s, connectOpts } = await chatStripe(company)
         const session: any = await s.checkout.sessions.retrieve(b.stripe_session_id, { expand: ['payment_intent.latest_charge'] } as any, connectOpts)
         if (session?.payment_status === 'paid') await settleBookingPayment(db, b.id, session, origin)
       }

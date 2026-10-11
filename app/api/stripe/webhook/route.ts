@@ -5,6 +5,7 @@ import { logWebhookEvent } from '@/lib/webhook-log'
 import { confirmChatPayment } from '@/lib/chat-payment-confirm'
 import { internalPlanForTier } from '@/lib/plan'
 import { BRANDING_ADDON, setBrandingAddon } from '@/lib/branding-addon'
+import { stripeSecretFor } from '@/lib/company-secrets'
 
 const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || ''
 
@@ -56,8 +57,9 @@ export async function POST(req: NextRequest) {
             const setupIntentId = session.setup_intent as string
             if (setupIntentId) {
               const { data: company } = await (supabase as any).from('companies').select('*').eq('id', meta.companyId).maybeSingle()
-              const useOwnKeys = company?.stripe_mode === 'keys' && company?.stripe_secret_key
-              const key = useOwnKeys ? company.stripe_secret_key : process.env.STRIPE_SECRET_KEY
+              const ownKey = await stripeSecretFor(company)
+              const useOwnKeys = !!ownKey
+              const key = ownKey || process.env.STRIPE_SECRET_KEY
               const sc = new (require('stripe'))(String(key).trim(), { apiVersion: '2024-06-20' })
               const opts = useOwnKeys ? undefined : (company?.stripe_account_id ? { stripeAccount: company.stripe_account_id } : undefined)
 

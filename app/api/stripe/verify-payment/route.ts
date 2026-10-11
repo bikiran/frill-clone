@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import Stripe from 'stripe'
 import { confirmChatPayment } from '@/lib/chat-payment-confirm'
+import { stripeSecretFor } from '@/lib/company-secrets'
 
 export const dynamic = 'force-dynamic'
 
@@ -44,8 +45,9 @@ export async function POST(req: NextRequest) {
     for (const pay of pending) {
       try {
         const { data: company } = await db.from('companies').select('*').eq('id', pay.company_id).maybeSingle()
-        const useOwnKeys = company?.stripe_mode === 'keys' && company?.stripe_secret_key
-        const key = useOwnKeys ? company.stripe_secret_key : process.env.STRIPE_SECRET_KEY
+        const ownKey = await stripeSecretFor(company)
+        const useOwnKeys = !!ownKey
+        const key = ownKey || process.env.STRIPE_SECRET_KEY
         if (!key) { results.push({ id: pay.id, error: 'No Stripe key' }); continue }
 
         const s = new Stripe(String(key).trim(), { apiVersion: '2024-06-20' as any })
