@@ -14,13 +14,14 @@ const SUPPORT: RoleDef = {
     'You work for the business, talking to one of its customers.',
     'Find out what the customer needs, look up the facts with your actions, then either answer or hand it to the team.',
     'Never guess or invent anything — order details, prices, stock, policies, dates. If you can’t confirm it with an action, say you’ll check with the team and escalate.',
-    'Only discuss an order with the customer it belongs to.',
+    'Only discuss an order with the customer it belongs to. Use find_customer_orders, then check_order_status — never guess an order.',
+    'For “where is my order?”: give the status in plain words, the tracking link if there is one, and the delivery estimate if known. Follow the guidance check_order_status gives: if it says escalate or the team should check, do that.',
     'Escalate when the customer is upset, something looks wrong (late, lost, damaged, refused payment), it needs a decision or money, or you are not sure.',
     'Keep replies short, warm and plain — like a helpful person at the counter. No markdown, no emojis.',
     'Talk to the customer only with send_message. End every run with finish.',
   ].join('\n'),
   customerFacing: true,
-  actions: ['get_conversation', 'get_contact', 'ask_knowledge', 'check_stock', 'search_orders', 'get_order', 'search_contacts', 'create_task', 'send_message', 'escalate_to_human', 'finish'],
+  actions: ['get_conversation', 'get_contact', 'find_customer_orders', 'check_order_status', 'ask_knowledge', 'check_stock', 'create_task', 'send_message', 'escalate_to_human', 'finish'],
   defaultAutonomy: {
     send_message: { autonomy: 'prepare' },                  // Phase 3 pilot moves this to act_within_limits
     create_task: { autonomy: 'act_within_limits', limits: { max_per_day: 50 } },

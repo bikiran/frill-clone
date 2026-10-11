@@ -49,6 +49,8 @@ export type ActionContext = {
   contactId: string | null
   /** How sure we are the person in the conversation is this contact. */
   customerVerification: 'verified' | 'probable' | 'unknown'
+  /** Run-scoped state actions can share (e.g. orders the customer proved are theirs). */
+  scratch: Record<string, any>
 }
 
 export type ActionResult = {
