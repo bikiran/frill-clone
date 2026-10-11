@@ -5138,6 +5138,10 @@ export default function InboxPage() {
       return
     }
 
+    // The database gives a conversation without an outlet its assignee's home
+    // outlet (COLVY_V349); pick that up straight away.
+    const row = data[0]
+    if (row?.assigned_location_id) setSelected(s => s && s.id === row.id ? ({ ...s, assigned_location_id: row.assigned_location_id, assigned_auto: row.assigned_auto } as any) : s)
     logEvent('assigned', `Auto-assigned to ${me} on first reply`)
     showToast(`Assigned to you`)
     loadConversations()
