@@ -124,21 +124,33 @@ DO $$
 DECLARE
   g RECORD;
   cond TEXT;
+  col_type TEXT;
 BEGIN
   FOR g IN SELECT * FROM _v347_gates LOOP
     -- Only tables that exist here and carry a workspace column.
-    IF NOT EXISTS (
-      SELECT 1 FROM information_schema.columns
-       WHERE table_schema = 'public' AND table_name = g.tbl AND column_name = 'company_id'
-    ) THEN
+    SELECT data_type INTO col_type FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = g.tbl AND column_name = 'company_id';
+    IF col_type IS NULL THEN
       RAISE NOTICE 'skipped % (no table or no company_id)', g.tbl;
       CONTINUE;
     END IF;
 
-    cond := format(
-      '(company_id IS NULL OR company_id IN (SELECT feature_companies(%L::text[])) OR company_id NOT IN (SELECT member_companies()))',
-      g.features
-    );
+    -- company_id is a uuid on most tables but text on a few (e.g.
+    -- conversation_pins): compare like with like.
+    IF col_type = 'uuid' THEN
+      cond := format(
+        '(company_id IS NULL OR company_id IN (SELECT feature_companies(%L::text[])) OR company_id NOT IN (SELECT member_companies()))',
+        g.features
+      );
+    ELSIF col_type IN ('text', 'character varying') THEN
+      cond := format(
+        '(company_id IS NULL OR company_id IN (SELECT f::text FROM feature_companies(%L::text[]) f) OR company_id NOT IN (SELECT m::text FROM member_companies() m))',
+        g.features
+      );
+    ELSE
+      RAISE NOTICE 'skipped % (company_id is %, not uuid or text)', g.tbl, col_type;
+      CONTINUE;
+    END IF;
 
     EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', g.tbl);
 
