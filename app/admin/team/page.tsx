@@ -8,7 +8,7 @@ import { supabase } from '@/lib/supabase'
 import ConfirmModal from '@/components/ConfirmModal'
 import { SkeletonList } from '@/components/Skeleton'
 import PageHeader from '@/components/PageHeader'
-import { PERMISSION_SUITES, ALL_FEATURE_KEYS } from '@/lib/permissions'
+import { PERMISSION_SUITES, ALL_FEATURE_KEYS, restrictedDefault } from '@/lib/permissions'
 
 
 export default function TeamPage() {
@@ -99,10 +99,10 @@ export default function TeamPage() {
   const openPermissions = (m: any) => {
     const existing = m.permissions && typeof m.permissions === 'object' ? m.permissions : null
     const draft: Record<string, boolean> = {}
-    // Default every feature ON when the member has no map yet (so opening the
-    // editor shows their current effective access — full — and you switch things
-    // off from there).
-    for (const key of ALL_FEATURE_KEYS) draft[key] = existing ? existing[key] !== false : true
+    // Show what actually applies: everything ON when the member has no map yet
+    // (full access); otherwise their saved choices, with features the map doesn't
+    // mention yet at their restricted default (new pages start hidden).
+    for (const key of ALL_FEATURE_KEYS) draft[key] = existing ? (key in existing ? existing[key] !== false : restrictedDefault(key)) : true
     setPermDraft(draft)
     setPermMember(m)
   }

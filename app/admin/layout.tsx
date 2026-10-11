@@ -1088,7 +1088,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         </nav>
 
         {/* Upgrade CTA — collapses to a single centred icon so its text can't
-            overflow the 60px rail and clip ("Upgrade / to Pro / Unloc…"). */}
+            overflow the 60px rail and clip ("Upgrade / to Pro / Unloc…").
+            Only for the people who run billing, and only when there's
+            something to upgrade to (not on a paid or Enterprise plan). */}
+        {hasFullAccess(myRole) && !['feedback', 'omnichannel', 'everything', 'enterprise', 'pro', 'business', 'growth', 'startup'].includes(String(company?.plan || '').toLowerCase()) && (
         <div style={{ padding: 12, borderTop: '1px solid var(--border)' }}>
           <Link href="/admin/billing"
             title={adminCollapsed ? 'Upgrade to Pro' : undefined}
@@ -1100,6 +1103,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             {!adminCollapsed && <p style={{ fontSize: 11, color: 'var(--slate)', marginTop: 2 }}>Unlock all features</p>}
           </Link>
         </div>
+        )}
       </aside>
 
       {/* Main content — offset by sidebar width on desktop, full width on mobile */}

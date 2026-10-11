@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { requireCompanyAccess } from '@/lib/company-access'
 import { computeSla, resolveSla } from '@/lib/ticket-sla'
 import { dayKey, startOfDay, callOutcome } from '@/lib/dashboard-time'
+import { ALL_FEATURE_KEYS, canUseFeature, hasFullAccess } from '@/lib/permissions'
 
 // GET /api/dashboard/summary?companyId=&tz=
 //
@@ -34,6 +35,27 @@ function validTz(tz: string | null): string {
 }
 
 const isTaskDone = (t: any) => (t.status ? t.status === 'done' : !!t.done)
+
+// What this member may see, from their Team permissions (lib/permissions). The
+// owner, admins and the platform super admin (who passed the access check
+// without being on the team) see everything.
+async function memberAccess(db: any, companyId: string, userId?: string): Promise<{ full: boolean; can: (k: string) => boolean }> {
+  const full = { full: true, can: () => true }
+  if (!userId) return full
+  try {
+    const [{ data: co }, { data: rowsData }] = await Promise.all([
+      db.from('companies').select('owner_id').eq('id', companyId).maybeSingle(),
+      db.from('team_members').select('*').eq('company_id', companyId).eq('user_id', userId).limit(1),
+    ])
+    if (co?.owner_id === userId) return full
+    const row = rowsData?.[0]
+    if (!row) return full
+    const role = String(row.role || 'viewer').toLowerCase()
+    if (hasFullAccess(role)) return full
+    const perms = row.permissions && typeof row.permissions === 'object' ? row.permissions : null
+    return { full: false, can: (k: string) => canUseFeature(role, perms, k) }
+  } catch { return { full: false, can: () => false } }
+}
 
 export async function GET(req: NextRequest) {
   const companyId = req.nextUrl.searchParams.get('companyId')
@@ -102,6 +124,8 @@ export async function GET(req: NextRequest) {
   ])
   const [access, results] = await Promise.all([accessP, dataP])
   if (!access.ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+  const who = await memberAccess(db, companyId, access.userId)
+  const can = who.can
   const [
     unread, unassigned, callsToday, awaiting, oldestAwaiting, tasks, tickets, company,
     reviewsToAnswer, lowReviewsToAnswer, waitlist, carts, bookingsToday,
@@ -161,39 +185,42 @@ export async function GET(req: NextRequest) {
 
   // ── Recent activity ────────────────────────────────────────────────────────
   const activity: any[] = []
-  for (const o of recentOrders) activity.push({ kind: 'order', at: o.created_at, title: `Order #${o.order_number || '—'}`, detail: [o.customer_name, o.total != null ? `$${Number(o.total).toFixed(2)}` : ''].filter(Boolean).join(' · '), href: '/admin/orders' })
-  for (const r of recentReviews) activity.push({ kind: 'review', at: r.review_created_at, title: `${r.star_rating ?? '—'}-star Google review`, detail: r.reviewer_name || '', rating: r.star_rating, href: `/admin/reviews?review=${r.id}` })
-  for (const w of recentWaitlist) activity.push({ kind: 'waitlist', at: w.created_at, title: 'Joined a waitlist', detail: [w.customer_name, w.item_name].filter(Boolean).join(' · '), href: '/admin/waitlists' })
-  for (const b of recentBookings) activity.push({ kind: 'booking', at: b.created_at, title: 'New booking', detail: [b.customer_name, b.service_name].filter(Boolean).join(' · '), href: '/admin/bookings' })
-  for (const i of recentIdeas) activity.push({ kind: 'idea', at: i.created_at, title: 'New idea', detail: [i.created_by_name, i.title].filter(Boolean).join(' · '), href: '/' })
+  if (can('orders')) for (const o of recentOrders) activity.push({ kind: 'order', at: o.created_at, title: `Order #${o.order_number || '—'}`, detail: [o.customer_name, o.total != null ? `$${Number(o.total).toFixed(2)}` : ''].filter(Boolean).join(' · '), href: '/admin/orders' })
+  if (can('reviews')) for (const r of recentReviews) activity.push({ kind: 'review', at: r.review_created_at, title: `${r.star_rating ?? '—'}-star Google review`, detail: r.reviewer_name || '', rating: r.star_rating, href: `/admin/reviews?review=${r.id}` })
+  if (can('waitlists')) for (const w of recentWaitlist) activity.push({ kind: 'waitlist', at: w.created_at, title: 'Joined a waitlist', detail: [w.customer_name, w.item_name].filter(Boolean).join(' · '), href: '/admin/waitlists' })
+  if (can('bookings')) for (const b of recentBookings) activity.push({ kind: 'booking', at: b.created_at, title: 'New booking', detail: [b.customer_name, b.service_name].filter(Boolean).join(' · '), href: '/admin/bookings' })
+  if (can('ideas')) for (const i of recentIdeas) activity.push({ kind: 'idea', at: i.created_at, title: 'New idea', detail: [i.created_by_name, i.title].filter(Boolean).join(' · '), href: '/' })
   activity.sort((a, b) => Date.parse(b.at || 0) - Date.parse(a.at || 0))
 
+  // Numbers for areas this member can't open are never sent, not just hidden.
+  const z = (k: string, v: any, off: any = 0) => (can(k) ? v : off)
   return NextResponse.json({
     tz, ms: Date.now() - started,
+    access: { full: who.full, features: Object.fromEntries(ALL_FEATURE_KEYS.map(k => [k, can(k)])) },
     attention: {
-      unread, unassigned,
-      missedCalls, voicemails, callsToday: callsToday.length,
-      awaiting, oldestDays,
-      overdueTasks: overdueTasks.length, dueToday: dueToday.length,
-      ticketsOverdue, ticketsSoon,
-      reviewsToAnswer, lowReviewsToAnswer,
-      waitlist,
-      carts: carts.length, cartValue: Math.round(cartValue * 100) / 100,
-      bookingsToday: bookingsToday.length,
+      unread: z('inbox', unread), unassigned: z('inbox', unassigned),
+      missedCalls: z('calls', missedCalls), voicemails: z('calls', voicemails), callsToday: z('calls', callsToday.length),
+      awaiting: z('orders', awaiting), oldestDays: z('orders', oldestDays, null),
+      overdueTasks: z('tasks', overdueTasks.length), dueToday: z('tasks', dueToday.length),
+      ticketsOverdue: z('tickets', ticketsOverdue), ticketsSoon: z('tickets', ticketsSoon),
+      reviewsToAnswer: z('reviews', reviewsToAnswer), lowReviewsToAnswer: z('reviews', lowReviewsToAnswer),
+      waitlist: z('waitlists', waitlist),
+      carts: z('orders', carts.length), cartValue: z('orders', Math.round(cartValue * 100) / 100),
+      bookingsToday: z('bookings', bookingsToday.length),
     },
     today: {
-      bookings: bookingsToday,
-      tasks: [...overdueTasks.map((t: any) => ({ ...t, overdue: true })), ...dueToday].slice(0, 8)
-        .map((t: any) => ({ id: t.id, text: t.text, due_date: t.due_date, assigned_to: t.assigned_to, overdue: !!t.overdue })),
+      bookings: z('bookings', bookingsToday, []),
+      tasks: z('tasks', [...overdueTasks.map((t: any) => ({ ...t, overdue: true })), ...dueToday].slice(0, 8)
+        .map((t: any) => ({ id: t.id, text: t.text, due_date: t.due_date, assigned_to: t.assigned_to, overdue: !!t.overdue })), []),
     },
     perf: {
-      revenue: { now: Math.round(sales.now.revenue * 100) / 100, prev: Math.round(sales.prev.revenue * 100) / 100 },
-      orders: { now: sales.now.orders, prev: sales.prev.orders },
-      aov: { now: sales.now.orders ? sales.now.revenue / sales.now.orders : 0, prev: sales.prev.orders ? sales.prev.revenue / sales.prev.orders : 0 },
-      conversations: { now: convNow, prev: convPrev },
-      calls: { now: callsNow, prev: callsPrev },
-      reviews: { now: rv.now.length, prev: rv.prev.length, avgNow: avg(rv.now), avgPrev: avg(rv.prev) },
-      daily,
+      revenue: z('orders', { now: Math.round(sales.now.revenue * 100) / 100, prev: Math.round(sales.prev.revenue * 100) / 100 }, { now: 0, prev: 0 }),
+      orders: z('orders', { now: sales.now.orders, prev: sales.prev.orders }, { now: 0, prev: 0 }),
+      aov: z('orders', { now: sales.now.orders ? sales.now.revenue / sales.now.orders : 0, prev: sales.prev.orders ? sales.prev.revenue / sales.prev.orders : 0 }, { now: 0, prev: 0 }),
+      conversations: z('inbox', { now: convNow, prev: convPrev }, { now: 0, prev: 0 }),
+      calls: z('calls', { now: callsNow, prev: callsPrev }, { now: 0, prev: 0 }),
+      reviews: z('reviews', { now: rv.now.length, prev: rv.prev.length, avgNow: avg(rv.now), avgPrev: avg(rv.prev) }, { now: 0, prev: 0, avgNow: null, avgPrev: null }),
+      daily: z('orders', daily, []),
     },
     activity: activity.slice(0, 10),
   })
