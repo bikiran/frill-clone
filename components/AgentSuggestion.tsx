@@ -55,9 +55,14 @@ export function SuggestionCard({ s, companyId, onDone, compact }: { s: Suggestio
 
 export default function AgentSuggestion({ companyId, conversationId, onChange }: { companyId: string | null; conversationId: string | null; onChange?: () => void }) {
   const [items, setItems] = useState<Suggestion[]>([])
-  const [done, setDone] = useState<Set<string>>(new Set())
+  const [done, setDone] = useState<Set<string>>(() => new Set())
   const convRef = useRef(conversationId)
   convRef.current = conversationId
+  // The parent passes a fresh onChange every render. Keep it out of the deps,
+  // or each inbox re-render would clear and refetch the card (it flickers).
+  const onChangeRef = useRef(onChange)
+  onChangeRef.current = onChange
+  const shownRef = useRef('')
 
   const load = useCallback(async () => {
     if (!companyId || !conversationId) { setItems([]); return }
@@ -66,16 +71,18 @@ export default function AgentSuggestion({ companyId, conversationId, onChange }:
       if (!r.ok) return
       const d = await r.json()
       if (convRef.current !== conversationId) return
-      const next = (d.approvals || []).filter((a: Suggestion) => a.action_key === 'send_message')
-      setItems(prev => {
-        if (next.length !== prev.length) setTimeout(() => onChange?.(), 60)
-        return next
-      })
+      const next: Suggestion[] = (d.approvals || []).filter((a: Suggestion) => a.action_key === 'send_message')
+      const ids = next.map(a => a.id).join(',')
+      if (ids === shownRef.current) return   // nothing new: leave the card alone
+      const grew = next.some(a => !shownRef.current.split(',').includes(a.id))
+      shownRef.current = ids
+      setItems(next)
+      if (grew) setTimeout(() => onChangeRef.current?.(), 60)
     } catch {}
-  }, [companyId, conversationId, onChange])
+  }, [companyId, conversationId])
 
   useEffect(() => {
-    setItems([]); load()
+    setItems([]); shownRef.current = ''; load()
     if (!companyId || !conversationId) return
     // Runs finish a few seconds after a message arrives — check while open.
     const iv = setInterval(load, 8000)
