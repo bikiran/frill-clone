@@ -117,9 +117,9 @@ function systemPrompt(role: RoleDef, companyName: string, businessText: string, 
   ].join('\n\n')
 }
 
-function firstMessage(run: any, timezone = 'Australia/Melbourne'): string {
+function firstMessage(run: any, timezone = 'Australia/Melbourne', role?: RoleDef): string {
   const msg = String(run.input?.message || '').trim()
-  const lines = [
+  const lines = role?.opener ? [role.opener(run)] : [
     run.trigger_type === 'inbound_message' || run.trigger_type === 'sandbox' ? 'A customer has sent a message.' : `New ${run.trigger_type.replace(/_/g, ' ')}.`,
     run.conversation_id ? 'It is part of an existing conversation — use get_conversation for the history.' : 'There is no conversation history.',
   ]
@@ -166,7 +166,7 @@ export async function runAgent(db: any, runId: string, deadline: number, model: 
       conversationId: run.conversation_id || null, contactId: run.contact_id || pack.contactId,
       customerVerification: pack.verification,
       // startedAt: "has a person replied since?" checks before acting alone.
-      scratch: { startedAt: run.created_at || nowIso() },
+      scratch: { startedAt: run.created_at || nowIso(), runInput: run.input || {} },
     }
     const policies = await loadPolicies(db, run.company_id)
     const pausedNow = async () => run.mode === 'live' && (await agentsPaused(db, run.company_id)).paused
@@ -176,7 +176,7 @@ export async function runAgent(db: any, runId: string, deadline: number, model: 
     if (!actions.find(a => a.key === 'finish')) actions.push(FINISH_ACTION)
     const tools = actions.map(toolSpec)
     const system = systemPrompt(role, actx.companyName, pack.businessText, pack.customerText, pack.timezone, pack.toneText)
-    const messages: NeutralMessage[] = [{ role: 'user', content: [{ type: 'text', text: firstMessage(run, pack.timezone) }] }]
+    const messages: NeutralMessage[] = [{ role: 'user', content: [{ type: 'text', text: firstMessage(run, pack.timezone, role) }] }]
 
     let tokensIn = Number(run.tokens_in) || 0, tokensOut = Number(run.tokens_out) || 0, modelName = run.model || null
     let finished: any = null

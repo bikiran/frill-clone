@@ -44,7 +44,7 @@ export async function POST(req: NextRequest) {
   const roleKey = String(body.roleKey || 'support')
   if (!ROLES[roleKey]) return NextResponse.json({ error: 'Unknown agent role.' }, { status: 400 })
   const message = String(body.message || '').trim().slice(0, 4000)
-  if (!message) return NextResponse.json({ error: 'Type a customer message to try.' }, { status: 400 })
+  if (!message) return NextResponse.json({ error: roleKey === 'reputation' ? 'Type a review to try.' : 'Type a customer message to try.' }, { status: 400 })
   if (!process.env.ANTHROPIC_API_KEY) return NextResponse.json({ error: 'AI is not configured.' }, { status: 503 })
 
   const guard = await guardAiRequest(req, companyId, 'agent_sandbox', false)
@@ -56,7 +56,11 @@ export async function POST(req: NextRequest) {
     if (!conv) conversationId = null
   }
   try {
-    const { runId } = await enqueueRun(db, { type: 'sandbox', mode: 'sandbox', companyId, roleKey, conversationId, actorUserId: userId || null, input: { message } })
+    // The Reputation Agent tries out on a made-up review: stars + text.
+    const input = roleKey === 'reputation'
+      ? { kind: 'review', message, rating: Math.min(5, Math.max(1, Math.round(Number(body.rating) || 5))), reviewer: String(body.reviewer || 'Sam').slice(0, 60) }
+      : { message }
+    const { runId } = await enqueueRun(db, { type: 'sandbox', mode: 'sandbox', companyId, roleKey, conversationId: roleKey === 'reputation' ? null : conversationId, actorUserId: userId || null, input })
     after(async () => { try { await runAgent(agentDb(), runId, Date.now() + 240_000) } catch {} })
     return NextResponse.json({ runId })
   } catch (e: any) {

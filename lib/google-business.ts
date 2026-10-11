@@ -306,6 +306,12 @@ export async function syncReviews(companyId: string, opts: { deadline?: number }
     if (recent.length) await notifyNewReviews(db, companyId, recent)
   } catch { /* non-fatal */ }
 
+  // The Reputation Agent drafts a reply to each new review (if switched on).
+  try {
+    const { startReputationAgentForReviews } = await import('@/lib/agent/reputation')
+    await startReputationAgentForReviews(db, companyId, newReviews.map(({ _match, ...r }: any) => r))
+  } catch { /* non-fatal */ }
+
   // Round the average here so every consumer shows 4.6★, not 4.599999…★.
   const avgRounded = averageRating != null ? Math.round(Number(averageRating) * 10) / 10 : null
   if (pageToken) partial = true   // stopped paging early for time

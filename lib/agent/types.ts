@@ -94,6 +94,8 @@ export type PolicyLimits = {
   topics?: string[]
   /** send_message: at most this many on its own per conversation per hour. */
   max_per_conversation_per_hour?: number
+  /** reply_to_review: only reviews with at least this many stars on its own. */
+  min_rating?: number
 }
 
 export type Decision = {
@@ -113,6 +115,8 @@ export interface RoleDef {
   customerFacing: boolean
   actions: string[]
   defaultAutonomy: Record<string, { autonomy: Autonomy; limits?: PolicyLimits }>
+  /** How a run starts, in the agent's first message (default: a customer message). */
+  opener?: (run: any) => string
   modelTier: 'fast' | 'smart'
   maxSteps: number
 }

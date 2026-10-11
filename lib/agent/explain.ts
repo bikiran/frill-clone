@@ -13,6 +13,7 @@ const LABEL: Record<string, string> = {
   check_stock: 'Checked stock', find_customer_orders: 'Found the customer’s orders', check_order_status: 'Checked order tracking',
   get_business_hours: 'Checked opening hours', create_task: 'Created a task', send_message: 'Replied to the customer',
   escalate_to_human: 'Handed it to the team', search_orders: 'Searched orders', get_order: 'Looked up an order',
+  get_review: 'Read the review', reply_to_review: 'Replied to the review',
   auto_reply: 'Replied to the customer', issue_coupon: 'Issued a coupon', start_doa_claim: 'Started a dead-on-arrival claim', create_draft_order: 'Created a draft order',
 }
 
@@ -42,7 +43,8 @@ function detailFor(action: string | null, input: any, output: any): string | nul
   const o = output || {}
   if (o.error) return clip(o.error)
   switch (action) {
-    case 'send_message': case 'auto_reply': return input?.text ? clip(input.text, 400) : null
+    case 'send_message': case 'auto_reply': case 'reply_to_review': return input?.text ? clip(input.text, 400) : null
+    case 'get_review': return o.stars != null || o.wrote ? clip(`${o.stars ?? '?'}★ from ${o.reviewer || 'a customer'}: “${o.wrote || ''}”`, 260) : null
     case 'escalate_to_human': return input?.message_for_team ? clip(input.message_for_team) : null
     case 'create_task': return input?.title ? clip(input.title) : null
     case 'check_order_status': {
@@ -87,12 +89,12 @@ export async function explainRun(db: any, companyId: string, runId: string): Pro
   for (const s of (rows || []) as any[]) {
     if (s.kind === 'model' || s.kind === 'context' || s.kind === 'finish') continue
     if (s.kind === 'action' && ['get_conversation', 'get_contact'].includes(s.action_key) && s.status === 'ok') continue  // routine reads
-    const sentAlone = s.kind === 'action' && (s.action_key === 'send_message' || s.action_key === 'auto_reply') && s.decision === 'allowed' && s.status === 'ok'
+    const sentAlone = s.kind === 'action' && ['send_message', 'auto_reply', 'reply_to_review'].includes(s.action_key) && s.decision === 'allowed' && s.status === 'ok'
     steps.push({
       kind: s.kind,
       action: s.action_key || null,
       label: s.kind === 'approval'
-        ? (s.decision === 'denied' ? 'Dismissed by the team' : String(s.decision_reason || '').includes('edited') ? 'Edited and sent by the team' : 'Approved and sent by the team')
+        ? (s.decision === 'denied' ? 'Dismissed by the team' : String(s.decision_reason || '').includes('edited') ? `Edited and ${s.action_key === 'reply_to_review' ? 'posted' : 'sent'} by the team` : `Approved and ${s.action_key === 'reply_to_review' ? 'posted' : 'sent'} by the team`)
         : s.kind === 'error' ? 'Stopped' : (LABEL[s.action_key] || String(s.action_key || s.kind).replace(/_/g, ' ')),
       decision: sentAlone ? 'sent_alone' : s.decision || null,
       decisionReason: s.decision_reason || null,

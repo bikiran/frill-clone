@@ -128,3 +128,30 @@ export async function autoSentToday(db: any, companyId: string): Promise<number>
     return count || 0
   } catch { return 0 }
 }
+
+// ── Reputation Agent: reply to good reviews on its own ───────────────────────
+
+export type ReviewAuto = { enabled: boolean; min_rating: number; max_per_day: number }
+export const DEFAULT_REVIEW_AUTO: ReviewAuto = { enabled: false, min_rating: 4, max_per_day: 20 }
+
+export function cleanReviewAuto(raw: any): ReviewAuto {
+  return {
+    enabled: !!raw?.enabled,
+    min_rating: Number(raw?.min_rating) === 5 ? 5 : 4,
+    max_per_day: clampInt(raw?.max_per_day, 1, 200, DEFAULT_REVIEW_AUTO.max_per_day),
+  }
+}
+
+export async function getReviewAuto(db: any, companyId: string): Promise<ReviewAuto> {
+  try {
+    const { data } = await db.from('agent_policies').select('autonomy, limits').eq('company_id', companyId).eq('role_key', 'reputation').eq('action_key', 'reply_to_review').limit(1)
+    const row = data?.[0]
+    return row ? cleanReviewAuto({ ...DEFAULT_REVIEW_AUTO, ...(row.limits || {}), enabled: row.autonomy === 'act_within_limits' }) : { ...DEFAULT_REVIEW_AUTO }
+  } catch { return { ...DEFAULT_REVIEW_AUTO } }
+}
+
+export async function setReviewAuto(db: any, companyId: string, raw: any, userId: string | null): Promise<ReviewAuto> {
+  const s = cleanReviewAuto(raw)
+  await putPolicy(db, { company_id: companyId, role_key: 'reputation', action_key: 'reply_to_review', autonomy: s.enabled ? 'act_within_limits' : 'prepare', limits: { min_rating: s.min_rating, max_per_day: s.max_per_day }, updated_by: userId })
+  return s
+}
