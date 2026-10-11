@@ -9,6 +9,7 @@ import IdeaDetailModal from '@/components/IdeaDetailModal'
 import Link from 'next/link'
 import { toggleEngagement, fetchEngagedIdeaIds } from '@/lib/engagement'
 import { notifyIntegrations } from '@/lib/integrations-notify'
+import { useTerminology } from '@/lib/terminologyContext'
 
 async function getCompanyId(): Promise<string | null> {
   if (typeof window === 'undefined') return null
@@ -68,6 +69,9 @@ const FilterIcon = ({ type }: { type: string }) => {
 }
 
 export default function HomePage() {
+  const { getTerm } = useTerminology()
+  const plural = getTerm('idea_plural')
+  const cap = (w: string) => w.charAt(0).toUpperCase() + w.slice(1)
   // admin.colvy.com is the platform super-admin panel — route straight to it.
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -575,8 +579,8 @@ export default function HomePage() {
 
   const SORT_OPTIONS = [
     { key: 'trending', label: 'Trending' },
-    { key: 'latest', label: 'Latest Ideas' },
-    { key: 'oldest', label: 'Oldest Ideas' },
+    { key: 'latest', label: `Latest ${cap(plural)}` },
+    { key: 'oldest', label: `Oldest ${cap(plural)}` },
     { key: 'most_votes', label: 'Most votes' },
     { key: 'least_votes', label: 'Least votes' },
     { key: 'highest_priority', label: 'Highest priority' },
@@ -608,7 +612,7 @@ export default function HomePage() {
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-xs font-bold uppercase tracking-widest flex items-center gap-1.5" style={{ color: 'var(--slate)' }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>
-              Statuses
+              {getTerm('statuses_heading')}
             </h3>
             <div className="flex items-center gap-1">
               {isCompanyAdmin && (
@@ -666,7 +670,7 @@ export default function HomePage() {
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-xs font-bold uppercase tracking-widest flex items-center gap-1.5" style={{ color: 'var(--slate)' }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="4" y1="9" x2="20" y2="9" /><line x1="4" y1="15" x2="20" y2="15" /><line x1="10" y1="3" x2="8" y2="21" /><line x1="16" y1="3" x2="14" y2="21" /></svg>
-              Topics
+              {getTerm('topics_heading')}
             </h3>
             {isCompanyAdmin && (
               <Link href="/admin/topics" className="text-xs px-2 py-1 rounded transition-smooth hover:bg-gray-100 flex items-center gap-1" style={{ color: 'var(--slate)' }} title="Manage topics">
@@ -740,17 +744,17 @@ export default function HomePage() {
           <div className="flex items-center justify-between mb-6 gap-4 flex-wrap">
             <div className="flex-1 min-w-0">
               <h1 className="text-2xl md:text-3xl font-bold mb-1" style={{ color: 'var(--ink)' }}>
-                Ideas
+                {getTerm('ideas_title')}
               </h1>
               <p className="text-sm md:text-base" style={{ color: 'var(--slate)' }}>
-                {filtered.length} idea{filtered.length !== 1 ? 's' : ''} total
+                {filtered.length} {filtered.length === 1 ? getTerm('idea_singular') : plural} total
               </p>
             </div>
             <button
               onClick={() => setShowModal(true)}
               className="px-6 py-3 rounded-xl font-semibold text-white transition-smooth press-effect futuristic-btn shrink-0"
               style={{ background: 'var(--coral)' }}>
-              + Submit Idea
+              + {getTerm('submit_idea')}
             </button>
           </div>
 
@@ -765,7 +769,7 @@ export default function HomePage() {
                 type="text"
                 value={search}
                 onChange={e => setSearch(e.target.value)}
-                placeholder={search === '' ? placeholderText : 'Search ideas...'}
+                placeholder={search === '' ? placeholderText : `Search ${plural}...`}
                 className="w-full pl-10 pr-4 py-3 border rounded-xl text-sm focus:outline-none transition-smooth"
                 style={{ borderColor: search ? 'var(--coral)' : 'var(--border)', fontSize: '16px' }}
               />
@@ -901,10 +905,10 @@ export default function HomePage() {
             <div className="text-center py-16">
               <div className="text-5xl mb-4">🚀</div>
               <h3 className="text-lg font-semibold mb-2" style={{ color: 'var(--ink)' }}>
-                No ideas yet
+                No {plural} yet
               </h3>
               <p style={{ color: 'var(--slate)' }} className="mb-6">
-                Be the first to share an idea!
+                Be the first to add one!
               </p>
               <button
                 onClick={() => setShowModal(true)}

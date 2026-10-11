@@ -178,7 +178,7 @@ const SEARCH_EXTRAS: SearchItem[] = [
   { label: 'Statuses', href: '/admin/statuses', section: 'Settings' },
   { label: 'Topics', href: '/admin/topics', section: 'Settings' },
   { label: 'Priorities', href: '/admin/priorities', section: 'Settings' },
-  { label: 'Terminology', href: '/admin/terminology', section: 'Settings', keywords: 'wording labels rename' },
+  { label: 'Terminology', href: '/admin/settings#terminology', section: 'Settings', keywords: 'wording labels rename words' },
   { label: 'Audit logs', href: '/admin/settings/audit-logs', section: 'Settings', keywords: 'security history' },
 ]
 

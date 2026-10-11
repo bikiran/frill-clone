@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { cleanTerms } from '@/lib/terminology'
 import { log } from '@/lib/log'
 import { createClient } from '@supabase/supabase-js'
 import { effectivePlan, companyHasFeature } from '@/lib/plan'
@@ -119,6 +120,7 @@ export async function GET(req: NextRequest) {
 
     // Widget tab visibility + order (saved in site_settings 'general').
     let widgetTabs: any = null
+    let terms: Record<string, string> = {}
     let hidePoweredBySetting = false
     try {
       const { data: ss } = await (supabase as any).from('site_settings').select('value').eq('key', 'general').eq('company_id', company.id).order('updated_at', { ascending: false }).limit(1)
@@ -131,6 +133,8 @@ export async function GET(req: NextRequest) {
         chat: v.widgetChat !== false,
         order: v.widgetOrder || null,
       }
+      // The workspace's wording (Settings → Terminology) for the tab labels.
+      terms = cleanTerms(v.termValues)
       // Branding-removal plans hide the badge unless the workspace chose to
       // show it (lib/branding has the same rule for the other public pages).
       hidePoweredBySetting = v.showPoweredBy !== true
@@ -163,6 +167,7 @@ export async function GET(req: NextRequest) {
     const responseData = {
       company: companyOut,
       widgetTabs,
+      terms,
       ideas: (ideasRes.data || []).filter(visibleAt),
       announcements: (annRes.data || []).filter(visibleAt),
       forms: formsRes.data || [],

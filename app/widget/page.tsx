@@ -2,6 +2,7 @@
 
 
 import { authFetch } from '@/lib/auth-fetch'
+import { termFor } from '@/lib/terminology'
 import React, { useState, useEffect, useRef } from 'react'
 import { StatusMark } from '@/components/StatusMark'
 import { compressImage, uploadDirect } from '@/lib/upload-attachment'
@@ -95,6 +96,7 @@ function WidgetContent() {
   const [selectedItem, setSelectedItem] = useState<{ type: 'idea' | 'announcement' | 'help'; id: string } | null>(null)
   const [company, setCompany] = useState<any>(null)
   const [widgetTabs, setWidgetTabs] = useState<any>(null)
+  const [terms, setTerms] = useState<Record<string, string>>({})
   // Online booking services (the Book tab shows only when there are some).
   const [bookServices, setBookServices] = useState<any[]>([])
   useEffect(() => {
@@ -457,6 +459,7 @@ function WidgetContent() {
         
         setCompany(data.company)
         setWidgetTabs(data.widgetTabs || null)
+        if (data.terms && typeof data.terms === 'object') setTerms(data.terms)
         // Open on the FIRST tab in the configured order (respects Chat-first, etc).
         if (data.widgetTabs) {
           const wt = data.widgetTabs
@@ -2425,7 +2428,7 @@ function WidgetContent() {
                 {t === 'book' && <><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></>}
               </svg>
               <span style={{ fontSize: 10, fontWeight: isActive ? 700 : 500, textTransform: 'capitalize', lineHeight: 1 }}>
-                {t === 'updates' ? 'Updates' : t === 'help' ? 'Help' : t.charAt(0).toUpperCase() + t.slice(1)}
+                {({ feedback: termFor(terms, 'widget_feedback'), chat: termFor(terms, 'widget_chat'), roadmap: termFor(terms, 'nav_roadmap'), updates: termFor(terms, 'nav_updates'), help: termFor(terms, 'nav_help') } as Record<string, string>)[t] || t.charAt(0).toUpperCase() + t.slice(1)}
               </span>
             </button>
           )
