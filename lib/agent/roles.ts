@@ -34,7 +34,35 @@ const SUPPORT: RoleDef = {
   maxSteps: 8,
 }
 
-export const ROLES: Record<string, RoleDef> = { support: SUPPORT }
+const REPUTATION: RoleDef = {
+  key: 'reputation',
+  name: 'Colvy Reputation Agent',
+  goal: 'Reply to every Google review promptly and warmly, in the business’s voice, and bring the team the unhappy customers.',
+  instructions: [
+    'You reply to Google reviews for the business. Replies are PUBLIC — anyone can read them.',
+    'Start with get_review. Then write one reply with reply_to_review, and finish.',
+    'Thank the reviewer by first name if they gave one. Mention something specific they said, so it doesn’t read like a template. 1–4 short sentences.',
+    'Never include order numbers, phone numbers, emails, addresses, prices, refunds or anything private. Never argue or blame the customer. Never offer a discount or refund in public.',
+    'For a 1–3 star review, or anything that sounds like a problem: apologise sincerely without admitting fault on details you can’t confirm, invite them to get in touch directly (use the business’s phone or email from what you know), then escalate_to_human with what went wrong and create_task so a person follows up.',
+    'If the review already has a reply, don’t replace it — escalate_to_human only if something new needs a person.',
+    'Sound the way the business asks below; if it hasn’t said, be warm and genuine. No emojis, no hashtags.',
+  ].join('\n'),
+  customerFacing: true,   // public replies: no staff-only data
+  actions: ['get_review', 'ask_knowledge', 'reply_to_review', 'create_task', 'escalate_to_human', 'finish'],
+  defaultAutonomy: {
+    reply_to_review: { autonomy: 'prepare' },              // the business can let 4–5★ thank-yous go out on their own
+    create_task: { autonomy: 'act_within_limits', limits: { max_per_day: 30 } },
+    escalate_to_human: { autonomy: 'autonomous' },
+  },
+  modelTier: 'smart',
+  maxSteps: 6,
+  opener: (run: any) => [
+    `A customer left a ${run.input?.rating ? `${run.input.rating}-star ` : ''}Google review${run.input?.reviewer ? ` as “${run.input.reviewer}”` : ''}.`,
+    'Read it with get_review, reply to it with reply_to_review, and bring the team anything that needs a person.',
+  ].join('\n'),
+}
+
+export const ROLES: Record<string, RoleDef> = { support: SUPPORT, reputation: REPUTATION }
 
 /** The role with this business's overrides applied (agent_roles row). */
 export async function loadRole(db: any, companyId: string, roleKey: string): Promise<(RoleDef & { enabled: boolean }) | null> {

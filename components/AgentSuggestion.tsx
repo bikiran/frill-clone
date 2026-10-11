@@ -17,6 +17,8 @@ export function SuggestionCard({ s, companyId, onDone, compact }: { s: Suggestio
   const [editing, setEditing] = useState(false)
   const [text, setText] = useState(String(s.args?.text || ''))
   const [busy, setBusy] = useState<'' | 'send' | 'dismiss'>('')
+  // A public reply to a Google review (Reputation Agent) or a message to a customer (Support Agent).
+  const isReview = s.action_key === 'reply_to_review'
   const [error, setError] = useState('')
 
   const decide = async (action: 'approve' | 'reject') => {
@@ -34,17 +36,17 @@ export function SuggestionCard({ s, companyId, onDone, compact }: { s: Suggestio
       <div className="agsg-head">
         <span className="agsg-orb"><Spark /></span>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <p className="agsg-t">Support Agent suggests a reply</p>
+          <p className="agsg-t">{isReview ? 'Reputation Agent drafted a reply' : 'Support Agent suggests a reply'}</p>
           {!compact && s.run?.summary && <p className="agsg-s">{s.run.summary}</p>}
         </div>
         <WhyLink companyId={companyId} runId={s.run_id} className="agsg-why" style={{ textDecoration: 'none' }} />
       </div>
       {editing
-        ? <textarea className="agsg-edit" value={text} onChange={e => setText(e.target.value)} rows={Math.min(8, Math.max(3, Math.ceil(text.length / 60)))} autoFocus aria-label="Edit the reply" />
+        ? <textarea className="agsg-edit" value={text} onChange={e => setText(e.target.value)} rows={Math.min(8, Math.max(3, Math.ceil(text.length / 60)))} autoFocus aria-label={isReview ? 'Edit the public reply' : 'Edit the reply'} />
         : <p className="agsg-text">{text}</p>}
       {error && <p className="agsg-err" role="alert">{error}</p>}
       <div className="agsg-actions">
-        <button type="button" className="agsg-send" onClick={() => decide('approve')} disabled={!!busy || !text.trim()}>{busy === 'send' ? 'Sending…' : editing ? 'Send edited' : 'Send'}</button>
+        <button type="button" className="agsg-send" onClick={() => decide('approve')} disabled={!!busy || !text.trim()}>{busy === 'send' ? (isReview ? 'Posting…' : 'Sending…') : editing ? (isReview ? 'Post edited' : 'Send edited') : (isReview ? 'Post reply' : 'Send')}</button>
         {!editing && <button type="button" className="agsg-btn" onClick={() => setEditing(true)} disabled={!!busy}>Edit</button>}
         <button type="button" className="agsg-btn" onClick={() => decide('reject')} disabled={!!busy}>{busy === 'dismiss' ? 'Dismissing…' : 'Dismiss'}</button>
       </div>

@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { peekCompanyUser, readCache, writeCache } from '@/lib/client-cache'
 import PageHeader from '@/components/PageHeader'
+import { SuggestionCard, type Suggestion } from '@/components/AgentSuggestion'
 
 type Review = {
   id: string
@@ -27,6 +28,19 @@ export default function ReviewsPage() {
   const seededReviews = seededCid ? readCache<Review[]>(`reviews:${seededCid}`) : undefined
   const [reviews, setReviews] = useState<Review[]>(seededReviews ?? [])
   const [companyId, setCompanyId] = useState<string | null>(seededCid)
+  // Replies the Reputation Agent drafted, waiting for a person (by Google review id).
+  const [drafts, setDrafts] = useState<Record<string, Suggestion>>({})
+  const loadDrafts = async (cid: string) => {
+    try {
+      const r = await authFetch(`/api/agent/approvals?companyId=${cid}`)
+      if (!r.ok) return
+      const d = await r.json()
+      const map: Record<string, Suggestion> = {}
+      for (const a of d.approvals || []) if (a.action_key === 'reply_to_review' && a.run?.input?.reviewId) map[a.run.input.reviewId] = a
+      setDrafts(map)
+    } catch {}
+  }
+  useEffect(() => { if (companyId) loadDrafts(companyId) }, [companyId])
   const [companyName, setCompanyName] = useState('')
   const [reviewLink, setReviewLink] = useState<string>('')
   const [savingLink, setSavingLink] = useState(false)
@@ -436,10 +450,18 @@ export default function ReviewsPage() {
                     <button onClick={() => postReply(review)} disabled={posting || !replyText.trim()} className="rv-btn rv-btn-primary">{posting ? 'Posting…' : 'Post reply'}</button>
                   </div>
                 </div>
+              ) : drafts[review.review_id] && companyId ? (
+                <div className="rv-agsg" style={{ marginTop: 12 }}>
+                  <style>{'.rv-agsg .agsg{max-width:none;margin-left:0}'}</style>
+                  <SuggestionCard s={drafts[review.review_id]} companyId={companyId} compact onDone={() => {
+                    setDrafts(d => { const n = { ...d }; delete n[review.review_id]; return n })
+                    setTimeout(() => { load(companyId); loadDrafts(companyId) }, 600)
+                  }} />
+                </div>
               ) : (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 12, flexWrap: 'wrap' }}>
                   <button onClick={() => draftReply(review)} disabled={drafting === review.id} className="rv-btn rv-btn-ai">
-                    <span>✨</span> {drafting === review.id ? 'Drafting…' : 'Generate AI Reply'}
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l1.6 5.3L19 9l-5.4 1.7L12 16l-1.6-5.3L5 9l5.4-1.7z" /></svg> {drafting === review.id ? 'Drafting…' : 'Generate AI Reply'}
                   </button>
                   <button onClick={() => { setReplyingTo(review.id); setReplyText('') }} className="rv-btn rv-btn-ghost">
                     Compose Reply

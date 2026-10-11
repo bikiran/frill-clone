@@ -3,6 +3,7 @@
 // (or the person's edit of them), never something re-generated.
 
 import { sendAgentMessage } from './send'
+import { postApprovedReviewReply } from './review-actions'
 
 export async function pendingApprovals(db: any, companyId: string, opts: { conversationId?: string | null; limit?: number } = {}) {
   let q = db.from('agent_approvals').select('id, run_id, action_key, args, status, created_at, expires_at').eq('company_id', companyId).eq('status', 'pending')
@@ -11,7 +12,7 @@ export async function pendingApprovals(db: any, companyId: string, opts: { conve
   let rows = (data || []).filter((a: any) => !a.expires_at || new Date(a.expires_at).getTime() > Date.now())
   if (!rows.length) return []
   const runIds = Array.from(new Set(rows.map((a: any) => a.run_id)))
-  const { data: runs } = await db.from('agent_runs').select('id, role_key, conversation_id, summary, intent, created_at').in('id', runIds)
+  const { data: runs } = await db.from('agent_runs').select('id, role_key, conversation_id, summary, intent, created_at, input').in('id', runIds)
   const byId = new Map((runs || []).map((r: any) => [r.id, r]))
   rows = rows.map((a: any) => ({ ...a, run: byId.get(a.run_id) || null }))
   if (opts.conversationId) rows = rows.filter((a: any) => a.run?.conversation_id === opts.conversationId)
@@ -82,20 +83,24 @@ export async function decideApproval(db: any, opts: {
     return { ok: true, status: 'rejected' }
   }
 
-  if (ap.action_key !== 'send_message') {
+  if (!['send_message', 'reply_to_review'].includes(ap.action_key)) {
     await db.from('agent_approvals').update({ status: 'failed', result: { error: 'Not supported yet' } }).eq('id', ap.id)
     return { ok: false, error: 'Approving this kind of action isn’t supported yet.' }
   }
   const original = String(ap.args?.text || '')
   const text = String(opts.text ?? original).trim()
   const edited = text !== original.trim()
-  const sent = await sendAgentMessage(db, { companyId: opts.companyId, conversationId: run.conversation_id, text, runId: run.id, approvedBy: opts.user, edited })
+  const isReview = ap.action_key === 'reply_to_review'
+  const sent: { ok: boolean; error?: string; channel?: string } = isReview
+    ? await postApprovedReviewReply(db, opts.companyId, run, text).then(r => ({ ...r, channel: r.ok ? 'google' : undefined }))
+    : await sendAgentMessage(db, { companyId: opts.companyId, conversationId: run.conversation_id, text, runId: run.id, approvedBy: opts.user, edited })
   await db.from('agent_approvals').update({ status: sent.ok ? (edited ? 'edited' : 'executed') : 'failed', result: sent.ok ? { channel: sent.channel, text, edited } : { error: sent.error } }).eq('id', ap.id)
+  const verb = isReview ? (edited ? 'edited and posted' : 'approved and posted') : (edited ? 'edited and sent' : 'approved and sent')
   await logStep(db, run, {
-    kind: 'approval', action_key: 'send_message', decision: 'allowed',
-    decision_reason: sent.ok ? `${who} ${edited ? 'edited and sent' : 'approved and sent'} it.` : `${who} approved it, but sending failed: ${sent.error}`,
+    kind: 'approval', action_key: ap.action_key, decision: 'allowed',
+    decision_reason: sent.ok ? `${who} ${verb} it.` : `${who} approved it, but ${isReview ? 'posting' : 'sending'} failed: ${sent.error}`,
     status: sent.ok ? 'ok' : 'error', input: { text, edited }, output: sent.ok ? { channel: sent.channel } : { error: sent.error },
-    entity_type: 'conversation', entity_id: run.conversation_id,
+    entity_type: isReview ? 'review' : 'conversation', entity_id: isReview ? (run.input?.reviewId || null) : run.conversation_id,
   })
   await settleRun(db, run)
   return sent.ok ? { ok: true, status: edited ? 'edited' : 'executed' } : { ok: false, error: sent.error }
