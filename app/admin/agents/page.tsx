@@ -29,11 +29,11 @@ type ReviewAuto = { enabled: boolean; min_rating: number; max_per_day: number }
 type AutoSend = { enabled: boolean; topics: string[]; max_per_day: number; max_per_conversation_per_hour: number; require_verified_customer: boolean }
 type Settings = {
   pause: { paused: boolean; byName?: string | null; at?: string | null; platform?: boolean }
-  autoSend: AutoSend; reviewAuto?: ReviewAuto; sentToday: number; waiting: number; topics: { key: string; label: string }[]
+  autoSend: AutoSend; receptionAuto?: AutoSend; reviewAuto?: ReviewAuto; sentToday: number; waiting: number; topics: { key: string; label: string }[]
 }
 type Waiting = Suggestion & { run?: any; conversation?: { id: string; channel: string | null; customer: string | null } | null }
 const TOPIC_SHORT: Record<string, string> = { opening_hours: 'opening hours', order_status: 'order status (when tracking looks normal)', stock: 'stock', store_info: 'things your knowledge covers' }
-const WHO: { key: string; label: string }[] = [{ key: '', label: 'Everything' }, { key: 'support', label: 'Support Agent' }, { key: 'reputation', label: 'Reputation' }, { key: 'colvy_ai', label: 'Auto-reply' }, { key: 'assistant', label: 'Assistant' }, { key: 'connected_app', label: 'Connected apps' }]
+const WHO: { key: string; label: string }[] = [{ key: '', label: 'Everything' }, { key: 'support', label: 'Support Agent' }, { key: 'reception', label: 'Reception' }, { key: 'reputation', label: 'Reputation' }, { key: 'colvy_ai', label: 'Auto-reply' }, { key: 'assistant', label: 'Assistant' }, { key: 'connected_app', label: 'Connected apps' }]
 const actorOf = (r: { role_key: string; actor?: string }) => r.actor || (r.role_key === 'support' ? 'Support Agent' : r.role_key)
 const CHANNEL: Record<string, string> = { sms: 'SMS', widget: 'Website chat', chat: 'Website chat' }
 
@@ -44,6 +44,7 @@ const ACTION_LABEL: Record<string, string> = {
   send_message: 'Reply to the customer', escalate_to_human: 'Hand to the team', finish: 'Finished',
   get_business_hours: 'Checked opening hours', find_customer_orders: 'Found the customer’s orders', check_order_status: 'Checked order tracking',
   get_review: 'Read the review', reply_to_review: 'Replied to the review',
+  list_services: 'Looked at your services', check_availability: 'Checked free times', find_my_bookings: 'Found the customer’s bookings', booking_link: 'Made a booking link', reschedule_booking: 'Move a booking', cancel_booking: 'Cancel a booking',
   auto_reply: 'Replied to the customer', issue_coupon: 'Issued a coupon', start_doa_claim: 'Started a dead-on-arrival claim', create_draft_order: 'Created a draft order',
 }
 const STATUS: Record<string, { label: string; tone: string }> = {
@@ -95,7 +96,7 @@ export default function AgentsPage() {
   const [selected, setSelected] = useState<string | null>(null)
   const [detail, setDetail] = useState<{ run: Run; steps: Step[]; approvals: any[] } | null>(null)
   const [message, setMessage] = useState('Where is my order?')
-  const [tryRole, setTryRole] = useState<'support' | 'reputation'>('support')
+  const [tryRole, setTryRole] = useState<'support' | 'reception' | 'reputation'>('support')
   const [tryRating, setTryRating] = useState(5)
   const [convs, setConvs] = useState<{ id: string; label: string }[]>([])
   const [convId, setConvId] = useState('')
@@ -110,17 +111,19 @@ export default function AgentsPage() {
   const [supportOn, setSupportOn] = useState<boolean | null>(null)
   // Reputation Agent switch: drafts replies to new Google reviews.
   const [repOn, setRepOn] = useState<boolean | null>(null)
+  // Reception Agent switch: booking talk on SMS / chat.
+  const [recOn, setRecOn] = useState<boolean | null>(null)
   const [savingRole, setSavingRole] = useState(false)
   useEffect(() => {
     if (!companyId) return
     authFetch(`/api/agent/roles?companyId=${companyId}`).then(r => r.json()).then(d => {
       const on = (k: string) => !!(d.roles || []).find((x: any) => x.key === k)?.enabled
-      setSupportOn(on('support')); setRepOn(on('reputation'))
+      setSupportOn(on('support')); setRepOn(on('reputation')); setRecOn(on('reception'))
     }).catch(() => {})
   }, [companyId])
-  const toggleRole = async (roleKey: 'support' | 'reputation') => {
-    const cur = roleKey === 'support' ? supportOn : repOn
-    const set = roleKey === 'support' ? setSupportOn : setRepOn
+  const toggleRole = async (roleKey: 'support' | 'reputation' | 'reception') => {
+    const cur = roleKey === 'support' ? supportOn : roleKey === 'reception' ? recOn : repOn
+    const set = roleKey === 'support' ? setSupportOn : roleKey === 'reception' ? setRecOn : setRepOn
     if (!companyId || cur == null) return
     const next = !cur
     setSavingRole(true); set(next); setError('')
@@ -144,7 +147,7 @@ export default function AgentsPage() {
   }, [companyId])
   const loadWaiting = useCallback(async () => {
     if (!companyId) return
-    try { const r = await authFetch(`/api/agent/approvals?companyId=${companyId}`); const d = await r.json(); if (r.ok) setWaiting((d.approvals || []).filter((a: Waiting) => a.action_key === 'send_message' || a.action_key === 'reply_to_review')) } catch {}
+    try { const r = await authFetch(`/api/agent/approvals?companyId=${companyId}`); const d = await r.json(); if (r.ok) setWaiting((d.approvals || []).filter((a: Waiting) => ['send_message', 'reply_to_review', 'reschedule_booking', 'cancel_booking'].includes(a.action_key))) } catch {}
   }, [companyId])
   useEffect(() => {
     loadSettings(); loadWaiting()
@@ -221,10 +224,10 @@ export default function AgentsPage() {
     if (!companyId || !message.trim()) return
     setBusy(true); setError('')
     try {
-      const r = await authFetch('/api/agent/runs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, roleKey: tryRole, message, rating: tryRating, conversationId: tryRole === 'support' ? convId || null : null }) })
+      const r = await authFetch('/api/agent/runs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, roleKey: tryRole, message, rating: tryRating, conversationId: tryRole !== 'reputation' ? convId || null : null }) })
       const d = await r.json()
       if (!r.ok || d.error) { setError(d.error || 'Couldn’t start the agent.'); return }
-      const stub: Run = { id: d.runId, role_key: tryRole, mode: 'sandbox', trigger_type: 'sandbox', status: 'queued', outcome: null, intent: null, summary: null, model: null, tokens_in: 0, tokens_out: 0, step_count: 0, created_at: new Date().toISOString(), finished_at: null, input: { message, rating: tryRole === 'reputation' ? tryRating : undefined }, conversation_id: tryRole === 'support' ? convId || null : null }
+      const stub: Run = { id: d.runId, role_key: tryRole, mode: 'sandbox', trigger_type: 'sandbox', status: 'queued', outcome: null, intent: null, summary: null, model: null, tokens_in: 0, tokens_out: 0, step_count: 0, created_at: new Date().toISOString(), finished_at: null, input: { message, rating: tryRole === 'reputation' ? tryRating : undefined }, conversation_id: tryRole !== 'reputation' ? convId || null : null }
       setRuns(rs => [stub, ...rs]); setSelected(d.runId)
     } catch { setError('Couldn’t reach Colvy. Check your connection and try again.') }
     finally { setBusy(false) }
@@ -278,6 +281,23 @@ export default function AgentsPage() {
         <div className="ag-card ag-fade" style={{ marginBottom: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 14, justifyContent: 'space-between' }}>
             <div style={{ minWidth: 0 }}>
+              <p className="ag-h">Reception Agent for bookings</p>
+              <p className="ag-p">Booking messages on SMS and chat — “can I book…”, “what times do you have…”, “can I move my appointment…” — go to the Reception Agent; everything else stays with the Support Agent. It checks free times, finds the customer’s bookings and sends booking or manage links. Moving or cancelling a booking always waits for you.</p>
+            </div>
+            <button type="button" role="switch" aria-checked={!!recOn} aria-label="Reception Agent for bookings" onClick={() => toggleRole('reception')} disabled={recOn == null || savingRole} className={`ag-switch ${recOn ? 'on' : ''}`}><span /></button>
+          </div>
+          {recOn && settings?.receptionAuto && (
+            <AutoSendPanel
+              settings={{ ...settings, autoSend: settings.receptionAuto, topics: settings.topics.filter(t => ['booking', 'opening_hours', 'store_info'].includes(t.key)) }}
+              saving={savingSettings}
+              onSave={a => saveSettings({ receptionAuto: a })}
+            />
+          )}
+        </div>
+
+        <div className="ag-card ag-fade" style={{ marginBottom: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14, justifyContent: 'space-between' }}>
+            <div style={{ minWidth: 0 }}>
               <p className="ag-h">Reputation Agent on new Google reviews</p>
               <p className="ag-p">When a new review comes in, the Reputation Agent drafts a reply in your voice. Unhappy reviews also go to your team with a follow-up task.{settings?.reviewAuto?.enabled ? ` It posts replies to ${settings.reviewAuto.min_rating === 5 ? '5' : '4 and 5'}-star reviews on its own; everything else waits for you.` : ' Every reply waits for you to post it.'}</p>
             </div>
@@ -322,17 +342,18 @@ export default function AgentsPage() {
               <p className="ag-p">Sandbox — it reads your real data, but nothing is sent, posted or changed. Anything it would do is recorded as a suggestion.</p>
             </div>
           </div>
-          <div className="ag-seg" role="radiogroup" aria-label="Which agent" style={{ marginTop: 14 }}>
-            <button type="button" role="radio" aria-checked={tryRole === 'support'} className={tryRole === 'support' ? 'on' : ''} onClick={() => { setTryRole('support'); setMessage('Where is my order?') }}>Support Agent</button>
-            <button type="button" role="radio" aria-checked={tryRole === 'reputation'} className={tryRole === 'reputation' ? 'on' : ''} onClick={() => { setTryRole('reputation'); setMessage('Lovely shop and really helpful staff — they spent ages helping me choose fish for my new tank.') }}>Reputation Agent</button>
-            <span className="ag-seg-pill" style={{ transform: tryRole === 'reputation' ? 'translateX(100%)' : 'none' }} />
+          <div className="ag-seg three" role="radiogroup" aria-label="Which agent" style={{ marginTop: 14 }}>
+            <button type="button" role="radio" aria-checked={tryRole === 'support'} className={tryRole === 'support' ? 'on' : ''} onClick={() => { setTryRole('support'); setMessage('Where is my order?') }}>Support</button>
+            <button type="button" role="radio" aria-checked={tryRole === 'reception'} className={tryRole === 'reception' ? 'on' : ''} onClick={() => { setTryRole('reception'); setMessage('Can I book a tank service for Saturday morning?') }}>Reception</button>
+            <button type="button" role="radio" aria-checked={tryRole === 'reputation'} className={tryRole === 'reputation' ? 'on' : ''} onClick={() => { setTryRole('reputation'); setMessage('Lovely shop and really helpful staff — they spent ages helping me choose fish for my new tank.') }}>Reputation</button>
+            <span className="ag-seg-pill three" style={{ transform: tryRole === 'reputation' ? 'translateX(200%)' : tryRole === 'reception' ? 'translateX(100%)' : 'none' }} />
           </div>
           <div className="ag-try">
             <div style={{ minWidth: 0 }}>
               <label className="ag-label" htmlFor="ag-msg">{tryRole === 'reputation' ? 'Review' : 'Customer message'}</label>
               <textarea id="ag-msg" className="ag-input" rows={2} value={message} onChange={e => setMessage(e.target.value)} placeholder={tryRole === 'reputation' ? 'e.g. Fish arrived dead and nobody called me back.' : 'e.g. Where is my order?'} />
             </div>
-            {tryRole === 'support' ? (
+            {tryRole !== 'reputation' ? (
               <div style={{ minWidth: 0 }}>
                 <label className="ag-label" htmlFor="ag-conv">As if it came in on (optional)</label>
                 <select id="ag-conv" className="ag-input" value={convId} onChange={e => setConvId(e.target.value)}>
@@ -547,9 +568,9 @@ function RunDetail({ run, steps, approvals, companyId, onDecided }: { run: Run; 
         </div>
       )}
 
-      {(approvals || []).filter(a => a.status === 'pending' && a.action_key === 'send_message').map(a => (
+      {(approvals || []).filter(a => a.status === 'pending' && ['send_message', 'reply_to_review', 'reschedule_booking', 'cancel_booking'].includes(a.action_key)).map(a => (
         <div key={a.id} style={{ marginTop: 14 }}>
-          <SuggestionCard s={{ ...a, run_id: run.id } as Suggestion} companyId={companyId} compact onDone={onDecided} />
+          <SuggestionCard s={{ ...a, run_id: run.id, run: { role_key: run.role_key } } as Suggestion} companyId={companyId} compact onDone={onDecided} />
         </div>
       ))}
       {(approvals || []).filter(a => a.status !== 'pending').map(a => (
@@ -592,7 +613,7 @@ function StepRow({ s }: { s: Step }) {
     if (s.kind === 'model') return 'Thought it through'
     if (s.kind === 'finish') return `Finished${s.input?.outcome ? ` — ${OUTCOME[s.input.outcome] || s.input.outcome}` : ''}`
     if (s.kind === 'error') return 'Stopped'
-    if (s.kind === 'approval') return s.decision === 'denied' ? 'Team dismissed the suggestion' : s.action_key === 'reply_to_review' ? 'Team approved and posted it' : 'Team approved and sent it'
+    if (s.kind === 'approval') return s.decision === 'denied' ? 'Team dismissed the suggestion' : s.action_key === 'reply_to_review' ? 'Team approved and posted it' : s.action_key === 'reschedule_booking' || s.action_key === 'cancel_booking' ? 'Team approved the booking change' : 'Team approved and sent it'
     return ACTION_LABEL[s.action_key || ''] || s.action_key || s.kind
   }, [s])
   const text = s.kind === 'model' ? String(s.output?.text || '') : ''
@@ -698,6 +719,8 @@ const CSS = `
 .ag-seg{position:relative;display:inline-grid;grid-template-columns:1fr 1fr;padding:3px;border-radius:13px;background:var(--canvas,#f3f4f6);max-width:100%}
 .ag-seg button{position:relative;z-index:1;padding:8px 16px;border:none;background:none;border-radius:10px;font-size:13.5px;font-weight:700;color:var(--slate);cursor:pointer;font-family:inherit;white-space:nowrap;transition:color .25s ease}
 .ag-seg button.on{color:var(--ink)}
+.ag-seg.three{grid-template-columns:1fr 1fr 1fr}
+.ag-seg-pill.three{width:calc(33.333% - 2px)}
 .ag-seg-pill{position:absolute;top:3px;bottom:3px;left:3px;width:calc(50% - 3px);border-radius:10px;background:#fff;box-shadow:0 1px 3px rgba(15,23,42,.12);transition:transform .35s ${EASE}}
 .ag-auto-body{display:grid;grid-template-rows:0fr;opacity:0;transition:grid-template-rows .45s ${EASE},opacity .3s ease}
 .ag-auto-body.open{grid-template-rows:1fr;opacity:1}

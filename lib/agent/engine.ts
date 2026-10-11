@@ -258,7 +258,7 @@ export async function runAgent(db: any, runId: string, deadline: number, model: 
           try { r = await action.run(actx, input) } catch (e: any) { r = { ok: false, error: e?.message || 'Action failed' } }
           if (action.key === 'escalate_to_human' && r.ok) { escalated = true; actx.scratch.escalated = true }
           // What this run has looked up — replies sent on their own must be backed by it.
-          if (r.ok && action.category === 'read') {
+          if (r.ok && (action.category === 'read' || action.category === 'internal_write')) {
             ;(actx.scratch.done ||= {})[action.key] = r.data
             if (action.key === 'check_order_status' && r.data?.assessment?.verdict) (actx.scratch.orderVerdicts ||= []).push(r.data.assessment.verdict)
           }
@@ -269,9 +269,17 @@ export async function runAgent(db: any, runId: string, deadline: number, model: 
           if (action.key === 'escalate_to_human') { escalated = true; actx.scratch.escalated = true }
           results.push({ type: 'tool_result', id: call.id, content: JSON.stringify({ done: false, recorded_as: 'suggestion', note: 'Recorded for the team to review. It has NOT happened. Carry on, then finish.' }) })
         } else if (decision.verdict === 'needs_approval') {
-          const stepId = await trail.add({ ...base, status: 'pending' })
+          // Don't ask a person to approve something that couldn't work (not this customer's booking, a time that isn't free).
+          const invalid = action.validate ? await action.validate(actx, input) : null
+          if (invalid) {
+            await trail.add({ ...base, decision: 'denied', decision_reason: invalid, status: 'skipped' })
+            results.push({ type: 'tool_result', id: call.id, content: JSON.stringify({ error: invalid }), isError: true })
+            continue
+          }
+          const preview = action.describe ? await action.describe(actx, input).catch(() => null) : null
+          const stepId = await trail.add({ ...base, status: 'pending', ...(preview ? { output: { preview } } : {}) })
           const hash = createHash('sha256').update(sig).digest('hex')
-          await db.from('agent_approvals').insert({ company_id: run.company_id, run_id: run.id, step_id: stepId, action_key: action.key, args: input, args_hash: hash, status: 'pending', expires_at: new Date(Date.now() + 24 * 3600_000).toISOString() }).then(() => {}, () => {})
+          await db.from('agent_approvals').insert({ company_id: run.company_id, run_id: run.id, step_id: stepId, action_key: action.key, args: preview ? { ...input, _preview: preview } : input, args_hash: hash, status: 'pending', expires_at: new Date(Date.now() + 24 * 3600_000).toISOString() }).then(() => {}, () => {})
           approvals++
           results.push({ type: 'tool_result', id: call.id, content: JSON.stringify({ done: false, waiting_for: 'team approval', note: 'A team member will review this before it happens. Do not tell the customer it is done.' }) })
         } else {
