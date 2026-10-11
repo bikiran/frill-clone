@@ -15,6 +15,7 @@
 // Colvy do this?" can point at exactly what the agent knew.
 
 import { colvyWeek, weekText } from '@/lib/business-hours'
+import { renderMemory } from './business-memory'
 
 export type ContextRef = { type: string; id: string; label: string }
 
@@ -24,6 +25,8 @@ export type AgentContextPack = {
   customerText: string
   verification: 'verified' | 'probable' | 'unknown'
   timezone: string
+  /** How the business wants replies to sound (Business Memory → tone). */
+  toneText: string
   contactId: string | null
   refs: ContextRef[]
 }
@@ -59,14 +62,10 @@ export async function buildContext(db: any, companyId: string, opts: { conversat
     refs.push({ type: 'locations', id: companyId, label: `${locs.length} location${locs.length === 1 ? '' : 's'}` })
     biz.push('Locations:\n' + locs.map((l: any) => `- ${l.label || l.suburb || 'Location'}${l.street_address ? `, ${l.street_address}` : ''}${l.suburb ? `, ${l.suburb}` : ''}${l.phone ? ` (${l.phone})` : ''}${l.is_primary ? ' — main' : ''}`).join('\n'))
   }
-  const grouped: Record<string, string[]> = {}
-  for (const m of (mem || []) as any[]) {
-    const text = typeof m.content === 'string' ? m.content : (m.content?.text ?? JSON.stringify(m.content))
-    if (!text) continue
-    ;(grouped[m.kind] ||= []).push(`- ${m.key}: ${String(text).slice(0, 600)}`)
-    refs.push({ type: 'business_memory', id: m.id, label: `${m.kind}: ${m.key}` })
-  }
-  for (const [kind, lines] of Object.entries(grouped)) biz.push(`${kind[0].toUpperCase()}${kind.slice(1)}:\n${lines.join('\n')}`)
+  // Business Memory: policies, rules and tone the owner set (active only).
+  const memory = renderMemory((mem || []) as any[])
+  biz.push(...memory.lines)
+  refs.push(...memory.refs)
 
   // ── Customer ──
   let contactId = opts.contactId || null
@@ -108,6 +107,7 @@ export async function buildContext(db: any, companyId: string, opts: { conversat
     businessText: biz.join('\n\n') || 'No business details saved yet.',
     customerText: cust.join('\n'),
     verification, contactId, refs,
+    toneText: memory.toneText,
     timezone: validTz(co?.booking_settings?.timezone) ? co.booking_settings.timezone : 'Australia/Melbourne',
   }
 }

@@ -225,9 +225,12 @@ export default function AgentsPage() {
             <h1 style={{ margin: 0, fontSize: 'clamp(22px, 3.4vw, 28px)', fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--ink)' }}>AI Agents</h1>
             <p style={{ margin: '4px 0 0', fontSize: 14, color: 'var(--slate)', maxWidth: 640 }}>Colvy’s AI employees. Every run is recorded — what the agent knew, what it decided, which permission allowed it, and why.</p>
           </div>
-          {settings && !settings.pause.paused && (
-            <button type="button" className="ag-kill" onClick={pauseAll} disabled={savingSettings}>{I.pause} Pause all agents</button>
-          )}
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <a href="/admin/agents/memory" className="ag-ghost" style={{ display: 'inline-flex', alignItems: 'center', height: 38, textDecoration: 'none' }}>Business memory</a>
+            {settings && !settings.pause.paused && (
+              <button type="button" className="ag-kill" onClick={pauseAll} disabled={savingSettings}>{I.pause} Pause all agents</button>
+            )}
+          </div>
         </div>
 
         {settings?.pause.paused && (
