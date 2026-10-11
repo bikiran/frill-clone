@@ -25,7 +25,7 @@ export type HoursPlace = {
   special: SpecialDay[]
   status?: 'open' | 'closed_temporarily' | 'closed_permanently'
 }
-export type BusinessHours = { timezone: string; places: HoursPlace[]; notes: string[] }
+export type BusinessHours = { timezone: string; places: HoursPlace[]; notes: string[]; missing?: string[] }
 
 const WEEKDAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
 const pad = (n: any) => String(Number(n) || 0).padStart(2, '0')
@@ -142,9 +142,9 @@ export function prettyRanges(ranges: Range[] | undefined): string {
 
 // ── Loading ──────────────────────────────────────────────────────────────────
 
-const READ_MASK = 'name,title,storefrontAddress,regularHours,specialHours,openInfo'
+const READ_MASK = 'name,title,storefrontAddress,phoneNumbers,regularHours,specialHours,openInfo'
 const GOOGLE_TTL = 15 * 60_000
-const googleCache = new Map<string, { at: number; places: HoursPlace[] }>()
+const googleCache = new Map<string, { at: number; result: GoogleHours }>()
 
 function placeFromGoogle(loc: any): HoursPlace {
   const a = loc.storefrontAddress
@@ -159,61 +159,102 @@ function placeFromGoogle(loc: any): HoursPlace {
   }
 }
 
+const norm = (s: any) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '')
+const phone9 = (s: any) => String(s || '').replace(/\D/g, '').slice(-9)
+/** "Shop 2, 1B Fleet Street" → "1bfleet": the street number and name, ignoring units and suffixes. */
+const streetKey = (s: any) => { const m = String(s || '').toLowerCase().match(/(\d+[a-z]?)\s+([a-z]+)/); return m ? m[1] + m[2] : '' }
+
+type GoogleHours = { places: HoursPlace[]; missing: string[] }
+
+/** Does this Google listing look like this Colvy location? */
+function sameStore(g: any, l: any): boolean {
+  const a = g.storefrontAddress || {}
+  const gSt = streetKey((a.addressLines || []).join(' ')), lSt = streetKey(l.street_address)
+  const gPc = String(a.postalCode || '').trim(), lPc = String(l.postcode || '').trim()
+  const gSub = norm(a.locality), lSub = norm(l.suburb)
+  const gPh = phone9(g.phoneNumbers?.primaryPhone), lPh = phone9(l.phone)
+  if (gPh.length >= 8 && gPh === lPh) return true
+  if (gSt && gSt === lSt && ((gPc && gPc === lPc) || (gSub && gSub === lSub))) return true
+  if (gSub && gSub === lSub && gPc && gPc === lPc) return true
+  const title = norm(g.title)
+  return !!title && [l.label, l.suburb].some(x => norm(x).length >= 4 && title.includes(norm(x)))
+}
+
 /**
- * Hours for the business's stores on Google. The connected location always;
- * other locations on the same Google account only when their address matches
- * one of this business's Colvy locations (a manager account can hold other
- * businesses' stores too).
+ * Hours for the business's stores on Google. Looks through every Google
+ * account the connection can see (stores often sit in separate location
+ * groups), and keeps a listing when it's the connected location, carries the
+ * business's name, or matches one of its Colvy locations — a manager account
+ * can hold other businesses' stores too. Also says which Colvy locations have
+ * no Google listing, so the agent doesn't pretend to know their hours.
  */
-export async function googleHoursPlaces(db: any, companyId: string, locations: any[] = []): Promise<HoursPlace[] | null> {
+export async function googleHoursPlaces(db: any, companyId: string, company: { name?: string | null } = {}, locations: any[] = []): Promise<GoogleHours | null> {
   const hit = googleCache.get(companyId)
-  if (hit && Date.now() - hit.at < GOOGLE_TTL) return hit.places
+  if (hit && Date.now() - hit.at < GOOGLE_TTL) return hit.result
   const tok = await getGoogleToken(companyId, db)
   if (!tok) return null
   const acc = tok.account || {}
   const headers = { Authorization: `Bearer ${tok.token}` }
-  let locs: any[] = []
-  if (acc.account_name) {
-    const r = await fetch(`https://mybusinessbusinessinformation.googleapis.com/v1/${acc.account_name}/locations?readMask=${READ_MASK}&pageSize=100`, { headers })
-    if (r.ok) locs = (await r.json())?.locations || []
+
+  const accounts: string[] = acc.account_name ? [acc.account_name] : []
+  try {
+    const r = await fetch('https://mybusinessaccountmanagement.googleapis.com/v1/accounts?pageSize=20', { headers })
+    if (r.ok) for (const a of (await r.json())?.accounts || []) if (a?.name && !accounts.includes(a.name)) accounts.push(a.name)
+  } catch {}
+  const byName = new Map<string, any>()
+  for (const name of accounts.slice(0, 10)) {
+    try {
+      const r = await fetch(`https://mybusinessbusinessinformation.googleapis.com/v1/${name}/locations?readMask=${READ_MASK}&pageSize=100`, { headers })
+      if (r.ok) for (const l of (await r.json())?.locations || []) if (l?.name) byName.set(l.name, l)
+    } catch {}
   }
-  if (!locs.length && acc.location_name) {
+  if (acc.location_name && !byName.has(acc.location_name)) {
     const r = await fetch(`https://mybusinessbusinessinformation.googleapis.com/v1/${acc.location_name}?readMask=${READ_MASK}`, { headers })
-    if (r.ok) locs = [await r.json()]
+    if (r.ok) { const l = await r.json(); if (l?.name) byName.set(l.name, l) }
   }
+  const locs = [...byName.values()]
   if (!locs.length) throw new Error('Google Business Profile didn’t return any locations')
 
-  const ours = (loc: any) => {
-    if (acc.location_name && loc.name === acc.location_name) return true
-    const a = loc.storefrontAddress || {}
-    const pc = String(a.postalCode || '').trim(), sub = String(a.locality || '').trim().toLowerCase()
-    return locations.some((l: any) => (pc && String(l.postcode || '').trim() === pc) || (sub && String(l.suburb || '').trim().toLowerCase() === sub))
-  }
+  const bizName = norm(company.name)
+  const ours = (g: any) => (acc.location_name && g.name === acc.location_name)
+    || (bizName.length >= 4 && norm(g.title).includes(bizName))
+    || locations.some(l => sameStore(g, l))
   const mine = locs.filter(ours)
-  const places = (mine.length ? mine : acc.location_name ? [] : locs.slice(0, 1)).map(placeFromGoogle)
-  googleCache.set(companyId, { at: Date.now(), places })
-  return places
+  const kept = mine.length ? mine : acc.location_name ? [] : locs.slice(0, 1)
+  const result: GoogleHours = {
+    places: kept.map(placeFromGoogle),
+    missing: locations.filter(l => !kept.some(g => sameStore(g, l))).map(l => l.label || l.suburb || 'A location'),
+  }
+  googleCache.set(companyId, { at: Date.now(), result })
+  return result
 }
 
 export async function loadBusinessHours(db: any, companyId: string, opts: { google?: boolean } = {}): Promise<BusinessHours> {
   const [{ data: co }, { data: locations }] = await Promise.all([
     db.from('companies').select('name, business_hours, booking_settings').eq('id', companyId).maybeSingle(),
-    db.from('company_locations').select('label, suburb, postcode').eq('company_id', companyId).limit(20).then((r: any) => r, () => ({ data: [] })),
+    db.from('company_locations').select('label, street_address, suburb, postcode, phone').eq('company_id', companyId).limit(20).then((r: any) => r, () => ({ data: [] })),
   ])
   const tzRaw = String(co?.booking_settings?.timezone || '').trim()
   const timezone = tzRaw && validTz(tzRaw) ? tzRaw : 'Australia/Melbourne'
   const notes: string[] = []
   let places: HoursPlace[] = []
+  let missing: string[] = []
 
   if (opts.google !== false) {
-    try { places = ((await googleHoursPlaces(db, companyId, locations || [])) || []).filter(p => Object.keys(p.week).length || p.special.length || p.status !== 'open') }
-    catch { notes.push('Couldn’t reach Google Business Profile just now, so these are the hours saved in Colvy.') }
+    try {
+      const g = await googleHoursPlaces(db, companyId, { name: co?.name }, locations || [])
+      if (g) {
+        places = g.places.filter(p => Object.keys(p.week).length || p.special.length || p.status !== 'open')
+        if (places.length) missing = g.missing
+      }
+    } catch { notes.push('Couldn’t reach Google Business Profile just now, so these are the hours saved in Colvy.') }
   }
   if (!places.length) {
     const week = colvyWeek(co?.business_hours)
     if (week) places.push({ name: co?.name || 'The business', source: 'colvy', week, special: [] })
   }
-  return { timezone, places, notes }
+  if (missing.length) notes.push(`No Google Business Profile listing found for ${missing.join(', ')}. Check the store is on the Google account connected to Colvy, with the same address as in Colvy → Locations.`)
+  return { timezone, places, notes, missing }
 }
 
 // ── What a customer needs to hear ────────────────────────────────────────────
@@ -269,9 +310,10 @@ export function hoursOutlook(h: BusinessHours, opts: { at?: Date; days?: number;
     if (places.some(p => p.days.some(d => d.publicHoliday && !d.specialHours))) {
       guidance.push('A day marked publicHoliday has no holiday hours set, so the usual hours may not apply. If the customer asks about that day, say hours can differ on public holidays and you’ll confirm with the team (escalate_to_human) — don’t promise.')
     }
+    if (h.missing?.length) guidance.push(`There are no hours on file for ${h.missing.join(', ')}. If the customer asks about ${h.missing.length === 1 ? 'that store' : 'those stores'}, say you’ll check with the team and escalate_to_human — don’t borrow another store’s hours.`)
     if (places.some(p => p.days.some(d => d.hours === 'unknown'))) guidance.push('“unknown” means no hours are saved for that day — don’t guess; say you’ll check.')
   }
-  return { now: { date: now.date, day: prettyDate(now.date), time: prettyTime(now.time), timezone: h.timezone }, places, guidance, notes: h.notes }
+  return { now: { date: now.date, day: prettyDate(now.date), time: prettyTime(now.time), timezone: h.timezone }, places, ...(h.missing?.length ? { noHoursFor: h.missing } : {}), guidance, notes: h.notes }
 }
 
 /** One line per store for the agent's background knowledge (no network). */
