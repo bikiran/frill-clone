@@ -47,9 +47,8 @@ export default function TerminologySettings({ values, onChange, saving }: {
       <div className="term-main">
         <div className="bg-white rounded-2xl border p-5 md:p-6" style={{ borderColor: 'var(--border)' }}>
           <div className="flex items-start justify-between gap-3 flex-wrap">
-            <div style={{ minWidth: 0 }}>
-              <h2 className="font-bold" style={{ color: 'var(--ink)' }}>Terminology</h2>
-              <p className="text-sm mt-1" style={{ color: 'var(--slate)', lineHeight: 1.5 }}>
+            <div style={{ minWidth: 0, flex: '1 1 260px' }}>
+              <p className="text-sm" style={{ color: 'var(--slate)', lineHeight: 1.5 }}>
                 Use your own words on your board, help centre and website widget. Leave a field empty to keep the default.
               </p>
             </div>

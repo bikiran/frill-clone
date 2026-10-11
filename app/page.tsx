@@ -905,10 +905,10 @@ export default function HomePage() {
             <div className="text-center py-16">
               <div className="text-5xl mb-4">🚀</div>
               <h3 className="text-lg font-semibold mb-2" style={{ color: 'var(--ink)' }}>
-                No ideas yet
+                No {plural} yet
               </h3>
               <p style={{ color: 'var(--slate)' }} className="mb-6">
-                Be the first to share an idea!
+                Be the first to add one!
               </p>
               <button
                 onClick={() => setShowModal(true)}

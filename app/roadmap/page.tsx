@@ -344,7 +344,7 @@ export default function RoadmapPage() {
               className="flex items-center gap-2 px-3 py-2 rounded-lg border text-sm transition-smooth hover:bg-gray-50 cursor-pointer"
               style={{ borderColor: filterTopic ? 'var(--coral)' : 'var(--border)', color: filterTopic ? 'var(--coral)' : 'var(--ink)' }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" /></svg>
-              <span className="font-medium">{filterTopic ? `#${filterTopic}` : 'All Ideas'}</span>
+              <span className="font-medium">{filterTopic ? `#${filterTopic}` : `All ${getTerm('idea_plural')}`}</span>
             </button>
             {showFilterDropdown && (
               <>
@@ -354,7 +354,7 @@ export default function RoadmapPage() {
                     onClick={() => { setFilterTopic(null); setShowFilterDropdown(false) }}
                     className="w-full px-4 py-2.5 text-left text-sm hover:bg-gray-50 transition-smooth cursor-pointer"
                     style={{ color: !filterTopic ? 'var(--coral)' : 'var(--ink)', fontWeight: !filterTopic ? 600 : 400 }}>
-                    All Ideas {!filterTopic && '✓'}
+                    All {getTerm('idea_plural')} {!filterTopic && '✓'}
                   </button>
                   <div className="border-t" style={{ borderColor: 'var(--border)' }} />
                   <button
@@ -438,7 +438,7 @@ export default function RoadmapPage() {
             <div className="flex-1 space-y-2 overflow-y-auto pr-1">
               {column.ideas.length === 0 ? (
                 <div className="text-center py-8" style={{ color: 'var(--slate)' }}>
-                  <p className="text-xs">No ideas yet</p>
+                  <p className="text-xs">No {getTerm('idea_plural')} yet</p>
                   {canDrag && <p className="text-xs mt-1">Drag ideas here</p>}
                 </div>
               ) : (
