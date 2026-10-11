@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo, useCallback, useRef, Fragment } from 'react'
+import { WhyLink } from '@/components/WhyAgent'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { authFetch } from '@/lib/auth-fetch'
@@ -2273,6 +2274,7 @@ function TaskDetail({ task, conv, team, outlets = [], companyId, me, userId, onP
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 13, color: 'var(--ink)', lineHeight: 1.4 }}>
                     <strong style={{ fontWeight: 700 }}>{task.created_by || task.created_by_name || task.assigned_to || 'Someone'}</strong> created this task
+                    {task.source === 'agent' && <> · <WhyLink companyId={companyId} entityType="task" entityId={task.id} /></>}
                   </div>
                   <div style={{ fontSize: 11.5, color: '#9ca3af' }} title={fmtExact(created)}>{fmtAgo(created)}</div>
                 </div>

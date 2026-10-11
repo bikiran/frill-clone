@@ -5,6 +5,7 @@ import VoicePlayer from '@/components/VoicePlayer'
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import AiLiveReply from '@/components/AiLiveReply'
 import AgentSuggestion from '@/components/AgentSuggestion'
+import { WhyLink } from '@/components/WhyAgent'
 import { supabase } from '@/lib/supabase'
 import { authFetch } from '@/lib/auth-fetch'
 import { peekCompanyUser, readCache, writeCache } from '@/lib/client-cache'
@@ -8702,9 +8703,10 @@ export default function InboxPage() {
                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5, fontWeight: 600, color: 'var(--coral, #ff7a6b)', whiteSpace: 'nowrap', maxWidth: 460, overflow: 'hidden', textOverflow: 'ellipsis' }}>
                           <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" style={{ flexShrink: 0 }}><path d="M12 2l1.6 4.6L18 8l-4.4 1.4L12 14l-1.6-4.6L6 8l4.4-1.4L12 2zM19 14l.8 2.2L22 17l-2.2.8L19 20l-.8-2.2L16 17l2.2-.8L19 14zM5 15l.7 1.8L7.5 17l-1.8.7L5 19.5l-.7-1.8L2.5 17l1.8-.7L5 15z"/></svg>
                           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{ev.detail || 'Updated by Colvy AI'}</span>
-                          <span style={{ opacity: 0.75, fontWeight: 500 }}>· Colvy AI</span>
+                          <span style={{ opacity: 0.75, fontWeight: 500 }}>· {ev.metadata?.agent_run_id ? (ev.actor_name || 'Support Agent').replace(/^Colvy /, '') : 'Colvy AI'}</span>
                           {ev.created_at && <span style={{ opacity: 0.55, fontWeight: 500 }}> · {fmtTime(ev.created_at)}</span>}
                         </span>
+                        {ev.metadata?.agent_run_id && <WhyLink companyId={companyId} runId={ev.metadata.agent_run_id} style={{ fontSize: 11.5, flexShrink: 0 }} />}
                         <div style={{ flex: 1, height: 1, background: 'color-mix(in srgb, var(--coral, #ff7a6b) 22%, transparent)' }} />
                       </div>
                     )
@@ -9349,12 +9351,20 @@ export default function InboxPage() {
                           {fmtReceipt(msg.created_at, isAgent, receiptChannel(msg, selected.channel)) || fmtTime(msg.created_at)}
                         </span>
 
-                        {(msg as any).is_ai && (
+                        {(msg as any).is_ai && (msg.metadata?.agent_run_id ? (
+                          // Sent by an agent (Agent Engine): who let it go out, and why.
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: '#8b5cf6', fontWeight: 700 }}>
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l1.6 5.3L19 9l-5.4 1.7L12 16l-1.6-5.3L5 9l5.4-1.7z"/></svg>
+                            Support Agent · {msg.metadata.approved_by ? `${msg.metadata.edited ? 'edited' : 'approved'} by ${msg.metadata.approved_by}` : 'sent on its own'}
+                            <span aria-hidden="true">·</span>
+                            <WhyLink companyId={companyId} runId={msg.metadata.agent_run_id} style={{ color: '#8b5cf6' }} />
+                          </span>
+                        ) : (
                           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, color: '#8b5cf6', fontWeight: 700 }}>
                             <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l1.6 5.3L19 9l-5.4 1.7L12 16l-1.6-5.3L5 9l5.4-1.7z"/></svg>
                             AI reply · AI can make mistakes
                           </span>
-                        )}
+                        ))}
 
                         {/* Who on the team has seen it. Shown on BOTH sides — on an
                             agent message it answers "did my colleague see this?",
