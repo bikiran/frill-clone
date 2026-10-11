@@ -188,6 +188,7 @@ export const PERMISSION_SUITES: SuiteDef[] = [
       { key: 'settings', label: 'Settings', paths: ['/admin/settings', '/admin/legal'] },
       { key: 'inbox_settings', label: 'Inbox settings', paths: ['/admin/crm-settings', '/admin/auto-replies'], restrictedDefault: false },
       { key: 'ai_settings', label: 'AI settings', paths: ['/admin/ai-settings', '/admin/ai-knowledge', '/admin/crm-settings/ai', '/admin/crm-settings/ai-knowledge'], restrictedDefault: false },
+      { key: 'agents', label: 'AI agents', paths: ['/admin/agents'], restrictedDefault: false },
       { key: 'terminology', label: 'Terminology', paths: ['/admin/terminology'], restrictedDefault: false },
       { key: 'billing', label: 'Billing', paths: ['/admin/billing'] },
       { key: 'referrals', label: 'Referrals', paths: ['/admin/referrals'], restrictedDefault: false },
