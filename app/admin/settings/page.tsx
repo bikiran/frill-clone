@@ -264,15 +264,10 @@ export default function SettingsPage() {
 
         if (co) {
           setCompany(co)
-          if (co.api_key) setPluginKey(co.api_key)
-          else {
-            // Generate and persist an API key for this company if it lacks one.
-            try {
-              const genKey = 'colvy_' + (crypto.randomUUID?.() || Date.now().toString(36)).replace(/-/g, '')
-              await (supabase as any).from('companies').update({ api_key: genKey }).eq('id', co.id)
-              setPluginKey(genKey)
-            } catch {}
-          }
+          // The plugin / API key is server-only now (company_secrets); the
+          // route returns it, creating it the first time.
+          authFetch(`/api/company/plugin-key?companyId=${co.id}`)
+            .then(r => r.json()).then(d => { if (d?.key) setPluginKey(d.key) }).catch(() => {})
           if (co.name) setCompanyName(co.name)
           if (co.logo_url) setLogoUrl(co.logo_url)
           if (co.accent_color) setAccentColor(co.accent_color)
