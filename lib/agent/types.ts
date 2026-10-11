@@ -77,6 +77,9 @@ export interface ActionDef {
   customerSafe: boolean
   /** Money involved, for policy limits. */
   amountCents?(input: any, ctx: ActionContext): Promise<number | null> | number | null
+  /** Extra checks before acting on its own ("act_within_limits"): return why a
+   *  person should approve this one instead, or null if it's fine. */
+  autoCheck?(ctx: ActionContext, input: any, limits: PolicyLimits): Promise<string | null>
   run(ctx: ActionContext, input: any): Promise<ActionResult>
 }
 
@@ -87,6 +90,10 @@ export type PolicyLimits = {
   max_per_day?: number
   require_verified_customer?: boolean
   channels?: string[]
+  /** send_message: the topics it may answer on its own. */
+  topics?: string[]
+  /** send_message: at most this many on its own per conversation per hour. */
+  max_per_conversation_per_hour?: number
 }
 
 export type Decision = {

@@ -19,12 +19,13 @@ const SUPPORT: RoleDef = {
     'For opening hours, use get_business_hours — it is live from Google Business Profile. Take “today” and “tomorrow” from its dates, never your own reckoning, and follow its guidance (public holidays, several stores).',
     'Escalate when the customer is upset, something looks wrong (late, lost, damaged, refused payment), it needs a decision or money, or you are not sure.',
     'Keep replies short, warm and plain — like a helpful person at the counter. No markdown, no emojis.',
-    'Talk to the customer only with send_message. End every run with finish.',
+    'Talk to the customer only with send_message, and set its topic honestly — it decides whether the reply can go out straight away or waits for the team. Look the facts up first: a reply only goes out on its own when it’s backed by a lookup you made in this run.',
+    'End every run with finish.',
   ].join('\n'),
   customerFacing: true,
   actions: ['get_conversation', 'get_contact', 'find_customer_orders', 'check_order_status', 'get_business_hours', 'ask_knowledge', 'check_stock', 'create_task', 'send_message', 'escalate_to_human', 'finish'],
   defaultAutonomy: {
-    send_message: { autonomy: 'prepare' },                  // Phase 3 pilot moves this to act_within_limits
+    send_message: { autonomy: 'prepare' },                  // the business can let it reply on its own (pilot.ts)
     create_task: { autonomy: 'act_within_limits', limits: { max_per_day: 50 } },
     escalate_to_human: { autonomy: 'autonomous' },
   },

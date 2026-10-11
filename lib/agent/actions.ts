@@ -11,7 +11,8 @@
 
 import { runReadTool, type AssistantContext } from '@/lib/ai-assistant/tools'
 import { notifyCompany } from '@/lib/notify'
-import type { ActionContext, ActionDef, ActionResult, JsonSchema } from './types'
+import type { ActionContext, ActionDef, ActionResult, JsonSchema, PolicyLimits } from './types'
+import { AUTO_TOPICS } from './pilot'
 import { findCustomerOrders, checkOrderStatus } from './order-actions'
 import { getBusinessHours } from './business-actions'
 import { sendAgentMessage } from './send'
@@ -107,11 +108,60 @@ const createTask: ActionDef = {
   },
 }
 
+const TOPICS = ['opening_hours', 'order_status', 'stock', 'store_info', 'other']
+
+// Before the agent sends a reply on its own: is it a topic the business
+// allowed, is it backed by a live lookup made in this run, and is nobody else
+// handling the conversation? Otherwise a person approves it.
+async function sendOnItsOwn(ctx: ActionContext, args: any, limits: PolicyLimits): Promise<string | null> {
+  const topic = TOPICS.includes(args?.topic) ? String(args.topic) : 'other'
+  const allowed = Array.isArray(limits.topics) ? limits.topics : []
+  if (topic === 'other') return 'Not one of the topics it may answer on its own, so a person approves it.'
+  if (!allowed.includes(topic)) return `Replies about ${AUTO_TOPICS[topic]?.label.toLowerCase() || topic} aren’t switched on to send on their own, so a person approves it.`
+
+  const done = ctx.scratch.done || {}
+  const grounded =
+    topic === 'opening_hours' ? (done.get_business_hours?.places?.length || 0) > 0
+      : topic === 'order_status' ? (ctx.scratch.orderVerdicts?.length || 0) > 0 && ctx.scratch.orderVerdicts.every((v: string) => v === 'normal')
+        : topic === 'stock' ? (done.check_stock?.products?.length || 0) > 0
+          : topic === 'store_info' ? done.ask_knowledge?.found === true
+            : false
+  if (!grounded) {
+    return topic === 'order_status' && ctx.scratch.orderVerdicts?.length
+      ? 'The order needs a look, so a person approves the reply.'
+      : `It didn’t check ${AUTO_TOPICS[topic].needs.replace(/_/g, ' ')} in this run, so a person approves it.`
+  }
+  if (ctx.scratch.escalated) return 'It also handed this to the team, so a person approves the reply.'
+  if (!ctx.conversationId) return null
+
+  const [{ data: conv }, { data: human }] = await Promise.all([
+    ctx.db.from('conversations').select('ai_enabled').eq('company_id', ctx.companyId).eq('id', ctx.conversationId).maybeSingle(),
+    ctx.scratch.startedAt
+      ? ctx.db.from('messages').select('id').eq('conversation_id', ctx.conversationId).eq('sender_type', 'agent').eq('is_ai', false).gt('created_at', ctx.scratch.startedAt).limit(1)
+      : Promise.resolve({ data: [] }),
+  ])
+  if (conv?.ai_enabled === false) return 'AI replies are switched off for this conversation, so a person approves it.'
+  if (human?.length) return 'Someone on the team replied meanwhile, so a person approves it.'
+
+  const perHour = limits.max_per_conversation_per_hour
+  if (perHour) {
+    const { count } = await ctx.db.from('agent_steps').select('id', { count: 'exact', head: true })
+      .eq('company_id', ctx.companyId).eq('action_key', 'send_message').eq('decision', 'allowed').eq('entity_id', ctx.conversationId)
+      .gte('created_at', new Date(Date.now() - 3600_000).toISOString())
+    if ((count || 0) >= perHour) return `Already sent ${perHour} repl${perHour === 1 ? 'y' : 'ies'} on its own in this conversation this hour, so a person approves it.`
+  }
+  return null
+}
+
 const sendMessage: ActionDef = {
   key: 'send_message',
-  description: 'Reply to the customer in this conversation. Plain text, no markdown. This is the ONLY way to talk to the customer.',
-  input: obj({ text: { type: 'string', description: 'The message to send.' } }, ['text']),
+  description: 'Reply to the customer in this conversation. Plain text, no markdown. This is the ONLY way to talk to the customer. Say what the reply is about in topic.',
+  input: obj({
+    text: { type: 'string', description: 'The message to send.' },
+    topic: { type: 'string', enum: TOPICS, description: 'What the reply answers: opening_hours, order_status, stock, store_info (from the business’s knowledge), or other.' },
+  }, ['text', 'topic']),
   category: 'communicate', risk: 'medium', maxAutonomy: 'act_within_limits', customerSafe: true,
+  autoCheck: sendOnItsOwn,
   async run(ctx, args) {
     if (!ctx.conversationId) return { ok: false, error: 'No conversation to reply in.' }
     const r = await sendAgentMessage(ctx.db, { companyId: ctx.companyId, conversationId: ctx.conversationId, text: String(args?.text || ''), runId: ctx.runId })

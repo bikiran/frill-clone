@@ -2,7 +2,8 @@ import { isInternalCall } from '@/lib/internal-call'
 import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse, after } from 'next/server'
 import { runAiAgent } from '@/lib/ai-agent'
-import { startSupportAgentForConversation } from '@/lib/agent/inbound'
+import { startSupportAgentForConversation, AGENT_CHANNELS } from '@/lib/agent/inbound'
+import { supportAutoSends } from '@/lib/agent/pilot'
 import { createClient } from '@supabase/supabase-js'
 
 export const dynamic = 'force-dynamic'
@@ -27,15 +28,18 @@ export async function POST(req: NextRequest) {
     if (!isInternalCall(req)) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     const { conversationId } = await req.json()
     if (!conversationId) return NextResponse.json({ error: 'conversationId required' }, { status: 400 })
-    const { data: owner } = await admin().from('conversations').select('company_id').eq('id', conversationId).maybeSingle()
+    const { data: owner } = await admin().from('conversations').select('company_id, channel').eq('id', conversationId).maybeSingle()
     if (!owner?.company_id) return NextResponse.json({ error: 'Conversation not found' }, { status: 404 })
 
     // The Support Agent (Agent Engine) — only if the business switched it on.
-    // Runs alongside, never instead of, the auto-reply below; by default it
-    // only suggests a reply for the team.
+    // By default it only suggests a reply for the team, alongside the auto-reply
+    // below. Once it's allowed to reply on its own, the older auto-reply stands
+    // down so the customer never gets two answers.
     after(async () => { try { await startSupportAgentForConversation(admin(), conversationId) } catch (e) { console.warn('[agent] inbound', e) } })
 
-    const result = await runAiAgent({ conversationId, companyId: owner.company_id })
+    const result = AGENT_CHANNELS.has(String(owner.channel || 'chat')) && (await supportAutoSends(admin(), owner.company_id))
+      ? { replied: false, reason: 'The Support Agent is answering customers on its own, so Colvy AI’s auto-reply stays quiet.' }
+      : await runAiAgent({ conversationId, companyId: owner.company_id })
 
     // Log a skip so the business can see why nothing happened.
     if (!result.replied && result.reason) {

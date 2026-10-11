@@ -28,3 +28,14 @@ export async function agentAccess(req: NextRequest, companyId: string | null | u
 }
 
 export const missingAgentTables = (e: any) => /agent_runs|agent_steps|agent_approvals/i.test(String(e?.message || '')) && /does not exist|schema cache|relation/i.test(String(e?.message || ''))
+
+/** A team member's display name, for the audit trail ("Sam approved it"). */
+export async function staffName(db: any, companyId: string, userId: string | null | undefined): Promise<string | null> {
+  if (!userId) return null
+  const { data: tm } = await db.from('team_members').select('name, email').eq('company_id', companyId).eq('user_id', userId).maybeSingle()
+  const name = tm?.name || tm?.email?.split('@')[0] || null
+  if (name) return name
+  const { data } = await db.auth.admin.getUserById(userId).catch(() => ({ data: null }))
+  const u = (data as any)?.user
+  return u?.user_metadata?.display_name || u?.user_metadata?.full_name || u?.email?.split('@')[0] || null
+}

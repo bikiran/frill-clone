@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { agentDb } from '@/lib/agent/access'
 import { claimableRuns, runAgent } from '@/lib/agent/engine'
+import { expireApprovals } from '@/lib/agent/approvals'
 import { logJobRun } from '@/lib/job-log'
 
 export const runtime = 'nodejs'
@@ -24,14 +25,15 @@ export async function GET(req: NextRequest) {
   const t0 = Date.now()
   const deadline = t0 + 240_000
   const db = agentDb()
-  let ran = 0
+  let ran = 0, expired = 0
   try {
+    expired = await expireApprovals(db).catch(() => 0)
     for (const id of await claimableRuns(db)) {
       if (Date.now() > deadline - 20_000) break
       if (await runAgent(db, id, deadline)) ran++
     }
-    if (ran) await logJobRun({ job: 'agent-worker', startedAt, durationMs: Date.now() - t0, status: 'success', detail: { ran } })
-    return NextResponse.json({ ok: true, ran })
+    if (ran || expired) await logJobRun({ job: 'agent-worker', startedAt, durationMs: Date.now() - t0, status: 'success', detail: { ran, expired } })
+    return NextResponse.json({ ok: true, ran, expired })
   } catch (e: any) {
     await logJobRun({ job: 'agent-worker', startedAt, durationMs: Date.now() - t0, status: 'error', error: e?.message })
     return NextResponse.json({ ok: false, error: e?.message }, { status: 500 })

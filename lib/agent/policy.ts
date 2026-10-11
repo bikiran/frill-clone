@@ -13,10 +13,12 @@
 
 import type { ActionContext, ActionDef, Autonomy, Decision, PolicyLimits, RoleDef } from './types'
 import { minAutonomy } from './types'
+import { pauseFrom } from './pilot'
 
 type PolicyRow = { id: string; role_key: string | null; action_key: string; autonomy: Autonomy; limits: PolicyLimits }
 
 export async function loadPolicies(db: any, companyId: string): Promise<PolicyRow[]> {
+  // Includes the kill-switch row (action '*'), which pauseFrom() reads.
   try {
     const { data } = await db.from('agent_policies').select('id, role_key, action_key, autonomy, limits').eq('company_id', companyId)
     return (data || []) as PolicyRow[]
@@ -35,8 +37,9 @@ function tenantPolicy(policies: PolicyRow[], role: RoleDef, action: ActionDef): 
   return { autonomy: action.category === 'read' || action.category === 'control' ? 'autonomous' : 'prepare', limits: {}, policyId: null, source: 'the platform default' }
 }
 
+// "Per day" is the last 24 hours — the server's midnight isn't the business's.
 async function countToday(db: any, companyId: string, actionKey: string): Promise<number> {
-  const since = new Date(); since.setHours(0, 0, 0, 0)
+  const since = new Date(Date.now() - 86_400_000)
   try {
     const { count } = await db.from('agent_steps').select('id', { count: 'exact', head: true })
       .eq('company_id', companyId).eq('action_key', actionKey).eq('decision', 'allowed').eq('kind', 'action').gte('created_at', since.toISOString())
@@ -55,6 +58,11 @@ export async function decide(
   input: any,
   policies: PolicyRow[],
 ): Promise<Decision> {
+  // Kill switch: every agent is paused for this business.
+  const pause = pauseFrom(policies)
+  if (pause.paused && ctx.mode === 'live' && action.category !== 'read' && action.category !== 'control') {
+    return { verdict: 'denied', autonomy: 'off', reason: `Agents are paused${pause.byName ? ` (by ${pause.byName})` : ''}.` }
+  }
   if (!role.actions.includes(action.key)) {
     return { verdict: 'denied', autonomy: 'off', reason: `${role.name} isn’t allowed to use ${action.key}.` }
   }
@@ -79,7 +87,9 @@ export async function decide(
     } else if (limits.max_per_day != null && (await countToday(ctx.db, ctx.companyId, action.key)) >= limits.max_per_day) {
       level = 'prepare'; reason = `Daily limit of ${limits.max_per_day} reached, so a person approves it.`
     } else {
-      reason = `Within the limits set by ${tenant.source}.`
+      const why = action.autoCheck ? await action.autoCheck(ctx, input, limits) : null
+      if (why) { level = 'prepare'; reason = why }
+      else reason = `Within the limits set by ${tenant.source}.`
     }
   }
 
