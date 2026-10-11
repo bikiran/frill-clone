@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { bookingPageUrl } from '@/lib/booking'
+import { pluginKeyFor, keyMatches } from '@/lib/company-secrets'
 
 function admin() {
   return createClient(
@@ -23,7 +24,7 @@ export async function OPTIONS() { return cors(NextResponse.json({ ok: true })) }
 async function authCompany(db: any, companyId: string | null, key: string | null) {
   if (!companyId || !key) return null
   const { data } = await db.from('companies').select('*').eq('id', companyId).maybeSingle()
-  if (!data || data.api_key !== key) return null
+  if (!data || !keyMatches(key, await pluginKeyFor(companyId))) return null
   return data
 }
 

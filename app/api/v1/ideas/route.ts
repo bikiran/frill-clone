@@ -1,17 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { companyIdForApiKey } from '@/lib/company-secrets'
 
 // Public REST API: GET / POST ideas for ONE board, chosen by its API key
-// (Authorization: Bearer <companies.api_key>, from Admin → Settings → API).
+// (Authorization: Bearer <the company's Colvy API key>, from Admin → Settings → API).
 // This used to list every company's ideas and insert ideas with no company.
 
 const admin = () => createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, { auth: { autoRefreshToken: false, persistSession: false } })
 
-async function companyFromKey(req: NextRequest, db: any): Promise<string | null> {
+async function companyFromKey(req: NextRequest, _db: any): Promise<string | null> {
   const key = (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '').trim()
-  if (!key || key.length < 16) return null
-  const { data } = await db.from('companies').select('id').eq('api_key', key).maybeSingle()
-  return data?.id || null
+  return companyIdForApiKey(key)
 }
 
 export async function GET(req: NextRequest) {

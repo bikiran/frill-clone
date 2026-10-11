@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { notifyWaitlist, resolveWaitlistSettings, isMissingTable } from '@/lib/waitlist'
 import { toE164, phoneKey, emailKey } from '@/lib/phone'
+import { pluginKeyFor, keyMatches } from '@/lib/company-secrets'
 
 export const dynamic = 'force-dynamic'
 
@@ -25,8 +26,8 @@ const admin = () => createClient(
 
 async function authCompany(db: any, companyId: string | null, key: string | null) {
   if (!companyId || !key || !/^[0-9a-f-]{36}$/i.test(companyId)) return null
-  const { data } = await db.from('companies').select('id, name, api_key, accent_color, waitlist_settings').eq('id', companyId).maybeSingle()
-  if (!data || !data.api_key || data.api_key !== key) return null
+  const { data } = await db.from('companies').select('id, name, accent_color, waitlist_settings').eq('id', companyId).maybeSingle()
+  if (!data || !keyMatches(key, await pluginKeyFor(companyId))) return null
   return data
 }
 

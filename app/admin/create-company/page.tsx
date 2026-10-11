@@ -102,9 +102,10 @@ export default function CreateCompanyPage() {
       const coResult = await coRes.json()
       if (coResult.error && !coResult.error.includes('duplicate')) throw new Error(coResult.error)
 
-      // 4. Update company plan
-      if (coResult.company?.id) {
-        await (supabase as any).from('companies').update({ plan, description: description.trim() }).eq('id', coResult.company.id)
+      // 4. The plan is set by /api/companies (only the platform admin may
+      //    choose one); the description is saved here.
+      if (coResult.company?.id && description.trim()) {
+        await (supabase as any).from('companies').update({ description: description.trim() }).eq('id', coResult.company.id)
       }
 
       // 5. Auto-register subdomain in Vercel

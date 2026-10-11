@@ -1,11 +1,12 @@
 import { createHmac, timingSafeEqual } from 'crypto'
 import type { NextRequest } from 'next/server'
+import { pluginKeyFor } from '@/lib/company-secrets'
 
 /**
  * WooCommerce signs each webhook delivery: X-WC-Webhook-Signature =
  * base64(HMAC-SHA256(secret, raw body)). Colvy registers its webhooks with a
  * secret derived per store (from the integration id), and the Colvy WordPress
- * plugin (3.0.3+) signs with the business's plugin key (companies.api_key).
+ * plugin (3.0.3+) signs with the business's plugin key (company_secrets.api_key).
  *
  * Webhooks registered before this have no secret, so enforcement waits for
  * WOO_WEBHOOK_VERIFY=enforce (set it once every store has been re-registered:
@@ -28,8 +29,8 @@ export async function wooSignatureOk(req: NextRequest, raw: string, db: any, com
   const integrationId = req.nextUrl.searchParams.get('integration')
   if (integrationId) secrets.push(wooIntegrationSecret(integrationId))
   try {
-    const { data: co } = await db.from('companies').select('api_key').eq('id', companyId).maybeSingle()
-    if (co?.api_key) secrets.push(String(co.api_key))
+    const pluginKey = await pluginKeyFor(companyId)
+    if (pluginKey) secrets.push(pluginKey)
   } catch {}
   const ok = !!sig && secrets.some(s => same(createHmac('sha256', s).update(raw, 'utf8').digest('base64'), sig))
   if (!ok) console.warn('[woo webhook] signature check failed for company', companyId, sig ? '(bad signature)' : '(no signature)')
