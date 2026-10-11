@@ -8,8 +8,7 @@ const admin = () => createClient(
 )
 
 // Returns a valid access token for the company, refreshing it if it has expired.
-export async function getGoogleToken(companyId: string): Promise<{ token: string; account: any } | null> {
-  const db = admin()
+export async function getGoogleToken(companyId: string, db: any = admin()): Promise<{ token: string; account: any } | null> {
   const { data: rows } = await db.from('google_business_accounts')
     .select('*').eq('company_id', companyId).eq('is_active', true).limit(1)
   const acc = rows?.[0]

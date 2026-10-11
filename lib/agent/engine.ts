@@ -15,6 +15,7 @@ import { getAction, validateInput, FINISH_ACTION } from './actions'
 import { decide, loadPolicies } from './policy'
 import { loadRole } from './roles'
 import { buildContext } from './memory'
+import { localNow, prettyDate, prettyTime, addDays } from '@/lib/business-hours'
 import type { ActionContext, ActionDef, AgentTrigger, Decision, RoleDef } from './types'
 
 const LEASE_MS = 120_000
@@ -94,7 +95,8 @@ export function toolSpec(a: ActionDef): ToolSpec {
   return { name: a.key, description: a.description, input_schema: { type: 'object', properties: props, required: Array.from(required), additionalProperties: false } }
 }
 
-function systemPrompt(role: RoleDef, companyName: string, businessText: string, customerText: string): string {
+function systemPrompt(role: RoleDef, companyName: string, businessText: string, customerText: string, timezone = 'Australia/Melbourne'): string {
+  const today = localNow(timezone)
   return [
     `You are ${role.name}, an AI employee of ${companyName}.`,
     `GOAL\n${role.goal}`,
@@ -105,14 +107,15 @@ function systemPrompt(role: RoleDef, companyName: string, businessText: string, 
       '- You can only act through your actions. Every action needs a short reason — the business owner reads it.',
       '- Some actions are recorded for a person to approve instead of happening straight away. Believe each action’s result: only tell the customer something is done if the result says it happened.',
       '- When in doubt, escalate_to_human. That is always allowed and never wrong.',
-      `- Today is ${new Date().toISOString().slice(0, 10)}.`,
+      // The business's own date, not UTC: at 12:20am in Melbourne UTC is still yesterday.
+      `- Today is ${prettyDate(today.date)} (${today.date}) where the business is (${timezone}). Tomorrow is ${prettyDate(addDays(today.date, 1))}.`,
     ].join('\n'),
     `WHAT YOU KNOW ABOUT THE BUSINESS\n${businessText}`,
     `WHO YOU ARE TALKING TO\n${customerText}`,
   ].join('\n\n')
 }
 
-function firstMessage(run: any): string {
+function firstMessage(run: any, timezone = 'Australia/Melbourne'): string {
   const msg = String(run.input?.message || '').trim()
   const lines = [
     run.trigger_type === 'inbound_message' || run.trigger_type === 'sandbox' ? 'A customer has sent a message.' : `New ${run.trigger_type.replace(/_/g, ' ')}.`,
@@ -120,6 +123,8 @@ function firstMessage(run: any): string {
   ]
   if (msg) lines.push(`<customer_message>\n${msg.slice(0, 4000)}\n</customer_message>`)
   if (run.goal) lines.push(`Goal for this run: ${run.goal}`)
+  const now = localNow(timezone)
+  lines.push(`Local time for the business: ${prettyTime(now.time)}, ${prettyDate(now.date)}.`)
   lines.push('Work out what they need and handle it, then call finish.')
   return lines.join('\n\n')
 }
@@ -164,8 +169,8 @@ export async function runAgent(db: any, runId: string, deadline: number, model: 
     const actions = role.actions.map(getAction).filter(Boolean) as ActionDef[]
     if (!actions.find(a => a.key === 'finish')) actions.push(FINISH_ACTION)
     const tools = actions.map(toolSpec)
-    const system = systemPrompt(role, actx.companyName, pack.businessText, pack.customerText)
-    const messages: NeutralMessage[] = [{ role: 'user', content: [{ type: 'text', text: firstMessage(run) }] }]
+    const system = systemPrompt(role, actx.companyName, pack.businessText, pack.customerText, pack.timezone)
+    const messages: NeutralMessage[] = [{ role: 'user', content: [{ type: 'text', text: firstMessage(run, pack.timezone) }] }]
 
     let tokensIn = Number(run.tokens_in) || 0, tokensOut = Number(run.tokens_out) || 0, modelName = run.model || null
     let finished: any = null
