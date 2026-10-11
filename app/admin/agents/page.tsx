@@ -5,6 +5,7 @@ import { authFetch } from '@/lib/auth-fetch'
 import { supabase } from '@/lib/supabase'
 import { resolveCompanyUser, peekCompanyUser } from '@/lib/client-cache'
 import { SuggestionCard, type Suggestion } from '@/components/AgentSuggestion'
+import { confirmDialog } from '@/components/ConfirmDialog'
 
 // AI Agents (Phase 1 of the Agent Engine). Every agent run is recorded — what
 // it knew, every action it asked for, the permission decision and why, and the
@@ -24,11 +25,21 @@ type Step = {
   entity_type: string | null; entity_id: string | null; duration_ms: number | null; tokens_in: number | null; tokens_out: number | null; created_at: string
 }
 
+type AutoSend = { enabled: boolean; topics: string[]; max_per_day: number; max_per_conversation_per_hour: number; require_verified_customer: boolean }
+type Settings = {
+  pause: { paused: boolean; byName?: string | null; at?: string | null; platform?: boolean }
+  autoSend: AutoSend; sentToday: number; waiting: number; topics: { key: string; label: string }[]
+}
+type Waiting = Suggestion & { conversation?: { id: string; channel: string | null; customer: string | null } | null }
+const TOPIC_SHORT: Record<string, string> = { opening_hours: 'opening hours', order_status: 'order status (when tracking looks normal)', stock: 'stock', store_info: 'things your knowledge covers' }
+const CHANNEL: Record<string, string> = { sms: 'SMS', widget: 'Website chat', chat: 'Website chat' }
+
 const ACTION_LABEL: Record<string, string> = {
   get_conversation: 'Read the conversation', get_contact: 'Looked up the customer', ask_knowledge: 'Searched your knowledge',
   check_stock: 'Checked stock', search_orders: 'Searched orders', get_order: 'Looked up an order', search_contacts: 'Searched customers',
   search_conversations: 'Searched conversations', search_tasks: 'Searched tasks', create_task: 'Create a task',
   send_message: 'Reply to the customer', escalate_to_human: 'Hand to the team', finish: 'Finished',
+  get_business_hours: 'Checked opening hours', find_customer_orders: 'Found the customer’s orders', check_order_status: 'Checked order tracking',
 }
 const STATUS: Record<string, { label: string; tone: string }> = {
   queued: { label: 'Queued', tone: 'muted' }, running: { label: 'Working', tone: 'live' }, completed: { label: 'Done', tone: 'ok' },
@@ -65,6 +76,9 @@ const I = {
   alert: <Svg d={<><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></>} />,
   chev: <Svg size={13} d={<polyline points="9 18 15 12 9 6" />} />,
   play: <Svg size={13} d={<polygon points="6 4 20 12 6 20 6 4" />} />,
+  pause: <Svg size={14} d={<><rect x="6" y="4" width="4" height="16" rx="1" /><rect x="14" y="4" width="4" height="16" rx="1" /></>} />,
+  check: <Svg size={12} d={<polyline points="20 6 9 17 4 12" />} />,
+  inbox: <Svg size={14} d={<><polyline points="22 12 16 12 14 15 10 15 8 12 2 12" /><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" /></>} />,
 }
 const KIND_ICON: Record<string, React.ReactNode> = { context: I.layers, model: I.brain, action: I.bolt, finish: I.flag, error: I.alert, approval: I.flag }
 
@@ -105,6 +119,43 @@ export default function AgentsPage() {
     } catch { setSupportOn(!next); setError('Couldn’t reach Colvy.') } finally { setSavingRole(false) }
   }
   const [reloadKey, setReloadKey] = useState(0)
+
+  // Live pilot: kill switch, auto-send settings, and what's waiting for a person.
+  const [settings, setSettings] = useState<Settings | null>(null)
+  const [savingSettings, setSavingSettings] = useState(false)
+  const [waiting, setWaiting] = useState<Waiting[]>([])
+  const loadSettings = useCallback(async () => {
+    if (!companyId) return
+    try { const r = await authFetch(`/api/agent/settings?companyId=${companyId}`); const d = await r.json(); if (r.ok && d.pause) setSettings(d) } catch {}
+  }, [companyId])
+  const loadWaiting = useCallback(async () => {
+    if (!companyId) return
+    try { const r = await authFetch(`/api/agent/approvals?companyId=${companyId}`); const d = await r.json(); if (r.ok) setWaiting((d.approvals || []).filter((a: Waiting) => a.action_key === 'send_message')) } catch {}
+  }, [companyId])
+  useEffect(() => {
+    loadSettings(); loadWaiting()
+    if (!companyId) return
+    const iv = setInterval(() => { loadWaiting(); loadSettings() }, 15000)
+    return () => clearInterval(iv)
+  }, [companyId, loadSettings, loadWaiting])
+  const saveSettings = async (patch: Record<string, any>): Promise<boolean> => {
+    if (!companyId) return false
+    setSavingSettings(true); setError('')
+    try {
+      const r = await authFetch('/api/agent/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, ...patch }) })
+      const d = await r.json()
+      if (!r.ok || d.error) { setError(d.error || 'Couldn’t save.'); return false }
+      setSettings(d); return true
+    } catch { setError('Couldn’t reach Colvy.'); return false } finally { setSavingSettings(false) }
+  }
+  const pauseAll = async () => {
+    const ok = await confirmDialog({
+      title: 'Pause all agents?',
+      message: 'They stop straight away: nothing more is sent or changed, queued work is cancelled, and new messages wait for your team. Suggestions already waiting stay for you to send or dismiss. You can resume any time.',
+      confirmLabel: 'Pause all agents', tone: 'danger',
+    })
+    if (ok) { await saveSettings({ paused: true }); loadRuns() }
+  }
 
   const loadRuns = useCallback(async () => {
     if (!companyId) return
@@ -169,10 +220,26 @@ export default function AgentsPage() {
     <div style={{ minHeight: '100%', background: 'var(--canvas, #f6f7f9)' }}>
       <style>{CSS}</style>
       <div style={{ maxWidth: 1160, margin: '0 auto', padding: '24px 16px 120px' }}>
-        <div style={{ marginBottom: 20 }}>
-          <h1 style={{ margin: 0, fontSize: 'clamp(22px, 3.4vw, 28px)', fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--ink)' }}>AI Agents</h1>
-          <p style={{ margin: '4px 0 0', fontSize: 14, color: 'var(--slate)', maxWidth: 640 }}>Colvy’s AI employees. Every run is recorded — what the agent knew, what it decided, which permission allowed it, and why.</p>
+        <div style={{ marginBottom: 20, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+          <div style={{ minWidth: 0, flex: '1 1 320px' }}>
+            <h1 style={{ margin: 0, fontSize: 'clamp(22px, 3.4vw, 28px)', fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--ink)' }}>AI Agents</h1>
+            <p style={{ margin: '4px 0 0', fontSize: 14, color: 'var(--slate)', maxWidth: 640 }}>Colvy’s AI employees. Every run is recorded — what the agent knew, what it decided, which permission allowed it, and why.</p>
+          </div>
+          {settings && !settings.pause.paused && (
+            <button type="button" className="ag-kill" onClick={pauseAll} disabled={savingSettings}>{I.pause} Pause all agents</button>
+          )}
         </div>
+
+        {settings?.pause.paused && (
+          <div className="ag-paused ag-fade" role="status">
+            <span className="ag-paused-ic">{I.pause}</span>
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <p className="ag-h">All agents are paused</p>
+              <p className="ag-p">{settings.pause.platform ? 'Colvy has paused agents for everyone while we look into something.' : `${settings.pause.byName ? `${settings.pause.byName} paused them` : 'Paused'}${settings.pause.at ? ` ${when(settings.pause.at)}` : ''}. Nothing is sent or changed, and new messages wait for your team.`}</p>
+            </div>
+            {!settings.pause.platform && <button type="button" className="ag-primary" onClick={() => saveSettings({ paused: false })} disabled={savingSettings}>{savingSettings ? 'Resuming…' : 'Resume'}</button>}
+          </div>
+        )}
 
         {needsMigration && <div className="ag-note warn ag-fade" style={{ marginBottom: 16 }}>{I.alert}<span>Agents need a one-time database update (<b>COLVY_V353_AGENT_ENGINE.sql</b>).</span></div>}
         {error && <div className="ag-note err ag-fade" style={{ marginBottom: 16 }} role="alert">{I.alert}<span>{error}</span></div>}
@@ -182,11 +249,33 @@ export default function AgentsPage() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 14, justifyContent: 'space-between' }}>
             <div style={{ minWidth: 0 }}>
               <p className="ag-h">Support Agent on incoming SMS and chat</p>
-              <p className="ag-p">When a customer texts or chats, the Support Agent works out what they need, checks their order and tracking, and suggests a reply in the conversation. Nothing is sent until someone on your team presses Send.</p>
+              <p className="ag-p">{settings?.autoSend.enabled
+                ? 'When a customer texts or chats, the Support Agent works out what they need and looks it up. It replies on its own when the answer is one you allowed and it has just checked the facts; anything else waits for your team.'
+                : 'When a customer texts or chats, the Support Agent works out what they need, checks their order and tracking, and suggests a reply in the conversation. Nothing is sent until someone on your team presses Send.'}</p>
             </div>
             <button type="button" role="switch" aria-checked={!!supportOn} aria-label="Support Agent on incoming SMS and chat" onClick={toggleSupport} disabled={supportOn == null || savingRole} className={`ag-switch ${supportOn ? 'on' : ''}`}><span /></button>
           </div>
+          {supportOn && settings && <AutoSendPanel settings={settings} saving={savingSettings} onSave={a => saveSettings({ autoSend: a })} />}
         </div>
+
+        {waiting.length > 0 && companyId && (
+          <div className="ag-card ag-fade ag-wait" style={{ marginBottom: 16 }}>
+            <p className="ag-h">Waiting for you <span className="ag-count">{waiting.length}</span></p>
+            <p className="ag-p">Replies the Support Agent prepared. Send, edit or dismiss them here or in the conversation. They expire after 24 hours.</p>
+            <ul className="ag-wait-list">
+              {waiting.map(a => (
+                <li key={a.id}>
+                  <div className="ag-wait-head">
+                    <span className="ag-wait-who">{a.conversation?.customer || 'Customer'}</span>
+                    <span className="ag-run-s" style={{ marginTop: 0 }}>{CHANNEL[a.conversation?.channel || ''] || a.conversation?.channel || 'Conversation'} · {when(a.created_at)}</span>
+                    {a.conversation?.id && <a className="ag-link" href={`/admin/inbox?conversation=${a.conversation.id}`}>{I.inbox} Open conversation</a>}
+                  </div>
+                  <SuggestionCard s={a} companyId={companyId} onDone={() => { setWaiting(w => w.filter(x => x.id !== a.id)); setTimeout(() => { loadWaiting(); loadSettings(); loadRuns() }, 800) }} />
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         {/* Try it */}
         <div className="ag-card ag-fade" style={{ marginBottom: 16 }}>
@@ -250,6 +339,87 @@ export default function AgentsPage() {
   )
 }
 
+function AutoSendPanel({ settings, saving, onSave }: { settings: Settings; saving: boolean; onSave: (a: AutoSend) => Promise<boolean> }) {
+  const [draft, setDraft] = useState<AutoSend>(settings.autoSend)
+  const saved = settings.autoSend
+  // Follow the server unless the person is mid-edit.
+  const dirty = JSON.stringify(draft) !== JSON.stringify(saved)
+  useEffect(() => { if (!dirty) setDraft(saved) }, [saved]) // eslint-disable-line react-hooks/exhaustive-deps
+  const set = (patch: Partial<AutoSend>) => setDraft(d => ({ ...d, ...patch }))
+  const toggleTopic = (k: string) => set({ topics: draft.topics.includes(k) ? draft.topics.filter(t => t !== k) : [...draft.topics, k] })
+
+  const save = async () => {
+    if (draft.enabled && !saved.enabled) {
+      const names = draft.topics.map(k => TOPIC_SHORT[k] || k)
+      const list = names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : names[0] || 'nothing yet'
+      const ok = await confirmDialog({
+        title: 'Let the Support Agent reply on its own?',
+        message: `Without waiting for you, it will answer questions about ${list} — only when it has just looked up the facts, and at most ${draft.max_per_day} a day. Everything else still waits for your team, and you can pause it any time.`,
+        confirmLabel: 'Turn on', tone: 'primary',
+      })
+      if (!ok) return
+    }
+    await onSave(draft)
+  }
+
+  return (
+    <div className="ag-auto">
+      <p className="ag-label" style={{ marginTop: 0 }}>How it replies</p>
+      <div className="ag-seg" role="radiogroup" aria-label="How it replies">
+        <button type="button" role="radio" aria-checked={!draft.enabled} className={!draft.enabled ? 'on' : ''} onClick={() => set({ enabled: false })}>Suggest replies</button>
+        <button type="button" role="radio" aria-checked={draft.enabled} className={draft.enabled ? 'on' : ''} onClick={() => set({ enabled: true })}>Reply on its own</button>
+        <span className="ag-seg-pill" style={{ transform: draft.enabled ? 'translateX(100%)' : 'none' }} />
+      </div>
+
+      <div className={`ag-auto-body ${draft.enabled ? 'open' : ''}`} aria-hidden={!draft.enabled}>
+        <div style={{ overflow: 'hidden' }}>
+          <p className="ag-p" style={{ margin: '14px 0 10px' }}>It sends a reply on its own only when it’s about one of these, and it has just looked the answer up. Anything else — or anything that looks wrong — waits for your team.</p>
+          <div className="ag-topics">
+            {settings.topics.map(t => {
+              const on = draft.topics.includes(t.key)
+              return (
+                <button key={t.key} type="button" role="checkbox" aria-checked={on} className={`ag-topic ${on ? 'on' : ''}`} onClick={() => toggleTopic(t.key)} tabIndex={draft.enabled ? 0 : -1}>
+                  <span className="ag-tick">{on && I.check}</span>{t.label}
+                </button>
+              )
+            })}
+          </div>
+          <div className="ag-limits">
+            <label className="ag-limit">
+              <span>Most replies on its own a day</span>
+              <input type="number" min={1} max={500} className="ag-input" value={draft.max_per_day} onChange={e => set({ max_per_day: Number(e.target.value) })} tabIndex={draft.enabled ? 0 : -1} />
+            </label>
+            <label className="ag-limit">
+              <span>Most per conversation an hour</span>
+              <input type="number" min={1} max={10} className="ag-input" value={draft.max_per_conversation_per_hour} onChange={e => set({ max_per_conversation_per_hour: Number(e.target.value) })} tabIndex={draft.enabled ? 0 : -1} />
+            </label>
+          </div>
+          <div className="ag-verified">
+            <div style={{ minWidth: 0 }}>
+              <div className="ag-step-t" style={{ fontSize: 13.5 }}>Only for known customers</div>
+              <div className="ag-step-dec" style={{ marginTop: 1 }}>Only when the texting number matches the customer’s saved number.</div>
+            </div>
+            <button type="button" role="switch" aria-checked={draft.require_verified_customer} aria-label="Only for known customers" className={`ag-switch ${draft.require_verified_customer ? 'on' : ''}`} onClick={() => set({ require_verified_customer: !draft.require_verified_customer })} tabIndex={draft.enabled ? 0 : -1}><span /></button>
+          </div>
+          <p className="ag-step-dec" style={{ marginTop: 10 }}>While it replies on its own, Colvy AI’s older auto-reply stays quiet on SMS and chat, so customers never get two answers.</p>
+        </div>
+      </div>
+
+      <div className="ag-auto-foot">
+        <span className="ag-step-dec" style={{ margin: 0 }}>
+          {saved.enabled ? `On — ${settings.sentToday} sent on its own in the last 24 hours (limit ${saved.max_per_day}).` : 'Off — every reply waits for your team.'}
+        </span>
+        {dirty && (
+          <span style={{ display: 'flex', gap: 8 }}>
+            <button type="button" className="ag-ghost" onClick={() => setDraft(saved)} disabled={saving}>Cancel</button>
+            <button type="button" className="ag-primary small" onClick={save} disabled={saving || (draft.enabled && !draft.topics.length)}>{saving ? 'Saving…' : 'Save'}</button>
+          </span>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function RunDetail({ run, steps, approvals, companyId, onDecided }: { run: Run; steps: Step[]; approvals: any[]; companyId: string; onDecided: () => void }) {
   const st = STATUS[run.status] || { label: run.status, tone: 'muted' }
   const dur = secs(run.started_at || run.created_at, run.finished_at)
@@ -278,7 +448,7 @@ function RunDetail({ run, steps, approvals, companyId, onDecided }: { run: Run; 
       ))}
       {(approvals || []).filter(a => a.status !== 'pending').map(a => (
         <p key={a.id} className="ag-step-dec" style={{ marginTop: 10 }}>
-          Suggested reply {a.status === 'executed' ? 'sent by the team' : a.status === 'edited' ? 'edited and sent by the team' : a.status === 'rejected' ? 'dismissed by the team' : a.status}.
+          Suggested reply {a.status === 'executed' ? 'sent by the team' : a.status === 'edited' ? 'edited and sent by the team' : a.status === 'rejected' ? 'dismissed by the team' : a.status === 'expired' ? 'expired — nobody sent it within 24 hours' : a.status}.
         </p>
       ))}
 
@@ -309,7 +479,9 @@ function RunDetail({ run, steps, approvals, companyId, onDecided }: { run: Run; 
 
 function StepRow({ s }: { s: Step }) {
   const [open, setOpen] = useState(false)
-  const dec = s.decision ? DECISION[s.decision] : null
+  const dec = s.kind === 'action' && s.action_key === 'send_message' && s.decision === 'allowed' && s.status === 'ok'
+    ? { label: 'Sent on its own', tone: 'ok' }
+    : s.decision ? DECISION[s.decision] : null
   const title = useMemo(() => {
     if (s.kind === 'model') return 'Thought it through'
     if (s.kind === 'finish') return `Finished${s.input?.outcome ? ` — ${OUTCOME[s.input.outcome] || s.input.outcome}` : ''}`
@@ -404,4 +576,36 @@ const CSS = `
 .ag-note svg{flex-shrink:0;margin-top:2px}
 .ag-note.warn{background:#fffaeb;color:#93370d;border:1px solid #fedf89}
 .ag-note.err{background:#fef3f2;color:#b42318;border:1px solid #fecdca}
+.ag-kill{display:inline-flex;align-items:center;gap:7px;height:38px;padding:0 15px;border-radius:12px;border:1px solid #fecdca;background:#fff;color:#b42318;font-size:13.5px;font-weight:700;cursor:pointer;font-family:inherit;transition:background .2s ease,transform .15s ${EASE}}
+.ag-kill:hover:not(:disabled){background:#fef3f2}.ag-kill:active:not(:disabled){transform:scale(.97)}.ag-kill:disabled{opacity:.5;cursor:default}
+.ag-paused{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:16px;padding:16px 18px;border-radius:20px;background:#fef3f2;border:1px solid #fecdca}
+.ag-paused .ag-h{color:#912018}.ag-paused .ag-p{color:#b42318}
+.ag-paused-ic{width:38px;height:38px;flex-shrink:0;border-radius:12px;display:inline-flex;align-items:center;justify-content:center;background:#fff;color:#b42318;border:1px solid #fecdca}
+.ag-primary.small{height:36px;padding:0 16px;font-size:13.5px;box-shadow:none}
+.ag-ghost{height:36px;padding:0 14px;border-radius:12px;border:1px solid var(--border);background:#fff;color:var(--ink);font-size:13.5px;font-weight:700;cursor:pointer;font-family:inherit}
+.ag-ghost:disabled{opacity:.5;cursor:default}
+.ag-auto{margin-top:16px;padding-top:16px;border-top:1px solid var(--border)}
+.ag-seg{position:relative;display:inline-grid;grid-template-columns:1fr 1fr;padding:3px;border-radius:13px;background:var(--canvas,#f3f4f6);max-width:100%}
+.ag-seg button{position:relative;z-index:1;padding:8px 16px;border:none;background:none;border-radius:10px;font-size:13.5px;font-weight:700;color:var(--slate);cursor:pointer;font-family:inherit;white-space:nowrap;transition:color .25s ease}
+.ag-seg button.on{color:var(--ink)}
+.ag-seg-pill{position:absolute;top:3px;bottom:3px;left:3px;width:calc(50% - 3px);border-radius:10px;background:#fff;box-shadow:0 1px 3px rgba(15,23,42,.12);transition:transform .35s ${EASE}}
+.ag-auto-body{display:grid;grid-template-rows:0fr;opacity:0;transition:grid-template-rows .45s ${EASE},opacity .3s ease}
+.ag-auto-body.open{grid-template-rows:1fr;opacity:1}
+.ag-topics{display:flex;flex-wrap:wrap;gap:8px}
+.ag-topic{display:inline-flex;align-items:center;gap:8px;padding:8px 13px 8px 9px;border-radius:12px;border:1px solid var(--border);background:#fff;font-size:13px;font-weight:600;color:var(--ink);cursor:pointer;font-family:inherit;text-align:left;transition:border-color .2s ease,background .2s ease}
+.ag-topic.on{border-color:color-mix(in srgb,var(--coral) 45%,var(--border));background:color-mix(in srgb,var(--coral) 6%,#fff)}
+.ag-tick{width:18px;height:18px;flex-shrink:0;border-radius:6px;border:1.5px solid var(--border);display:inline-flex;align-items:center;justify-content:center;color:#fff;transition:background .2s ease,border-color .2s ease}
+.ag-topic.on .ag-tick{background:var(--coral);border-color:var(--coral)}
+.ag-limits{display:grid;grid-template-columns:minmax(0,1fr);gap:10px;margin-top:14px}
+@media (min-width:560px){.ag-limits{grid-template-columns:1fr 1fr}}
+.ag-limit{display:flex;flex-direction:column;gap:6px;font-size:12.5px;font-weight:600;color:var(--slate)}
+.ag-verified{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:12px;padding:11px 13px;border-radius:13px;border:1px solid var(--border)}
+.ag-auto-foot{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:14px}
+.ag-count{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 6px;margin-left:8px;border-radius:999px;background:var(--coral);color:#fff;font-size:11.5px;font-weight:800}
+.ag-wait-list{list-style:none;margin:14px 0 0;padding:0;display:flex;flex-direction:column;gap:14px}
+.ag-wait-list li{animation:agFade .45s ${EASE} both}
+.ag-wait-head{display:flex;align-items:center;gap:6px 10px;flex-wrap:wrap;margin-bottom:8px}
+.ag-wait-who{font-size:14px;font-weight:700;color:var(--ink)}
+.ag-link{display:inline-flex;align-items:center;gap:5px;margin-left:auto;font-size:12.5px;font-weight:700;color:var(--coral);text-decoration:none}
+.ag-wait .agsg{max-width:none;margin-left:0}
 `

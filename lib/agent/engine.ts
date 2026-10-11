@@ -13,6 +13,7 @@ import { createHash } from 'crypto'
 import { getModelClient, type ModelClient, type NeutralBlock, type NeutralMessage, type ToolSpec } from './model'
 import { getAction, validateInput, FINISH_ACTION } from './actions'
 import { decide, loadPolicies } from './policy'
+import { agentsPaused, pauseFrom } from './pilot'
 import { loadRole } from './roles'
 import { buildContext } from './memory'
 import { localNow, prettyDate, prettyTime, addDays } from '@/lib/business-hours'
@@ -163,9 +164,13 @@ export async function runAgent(db: any, runId: string, deadline: number, model: 
       runId: run.id, roleKey: role.key, roleName: role.name, mode: run.mode,
       conversationId: run.conversation_id || null, contactId: run.contact_id || pack.contactId,
       customerVerification: pack.verification,
-      scratch: {},
+      // startedAt: "has a person replied since?" checks before acting alone.
+      scratch: { startedAt: run.created_at || nowIso() },
     }
     const policies = await loadPolicies(db, run.company_id)
+    const pausedNow = async () => run.mode === 'live' && (await agentsPaused(db, run.company_id)).paused
+    const stopPaused = () => finishRun({ status: 'cancelled', summary: 'Stopped — agents are paused for this business.', tokens_in: Number(run.tokens_in) || 0, tokens_out: Number(run.tokens_out) || 0 })
+    if (run.mode === 'live' && pauseFrom(policies).paused) return stopPaused()
     const actions = role.actions.map(getAction).filter(Boolean) as ActionDef[]
     if (!actions.find(a => a.key === 'finish')) actions.push(FINISH_ACTION)
     const tools = actions.map(toolSpec)
@@ -180,6 +185,11 @@ export async function runAgent(db: any, runId: string, deadline: number, model: 
 
     for (let step = 0; step < role.maxSteps && !finished; step++) {
       if (Date.now() > deadline) break
+      // Kill switch: someone pressed "Pause all agents" while this was running.
+      if (step > 0 && (await pausedNow())) {
+        await trail.add({ kind: 'error', status: 'skipped', decision_reason: 'Agents were paused — stopped here.' })
+        return finishRun({ status: 'cancelled', summary: 'Stopped part-way — agents were paused for this business.', tokens_in: tokensIn, tokens_out: tokensOut, model: modelName })
+      }
       const t0 = Date.now()
       const resp = await model.generate({ tier: role.modelTier, system, messages, tools })
       tokensIn += resp.usage.in; tokensOut += resp.usage.out; modelName = resp.model
@@ -237,15 +247,25 @@ export async function runAgent(db: any, runId: string, deadline: number, model: 
         const base = { kind: 'action', action_key: action.key, input, reason, decision: decision.verdict, decision_reason: decision.reason, autonomy: decision.autonomy }
 
         if (decision.verdict === 'allowed') {
+          // Last check before anything leaves Colvy.
+          if (action.category !== 'read' && action.category !== 'control' && (await pausedNow())) {
+            await trail.add({ ...base, decision: 'denied', decision_reason: 'Agents were paused — not done.', status: 'skipped' })
+            return finishRun({ status: 'cancelled', summary: 'Stopped part-way — agents were paused for this business.', tokens_in: tokensIn, tokens_out: tokensOut, model: modelName })
+          }
           const t1 = Date.now()
           let r
           try { r = await action.run(actx, input) } catch (e: any) { r = { ok: false, error: e?.message || 'Action failed' } }
-          if (action.key === 'escalate_to_human' && r.ok) escalated = true
+          if (action.key === 'escalate_to_human' && r.ok) { escalated = true; actx.scratch.escalated = true }
+          // What this run has looked up — replies sent on their own must be backed by it.
+          if (r.ok && action.category === 'read') {
+            ;(actx.scratch.done ||= {})[action.key] = r.data
+            if (action.key === 'check_order_status' && r.data?.assessment?.verdict) (actx.scratch.orderVerdicts ||= []).push(r.data.assessment.verdict)
+          }
           await trail.add({ ...base, status: r.ok ? 'ok' : 'error', output: r.ok ? (r.data ?? { summary: r.summary }) : { error: r.error }, entity_type: r.entityType || null, entity_id: r.entityId || null, duration_ms: Date.now() - t1 })
           results.push({ type: 'tool_result', id: call.id, content: JSON.stringify(r.ok ? (r.data ?? { ok: true }) : { error: r.error }), ...(r.ok ? {} : { isError: true }) })
         } else if (decision.verdict === 'suggested') {
           await trail.add({ ...base, status: 'simulated' })
-          if (action.key === 'escalate_to_human') escalated = true
+          if (action.key === 'escalate_to_human') { escalated = true; actx.scratch.escalated = true }
           results.push({ type: 'tool_result', id: call.id, content: JSON.stringify({ done: false, recorded_as: 'suggestion', note: 'Recorded for the team to review. It has NOT happened. Carry on, then finish.' }) })
         } else if (decision.verdict === 'needs_approval') {
           const stepId = await trail.add({ ...base, status: 'pending' })

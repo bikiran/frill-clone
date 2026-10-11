@@ -15,7 +15,33 @@ export async function pendingApprovals(db: any, companyId: string, opts: { conve
   const byId = new Map((runs || []).map((r: any) => [r.id, r]))
   rows = rows.map((a: any) => ({ ...a, run: byId.get(a.run_id) || null }))
   if (opts.conversationId) rows = rows.filter((a: any) => a.run?.conversation_id === opts.conversationId)
+  else if (rows.length) {
+    // The list across conversations: who each one is for, and on which channel.
+    const convIds = Array.from(new Set(rows.map((a: any) => a.run?.conversation_id).filter(Boolean)))
+    const { data: convs } = convIds.length ? await db.from('conversations').select('id, channel, contact_id').in('id', convIds) : { data: [] }
+    const contactIds = Array.from(new Set((convs || []).map((c: any) => c.contact_id).filter(Boolean)))
+    const { data: contacts } = contactIds.length ? await db.from('contacts').select('id, name, phone, email').in('id', contactIds) : { data: [] }
+    const cById = new Map((contacts || []).map((c: any) => [c.id, c]))
+    const convById = new Map((convs || []).map((c: any) => [c.id, c]))
+    rows = rows.map((a: any) => {
+      const conv: any = convById.get(a.run?.conversation_id)
+      const ct: any = conv ? cById.get(conv.contact_id) : null
+      return { ...a, conversation: conv ? { id: conv.id, channel: conv.channel, customer: ct?.name || ct?.phone || ct?.email || null } : null }
+    })
+  }
   return rows
+}
+
+/** Suggestions nobody acted on in time. Their run is finished; the reply is not sent. */
+export async function expireApprovals(db: any): Promise<number> {
+  const now = new Date().toISOString()
+  const { data } = await db.from('agent_approvals').update({ status: 'expired' }).eq('status', 'pending').lt('expires_at', now).select('id, run_id')
+  const runIds = Array.from(new Set((data || []).map((a: any) => a.run_id)))
+  for (const id of runIds) {
+    const { data: run } = await db.from('agent_runs').select('*').eq('id', id).maybeSingle()
+    if (run) await settleRun(db, run)
+  }
+  return (data || []).length
 }
 
 async function logStep(db: any, run: any, step: Record<string, any>) {

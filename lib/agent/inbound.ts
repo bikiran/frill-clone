@@ -7,19 +7,22 @@
 // person has already replied.
 //
 // What the agent may do is decided by its policies: by default send_message
-// is "prepare", so its reply becomes a suggestion for the team — nothing is
-// sent to the customer on its own.
+// is "prepare", so its reply becomes a suggestion for the team. A business can
+// let it send some replies on its own (Phase 4, lib/agent/pilot.ts). Nothing
+// starts while agents are paused.
 
 import { enqueueRun, runAgent } from './engine'
+import { agentsPaused } from './pilot'
 
-const CHANNELS = new Set(['sms', 'widget', 'chat'])
+export const AGENT_CHANNELS = new Set(['sms', 'widget', 'chat'])
 export const DEBOUNCE_MS = 6000
 
 export async function startSupportAgentForConversation(db: any, conversationId: string, opts: { debounceMs?: number; deadlineMs?: number } = {}) {
   const { data: conv } = await db.from('conversations').select('id, company_id, channel, contact_id').eq('id', conversationId).maybeSingle()
-  if (!conv?.company_id || !CHANNELS.has(String(conv.channel || 'chat'))) return { started: false, reason: 'channel' }
+  if (!conv?.company_id || !AGENT_CHANNELS.has(String(conv.channel || 'chat'))) return { started: false, reason: 'channel' }
   const { data: role } = await db.from('agent_roles').select('enabled').eq('company_id', conv.company_id).eq('role_key', 'support').maybeSingle().then((r: any) => r, () => ({ data: null }))
   if (!role?.enabled) return { started: false, reason: 'off' }
+  if ((await agentsPaused(db, conv.company_id)).paused) return { started: false, reason: 'paused' }
 
   await new Promise(r => setTimeout(r, opts.debounceMs ?? DEBOUNCE_MS))
 
@@ -32,6 +35,9 @@ export async function startSupportAgentForConversation(db: any, conversationId: 
   // A person already answered after the customer — they're handling it.
   const humanSince = list.some((m: any) => m.sender_type === 'agent' && !m.is_ai && new Date(m.created_at) > new Date(lastCustomer.created_at))
   if (humanSince) return { started: false, reason: 'human replied' }
+  // Colvy AI's older auto-reply (or a keyword reply) already answered it.
+  const aiSince = list.some((m: any) => m.sender_type === 'agent' && m.is_ai && new Date(m.created_at) > new Date(lastCustomer.created_at))
+  if (aiSince) return { started: false, reason: 'already answered' }
   // Collect the customer's latest burst (their messages since anyone else spoke).
   const burst: string[] = []
   for (const m of list) { if (m.sender_type !== 'visitor') break; burst.unshift(String(m.content || '').trim()) }
