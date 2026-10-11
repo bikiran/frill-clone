@@ -13,6 +13,7 @@ import { runReadTool, type AssistantContext } from '@/lib/ai-assistant/tools'
 import { notifyCompany } from '@/lib/notify'
 import type { ActionContext, ActionDef, ActionResult, JsonSchema } from './types'
 import { findCustomerOrders, checkOrderStatus } from './order-actions'
+import { sendAgentMessage } from './send'
 
 const obj = (properties: Record<string, any>, required: string[] = []): JsonSchema => ({ type: 'object', properties, required, additionalProperties: false })
 
@@ -111,9 +112,9 @@ const sendMessage: ActionDef = {
   input: obj({ text: { type: 'string', description: 'The message to send.' } }, ['text']),
   category: 'communicate', risk: 'medium', maxAutonomy: 'act_within_limits', customerSafe: true,
   async run(ctx, args) {
-    // Live delivery is wired in Phase 3, through the existing countdown / claim
-    // flow (lib/ai-live-reply). Until then nothing can reach a customer.
-    return { ok: false, error: `Live sending isn’t switched on yet. Text was: ${String(args?.text || '').slice(0, 200)}` }
+    if (!ctx.conversationId) return { ok: false, error: 'No conversation to reply in.' }
+    const r = await sendAgentMessage(ctx.db, { companyId: ctx.companyId, conversationId: ctx.conversationId, text: String(args?.text || ''), runId: ctx.runId })
+    return r.ok ? { ok: true, data: { sent: true, channel: r.channel }, entityType: 'conversation', entityId: ctx.conversationId, summary: 'Replied to the customer' } : { ok: false, error: r.error }
   },
 }
 

@@ -1,11 +1,12 @@
 import { isInternalCall } from '@/lib/internal-call'
 import { requireCompanyAccess } from '@/lib/company-access'
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse, after } from 'next/server'
 import { runAiAgent } from '@/lib/ai-agent'
+import { startSupportAgentForConversation } from '@/lib/agent/inbound'
 import { createClient } from '@supabase/supabase-js'
 
 export const dynamic = 'force-dynamic'
-export const maxDuration = 60
+export const maxDuration = 300
 
 const admin = () => createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -28,6 +29,11 @@ export async function POST(req: NextRequest) {
     if (!conversationId) return NextResponse.json({ error: 'conversationId required' }, { status: 400 })
     const { data: owner } = await admin().from('conversations').select('company_id').eq('id', conversationId).maybeSingle()
     if (!owner?.company_id) return NextResponse.json({ error: 'Conversation not found' }, { status: 404 })
+
+    // The Support Agent (Agent Engine) — only if the business switched it on.
+    // Runs alongside, never instead of, the auto-reply below; by default it
+    // only suggests a reply for the team.
+    after(async () => { try { await startSupportAgentForConversation(admin(), conversationId) } catch (e) { console.warn('[agent] inbound', e) } })
 
     const result = await runAiAgent({ conversationId, companyId: owner.company_id })
 
