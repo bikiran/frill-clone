@@ -14,6 +14,8 @@
 // Every slice carries a reference, saved on the run (context_refs), so "why did
 // Colvy do this?" can point at exactly what the agent knew.
 
+import { colvyWeek, weekText } from '@/lib/business-hours'
+
 export type ContextRef = { type: string; id: string; label: string }
 
 export type AgentContextPack = {
@@ -21,22 +23,14 @@ export type AgentContextPack = {
   businessText: string
   customerText: string
   verification: 'verified' | 'probable' | 'unknown'
+  timezone: string
   contactId: string | null
   refs: ContextRef[]
 }
 
-const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
-
-function hoursText(h: any): string {
-  if (!h || typeof h !== 'object') return ''
-  const lines = DAYS.map(d => {
-    const v = h[d]
-    if (!v) return null
-    if (v.open === false || v.closed) return `${d[0].toUpperCase()}${d.slice(1)}: closed`
-    if (v.from && v.to) return `${d[0].toUpperCase()}${d.slice(1)}: ${v.from}–${v.to}`
-    return null
-  }).filter(Boolean)
-  return lines.join('; ')
+function validTz(tz: any): boolean {
+  if (!tz || typeof tz !== 'string') return false
+  try { new Intl.DateTimeFormat('en-US', { timeZone: tz }); return true } catch { return false }
 }
 
 const digits = (s: any) => String(s || '').replace(/\D/g, '').slice(-9)
@@ -45,7 +39,7 @@ export async function buildContext(db: any, companyId: string, opts: { conversat
   const refs: ContextRef[] = []
 
   const [{ data: co }, { data: locs }, { data: mem }] = await Promise.all([
-    db.from('companies').select('id, name, website, business_phone, business_email, business_address, business_city, business_state, business_hours').eq('id', companyId).maybeSingle(),
+    db.from('companies').select('id, name, website, business_phone, business_email, business_address, business_city, business_state, business_hours, booking_settings').eq('id', companyId).maybeSingle(),
     db.from('company_locations').select('id, label, street_address, suburb, state, phone, is_primary').eq('company_id', companyId).limit(20),
     db.from('business_memory').select('id, kind, key, content').eq('company_id', companyId).eq('status', 'active').limit(200).then((r: any) => r, () => ({ data: [] })),
   ])
@@ -56,8 +50,10 @@ export async function buildContext(db: any, companyId: string, opts: { conversat
     biz.push(`Business: ${co.name}${co.website ? ` (${co.website})` : ''}`)
     const contact = [co.business_phone && `phone ${co.business_phone}`, co.business_email && `email ${co.business_email}`].filter(Boolean).join(', ')
     if (contact) biz.push(`Contact: ${contact}`)
-    const hrs = hoursText(co.business_hours)
-    if (hrs) biz.push(`Opening hours: ${hrs}`)
+    const week = colvyWeek(co.business_hours)
+    biz.push(week
+      ? `Opening hours saved in Colvy: ${weekText(week)}. Use get_business_hours before answering — it has live Google hours, holiday hours and the right dates.`
+      : 'Opening hours: use get_business_hours.')
   }
   if (locs?.length) {
     refs.push({ type: 'locations', id: companyId, label: `${locs.length} location${locs.length === 1 ? '' : 's'}` })
@@ -112,5 +108,6 @@ export async function buildContext(db: any, companyId: string, opts: { conversat
     businessText: biz.join('\n\n') || 'No business details saved yet.',
     customerText: cust.join('\n'),
     verification, contactId, refs,
+    timezone: validTz(co?.booking_settings?.timezone) ? co.booking_settings.timezone : 'Australia/Melbourne',
   }
 }

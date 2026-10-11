@@ -13,6 +13,7 @@ import { runReadTool, type AssistantContext } from '@/lib/ai-assistant/tools'
 import { notifyCompany } from '@/lib/notify'
 import type { ActionContext, ActionDef, ActionResult, JsonSchema } from './types'
 import { findCustomerOrders, checkOrderStatus } from './order-actions'
+import { getBusinessHours } from './business-actions'
 import { sendAgentMessage } from './send'
 
 const obj = (properties: Record<string, any>, required: string[] = []): JsonSchema => ({ type: 'object', properties, required, additionalProperties: false })
@@ -155,7 +156,7 @@ export const FINISH_ACTION: ActionDef = {
   async run() { return { ok: true } },
 }
 
-const ALL: ActionDef[] = [...READS, findCustomerOrders, checkOrderStatus, createTask, sendMessage, escalateToHuman, FINISH_ACTION]
+const ALL: ActionDef[] = [...READS, findCustomerOrders, checkOrderStatus, getBusinessHours, createTask, sendMessage, escalateToHuman, FINISH_ACTION]
 export const ACTIONS: Record<string, ActionDef> = Object.fromEntries(ALL.map(a => [a.key, a]))
 
 export function getAction(key: string): ActionDef | null {
