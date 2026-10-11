@@ -1,4 +1,5 @@
-// Phase 3: incoming customer messages start the Support Agent.
+// Phase 3: incoming customer messages start the Support Agent — or, for
+// booking talk when it's switched on, the Reception Agent (Phase 8).
 //
 // Called (in after()) for every inbound SMS / website chat that reaches
 // /api/ai/reply. Only for businesses that switched the Support Agent on
@@ -17,11 +18,25 @@ import { agentsPaused } from './pilot'
 export const AGENT_CHANNELS = new Set(['sms', 'widget', 'chat'])
 export const DEBOUNCE_MS = 6000
 
+// Booking talk goes to the Reception Agent; everything else (orders, products,
+// opening hours…) to the Support Agent. Deterministic and recorded on the run,
+// so "why did Reception answer this?" has an answer. One run per message
+// either way (same dedupe key).
+const BOOKING = /\b(book(ing|ed)?|appointment|appt|reschedul\w*|re-schedul\w*|availability|any (times|spots|slots)|free (time|slot)s?|slot|session|lesson|class(es)?|consult(ation)?|move my|change my (time|booking|appointment)|cancel my (booking|appointment|session|lesson|class))\b/i
+const ORDERISH = /\b(order|parcel|delivery|deliver|shipping|shipped|tracking|refund my order)\b/i
+
+export function pickRole(enabled: Set<string>, text: string): { roleKey: string; why: string } {
+  if (enabled.size === 1) return { roleKey: [...enabled][0], why: 'only agent switched on' }
+  if (enabled.has('reception') && BOOKING.test(text) && !ORDERISH.test(text)) return { roleKey: 'reception', why: 'about a booking' }
+  return { roleKey: enabled.has('support') ? 'support' : 'reception', why: 'not about a booking' }
+}
+
 export async function startSupportAgentForConversation(db: any, conversationId: string, opts: { debounceMs?: number; deadlineMs?: number } = {}) {
   const { data: conv } = await db.from('conversations').select('id, company_id, channel, contact_id').eq('id', conversationId).maybeSingle()
   if (!conv?.company_id || !AGENT_CHANNELS.has(String(conv.channel || 'chat'))) return { started: false, reason: 'channel' }
-  const { data: role } = await db.from('agent_roles').select('enabled').eq('company_id', conv.company_id).eq('role_key', 'support').maybeSingle().then((r: any) => r, () => ({ data: null }))
-  if (!role?.enabled) return { started: false, reason: 'off' }
+  const { data: roleRows } = await db.from('agent_roles').select('role_key, enabled').eq('company_id', conv.company_id).in('role_key', ['support', 'reception']).then((r: any) => r, () => ({ data: [] }))
+  const enabled = new Set<string>((roleRows || []).filter((r: any) => r.enabled).map((r: any) => r.role_key))
+  if (!enabled.size) return { started: false, reason: 'off' }
   if ((await agentsPaused(db, conv.company_id)).paused) return { started: false, reason: 'paused' }
 
   await new Promise(r => setTimeout(r, opts.debounceMs ?? DEBOUNCE_MS))
@@ -42,10 +57,12 @@ export async function startSupportAgentForConversation(db: any, conversationId: 
   const burst: string[] = []
   for (const m of list) { if (m.sender_type !== 'visitor') break; burst.unshift(String(m.content || '').trim()) }
 
+  const text = burst.filter(Boolean).join('\n')
+  const { roleKey, why } = pickRole(enabled, text)
   const { runId, deduped } = await enqueueRun(db, {
-    type: 'inbound_message', mode: 'live', companyId: conv.company_id, roleKey: 'support',
+    type: 'inbound_message', mode: 'live', companyId: conv.company_id, roleKey,
     conversationId, contactId: conv.contact_id || null, ref: lastCustomer.id, dedupeKey: `msg:${lastCustomer.id}`,
-    input: { message: burst.filter(Boolean).join('\n').slice(0, 4000), messageId: lastCustomer.id, channel: conv.channel },
+    input: { message: text.slice(0, 4000), messageId: lastCustomer.id, channel: conv.channel, routed: why },
   })
   if (deduped) return { started: false, reason: 'already running', runId }
   await runAgent(db, runId, Date.now() + (opts.deadlineMs ?? 200_000))

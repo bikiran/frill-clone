@@ -80,6 +80,11 @@ export interface ActionDef {
   /** Extra checks before acting on its own ("act_within_limits"): return why a
    *  person should approve this one instead, or null if it's fine. */
   autoCheck?(ctx: ActionContext, input: any, limits: PolicyLimits): Promise<string | null>
+  /** Before preparing it for approval: is the request valid (e.g. the customer's
+   *  own booking, a time that's free)? Return why not, or null. */
+  validate?(ctx: ActionContext, input: any): Promise<string | null>
+  /** One plain line for the person approving it ("Move Grooming to Tue 2pm"). */
+  describe?(ctx: ActionContext, input: any): Promise<string>
   run(ctx: ActionContext, input: any): Promise<ActionResult>
 }
 

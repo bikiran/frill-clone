@@ -16,6 +16,7 @@ import { AUTO_TOPICS } from './pilot'
 import { findCustomerOrders, checkOrderStatus } from './order-actions'
 import { getBusinessHours } from './business-actions'
 import { getReview, replyToReviewAction } from './review-actions'
+import { listServices, checkAvailability, findMyBookings, bookingLink, rescheduleBookingAction, cancelBookingAction } from './booking-actions'
 import { sendAgentMessage } from './send'
 
 const obj = (properties: Record<string, any>, required: string[] = []): JsonSchema => ({ type: 'object', properties, required, additionalProperties: false })
@@ -109,7 +110,7 @@ const createTask: ActionDef = {
   },
 }
 
-const TOPICS = ['opening_hours', 'order_status', 'stock', 'store_info', 'other']
+const TOPICS = ['opening_hours', 'order_status', 'stock', 'store_info', 'booking', 'other']
 
 // Before the agent sends a reply on its own: is it a topic the business
 // allowed, is it backed by a live lookup made in this run, and is nobody else
@@ -126,7 +127,8 @@ async function sendOnItsOwn(ctx: ActionContext, args: any, limits: PolicyLimits)
       : topic === 'order_status' ? (ctx.scratch.orderVerdicts?.length || 0) > 0 && ctx.scratch.orderVerdicts.every((v: string) => v === 'normal')
         : topic === 'stock' ? (done.check_stock?.products?.length || 0) > 0
           : topic === 'store_info' ? done.ask_knowledge?.found === true
-            : false
+            : topic === 'booking' ? !!(done.check_availability || done.find_my_bookings || done.list_services || done.booking_link)
+              : false
   if (!grounded) {
     return topic === 'order_status' && ctx.scratch.orderVerdicts?.length
       ? 'The order needs a look, so a person approves the reply.'
@@ -159,13 +161,13 @@ const sendMessage: ActionDef = {
   description: 'Reply to the customer in this conversation. Plain text, no markdown. This is the ONLY way to talk to the customer. Say what the reply is about in topic.',
   input: obj({
     text: { type: 'string', description: 'The message to send.' },
-    topic: { type: 'string', enum: TOPICS, description: 'What the reply answers: opening_hours, order_status, stock, store_info (from the business’s knowledge), or other.' },
+    topic: { type: 'string', enum: TOPICS, description: 'What the reply answers: opening_hours, order_status, stock, store_info (from the business’s knowledge), booking (services, times, their bookings), or other.' },
   }, ['text', 'topic']),
   category: 'communicate', risk: 'medium', maxAutonomy: 'act_within_limits', customerSafe: true,
   autoCheck: sendOnItsOwn,
   async run(ctx, args) {
     if (!ctx.conversationId) return { ok: false, error: 'No conversation to reply in.' }
-    const r = await sendAgentMessage(ctx.db, { companyId: ctx.companyId, conversationId: ctx.conversationId, text: String(args?.text || ''), runId: ctx.runId })
+    const r = await sendAgentMessage(ctx.db, { companyId: ctx.companyId, conversationId: ctx.conversationId, text: String(args?.text || ''), runId: ctx.runId, agentName: ctx.roleName.replace(/^Colvy /, '') })
     return r.ok ? { ok: true, data: { sent: true, channel: r.channel }, entityType: 'conversation', entityId: ctx.conversationId, summary: 'Replied to the customer' } : { ok: false, error: r.error }
   },
 }
@@ -207,7 +209,7 @@ export const FINISH_ACTION: ActionDef = {
   async run() { return { ok: true } },
 }
 
-const ALL: ActionDef[] = [...READS, findCustomerOrders, checkOrderStatus, getBusinessHours, getReview, replyToReviewAction, createTask, sendMessage, escalateToHuman, FINISH_ACTION]
+const ALL: ActionDef[] = [...READS, findCustomerOrders, checkOrderStatus, getBusinessHours, getReview, replyToReviewAction, listServices, checkAvailability, findMyBookings, bookingLink, rescheduleBookingAction, cancelBookingAction, createTask, sendMessage, escalateToHuman, FINISH_ACTION]
 export const ACTIONS: Record<string, ActionDef> = Object.fromEntries(ALL.map(a => [a.key, a]))
 
 export function getAction(key: string): ActionDef | null {

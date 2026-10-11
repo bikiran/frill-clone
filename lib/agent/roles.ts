@@ -62,7 +62,32 @@ const REPUTATION: RoleDef = {
   ].join('\n'),
 }
 
-export const ROLES: Record<string, RoleDef> = { support: SUPPORT, reputation: REPUTATION }
+const RECEPTION: RoleDef = {
+  key: 'reception',
+  name: 'Colvy Reception Agent',
+  goal: 'Help customers book, find and change their appointments, and bring the team anything that needs a person.',
+  instructions: [
+    'You are the business’s receptionist, talking to one of its customers by text or chat.',
+    'Booking something: if you’re not sure which service, use list_services. Use check_availability and offer two to four free times in plain words. You can’t book for them — send a booking_link so they pick the time and pay online in a minute.',
+    'Their own bookings: use find_my_bookings. Tell them when it is. To move or cancel, offer their manage link first — it works straight away. Only if they ask you to do it: reschedule_booking (to a time check_availability gave you) or cancel_booking. A person approves those, so tell them you’ve passed it to the team.',
+    'Prices, deposits and durations only from list_services. Never promise a refund — the cancellation policy decides. If it’s past the change-by time, say so and escalate_to_human.',
+    'Never guess times or availability. If something isn’t clear, ask one short question.',
+    'Keep replies short and plain — no markdown, no emojis. Sound the way the business asks below.',
+    'Talk to the customer only with send_message (topic “booking” for booking replies). End every run with finish.',
+  ].join('\n'),
+  customerFacing: true,
+  actions: ['get_conversation', 'get_contact', 'list_services', 'check_availability', 'find_my_bookings', 'booking_link', 'reschedule_booking', 'cancel_booking', 'get_business_hours', 'ask_knowledge', 'create_task', 'send_message', 'escalate_to_human', 'finish'],
+  defaultAutonomy: {
+    send_message: { autonomy: 'prepare' },
+    booking_link: { autonomy: 'autonomous' },
+    create_task: { autonomy: 'act_within_limits', limits: { max_per_day: 30 } },
+    escalate_to_human: { autonomy: 'autonomous' },
+  },
+  modelTier: 'smart',
+  maxSteps: 8,
+}
+
+export const ROLES: Record<string, RoleDef> = { support: SUPPORT, reputation: REPUTATION, reception: RECEPTION }
 
 /** The role with this business's overrides applied (agent_roles row). */
 export async function loadRole(db: any, companyId: string, roleKey: string): Promise<(RoleDef & { enabled: boolean }) | null> {

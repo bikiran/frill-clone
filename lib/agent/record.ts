@@ -13,6 +13,7 @@
 export const ACTIVITY_ROLES: Record<string, string> = {
   support: 'Colvy Support Agent',
   reputation: 'Colvy Reputation Agent',
+  reception: 'Colvy Reception Agent',
   colvy_ai: 'Colvy AI auto-reply',
   assistant: 'Colvy AI assistant',
   connected_app: 'Connected app',

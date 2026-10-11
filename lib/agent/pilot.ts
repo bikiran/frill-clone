@@ -19,6 +19,7 @@ export const AUTO_TOPICS: Record<string, { label: string; needs: string }> = {
   order_status: { label: 'Order status, when tracking looks normal', needs: 'check_order_status' },
   stock: { label: 'Stock questions', needs: 'check_stock' },
   store_info: { label: 'Questions your knowledge answers', needs: 'ask_knowledge' },
+  booking: { label: 'Booking questions (services, free times, their bookings)', needs: 'check_availability' },
 }
 
 export type AutoSend = {
@@ -92,30 +93,36 @@ export function cleanAutoSend(raw: any): AutoSend {
   }
 }
 
-export async function getAutoSend(db: any, companyId: string): Promise<AutoSend> {
+const defaultsFor = (roleKey: string): AutoSend => roleKey === 'reception' ? { ...DEFAULT_AUTO_SEND, topics: ['booking', 'opening_hours'] } : { ...DEFAULT_AUTO_SEND }
+
+/** An agent's "reply on its own" settings (its send_message policy). */
+export async function getAutoSend(db: any, companyId: string, roleKey = 'support'): Promise<AutoSend> {
+  const def = defaultsFor(roleKey)
   try {
-    const { data } = await db.from('agent_policies').select('autonomy, limits').eq('company_id', companyId).eq('role_key', 'support').eq('action_key', 'send_message').limit(1)
+    const { data } = await db.from('agent_policies').select('autonomy, limits').eq('company_id', companyId).eq('role_key', roleKey).eq('action_key', 'send_message').limit(1)
     const row = data?.[0]
-    if (!row) return { ...DEFAULT_AUTO_SEND }
-    return cleanAutoSend({ ...DEFAULT_AUTO_SEND, ...(row.limits || {}), enabled: row.autonomy === 'act_within_limits' })
-  } catch { return { ...DEFAULT_AUTO_SEND } }
+    if (!row) return def
+    return cleanAutoSend({ ...def, ...(row.limits || {}), enabled: row.autonomy === 'act_within_limits' })
+  } catch { return def }
 }
 
-export async function setAutoSend(db: any, companyId: string, raw: any, userId: string | null): Promise<AutoSend> {
+export async function setAutoSend(db: any, companyId: string, raw: any, userId: string | null, roleKey = 'support'): Promise<AutoSend> {
   const s = cleanAutoSend(raw)
   const limits: PolicyLimits = { topics: s.topics, max_per_day: s.max_per_day, max_per_conversation_per_hour: s.max_per_conversation_per_hour, require_verified_customer: s.require_verified_customer }
   // Off = back to suggestions ("prepare"); the limits are kept for next time.
-  await putPolicy(db, { company_id: companyId, role_key: 'support', action_key: 'send_message', autonomy: s.enabled ? 'act_within_limits' : 'prepare', limits, updated_by: userId })
+  await putPolicy(db, { company_id: companyId, role_key: roleKey, action_key: 'send_message', autonomy: s.enabled ? 'act_within_limits' : 'prepare', limits, updated_by: userId })
   return s
 }
 
-/** Is the Support Agent sending replies on its own right now? (Colvy AI's older auto-reply stands down if so.) */
+/** Is an agent (Support or Reception) sending replies on its own right now? (Colvy AI's older auto-reply stands down if so.) */
 export async function supportAutoSends(db: any, companyId: string): Promise<boolean> {
   try {
-    const { data: role } = await db.from('agent_roles').select('enabled').eq('company_id', companyId).eq('role_key', 'support').maybeSingle()
-    if (!role?.enabled) return false
+    const { data: roles } = await db.from('agent_roles').select('role_key, enabled').eq('company_id', companyId).in('role_key', ['support', 'reception'])
+    const on = (roles || []).filter((r: any) => r.enabled).map((r: any) => r.role_key)
+    if (!on.length) return false
     if ((await agentsPaused(db, companyId)).paused) return false
-    return (await getAutoSend(db, companyId)).enabled
+    for (const k of on) if ((await getAutoSend(db, companyId, k)).enabled) return true
+    return false
   } catch { return false }
 }
 

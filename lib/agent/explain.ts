@@ -14,6 +14,7 @@ const LABEL: Record<string, string> = {
   get_business_hours: 'Checked opening hours', create_task: 'Created a task', send_message: 'Replied to the customer',
   escalate_to_human: 'Handed it to the team', search_orders: 'Searched orders', get_order: 'Looked up an order',
   get_review: 'Read the review', reply_to_review: 'Replied to the review',
+  list_services: 'Looked at your services', check_availability: 'Checked free times', find_my_bookings: 'Found the customer’s bookings', booking_link: 'Made a booking link', reschedule_booking: 'Move a booking', cancel_booking: 'Cancel a booking',
   auto_reply: 'Replied to the customer', issue_coupon: 'Issued a coupon', start_doa_claim: 'Started a dead-on-arrival claim', create_draft_order: 'Created a draft order',
 }
 
@@ -44,6 +45,10 @@ function detailFor(action: string | null, input: any, output: any): string | nul
   if (o.error) return clip(o.error)
   switch (action) {
     case 'send_message': case 'auto_reply': case 'reply_to_review': return input?.text ? clip(input.text, 400) : null
+    case 'check_availability': return Array.isArray(o.free) ? (o.free.length ? clip(`${o.service}: ${o.free.slice(0, 3).map((d: any) => `${d.day} ${d.times.slice(0, 3).join(', ')}`).join(' · ')}`, 220) : clip(o.note || 'Nothing free')) : null
+    case 'find_my_bookings': return Array.isArray(o.bookings) ? (o.bookings.length ? clip(o.bookings.map((b: any) => `${b.service} ${b.when}`).join(' · '), 220) : clip(o.note || o.needs || 'No bookings')) : null
+    case 'booking_link': return o.link ? `Link${o.service ? ` for ${o.service}` : ''}: ${o.link}` : null
+    case 'reschedule_booking': case 'cancel_booking': return o.preview || null
     case 'get_review': return o.stars != null || o.wrote ? clip(`${o.stars ?? '?'}★ from ${o.reviewer || 'a customer'}: “${o.wrote || ''}”`, 260) : null
     case 'escalate_to_human': return input?.message_for_team ? clip(input.message_for_team) : null
     case 'create_task': return input?.title ? clip(input.title) : null
