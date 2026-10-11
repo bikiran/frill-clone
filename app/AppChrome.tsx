@@ -6,6 +6,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { useClickOutside } from '@/lib/use-click-outside'
 import { TerminologyProvider } from '@/lib/terminologyContext'
+import { termFor } from '@/lib/terminology'
 import { ToastProvider } from '@/components/ToastProvider'
 import LiveChat from '@/components/LiveChat'
 import UpdateNotification from '@/components/UpdateNotification'
@@ -202,6 +203,9 @@ export default function AppChrome({
   })
   const [navOrder, setNavOrder] = useState(['Ideas', 'Roadmap', 'Updates', 'Help'])
   const [homePath, setHomePath] = useState('/')
+  // The workspace's own wording (Settings → Terminology, lib/terminology).
+  const [siteTerms, setSiteTerms] = useState<Record<string, string>>({})
+  const NAV_TERM: Record<string, string> = { Ideas: 'nav_ideas', Roadmap: 'nav_roadmap', Updates: 'nav_updates', Help: 'nav_help' }
 
   // Load nav visibility from settings (DB-first, localStorage fallback)
   useEffect(() => {
@@ -211,6 +215,7 @@ export default function AppChrome({
     let companyLogo: string | null = null
     const applySettings = (s: any) => {
       if (s) {
+        if (s.termValues && typeof s.termValues === 'object') setSiteTerms(s.termValues)
         setNavVisibility({
           Ideas: s.navIdeas !== false,
           Roadmap: s.navRoadmap !== false,
@@ -338,6 +343,7 @@ export default function AppChrome({
     const handleNavUpdate = (e: Event) => {
       const s = (e as CustomEvent).detail
       if (!s) return
+      if (s.termValues && typeof s.termValues === 'object') setSiteTerms(s.termValues)
       const norm = (l: string) => l === 'Help Centre' ? 'Help' : l === 'Announcements' ? 'Updates' : l
       setNavVisibility({
         Ideas: s.navIdeas !== false,
@@ -348,7 +354,9 @@ export default function AppChrome({
       if (s.navOrder) setNavOrder(s.navOrder.map(norm))
     }
     window.addEventListener('colvy-nav-update', handleNavUpdate)
-    return () => window.removeEventListener('colvy-nav-update', handleNavUpdate)
+    const handleTermsUpdate = (e: Event) => { const d = (e as CustomEvent).detail; if (d && typeof d === 'object') setSiteTerms(d) }
+    window.addEventListener('colvy-terminology-update', handleTermsUpdate)
+    return () => { window.removeEventListener('colvy-nav-update', handleNavUpdate); window.removeEventListener('colvy-terminology-update', handleTermsUpdate) }
   }, [pathname])
 
   // Browser tab title: "<Company>'s <Page Name>" on company boards
@@ -902,7 +910,7 @@ export default function AppChrome({
                         <div className="absolute -top-1 -right-1 w-2 h-2 rounded-full" style={{ background: 'var(--coral)' }} />
                       )}
                     </span>
-                    {item.label}
+                    {isOnBoard && NAV_TERM[item.label] ? termFor(siteTerms, NAV_TERM[item.label]) : item.label}
                   </span>
                   {pathname === item.href && (
                     <div className="absolute bottom-0 left-0 right-0 h-1 rounded-t-lg" style={{ background: 'var(--coral)' }} />
@@ -1155,7 +1163,7 @@ export default function AppChrome({
                           <div className="absolute -top-1 -right-1 w-2 h-2 rounded-full" style={{ background: 'var(--coral)' }} />
                         )}
                       </span>
-                      {item.label}
+                      {(isSubdomain || isCompanyOwner) && NAV_TERM[item.label] ? termFor(siteTerms, NAV_TERM[item.label]) : item.label}
                     </span>
                   </Link>
                 ))}
@@ -1205,7 +1213,7 @@ export default function AppChrome({
 
         <main className="w-full px-0 py-0">
           <ToastProvider>
-            <TerminologyProvider>
+            <TerminologyProvider terms={siteTerms}>
               {children}
             </TerminologyProvider>
           </ToastProvider>

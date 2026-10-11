@@ -6,6 +6,7 @@ import IdeaDetailModal from '@/components/IdeaDetailModal'
 import IdeaModal from '@/components/IdeaModal'
 import Link from 'next/link'
 import { notifyIntegrations } from '@/lib/integrations-notify'
+import { useTerminology } from '@/lib/terminologyContext'
 
 const ADMIN_EMAIL = 'bishalstha76@gmail.com'
 
@@ -26,6 +27,7 @@ const DEFAULT_TOPICS = [
 ]
 
 export default function RoadmapPage() {
+  const { getTerm } = useTerminology()
   const [ideas, setIdeas] = useState<any[]>([])
   const [customStatuses, setCustomStatuses] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -293,11 +295,11 @@ export default function RoadmapPage() {
       <div className="mb-6 flex items-start md:items-center justify-between flex-col md:flex-row gap-3 shrink-0">
         <div>
           <div className="flex items-center gap-3 mb-1.5">
-            <h1 className="text-2xl md:text-3xl font-extrabold" style={{ color: 'var(--ink)', letterSpacing: '-0.02em' }}>Roadmap</h1>
-            {ideas.length > 0 && <span className="text-xs font-bold px-2.5 py-1 rounded-full" style={{ background: 'var(--peach)', color: 'var(--coral)' }}>{ideas.length} ideas</span>}
+            <h1 className="text-2xl md:text-3xl font-extrabold" style={{ color: 'var(--ink)', letterSpacing: '-0.02em' }}>{getTerm('roadmap_title')}</h1>
+            {ideas.length > 0 && <span className="text-xs font-bold px-2.5 py-1 rounded-full" style={{ background: 'var(--peach)', color: 'var(--coral)' }}>{ideas.length} {ideas.length === 1 ? getTerm('idea_singular') : getTerm('idea_plural')}</span>}
           </div>
           <p className="text-sm md:text-base" style={{ color: 'var(--slate)' }}>
-            {canDrag ? 'Drag ideas between columns to update their status' : 'See what we’re planning, building and shipping'}
+            {canDrag ? `Drag ${getTerm('idea_plural')} between columns to update their status` : getTerm('roadmap_subtitle')}
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">

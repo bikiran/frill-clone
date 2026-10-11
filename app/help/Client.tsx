@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
+import { useTerminology } from '@/lib/terminologyContext'
 
 const ADMIN_EMAIL = 'bishalstha76@gmail.com'
 
@@ -30,6 +31,7 @@ const DEMO_ARTICLES = [
 ]
 
 export default function HelpCentrePage() {
+  const { getTerm } = useTerminology()
   const [articles, setArticles] = useState<any[]>([])
   // The company's own support address — a hardcoded support@colvy.com told
   // every customer to email Colvy instead of the business they're buying from.
@@ -224,7 +226,7 @@ export default function HelpCentrePage() {
             value={search}
             onChange={e => setSearch(e.target.value)}
             onFocus={() => search && setShowSearchDropdown(searchResults.length > 0)}
-            placeholder="Search articles…"
+            placeholder={getTerm('help_search')}
             className="w-full focus:outline-none bg-white"
             style={{ padding: '17px 60px 17px 52px', borderRadius: 999, border: 'none', fontSize: '16px', boxShadow: '0 12px 34px rgba(15,23,42,0.16)' }}
           />
@@ -337,7 +339,7 @@ export default function HelpCentrePage() {
             {/* Featured */}
             {featured.length > 0 && !search && (
               <div className="mb-11">
-                <h2 className="flex items-center gap-2 mb-4" style={{ fontSize: 20, fontWeight: 800, color: 'var(--ink)' }}><span style={{ color: '#f5b301' }}>★</span> Featured Articles</h2>
+                <h2 className="flex items-center gap-2 mb-4" style={{ fontSize: 20, fontWeight: 800, color: 'var(--ink)' }}><span style={{ color: '#f5b301' }}>★</span> {getTerm('help_featured')}</h2>
                 <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fill,minmax(300px,1fr))' }}>
                   {featured.map(a => {
                     const img = a.image_url || a.cover_url || a.image
@@ -368,7 +370,7 @@ export default function HelpCentrePage() {
             {/* Browse by Topic */}
             {allCategories.length > 0 && !search && !categoryFilter && (
               <div className="mb-11">
-                <h2 className="mb-4" style={{ fontSize: 20, fontWeight: 800, color: 'var(--ink)' }}>Browse by Topic</h2>
+                <h2 className="mb-4" style={{ fontSize: 20, fontWeight: 800, color: 'var(--ink)' }}>{getTerm('help_browse')}</h2>
                 <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fill,minmax(210px,1fr))' }}>
                   {allCategories.map(c => (
                     <button key={c} onClick={() => setCategoryFilter(c)}

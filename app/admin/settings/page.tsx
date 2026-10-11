@@ -8,6 +8,8 @@ import Link from 'next/link'
 import { useToast, ToastContainer } from '@/lib/toast'
 import { useEntitlements } from '@/lib/entitlements-client'
 import { confirmDialog } from '@/components/ConfirmDialog'
+import TerminologySettings from '@/components/TerminologySettings'
+import { cleanTerms } from '@/lib/terminology'
 
 // Colvy-branded CNAME target shown to customers for custom domains — a
 // colvy.com host that itself points at our platform, so the underlying
@@ -111,9 +113,13 @@ export default function SettingsPage() {
   const [newKeyName, setNewKeyName] = useState('')
   const [generatedKey, setGeneratedKey] = useState('')
   // Terminology
-  const [termSearch, setTermSearch] = useState('')
   const [settingsSearch, setSettingsSearch] = useState('')
   const [termValues, setTermValues] = useState<Record<string, string>>({})
+  // Other open tabs of the board pick up new wording as you type (AppChrome and
+  // TerminologyProvider listen for this).
+  useEffect(() => {
+    try { window.dispatchEvent(new CustomEvent('colvy-terminology-update', { detail: cleanTerms(termValues) })) } catch {}
+  }, [termValues])
   const [privacyMode, setPrivacyMode] = useState('public')
   const [slugEdit, setSlugEdit] = useState(() => {
     if (typeof window === 'undefined') return ''
@@ -452,7 +458,7 @@ export default function SettingsPage() {
       accentColor, themeMode, borderRadius,
       emailFromName, emailReplyTo, emailSignature,
       hidePoweredBy, showPoweredBy: !hidePoweredBy, customDomain, boardDomain, helpDomain, domainStatus,
-      guestVotingEnabled, guestSubmitEnabled, termValues, privacyMode, categories, defaultHomepage,
+      guestVotingEnabled, guestSubmitEnabled, termValues: cleanTerms(termValues), privacyMode, categories, defaultHomepage,
       allowAnnSubsc, allowAnnComments, showAnnComments, disableAnnReactions,
       disableAnimGifs, disableCommentReactions, allowIdeaComments, showIdeaMRR,
       showIdeaNumber, showRoadmapDesc, showIdeaDate, showIdeaActivity, requireIdeaTopic,
@@ -1811,34 +1817,7 @@ export default function SettingsPage() {
         )}
 
         {activeSettingsTab === 'terminology' && (
-          <div className="space-y-5">
-            <div className="bg-white rounded-2xl border p-6" style={{ borderColor: 'var(--border)' }}>
-              <h2 className="font-bold mb-1" style={{ color: 'var(--ink)' }}>Terminology</h2>
-              <p className="text-sm mb-4" style={{ color: 'var(--slate)' }}>Customise the labels shown to your users throughout the board.</p>
-              <div className="relative mb-5">
-                <svg className="absolute left-3.5 top-1/2 -translate-y-1/2" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: 'var(--slate)' }}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                <input value={termSearch} onChange={e => setTermSearch(e.target.value)}
-                  placeholder="Search terms..."
-                  className="w-full pl-10 pr-4 py-2.5 rounded-xl border text-sm focus:outline-none"
-                  style={{ borderColor: 'var(--border)' }} />
-              </div>
-              <div style={{ maxHeight: 480, overflowY: 'auto' }}>
-                {['Idea', 'Ideas', 'Idea board title', 'Idea board subtitle', 'Idea not found', 'Idea failed to load', 'Ideas board no Ideas', 'Ideas board failed to load', 'Ideas board filter placeholder', 'Ideas board meta title', 'Ideas board meta description', 'Submit Idea button', 'Create Idea form submit', 'Update Idea form submit', 'Update Idea form cancel', 'Idea form name placeholder', 'Idea form name length error', 'Idea form description placeholder', 'Idea form topics label', 'Idea form topics length error', 'Create Idea title', 'Similar Ideas title', 'Similar Ideas no results', 'View Idea', 'Add new Idea', 'Create new Idea', 'Close Idea', 'Create Idea signup prompt', 'Vote for Idea signup prompt', 'Sort by trending', 'Sort by votes (Highest first)', 'Sort by votes (Lowest first)', 'Sort by priority (Highest first)', 'Sort by priority (Lowest first)', 'Sort by MRR (Descending)', 'Sort by latest', 'Sort by oldest', 'Sort by custom order', 'Create Idea success title', 'Create Idea success subtitle', 'Follow Idea', 'Unfollow Idea', 'Pin Idea', 'Unpin Idea', 'Edit Idea', 'Delete Idea', 'Delete Idea success', 'Delete Idea confirmation title', 'Idea archived', 'Idea removed', 'Idea was merged (winning)', 'Idea was merged (losing)', 'Add Idea comment', 'Add Idea note', 'Idea pending approval', 'Idea rejected', 'Bug', 'Bugs', 'Idea marked as bug', 'Private', 'Idea is private', 'Prioritized', 'Unprioritized', 'Vote', 'Votes', 'Vote Idea', 'Unvote Idea', 'Idea Activity title', 'Delete Idea Activity confirmation title'].filter((t: string) => !termSearch || t.toLowerCase().includes(termSearch.toLowerCase())).map((term: string) => (
-                  <div key={term} className="flex items-center gap-4 py-2.5 border-b last:border-b-0" style={{ borderColor: 'var(--border)' }}>
-                    <span className="text-sm flex-1" style={{ color: 'var(--ink)' }}>{term}</span>
-                    <input className="text-sm px-3 py-1.5 rounded-lg border focus:outline-none"
-                      style={{ borderColor: 'var(--border)', width: 200, fontSize: 13 }}
-                      placeholder={term} />
-                  </div>
-                ))}
-              </div>
-              <div className="flex justify-end mt-4">
-                <button onClick={() => handleSave(true)} disabled={saving} className="px-6 py-2.5 rounded-xl font-semibold text-white text-sm cursor-pointer disabled:opacity-50" style={{ background: 'var(--coral)' }}>
-                  {saving ? 'Saving...' : saved ? '✅ Saved!' : 'Save Terminology'}
-                </button>
-              </div>
-            </div>
-          </div>
+          <TerminologySettings values={termValues} onChange={setTermValues} saving={saving} />
         )}
 
         {/* General, Theme, Emails tabs — show content based on activeSettingsTab */}

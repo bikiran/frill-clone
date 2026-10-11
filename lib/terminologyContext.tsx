@@ -1,89 +1,35 @@
 'use client'
 
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react'
-import { createClient } from './supabase'
+import { termFor } from './terminology'
+
+// Delivers the workspace's wording (lib/terminology) to the public board.
+// AppChrome passes the terms it loads with the site settings; the Settings page
+// broadcasts 'colvy-terminology-update' on save so open pages update live.
 
 interface TerminologyContextType {
   terms: Record<string, string>
-  getTerm: (key: string, defaultValue?: string) => string
-  loading: boolean
+  getTerm: (key: string) => string
 }
 
 const TerminologyContext = createContext<TerminologyContextType | undefined>(undefined)
 
-const DEFAULT_TERMS: Record<string, string> = {
-  ideas: 'Ideas',
-  announcements: 'Announcements',
-  roadmap: 'Roadmap',
-  surveys: 'Surveys',
-  idea: 'Idea',
-  submit_idea: 'Submit Idea',
-  create_idea: 'Create Idea',
-  vote: 'Vote',
-  votes: 'Votes',
-  topics: 'Topics',
-  status: 'Status',
-  priority: 'Priority',
-  comment: 'Comment',
-  comments: 'Comments',
-  manage: 'Manage',
-  settings: 'Settings',
-  admin: 'Admin',
-  trending: 'Trending',
-  latest: 'Latest',
-  most_votes: 'Most Votes',
-  search: 'Search',
-  filter: 'Filter',
-  sort: 'Sort',
-  delete: 'Delete',
-  edit: 'Edit',
-  save: 'Save',
-  cancel: 'Cancel',
-  loading: 'Loading',
-  no_results: 'No results',
-}
-
-export function TerminologyProvider({ children }: { children: ReactNode }) {
-  const [terms, setTerms] = useState<Record<string, string>>(DEFAULT_TERMS)
-  const [loading, setLoading] = useState(true)
-  const supabase = createClient()
-
+export function TerminologyProvider({ children, terms: initial }: { children: ReactNode; terms?: Record<string, string> | null }) {
+  const [terms, setTerms] = useState<Record<string, string>>(initial || {})
+  useEffect(() => { setTerms(initial || {}) }, [initial])
   useEffect(() => {
-    const fetchTerminology = async () => {
-      try {
-        const { data } = await supabase.from('terminology').select('key, label')
-        if (data) {
-          const termsMap = data.reduce((acc, item) => {
-            acc[item.key] = item.label
-            return acc
-          }, {} as Record<string, string>)
-          setTerms({ ...DEFAULT_TERMS, ...termsMap })
-        }
-      } catch (error) {
-        console.error('Failed to fetch terminology:', error)
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    fetchTerminology()
+    const onUpdate = (e: Event) => { const d = (e as CustomEvent).detail; if (d && typeof d === 'object') setTerms(d) }
+    window.addEventListener('colvy-terminology-update', onUpdate)
+    return () => window.removeEventListener('colvy-terminology-update', onUpdate)
   }, [])
-
-  const getTerm = (key: string, defaultValue?: string): string => {
-    return terms[key] || defaultValue || key
-  }
-
   return (
-    <TerminologyContext.Provider value={{ terms, getTerm, loading }}>
+    <TerminologyContext.Provider value={{ terms, getTerm: (k: string) => termFor(terms, k) }}>
       {children}
     </TerminologyContext.Provider>
   )
 }
 
-export function useTerminology() {
-  const context = useContext(TerminologyContext)
-  if (!context) {
-    throw new Error('useTerminology must be used within TerminologyProvider')
-  }
-  return context
+/** The workspace's wording. Outside a provider it falls back to the defaults. */
+export function useTerminology(): TerminologyContextType {
+  return useContext(TerminologyContext) || { terms: {}, getTerm: (k: string) => termFor(null, k) }
 }

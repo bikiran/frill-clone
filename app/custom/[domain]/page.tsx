@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { useShowPoweredBy } from '@/lib/use-powered-by'
+import { termFor } from '@/lib/terminology'
 
 function CategorySVG({ cat, size = 15 }: { cat: string; size?: number }) {
   const p = { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const }
@@ -27,6 +28,9 @@ export default function CustomDomainPage() {
   const [search, setSearch] = useState('')
   const [catFilter, setCatFilter] = useState('All')
   const showPoweredBy = useShowPoweredBy(company?.id)
+  // The workspace's wording (Settings → Terminology).
+  const [terms, setTerms] = useState<Record<string, string>>({})
+  const T = (k: string) => termFor(terms, k)
 
   useEffect(() => {
     if (!hostname) return
@@ -73,6 +77,9 @@ export default function CustomDomainPage() {
 
       setCompany(co)
       setIsHelp(help)
+      ;(supabase as any).from('site_settings').select('value').eq('key', 'general').eq('company_id', co.id)
+        .order('updated_at', { ascending: false }).limit(1)
+        .then(({ data }: any) => { const tv = data?.[0]?.value?.termValues; if (tv && typeof tv === 'object') setTerms(tv) }, () => {})
 
       if (help) {
         const { data: arts } = await (supabase as any)
@@ -118,10 +125,10 @@ export default function CustomDomainPage() {
 
   // Shared nav header component
   const navLinks = [
-    { label: 'Ideas', href: `${currentBase}/` },
-    { label: 'Roadmap', href: `${currentBase}/roadmap` },
-    { label: 'Updates', href: `${currentBase}/announcements` },
-    { label: 'Help', href: `${currentBase}/help`, active: isHelp },
+    { label: T('nav_ideas'), href: `${currentBase}/` },
+    { label: T('nav_roadmap'), href: `${currentBase}/roadmap` },
+    { label: T('nav_updates'), href: `${currentBase}/announcements` },
+    { label: T('nav_help'), href: `${currentBase}/help`, active: isHelp },
   ]
 
   // On the real custom domain (and colvy subdomains) the shared AppChrome header
@@ -187,7 +194,7 @@ export default function CustomDomainPage() {
         <p style={{ color: sub, margin: '0 auto 28px', fontSize: 18, maxWidth: 560, textShadow: onCover ? '0 1px 8px rgba(0,0,0,0.25)' : 'none' }}>Find answers, guides, and resources to keep your aquarium thriving</p>
         <div style={{ maxWidth: 640, margin: '0 auto', position: 'relative' }}>
           <svg style={{ position: 'absolute', left: 20, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af' }} width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search articles…"
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder={T('help_search')}
             style={{ width: '100%', padding: '17px 60px 17px 52px', borderRadius: 999, border: 'none', fontSize: 16, outline: 'none', boxSizing: 'border-box', background: '#fff', boxShadow: '0 12px 34px rgba(15,23,42,0.16)' }} />
           <button aria-label="Search" style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', width: 42, height: 42, borderRadius: '50%', border: 'none', background: accent, color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
@@ -256,7 +263,7 @@ export default function CustomDomainPage() {
               <div style={{ marginBottom: 44 }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
                   <h2 style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 20, fontWeight: 800, color: 'var(--ink,#1a1a1a)', margin: 0 }}>
-                    <span style={{ color: '#f5b301' }}>★</span> Featured Articles
+                    <span style={{ color: '#f5b301' }}>★</span> {T('help_featured')}
                   </h2>
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(300px,1fr))', gap: 18 }}>
@@ -290,7 +297,7 @@ export default function CustomDomainPage() {
             {/* Browse by Topic */}
             {realCats.length > 0 && !search && catFilter === 'All' && (
               <div style={{ marginBottom: 44 }}>
-                <h2 style={{ fontSize: 20, fontWeight: 800, color: 'var(--ink,#1a1a1a)', margin: '0 0 16px' }}>Browse by Topic</h2>
+                <h2 style={{ fontSize: 20, fontWeight: 800, color: 'var(--ink,#1a1a1a)', margin: '0 0 16px' }}>{T('help_browse')}</h2>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(210px,1fr))', gap: 16 }}>
                   {realCats.map(c => (
                     <button key={c} onClick={() => setCatFilter(c)}
