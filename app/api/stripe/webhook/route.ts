@@ -4,6 +4,7 @@ import { createClient } from '@supabase/supabase-js'
 import { logWebhookEvent } from '@/lib/webhook-log'
 import { confirmChatPayment } from '@/lib/chat-payment-confirm'
 import { internalPlanForTier } from '@/lib/plan'
+import { BRANDING_ADDON, setBrandingAddon } from '@/lib/branding-addon'
 
 const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || ''
 
@@ -188,6 +189,22 @@ export async function POST(req: NextRequest) {
           // payment identically — whichever confirms it first.)
           break
         }
+        // The branding add-on: grant it and stop. It must never reach the plan
+        // code below, which used to overwrite the owner's subscription row and
+        // set the workspace's plan to Free (normalizePlan('branding_removal')).
+        if (meta.addon === BRANDING_ADDON || meta.tier === BRANDING_ADDON) {
+          if (meta.companyId) await setBrandingAddon(supabase, meta.companyId, true)
+          // A Free workspace has no subscription row yet; keep the Stripe
+          // customer so Billing can open the portal to manage the add-on.
+          if (meta.userId && session.customer) {
+            try {
+              await (supabase as any).from('subscriptions').upsert(
+                { user_id: meta.userId, stripe_customer_id: session.customer, tier: 'free', status: 'active' },
+                { onConflict: 'user_id', ignoreDuplicates: true })
+            } catch {}
+          }
+          break
+        }
         const { userId, tier } = meta
         if (userId && tier) {
           // Fetch the real subscription to capture the actual billed amount.
@@ -302,6 +319,12 @@ export async function POST(req: NextRequest) {
       }
       case 'customer.subscription.updated': {
         const sub = event.data.object
+        if (sub.metadata?.addon === BRANDING_ADDON) {
+          // Lapsed payments end the add-on; a recovered one restores it.
+          const live = ['active', 'trialing', 'past_due'].includes(sub.status)
+          if (sub.metadata.companyId) await setBrandingAddon(supabase, sub.metadata.companyId, live)
+          break
+        }
         const item = sub.items?.data?.[0]
         await (supabase as any).from('subscriptions').update({
           status: sub.status,
@@ -315,6 +338,10 @@ export async function POST(req: NextRequest) {
       }
       case 'customer.subscription.deleted': {
         const sub = event.data.object
+        if (sub.metadata?.addon === BRANDING_ADDON) {
+          if (sub.metadata.companyId) await setBrandingAddon(supabase, sub.metadata.companyId, false)
+          break
+        }
         await (supabase as any).from('subscriptions').update({
           status: 'canceled',
           tier: 'free',

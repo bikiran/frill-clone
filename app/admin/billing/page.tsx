@@ -171,6 +171,10 @@ export default function BillingPage() {
   const [portalLoading, setPortalLoading] = useState(false)
   const [showCurrencyMenu, setShowCurrencyMenu] = useState(false)
   const [shopifyBilling, setShopifyBilling] = useState<any>(null)
+  // The $5 branding add-on (lib/branding-addon): granted as a removeBranding
+  // override in company_entitlements once Stripe confirms the payment.
+  const [brandingAddon, setBrandingAddon] = useState(false)
+  const [addonPending, setAddonPending] = useState(false)
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data }: any) => {
@@ -197,6 +201,24 @@ export default function BillingPage() {
         co = coByOwner
       }
       setCompany(co)
+      const readAddon = async () => {
+        if (!co?.id) return false
+        const { data: ent } = await (supabase as any).from('company_entitlements').select('features').eq('company_id', co.id).maybeSingle()
+        const on = !!(ent?.features?.brandingAddon && ent?.features?.removeBranding)
+        setBrandingAddon(on)
+        return on
+      }
+      const addonOn = await readAddon()
+      // Back from the add-on checkout: Stripe's webhook can land a few seconds
+      // after the redirect, so check again for up to ~30s.
+      if (!addonOn && new URLSearchParams(window.location.search).get('addon') === 'branding') {
+        setAddonPending(true)
+        let tries = 0
+        const t = setInterval(async () => {
+          tries++
+          if ((await readAddon()) || tries >= 10) { clearInterval(t); setAddonPending(false) }
+        }, 3000)
+      }
 
       // Billed through Shopify? (lib/shopify-billing)
       if (co?.billing_provider === 'shopify') {
@@ -267,7 +289,7 @@ export default function BillingPage() {
       const res = await authFetch('/api/stripe/create-checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id, tier: planId, billing, email: user.email, currency, trial }),
+        body: JSON.stringify({ userId: user.id, companyId: company?.id, tier: planId, billing, email: user.email, currency, trial }),
       })
       const data = await res.json()
       if (data.setup) {
@@ -303,7 +325,9 @@ export default function BillingPage() {
 
   if (shopifyBilling) return <ShopifyBilling info={shopifyBilling} />
 
-  const currentPlanId = subscription?.tier || company?.plan || 'free'
+  // A 'free' subscription row can exist just to hold the Stripe customer for
+  // the branding add-on; the company's own plan (e.g. a trial) wins then.
+  const currentPlanId = (subscription?.tier && subscription.tier !== 'free' ? subscription.tier : null) || company?.plan || 'free'
   const isOnPlan = (id: string) => currentPlanId === id
   const isPaid = ['feedback', 'omnichannel', 'everything', 'startup', 'business', 'growth', 'pro', 'enterprise'].includes(currentPlanId)
   const planLabel = PLAN_LABEL[currentPlanId] || currentPlanId.charAt(0).toUpperCase() + currentPlanId.slice(1)
@@ -516,17 +540,37 @@ export default function BillingPage() {
             </div>
             {brandingIncluded ? (
               <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold" style={{ background: '#dcfce7', color: '#16a34a' }}><CheckIcon />Included</span>
+            ) : brandingAddon ? (
+              <div className="flex md:justify-end items-center gap-3">
+                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold" style={{ background: '#dcfce7', color: '#16a34a' }}><CheckIcon />Active</span>
+                {hasStripe && (
+                  <button onClick={handleManageBilling} disabled={portalLoading} className="text-sm font-medium cursor-pointer hover:underline" style={{ color: 'var(--coral)' }}>
+                    {portalLoading ? 'Loading...' : 'Manage'}
+                  </button>
+                )}
+              </div>
+            ) : addonPending ? (
+              <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold" style={{ background: 'var(--canvas)', color: 'var(--slate)' }}>
+                <span className="w-3 h-3 rounded-full border-2 animate-spin" style={{ borderColor: 'var(--coral)', borderTopColor: 'transparent' }} />
+                Turning on…
+              </span>
             ) : (
             <button
               onClick={() => handleUpgrade('branding_removal')}
-              disabled={company?.remove_branding || loading === 'branding_removal'}
+              disabled={loading === 'branding_removal'}
               className="px-4 py-2 rounded-xl text-sm font-bold cursor-pointer disabled:opacity-60 transition-all hover:opacity-90"
-              style={{ background: company?.remove_branding ? '#f3f4f6' : 'var(--coral)', color: company?.remove_branding ? 'var(--slate)' : '#fff' }}>
-              {loading === 'branding_removal' ? 'Redirecting...' : company?.remove_branding ? <span className="inline-flex items-center gap-1.5"><CheckIcon />Active</span> : `Add for +${cur.symbol}5/mo`}
+              style={{ background: 'var(--coral)', color: '#fff' }}>
+              {loading === 'branding_removal' ? 'Redirecting...' : `Add for +${cur.symbol}5/mo`}
             </button>
             )}
           </div>
         </div>
+        {!brandingIncluded && brandingAddon && (
+          <div className="mt-3 p-3 rounded-xl text-sm flex items-center gap-2" style={{ background: '#dcfce7', color: '#16a34a' }}>
+            <span className="shrink-0"><CheckIcon /></span>
+            Colvy branding is hidden on your board, help centre, forms and booking pages.
+          </div>
+        )}
         {brandingIncluded && (
           <div className="mt-3 p-3 rounded-xl text-sm flex items-center gap-2" style={{ background: '#dcfce7', color: '#16a34a' }}>
             <span className="shrink-0"><CheckIcon /></span>
