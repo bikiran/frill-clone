@@ -436,9 +436,14 @@ function BusinessDetail({ co, onClose, onAction }: { co: any; onClose: () => voi
   const [entMsg, setEntMsg] = useState('')
   useEffect(() => {
     ;(async () => {
-      const { data, error } = await (supabase as any).from('company_entitlements').select('*').eq('company_id', co.id).maybeSingle()
-      if (error) { if (/does not exist|schema cache/i.test(error.message)) setEntMissing(true) }
-      else if (data) { setEntFeatures(data.features || {}); setEntLimits(data.limits || {}); setEntReason(data.reason || '') }
+      // Server route (service role): the table isn't readable/writable from the
+      // browser for anyone outside the company (COLVY_V347).
+      try {
+        const r = await authFetch(`/api/platform-admin/entitlements?companyId=${co.id}`)
+        const d = await r.json()
+        if (!r.ok) { if (d?.missing) setEntMissing(true) }
+        else if (d?.row) { setEntFeatures(d.row.features || {}); setEntLimits(d.row.limits || {}); setEntReason(d.row.reason || '') }
+      } catch {}
       setEntLoaded(true)
     })()
   }, [co.id])
@@ -452,13 +457,17 @@ function BusinessDetail({ co, onClose, onAction }: { co: any; onClose: () => voi
   const saveEnt = async () => {
     if (!entReason.trim()) { setEntMsg('A reason is required (audited).'); return }
     setSavingEnt(true); setEntMsg('')
-    const { data: { session } } = await supabase.auth.getSession()
-    const { error } = await (supabase as any).from('company_entitlements').upsert({
-      company_id: co.id, features: entFeatures, limits: entLimits, reason: entReason.trim(),
-      updated_by: session?.user?.email || null, updated_at: new Date().toISOString(),
-    }, { onConflict: 'company_id' })
+    let error: string | null = null, missing = false
+    try {
+      const r = await authFetch('/api/platform-admin/entitlements', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId: co.id, features: entFeatures, limits: entLimits, reason: entReason.trim() }),
+      })
+      const d = await r.json().catch(() => ({}))
+      if (!r.ok) { error = d?.error || `Save failed (HTTP ${r.status})`; missing = !!d?.missing }
+    } catch (e: any) { error = e?.message || 'Save failed' }
     setSavingEnt(false)
-    if (error) { setEntMsg(/does not exist|schema cache/i.test(error.message) ? 'Run COLVY_V222_COMPANY_ENTITLEMENTS.sql, then reload.' : error.message); return }
+    if (error) { setEntMsg(missing ? 'Run COLVY_V222_COMPANY_ENTITLEMENTS.sql, then reload.' : error); return }
     const fCount = Object.keys(entFeatures).length, lCount = Object.keys(entLimits).length
     await auditChange(`Updated entitlements (${fCount} feature + ${lCount} limit override${fCount + lCount === 1 ? '' : 's'}) — ${entReason.trim()}`)
     setEntMsg('Overrides saved.')
