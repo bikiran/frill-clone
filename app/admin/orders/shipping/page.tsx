@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { peekCompanyUser } from '@/lib/client-cache'
+import OrderTrackingCard from '@/components/OrderTrackingCard'
 
 type Carrier = { id: string; name: string; code: string | null; services: number; balance: number | null; currency: string | null }
 
@@ -152,6 +153,8 @@ export default function ShippingSettingsPage() {
           </div>
         </>
       )}
+
+      {!loading && companyId && <OrderTrackingCard companyId={companyId} accent={accent} />}
     </div>
   )
 }

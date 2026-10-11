@@ -222,3 +222,39 @@ export async function voidLabel(labelId: string): Promise<{ voided: boolean; mes
     return { voided: false, message: e?.message || 'Void failed' }
   }
 }
+
+// ── Tracking (read-only) ─────────────────────────────────────────────────────
+// ShipStation V2 calls an order a "shipment"; shipment_number is the order
+// source's number (e.g. the WooCommerce order number). Labels carry the
+// tracking number, carrier, tracking status and the carrier's tracking link.
+// https://docs.shipstation.com/apis/openapi/shipments/list_shipments
+// https://docs.shipstation.com/apis/openapi/labels/list_labels
+// https://docs.shipstation.com/tracking
+
+export type SSShipment = { shipment_id: string; shipment_number?: string; shipment_status?: string; ship_date?: string; ship_to?: { name?: string; postal_code?: string } | null; created_at?: string }
+export type SSLabel = {
+  label_id: string; shipment_id?: string; status?: string; voided?: boolean; trackable?: boolean
+  tracking_number?: string; tracking_status?: string; tracking_url?: string | null; carrier_code?: string; service_code?: string; ship_date?: string; created_at?: string
+}
+export type SSTrack = {
+  tracking_number?: string; status_code?: string; status_description?: string; carrier_status_description?: string
+  shipped_date?: string | null; estimated_delivery_date?: string | null; actual_delivery_date?: string | null; exception_description?: string | null
+  events?: { occurred_at?: string; description?: string; city_locality?: string; state_province?: string; event_code?: string }[]
+}
+
+export async function shipmentsForOrderNumber(orderNumber: string): Promise<SSShipment[]> {
+  const n = String(orderNumber || '').replace(/^#/, '').trim()
+  if (!n) return []
+  const j = await call(`/shipments?shipment_number=${encodeURIComponent(n)}&page_size=10`, 'GET')
+  // shipment_number isn't unique and may be matched loosely — keep exact matches only.
+  return (j?.shipments || []).filter((s: any) => String(s.shipment_number || '').replace(/^#/, '').trim() === n)
+}
+
+export async function labelsForShipment(shipmentId: string): Promise<SSLabel[]> {
+  const j = await call(`/labels?shipment_id=${encodeURIComponent(shipmentId)}&page_size=10`, 'GET')
+  return (j?.labels || []) as SSLabel[]
+}
+
+export async function trackLabel(labelId: string): Promise<SSTrack | null> {
+  try { return (await call(`/labels/${encodeURIComponent(labelId)}/track`, 'GET')) as SSTrack } catch { return null }
+}

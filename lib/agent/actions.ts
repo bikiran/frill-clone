@@ -12,6 +12,7 @@
 import { runReadTool, type AssistantContext } from '@/lib/ai-assistant/tools'
 import { notifyCompany } from '@/lib/notify'
 import type { ActionContext, ActionDef, ActionResult, JsonSchema } from './types'
+import { findCustomerOrders, checkOrderStatus } from './order-actions'
 
 const obj = (properties: Record<string, any>, required: string[] = []): JsonSchema => ({ type: 'object', properties, required, additionalProperties: false })
 
@@ -65,8 +66,8 @@ const READS: ActionDef[] = [
   readTool('ask_knowledge', 'Search the business’s own knowledge (help articles, facts, files, website). Use before answering any question about policies, products or services.', obj({ question: { type: 'string' } }, ['question']), true),
   readTool('check_stock', 'Live stock for a product by name or SKU.', obj({ query: { type: 'string' } }, ['query']), true),
   // Staff-only lookups: they search across ALL customers, so a customer-facing
-  // role must not use them in live mode (Phase 3 adds a customer-scoped
-  // find_customer_orders).
+  // role must not use them in live mode (customer roles use
+  // find_customer_orders / check_order_status instead).
   readTool('search_contacts', 'Find customers by name, email or phone (searches all customers — staff use).', obj({ query: { type: 'string' }, limit: { type: 'integer' } }, ['query']), false),
   readTool('search_orders', 'Find orders by number, customer name, email or phone (searches all orders — staff use).', obj({ query: { type: 'string' }, limit: { type: 'integer' } }, ['query']), false),
   readTool('get_order', 'One order’s details, status, items and tracking, by order number or id.', obj({ orderId: { type: 'string', description: 'Order number or id' } }, ['orderId']), false),
@@ -153,7 +154,7 @@ export const FINISH_ACTION: ActionDef = {
   async run() { return { ok: true } },
 }
 
-const ALL: ActionDef[] = [...READS, createTask, sendMessage, escalateToHuman, FINISH_ACTION]
+const ALL: ActionDef[] = [...READS, findCustomerOrders, checkOrderStatus, createTask, sendMessage, escalateToHuman, FINISH_ACTION]
 export const ACTIONS: Record<string, ActionDef> = Object.fromEntries(ALL.map(a => [a.key, a]))
 
 export function getAction(key: string): ActionDef | null {

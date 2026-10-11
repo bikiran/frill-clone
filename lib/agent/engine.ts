@@ -158,6 +158,7 @@ export async function runAgent(db: any, runId: string, deadline: number, model: 
       runId: run.id, roleKey: role.key, roleName: role.name, mode: run.mode,
       conversationId: run.conversation_id || null, contactId: run.contact_id || pack.contactId,
       customerVerification: pack.verification,
+      scratch: {},
     }
     const policies = await loadPolicies(db, run.company_id)
     const actions = role.actions.map(getAction).filter(Boolean) as ActionDef[]
