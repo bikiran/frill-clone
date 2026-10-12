@@ -45,6 +45,21 @@ const I = {
   check: <Svg size={12} d={<polyline points="20 6 9 17 4 12" />} />,
   search: <Svg size={16} d={<><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></>} />,
   alert: <Svg d={<><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></>} />,
+  book: <Svg size={20} d={<><path d="M2 4h6a4 4 0 0 1 4 4v13a3 3 0 0 0-3-3H2z" /><path d="M22 4h-6a4 4 0 0 0-4 4v13a3 3 0 0 1 3-3h7z" /></>} />,
+  db: <Svg size={17} d={<><ellipse cx="12" cy="5" rx="8" ry="3" /><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5" /><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3" /></>} />,
+  globe: <Svg size={17} d={<><circle cx="12" cy="12" r="10" /><line x1="2" y1="12" x2="22" y2="12" /><path d="M12 2a15 15 0 0 1 0 20M12 2a15 15 0 0 0 0 20" /></>} />,
+  file: <Svg size={17} d={<><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></>} />,
+  smile: <Svg size={18} d={<><circle cx="12" cy="12" r="10" /><path d="M8 14s1.5 2 4 2 4-2 4-2" /><line x1="9" y1="9" x2="9.01" y2="9" /><line x1="15" y1="9" x2="15.01" y2="9" /></>} />,
+  case: <Svg size={18} d={<><rect x="2" y="7" width="20" height="14" rx="2" /><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" /></>} />,
+  bolt: <Svg size={18} d={<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />} />,
+  gauge: <Svg size={18} d={<><path d="M12 20a8 8 0 1 1 8-8" /><path d="M12 12l4-4" /><path d="M20 20h-4" /></>} />,
+  info: <Svg size={16} d={<><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></>} />,
+  arrow: <Svg size={13} d={<><line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" /></>} />,
+}
+const TONE_META: Record<string, { icon: React.ReactNode; desc: string }> = {
+  warm: { icon: I.smile, desc: 'Friendly, helpful and natural.' },
+  professional: { icon: I.case, desc: 'Polite and straightforward.' },
+  short: { icon: I.bolt, desc: 'Minimal and to the point.' },
 }
 
 export default function BusinessMemoryPage() {
@@ -90,11 +105,11 @@ export default function BusinessMemoryPage() {
   return (
     <div style={{ minHeight: '100%', background: 'var(--canvas, #f6f7f9)' }}>
       <style>{CSS}</style>
-      <div style={{ maxWidth: 860, margin: '0 auto', padding: '20px 16px 120px' }}>
-        <Link href="/admin/agents" className="bm-back">{I.back} AI Agents</Link>
-        <div style={{ margin: '10px 0 20px' }}>
-          <h1 style={{ margin: 0, fontSize: 'clamp(22px, 3.4vw, 28px)', fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--ink)' }}>Business memory</h1>
-          <p style={{ margin: '4px 0 0', fontSize: 14, color: 'var(--slate)', maxWidth: 620, lineHeight: 1.55 }}>How your AI agents sound and the rules they always follow. It’s part of every reply, and changes apply from the next message.</p>
+      <div className="bm-page">
+        <nav className="bm-crumbs" aria-label="Breadcrumb"><Link href="/admin/agents">AI Agents</Link><span aria-hidden="true">/</span><span>Business memory</span></nav>
+        <div style={{ margin: '8px 0 20px' }}>
+          <h1 style={{ margin: 0, fontSize: 'clamp(22px, 3.4vw, 30px)', fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--ink)' }}>Business memory</h1>
+          <p style={{ margin: '4px 0 0', fontSize: 14, color: 'var(--slate)', maxWidth: 680, lineHeight: 1.55 }}>How your AI agents sound and the rules they always follow. It’s part of every reply, and changes apply from the next message.</p>
         </div>
         {loaded && <KnowledgeNote coverage={coverage} />}
 
@@ -103,46 +118,83 @@ export default function BusinessMemoryPage() {
         {!loaded && <div className="bm-card"><p className="bm-p">Loading…</p></div>}
 
         {loaded && templates && (
-          <>
-            {proposals.length > 0 && <Proposals items={proposals} save={save} />}
-            <ToneCard item={tone} tones={templates.tones} save={save} />
-            <RulesCard items={rules} save={save} />
-            <ThresholdsCard item={thresholds} defaults={templates.thresholds} save={save} />
-            <PoliciesCard items={policies} templates={templates.policies} coverage={coverage} save={save} />
-            <p className="bm-foot">Opening hours come live from Google Business Profile, so there’s no need to add them here.</p>
-          </>
+          <div className="bm-cols">
+            <div className="bm-main">
+              {proposals.length > 0 && <Proposals items={proposals} save={save} />}
+              <ToneCard item={tone} tones={templates.tones} save={save} />
+              <RulesCard items={rules} save={save} />
+              <PoliciesCard items={policies} templates={templates.policies} coverage={coverage} save={save} />
+            </div>
+            <aside className="bm-side">
+              <Glance active={active} tone={templates.tones[tone?.content?.style || 'warm']?.label || 'Warm & friendly'} rules={rules.length} facts={policies.length} waiting={proposals.length} />
+              <ThresholdsCard item={thresholds} defaults={templates.thresholds} save={save} />
+              <div className="bm-tip bm-fade">{I.info}<span>Opening hours come live from Google Business Profile, so there’s no need to add them here.</span></div>
+            </aside>
+          </div>
         )}
       </div>
     </div>
   )
 }
 
-const SRC: [string, string, string][] = [['help', 'help centre article', 'help centre articles'], ['fact', 'saved fact', 'saved facts'], ['file', 'file', 'files'], ['website', 'website page', 'website pages']]
+const SRC: { key: string; label: string; icon: React.ReactNode }[] = [
+  { key: 'help', label: 'Help centre articles', icon: I.doc },
+  { key: 'fact', label: 'Saved facts', icon: I.db },
+  { key: 'website', label: 'Website pages', icon: I.globe },
+  { key: 'file', label: 'Files', icon: I.file },
+]
 
 function KnowledgeNote({ coverage }: { coverage: Coverage | null }) {
-  const parts = SRC.map(([k, one, many]) => { const n = coverage?.counts?.[k] || 0; return n ? `${n} ${n === 1 ? one : many}` : '' }).filter(Boolean)
   return (
     <div className="bm-know bm-fade">
-      <span className="bm-know-ic">{I.search}</span>
-      <div style={{ minWidth: 0, flex: 1 }}>
-        <p className="bm-t" style={{ margin: 0 }}>Your policies and FAQs don’t need to be copied here</p>
-        <p className="bm-p">{parts.length
-          ? `Agents already search AI Knowledge before answering — ${parts.join(', ')}. Keep full policies there, where customers can read them too.`
-          : 'Agents search AI Knowledge before answering — your help centre articles, saved facts and website. Add your policies there, where customers can read them too.'}</p>
+      <div className="bm-know-lead">
+        <span className="bm-know-ic">{I.book}</span>
+        <div style={{ minWidth: 0 }}>
+          <p className="bm-h">Connected knowledge</p>
+          <p className="bm-p">Agents search AI Knowledge before answering, so full policies and FAQs don’t need copying here. Keep them there, where customers can read them too.</p>
+        </div>
       </div>
-      <Link href="/admin/ai-knowledge" className="bm-know-link">Open AI Knowledge</Link>
+      <div className="bm-stats">
+        {SRC.map(s => (
+          <div key={s.key} className="bm-stat">
+            <span className="bm-stat-ic">{s.icon}</span>
+            <div><b>{coverage?.counts?.[s.key] || 0}</b><span>{s.label}</span></div>
+          </div>
+        ))}
+      </div>
+      <Link href="/admin/ai-knowledge" className="bm-know-link">Open AI Knowledge {I.arrow}</Link>
     </div>
   )
 }
 
-function CardHead({ icon, title, sub }: { icon: React.ReactNode; title: string; sub: string }) {
+function Glance({ active, tone, rules, facts, waiting }: { active: Item[]; tone: string; rules: number; facts: number; waiting: number }) {
+  const last = active.reduce<string | null>((m, i) => (i.updated_at && (!m || i.updated_at > m) ? i.updated_at : m), null)
+  const rows: [React.ReactNode, string, string][] = [
+    [I.clock, 'Last updated', last ? when(last) : 'Not yet'],
+    [I.voice, 'Tone', tone],
+    [I.rule, 'Rules', `${rules} active`],
+    [I.doc, 'Must-know facts', facts ? `${facts}` : 'None'],
+  ]
   return (
-    <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', marginBottom: 14 }}>
+    <div className="bm-card bm-fade">
+      <p className="bm-h" style={{ marginBottom: 6 }}>At a glance</p>
+      <ul className="bm-glance">
+        {rows.map(([ic, k, v]) => <li key={k}><span className="bm-glance-ic">{ic}</span><span className="bm-glance-k">{k}</span><span className="bm-glance-v">{v}</span></li>)}
+      </ul>
+      {waiting > 0 && <p className="bm-glance-note">{I.spark}<span>{waiting} suggestion{waiting === 1 ? '' : 's'} from your agents waiting for you</span></p>}
+    </div>
+  )
+}
+
+function CardHead({ icon, title, sub, action }: { icon: React.ReactNode; title: string; sub: string; action?: React.ReactNode }) {
+  return (
+    <div className="bm-head">
       <span className="bm-ic">{icon}</span>
-      <div style={{ minWidth: 0 }}>
+      <div style={{ minWidth: 0, flex: 1 }}>
         <p className="bm-h">{title}</p>
         <p className="bm-p">{sub}</p>
       </div>
+      {action}
     </div>
   )
 }
@@ -214,15 +266,20 @@ function ToneCard({ item, tones, save }: { item?: Item; tones: Templates['tones'
   const sample = `${(tones[d.style]?.sample || '').replace(/^Hi Jo|^Hello Jo/, m => (d.first_name ? m : m.replace(' Jo', ' there')))}${d.sign_off ? `\n${d.sign_off}` : ''}`
   return (
     <div className="bm-card bm-fade">
-      <CardHead icon={I.voice} title="How it sounds" sub="The voice your agents reply in." />
+      <CardHead icon={I.voice} title="How it sounds" sub="The voice your agents reply in. It shapes every message they write." />
       <div className="bm-tones" role="radiogroup" aria-label="Tone of voice">
         {Object.entries(tones).map(([k, t]) => (
           <button key={k} type="button" role="radio" aria-checked={d.style === k} className={`bm-tone ${d.style === k ? 'on' : ''}`} onClick={() => setD({ ...d, style: k })}>
-            <span className="bm-radio" />{t.label}
+            <span className="bm-radio" />
+            <span className="bm-tone-ic">{TONE_META[k]?.icon || I.voice}</span>
+            <span style={{ minWidth: 0 }}><span className="bm-tone-l">{t.label}</span>{TONE_META[k] && <span className="bm-tone-d">{TONE_META[k].desc}</span>}</span>
           </button>
         ))}
       </div>
-      <p key={sample} className="bm-bubble bm-fade" style={{ marginTop: 12 }}>{sample}</p>
+      <div className="bm-preview">
+        <p className="bm-label" style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--coral)' }}>{I.spark} Example reply</p>
+        <p key={sample} className="bm-bubble bm-fade">{sample}</p>
+      </div>
       <div className="bm-row">
         <div style={{ minWidth: 0 }}>
           <div className="bm-t">Use the customer’s first name</div>
@@ -310,18 +367,17 @@ function RulesCard({ items, save }: { items: Item[]; save: Save }) {
   const [adding, setAdding] = useState(false)
   return (
     <div className="bm-card bm-fade">
-      <CardHead icon={I.rule} title="Rules" sub="Things agents must always or never do." />
+      <CardHead icon={I.rule} title="Rules" sub="Things agents must always or never do. They apply to every reply." action={!adding ? <button type="button" className="bm-primary bm-add" onClick={() => setAdding(true)}>{I.plus} Add rule</button> : null} />
       {items.length === 0 && !adding && <p className="bm-empty">No rules yet. For example: “Never promise same-day delivery” or “Always offer click & collect for tanks over 4ft.”</p>}
       <ul className="bm-list">
-        {items.map(i => <RuleRow key={i.id} item={i} save={save} />)}
-        {adding && <RuleRow save={save} onDone={() => setAdding(false)} />}
+        {items.map((i, n) => <RuleRow key={i.id} n={n + 1} item={i} save={save} />)}
+        {adding && <RuleRow n={items.length + 1} save={save} onDone={() => setAdding(false)} />}
       </ul>
-      {!adding && <div className="bm-chips"><button type="button" className="bm-chip" onClick={() => setAdding(true)}>{I.plus} Add a rule</button></div>}
     </div>
   )
 }
 
-function RuleRow({ item, save, onDone }: { item?: Item; save: Save; onDone?: () => void }) {
+function RuleRow({ n, item, save, onDone }: { n: number; item?: Item; save: Save; onDone?: () => void }) {
   const saved = String(item?.content?.text || '')
   const [text, setText] = useState(saved)
   const [busy, setBusy] = useState(false)
@@ -330,7 +386,7 @@ function RuleRow({ item, save, onDone }: { item?: Item; save: Save; onDone?: () 
   return (
     <li className="bm-item">
       <div className="bm-item-head" style={{ alignItems: 'flex-start' }}>
-        <span className="bm-bullet" />
+        <span className="bm-num-badge">{n}</span>
         <textarea className="bm-input" rows={rowsFor(text, 1, 5)} value={text} onChange={e => setText(e.target.value)} placeholder="e.g. Never promise same-day delivery." maxLength={600} autoFocus={!item} aria-label="Rule" style={{ flex: 1, resize: 'vertical' }} />
         <button type="button" className="bm-icon" aria-label="Remove rule" onClick={async () => {
           if (!item) { onDone?.(); return }
@@ -360,11 +416,11 @@ function ThresholdsCard({ item, defaults, save }: { item?: Item; defaults: Templ
   )
   return (
     <div className="bm-card bm-fade">
-      <CardHead icon={I.clock} title="When an order needs a person" sub="On “where is my order?”, agents check tracking against these. Past them, they bring the order to your team instead of just replying." />
+      <CardHead icon={I.gauge} title="When an order needs a person" sub="On “where is my order?”, agents check tracking against these. Past them, the order comes to your team." />
       <div className="bm-sentences">
-        <p>Not shipped after {num('processing_days')} days</p>
-        <p>In transit longer than {num('transit_days')} days</p>
-        <p>Tracking hasn’t moved for {num('stale_days')} days</p>
+        <p><span>Not shipped after</span><span>{num('processing_days')} days</span></p>
+        <p><span>In transit longer than</span><span>{num('transit_days')} days</span></p>
+        <p><span>Tracking hasn’t moved for</span><span>{num('stale_days')} days</span></p>
       </div>
       <SaveBar dirty={dirty} busy={busy} onCancel={() => setD(saved)} onSave={async () => { setBusy(true); await save({ kind: 'rule', content: d }); setBusy(false) }} />
     </div>
@@ -375,8 +431,34 @@ const CSS = `
 .bm-fade{animation:bmFade .5s ${EASE} both}
 @keyframes bmFade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
 @media (prefers-reduced-motion: reduce){.bm-fade{animation:none!important}}
-.bm-back{display:inline-flex;align-items:center;gap:4px;font-size:13px;font-weight:700;color:var(--slate);text-decoration:none}
-.bm-back:hover{color:var(--ink)}
+.bm-page{max-width:1240px;margin:0 auto;padding:20px 16px 120px}
+@media (min-width:900px){.bm-page{padding:24px 28px 120px}}
+.bm-crumbs{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--slate)}
+.bm-crumbs a{color:var(--slate);text-decoration:none;font-weight:600}.bm-crumbs a:hover{color:var(--ink)}
+.bm-crumbs span:last-child{color:var(--ink);font-weight:700}
+.bm-cols{display:grid;grid-template-columns:minmax(0,1fr);gap:16px;align-items:start}
+@media (min-width:1080px){.bm-cols{grid-template-columns:minmax(0,1fr) 340px;gap:20px}.bm-side{position:sticky;top:76px}}
+.bm-main>.bm-card:last-child{margin-bottom:0}
+.bm-head{display:flex;gap:12px;align-items:flex-start;margin-bottom:16px}
+.bm-add{gap:6px;flex-shrink:0;height:34px;padding:0 13px}
+.bm-glance{list-style:none;margin:0;padding:0}
+.bm-glance li{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid color-mix(in srgb,var(--border) 70%,transparent);font-size:13.5px}
+.bm-glance li:last-child{border-bottom:none;padding-bottom:2px}
+.bm-glance-ic{color:var(--slate);display:inline-flex}.bm-glance-ic svg{width:16px;height:16px}
+.bm-glance-k{color:var(--slate)}
+.bm-glance-v{margin-left:auto;font-weight:700;color:var(--ink);text-align:right}
+.bm-glance-note{display:flex;gap:8px;align-items:center;margin:10px 0 0;padding:9px 11px;border-radius:12px;background:color-mix(in srgb,var(--coral) 8%,#fff);color:var(--ink);font-size:12.5px;font-weight:600}
+.bm-glance-note svg{width:15px;height:15px;color:var(--coral);flex-shrink:0}
+.bm-tip{display:flex;gap:9px;align-items:flex-start;padding:12px 14px;border-radius:16px;border:1px dashed var(--border);font-size:12.5px;line-height:1.5;color:var(--slate)}
+.bm-tip svg{flex-shrink:0;margin-top:1px}
+.bm-num-badge{width:26px;height:26px;flex-shrink:0;margin-top:9px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:var(--coral);background:color-mix(in srgb,var(--coral) 10%,#fff)}
+.bm-preview{margin-top:12px;padding:12px 14px;border-radius:16px;background:color-mix(in srgb,var(--coral) 4%,#fff);border:1px solid color-mix(in srgb,var(--coral) 14%,var(--border))}
+.bm-preview .bm-label svg{width:14px;height:14px}
+.bm-preview .bm-bubble{background:#fff;max-width:none}
+.bm-tone-ic{display:inline-flex;color:var(--slate);transition:color .2s ease}
+.bm-tone.on .bm-tone-ic{color:var(--coral)}
+.bm-tone-l{display:block;font-weight:700}
+.bm-tone-d{display:block;margin-top:1px;font-size:12px;font-weight:500;color:var(--slate)}
 .bm-card{background:#fff;border:1px solid var(--border);border-radius:20px;padding:18px;margin-bottom:16px}
 @media (min-width:640px){.bm-card{padding:22px}}
 .bm-learn{border-color:color-mix(in srgb,var(--coral) 30%,var(--border));background:linear-gradient(180deg,color-mix(in srgb,var(--coral) 5%,#fff),#fff 120px)}
@@ -388,7 +470,7 @@ const CSS = `
 .bm-label{margin:0 0 4px;font-size:11.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--slate)}
 .bm-empty{margin:0 0 4px;font-size:13.5px;color:var(--slate);line-height:1.5}
 .bm-input{width:100%;box-sizing:border-box;padding:10px 12px;border-radius:12px;border:1px solid var(--border);background:#fff;font-size:14px;line-height:1.5;color:var(--ink);font-family:inherit;outline:none;resize:vertical;transition:border-color .2s ease,box-shadow .2s ease}
-.bm-input{field-sizing:content}
+textarea.bm-input{field-sizing:content}
 textarea.bm-input{min-height:44px}
 .bm-input:focus{border-color:var(--coral);box-shadow:0 0 0 3px color-mix(in srgb,var(--coral) 15%,transparent)}
 .bm-title-in{flex:1;min-width:0;padding:7px 10px;font-weight:700}
@@ -404,13 +486,12 @@ textarea.bm-input{min-height:44px}
 .bm-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:12px}
 .bm-item{padding:14px;border-radius:16px;border:1px solid var(--border);animation:bmFade .4s ${EASE} both}
 .bm-item-head{display:flex;align-items:center;gap:10px;margin-bottom:8px}
-.bm-bullet{width:7px;height:7px;flex-shrink:0;margin-top:16px;border-radius:50%;background:var(--coral)}
 .bm-chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
 .bm-chip{display:inline-flex;align-items:center;gap:6px;padding:7px 12px;border-radius:999px;border:1px dashed color-mix(in srgb,var(--slate) 45%,var(--border));background:#fff;font-size:13px;font-weight:600;color:var(--ink);cursor:pointer;font-family:inherit;transition:border-color .2s ease,background .2s ease}
 .bm-chip:hover{border-color:var(--coral);background:color-mix(in srgb,var(--coral) 5%,#fff)}
 .bm-tones{display:grid;grid-template-columns:minmax(0,1fr);gap:8px}
 @media (min-width:560px){.bm-tones{grid-template-columns:repeat(3,minmax(0,1fr))}}
-.bm-tone{display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:14px;border:1px solid var(--border);background:#fff;font-size:13.5px;font-weight:700;color:var(--ink);cursor:pointer;font-family:inherit;text-align:left;transition:border-color .2s ease,background .2s ease}
+.bm-tone{display:flex;align-items:center;gap:10px;padding:14px;border-radius:14px;border:1px solid var(--border);background:#fff;font-size:13.5px;font-weight:700;color:var(--ink);cursor:pointer;font-family:inherit;text-align:left;transition:border-color .2s ease,background .2s ease}
 .bm-tone.on{border-color:var(--coral);background:color-mix(in srgb,var(--coral) 6%,#fff)}
 .bm-radio{width:16px;height:16px;flex-shrink:0;border-radius:50%;border:1.5px solid var(--border);transition:border .2s ease}
 .bm-tone.on .bm-radio{border:5px solid var(--coral)}
@@ -418,28 +499,41 @@ textarea.bm-input{min-height:44px}
 .bm-bubble.muted{background:var(--canvas,#f6f7f9);border-color:var(--border);color:var(--slate)}
 .bm-row{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:14px;padding:11px 13px;border-radius:13px;border:1px solid var(--border)}
 .bm-grid2{display:grid;grid-template-columns:minmax(0,1fr);gap:10px;margin-top:12px}
-@media (min-width:640px){.bm-grid2{grid-template-columns:1fr 1fr}}
+@media (min-width:640px){.bm-grid2{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}}
 .bm-field{display:flex;flex-direction:column;gap:6px;font-size:12.5px;font-weight:600;color:var(--slate)}
 .bm-switch{position:relative;width:46px;height:28px;flex-shrink:0;border-radius:999px;border:none;cursor:pointer;background:color-mix(in srgb,var(--slate) 28%,transparent);transition:background .3s ${EASE}}
 .bm-switch span{position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.2);transition:transform .3s ${EASE}}
 .bm-switch.on{background:var(--coral)}.bm-switch.on span{transform:translateX(18px)}
-.bm-sentences p{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 10px;font-size:14.5px;color:var(--ink)}
-.bm-num{width:64px;padding:7px 8px;border-radius:10px;border:1px solid var(--border);font-size:14.5px;font-weight:700;text-align:center;color:var(--ink);font-family:inherit;outline:none}
+.bm-sentences p{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0;padding:9px 0;border-bottom:1px solid color-mix(in srgb,var(--border) 70%,transparent);font-size:13.5px;color:var(--ink)}
+.bm-sentences p:last-child{border-bottom:none}
+.bm-sentences p>span:last-child{display:inline-flex;align-items:center;gap:6px;flex-shrink:0;color:var(--slate)}
+.bm-num{width:56px;padding:6px 6px;border-radius:10px;border:1px solid var(--border);font-size:14.5px;font-weight:700;text-align:center;color:var(--ink);font-family:inherit;outline:none}
 .bm-num:focus{border-color:var(--coral);box-shadow:0 0 0 3px color-mix(in srgb,var(--coral) 15%,transparent)}
 .bm-prop{padding:14px;border-radius:16px;background:#fff;border:1px solid var(--border);animation:bmFade .4s ${EASE} both}
 .bm-tag{display:inline-block;margin-bottom:8px;padding:3px 9px;border-radius:999px;font-size:11.5px;font-weight:700;background:color-mix(in srgb,var(--coral) 10%,#fff);color:var(--coral)}
 .bm-prop .bm-meta{margin-top:8px}
 .bm-diff{display:grid;grid-template-columns:minmax(0,1fr);gap:10px;margin-top:10px}
 @media (min-width:640px){.bm-diff{grid-template-columns:1fr 1fr}}
-.bm-know{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px;padding:14px 16px;border-radius:18px;background:#fff;border:1px solid var(--border)}
-.bm-know-ic{width:34px;height:34px;flex-shrink:0;border-radius:11px;display:inline-flex;align-items:center;justify-content:center;background:var(--canvas,#f3f4f6);color:var(--slate)}
-.bm-know-link{flex-shrink:0;font-size:13px;font-weight:700;color:var(--coral);text-decoration:none;margin-left:auto}
+.bm-know{display:grid;grid-template-columns:minmax(0,1fr);gap:16px;align-items:center;margin-bottom:16px;padding:18px;border-radius:20px;background:#fff;border:1px solid var(--border)}
+@media (min-width:760px){.bm-know{grid-template-columns:minmax(0,1fr) auto;gap:18px 20px;padding:20px 22px}.bm-know-lead{grid-column:1 / -1}}
+@media (min-width:1320px){.bm-know{grid-template-columns:minmax(300px,1fr) auto auto;gap:24px}.bm-know-lead{grid-column:auto}}
+.bm-know-lead{display:flex;gap:14px;align-items:flex-start;min-width:0}
+.bm-know-ic{width:46px;height:46px;flex-shrink:0;border-radius:14px;display:inline-flex;align-items:center;justify-content:center;background:color-mix(in srgb,var(--coral) 10%,#fff);color:var(--coral)}
+.bm-stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+@media (min-width:640px){.bm-stats{grid-template-columns:repeat(4,minmax(0,1fr))}}
+@media (min-width:760px){.bm-stats{display:flex;gap:6px}}
+.bm-stat{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:14px;background:var(--canvas,#f6f7f9);min-width:0}
+@media (min-width:760px){.bm-stat{background:none;padding:6px 14px;border-radius:0;border-left:1px solid var(--border)}}
+@media (min-width:760px) and (max-width:1319px){.bm-stat:first-child{border-left:none;padding-left:0}}
+.bm-stat-ic{width:32px;height:32px;flex-shrink:0;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:#fff;color:var(--slate);border:1px solid var(--border)}
+.bm-stat b{display:block;font-size:19px;font-weight:800;color:var(--ink);line-height:1.1}
+.bm-stat div span{display:block;font-size:11.5px;color:var(--slate);white-space:nowrap}
+.bm-know-link{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:38px;padding:0 14px;border-radius:12px;border:1px solid color-mix(in srgb,var(--coral) 35%,var(--border));background:color-mix(in srgb,var(--coral) 5%,#fff);font-size:13px;font-weight:700;color:var(--coral);text-decoration:none;white-space:nowrap;transition:background .2s ease,transform .15s ${EASE}}
+.bm-know-link:hover{background:color-mix(in srgb,var(--coral) 10%,#fff)}.bm-know-link:active{transform:scale(.97)}
 .bm-chip.covered{border-style:solid;border-color:var(--border);color:var(--slate)}
 .bm-chip.covered svg{color:#067647}
 .bm-chip-note{font-size:11.5px;font-weight:600;color:var(--slate);opacity:.85}
 .bm-also{margin:0 0 8px;padding:8px 11px;border-radius:10px;background:#fffaeb;color:#93370d;font-size:12.5px;line-height:1.45}
-.bm-foot{margin:6px 4px 0;font-size:13px;color:var(--slate);line-height:1.55}
-.bm-foot a{color:var(--coral);font-weight:700;text-decoration:none}
 .bm-note{display:flex;gap:10px;align-items:flex-start;padding:12px 14px;border-radius:14px;font-size:13.5px;line-height:1.45;margin-bottom:16px}
 .bm-note svg{flex-shrink:0;margin-top:2px}
 .bm-note.warn{background:#fffaeb;color:#93370d;border:1px solid #fedf89}
