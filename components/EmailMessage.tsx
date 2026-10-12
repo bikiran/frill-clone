@@ -147,7 +147,7 @@ export default function EmailMessage({ msg, agentColor, onOpenMedia }: {
                       style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '5px 11px 5px 5px', borderRadius: 9, border: '1px solid #e3e9f2', background: '#f9fbfd', color: 'var(--ink)', fontSize: 12.5, maxWidth: 240, cursor: 'zoom-in', font: 'inherit' }}>
                       <span style={{ position: 'relative', width: 32, height: 32, borderRadius: 6, overflow: 'hidden', background: '#e8edf4', flexShrink: 0 }}>
                         {kind === 'image'
-                          ? <img src={dl} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                          ? <img src={dl} alt="" loading="lazy" decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
                           : <>
                               <video src={dl} preload="metadata" muted style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
                               <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', background: 'rgba(0,0,0,0.25)' }}>
