@@ -8,6 +8,7 @@
 
 import Anthropic from '@anthropic-ai/sdk'
 import { searchKnowledge } from '@/lib/ai-knowledge'
+import { modelFor, trackAi } from '@/lib/ai-models'
 
 const STOP = new Set(['the', 'and', 'for', 'you', 'your', 'are', 'was', 'were', 'can', 'could', 'would', 'should', 'will', 'what', 'when', 'where', 'which', 'who', 'how', 'why', 'does', 'did', 'have', 'has', 'had', 'this', 'that', 'these', 'those', 'with', 'from', 'about', 'into', 'there', 'their', 'them', 'they', 'then', 'than', 'just', 'like', 'want', 'need', 'know', 'please', 'thanks', 'thank', 'hello', 'hey', 'any', 'some', 'get', 'got', 'also', 'still', 'much', 'many', 'very', 'our', 'out', 'not', 'yes', 'okay', 'today', 'is', 'do', 'hi', 'there', 'mate', 'guys', 'possible', 'able', 'tell', 'wondering', 'question', 'quick'])
 
@@ -126,7 +127,7 @@ export async function scanRecentQuestions(db: any, companyId: string, days = 45)
   try {
     const client = new Anthropic()
     const response = await client.beta.messages.create({
-      model: 'claude-opus-5-5',
+      model: await modelFor('unanswered_scan'),
       max_tokens: 16000,
       output_config: {
         effort: 'low',
@@ -161,6 +162,7 @@ You get numbered customer messages, each with how the team replied (if they did)
 - members: the message numbers in the group. At most 30 groups, most common first. Never use emojis.`,
       messages: [{ role: 'user', content: list.map((c, i) => `${i + 1}. Customer: ${c.text}${c.reply ? `\n   Team replied: ${c.reply}` : ''}`).join('\n') }],
     })
+    await trackAi('unanswered_scan', companyId, response)
     if (response.stop_reason === 'refusal') return { error: 'Colvy AI declined to scan these conversations.' }
     const text = response.content.filter((b: any) => b.type === 'text').map((b: any) => b.text).join('')
     const groups: { question: string; members: number[]; suggested_answer: string }[] = JSON.parse(text).groups || []

@@ -1,6 +1,7 @@
 import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { modelFor, trackAi } from '@/lib/ai-models'
 
 function admin() {
   return createClient(
@@ -33,7 +34,7 @@ export async function POST(req: NextRequest) {
       method: 'POST',
       headers: { 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
       body: JSON.stringify({
-        model: 'claude-haiku-4-5',
+        model: await modelFor('call_summary'),
         max_tokens: 350,
         messages: [{
           role: 'user',
@@ -43,6 +44,7 @@ export async function POST(req: NextRequest) {
     })
     if (!res.ok) return NextResponse.json({ summary: 'AI summary unavailable.' })
     const data = await res.json()
+    await trackAi('call_summary', call.company_id, data)
     const out = (data.content?.[0]?.text || '').replace(/```json|```/g, '').trim()
     try {
       const parsed = JSON.parse(out)

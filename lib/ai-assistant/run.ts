@@ -5,6 +5,7 @@ import {
   runReadTool, executeAction, buildConfirmPreview, readToolCard,
   type AssistantContext,
 } from '@/lib/ai-assistant/tools'
+import { modelFor, trackAi } from '@/lib/ai-models'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Colvy AI assistant — the tool-use loop.
@@ -24,7 +25,6 @@ import {
 //                 user approves. Nothing external happens without that.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const MODEL = 'claude-opus-5-5'
 const TOOLS_FOR_MODEL = ASSISTANT_TOOLS.map(({ safety, ...t }) => t)
 const MAX_STEPS = 8
 
@@ -178,7 +178,7 @@ export async function runAssistant(opts: {
           'anthropic-beta': 'server-side-fallback-2026-07-01',
         },
         body: JSON.stringify({
-          model: MODEL,
+          model: await modelFor('assistant'),
           // Thinking is always on for this model; low effort keeps a command snappy.
           max_tokens: 8000,
           output_config: { effort: 'low' },
@@ -191,6 +191,7 @@ export async function runAssistant(opts: {
       })
       const data = await res.json()
       if (!res.ok) return { text: '', cards, error: data?.error?.message || 'Assistant request failed' }
+      await trackAi('assistant', ctx.companyId, data)
 
       if (data.stop_reason === 'refusal') return { text: "I can't help with that one.", cards, confirm: null, clientActions }
       const content: any[] = data.content || []

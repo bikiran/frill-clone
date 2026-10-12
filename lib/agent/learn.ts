@@ -54,7 +54,7 @@ export async function proposeFromEdit(db: any, opts: { companyId: string; approv
   const customer = String(run?.input?.message || '').slice(0, 1500)
   const model = opts.model || getModelClient()
   const resp = await model.generate({
-    tier: 'fast', system: SYSTEM, maxTokens: 600, tools: TOOLS,
+    tier: 'fast', system: SYSTEM, maxTokens: 600, tools: TOOLS, companyId: opts.companyId,
     messages: [{ role: 'user', content: [{ type: 'text', text: `<customer_message>\n${customer}\n</customer_message>\n\n<agent_draft>\n${draft.slice(0, 2000)}\n</agent_draft>\n\n<sent_by_team>\n${sent.slice(0, 2000)}\n</sent_by_team>` }] }],
   })
   const call = resp.toolCalls.find(c => c.name === 'remember')

@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { callerUser } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
+import { modelFor, trackAi } from '@/lib/ai-models'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -92,13 +93,14 @@ async function polishText(text: string, key: string): Promise<string> {
       method: 'POST',
       headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
       body: JSON.stringify({
-        model: 'claude-haiku-4-5',
+        model: await modelFor('dictation'),
         max_tokens: 1024,
         messages: [{ role: 'user', content: prompt }],
       }),
     }, 20000)
     if (!res.ok) return text
     const data = await res.json()
+    await trackAi('dictation', null, data)
     const out = (data?.content?.[0]?.text || '').trim().replace(/^"|"$/g, '')
     return out || text
   } catch {

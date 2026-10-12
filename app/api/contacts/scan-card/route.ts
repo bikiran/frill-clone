@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { guardAiRequest } from '@/lib/rate-limit'
+import { modelFor, trackAi } from '@/lib/ai-models'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -86,7 +87,7 @@ export async function POST(req: NextRequest) {
         'content-type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-5',
+        model: await modelFor('card_scan'),
         max_tokens: 400,
         system,
         messages: [{
@@ -111,6 +112,7 @@ export async function POST(req: NextRequest) {
     }
 
     const data = await res.json()
+    await trackAi('card_scan', companyId, data)
     const raw = (data.content || [])
       .filter((c: any) => c.type === 'text')
       .map((c: any) => c.text)

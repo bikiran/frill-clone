@@ -5,6 +5,7 @@
 // because the classifier is down; the operator can still disable the toggle.
 
 import { AIService } from '@/lib/ai-service'
+import { modelFor } from '@/lib/ai-models'
 
 export async function assessReviewSentiment(conversation: string): Promise<{ block: boolean; sentiment: string; reason: string }> {
   if (!process.env.ANTHROPIC_API_KEY || !conversation.trim()) {
@@ -12,7 +13,7 @@ export async function assessReviewSentiment(conversation: string): Promise<{ blo
   }
   try {
     // A small/fast model is plenty for this classification.
-    const svc = new AIService({ provider: 'claude', model: 'claude-haiku-4-5-20251001' })
+    const svc = new AIService({ provider: 'claude', model: await modelFor('review_sentiment') })
     return await svc.reviewSentiment(conversation)
   } catch (e) {
     console.error('[review sentiment] classification failed, allowing send:', (e as any)?.message || e)

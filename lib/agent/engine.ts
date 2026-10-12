@@ -202,7 +202,7 @@ export async function runAgent(db: any, runId: string, deadline: number, model: 
         return finishRun({ status: 'cancelled', summary: 'Stopped part-way — agents were paused for this business.', tokens_in: tokensIn, tokens_out: tokensOut, model: modelName })
       }
       const t0 = Date.now()
-      const resp = await model.generate({ tier: role.modelTier, system, messages, tools })
+      const resp = await model.generate({ tier: role.modelTier, system, messages, tools, companyId: run.company_id })
       tokensIn += resp.usage.in; tokensOut += resp.usage.out; modelName = resp.model
       await trail.add({ kind: 'model', status: 'ok', output: { text: resp.text.slice(0, 2000), stop: resp.stop, calls: resp.toolCalls.map(c => c.name) }, duration_ms: Date.now() - t0, tokens_in: resp.usage.in, tokens_out: resp.usage.out })
       await db.from('agent_runs').update({ tokens_in: tokensIn, tokens_out: tokensOut, model: modelName }).eq('id', run.id)

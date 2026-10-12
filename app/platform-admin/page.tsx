@@ -2,7 +2,7 @@
 
 import { authFetch } from '@/lib/auth-fetch'
 import VoicePlayer from '@/components/VoicePlayer'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Fragment } from 'react'
 import { supabase } from '@/lib/supabase'
 import LegalAdminPage from '../admin/legal/page'
 import PlatformBannerAdmin from '@/components/PlatformBannerAdmin'
@@ -124,6 +124,7 @@ const NAV = [
   { key: 'devices',    label: 'Mobile Devices',   icon: 'users' },
   { key: 'integrations', label: 'Integrations',   icon: 'system' },
   { section: 'Platform' },
+  { key: 'ai',         label: 'AI Models & Usage', icon: 'system' },
   { key: 'sms',        label: 'SMS Pricing',      icon: 'billing' },
   { key: 'billing',    label: 'Billing',          icon: 'billing' },
   { key: 'flags',      label: 'Feature Flags',    icon: 'flags' },
@@ -3953,6 +3954,134 @@ function SmsPricingPage() {
   )
 }
 
+// ── AI models & usage (lib/ai-models.ts) ─────────────────────────────────
+// Which model does each AI job, and what the AI costs per business and job.
+function AiModelsPage() {
+  const [days, setDays] = useState(30)
+  const [d, setD] = useState<any>(null)
+  const [picks, setPicks] = useState<Record<string, string>>({})
+  const [prices, setPrices] = useState<Record<string, { in: string; out: string }>>({})
+  const [saving, setSaving] = useState(false)
+  const [msg, setMsg] = useState('')
+  const load = async () => {
+    try {
+      const r = await authFetch(`/api/platform-admin/ai?days=${days}`)
+      const j = await r.json()
+      if (!r.ok) { setMsg(j.error || 'Could not load'); return }
+      setD(j)
+      setPicks(Object.fromEntries(j.jobs.map((x: any) => [x.key, x.picked || x.default])))
+      setPrices(Object.fromEntries(j.models.map((m: any) => [m.id, { in: m.price?.in != null ? String(m.price.in) : '', out: m.price?.out != null ? String(m.price.out) : '' }])))
+    } catch { setMsg('Could not load') }
+  }
+  useEffect(() => { load() }, [days]) // eslint-disable-line react-hooks/exhaustive-deps
+  const dirty = !!d && (d.jobs.some((x: any) => (picks[x.key] || x.default) !== (x.picked || x.default)) || d.models.some((m: any) => {
+    const p = prices[m.id] || { in: '', out: '' }
+    return p.in !== (m.price?.in != null ? String(m.price.in) : '') || p.out !== (m.price?.out != null ? String(m.price.out) : '')
+  }))
+  const save = async () => {
+    setSaving(true); setMsg('')
+    try {
+      const body = {
+        models: Object.fromEntries(d.jobs.map((x: any) => [x.key, picks[x.key] === x.default ? null : picks[x.key]])),
+        prices: Object.fromEntries(Object.entries(prices).map(([id, p]) => [id, p.in === '' || p.out === '' ? null : { in: Number(p.in), out: Number(p.out) }])),
+      }
+      const r = await authFetch('/api/platform-admin/ai', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      const j = await r.json()
+      if (!r.ok) { setMsg(j.error || 'Could not save'); return }
+      setMsg(`Saved ${new Date().toLocaleTimeString()} — new calls use it within a minute.`); await load()
+    } catch { setMsg('Could not save') } finally { setSaving(false) }
+  }
+  const label = (id: string) => d?.models.find((m: any) => m.id === id)?.label || id
+  const n = (v: number) => v >= 1e6 ? `${(v / 1e6).toFixed(1)}M` : v >= 1e3 ? `${(v / 1e3).toFixed(1)}k` : String(v)
+  const usd = (a: any) => a.calls === 0 ? '—' : a.costKnown ? `$${a.cost.toFixed(a.cost < 10 ? 2 : 0)}` : `${a.cost > 0 ? `$${a.cost.toFixed(2)}+` : '—'}`
+  const card: React.CSSProperties = { background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, padding: 20, marginBottom: 14 }
+  const th: React.CSSProperties = { textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--sa-muted)', textTransform: 'uppercase', letterSpacing: '0.03em', padding: '6px 10px', whiteSpace: 'nowrap' }
+  const td: React.CSSProperties = { fontSize: 13, color: 'var(--sa-text)', padding: '9px 10px', borderTop: '1px solid var(--sa-border)', verticalAlign: 'top' }
+  const input: React.CSSProperties = { padding: '7px 10px', borderRadius: 9, border: '1px solid var(--sa-border)', background: 'var(--sa-bg)', color: 'var(--sa-text)', fontSize: 13, boxSizing: 'border-box' }
+  if (!d) return <div><SectionHeader title="AI Models & Usage" sub="Which model does each job, and what the AI costs" /><p style={{ color: 'var(--sa-muted)' }}>{msg || 'Loading…'}</p></div>
+  const groups = Array.from(new Set(d.jobs.map((x: any) => x.group))) as string[]
+  return (
+    <div style={{ maxWidth: 1080 }}>
+      <SectionHeader title="AI Models & Usage" sub="Pick the model for each AI job. Every AI call in Colvy goes through these choices."
+        action={<div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>{msg && <span style={{ fontSize: 12, color: /Saved/.test(msg) ? '#10b981' : '#ef4444' }}>{msg}</span>}<button onClick={save} disabled={saving || !dirty} style={paBtn('#ff7a6b', true)}>{saving ? 'Saving…' : 'Save changes'}</button></div>} />
+      {d.missing && <div style={{ padding: '14px 16px', borderRadius: 10, background: '#f59e0b18', border: '1px solid #f59e0b55', fontSize: 13, color: 'var(--sa-text)', marginBottom: 14 }}>Run <b>COLVY_V354_AI_SWITCHBOARD.sql</b> to start recording AI usage. Model choices work without it.</div>}
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12, marginBottom: 14 }}>
+        {[['AI calls', n(d.total.calls)], ['Tokens in', n(d.total.tokensIn)], ['Tokens out', n(d.total.tokensOut)], ['Estimated cost (USD)', usd(d.total)]].map(([k, v]) => (
+          <div key={k} style={{ ...card, marginBottom: 0, padding: 16 }}><div style={{ fontSize: 11.5, color: 'var(--sa-muted)', fontWeight: 700 }}>{k}</div><div style={{ fontSize: 22, fontWeight: 800, color: 'var(--sa-text)', marginTop: 4 }}>{v}</div></div>
+        ))}
+      </div>
+      <div style={{ display: 'flex', gap: 6, marginBottom: 14 }}>
+        {[7, 30, 90].map(x => <button key={x} onClick={() => setDays(x)} style={{ ...paBtn(days === x ? '#ff7a6b' : 'var(--sa-muted)', days === x), padding: '6px 12px' }}>Last {x} days</button>)}
+      </div>
+      {!d.total.costKnown && d.total.calls > 0 && <p style={{ fontSize: 12.5, color: 'var(--sa-muted)', margin: '-6px 0 14px' }}>Some models have no price yet, so costs marked “+” are a minimum. Add their prices below (from anthropic.com/pricing).</p>}
+
+      <div style={card}>
+        <p style={{ margin: '0 0 4px', fontWeight: 800, fontSize: 15, color: 'var(--sa-text)' }}>Model for each job</p>
+        <p style={{ margin: '0 0 12px', fontSize: 12.5, color: 'var(--sa-muted)' }}>Defaults are what each feature used before. Jobs that use newer AI options only offer Claude 5-generation models. A cheaper model saves money but can make that feature less careful — change one at a time and keep an eye on it.</p>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
+            <thead><tr><th style={th}>Job</th><th style={th}>Model</th><th style={th}>Calls</th><th style={th}>Tokens</th><th style={th}>Est. cost</th></tr></thead>
+            <tbody>
+              {groups.map(g => (
+                <Fragment key={g}>
+                  <tr><td colSpan={5} style={{ ...td, fontSize: 11, fontWeight: 800, color: 'var(--sa-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', paddingTop: 14 }}>{g}</td></tr>
+                  {d.jobs.filter((x: any) => x.group === g).map((x: any) => (
+                    <tr key={x.key}>
+                      <td style={td}><div style={{ fontWeight: 700 }}>{x.label}</div><div style={{ fontSize: 12, color: 'var(--sa-muted)', marginTop: 2 }}>{x.about}</div></td>
+                      <td style={td}>
+                        <select value={picks[x.key] || x.default} onChange={e => setPicks(p => ({ ...p, [x.key]: e.target.value }))} style={{ ...input, minWidth: 190 }} aria-label={`Model for ${x.label}`}>
+                          {Array.from(new Set([x.default, ...x.options])).map((id: string) => <option key={id} value={id}>{label(id)}{id === x.default ? ' (default)' : ''}</option>)}
+                        </select>
+                      </td>
+                      <td style={td}>{n(x.usage.calls)}</td>
+                      <td style={td}>{n(x.usage.tokensIn + x.usage.tokensOut)}</td>
+                      <td style={td}>{usd(x.usage)}</td>
+                    </tr>
+                  ))}
+                </Fragment>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div style={card}>
+        <p style={{ margin: '0 0 12px', fontWeight: 800, fontSize: 15, color: 'var(--sa-text)' }}>By business</p>
+        {!d.companies.length ? <p style={{ fontSize: 13, color: 'var(--sa-muted)', margin: 0 }}>No AI usage recorded in this period.</p> : (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 520 }}>
+              <thead><tr><th style={th}>Business</th><th style={th}>Calls</th><th style={th}>Tokens in</th><th style={th}>Tokens out</th><th style={th}>Est. cost</th></tr></thead>
+              <tbody>{d.companies.map((c: any) => (
+                <tr key={c.id || 'none'}><td style={{ ...td, fontWeight: 700, color: c.id ? 'var(--sa-text)' : 'var(--sa-muted)' }}>{c.name}</td><td style={td}>{n(c.calls)}</td><td style={td}>{n(c.tokensIn)}</td><td style={td}>{n(c.tokensOut)}</td><td style={td}>{usd(c)}</td></tr>
+              ))}</tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      <div style={card}>
+        <p style={{ margin: '0 0 4px', fontWeight: 800, fontSize: 15, color: 'var(--sa-text)' }}>Prices (USD per million tokens)</p>
+        <p style={{ margin: '0 0 12px', fontSize: 12.5, color: 'var(--sa-muted)' }}>Used only for the cost estimates. Leave blank if you don’t know a price.</p>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 520 }}>
+            <thead><tr><th style={th}>Model</th><th style={th}>Input</th><th style={th}>Output</th><th style={th}>Calls</th></tr></thead>
+            <tbody>{d.models.map((m: any) => (
+              <tr key={m.id}>
+                <td style={{ ...td, fontWeight: 700 }}>{m.label}<div style={{ fontSize: 11.5, color: 'var(--sa-muted)', fontWeight: 500 }}>{m.id}</div></td>
+                {(['in', 'out'] as const).map(k => (
+                  <td key={k} style={td}><input type="number" min={0} step="0.01" value={prices[m.id]?.[k] ?? ''} onChange={e => setPrices(p => ({ ...p, [m.id]: { ...(p[m.id] || { in: '', out: '' }), [k]: e.target.value } }))} style={{ ...input, width: 100 }} aria-label={`${m.label} ${k === 'in' ? 'input' : 'output'} price`} /></td>
+                ))}
+                <td style={td}>{n(m.usage.calls)}</td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function SettingsPage() {
   const [me, setMe] = useState<any>(null)
   useEffect(() => { supabase.auth.getSession().then(({ data }: any) => setMe(data?.session?.user || null)) }, [])
@@ -4270,7 +4399,7 @@ export default function SuperAdmin() {
       )}
 
       {/* ── MAIN ────────────────────────────────────────────────────────────── */}
-      <main style={{ marginLeft: SIDEBAR_W, flex: 1, background: 'var(--sa-bg)', minHeight: '100vh', transition: 'margin-left 0.2s ease' }}>
+      <main style={{ marginLeft: SIDEBAR_W, flex: 1, minWidth: 0, background: 'var(--sa-bg)', minHeight: '100vh', transition: 'margin-left 0.2s ease' }}>
         {/* Topbar */}
         <div style={{ height: 54, borderBottom: '1px solid var(--sa-border)', display: 'flex', alignItems: 'center', padding: '0 24px', gap: 12, background: 'var(--sa-sidebar)', position: 'sticky', top: 0, zIndex: 30 }}>
           <div style={{ flex: 1, position: 'relative', maxWidth: 400 }}>
@@ -4313,6 +4442,7 @@ export default function SuperAdmin() {
           {page === 'billing'    && <BillingPage />}
           {page === 'legal'      && <LegalAdminPage />}
           {page === 'banner'     && <PlatformBannerAdmin />}
+          {page === 'ai'         && <AiModelsPage />}
           {page === 'sms'        && <SmsPricingPage />}
           {page === 'settings'   && <SettingsPage />}
         </div>

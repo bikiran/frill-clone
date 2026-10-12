@@ -4,11 +4,11 @@ import Anthropic from '@anthropic-ai/sdk'
 import { requireCompanyAccess } from '@/lib/company-access'
 import { guardAiRequest } from '@/lib/rate-limit'
 import { discoverSite, normaliseStartUrl, readPage, stripBoilerplate } from '@/lib/site-crawl'
+import { modelFor, trackAi } from '@/lib/ai-models'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
 
-const MODEL = 'claude-opus-5-5'
 
 const admin = () => createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -91,7 +91,7 @@ const cleanPages = (raw: any): PageIn[] => stripBoilerplate(
 async function askJson(system: string, user: string, schema: any, maxTokens: number, effort: 'low' | 'medium' | 'high') {
   const client = new Anthropic()
   const stream = (client.beta.messages as any).stream({
-    model: MODEL,
+    model: await modelFor('help_import'),
     max_tokens: maxTokens,
     output_config: { effort, format: { type: 'json_schema', schema } },
     betas: ['server-side-fallback-2026-07-01'],
@@ -100,6 +100,7 @@ async function askJson(system: string, user: string, schema: any, maxTokens: num
     messages: [{ role: 'user', content: user }],
   })
   const response = await stream.finalMessage()
+  await trackAi('help_import', null, response)
   if (response.stop_reason === 'refusal') throw new Error('refused')
   const text = response.content.filter((b: any) => b.type === 'text').map((b: any) => b.text).join('')
   return JSON.parse(text)

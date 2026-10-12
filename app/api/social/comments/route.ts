@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { admin, getFacebookChannel, setCommentHidden, privateReply, setIgCommentHidden } from '@/lib/social-sync'
 import { isIgLoginChannel, hideInstagramComment, sendInstagramCommentPrivateReply } from '@/lib/instagram-login'
 import { postCommentReply } from '@/lib/social-reply'
+import { modelFor, trackAi } from '@/lib/ai-models'
 
 export const dynamic = 'force-dynamic'
 
@@ -77,10 +78,11 @@ Write a short, warm, human reply (1-2 sentences). Don't invent facts or offers. 
       const res = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 300, messages: [{ role: 'user', content: prompt }] }),
+        body: JSON.stringify({ model: await modelFor('social_reply'), max_tokens: 300, messages: [{ role: 'user', content: prompt }] }),
       })
       const data = await res.json()
       if (!res.ok) return NextResponse.json({ error: data?.error?.message || 'AI request failed' }, { status: 502 })
+      await trackAi('social_reply', companyId, data)
       const text = (data.content || []).map((c: any) => (c.type === 'text' ? c.text : '')).join('').trim()
       return NextResponse.json({ ok: true, reply: text })
     }

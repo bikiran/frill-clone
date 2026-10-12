@@ -12,6 +12,7 @@
 // to that customer, never stored where they could surface for someone else.
 
 import Anthropic from '@anthropic-ai/sdk'
+import { modelFor, trackAi } from '@/lib/ai-models'
 
 export type KnowledgeSource = 'fact' | 'help' | 'file' | 'website' | 'announcement' | 'roadmap' | 'idea' | 'chat'
 export type KnowledgeHit = { id?: string; source: string; source_id?: string; title: string | null; content: string; url: string | null; rank?: number }
@@ -130,16 +131,15 @@ async function searchWithQuery(db: any, companyId: string, q: string, limit: num
 // match: an article that merely shares words doesn't count as found. Without
 // a model (no key, an error, a timeout) it's the plain keyword search.
 
-const FAST_MODEL = process.env.AGENT_MODEL_FAST || 'claude-haiku-5-5'
-
-async function fastJson(system: string, user: string, schema: any): Promise<any> {
+async function fastJson(system: string, user: string, schema: any, companyId: string | null = null): Promise<any> {
   const client = new Anthropic({ timeout: 15_000, maxRetries: 1 })
   const response: any = await (client as any).beta.messages.create({
-    model: FAST_MODEL, max_tokens: 1200,
+    model: await modelFor('knowledge_search'), max_tokens: 1200,
     output_config: { effort: 'low', format: { type: 'json_schema', schema } },
     betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default',
     system, messages: [{ role: 'user', content: user }],
   })
+  await trackAi('knowledge_search', companyId, response)
   if (response.stop_reason === 'refusal') throw new Error('refused')
   return JSON.parse((response.content || []).filter((b: any) => b.type === 'text').map((b: any) => b.text).join(''))
 }
@@ -155,6 +155,7 @@ export async function smartSearchKnowledge(db: any, companyId: string, question:
       `You help search the help articles, website pages, policies and facts of ${co?.name || 'a small business'}. Turn the customer's question into what those pages would say: the topic, the words the business would use, and closely related terms. Short words or two-word phrases, most useful first. No sentences.`,
       ask,
       { type: 'object', properties: { terms: { type: 'array', items: { type: 'string' } } }, required: ['terms'], additionalProperties: false },
+      companyId,
     )
     const extra = (Array.isArray(ex?.terms) ? ex.terms : []).map((t: any) => String(t).toLowerCase().replace(/[^a-z0-9' -]/g, ' ').trim()).filter((t: string) => t.length >= 3).slice(0, 15)
     const base = buildSearchQuery(ask)
@@ -180,6 +181,7 @@ export async function smartSearchKnowledge(db: any, companyId: string, question:
       'You pick which passages help answer a customer’s question for a business. Only passages that actually answer it or contain facts needed to answer it — not ones that just mention similar words. Best first. If none do, return an empty list.',
       `QUESTION\n${ask}\n\nPASSAGES\n${list}`,
       { type: 'object', properties: { relevant: { type: 'array', items: { type: 'string' } } }, required: ['relevant'], additionalProperties: false },
+      companyId,
     )
     const out: KnowledgeHit[] = []
     for (const id of Array.isArray(pick?.relevant) ? pick.relevant : []) {
@@ -404,7 +406,6 @@ export type KnowledgeAnswer = {
   sources: { source: string; title: string; url: string | null; excerpt: string }[]
 }
 
-const MODEL = 'claude-opus-5-5'
 
 /**
  * Answer a customer-style question using ONLY the library. `grounded` is false
@@ -422,7 +423,7 @@ export async function answerFromKnowledge(db: any, companyId: string, question: 
   try {
     const client = new Anthropic()
     const response = await client.beta.messages.create({
-      model: MODEL,
+      model: await modelFor('knowledge_answer'),
       max_tokens: 4000,
       output_config: {
         effort: 'low',
@@ -442,6 +443,7 @@ export async function answerFromKnowledge(db: any, companyId: string, question: 
       system: `You answer customer questions for ${co?.name || 'a small business'}, as the business ("we"). Use ONLY the numbered sources. If they don't clearly answer the question, set grounded to false and say briefly that you'll check with the team, without guessing. Never invent prices, stock, dates or policies. Ideas and roadmap items are customer suggestions and plans, not promises. Keep it short, warm and plain: two to four sentences, no markdown, no emojis. In used, list the source ids (like "S2") you relied on.`,
       messages: [{ role: 'user', content: `SOURCES\n${lines.join('\n\n')}\n\n---\n\nCUSTOMER QUESTION\n${String(question).slice(0, 1000)}` }],
     })
+    await trackAi('knowledge_answer', companyId, response)
     if (response.stop_reason === 'refusal') return { error: 'Colvy AI declined to answer that one.' }
     const text = response.content.filter((b: any) => b.type === 'text').map((b: any) => b.text).join('')
     const p = JSON.parse(text)

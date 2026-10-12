@@ -4,6 +4,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { DEFAULT_SOCIAL_CATEGORIES } from '@/lib/social'
 import { isIgLoginChannel } from '@/lib/instagram-login'
+import { modelFor, trackAi } from '@/lib/ai-models'
 
 const IG_GRAPH = 'https://graph.instagram.com/v23.0'
 
@@ -106,10 +107,11 @@ No prose, no code fences.`
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 1500, messages: [{ role: 'user', content: prompt }] }),
+      body: JSON.stringify({ model: await modelFor('social_classify'), max_tokens: 1500, messages: [{ role: 'user', content: prompt }] }),
     })
     const data = await res.json()
     if (!res.ok) return {}
+    await trackAi('social_classify', null, data)
     let text = (data.content || []).map((c: any) => (c.type === 'text' ? c.text : '')).join('').trim()
     text = text.replace(/^```(json)?/i, '').replace(/```$/, '').trim()
     const arr = JSON.parse(text)
