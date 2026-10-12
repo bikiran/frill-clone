@@ -291,7 +291,14 @@ function fmtReceipt(d: string | undefined | null, isAgent: boolean, channel?: st
 // be replied to on.
 function receiptChannel(msg: any, fallback?: string): string | undefined {
   if (Array.isArray(msg?.attachments) && msg.attachments.some((a: any) => a?.from_request)) return 'upload'
+  // Customer emails received by the inbound webhook used to be saved without a
+  // channel, so the column default ('chat') made them read "Live Chat".
+  if (isEmailWithoutChannel(msg)) return 'email'
   return msg?.delivery_channel || fallback
+}
+function isEmailWithoutChannel(msg: any): boolean {
+  const dc = String(msg?.delivery_channel || '').toLowerCase()
+  return (!dc || dc === 'chat') && msg?.sender_type === 'visitor' && !!(msg?.email_message_id || msg?.email_in_reply_to)
 }
 // Two-letter initials from a name — first + last (e.g. "Bikiran Simkhada" → "BS")
 // so team members whose first names share a letter stay distinguishable. A
@@ -9266,6 +9273,19 @@ export default function InboxPage() {
                               </div>
                             )
                           })()
+                        )}
+
+                        {/* Nothing to show (no text, no files) — say so instead of
+                            drawing an empty bubble. Older customer emails that were
+                            only a photo or video arrived like this. */}
+                        {!isAgent && !String(msg.content || '').trim() && atts.length === 0 && (!msg.message_type || msg.message_type === 'text')
+                          && !(msg as any).metadata?.story_reply && !(msg as any).metadata?.media_attempt && !(msg as any).metadata?.review_request && (
+                          <span style={{ display: 'flex', alignItems: 'flex-start', gap: 6, fontSize: 12.5, fontStyle: 'italic', color: 'var(--slate)', lineHeight: 1.45 }}>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 2, display: 'inline-block' }}><circle cx="12" cy="12" r="9"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                            {isEmailWithoutChannel(msg)
+                              ? 'This email came through with no text. If it had photos or a video, they weren\u2019t saved \u2014 open it in your mailbox to see them.'
+                              : 'This message came through empty.'}
+                          </span>
                         )}
 
                         {/* Customer tried to send media the carrier couldn't
