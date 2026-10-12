@@ -101,7 +101,7 @@ export function WhySheet({ companyId, refs, onClose }: { companyId: string; refs
                               <span className="why-step-t">{s.label}</span>
                               {d && s.kind === 'action' && !['allowed'].includes(s.decision || '') && <span className={`why-chip ${d.tone}`}>{d.label}</span>}
                             </div>
-                            {s.detail && (['send_message', 'auto_reply', 'reply_to_review', 'send_cart_followup', 'send_order_update'].includes(s.action || '') ? <p className="why-bubble">{s.detail}</p> : <p className="why-detail">{s.detail}</p>)}
+                            {s.detail && (['send_message', 'auto_reply', 'reply_to_review', 'reply_to_comment', 'send_cart_followup', 'send_order_update'].includes(s.action || '') ? <p className="why-bubble">{s.detail}</p> : <p className="why-detail">{s.detail}</p>)}
                             {s.why && <p className="why-why">Why: {s.why}</p>}
                             {s.decisionReason && (s.kind === 'approval' || s.decision !== 'allowed') && <p className="why-rule">{s.decisionReason}</p>}
                           </div>

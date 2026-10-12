@@ -427,6 +427,11 @@ export async function POST(req: NextRequest) {
         if (ins?.id && text.trim()) {
           try { await classifyOne(db, companyId, ins.id, text) } catch {}
         }
+        // The Reputation Agent drafts a reply, if it's on for comments (queued
+        // for the agent worker; it reads the classification just saved).
+        if (ins?.id && text.trim()) {
+          try { const { queueCommentReplies } = await import('@/lib/agent/reputation'); await queueCommentReplies(db, companyId, [ins.id]) } catch (e) { console.warn('[agent] comment', e) }
+        }
 
         // Alert the team (in-app bell). No conversationId — comments live in the
         // Social Engagement manager, not the DM inbox.

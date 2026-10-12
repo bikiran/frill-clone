@@ -18,7 +18,8 @@ export function SuggestionCard({ s, companyId, onDone, compact }: { s: Suggestio
   const [text, setText] = useState(String(s.args?.text || ''))
   const [busy, setBusy] = useState<'' | 'send' | 'dismiss'>('')
   // A public reply to a Google review (Reputation Agent) or a message to a customer (Support Agent).
-  const isReview = s.action_key === 'reply_to_review'
+  const isComment = s.action_key === 'reply_to_comment'
+  const isReview = s.action_key === 'reply_to_review' || isComment
   // A booking change the Reception Agent prepared: approve or dismiss (nothing to edit).
   const isBooking = s.action_key === 'reschedule_booking' || s.action_key === 'cancel_booking'
   // A follow-up to a shopper who left a cart (Sales Agent), sent by SMS or email.
@@ -42,7 +43,7 @@ export function SuggestionCard({ s, companyId, onDone, compact }: { s: Suggestio
       <div className="agsg-head">
         <span className="agsg-orb"><Spark /></span>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <p className="agsg-t">{isBooking ? `Reception Agent wants to ${s.action_key === 'cancel_booking' ? 'cancel a booking' : 'move a booking'}` : isReview ? 'Reputation Agent drafted a reply' : isCart ? 'Sales Agent wrote a cart follow-up' : isOrder ? 'Operations Agent wrote an order update' : s.run?.role_key === 'reception' ? 'Reception Agent suggests a reply' : 'Support Agent suggests a reply'}</p>
+          <p className="agsg-t">{isBooking ? `Reception Agent wants to ${s.action_key === 'cancel_booking' ? 'cancel a booking' : 'move a booking'}` : isComment ? `Reputation Agent drafted ${s.run?.input?.platform === 'instagram' ? 'an Instagram' : 'a Facebook'} reply` : isReview ? 'Reputation Agent drafted a reply' : isCart ? 'Sales Agent wrote a cart follow-up' : isOrder ? 'Operations Agent wrote an order update' : s.run?.role_key === 'reception' ? 'Reception Agent suggests a reply' : 'Support Agent suggests a reply'}</p>
           {!compact && s.run?.summary && <p className="agsg-s">{s.run.summary}</p>}
         </div>
         <WhyLink companyId={companyId} runId={s.run_id} className="agsg-why" style={{ textDecoration: 'none' }} />
