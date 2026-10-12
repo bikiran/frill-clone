@@ -3,7 +3,7 @@ import { NextRequest, NextResponse, after } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { notifyCompany, pushInboundMessage } from '@/lib/notify'
 import { runKeywordReply } from '@/lib/keyword-reply'
-import { passesRules } from '@/lib/gmail'
+import { passesRules, sanitizeEmailHtml } from '@/lib/gmail'
 import { logWebhookEvent } from '@/lib/webhook-log'
 import { logEnquiryReopened } from '@/lib/conversation-timeline'
 import { parseInboundAlias } from '@/lib/inbound-alias'
@@ -184,8 +184,13 @@ export async function POST(req: NextRequest) {
       // Mirror into the linked inbox conversation too, if the ticket has one.
       if (ticket.conversation_id) {
         try {
-          await db.from('messages').insert({ conversation_id: ticket.conversation_id, company_id: ticket.company_id, sender_type: 'visitor', sender_name: from.name || from.email, sender_email: from.email, content, email_message_id: messageId || null, email_in_reply_to: inReplyTo || null })
-          await db.from('conversations').update({ last_message: content.slice(0, 200), last_message_at: new Date().toISOString(), is_unread: true, status: 'open' }).eq('id', ticket.conversation_id)
+          await db.from('messages').insert({
+            conversation_id: ticket.conversation_id, company_id: ticket.company_id, sender_type: 'visitor', sender_name: from.name || from.email, sender_email: from.email, content, email_message_id: messageId || null, email_in_reply_to: inReplyTo || null,
+            delivery_channel: 'email', email_from: from.name ? `${from.name} <${from.email}>` : from.email, email_subject: subject,
+            email_html: htmlBody ? sanitizeEmailHtml(String(htmlBody)) || null : null,
+            email_attachments: ticketAtts.map((a: any) => ({ name: a.name, mime: a.type, url: a.url })),
+          })
+          await db.from('conversations').update({ last_message: (content || (ticketAtts.length ? 'Sent an attachment' : '')).slice(0, 200), last_message_at: new Date().toISOString(), is_unread: true, status: 'open' }).eq('id', ticket.conversation_id)
         } catch {}
       }
       try { await notifyCompany({ db, companyId: ticket.company_id, type: 'ticket', message: `Reply on ${ticket.ticket_number} from ${from.name || from.email}`, actorName: from.name || from.email }) } catch {}
@@ -218,6 +223,14 @@ export async function POST(req: NextRequest) {
     if (!(await passesRules(db, channel, from.email))) {
       return NextResponse.json({ ok: false, reason: 'Sender filtered by an email rule' })
     }
+
+    // Keep the email as an email: its files (a reply that's only a photo or a
+    // video has no text at all) and its formatted body. Without these a
+    // photo-only reply landed as an empty "Live Chat" bubble.
+    const isForm = channel.provider === 'webform'
+    const emailAtts = await hostResendAttachments(evt, companyId as string)
+    const emailHtml = htmlBody ? sanitizeEmailHtml(String(htmlBody)) : ''
+    const preview = (content || (emailAtts.length === 1 ? 'Sent an attachment' : emailAtts.length > 1 ? `Sent ${emailAtts.length} attachments` : '')).slice(0, 200)
 
     // ── Find-or-create the contact ───────────────────────────────────────────
     let contact: any = null
@@ -258,7 +271,7 @@ export async function POST(req: NextRequest) {
         assigned_location_id: channel.location_id || null,
         contact_id: contact?.id || null, status: 'open',
         is_unread: true, unread_count: 1,
-        last_message: content.slice(0, 200), last_message_at: new Date().toISOString(),
+        last_message: preview, last_message_at: new Date().toISOString(),
       }).select().maybeSingle()
       conv = newConv
     }
@@ -276,8 +289,20 @@ export async function POST(req: NextRequest) {
       content,
       email_message_id: messageId || null,
       email_in_reply_to: inReplyTo || null,
+      // Without a delivery_channel the column default ('chat') applied, so the
+      // inbox labelled customer emails "Live Chat" and drew them as chat
+      // bubbles. Web-form mailboxes keep the old behaviour (replies to a form
+      // aren't sent by email from here).
+      ...(isForm ? {} : {
+        delivery_channel: 'email',
+        email_from: from.name ? `${from.name} <${from.email}>` : from.email,
+        email_to: recipientEmails.join(', ') || to.email || null,
+        email_subject: subject,
+        email_html: emailHtml || null,
+        email_attachments: emailAtts.map(a => ({ name: a.name, mime: a.type, url: a.url })),
+      }),
     })
-    await emitInboundEvent(db, { companyId, conversationId: conv.id, text: content, channel: 'email', name: from.name || null, email: from.email || null })
+    await emitInboundEvent(db, { companyId, conversationId: conv.id, text: content || preview, channel: 'email', name: from.name || null, email: from.email || null })
 
     // The Support / Reception Agent, if switched on for email — queued for the
     // agent worker. Ticket replies stay with the ticket.
@@ -289,7 +314,7 @@ export async function POST(req: NextRequest) {
     }
 
     await db.from('conversations').update({
-      last_message: content.slice(0, 200),
+      last_message: preview,
       last_message_at: new Date().toISOString(),
       is_unread: true,
       // An inbound message reopens a closed enquiry — the customer is back.
@@ -309,7 +334,7 @@ export async function POST(req: NextRequest) {
         const { data: ticket } = await db.from('support_tickets')
           .select('id, status, conversation_id').eq('company_id', companyId).eq('ticket_number', ticketNumber).maybeSingle()
         if (ticket?.id) {
-          const ticketAtts = await hostResendAttachments(evt, companyId)
+          const ticketAtts = emailAtts
           await db.from('ticket_messages').insert({
             ticket_id: ticket.id, company_id: companyId,
             kind: 'reply', direction: 'in', body: content,
