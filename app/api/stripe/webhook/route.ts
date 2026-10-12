@@ -164,6 +164,12 @@ export async function POST(req: NextRequest) {
             ? await confirmChatPayment(supabase, pay, { receiptUrl, paymentIntent: (typeof session.payment_intent === 'string' ? session.payment_intent : session.payment_intent?.id) || null, orderId: meta.orderId || null, orderNumber: meta.orderId ? String(meta.orderId) : null, cardBrand, cardLast4 })
             : { confirmed: false }
           if (!confirmRes.confirmed) break
+          // Fill the customer's empty details, keep their address and a card
+          // they chose to save (once — only the confirming call gets here).
+          try {
+            const { captureFromPayLink } = await import('@/lib/paylink-capture')
+            if (pay?.company_id) await captureFromPayLink(supabase, { companyId: pay.company_id, sessionId: session.id, paymentId: pay.id })
+          } catch (e) { console.error('[webhook] paylink capture failed', e) }
           // If this payment was for a WooCommerce order, mark it processing.
           if (meta.orderId) {
             try {

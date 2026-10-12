@@ -1381,6 +1381,8 @@ export default function InboxPage() {
     }
   }
   const [payDesc, setPayDesc] = useState('')
+  // Address the pay link asks for; null = the business default (Settings → Payments).
+  const [payAddress, setPayAddress] = useState<'none' | 'billing' | 'shipping' | null>(null)
   const [toast, setToast] = useState('')
   const [editField, setEditField] = useState<string | null>(null)
   const [editFieldValue, setEditFieldValue] = useState('')
@@ -1953,7 +1955,7 @@ export default function InboxPage() {
         loadTeam(cid)
         ;(supabase as any)
           .from('companies')
-          .select('name, logo_url, accent_color, slug, conversation_actions, inbox_settings')
+          .select('name, logo_url, accent_color, slug, conversation_actions, inbox_settings, payment_settings')
           .eq('id', cid).maybeSingle()
           .then(({ data: ci }: any) => {
             if (!ci) return
@@ -4892,7 +4894,7 @@ export default function InboxPage() {
       const isWidgetActive = outboundChannel === 'widget' || outboundChannel === 'chat'
       const res = await authFetch('/api/stripe/chat-payment', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ companyId, conversationId: selected.id, amount: payAmount, description: payDesc, senderName, channel: isWidgetActive ? 'chat' : outboundChannel }),
+        body: JSON.stringify({ companyId, conversationId: selected.id, amount: payAmount, description: payDesc, senderName, channel: isWidgetActive ? 'chat' : outboundChannel, ...(payAddress ? { collectAddress: payAddress } : {}) }),
       })
       const data = await res.json()
       if (!res.ok) { alert(data.error || 'Could not create payment'); return }
@@ -4910,7 +4912,7 @@ export default function InboxPage() {
           })
         } catch (e) { showToast(`Payment created, but sending failed: ${(e as any).message}`) }
       }
-      setSendPicker(null); setPayAmount(''); setPayDesc('')
+      setSendPicker(null); setPayAmount(''); setPayDesc(''); setPayAddress(null)
       if (await reloadThread(selected.id)) scrollBottom()
     } catch (e: any) { alert('Payment error: ' + e.message) }
     finally { paySendingRef.current = false; setPaySending(false) }
@@ -7704,9 +7706,25 @@ export default function InboxPage() {
                   <label style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--ink)', display: 'block', marginBottom: 6 }}>Description (optional)</label>
                   <input value={payDesc} onChange={e => setPayDesc(e.target.value)} placeholder="Deposit for booking" style={inp} />
                 </div>
+                {(() => {
+                  const def = (['none', 'billing', 'shipping'] as const).find(v => v === (companyInfo as any)?.payment_settings?.paylink_address) || 'none'
+                  const cur = payAddress || def
+                  return (
+                    <div>
+                      <label style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--ink)', display: 'block', marginBottom: 6 }}>Ask for an address</label>
+                      <div role="radiogroup" aria-label="Ask for an address" className="pay-addr">
+                        {([['none', 'No'], ['billing', 'Billing'], ['shipping', 'Delivery']] as const).map(([v, label]) => (
+                          <button key={v} type="button" role="radio" aria-checked={cur === v} onClick={() => setPayAddress(v)} className={cur === v ? 'on' : ''}>{label}</button>
+                        ))}
+                      </div>
+                      <style>{`.pay-addr{display:flex;gap:4px;padding:3px;border-radius:10px;background:var(--canvas)}.pay-addr button{flex:1;padding:7px 0;border:none;border-radius:8px;background:transparent;font-size:12.5px;font-weight:600;color:var(--slate);cursor:pointer;transition:background .2s ease,color .2s ease,box-shadow .2s ease}.pay-addr button.on{background:#fff;color:var(--ink);box-shadow:0 1px 3px rgba(15,23,42,.12)}`}</style>
+                      <p style={{ margin: '6px 0 0', fontSize: 11.5, color: 'var(--slate)' }}>{cur === 'none' ? 'Stripe still asks for their email and the name on the card.' : cur === 'billing' ? 'They enter their billing address; it’s saved to their addresses.' : 'They enter where to deliver; it’s saved to their addresses.'}</p>
+                    </div>
+                  )
+                })()}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--slate)', background: 'var(--canvas)', padding: '8px 12px', borderRadius: 8 }}>
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#059669" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-                  Secure payment via Stripe. Card details are never stored by Colvy.
+                  Secure payment via Stripe. Card details are never stored by Colvy.{(companyInfo as any)?.payment_settings?.paylink_fill_contact !== false ? ' Their name and email fill in any blanks on the contact.' : ''}
                 </div>
                 <button type="button" onClick={sendPayment} disabled={!payAmount || paySending} style={{ padding: '11px 0', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 14, fontWeight: 700, cursor: (!payAmount || paySending) ? 'default' : 'pointer', opacity: paySending ? 0.7 : 1 }}>
                   {paySending ? 'Sending…' : 'Send payment request'}

@@ -6,6 +6,7 @@ import { shortenUrl } from '@/lib/short-link'
 import { createClient } from '@supabase/supabase-js'
 import { createChatCheckoutSession } from '@/lib/chat-checkout'
 import { stripeSecretFor } from '@/lib/company-secrets'
+import { payLinkCollect } from '@/lib/paylink-capture'
 
 function admin() {
   return createClient(
@@ -21,7 +22,9 @@ function admin() {
 // still feeling inline — the widget shows amount + a secure Pay button.
 export async function POST(req: NextRequest) {
   try {
-    const { companyId, conversationId, amount, description, senderName, orderId, integrationId, pageUrl, channel } = await req.json()
+    // collectAddress (optional): 'none' | 'billing' | 'shipping' for this link;
+    // otherwise the business's default (Settings → Payments → Payment links).
+    const { companyId, conversationId, amount, description, senderName, orderId, integrationId, pageUrl, channel, collectAddress } = await req.json()
     // The customer's real channel, so the payment card is labelled correctly
     // (SMS/email/Messenger) instead of always reading "Live Chat". The caller
     // delivers the actual pay link over that channel.
@@ -73,9 +76,10 @@ export async function POST(req: NextRequest) {
     // Checkout sessions die after ~24h). So an SMS'd link keeps working for days
     // instead of dead-ending on Stripe's "session has timed out" page.
     const payId = randomUUID()
+    const collect = await payLinkCollect(db, company, conversationId, { address: collectAddress })
     const session = await createChatCheckoutSession(company, {
       cents, currency: 'aud', description, companyId, conversationId,
-      orderId, integrationId, originHost: candidate, originVerified: isVerified, pageUrl,
+      orderId, integrationId, originHost: candidate, originVerified: isVerified, pageUrl, collect,
     })
 
     // Post the payment message into the chat. Wrap the durable /pay/<id> URL

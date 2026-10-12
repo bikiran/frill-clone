@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { chatStripe, createChatCheckoutSession } from '@/lib/chat-checkout'
+import { payLinkCollect } from '@/lib/paylink-capture'
 
 export const dynamic = 'force-dynamic'
 
@@ -58,6 +59,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
         orderId: meta.orderId || null, integrationId: meta.integrationId || null,
         originHost: meta.originHost || null, originVerified: meta.originVerified === '1',
         pageUrl: meta.pageUrl || null,
+        // Ask for the same things the original link did.
+        collect: await payLinkCollect(db, company, pay.conversation_id, { meta }),
       })
       if (!fresh.url) return new NextResponse('Could not start checkout', { status: 502 })
       url = fresh.url
