@@ -7,7 +7,8 @@ interface WooCommerceConfig {
   storeUrl: string
   consumerKey: string
   consumerSecret: string
-  companyId: string
+  // Not read by the service itself; callers pass it optionally for context.
+  companyId?: string
 }
 
 interface WooCommerceCustomer {

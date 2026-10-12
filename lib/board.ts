@@ -9,6 +9,8 @@ export type Company = {
   accent_color?: string
   description?: string
   is_private?: boolean
+  plan?: string | null
+  trial_ends_at?: string | null
   created_at: string
 }
 

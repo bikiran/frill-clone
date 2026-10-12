@@ -98,7 +98,8 @@ const QUESTION_CATEGORIES = [
   },
 ] as const
 
-const QUESTION_TYPES = QUESTION_CATEGORIES.flatMap(c => c.types)
+const QUESTION_TYPES: { type: string; label: string; icon: string }[] =
+  QUESTION_CATEGORIES.flatMap(c => c.types as readonly { type: string; label: string; icon: string }[])
 
 function TypeIcon({ type, size = 16 }: { type: string; size?: number }) {
   const p = { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const }
@@ -237,6 +238,13 @@ export default function FormBuilder() {
     }).eq('id', formId)
     setSaving(false)
     setIsDirty(false)
+  }
+
+  // Display style is saved on its own — handleSave() takes no arguments, so the
+  // style buttons previously passed { display_style } into the void.
+  const saveDisplayStyle = async (display_style: 'list' | 'typeform') => {
+    setForm((f: any) => ({ ...(f || {}), display_style }))
+    await (supabase as any).from('forms').update({ display_style }).eq('id', formId)
   }
 
   const togglePublish = async () => {
@@ -994,7 +1002,7 @@ export default function FormBuilder() {
               <div style={{ marginBottom: 16 }}>
                 <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--slate)', display: 'block', marginBottom: 8 }}>Display style</label>
                 <div style={{ display: 'flex', gap: 8 }}>
-                  <button onClick={() => handleSave({ display_style: 'list' })}
+                  <button onClick={() => saveDisplayStyle('list')}
                     style={{
                       flex: 1,
                       padding: '8px 12px',
@@ -1008,7 +1016,7 @@ export default function FormBuilder() {
                     }}>
                     List view
                   </button>
-                  <button onClick={() => handleSave({ display_style: 'typeform' })}
+                  <button onClick={() => saveDisplayStyle('typeform')}
                     style={{
                       flex: 1,
                       padding: '8px 12px',

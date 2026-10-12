@@ -219,7 +219,9 @@ const Chevron = ({ open }: { open: boolean }) => (<svg width="12" height="12" vi
 const MenuIcon = () => (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" /></svg>)
 const CloseIcon = () => (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>)
 
-export default function MarketingNav({ dark, onToggleDark }: { dark: boolean; onToggleDark: () => void }) {
+// `dark`/`onToggleDark` are optional: light-only pages (e.g. /referrals) omit
+// them, and the theme toggle is hidden rather than rendered as a dead button.
+export default function MarketingNav({ dark = false, onToggleDark }: { dark?: boolean; onToggleDark?: () => void }) {
   const pathname = usePathname() || ''
   const [scrolled, setScrolled] = useState(false)
   const [open, setOpen] = useState<string | null>(null)
@@ -363,7 +365,7 @@ export default function MarketingNav({ dark, onToggleDark }: { dark: boolean; on
 
         {/* Right actions */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
-          <button onClick={onToggleDark} aria-label="Toggle theme" style={{ width: 38, height: 38, borderRadius: 11, border: `1px solid ${cardBorder}`, background: cardBg, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: text }}>{dark ? <SunIcon /> : <MoonIcon />}</button>
+          {onToggleDark && <button onClick={onToggleDark} aria-label="Toggle theme" style={{ width: 38, height: 38, borderRadius: 11, border: `1px solid ${cardBorder}`, background: cardBg, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: text }}>{dark ? <SunIcon /> : <MoonIcon />}</button>}
           {user ? (
             <button onClick={handleDashboard} className="mn-cta mn-desktop" style={primaryBtn}>Dashboard →</button>
           ) : (

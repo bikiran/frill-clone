@@ -30,6 +30,7 @@ export type ColvyEvent =
   // Acquisition / conversion funnel (signup → workspace → checkout)
   | 'signup_started'        // signup page opened
   | 'signup_submitted'      // account created (props: via, joining)
+  | 'signup_completed'      // email signup verified and account created (props: via)
   | 'workspace_created'     // a new workspace came into existence
   | 'pricing_viewed'        // the billing/plans page was opened
   | 'checkout_started'      // upgrade clicked, redirecting to Stripe (props: tier, billing)

@@ -452,7 +452,7 @@ export default function AnalyticsPage() {
                   textAlign: 'center'
                 }}>
                   <p style={{ margin: '0', fontSize: '13px', color: 'var(--slate)' }}>{tab}</p>
-                  <p style={{ margin: '4px 0 0 0', fontSize: '20px', fontWeight: 700, color: 'var(--coral)' }}>{count}</p>
+                  <p style={{ margin: '4px 0 0 0', fontSize: '20px', fontWeight: 700, color: 'var(--coral)' }}>{String(count)}</p>
                 </div>
               ))}
             </div>

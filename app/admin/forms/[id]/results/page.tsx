@@ -96,7 +96,7 @@ export default function FormResults() {
       const accentColor = company?.accent_color || '#ff7a6b'
       
       // Convert hex to RGB for jsPDF
-      const hexToRgb = (hex: string) => {
+      const hexToRgb = (hex: string): [number, number, number] => {
         const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex)
         return result ? [parseInt(result[1], 16), parseInt(result[2], 16), parseInt(result[3], 16)] : [255, 122, 107]
       }

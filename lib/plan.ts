@@ -177,16 +177,20 @@ export async function companyLimit(db: any, companyId: string, key: string, plan
 }
 
 let _cachedPlan: Plan | null = null
+let _cachedPlanUser: string | null = null
 let _cacheTime = 0
 const CACHE_TTL = 5 * 60 * 1000
 
 export async function getUserPlan(userId?: string): Promise<Plan> {
   if (!userId) return 'free'
-  if (_cachedPlan && Date.now() - _cacheTime < CACHE_TTL) return _cachedPlan
+  // Cache is keyed to the user — otherwise a second user in the same process
+  // would be handed the first user's plan.
+  if (_cachedPlan && _cachedPlanUser === userId && Date.now() - _cacheTime < CACHE_TTL) return _cachedPlan
   try {
     const company = await getCompanyByOwner(userId)
     if (company?.plan) {
-      _cachedPlan = effectivePlan(company.plan, (company as any).trial_ends_at)
+      _cachedPlan = effectivePlan(company.plan, company.trial_ends_at)
+      _cachedPlanUser = userId
       _cacheTime = Date.now()
       return _cachedPlan
     }

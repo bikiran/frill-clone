@@ -629,7 +629,7 @@ function BookingMock({ color, text, muted, cardBg, border }: { color: string; te
   )
 }
 // ── See how it works: clickable step list drives an animated phone ───────────
-type Step = { title: string; desc: string; href: string; channel: string; who: string; color: string; bubbles: { side: 'them' | 'me'; text: string; kind?: 'text' | 'image' | 'pill' | 'system' }[] }
+type Step = { title: string; desc: string; href: string; channel: string; who: string; color: string; bubbles: { side: 'them' | 'me' | 'system'; text: string; kind?: 'text' | 'image' | 'pill' | 'system' }[] }
 const HIW_STEPS: Step[] = [
   { title: 'Every channel in one inbox', desc: 'WhatsApp, Instagram, Messenger, email & SMS — one thread.', href: '/inbox-crm', channel: 'WhatsApp', who: 'Sam Rivera', color: '#25D366',
     bubbles: [{ side: 'them', text: 'Hi! Do you still have the 4ft reef tank in stock? 🐠' }, { side: 'me', text: 'Hey Sam! Yes — 2 left in Sydney.' }] },

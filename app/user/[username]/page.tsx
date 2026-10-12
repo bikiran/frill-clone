@@ -198,7 +198,7 @@ export default function UserProfilePage() {
             <h2 style={{ fontSize: 18, fontWeight: 800, color: '#0d0d0d', marginBottom: 16 }}>Ideas</h2>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               {ideas.map(idea => (
-                <div key={idea.id} style={{ background: '#fff', borderRadius: 12, padding: 16, border: '1px solid #f0f0f0', cursor: 'pointer', transition: 'all 0.2s', hover: { borderColor: accentColor } }}>
+                <div key={idea.id} style={{ background: '#fff', borderRadius: 12, padding: 16, border: '1px solid #f0f0f0', cursor: 'pointer', transition: 'all 0.2s' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', gap: 12 }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <p style={{ fontSize: 14, fontWeight: 600, color: '#0d0d0d', marginBottom: 4 }}>{idea.title}</p>

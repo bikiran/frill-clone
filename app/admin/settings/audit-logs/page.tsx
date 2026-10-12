@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
+import { authFetch } from '@/lib/auth-fetch'
 import Link from 'next/link'
 
 const ACTIVITY_ICONS: Record<string, string> = {
@@ -99,15 +100,24 @@ export default function AuditLogsPage() {
 
       // Load user names
       if (logsData && logsData.length > 0) {
-        const userIds = [...new Set(logsData.map((l: any) => l.user_id).filter(Boolean))]
+        const userIds = [...new Set(logsData.map((l: any) => l.user_id).filter(Boolean))] as string[]
         const userMap = new Map<string, string>()
 
-        for (const uid of userIds) {
-          const { data: userData } = await supabase.auth.admin.getUserById(uid)
-          if (userData.user) {
-            userMap.set(uid, userData.user.email || 'Unknown')
+        // supabase.auth.admin needs the service-role key, so calling it from the
+        // browser always failed and every entry showed "System". Resolve the
+        // emails server-side instead.
+        try {
+          const res = await authFetch('/api/team/names', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userIds }),
+          })
+          const { names } = await res.json()
+          for (const uid of userIds) {
+            const n = names?.[uid]
+            if (n) userMap.set(uid, n.email || n.name || 'Unknown')
           }
-        }
+        } catch { /* names are a nicety */ }
         setUsers(userMap)
       }
     } catch (error) {

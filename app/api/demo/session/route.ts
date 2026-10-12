@@ -38,8 +38,11 @@ export async function POST(_req: NextRequest) {
     try {
       const { data: c2 } = await admin.from('companies').select('id').eq('slug', DEMO_SLUG).maybeSingle()
       if (c2?.id) {
-        admin.from('demo_analytics').insert({ company_id: c2.id, event: 'session_start' })
-        admin.from('demo_workspaces').update({ last_login_at: new Date().toISOString() }).eq('company_id', c2.id).eq('demo_type', 'shared_showcase')
+        // Query builders are lazy — they only hit the DB once awaited.
+        await Promise.all([
+          admin.from('demo_analytics').insert({ company_id: c2.id, event: 'session_start' }),
+          admin.from('demo_workspaces').update({ last_login_at: new Date().toISOString() }).eq('company_id', c2.id).eq('demo_type', 'shared_showcase'),
+        ])
       }
     } catch {}
     return NextResponse.json({

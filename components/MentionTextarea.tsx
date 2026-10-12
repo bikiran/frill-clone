@@ -130,7 +130,7 @@ export default function MentionTextarea({
           resize: 'vertical',
           outline: 'none',
           fontFamily: 'inherit',
-          fontColor: '#0d0d0d',
+          color: '#0d0d0d',
           ...style,
         }}
         onFocus={() => {
