@@ -270,7 +270,7 @@ export default function AiKnowledgePage() {
         </div>
       )}
       {!ov.aiEnabled && !ov.needsMigration && (
-        <p className="akn-sub" style={{ marginTop: 14 }}>Colvy AI replies are switched off in <Link href="/admin/ai-settings" style={{ color: '#e2553f', fontWeight: 700 }}>AI settings</Link>. You can still build the library and test answers here.</p>
+        <p className="akn-sub" style={{ marginTop: 14 }}>Colvy AI replies are switched off in <Link href="/admin/crm-settings/ai" style={{ color: '#e2553f', fontWeight: 700 }}>AI settings</Link>. You can still build the library and test answers here.</p>
       )}
 
       {/* Test */}

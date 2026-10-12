@@ -1,29 +1,43 @@
 'use client'
 
+import React from 'react'
 import { usePathname } from 'next/navigation'
 import Link from 'next/link'
 
-const NAV = [
-  { slug: 'profile', label: 'Your Settings' },
-  { slug: 'business', label: 'Business' },
-  { slug: 'channels', label: 'Channels' },
-  { slug: 'conversation-actions', label: 'Conversation Actions' },
-  { slug: 'order-automation', label: 'Order Automation' },
-  { slug: 'custom-fields', label: 'Custom Fields' },
-  { slug: 'power-ups', label: 'Time Savers' },
-  { slug: 'ai', label: 'AI' },
-  { slug: 'ai-knowledge', label: 'AI Knowledge' },
-  { slug: 'contact-form', label: 'Contact Form' },
-  { slug: 'chat-widget', label: 'Chat Widget' },
-  { slug: 'auto-replies', label: 'Automatic Replies' },
-  { slug: 'calendar', label: 'Calendar' },
-  { slug: 'archived-spam', label: 'Archived & Spam' },
-  { slug: 'imports', label: 'Imports' },
-  { slug: 'payments', label: 'Payments' },
-  { slug: 'campaigns', label: 'Campaigns' },
-  { slug: 'csv-processor', label: 'CSV Processor' },
-  { slug: 'policies', label: 'Policies' },
+// Settings tabs, grouped so related ones sit together. (The team Calendar used
+// to be a tab here too; it's an everyday tool, so /crm-settings/calendar now
+// forwards to /admin/calendar in the sidebar.)
+const NAV_GROUPS: { title: string; items: { slug: string; label: string }[] }[] = [
+  { title: 'General', items: [
+    { slug: 'business', label: 'Business' },
+    { slug: 'profile', label: 'Your Settings' },
+  ]},
+  { title: 'Inbox & channels', items: [
+    { slug: 'channels', label: 'Channels' },
+    { slug: 'chat-widget', label: 'Chat Widget' },
+    { slug: 'contact-form', label: 'Contact Form' },
+    { slug: 'auto-replies', label: 'Automatic Replies' },
+    { slug: 'power-ups', label: 'Time Savers' },
+    { slug: 'conversation-actions', label: 'Conversation Actions' },
+    { slug: 'custom-fields', label: 'Custom Fields' },
+    { slug: 'archived-spam', label: 'Archived & Spam' },
+  ]},
+  { title: 'AI', items: [
+    { slug: 'ai', label: 'AI Settings' },
+    { slug: 'ai-knowledge', label: 'AI Knowledge' },
+  ]},
+  { title: 'Sales & orders', items: [
+    { slug: 'payments', label: 'Payments' },
+    { slug: 'order-automation', label: 'Order Automation' },
+    { slug: 'campaigns', label: 'Campaigns' },
+    { slug: 'policies', label: 'Policies' },
+  ]},
+  { title: 'Data', items: [
+    { slug: 'imports', label: 'Imports' },
+    { slug: 'csv-processor', label: 'CSV Processor' },
+  ]},
 ]
+const NAV = NAV_GROUPS.flatMap(g => g.items)
 
 export default function CrmSettingsLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
@@ -35,8 +49,9 @@ export default function CrmSettingsLayout({ children }: { children: React.ReactN
   // third breadcrumb level with a "Back to channels" link, so people don't lose
   // the settings navigation when they drill into a channel.
   const CHANNEL_LABELS: Record<string, string> = {
-    email: 'Email', telnyx: 'SMS & Calls', 'google-reviews': 'Google Reviews',
+    email: 'Email', telnyx: 'SMS & Calls', calls: 'SMS & Calls', 'google-reviews': 'Google Reviews',
     instagram: 'Instagram', facebook: 'Messenger', whatsapp: 'WhatsApp',
+    meta: 'Facebook & Instagram', 'web-form': 'Web Form', realestate: 'RealEstate',
     'chat-widget': 'Chat Widget',
   }
   const channelMatch = pathname?.match(/\/crm-settings\/channels\/([^/?#]+)/)
@@ -48,7 +63,7 @@ export default function CrmSettingsLayout({ children }: { children: React.ReactN
       {/* Breadcrumb + back */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 24px', borderBottom: '1px solid var(--border)', background: '#fff' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--slate)' }}>
-          <Link href="/admin/crm-settings/profile" style={{ color: 'var(--slate)', textDecoration: 'none' }}>Settings</Link>
+          <Link href="/admin/crm-settings/business" style={{ color: 'var(--slate)', textDecoration: 'none' }}>Business Settings</Link>
           <span>/</span>
           {channelLabel ? (
             <>
@@ -85,25 +100,33 @@ export default function CrmSettingsLayout({ children }: { children: React.ReactN
               white-space: nowrap !important; padding: 8px !important; gap: 6px !important;
             }
             .crm-settings-nav a { display: inline-block !important; margin-bottom: 0 !important; flex-shrink: 0 !important; }
+            .crm-settings-nav .crm-settings-group-title { display: none !important; }
             .crm-settings-content { padding: 20px 16px !important; }
           }
         `}</style>
         {/* Settings sidebar */}
         <div className="crm-settings-nav" style={{ width: 230, flexShrink: 0, borderRight: '1px solid var(--border)', background: '#fafafa', padding: '12px 8px', overflowY: 'auto' }}>
-          {NAV.map(n => {
-            const active = isAt(n.slug)
-            return (
-              <Link key={n.slug} href={`/admin/crm-settings/${n.slug}`}
-                style={{
-                  display: 'block', padding: '9px 14px', borderRadius: 8, fontSize: 13.5, marginBottom: 2,
-                  textDecoration: 'none', fontWeight: active ? 600 : 500,
-                  background: active ? 'var(--peach)' : 'transparent',
-                  color: active ? 'var(--coral)' : 'var(--ink)',
-                }}>
-                {n.label}
-              </Link>
-            )
-          })}
+          {NAV_GROUPS.map((g, gi) => (
+            <React.Fragment key={g.title}>
+              <p className="crm-settings-group-title" style={{ margin: gi === 0 ? '2px 14px 6px' : '14px 14px 6px', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--slate)' }}>
+                {g.title}
+              </p>
+              {g.items.map(n => {
+                const active = isAt(n.slug)
+                return (
+                  <Link key={n.slug} href={`/admin/crm-settings/${n.slug}`}
+                    style={{
+                      display: 'block', padding: '9px 14px', borderRadius: 8, fontSize: 13.5, marginBottom: 2,
+                      textDecoration: 'none', fontWeight: active ? 600 : 500,
+                      background: active ? 'var(--peach)' : 'transparent',
+                      color: active ? 'var(--coral)' : 'var(--ink)',
+                    }}>
+                    {n.label}
+                  </Link>
+                )
+              })}
+            </React.Fragment>
+          ))}
         </div>
 
         {/* Page content */}

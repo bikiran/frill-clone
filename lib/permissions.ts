@@ -101,12 +101,75 @@ export interface SuiteDef {
   features: FeatureDef[]
 }
 
+// Suites mirror the admin sidebar's groups (app/admin/layout.tsx) so the Team
+// page's access checklist reads in the same order as the menu. Only the
+// grouping is presentational: access is stored per feature KEY, so moving a
+// feature between suites never changes anyone's access. Never rename a key.
 export const PERMISSION_SUITES: SuiteDef[] = [
+  {
+    key: 'inbox',
+    label: 'Inbox & CRM',
+    features: [
+      { key: 'inbox', label: 'Inbox', paths: ['/admin/inbox'] },
+      { key: 'contacts', label: 'Contacts', paths: ['/admin/contacts', '/admin/customers/profile'] },
+      { key: 'tasks', label: 'Tasks', paths: ['/admin/tasks'] },
+      { key: 'notes', label: 'Notes', paths: ['/admin/notes'] },
+      { key: 'gallery', label: 'Gallery', paths: ['/admin/gallery'] },
+      { key: 'calendar', label: 'Calendar', paths: ['/admin/calendar'] },
+      { key: 'bookings', label: 'Bookings', paths: ['/admin/bookings'], restrictedDefault: false },
+      { key: 'scheduled', label: 'Scheduled', paths: ['/admin/scheduled'] },
+      { key: 'calls', label: 'Call Logs', paths: ['/admin/calls'] },
+    ],
+  },
+  {
+    key: 'ai',
+    label: 'AI',
+    features: [
+      // AI Agents + Needs you + Results & goals + Business memory (all /admin/agents/*).
+      { key: 'agents', label: 'AI agents & business memory', paths: ['/admin/agents'], restrictedDefault: false },
+      // AI settings + AI knowledge. The canonical pages live under
+      // /admin/crm-settings; the old top-level addresses just redirect there.
+      { key: 'ai_settings', label: 'AI settings & knowledge', paths: ['/admin/ai-settings', '/admin/ai-knowledge', '/admin/crm-settings/ai', '/admin/crm-settings/ai-knowledge'], restrictedDefault: false },
+    ],
+  },
+  {
+    key: 'orders',
+    label: 'Orders & Fulfillment',
+    features: [
+      { key: 'orders', label: 'Orders', paths: ['/admin/orders'] },
+      { key: 'reports', label: 'Reports', paths: ['/admin/orders/reports'] },
+      { key: 'payments', label: 'Payments', paths: ['/admin/payments'] },
+      { key: 'shipping', label: 'Shipping', paths: ['/admin/orders/shipping'] },
+    ],
+  },
+  {
+    key: 'support',
+    label: 'Support',
+    features: [
+      { key: 'tickets', label: 'Tickets', paths: ['/admin/tickets'] },
+      { key: 'help', label: 'Help Centre', paths: ['/admin/help'] },
+      { key: 'help_categories', label: 'Help Categories', paths: ['/admin/settings/help-categories'] },
+      { key: 'help_reporting', label: 'Help Reporting', paths: ['/admin/help/analytics'] },
+      { key: 'help_settings', label: 'Help Settings', paths: ['/admin/help/settings'] },
+    ],
+  },
+  {
+    key: 'marketing',
+    label: 'Marketing',
+    features: [
+      { key: 'campaigns', label: 'Campaigns', paths: ['/admin/campaigns'] },
+      { key: 'waitlists', label: 'Waitlists', paths: ['/admin/waitlists'], restrictedDefault: false },
+      { key: 'links', label: 'Links Generator', paths: ['/admin/links'] },
+      { key: 'link_reports', label: 'Link Reports', paths: ['/admin/link-reports'] },
+      { key: 'reviews', label: 'Reviews', paths: ['/admin/reviews'] },
+      { key: 'social', label: 'Social Engagement', paths: ['/admin/social'] },
+    ],
+  },
   {
     key: 'feedback',
     label: 'Feedback',
     features: [
-      { key: 'ideas', label: 'Ideas', paths: [] }, // Ideas is the /admin home — nav-only toggle, route always allowed
+      { key: 'ideas', label: 'Ideas', paths: [] }, // Ideas is the public board (/?view=ideas) — nav-only toggle, no admin route to gate
       { key: 'roadmap', label: 'Roadmap', paths: ['/roadmap', '/admin/roadmap'] },
       { key: 'announcements', label: 'Announcements', paths: ['/admin/announcements'] },
       { key: 'polls', label: 'Polls', paths: ['/admin/polls'] },
@@ -122,38 +185,6 @@ export const PERMISSION_SUITES: SuiteDef[] = [
       { key: 'topics', label: 'Topics', paths: ['/admin/topics'] },
       { key: 'priorities', label: 'Priorities', paths: ['/admin/priorities'] },
       { key: 'segments', label: 'Segments', paths: ['/admin/segments', '/admin/customers/segments'] },
-      { key: 'analytics', label: 'Analytics', paths: ['/admin/analytics'] },
-    ],
-  },
-  {
-    key: 'orders',
-    label: 'Orders & Fulfillment',
-    features: [
-      { key: 'orders', label: 'Orders', paths: ['/admin/orders'] },
-      { key: 'reports', label: 'Reports', paths: ['/admin/orders/reports'] },
-      { key: 'payments', label: 'Payments', paths: ['/admin/payments'] },
-      { key: 'shipping', label: 'Shipping', paths: ['/admin/orders/shipping'] },
-    ],
-  },
-  {
-    key: 'inbox',
-    label: 'Inbox & CRM',
-    features: [
-      { key: 'inbox', label: 'Inbox', paths: ['/admin/inbox'] },
-      { key: 'contacts', label: 'Contacts', paths: ['/admin/contacts', '/admin/customers/profile'] },
-      { key: 'tasks', label: 'Tasks', paths: ['/admin/tasks'] },
-      { key: 'notes', label: 'Notes', paths: ['/admin/notes'] },
-      { key: 'gallery', label: 'Gallery', paths: ['/admin/gallery'] },
-      { key: 'calendar', label: 'Calendar', paths: ['/admin/calendar'] },
-      { key: 'bookings', label: 'Bookings', paths: ['/admin/bookings'], restrictedDefault: false },
-      { key: 'scheduled', label: 'Scheduled', paths: ['/admin/scheduled'] },
-      { key: 'calls', label: 'Call Logs', paths: ['/admin/calls'] },
-      { key: 'campaigns', label: 'Campaigns', paths: ['/admin/campaigns'] },
-      { key: 'waitlists', label: 'Waitlists', paths: ['/admin/waitlists'], restrictedDefault: false },
-      { key: 'links', label: 'Links Generator', paths: ['/admin/links'] },
-      { key: 'link_reports', label: 'Link Reports', paths: ['/admin/link-reports'] },
-      { key: 'reviews', label: 'Reviews', paths: ['/admin/reviews'] },
-      { key: 'social', label: 'Social Engagement', paths: ['/admin/social'] },
     ],
   },
   {
@@ -161,34 +192,24 @@ export const PERMISSION_SUITES: SuiteDef[] = [
     label: 'Insights',
     features: [
       { key: 'command_centre', label: 'Command Centre', paths: ['/admin/command-centre'] },
+      { key: 'analytics', label: 'Analytics', paths: ['/admin/analytics'] },
       { key: 'customer_insights', label: 'Customer Insights', paths: ['/admin/insights/customers'] },
       { key: 'location_insights', label: 'Location Insights', paths: ['/admin/insights/location'] },
-    ],
-  },
-  {
-    key: 'support',
-    label: 'Support',
-    features: [
-      { key: 'tickets', label: 'Tickets', paths: ['/admin/tickets'] },
-      { key: 'help', label: 'Help Centre', paths: ['/admin/help'] },
-      { key: 'help_categories', label: 'Help Categories', paths: ['/admin/settings/help-categories'] },
-      { key: 'help_reporting', label: 'Help Reporting', paths: ['/admin/help/analytics'] },
-      { key: 'help_settings', label: 'Help Settings', paths: ['/admin/help/settings'] },
     ],
   },
   {
     key: 'settings',
     label: 'Settings',
     features: [
+      { key: 'settings', label: 'Settings', paths: ['/admin/settings', '/admin/legal'] },
+      // The "Business Settings" area (/admin/crm-settings: business profile,
+      // channels, chat widget, auto-replies, payments, order automation…).
+      { key: 'inbox_settings', label: 'Business settings (inbox, channels, payments…)', paths: ['/admin/crm-settings', '/admin/auto-replies'], restrictedDefault: false },
       { key: 'team', label: 'Team', paths: ['/admin/team'] },
       { key: 'users', label: 'Users', paths: ['/admin/users'] },
       { key: 'locations', label: 'Locations', paths: ['/admin/locations'] },
       { key: 'integrations', label: 'Integrations', paths: ['/admin/integrations'] },
       { key: 'import', label: 'Import Data', paths: ['/admin/import'] },
-      { key: 'settings', label: 'Settings', paths: ['/admin/settings', '/admin/legal'] },
-      { key: 'inbox_settings', label: 'Inbox settings', paths: ['/admin/crm-settings', '/admin/auto-replies'], restrictedDefault: false },
-      { key: 'ai_settings', label: 'AI settings', paths: ['/admin/ai-settings', '/admin/ai-knowledge', '/admin/crm-settings/ai', '/admin/crm-settings/ai-knowledge'], restrictedDefault: false },
-      { key: 'agents', label: 'AI agents', paths: ['/admin/agents'], restrictedDefault: false },
       { key: 'terminology', label: 'Terminology', paths: ['/admin/terminology'], restrictedDefault: false },
       { key: 'billing', label: 'Billing', paths: ['/admin/billing'] },
       { key: 'referrals', label: 'Referrals', paths: ['/admin/referrals'], restrictedDefault: false },

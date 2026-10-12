@@ -103,7 +103,7 @@ export default function TopicsPage() {
         <p className="text-sm mb-3" style={{ color: '#1e40af' }}>
           Private Topics are part of the Privacy Add-on. They will be converted to normal Topics at the end of your trial unless you purchase the Growth plan or Privacy Add-on.
         </p>
-        <a href={`/admin/settings/billing?slug=${slug}`} className="text-sm font-medium hover:underline" style={{ color: '#3b82f6' }}>
+        <a href="/admin/billing" className="text-sm font-medium hover:underline" style={{ color: '#3b82f6' }}>
           Compare plans →
         </a>
       </div>
