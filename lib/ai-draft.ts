@@ -18,8 +18,8 @@ import { findProducts } from '@/lib/product-search'
 import { logUnanswered } from '@/lib/ai-unanswered'
 
 import { statusMeta } from '@/lib/orders'
+import { modelFor, trackAi } from '@/lib/ai-models'
 
-const MODEL = 'claude-opus-5-5'
 
 export type DraftSource = { id: string; kind: 'knowledge' | 'product' | 'order'; label: string; url?: string | null }
 export type DraftResult =
@@ -168,7 +168,7 @@ Return JSON with: "reply" (the draft), "used" (the IDs of the sources you relied
   try {
     const client = new Anthropic()
     const response = await client.beta.messages.create({
-      model: MODEL,
+      model: await modelFor('reply_draft'),
       max_tokens: 16000,
       // Drafting is short and an agent is waiting on it, so keep effort low.
       output_config: {
@@ -195,6 +195,7 @@ Return JSON with: "reply" (the draft), "used" (the IDs of the sources you relied
       messages: [{ role: 'user', content: user }],
     })
 
+    await trackAi('reply_draft', opts.companyId, response)
     if (response.stop_reason === 'refusal') return { ok: false, error: 'The AI declined to draft a reply for this conversation.' }
     if (response.stop_reason === 'max_tokens') return { ok: false, error: 'The draft was cut off — please try again.' }
     const text = response.content.filter(b => b.type === 'text').map(b => (b as any).text).join('')

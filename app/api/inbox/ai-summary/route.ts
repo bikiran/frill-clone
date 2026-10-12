@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { guardAiRequest } from '@/lib/rate-limit'
+import { modelFor, trackAi } from '@/lib/ai-models'
 
 // Generates a short summary + action items for a conversation using Claude.
 // Falls back gracefully if no API key is configured.
@@ -37,7 +38,7 @@ export async function POST(req: NextRequest) {
         'content-type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'claude-haiku-4-5',
+        model: await modelFor('conversation_summary'),
         max_tokens: 400,
         messages: [{
           role: 'user',
@@ -72,6 +73,7 @@ ${transcript}`,
     }
 
     const data = await res.json()
+    await trackAi('conversation_summary', companyId, data)
     const text = data.content?.[0]?.text || ''
     // Parse the JSON out of the response
     const clean = text.replace(/```json|```/g, '').trim()

@@ -6,8 +6,8 @@
 // collected stay attached to them.
 
 import Anthropic from '@anthropic-ai/sdk'
+import { modelFor, trackAi } from '@/lib/ai-models'
 
-const MODEL = 'claude-opus-5-5'
 
 // Question types the AI may use. Picture choice, payment, scheduler and
 // video/audio need uploads or setup a person has to do, so they're left out.
@@ -132,7 +132,7 @@ export async function chatForm(opts: {
   try {
     const client = new Anthropic()
     const response = await client.beta.messages.create({
-      model: MODEL,
+      model: await modelFor('form_builder'),
       max_tokens: 16000,
       // Someone is watching the chat, so keep it quick.
       output_config: { effort: 'low', format: { type: 'json_schema', schema: SCHEMA } },
@@ -144,6 +144,7 @@ export async function chatForm(opts: {
       messages: turns,
     })
 
+    await trackAi('form_builder', null, response)
     if (response.stop_reason === 'refusal') return { ok: false, error: 'Colvy AI can’t help with that one.' }
     if (response.stop_reason === 'max_tokens') return { ok: false, error: 'That form came out too long. Try asking for fewer questions.' }
     const text = response.content.filter((b: any) => b.type === 'text').map((b: any) => b.text).join('')

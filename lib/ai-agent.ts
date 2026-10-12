@@ -8,6 +8,7 @@ import { markThinking, clearThinking, queueDraft, claimDraft, answeredSince, sen
 import { WooCommerceService } from '@/lib/woocommerce-service'
 import { shopifyCreateDiscountCode, shopifyCreateOrder, shopifyStoreFor } from '@/lib/shopify-create'
 import { trackLinksInText } from '@/lib/link-tracking'
+import { modelFor, trackAi } from '@/lib/ai-models'
 
 const admin = () => createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -35,7 +36,6 @@ const admin = () => createClient(
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-const MODEL = 'claude-opus-5-5'
 
 export interface AiResult {
   replied: boolean
@@ -651,7 +651,7 @@ WHAT YOU CANNOT DO
         'content-type': 'application/json',
       },
       body: JSON.stringify({
-        model: MODEL,
+        model: await modelFor('auto_reply'),
         // Thinking is always on for this model; low effort keeps replies quick.
         max_tokens: 4000,
         output_config: { effort: 'low' },
@@ -663,6 +663,7 @@ WHAT YOU CANNOT DO
 
     const data = await res.json()
     if (!res.ok) return { replied: false, reason: data?.error?.message || 'AI request failed' }
+    await trackAi('auto_reply', opts.companyId, data)
 
     let text = (data.content || [])
       .filter((c: any) => c.type === 'text').map((c: any) => c.text).join('').trim()

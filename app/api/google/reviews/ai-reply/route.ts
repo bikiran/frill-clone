@@ -2,6 +2,7 @@ import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { guardAiRequest } from '@/lib/rate-limit'
 import { createClient } from '@supabase/supabase-js'
+import { modelFor, trackAi } from '@/lib/ai-models'
 
 export const dynamic = 'force-dynamic'
 
@@ -58,7 +59,7 @@ Reply with ONLY the reply text, nothing else.`
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
+        model: await modelFor('review_reply'),
         max_tokens: 400,
         messages: [{ role: 'user', content: prompt }],
       }),
@@ -66,6 +67,7 @@ Reply with ONLY the reply text, nothing else.`
 
     const data = await res.json()
     if (!res.ok) return NextResponse.json({ error: data?.error?.message || 'AI request failed' }, { status: 502 })
+    await trackAi('review_reply', companyId, data)
 
     const text = (data.content || []).map((c: any) => (c.type === 'text' ? c.text : '')).join('').trim()
     return NextResponse.json({ ok: true, reply: text })

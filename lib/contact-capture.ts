@@ -1,4 +1,5 @@
 // Server-side "Colvy AI" contact capture for inbound SMS.
+import { modelFor, trackAi } from '@/lib/ai-models'
 //
 // When a customer texts in, we extract their details from the message and
 // create/link a contact — so a first-time texter like "Good day, its Dylan here
@@ -97,7 +98,7 @@ export async function extractContactDetails(text: string): Promise<ExtractedCont
       method: 'POST',
       headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
       body: JSON.stringify({
-        model: 'claude-sonnet-5',
+        model: await modelFor('contact_capture'),
         max_tokens: 200,
         system,
         messages: [{ role: 'user', content: text.slice(0, 2000) }],
@@ -105,6 +106,7 @@ export async function extractContactDetails(text: string): Promise<ExtractedCont
     })
     const data = await res.json()
     if (!res.ok) return empty
+    await trackAi('contact_capture', null, data)
     const raw = (data.content || []).filter((c: any) => c.type === 'text').map((c: any) => c.text).join('').trim()
     const json = raw.slice(raw.indexOf('{'), raw.lastIndexOf('}') + 1)
     const parsed = JSON.parse(json)

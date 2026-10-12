@@ -6,6 +6,7 @@
 // locally hosted model) means adding one class here.
 
 import Anthropic from '@anthropic-ai/sdk'
+import { modelFor, trackAi } from '@/lib/ai-models'
 
 export type NeutralBlock =
   | { type: 'text'; text: string }
@@ -22,6 +23,7 @@ export type ModelRequest = {
   messages: NeutralMessage[]
   tools?: ToolSpec[]
   maxTokens?: number
+  companyId?: string | null       // whose run this is, for the AI usage numbers
 }
 
 export type ModelResponse = {
@@ -40,11 +42,6 @@ export interface ModelClient {
 
 // ── Anthropic ────────────────────────────────────────────────────────────────
 
-const ANTHROPIC_MODELS = {
-  smart: process.env.AGENT_MODEL_SMART || 'claude-opus-5-5',
-  fast: process.env.AGENT_MODEL_FAST || 'claude-haiku-5-5',
-}
-
 function toAnthropic(messages: NeutralMessage[]): any[] {
   return messages.map(m => ({
     role: m.role,
@@ -61,7 +58,8 @@ export class AnthropicModel implements ModelClient {
   private client = new Anthropic()
 
   async generate(req: ModelRequest): Promise<ModelResponse> {
-    const model = ANTHROPIC_MODELS[req.tier]
+    // Picked per job on Platform admin → AI models (lib/ai-models.ts).
+    const model = await modelFor(req.tier === 'smart' ? 'agent_smart' : 'agent_fast')
     const response: any = await (this.client as any).beta.messages.create({
       model,
       max_tokens: req.maxTokens || 8000,
@@ -76,6 +74,7 @@ export class AnthropicModel implements ModelClient {
       messages: toAnthropic(req.messages),
     })
 
+    await trackAi(req.tier === 'smart' ? 'agent_smart' : 'agent_fast', req.companyId, response)
     const content: NeutralBlock[] = []
     const toolCalls: ModelResponse['toolCalls'] = []
     for (const b of response.content || []) {

@@ -1,4 +1,5 @@
 // Detect a message's language and translate it to English — one Claude call.
+import { modelChain, trackAi } from '@/lib/ai-models'
 //
 // Returns { lang, translated }:
 //   - lang: an ISO code for the detected language ('en', 'ne', 'es'…), or null
@@ -19,7 +20,7 @@ Respond with ONLY JSON, no preamble, no markdown fences:
 Message:
 ${clean.slice(0, 4000)}`
 
-  for (const model of ['claude-haiku-4-5', 'claude-sonnet-4-6']) {
+  for (const model of await modelChain('translate', ['claude-sonnet-4-6'])) {
     try {
       const ctrl = new AbortController()
       const t = setTimeout(() => ctrl.abort(), 20000)
@@ -34,6 +35,7 @@ ${clean.slice(0, 4000)}`
       } finally { clearTimeout(t) }
       if (!res.ok) continue
       const data = await res.json()
+      await trackAi('translate', null, data)
       const out = (data.content?.[0]?.text || '').replace(/```json|```/g, '').trim()
       const parsed = JSON.parse(out)
       const lang = parsed.lang ? String(parsed.lang).toLowerCase() : null

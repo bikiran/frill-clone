@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { trackLinksInText } from '@/lib/link-tracking'
+import { modelFor, trackAi } from '@/lib/ai-models'
 
 const admin = () => createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -88,7 +89,7 @@ async function intentAllows(text: string, keywords: string[], reply: string): Pr
       method: 'POST',
       headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
       body: JSON.stringify({
-        model: 'claude-sonnet-5',
+        model: await modelFor('keyword_reply'),
         max_tokens: 5,
         system,
         messages: [{ role: 'user', content: user }],
@@ -98,6 +99,7 @@ async function intentAllows(text: string, keywords: string[], reply: string): Pr
     clearTimeout(t)
     if (!res.ok) return true
     const data = await res.json()
+    await trackAi('keyword_reply', null, data)
     const out = (data.content || []).filter((c: any) => c.type === 'text').map((c: any) => c.text).join('').trim().toLowerCase()
     if (!out) return true
     return out.startsWith('y')
