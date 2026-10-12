@@ -1662,6 +1662,16 @@ function Timeline({ tasks, convs, statusOf, onSelect, selectedId, outlets, onTog
   const [daysShown, setDaysShown] = useState(5)
   const [viewW, setViewW] = useState(0)
   const COL_W = viewW ? viewW / daysShown : 256
+  // Only the days around what's on screen are drawn — the axis can span a
+  // year (366 columns), and drawing every card in every column made the
+  // Timeline slow to open. Spacers keep the scroll width the same.
+  const [scrollX, setScrollX] = useState<number | null>(null)
+  const scrollRaf = useRef(0)
+  const onScroll = () => {
+    if (scrollRaf.current) return
+    scrollRaf.current = requestAnimationFrame(() => { scrollRaf.current = 0; if (scrollRef.current) setScrollX(scrollRef.current.scrollLeft) })
+  }
+  useEffect(() => () => { if (scrollRaf.current) cancelAnimationFrame(scrollRaf.current) }, [])
   // Drag & drop: reorder within a day or move a task to another day (which
   // changes its due date). dropTarget is the live insertion point (which column,
   // and the index within it) so we can show a precise drop line.
@@ -1730,7 +1740,9 @@ function Timeline({ tasks, convs, statusOf, onSelect, selectedId, outlets, onTog
   useEffect(() => {
     // Offset by the pinned "No due date" column (if present) so today isn't
     // hidden behind it.
-    if (scrollRef.current) scrollRef.current.scrollLeft = Math.max(0, todayIdx * COL_W - COL_W + (showNoDate ? COL_W : 0))
+    const left = Math.max(0, todayIdx * COL_W - COL_W + (showNoDate ? COL_W : 0))
+    if (scrollRef.current) scrollRef.current.scrollLeft = left
+    setScrollX(left)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [todayIdx, COL_W, showNoDate])
 
@@ -1740,6 +1752,11 @@ function Timeline({ tasks, convs, statusOf, onSelect, selectedId, outlets, onTog
   if (tasks.length === 0) return <div style={{ padding: 40, textAlign: 'center', color: 'var(--slate)', fontSize: 13.5 }}>No tasks to show on the timeline.</div>
 
   const todayKey = dayKey(startOfDay(new Date()))
+  // The window of day columns to draw: what's visible plus a week either side.
+  const BUFFER = 7
+  const firstVisible = Math.floor(Math.max(0, (scrollX ?? Math.max(0, todayIdx * COL_W - COL_W)) - (showNoDate ? COL_W : 0)) / COL_W)
+  const winStart = Math.max(0, firstVisible - BUFFER)
+  const winEnd = Math.min(days.length, firstVisible + daysShown + 1 + BUFFER)
   const navBtn: React.CSSProperties = { width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', color: 'var(--slate)', fontSize: 16, fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }
 
   const targetYmd = (dateObj: Date | null) => dateObj ? localYmd(dateObj) : ''
@@ -1823,12 +1840,13 @@ function Timeline({ tasks, convs, statusOf, onSelect, selectedId, outlets, onTog
           style={{ width: 48, padding: '6px 8px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 12.5, boxSizing: 'border-box' }} />
         <span style={{ fontSize: 12.5, color: 'var(--slate)' }}>days</span>
       </div>
-      <div ref={scrollRef} style={{ flex: 1, overflowX: 'auto', overflowY: 'hidden', WebkitOverflowScrolling: 'touch', borderTop: '1px solid var(--border)' }}>
+      <div ref={scrollRef} onScroll={onScroll} style={{ flex: 1, overflowX: 'auto', overflowY: 'hidden', WebkitOverflowScrolling: 'touch', borderTop: '1px solid var(--border)' }}>
         <div style={{ display: 'flex', alignItems: 'stretch', height: '100%', minWidth: 'min-content' }}>
           {/* Unscheduled tasks (no due date) pinned to the left so they're always
               visible — otherwise they hid at the far right, past every future day. */}
           {showNoDate && renderColumn('nodate', 'No due date', 'unscheduled', false, false, byDay.noDate, null, true)}
-          {days.map(d => {
+          {winStart > 0 && <div aria-hidden="true" style={{ width: winStart * COL_W, flexShrink: 0 }} />}
+          {days.slice(winStart, winEnd).map(d => {
             const k = dayKey(d)
             const list = byDay.m.get(k) || []
             const isToday = k === todayKey
@@ -1841,6 +1859,7 @@ function Timeline({ tasks, convs, statusOf, onSelect, selectedId, outlets, onTog
               isToday, weekend, list, d,
             )
           })}
+          {winEnd < days.length && <div aria-hidden="true" style={{ width: (days.length - winEnd) * COL_W, flexShrink: 0 }} />}
         </div>
       </div>
     </div>
