@@ -8,6 +8,40 @@ import { runApprovedBookingAction } from './booking-actions'
 import { sendApprovedCartFollowup } from './sales-actions'
 import { sendApprovedOrderUpdate } from './ops-actions'
 
+// Suggested replies in a conversation. Only one should ever be waiting: a new
+// customer message makes earlier ones out of date, and so does a reply from the
+// team. Out-of-date ones are expired (result.superseded) instead of piling up.
+const REPLY_ACTIONS = ['send_message']
+
+/**
+ * Expire this conversation's waiting reply suggestions except those from
+ * keepRunId (the run that just drafted one), plus any older than a reply a
+ * person sent since.
+ */
+export async function retireStaleSuggestions(db: any, companyId: string, conversationId: string, opts: { keepRunId?: string | null } = {}): Promise<number> {
+  try {
+    const { data: runs } = await db.from('agent_runs').select('id').eq('company_id', companyId).eq('conversation_id', conversationId).order('created_at', { ascending: false }).limit(50)
+    const runIds = (runs || []).map((r: any) => r.id)
+    if (!runIds.length) return 0
+    const { data: waiting } = await db.from('agent_approvals').select('id, run_id, created_at').eq('company_id', companyId).eq('status', 'pending').in('action_key', REPLY_ACTIONS).in('run_id', runIds)
+    if (!waiting?.length) return 0
+    const { data: human } = await db.from('messages').select('created_at').eq('conversation_id', conversationId).eq('sender_type', 'agent').eq('is_ai', false).order('created_at', { ascending: false }).limit(1)
+    const humanAt = human?.[0]?.created_at ? new Date(human[0].created_at).getTime() : 0
+    const stale = waiting.filter((a: any) => a.run_id !== opts.keepRunId || new Date(a.created_at).getTime() < humanAt)
+    return await expireAsSuperseded(db, stale)
+  } catch { return 0 }
+}
+
+async function expireAsSuperseded(db: any, rows: any[]): Promise<number> {
+  if (!rows.length) return 0
+  await db.from('agent_approvals').update({ status: 'expired', result: { superseded: true } }).in('id', rows.map(r => r.id)).eq('status', 'pending')
+  for (const runId of Array.from(new Set(rows.map(r => r.run_id)))) {
+    const { data: run } = await db.from('agent_runs').select('*').eq('id', runId).maybeSingle()
+    if (run) await settleRun(db, run)
+  }
+  return rows.length
+}
+
 export async function pendingApprovals(db: any, companyId: string, opts: { conversationId?: string | null; limit?: number } = {}) {
   let q = db.from('agent_approvals').select('id, run_id, action_key, args, status, created_at, expires_at').eq('company_id', companyId).eq('status', 'pending')
   const { data, error } = await q.order('created_at', { ascending: false }).limit(opts.limit || 50)
@@ -18,7 +52,27 @@ export async function pendingApprovals(db: any, companyId: string, opts: { conve
   const { data: runs } = await db.from('agent_runs').select('id, role_key, conversation_id, summary, intent, created_at, input').in('id', runIds)
   const byId = new Map((runs || []).map((r: any) => [r.id, r]))
   rows = rows.map((a: any) => ({ ...a, run: byId.get(a.run_id) || null }))
-  if (opts.conversationId) rows = rows.filter((a: any) => a.run?.conversation_id === opts.conversationId)
+    .sort((a: any, b: any) => String(b.created_at).localeCompare(String(a.created_at)))
+  // Never more than one suggested reply per conversation: keep the newest
+  // (rows are newest first) and clear the rest — tidies up any backlog too.
+  const seen = new Set<string>(), older: any[] = []
+  rows = rows.filter((a: any) => {
+    const conv = a.run?.conversation_id
+    if (!REPLY_ACTIONS.includes(a.action_key) || !conv) return true
+    if (seen.has(conv)) { older.push(a); return false }
+    seen.add(conv); return true
+  })
+  if (older.length) await expireAsSuperseded(db, older).catch(() => 0)
+  if (opts.conversationId) {
+    rows = rows.filter((a: any) => a.run?.conversation_id === opts.conversationId)
+    // Someone on the team already answered after it was drafted? Then it's out of date.
+    const reply = rows.find((a: any) => REPLY_ACTIONS.includes(a.action_key))
+    if (reply && (await retireStaleSuggestions(db, companyId, opts.conversationId, { keepRunId: reply.run_id }))) {
+      const { data: still } = await db.from('agent_approvals').select('id').in('id', rows.map((a: any) => a.id)).eq('status', 'pending')
+      const ids = new Set((still || []).map((x: any) => x.id))
+      rows = rows.filter((a: any) => ids.has(a.id))
+    }
+  }
   else if (rows.length) {
     // The list across conversations: who each one is for, and on which channel.
     const convIds = Array.from(new Set(rows.map((a: any) => a.run?.conversation_id).filter(Boolean)))

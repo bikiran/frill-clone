@@ -726,7 +726,7 @@ function RunDetail({ run, steps, approvals, companyId, onDecided }: { run: Run; 
       ))}
       {(approvals || []).filter(a => a.status !== 'pending').map(a => (
         <p key={a.id} className="ag-step-dec" style={{ marginTop: 10 }}>
-          Suggested reply {a.status === 'executed' ? 'sent by the team' : a.status === 'edited' ? 'edited and sent by the team' : a.status === 'rejected' ? 'dismissed by the team' : a.status === 'expired' ? 'expired — nobody sent it within 24 hours' : a.status}.
+          Suggested reply {a.status === 'executed' ? 'sent by the team' : a.status === 'edited' ? 'edited and sent by the team' : a.status === 'rejected' ? 'dismissed by the team' : a.status === 'expired' ? (a.result?.superseded ? 'replaced by a newer suggestion' : 'expired — nobody sent it within 24 hours') : a.status}.
         </p>
       ))}
 
