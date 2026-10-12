@@ -18,8 +18,11 @@ export async function GET(req: NextRequest) {
     const db = admin()
     const companyId = req.nextUrl.searchParams.get('companyId')
     if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
-    const { data: co } = await db.from('companies').select('ticket_sla_settings').eq('id', companyId).maybeSingle()
-    return NextResponse.json({ sla: resolveSla((co as any)?.ticket_sla_settings), team: await loadTicketTeam(db, String(companyId)) })
+    const [{ data: co }, team] = await Promise.all([
+      db.from('companies').select('ticket_sla_settings').eq('id', companyId).maybeSingle(),
+      loadTicketTeam(db, String(companyId)),
+    ])
+    return NextResponse.json({ sla: resolveSla((co as any)?.ticket_sla_settings), team })
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || 'Failed' }, { status: 500 })
   }

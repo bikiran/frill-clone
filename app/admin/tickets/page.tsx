@@ -1,9 +1,10 @@
 'use client'
 
 import { authFetch } from '@/lib/auth-fetch'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { readLocal, writeLocal } from '@/lib/local-cache'
 import { SkeletonList } from '@/components/Skeleton'
 import PageHeader from '@/components/PageHeader'
 import { computeSla, activeClock, clockLabel, CLOCK_COLORS, resolveSla, DEFAULT_SLA, type SlaSettings } from '@/lib/ticket-sla'
@@ -23,6 +24,17 @@ const STAT_META: { key: string; label: string; icon: string; bg: string; c: stri
   { key: 'resolved', label: 'Resolved', icon: '✓', bg: '#f0fdf4', c: '#059669' },
   { key: 'closed', label: 'Closed', icon: '🗄', bg: '#f8fafc', c: '#64748b' },
 ]
+
+// The last list this device rendered (lib/local-cache, scoped to user + workspace).
+type TicketsCache = { tickets: any[]; sla: any; team: { userId: string; name: string }[] }
+const CACHE_KEY = 'tickets'
+// Long ticket bodies are only needed for search, and the fresh list replaces the
+// cached one moments later — keep the cache small enough to fit in storage.
+const toCache = (d: any): TicketsCache => ({
+  tickets: (d.tickets || []).map((t: any) => (typeof t.description === 'string' && t.description.length > 400 ? { ...t, description: t.description.slice(0, 400) } : t)),
+  sla: d.sla || null,
+  team: Array.isArray(d.team) ? d.team : [],
+})
 
 const initials = (name: string) => (name || '?').trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase() || '?'
 
@@ -46,39 +58,80 @@ export default function TicketsList() {
   // Re-render every minute so "due in…" countdowns stay current.
   useEffect(() => { const iv = setInterval(() => setTick(t => t + 1), 60000); return () => clearInterval(iv) }, [])
 
+  // The workspace whose list is on screen — a slower response for another one
+  // (e.g. the cached workspace, if it turns out to have changed) is ignored.
+  const activeCid = useRef('')
+  const userIdRef = useRef('')
+
   const load = async (cid: string) => {
     const res = await authFetch(`/api/tickets?companyId=${cid}`)
     const data = await res.json()
+    if (activeCid.current !== cid) return
     setTickets(data.tickets || [])
     if (data.sla) setSla(resolveSla(data.sla))
     if (Array.isArray(data.team)) setTeam(data.team)
+    // Keep the list on this device so the next visit paints it at once.
+    if (res.ok && Array.isArray(data.tickets)) writeLocal<TicketsCache>(CACHE_KEY, userIdRef.current, cid, toCache(data))
   }
 
   useEffect(() => {
     ;(async () => {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session?.user) { router.push('/signin'); return }
-      setMeId(session.user.id)
-      const { data: co } = await (supabase as any).from('companies').select('id').eq('owner_id', session.user.id).maybeSingle()
-      let cid = co?.id
-      if (!cid) {
-        const { data: tm } = await (supabase as any).from('team_members').select('company_id').eq('user_id', session.user.id).maybeSingle()
-        cid = tm?.company_id
+      const uid = session.user.id
+      setMeId(uid); userIdRef.current = uid
+      // Paint the last list seen on this device straight away and refresh it in
+      // the background, while the workspace lookup runs.
+      const cached = readLocal<TicketsCache>(CACHE_KEY, uid)
+      let refreshing: Promise<void> | null = null
+      if (cached?.companyId && Array.isArray(cached.data?.tickets)) {
+        activeCid.current = cached.companyId
+        setCompanyId(cached.companyId)
+        setTickets(cached.data.tickets)
+        if (cached.data.sla) setSla(resolveSla(cached.data.sla))
+        if (Array.isArray(cached.data.team)) setTeam(cached.data.team)
+        setLoading(false)
+        refreshing = load(cached.companyId).catch(() => {})
       }
-      if (cid) { setCompanyId(cid); await load(cid) }
+      // Owned workspace first, else the one they're a member of — both asked at once.
+      const [{ data: co }, { data: tm }] = await Promise.all([
+        (supabase as any).from('companies').select('id').eq('owner_id', uid).maybeSingle(),
+        (supabase as any).from('team_members').select('company_id').eq('user_id', uid).maybeSingle(),
+      ])
+      const cid: string | undefined = co?.id || tm?.company_id
+      if (cid && refreshing && cid === activeCid.current) await refreshing
+      else if (cid) {
+        // First visit on this device, or a different workspace — start clean.
+        activeCid.current = cid
+        if (refreshing) { setLoading(true); setTickets([]); setSla(DEFAULT_SLA); setTeam([]) }
+        setCompanyId(cid); await load(cid)
+      } else if (refreshing) {
+        activeCid.current = ''
+        setCompanyId(''); setTickets([]); setSla(DEFAULT_SLA); setTeam([])
+      }
       setLoading(false)
       // Clear the sidebar "new tickets" badge — we've now seen them.
       try { localStorage.setItem('colvy-tickets-seen-at', new Date().toISOString()); window.dispatchEvent(new Event('tickets-seen')) } catch {}
     })()
   }, [])
 
+  // Lower-cased search text per ticket, built once per list rather than on
+  // every keystroke (and not again on the minute tick).
+  const searchText = useMemo(() => tickets.map(t =>
+    [t.ticket_number, t.subject, t.customer_name, t.customer_email, t.description].map((v: any) => String(v || '').toLowerCase()).join('\u0001')
+  ), [tickets])
   // Each ticket's deadline clocks, recomputed every minute.
   const withSla = useMemo(() => {
     const now = new Date()
-    return tickets.map(t => ({ ...t, _sla: computeSla(t, sla, now) }))
+    return tickets.map((t, i) => ({ ...t, _sla: computeSla(t, sla, now), _q: searchText[i] }))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tickets, sla, tick])
-  const teamName = (uid: string | null) => (uid && team.find(m => m.userId === uid)?.name) || ''
+  }, [tickets, searchText, sla, tick])
+  const teamNames = useMemo(() => {
+    const m = new Map<string, string>()
+    team.forEach(t => { if (!m.has(t.userId)) m.set(t.userId, t.name) })
+    return m
+  }, [team])
+  const teamName = (uid: string | null) => (uid && teamNames.get(uid)) || ''
 
   const counts = useMemo(() => {
     const c: Record<string, number> = { open: 0, in_progress: 0, resolved: 0, closed: 0, overdue: 0 }
@@ -96,7 +149,7 @@ export default function TicketsList() {
       if (!['all', 'me', 'unassigned'].includes(assigneeFilter) && t.assigned_to !== assigneeFilter) return false
       if (priorityFilter !== 'all' && (t.priority || 'normal') !== priorityFilter) return false
       if (!q) return true
-      return [t.ticket_number, t.subject, t.customer_name, t.customer_email, t.description].some((v: any) => String(v || '').toLowerCase().includes(q))
+      return t._q.includes(q)
     })
   }, [withSla, search, statusFilter, priorityFilter, dueFilter, assigneeFilter, meId])
 

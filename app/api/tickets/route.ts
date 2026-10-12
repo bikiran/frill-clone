@@ -14,6 +14,23 @@ function admin() {
   )
 }
 
+// Rows of `table` whose id is in `ids`, fetched in batches so each request URL
+// stays short however many ids there are (a few batches in flight at once).
+// Best-effort: a failed batch contributes no rows, like the old single query.
+const ID_BATCH = 150
+async function fetchByIds(db: any, table: string, cols: string, ids: string[]): Promise<any[]> {
+  const batches: string[][] = []
+  for (let i = 0; i < ids.length; i += ID_BATCH) batches.push(ids.slice(i, i + ID_BATCH))
+  const out: any[] = []
+  for (let i = 0; i < batches.length; i += 6) {
+    const results = await Promise.all(batches.slice(i, i + 6).map(async b => {
+      try { const { data } = await db.from(table).select(cols).in('id', b); return data || [] } catch { return [] }
+    }))
+    results.forEach(r => out.push(...r))
+  }
+  return out
+}
+
 // Atomically get the next ticket number for a company.
 async function nextTicketNumber(db: any, companyId: string): Promise<string> {
   // Upsert the counter row, then bump it. (Last-write-wins is acceptable here;
@@ -190,21 +207,35 @@ export async function GET(req: NextRequest) {
     if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     let q = db.from('support_tickets').select('*').eq('company_id', companyId)
     if (conversationId) q = q.eq('conversation_id', conversationId)
+    // The deadline targets and the team don't depend on the tickets, so they
+    // load at the same time as the ticket list instead of after it.
+    const settingsP = Promise.all([
+      (async () => {
+        try {
+          const { data: co } = await db.from('companies').select('ticket_sla_settings').eq('id', companyId).maybeSingle()
+          return resolveSla(co?.ticket_sla_settings)
+        } catch { return resolveSla(null) }
+      })(),
+      loadTicketTeam(db, companyId),
+    ])
     const { data } = await q.order('created_at', { ascending: false })
     const tickets = data || []
 
     // Attach a display customer + channel so the list can show who raised each
     // ticket and where it came from, without the client re-fetching per row.
-    const contactIds = Array.from(new Set(tickets.map((t: any) => t.contact_id).filter(Boolean)))
-    const convIds = Array.from(new Set(tickets.map((t: any) => t.conversation_id).filter(Boolean)))
+    // Contacts and conversations are looked up together, in id batches small
+    // enough to stay under URL-length limits (one huge .in() list for a busy
+    // workspace fails outright and leaves every row "Unknown").
+    const contactIds = Array.from(new Set(tickets.map((t: any) => t.contact_id).filter(Boolean))) as string[]
+    const convIds = Array.from(new Set(tickets.map((t: any) => t.conversation_id).filter(Boolean))) as string[]
     const contactMap: Record<string, any> = {}
     const convMap: Record<string, any> = {}
-    if (contactIds.length) {
-      try { const { data: cs } = await db.from('contacts').select('id,name,email,phone').in('id', contactIds); (cs || []).forEach((c: any) => { contactMap[c.id] = c }) } catch {}
-    }
-    if (convIds.length) {
-      try { const { data: cvs } = await db.from('conversations').select('id,channel').in('id', convIds); (cvs || []).forEach((c: any) => { convMap[c.id] = c }) } catch {}
-    }
+    const [cs, cvs] = await Promise.all([
+      fetchByIds(db, 'contacts', 'id,name,email,phone', contactIds),
+      fetchByIds(db, 'conversations', 'id,channel', convIds),
+    ])
+    cs.forEach((c: any) => { contactMap[c.id] = c })
+    cvs.forEach((c: any) => { convMap[c.id] = c })
     // Parse "— From: Name <email>" that the help-centre form writes into the body.
     const parseFrom = (desc: string) => {
       const m = /From:\s*([^<]+?)\s*<([^>]+)>/i.exec(desc || '')
@@ -223,13 +254,7 @@ export async function GET(req: NextRequest) {
       return { ...t, customer_name, customer_email, channel }
     })
     // Deadline targets + the team (for assignee names / the assign picker).
-    let sla = resolveSla(null)
-    let team: { userId: string; name: string }[] = []
-    try {
-      const { data: co } = await db.from('companies').select('ticket_sla_settings').eq('id', companyId).maybeSingle()
-      sla = resolveSla(co?.ticket_sla_settings)
-      team = await loadTicketTeam(db, companyId)
-    } catch {}
+    const [sla, team] = await settingsP
     return NextResponse.json({ tickets: enriched, sla, team })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })
