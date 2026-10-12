@@ -256,3 +256,28 @@ export async function setCommentAuto(db: any, companyId: string, raw: any, userI
   await putPolicy(db, { company_id: companyId, role_key: 'reputation', action_key: 'reply_to_comment', autonomy: s.enabled ? 'act_within_limits' : 'prepare', limits: { on: s.on, max_per_day: s.max_per_day }, updated_by: userId })
   return s
 }
+
+// ── Sales Agent: quotes and leads ────────────────────────────────────────────
+// on: follow up quotes and leads at all; enabled: send on its own; after_days:
+// how long they've been quiet first. One policy row for send_sales_followup.
+
+export type SalesFollowup = { on: boolean; enabled: boolean; max_per_day: number; after_days: number }
+export const FOLLOWUP_DAYS = [2, 3, 5, 7]
+export const DEFAULT_SALES_FOLLOWUP: SalesFollowup = { on: false, enabled: false, max_per_day: 20, after_days: 3 }
+
+export async function getSalesFollowup(db: any, companyId: string): Promise<SalesFollowup> {
+  try {
+    const { data } = await db.from('agent_policies').select('autonomy, limits').eq('company_id', companyId).eq('role_key', 'sales').eq('action_key', 'send_sales_followup').limit(1)
+    const row = data?.[0]
+    if (!row) return { ...DEFAULT_SALES_FOLLOWUP }
+    const days = Number(row.limits?.after_days)
+    return { on: !!row.limits?.on, enabled: row.autonomy === 'act_within_limits', max_per_day: clampInt(row.limits?.max_per_day, 1, 500, DEFAULT_SALES_FOLLOWUP.max_per_day), after_days: FOLLOWUP_DAYS.includes(days) ? days : DEFAULT_SALES_FOLLOWUP.after_days }
+  } catch { return { ...DEFAULT_SALES_FOLLOWUP } }
+}
+
+export async function setSalesFollowup(db: any, companyId: string, raw: any, userId: string | null): Promise<SalesFollowup> {
+  const days = Number(raw?.after_days)
+  const s: SalesFollowup = { on: !!raw?.on, enabled: !!raw?.on && !!raw?.enabled, max_per_day: clampInt(raw?.max_per_day, 1, 500, DEFAULT_SALES_FOLLOWUP.max_per_day), after_days: FOLLOWUP_DAYS.includes(days) ? days : DEFAULT_SALES_FOLLOWUP.after_days }
+  await putPolicy(db, { company_id: companyId, role_key: 'sales', action_key: 'send_sales_followup', autonomy: s.enabled ? 'act_within_limits' : 'prepare', limits: { on: s.on, max_per_day: s.max_per_day, after_days: s.after_days }, updated_by: userId })
+  return s
+}

@@ -28,11 +28,12 @@ type Step = {
 type SalesAuto = { enabled: boolean; max_per_day: number }
 type DailyAuto = SalesAuto
 type CommentAuto = { on: boolean; enabled: boolean; max_per_day: number }
+type SalesFollowup = { on: boolean; enabled: boolean; max_per_day: number; after_days: number }
 type ReviewAuto = { enabled: boolean; min_rating: number; max_per_day: number }
 type AutoSend = { enabled: boolean; topics: string[]; max_per_day: number; max_per_conversation_per_hour: number; require_verified_customer: boolean }
 type Settings = {
   pause: { paused: boolean; byName?: string | null; at?: string | null; platform?: boolean }
-  autoSend: AutoSend; receptionAuto?: AutoSend; reviewAuto?: ReviewAuto; commentAuto?: CommentAuto; salesAuto?: SalesAuto; opsAuto?: DailyAuto; channels?: string[]; channelOptions?: { key: string; label: string }[]; sentToday: number; waiting: number; topics: { key: string; label: string }[]
+  autoSend: AutoSend; receptionAuto?: AutoSend; reviewAuto?: ReviewAuto; commentAuto?: CommentAuto; salesAuto?: SalesAuto; salesFollowup?: SalesFollowup; opsAuto?: DailyAuto; channels?: string[]; channelOptions?: { key: string; label: string }[]; sentToday: number; waiting: number; topics: { key: string; label: string }[]
 }
 type Waiting = Suggestion & { run?: any; conversation?: { id: string; channel: string | null; customer: string | null } | null }
 const TOPIC_SHORT: Record<string, string> = { opening_hours: 'opening hours', order_status: 'order status (when tracking looks normal)', stock: 'stock', store_info: 'things your knowledge covers' }
@@ -49,8 +50,8 @@ const TRY_ROLES: { key: RoleKey; label: string; sample: string }[] = [
   { key: 'operations', label: 'Operations', sample: '' },
 ]
 // What agents prepare for a person (the waiting list), and what counts as "sent on its own".
-const WAITING_ACTIONS = ['send_message', 'reply_to_review', 'reply_to_comment', 'reschedule_booking', 'cancel_booking', 'send_cart_followup', 'send_order_update']
-const SENT_ACTIONS = ['send_message', 'auto_reply', 'reply_to_review', 'reply_to_comment', 'send_cart_followup', 'send_order_update']
+const WAITING_ACTIONS = ['send_message', 'reply_to_review', 'reply_to_comment', 'reschedule_booking', 'cancel_booking', 'send_cart_followup', 'send_order_update', 'send_sales_followup']
+const SENT_ACTIONS = ['send_message', 'auto_reply', 'reply_to_review', 'reply_to_comment', 'send_cart_followup', 'send_order_update', 'send_sales_followup']
 
 const ACTION_LABEL: Record<string, string> = {
   get_conversation: 'Read the conversation', get_contact: 'Looked up the customer', ask_knowledge: 'Searched your knowledge',
@@ -62,6 +63,7 @@ const ACTION_LABEL: Record<string, string> = {
   get_comment: 'Read the comment', reply_to_comment: 'Reply to the comment',
   list_services: 'Looked at your services', check_availability: 'Checked free times', find_my_bookings: 'Found the customer’s bookings', booking_link: 'Made a booking link', reschedule_booking: 'Move a booking', cancel_booking: 'Cancel a booking',
   get_cart: 'Read the cart', send_cart_followup: 'Follow up the cart',
+  get_opportunity: 'Read the quote or enquiry', send_sales_followup: 'Follow up the customer',
   get_exception: 'Looked at the flagged order', check_order_tracking: 'Checked live tracking', send_order_update: 'Update the customer',
   auto_reply: 'Replied to the customer', issue_coupon: 'Issued a coupon', start_doa_claim: 'Started a dead-on-arrival claim', create_draft_order: 'Created a draft order',
 }
@@ -335,12 +337,13 @@ export default function AgentsPage() {
         <div className="ag-card ag-fade" style={{ marginBottom: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 14, justifyContent: 'space-between' }}>
             <div style={{ minWidth: 0 }}>
-              <p className="ag-h">Sales Agent for abandoned carts</p>
+              <p className="ag-h">Sales Agent for carts, quotes and enquiries</p>
               <p className="ag-p">When a shopper leaves items in their cart, the Sales Agent looks at what they picked, checks stock and writes them a short, personal follow-up with their checkout link — by SMS, else email, within your sending hours. It never offers a discount unless you approve it. While it’s on, Colvy’s template cart message stands down so nobody gets two.{settings?.salesAuto?.enabled ? ' It sends follow-ups on its own; anything unusual waits for you.' : ' Every follow-up waits for you to send it.'}</p>
             </div>
-            <button type="button" role="switch" aria-checked={!!salesOn} aria-label="Sales Agent for abandoned carts" onClick={() => toggleRole('sales')} disabled={salesOn == null || savingRole} className={`ag-switch ${salesOn ? 'on' : ''}`}><span /></button>
+            <button type="button" role="switch" aria-checked={!!salesOn} aria-label="Sales Agent for carts, quotes and enquiries" onClick={() => toggleRole('sales')} disabled={salesOn == null || savingRole} className={`ag-switch ${salesOn ? 'on' : ''}`}><span /></button>
           </div>
           {salesOn && settings?.salesAuto && <DailyAutoPanel value={settings.salesAuto} saving={savingSettings} onSave={v => saveSettings({ salesAuto: v })} copy={SALES_AUTO_COPY} />}
+          {salesOn && settings?.salesFollowup && <FollowupPanel value={settings.salesFollowup} saving={savingSettings} onSave={v => saveSettings({ salesFollowup: v })} />}
         </div>
 
         <div className="ag-card ag-fade" style={{ marginBottom: 16 }}>
@@ -372,6 +375,12 @@ export default function AgentsPage() {
                       <span className="ag-wait-who">{a.run?.input?.reviewer || 'A customer'}</span>
                       <span className="ag-run-s" style={{ marginTop: 0 }}>{a.run?.input?.rating ? `${a.run.input.rating}★ ` : ''}Google review · {when(a.created_at)}</span>
                       <a className="ag-link" href="/admin/reviews">{I.inbox} Open reviews</a>
+                    </div>
+                  ) : a.action_key === 'send_sales_followup' ? (
+                    <div className="ag-wait-head">
+                      <span className="ag-wait-who">{a.conversation?.customer || 'Customer'}</span>
+                      <span className="ag-run-s" style={{ marginTop: 0 }}>{a.run?.input?.kind === 'lead' ? 'Enquiry follow-up' : 'Quote follow-up'} · {when(a.created_at)}</span>
+                      {a.conversation?.id && <a className="ag-link" href={`/admin/inbox?conversation=${a.conversation.id}`}>{I.inbox} Open conversation</a>}
                     </div>
                   ) : a.action_key === 'send_order_update' ? (
                     <div className="ag-wait-head">
@@ -589,6 +598,53 @@ const COMMENT_AUTO_COPY: DailyAutoCopy = {
   note: 'Only friendly comments get a reply on its own. Questions, complaints, anything Colvy flags as sensitive, and replies that mention an order number, phone, email or address always wait for you.',
   confirmTitle: 'Let the Reputation Agent reply to comments on its own?',
   confirm: n => `It will post public replies to friendly Facebook and Instagram comments without waiting, up to ${n} a day. Questions, complaints and anything sensitive still wait for you. You can pause it any time.`,
+}
+
+const FOLLOWUP_AUTO_COPY: DailyAutoCopy = {
+  label: 'How it follows up quotes and enquiries', aria: 'How it follows up quotes and enquiries', perDay: 'Most follow-ups a day',
+  note: 'One follow-up per quote or enquiry, and never more than one a month per customer. Anything that offers a discount, a quote that’s been paid, or a customer who has replied or ordered since always waits for you or is skipped.',
+  confirmTitle: 'Let the Sales Agent follow up quotes and enquiries on its own?',
+  confirm: n => `It will message customers whose quote, payment request or product question went quiet, without waiting — up to ${n} a day and only within your sending hours. Messages that offer a discount still wait for you. You can pause it any time.`,
+}
+
+// Quotes and leads: switched on separately from abandoned carts.
+function FollowupPanel({ value, saving, onSave }: { value: SalesFollowup; saving: boolean; onSave: (v: SalesFollowup) => Promise<boolean> }) {
+  const auto = useMemo(() => ({ enabled: value.enabled, max_per_day: value.max_per_day }), [value.enabled, value.max_per_day])
+  const toggle = async () => {
+    if (!value.on) {
+      const ok = await confirmDialog({
+        title: 'Follow up quotes and enquiries too?',
+        message: `When a quote, payment request or product question goes quiet for ${value.after_days} days, the Sales Agent writes the customer one friendly follow-up — you send it from the inbox or here. Paid quotes and customers who replied or ordered since are skipped.`,
+        confirmLabel: 'Turn on', tone: 'primary',
+      })
+      if (!ok) return
+    }
+    await onSave({ ...value, on: !value.on, enabled: value.on ? false : value.enabled })
+  }
+  return (
+    <>
+      <div className="ag-verified" style={{ marginTop: 14 }}>
+        <div style={{ minWidth: 0 }}>
+          <div className="ag-step-t" style={{ fontSize: 13.5 }}>Quotes and enquiries</div>
+          <div className="ag-step-dec" style={{ marginTop: 1 }}>{value.on ? `Follows up quotes, payment requests and product questions that go quiet for ${value.after_days} days.` : 'Off — only abandoned carts get a follow-up.'}</div>
+        </div>
+        <button type="button" role="switch" aria-checked={value.on} aria-label="Follow up quotes and enquiries" className={`ag-switch ${value.on ? 'on' : ''}`} onClick={toggle} disabled={saving}><span /></button>
+      </div>
+      {value.on && (
+        <>
+          <div className="ag-limits" style={{ marginTop: 12 }}>
+            <label className="ag-limit">
+              <span>Follow up after</span>
+              <select className="ag-input" value={value.after_days} onChange={e => onSave({ ...value, after_days: Number(e.target.value) })} disabled={saving}>
+                {[2, 3, 5, 7].map(n => <option key={n} value={n}>{n} quiet days</option>)}
+              </select>
+            </label>
+          </div>
+          <DailyAutoPanel value={auto} saving={saving} onSave={v => onSave({ ...value, ...v, on: true })} copy={FOLLOWUP_AUTO_COPY} />
+        </>
+      )}
+    </>
+  )
 }
 
 // Facebook / Instagram comments: switched on separately from reviews.
