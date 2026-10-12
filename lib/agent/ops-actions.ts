@@ -10,6 +10,7 @@
 import { getOrderTracking } from '@/lib/tracking'
 import { assessOrder, loadThresholds } from '@/lib/order-assess'
 import { statusMeta, displayStatus } from '@/lib/orders'
+import { orderProgress } from '@/lib/order-progress'
 import { deliverAutomatedMessage } from '@/lib/channel-fallback'
 import { isWithinSendingHours } from '@/lib/campaign-sender'
 import type { ActionContext, ActionDef, JsonSchema, PolicyLimits } from './types'
@@ -17,7 +18,7 @@ import type { ActionContext, ActionDef, JsonSchema, PolicyLimits } from './types
 const obj = (properties: Record<string, any>, required: string[] = []): JsonSchema => ({ type: 'object', properties, required, additionalProperties: false })
 const days = (iso?: string | null) => (iso ? Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000)) : null)
 
-export const OPS_ORDER_COLS = 'id, order_number, status, payment_status, fulfilment_status, total, currency, order_date, created_at, customer_name, customer_email, customer_phone, customer_phone_norm, contact_id, conversation_id, shipping_address, sales_channel, carrier, tracking_number, tracking_url, shipped_at, delivered_at, assignee_name, metadata'
+export const OPS_ORDER_COLS = 'id, order_number, status, payment_status, fulfilment_status, total, currency, order_date, created_at, customer_name, customer_email, customer_phone, customer_phone_norm, contact_id, conversation_id, shipping_address, sales_channel, carrier, tracking_number, tracking_url, shipped_at, delivered_at, assignee_name, metadata, store_location_id'
 
 /** The business's own timezone: bookings first, then the cart message settings. */
 export async function businessTimezone(db: any, companyId: string): Promise<string> {
@@ -71,13 +72,14 @@ export const getException: ActionDef = {
       const { data } = await ctx.db.from('order_stock_alerts').select('id, product_name, sku, quantity, status, note, created_at, updated_at').eq('company_id', ctx.companyId).eq('id', input.alertId).maybeSingle()
       alert = data
     }
-    const [{ data: items }, { data: tasks }, msg, reach] = await Promise.all([
+    const [{ data: items }, { data: tasks }, msg, reach, progress] = await Promise.all([
       ctx.db.from('order_items').select('product_name, sku, quantity').eq('order_id', order.id).limit(20),
       ctx.db.from('conversation_tasks').select('title, status, created_at').eq('company_id', ctx.companyId).eq('order_id', order.id).eq('done', false).limit(5),
       order.conversation_id
         ? ctx.db.from('messages').select('content, created_at').eq('conversation_id', order.conversation_id).eq('sender_type', 'visitor').order('created_at', { ascending: false }).limit(1)
         : Promise.resolve({ data: [] }),
       canMessage(ctx.db, ctx.companyId, order),
+      orderProgress(ctx.db, ctx.companyId, order).catch(() => null),
     ])
     const last = (msg as any)?.data?.[0]
     const issue = input.kind === 'stock'
@@ -93,7 +95,10 @@ export const getException: ActionDef = {
           total: order.total != null ? `${Number(order.total).toFixed(2)} ${order.currency || 'AUD'}` : null,
           customer: order.customer_name || null, assignedTo: order.assignee_name || null,
           shippedDaysAgo: days(order.shipped_at), carrier: order.carrier || null, trackingNumber: order.tracking_number || null,
-          items: (items || []).map((i: any) => ({ name: i.product_name, sku: i.sku || null, qty: i.quantity || 1 })),
+          items: progress
+            ? progress.items.map(i => ({ name: i.name, sku: i.sku, qty: i.qty, state: i.state, ...(progress.split ? { shipment: i.shipment } : {}) }))
+            : (items || []).map((i: any) => ({ name: i.product_name, sku: i.sku || null, qty: i.quantity || 1 })),
+          ...(progress ? { progress: progress.summary, ...(progress.outlet ? { outlet: progress.outlet } : {}), ...(progress.waitingOnStock.length ? { waitingOnStock: progress.waitingOnStock } : {}) } : {}),
         },
         ...(alert ? { outOfStock: { product: alert.product_name, sku: alert.sku || null, qty: alert.quantity || 1, flagged: (alert.created_at || '').slice(0, 10), stillPending: alert.status === 'pending', note: alert.note || null } } : {}),
         openTasks: (tasks || []).map((t: any) => ({ title: t.title, created: (t.created_at || '').slice(0, 10) })),

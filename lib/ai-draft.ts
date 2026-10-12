@@ -18,6 +18,7 @@ import { findProducts } from '@/lib/product-search'
 import { logUnanswered } from '@/lib/ai-unanswered'
 
 import { statusMeta } from '@/lib/orders'
+import { orderProgress } from '@/lib/order-progress'
 import { modelFor, trackAi } from '@/lib/ai-models'
 
 
@@ -57,7 +58,20 @@ async function findOrders(db: any, companyId: string, email: string | null, phon
       })
     }
   } catch {}
-  return rows.sort((a, b) => String(b.order_date || '').localeCompare(String(a.order_date || ''))).slice(0, 5)
+  const top = rows.sort((a, b) => String(b.order_date || '').localeCompare(String(a.order_date || ''))).slice(0, 5)
+  // Item by item for the latest few: packed, sent, split, or out of stock at the outlet.
+  try {
+    const nums = top.slice(0, 3).map(r => String(r.woo_order_id || '')).filter(Boolean)
+    if (nums.length) {
+      const { data: ops } = await db.from('orders').select('id, order_number, store_location_id').eq('company_id', companyId).in('order_number', nums)
+      await Promise.all((ops || []).map(async (o: any) => {
+        const p = await orderProgress(db, companyId, o).catch(() => null)
+        const r = top.find(x => String(x.woo_order_id) === String(o.order_number))
+        if (r && p?.summary) r.progress = p.summary
+      }))
+    }
+  } catch {}
+  return top
 }
 
 type Turn = { who: 'Customer' | 'Us'; text: string }
@@ -137,7 +151,7 @@ export async function draftReply(db: any, opts: {
     sources.push({ id, kind: 'order', label: `Order #${o.woo_order_id} · ${o.status}` })
     const items = (Array.isArray(o.line_items) ? o.line_items : []).map((li: any) => `${li.quantity || 1}× ${li.name}`).slice(0, 8).join(', ')
     const when = o.order_date ? new Date(o.order_date).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' }) : 'date unknown'
-    lines.push(`[${id}] Order #${o.woo_order_id}: ${o.status}, placed ${when}, total $${o.total}${items ? `, items: ${items}` : ''}`)
+    lines.push(`[${id}] Order #${o.woo_order_id}: ${o.status}, placed ${when}, total $${o.total}${items ? `, items: ${items}` : ''}${o.progress ? `. Right now: ${o.progress}` : ''}`)
   })
 
   const who = [contact?.name && `Name: ${contact.name}`, contact?.email && `Email: ${contact.email}`, contact?.phone && `Phone: ${contact.phone}`].filter(Boolean).join('\n')
