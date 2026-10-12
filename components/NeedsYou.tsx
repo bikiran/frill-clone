@@ -11,7 +11,8 @@ import { SuggestionCard } from '@/components/AgentSuggestion'
 
 type Urgency = 'now' | 'soon' | 'fyi'
 type Item = { key: string; kind: 'approval' | 'reply' | 'review' | 'order' | 'quote' | 'handover' | 'failed'; urgency: Urgency; title: string; detail: string; at: string; href: string; conversationId?: string | null; runId?: string | null; approval?: any }
-type Payload = { items: Item[]; counts: Record<Urgency, number>; alerts: { enabled: boolean } }
+type GoalLite = { key: string; label: string; rate: number | null; open: number; met: number; missed: number }
+type Payload = { items: Item[]; counts: Record<Urgency, number>; alerts: { enabled: boolean }; goals?: GoalLite[] }
 
 const EASE = 'cubic-bezier(.22,1,.36,1)'
 const ico = (d: React.ReactNode, s = 16) => <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ display: 'inline-block', flexShrink: 0 }}>{d}</svg>
@@ -25,7 +26,8 @@ const ICON: Record<Item['kind'], React.ReactNode> = {
   failed: ico(<><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></>),
 }
 const Check = () => ico(<polyline points="20 6 9 17 4 12" />, 18)
-const Back = () => ico(<polyline points="15 18 9 12 15 6" />)
+const Bell = () => ico(<><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></>)
+const Target = () => ico(<><circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="6" /><circle cx="12" cy="12" r="2" /></>)
 const Arrow = () => ico(<><line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" /></>, 14)
 const OPEN: Record<Item['kind'], string> = { approval: 'Open conversation', reply: 'Reply', review: 'Reply to review', order: 'Open', quote: 'Follow up', handover: 'Take over', failed: 'See what happened' }
 const GROUPS: { key: Urgency; label: string; hint: string }[] = [
@@ -77,39 +79,85 @@ export function NeedsYouView({ companyId }: { companyId: string | null }) {
   }
   const remove = (key: string) => { if (data) setData({ ...data, items: data.items.filter(i => i.key !== key) }); setTimeout(reload, 900) }
 
+  const total = data?.items.length || 0
   return (
     <div className="ny" style={{ minHeight: '100%', background: 'var(--canvas, #f6f7f9)' }}>
       <style>{CSS}</style>
-      <div style={{ maxWidth: 860, margin: '0 auto', padding: '24px 16px 120px' }}>
-        <a href="/admin/agents" className="ny-back"><Back /> AI Agents</a>
+      <div className="ny-page">
+        <nav className="ny-crumbs" aria-label="Breadcrumb"><a href="/admin/agents">AI Agents</a><span aria-hidden="true">/</span><span>Needs you</span></nav>
         <h1 className="ny-title">Needs you</h1>
         <p className="ny-sub">Everything your agents and goals need a person for, most urgent first. When this is empty, you can get on with your day.</p>
 
         {!data && <p className="ny-sub">Loading…</p>}
-        {data && data.items.length === 0 && (
-          <div className="ny-card ny-empty">
-            <span className="ny-ok"><Check /></span>
-            <div><p className="ny-t">Nothing needs you right now</p><p className="ny-d">Your agents are on it and every goal is on track.</p></div>
-          </div>
-        )}
-        {data && GROUPS.map(g => {
-          const list = data.items.filter(i => i.urgency === g.key)
-          if (!list.length) return null
-          return (
-            <section key={g.key} className="ny-group">
-              <p className="ny-gh"><span className={`ny-dot ${g.key}`} />{g.label} <span className="ny-count">{list.length}</span><span className="ny-ghint">{g.hint}</span></p>
-              <ul className="ny-list">{list.map(i => <Row key={i.key} item={i} companyId={companyId!} onDone={() => remove(i.key)} />)}</ul>
-            </section>
-          )
-        })}
-
         {data && (
-          <div className="ny-card ny-alerts">
-            <div style={{ minWidth: 0, flex: 1 }}>
-              <p className="ny-t">Phone alerts</p>
-              <p className="ny-d">A notification on the Colvy app when something lands in “Now” — once per item, a few at a time.</p>
+          <div className="ny-cols">
+            <div className="ny-main">
+              {total === 0 && (
+                <div className="ny-card ny-empty">
+                  <span className="ny-ok"><Check /></span>
+                  <div><p className="ny-t">Nothing needs you right now</p><p className="ny-d">Your agents are on it and every goal is on track.</p></div>
+                </div>
+              )}
+              {GROUPS.map(g => {
+                const list = data.items.filter(i => i.urgency === g.key)
+                if (!list.length) return null
+                return (
+                  <section key={g.key} id={`ny-${g.key}`} className="ny-group">
+                    <p className="ny-gh"><span className={`ny-dot ${g.key}`} />{g.label} <span className="ny-count">{list.length}</span><span className="ny-ghint">{g.hint}</span></p>
+                    <ul className="ny-list">{list.map(i => <Row key={i.key} item={i} companyId={companyId!} onDone={() => remove(i.key)} />)}</ul>
+                  </section>
+                )
+              })}
             </div>
-            <button type="button" role="switch" aria-checked={data.alerts.enabled} aria-label="Phone alerts" className={`ny-switch ${data.alerts.enabled ? 'on' : ''}`} onClick={toggleAlerts} disabled={saving}><span /></button>
+
+            <aside className="ny-side">
+              <div className="ny-card ny-overview">
+                <p className="ny-t">Overview</p>
+                <ul className="ny-sum">
+                  {GROUPS.map(g => {
+                    const n = data.counts[g.key] || 0
+                    return (
+                      <li key={g.key}>
+                        <a href={n ? `#ny-${g.key}` : undefined} className={n ? '' : 'none'}>
+                          <span className={`ny-dot ${g.key}`} /><span className="ny-sum-l">{g.label}</span><span className="ny-sum-n">{n}</span>
+                        </a>
+                      </li>
+                    )
+                  })}
+                </ul>
+              </div>
+
+              {!!data.goals?.length && (
+                <div className="ny-card">
+                  <div className="ny-head"><p className="ny-t" style={{ display: 'flex', alignItems: 'center', gap: 8 }}><span className="ny-side-ic"><Target /></span>Goals · last 2 weeks</p></div>
+                  <ul className="ny-goals">
+                    {data.goals.map(g => {
+                      const pct = g.rate == null ? null : Math.round(g.rate * 100)
+                      return (
+                        <li key={g.key}>
+                          <div className="ny-goal-top">
+                            <span className="ny-goal-l">{g.label}</span>
+                            <span className={`ny-goal-p ${pct == null ? '' : pct >= 90 ? 'good' : pct >= 70 ? 'ok' : 'bad'}`}>{pct == null ? '—' : `${pct}%`}</span>
+                          </div>
+                          <span className="ny-goal-m" aria-hidden="true"><span style={{ width: `${pct ?? 0}%` }} /></span>
+                          {g.open > 0 && <span className="ny-goal-o">{g.open} missing now</span>}
+                        </li>
+                      )
+                    })}
+                  </ul>
+                  <a className="ny-link" href="/admin/agents/results">Change goals <Arrow /></a>
+                </div>
+              )}
+
+              <div className="ny-card ny-alerts">
+                <span className="ny-side-ic"><Bell /></span>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <p className="ny-t">Phone alerts</p>
+                  <p className="ny-d">A notification on the Colvy app when something lands in “Now” — once per item, a few at a time.</p>
+                </div>
+                <button type="button" role="switch" aria-checked={data.alerts.enabled} aria-label="Phone alerts" className={`ny-switch ${data.alerts.enabled ? 'on' : ''}`} onClick={toggleAlerts} disabled={saving}><span /></button>
+              </div>
+            </aside>
           </div>
         )}
       </div>
@@ -147,15 +195,39 @@ export function NeedsYouCard({ companyId }: { companyId: string }) {
 const CSS = `
 .ny .ny-card,.ny.ny-card{background:#fff;border:1px solid var(--border);border-radius:20px;padding:18px}
 .ny-mini{margin-bottom:16px}
-.ny-back{display:inline-flex;align-items:center;gap:4px;font-size:13px;font-weight:600;color:var(--slate);text-decoration:none;margin-bottom:10px}
+.ny-page{max-width:1240px;margin:0 auto;padding:20px 16px 120px}
+@media (min-width:900px){.ny-page{padding:24px 28px 120px}}
+.ny-crumbs{display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:13px;color:var(--slate)}
+.ny-crumbs a{color:var(--slate);text-decoration:none;font-weight:600}.ny-crumbs a:hover{color:var(--ink)}
+.ny-crumbs span:last-child{color:var(--ink);font-weight:700}
+.ny-cols{display:grid;grid-template-columns:minmax(0,1fr);gap:16px;align-items:start}
+@media (min-width:1080px){.ny-cols{grid-template-columns:minmax(0,1fr) 320px;gap:20px}.ny-side{position:sticky;top:76px}}
+.ny-side{display:flex;flex-direction:column;gap:12px}
+@media (max-width:1079px){.ny-overview{display:none}}
+.ny-side-ic{width:30px;height:30px;flex-shrink:0;border-radius:10px;display:inline-flex;align-items:center;justify-content:center;background:color-mix(in srgb,var(--coral) 10%,#fff);color:var(--coral)}
+.ny-sum{list-style:none;margin:8px 0 0;padding:0}
+.ny-sum a{display:flex;align-items:center;gap:10px;padding:10px 10px;margin:0 -10px;border-radius:12px;text-decoration:none;color:var(--ink);font-size:13.5px;transition:background .2s ease}
+.ny-sum a[href]:hover{background:var(--canvas,#f6f7f9)}
+.ny-sum a.none{opacity:.55}
+.ny-sum-l{flex:1;font-weight:600}
+.ny-sum-n{font-weight:800;font-size:15px}
+.ny-goals{list-style:none;margin:10px 0 0;padding:0;display:flex;flex-direction:column;gap:12px}
+.ny-goal-top{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+.ny-goal-l{font-size:13px;font-weight:600;color:var(--ink)}
+.ny-goal-p{font-size:14px;font-weight:800;color:var(--ink)}
+.ny-goal-p.good{color:#067647}.ny-goal-p.ok{color:#b54708}.ny-goal-p.bad{color:#b42318}
+.ny-goal-m{display:block;height:5px;margin-top:5px;border-radius:999px;background:color-mix(in srgb,var(--slate) 14%,#fff);overflow:hidden}
+.ny-goal-m span{display:block;height:100%;border-radius:999px;background:var(--ink);opacity:.7;transition:width .6s ${EASE}}
+.ny-goal-o{display:block;margin-top:4px;font-size:12px;font-weight:700;color:#b42318}
 .ny-title{margin:0;font-size:clamp(22px,3.4vw,28px);font-weight:800;letter-spacing:-0.02em;color:var(--ink)}
-.ny-sub{margin:4px 0 18px;font-size:14px;color:var(--slate);line-height:1.5;max-width:640px}
+.ny-sub{margin:4px 0 20px;font-size:14px;color:var(--slate);line-height:1.5;max-width:680px}
 .ny-t{margin:0;font-size:14.5px;font-weight:700;color:var(--ink);line-height:1.35}
 .ny-d{margin:3px 0 0;font-size:13px;color:var(--slate);line-height:1.45}
 .ny-empty{display:flex;gap:12px;align-items:center;animation:nyIn .45s ${EASE} both}
 .ny-ok{width:36px;height:36px;border-radius:12px;display:inline-flex;align-items:center;justify-content:center;background:#ecfdf3;color:#067647;flex-shrink:0}
 .ny-ok.sm{width:24px;height:24px;border-radius:8px}
-.ny-group{margin-bottom:18px}
+.ny-group{margin-bottom:18px;scroll-margin-top:80px}
+.ny-main>.ny-group:last-child{margin-bottom:0}
 .ny-gh{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 8px;font-size:12px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--slate)}
 .ny-ghint{font-weight:500;letter-spacing:0;text-transform:none;font-size:12px;color:var(--slate);opacity:.8}
 .ny-count{padding:1px 7px;border-radius:999px;background:#fff;border:1px solid var(--border);font-size:11px;color:var(--ink);letter-spacing:0}
@@ -174,7 +246,8 @@ const CSS = `
 .ny-open:hover{border-color:var(--coral)}.ny-open:active{transform:scale(.97)}
 .ny-sg{margin-top:10px}
 .ny-link{display:inline-flex;align-items:center;gap:5px;margin-top:8px;font-size:13px;font-weight:700;color:var(--coral);text-decoration:none}
-.ny-alerts{display:flex;align-items:center;gap:14px;margin-top:22px}
+.ny-alerts{display:flex;align-items:flex-start;gap:12px}
+.ny-alerts .ny-switch{margin-top:2px}
 .ny-switch{position:relative;width:46px;height:28px;flex-shrink:0;border-radius:999px;border:none;cursor:pointer;background:color-mix(in srgb,var(--slate) 28%,transparent);transition:background .3s ${EASE}}
 .ny-switch span{position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.2);transition:transform .3s ${EASE}}
 .ny-switch.on{background:var(--coral)}.ny-switch.on span{transform:translateX(18px)}
