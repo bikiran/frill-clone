@@ -9,6 +9,7 @@ import { confirmDialog } from '@/components/ConfirmDialog'
 import AgentConnections from '@/components/AgentConnections'
 import { ResultsStrip } from '@/components/AgentResults'
 import { NeedsYouCard } from '@/components/NeedsYou'
+import ConversationPicker, { cleanPreview, type PickConv } from '@/components/ConversationPicker'
 
 // AI Agents (Phase 1 of the Agent Engine). Every agent run is recorded — what
 // it knew, every action it asked for, the permission decision and why, and the
@@ -121,7 +122,7 @@ export default function AgentsPage() {
   const [message, setMessage] = useState('Where is my order?')
   const [tryRole, setTryRole] = useState<RoleKey>('support')
   const [tryRating, setTryRating] = useState(5)
-  const [convs, setConvs] = useState<{ id: string; label: string }[]>([])
+  const [convs, setConvs] = useState<PickConv[]>([])
   const [convId, setConvId] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -218,14 +219,14 @@ export default function AgentsPage() {
     if (!companyId) return
     ;(async () => {
       const { data } = await (supabase as any).from('conversations').select('id, channel, contact_id, last_message, last_message_at')
-        .eq('company_id', companyId).order('last_message_at', { ascending: false }).limit(25)
+        .eq('company_id', companyId).order('last_message_at', { ascending: false }).limit(60)
       const ids = Array.from(new Set((data || []).map((c: any) => c.contact_id).filter(Boolean)))
       const names: Record<string, string> = {}
       if (ids.length) {
         const { data: cs } = await (supabase as any).from('contacts').select('id, name').in('id', ids)
         for (const c of cs || []) names[c.id] = c.name
       }
-      setConvs((data || []).map((c: any) => ({ id: c.id, label: `${names[c.contact_id] || 'Unknown customer'} · ${c.channel || 'chat'}${c.last_message ? ` — “${String(c.last_message).slice(0, 40)}”` : ''}` })))
+      setConvs((data || []).map((c: any) => ({ id: c.id, name: names[c.contact_id] || 'Unknown customer', channel: c.channel || 'chat', preview: cleanPreview(c.last_message || '').slice(0, 120), at: c.last_message_at || null })))
     })().catch(() => {})
   }, [companyId])
 
@@ -449,10 +450,7 @@ export default function AgentsPage() {
             ) : tryRole !== 'reputation' ? (
               <div style={{ minWidth: 0 }}>
                 <label className="ag-label" htmlFor="ag-conv">As if it came in on (optional)</label>
-                <select id="ag-conv" className="ag-input" value={convId} onChange={e => setConvId(e.target.value)}>
-                  <option value="">No conversation — a new customer</option>
-                  {convs.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
-                </select>
+                <ConversationPicker id="ag-conv" value={convId} convs={convs} onChange={setConvId} />
               </div>
             ) : (
               <div style={{ minWidth: 0 }}>
@@ -920,6 +918,7 @@ const CSS = `
 .ag-p{margin:2px 0 0;font-size:13.5px;color:var(--slate);line-height:1.5}
 .ag-label{display:block;margin:0 0 6px;font-size:11.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--slate)}
 .ag-orb{width:40px;height:40px;flex-shrink:0;border-radius:13px;display:inline-flex;align-items:center;justify-content:center;color:#fff;background:linear-gradient(135deg,var(--coral),color-mix(in srgb,var(--coral) 55%,#a855f7));box-shadow:0 10px 24px color-mix(in srgb,var(--coral) 28%,transparent)}
+.ag-card:has(.cp-pop){position:relative;z-index:30}
 .ag-try{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;margin-top:16px;align-items:end}
 @media (min-width:860px){.ag-try{grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) auto}}
 .ag-input{width:100%;box-sizing:border-box;padding:10px 12px;border-radius:12px;border:1px solid var(--border);background:#fff;font-size:14px;color:var(--ink);font-family:inherit;outline:none;resize:vertical;transition:border-color .2s ease,box-shadow .2s ease}
