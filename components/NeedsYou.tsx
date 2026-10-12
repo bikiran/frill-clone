@@ -36,12 +36,24 @@ const GROUPS: { key: Urgency; label: string; hint: string }[] = [
   { key: 'fyi', label: 'For your information', hint: 'Worth a look when you have a minute' },
 ]
 
+// The last list is kept in this browser, so the page shows it at once and refreshes underneath.
+const cacheKey = (companyId: string) => `colvy:needs-you:${companyId}`
+const readCache = (companyId: string | null): Payload | null => {
+  if (!companyId) return null
+  try { const v = JSON.parse(localStorage.getItem(cacheKey(companyId)) || 'null'); return v && Array.isArray(v.items) ? v : null } catch { return null }
+}
+
 export function useNeedsYou(companyId: string | null) {
-  const [data, setData] = useState<Payload | null>(null)
+  const [data, setDataState] = useState<Payload | null>(null)
+  const setData = useCallback((d: Payload | null) => {
+    setDataState(d)
+    if (d && companyId) { try { localStorage.setItem(cacheKey(companyId), JSON.stringify({ ...d, items: d.items })) } catch {} }
+  }, [companyId])
+  useEffect(() => { const c = readCache(companyId); if (c) setDataState(d => d || c) }, [companyId])
   const load = useCallback(async () => {
     if (!companyId) return
     try { const r = await authFetch(`/api/agent/needs-you?companyId=${companyId}`); if (r.ok) setData(await r.json()) } catch {}
-  }, [companyId])
+  }, [companyId, setData])
   useEffect(() => { load(); const t = setInterval(load, 60_000); return () => clearInterval(t) }, [load])
   return { data, reload: load, setData }
 }
@@ -88,7 +100,12 @@ export function NeedsYouView({ companyId }: { companyId: string | null }) {
         <h1 className="ny-title">Needs you</h1>
         <p className="ny-sub">Everything your agents and goals need a person for, most urgent first. When this is empty, you can get on with your day.</p>
 
-        {!data && <p className="ny-sub">Loading…</p>}
+        {!data && (
+          <div className="ny-cols" aria-busy="true" aria-label="Loading">
+            <div className="ny-main"><ul className="ny-list">{[0, 1, 2].map(n => <li key={n} className="ny-item ny-skel"><span className="ny-sk ic" /><span style={{ flex: 1 }}><span className="ny-sk t" /><span className="ny-sk d" /></span></li>)}</ul></div>
+            <aside className="ny-side"><div className="ny-card ny-skel" style={{ height: 150 }} /></aside>
+          </div>
+        )}
         {data && (
           <div className="ny-cols">
             <div className="ny-main">
@@ -258,6 +275,10 @@ const CSS = `
 .ny-mini-list li a{display:flex;align-items:center;gap:8px;padding:8px 0;border-top:1px solid color-mix(in srgb,var(--border) 60%,transparent);text-decoration:none;min-width:0}
 .ny-mini-t{font-size:13.5px;font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex-shrink:1;min-width:0}
 .ny-mini-d{font-size:12.5px;color:var(--slate);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0}
+.ny-skel{display:flex;gap:12px;align-items:flex-start}
+.ny-sk{display:block;border-radius:8px;background:linear-gradient(90deg,#eef0f3 25%,#f6f7f9 50%,#eef0f3 75%);background-size:200% 100%;animation:nySk 1.2s ease-in-out infinite}
+.ny-sk.ic{width:34px;height:34px;border-radius:11px;flex-shrink:0}.ny-sk.t{height:14px;width:55%;margin:3px 0 8px}.ny-sk.d{height:12px;width:80%}
+@keyframes nySk{from{background-position:200% 0}to{background-position:-200% 0}}
 @keyframes nyIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 @media (prefers-reduced-motion: reduce){.ny-item,.ny-empty{animation:none}}
 @media (max-width:560px){
