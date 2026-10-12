@@ -9,7 +9,7 @@
 // Telnyx rather than dropping the message — switching provider can never strand
 // a company with no way to text.
 
-import { TelnyxService } from './telnyx-service'
+import { TelnyxService, toE164 } from './telnyx-service'
 import { TwilioService } from './twilio-service'
 import { assertSmsAllowed, recordSmsSent } from './sms-quota'
 
@@ -81,7 +81,11 @@ function meteredSender(db: any, companyId: string, base: SmsSender): SmsSender {
     ...base,
     async send(p: SmsSendParams): Promise<SmsSendResult> {
       await assertSmsAllowed(db, companyId)  // throws SmsQuotaError if blocked
-      const result = await base.send(p)
+      // Always send to an E.164 number. Callers pass whatever they have — a
+      // contact's phone saved as "0478 019 667" was rejected by the provider,
+      // and routes that swallow send errors (media requests) showed the link
+      // in the thread while the customer never got it.
+      const result = await base.send({ ...p, to: toE164(p.to || '') || p.to })
       recordSmsSent(db, companyId, 1).catch(() => {})
       return result
     },
