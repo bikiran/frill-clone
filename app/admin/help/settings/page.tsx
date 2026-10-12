@@ -6,6 +6,7 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
+import { refreshPublicHelp } from '@/lib/help-revalidate'
 
 const LANGUAGES = ['English', 'Spanish', 'French', 'German', 'Portuguese', 'Italian', 'Dutch', 'Japanese', 'Korean', 'Chinese (Simplified)', 'Hindi', 'Nepali', 'Arabic']
 
@@ -67,16 +68,16 @@ export default function HelpSettingsPage() {
       setSlug(s)
       if (!cid) return
 
-      // Cover photo lives on the company row (read by both help renderers).
-      try {
-        const { data: co } = await (supabase as any).from('companies').select('help_cover_url').eq('id', cid).maybeSingle()
-        if (co?.help_cover_url) setCoverUrl(co.help_cover_url)
-      } catch {}
+      // Cover photo (on the company row, read by both help renderers) and the
+      // saved help settings, loaded together.
+      const [coRes, { data: rows }] = await Promise.all([
+        Promise.resolve((supabase as any).from('companies').select('help_cover_url').eq('id', cid).maybeSingle()).catch(() => ({ data: null })),
+        (supabase as any).from('site_settings').select('*')
+          .eq('key', 'general').eq('company_id', cid)
+          .order('updated_at', { ascending: false }).limit(1),
+      ])
+      if (coRes?.data?.help_cover_url) setCoverUrl(coRes.data.help_cover_url)
 
-      // Load saved help settings
-      const { data: rows } = await (supabase as any).from('site_settings').select('*')
-        .eq('key', 'general').eq('company_id', cid)
-        .order('updated_at', { ascending: false }).limit(1)
       const v = rows?.[0]?.value || {}
       if (v.helpAccess) setHelpAccess(v.helpAccess)
       if (v.helpPrimaryLanguage) setPrimaryLanguage(v.helpPrimaryLanguage)
@@ -110,6 +111,9 @@ export default function HelpSettingsPage() {
         { key: 'general', company_id: companyId, value: merged, updated_at: new Date().toISOString() },
         { onConflict: 'key,company_id' }
       )
+      // The public help centre is cached briefly — refresh it before the
+      // preview reloads so access changes show straight away.
+      await refreshPublicHelp(companyId)
       setSaveMsg('Saved!')
       setTimeout(() => setSaveMsg(''), 2500)
       setPreviewKey(k => k + 1)
@@ -132,6 +136,7 @@ export default function HelpSettingsPage() {
       const { data: { publicUrl } } = supabase.storage.from(bucket).getPublicUrl(data!.path)
       const { error: upErr } = await (supabase as any).from('companies').update({ help_cover_url: publicUrl }).eq('id', companyId)
       if (upErr) throw upErr
+      await refreshPublicHelp(companyId)
       setCoverUrl(publicUrl); setSaveMsg('Cover updated!'); setTimeout(() => setSaveMsg(''), 2500); setPreviewKey(k => k + 1)
     } catch (e: any) { setSaveMsg(/does not exist|schema cache|column/i.test(e?.message || '') ? 'Run COLVY_V315_HELP_COVER.sql, then reload.' : 'Cover upload failed') }
     setCoverBusy(false)
@@ -139,7 +144,7 @@ export default function HelpSettingsPage() {
   const removeCover = async () => {
     if (!companyId) return
     setCoverBusy(true)
-    try { await (supabase as any).from('companies').update({ help_cover_url: null }).eq('id', companyId); setCoverUrl(''); setPreviewKey(k => k + 1) } catch {}
+    try { await (supabase as any).from('companies').update({ help_cover_url: null }).eq('id', companyId); await refreshPublicHelp(companyId); setCoverUrl(''); setPreviewKey(k => k + 1) } catch {}
     setCoverBusy(false)
   }
 

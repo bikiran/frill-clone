@@ -20,39 +20,55 @@ const admin = () => createClient(
  * This returns the single address and nothing else, so the table can stay
  * locked down.
  */
+// The answer is the same for every visitor of a help centre, so browsers and
+// the CDN may reuse it for a few minutes instead of re-running the lookups on
+// every help page view.
+const CACHE = { 'Cache-Control': 'public, max-age=60, s-maxage=300, stale-while-revalidate=3600' }
+
 export async function GET(req: NextRequest) {
   try {
     const slug = req.nextUrl.searchParams.get('slug')
     if (!slug) return NextResponse.json({ email: null })
 
     const db = admin()
-    // `slug` may be a real slug (colvy subdomain) or a custom domain host.
+    // `slug` may be a real slug (colvy subdomain) or a custom domain host. The
+    // three lookups run together; precedence is unchanged (slug, help domain,
+    // board domain).
     const cols = 'id, owner_id, support_email, business_email, contact_email, email'
-    let { data: co } = await db.from('companies').select(cols).eq('slug', slug).maybeSingle()
-    if (!co) { const { data } = await db.from('companies').select(cols).eq('help_domain', slug).maybeSingle(); co = data || null }
-    if (!co) { const { data } = await db.from('companies').select(cols).eq('board_domain', slug).maybeSingle(); co = data || null }
+    const [bySlug, byHelp, byBoard] = await Promise.all([
+      db.from('companies').select(cols).eq('slug', slug).maybeSingle(),
+      db.from('companies').select(cols).eq('help_domain', slug).maybeSingle(),
+      db.from('companies').select(cols).eq('board_domain', slug).maybeSingle(),
+    ])
+    const co: any = bySlug.data || byHelp.data || byBoard.data || null
 
     let email: string | null =
       (co as any)?.support_email || (co as any)?.business_email ||
       (co as any)?.contact_email || (co as any)?.email || null
 
-    // A support address configured in the help settings JSON.
+    // A support address configured in the help settings JSON, else a
+    // configured, active email channel (both fetched together).
     if (!email && co?.id) {
-      try {
-        const { data: s } = await db.from('site_settings').select('value')
-          .eq('key', 'general').eq('company_id', co.id)
-          .order('updated_at', { ascending: false }).limit(1)
-        const v = s?.[0]?.value || {}
-        email = v.helpEmail || v.supportEmail || v.contactEmail || v.businessEmail || null
-      } catch {}
-    }
-
-    // A configured, active email channel.
-    if (!email && co?.id) {
-      const { data: ec } = await db.from('email_channels')
-        .select('from_address, inbound_address')
-        .eq('company_id', co.id).eq('is_active', true).limit(1)
-      email = ec?.[0]?.from_address || ec?.[0]?.inbound_address || null
+      const [fromSettings, fromChannel] = await Promise.all([
+        (async () => {
+          try {
+            const { data: s } = await db.from('site_settings').select('value')
+              .eq('key', 'general').eq('company_id', co.id)
+              .order('updated_at', { ascending: false }).limit(1)
+            const v = s?.[0]?.value || {}
+            return v.helpEmail || v.supportEmail || v.contactEmail || v.businessEmail || null
+          } catch { return null }
+        })(),
+        (async () => {
+          try {
+            const { data: ec } = await db.from('email_channels')
+              .select('from_address, inbound_address')
+              .eq('company_id', co.id).eq('is_active', true).limit(1)
+            return ec?.[0]?.from_address || ec?.[0]?.inbound_address || null
+          } catch { return null }
+        })(),
+      ])
+      email = fromSettings || fromChannel || null
     }
 
     // Last resort: the workspace owner's account email — always company-specific,
@@ -64,7 +80,7 @@ export async function GET(req: NextRequest) {
       } catch {}
     }
 
-    return NextResponse.json({ email })
+    return NextResponse.json({ email }, { headers: CACHE })
   } catch {
     // Never fail the help page over a contact address.
     return NextResponse.json({ email: null })
