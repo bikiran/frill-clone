@@ -46,8 +46,11 @@ export async function autoAssignTicket(db: any, companyId: string, ticketId: str
 export async function loadTicketTeam(db: any, companyId: string): Promise<{ userId: string; name: string }[]> {
   const team: { userId: string; name: string }[] = []
   try {
-    const { data: co } = await db.from('companies').select('owner_id').eq('id', companyId).maybeSingle()
-    const { data: tm } = await db.from('team_members').select('user_id, name, email, status').eq('company_id', companyId)
+    // The owner and the team rows don't depend on each other — fetch together.
+    const [{ data: co }, { data: tm }] = await Promise.all([
+      db.from('companies').select('owner_id').eq('id', companyId).maybeSingle(),
+      db.from('team_members').select('user_id, name, email, status').eq('company_id', companyId),
+    ])
     for (const m of tm || []) {
       if (!m.user_id || team.some(t => t.userId === m.user_id)) continue
       if (['invited', 'pending', 'inactive', 'disabled', 'removed', 'suspended'].includes(String(m.status || '').toLowerCase())) continue
