@@ -140,12 +140,17 @@ async function sendOnItsOwn(ctx: ActionContext, args: any, limits: PolicyLimits)
   if (ctx.scratch.escalated) return 'It also handed this to the team, so a person approves the reply.'
   if (!ctx.conversationId) return null
 
-  const [{ data: conv }, { data: human }] = await Promise.all([
-    ctx.db.from('conversations').select('ai_enabled').eq('company_id', ctx.companyId).eq('id', ctx.conversationId).maybeSingle(),
+  const [{ data: conv }, { data: human }, { data: lastIn }] = await Promise.all([
+    ctx.db.from('conversations').select('ai_enabled, channel').eq('company_id', ctx.companyId).eq('id', ctx.conversationId).maybeSingle(),
     ctx.scratch.startedAt
       ? ctx.db.from('messages').select('id').eq('conversation_id', ctx.conversationId).eq('sender_type', 'agent').eq('is_ai', false).gt('created_at', ctx.scratch.startedAt).limit(1)
       : Promise.resolve({ data: [] }),
+    ctx.db.from('messages').select('created_at').eq('conversation_id', ctx.conversationId).eq('sender_type', 'visitor').order('created_at', { ascending: false }).limit(1),
   ])
+  // Meta allows automated replies only within 24 hours of the customer's last message.
+  if (['facebook', 'instagram'].includes(String(conv?.channel || '')) && lastIn?.[0]?.created_at && Date.now() - new Date(lastIn[0].created_at).getTime() > 23 * 3600_000) {
+    return 'Meta only allows automatic replies within 24 hours of the customer’s message, so a person sends it.'
+  }
   if (conv?.ai_enabled === false) return 'AI replies are switched off for this conversation, so a person approves it.'
   if (human?.length) return 'Someone on the team replied meanwhile, so a person approves it.'
 

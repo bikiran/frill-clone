@@ -611,6 +611,12 @@ export async function syncGmailChannel(
     })
     await emitInboundEvent(db, { companyId, conversationId: conv.id, text: content, channel: 'email', name: from.name || null, email: from.email || null })
 
+    // The Support / Reception Agent, if switched on for email: queued here, run
+    // by the agent worker within a minute. Ticket replies stay with the ticket.
+    if (!/\[TICK-\d+\]/i.test(subject || '')) {
+      try { const { startSupportAgentForConversation } = await import('@/lib/agent/inbound'); await startSupportAgentForConversation(db, conv.id, { debounceMs: 0, run: false }) } catch (e) { console.warn('[agent] gmail inbound', e) }
+    }
+
     // Route ticket replies back onto the ticket. Agent ticket replies carry
     // "[TICK-######]" in the subject; the customer's "Re:" keeps it, so when the
     // reply lands in the connected mailbox we can thread it straight onto the

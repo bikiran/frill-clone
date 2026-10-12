@@ -3,7 +3,7 @@ import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse, after } from 'next/server'
 import { runAiAgent } from '@/lib/ai-agent'
 import { startSupportAgentForConversation, AGENT_CHANNELS } from '@/lib/agent/inbound'
-import { supportAutoSends } from '@/lib/agent/pilot'
+import { supportAutoSends, getAgentChannels, channelKey } from '@/lib/agent/pilot'
 import { createClient } from '@supabase/supabase-js'
 
 export const dynamic = 'force-dynamic'
@@ -37,7 +37,10 @@ export async function POST(req: NextRequest) {
     // down so the customer never gets two answers.
     after(async () => { try { await startSupportAgentForConversation(admin(), conversationId) } catch (e) { console.warn('[agent] inbound', e) } })
 
-    const result = AGENT_CHANNELS.has(String(owner.channel || 'chat')) && (await supportAutoSends(admin(), owner.company_id))
+    // …but only where the agents answer: a channel the business took them off
+    // stays with the auto-reply.
+    const agentsHere = AGENT_CHANNELS.has(String(owner.channel || 'chat')) && (await getAgentChannels(admin(), owner.company_id)).includes(channelKey(owner.channel) || '')
+    const result = agentsHere && (await supportAutoSends(admin(), owner.company_id))
       ? { replied: false, reason: 'The Support Agent is answering customers on its own, so Colvy AI’s auto-reply stays quiet.' }
       : await runAiAgent({ conversationId, companyId: owner.company_id })
 

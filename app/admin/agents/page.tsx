@@ -31,13 +31,13 @@ type ReviewAuto = { enabled: boolean; min_rating: number; max_per_day: number }
 type AutoSend = { enabled: boolean; topics: string[]; max_per_day: number; max_per_conversation_per_hour: number; require_verified_customer: boolean }
 type Settings = {
   pause: { paused: boolean; byName?: string | null; at?: string | null; platform?: boolean }
-  autoSend: AutoSend; receptionAuto?: AutoSend; reviewAuto?: ReviewAuto; salesAuto?: SalesAuto; opsAuto?: DailyAuto; sentToday: number; waiting: number; topics: { key: string; label: string }[]
+  autoSend: AutoSend; receptionAuto?: AutoSend; reviewAuto?: ReviewAuto; salesAuto?: SalesAuto; opsAuto?: DailyAuto; channels?: string[]; channelOptions?: { key: string; label: string }[]; sentToday: number; waiting: number; topics: { key: string; label: string }[]
 }
 type Waiting = Suggestion & { run?: any; conversation?: { id: string; channel: string | null; customer: string | null } | null }
 const TOPIC_SHORT: Record<string, string> = { opening_hours: 'opening hours', order_status: 'order status (when tracking looks normal)', stock: 'stock', store_info: 'things your knowledge covers' }
 const WHO: { key: string; label: string }[] = [{ key: '', label: 'Everything' }, { key: 'support', label: 'Support Agent' }, { key: 'reception', label: 'Reception' }, { key: 'reputation', label: 'Reputation' }, { key: 'sales', label: 'Sales' }, { key: 'operations', label: 'Operations' }, { key: 'colvy_ai', label: 'Auto-reply' }, { key: 'assistant', label: 'Assistant' }, { key: 'connected_app', label: 'Connected apps' }]
 const actorOf = (r: { role_key: string; actor?: string }) => r.actor || (r.role_key === 'support' ? 'Support Agent' : r.role_key)
-const CHANNEL: Record<string, string> = { sms: 'SMS', widget: 'Website chat', chat: 'Website chat' }
+const CHANNEL: Record<string, string> = { sms: 'SMS', widget: 'Website chat', chat: 'Website chat', email: 'Email', facebook: 'Facebook', instagram: 'Instagram' }
 
 type RoleKey = 'support' | 'reception' | 'reputation' | 'sales' | 'operations'
 const TRY_ROLES: { key: RoleKey; label: string; sample: string }[] = [
@@ -288,13 +288,16 @@ export default function AgentsPage() {
         <div className="ag-card ag-fade" style={{ marginBottom: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 14, justifyContent: 'space-between' }}>
             <div style={{ minWidth: 0 }}>
-              <p className="ag-h">Support Agent on incoming SMS and chat</p>
+              <p className="ag-h">Support Agent on incoming messages</p>
               <p className="ag-p">{settings?.autoSend.enabled
-                ? 'When a customer texts or chats, the Support Agent works out what they need and looks it up. It replies on its own when the answer is one you allowed and it has just checked the facts; anything else waits for your team.'
-                : 'When a customer texts or chats, the Support Agent works out what they need, checks their order and tracking, and suggests a reply in the conversation. Nothing is sent until someone on your team presses Send.'}</p>
+                ? 'When a customer gets in touch, the Support Agent works out what they need and looks it up. It replies on its own when the answer is one you allowed and it has just checked the facts; anything else waits for your team.'
+                : 'When a customer gets in touch, the Support Agent works out what they need, checks their order and tracking, and suggests a reply in the conversation. Nothing is sent until someone on your team presses Send.'}</p>
             </div>
-            <button type="button" role="switch" aria-checked={!!supportOn} aria-label="Support Agent on incoming SMS and chat" onClick={toggleSupport} disabled={supportOn == null || savingRole} className={`ag-switch ${supportOn ? 'on' : ''}`}><span /></button>
+            <button type="button" role="switch" aria-checked={!!supportOn} aria-label="Support Agent on incoming messages" onClick={toggleSupport} disabled={supportOn == null || savingRole} className={`ag-switch ${supportOn ? 'on' : ''}`}><span /></button>
           </div>
+          {(supportOn || recOn) && settings?.channels && settings.channelOptions && (
+            <ChannelPicker value={settings.channels} options={settings.channelOptions} saving={savingSettings} onSave={c => saveSettings({ channels: c })} />
+          )}
           {supportOn && settings && <AutoSendPanel settings={settings} saving={savingSettings} onSave={a => saveSettings({ autoSend: a })} />}
         </div>
 
@@ -302,7 +305,7 @@ export default function AgentsPage() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 14, justifyContent: 'space-between' }}>
             <div style={{ minWidth: 0 }}>
               <p className="ag-h">Reception Agent for bookings</p>
-              <p className="ag-p">Booking messages on SMS and chat — “can I book…”, “what times do you have…”, “can I move my appointment…” — go to the Reception Agent; everything else stays with the Support Agent. It checks free times, finds the customer’s bookings and sends booking or manage links. Moving or cancelling a booking always waits for you.</p>
+              <p className="ag-p">Booking messages — “can I book…”, “what times do you have…”, “can I move my appointment…” — go to the Reception Agent; everything else stays with the Support Agent. It checks free times, finds the customer’s bookings and sends booking or manage links. Moving or cancelling a booking always waits for you.</p>
             </div>
             <button type="button" role="switch" aria-checked={!!recOn} aria-label="Reception Agent for bookings" onClick={() => toggleRole('reception')} disabled={recOn == null || savingRole} className={`ag-switch ${recOn ? 'on' : ''}`}><span /></button>
           </div>
@@ -536,6 +539,40 @@ const OPS_AUTO_COPY: DailyAutoCopy = {
   note: 'An update only goes out on its own after it has checked live tracking or stock in that run, and within your sending hours. Anything that mentions a refund, discount or credit waits for you, and so does an order it hands to your team. Tasks for your team are always created straight away.',
   confirmTitle: 'Let the Operations Agent update customers on its own?',
   confirm: n => `When an order is late, stuck or waiting on stock, it will text or email the customer a short, honest update without waiting — up to ${n} a day, only within your sending hours, and never about refunds or money. Orders it hands to your team still wait for you. You can pause it any time.`,
+}
+
+// Where Support and Reception answer. Saved straight away; turning on email or
+// Meta asks first, since it puts the agents in front of more customers.
+function ChannelPicker({ value, options, saving, onSave }: { value: string[]; options: { key: string; label: string }[]; saving: boolean; onSave: (v: string[]) => Promise<boolean> }) {
+  const toggle = async (k: string) => {
+    const on = value.includes(k)
+    if (!on && ['email', 'facebook', 'instagram'].includes(k)) {
+      const name = options.find(o => o.key === k)?.label || k
+      const ok = await confirmDialog({
+        title: `Answer ${name === 'Email' ? 'emails' : `${name} messages`} too?`,
+        message: `New ${name === 'Email' ? 'emails' : `${name} messages`} will go to the Support Agent (or Reception for bookings), just like texts and chat — with the same rules for what waits for your team.${k === 'email' ? ' Newsletters, notifications and support-ticket replies are left alone.' : ' Meta only allows automatic replies within 24 hours of the customer’s message; later ones always wait for a person.'}`,
+        confirmLabel: 'Turn on', tone: 'primary',
+      })
+      if (!ok) return
+    }
+    await onSave(on ? value.filter(x => x !== k) : [...value, k])
+  }
+  return (
+    <div className="ag-auto">
+      <p className="ag-label" style={{ marginTop: 0 }}>Channels Support and Reception answer</p>
+      <div className="ag-topics" role="group" aria-label="Channels the agents answer">
+        {options.map(o => {
+          const on = value.includes(o.key)
+          return (
+            <button key={o.key} type="button" role="checkbox" aria-checked={on} className={`ag-topic ${on ? 'on' : ''}`} onClick={() => toggle(o.key)} disabled={saving}>
+              <span className="ag-tick">{on && I.check}</span>{o.label}
+            </button>
+          )
+        })}
+      </div>
+      {!value.length && <p className="ag-step-dec" style={{ marginTop: 8 }}>No channels on — the agents won’t see new messages.</p>}
+    </div>
+  )
 }
 
 function DailyAutoPanel({ value, saving, onSave, copy }: { value: DailyAuto; saving: boolean; onSave: (v: DailyAuto) => Promise<boolean>; copy: DailyAutoCopy }) {

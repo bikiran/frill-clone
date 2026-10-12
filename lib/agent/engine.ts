@@ -117,12 +117,21 @@ function systemPrompt(role: RoleDef, companyName: string, businessText: string, 
   ].join('\n\n')
 }
 
+// How to write for the channel the message came in on.
+const CHANNEL_NOTE: Record<string, string> = {
+  email: 'It came in by email. Write your reply as a short email: “Hi <first name>,”, the answer in a few short paragraphs, then a simple sign-off such as “Thanks,” — no subject line and no signature (the mailbox adds its own).',
+  facebook: 'It came in as a Facebook message. Reply like a chat message: short, friendly and plain.',
+  instagram: 'It came in as an Instagram message. Reply like a chat message: short, friendly and plain.',
+}
+
 function firstMessage(run: any, timezone = 'Australia/Melbourne', role?: RoleDef): string {
   const msg = String(run.input?.message || '').trim()
   const lines = role?.opener ? [role.opener(run)] : [
     run.trigger_type === 'inbound_message' || run.trigger_type === 'sandbox' ? 'A customer has sent a message.' : `New ${run.trigger_type.replace(/_/g, ' ')}.`,
     run.conversation_id ? 'It is part of an existing conversation — use get_conversation for the history.' : 'There is no conversation history.',
   ]
+  const via = CHANNEL_NOTE[String(run.input?.channel || '')]
+  if (via && !role?.opener) lines.push(via)
   if (msg) lines.push(`<customer_message>\n${msg.slice(0, 4000)}\n</customer_message>`)
   if (run.goal) lines.push(`Goal for this run: ${run.goal}`)
   const now = localNow(timezone)

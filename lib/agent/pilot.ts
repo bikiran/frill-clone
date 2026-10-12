@@ -200,3 +200,38 @@ export async function setOpsAuto(db: any, companyId: string, raw: any, userId: s
   await putPolicy(db, { company_id: companyId, role_key: 'operations', action_key: 'send_order_update', autonomy: s.enabled ? 'act_within_limits' : 'prepare', limits: { max_per_day: s.max_per_day }, updated_by: userId })
   return s
 }
+
+// ── Which channels Support and Reception answer ──────────────────────────────
+// SMS and website chat from the start; email, Facebook and Instagram once the
+// business switches them on. Stored as a company-wide (role-less) policy row
+// whose action key matches no action, so the policy engine ignores it.
+
+export const AGENT_CHANNEL_OPTIONS: { key: string; label: string }[] = [
+  { key: 'sms', label: 'SMS' }, { key: 'chat', label: 'Website chat' }, { key: 'email', label: 'Email' },
+  { key: 'facebook', label: 'Facebook' }, { key: 'instagram', label: 'Instagram' },
+]
+export const DEFAULT_AGENT_CHANNELS = ['sms', 'chat']
+const CHANNELS_ACTION = 'inbound_channels'
+
+/** A conversation's channel as a switch key: widget and chat are both "chat". */
+export function channelKey(channel: string | null | undefined): string | null {
+  const c = String(channel || 'chat').toLowerCase()
+  if (c === 'widget' || c === 'chat') return 'chat'
+  if (c === 'messenger') return 'facebook'
+  return AGENT_CHANNEL_OPTIONS.some(o => o.key === c) ? c : null
+}
+
+export async function getAgentChannels(db: any, companyId: string): Promise<string[]> {
+  try {
+    const { data } = await db.from('agent_policies').select('limits').eq('company_id', companyId).is('role_key', null).eq('action_key', CHANNELS_ACTION).limit(1)
+    const list = data?.[0]?.limits?.channels
+    return Array.isArray(list) ? list.filter((k: any) => AGENT_CHANNEL_OPTIONS.some(o => o.key === k)) : [...DEFAULT_AGENT_CHANNELS]
+  } catch { return [...DEFAULT_AGENT_CHANNELS] }
+}
+
+export async function setAgentChannels(db: any, companyId: string, raw: any, userId: string | null): Promise<string[]> {
+  const list = (Array.isArray(raw) ? raw : []).filter((k: any) => AGENT_CHANNEL_OPTIONS.some(o => o.key === k))
+  const channels = AGENT_CHANNEL_OPTIONS.map(o => o.key).filter(k => list.includes(k))
+  await putPolicy(db, { company_id: companyId, role_key: null, action_key: CHANNELS_ACTION, autonomy: 'prepare', limits: { channels }, updated_by: userId })
+  return channels
+}
