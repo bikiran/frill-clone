@@ -124,15 +124,19 @@ export async function evaluateGoals(db: any, companyId: string, settings: GoalSe
     statuses.push({ key, on: s.on, target: s.target, label: GOALS[key].label, sentence: GOALS[key].sentence(s.target), about: GOALS[key].about, unit: GOALS[key].unit, options: GOALS[key].options, met, missed, open, rate: met + missed ? met / (met + missed) : null })
   }
 
+  // The five goals are independent, so measure them side by side.
+  await Promise.all([
   // ── Answer customers (during opening hours)
-  {
+  (async () => {
     const key: GoalKey = 'reply_time'
     const limit = targetMs(key, settings[key].target)
     let met = 0, missed = 0, open = 0
     try {
-      const hours = await loadBusinessHours(db, companyId, { google: false }).catch(() => null)
-      const msgs = await pageAll(from => db.from('messages').select('conversation_id, sender_type, is_internal, created_at')
-        .eq('company_id', companyId).gte('created_at', since).order('created_at', { ascending: true }).range(from, from + 999))
+      const [hours, msgs] = await Promise.all([
+        loadBusinessHours(db, companyId, { google: false }).catch(() => null),
+        pageAll(from => db.from('messages').select('conversation_id, sender_type, is_internal, created_at')
+          .eq('company_id', companyId).in('sender_type', ['visitor', 'agent', 'ai']).gte('created_at', since).order('created_at', { ascending: true }).range(from, from + 999)),
+      ])
       const byConv = new Map<string, any[]>()
       for (const m of msgs) { if (!m.conversation_id || m.is_internal || m.sender_type === 'system') continue; (byConv.get(m.conversation_id) || byConv.set(m.conversation_id, []).get(m.conversation_id)!).push(m) }
       const waiting: { conv: string; at: string; ms: number }[] = []
@@ -167,10 +171,9 @@ export async function evaluateGoals(db: any, companyId: string, settings: GoalSe
       }
     } catch { /* messages unavailable */ }
     status(key, met, missed, open)
-  }
-
+  })(),
   // ── Check agent drafts
-  {
+  (async () => {
     const key: GoalKey = 'approval_wait'
     const limit = targetMs(key, settings[key].target)
     let met = 0, missed = 0, open = 0
@@ -186,10 +189,9 @@ export async function evaluateGoals(db: any, companyId: string, settings: GoalSe
       }
     } catch {}
     status(key, met, missed, open)
-  }
-
+  })(),
   // ── Reply to reviews
-  {
+  (async () => {
     const key: GoalKey = 'review_reply'
     const limit = targetMs(key, settings[key].target)
     let met = 0, missed = 0, open = 0
@@ -208,10 +210,9 @@ export async function evaluateGoals(db: any, companyId: string, settings: GoalSe
       }
     } catch {}
     status(key, met, missed, open)
-  }
-
+  })(),
   // ── Keep customers updated (orders the Operations Agent flagged)
-  {
+  (async () => {
     const key: GoalKey = 'order_updates'
     const limit = targetMs(key, settings[key].target)
     let met = 0, missed = 0, open = 0
@@ -241,10 +242,9 @@ export async function evaluateGoals(db: any, companyId: string, settings: GoalSe
       }
     } catch {}
     status(key, met, missed, open)
-  }
-
+  })(),
   // ── Follow up quotes / payment requests
-  {
+  (async () => {
     const key: GoalKey = 'quote_followup'
     const limit = targetMs(key, settings[key].target)
     let met = 0, missed = 0, open = 0
@@ -271,7 +271,8 @@ export async function evaluateGoals(db: any, companyId: string, settings: GoalSe
       }
     } catch {}
     status(key, met, missed, open)
-  }
-
+  })(),
+  ])
+  statuses.sort((a, b) => GOAL_KEYS.indexOf(a.key) - GOAL_KEYS.indexOf(b.key))
   return { goals: statuses, breaches }
 }

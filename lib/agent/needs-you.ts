@@ -43,16 +43,38 @@ function approvalTitle(a: any): string {
   return `${who} needs your approval`
 }
 
+/** Hand-overs and failed runs from the last two days, plus when the team last wrote in each conversation — in four queries, not one per hand-over. */
+async function recentExceptions(db: any, companyId: string, since: string) {
+  const [{ data: steps }, { data: failed }] = await Promise.all([
+    db.from('agent_steps').select('run_id, created_at').eq('company_id', companyId).eq('action_key', 'escalate_to_human').eq('decision', 'allowed').eq('status', 'ok').gte('created_at', since).limit(200),
+    db.from('agent_runs').select('id, role_key, summary, created_at, conversation_id, mode').eq('company_id', companyId).eq('status', 'failed').eq('mode', 'live').gte('created_at', since).limit(50),
+  ])
+  const runIds = Array.from(new Set((steps || []).map((s: any) => s.run_id)))
+  const { data: runs } = runIds.length ? await db.from('agent_runs').select('id, role_key, summary, conversation_id, mode').in('id', runIds) : { data: [] }
+  const runBy = new Map<string, any>((runs || []).filter((r: any) => r.mode === 'live').map((r: any) => [r.id, r]))
+  const convIds = Array.from(new Set(Array.from(runBy.values()).map((r: any) => r.conversation_id).filter(Boolean))) as string[]
+  const teamReplies = new Map<string, string[]>()
+  if (convIds.length) {
+    const { data: msgs } = await db.from('messages').select('conversation_id, created_at, metadata').in('conversation_id', convIds).eq('sender_type', 'agent').gte('created_at', since).limit(2000)
+    for (const m of msgs || []) {
+      if (m.metadata?.auto || m.metadata?.agent_name || m.metadata?.paylink_capture) continue
+      ;(teamReplies.get(m.conversation_id) || teamReplies.set(m.conversation_id, []).get(m.conversation_id)!).push(m.created_at)
+    }
+  }
+  return { steps: steps || [], failed: failed || [], runBy, teamReplies }
+}
+
 export async function needsYou(db: any, companyId: string, now = Date.now()): Promise<{ items: NeedItem[]; counts: Record<Urgency, number>; goals: GoalStatus[] }> {
   const settings = cleanGoals(await getGoalSettings(db, companyId))
   const items: NeedItem[] = []
 
-  // ── Goals: what's being missed right now (and how the week is going)
-  const { goals, breaches } = await evaluateGoals(db, companyId, settings, { days: 14, now }).catch(() => ({ goals: [] as GoalStatus[], breaches: [] as Breach[] }))
-
-  // ── Drafts waiting for a person
-  let approvals: any[] = []
-  try { approvals = await pendingApprovals(db, companyId, { limit: 50 }) } catch {}
+  // Goals, drafts and recent hand-overs don't depend on each other: fetch them together.
+  const since = new Date(now - 48 * 3_600_000).toISOString()
+  const [{ goals, breaches }, approvals, recent] = await Promise.all([
+    evaluateGoals(db, companyId, settings, { days: 14, now }).catch(() => ({ goals: [] as GoalStatus[], breaches: [] as Breach[] })),
+    pendingApprovals(db, companyId, { limit: 50 }).catch(() => [] as any[]),
+    recentExceptions(db, companyId, since).catch(() => null),
+  ])
   const approvalLimit = settings.approval_wait.on ? targetMs('approval_wait', settings.approval_wait.target) : Infinity
   const waitingConvs = new Map(breaches.filter(b => b.goal === 'reply_time' && b.conversationId).map(b => [b.conversationId!, b]))
   for (const a of approvals) {
@@ -76,21 +98,13 @@ export async function needsYou(db: any, companyId: string, now = Date.now()): Pr
   }
 
   // ── Hand-overs nobody has picked up, and runs that went wrong (last 2 days)
-  try {
-    const since = new Date(now - 48 * 3_600_000).toISOString()
-    const { data: steps } = await db.from('agent_steps').select('run_id, created_at').eq('company_id', companyId).eq('action_key', 'escalate_to_human').eq('decision', 'allowed').eq('status', 'ok').gte('created_at', since).limit(200)
-    const { data: failed } = await db.from('agent_runs').select('id, role_key, summary, created_at, conversation_id, mode').eq('company_id', companyId).eq('status', 'failed').eq('mode', 'live').gte('created_at', since).limit(50)
-    const runIds = Array.from(new Set((steps || []).map((s: any) => s.run_id)))
-    const { data: runs } = runIds.length ? await db.from('agent_runs').select('id, role_key, summary, conversation_id, mode').in('id', runIds) : { data: [] }
-    const runBy = new Map((runs || []).filter((r: any) => r.mode === 'live').map((r: any) => [r.id, r]))
-    for (const s of steps || []) {
+  if (recent) {
+    const { steps, failed, runBy, teamReplies } = recent
+    for (const s of steps) {
       const run: any = runBy.get(s.run_id)
       if (!run || items.some(i => i.key === `handover:${run.id}`)) continue
-      if (run.conversation_id) {
-        // Picked up = a person on the team has written in the conversation since.
-        const { data: later } = await db.from('messages').select('id, metadata, sender_type, is_internal').eq('conversation_id', run.conversation_id).eq('sender_type', 'agent').gt('created_at', s.created_at).limit(20)
-        if ((later || []).some((m: any) => !m.metadata?.auto && !m.metadata?.agent_name && !m.metadata?.paylink_capture)) continue
-      }
+      // Picked up = a person on the team has written in the conversation since.
+      if (run.conversation_id && (teamReplies.get(run.conversation_id) || []).some(t => t > s.created_at)) continue
       items.push({
         key: `handover:${run.id}`, kind: 'handover', urgency: run.conversation_id ? 'now' : 'soon',
         title: `${AGENT[run.role_key] || 'An agent'} handed this to you`,
@@ -99,10 +113,10 @@ export async function needsYou(db: any, companyId: string, now = Date.now()): Pr
         conversationId: run.conversation_id || null, runId: run.id,
       })
     }
-    for (const r of failed || []) {
+    for (const r of failed) {
       items.push({ key: `failed:${r.id}`, kind: 'failed', urgency: 'fyi', title: `${AGENT[r.role_key] || 'An agent'} ran into a problem`, detail: String(r.summary || 'Something went wrong.').slice(0, 180), at: r.created_at, href: `/admin/agents?run=${r.id}`, conversationId: r.conversation_id || null, runId: r.id })
     }
-  } catch {}
+  }
 
   const rank: Record<Urgency, number> = { now: 0, soon: 1, fyi: 2 }
   items.sort((a, b) => rank[a.urgency] - rank[b.urgency] || (a.at < b.at ? -1 : 1))   // oldest first within each level
