@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { authFetch } from '@/lib/auth-fetch'
 import { confirmDialog } from '@/components/ConfirmDialog'
+import { GoalsPanel } from '@/components/AgentGoals'
 
 // Agents → Results: what the agents achieved, what they brought to the team,
 // and "ready for more freedom" suggestions the team can accept in one tap.
@@ -192,6 +193,15 @@ export function ResultsView({ companyId }: { companyId: string | null }) {
               <Tile days={days} label="Approved as written" value={asIsPct(c) == null ? '—' : `${asIsPct(c)}%`} note={`${c.approvedAsIs} as written · ${c.edited} edited · ${c.dismissed} dismissed`} now={asIsPct(c) ?? undefined} before={asIsPct(p) ?? undefined} fmt={pts} />
               <Tile days={days} label="Brought to you" value={compact(c.escalated + c.tasks)} note={`${c.escalated} handed over · ${c.tasks} tasks`} now={c.escalated + c.tasks} before={p.escalated + p.tasks} neutral />
               <Tile days={days} label="Time saved" value={`~${hours(c.minutesSaved)}`} note="estimate — see below" now={c.minutesSaved} before={p.minutesSaved} fmt={hours} />
+            </div>
+
+            <div className="ar-card ar-sec">
+              <div className="ar-head" style={{ marginBottom: 0 }}>
+                <p className="ar-h">Goals</p>
+                <a className="ar-link" href="/admin/agents/needs-you">Needs you <Arrow /></a>
+              </div>
+              <p className="ar-p">The outcomes you expect. Agents work toward them, and anything missing one comes to you under Needs you.</p>
+              <GoalsPanel companyId={companyId!} days={days} />
             </div>
 
             <div className="ar-card ar-sec">

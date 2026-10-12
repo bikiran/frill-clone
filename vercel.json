@@ -99,6 +99,10 @@
     {
       "path": "/api/cron/agent-digest",
       "schedule": "30 21 * * 0"
+    },
+    {
+      "path": "/api/cron/needs-you",
+      "schedule": "*/15 * * * *"
     }
   ]
 }

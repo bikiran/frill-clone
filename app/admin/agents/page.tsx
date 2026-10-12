@@ -8,6 +8,7 @@ import { SuggestionCard, type Suggestion } from '@/components/AgentSuggestion'
 import { confirmDialog } from '@/components/ConfirmDialog'
 import AgentConnections from '@/components/AgentConnections'
 import { ResultsStrip } from '@/components/AgentResults'
+import { NeedsYouCard } from '@/components/NeedsYou'
 
 // AI Agents (Phase 1 of the Agent Engine). Every agent run is recorded — what
 // it knew, every action it asked for, the permission decision and why, and the
@@ -269,6 +270,7 @@ export default function AgentsPage() {
             <p style={{ margin: '4px 0 0', fontSize: 14, color: 'var(--slate)', maxWidth: 640 }}>Everything Colvy’s AI does, in one place — the Support Agent, the auto-reply, the assistant and connected apps. Each run shows what it knew, what it decided, which permission allowed it, and why.</p>
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <a href="/admin/agents/needs-you" className="ag-ghost" style={{ display: 'inline-flex', alignItems: 'center', height: 38, textDecoration: 'none' }}>Needs you</a>
             <a href="/admin/agents/results" className="ag-ghost" style={{ display: 'inline-flex', alignItems: 'center', height: 38, textDecoration: 'none' }}>Results</a>
             <a href="/admin/agents/memory" className="ag-ghost" style={{ display: 'inline-flex', alignItems: 'center', height: 38, textDecoration: 'none' }}>Business memory</a>
             {settings && !settings.pause.paused && (
@@ -290,6 +292,9 @@ export default function AgentsPage() {
 
         {needsMigration && <div className="ag-note warn ag-fade" style={{ marginBottom: 16 }}>{I.alert}<span>Agents need a one-time database update (<b>COLVY_V353_AGENT_ENGINE.sql</b>).</span></div>}
         {error && <div className="ag-note err ag-fade" style={{ marginBottom: 16 }} role="alert">{I.alert}<span>{error}</span></div>}
+
+        {/* What needs a person right now (Phase 10) */}
+        {companyId && !needsMigration && <NeedsYouCard companyId={companyId} />}
 
         {/* This week + earned-trust suggestions (Phase 9) */}
         {companyId && !needsMigration && <ResultsStrip companyId={companyId} onSettingsChanged={() => { loadSettings() }} />}

@@ -321,3 +321,38 @@ export async function setDigest(db: any, companyId: string, patch: Partial<Diges
   await putPolicy(db, { company_id: companyId, role_key: null, action_key: DIGEST_ACTION, autonomy: 'prepare', limits: next, updated_by: userId })
   return next
 }
+
+// ── Goals + "Needs you" phone alerts (Phase 10) ─────────────────────────────
+
+const GOALS_ACTION = 'goals'
+const ALERTS_ACTION = 'needs_you_alerts'
+
+export async function getGoalSettings(db: any, companyId: string): Promise<any> {
+  try {
+    const { data } = await db.from('agent_policies').select('limits').eq('company_id', companyId).is('role_key', null).eq('action_key', GOALS_ACTION).limit(1)
+    return data?.[0]?.limits?.goals || {}
+  } catch { return {} }
+}
+
+export async function setGoalSettings(db: any, companyId: string, goals: any, userId: string | null): Promise<void> {
+  await putPolicy(db, { company_id: companyId, role_key: null, action_key: GOALS_ACTION, autonomy: 'prepare', limits: { goals }, updated_by: userId })
+}
+
+export type AlertSettings = { enabled: boolean; notified: Record<string, string> }
+
+export async function getAlertSettings(db: any, companyId: string): Promise<AlertSettings> {
+  try {
+    const { data } = await db.from('agent_policies').select('limits').eq('company_id', companyId).is('role_key', null).eq('action_key', ALERTS_ACTION).limit(1)
+    const l = data?.[0]?.limits || {}
+    return { enabled: l.enabled !== false, notified: l.notified && typeof l.notified === 'object' ? l.notified : {} }
+  } catch { return { enabled: true, notified: {} } }
+}
+
+export async function setAlertSettings(db: any, companyId: string, patch: Partial<AlertSettings>, userId: string | null): Promise<AlertSettings> {
+  const cur = await getAlertSettings(db, companyId)
+  const cutoff = Date.now() - 7 * 86_400_000
+  const notified = Object.fromEntries(Object.entries({ ...cur.notified, ...(patch.notified || {}) }).filter(([, at]) => new Date(at).getTime() > cutoff))
+  const next = { enabled: patch.enabled ?? cur.enabled, notified }
+  await putPolicy(db, { company_id: companyId, role_key: null, action_key: ALERTS_ACTION, autonomy: 'prepare', limits: next, updated_by: userId })
+  return next
+}
