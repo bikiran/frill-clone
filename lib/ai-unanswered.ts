@@ -12,6 +12,8 @@ import { modelFor, trackAi } from '@/lib/ai-models'
 
 const STOP = new Set(['the', 'and', 'for', 'you', 'your', 'are', 'was', 'were', 'can', 'could', 'would', 'should', 'will', 'what', 'when', 'where', 'which', 'who', 'how', 'why', 'does', 'did', 'have', 'has', 'had', 'this', 'that', 'these', 'those', 'with', 'from', 'about', 'into', 'there', 'their', 'them', 'they', 'then', 'than', 'just', 'like', 'want', 'need', 'know', 'please', 'thanks', 'thank', 'hello', 'hey', 'any', 'some', 'get', 'got', 'also', 'still', 'much', 'many', 'very', 'our', 'out', 'not', 'yes', 'okay', 'today', 'is', 'do', 'hi', 'there', 'mate', 'guys', 'possible', 'able', 'tell', 'wondering', 'question', 'quick'])
 
+const LOOKS_LIKE_QUESTION = /\?|^(do|does|did|can|could|would|will|is|are|was|were|have|has|what|whats|what's|when|where|which|who|why|how|any|anyone)\b/i
+
 const stem = (w: string) => w.replace(/(ies)$/, 'y').replace(/(ing|ed|es|s)$/, '')
 
 export function questionWords(text: string): string[] {
@@ -30,9 +32,32 @@ const jaccard = (a: string[], b: string[]) => {
   return inter / Math.max(1, A.size + B.size - inter)
 }
 
+/** A customer message without the email clutter: quoted replies, signatures, inline-image tags, addresses. */
+export function cleanCustomerText(text: string): string {
+  let t = String(text || '')
+  // Stop at the first signature or quoted-reply marker.
+  const cut = t.search(/(^|\n|\s)(kind regards|warm regards|best regards|regards,|cheers,|thanks,|thank you,|sent from my|get outlook for|on .{3,60} wrote:|-----original message|from: .+@)/i)
+  if (cut > 0) t = t.slice(0, cut)
+  return t
+    .split('\n').filter(l => !/^\s*>/.test(l)).join(' ')
+    .replace(/\[cid:[^\]]*\]/gi, ' ')
+    .replace(/<mailto:[^>]*>/gi, ' ')
+    .replace(/\S+@\S+\.\S+/g, ' ')
+    .replace(/https?:\/\/\S+/g, ' ')
+    .replace(/\s+/g, ' ').trim()
+}
+
+/** True when the text reads like a question a customer asked (not "15 each" or a signature). */
+export function isRealQuestion(text: string): boolean {
+  const t = cleanCustomerText(text)
+  if (t.length < 8 || t.length > 500) return false
+  if (/\[cid:|mailto:|@[\w-]+\.\w/i.test(text) && !t.includes('?')) return false
+  return LOOKS_LIKE_QUESTION.test(t) && questionWords(t).length >= 1
+}
+
 /** The question part of a customer message: the sentence with a "?", else the start. */
 export function questionFrom(text: string): string {
-  const t = String(text || '').replace(/\s+/g, ' ').trim()
+  const t = cleanCustomerText(text)
   const q = t.split(/(?<=[.!?])\s+/).find(s => s.includes('?'))
   return (q || t).slice(0, 300)
 }
@@ -68,12 +93,10 @@ async function upsertGroup(db: any, companyId: string, g: { question: string; co
 export async function logUnanswered(db: any, companyId: string, text: string, opts: { source: 'ai_reply' | 'ai_draft'; conversationId?: string | null }) {
   try {
     const q = questionFrom(text)
-    if (q.length < 6) return
+    if (q.length < 6 || !isRealQuestion(q)) return
     await upsertGroup(db, companyId, { question: q, count: 1, examples: [{ text: q, conversation_id: opts.conversationId || null, source: opts.source, at: new Date().toISOString() }] })
   } catch { /* best effort */ }
 }
-
-const LOOKS_LIKE_QUESTION = /\?|^(do|does|did|can|could|would|will|is|are|was|were|have|has|what|whats|what's|when|where|which|who|why|how|any|anyone)\b/i
 
 /**
  * Look back over recent customer messages for questions the library doesn't
@@ -103,7 +126,7 @@ export async function scanRecentQuestions(db: any, companyId: string, days = 45)
       const m = list[i]
       if (m.sender_type !== 'visitor') continue
       const text = String(m.content || '').replace(/\s+/g, ' ').trim()
-      if (text.length < 8 || text.length > 500 || !LOOKS_LIKE_QUESTION.test(text)) continue
+      if (!isRealQuestion(text)) continue
       const q = questionFrom(text)
       const k = keyOf(questionWords(q))
       if (!k || seen.has(k)) continue
