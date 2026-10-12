@@ -6,7 +6,8 @@ import { useState } from 'react'
 // Coax-style email card. Emails used to render as one flattened blob of
 // stripped text (with CSS leaking in). This shows the real thing: From/To/Cc,
 // subject, the formatted body, quoted history collapsed behind "View full
-// message", and attachments with a download.
+// message", and attachments: photos and videos open in the inbox's viewer,
+// other files download.
 
 const ico = (path: React.ReactNode, size = 14) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>{path}</svg>
@@ -43,7 +44,31 @@ function cleanPreview(raw: string): string {
   return t.trim()
 }
 
-export default function EmailMessage({ msg, agentColor }: { msg: any; agentColor?: string }) {
+// Photo or video? Uses the stored type, else the file name ("image0.jpeg").
+export function emailAttachmentKind(a: any): 'image' | 'video' | null {
+  const mime = String(a?.mime || a?.type || a?.mimeType || '').toLowerCase()
+  if (mime.startsWith('image/')) return 'image'
+  if (mime.startsWith('video/')) return 'video'
+  const ext = String(a?.name || '').toLowerCase().split('.').pop() || ''
+  if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'heif', 'bmp', 'avif'].includes(ext)) return 'image'
+  if (['mp4', 'mov', 'm4v', 'webm'].includes(ext)) return 'video'
+  return null
+}
+
+// Where an email attachment can be fetched: a direct url (webhook emails), or
+// streamed from Gmail through our attachment route.
+export function emailAttachmentUrl(msg: any, a: any, attToken?: string | null): string | null {
+  return a?.url || (msg?.gmail_message_id && a?.attachmentId
+    ? `/api/email/attachment?messageId=${encodeURIComponent(msg.gmail_message_id)}&attachmentId=${encodeURIComponent(a.attachmentId)}&name=${encodeURIComponent(a.name || 'file')}&conversationId=${encodeURIComponent(msg.conversation_id)}${attToken ? `&t=${encodeURIComponent(attToken)}` : ''}`
+    : null)
+}
+
+export default function EmailMessage({ msg, agentColor, onOpenMedia }: {
+  msg: any
+  agentColor?: string
+  // Open a photo/video attachment (by its index on this email) in the viewer.
+  onOpenMedia?: (attachmentIndex: number) => void
+}) {
   const attToken = useAttachmentToken(msg?.gmail_message_id ? msg?.conversation_id : null)
   const [showFull, setShowFull] = useState(false)
   const isAgent = msg.sender_type === 'agent'
@@ -112,10 +137,29 @@ export default function EmailMessage({ msg, agentColor }: { msg: any; agentColor
           {/* Attachments */}
           {attachments.length > 0 && (
             <div style={{ marginTop: 12, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              <style>{`.em-media{transition:border-color .18s ease,box-shadow .18s ease,transform .18s cubic-bezier(.2,.8,.2,1)}.em-media:hover{border-color:#c9d6e8;box-shadow:0 2px 10px rgba(15,23,42,.07)}.em-media:active{transform:scale(.98)}`}</style>
               {attachments.map((a, i) => {
-                const dl = a.url || (msg.gmail_message_id && a.attachmentId
-                  ? `/api/email/attachment?messageId=${encodeURIComponent(msg.gmail_message_id)}&attachmentId=${encodeURIComponent(a.attachmentId)}&name=${encodeURIComponent(a.name || 'file')}&conversationId=${encodeURIComponent(msg.conversation_id)}${attToken ? `&t=${encodeURIComponent(attToken)}` : ''}`
-                  : null)
+                const dl = emailAttachmentUrl(msg, a, attToken)
+                const kind = emailAttachmentKind(a)
+                if (dl && kind && onOpenMedia) {
+                  return (
+                    <button key={i} type="button" className="em-media" onClick={() => onOpenMedia(i)} title={`View ${a.name || 'attachment'}`}
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '5px 11px 5px 5px', borderRadius: 9, border: '1px solid #e3e9f2', background: '#f9fbfd', color: 'var(--ink)', fontSize: 12.5, maxWidth: 240, cursor: 'zoom-in', font: 'inherit' }}>
+                      <span style={{ position: 'relative', width: 32, height: 32, borderRadius: 6, overflow: 'hidden', background: '#e8edf4', flexShrink: 0 }}>
+                        {kind === 'image'
+                          ? <img src={dl} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                          : <>
+                              <video src={dl} preload="metadata" muted style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                              <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', background: 'rgba(0,0,0,0.25)' }}>
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20 6 4"/></svg>
+                              </span>
+                            </>}
+                      </span>
+                      <span style={{ fontSize: 12.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.name}</span>
+                      {a.size ? <span style={{ color: 'var(--slate)', fontSize: 11, flexShrink: 0 }}>{fmtBytes(a.size)}</span> : null}
+                    </button>
+                  )
+                }
                 const chip = (
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '7px 11px', borderRadius: 9, border: '1px solid #e3e9f2', background: '#f9fbfd', color: 'var(--ink)', fontSize: 12.5, maxWidth: 240 }}>
                     <Paperclip />

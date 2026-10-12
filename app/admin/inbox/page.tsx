@@ -39,7 +39,7 @@ import DraftTasks from '@/components/DraftTasks'
 import Dialer from '@/components/Dialer'
 import ResilientImage from '@/components/ResilientImage'
 import ComposeMessage from '@/components/ComposeMessage'
-import EmailMessage from '@/components/EmailMessage'
+import EmailMessage, { emailAttachmentKind, emailAttachmentUrl } from '@/components/EmailMessage'
 import EmailComposer from '@/components/EmailComposer'
 import ContactTimeline from '@/components/ContactTimeline'
 import AddressAutocomplete from '@/components/AddressAutocomplete'
@@ -584,6 +584,27 @@ export default function InboxPage() {
   const [, setHour12] = useState(INBOX_HOUR12)
   const [showMergePicker, setShowMergePicker] = useState(false)
   const [galleryIndex, setGalleryIndex] = useState<number | null>(null)
+  // The thread's gallery: chat photos/videos first (their indices are used
+  // directly by the bubbles), then photos/videos that arrived on emails.
+  const chatGalleryMedia = (): MediaItem[] => {
+    const out: MediaItem[] = []
+    messages.forEach(m => (Array.isArray(m.attachments) ? m.attachments : []).forEach((a: any) => {
+      const isImg = a.kind === 'image' || String(a.type||'').startsWith('image'); const isVid = a.kind === 'video' || String(a.type||'').startsWith('video'); if ((isImg || isVid) && a.url) out.push({ url: a.url, name: a.name, kind: isVid ? 'video' : 'image', poster: videoPoster(a) })
+    }))
+    return out
+  }
+  const emailGalleryMedia = (): (MediaItem & { key: string })[] => {
+    const out: (MediaItem & { key: string })[] = []
+    messages.forEach(m => (Array.isArray((m as any).email_attachments) ? (m as any).email_attachments : []).forEach((a: any, i: number) => {
+      const kind = emailAttachmentKind(a); const url = emailAttachmentUrl(m, a, attToken)
+      if (kind && url) out.push({ key: `${m.id}:${i}`, url, name: a.name, kind })
+    }))
+    return out
+  }
+  const openEmailMedia = (messageId: string, attachmentIndex: number) => {
+    const at = emailGalleryMedia().findIndex(x => x.key === `${messageId}:${attachmentIndex}`)
+    if (at >= 0) setGalleryIndex(chatGalleryMedia().length + at)
+  }
   const [storyView, setStoryView] = useState<{ items: MediaItem[]; index: number } | null>(null)
   const [showDoa, setShowDoa] = useState(false)
   const [doaMatch, setDoaMatch] = useState(false)
@@ -7634,10 +7655,7 @@ export default function InboxPage() {
 
       {/* Media gallery / lightbox */}
       {galleryIndex !== null && (() => {
-        const media: MediaItem[] = []
-        messages.forEach(m => (Array.isArray(m.attachments) ? m.attachments : []).forEach((a: any) => {
-          { const isImg = a.kind === 'image' || String(a.type||'').startsWith('image'); const isVid = a.kind === 'video' || String(a.type||'').startsWith('video'); if ((isImg || isVid) && a.url) media.push({ url: a.url, name: a.name, kind: isVid ? 'video' : 'image', poster: videoPoster(a) }) }
-        }))
+        const media: MediaItem[] = [...chatGalleryMedia(), ...emailGalleryMedia().map(({ key: _k, ...x }) => x)]
         return <MediaGallery items={media} index={galleryIndex} onClose={() => setGalleryIndex(null)} onIndex={setGalleryIndex} />
       })()}
 
@@ -8870,7 +8888,7 @@ export default function InboxPage() {
                   return (
                     <div key={msg.id} id={`cmsg-${msg.id}`} data-cmsg="1">
                       {dateDivider}
-                      <EmailMessage msg={msg} agentColor={companyInfo?.accent_color} />
+                      <EmailMessage msg={msg} agentColor={companyInfo?.accent_color} onOpenMedia={(i) => openEmailMedia(msg.id, i)} />
                       <p style={{ textAlign: isAgent ? 'right' : 'left', fontSize: 10.5, color: '#9ca3af', margin: '2px 12px 0' }}>
                         {fmtReceipt(msg.created_at, isAgent, 'email')}
                       </p>
@@ -10880,13 +10898,11 @@ export default function InboxPage() {
                   // Email attachments (Gmail streams via /api/email/attachment;
                   // webhook emails carry a direct url).
                   const emailAtts: any[] = []
-                  messages.forEach(m => (Array.isArray(m.email_attachments) ? m.email_attachments : []).forEach((a: any) => {
-                    const url = a.url || (m.gmail_message_id && a.attachmentId
-                      ? `/api/email/attachment?messageId=${encodeURIComponent(m.gmail_message_id)}&attachmentId=${encodeURIComponent(a.attachmentId)}&name=${encodeURIComponent(a.name || 'file')}&conversationId=${encodeURIComponent(m.conversation_id)}${attToken ? `&t=${encodeURIComponent(attToken)}` : ''}`
-                      : null)
+                  messages.forEach(m => (Array.isArray(m.email_attachments) ? m.email_attachments : []).forEach((a: any, ai: number) => {
+                    const url = emailAttachmentUrl(m, a, attToken)
                     if (!url) return
-                    const mime = String(a.mime || a.type || '')
-                    emailAtts.push({ url, name: a.name || 'file', isImage: mime.startsWith('image'), isVideo: mime.startsWith('video') })
+                    const kind = emailAttachmentKind(a)
+                    emailAtts.push({ url, name: a.name || 'file', isImage: kind === 'image', isVideo: kind === 'video', messageId: m.id, index: ai })
                   }))
                   const total = media.length + emailAtts.length
                   if (total === 0) return null
@@ -10913,7 +10929,8 @@ export default function InboxPage() {
                         ))}
                         {emailAtts.map((a, i) => (
                           <a key={`e${i}`} href={a.url} target="_blank" rel="noopener noreferrer" title={a.name}
-                            style={{ position: 'relative', paddingTop: '100%', borderRadius: 8, overflow: 'hidden', background: 'var(--canvas)', display: 'block', textDecoration: 'none' }}>
+                            onClick={(a.isImage || a.isVideo) ? (e => { e.preventDefault(); openEmailMedia(a.messageId, a.index) }) : undefined}
+                            style={{ position: 'relative', paddingTop: '100%', borderRadius: 8, overflow: 'hidden', background: 'var(--canvas)', display: 'block', textDecoration: 'none', cursor: (a.isImage || a.isVideo) ? 'zoom-in' : 'pointer' }}>
                             {a.isImage ? (
                               <img src={a.url} alt={a.name} loading="lazy" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
                             ) : a.isVideo ? (
