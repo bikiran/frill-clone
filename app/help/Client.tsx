@@ -4,6 +4,8 @@ import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
 import { useTerminology } from '@/lib/terminologyContext'
+import { HELP_LIST_COLUMNS, helpExcerpt, toCatMap } from '@/lib/help-shared'
+import type { HelpIndexData } from '@/lib/help-public'
 
 const ADMIN_EMAIL = 'bishalstha76@gmail.com'
 
@@ -30,16 +32,25 @@ const DEMO_ARTICLES = [
   { id: 'demo-9', title: 'REST API overview', content: 'Colvy provides a REST API for programmatic access to your data.\n\n## Authentication\nAll API requests require an API key in the Authorization header:\n```\nAuthorization: Bearer YOUR_API_KEY\n```\n\n## Endpoints\n- GET /api/v1/ideas — List all ideas\n- POST /api/v1/ideas — Create an idea\n- GET /api/v1/announcements — List announcements\n\n## Rate limiting\nAPI requests are limited to 1000 per hour per key.', category: 'API', status: 'published', featured: false, views: 123, likes: 22 },
 ]
 
-export default function HelpCentrePage() {
+// `initial` comes from the server (lib/help-public): this help centre's
+// published articles (titles + excerpts, no bodies), categories and branding,
+// from a short-lived shared cache — so the page renders with its content
+// instead of a spinner. It's undefined when the help centre is locked or the
+// server couldn't load it; the page then loads everything here as before.
+export default function HelpCentrePage({ initial }: { initial?: HelpIndexData } = {}) {
   const { getTerm } = useTerminology()
-  const [articles, setArticles] = useState<any[]>([])
+  const [articles, setArticles] = useState<any[]>(() => {
+    if (!initial) return []
+    if (initial.articles.length) return initial.articles
+    return initial.companyId || initial.onSubdomain ? [] : DEMO_ARTICLES
+  })
   // The company's own support address — a hardcoded support@colvy.com told
   // every customer to email Colvy instead of the business they're buying from.
   const [helpEmail, setHelpEmail] = useState('')
   // Articles store the category SLUG; resolve it to the readable name and the
   // icon configured in Settings → Help Categories.
-  const [catMap, setCatMap] = useState<Record<string, { name: string; icon: string }>>({})
-  const [loading, setLoading] = useState(true)
+  const [catMap, setCatMap] = useState<Record<string, { name: string; icon: string }>>(initial?.catMap ?? {})
+  const [loading, setLoading] = useState(!initial)
   const [search, setSearch] = useState('')
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null)
   const [user, setUser] = useState<any>(null)
@@ -48,14 +59,19 @@ export default function HelpCentrePage() {
   const [showSearchDropdown, setShowSearchDropdown] = useState(false)
   const [accessLocked, setAccessLocked] = useState(false)
   const [darkMode, setDarkMode] = useState(false)
-  const [cid, setCid] = useState<string | null>(null)
-  const [companyName, setCompanyName] = useState('')
-  const [helpCover, setHelpCover] = useState('')
+  const [cid, setCid] = useState<string | null>(initial?.companyId ?? null)
+  const [companyName, setCompanyName] = useState(initial?.companyName ?? '')
+  const [helpCover, setHelpCover] = useState(initial?.helpCover ?? '')
   const searchRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }: any) => setUser(data?.session?.user))
-    fetchArticles()
+    if (initial) {
+      loadContactEmail()
+      showDraftsToAdmins(initial.companyId, initial.onSubdomain)
+    } else {
+      fetchArticles()
+    }
     // ?theme=dark → dark mode (used by the admin preview and shareable links)
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search)
@@ -63,7 +79,7 @@ export default function HelpCentrePage() {
     }
     // Access control: locked help centers require sign-in
     ;(async () => {
-      const companyId = await getCompanyId()
+      const companyId = initial ? initial.companyId : await getCompanyId()
       setCid(companyId)
       if (!companyId) return
       const { data: rows } = await (supabase as any).from('site_settings').select('value')
@@ -75,6 +91,26 @@ export default function HelpCentrePage() {
       }
     })()
   }, [])
+
+  // Article bodies are only needed to search inside them, so they're loaded the
+  // first time someone uses the search box rather than with the page.
+  const bodiesLoaded = useRef(!initial)
+  const loadBodies = () => {
+    if (bodiesLoaded.current || !initial) return
+    if (!initial.companyId && initial.onSubdomain) return
+    bodiesLoaded.current = true
+    ;(async () => {
+      try {
+        let q = (supabase as any).from('help_articles').select('id, content').eq('status', 'published')
+        if (initial.companyId) q = q.eq('company_id', initial.companyId)
+        const { data, error } = await q
+        if (error || !data) { bodiesLoaded.current = false; return }
+        const bodies = new Map<string, string>(data.map((r: any) => [r.id, r.content]))
+        setArticles(prev => prev.map(a => a.content === undefined && bodies.has(a.id) ? { ...a, content: bodies.get(a.id) } : a))
+      } catch { bodiesLoaded.current = false }
+    })()
+  }
+  useEffect(() => { if (search.trim()) loadBodies() }, [search])
 
   // Track searches (debounced) for help center analytics
   const searchTrackTimer = useRef<any>(null)
@@ -110,63 +146,75 @@ export default function HelpCentrePage() {
     const h = window.location.hostname
     return h.endsWith('.colvy.com') && h !== 'colvy.com' && h !== 'www.colvy.com'
   }
-  const getCompanyId = async () => {
-    if (typeof window === 'undefined') return null
-    const h = window.location.hostname
-    if (h.endsWith('.colvy.com') && h !== 'colvy.com' && h !== 'www.colvy.com') {
-      const slug = h.replace('.colvy.com', '')
+
+  const loadContactEmail = async () => {
+    if (!isOnCompanySubdomain()) return
+    const slug = window.location.hostname.replace('.colvy.com', '')
+    try {
+      const r = await fetch(`/api/help/contact?slug=${encodeURIComponent(slug)}`)
+      const d = await r.json()
+      if (d.email) setHelpEmail(d.email)
+    } catch { /* keep the default */ }
+  }
+
+  // One company lookup per page (it used to run twice, each time waiting on the
+  // contact-address request before returning).
+  const companyLookup = useRef<Promise<string | null> | null>(null)
+  const getCompanyId = () => {
+    if (!companyLookup.current) companyLookup.current = (async () => {
+      if (!isOnCompanySubdomain()) return null
+      const slug = window.location.hostname.replace('.colvy.com', '')
+      loadContactEmail()
       const { data } = await (supabase as any).from('companies').select('id, name, help_cover_url, accent_color').eq('slug', slug).maybeSingle()
       if (data?.name) setCompanyName(data.name)
       if (data?.help_cover_url) setHelpCover(data.help_cover_url)
-      try {
-        const r = await fetch(`/api/help/contact?slug=${encodeURIComponent(slug)}`)
-        const d = await r.json()
-        if (d.email) setHelpEmail(d.email)
-      } catch { /* keep the default */ }
       return data?.id || null
-    }
-    return null
+    })()
+    return companyLookup.current
+  }
+
+  // Only company admins may see drafts/private articles; the public sees published only
+  const isAdminViewer = async () => {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session?.user) return false
+    const { isCompanyAdminUser } = await import('@/lib/board')
+    return isCompanyAdminUser(session.user)
+  }
+
+  // The server only renders published articles; a signed-in admin also gets
+  // their drafts, loaded here after the page is already on screen.
+  const showDraftsToAdmins = async (companyId: string | null, onSubdomain: boolean) => {
+    try {
+      if (!companyId && onSubdomain) return
+      if (!(await isAdminViewer())) return
+      let q = (supabase as any).from('help_articles').select(`${HELP_LIST_COLUMNS}, content`)
+      if (companyId) q = q.eq('company_id', companyId)
+      const { data } = await q.order('created_at', { ascending: false })
+      if (data?.length) { bodiesLoaded.current = true; setArticles(data) }
+    } catch {}
   }
 
   const fetchArticles = async () => {
     try {
       const companyId = await getCompanyId()
-      try {
-        const { data: cats } = await (supabase as any)
-          .from('help_categories').select('slug, name, icon')
-        if (cats) {
-          const m: Record<string, { name: string; icon: string }> = {}
-          for (const c of cats) m[c.slug] = { name: c.name, icon: c.icon || '📁' }
-          setCatMap(m)
-        }
-      } catch { /* fall back to the raw category value */ }
-      let q = (supabase as any).from('help_articles').select('*')
-      if (companyId) {
-        q = q.eq('company_id', companyId)
-      } else if (isOnCompanySubdomain()) {
+      if (!companyId && isOnCompanySubdomain()) {
         setArticles([]); setLoading(false); return
       }
-      const { data } = await q.order('created_at', { ascending: false })
-      // Only company admins may see drafts/private articles; the public sees published only
-      const { isCompanyAdminUser } = await import('@/lib/board')
-      const { data: { session } } = await supabase.auth.getSession()
-      const admin = session?.user ? await isCompanyAdminUser(session.user) : false
+      // Categories, articles (no inline media) and the admin check together.
+      let catQ = (supabase as any).from('help_categories').select('slug, name, icon')
+      if (companyId) catQ = catQ.eq('company_id', companyId)
+      let q = (supabase as any).from('help_articles').select(`${HELP_LIST_COLUMNS}, content`)
+      if (companyId) q = q.eq('company_id', companyId)
+      const [catRes, { data }, admin] = await Promise.all([
+        Promise.resolve(catQ).catch(() => ({ data: null })),
+        q.order('created_at', { ascending: false }),
+        isAdminViewer(),
+      ])
+      if (catRes?.data) setCatMap(toCatMap(catRes.data))
       const visible = (data || []).filter((a: any) => admin || a.status === 'published')
       setArticles(visible.length ? visible : (companyId ? [] : DEMO_ARTICLES))
     } catch { setArticles(DEMO_ARTICLES) }
-
     setLoading(false)
-      // Set page title from company name
-      if (typeof document !== 'undefined' && typeof window !== 'undefined') {
-        const h = window.location.hostname
-        if (h.endsWith('.colvy.com') && h !== 'colvy.com') {
-          const slug = h.replace('.colvy.com', '')
-          const cached = localStorage.getItem(`company_${slug}`)
-          const co = cached ? JSON.parse(cached) : null
-          const name = co?.name || slug.charAt(0).toUpperCase() + slug.slice(1)
-          // Tab title is set centrally by app/layout.tsx
-        }
-      }
   }
 
   const isAdmin = isCompanyAdmin
@@ -188,7 +236,8 @@ export default function HelpCentrePage() {
   const catCount = (c: string) => articles.filter(a => a.category === c).length
   const heroTitle = companyName ? `${companyName} Help Centre` : 'Help Centre'
   const onCover = !!helpCover
-  const excerpt = (a: any) => (a.content || '').replace(/#{1,6} /g, '').replace(/```[\s\S]*?```/g, '').replace(/[*_>#`]/g, '').slice(0, 110)
+  // Server rows carry a ready-made excerpt; demo/admin rows still have the body.
+  const excerpt = (a: any) => a.excerpt ?? helpExcerpt(a.content)
 
   return (
     <div className="min-h-screen" style={{ background: darkMode ? '#111214' : 'var(--canvas)', filter: darkMode ? 'invert(0.92) hue-rotate(180deg)' : 'none' }}>
@@ -225,7 +274,7 @@ export default function HelpCentrePage() {
             type="text"
             value={search}
             onChange={e => setSearch(e.target.value)}
-            onFocus={() => search && setShowSearchDropdown(searchResults.length > 0)}
+            onFocus={() => { loadBodies(); if (search) setShowSearchDropdown(searchResults.length > 0) }}
             placeholder={getTerm('help_search')}
             className="w-full focus:outline-none bg-white"
             style={{ padding: '17px 60px 17px 52px', borderRadius: 999, border: 'none', fontSize: '16px', boxShadow: '0 12px 34px rgba(15,23,42,0.16)' }}

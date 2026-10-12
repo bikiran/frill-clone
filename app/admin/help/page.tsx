@@ -1,11 +1,15 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { IconEdit, IconLink, IconView, IconDelete } from '@/components/SvgIcons'
 import { confirmDialog } from '@/components/ConfirmDialog'
+import { peekCompanyUser, resolveCompanyUser, readCache, writeCache } from '@/lib/client-cache'
+import { readLocal, writeLocal } from '@/lib/local-cache'
+import { HELP_LIST_COLUMNS } from '@/lib/help-shared'
+import { refreshPublicHelp } from '@/lib/help-revalidate'
 
 
 const SEED_ARTICLES = [
@@ -20,53 +24,97 @@ const SEED_ARTICLES = [
   { title: 'REST API overview', content: `# REST API overview\n\nColvy provides a REST API for programmatic access to your data.\n\n## Authentication\n\n\`\`\`\nAuthorization: Bearer YOUR_API_KEY\n\`\`\`\n\n## Endpoints\n\n- \`GET /api/v1/ideas\` — List all ideas\n- \`POST /api/v1/ideas\` — Create an idea\n- \`GET /api/v1/announcements\` — List announcements\n\n## Rate limiting\n\n1,000 requests per hour per API key.`, category: 'API', status: 'published', featured: false, views: 123, likes: 22 },
 ]
 
-export default function HelpAdminPage() {
-  // Get company_id from hostname slug (most reliable approach)
-  const getMyCompanyId = async () => {
-    if (typeof window !== 'undefined') {
-      const h = window.location.hostname
-      if (h.endsWith('.colvy.com') && h !== 'colvy.com') {
-        const slug = h.replace('.colvy.com', '')
-        const { data: co } = await (supabase as any).from('companies').select('id').eq('slug', slug).maybeSingle()
-        if (co?.id) return co.id
-      }
-    }
-    const { data: { session } } = await supabase.auth.getSession()
-    if (session?.user) {
-      const { data: co } = await (supabase as any).from('companies').select('id').eq('owner_id', session.user.id).maybeSingle()
-      return co?.id || null
-    }
-    return null
-  }
+// The list only needs these columns. Bodies and media (inline base64 uploads,
+// often megabytes) are fetched for the open article only.
+const LIST_COLUMNS = `${HELP_LIST_COLUMNS}, company_id`
+const memKey = (cid: string | null) => `help-admin:${cid || 'none'}`
+// Body + media of articles already opened this session, shown straight away
+// when you come back to one (and refreshed in the background).
+const detailCache = new Map<string, { content: string | null; media: any[] | null }>()
 
+export default function HelpAdminPage() {
   const router = useRouter()
-  const [user, setUser] = useState<any>(null)
-  const [articles, setArticles] = useState<any[]>([])
-  const [selected, setSelected] = useState<any>(null)
-  const [loading, setLoading] = useState(true)
+  // Paint the last list seen (this session, or this device) straight away and
+  // refresh it in the background, instead of a "Loading..." screen every visit.
+  const seed = peekCompanyUser()
+  const seeded = seed?.user ? readCache<any[]>(memKey(seed.companyId)) : undefined
+  const [user, setUser] = useState<any>(seeded ? seed?.user : null)
+  const [companyId, setCompanyId] = useState<string | null>(seeded ? seed?.companyId ?? null : null)
+  const [articles, setArticles] = useState<any[]>(seeded ?? [])
+  const [selected, setSelected] = useState<any>(seeded?.[0] ?? null)
+  const [details, setDetails] = useState<Record<string, { content: string | null; media: any[] | null }>>(() => Object.fromEntries(detailCache))
+  const [loading, setLoading] = useState(!seeded)
   const [seeding, setSeeding] = useState(false)
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
+  const userIdRef = useRef<string | null>(seed?.user?.id ?? null)
+
+  // Show a list and remember it for the next visit.
+  const commitList = (list: any[], cid: string | null) => {
+    setArticles(list)
+    writeCache(memKey(cid), list)
+    writeLocal('help-admin', userIdRef.current, cid || '', list)
+  }
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }: any) => {
+    supabase.auth.getSession().then(async ({ data }: any) => {
       const u = data?.session?.user
       setUser(u)
-      fetchArticles()
+      userIdRef.current = u?.id || null
+      let started: string | null | undefined = seeded ? (seed?.companyId ?? null) : undefined
+      if (started === undefined && u) {
+        const cached = readLocal<any[]>('help-admin', u.id)
+        if (cached && Array.isArray(cached.data)) {
+          started = cached.companyId || null
+          setCompanyId(started)
+          setArticles(cached.data)
+          setSelected((prev: any) => prev || cached.data[0] || null)
+          setLoading(false)
+        }
+      }
+      const cid = u ? (await resolveCompanyUser()).companyId : null
+      if (started !== undefined && cid !== started) {
+        // A different workspace than the cached list — start clean.
+        setArticles([]); setSelected(null); setLoading(true)
+      }
+      setCompanyId(cid)
+      fetchArticles(cid)
     })
   }, [router])
 
-  const fetchArticles = async () => {
+  const fetchArticles = async (cid: string | null = companyId) => {
     try {
-      const companyId = await getMyCompanyId()
-      let q = (supabase as any).from('help_articles').select('*').order('created_at', { ascending: false })
-      if (companyId) q = q.eq('company_id', companyId)
-      const { data } = await q
+      let q = (supabase as any).from('help_articles').select(LIST_COLUMNS).order('created_at', { ascending: false })
+      if (cid) q = q.eq('company_id', cid)
+      const { data, error } = await q
+      if (error) throw error
       const list = data || []
-      setArticles(list)
+      commitList(list, cid)
       if (list.length > 0) setSelected((prev: any) => prev ? list.find((a: any) => a.id === prev.id) || list[0] : list[0])
-    } catch { setArticles([]) }
+    } catch { setArticles(prev => prev.length ? prev : []) }
     setLoading(false)
   }
+
+  // Load the body/media of the article that's open — and only that one. A copy
+  // from earlier this session shows at once; it's still refreshed once per
+  // visit in case the article was edited since.
+  const fetchedDetails = useRef(new Set<string>())
+  useEffect(() => {
+    const id = selected?.id
+    if (!id || fetchedDetails.current.has(id)) return
+    fetchedDetails.current.add(id)
+    ;(async () => {
+      try {
+        const { data } = await (supabase as any).from('help_articles').select('id, content, media').eq('id', id).maybeSingle()
+        if (!data) { fetchedDetails.current.delete(id); return }
+        const d = { content: data.content ?? null, media: data.media ?? null }
+        detailCache.set(id, d)
+        setDetails(prev => ({ ...prev, [id]: d }))
+      } catch { fetchedDetails.current.delete(id) }
+    })()
+  }, [selected?.id])
+
+  // The open article with its body merged in once it has loaded.
+  const current = selected ? { ...selected, ...(details[selected.id] || {}) } : null
 
   const seedArticles = async () => {
     setSeeding(true)
@@ -75,6 +123,7 @@ export default function HelpAdminPage() {
         SEED_ARTICLES.map(a => ({ ...a, media: [] }))
       )
       await fetchArticles()
+      refreshPublicHelp(companyId)
     } catch (err: any) {
       alert('Seed failed: ' + err.message)
     }
@@ -84,9 +133,11 @@ export default function HelpAdminPage() {
   const deleteArticle = async (id: string) => {
     if (!await confirmDialog('Delete this article?')) return
     await (supabase as any).from('help_articles').delete().eq('id', id)
-    setArticles(prev => prev.filter((a: any) => a.id !== id))
+    detailCache.delete(id)
+    commitList(articles.filter((a: any) => a.id !== id), companyId)
     if (selected?.id === id) setSelected(null)
     setOpenMenuId(null)
+    refreshPublicHelp(companyId, [id])
   }
 
   const copyLink = (id: string) => {
@@ -237,17 +288,17 @@ export default function HelpAdminPage() {
 
                 <div className="bg-white rounded-2xl border p-6" style={{ borderColor: 'var(--border)' }}>
                   <div className="prose max-w-none text-sm leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--ink)', fontSize: '15px', lineHeight: 1.8 }}>
-                    {selected.content?.replace(/#{1,6} /g, '').replace(/\*\*([^*]+)\*\*/g, '$1').replace(/`([^`]+)`/g, '$1').slice(0, 600)}
-                    {selected.content?.length > 600 && '...'}
+                    {current?.content?.replace(/#{1,6} /g, '').replace(/\*\*([^*]+)\*\*/g, '$1').replace(/`([^`]+)`/g, '$1').slice(0, 600)}
+                    {current?.content?.length > 600 && '...'}
                   </div>
                 </div>
 
                 {/* Media gallery preview */}
-                {selected.media?.length > 0 && (
+                {current?.media?.length > 0 && (
                   <div className="bg-white rounded-2xl border p-4" style={{ borderColor: 'var(--border)' }}>
-                    <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'var(--slate)' }}>Media ({selected.media.length})</p>
+                    <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'var(--slate)' }}>Media ({current?.media.length})</p>
                     <div className="flex gap-2 flex-wrap">
-                      {selected.media.map((m: any, i: number) => (
+                      {current?.media.map((m: any, i: number) => (
                         <div key={i} className="w-20 h-16 rounded-lg overflow-hidden border" style={{ borderColor: 'var(--border)' }}>
                           {m.type === 'youtube' ? (
                             <div className="w-full h-full flex items-center justify-center" style={{ background: '#fef2f2' }}>
@@ -256,7 +307,7 @@ export default function HelpAdminPage() {
                           ) : m.type === 'video' ? (
                             <video src={m.src} className="w-full h-full object-cover" muted />
                           ) : (
-                            <img src={m.src} className="w-full h-full object-cover" />
+                            <img src={m.src} loading="lazy" decoding="async" className="w-full h-full object-cover" />
                           )}
                         </div>
                       ))}
