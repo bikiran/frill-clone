@@ -7,7 +7,7 @@ import { mapWooStatus, mapWooPayment, statusMeta } from '@/lib/orders'
 import { WooCommerceService } from '@/lib/woocommerce-service'
 import { replyToReview } from '@/lib/google-business'
 import { loadCompanyPublic, createInvite, bookingPageUrl } from '@/lib/booking'
-import { searchKnowledge } from '@/lib/ai-knowledge'
+import { smartSearchKnowledge } from '@/lib/ai-knowledge'
 import { BUILDER_TOOLS, BUILDER_TOOL_NAMES, runBuilderAction, runBuilderRead } from '@/lib/ai-assistant/builders'
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -846,7 +846,8 @@ export async function runReadTool(db: SupabaseClient, ctx: AssistantContext, nam
   }
 
   if (name === 'ask_knowledge') {
-    const hits = await searchKnowledge(D, ctx.companyId, String(args?.question || ''), 6).catch(() => [])
+    // Search by meaning (lib/ai-knowledge): only passages that actually answer it count as found.
+    const hits = await smartSearchKnowledge(D, ctx.companyId, String(args?.question || ''), 6).catch(() => [])
     if (!hits.length) return { found: false, note: 'Nothing in the knowledge library covers this. Say so; do not guess.' }
     return { found: true, sources: hits.map(h => ({ source: h.source, title: h.title, text: String(h.content || '').slice(0, 900), url: h.url })) }
   }

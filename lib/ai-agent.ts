@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-import { searchKnowledge } from '@/lib/ai-knowledge'
+import { smartSearchKnowledge } from '@/lib/ai-knowledge'
 import { logUnanswered } from '@/lib/ai-unanswered'
 import { findProducts } from '@/lib/product-search'
 import { agentsPaused } from '@/lib/agent/pilot'
@@ -48,8 +48,8 @@ export interface AiResult {
 // Pull the most relevant knowledge for this question. Keyword scoring — simple,
 // predictable, and it never hallucinates a source.
 export async function retrieve(db: any, companyId: string, question: string, limit = 8) {
-  // Ranked full-text search over the knowledge library (with synonyms), see lib/ai-knowledge.
-  return searchKnowledge(db, companyId, question, limit)
+  // Search by meaning over the knowledge library, see lib/ai-knowledge.
+  return smartSearchKnowledge(db, companyId, question, limit)
 }
 
 async function log(db: any, row: any) {
