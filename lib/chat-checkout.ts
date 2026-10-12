@@ -1,5 +1,6 @@
 import Stripe from 'stripe'
 import { stripeSecretFor } from '@/lib/company-secrets'
+import { collectParams, collectMetadata, type PayLinkCollect } from '@/lib/paylink-capture'
 
 // Shared Stripe Checkout logic for customer "pay by link" payments, used by both
 // the send endpoint (/api/stripe/chat-payment) and the durable pay resolver
@@ -55,6 +56,9 @@ export type ChatCheckoutOpts = {
   // and prefill the customer's email — used by booking holds.
   expiresAt?: number
   customerEmail?: string | null
+  // Pay links only: what the checkout asks for (address, phone, saving the
+  // card). See lib/paylink-capture.
+  collect?: PayLinkCollect
 }
 
 // Create a hosted Checkout session on the business's account. Card data stays
@@ -69,7 +73,11 @@ export async function createChatCheckoutSession(company: any, opts: ChatCheckout
   const feePct = useOwnKeys ? 0 : parseFloat(process.env.COLVY_PAYMENT_FEE_PCT || '0')
   const applicationFee = feePct > 0 ? Math.round(opts.cents * (feePct / 100)) : 0
 
-  return s.checkout.sessions.create({
+  const collect = opts.collect ? collectParams(opts.collect) : {}
+  const { payment_intent_data: collectPi, ...collectRest } = collect
+  const piData = { ...(applicationFee > 0 ? { application_fee_amount: applicationFee } : {}), ...(collectPi || {}) }
+
+  const params: any = {
     mode: 'payment',
     payment_method_types: ['card'],
     line_items: [{
@@ -80,18 +88,31 @@ export async function createChatCheckoutSession(company: any, opts: ChatCheckout
       },
       quantity: 1,
     }],
-    payment_intent_data: applicationFee > 0 ? { application_fee_amount: applicationFee } : undefined,
+    payment_intent_data: Object.keys(piData).length ? piData : undefined,
     success_url: successUrl,
     cancel_url: opts.cancelUrl || cancelUrl,
     ...(opts.expiresAt ? { expires_at: opts.expiresAt } : {}),
-    ...(opts.customerEmail ? { customer_email: opts.customerEmail } : {}),
+    ...(opts.customerEmail && !collectRest.customer ? { customer_email: opts.customerEmail } : {}),
+    ...collectRest,
     metadata: {
       kind: opts.kind || 'chat_payment', companyId: opts.companyId, conversationId: opts.conversationId,
       orderId: opts.orderId ? String(opts.orderId) : '',
       integrationId: opts.integrationId ? String(opts.integrationId) : '',
       originHost: opts.originHost || '', originVerified: opts.originVerified ? '1' : '0',
       pageUrl: (opts.pageUrl || '').slice(0, 400),
+      ...(opts.collect ? collectMetadata(opts.collect) : {}),
       ...(opts.extraMetadata || {}),
     },
-  }, connectOpts)
+  }
+  try {
+    return await s.checkout.sessions.create(params, connectOpts)
+  } catch (e: any) {
+    // The customer's stored Stripe id belongs to another Stripe account (the
+    // business switched accounts or modes): start a fresh customer instead.
+    if (params.customer && (e?.code === 'resource_missing' || /no such customer/i.test(String(e?.message || '')))) {
+      const { customer: _c, ...rest } = params
+      return s.checkout.sessions.create({ ...rest, customer_creation: 'always' }, connectOpts)
+    }
+    throw e
+  }
 }

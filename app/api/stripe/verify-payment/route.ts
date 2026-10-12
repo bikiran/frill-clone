@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import Stripe from 'stripe'
 import { confirmChatPayment } from '@/lib/chat-payment-confirm'
+import { captureFromPayLink } from '@/lib/paylink-capture'
 import { stripeSecretFor } from '@/lib/company-secrets'
 
 export const dynamic = 'force-dynamic'
@@ -76,7 +77,13 @@ export async function POST(req: NextRequest) {
           cardBrand: card?.brand || null, cardLast4: card?.last4 || null,
         })
 
-        if (res.confirmed) updated++
+        if (res.confirmed) {
+          updated++
+          // Pay links: fill the customer's details / address / saved card.
+          if (session?.metadata?.kind === 'chat_payment') {
+            try { await captureFromPayLink(db, { companyId: pay.company_id, sessionId, paymentId: pay.id }) } catch {}
+          }
+        }
         results.push({ id: pay.id, status: res.confirmed ? 'paid' : 'already-confirmed' })
       } catch (e: any) {
         results.push({ id: pay.id, error: e.message })
