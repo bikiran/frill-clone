@@ -216,7 +216,7 @@ export async function GET(req: NextRequest) {
           return resolveSla(co?.ticket_sla_settings)
         } catch { return resolveSla(null) }
       })(),
-      loadTicketTeam(db, companyId),
+      loadTicketTeam(db, companyId).catch(() => [] as { userId: string; name: string }[]),
     ])
     const { data } = await q.order('created_at', { ascending: false })
     const tickets = data || []
