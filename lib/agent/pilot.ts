@@ -281,3 +281,43 @@ export async function setSalesFollowup(db: any, companyId: string, raw: any, use
   await putPolicy(db, { company_id: companyId, role_key: 'sales', action_key: 'send_sales_followup', autonomy: s.enabled ? 'act_within_limits' : 'prepare', limits: { on: s.on, max_per_day: s.max_per_day, after_days: s.after_days }, updated_by: userId })
   return s
 }
+
+// ── Earned trust + weekly summary ────────────────────────────────────────────
+// Role-less settings rows: suggestions the business said "not now" to (hidden
+// for a while), and the weekly summary email (on unless switched off).
+
+const TRUST_ACTION = 'trust_dismissed'
+const DIGEST_ACTION = 'weekly_digest'
+export const TRUST_SNOOZE_DAYS = 60
+
+export async function getTrustDismissed(db: any, companyId: string): Promise<Record<string, string>> {
+  try {
+    const { data } = await db.from('agent_policies').select('limits').eq('company_id', companyId).is('role_key', null).eq('action_key', TRUST_ACTION).limit(1)
+    const m = data?.[0]?.limits?.dismissed
+    return m && typeof m === 'object' ? m : {}
+  } catch { return {} }
+}
+
+export async function dismissTrust(db: any, companyId: string, key: string, userId: string | null): Promise<void> {
+  const cur = await getTrustDismissed(db, companyId)
+  const cutoff = Date.now() - TRUST_SNOOZE_DAYS * 86_400_000
+  const kept = Object.fromEntries(Object.entries(cur).filter(([, at]) => new Date(at).getTime() > cutoff))
+  await putPolicy(db, { company_id: companyId, role_key: null, action_key: TRUST_ACTION, autonomy: 'prepare', limits: { dismissed: { ...kept, [String(key).slice(0, 120)]: new Date().toISOString() } }, updated_by: userId })
+}
+
+export type DigestSettings = { enabled: boolean; last_week?: string | null }
+
+export async function getDigest(db: any, companyId: string): Promise<DigestSettings> {
+  try {
+    const { data } = await db.from('agent_policies').select('limits').eq('company_id', companyId).is('role_key', null).eq('action_key', DIGEST_ACTION).limit(1)
+    const l = data?.[0]?.limits
+    return { enabled: l?.enabled !== false, last_week: l?.last_week || null }
+  } catch { return { enabled: true, last_week: null } }
+}
+
+export async function setDigest(db: any, companyId: string, patch: Partial<DigestSettings>, userId: string | null): Promise<DigestSettings> {
+  const cur = await getDigest(db, companyId)
+  const next = { enabled: patch.enabled ?? cur.enabled, last_week: patch.last_week !== undefined ? patch.last_week : (cur.last_week || null) }
+  await putPolicy(db, { company_id: companyId, role_key: null, action_key: DIGEST_ACTION, autonomy: 'prepare', limits: next, updated_by: userId })
+  return next
+}
