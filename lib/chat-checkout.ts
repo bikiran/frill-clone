@@ -68,7 +68,9 @@ export async function createChatCheckoutSession(company: any, opts: ChatCheckout
   const { s, connectOpts, useOwnKeys } = await chatStripe(company)
   const colvyBase = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
   const { successBase, cancelUrl } = returnUrls(opts.originHost || null, !!opts.originVerified, colvyBase)
-  const successUrl = opts.successUrl || `${successBase}?session_id={CHECKOUT_SESSION_ID}`
+  // ?c= lets our thank-you / cancelled pages show the business's own name and logo.
+  const c = encodeURIComponent(opts.companyId)
+  const successUrl = opts.successUrl || `${successBase}?session_id={CHECKOUT_SESSION_ID}&c=${c}`
 
   const feePct = useOwnKeys ? 0 : parseFloat(process.env.COLVY_PAYMENT_FEE_PCT || '0')
   const applicationFee = feePct > 0 ? Math.round(opts.cents * (feePct / 100)) : 0
@@ -90,7 +92,7 @@ export async function createChatCheckoutSession(company: any, opts: ChatCheckout
     }],
     payment_intent_data: Object.keys(piData).length ? piData : undefined,
     success_url: successUrl,
-    cancel_url: opts.cancelUrl || cancelUrl,
+    cancel_url: opts.cancelUrl || `${cancelUrl}?c=${c}`,
     ...(opts.expiresAt ? { expires_at: opts.expiresAt } : {}),
     ...(opts.customerEmail && !collectRest.customer ? { customer_email: opts.customerEmail } : {}),
     ...collectRest,

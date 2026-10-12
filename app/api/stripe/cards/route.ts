@@ -76,8 +76,8 @@ export async function POST(req: NextRequest) {
         mode: 'setup',
         payment_method_types: ['card'],
         customer: customerId,
-        success_url: `${base}/pay/card-saved?session_id={CHECKOUT_SESSION_ID}`,
-        cancel_url: `${base}/pay/cancelled`,
+        success_url: `${base}/pay/card-saved?session_id={CHECKOUT_SESSION_ID}&c=${encodeURIComponent(companyId)}`,
+        cancel_url: `${base}/pay/cancelled?c=${encodeURIComponent(companyId)}`,
         metadata: { kind: 'save_card', companyId, conversationId: conversationId || '', contactId: contact.id },
       }, opts)
 

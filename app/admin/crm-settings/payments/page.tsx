@@ -7,7 +7,7 @@ import Link from 'next/link'
 
 export default function PaymentsSettings() {
   const { companyId, loading } = useCompanyUser()
-  const [cfg, setCfg] = useState<any>({ invoice_prefix: 'INV', primary_color: '#1E75FF', secondary_color: '#1E75FF', pass_fees: false, paylink_fill_contact: true, paylink_address: 'none', paylink_phone: false, paylink_save_card: 'ask', paylink_countries: ['AU'] })
+  const [cfg, setCfg] = useState<any>({ invoice_prefix: 'INV', primary_color: '#1E75FF', secondary_color: '#1E75FF', pass_fees: false, paylink_fill_contact: true, paylink_address: 'none', paylink_phone: false, paylink_save_card: 'ask', paylink_countries: ['AU'], paylink_receipt: true })
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [countriesText, setCountriesText] = useState<string | null>(null)
@@ -80,6 +80,8 @@ export default function PaymentsSettings() {
             </div>
           )}
         </div>
+        <ToggleRow title="Email the customer a receipt" desc="Stripe emails a receipt to the address they paid with, even if receipts are switched off in your Stripe settings."
+          checked={cfg.paylink_receipt !== false} onChange={v => set('paylink_receipt', v)} />
         <ToggleRow title="Ask for a phone number" desc="Useful when a customer pays from an email or chat and you don&rsquo;t have their number yet."
           checked={!!cfg.paylink_phone} onChange={v => set('paylink_phone', v)} />
         <div style={{ padding: '14px 0 2px' }}>
