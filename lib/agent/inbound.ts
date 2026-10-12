@@ -16,6 +16,7 @@
 
 import { enqueueRun, runAgent } from './engine'
 import { agentsPaused, getAgentChannels, channelKey } from './pilot'
+import { retireStaleSuggestions } from './approvals'
 
 // Where Colvy AI's older auto-reply also runs — it stands down here once the
 // Support Agent replies on its own (app/api/ai/reply).
@@ -80,6 +81,8 @@ export async function startSupportAgentForConversation(db: any, conversationId: 
     input: { message: text.slice(0, 4000), messageId: lastCustomer.id, channel: conv.channel, routed: why },
   })
   if (deduped) return { started: false, reason: 'already running', runId }
+  // Suggestions drafted for earlier messages are out of date now — this run answers the lot.
+  await retireStaleSuggestions(db, conv.company_id, conversationId, { keepRunId: runId })
   if (opts.run === false) return { started: true, queued: true, runId }
   await runAgent(db, runId, Date.now() + (opts.deadlineMs ?? 200_000))
   return { started: true, runId }

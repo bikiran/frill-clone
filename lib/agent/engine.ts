@@ -12,6 +12,7 @@
 import { createHash } from 'crypto'
 import { getModelClient, type ModelClient, type NeutralBlock, type NeutralMessage, type ToolSpec } from './model'
 import { getAction, validateInput, FINISH_ACTION } from './actions'
+import { retireStaleSuggestions } from './approvals'
 import { decide, loadPolicies } from './policy'
 import { agentsPaused, pauseFrom } from './pilot'
 import { loadRole } from './roles'
@@ -289,6 +290,8 @@ export async function runAgent(db: any, runId: string, deadline: number, model: 
           const stepId = await trail.add({ ...base, status: 'pending', ...(preview ? { output: { preview } } : {}) })
           const hash = createHash('sha256').update(sig).digest('hex')
           await db.from('agent_approvals').insert({ company_id: run.company_id, run_id: run.id, step_id: stepId, action_key: action.key, args: preview ? { ...input, _preview: preview } : input, args_hash: hash, status: 'pending', expires_at: new Date(Date.now() + 24 * 3600_000).toISOString() }).then(() => {}, () => {})
+          // The newest suggested reply replaces any earlier one in the conversation.
+          if (action.key === 'send_message' && run.conversation_id) await retireStaleSuggestions(db, run.company_id, run.conversation_id, { keepRunId: run.id })
           approvals++
           results.push({ type: 'tool_result', id: call.id, content: JSON.stringify({ done: false, waiting_for: 'team approval', note: 'A team member will review this before it happens. Do not tell the customer it is done.' }) })
         } else {

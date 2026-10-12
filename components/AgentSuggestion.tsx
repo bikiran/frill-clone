@@ -83,7 +83,10 @@ export default function AgentSuggestion({ companyId, conversationId, onChange }:
       if (!r.ok) return
       const d = await r.json()
       if (convRef.current !== conversationId) return
+      // At most one suggested reply (the newest — the list is newest first); other kinds as they are.
+      let replyShown = false
       const next: Suggestion[] = (d.approvals || []).filter((a: Suggestion) => ['send_message', 'reschedule_booking', 'cancel_booking', 'send_cart_followup', 'send_order_update'].includes(a.action_key))
+        .filter((a: Suggestion) => a.action_key !== 'send_message' || (!replyShown && (replyShown = true)))
       const ids = next.map(a => a.id).join(',')
       if (ids === shownRef.current) return   // nothing new: leave the card alone
       const grew = next.some(a => !shownRef.current.split(',').includes(a.id))
