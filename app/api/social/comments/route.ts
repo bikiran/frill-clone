@@ -1,8 +1,9 @@
 import { isInternalCall } from '@/lib/internal-call'
 import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
-import { admin, getFacebookChannel, replyToComment, setCommentHidden, privateReply, replyToIgComment, setIgCommentHidden } from '@/lib/social-sync'
-import { isIgLoginChannel, replyInstagramComment, hideInstagramComment, sendInstagramCommentPrivateReply } from '@/lib/instagram-login'
+import { admin, getFacebookChannel, setCommentHidden, privateReply, setIgCommentHidden } from '@/lib/social-sync'
+import { isIgLoginChannel, hideInstagramComment, sendInstagramCommentPrivateReply } from '@/lib/instagram-login'
+import { postCommentReply } from '@/lib/social-reply'
 
 export const dynamic = 'force-dynamic'
 
@@ -87,16 +88,8 @@ Write a short, warm, human reply (1-2 sentences). Don't invent facts or offers. 
     if (action === 'reply') {
       const { message, byAi } = body
       if (!message?.trim()) return NextResponse.json({ error: 'message required' }, { status: 400 })
-      const msg = message.trim()
-      if (isIg && igLogin) {
-        const r = await replyInstagramComment(token, comment.external_comment_id, msg)
-        if (r.error) throw new Error(r.error)
-      } else if (isIg) {
-        await replyToIgComment(comment.external_comment_id, token, msg)
-      } else {
-        await replyToComment(comment.external_comment_id, token, msg)
-      }
-      await db.from('social_comments').update({ is_replied: true, replied_by_ai: !!byAi, reply_text: msg }).eq('id', commentId)
+      const r = await postCommentReply(db, companyId, comment, message, { byAi: !!byAi })
+      if (!r.ok) throw new Error(r.error)
       return NextResponse.json({ ok: true })
     }
 

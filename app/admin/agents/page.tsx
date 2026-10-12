@@ -27,11 +27,12 @@ type Step = {
 
 type SalesAuto = { enabled: boolean; max_per_day: number }
 type DailyAuto = SalesAuto
+type CommentAuto = { on: boolean; enabled: boolean; max_per_day: number }
 type ReviewAuto = { enabled: boolean; min_rating: number; max_per_day: number }
 type AutoSend = { enabled: boolean; topics: string[]; max_per_day: number; max_per_conversation_per_hour: number; require_verified_customer: boolean }
 type Settings = {
   pause: { paused: boolean; byName?: string | null; at?: string | null; platform?: boolean }
-  autoSend: AutoSend; receptionAuto?: AutoSend; reviewAuto?: ReviewAuto; salesAuto?: SalesAuto; opsAuto?: DailyAuto; channels?: string[]; channelOptions?: { key: string; label: string }[]; sentToday: number; waiting: number; topics: { key: string; label: string }[]
+  autoSend: AutoSend; receptionAuto?: AutoSend; reviewAuto?: ReviewAuto; commentAuto?: CommentAuto; salesAuto?: SalesAuto; opsAuto?: DailyAuto; channels?: string[]; channelOptions?: { key: string; label: string }[]; sentToday: number; waiting: number; topics: { key: string; label: string }[]
 }
 type Waiting = Suggestion & { run?: any; conversation?: { id: string; channel: string | null; customer: string | null } | null }
 const TOPIC_SHORT: Record<string, string> = { opening_hours: 'opening hours', order_status: 'order status (when tracking looks normal)', stock: 'stock', store_info: 'things your knowledge covers' }
@@ -48,8 +49,8 @@ const TRY_ROLES: { key: RoleKey; label: string; sample: string }[] = [
   { key: 'operations', label: 'Operations', sample: '' },
 ]
 // What agents prepare for a person (the waiting list), and what counts as "sent on its own".
-const WAITING_ACTIONS = ['send_message', 'reply_to_review', 'reschedule_booking', 'cancel_booking', 'send_cart_followup', 'send_order_update']
-const SENT_ACTIONS = ['send_message', 'auto_reply', 'reply_to_review', 'send_cart_followup', 'send_order_update']
+const WAITING_ACTIONS = ['send_message', 'reply_to_review', 'reply_to_comment', 'reschedule_booking', 'cancel_booking', 'send_cart_followup', 'send_order_update']
+const SENT_ACTIONS = ['send_message', 'auto_reply', 'reply_to_review', 'reply_to_comment', 'send_cart_followup', 'send_order_update']
 
 const ACTION_LABEL: Record<string, string> = {
   get_conversation: 'Read the conversation', get_contact: 'Looked up the customer', ask_knowledge: 'Searched your knowledge',
@@ -58,6 +59,7 @@ const ACTION_LABEL: Record<string, string> = {
   send_message: 'Reply to the customer', escalate_to_human: 'Hand to the team', finish: 'Finished',
   get_business_hours: 'Checked opening hours', find_customer_orders: 'Found the customer’s orders', check_order_status: 'Checked order tracking',
   get_review: 'Read the review', reply_to_review: 'Replied to the review',
+  get_comment: 'Read the comment', reply_to_comment: 'Reply to the comment',
   list_services: 'Looked at your services', check_availability: 'Checked free times', find_my_bookings: 'Found the customer’s bookings', booking_link: 'Made a booking link', reschedule_booking: 'Move a booking', cancel_booking: 'Cancel a booking',
   get_cart: 'Read the cart', send_cart_followup: 'Follow up the cart',
   get_exception: 'Looked at the flagged order', check_order_tracking: 'Checked live tracking', send_order_update: 'Update the customer',
@@ -321,12 +323,13 @@ export default function AgentsPage() {
         <div className="ag-card ag-fade" style={{ marginBottom: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 14, justifyContent: 'space-between' }}>
             <div style={{ minWidth: 0 }}>
-              <p className="ag-h">Reputation Agent on new Google reviews</p>
-              <p className="ag-p">When a new review comes in, the Reputation Agent drafts a reply in your voice. Unhappy reviews also go to your team with a follow-up task.{settings?.reviewAuto?.enabled ? ` It posts replies to ${settings.reviewAuto.min_rating === 5 ? '5' : '4 and 5'}-star reviews on its own; everything else waits for you.` : ' Every reply waits for you to post it.'}</p>
+              <p className="ag-h">Reputation Agent on reviews and comments</p>
+              <p className="ag-p">When a new Google review comes in — and, if you switch it on, a comment on your Facebook or Instagram posts — the Reputation Agent drafts a reply in your voice. Unhappy customers also go to your team with a follow-up task.{settings?.reviewAuto?.enabled ? ` It posts replies to ${settings.reviewAuto.min_rating === 5 ? '5' : '4 and 5'}-star reviews on its own; everything else waits for you.` : ' Every reply waits for you to post it.'}</p>
             </div>
-            <button type="button" role="switch" aria-checked={!!repOn} aria-label="Reputation Agent on new Google reviews" onClick={() => toggleRole('reputation')} disabled={repOn == null || savingRole} className={`ag-switch ${repOn ? 'on' : ''}`}><span /></button>
+            <button type="button" role="switch" aria-checked={!!repOn} aria-label="Reputation Agent on reviews and comments" onClick={() => toggleRole('reputation')} disabled={repOn == null || savingRole} className={`ag-switch ${repOn ? 'on' : ''}`}><span /></button>
           </div>
           {repOn && settings?.reviewAuto && <ReviewAutoPanel value={settings.reviewAuto} saving={savingSettings} onSave={v => saveSettings({ reviewAuto: v })} />}
+          {repOn && settings?.commentAuto && <CommentPanel value={settings.commentAuto} saving={savingSettings} onSave={v => saveSettings({ commentAuto: v })} />}
         </div>
 
         <div className="ag-card ag-fade" style={{ marginBottom: 16 }}>
@@ -358,7 +361,13 @@ export default function AgentsPage() {
             <ul className="ag-wait-list">
               {waiting.map(a => (
                 <li key={a.id}>
-                  {a.action_key === 'reply_to_review' ? (
+                  {a.action_key === 'reply_to_comment' ? (
+                    <div className="ag-wait-head">
+                      <span className="ag-wait-who">{a.run?.input?.author || 'A follower'}</span>
+                      <span className="ag-run-s" style={{ marginTop: 0 }}>{a.run?.input?.platform === 'instagram' ? 'Instagram' : 'Facebook'} comment · {when(a.created_at)}</span>
+                      <a className="ag-link" href="/admin/social">{I.inbox} Open comments</a>
+                    </div>
+                  ) : a.action_key === 'reply_to_review' ? (
                     <div className="ag-wait-head">
                       <span className="ag-wait-who">{a.run?.input?.reviewer || 'A customer'}</span>
                       <span className="ag-run-s" style={{ marginTop: 0 }}>{a.run?.input?.rating ? `${a.run.input.rating}★ ` : ''}Google review · {when(a.created_at)}</span>
@@ -575,7 +584,43 @@ function ChannelPicker({ value, options, saving, onSave }: { value: string[]; op
   )
 }
 
-function DailyAutoPanel({ value, saving, onSave, copy }: { value: DailyAuto; saving: boolean; onSave: (v: DailyAuto) => Promise<boolean>; copy: DailyAutoCopy }) {
+const COMMENT_AUTO_COPY: DailyAutoCopy = {
+  label: 'How it replies to comments', aria: 'How it replies to comments', perDay: 'Most replies a day',
+  note: 'Only friendly comments get a reply on its own. Questions, complaints, anything Colvy flags as sensitive, and replies that mention an order number, phone, email or address always wait for you.',
+  confirmTitle: 'Let the Reputation Agent reply to comments on its own?',
+  confirm: n => `It will post public replies to friendly Facebook and Instagram comments without waiting, up to ${n} a day. Questions, complaints and anything sensitive still wait for you. You can pause it any time.`,
+}
+
+// Facebook / Instagram comments: switched on separately from reviews.
+function CommentPanel({ value, saving, onSave }: { value: CommentAuto; saving: boolean; onSave: (v: CommentAuto) => Promise<boolean> }) {
+  // A stable object, or DailyAutoPanel's "follow the server" effect would loop.
+  const auto = useMemo(() => ({ enabled: value.enabled, max_per_day: value.max_per_day }), [value.enabled, value.max_per_day])
+  const toggle = async () => {
+    if (!value.on) {
+      const ok = await confirmDialog({
+        title: 'Reply to Facebook and Instagram comments too?',
+        message: 'New comments on your posts will go to the Reputation Agent, which drafts a reply in your voice — you post it from here or from Social. Spam, abuse and complaints go to your team instead.',
+        confirmLabel: 'Turn on', tone: 'primary',
+      })
+      if (!ok) return
+    }
+    await onSave({ ...value, on: !value.on, enabled: value.on ? false : value.enabled })
+  }
+  return (
+    <>
+      <div className="ag-verified" style={{ marginTop: 14 }}>
+        <div style={{ minWidth: 0 }}>
+          <div className="ag-step-t" style={{ fontSize: 13.5 }}>Facebook and Instagram comments</div>
+          <div className="ag-step-dec" style={{ marginTop: 1 }}>{value.on ? 'New comments on your posts get a drafted reply.' : 'Off — comments stay in Social for your team.'}</div>
+        </div>
+        <button type="button" role="switch" aria-checked={value.on} aria-label="Reply to Facebook and Instagram comments" className={`ag-switch ${value.on ? 'on' : ''}`} onClick={toggle} disabled={saving}><span /></button>
+      </div>
+      {value.on && <DailyAutoPanel value={auto} saving={saving} onSave={v => onSave({ on: true, ...v })} copy={COMMENT_AUTO_COPY} onLabel="Post friendly ones" />}
+    </>
+  )
+}
+
+function DailyAutoPanel({ value, saving, onSave, copy, onLabel = 'Send on its own' }: { value: DailyAuto; saving: boolean; onSave: (v: DailyAuto) => Promise<boolean>; copy: DailyAutoCopy; onLabel?: string }) {
   const [d, setD] = useState<DailyAuto>(value)
   const dirty = JSON.stringify(d) !== JSON.stringify(value)
   useEffect(() => { if (!dirty) setD(value) }, [value]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -591,7 +636,7 @@ function DailyAutoPanel({ value, saving, onSave, copy }: { value: DailyAuto; sav
       <p className="ag-label" style={{ marginTop: 0 }}>{copy.label}</p>
       <div className="ag-seg" role="radiogroup" aria-label={copy.aria}>
         <button type="button" role="radio" aria-checked={!d.enabled} className={!d.enabled ? 'on' : ''} onClick={() => setD({ ...d, enabled: false })}>Draft for me</button>
-        <button type="button" role="radio" aria-checked={d.enabled} className={d.enabled ? 'on' : ''} onClick={() => setD({ ...d, enabled: true })}>Send on its own</button>
+        <button type="button" role="radio" aria-checked={d.enabled} className={d.enabled ? 'on' : ''} onClick={() => setD({ ...d, enabled: true })}>{onLabel}</button>
         <span className="ag-seg-pill" style={{ transform: d.enabled ? 'translateX(100%)' : 'none' }} />
       </div>
       <div className={`ag-auto-body ${d.enabled ? 'open' : ''}`} aria-hidden={!d.enabled}>
@@ -764,7 +809,7 @@ function StepRow({ s }: { s: Step }) {
     if (s.kind === 'model') return 'Thought it through'
     if (s.kind === 'finish') return `Finished${s.input?.outcome ? ` — ${OUTCOME[s.input.outcome] || s.input.outcome}` : ''}`
     if (s.kind === 'error') return 'Stopped'
-    if (s.kind === 'approval') return s.decision === 'denied' ? 'Team dismissed the suggestion' : s.action_key === 'reply_to_review' ? 'Team approved and posted it' : s.action_key === 'reschedule_booking' || s.action_key === 'cancel_booking' ? 'Team approved the booking change' : 'Team approved and sent it'
+    if (s.kind === 'approval') return s.decision === 'denied' ? 'Team dismissed the suggestion' : ['reply_to_review', 'reply_to_comment'].includes(s.action_key || '') ? 'Team approved and posted it' : s.action_key === 'reschedule_booking' || s.action_key === 'cancel_booking' ? 'Team approved the booking change' : 'Team approved and sent it'
     return ACTION_LABEL[s.action_key || ''] || s.action_key || s.kind
   }, [s])
   const text = s.kind === 'model' ? String(s.output?.text || '') : ''

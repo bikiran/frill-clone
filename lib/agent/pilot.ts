@@ -235,3 +235,24 @@ export async function setAgentChannels(db: any, companyId: string, raw: any, use
   await putPolicy(db, { company_id: companyId, role_key: null, action_key: CHANNELS_ACTION, autonomy: 'prepare', limits: { channels }, updated_by: userId })
   return channels
 }
+
+// ── Reputation Agent: Facebook / Instagram comments ──────────────────────────
+// on: whether it handles comments at all; enabled: whether friendly ones get a
+// reply on their own. One policy row for reply_to_comment holds both.
+
+export type CommentAuto = { on: boolean; enabled: boolean; max_per_day: number }
+export const DEFAULT_COMMENT_AUTO: CommentAuto = { on: false, enabled: false, max_per_day: 30 }
+
+export async function getCommentAuto(db: any, companyId: string): Promise<CommentAuto> {
+  try {
+    const { data } = await db.from('agent_policies').select('autonomy, limits').eq('company_id', companyId).eq('role_key', 'reputation').eq('action_key', 'reply_to_comment').limit(1)
+    const row = data?.[0]
+    return row ? { on: !!row.limits?.on, enabled: row.autonomy === 'act_within_limits', max_per_day: clampInt(row.limits?.max_per_day, 1, 500, DEFAULT_COMMENT_AUTO.max_per_day) } : { ...DEFAULT_COMMENT_AUTO }
+  } catch { return { ...DEFAULT_COMMENT_AUTO } }
+}
+
+export async function setCommentAuto(db: any, companyId: string, raw: any, userId: string | null): Promise<CommentAuto> {
+  const s: CommentAuto = { on: !!raw?.on, enabled: !!raw?.on && !!raw?.enabled, max_per_day: clampInt(raw?.max_per_day, 1, 500, DEFAULT_COMMENT_AUTO.max_per_day) }
+  await putPolicy(db, { company_id: companyId, role_key: 'reputation', action_key: 'reply_to_comment', autonomy: s.enabled ? 'act_within_limits' : 'prepare', limits: { on: s.on, max_per_day: s.max_per_day }, updated_by: userId })
+  return s
+}

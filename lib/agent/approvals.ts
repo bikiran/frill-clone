@@ -4,6 +4,7 @@
 
 import { sendAgentMessage } from './send'
 import { postApprovedReviewReply } from './review-actions'
+import { postApprovedCommentReply } from './comment-actions'
 import { runApprovedBookingAction } from './booking-actions'
 import { sendApprovedCartFollowup } from './sales-actions'
 import { sendApprovedOrderUpdate } from './ops-actions'
@@ -155,15 +156,18 @@ export async function decideApproval(db: any, opts: {
     return r.ok ? { ok: true, status: 'executed' } : { ok: false, error: r.error }
   }
 
-  if (!['send_message', 'reply_to_review', 'send_cart_followup', 'send_order_update'].includes(ap.action_key)) {
+  if (!['send_message', 'reply_to_review', 'reply_to_comment', 'send_cart_followup', 'send_order_update'].includes(ap.action_key)) {
     await db.from('agent_approvals').update({ status: 'failed', result: { error: 'Not supported yet' } }).eq('id', ap.id)
     return { ok: false, error: 'Approving this kind of action isn’t supported yet.' }
   }
   const original = String(ap.args?.text || '')
   const text = String(opts.text ?? original).trim()
   const edited = text !== original.trim()
-  const isReview = ap.action_key === 'reply_to_review'
-  const sent: { ok: boolean; error?: string; channel?: string } = isReview
+  const isComment = ap.action_key === 'reply_to_comment'
+  const isReview = ap.action_key === 'reply_to_review' || isComment   // public replies: "posted"
+  const sent: { ok: boolean; error?: string; channel?: string } = isComment
+    ? await postApprovedCommentReply(db, opts.companyId, run, text).then(r => ({ ...r, channel: r.ok ? (run.input?.platform || 'social') : undefined }))
+    : isReview
     ? await postApprovedReviewReply(db, opts.companyId, run, text).then(r => ({ ...r, channel: r.ok ? 'google' : undefined }))
     : ap.action_key === 'send_cart_followup'
     ? await sendApprovedCartFollowup(db, opts.companyId, run, text, opts.user)
@@ -176,7 +180,7 @@ export async function decideApproval(db: any, opts: {
     kind: 'approval', action_key: ap.action_key, decision: 'allowed',
     decision_reason: sent.ok ? `${who} ${verb} it.` : `${who} approved it, but ${isReview ? 'posting' : 'sending'} failed: ${sent.error}`,
     status: sent.ok ? 'ok' : 'error', input: { text, edited }, output: sent.ok ? { channel: sent.channel } : { error: sent.error },
-    entity_type: isReview ? 'review' : 'conversation', entity_id: isReview ? (run.input?.reviewId || null) : run.conversation_id,
+    entity_type: isComment ? 'comment' : isReview ? 'review' : 'conversation', entity_id: isComment ? (run.input?.commentId || null) : isReview ? (run.input?.reviewId || null) : run.conversation_id,
   })
   await settleRun(db, run)
   return sent.ok ? { ok: true, status: edited ? 'edited' : 'executed' } : { ok: false, error: sent.error }

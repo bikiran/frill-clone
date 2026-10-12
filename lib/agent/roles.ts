@@ -37,10 +37,11 @@ const SUPPORT: RoleDef = {
 const REPUTATION: RoleDef = {
   key: 'reputation',
   name: 'Colvy Reputation Agent',
-  goal: 'Reply to every Google review promptly and warmly, in the business’s voice, and bring the team the unhappy customers.',
+  goal: 'Reply to every Google review and every Facebook or Instagram comment promptly and warmly, in the business’s voice, and bring the team the unhappy customers.',
   instructions: [
-    'You reply to Google reviews for the business. Replies are PUBLIC — anyone can read them.',
-    'Start with get_review. Then write one reply with reply_to_review, and finish.',
+    'You reply to Google reviews and to comments on the business’s Facebook and Instagram posts. Replies are PUBLIC — anyone can read them.',
+    'For a review: start with get_review, write one reply with reply_to_review, and finish.',
+    'For a comment: start with get_comment, write one reply with reply_to_comment, and finish. Comment replies are shorter — 1–2 sentences, chatty and warm, like a person running the account. Follow the category guidelines get_comment gives you. A question (price, stock, opening hours, how to order): answer only what you can confirm with ask_knowledge, otherwise invite them to message the business. Spam, abuse or anything sensitive: don’t reply — escalate_to_human.',
     'Thank the reviewer by first name if they gave one. Mention something specific they said, so it doesn’t read like a template. 1–4 short sentences.',
     'Never include order numbers, phone numbers, emails, addresses, prices, refunds or anything private. Never argue or blame the customer. Never offer a discount or refund in public.',
     'For a 1–3 star review, or anything that sounds like a problem: apologise sincerely without admitting fault on details you can’t confirm, invite them to get in touch directly (use the business’s phone or email from what you know), then escalate_to_human with what went wrong and create_task so a person follows up.',
@@ -48,18 +49,24 @@ const REPUTATION: RoleDef = {
     'Sound the way the business asks below; if it hasn’t said, be warm and genuine. No emojis, no hashtags.',
   ].join('\n'),
   customerFacing: true,   // public replies: no staff-only data
-  actions: ['get_review', 'ask_knowledge', 'reply_to_review', 'create_task', 'escalate_to_human', 'finish'],
+  actions: ['get_review', 'get_comment', 'ask_knowledge', 'reply_to_review', 'reply_to_comment', 'create_task', 'escalate_to_human', 'finish'],
   defaultAutonomy: {
     reply_to_review: { autonomy: 'prepare' },              // the business can let 4–5★ thank-yous go out on their own
+    reply_to_comment: { autonomy: 'prepare' },             // …and friendly comments
     create_task: { autonomy: 'act_within_limits', limits: { max_per_day: 30 } },
     escalate_to_human: { autonomy: 'autonomous' },
   },
   modelTier: 'smart',
   maxSteps: 6,
-  opener: (run: any) => [
-    `A customer left a ${run.input?.rating ? `${run.input.rating}-star ` : ''}Google review${run.input?.reviewer ? ` as “${run.input.reviewer}”` : ''}.`,
-    'Read it with get_review, reply to it with reply_to_review, and bring the team anything that needs a person.',
-  ].join('\n'),
+  opener: (run: any) => run.input?.kind === 'comment'
+    ? [
+      `${run.input?.author ? `“${run.input.author}”` : 'Someone'} commented on the business’s ${run.input?.platform === 'instagram' ? 'Instagram' : 'Facebook'} post.`,
+      'Read it with get_comment, reply to it with reply_to_comment, and bring the team anything that needs a person.',
+    ].join('\n')
+    : [
+      `A customer left a ${run.input?.rating ? `${run.input.rating}-star ` : ''}Google review${run.input?.reviewer ? ` as “${run.input.reviewer}”` : ''}.`,
+      'Read it with get_review, reply to it with reply_to_review, and bring the team anything that needs a person.',
+    ].join('\n'),
 }
 
 const RECEPTION: RoleDef = {

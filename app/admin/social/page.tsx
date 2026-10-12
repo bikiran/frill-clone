@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { useCompanyUser } from '../crm-settings/_shared'
 import PageHeader from '@/components/PageHeader'
+import { SuggestionCard, type Suggestion } from '@/components/AgentSuggestion'
 import Pagination, { usePagination } from '@/components/Pagination'
 
 type Comment = {
@@ -59,6 +60,21 @@ export default function SocialEngagementPage() {
     const clear = setTimeout(() => setHighlightCommentId(null), 6000)
     return () => { clearTimeout(t); clearTimeout(clear) }
   }, [highlightCommentId, comments.length])
+
+  // Replies the Reputation Agent drafted, waiting for a person (by comment id).
+  const [drafts, setDrafts] = useState<Record<string, Suggestion>>({})
+  const loadDrafts = useCallback(async () => {
+    if (!companyId) return
+    try {
+      const r = await authFetch(`/api/agent/approvals?companyId=${companyId}`)
+      if (!r.ok) return
+      const d = await r.json()
+      const map: Record<string, Suggestion> = {}
+      for (const a of d.approvals || []) if (a.action_key === 'reply_to_comment' && a.run?.input?.commentId) map[a.run.input.commentId] = a
+      setDrafts(map)
+    } catch {}
+  }, [companyId])
+  useEffect(() => { loadDrafts() }, [loadDrafts])
 
   // Per-comment reply / DM composer
   const [composer, setComposer] = useState<{ id: string; mode: 'reply' | 'dm'; text: string; busy?: boolean } | null>(null)
@@ -280,7 +296,9 @@ export default function SocialEngagementPage() {
                     </div>
                   </div>
                   <span style={{ fontSize: 11.5, fontWeight: 800, padding: '4px 11px', borderRadius: 999, background: critical ? '#fee2e2' : '#dcfce7', color: critical ? '#dc2626' : '#16a34a', whiteSpace: 'nowrap' }}>
-                    {critical ? '⚠ Critical / Harmful' : '♥ Safe / Positive'}
+                    {critical
+                      ? <><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ display: 'inline-block', verticalAlign: '-1px', marginRight: 4 }}><path d="M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>Critical / Harmful</>
+                      : <><svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style={{ display: 'inline-block', verticalAlign: '-1px', marginRight: 4 }}><path d="M12 21s-7.5-4.6-9.6-9.2C.9 8.3 3.1 4.5 6.8 4.5c2.1 0 3.6 1.1 5.2 3 1.6-1.9 3.1-3 5.2-3 3.7 0 5.9 3.8 4.4 7.3C19.5 16.4 12 21 12 21z" /></svg>Safe / Positive</>}
                   </span>
                 </div>
 
@@ -296,7 +314,15 @@ export default function SocialEngagementPage() {
                   </div>
                 )}
 
-                {composer?.id === c.id ? (
+                {composer?.id !== c.id && !c.is_replied && drafts[c.id] && companyId ? (
+                  <div className="se-agsg" style={{ marginTop: 12 }}>
+                    <style>{'.se-agsg .agsg{max-width:none;margin-left:0}'}</style>
+                    <SuggestionCard s={drafts[c.id]} companyId={companyId} compact onDone={(_id, status) => {
+                      setDrafts(d => { const n = { ...d }; delete n[c.id]; return n })
+                      setTimeout(() => { load(); loadDrafts() }, 600)
+                    }} />
+                  </div>
+                ) : composer?.id === c.id ? (
                   <div style={{ marginTop: 10 }}>
                     <textarea value={composer.text} onChange={e => setComposer({ ...composer, text: e.target.value })} rows={2}
                       placeholder={composer.mode === 'dm' ? 'Private message to the commenter…' : 'Reply publicly…'}
@@ -308,7 +334,7 @@ export default function SocialEngagementPage() {
                   </div>
                 ) : (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginTop: 12, flexWrap: 'wrap' }}>
-                    {!c.is_replied && <button className="se-act" style={{ color: '#7c3aed' }} onClick={() => aiDraft(c)} disabled={drafting === c.id}>✨ {drafting === c.id ? 'Drafting…' : 'Generate AI Reply'}</button>}
+                    {!c.is_replied && <button className="se-act" style={{ color: '#7c3aed' }} onClick={() => aiDraft(c)} disabled={drafting === c.id}><svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style={{ display: 'inline-block', verticalAlign: '-2px', marginRight: 4 }}><path d="M12 2l1.6 5.3L19 9l-5.4 1.7L12 16l-1.6-5.3L5 9l5.4-1.7z" /></svg>{drafting === c.id ? 'Drafting…' : 'Generate AI Reply'}</button>}
                     <button className="se-act" onClick={() => setComposer({ id: c.id, mode: 'reply', text: '' })}>Reply</button>
                     <button className="se-act" onClick={() => setComposer({ id: c.id, mode: 'dm', text: '' })}>Message</button>
                     <button className="se-act" onClick={async () => { await act(c, c.is_hidden ? 'unhide' : 'hide'); patch(c.id, { is_hidden: !c.is_hidden }) }}>{c.is_hidden ? 'Unhide' : 'Hide'}</button>
