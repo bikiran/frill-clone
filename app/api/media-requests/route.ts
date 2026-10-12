@@ -65,6 +65,9 @@ export async function POST(req: NextRequest) {
     // Did this route text the link itself? Callers use it to avoid sending it a
     // second time, and the thread card is labelled from it.
     let texted = false
+    // Why it wasn't texted, when it should have been — so the app can say so
+    // instead of showing a link the customer never received.
+    let smsError: string | null = null
 
     if (conversationId) {
       // Actually deliver the link to the customer over SMS. Previously we only
@@ -93,11 +96,13 @@ export async function POST(req: NextRequest) {
         if (to && conv?.sms_enabled !== false && smsAllowed) {
           const sender = await resolveSmsSender(db, companyId)
           if (sender) { await sender.send({ to, text: smsText }); texted = true }
+          else smsError = 'No SMS number is set up for this workspace.'
         } else if (!to) {
           console.warn('[media-requests] no SMS recipient resolved for conversation', conversationId)
         }
       } catch (e: any) {
         console.error('[media-requests] sms send failed', e?.message || e)
+        smsError = e?.message || 'The text didn’t send.'
       }
 
       // Post the request into the conversation as an agent message, labelled
@@ -118,7 +123,7 @@ export async function POST(req: NextRequest) {
       await db.from('conversations').update({ last_message: 'Requested media upload', last_message_at: new Date().toISOString() }).eq('id', conversationId)
     }
 
-    return NextResponse.json({ ok: true, token, link, texted })
+    return NextResponse.json({ ok: true, token, link, texted, smsError })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
