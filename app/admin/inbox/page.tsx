@@ -2,13 +2,13 @@
 
 import { useAttachmentToken } from '@/lib/useAttachmentToken'
 import VoicePlayer from '@/components/VoicePlayer'
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react'
 import AiLiveReply from '@/components/AiLiveReply'
 import AgentSuggestion from '@/components/AgentSuggestion'
 import { WhyLink } from '@/components/WhyAgent'
 import { supabase } from '@/lib/supabase'
 import { authFetch } from '@/lib/auth-fetch'
-import { peekCompanyUser, readCache, writeCache } from '@/lib/client-cache'
+import { peekCompanyUser, resolveCompanyUser, readCache, writeCache } from '@/lib/client-cache'
 import { uploadAttachment, readJsonSafe } from '@/lib/upload-attachment'
 import MentionInput, { resolveMentions as resolveTeamMentions } from '@/components/MentionInput'
 import { decodeEntities as dec } from '@/lib/decode-entities'
@@ -317,20 +317,66 @@ function mergeEvents(msgs: any[], events: any[], calls: any[] = []) {
     .filter(e => SHOW.includes(e.event_type))
     .map(e => ({ ...e, __event: true }))
 
-  // Postgres timestamps come back with or without a trailing Z depending on the
-  // column type. Parsing inconsistently offset events by the local timezone,
-  // which shoved them all to the bottom of the thread instead of sorting them
-  // in among the messages.
-  const ts = (v: any): number => {
-    if (!v) return 0
-    const s = String(v)
-    // Already has a timezone (Z or ±HH:MM) → parse as-is.
-    const hasTz = /Z$|[+-]\d{2}:?\d{2}$/.test(s)
-    const d = new Date(hasTz ? s : s.replace(' ', 'T') + 'Z')
-    return isNaN(d.getTime()) ? 0 : d.getTime()
-  }
+  // Parse each timestamp ONCE, then sort. Parsing inside the comparator ran the
+  // regex + Date parse ~2·n·log(n) times on every render of the thread (every
+  // keystroke in the composer re-renders it). Array.prototype.sort is stable,
+  // so the resulting order is identical.
+  const all = [...msgs, ...evs, ...(calls || [])]
+  const keyed = all.map(item => ({ item, t: tsOf(item.created_at) }))
+  keyed.sort((a, b) => a.t - b.t)
+  return keyed.map(k => k.item)
+}
 
-  return [...msgs, ...evs, ...(calls || [])].sort((a, b) => ts(a.created_at) - ts(b.created_at))
+// Postgres timestamps come back with or without a trailing Z depending on the
+// column type. Parsing inconsistently offset events by the local timezone,
+// which shoved them all to the bottom of the thread instead of sorting them
+// in among the messages.
+function tsOf(v: any): number {
+  if (!v) return 0
+  const s = String(v)
+  // Already has a timezone (Z or ±HH:MM) → parse as-is.
+  const hasTz = /Z$|[+-]\d{2}:?\d{2}$/.test(s)
+  const d = new Date(hasTz ? s : s.replace(' ', 'T') + 'Z')
+  return isNaN(d.getTime()) ? 0 : d.getTime()
+}
+
+// ── Open-thread windowing ───────────────────────────────────────────────────
+// Long histories (thousands of SMS/chat/email rows with attachments, calls,
+// order cards) used to be fetched in full with select('*') and rendered all at
+// once every time a conversation opened — and re-fetched in full by every
+// poll / refresh. The thread now opens on the newest THREAD_PAGE messages and
+// pulls older pages as the agent scrolls up (or all of them when something
+// needs the whole history, e.g. in-thread search or the AI summary).
+const THREAD_PAGE = 150
+// Last thread shown per conversation, so re-opening a chat (or coming back to
+// the inbox) paints its messages instantly while the fresh copy loads. Small
+// LRU — module scope survives client-side navigation like lib/client-cache.
+const THREAD_CACHE_MAX = 30
+const threadCache = new Map<string, { msgs: any[]; since: string | null }>()
+function threadCacheGet(id: string) {
+  const v = threadCache.get(id)
+  if (v) { threadCache.delete(id); threadCache.set(id, v) }
+  return v
+}
+function threadCacheSet(id: string, v: { msgs: any[]; since: string | null }) {
+  threadCache.delete(id)
+  threadCache.set(id, v)
+  while (threadCache.size > THREAD_CACHE_MAX) {
+    const oldest = threadCache.keys().next().value
+    if (oldest === undefined) break
+    threadCache.delete(oldest)
+  }
+}
+// Run async jobs with bounded concurrency (instead of one-at-a-time awaits).
+async function runPool<T>(items: T[], limit: number, fn: (item: T) => Promise<unknown>) {
+  let next = 0
+  const worker = async () => {
+    while (next < items.length) {
+      const item = items[next++]
+      try { await fn(item) } catch {}
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker))
 }
 
 // Returns "Today" / "Yesterday" / "12 Jul 2026" for a date divider
@@ -569,6 +615,8 @@ export default function InboxPage() {
       .then(({ data }: any) => { const n = data?.[0]?.name; setMyName(n || authName || 'Agent') }, () => {})
   }, [user?.id, companyId])
   const [conversations, setConversations] = useState<Conversation[]>(seededConvs ?? [])
+  const conversationsRef = useRef<Conversation[]>(conversations)
+  conversationsRef.current = conversations
   const [selected, setSelected] = useState<Conversation | null>(null)
   // Token for this conversation's Gmail attachment links (members only).
   const attToken = useAttachmentToken(selected?.id)
@@ -595,14 +643,14 @@ export default function InboxPage() {
   // directly by the bubbles), then photos/videos that arrived on emails.
   const chatGalleryMedia = (): MediaItem[] => {
     const out: MediaItem[] = []
-    messages.forEach(m => (Array.isArray(m.attachments) ? m.attachments : []).forEach((a: any) => {
+    galleryMessages.forEach(m => (Array.isArray(m.attachments) ? m.attachments : []).forEach((a: any) => {
       const isImg = a.kind === 'image' || String(a.type||'').startsWith('image'); const isVid = a.kind === 'video' || String(a.type||'').startsWith('video'); if ((isImg || isVid) && a.url) out.push({ url: a.url, name: a.name, kind: isVid ? 'video' : 'image', poster: videoPoster(a) })
     }))
     return out
   }
   const emailGalleryMedia = (): (MediaItem & { key: string })[] => {
     const out: (MediaItem & { key: string })[] = []
-    messages.forEach(m => (Array.isArray((m as any).email_attachments) ? (m as any).email_attachments : []).forEach((a: any, i: number) => {
+    galleryMessages.forEach(m => (Array.isArray((m as any).email_attachments) ? (m as any).email_attachments : []).forEach((a: any, i: number) => {
       const kind = emailAttachmentKind(a); const url = emailAttachmentUrl(m, a, attToken)
       if (kind && url) out.push({ key: `${m.id}:${i}`, url, name: a.name, kind })
     }))
@@ -681,6 +729,48 @@ export default function InboxPage() {
   const [ticketPriority, setTicketPriority] = useState('normal')
   const [ticketSaving, setTicketSaving] = useState(false)
   const [messages, setMessages] = useState<Message[]>([])
+  // The open thread's loaded window: `since` is the created_at of the oldest
+  // message loaded, or null when the WHOLE history is loaded. Refreshes re-read
+  // only from `since` onwards, so they never drop pages the agent scrolled to.
+  const [threadWin, setThreadWinState] = useState<{ convId: string | null; since: string | null }>({ convId: null, since: null })
+  const threadWinRef = useRef<{ convId: string | null; since: string | null }>({ convId: null, since: null })
+  const setThreadWin = (w: { convId: string | null; since: string | null }) => { threadWinRef.current = w; setThreadWinState(w) }
+  const [loadingOlder, setLoadingOlder] = useState(false)
+  const loadingOlderRef = useRef(false)
+  // Attachment-bearing messages OLDER than the loaded window (light columns
+  // only), so the gallery and "Shared media & files" still cover the whole
+  // conversation exactly as before windowing.
+  const [olderMedia, setOlderMedia] = useState<{ convId: string; since: string; rows: any[] } | null>(null)
+  const galleryMessages = useMemo<Message[]>(() => {
+    const rows = olderMedia && olderMedia.convId === threadWin.convId && threadWin.since ? olderMedia.rows : []
+    if (!rows.length) return messages
+    const have = new Set(messages.map(m => m.id))
+    return [...rows.filter((r: any) => !have.has(r.id)), ...messages]
+  }, [messages, olderMedia, threadWin])
+  // Per-thread lookups the message list needs, computed once per change of the
+  // messages instead of on every render of this page (each keystroke in the
+  // composer re-renders it): reply-to targets (was a linear find per bubble),
+  // call ids that already have a timeline card, and the media gallery index.
+  const threadIndex = useMemo(() => {
+    const byId = new Map<any, Message>()
+    const linkedCallIds = new Set<any>()
+    for (const m of messages as any[]) {
+      if (!byId.has(m.id)) byId.set(m.id, m)
+      if (m.metadata?.call_event && m.metadata?.call_id) linkedCallIds.add(m.metadata.call_id)
+    }
+    const galleryMedia: MediaItem[] = []
+    const mediaIndexOf: Record<string, number> = {}
+    galleryMessages.forEach(m => {
+      const ma = Array.isArray(m.attachments) ? m.attachments : []
+      ma.forEach((a: any) => {
+        if (a.kind === 'image' || a.kind === 'video') {
+          mediaIndexOf[a.url] = galleryMedia.length
+          galleryMedia.push({ url: a.url, name: a.name, kind: a.kind })
+        }
+      })
+    })
+    return { byId, linkedCallIds, galleryMedia, mediaIndexOf }
+  }, [messages, galleryMessages])
   // Smart sale detection: when a recent message reads like a payment happened,
   // prompt the agent to log the sale. Deterministic phrase match — instant, free
   // and reliable, no model call per message. Dismissals are per-conversation for
@@ -916,11 +1006,143 @@ export default function InboxPage() {
   // still the one open. Sends take a few seconds and agents jump between chats;
   // without this check the previous chat's messages replaced the one just opened.
   const reloadThread = async (convId: string): Promise<boolean> => {
-    const { data } = await (supabase as any).from('messages').select('*').eq('conversation_id', convId).order('created_at', { ascending: true })
+    const { data, since, fresh } = await fetchThread(convId)
     if (selectedIdRef.current !== convId) return false
-    setMessages(data || [])
+    applyThread(convId, data || [], since, fresh)
     return true
   }
+  // Re-read the open thread's LOADED WINDOW (everything from the oldest loaded
+  // message onwards). For a conversation whose whole history is loaded this is
+  // exactly the old full read.
+  const fetchThread = async (convId: string): Promise<{ data: any[] | null; since: string | null; fresh?: boolean }> => {
+    const win = threadWinRef.current
+    // No window established for this conversation yet (its first page is still
+    // loading) — read the newest page rather than the whole history.
+    if (win.convId !== convId) {
+      const { rows, since } = await fetchLatestPage(convId)
+      return { data: rows, since, fresh: true }
+    }
+    const since = win.since
+    let q = (supabase as any).from('messages').select('*').eq('conversation_id', convId)
+    if (since) q = q.gte('created_at', since)
+    const { data } = await q.order('created_at', { ascending: true })
+    return { data: data || null, since }
+  }
+  // Swap in a re-read window. If older pages were prepended while that read was
+  // in flight (the window start moved earlier), keep them rather than drop them.
+  const applyThread = (convId: string, rows: any[], usedSince: string | null, fresh?: boolean) => {
+    if (fresh) {
+      if (threadWinRef.current.convId !== convId) setThreadWin({ convId, since: usedSince })
+      else return   // the open's own first page landed meanwhile; it wins
+    }
+    setMessages(prev => {
+      const win = threadWinRef.current
+      if (usedSince && win.convId === convId && (!win.since || tsOf(win.since) < tsOf(usedSince))) {
+        const cut = tsOf(usedSince)
+        const have = new Set(rows.map((r: any) => r.id))
+        return [...prev.filter((m: any) => tsOf(m.created_at) < cut && !have.has(m.id)), ...rows]
+      }
+      return rows
+    })
+  }
+  // The newest page of a thread, oldest-first.
+  const fetchLatestPage = async (convId: string): Promise<{ rows: any[]; since: string | null }> => {
+    const { data } = await (supabase as any).from('messages').select('*').eq('conversation_id', convId)
+      .order('created_at', { ascending: false }).limit(THREAD_PAGE)
+    const rows = (data || []).slice().reverse()
+    const since = (data || []).length >= THREAD_PAGE ? (rows[0]?.created_at ?? null) : null
+    return { rows, since }
+  }
+  // Keep the viewport anchored on the same message when older pages are
+  // prepended above it (applied in a layout effect once they're in the DOM).
+  const prependAnchorRef = useRef<{ h: number; top: number } | null>(null)
+  const lastThreadScrollTop = useRef(0)
+  // Pull older history into the open thread: one page, or (all = true) the rest.
+  const loadOlderMessages = async (all = false) => {
+    const convId = selectedRef.current?.id
+    const win = threadWinRef.current
+    if (!convId || win.convId !== convId || !win.since || loadingOlderRef.current) return
+    loadingOlderRef.current = true
+    setLoadingOlder(true)
+    let stuck = false
+    try {
+      // lte (not lt): rows sharing the boundary timestamp may have been cut off
+      // by the page limit; already-loaded ones are de-duplicated below.
+      let q = (supabase as any).from('messages').select('*').eq('conversation_id', convId)
+        .lte('created_at', win.since).order('created_at', { ascending: false })
+      if (!all) q = q.limit(THREAD_PAGE + 1)
+      const { data, error } = await q
+      if (error || selectedRef.current?.id !== convId || threadWinRef.current.convId !== convId) return
+      const rows = (data || []).slice().reverse()
+      const more = !all && (data || []).length >= THREAD_PAGE + 1
+      const since = more ? (rows[0]?.created_at ?? null) : null
+      // Degenerate case: a whole page sharing one timestamp can't advance the
+      // window — load everything instead (below).
+      if (more && since === win.since) { stuck = true; return }
+      const el = messagesScrollRef.current
+      if (el) prependAnchorRef.current = { h: el.scrollHeight, top: el.scrollTop }
+      setMessages(prev => {
+        const have = new Set(prev.map((m: any) => m.id))
+        return [...rows.filter((r: any) => !have.has(r.id)), ...prev]
+      })
+      setThreadWin({ convId, since })
+    } finally {
+      loadingOlderRef.current = false
+      setLoadingOlder(false)
+    }
+    if (stuck) await loadOlderMessages(true)
+  }
+  useLayoutEffect(() => {
+    const a = prependAnchorRef.current
+    const el = messagesScrollRef.current
+    if (!a || !el) return
+    prependAnchorRef.current = null
+    el.scrollTop = el.scrollHeight - a.h + a.top
+  }, [messages])
+  // In-thread search covers the whole conversation, as before: searching a
+  // windowed thread pulls in the rest of its history first.
+  useEffect(() => {
+    if (!showMsgSearch || !msgSearch.trim()) return
+    if (threadWin.since && threadWin.convId === selected?.id) loadOlderMessages(true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showMsgSearch, msgSearch, threadWin, selected?.id])
+  // Remember the latest loaded thread so re-opening it paints instantly.
+  useEffect(() => {
+    const id = threadWin.convId
+    if (!id || id !== selectedRef.current?.id || !messages.length) return
+    threadCacheSet(id, { msgs: messages, since: threadWin.since })
+  }, [messages, threadWin])
+  // Gallery / "Shared media & files" source for a windowed thread: just the
+  // attachment columns of the messages older than the window, loaded after the
+  // thread has painted.
+  useEffect(() => {
+    const convId = threadWin.convId
+    const since = threadWin.since
+    if (!convId || !since) return
+    // Already have everything before this window (an earlier read reached at
+    // least this far forward)?
+    if (olderMedia?.convId === convId && tsOf(since) <= tsOf(olderMedia.since)) return
+    let cancelled = false
+    const cols = 'id, conversation_id, created_at, attachments, email_attachments, gmail_message_id'
+    const t = setTimeout(async () => {
+      try {
+        // Everything before the window that carries attachments. Rows that
+        // later get paged into the window are de-duplicated in galleryMessages.
+        let res = await (supabase as any).from('messages').select(cols).eq('conversation_id', convId)
+          .lt('created_at', since).or('attachments.neq.[],email_attachments.neq.[]')
+          .order('created_at', { ascending: true })
+        if (res.error) {
+          res = await (supabase as any).from('messages').select(cols).eq('conversation_id', convId)
+            .lt('created_at', since).order('created_at', { ascending: true })
+        }
+        const rows = (res.data || []).filter((r: any) =>
+          (Array.isArray(r.attachments) && r.attachments.length) || (Array.isArray(r.email_attachments) && r.email_attachments.length))
+        if (!cancelled) setOlderMedia({ convId, since, rows })
+      } catch {}
+    }, 400)
+    return () => { cancelled = true; clearTimeout(t) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [threadWin.convId, threadWin.since])
   // Load them when a conversation opens, and keep checking while any are
   // waiting so ones the scheduler sends drop off the list on their own.
   useEffect(() => {
@@ -1505,9 +1727,8 @@ export default function InboxPage() {
         })
         const d = await r.json().catch(() => ({}))
         if (!stopped && d?.updated > 0 && selectedRef.current?.id === convId) {
-          const { data } = await (supabase as any).from('messages').select('*')
-            .eq('conversation_id', convId).order('created_at', { ascending: true })
-          if (data) setMessages(data)
+          const { data, since, fresh } = await fetchThread(convId)
+          if (data && selectedRef.current?.id === convId) applyThread(convId, data, since, fresh)
         }
       } catch { /* keep polling */ }
     }
@@ -1962,12 +2183,11 @@ export default function InboxPage() {
         }
         setUser(session.user)
         let cid: string | null = seededCid
-        if (!cid && typeof window !== 'undefined') {
-          const h = window.location.hostname
-          if (h.endsWith('.colvy.com') && h !== 'colvy.com') {
-            const { data: co } = await (supabase as any).from('companies').select('id').eq('slug', h.replace('.colvy.com', '')).maybeSingle()
-            if (co) cid = co.id
-          }
+        if (!cid) {
+          // The shared, once-per-session company lookup (subdomain slug, then
+          // owned company) — also what seeds the NEXT visit to the inbox with
+          // its cached list instead of the full-page "Loading inbox…".
+          try { cid = (await resolveCompanyUser()).companyId } catch {}
         }
         if (!cid) {
           const { data: ownCo } = await (supabase as any).from('companies').select('id').eq('owner_id', session.user.id).maybeSingle()
@@ -1975,11 +2195,12 @@ export default function InboxPage() {
         }
         if (!cid) return
         setCompanyId(cid)
-        // Show the inbox ASAP: start the conversation load now, and drop the
-        // company chrome (logo/name/accent/time-format) and the team list OFF the
-        // critical path — they only enrich the UI, so an awaited companies query
-        // in front of the list was making the whole inbox wait on it.
-        loadConversations(cid)
+        // Show the inbox ASAP: the conversation load is driven by the
+        // loadConversations effect (it already ran on mount for a seeded
+        // company, or runs as soon as companyId is set above) — calling it here
+        // too fired a second, identical list + contacts + backfill load on every
+        // open. The company chrome (logo/name/accent/time-format) and the team
+        // list stay OFF the critical path — they only enrich the UI.
         loadTeam(cid)
         ;(supabase as any)
           .from('companies')
@@ -2023,15 +2244,23 @@ export default function InboxPage() {
     // If we got a full page back there are probably more to load.
     setHasMoreConvs(convs.length >= convLimitRef.current)
 
-    // Attach contact details in one extra query.
-    const contactIds = Array.from(new Set(convs.map((c: any) => c.contact_id).filter(Boolean)))
-    if (contactIds.length) {
-      const { data: cts } = await (supabase as any)
-        .from('contacts').select('id, name, email, phone, relationship_type, prexty_customer_id').in('id', contactIds)
-      const byId: Record<string, any> = {}
-      for (const ct of cts || []) byId[ct.id] = ct
-      for (const c of convs) (c as any).contacts = c.contact_id ? byId[c.contact_id] || null : null
+    // On first load (desktop), OPEN the top conversation — including its messages
+    // and contact — instead of just highlighting it (which left the pane blank).
+    // BUT not when we arrived via ?conversation=<id>: the deep-link handler will
+    // open that specific thread (even if it's in another folder), so don't flash
+    // the wrong (top) conversation first. Started right away (it reads its own
+    // messages + contact) so the thread loads in parallel with the list's
+    // contact enrichment below rather than after it.
+    const hasDeepLink = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('conversation')
+    if (data && data.length > 0 && !selectedRef.current && !hasDeepLink && typeof window !== 'undefined' && window.innerWidth >= 768) {
+      selectConversation(data[0])
     }
+
+    // Attach contact details in one extra query, and — in parallel, since the
+    // two are independent — resolve unlinked phone threads (below). These used
+    // to run one after the other, then persist each link one at a time, all
+    // before the list could paint.
+    const contactIds = Array.from(new Set(convs.map((c: any) => c.contact_id).filter(Boolean)))
 
     // Fallback: a conversation with no contact_id but a phone (sms_number) may
     // match a contact that was added AFTER the thread started — the manual link
@@ -2039,32 +2268,58 @@ export default function InboxPage() {
     // contact_id so the list, thread and Details panel all show it from now on.
     const dig = (p: string) => (p || '').replace(/\D/g, '')
     const unlinked = convs.filter((c: any) => !c.contact_id && dig(c.sms_number || c.phone).length >= 8)
-    if (unlinked.length) {
-      const tails = Array.from(new Set(unlinked.map((c: any) => dig(c.sms_number || c.phone).slice(-9))))
-      const ors = tails.map((t: string) => `phone.ilike.%${t}%`).join(',')
-      const { data: cand } = await (supabase as any).from('contacts').select('id, name, email, phone, relationship_type').eq('company_id', id).or(ors).limit(200)
-      if (cand && cand.length) {
-        const linked: { conv: string; contact: string }[] = []
-        for (const c of unlinked) {
-          const tail = dig(c.sms_number || c.phone).slice(-9)
-          const m = cand.find((ct: any) => ct.phone && dig(ct.phone).endsWith(tail))
-          if (m) { (c as any).contacts = m; (c as any).contact_id = m.id; linked.push({ conv: c.id, contact: m.id }) }
-        }
-        for (const l of linked) { try { await (supabase as any).from('conversations').update({ contact_id: l.contact }).eq('id', l.conv) } catch {} }
+    const tails = Array.from(new Set(unlinked.map((c: any) => dig(c.sms_number || c.phone).slice(-9))))
+
+    // Reloads (every realtime burst, the poll, filter switches) mostly return
+    // conversations whose contacts are already on screen. When all of them are
+    // known, paint the fresh rows now with those contacts; the enriched rows
+    // below then replace them (identical unless a contact changed meanwhile).
+    const known = new Map<string, any>()
+    const prevById = new Map<string, any>()
+    for (const c of conversationsRef.current as any[]) {
+      prevById.set(c.id, c)
+      if (c.contact_id && c.contacts) known.set(c.contact_id, c.contacts)
+    }
+    if (convs.length && contactIds.every((cid: any) => known.has(cid))) {
+      setConversations(convs.map((c: any) => {
+        if (c.contact_id) return { ...c, contacts: known.get(c.contact_id) }
+        // A phone thread linked by an earlier backfill whose write hasn't
+        // landed yet keeps the contact it was showing.
+        const p = prevById.get(c.id)
+        return p?.contacts ? { ...c, contact_id: p.contact_id, contacts: p.contacts } : { ...c }
+      }))
+    }
+
+    const [ctsRes, candRes] = await Promise.all([
+      contactIds.length
+        ? (supabase as any).from('contacts').select('id, name, email, phone, relationship_type, prexty_customer_id').in('id', contactIds)
+        : Promise.resolve(null),
+      unlinked.length
+        ? (supabase as any).from('contacts').select('id, name, email, phone, relationship_type').eq('company_id', id)
+            .or(tails.map((t: string) => `phone.ilike.%${t}%`).join(',')).limit(200)
+        : Promise.resolve(null),
+    ])
+
+    if (contactIds.length) {
+      const byId: Record<string, any> = {}
+      for (const ct of ctsRes?.data || []) byId[ct.id] = ct
+      for (const c of convs) (c as any).contacts = c.contact_id ? byId[c.contact_id] || null : null
+    }
+
+    const cand = candRes?.data
+    if (unlinked.length && cand && cand.length) {
+      const linked: { conv: string; contact: string }[] = []
+      for (const c of unlinked) {
+        const tail = dig(c.sms_number || c.phone).slice(-9)
+        const m = cand.find((ct: any) => ct.phone && dig(ct.phone).endsWith(tail))
+        if (m) { (c as any).contacts = m; (c as any).contact_id = m.id; linked.push({ conv: c.id, contact: m.id }) }
       }
+      // Persist the links in the background — the list doesn't need to wait.
+      if (linked.length) runPool(linked, 4, l => (supabase as any).from('conversations').update({ contact_id: l.contact }).eq('id', l.conv))
     }
 
     setConversations(convs)
     writeCache(cacheKey, convs)
-    // On first load (desktop), OPEN the top conversation — including its messages
-    // and contact — instead of just highlighting it (which left the pane blank).
-    // BUT not when we arrived via ?conversation=<id>: the deep-link handler will
-    // open that specific thread (even if it's in another folder), so don't flash
-    // the wrong (top) conversation first.
-    const hasDeepLink = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('conversation')
-    if (data && data.length > 0 && !selectedRef.current && !hasDeepLink && typeof window !== 'undefined' && window.innerWidth >= 768) {
-      selectConversation(data[0])
-    }
     } finally { convLoadingRef.current = false }
   }, [companyId, statusFilter, convLimit])
 
@@ -2254,6 +2509,9 @@ export default function InboxPage() {
       }
     } catch {}
     if (channelRef.current) { try { supabase.removeChannel(channelRef.current) } catch {}; channelRef.current = null }
+    // Message UPDATEs waiting to be applied in one batch (see below).
+    const pendingMsgUpdates = new Map<string, any>()
+    let msgUpdateTimer: any = null
     // Belt AND braces: a UNIQUE topic per subscription. Even if a previous
     // channel somehow survives (a cleanup that didn't run, a React 18 double
     // mount, a fast back/forward), this new name can never collide with it, so
@@ -2314,7 +2572,22 @@ export default function InboxPage() {
         // row. We only listened for INSERTs, so a reaction never showed until
         // the page was reloaded.
         if (selectedRef.current?.id === payload.new.conversation_id) {
-          setMessages(prev => prev.map((m: any) => (m.id === payload.new.id ? { ...m, ...payload.new } : m)))
+          // Coalesce bursts (opening a thread stamps a read receipt on every
+          // message, and each comes back as an UPDATE) into one re-render of
+          // the thread per frame instead of one per row.
+          const prevUpd = pendingMsgUpdates.get(payload.new.id)
+          pendingMsgUpdates.set(payload.new.id, prevUpd ? { ...prevUpd, ...payload.new } : payload.new)
+          if (!msgUpdateTimer) {
+            msgUpdateTimer = setTimeout(() => {
+              msgUpdateTimer = null
+              const upd = new Map(pendingMsgUpdates); pendingMsgUpdates.clear()
+              const openId = selectedRef.current?.id
+              setMessages(prev => prev.map((m: any) => {
+                const u = upd.get(m.id)
+                return u && u.conversation_id === openId ? { ...m, ...u } : m
+              }))
+            }, 32)
+          }
         }
       })
       .subscribe()
@@ -2337,10 +2610,10 @@ export default function InboxPage() {
       // Pull fresh data either way — cheap, and it guarantees we're current.
       loadConversationsRef.current()
       if (selectedRef.current?.id) {
-        ;(supabase as any).from('messages').select('*')
-          .eq('conversation_id', selectedRef.current.id)
-          .order('created_at', { ascending: true })
-          .then(({ data }: any) => { if (data) setMessages(data) })
+        const openId = selectedRef.current.id
+        fetchThread(openId)
+          .then(({ data, since, fresh }) => { if (data && selectedRef.current?.id === openId) applyThread(openId, data, since, fresh) })
+          .catch(() => {})
         ;(supabase as any).from('conversations').select('*')
           .eq('id', selectedRef.current.id).maybeSingle()
           .then(({ data }: any) => { if (data) setSelected((p: any) => (p ? { ...p, ...data } : p)) })
@@ -2363,8 +2636,15 @@ export default function InboxPage() {
       scheduleConvReload(0)
       const openId = selectedRef.current?.id
       if (openId) {
-        const { data: msgs } = await (supabase as any).from('messages').select('*').eq('conversation_id', openId).order('created_at', { ascending: true })
-        if (msgs && selectedRef.current?.id === openId) setMessages(prev => msgs.length !== prev.length ? msgs : prev)
+        // Only the loaded window is re-read — not the whole history every 15s.
+        const { data: msgs, since, fresh } = await fetchThread(openId)
+        if (msgs && selectedRef.current?.id === openId) {
+          if (fresh) applyThread(openId, msgs, since, true)
+          // Skip if older pages were loaded while this read was in flight.
+          else if (threadWinRef.current.convId === openId && threadWinRef.current.since === since) {
+            setMessages(prev => msgs.length !== prev.length ? msgs : prev)
+          }
+        }
       }
     }, 15000)
 
@@ -2376,6 +2656,7 @@ export default function InboxPage() {
       window.removeEventListener('focus', revive)
       window.removeEventListener('online', revive)
       clearInterval(poll)
+      if (msgUpdateTimer) { clearTimeout(msgUpdateTimer); msgUpdateTimer = null }
       if (convReloadTimer.current) { clearTimeout(convReloadTimer.current); convReloadTimer.current = null }
       try { supabase.removeChannel(ch) } catch {}
       if (channelRef.current === ch) channelRef.current = null
@@ -2434,11 +2715,18 @@ export default function InboxPage() {
   const refreshThread = async () => {
     const convId = selectedRef.current?.id
     if (!convId) return
-    const { data } = await (supabase as any).from('messages').select('*').eq('conversation_id', convId).order('created_at', { ascending: true })
-    if (data && selectedRef.current?.id === convId) { setMessages(data); scrollBottom() }
+    const { data, since, fresh } = await fetchThread(convId)
+    if (data && selectedRef.current?.id === convId) { applyThread(convId, data, since, fresh); scrollBottom() }
   }
 
   const selectConversation = async (conv: Conversation) => {
+    // Start every independent read for this conversation NOW, in parallel. The
+    // thread used to wait on: full message history → unread update → contact →
+    // timeline/calls, one round trip after another, before it finished loading.
+    const msgsP = fetchLatestPage(conv.id)
+    const contactP: Promise<any> | null = conv.contact_id
+      ? (supabase as any).from('contacts').select('*').eq('id', conv.contact_id).maybeSingle()
+      : null
     // Reconcile any pending Stripe payments straight from Stripe. The webhook
     // may not be configured (or a delivery was missed), which would otherwise
     // leave a paid order showing as "pending" in the chat forever.
@@ -2449,13 +2737,17 @@ export default function InboxPage() {
       }).then(r => r.json()).then(d => {
         // If something flipped to paid, refresh the thread so it shows.
         if (d?.updated > 0) {
-          ;(supabase as any).from('messages').select('*').eq('conversation_id', conv.id)
-            .order('created_at', { ascending: true })
-            .then(({ data }: any) => { if (data) setMessages(data) })
+          fetchThread(conv.id).then(({ data, since, fresh }) => {
+            if (data && selectedRef.current?.id === conv.id) applyThread(conv.id, data, since, fresh)
+          }).catch(() => {})
         }
       }).catch(() => {})
     } catch {}
 
+    // The previous chat's timeline events are merged into the thread — don't
+    // let them sit inside this one (now painted from cache straight away)
+    // while its own events load.
+    if (selectedRef.current?.id !== conv.id) setEvents([])
     setSelected(conv)
     selectedRef.current = conv
     setMobilePane('thread')
@@ -2465,8 +2757,30 @@ export default function InboxPage() {
     // stayed on screen — under the newly-clicked contact's name — until the
     // real (often much shorter) data for the new conversation loaded a moment
     // later, which looked like the page "shows the info and then hides it".
-    setMessages([])
+    // If we've shown THIS conversation before, paint its last-seen messages
+    // straight away instead (stale-while-revalidate); the fresh page replaces it.
+    const cachedThread = threadCacheGet(conv.id)
+    lastThreadScrollTop.current = 0
+    prependAnchorRef.current = null
+    if (cachedThread) {
+      setThreadWin({ convId: conv.id, since: cachedThread.since })
+      setMessages(cachedThread.msgs as any)
+      scrollBottom()
+    } else {
+      setThreadWin({ convId: null, since: null })
+      setMessages([])
+    }
     setContact(null)
+    // Timeline events (merged into the thread) and calls don't depend on the
+    // messages or contact — load them alongside instead of after.
+    loadConversationExtras(conv.id)
+    setConvCalls([])
+    // Load this conversation's calls so any that lack a timeline card (historical
+    // calls, or calls the browser/webhook never posted) still show in the thread.
+    ;(supabase as any).from('calls')
+      .select('id, created_at, direction, duration_seconds, recording_url, ai_summary, status, is_voicemail, agent_name')
+      .eq('conversation_id', conv.id).order('created_at', { ascending: true }).limit(200)
+      .then(({ data }: any) => { if (selectedRef.current?.id === conv.id) setConvCalls(data || []) }, () => {})
     // Restore which fields AI auto-saved for this contact (for the badge).
     try {
       const store = JSON.parse(localStorage.getItem('colvy-ai-saved') || '{}')
@@ -2480,22 +2794,25 @@ export default function InboxPage() {
     if (recording) { recCancelRef.current = true; if (recTimerRef.current) clearInterval(recTimerRef.current); try { mediaRecRef.current?.stop() } catch {}; setRecording(false) }
     setAiSummary((conv as any).ai_summary || '')
     setAiTodos((conv as any).ai_todos || [])
-    // Load messages
-    const { data: msgs } = await (supabase as any).from('messages').select('*').eq('conversation_id', conv.id).order('created_at', { ascending: true })
-    // Clicked through several chats quickly: only the last one's messages show.
-    if (selectedRef.current?.id !== conv.id) return
-    setMessages(msgs || [])
+    // Load messages (the newest page — older pages load on scroll-up)
+    let msgs: any[] = []
+    try {
+      const page = await msgsP
+      msgs = page.rows
+      // Clicked through several chats quickly: only the last one's messages show.
+      if (selectedRef.current?.id !== conv.id) return
+      setThreadWin({ convId: conv.id, since: page.since })
+    } catch {
+      if (selectedRef.current?.id !== conv.id) return
+      setThreadWin({ convId: conv.id, since: null })
+    }
+    setMessages(msgs)
     scrollBottom()
-    // Load this conversation's calls so any that lack a timeline card (historical
-    // calls, or calls the browser/webhook never posted) still show in the thread.
-    setConvCalls([])
-    ;(supabase as any).from('calls')
-      .select('id, created_at, direction, duration_seconds, recording_url, ai_summary, status, is_voicemail, agent_name')
-      .eq('conversation_id', conv.id).order('created_at', { ascending: true }).limit(200)
-      .then(({ data }: any) => setConvCalls(data || []))
-    // Mark read + stamp read receipt on visitor messages
-    await (supabase as any).from('conversations').update({ is_unread: false, unread_count: 0 }).eq('id', conv.id)
-    markMessagesRead(conv.id, msgs || [])
+    // Mark read + stamp read receipt on visitor messages. Neither needs to hold
+    // up the contact panel below.
+    ;(supabase as any).from('conversations').update({ is_unread: false, unread_count: 0 }).eq('id', conv.id)
+      .then(() => {}, () => {})
+    markMessagesRead(conv.id, msgs)
     // Load contact
     setShowDoa(false); setDoaMatch(false)
     // Captured so we can hand the resolved email/phone straight to loadWooData
@@ -2503,8 +2820,10 @@ export default function InboxPage() {
     // needless round trip to the Order History panel's critical path.
     let resolvedEmail: string | null = null
     let resolvedPhone: string | null = null
-    if (conv.contact_id) {
-      const { data: c } = await (supabase as any).from('contacts').select('*').eq('id', conv.contact_id).maybeSingle()
+    if (conv.contact_id && contactP) {
+      let c: any = null
+      try { c = (await contactP)?.data || null } catch {}
+      if (selectedRef.current?.id !== conv.id) return
       resolvedEmail = c?.email || null
       resolvedPhone = c?.phone || null
       setContact(c || null)
@@ -2541,12 +2860,14 @@ export default function InboxPage() {
       if (tail.length >= 8 && companyId) {
         const { data: cand } = await (supabase as any).from('contacts').select('*').eq('company_id', companyId).ilike('phone', `%${tail}%`).limit(10)
         matched = (cand || []).find((ct: any) => ct.phone && dig(ct.phone).endsWith(tail)) || null
+        if (selectedRef.current?.id !== conv.id) return
       }
       if (matched) {
         resolvedEmail = matched.email || null
         resolvedPhone = matched.phone || null
         setContact(matched); setEditContact(matched)
-        try { await (supabase as any).from('conversations').update({ contact_id: matched.id }).eq('id', conv.id) } catch {}
+        // Persist the link in the background — nothing below needs to wait on it.
+        ;(supabase as any).from('conversations').update({ contact_id: matched.id }).eq('id', conv.id).then(() => {}, () => {})
         ;(conv as any).contact_id = matched.id
         setSelected(s => (s && s.id === conv.id ? ({ ...s, contact_id: matched.id } as any) : s))
         setConversations(prev => prev.map(c => c.id === conv.id ? ({ ...c, contact_id: matched.id, contacts: matched } as any) : c))
@@ -2569,8 +2890,7 @@ export default function InboxPage() {
         setEditContact((conv as any).sms_number ? { phone: (conv as any).sms_number } : {})
       }
     }
-    // Load timeline events, notes, tasks
-    loadConversationExtras(conv.id)
+    // (Timeline events, notes and tasks were already requested at the top.)
     // Load WooCommerce data if the contact's email matches an order. Hand over
     // the email/phone we already resolved above so the panel skips a redundant
     // contacts lookup on its critical path.
@@ -2901,6 +3221,7 @@ export default function InboxPage() {
     // Stamp read_by on every message this agent has now seen — including other
     // agents' replies. "Did my colleague see this?" is the question people
     // actually have, and previously only customer messages were stamped.
+    const todo: { m: Message; updated: any[] }[] = []
     for (const m of msgs) {
       if (m.sender_type === 'system') continue
       // Tenant isolation. A receipt written without a company cannot be
@@ -2919,11 +3240,15 @@ export default function InboxPage() {
         id: user?.id || null, company_id: companyId,
         name: me, initial, at: new Date().toISOString(), ...(avatar ? { avatar } : {}),
       }]
-      await (supabase as any).from('messages').update({
-        read_by: updated,
-        ...(m.sender_type === 'visitor' ? { is_read: true } : {}),
-      }).eq('id', m.id)
+      todo.push({ m, updated })
     }
+    // One row per message (each has its own read_by array), but a few at a time
+    // rather than strictly one after another — a long unread history used to
+    // take one full round trip per message to settle.
+    await runPool(todo, 6, ({ m, updated }) => (supabase as any).from('messages').update({
+      read_by: updated,
+      ...(m.sender_type === 'visitor' ? { is_read: true } : {}),
+    }).eq('id', m.id))
   }
 
   /**
@@ -3897,12 +4222,21 @@ export default function InboxPage() {
     if (!selected || messages.length === 0) return
     setGeneratingAi(true)
     try {
+      // The summary covers the whole conversation. If only the newest page is
+      // loaded in the thread, read every message's text for it (two columns).
+      let source: { sender_type: string; content: string }[] = messages
+      const win = threadWinRef.current
+      if (win.convId === selected.id && win.since) {
+        const { data: all } = await (supabase as any).from('messages').select('sender_type, content')
+          .eq('conversation_id', selected.id).order('created_at', { ascending: true })
+        if (all) source = all
+      }
       const res = await authFetch('/api/inbox/ai-summary', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ companyId,
           conversationId: selected.id,
-          messages: messages.filter(m => m.sender_type !== 'system').map(m => ({ role: m.sender_type, content: m.content })),
+          messages: source.filter(m => m.sender_type !== 'system').map(m => ({ role: m.sender_type, content: m.content })),
         }),
       })
       const data = await res.json()
@@ -5935,6 +6269,13 @@ export default function InboxPage() {
     }
     return base
   })()
+  // last_message_at parsed once per row per render, not twice per comparison.
+  const convTsCache = new Map<any, number>()
+  const convTs = (c: any): number => {
+    let t = convTsCache.get(c)
+    if (t === undefined) { t = parseTs(c.last_message_at)?.getTime() || 0; convTsCache.set(c, t) }
+    return t
+  }
   const filteredConvs = convSource.filter(c => {
     // Tab guard: the Open tab never shows closed/resolved threads and the Closed
     // tab never shows open ones — even if a stale fetch briefly seeds the wrong
@@ -6028,8 +6369,8 @@ export default function InboxPage() {
       const pa = pinnedIds.has(a.id) ? 1 : 0
       const pb = pinnedIds.has(b.id) ? 1 : 0
       if (pa !== pb) return pb - pa
-      const ta = (parseTs(a.last_message_at)?.getTime() || 0)
-      const tb = (parseTs(b.last_message_at)?.getTime() || 0)
+      const ta = convTs(a)
+      const tb = convTs(b)
       return filters.oldestFirst ? ta - tb : tb - ta
     })
 
@@ -8571,7 +8912,17 @@ export default function InboxPage() {
             })()}
 
             {/* Messages */}
-            <div ref={messagesScrollRef} className="inbox-messages" style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: 14, scrollBehavior: 'auto' }}>
+            <div ref={messagesScrollRef} className="inbox-messages"
+              onScroll={e => {
+                // Scrolling UP near the top of a windowed thread pulls the
+                // previous page in (the viewport stays anchored). Downward
+                // scrolls — including the open's own scroll-to-bottom — never do.
+                const el = e.currentTarget
+                const prevTop = lastThreadScrollTop.current
+                lastThreadScrollTop.current = el.scrollTop
+                if (el.scrollTop < prevTop && el.scrollTop < 400 && threadWinRef.current.since && !loadingOlderRef.current) loadOlderMessages()
+              }}
+              style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: 14, scrollBehavior: 'auto' }}>
               {/* AI-detected action items → draft tasks. Sits inline at the top of
                   the thread and scrolls with the conversation (not sticky/floating),
                   so it never covers the newest messages. Mirrored in Timeline. */}
@@ -8605,19 +8956,14 @@ export default function InboxPage() {
                 // matches in place, scrolling the active one into view (see the
                 // find bar's next/previous nav).
                 const list = messages
-                // Flat list of all images/videos in the thread (for the gallery),
-                // with a lookup from a message's attachment to its gallery index.
-                const galleryMedia: MediaItem[] = []
-                const mediaIndexOf: Record<string, number> = {}
-                messages.forEach(m => {
-                  const ma = Array.isArray(m.attachments) ? m.attachments : []
-                  ma.forEach((a: any) => {
-                    if (a.kind === 'image' || a.kind === 'video') {
-                      mediaIndexOf[a.url] = galleryMedia.length
-                      galleryMedia.push({ url: a.url, name: a.name, kind: a.kind })
-                    }
-                  })
-                })
+                // Lookup from a message's attachment to its gallery index (all
+                // images/videos in the thread, memoised in threadIndex).
+                const { mediaIndexOf } = threadIndex
+                // Only the newest page of a long history is loaded: keep events,
+                // calls and engagement older than it out until that page is (they
+                // would otherwise pile up above the first loaded message).
+                const windowStart = threadWin.convId === selected.id && threadWin.since ? tsOf(threadWin.since) : 0
+                const inWindow = (x: any) => !windowStart || tsOf(x.created_at) >= windowStart
                 let lastDay = ''
                 const first = list[0]
                 const enquiryName = contact?.name || contact?.email || contact?.phone || 'a customer'
@@ -8635,7 +8981,17 @@ export default function InboxPage() {
                   : (subj.startsWith('order #') || (selected as any).order_status) ? 'Order Placed'
                   : (SRC[(selected.channel || '').toLowerCase()] || 'Live Chat Enquiry')
 
-                const header = (
+                // The "New … Enquiry" line marks the START of the conversation,
+                // so while older history is still unloaded the top of the thread
+                // offers it instead (it also loads on scrolling up).
+                const header = windowStart ? (
+                  <div key="enquiry-header" style={{ textAlign: 'center', margin: '4px 0 6px' }}>
+                    <button type="button" onClick={() => loadOlderMessages()} disabled={loadingOlder}
+                      style={{ fontSize: 11, fontWeight: 600, color: '#9ca3af', background: '#eef0f2', padding: '3px 12px', borderRadius: 20, border: 'none', cursor: loadingOlder ? 'default' : 'pointer', fontFamily: 'inherit' }}>
+                      {loadingOlder ? 'Loading earlier messages…' : 'Load earlier messages'}
+                    </button>
+                  </div>
+                ) : (
                   <div key="enquiry-header" style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '4px 0 14px' }}>
                     <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
                     <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--slate)', whiteSpace: 'nowrap' }}>
@@ -8647,9 +9003,7 @@ export default function InboxPage() {
 
                 // Calls that already have a timeline message (server-posted or
                 // browser-posted card) — don't double-render those from convCalls.
-                const linkedCallIds = new Set(
-                  messages.filter((m: any) => m.metadata?.call_event && m.metadata?.call_id).map((m: any) => m.metadata.call_id)
-                )
+                const { linkedCallIds } = threadIndex
                 // Which calls belong in the thread. Connected calls (duration
                 // alone is unreliable — Telnyx inbound can finalise at 0s — so a
                 // recording, a summary or a completed/answered status also count),
@@ -8658,6 +9012,7 @@ export default function InboxPage() {
                 const extraCalls = convCalls
                   .filter((c: any) => {
                     if (linkedCallIds.has(c.id)) return false
+                    if (!inWindow(c)) return false
                     const st = String(c.status || '')
                     const connected = (c.duration_seconds || 0) > 0 || c.recording_url || c.ai_summary || ['completed', 'answered'].includes(st)
                     const voicemail = c.is_voicemail || st.startsWith('voicemail')
@@ -8674,7 +9029,8 @@ export default function InboxPage() {
                   ...contactReviews.reviews.map((r: any) => ({ id: `rev-${r.id}`, event_type: 'google_review', created_at: r.createdAt || new Date().toISOString(), __engRating: r.rating, __engComment: r.comment, __engReviewId: r.id })),
                   ...contactReviews.socialComments.map((c: any) => ({ id: `cmt-${c.id}`, event_type: 'social_comment', created_at: c.commentedAt || new Date().toISOString(), __engPlatform: c.platform, __engComment: c.message, __engCommentId: c.id })),
                 ]
-                return [header, liveBanner, ...mergeEvents(list, [...events, ...engagementEvents], extraCalls).map((item: any) => {
+                const threadEvents = windowStart ? [...events, ...engagementEvents].filter(inWindow) : [...events, ...engagementEvents]
+                return [header, liveBanner, ...mergeEvents(list, threadEvents, extraCalls).map((item: any) => {
                 if (item.__call) {
                   const thisDay = dayLabel(item.created_at)
                   const showDivider = thisDay && thisDay !== lastDay
@@ -8921,7 +9277,7 @@ export default function InboxPage() {
                   )
                 }
 
-                const repliedMsg = (msg as any).reply_to ? messages.find(m => m.id === (msg as any).reply_to) : null
+                const repliedMsg = (msg as any).reply_to ? (threadIndex.byId.get((msg as any).reply_to) || null) : null
                 // Instagram theme: when enabled (Settings → Channels), agent
                 // replies on an Instagram thread get the Instagram gradient +
                 // rounder bubbles so the thread reads like the Instagram app.
@@ -9008,7 +9364,7 @@ export default function InboxPage() {
                           const openStory = (kind: 'image' | 'video') => {
                             if (!url) return
                             const chatMedia: MediaItem[] = []
-                            messages.forEach((mm: any) => (Array.isArray(mm.attachments) ? mm.attachments : []).forEach((a: any) => {
+                            galleryMessages.forEach((mm: any) => (Array.isArray(mm.attachments) ? mm.attachments : []).forEach((a: any) => {
                               const isImg = a.kind === 'image' || String(a.type || '').startsWith('image')
                               const isVid = a.kind === 'video' || String(a.type || '').startsWith('video')
                               if ((isImg || isVid) && a.url && a.url !== url) chatMedia.push({ url: a.url, name: a.name, kind: isVid ? 'video' : 'image', poster: videoPoster(a) })
@@ -9438,7 +9794,7 @@ export default function InboxPage() {
                                 const rAvatar = r.avatar || teamMembers.find((t: any) => t.name === r.name)?.avatar
                                 const tip = `Read by ${r.name}${r.at ? ` · ${new Date(r.at).toLocaleString('en-AU', { hour: 'numeric', minute: '2-digit', day: 'numeric', month: 'short' })}` : ''}`
                                 return rAvatar ? (
-                                  <img key={ri} src={rAvatar} alt={r.name || ''} title={tip}
+                                  <img key={ri} src={rAvatar} alt={r.name || ''} title={tip} loading="lazy" decoding="async"
                                     style={{ width: 15, height: 15, borderRadius: '50%', objectFit: 'cover', display: 'inline-block' }} />
                                 ) : (
                                   <span key={ri} title={tip}
@@ -9479,7 +9835,7 @@ export default function InboxPage() {
                     </div>
                     {isAgent && (
                       companyInfo?.logo_url ? (
-                        <img src={companyInfo.logo_url} alt="" style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} onError={(e: any) => { e.target.style.display = 'none' }} />
+                        <img src={companyInfo.logo_url} alt="" loading="lazy" decoding="async" style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} onError={(e: any) => { e.target.style.display = 'none' }} />
                       ) : (
                         <div style={{ width: 28, height: 28, borderRadius: '50%', background: companyInfo?.accent_color || 'var(--coral)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: '#fff', flexShrink: 0 }}>
                           {(companyInfo?.name || msg.sender_name || 'A')[0].toUpperCase()}
@@ -10930,13 +11286,13 @@ export default function InboxPage() {
                   // Chat image/video keeps the lightbox gallery (indices must
                   // match the thread's gallery source, so this stays separate).
                   const media: any[] = []
-                  messages.forEach(m => (Array.isArray(m.attachments) ? m.attachments : []).forEach((a: any) => {
+                  galleryMessages.forEach(m => (Array.isArray(m.attachments) ? m.attachments : []).forEach((a: any) => {
                     const isImg = a.kind === 'image' || String(a.type||'').startsWith('image'); const isVid = a.kind === 'video' || String(a.type||'').startsWith('video'); if ((isImg || isVid) && a.url) media.push({ ...a, kind: isVid ? 'video' : 'image' })
                   }))
                   // Email attachments (Gmail streams via /api/email/attachment;
                   // webhook emails carry a direct url).
                   const emailAtts: any[] = []
-                  messages.forEach(m => (Array.isArray(m.email_attachments) ? m.email_attachments : []).forEach((a: any, ai: number) => {
+                  galleryMessages.forEach(m => (Array.isArray(m.email_attachments) ? m.email_attachments : []).forEach((a: any, ai: number) => {
                     const url = emailAttachmentUrl(m, a, attToken)
                     if (!url) return
                     const kind = emailAttachmentKind(a)
@@ -10953,8 +11309,8 @@ export default function InboxPage() {
                             style={{ position: 'relative', paddingTop: '100%', borderRadius: 8, overflow: 'hidden', cursor: 'pointer', background: 'var(--canvas)' }}>
                             <div onClick={() => setGalleryIndex(i)} style={{ position: 'absolute', inset: 0 }}>
                               {(a.kind === 'video' || String(a.type).startsWith('video'))
-                                ? <video src={a.url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                : <img src={a.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
+                                ? <video src={a.url} preload="metadata" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                : <img src={a.url} alt="" loading="lazy" decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
                             </div>
                             {/* Forward it to another customer */}
                             <button type="button"
@@ -10970,9 +11326,9 @@ export default function InboxPage() {
                             onClick={(a.isImage || a.isVideo) ? (e => { e.preventDefault(); openEmailMedia(a.messageId, a.index) }) : undefined}
                             style={{ position: 'relative', paddingTop: '100%', borderRadius: 8, overflow: 'hidden', background: 'var(--canvas)', display: 'block', textDecoration: 'none', cursor: (a.isImage || a.isVideo) ? 'zoom-in' : 'pointer' }}>
                             {a.isImage ? (
-                              <img src={a.url} alt={a.name} loading="lazy" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+                              <img src={a.url} alt={a.name} loading="lazy" decoding="async" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
                             ) : a.isVideo ? (
-                              <video src={a.url} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+                              <video src={a.url} preload="metadata" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
                             ) : (
                               <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, padding: 4, color: '#64748b' }}>
                                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
