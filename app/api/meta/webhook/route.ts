@@ -1,5 +1,5 @@
 import { internalHeaders } from '@/lib/internal-call'
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse, after } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import crypto from 'crypto'
 import { META_VERIFY_TOKEN, META_APP_SECRET, fetchMetaProfile, fetchPageComment } from '@/lib/meta'
@@ -12,6 +12,9 @@ import { notifyCompany, pushInboundMessage } from '@/lib/notify'
 import { logEnquiryReopened } from '@/lib/conversation-timeline'
 import { classifyOne } from '@/lib/social-sync'
 import { emitInboundEvent } from '@/lib/integration-hooks'
+
+// Room for the Support Agent to answer after the response (after()).
+export const maxDuration = 300
 
 export const dynamic = 'force-dynamic'
 
@@ -247,6 +250,15 @@ export async function POST(req: NextRequest) {
           metadata: storyReply ? { story_reply: storyReply } : {},
         }).select('id').maybeSingle()
         await emitInboundEvent(db, { companyId, conversationId: conv.id, text, channel: platform, name: contact?.name || null, messageId: insertedMsg?.id || null })
+
+        // The Support / Reception Agent, if the business switched it on for this
+        // channel (lib/agent/inbound.ts decides; a burst of messages is one run).
+        if (text) {
+          const convId = conv.id
+          after(async () => {
+            try { const { startSupportAgentForConversation } = await import('@/lib/agent/inbound'); await startSupportAgentForConversation(db, convId) } catch (e) { console.warn('[agent] meta inbound', e) }
+          })
+        }
 
         // Detect language + translate to English (fire-and-forget) for the inbox
         // "Translated · English / View original" toggle.

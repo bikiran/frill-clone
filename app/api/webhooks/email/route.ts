@@ -1,5 +1,5 @@
 import { emailWebhookOk } from '@/lib/email-webhook'
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse, after } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { notifyCompany, pushInboundMessage } from '@/lib/notify'
 import { runKeywordReply } from '@/lib/keyword-reply'
@@ -278,6 +278,15 @@ export async function POST(req: NextRequest) {
       email_in_reply_to: inReplyTo || null,
     })
     await emitInboundEvent(db, { companyId, conversationId: conv.id, text: content, channel: 'email', name: from.name || null, email: from.email || null })
+
+    // The Support / Reception Agent, if switched on for email — queued for the
+    // agent worker. Ticket replies stay with the ticket.
+    if (!/\[TICK-\d+\]/i.test(subject || '')) {
+      const convId = conv.id
+      after(async () => {
+        try { const { startSupportAgentForConversation } = await import('@/lib/agent/inbound'); await startSupportAgentForConversation(db, convId, { debounceMs: 0, run: false }) } catch (e) { console.warn('[agent] email inbound', e) }
+      })
+    }
 
     await db.from('conversations').update({
       last_message: content.slice(0, 200),
