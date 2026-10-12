@@ -99,21 +99,100 @@ export function buildSearchQuery(text: string): string {
 
 /** Best-matching knowledge for a question. Falls back to word matching if the V326 search function isn't installed yet. */
 export async function searchKnowledge(db: any, companyId: string, question: string, limit = 8): Promise<KnowledgeHit[]> {
-  const q = buildSearchQuery(question)
+  return searchWithQuery(db, companyId, buildSearchQuery(question), limit)
+}
+
+async function searchWithQuery(db: any, companyId: string, q: string, limit: number): Promise<KnowledgeHit[]> {
   if (!q) return []
   const { data, error } = await db.rpc('search_ai_knowledge', { p_company: companyId, p_query: q, p_limit: limit })
   if (!error) return (data || []) as KnowledgeHit[]
 
   const { data: all } = await db.from('ai_knowledge').select('id, source, source_id, title, content, url').eq('company_id', companyId).limit(1000)
-  const words = q.split(' or ')
+  const words = q.split(' or ').map(w => w.replace(/"/g, '')).filter(Boolean)
   return (all || []).map((k: any) => {
     const hay = `${k.title || ''} ${k.content || ''}`.toLowerCase()
     let score = 0
     for (const w of words) if (hay.includes(w)) score += 1
-    if (k.source === 'fact') score += 1
-    if (k.source === 'help') score += 0.5
+    // Trusted sources rank higher — but only once something actually matched.
+    if (score && k.source === 'fact') score += 1
+    if (score && k.source === 'help') score += 0.5
     return { ...k, rank: score }
   }).filter((k: any) => k.rank > 0).sort((a: any, b: any) => b.rank - a.rank).slice(0, limit)
+}
+
+// ── Search by meaning ──────────────────────────────────────────────────────
+// Keyword search only finds what shares words with the question: "my fish keep
+// dying" never meets an article called "Water quality and cycling your tank".
+// So a fast model first turns the question into the words a business would
+// write, full-text search gathers candidates from those (plus every fact the
+// owner wrote — they're short and the most trusted), and the model then keeps
+// only the passages that actually answer the question. No match means no
+// match: an article that merely shares words doesn't count as found. Without
+// a model (no key, an error, a timeout) it's the plain keyword search.
+
+const FAST_MODEL = process.env.AGENT_MODEL_FAST || 'claude-haiku-5-5'
+
+async function fastJson(system: string, user: string, schema: any): Promise<any> {
+  const client = new Anthropic({ timeout: 15_000, maxRetries: 1 })
+  const response: any = await (client as any).beta.messages.create({
+    model: FAST_MODEL, max_tokens: 1200,
+    output_config: { effort: 'low', format: { type: 'json_schema', schema } },
+    betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default',
+    system, messages: [{ role: 'user', content: user }],
+  })
+  if (response.stop_reason === 'refusal') throw new Error('refused')
+  return JSON.parse((response.content || []).filter((b: any) => b.type === 'text').map((b: any) => b.text).join(''))
+}
+
+export async function smartSearchKnowledge(db: any, companyId: string, question: string, limit = 6): Promise<KnowledgeHit[]> {
+  const ask = String(question || '').trim().slice(0, 1000)
+  if (!ask) return []
+  if (!process.env.ANTHROPIC_API_KEY) return searchKnowledge(db, companyId, ask, limit)
+  try {
+    const { data: co } = await db.from('companies').select('name').eq('id', companyId).maybeSingle()
+    // 1. The question in the business's own words.
+    const ex = await fastJson(
+      `You help search the help articles, website pages, policies and facts of ${co?.name || 'a small business'}. Turn the customer's question into what those pages would say: the topic, the words the business would use, and closely related terms. Short words or two-word phrases, most useful first. No sentences.`,
+      ask,
+      { type: 'object', properties: { terms: { type: 'array', items: { type: 'string' } } }, required: ['terms'], additionalProperties: false },
+    )
+    const extra = (Array.isArray(ex?.terms) ? ex.terms : []).map((t: any) => String(t).toLowerCase().replace(/[^a-z0-9' -]/g, ' ').trim()).filter((t: string) => t.length >= 3).slice(0, 15)
+    const base = buildSearchQuery(ask)
+    const query = Array.from(new Set([...(base ? base.split(' or ') : []), ...extra.map((t: string) => (t.includes(' ') ? `"${t}"` : t))])).slice(0, 50).join(' or ')
+
+    // 2. Candidates: full-text matches plus the owner's facts.
+    const [hits, { data: facts }] = await Promise.all([
+      searchWithQuery(db, companyId, query, 20),
+      db.from('ai_knowledge').select('id, source, source_id, title, content, url').eq('company_id', companyId).eq('source', 'fact').limit(40),
+    ])
+    const seen = new Set<string>()
+    const pool: KnowledgeHit[] = []
+    for (const h of [...hits, ...((facts || []) as KnowledgeHit[])]) {
+      const key = h.id || `${h.source}:${h.source_id}:${h.title}`
+      if (seen.has(key)) continue
+      seen.add(key); pool.push(h)
+    }
+    if (!pool.length) return []
+
+    // 3. Keep only what answers it, best first.
+    const list = pool.slice(0, 40).map((h, i) => `[K${i + 1}] (${h.source}) ${h.title || ''}\n${String(h.content || '').replace(/\s+/g, ' ').slice(0, 600)}`).join('\n\n')
+    const pick = await fastJson(
+      'You pick which passages help answer a customer’s question for a business. Only passages that actually answer it or contain facts needed to answer it — not ones that just mention similar words. Best first. If none do, return an empty list.',
+      `QUESTION\n${ask}\n\nPASSAGES\n${list}`,
+      { type: 'object', properties: { relevant: { type: 'array', items: { type: 'string' } } }, required: ['relevant'], additionalProperties: false },
+    )
+    const out: KnowledgeHit[] = []
+    for (const id of Array.isArray(pick?.relevant) ? pick.relevant : []) {
+      const n = Number(String(id).replace(/\D/g, ''))
+      const h = pool[n - 1]
+      if (h && !out.includes(h)) out.push(h)
+      if (out.length >= limit) break
+    }
+    return out
+  } catch (e: any) {
+    console.warn('[ai-knowledge] smart search fell back to keywords', e?.message || e)
+    return searchKnowledge(db, companyId, ask, limit)
+  }
 }
 
 // ── Website ────────────────────────────────────────────────────────────────
@@ -333,7 +412,7 @@ const MODEL = 'claude-opus-5-5'
  * over to a person instead of guessing.
  */
 export async function answerFromKnowledge(db: any, companyId: string, question: string): Promise<KnowledgeAnswer | { error: string }> {
-  const hits = await searchKnowledge(db, companyId, question, 8)
+  const hits = await smartSearchKnowledge(db, companyId, question, 8)
   if (!hits.length) return { answer: '', grounded: false, sources: [] }
   if (!process.env.ANTHROPIC_API_KEY) return { error: 'Colvy AI isn’t set up on this server yet.' }
 
