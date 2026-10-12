@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { resolveCompanyUser, peekCompanyUser } from '@/lib/client-cache'
 import { SuggestionCard, type Suggestion } from '@/components/AgentSuggestion'
 import { confirmDialog } from '@/components/ConfirmDialog'
+import AgentConnections from '@/components/AgentConnections'
 
 // AI Agents (Phase 1 of the Agent Engine). Every agent run is recorded — what
 // it knew, every action it asked for, the permission decision and why, and the
@@ -171,7 +172,7 @@ export default function AgentsPage() {
   }, [companyId])
   const loadWaiting = useCallback(async () => {
     if (!companyId) return
-    try { const r = await authFetch(`/api/agent/approvals?companyId=${companyId}`); const d = await r.json(); if (r.ok) setWaiting((d.approvals || []).filter((a: Waiting) => WAITING_ACTIONS.includes(a.action_key))) } catch {}
+    try { const r = await authFetch(`/api/agent/approvals?companyId=${companyId}`); const d = await r.json(); if (r.ok) setWaiting((d.approvals || []).filter((a: Waiting) => WAITING_ACTIONS.includes(a.action_key) || a.action_key.startsWith('x_'))) } catch {}
   }, [companyId])
   useEffect(() => {
     loadSettings(); loadWaiting()
@@ -407,6 +408,9 @@ export default function AgentsPage() {
             </ul>
           </div>
         )}
+
+        {/* Outside tools (MCP connections) */}
+        {companyId && !needsMigration && <AgentConnections companyId={companyId} />}
 
         {/* Try it */}
         <div className="ag-card ag-fade" style={{ marginBottom: 16 }}>
@@ -820,7 +824,7 @@ function RunDetail({ run, steps, approvals, companyId, onDecided }: { run: Run; 
         </div>
       )}
 
-      {(approvals || []).filter(a => a.status === 'pending' && WAITING_ACTIONS.includes(a.action_key)).map(a => (
+      {(approvals || []).filter(a => a.status === 'pending' && (WAITING_ACTIONS.includes(a.action_key) || String(a.action_key || '').startsWith('x_'))).map(a => (
         <div key={a.id} style={{ marginTop: 14 }}>
           <SuggestionCard s={{ ...a, run_id: run.id, run: { role_key: run.role_key } } as Suggestion} companyId={companyId} compact onDone={onDecided} />
         </div>

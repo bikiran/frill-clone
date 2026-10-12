@@ -9,6 +9,7 @@ import { runApprovedBookingAction } from './booking-actions'
 import { sendApprovedCartFollowup } from './sales-actions'
 import { sendApprovedOrderUpdate } from './ops-actions'
 import { sendApprovedSalesFollowup } from './followup-actions'
+import { isExternalKey, runApprovedExternalAction } from './external-tools'
 
 // Suggested replies in a conversation. Only one should ever be waiting: a new
 // customer message makes earlier ones out of date, and so does a reply from the
@@ -152,6 +153,20 @@ export async function decideApproval(db: any, opts: {
       decision_reason: r.ok ? `${who} approved it — ${_preview || ap.action_key.replace(/_/g, ' ')} (${r.detail}).` : `${who} approved it, but it didn’t go through: ${r.error}`,
       status: r.ok ? 'ok' : 'error', input: args, output: r.ok ? { done: r.detail } : { error: r.error },
       entity_type: 'booking', entity_id: args.bookingId || null,
+    })
+    await settleRun(db, run)
+    return r.ok ? { ok: true, status: 'executed' } : { ok: false, error: r.error }
+  }
+
+  // Outside tools (MCP connections): approve runs exactly what was prepared.
+  if (isExternalKey(ap.action_key)) {
+    const { _preview, ...args } = ap.args || {}
+    const r = await runApprovedExternalAction(db, opts.companyId, ap.action_key, args)
+    await db.from('agent_approvals').update({ status: r.ok ? 'executed' : 'failed', result: r.ok ? { done: r.detail } : { error: r.error } }).eq('id', ap.id)
+    await logStep(db, run, {
+      kind: 'approval', action_key: ap.action_key, decision: 'allowed',
+      decision_reason: r.ok ? `${who} approved it — ${_preview || 'outside tool'}.` : `${who} approved it, but it didn’t go through: ${r.error}`,
+      status: r.ok ? 'ok' : 'error', input: args, output: r.ok ? { done: r.detail } : { error: r.error },
     })
     await settleRun(db, run)
     return r.ok ? { ok: true, status: 'executed' } : { ok: false, error: r.error }
