@@ -37,6 +37,13 @@ export async function POST(req: NextRequest) {
 
     if (callRowId) {
       const db = admin()
+      // Who ended an answered call. Here CallStatus is the AGENT's leg (the SDK
+      // call): completed → the agent hung up (or their app dropped); still in
+      // progress → the customer hung up. Shown as "Hangup cause".
+      const parentStatus = (get('CallStatus') || '').toLowerCase()
+      const cause = answered
+        ? `${parentStatus === 'completed' ? 'agent_hung_up' : parentStatus === 'in-progress' ? 'customer_hung_up' : `parent_${parentStatus || 'unknown'}`}: dur=${durSecs}s`
+        : null
       const status = answered && durSecs > 0 ? 'completed'
         : ['busy', 'no-answer', 'failed', 'canceled'].includes(dialStatus) ? (durSecs > 0 ? 'completed' : 'missed')
         : 'completed'
@@ -48,6 +55,7 @@ export async function POST(req: NextRequest) {
           // dial-time stamp was missed — but never in bridge mode (see above).
           ...(callSid && !bridge ? { twilio_call_sid: callSid } : {}),
           ...(durSecs ? { duration_seconds: durSecs } : {}),
+          ...(cause ? { cause } : {}),
         }).eq('id', callRowId)
       } catch {}
       // Guarantee the call logs in the thread even if the browser never posted
