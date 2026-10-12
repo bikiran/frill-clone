@@ -2,6 +2,7 @@ import { cronOr401 } from '@/lib/cron-auth'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { runBookingSweep } from '@/lib/booking-sweep'
+import { withJobLog } from '@/lib/job-log'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -19,7 +20,7 @@ const admin = () => createClient(
  * expired holds — see lib/booking-sweep.ts. Vercel Cron runs it every 10
  * minutes; CRON_SECRET guards it like the other crons.
  */
-export async function GET(req: NextRequest) {
+async function getHandler(req: NextRequest) {
   const denied = cronOr401(req)
   if (denied) return denied
   try {
@@ -29,3 +30,5 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: false, error: e?.message || 'Failed' }, { status: 500 })
   }
 }
+
+export const GET = withJobLog('booking-reminders', getHandler)

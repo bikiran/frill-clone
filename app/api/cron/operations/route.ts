@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { queueOpsChecks } from '@/lib/agent/operations'
+import { withJobLog } from '@/lib/job-log'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 120
@@ -14,7 +15,7 @@ export const maxDuration = 120
  * agent worker does the rest. See lib/agent/operations.ts.
  * Runs on a schedule (see vercel.json). Honours CRON_SECRET like the others.
  */
-export async function GET(req: NextRequest) {
+async function getHandler(req: NextRequest) {
   const secret = process.env.CRON_SECRET
   if (secret) {
     const auth = req.headers.get('authorization') || ''
@@ -27,3 +28,5 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: false, error: e?.message || 'Failed' }, { status: 500 })
   }
 }
+
+export const GET = withJobLog('operations-agent', getHandler)

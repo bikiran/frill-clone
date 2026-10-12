@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { notifyCompany } from '@/lib/notify'
 import { computeSla, resolveSla, humanDuration } from '@/lib/ticket-sla'
+import { withJobLog } from '@/lib/job-log'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -21,7 +22,7 @@ const admin = () => createClient(
  * (vercel.json). Safe to call often: each ticket is alerted at
  * most once (sla_breach_notified_at), and it only reads/updates tickets.
  */
-export async function GET(req: NextRequest) {
+async function getHandler(req: NextRequest) {
   const denied = cronOr401(req)
   if (denied) return denied
   try {
@@ -58,3 +59,5 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: false, error: e?.message })
   }
 }
+
+export const GET = withJobLog('ticket-sla', getHandler)

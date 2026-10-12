@@ -55,3 +55,31 @@ export async function logJobRun(run: JobRun): Promise<void> {
     /* logging must never break the job */
   }
 }
+
+/**
+ * Wrap a scheduled route handler so every run lands in job_runs (Super Admin →
+ * Background Jobs): when it started, how long it took, and whether it worked.
+ * Rejected callers (401/403) aren't logged. Never changes the response.
+ */
+export function withJobLog<A extends any[]>(job: string, fn: (...args: A) => Promise<Response>): (...args: A) => Promise<Response> {
+  return async (...args: A) => {
+    const t0 = Date.now()
+    const startedAt = new Date(t0).toISOString()
+    try {
+      const res = await fn(...args)
+      if (res.status === 401 || res.status === 403) return res
+      let detail: any = null
+      try { detail = await res.clone().json() } catch {}
+      const failed = res.status >= 500 || (detail && typeof detail === 'object' && detail.error && detail.ok !== true)
+      await logJobRun({
+        job, startedAt, durationMs: Date.now() - t0,
+        status: failed ? 'error' : 'success', detail,
+        error: failed ? String(detail?.error || `HTTP ${res.status}`) : null,
+      })
+      return res
+    } catch (e: any) {
+      await logJobRun({ job, startedAt, durationMs: Date.now() - t0, status: 'error', error: e?.message || String(e) })
+      throw e
+    }
+  }
+}

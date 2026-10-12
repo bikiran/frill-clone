@@ -7,6 +7,7 @@ import { holidaySet, wallClock, isBlockedDay, nextOpenSlot } from '@/lib/holiday
 import { assessReviewSentiment } from '@/lib/review-sentiment'
 import { shortenUrl } from '@/lib/short-link'
 import { findCustomerGoogleReview } from '@/lib/review-match'
+import { withJobLog } from '@/lib/job-log'
 
 export const dynamic = 'force-dynamic'
 
@@ -21,10 +22,10 @@ const admin = () => createClient(
 //
 // Delivers over the channels the business enabled: chat (always available),
 // SMS (Telnyx) and/or email (Resend).
-export async function GET(req: NextRequest) {
+async function getHandler(req: NextRequest) {
   return run(req)
 }
-export async function POST(req: NextRequest) {
+async function postHandler(req: NextRequest) {
   return run(req)
 }
 
@@ -285,3 +286,7 @@ async function run(req: NextRequest) {
     return NextResponse.json({ error: e.message }, { status: 500 })
   }
 }
+
+export const GET = withJobLog('review-dispatch', getHandler)
+
+export const POST = withJobLog('review-dispatch', postHandler)
