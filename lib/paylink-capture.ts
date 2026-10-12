@@ -98,7 +98,7 @@ function toAddress(a: any): AddressInput | null {
   return { line1: a.line1 || null, line2: a.line2 || null, city: a.city || null, state: a.state || null, postcode: a.postal_code || null, country: a.country || null }
 }
 
-export type CaptureResult = { contactId: string | null; filled: string[]; created: boolean; addresses: number; card: { brand: string | null; last4: string | null } | null }
+export type CaptureResult = { contactId: string | null; filled: string[]; created: boolean; addresses: number; card: { brand: string | null; last4: string | null } | null; receipt?: string | null }
 
 /**
  * After a pay link is paid (called once, by whichever of the webhook or the
@@ -111,7 +111,7 @@ export async function captureFromPayLink(db: any, args: { companyId: string; ses
     const { data: company } = await db.from('companies').select('*').eq('id', args.companyId).maybeSingle()
     if (!company) return null
     const { s, connectOpts } = await chatStripe(company)
-    const session: any = await s.checkout.sessions.retrieve(args.sessionId, { expand: ['payment_intent.payment_method'] } as any, connectOpts as any)
+    const session: any = await s.checkout.sessions.retrieve(args.sessionId, { expand: ['payment_intent.payment_method', 'payment_intent.latest_charge'] } as any, connectOpts as any)
     const meta = session?.metadata || {}
     if (meta.kind !== 'chat_payment' || !meta.conversationId) return null
     const st = payLinkSettings(company)
@@ -124,6 +124,15 @@ export async function captureFromPayLink(db: any, args: { companyId: string; ses
     const shippingAddr = toAddress(shipping?.address)
     const pm: any = typeof session.payment_intent === 'object' ? session.payment_intent?.payment_method : null
     const savedCard = pm && typeof pm === 'object' && pm.customer && pm.card ? pm : null
+
+    // ── A receipt for the customer. Checkout only emails one when the
+    // business switched receipts on in Stripe; giving the charge a receipt
+    // address makes Stripe send it either way (once — skipped if one was
+    // already requested).
+    const charge: any = typeof session.payment_intent === 'object' ? session.payment_intent?.latest_charge : null
+    if (email && company.payment_settings?.paylink_receipt !== false && charge && typeof charge === 'object' && !charge.receipt_email) {
+      try { await s.charges.update(charge.id, { receipt_email: email }, connectOpts as any); res.receipt = email } catch { /* best-effort */ }
+    }
 
     // ── The customer this payment belongs to
     const { data: conv } = await db.from('conversations').select('id, contact_id').eq('id', meta.conversationId).maybeSingle()
