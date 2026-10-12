@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { authFetch } from '@/lib/auth-fetch'
+import { refreshPublicHelp } from '@/lib/help-revalidate'
 import { useEntitlements } from '@/lib/entitlements-client'
 import { renderMarkdown } from '@/lib/markdown'
 import { StatusMark } from '@/components/StatusMark'
@@ -223,6 +224,7 @@ export default function HelpImportPage() {
         if (error) { if (/PLAN_LIMIT/i.test(error.message || '')) break; throw error }
         count++
       }
+      if (count) refreshPublicHelp(companyId)
       setSaved({ count, status, capped: keep.length - count })
       setStage('done')
     } catch (e: any) {

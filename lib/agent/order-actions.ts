@@ -10,6 +10,7 @@
 import { getOrderTracking } from '@/lib/tracking'
 import { assessOrder, loadThresholds } from '@/lib/order-assess'
 import { statusMeta } from '@/lib/orders'
+import { orderProgress } from '@/lib/order-progress'
 import type { ActionContext, ActionDef, JsonSchema } from './types'
 
 const obj = (properties: Record<string, any>, required: string[] = []): JsonSchema => ({ type: 'object', properties, required, additionalProperties: false })
@@ -17,7 +18,7 @@ const digits9 = (s: any) => String(s || '').replace(/\D/g, '').slice(-9)
 const lc = (s: any) => String(s || '').trim().toLowerCase()
 const cleanNum = (s: any) => String(s || '').replace(/^#/, '').trim()
 
-const ORDER_COLS = 'id, order_number, status, payment_status, fulfilment_status, total, currency, order_date, created_at, customer_name, customer_email, customer_phone, customer_phone_norm, contact_id, shipping_address, sales_channel, carrier, tracking_number, tracking_url, shipped_at, delivered_at'
+const ORDER_COLS = 'id, order_number, status, payment_status, fulfilment_status, total, currency, order_date, created_at, customer_name, customer_email, customer_phone, customer_phone_norm, contact_id, shipping_address, sales_channel, carrier, tracking_number, tracking_url, shipped_at, delivered_at, store_location_id'
 
 async function contactOf(ctx: ActionContext) {
   if (!ctx.contactId) return null
@@ -89,7 +90,7 @@ export const findCustomerOrders: ActionDef = {
 
 export const checkOrderStatus: ActionDef = {
   key: 'check_order_status',
-  description: 'Where an order is right now: status, shipments, carrier tracking, delivery estimate, and whether it looks normal or needs a person. Use an orderId from find_customer_orders.',
+  description: 'Where an order is right now: status, each item (packed, sent, which shipment if the order was split, or out of stock at the outlet handling it), carrier tracking, delivery estimate, and whether it looks normal or needs a person. Use an orderId from find_customer_orders.',
   input: obj({ orderId: { type: 'string' } }, ['orderId']),
   category: 'read', risk: 'low', maxAutonomy: 'autonomous', customerSafe: true,
   async run(ctx, args) {
@@ -99,8 +100,12 @@ export const checkOrderStatus: ActionDef = {
     if (!proven(ctx).has(order.id) && !belongsTo(order, await contactOf(ctx))) {
       return { ok: false, error: 'That order isn’t linked to this customer. Use find_customer_orders.' }
     }
-    const tracking = await getOrderTracking(ctx.db, ctx.companyId, order, { live: true, save: ctx.mode === 'live' })
+    const [tracking, progress] = await Promise.all([
+      getOrderTracking(ctx.db, ctx.companyId, order, { live: true, save: ctx.mode === 'live' }),
+      orderProgress(ctx.db, ctx.companyId, order).catch(() => null),
+    ])
     const assessment = assessOrder(tracking, await loadThresholds(ctx.db, ctx.companyId))
+    const waiting = progress?.waitingOnStock || []
     return {
       ok: true,
       data: {
@@ -110,16 +115,26 @@ export const checkOrderStatus: ActionDef = {
           shipped: s.shippedAt?.slice(0, 10) || null, estimatedDelivery: s.estimatedDelivery?.slice(0, 10) || null, delivered: s.deliveredAt?.slice(0, 10) || null,
           latest: s.lastEvent ? `${s.lastEvent.text}${s.lastEvent.place ? ` — ${s.lastEvent.place}` : ''}${s.lastEvent.at ? ` (${s.lastEvent.at.slice(0, 10)})` : ''}` : null,
         })),
+        ...(progress ? {
+          items: progress.items.map(i => ({ item: i.name, qty: i.qty, state: i.state, ...(progress.split ? { shipment: i.shipment } : {}), ...(i.sentOn ? { sent: i.sentOn } : {}) })),
+          progress: progress.summary,
+          ...(progress.split ? { splitShipments: progress.shipments } : {}),
+          ...(waiting.length ? { waitingOnStock: waiting } : {}),
+          ...(progress.outlet ? { handledBy: progress.outlet } : {}),
+        } : {}),
         assessment: { verdict: assessment.verdict, reasons: assessment.reasons, ...assessment.facts },
-        guidance: assessment.verdict === 'escalate'
+        guidance: (waiting.length
+          ? `Tell the customer plainly which item${waiting.length === 1 ? ' is' : 's are'} waiting on stock (${waiting.map(w => w.name).join(', ')})${progress?.items.some(i => i.state === 'sent') ? ' and what has already been sent' : ''}. Don’t promise a date for the restock. Say the team will keep them posted, and create_task so a person follows up. `
+          : progress?.split ? 'The order was split: say which items went in which shipment and give tracking for the sent ones. ' : '')
+          + (assessment.verdict === 'escalate'
           ? 'Tell the customer you’re getting the team onto it, then escalate_to_human with the reasons.'
           : assessment.verdict === 'needs_attention'
             ? 'Give the customer the facts you have, say the team will check, and create_task so a person follows up.'
-            : 'Give the customer the status, and the tracking link if there is one.',
+            : 'Give the customer the status, and the tracking link if there is one.'),
         trackedVia: tracking.sources, notes: tracking.notes,
       },
       entityType: 'order', entityId: order.id,
-      summary: `Order #${tracking.orderNumber}: ${tracking.stage} · ${assessment.verdict}`,
+      summary: `Order #${tracking.orderNumber}: ${tracking.stage} · ${assessment.verdict}${waiting.length ? ` · ${waiting.length} waiting on stock` : ''}`,
     }
   },
 }

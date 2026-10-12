@@ -67,8 +67,18 @@ export async function POST(req: NextRequest) {
 
     // An agent answered → mark it and finish.
     if (dialStatus === 'completed' || dialStatus === 'answered') {
+      // Who ended it. This action fires when the <Dial> ends; CallStatus is the
+      // CUSTOMER's leg. Already completed → the customer hung up. Still in
+      // progress → the agent's leg ended (they hung up, or their app or
+      // connection dropped it). Shown as "Hangup cause" in Call Diagnostics, so
+      // a call that drops a second after it's answered says whose end it was.
+      const parentStatus = (get('CallStatus') || '').toLowerCase()
+      const endedBy = parentStatus === 'completed' ? 'caller_hung_up'
+        : parentStatus === 'in-progress' ? 'agent_leg_ended'
+        : `parent_${parentStatus || 'unknown'}`
+      const hangupCause = `${endedBy}: rang=${rang} dur=${durSecs}s`
       if (callRowId) {
-        try { await db.from('calls').update({ status: 'completed', answered_at: new Date().toISOString(), ended_at: new Date().toISOString(), ...(durSecs ? { duration_seconds: durSecs } : {}) }).eq('id', callRowId) } catch {}
+        try { await db.from('calls').update({ status: 'completed', answered_at: new Date().toISOString(), ended_at: new Date().toISOString(), cause: hangupCause, ...(durSecs ? { duration_seconds: durSecs } : {}) }).eq('id', callRowId) } catch {}
         // Record WHO answered when the per-<Client> callback didn't. Prefer the
         // exact answering leg (call_legs mapping by DialCallSid — works even in a
         // simultaneous multi-agent ring); fall back to the solo-ring user id when

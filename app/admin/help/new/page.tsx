@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { useEntitlements } from '@/lib/entitlements-client'
+import { refreshPublicHelp } from '@/lib/help-revalidate'
 
 const DEFAULT_CATEGORIES = ['Getting Started', 'Features', 'Billing', 'Integrations', 'Troubleshooting', 'API', 'Other']
 
@@ -49,6 +50,10 @@ export default function NewHelpArticlePage() {
   useEffect(() => {
     const init = async () => {
       console.log('[HELP INIT] Starting initialization...')
+      // Start loading the article being edited right away, alongside the
+      // company and categories, instead of after them. It's still applied last
+      // so its category wins over the default picked from the category list.
+      const articleP = editId ? fetchArticleData(editId) : null
       const { data: authData } = await supabase.auth.getSession()
       const u = authData?.session?.user
       console.log('[HELP INIT] User:', u?.id)
@@ -112,34 +117,35 @@ export default function NewHelpArticlePage() {
         console.error('[HELP INIT] ❌ Company load failed:', e.message)
       }
 
-      if (editId) loadArticle(editId)
+      if (articleP) applyArticle(await articleP)
     }
     init()
   }, [editId])
 
-  const loadArticle = async (id: string) => {
+  const applyArticle = (data: any) => {
+    if (!data) return
+    setTitle(data.title || '')
+    setContent(data.content || '')
+    setCategory(data.category || 'Getting Started')
+    setStatus(data.status || 'draft')
+    setFeatured(data.featured || false)
+    setLocationIds(Array.isArray(data.location_ids) ? data.location_ids : [])
+    setMediaItems(data.media || [])
+  }
+
+  const fetchArticleData = async (id: string): Promise<any> => {
     if (id.startsWith('demo-')) {
       const DEMO: Record<string, any> = {
         'demo-1': { title: 'Getting started with Colvy', content: 'Welcome to Colvy! This guide will help you set up your feedback board in minutes.\n\n## Step 1: Create your board\n\nAfter signing up, your feedback board is automatically created. You can customize it from the Admin panel.\n\n## Step 2: Invite your team\n\nGo to Admin → Team Members to invite colleagues.\n\n## Step 3: Collect feedback\n\nShare your board URL with customers and start collecting ideas.', category: 'Getting Started', status: 'published', featured: true },
         'demo-2': { title: 'How to create and manage ideas', content: 'Ideas are the core of Colvy. Here\'s how to manage them effectively.\n\n## Creating ideas\n\nClick "Share an Idea" on your board to submit new ideas.\n\n## Voting\n\nUsers can upvote ideas they care about.\n\n## Status management\n\nUpdate idea status to keep users informed.', category: 'Features', status: 'published', featured: true },
         'demo-5': { title: 'Embedding the Colvy widget', content: 'Add Colvy to your app with a simple JavaScript snippet.\n\n## Installation\n\nPaste this code before the closing </body> tag:\n\n```html\n<script src="https://yourapp.colvy.com/embed.js"></script>\n```', category: 'Integrations', status: 'published', featured: true },
       }
-      const demo = DEMO[id]
-      if (demo) { setTitle(demo.title); setContent(demo.content); setCategory(demo.category); setStatus(demo.status); setFeatured(demo.featured) }
-      return
+      return DEMO[id] || null
     }
     try {
       const { data } = await (supabase as any).from('help_articles').select('*').eq('id', id).single()
-      if (data) {
-        setTitle(data.title || '')
-        setContent(data.content || '')
-        setCategory(data.category || 'Getting Started')
-        setStatus(data.status || 'draft')
-        setFeatured(data.featured || false)
-        setLocationIds(Array.isArray(data.location_ids) ? data.location_ids : [])
-        setMediaItems(data.media || [])
-      }
-    } catch (err) { console.error(err) }
+      return data || null
+    } catch (err) { console.error(err); return null }
   }
 
   const handlePublish = async () => {
@@ -199,6 +205,8 @@ export default function NewHelpArticlePage() {
         if (error) throw error
       }
       
+      // Refresh the public help centre's cache so the change is live right away.
+      refreshPublicHelp(company.id, editId && !editId.startsWith('demo-') ? [editId] : [])
       console.log('[HELP PUBLISH] ✅ Successfully saved!')
       alert('Help article published successfully!')
       router.push('/admin/help')
@@ -301,6 +309,7 @@ export default function NewHelpArticlePage() {
                     ...article
                   })
                 }
+                refreshPublicHelp(company.id)
                 alert('✅ Demo articles created! Refresh to see them.')
               } catch (e) {
                 alert('Error: ' + (e as any).message)

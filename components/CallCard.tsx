@@ -30,6 +30,50 @@ const SENTIMENT: Record<string, { label: string; color: string; bg: string }> = 
 
 const fmt = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
 
+// Batched call-row reads. A thread with many calls mounts a CallCard per call,
+// and each one used to run its own `calls` query on mount (N round trips for N
+// cards). Requests made in the same tick are coalesced into one `in (...)`
+// query; if a batch fails (e.g. one malformed id) each id falls back to its own
+// single-row read, exactly as before.
+const callWaiters = new Map<string, ((row: any) => void)[]>()
+let callFlushTimer: ReturnType<typeof setTimeout> | null = null
+async function flushCallBatch() {
+  callFlushTimer = null
+  const batch = new Map(callWaiters)
+  callWaiters.clear()
+  const ids = Array.from(batch.keys())
+  const resolveAll = (id: string, row: any) => { for (const r of batch.get(id) || []) r(row) }
+  for (let i = 0; i < ids.length; i += 100) {
+    const chunk = ids.slice(i, i + 100)
+    let rows: any[] | null = null
+    try {
+      const { data, error } = await (supabase as any).from('calls').select('*').in('id', chunk)
+      if (!error) rows = data || []
+    } catch {}
+    if (rows) {
+      const byId = new Map(rows.map((r: any) => [String(r.id), r]))
+      for (const id of chunk) resolveAll(id, byId.get(id) || null)
+    } else {
+      await Promise.all(chunk.map(async id => {
+        let row: any = null
+        try { row = (await (supabase as any).from('calls').select('*').eq('id', id).maybeSingle()).data || null } catch {}
+        resolveAll(id, row)
+      }))
+    }
+  }
+}
+function loadCallRow(id: string): Promise<any> {
+  return new Promise(resolve => {
+    const list = callWaiters.get(id) || []
+    list.push(resolve)
+    callWaiters.set(id, list)
+    if (!callFlushTimer) callFlushTimer = setTimeout(flushCallBatch, 0)
+  })
+}
+// A call older than this won't get a summary/transcript by itself any more
+// (transcription runs right after the call), so its card doesn't need to poll.
+const POLL_MAX_AGE_MS = 6 * 60 * 60 * 1000
+
 // Wrap every (case-insensitive) occurrence of `q` in a themed <mark>, matching
 // the inbox search highlight so a call's summary/transcript lights up too.
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -84,7 +128,7 @@ export default function CallCard({ callId, meta, timestamp, highlight, accent = 
 
   const load = async () => {
     if (!callId) return
-    const { data } = await (supabase as any).from('calls').select('*').eq('id', callId).maybeSingle()
+    const data = await loadCallRow(String(callId))
     if (data) setCall(data)
   }
 
@@ -95,6 +139,10 @@ export default function CallCard({ callId, meta, timestamp, highlight, accent = 
   useEffect(() => {
     if (!callId) return
     if (call?.ai_summary || call?.transcription) return
+    // A historical call that never got a summary isn't about to: don't poll it
+    // (a thread with many old calls ran ~20 polls per card for nothing).
+    const startedAt = Date.parse(String(call?.created_at || timestamp || ''))
+    if (!isNaN(startedAt) && Date.now() - startedAt > POLL_MAX_AGE_MS) return
     // Nothing to wait for on a call that never connected (missed/failed with no
     // recording) — don't poll it. Connected/voicemail rows may still be waiting
     // for the recording + summary to upload, so keep polling those.

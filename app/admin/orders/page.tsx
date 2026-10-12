@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { supabase } from '@/lib/supabase'
 import { peekCompanyUser } from '@/lib/client-cache'
+import { readLocal, writeLocal } from '@/lib/local-cache'
 import { track } from '@/lib/analytics'
 import {
   STATUS_TABS, statusMeta, displayStatus, isAwaitingPayment, channelMeta, orderAge, fmtMoney,
@@ -95,6 +96,58 @@ export async function copyToClipboard(text: string, flash?: (m: string) => void)
     else { const ta = document.createElement('textarea'); ta.value = t; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove() }
     flash?.('Copied to clipboard')
   } catch { flash?.('Copy failed') }
+}
+
+// ── Board cache (stale-while-revalidate across visits) ──────────────────────
+// The last board is kept in localStorage so a revisit paints instantly while the
+// fresh load runs. Only the columns the board itself reads (table row, tab
+// counts, filters, search, bulk actions) are stored, column-wise (no repeated
+// keys) with the address cut to its searchable parts, so a book of thousands
+// fits comfortably.
+// Cached rows carry `__c: 1` and are replaced by full rows as their page of the
+// fresh load lands. The drawer never renders a cached row: opening one before
+// its page lands fetches the full row first (the drawer and the label modal
+// write back fields such as metadata, which a partial row doesn't carry).
+const ORDERS_CACHE_MAX = 6000
+const ORDER_CACHE_FIELDS = [
+  'id', 'order_number', 'order_date', 'customer_name', 'customer_email', 'customer_phone', 'item_count', 'primary_sku',
+  'shipping_method', 'shipping_total', 'total', 'currency', 'status', 'payment_status', 'fulfilment_status',
+  'assignee_id', 'assignee_name', 'tags', 'flagged', 'store_location_id', 'sales_channel', 'contact_id', 'conversation_id',
+  'external_order_id', 'carrier', 'tracking_number', 'shipping_address',
+] as const
+const ADDR_FIELDS = ['address_1', 'address_2', 'city', 'state', 'postcode', 'country'] as const
+type OrdersCache = { v: 1; cols: string[]; rows: any[][] }
+function encodeOrdersCache(rows: any[]): OrdersCache {
+  return {
+    v: 1, cols: [...ORDER_CACHE_FIELDS],
+    rows: rows.map(o => ORDER_CACHE_FIELDS.map(k => {
+      const v = o[k]
+      if (k !== 'shipping_address') return v ?? null
+      if (!v || typeof v !== 'object') return null
+      const sa: any = {}
+      for (const f of ADDR_FIELDS) if (v[f]) sa[f] = v[f]
+      return sa
+    })),
+  }
+}
+function decodeOrdersCache(c: any): any[] | null {
+  if (!c || c.v !== 1 || !Array.isArray(c.cols) || !Array.isArray(c.rows)) return null
+  const cols: string[] = c.cols
+  return c.rows.map((r: any[]) => {
+    const o: any = { __c: 1 }
+    for (let i = 0; i < cols.length; i++) o[cols[i]] = r[i]
+    return o
+  })
+}
+
+// Assignee avatar. Module-level (it used to be re-declared inside the page on
+// every render, which gave React a new component type each time and remounted
+// every row's avatar on every state change).
+function Avatar({ name }: { name: string | null }) {
+  if (!name) return <span style={{ fontSize: 12, color: 'var(--slate)' }}>—</span>
+  const initials = name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()
+  const hue = Array.from(name).reduce((a, c) => a + c.charCodeAt(0), 0) % 360
+  return <span title={name} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 26, height: 26, borderRadius: '50%', background: `hsl(${hue} 60% 90%)`, color: `hsl(${hue} 45% 38%)`, fontSize: 10.5, fontWeight: 800 }}>{initials}</span>
 }
 
 export default function OrdersPage() {
@@ -205,39 +258,98 @@ export default function OrdersPage() {
     return null
   }
 
+  // Bumped by every loadOrders call so a superseded load (e.g. a sync-triggered
+  // reload, or a workspace switch) stops writing into state.
+  const loadGenRef = useRef(0)
+  const userIdRef = useRef<string | null>(null)
+  const activeCidRef = useRef<string | null>(null)
+  // Persist the last full board (see encodeOrdersCache) so a revisit paints
+  // instantly while the fresh load runs. Deferred off the load's critical path;
+  // if storage is short, keep the newest orders that fit.
+  const writeOrdersCache = (cid: string, rows: any[]) => {
+    const uid = userIdRef.current
+    if (!uid) return
+    setTimeout(() => {
+      try {
+        for (let n = Math.min(rows.length, ORDERS_CACHE_MAX); n > 0; n = Math.floor(n / 2)) {
+          if (writeLocal('orders', uid, cid, encodeOrdersCache(rows.slice(0, n)))) return
+          if (n < 500) return
+        }
+      } catch {}
+    }, 0)
+  }
+
   const loadOrders = useCallback(async (cid: string) => {
     // Read the orders table DIRECTLY via PostgREST (always warm, index-served on
     // (company_id, order_date)) instead of the serverless /api/orders — that
     // route cold-starts and re-validates the auth token on every request, which
     // is the bulk of the load time. The orders table's RLS is permissive, so the
-    // anon client reads it fine. The FIRST page paints and drops the spinner
-    // immediately; the rest streams in behind it.
-    const PAGE = 1000
-    const pageQ = (offset: number) => (supabase as any).from('orders').select('*')
-      .eq('company_id', cid).order('order_date', { ascending: false }).range(offset, offset + PAGE - 1)
+    // anon client reads it fine.
+    //
+    // Speed: a SMALL first page paints (and drops the spinner) as fast as
+    // possible, then the following 1000-row pages are requested several at a
+    // time instead of one after another — a big book used to take N sequential
+    // round trips. Each landed prefix is merged over whatever is on screen
+    // (cached rows from the last visit, or the previous load), so a refresh
+    // never shrinks the board/counts while it streams in.
+    const gen = ++loadGenRef.current
+    const FIRST = 250, PAGE = 1000, WINDOW = 4, MAX = 100000
+    // PostgREST builders are lazy (they only send on .then), so .then() here
+    // fires the request immediately — that's what lets pages overlap.
+    const pageQ = (from: number, to: number): Promise<{ data: any[] | null; error: any }> => (supabase as any).from('orders').select('*')
+      .eq('company_id', cid).order('order_date', { ascending: false }).range(from, to)
+      .then((r: any) => r, (e: any) => ({ data: null, error: e }))
+    const seen = new Set<string>()
+    const acc: any[] = []
+    const add = (rows: any[]) => { for (const r of rows) { if (seen.has(r.id)) continue; seen.add(r.id); acc.push(r) } }
+    // The fetched prefix is authoritative for every order newer than its oldest
+    // row; older on-screen rows stay until their own page lands.
+    const show = (complete: boolean) => {
+      if (gen !== loadGenRef.current) return
+      const fresh = acc.slice()
+      setOrders(prev => {
+        if (complete || !prev.length) return fresh
+        const last = fresh[fresh.length - 1]?.order_date
+        if (!last) return fresh
+        const tail = prev.filter(o => !seen.has(o.id) && o.order_date && o.order_date < last)
+        return tail.length ? fresh.concat(tail) : fresh
+      })
+    }
+    const fail = (msg: string) => { if (gen !== loadGenRef.current) return; setToast(`Couldn’t load orders: ${msg}`); setTimeout(() => setToast(''), 6000); setLoading(false) }
     try {
-      const first = await pageQ(0)
-      if (first.error) { setToast(`Couldn’t load orders: ${first.error.message}`); setTimeout(() => setToast(''), 6000); setLoading(false); return }
-      let acc: any[] = first.data || []
-      setOrders(acc.slice()); setLoading(false)
-      if (acc.length < PAGE) return
-      // Remaining pages — detached so they never block interaction. We only
-      // re-render the (large, growing) list every few pages instead of on every
-      // 1000-row chunk — repainting the whole array per chunk was O(n²) work and
-      // the main cost of loading a big book. A final flush guarantees the full
-      // set is shown once paging finishes.
+      // The small first page goes out ALONE so it isn't sharing bandwidth with
+      // the bulk pages — it's what paints the board.
+      const first = await pageQ(0, FIRST - 1)
+      if (gen !== loadGenRef.current) return
+      if (first.error) { fail(first.error.message); return }
+      add(first.data || [])
+      if ((first.data || []).length < FIRST) { show(true); setLoading(false); writeOrdersCache(cid, acc); return }
+      show(false); setLoading(false)
+      // Remaining pages — detached so they never block the caller/interaction.
+      // A sliding window keeps WINDOW pages in flight (instead of one round trip
+      // per page); they're consumed in order, and the big-list re-derivation
+      // (counts, filter, sort) re-runs once per WINDOW pages, not per page.
       ;(async () => {
-        let sinceRender = 0
-        for (let offset = PAGE; offset < 100000; offset += PAGE) {
-          const { data, error } = await pageQ(offset)
-          if (error || !data?.length) break
-          acc = acc.concat(data)
-          if (++sinceRender >= 5) { setOrders(acc.slice()); sinceRender = 0 }
+        const inflight: Promise<{ data: any[] | null; error: any }>[] = []
+        let next = FIRST
+        const fire = () => { if (next < MAX) { inflight.push(pageQ(next, next + PAGE - 1)); next += PAGE } }
+        for (let i = 0; i < WINDOW; i++) fire()
+        let failed = false, sinceShow = 0
+        while (inflight.length) {
+          const { data, error } = await inflight.shift()!
+          if (gen !== loadGenRef.current) return
+          if (error) { failed = true; break }
+          if (!data?.length) break
+          add(data)
           if (data.length < PAGE) break
+          fire()
+          if (++sinceShow >= WINDOW) { show(false); sinceShow = 0 }
         }
-        setOrders(acc.slice())
+        // A failed page keeps the older on-screen rows rather than dropping them.
+        show(!failed)
+        if (!failed) writeOrdersCache(cid, acc)
       })()
-    } catch (e: any) { setToast(`Couldn’t load orders: ${e?.message || e}`); setTimeout(() => setToast(''), 6000); setLoading(false) }
+    } catch (e: any) { fail(e?.message || String(e)) }
   }, [])
 
   // Load which orders have an unresolved out-of-stock alert, so the "Order
@@ -247,6 +359,7 @@ export default function OrdersPage() {
     try {
       const { data } = await (supabase as any).from('order_stock_alerts')
         .select('order_id, status').eq('company_id', cid).neq('status', 'resolved').limit(2000)
+      if (activeCidRef.current && activeCidRef.current !== cid) return // superseded workspace
       setOosOrderIds(new Set((data || []).map((r: any) => r.order_id).filter(Boolean)))
     } catch { /* table may not exist yet — leave the set empty */ }
   }, [])
@@ -258,16 +371,21 @@ export default function OrdersPage() {
   const loadItemIndex = useCallback(async (cid: string) => {
     try {
       const map: Record<string, string> = {}
-      const page = 1000
-      for (let from = 0; ; from += page) {
-        const { data, error } = await (supabase as any).from('order_items')
-          .select('order_id, product_name, sku').eq('company_id', cid).range(from, from + page - 1)
-        if (error || !data?.length) break
-        for (const it of data) {
-          const s = `${it.product_name || ''} ${it.sku || ''}`.toLowerCase()
-          map[it.order_id] = map[it.order_id] ? `${map[it.order_id]} ${s}` : s
+      const page = 1000, WAVE = 4
+      // Pages are fetched in parallel waves rather than strictly one by one.
+      const q = (from: number) => (supabase as any).from('order_items')
+        .select('order_id, product_name, sku').eq('company_id', cid).range(from, from + page - 1)
+        .then((r: any) => r, (e: any) => ({ data: null, error: e }))
+      outer: for (let from = 0; ; from += WAVE * page) {
+        const res = await Promise.all(Array.from({ length: WAVE }, (_, i) => q(from + i * page)))
+        for (const { data, error } of res) {
+          if (error || !data?.length) break outer
+          for (const it of data) {
+            const s = `${it.product_name || ''} ${it.sku || ''}`.toLowerCase()
+            map[it.order_id] = map[it.order_id] ? `${map[it.order_id]} ${s}` : s
+          }
+          if (data.length < page) break outer
         }
-        if (data.length < page) break
       }
       setItemIndex(map)
     } catch {}
@@ -329,33 +447,107 @@ export default function OrdersPage() {
     if (full) setSyncing(false)
   }, [loadOrders])
 
+  // Board metadata (accent, outlets, team, tags, alert ids, filter prefs) is
+  // cached alongside the rows so a revisit paints in its final shape (default
+  // outlet/status already applied) rather than flashing "All" first.
+  const [metaFresh, setMetaFresh] = useState(false)
+  useEffect(() => {
+    if (!metaFresh || !companyId) return
+    writeLocal('orders-meta', userIdRef.current, companyId, {
+      accent, locations, team, tagDefs, oos: Array.from(oosOrderIds),
+      prefs: { outlet: defaultOutlet, status: defaultStatus, views: savedViews },
+    })
+  }, [metaFresh, companyId, accent, locations, team, tagDefs, oosOrderIds, defaultOutlet, defaultStatus, savedViews])
+
   useEffect(() => {
     (async () => {
-      const cid = await getMyCompanyId()
-      if (!cid) { setLoading(false); return }
-      setCompanyId(cid)
-      // Kick the orders load off immediately, in parallel with the accent /
-      // locations / prefs / team setup below — the board no longer waits on any
-      // of that before its first paint.
-      loadOrders(cid)
-      loadOos(cid)
-      try { const { data: co } = await (supabase as any).from('companies').select('accent_color').eq('id', cid).maybeSingle(); if (co?.accent_color) setAccent(co.accent_color) } catch {}
+      // Paint the last board seen on this device first (stale-while-revalidate)
+      // and start the fresh load at once — before the workspace lookup, which
+      // can itself be a round trip. getSession() reads local storage.
       const { data: { session } } = await supabase.auth.getSession()
+      const uid = session?.user?.id || null
+      userIdRef.current = uid
       if (session?.user) setMe({ id: session.user.id, name: session.user.user_metadata?.display_name || session.user.email?.split('@')[0] || 'You' })
+      let started: string | null = null
+      let cachedPrefs: { outlet: string | null; status: string | null } = { outlet: null, status: null }
+      const cached = readLocal<OrdersCache>('orders', uid)
+      const cachedRows = cached?.companyId ? decodeOrdersCache(cached.data) : null
+      if (cached && cachedRows) {
+        started = cached.companyId
+        const meta = readLocal<any>('orders-meta', uid)
+        if (meta && meta.companyId === started && meta.data) {
+          const m = meta.data
+          if (m.accent) setAccent(m.accent)
+          if (Array.isArray(m.locations)) setLocations(m.locations)
+          if (Array.isArray(m.team)) setTeam(m.team)
+          if (Array.isArray(m.tagDefs)) setTagDefs(m.tagDefs)
+          if (Array.isArray(m.oos)) setOosOrderIds(new Set(m.oos))
+          const p = m.prefs || {}
+          if (p.outlet) { cachedPrefs.outlet = p.outlet; setDefaultOutlet(p.outlet); setFStore(p.outlet) }
+          if (p.status && STATUS_TABS.some(t => t.key === p.status)) { cachedPrefs.status = p.status; setDefaultStatus(p.status); setTab(p.status) }
+          if (Array.isArray(p.views)) setSavedViews(p.views)
+        }
+        activeCidRef.current = started
+        setCompanyId(started); setOrders(cachedRows); setLoading(false)
+        loadOrders(started)
+        loadOos(started)
+      }
 
-      const { data: locs } = await (supabase as any).from('company_locations').select('id, label, suburb, is_primary').eq('company_id', cid).order('is_primary', { ascending: false })
+      const cid = await getMyCompanyId()
+      if (!cid) { if (!started) setLoading(false); return }
+      if (cid !== started) {
+        // First visit on this device, or a different workspace — start clean.
+        if (started) {
+          cachedPrefs = { outlet: null, status: null }
+          setOrders([]); setOosOrderIds(new Set()); setLoading(true)
+          setAccent('var(--coral)'); setLocations([]); setTeam([]); setTagDefs([]); setSavedViews([])
+          setDefaultOutlet(null); setFStore('all'); setDefaultStatus(null); setTab('all')
+        }
+        activeCidRef.current = cid
+        setCompanyId(cid)
+        // Kick the orders load off immediately, in parallel with the accent /
+        // locations / prefs / team setup below — the board never waits on any
+        // of that before its first paint.
+        loadOrders(cid)
+        loadOos(cid)
+      }
+      loadTagDefs(cid)
+
+      // The setup lookups are independent, so they run in parallel (they used
+      // to be five sequential round trips before outlets/filters/team settled).
+      const [coRes, locRes, prefs, tmRes] = await Promise.all([
+        (supabase as any).from('companies').select('accent_color, owner_id, name').eq('id', cid).maybeSingle().then((r: any) => r, () => null),
+        (supabase as any).from('company_locations').select('id, label, suburb, is_primary').eq('company_id', cid).order('is_primary', { ascending: false }).then((r: any) => r, () => null),
+        session?.user
+          ? authFetch(`/api/user-prefs?userId=${session.user.id}&companyId=${cid}`).then(r => r.json()).catch(() => null)
+          : Promise.resolve(null),
+        (supabase as any).from('team_members').select('*').then((r: any) => r, () => null),
+      ])
+      const coRow = coRes?.data
+      if (coRow?.accent_color) setAccent(coRow.accent_color)
+      const locs = locRes?.data
       setLocations((locs || []).map((l: any) => ({ id: l.id, name: l.label || l.suburb || 'Outlet' })))
 
-      // Default outlet — shared with the Tasks/Calendar pages. Pre-filters the board.
-      if (session?.user) {
+      // Default outlet — shared with the Tasks/Calendar pages. Pre-filters the
+      // board. A cached default was already applied at first paint; only move a
+      // filter if the saved default changed and the user hasn't picked another.
+      if (session?.user && prefs) {
         try {
-          const r = await authFetch(`/api/user-prefs?userId=${session.user.id}&companyId=${cid}`)
-          const j = await r.json()
-          const dv = j?.prefs?.default_outlet
-          if (dv?.id && (locs || []).some((l: any) => l.id === dv.id)) { setDefaultOutlet(dv.id); setFStore(dv.id) }
-          const ds = j?.prefs?.default_status?.key
-          if (ds && STATUS_TABS.some(t => t.key === ds)) { setDefaultStatus(ds); setTab(ds) }
-          const vs = j?.prefs?.order_views?.views
+          const dv = prefs?.prefs?.default_outlet
+          const outlet: string | null = dv?.id && (locs || []).some((l: any) => l.id === dv.id) ? dv.id : null
+          if (outlet && outlet !== cachedPrefs.outlet) {
+            setDefaultOutlet(outlet); setFStore(cur => cur === (cachedPrefs.outlet || 'all') ? outlet : cur)
+          } else if (!outlet && cachedPrefs.outlet) {
+            setDefaultOutlet(null); setFStore(cur => cur === cachedPrefs.outlet ? 'all' : cur)
+          }
+          const dsRaw = prefs?.prefs?.default_status?.key
+          const ds: string | null = dsRaw && STATUS_TABS.some(t => t.key === dsRaw) ? dsRaw : null
+          if (ds && ds !== cachedPrefs.status) {
+            setDefaultStatus(ds); setTab(cur => cur === (cachedPrefs.status || 'all') ? ds : cur)
+          } else if (!ds && cachedPrefs.status) {
+            setDefaultStatus(null); setTab(cur => cur === cachedPrefs.status ? 'all' : cur)
+          }
+          const vs = prefs?.prefs?.order_views?.views
           if (Array.isArray(vs)) setSavedViews(vs)
         } catch {}
       }
@@ -364,10 +556,8 @@ export default function OrdersPage() {
       // team_members by company_id (invited members can have a null company_id;
       // RLS already scopes them). Filtering by company_id hid everyone.
       const members: { id: string; name: string }[] = []
-      const { data: coRow } = await (supabase as any).from('companies').select('owner_id, name').eq('id', cid).maybeSingle()
       if (coRow?.owner_id) members.push({ id: coRow.owner_id, name: coRow.name ? `${coRow.name} (Owner)` : 'Owner' })
-      const { data: tms } = await (supabase as any).from('team_members').select('*')
-      for (const m of tms || []) {
+      for (const m of tmRes?.data || []) {
         if (m.company_id && m.company_id !== cid) continue
         const uid = m.user_id || m.id
         if (!uid || members.some(x => x.id === uid)) continue
@@ -376,8 +566,8 @@ export default function OrdersPage() {
       const needIds = members.filter(m => !m.name || m.name === 'Teammate').map(m => m.id)
       if (needIds.length) { try { const r = await authFetch('/api/team/names', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userIds: needIds }) }); const names = (await r.json()).names || {}; for (const m of members) if (names[m.id]?.name) m.name = names[m.id].name } catch {} }
       setTeam(members)
+      setMetaFresh(true)
 
-      loadTagDefs(cid)
       // Orders are already loading (kicked off above). Bring the operational
       // table up to date from the storefront in the background (idempotent).
       // The product-search index loads lazily on first search use, not here.
@@ -385,6 +575,20 @@ export default function OrdersPage() {
     })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // A drawer opened on a cached (partial) row before its fresh page has landed
+  // pulls that order's full row straight away; the drawer renders once it's in.
+  const drawerIsPartial = !!(drawerId && orders.find(x => x.id === drawerId)?.__c)
+  useEffect(() => {
+    if (!drawerId || !drawerIsPartial) return
+    let alive = true
+    ;(supabase as any).from('orders').select('*').eq('id', drawerId).maybeSingle().then(({ data, error }: any) => {
+      if (!alive) return
+      if (data) setOrders(os => os.map(x => x.id === data.id && x.__c ? data : x))
+      else if (!error) setDrawerId(null) // order no longer exists
+    }, () => {})
+    return () => { alive = false }
+  }, [drawerId, drawerIsPartial])
 
   // Live updates — a new or changed order (from the WooCommerce webhook) shows
   // up here instantly, the same way new chats do. No polling.
@@ -417,9 +621,10 @@ export default function OrdersPage() {
 
   // ── Counts for the tabs (scoped to the current Location filter) ─────────────
   const counts = useMemo(() => {
-    const scoped = orders.filter(locMatch)
-    const c: Record<string, number> = { all: scoped.length, alerts: 0, awaiting_shipment: 0, awaiting_payment: 0, on_hold: 0, manual: 0, shipped: 0, cancelled: 0, packed: 0, click_and_collect: 0 }
-    for (const o of scoped) {
+    const c: Record<string, number> = { all: 0, alerts: 0, awaiting_shipment: 0, awaiting_payment: 0, on_hold: 0, manual: 0, shipped: 0, cancelled: 0, packed: 0, click_and_collect: 0 }
+    for (const o of orders) {
+      if (!locMatch(o)) continue
+      c.all++
       // An order that hasn't been PAID isn't ready to ship — keep it out of the
       // Awaiting Shipment queue (and its count). It still counts under All Orders.
       const bucket = displayStatus(o)
@@ -449,8 +654,8 @@ export default function OrdersPage() {
   const filtered = useMemo(() => {
     const q = debouncedSearch.trim().toLowerCase()
     const now = Date.now()
-    let rows = orders.filter((o: any) => {
-      const tabDef = STATUS_TABS.find(t => t.key === tab)
+    const tabDef = STATUS_TABS.find(t => t.key === tab) // once, not per row
+    const rows = orders.filter((o: any) => {
       if (tab === 'alerts') { if (!isAlerted(o)) return false }
       else if (tab === 'awaiting_payment') { if (!isAwaitingPayment(o)) return false }
       else if (tabDef?.match) { if (!tabDef.match.includes(o.status)) return false }
@@ -475,7 +680,8 @@ export default function OrdersPage() {
       if (q) { if (!(hayIndex.get(o.id) || '').includes(q)) return false }
       return true
     })
-    rows = rows.slice().sort((a: any, b: any) => {
+    // `rows` is already a fresh array from filter(), so sort it in place.
+    rows.sort((a: any, b: any) => {
       let av: any, bv: any
       if (sortCol === 'total') { av = Number(a.total) || 0; bv = Number(b.total) || 0 }
       else if (sortCol === 'order_number') { av = a.order_number || ''; bv = b.order_number || '' }
@@ -588,12 +794,6 @@ export default function OrdersPage() {
   const th: React.CSSProperties = { padding: '10px 12px', fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--slate)', whiteSpace: 'nowrap', textAlign: 'left', position: 'sticky', top: 0, background: 'var(--canvas)', zIndex: 1 }
   const td: React.CSSProperties = { padding: '11px 12px', fontSize: 13, color: 'var(--ink)', whiteSpace: 'nowrap' }
 
-  const Avatar = ({ name }: { name: string | null }) => {
-    if (!name) return <span style={{ fontSize: 12, color: 'var(--slate)' }}>—</span>
-    const initials = name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()
-    const hue = Array.from(name).reduce((a, c) => a + c.charCodeAt(0), 0) % 360
-    return <span title={name} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 26, height: 26, borderRadius: '50%', background: `hsl(${hue} 60% 90%)`, color: `hsl(${hue} 45% 38%)`, fontSize: 10.5, fontWeight: 800 }}>{initials}</span>
-  }
   const kpi = (label: string, value: number, color: string) => (
     <div style={{ ...card, padding: '10px 14px', minWidth: 96 }}>
       <p style={{ margin: 0, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.03em', color: 'var(--slate)' }}>{label}</p>
@@ -901,7 +1101,7 @@ export default function OrdersPage() {
 
       {toast && <div style={{ position: 'fixed', bottom: 22, left: '50%', transform: 'translateX(-50%)', background: 'var(--ink)', color: '#fff', padding: '10px 16px', borderRadius: 10, fontSize: 13, fontWeight: 600, zIndex: 5000, boxShadow: '0 8px 24px rgba(0,0,0,0.2)' }}>{toast}</div>}
 
-      {drawerOrder && (
+      {drawerOrder && !drawerOrder.__c && (
         <OrderDrawer key={drawerOrder.id} order={drawerOrder} companyId={companyId!} me={me} team={team} locations={locations} accent={accent} allTags={allTags}
           tagDefs={tagDefs} tagColor={tagColor} onEnsureTag={ensureTagDef} onManageTags={() => setManageTagsOpen(true)}
           onClose={() => setDrawerId(null)}

@@ -5,6 +5,7 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
+import { resolveCompanyUser } from '@/lib/client-cache'
 import Link from 'next/link'
 
 const RANGES = [
@@ -88,12 +89,15 @@ export default function HelpAnalyticsPage() {
     const load = async () => {
       setLoading(true)
       try {
-        const cid = await getCompanyId()
+        // The workspace is resolved once per session (lib/client-cache); the
+        // local lookup is only a fallback.
+        const cid = (await resolveCompanyUser()).companyId || await getCompanyId()
         if (!cid) return
         const start = range === 'all' ? new Date(0).toISOString() : new Date(Date.now() - parseInt(range) * 864e5).toISOString()
 
         const [{ data: arts }, { data: vws }, { data: srch }, { data: fdbk }] = await Promise.all([
-          (supabase as any).from('help_articles').select('*').eq('company_id', cid),
+          // Only what the tables show — not every article body and media blob.
+          (supabase as any).from('help_articles').select('id, title, category, status').eq('company_id', cid),
           (supabase as any).from('help_article_views').select('*').eq('company_id', cid).gte('viewed_at', start).limit(10000),
           (supabase as any).from('help_searches').select('*').eq('company_id', cid).gte('created_at', start).limit(10000),
           (supabase as any).from('help_article_feedback').select('*').eq('company_id', cid).gte('created_at', start).limit(10000),
