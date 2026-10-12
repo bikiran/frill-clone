@@ -24,6 +24,7 @@ import DemoTour from '@/components/DemoTour'
 const DEMO_LOCKED_HREFS = ['/admin/integrations', '/admin/billing', '/admin/import']
 const DEMO_LOCK_MESSAGE = 'This action is unavailable in the shared Colvy showcase. Start a free trial to connect your channels and use live messaging.'
 import { getCompanyByOwner } from '@/lib/board'
+import { readAdminGate, writeAdminGate, clearAdminGate, peekStoredUser, seedCompanyUser } from '@/lib/client-cache'
 import { useRouter } from 'next/navigation'
 import MobileNav from '@/components/MobileNav'
 import FeedbackButton from '@/components/FeedbackButton'
@@ -591,6 +592,18 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   }, [])
 
   useEffect(() => {
+    // Opened this admin before as this same person? Show it straight away from
+    // the remembered answer; the full check below still runs and sends them
+    // away if the answer has changed. (Every read/write is still checked by the
+    // database and the API — this only decides what the screen shows first.)
+    if (typeof window !== 'undefined' && !window.location.hash.includes('access_token')) {
+      const gate = readAdminGate()
+      const stored = peekStoredUser()
+      if (gate && stored && stored.id === gate.userId) {
+        setUser(stored); setCompany(gate.company); setAuthed(true)
+        seedCompanyUser({ companyId: gate.company.id, user: stored })
+      }
+    }
     const initAuth = async () => {
       // When redirected from colvy.com sign-in, the session tokens may be in
       // the URL hash fragment (#access_token=...&refresh_token=...).
@@ -625,10 +638,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       if (typeof window !== 'undefined' && window.location.hostname === 'admin.colvy.com') {
         // The console lives at the bare host root, not the explicit
         // /platform-admin path (which 404s).
-        window.location.replace('/'); return
+        clearAdminGate(); window.location.replace('/'); return
       }
       const u = data?.session?.user
-      if (!u) { router.push('/signin'); return }
+      if (!u) { clearAdminGate(); router.push('/signin'); return }
       setUser(u)
 
       // Get hostname for subdomain detection
@@ -647,7 +660,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           // A subdomain with no company (typo, deleted workspace) has nothing to
           // administer — send the super admin to the platform panel rather than
           // rendering a company-less admin that reads as a broken 404.
-          if (!co) { window.location.href = 'https://admin.colvy.com'; return }
+          if (!co) { clearAdminGate(); window.location.href = 'https://admin.colvy.com'; return }
           setCompany(co)
         } else {
           const co = await getCompanyByOwner(u.id)
@@ -665,7 +678,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
         if (!subdomainCo) {
           // Subdomain doesn't exist — deny access
-          router.push('/')
+          clearAdminGate(); router.push('/')
           return
         }
 
@@ -692,10 +705,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         // If they own their OWN company, send them to their own admin; otherwise back to the board.
         const userCo = await getCompanyByOwner(u.id)
         if (userCo?.slug) {
-          window.location.href = `https://${userCo.slug}.colvy.com/admin`
+          clearAdminGate(); window.location.href = `https://${userCo.slug}.colvy.com/admin`
         } else {
           // User owns no company — deny access, back to the public board
-          router.push('/')
+          clearAdminGate(); router.push('/')
         }
         return
       }
@@ -719,7 +732,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         return
       }
       // Not an admin of anything — deny
-      router.push('/')
+      clearAdminGate(); router.push('/')
     }).catch(() => setAuthError(true))
     } // end initAuth
     initAuth().catch(() => setAuthError(true))
@@ -728,6 +741,14 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     const backstop = setTimeout(() => { if (authedRef.current === null) setAuthError(true) }, 15000)
     return () => clearTimeout(backstop)
   }, [])
+
+  // Remember a confirmed admin for an instant open next time, and hand the
+  // company to the pages so they skip their own lookup.
+  useEffect(() => {
+    if (!authed || !user?.id || !company?.id) return
+    writeAdminGate(user.id, company)
+    seedCompanyUser({ companyId: company.id, user })
+  }, [authed, user, company])
 
   // Resolve THIS member's role + feature permissions once we know who they are
   // and which company they're in. Owner / super-admin get full access; everyone

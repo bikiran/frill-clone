@@ -37,6 +37,52 @@ export function clearCompanyUser() {
   inflight = null
 }
 
+// The admin layout already works out who you are and which company you're in;
+// handing that over saves every page its own lookup.
+export function seedCompanyUser(v: CompanyUser) {
+  if (v.user && v.companyId) cachedCompanyUser = v
+}
+
+// ── Admin gate memory ───────────────────────────────────────────────────────
+// The last "yes, this person may use this admin" answer, per host, so a reload
+// opens the admin straight away while the full check runs in the background.
+// It's only about what the screen shows first: every read and write is still
+// checked by the database and the API.
+const gateKey = () => `colvy:admin-gate:${typeof window !== 'undefined' ? window.location.hostname : ''}`
+export type AdminGate = { userId: string; company: any; at: number }
+const GATE_MAX_AGE = 30 * 86_400_000
+
+export function readAdminGate(): AdminGate | null {
+  try {
+    const g = JSON.parse(localStorage.getItem(gateKey()) || 'null')
+    if (!g?.userId || !g?.company?.id || Date.now() - (g.at || 0) > GATE_MAX_AGE) return null
+    return g
+  } catch { return null }
+}
+export function writeAdminGate(userId: string, company: any) {
+  try { if (userId && company?.id) localStorage.setItem(gateKey(), JSON.stringify({ userId, company, at: Date.now() })) } catch {}
+}
+export function clearAdminGate() {
+  try { localStorage.removeItem(gateKey()) } catch {}
+}
+
+/** The signed-in user from Supabase's stored session, read without a network call (null if none or unusable). */
+export function peekStoredUser(): any | null {
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i) || ''
+      if (!/^sb-.+-auth-token$/.test(k)) continue
+      const v = JSON.parse(localStorage.getItem(k) || 'null')
+      const sess = v?.currentSession || v
+      if (!sess?.user?.id) continue
+      // Usable if it hasn't expired, or it can be refreshed.
+      const exp = Number(sess.expires_at || 0) * 1000
+      if ((exp && exp > Date.now()) || sess.refresh_token) return sess.user
+    }
+  } catch {}
+  return null
+}
+
 async function doResolve(): Promise<CompanyUser> {
   const { data: { session } } = await supabase.auth.getSession()
   const user = session?.user ?? null
@@ -76,6 +122,7 @@ if (typeof window !== 'undefined') {
     const uid = session?.user?.id
     if (event === 'SIGNED_OUT' || (lastUserId !== undefined && uid !== lastUserId)) {
       clearCompanyUser()
+      clearAdminGate()
     }
     lastUserId = uid
   })
