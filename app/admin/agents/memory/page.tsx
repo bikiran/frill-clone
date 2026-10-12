@@ -162,7 +162,7 @@ function KnowledgeNote({ coverage }: { coverage: Coverage | null }) {
           </div>
         ))}
       </div>
-      <Link href="/admin/ai-knowledge" className="bm-know-link">Open AI Knowledge {I.arrow}</Link>
+      <Link href="/admin/crm-settings/ai-knowledge" className="bm-know-link">Open AI Knowledge {I.arrow}</Link>
     </div>
   )
 }

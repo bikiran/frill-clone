@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { requireCompanyAccess } from '@/lib/company-access'
 import { KNOWLEDGE_DEFAULTS, rebuildKnowledge } from '@/lib/ai-knowledge'
+import { isRealQuestion } from '@/lib/ai-unanswered'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 120
@@ -49,7 +50,7 @@ export async function GET(req: NextRequest) {
       facts: facts.data || [],
       files: files.data || [],
       websitePages: Array.from(pages, ([url, title]) => ({ url, title })),
-      unanswered: unanswered.data || [],
+      unanswered: (unanswered.data || []).filter((u: any) => isRealQuestion(u.question)),
       unansweredReady: !unanswered.error,
     })
   } catch (e: any) {
