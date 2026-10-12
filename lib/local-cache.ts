@@ -19,9 +19,11 @@ export function readLocal<T>(key: string, userId: string | null | undefined, max
   } catch { return null }
 }
 
-export function writeLocal<T>(key: string, userId: string | null | undefined, companyId: string, data: T): void {
-  if (!userId || typeof window === 'undefined') return
+// Returns whether the entry was stored (false when storage is full/blocked), so
+// a caller with a large payload can retry with less.
+export function writeLocal<T>(key: string, userId: string | null | undefined, companyId: string, data: T): boolean {
+  if (!userId || typeof window === 'undefined') return false
   const entry: Entry<T> = { host: window.location.hostname, userId, companyId, at: Date.now(), data }
-  try { localStorage.setItem(PREFIX + key, JSON.stringify(entry)) }
-  catch { try { localStorage.removeItem(PREFIX + key) } catch {} }
+  try { localStorage.setItem(PREFIX + key, JSON.stringify(entry)); return true }
+  catch { try { localStorage.removeItem(PREFIX + key) } catch {} return false }
 }
