@@ -101,6 +101,17 @@ const createTask: ActionDef = {
     const title = String(args?.title || '').trim().slice(0, 200)
     if (!title) return { ok: false, error: 'A task needs a title.' }
     const details = String(args?.details || '').trim().slice(0, 2000)
+    // The outlet the work belongs to: the conversation's outlet, else (an
+    // Operations Agent order task) the order's store.
+    let locationId: string | null = null
+    if (ctx.conversationId) {
+      const { data: conv } = await ctx.db.from('conversations').select('assigned_location_id').eq('company_id', ctx.companyId).eq('id', ctx.conversationId).maybeSingle()
+      locationId = conv?.assigned_location_id || null
+    }
+    if (!locationId && ctx.scratch.opsOrder?.id) {
+      const { data: o } = await ctx.db.from('orders').select('store_location_id').eq('company_id', ctx.companyId).eq('id', ctx.scratch.opsOrder.id).maybeSingle()
+      locationId = o?.store_location_id || null
+    }
     const row: any = {
       company_id: ctx.companyId, title, text: details ? `${title}\n\n${details}` : title, done: false, status: 'todo',
       priority: ['low', 'high'].includes(args?.priority) ? args.priority : 'normal',
@@ -108,10 +119,16 @@ const createTask: ActionDef = {
       // The Operations Agent's tasks link to the order it's looking at.
       order_id: ctx.scratch.opsOrder?.id || (/^[0-9a-f-]{36}$/i.test(String(args?.orderId || '')) ? args.orderId : null), conversation_id: ctx.conversationId,
       created_by: ctx.roleName, source: 'agent',
+      ...(locationId ? { location_id: locationId, location_ids: [locationId] } : {}),
     }
-    const { data, error } = await ctx.db.from('conversation_tasks').insert(row).select('id').single()
+    let { data, error } = await ctx.db.from('conversation_tasks').insert(row).select('id').single()
+    // An older database without the outlet columns: still create the task.
+    if (error && locationId && /location/i.test(error.message || '')) {
+      const { location_id, location_ids, ...rest } = row
+      ;({ data, error } = await ctx.db.from('conversation_tasks').insert(rest).select('id').single())
+    }
     if (error) return { ok: false, error: error.message }
-    return { ok: true, data: { taskId: data.id }, entityType: 'task', entityId: data.id, summary: `Created task “${title}”` }
+    return { ok: true, data: { taskId: data.id, ...(locationId ? { outletId: locationId } : {}) }, entityType: 'task', entityId: data.id, summary: `Created task “${title}”` }
   },
 }
 
