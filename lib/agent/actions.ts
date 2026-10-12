@@ -19,6 +19,7 @@ import { getReview, replyToReviewAction } from './review-actions'
 import { getComment, replyToCommentAction } from './comment-actions'
 import { getCart, sendCartFollowup } from './sales-actions'
 import { getException, checkOrderTracking, sendOrderUpdate } from './ops-actions'
+import { getOpportunity, sendSalesFollowup } from './followup-actions'
 import { listServices, checkAvailability, findMyBookings, bookingLink, rescheduleBookingAction, cancelBookingAction } from './booking-actions'
 import { sendAgentMessage } from './send'
 
@@ -218,7 +219,7 @@ export const FINISH_ACTION: ActionDef = {
   async run() { return { ok: true } },
 }
 
-const ALL: ActionDef[] = [...READS, findCustomerOrders, checkOrderStatus, getBusinessHours, getReview, replyToReviewAction, getComment, replyToCommentAction, listServices, checkAvailability, findMyBookings, bookingLink, rescheduleBookingAction, cancelBookingAction, getCart, sendCartFollowup, getException, checkOrderTracking, sendOrderUpdate, createTask, sendMessage, escalateToHuman, FINISH_ACTION]
+const ALL: ActionDef[] = [...READS, findCustomerOrders, checkOrderStatus, getBusinessHours, getReview, replyToReviewAction, getComment, replyToCommentAction, listServices, checkAvailability, findMyBookings, bookingLink, rescheduleBookingAction, cancelBookingAction, getCart, sendCartFollowup, getOpportunity, sendSalesFollowup, getException, checkOrderTracking, sendOrderUpdate, createTask, sendMessage, escalateToHuman, FINISH_ACTION]
 export const ACTIONS: Record<string, ActionDef> = Object.fromEntries(ALL.map(a => [a.key, a]))
 
 export function getAction(key: string): ActionDef | null {

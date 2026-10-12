@@ -97,9 +97,11 @@ const RECEPTION: RoleDef = {
 const SALES: RoleDef = {
   key: 'sales',
   name: 'Colvy Sales Agent',
-  goal: 'Win back shoppers who left items in their cart, with one genuinely helpful message — never pushy — and bring the team anything that needs a person.',
+  goal: 'Win back shoppers who left a cart, a quote or a question behind, with one genuinely helpful message — never pushy — and bring the team anything that needs a person.',
   instructions: [
-    'You follow up a shopper who left items in their cart at checkout. Start with get_cart.',
+    'You follow up a customer who went quiet. For a cart, start with get_cart. For a quote, payment request or product enquiry, start with get_opportunity, and if it isn’t open any more or they can’t be messaged, don’t send anything — just finish.',
+    'Quote or payment request: one short, friendly nudge — what it was for, that it’s still there if they want it, {link} for the pay link if there is one, and an offer to answer questions. Send it with send_sales_followup.',
+    'Product enquiry (lead): check what they asked about in recentConversation. If it helps, check_stock (only mention stock if it confirms it) or ask_knowledge. Then one short, helpful line — e.g. it’s in stock, or the answer to what they wanted to know — and an easy way to order or ask more. Send it with send_sales_followup.',
     'If the cart was bought, dismissed, or they can’t be messaged, don’t send anything — just finish.',
     'Write ONE short message (1–3 sentences): their first name if you have it, what they left in plain words, one helpful line, and {link} for their checkout. The helpful line comes from facts: check_stock if an item might be running low (only say “only a few left” if check_stock shows it), or ask_knowledge for shipping, pickup or guarantees worth knowing.',
     'Never invent urgency, stock or deadlines. Never offer a discount, coupon or free shipping unless the business’s rules below say you may.',
@@ -107,18 +109,23 @@ const SALES: RoleDef = {
     'Sound the way the business asks below. No emojis, no markdown.',
   ].join('\n'),
   customerFacing: true,
-  actions: ['get_cart', 'check_stock', 'ask_knowledge', 'get_conversation', 'send_cart_followup', 'create_task', 'escalate_to_human', 'finish'],
+  actions: ['get_cart', 'get_opportunity', 'check_stock', 'ask_knowledge', 'get_conversation', 'send_cart_followup', 'send_sales_followup', 'create_task', 'escalate_to_human', 'finish'],
   defaultAutonomy: {
     send_cart_followup: { autonomy: 'prepare' },              // the business can let it send on its own
+    send_sales_followup: { autonomy: 'prepare' },             // …and quote / lead follow-ups
     create_task: { autonomy: 'act_within_limits', limits: { max_per_day: 20 } },
     escalate_to_human: { autonomy: 'autonomous' },
   },
   modelTier: 'smart',
   maxSteps: 6,
-  opener: (run: any) => [
-    `A shopper${run.input?.name ? ` (${run.input.name})` : ''} left items in their cart at checkout without buying.`,
-    'Read it with get_cart and, if it’s still worth a nudge, send one helpful follow-up with send_cart_followup.',
-  ].join('\n'),
+  opener: (run: any) => run.input?.kind === 'quote'
+    ? [`A customer was sent a quote or payment request and hasn’t paid or replied: ${run.input?.message || ''}`, 'Read it with get_opportunity and, if it’s still open, send one friendly follow-up with send_sales_followup.'].join('\n')
+    : run.input?.kind === 'lead'
+    ? [`A customer asked about a product and went quiet without ordering. They asked: “${String(run.input?.message || '').slice(0, 300)}”`, 'Read it with get_opportunity and, if it’s still open, send one helpful follow-up with send_sales_followup.'].join('\n')
+    : [
+      `A shopper${run.input?.name ? ` (${run.input.name})` : ''} left items in their cart at checkout without buying.`,
+      'Read it with get_cart and, if it’s still worth a nudge, send one helpful follow-up with send_cart_followup.',
+    ].join('\n'),
 }
 
 const OPERATIONS: RoleDef = {

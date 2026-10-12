@@ -26,6 +26,8 @@ export function SuggestionCard({ s, companyId, onDone, compact }: { s: Suggestio
   const isCart = s.action_key === 'send_cart_followup'
   // An update to a customer about a late or held-up order (Operations Agent).
   const isOrder = s.action_key === 'send_order_update'
+  // A follow-up to a quote, payment request or enquiry that went quiet (Sales Agent).
+  const isFollowup = s.action_key === 'send_sales_followup'
   const [error, setError] = useState('')
 
   const decide = async (action: 'approve' | 'reject') => {
@@ -43,7 +45,7 @@ export function SuggestionCard({ s, companyId, onDone, compact }: { s: Suggestio
       <div className="agsg-head">
         <span className="agsg-orb"><Spark /></span>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <p className="agsg-t">{isBooking ? `Reception Agent wants to ${s.action_key === 'cancel_booking' ? 'cancel a booking' : 'move a booking'}` : isComment ? `Reputation Agent drafted ${s.run?.input?.platform === 'instagram' ? 'an Instagram' : 'a Facebook'} reply` : isReview ? 'Reputation Agent drafted a reply' : isCart ? 'Sales Agent wrote a cart follow-up' : isOrder ? 'Operations Agent wrote an order update' : s.run?.role_key === 'reception' ? 'Reception Agent suggests a reply' : 'Support Agent suggests a reply'}</p>
+          <p className="agsg-t">{isBooking ? `Reception Agent wants to ${s.action_key === 'cancel_booking' ? 'cancel a booking' : 'move a booking'}` : isComment ? `Reputation Agent drafted ${s.run?.input?.platform === 'instagram' ? 'an Instagram' : 'a Facebook'} reply` : isReview ? 'Reputation Agent drafted a reply' : isCart ? 'Sales Agent wrote a cart follow-up' : isOrder ? 'Operations Agent wrote an order update' : isFollowup ? `Sales Agent wrote a ${s.run?.input?.kind === 'lead' ? 'follow-up to an enquiry' : 'quote follow-up'}` : s.run?.role_key === 'reception' ? 'Reception Agent suggests a reply' : 'Support Agent suggests a reply'}</p>
           {!compact && s.run?.summary && <p className="agsg-s">{s.run.summary}</p>}
         </div>
         <WhyLink companyId={companyId} runId={s.run_id} className="agsg-why" style={{ textDecoration: 'none' }} />
@@ -54,6 +56,7 @@ export function SuggestionCard({ s, companyId, onDone, compact }: { s: Suggestio
         ? <textarea className="agsg-edit" value={text} onChange={e => setText(e.target.value)} rows={Math.min(8, Math.max(3, Math.ceil(text.length / 60)))} autoFocus aria-label={isReview ? 'Edit the public reply' : isCart ? 'Edit the follow-up' : isOrder ? 'Edit the update' : 'Edit the reply'} />
         : <p className="agsg-text">{text}</p>}
       {isCart && <p className="agsg-note">Goes out by SMS, else email. {'{link}'} becomes their checkout link and “Reply STOP to opt out.” is added.</p>}
+      {isFollowup && <p className="agsg-note">{s.run?.input?.kind === 'quote' ? '{link} becomes their pay link. ' : ''}Goes in their conversation — by email or text on those threads, otherwise SMS, else email.</p>}
       {isOrder && <p className="agsg-note">Goes to the customer by SMS, else email, and shows in their conversation.</p>}
       {error && <p className="agsg-err" role="alert">{error}</p>}
       <div className="agsg-actions">
@@ -86,8 +89,8 @@ export default function AgentSuggestion({ companyId, conversationId, onChange }:
       if (convRef.current !== conversationId) return
       // At most one suggested reply (the newest — the list is newest first); other kinds as they are.
       let replyShown = false
-      const next: Suggestion[] = (d.approvals || []).filter((a: Suggestion) => ['send_message', 'reschedule_booking', 'cancel_booking', 'send_cart_followup', 'send_order_update'].includes(a.action_key))
-        .filter((a: Suggestion) => a.action_key !== 'send_message' || (!replyShown && (replyShown = true)))
+      const next: Suggestion[] = (d.approvals || []).filter((a: Suggestion) => ['send_message', 'reschedule_booking', 'cancel_booking', 'send_cart_followup', 'send_order_update', 'send_sales_followup'].includes(a.action_key))
+        .filter((a: Suggestion) => !['send_message', 'send_sales_followup'].includes(a.action_key) || (!replyShown && (replyShown = true)))
       const ids = next.map(a => a.id).join(',')
       if (ids === shownRef.current) return   // nothing new: leave the card alone
       const grew = next.some(a => !shownRef.current.split(',').includes(a.id))

@@ -8,11 +8,12 @@ import { postApprovedCommentReply } from './comment-actions'
 import { runApprovedBookingAction } from './booking-actions'
 import { sendApprovedCartFollowup } from './sales-actions'
 import { sendApprovedOrderUpdate } from './ops-actions'
+import { sendApprovedSalesFollowup } from './followup-actions'
 
 // Suggested replies in a conversation. Only one should ever be waiting: a new
 // customer message makes earlier ones out of date, and so does a reply from the
 // team. Out-of-date ones are expired (result.superseded) instead of piling up.
-const REPLY_ACTIONS = ['send_message']
+const REPLY_ACTIONS = ['send_message', 'send_sales_followup']
 
 /**
  * Expire this conversation's waiting reply suggestions except those from
@@ -156,7 +157,7 @@ export async function decideApproval(db: any, opts: {
     return r.ok ? { ok: true, status: 'executed' } : { ok: false, error: r.error }
   }
 
-  if (!['send_message', 'reply_to_review', 'reply_to_comment', 'send_cart_followup', 'send_order_update'].includes(ap.action_key)) {
+  if (!['send_message', 'reply_to_review', 'reply_to_comment', 'send_cart_followup', 'send_order_update', 'send_sales_followup'].includes(ap.action_key)) {
     await db.from('agent_approvals').update({ status: 'failed', result: { error: 'Not supported yet' } }).eq('id', ap.id)
     return { ok: false, error: 'Approving this kind of action isn’t supported yet.' }
   }
@@ -173,6 +174,8 @@ export async function decideApproval(db: any, opts: {
     ? await sendApprovedCartFollowup(db, opts.companyId, run, text, opts.user)
     : ap.action_key === 'send_order_update'
     ? await sendApprovedOrderUpdate(db, opts.companyId, run, text, opts.user)
+    : ap.action_key === 'send_sales_followup'
+    ? await sendApprovedSalesFollowup(db, opts.companyId, run, text, opts.user)
     : await sendAgentMessage(db, { companyId: opts.companyId, conversationId: run.conversation_id, text, runId: run.id, approvedBy: opts.user, edited, agentName: run.role_key === 'reception' ? 'Reception Agent' : 'Support Agent' })
   await db.from('agent_approvals').update({ status: sent.ok ? (edited ? 'edited' : 'executed') : 'failed', result: sent.ok ? { channel: sent.channel, text, edited } : { error: sent.error } }).eq('id', ap.id)
   const verb = isReview ? (edited ? 'edited and posted' : 'approved and posted') : (edited ? 'edited and sent' : 'approved and sent')

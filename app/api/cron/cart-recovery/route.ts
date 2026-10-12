@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { runCartRecovery } from '@/lib/cart-recovery'
 import { queueCartFollowups } from '@/lib/agent/sales'
+import { queueSalesFollowups } from '@/lib/agent/followups'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -28,7 +29,9 @@ export async function GET(req: NextRequest) {
     const result = await runCartRecovery(db, { origin })
     // Businesses with the Sales Agent on get a personal follow-up instead (the agent worker sends it).
     const agent = await queueCartFollowups(db).catch((e: any) => ({ error: e?.message }))
-    return NextResponse.json({ ok: true, ...result, agent })
+    // …and quotes / enquiries that went quiet, if it's on for those.
+    const followups = await queueSalesFollowups(db).catch((e: any) => ({ error: e?.message }))
+    return NextResponse.json({ ok: true, ...result, agent, followups })
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message || 'Failed' }, { status: 500 })
   }
