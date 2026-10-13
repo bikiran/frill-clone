@@ -20,6 +20,8 @@ export type ToolSpec = { name: string; description: string; input_schema: any }
 export type ModelRequest = {
   tier: 'fast' | 'smart'
   system: string
+  /** Changes every call (time, live facts); sent after the cached system prompt. */
+  systemLive?: string
   messages: NeutralMessage[]
   tools?: ToolSpec[]
   maxTokens?: number
@@ -91,7 +93,12 @@ export class AnthropicModel implements ModelClient {
       // Agent steps are short decisions; low effort keeps a customer waiting less.
       output_config: { effort: 'low' },
       // The role prompt + tools are identical every step of a run — cache them.
-      system: [{ type: 'text', text: req.system, cache_control: { type: 'ephemeral' } }],
+      // A live part that changes each turn goes after the cached block, so it
+      // doesn't stop the stable part being reused.
+      system: [
+        { type: 'text', text: req.system, cache_control: { type: 'ephemeral' } },
+        ...(req.systemLive ? [{ type: 'text', text: req.systemLive }] : []),
+      ],
       ...(req.tools?.length ? { tools: req.tools } : {}),
       messages: toAnthropic(req.messages),
     }
