@@ -10,10 +10,11 @@ export default function PhoneAgentTestCard({ companyId }: { companyId: string })
   const [enabled, setEnabled] = useState(false)
   const [numbers, setNumbers] = useState('')
   const [voice, setVoice] = useState('')
+  const [stt, setStt] = useState('')
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
 
-  const apply = (x: any) => { setEnabled(!!x.enabled); setNumbers((x.testNumbers || []).join(', ')); setVoice(x.voice || '') }
+  const apply = (x: any) => { setEnabled(!!x.enabled); setNumbers((x.testNumbers || []).join(', ')); setVoice(x.voice || ''); setStt(x.stt || '') }
   useEffect(() => {
     let live = true
     authFetch(`/api/phone-agent?companyId=${encodeURIComponent(companyId)}`).then(r => r.json())
@@ -22,11 +23,11 @@ export default function PhoneAgentTestCard({ companyId }: { companyId: string })
   }, [companyId])
 
   if (!d) return null
-  const dirty = enabled !== !!d.enabled || numbers.trim() !== (d.testNumbers || []).join(', ') || voice !== d.voice
+  const dirty = enabled !== !!d.enabled || numbers.trim() !== (d.testNumbers || []).join(', ') || voice !== d.voice || stt !== d.stt
   const save = async () => {
     setBusy(true); setMsg(null)
     try {
-      const r = await authFetch('/api/phone-agent', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, enabled, testNumbers: numbers, voice }) })
+      const r = await authFetch('/api/phone-agent', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, enabled, testNumbers: numbers, voice, stt }) })
       const x = await r.json()
       if (!r.ok || x.error) { setMsg({ ok: false, text: x.error || 'Could not save.' }); return }
       setD({ ...d, ...x }); apply(x); setMsg({ ok: true, text: x.enabled ? 'Saved. Call your business number from a test number to try it.' : 'Saved.' })
@@ -59,6 +60,22 @@ export default function PhoneAgentTestCard({ companyId }: { companyId: string })
             style={{ padding: '9px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 14, marginBottom: 14, background: '#fff' }}>
             {(d.voices || []).map((v: any) => <option key={v.id} value={v.id}>{v.label}</option>)}
           </select>
+          {d.realtime && (d.sttOptions || []).length ? (
+            <>
+              <label htmlFor="pa-stt" style={label}>Speech recognition</label>
+              <select id="pa-stt" value={stt} onChange={e => setStt(e.target.value)}
+                style={{ maxWidth: '100%', padding: '9px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 14, marginBottom: 4, background: '#fff' }}>
+                {(d.sttOptions || []).map((o: any) => <option key={o.id} value={o.id}>{o.label}</option>)}
+              </select>
+              <p style={{ margin: '0 0 14px', fontSize: 12, color: 'var(--slate)' }}>
+                {stt === 'google'
+                  ? 'Doesn’t know your product names, so it can mishear them.'
+                  : d.productNames
+                    ? `Knows ${d.productNames.toLocaleString()} of your product names, so it hears and finds them. If a test call ends with “an application error”, switch to another option.`
+                    : 'Your product names load when you save (from your connected store), so the AI can hear and find them.'}
+              </p>
+            </>
+          ) : null}
           <p style={{ margin: '0 0 12px', fontSize: 12.5, color: d.realtime ? '#15803d' : 'var(--slate)' }}>
             {d.realtime
               ? 'Real-time: on. Replies start speaking as they’re written, and callers can talk over the AI.'

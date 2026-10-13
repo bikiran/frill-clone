@@ -1,7 +1,8 @@
 import { requireCompanyAccess } from '@/lib/company-access'
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse, after } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { getPhoneAgent, setPhoneAgent, PHONE_VOICES, MAX_TEST_NUMBERS, relayConfigured } from '@/lib/phone-agent'
+import { getPhoneAgent, setPhoneAgent, PHONE_VOICES, PHONE_STT, MAX_TEST_NUMBERS, relayConfigured } from '@/lib/phone-agent'
+import { getPhoneCatalog, refreshPhoneCatalog } from '@/lib/phone-catalog'
 
 export const dynamic = 'force-dynamic'
 
@@ -23,8 +24,11 @@ export async function GET(req: NextRequest) {
   if (!companyId) return NextResponse.json({ error: 'companyId required' }, { status: 400 })
   const db = admin()
   if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
-  const [settings, prov] = await Promise.all([getPhoneAgent(db, companyId), provider(db, companyId)])
-  return NextResponse.json({ ...settings, voices: PHONE_VOICES, maxTestNumbers: MAX_TEST_NUMBERS, supported: prov === 'twilio', realtime: relayConfigured() })
+  const [settings, prov, catalog] = await Promise.all([getPhoneAgent(db, companyId), provider(db, companyId), getPhoneCatalog(db, companyId)])
+  return NextResponse.json({
+    ...settings, voices: PHONE_VOICES, sttOptions: PHONE_STT, maxTestNumbers: MAX_TEST_NUMBERS, supported: prov === 'twilio', realtime: relayConfigured(),
+    productNames: catalog?.names?.length || 0,
+  })
 }
 
 export async function PATCH(req: NextRequest) {
@@ -40,7 +44,12 @@ export async function PATCH(req: NextRequest) {
     if (body.enabled && !raw.some((n: any) => String(n || '').replace(/\D/g, '').length >= 8)) {
       return NextResponse.json({ error: 'Add at least one test number, like your mobile.' }, { status: 400 })
     }
-    const saved = await setPhoneAgent(db, companyId, { enabled: !!body.enabled, testNumbers: raw, voice: body.voice }, access.userId || null)
+    const saved = await setPhoneAgent(db, companyId, { enabled: !!body.enabled, testNumbers: raw, voice: body.voice, stt: body.stt }, access.userId || null)
+    // Read the store's product names now, so the next call already knows them.
+    if (saved.enabled) {
+      const refresh = () => refreshPhoneCatalog(admin(), companyId, { force: true }).then(() => {})
+      try { after(refresh) } catch { void refresh() }
+    }
     return NextResponse.json({ ok: true, ...saved })
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || 'Could not save' }, { status: 500 })
