@@ -967,7 +967,11 @@ export default function InboxPage() {
 
   // ── Saved cards: save a card on file, then charge it later without asking ──
   const [showChargeCard, setShowChargeCard] = useState(false)
-  const [savedCards, setSavedCards] = useState<any[]>([])
+  // null while this conversation's cards are still loading.
+  const [savedCards, setSavedCards] = useState<any[] | null>(null)
+  // Cards already fetched, per conversation, so reopening is instant.
+  const cardsByConv = useRef(new Map<string, any[]>())
+  const cardsLoading = useRef(new Set<string>())   // a fetch is already on its way
   const [chargeAmount, setChargeAmount] = useState('')
   const [chargeDesc, setChargeDesc] = useState('')
   const [chargeCardId, setChargeCardId] = useState<string>('')
@@ -1580,13 +1584,26 @@ export default function InboxPage() {
     return data
   }
 
+  // Fetches the customer's saved cards. Opening the "+" menu starts this, so
+  // they're usually here by the time Charge Card is clicked; a conversation
+  // already looked at shows its cards straight away and refreshes quietly.
   const loadSavedCards = async () => {
     if (!selected || !companyId) return
+    const convId = selected.id
+    const show = (cards: any[]) => {
+      setSavedCards(cards)
+      setChargeCardId(id => cards.some(c => c.id === id) ? id : (cards[0]?.id || ''))
+    }
+    const cached = cardsByConv.current.get(convId)
+    if (cached) show(cached); else setSavedCards(null)
+    if (cardsLoading.current.has(convId)) return
+    cardsLoading.current.add(convId)
     try {
       const d = await cardsApi({ action: 'list_cards' })
-      setSavedCards(d.cards || [])
-      setChargeCardId(d.cards?.[0]?.id || '')
-    } catch { setSavedCards([]) }
+      cardsByConv.current.set(convId, d.cards || [])
+      if (selectedIdRef.current === convId) show(d.cards || [])
+    } catch { if (!cached && selectedIdRef.current === convId) setSavedCards([]) }
+    finally { cardsLoading.current.delete(convId) }
   }
 
   // Sends the customer a secure Stripe page to store their card.
@@ -4635,7 +4652,7 @@ export default function InboxPage() {
     <>
                   {/* Send poll/survey/form/payment */}
                   <div ref={sendMenuRef} style={{ position: 'relative' }}>
-                    <button type="button" className="cmp-tool" onClick={() => setShowSendMenu(v => !v)} title="Send a payment link, form, poll or request media" aria-label="More actions"
+                    <button type="button" className="cmp-tool" onClick={() => { if (!showSendMenu) loadSavedCards(); setShowSendMenu(v => !v) }} title="Send a payment link, form, poll or request media" aria-label="More actions"
                       style={toolBtn(showSendMenu)}>
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                     </button>
@@ -4653,7 +4670,7 @@ export default function InboxPage() {
                           <span style={{ color: 'var(--slate)', display: 'inline-flex' }}>{Icon.payment()}</span>Send Payment Link
                         </button>
 
-                        <button type="button" onClick={() => { setShowSendMenu(false); setShowChargeCard(true); loadSavedCards() }}
+                        <button type="button" onClick={() => { setShowSendMenu(false); setShowChargeCard(true); if (!cardsByConv.current.has(selected?.id || '')) loadSavedCards() }}
                           style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}>
                           <span style={{ color: 'var(--slate)', display: 'inline-flex' }}>
                             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
@@ -7696,7 +7713,14 @@ export default function InboxPage() {
             <h3 style={{ margin: '0 0 4px', fontSize: 17, fontWeight: 800, color: 'var(--ink)' }}>Charge saved card</h3>
             <p style={{ margin: '0 0 16px', fontSize: 13, color: 'var(--slate)' }}>Charges the customer&rsquo;s card on file. They won&rsquo;t need to do anything.</p>
 
-            {savedCards.length === 0 ? (
+            {savedCards === null ? (
+              <div aria-busy="true" style={{ padding: '6px 0 4px' }}>
+                <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ink)', marginBottom: 6 }}>Card</div>
+                <div className="cc-skel" style={{ height: 40, borderRadius: 9, marginBottom: 10 }} />
+                <p style={{ margin: 0, fontSize: 12.5, color: 'var(--slate)' }}>Loading saved cards…</p>
+                <style>{'.cc-skel{background:linear-gradient(90deg,#f1f1f3 25%,#e7e7ea 37%,#f1f1f3 63%);background-size:400% 100%;animation:ccSk 1.2s ease infinite}@keyframes ccSk{0%{background-position:100% 50%}100%{background-position:0 50%}}@media (prefers-reduced-motion: reduce){.cc-skel{animation:none}}'}</style>
+              </div>
+            ) : savedCards.length === 0 ? (
               <>
                 <div style={{ padding: 14, borderRadius: 10, background: 'var(--canvas)', border: '1px solid var(--border)', marginBottom: 14 }}>
                   <p style={{ margin: 0, fontSize: 13, color: 'var(--slate)', lineHeight: 1.5 }}>
