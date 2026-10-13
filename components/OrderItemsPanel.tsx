@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { fmtMoney, buildOrderLineKeys, gstInclFactor, variationLabel } from '@/lib/orders'
 import CollapseSection from '@/components/CollapseSection'
+import { refundedByLine, storeLineId, type OrderRefund } from '@/lib/order-refunds'
 
 /**
  * Per-line-item fulfilment + ShipStation-style split shipments.
@@ -19,7 +20,7 @@ import CollapseSection from '@/components/CollapseSection'
 type Ful = { line_key: string; sent: boolean; sent_at: string | null; ship_group: number; picked: boolean; picked_at: string | null }
 
 export default function OrderItemsPanel({
-  order, companyId, items, accent, onLog, onFlash, onOpenItem, pickMode = false, onExitPick, onAllSent,
+  order, companyId, items, accent, onLog, onFlash, onOpenItem, pickMode = false, onExitPick, onAllSent, refunds,
 }: {
   order: any
   companyId: string
@@ -32,6 +33,8 @@ export default function OrderItemsPanel({
   onExitPick?: () => void
   // Someone just marked the last unsent item sent (not on load).
   onAllSent?: () => void
+  // The order's refunds (lib/order-refunds), to mark refunded items.
+  refunds?: OrderRefund[] | null
 }) {
   const ACCENT = accent || 'var(--coral)'
   const currency = order?.currency || 'AUD'
@@ -85,6 +88,23 @@ export default function OrderItemsPanel({
   useEffect(() => { loadOos() }, [loadOos])
 
   const oosOf = (it: any) => oos.has(keyOf(it))
+
+  // How much of each line has been refunded, by the store's line id (older
+  // synced rows without one are matched by name).
+  const refundedLines = useMemo(() => {
+    const byId = refundedByLine(refunds)
+    const byName = new Map<string, { qty: number; amount: number }>()
+    for (const r of refunds || []) for (const l of r.items) {
+      const k = l.name.trim().toLowerCase()
+      const cur = byName.get(k) || { qty: 0, amount: 0 }
+      byName.set(k, { qty: cur.qty + l.qty, amount: cur.amount + l.amount })
+    }
+    return { byId, byName }
+  }, [refunds])
+  const refundOf = (it: any) => {
+    const id = storeLineId(it)
+    return (id ? refundedLines.byId.get(id) : refundedLines.byName.get(String(it.product_name || '').trim().toLowerCase())) || null
+  }
 
   // Flag / clear an out-of-stock line. Denormalises the order + customer +
   // product detail so the list view needs no joins. Clearing deletes the row.
@@ -233,18 +253,22 @@ export default function OrderItemsPanel({
   const sentTotal = items.reduce((n, it) => n + (sentOf(it) ? 1 : 0), 0)
   const pickedTotal = items.reduce((n, it) => n + (pickedOf(it) ? 1 : 0), 0)
   const allPicked = items.length > 0 && pickedTotal >= items.length
+  const refundedTotal = items.reduce((n, it) => n + (refundOf(it) ? 1 : 0), 0)
 
   const renderItem = (it: any, idx: number) => {
     const sent = sentOf(it)
     const picked = pickedOf(it)
     const oosFlag = oosOf(it)
+    const rf = refundOf(it)
+    const qty = Number(it.quantity) || 1
+    const fullyRefunded = !!rf && rf.qty >= qty
     const checked = sel.has(it.id)
     const rowClick = pickMode ? () => togglePicked(it) : () => onOpenItem?.(idx)
     return (
       <div key={it.id} className="ord-item"
         onClick={pickMode ? () => togglePicked(it) : undefined}
         title={pickMode ? (picked ? 'Picked — tap to undo' : 'Tap to mark picked') : (sent ? 'Item sent' : 'Click to view')}
-        style={{ display: 'flex', alignItems: 'center', gap: 10, borderRadius: 9, padding: pickMode ? 8 : oosFlag ? 8 : 4, margin: pickMode ? 0 : oosFlag ? 0 : -4, opacity: sent && !pickMode ? 0.5 : 1, transition: 'opacity .15s, background .15s, box-shadow .15s',
+        style={{ display: 'flex', alignItems: 'center', gap: 10, borderRadius: 9, padding: pickMode ? 8 : oosFlag ? 8 : 4, margin: pickMode ? 0 : oosFlag ? 0 : -4, opacity: (sent || fullyRefunded) && !pickMode ? 0.5 : 1, transition: 'opacity .15s, background .15s, box-shadow .15s',
           cursor: pickMode ? 'pointer' : 'default',
           background: pickMode && picked ? 'color-mix(in srgb, #059669 10%, transparent)' : oosFlag ? 'color-mix(in srgb, #dc2626 7%, transparent)' : 'transparent',
           boxShadow: pickMode ? `inset 0 0 0 1.5px ${picked ? '#059669' : 'var(--border)'}` : oosFlag ? 'inset 0 0 0 1.5px #f4b4b4' : 'none' }}>
@@ -262,13 +286,21 @@ export default function OrderItemsPanel({
           )}
         </span>
         <div onClick={rowClick} style={{ flex: 1, minWidth: 0, cursor: 'pointer' }}>
-          <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textDecoration: sent && !pickMode ? 'line-through' : 'none' }}>{it.product_name}</p>
+          <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textDecoration: (sent || fullyRefunded) && !pickMode ? 'line-through' : 'none' }}>{it.product_name}</p>
           {variationLabel(it) && (
             <span style={{ display: 'inline-block', margin: '2px 0 0', padding: '1px 8px', borderRadius: 20, background: 'var(--peach)', color: 'var(--coral)', fontSize: 10.5, fontWeight: 700, maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{variationLabel(it)}</span>
           )}
           <p style={{ margin: '2px 0 0', fontSize: 11, color: 'var(--slate)', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
             {it.sku ? <span title={`SKU: ${it.sku}`} style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>SKU: {it.sku}</span> : null}
             {oosFlag && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 7px', borderRadius: 20, background: '#fee2e2', color: '#b91c1c', fontWeight: 800, fontSize: 10, letterSpacing: '0.02em', whiteSpace: 'nowrap' }}>⚠ OUT OF STOCK</span>}
+            {rf && (
+              <span title={`Refunded ${fmtMoney(rf.amount, currency)}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 7px', borderRadius: 20, background: '#fef3c7', color: '#b45309', fontWeight: 800, fontSize: 10, letterSpacing: '0.02em', whiteSpace: 'nowrap' }}>
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M9 14 4 9l5-5" /><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" /></svg>
+                {fullyRefunded ? (qty > 1 ? `ALL ${qty} REFUNDED` : 'REFUNDED')
+                  : rf.qty > 0 ? `${rf.qty} OF ${qty} REFUNDED`
+                  : `REFUNDED ${fmtMoney(rf.amount, currency)}`}
+              </span>
+            )}
             {sent && !pickMode && <span style={{ color: '#059669', fontWeight: 700 }}>✓ Sent</span>}
             {picked && !pickMode && <span style={{ color: '#059669', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 3 }}>✓ Picked</span>}
           </p>
@@ -338,7 +370,7 @@ export default function OrderItemsPanel({
       )}
 
       <CollapseSection storageKey="order-items"
-        title={<>Items · {items.length}{items.length ? ` · ${sentTotal} sent` : ''}{pickedTotal ? ` · ${pickedTotal} picked` : ''}{gstF > 1 ? <span style={{ textTransform: 'none', fontWeight: 600 }}> · incl GST</span> : null}</>}
+        title={<>Items · {items.length}{items.length ? ` · ${sentTotal} sent` : ''}{pickedTotal ? ` · ${pickedTotal} picked` : ''}{refundedTotal ? <span style={{ color: '#b45309' }}> · {refundedTotal} refunded</span> : null}{gstF > 1 ? <span style={{ textTransform: 'none', fontWeight: 600 }}> · incl GST</span> : null}</>}
         right={!pickMode && items.length > 1 && !splitMode ? (
           <button type="button" onClick={() => setSplitMode(true)} title="Split this order into multiple shipments"
             style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 700, color: ACCENT, background: 'none', border: 'none', cursor: 'pointer', whiteSpace: 'nowrap' }}>

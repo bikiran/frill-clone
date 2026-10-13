@@ -24,6 +24,7 @@ import { barcodeSVG } from '@/lib/barcode'
 import { confirmDialog } from '@/components/ConfirmDialog'
 import { notifyIntegrations } from '@/lib/integrations-notify'
 import { authFetch } from '@/lib/auth-fetch'
+import type { OrderRefund } from '@/lib/order-refunds'
 
 type Order = any
 
@@ -1760,6 +1761,9 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
   // Coupon codes, discount and manual fees — not stored on the synced order row,
   // so fetched live from WooCommerce when the drawer opens (best-effort).
   const [financials, setFinancials] = useState<{ discount: number; coupons: string[]; fees: { name: string; total: number }[] } | null>(null)
+  // The order's refunds (which items, shipping, general amounts), read live
+  // from the store once we know there are any.
+  const [refunds, setRefunds] = useState<OrderRefund[] | null>(null)
   const [pickMode, setPickMode] = useState(false)
   const [showRefund, setShowRefund] = useState(false)
   const [notes, setNotes] = useState<any[]>([])
@@ -1814,6 +1818,30 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
   const isShopifyOrder = order.sales_channel === 'shopify'
   const storeRef = isShopifyOrder ? `shopify-${order.external_order_id}` : order.external_order_id
   const storeName = isShopifyOrder ? 'Shopify' : 'WooCommerce'
+  const refundsAsked = useRef<string | null>(null)
+  const orderIdRef = useRef(order.id)
+  const loadRefunds = useCallback(async (force = false) => {
+    if (!companyId || !order.external_order_id || (order.sales_channel !== 'woocommerce' && !isShopifyOrder)) return
+    if (!force && refundsAsked.current === order.id) return
+    refundsAsked.current = order.id
+    const forOrder = order.id
+    try {
+      const res = await authFetch(`/api/orders/refunds?companyId=${encodeURIComponent(companyId)}&orderId=${encodeURIComponent(storeRef)}`)
+      const j = await res.json().catch(() => ({}))
+      if (res.ok && forOrder === orderIdRef.current) setRefunds(j.refunds || [])
+    } catch { /* best-effort — the summary still shows the order */ }
+  }, [companyId, order.id, order.external_order_id, order.sales_channel, isShopifyOrder, storeRef])
+  // A refunded / partly refunded order loads its refunds straight away; a
+  // WooCommerce order that stays "completed" after a partial refund is caught
+  // by the live details read below.
+  useEffect(() => {
+    orderIdRef.current = order.id
+    setRefunds(null)
+    refundsAsked.current = null
+    if (/refund/i.test(`${order.payment_status || ''} ${order.status || ''}`)) loadRefunds()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [order.id])
+  const refundedTotal = refunds ? refunds.reduce((s, r) => s + r.amount, 0) : Math.abs(Number(order.total_refunded) || 0)
   const markCompleted = async (opts: { allSent?: boolean } = {}) => {
     const ok = opts.allSent
       ? await confirmDialog({
@@ -2089,6 +2117,7 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
         const j = await res.json().catch(() => ({}))
         if (cancelled) return
         const o = j?.order
+        if (o?.refund_count > 0) loadRefunds()
         if (o) {
           setFinancials({
             discount: parseFloat(o.discount_total) || 0,
@@ -2336,6 +2365,10 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
                   ? <span key="cc" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: '#2563eb', fontWeight: 700 }}><ClickCollectIcon size={13} />{order.shipping_method || 'Click & Collect'}</span>
                   : (Number(order.shipping_total) || 0) > 0 ? `${fmtMoney(order.shipping_total, order.currency)}${order.shipping_method ? ` · ${order.shipping_method}` : ''}` : (order.shipping_method || 'Free')],
                 ['Total', `${fmtMoney(order.total, order.currency)} ${order.currency || ''}`],
+                ...(refundedTotal > 0.004 ? [
+                  ['Refunded', <span key="ref" style={{ color: '#b45309', fontWeight: 700 }}>−{fmtMoney(refundedTotal, order.currency)}</span>],
+                  ['Net', fmtMoney(Math.max(0, (Number(order.total) || 0) - refundedTotal), order.currency)],
+                ] as [string, any][] : []),
               ] as [string, any][]).map(([k, v]) => (
                 <div key={k} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 12.5 }}>
                   <span style={{ color: 'var(--slate)' }}>{k}</span>
@@ -2358,8 +2391,42 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
           <div style={sect} id="ord-items-panel">
             <OrderItemsPanel order={order} companyId={companyId} items={items} accent={ACCENT}
               pickMode={pickMode} onExitPick={() => setPickMode(false)}
-              onLog={logEvent} onFlash={onFlash} onOpenItem={(idx: number) => setGalleryIdx(idx)} onAllSent={onAllItemsSent} />
+              onLog={logEvent} onFlash={onFlash} onOpenItem={(idx: number) => setGalleryIdx(idx)} onAllSent={onAllItemsSent} refunds={refunds} />
           </div>
+
+          {/* Refunds — each one with its items, shipping and any general amount */}
+          {refunds && refunds.length > 0 && (
+            <CollapseSection style={sect} storageKey="order-refunds"
+              title={<>Refunds · {fmtMoney(refundedTotal, order.currency)}<span style={{ color: '#b45309' }}>{refundedTotal + 0.005 >= (Number(order.total) || 0) ? ' · Full' : ' · Partial'}</span></>}>
+              <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {refunds.map(r => {
+                  const general = !r.items.length && !r.shipping
+                  const row = (label: React.ReactNode, amount: number, key: string) => (
+                    <div key={key} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 12.5, color: 'var(--ink)' }}>
+                      <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
+                      <span style={{ flexShrink: 0, color: 'var(--slate)', fontWeight: 600 }}>{fmtMoney(amount, order.currency)}</span>
+                    </div>
+                  )
+                  return (
+                    <div key={r.id} className="ord-refund" style={{ border: '1px solid var(--border)', borderRadius: 11, padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 5 }}>
+                      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10 }}>
+                        <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--ink)' }}>
+                          {general ? 'Partial refund' : r.items.length ? `${r.items.reduce((n, l) => n + (l.qty || 0), 0) || r.items.length} item${(r.items.reduce((n, l) => n + (l.qty || 0), 0) || r.items.length) === 1 ? '' : 's'} refunded` : 'Shipping refunded'}
+                          {r.at && <span style={{ fontWeight: 600, color: 'var(--slate)', fontSize: 11.5 }}> · {new Date(r.at).toLocaleString('en-AU', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' })}</span>}
+                        </span>
+                        <span style={{ fontSize: 13.5, fontWeight: 800, color: '#b45309', flexShrink: 0 }}>−{fmtMoney(r.amount, order.currency)}</span>
+                      </div>
+                      {r.items.map((l, i) => row(<>{l.qty > 0 ? <strong>{l.qty} × </strong> : null}{l.name}</>, l.amount, `i${i}`))}
+                      {r.shipping > 0 && row('Shipping', r.shipping, 'ship')}
+                      {r.other > 0 && !general && row(<span style={{ color: 'var(--slate)' }}>Extra amount (not tied to an item)</span>, r.other, 'other')}
+                      {general && <span style={{ fontSize: 12, color: 'var(--slate)' }}>A general amount, not tied to any item.</span>}
+                      {r.reason && <span style={{ fontSize: 12, color: 'var(--slate)', fontStyle: 'italic' }}>&ldquo;{r.reason}&rdquo;</span>}
+                    </div>
+                  )
+                })}
+              </div>
+            </CollapseSection>
+          )}
 
           {/* Tags */}
           <CollapseSection style={sect} storageKey="order-tags" title="Tags"
@@ -2435,7 +2502,7 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
                   {isShopifyOrder && shopDomain && order.external_order_id && <a href={`https://${shopDomain}/admin/orders/${order.external_order_id}`} target="_blank" rel="noopener noreferrer" style={{ ...b('#008060'), textDecoration: 'none' }}>Shopify</a>}
                   {isStore && !['shipped', 'cancelled', 'refunded'].includes(order.status) && <button type="button" disabled={actBusy === 'done'} onClick={() => markCompleted()} style={b('#15803d')}>{actBusy === 'done' ? '…' : 'Complete'}</button>}
                   {isClickCollect(order) && order.status !== 'shipped' && order.status !== 'cancelled' && <button type="button" disabled={actBusy === 'notify'} onClick={notifyPickup} style={b('#2563eb')}>{actBusy === 'notify' ? '…' : 'Ready'}</button>}
-                  {isStore && order.status !== 'refunded' && <button type="button" disabled={actBusy === 'refund'} onClick={issueRefund} style={b('#b45309')}>{actBusy === 'refund' ? '…' : 'Refund'}</button>}
+                  {isStore && order.status !== 'refunded' && !(refundedTotal > 0 && refundedTotal + 0.005 >= (Number(order.total) || 0)) && <button type="button" disabled={actBusy === 'refund'} onClick={issueRefund} style={b('#b45309')}>{actBusy === 'refund' ? '…' : 'Refund'}</button>}
                   <button type="button" disabled={actBusy === 'invoice'} onClick={genInvoice} style={b('var(--ink)')}>{actBusy === 'invoice' ? '…' : 'Invoice'}</button>
                   <button type="button" onClick={copyOrderLink} style={b('var(--slate)')}>Copy link</button>
                 </>
@@ -2551,6 +2618,8 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
             order.total_refunded = totalRefunded
             if (full) onPatch({ payment_status: 'refunded' }, { type: 'refunded', detail: `Refund issued · $${amount.toFixed(2)}` })
             else logEvent('refunded', `Partial refund · $${amount.toFixed(2)}`)
+            // Show what was just refunded on the items and in the Refunds section.
+            loadRefunds(true)
           }} />
       )}
 

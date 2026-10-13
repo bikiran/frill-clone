@@ -10,6 +10,9 @@ import { createRoot } from 'react-dom/client'
 //   await confirmDialog({ title: 'Delete service?', message: '…', confirmLabel: 'Delete', tone: 'danger' })
 //
 // Esc / clicking outside = cancel, Enter = confirm.
+//
+// It's usually opened from inside another popup (a refund modal, a side panel),
+// so it sits above every other overlay in the app rather than behind them.
 
 export type ConfirmOptions = {
   title?: string
@@ -70,7 +73,7 @@ function Dialog({ onDone, confirmLabel, cancelLabel, tone, ...o }: ConfirmOption
   return (
     <div className={`cd-overlay${out ? ' out' : ''}`} onMouseDown={e => { if (e.target === e.currentTarget) close(false) }} role="presentation">
       <style>{`
-        .cd-overlay{position:fixed;inset:0;z-index:5000;background:rgba(17,17,20,.38);-webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;padding:16px;animation:cdFade .18s ease both;font-family:inherit}
+        .cd-overlay{position:fixed;inset:0;z-index:2147483600;background:rgba(17,17,20,.38);-webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;padding:16px;animation:cdFade .18s ease both;font-family:inherit}
         .cd-overlay.out{animation:cdFadeOut .2s ease both}
         .cd-box{width:100%;max-width:400px;background:#fff;border-radius:18px;box-shadow:0 30px 70px -20px rgba(0,0,0,.4);padding:22px 22px 18px;animation:cdIn .32s cubic-bezier(.22,1,.36,1) both}
         .cd-overlay.out .cd-box{animation:cdOut .2s ease both}

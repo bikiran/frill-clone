@@ -71,6 +71,8 @@ export async function GET(req: NextRequest) {
         fee_lines: (order.fee_lines || []).map((f: any) => ({ name: f.name, total: f.total })),
         total_tax: order.total_tax,
         total: order.total,
+        // How many refunds the order has, so the drawer knows to load them.
+        refund_count: (order.refunds || []).length,
         payment_method: order.payment_method_title,
       },
       company: company || {},
