@@ -206,11 +206,18 @@ async function startDoaClaim(db: any, ctx: any, req: { order_number: string }) {
 
     // The order must belong to THIS customer — otherwise anyone could claim
     // against someone else's order just by guessing a number.
-    const orderEmail = (order.billing?.email || '').toLowerCase()
-    const custEmail = (ctx.contact?.email || '').toLowerCase()
-    if (custEmail && orderEmail && orderEmail !== custEmail) {
-      await log(db, { ...base, allowed: false, blocked_reason: 'Order belongs to a different customer' })
-      return { ok: false, message: `That order doesn't appear to be under your email. I'll get a colleague to help you.`, handoff: true }
+    // Matched on email or phone; when neither can be confirmed (no details on
+    // file, or they differ), a person takes it from here.
+    const orderEmail = (order.billing?.email || '').trim().toLowerCase()
+    const custEmail = (ctx.contact?.email || '').trim().toLowerCase()
+    const tail = (v: any) => String(v || '').replace(/\D/g, '').slice(-9)
+    const orderPhone = tail(order.billing?.phone)
+    const custPhone = tail(ctx.contact?.phone)
+    const emailMatch = !!custEmail && !!orderEmail && orderEmail === custEmail
+    const phoneMatch = custPhone.length >= 8 && orderPhone.length >= 8 && orderPhone === custPhone
+    if (!emailMatch && !phoneMatch) {
+      await log(db, { ...base, allowed: false, blocked_reason: custEmail || custPhone ? 'Order belongs to a different customer' : 'Customer details on file can’t confirm the order' })
+      return { ok: false, message: `I can't match that order to your details, so I'll get a colleague to help you with the claim.`, handoff: true }
     }
 
     // Send the private upload link so they can send photos of the DOA.
