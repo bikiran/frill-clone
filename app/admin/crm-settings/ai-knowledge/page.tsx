@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { useCompanyUser } from '@/app/admin/crm-settings/_shared'
+import { readStored, writeStored } from '@/lib/client-cache'
 import { confirmDialog } from '@/components/ConfirmDialog'
 
 // Settings → AI Knowledge: what Colvy AI may use to answer customers, where it
@@ -76,7 +77,9 @@ const kb = (n: number) => n > 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB`
 
 export default function AiKnowledgePage() {
   const { companyId, loading: userLoading } = useCompanyUser()
-  const [ov, setOv] = useState<Overview | null>(null)
+  // The last overview kept in this browser shows at once; the fresh one replaces it.
+  const [ov, setOv] = useState<Overview | null>(() => readStored<Overview>(companyId ? `ai-knowledge:${companyId}` : null) || null)
+  useEffect(() => { if (companyId) setOv(cur => cur || readStored<Overview>(`ai-knowledge:${companyId}`) || null) }, [companyId])
   const [error, setError] = useState('')
   const [syncing, setSyncing] = useState<string | null>(null)   // 'all' or a setting key
   const [notice, setNotice] = useState('')
@@ -111,7 +114,9 @@ export default function AiKnowledgePage() {
     try {
       const d = await api(`/api/ai/knowledge?companyId=${companyId}`)
       // Never let a partial response take the page down.
-      setOv({ ...d, settings: d.settings || {}, sources: d.sources || {}, domains: d.domains || [], facts: d.facts || [], files: d.files || [], websitePages: d.websitePages || [], unanswered: d.unanswered || [], total: d.total || 0 })
+      const next = { ...d, settings: d.settings || {}, sources: d.sources || {}, domains: d.domains || [], facts: d.facts || [], files: d.files || [], websitePages: d.websitePages || [], unanswered: d.unanswered || [], total: d.total || 0 }
+      setOv(next)
+      writeStored(`ai-knowledge:${companyId}`, next)
       setError('')
     }
     catch (e: any) { setError(e.message) }
@@ -201,7 +206,7 @@ export default function AiKnowledgePage() {
     catch (e: any) { flash(e.message) }
   }
 
-  if (userLoading || (!ov && !error)) return <div style={{ padding: 32, color: 'var(--slate)' }}>Loading…</div>
+  if ((userLoading && !ov) || (!ov && !error)) return <div style={{ padding: 32, color: 'var(--slate)' }}>Loading…</div>
   if (!ov) return <div style={{ padding: 32, color: '#b42318' }}>{error || 'Couldn’t load AI knowledge.'}</div>
 
   const s = ov.sources

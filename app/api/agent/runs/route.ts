@@ -3,6 +3,7 @@ import { agentAccess, agentDb, missingAgentTables } from '@/lib/agent/access'
 import { enqueueRun, runAgent } from '@/lib/agent/engine'
 import { ROLES } from '@/lib/agent/roles'
 import { ACTIVITY_ROLES, activityName } from '@/lib/agent/record'
+import { runDetail } from '@/lib/agent/run-detail'
 import { guardAiRequest } from '@/lib/rate-limit'
 
 export const runtime = 'nodejs'
@@ -26,7 +27,11 @@ export async function GET(req: NextRequest) {
     if (missingAgentTables(error)) return NextResponse.json({ runs: [], needsMigration: true })
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
-  return NextResponse.json({ runs: (data || []).map((r: any) => ({ ...r, actor: activityName(r.role_key, r.input) })), roles: Object.values(ROLES).map(r => ({ key: r.key, name: r.name, goal: r.goal })) })
+  // ?first=1 also sends the newest run opened up, so the page doesn't have to
+  // wait for this list before asking for it.
+  const wantFirst = req.nextUrl.searchParams.get('first') === '1' && data?.length
+  const first = wantFirst ? await runDetail(db, companyId!, data[0].id).catch(() => null) : null
+  return NextResponse.json({ runs: (data || []).map((r: any) => ({ ...r, actor: activityName(r.role_key, r.input) })), roles: Object.values(ROLES).map(r => ({ key: r.key, name: r.name, goal: r.goal })), ...(first ? { first } : {}) })
 }
 
 /**

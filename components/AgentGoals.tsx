@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { authFetch } from '@/lib/auth-fetch'
+import { readStored, writeStored } from '@/lib/client-cache'
 
 // Results page: the outcomes the business set ("every customer message
 // answered within 15 minutes"), how often each was met, and how many are being
@@ -12,11 +13,16 @@ const EASE = 'cubic-bezier(.22,1,.36,1)'
 const short = (n: number, unit: Goal['unit']) => unit === 'minutes' ? (n >= 60 && n % 60 === 0 ? `${n / 60} hr` : `${n} min`) : unit === 'hours' ? `${n} hr` : `${n} day${n === 1 ? '' : 's'}`
 
 export function GoalsPanel({ companyId, days }: { companyId: string; days: number }) {
-  const [goals, setGoals] = useState<Goal[] | null>(null)
+  const key = `agents-goals:${companyId}:${days}`
+  const [goals, setGoalsState] = useState<Goal[] | null>(() => readStored<Goal[]>(key) || null)
+  useEffect(() => { const c = readStored<Goal[]>(key); if (c) setGoalsState(c) }, [key])
+  const setGoals = useCallback((g: Goal[] | null | ((cur: Goal[] | null) => Goal[] | null)) => {
+    setGoalsState(cur => { const next = typeof g === 'function' ? g(cur) : g; if (next) writeStored(key, next); return next })
+  }, [key])
   const [busy, setBusy] = useState('')
   const load = useCallback(async () => {
     try { const r = await authFetch(`/api/agent/goals?companyId=${companyId}&days=${days}`); if (r.ok) setGoals((await r.json()).goals || []) } catch {}
-  }, [companyId, days])
+  }, [companyId, days, setGoals])
   useEffect(() => { load() }, [load])
 
   const save = async (g: Goal, patch: Partial<Pick<Goal, 'on' | 'target'>>) => {

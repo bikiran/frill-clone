@@ -72,13 +72,16 @@ export async function agentResults(db: any, companyId: string, days = 7, now = D
   const since = new Date(now - span).toISOString()
   const before = new Date(now - 2 * span).toISOString()
 
-  const runs = await pageAll(from => db.from('agent_runs').select('id, role_key, status, outcome, summary, input, created_at, mode')
-    .eq('company_id', companyId).eq('mode', 'live').gte('created_at', before).order('created_at', { ascending: false }).range(from, from + 999)).catch(() => [])
+  // Independent reads, side by side.
+  const [runs, steps, approvals] = await Promise.all([
+    pageAll(from => db.from('agent_runs').select('id, role_key, status, outcome, summary, input, created_at, mode')
+      .eq('company_id', companyId).eq('mode', 'live').gte('created_at', before).order('created_at', { ascending: false }).range(from, from + 999)).catch(() => []),
+    pageAll(from => db.from('agent_steps').select('run_id, action_key, kind, decision, status, autonomy, created_at')
+      .eq('company_id', companyId).gte('created_at', before).in('kind', ['action', 'approval']).range(from, from + 999)).catch(() => []),
+    pageAll(from => db.from('agent_approvals').select('id, run_id, action_key, status, result, created_at, decided_at')
+      .eq('company_id', companyId).gte('created_at', before).range(from, from + 999)).catch(() => []),
+  ])
   const runById = new Map(runs.map((r: any) => [r.id, r]))
-  const steps = await pageAll(from => db.from('agent_steps').select('run_id, action_key, kind, decision, status, autonomy, created_at')
-    .eq('company_id', companyId).gte('created_at', before).in('kind', ['action', 'approval']).range(from, from + 999)).catch(() => [])
-  const approvals = await pageAll(from => db.from('agent_approvals').select('id, run_id, action_key, status, result, created_at, decided_at')
-    .eq('company_id', companyId).gte('created_at', before).range(from, from + 999)).catch(() => [])
 
   const cur = blank(), prev = blank()
   const pick = (iso: string) => (iso >= since ? cur : prev)
@@ -163,26 +166,28 @@ export async function agentResults(db: any, companyId: string, days = 7, now = D
     if (run?.input?.kind === 'cart' && run.input.cartId) cartRuns.set(String(run.input.cartId), run)
     if (run?.input?.kind === 'quote' && run.input.paymentId) payRuns.set(String(run.input.paymentId), run)
   }
-  if (cartRuns.size) {
-    try {
-      const { data } = await db.from('abandoned_carts').select('id, status, total').eq('company_id', companyId).in('id', Array.from(cartRuns.keys()))
-      for (const c of data || []) {
-        if (c.status !== 'recovered') continue
-        const t = pick(cartRuns.get(String(c.id)).created_at)
-        t.cartsWon++; t.cartsWonValue += Number(c.total) || 0
-      }
-    } catch {}
-  }
-  if (payRuns.size) {
-    try {
-      const { data } = await db.from('chat_payments').select('id, status, amount_cents').eq('company_id', companyId).in('id', Array.from(payRuns.keys()))
-      for (const p of data || []) {
-        if (p.status !== 'paid') continue
-        const t = pick(payRuns.get(String(p.id)).created_at)
-        t.quotesPaid++; t.quotesPaidValue += (Number(p.amount_cents) || 0) / 100
-      }
-    } catch {}
-  }
+  await Promise.all([
+    cartRuns.size ? (async () => {
+      try {
+        const { data } = await db.from('abandoned_carts').select('id, status, total').eq('company_id', companyId).in('id', Array.from(cartRuns.keys()))
+        for (const c of data || []) {
+          if (c.status !== 'recovered') continue
+          const t = pick(cartRuns.get(String(c.id)).created_at)
+          t.cartsWon++; t.cartsWonValue += Number(c.total) || 0
+        }
+      } catch {}
+    })() : null,
+    payRuns.size ? (async () => {
+      try {
+        const { data } = await db.from('chat_payments').select('id, status, amount_cents').eq('company_id', companyId).in('id', Array.from(payRuns.keys()))
+        for (const p of data || []) {
+          if (p.status !== 'paid') continue
+          const t = pick(payRuns.get(String(p.id)).created_at)
+          t.quotesPaid++; t.quotesPaidValue += (Number(p.amount_cents) || 0) / 100
+        }
+      } catch {}
+    })() : null,
+  ])
 
   for (const t of [cur, prev]) t.minutesSaved = t.sentOnOwn * MINUTES_PER_SENT + t.approvedAsIs * MINUTES_PER_APPROVED + t.edited * MINUTES_PER_EDITED
 

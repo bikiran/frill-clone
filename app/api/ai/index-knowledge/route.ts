@@ -34,16 +34,12 @@ export async function GET(req: NextRequest) {
     const db = admin()
     const companyId = req.nextUrl.searchParams.get('companyId')
     if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
-    const { data } = await db.from('ai_knowledge')
-      .select('source, indexed_at').eq('company_id', companyId).limit(5000)
-
-    const counts: Record<string, number> = {}
-    let latest: string | null = null
-    for (const r of data || []) {
-      counts[r.source] = (counts[r.source] || 0) + 1
-      if (!latest || r.indexed_at > latest) latest = r.indexed_at
-    }
-    return NextResponse.json({ total: (data || []).length, counts, lastIndexedAt: latest })
+    // A count and the newest row, rather than downloading the library to count it.
+    const [{ count }, { data: newest }] = await Promise.all([
+      db.from('ai_knowledge').select('id', { count: 'exact', head: true }).eq('company_id', companyId),
+      db.from('ai_knowledge').select('indexed_at').eq('company_id', companyId).order('indexed_at', { ascending: false }).limit(1),
+    ])
+    return NextResponse.json({ total: count || 0, lastIndexedAt: newest?.[0]?.indexed_at || null })
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 })
   }

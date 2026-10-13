@@ -1,9 +1,9 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { authFetch } from '@/lib/auth-fetch'
 import { supabase } from '@/lib/supabase'
-import { resolveCompanyUser, peekCompanyUser } from '@/lib/client-cache'
+import { resolveCompanyUser, peekCompanyUser, readStored, writeStored, readCache, writeCache } from '@/lib/client-cache'
 import { SuggestionCard, type Suggestion } from '@/components/AgentSuggestion'
 import { confirmDialog } from '@/components/ConfirmDialog'
 import AgentConnections from '@/components/AgentConnections'
@@ -114,11 +114,22 @@ const KIND_ICON: Record<string, React.ReactNode> = { context: I.layers, model: I
 
 export default function AgentsPage() {
   const [companyId, setCompanyId] = useState<string | null>(peekCompanyUser()?.companyId || null)
-  const [runs, setRuns] = useState<Run[]>([])
-  const [loaded, setLoaded] = useState(false)
+  // What this page showed last time (kept in this browser) paints straight
+  // away; every list below is refreshed underneath.
+  const ck = (what: string) => (companyId ? `agents-${what}:${companyId}` : null)
+  const cachedRuns = readStored<{ runs: Run[]; needsMigration?: boolean; first?: { run: Run; steps: Step[]; approvals: any[] } | null }>(ck('runs'))
+  if (cachedRuns?.first?.run?.id && !readCache(`agents-run:${cachedRuns.first.run.id}`)) writeCache(`agents-run:${cachedRuns.first.run.id}`, { ...cachedRuns.first, at: 0 })
+  const cachedRoles = readStored<Record<string, boolean>>(ck('roles'))
+  const [runs, setRuns] = useState<Run[]>(cachedRuns?.runs || [])
+  const [loaded, setLoaded] = useState(!!cachedRuns)
   const [needsMigration, setNeedsMigration] = useState(false)
-  const [selected, setSelected] = useState<string | null>(null)
+  const [selected, setSelected] = useState<string | null>(cachedRuns?.runs?.[0]?.id || null)
+  // Picked by you (or a "Why?" link), rather than just "the newest one".
+  const picked = useRef(false)
+  const pick = (id: string | null) => { picked.current = true; setSelected(id) }
   const [detail, setDetail] = useState<{ run: Run; steps: Step[]; approvals: any[] } | null>(null)
+  // Runs already opened this session, so going back to one is instant.
+  const detailCache = (id: string) => readCache<{ run: Run; steps: Step[]; approvals: any[]; at: number }>(`agents-run:${id}`)
   const [message, setMessage] = useState('Where is my order?')
   const [tryRole, setTryRole] = useState<RoleKey>('support')
   const [tryRating, setTryRating] = useState(5)
@@ -129,24 +140,26 @@ export default function AgentsPage() {
 
   useEffect(() => { resolveCompanyUser().then(r => setCompanyId(r.companyId)).catch(() => {}) }, [])
   // "Why?" links from the inbox open a specific run.
-  useEffect(() => { try { const r = new URLSearchParams(window.location.search).get('run'); if (r) setSelected(r) } catch {} }, [])
+  useEffect(() => { try { const r = new URLSearchParams(window.location.search).get('run'); if (r) pick(r) } catch {} }, [])
 
   // Support Agent switch: answers incoming SMS / chat with suggested replies.
-  const [supportOn, setSupportOn] = useState<boolean | null>(null)
+  const [supportOn, setSupportOn] = useState<boolean | null>(cachedRoles ? !!cachedRoles.support : null)
   // Reputation Agent switch: drafts replies to new Google reviews.
-  const [repOn, setRepOn] = useState<boolean | null>(null)
+  const [repOn, setRepOn] = useState<boolean | null>(cachedRoles ? !!cachedRoles.reputation : null)
   // Reception Agent switch: booking talk on SMS / chat.
-  const [recOn, setRecOn] = useState<boolean | null>(null)
+  const [recOn, setRecOn] = useState<boolean | null>(cachedRoles ? !!cachedRoles.reception : null)
   // Sales Agent switch: personal follow-ups to abandoned carts.
-  const [salesOn, setSalesOn] = useState<boolean | null>(null)
+  const [salesOn, setSalesOn] = useState<boolean | null>(cachedRoles ? !!cachedRoles.sales : null)
   // Operations Agent switch: late, stuck and out-of-stock orders.
-  const [opsOn, setOpsOn] = useState<boolean | null>(null)
+  const [opsOn, setOpsOn] = useState<boolean | null>(cachedRoles ? !!cachedRoles.operations : null)
   const [savingRole, setSavingRole] = useState(false)
   useEffect(() => {
     if (!companyId) return
     authFetch(`/api/agent/roles?companyId=${companyId}`).then(r => r.json()).then(d => {
-      const on = (k: string) => !!(d.roles || []).find((x: any) => x.key === k)?.enabled
+      if (!Array.isArray(d.roles)) return
+      const on = (k: string) => !!d.roles.find((x: any) => x.key === k)?.enabled
       setSupportOn(on('support')); setRepOn(on('reputation')); setRecOn(on('reception')); setSalesOn(on('sales')); setOpsOn(on('operations'))
+      writeStored(`agents-roles:${companyId}`, Object.fromEntries(['support', 'reputation', 'reception', 'sales', 'operations'].map(k => [k, on(k)])))
     }).catch(() => {})
   }, [companyId])
   const toggleRole = async (roleKey: RoleKey) => {
@@ -166,17 +179,21 @@ export default function AgentsPage() {
   const [who, setWho] = useState('')
 
   // Live pilot: kill switch, auto-send settings, and what's waiting for a person.
-  const [settings, setSettings] = useState<Settings | null>(null)
+  const [settings, setSettingsState] = useState<Settings | null>(() => readStored<Settings>(ck('settings')) || null)
+  const setSettings = useCallback((s: Settings) => { setSettingsState(s); writeStored(companyId ? `agents-settings:${companyId}` : null, s) }, [companyId])
   const [savingSettings, setSavingSettings] = useState(false)
-  const [waiting, setWaiting] = useState<Waiting[]>([])
+  const [waiting, setWaitingState] = useState<Waiting[]>(() => readStored<Waiting[]>(ck('waiting')) || [])
+  const setWaiting = useCallback((w: Waiting[] | ((cur: Waiting[]) => Waiting[])) => {
+    setWaitingState(cur => { const next = typeof w === 'function' ? w(cur) : w; writeStored(companyId ? `agents-waiting:${companyId}` : null, next); return next })
+  }, [companyId])
   const loadSettings = useCallback(async () => {
     if (!companyId) return
     try { const r = await authFetch(`/api/agent/settings?companyId=${companyId}`); const d = await r.json(); if (r.ok && d.pause) setSettings(d) } catch {}
-  }, [companyId])
+  }, [companyId, setSettings])
   const loadWaiting = useCallback(async () => {
     if (!companyId) return
     try { const r = await authFetch(`/api/agent/approvals?companyId=${companyId}`); const d = await r.json(); if (r.ok) setWaiting((d.approvals || []).filter((a: Waiting) => WAITING_ACTIONS.includes(a.action_key) || a.action_key.startsWith('x_'))) } catch {}
-  }, [companyId])
+  }, [companyId, setWaiting])
   useEffect(() => {
     loadSettings(); loadWaiting()
     if (!companyId) return
@@ -205,11 +222,14 @@ export default function AgentsPage() {
   const loadRuns = useCallback(async () => {
     if (!companyId) return
     try {
-      const r = await authFetch(`/api/agent/runs?companyId=${companyId}${who ? `&role=${who}` : ''}`)
+      // first=1: the newest run comes back opened up, saving a second wait.
+      const r = await authFetch(`/api/agent/runs?companyId=${companyId}${who ? `&role=${who}` : ''}&first=1`)
       const d = await r.json()
       if (!r.ok) { setError(d.error || 'Couldn’t load agent runs.'); return }
+      if (d.first?.run?.id) writeCache(`agents-run:${d.first.run.id}`, { ...d.first, at: Date.now() })
       setRuns(d.runs || []); setNeedsMigration(!!d.needsMigration)
-      setSelected(s => s || d.runs?.[0]?.id || null)
+      if (!who) writeStored(`agents-runs:${companyId}`, { runs: d.runs || [], needsMigration: !!d.needsMigration, first: d.first || null })
+      setSelected(s => (picked.current && s) ? s : d.runs?.[0]?.id || s || null)
     } catch {} finally { setLoaded(true) }
   }, [companyId, who])
   useEffect(() => { loadRuns() }, [loadRuns])
@@ -234,17 +254,22 @@ export default function AgentsPage() {
   useEffect(() => {
     if (!companyId || !selected) { setDetail(null); return }
     let stop = false, timer: any
+    // Show the copy we already have at once; fetch unless it's only just arrived.
+    const have = detailCache(selected)
+    if (have) setDetail(have)
     const tick = async () => {
       try {
         const r = await authFetch(`/api/agent/runs/${selected}?companyId=${companyId}`)
         const d = await r.json()
         if (stop || !r.ok) return
+        writeCache(`agents-run:${d.run.id}`, { ...d, at: Date.now() })
         setDetail(d)
         if (isActive(d.run)) timer = setTimeout(tick, 1200)
         else setRuns(rs => rs.map(x => (x.id === d.run.id ? { ...x, ...d.run } : x)))
       } catch { if (!stop) timer = setTimeout(tick, 2500) }
     }
-    tick()
+    if (have && !isActive(have.run) && Date.now() - have.at < 10_000 && !reloadKey) { /* fresh enough */ }
+    else tick()
     return () => { stop = true; clearTimeout(timer) }
   }, [companyId, selected, reloadKey])
 
@@ -256,7 +281,7 @@ export default function AgentsPage() {
       const d = await r.json()
       if (!r.ok || d.error) { setError(d.error || 'Couldn’t start the agent.'); return }
       const stub: Run = { id: d.runId, role_key: tryRole, mode: 'sandbox', trigger_type: 'sandbox', status: 'queued', outcome: null, intent: null, summary: null, model: null, tokens_in: 0, tokens_out: 0, step_count: 0, created_at: new Date().toISOString(), finished_at: null, input: { message, rating: tryRole === 'reputation' ? tryRating : undefined }, conversation_id: tryRole === 'support' || tryRole === 'reception' ? convId || null : null }
-      setRuns(rs => [stub, ...rs]); setSelected(d.runId)
+      setRuns(rs => [stub, ...rs]); pick(d.runId)
     } catch { setError('Couldn’t reach Colvy. Check your connection and try again.') }
     finally { setBusy(false) }
   }
@@ -480,7 +505,7 @@ export default function AgentsPage() {
                 const st = STATUS[r.status] || { label: r.status, tone: 'muted' }
                 return (
                   <li key={r.id}>
-                    <button type="button" className={`ag-run ${selected === r.id ? 'on' : ''}`} onClick={() => setSelected(r.id)}>
+                    <button type="button" className={`ag-run ${selected === r.id ? 'on' : ''}`} onClick={() => pick(r.id)}>
                       <span style={{ minWidth: 0, flex: 1 }}>
                         <span className="ag-run-t">{String(r.input?.message || r.summary || r.input?.tool || r.trigger_type).slice(0, 70)}</span>
                         <span className="ag-run-s">{actorOf(r)}{r.mode === 'sandbox' ? ' · Sandbox' : ''} · {when(r.created_at)}{r.step_count ? ` · ${r.step_count} step${r.step_count === 1 ? '' : 's'}` : ''}</span>

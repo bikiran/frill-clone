@@ -1,8 +1,9 @@
 'use client'
 
 import { authFetch } from '@/lib/auth-fetch'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import { peekCompanyUser, resolveCompanyUser, readStored, writeStored } from '@/lib/client-cache'
 import Link from 'next/link'
 
 const DEFAULTS = {
@@ -19,12 +20,27 @@ const DEFAULTS = {
   },
 }
 
+// Saved settings over the defaults, one level deep for the nested groups.
+const withDefaults = (ai: any) => ({ ...DEFAULTS, ...ai,
+  knowledge: { ...DEFAULTS.knowledge, ...(ai?.knowledge || {}) },
+  capabilities: {
+    coupon: { ...DEFAULTS.capabilities.coupon, ...(ai?.capabilities?.coupon || {}) },
+    doa_claim: { ...DEFAULTS.capabilities.doa_claim, ...(ai?.capabilities?.doa_claim || {}) },
+    create_order: { ...DEFAULTS.capabilities.create_order, ...(ai?.capabilities?.create_order || {}) },
+  },
+})
+
 export default function AiSettingsPage() {
-  const [companyId, setCompanyId] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [cfg, setCfg] = useState<any>(DEFAULTS)
+  const [companyId, setCompanyId] = useState<string | null>(peekCompanyUser()?.companyId || null)
+  // Last saved settings kept in this browser: the page shows them at once and
+  // the fresh copy replaces them (unless you've already started changing things).
+  const cached = readStored<{ ai: any; index: any }>(companyId ? `ai-settings:${companyId}` : null)
+  const [loading, setLoading] = useState(!cached)
+  const [cfg, setCfgState] = useState<any>(cached ? withDefaults(cached.ai) : DEFAULTS)
+  const edited = useRef(false)
+  const setCfg = (v: any) => { edited.current = true; setCfgState(v) }
   const [saving, setSaving] = useState(false)
-  const [index, setIndex] = useState<any>(null)
+  const [index, setIndex] = useState<any>(cached?.index || null)
   const [msg, setMsg] = useState('')
   const [diag, setDiag] = useState<any>(null)
   const [checking, setChecking] = useState(false)
@@ -40,45 +56,33 @@ export default function AiSettingsPage() {
   }
 
   useEffect(() => {
+    let cancelled = false
     ;(async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) { setLoading(false); return }
-      let cid: string | null = null
-      const { data: owned } = await (supabase as any).from('companies').select('id, ai_settings').eq('owner_id', user.id).order('created_at', { ascending: true }).limit(1)
-      cid = owned?.[0]?.id || null
-      if (owned?.[0]?.ai_settings && Object.keys(owned[0].ai_settings).length) {
-        setCfg({ ...DEFAULTS, ...owned[0].ai_settings,
-          knowledge: { ...DEFAULTS.knowledge, ...(owned[0].ai_settings.knowledge || {}) },
-          capabilities: {
-            coupon: { ...DEFAULTS.capabilities.coupon, ...(owned[0].ai_settings.capabilities?.coupon || {}) },
-            doa_claim: { ...DEFAULTS.capabilities.doa_claim, ...(owned[0].ai_settings.capabilities?.doa_claim || {}) },
-            create_order: { ...DEFAULTS.capabilities.create_order, ...(owned[0].ai_settings.capabilities?.create_order || {}) },
-          },
-        })
-      }
-      if (!cid) {
-        const { data: tm } = await (supabase as any).from('team_members').select('company_id').eq('user_id', user.id).limit(1)
-        cid = tm?.[0]?.company_id || null
-      }
+      const cid = peekCompanyUser()?.companyId || (await resolveCompanyUser().catch(() => null))?.companyId || null
+      if (cancelled) return
       setCompanyId(cid)
-      if (cid) await loadIndex(cid)
+      if (!cid) { setLoading(false); return }
+      // The settings and the library summary don't depend on each other.
+      const [{ data: co }, idx] = await Promise.all([
+        (supabase as any).from('companies').select('ai_settings').eq('id', cid).maybeSingle(),
+        authFetch(`/api/ai/index-knowledge?companyId=${cid}`).then(r => r.ok ? r.json() : null).catch(() => null),
+      ])
+      if (cancelled) return
+      if (!edited.current) setCfgState(withDefaults(co?.ai_settings || {}))
+      if (idx) setIndex(idx)
+      writeStored(`ai-settings:${cid}`, { ai: co?.ai_settings || {}, index: idx })
       setLoading(false)
     })()
+    return () => { cancelled = true }
   }, [])
-
-  const loadIndex = async (cid: string) => {
-    try {
-      const { data: { session } } = await supabase.auth.getSession()
-      const res = await authFetch(`/api/ai/index-knowledge?companyId=${cid}`, { headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {} })
-      setIndex(await res.json())
-    } catch {}
-  }
 
   const save = async () => {
     if (!companyId) return
     setSaving(true)
     try {
-      await (supabase as any).from('companies').update({ ai_settings: cfg }).eq('id', companyId)
+      const { error } = await (supabase as any).from('companies').update({ ai_settings: cfg }).eq('id', companyId)
+      if (error) throw error
+      writeStored(`ai-settings:${companyId}`, { ai: cfg, index })
       setMsg('Saved.')
       setTimeout(() => setMsg(''), 2500)
     } catch (e: any) { setMsg(e.message) }

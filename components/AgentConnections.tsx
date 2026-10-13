@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { authFetch } from '@/lib/auth-fetch'
+import { readStored, writeStored } from '@/lib/client-cache'
 import { confirmDialog } from '@/components/ConfirmDialog'
 
 // Agents page: outside tools. A business connects its agents to other systems
@@ -26,10 +27,11 @@ const host = (u: string) => { try { return new URL(u).host } catch { return u } 
 const MODE_LABEL: Record<Tool['mode'], string> = { off: 'Off', ask: 'Ask first', auto: 'On its own' }
 
 export default function AgentConnections({ companyId }: { companyId: string }) {
-  const [conns, setConns] = useState<Conn[]>([])
-  const [roles, setRoles] = useState<Role[]>([])
-  const [missing, setMissing] = useState(false)
-  const [loaded, setLoaded] = useState(false)
+  const cached = readStored<any>(`agents-connections:${companyId}`)
+  const [conns, setConns] = useState<Conn[]>(cached?.connections || [])
+  const [roles, setRoles] = useState<Role[]>(cached?.roles || [])
+  const [missing, setMissing] = useState(!!cached?.missing)
+  const [loaded, setLoaded] = useState(!!cached)
   const [open, setOpen] = useState<string | null>(null)
   const [adding, setAdding] = useState(false)
   const [busy, setBusy] = useState<string>('')
@@ -40,7 +42,7 @@ export default function AgentConnections({ companyId }: { companyId: string }) {
     try {
       const r = await authFetch(`/api/agent/connections?companyId=${companyId}`)
       const d = await r.json()
-      if (r.ok) { setConns(d.connections || []); setRoles(d.roles || []); setMissing(!!d.missing) }
+      if (r.ok) { setConns(d.connections || []); setRoles(d.roles || []); setMissing(!!d.missing); writeStored(`agents-connections:${companyId}`, d) }
     } catch {} finally { setLoaded(true) }
   }, [companyId])
   useEffect(() => { load() }, [load])

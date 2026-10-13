@@ -65,13 +65,15 @@ async function recentExceptions(db: any, companyId: string, since: string) {
 }
 
 export async function needsYou(db: any, companyId: string, now = Date.now()): Promise<{ items: NeedItem[]; counts: Record<Urgency, number>; goals: GoalStatus[] }> {
-  const settings = cleanGoals(await getGoalSettings(db, companyId))
   const items: NeedItem[] = []
 
-  // Goals, drafts and recent hand-overs don't depend on each other: fetch them together.
+  // Goals, drafts and recent hand-overs don't depend on each other: fetch them
+  // together (the goal settings are read first only for the goals).
   const since = new Date(now - 48 * 3_600_000).toISOString()
-  const [{ goals, breaches }, approvals, recent] = await Promise.all([
-    evaluateGoals(db, companyId, settings, { days: 14, now }).catch(() => ({ goals: [] as GoalStatus[], breaches: [] as Breach[] })),
+  const settingsP = getGoalSettings(db, companyId).then(cleanGoals)
+  const [settings, { goals, breaches }, approvals, recent] = await Promise.all([
+    settingsP,
+    settingsP.then(st => evaluateGoals(db, companyId, st, { days: 14, now })).catch(() => ({ goals: [] as GoalStatus[], breaches: [] as Breach[] })),
     pendingApprovals(db, companyId, { limit: 50 }).catch(() => [] as any[]),
     recentExceptions(db, companyId, since).catch(() => null),
   ])
