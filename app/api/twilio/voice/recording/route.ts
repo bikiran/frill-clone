@@ -4,9 +4,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { TwilioService } from '@/lib/twilio-service'
 import { uploadToR2, r2Configured } from '@/lib/r2'
-import { notifyCompany } from '@/lib/notify'
 import { ensureCallCard, setCallPreview } from '@/lib/call-card'
 import { emitCallEvent } from '@/lib/integration-hooks'
+import { alertCall, transcribeCall } from '@/lib/call-alerts'
 
 export const dynamic = 'force-dynamic'
 
@@ -95,8 +95,13 @@ export async function POST(req: NextRequest) {
     if (kind === 'voicemail') {
       await db.from('calls').update({ recording_url: publicUrl, status: 'voicemail', is_voicemail: true, ended_at: new Date().toISOString() }).eq('id', rowId)
       try { await setCallPreview(db as any, conversationId, '📞 Voicemail') } catch {}
-      const { data: c } = await db.from('calls').select('company_id, from_number, caller_name').eq('id', rowId).maybeSingle()
-      if (c?.company_id) { try { await notifyCompany({ db, companyId: c.company_id, type: 'call', message: `New voicemail from ${c.caller_name || c.from_number}`, actorName: c.caller_name || c.from_number }) } catch {} }
+      const { data: c } = await db.from('calls').select('company_id, conversation_id, from_number, caller_name').eq('id', rowId).maybeSingle()
+      if (c?.company_id) {
+        // Bell + phone notification, and a transcript so it can be read.
+        const convId = c.conversation_id || conversationId || null
+        await alertCall(db, c.company_id, convId, 'New voicemail', c.caller_name || c.from_number || 'a caller')
+        transcribeCall((process.env.NEXT_PUBLIC_SITE_URL || new URL(req.url).origin).replace(/\/$/, ''), rowId, c.company_id, convId)
+      }
       await emitCallEvent(db, 'voicemail.received', rowId)
       return NextResponse.json({ ok: true })
     }

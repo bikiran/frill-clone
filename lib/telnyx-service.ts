@@ -391,6 +391,12 @@ export class TelnyxService {
       trim: 'trim-silence',
     })
   }
+  // A call leg's current state ({ data: { is_alive, ... } }). Ended legs may
+  // answer with an error instead, which callers should treat as not alive.
+  async getCall(callControlId: string) {
+    return this.req(`/calls/${encodeURIComponent(callControlId)}`, 'GET')
+  }
+
   async hangupCall(callControlId: string) {
     return this.cc(callControlId, 'hangup')
   }

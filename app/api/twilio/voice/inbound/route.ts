@@ -5,6 +5,7 @@ import { createClient } from '@supabase/supabase-js'
 import { xmlEscape, twilioIdentity } from '@/lib/twilio-service'
 import { companyForInboundNumber } from '@/lib/inbound-company'
 import { ensureContactByPhone } from '@/lib/contact-capture'
+import { alertCall } from '@/lib/call-alerts'
 
 export const dynamic = 'force-dynamic'
 
@@ -227,7 +228,12 @@ export async function POST(req: NextRequest) {
       // Nobody online → straight to voicemail (if enabled). Record WHY on `cause`
       // (shown as "Hangup cause" in Call Diagnostics) so this is diagnosable: no
       // agent had a fresh presence heartbeat AND none had a push token to wake.
-      if (integ.voicemail_enabled === false) return twiml('<Response><Hangup/></Response>')
+      if (integ.voicemail_enabled === false) {
+        // No voicemail: it's a missed call — record it and tell the team.
+        if (callRowId) { try { await db.from('calls').update({ status: 'missed', ended_at: new Date().toISOString(), cause: 'no_agent: nobody online, voicemail off' }).eq('id', callRowId) } catch {} }
+        await alertCall(db, companyId, conversationId, 'Missed call', callerName || from || 'a caller')
+        return twiml('<Response><Hangup/></Response>')
+      }
       try {
         await db.from('calls').update({
           status: 'voicemail_greeting', is_voicemail: true,
