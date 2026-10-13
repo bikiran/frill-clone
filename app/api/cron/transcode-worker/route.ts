@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { drainQueue, backfillLegacy } from '@/lib/transcode'
 import { logJobRun } from '@/lib/job-log'
+import { backfillImageThumbs } from '@/lib/image-thumb'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -39,8 +40,10 @@ export async function GET(req: NextRequest) {
     // drain. Clears the pre-pipeline backlog automatically over a few minutes.
     const backfilled = await backfillLegacy(admin())
     const processed = await drainQueue(admin())
-    await logJobRun({ job: 'transcode-worker', startedAt, durationMs: Date.now() - t0, status: (backfilled || processed) ? 'success' : 'idle', detail: { backfilled, processed } })
-    return NextResponse.json({ ok: true, backfilled, processed })
+    // Small thumbnails for older photos, a few per run, in whatever time is left.
+    const thumbs = await backfillImageThumbs(admin(), 20, Math.max(0, 240_000 - (Date.now() - t0))).catch(() => 0)
+    await logJobRun({ job: 'transcode-worker', startedAt, durationMs: Date.now() - t0, status: (backfilled || processed || thumbs) ? 'success' : 'idle', detail: { backfilled, processed, thumbs } })
+    return NextResponse.json({ ok: true, backfilled, processed, thumbs })
   } catch (e: any) {
     await logJobRun({ job: 'transcode-worker', startedAt, durationMs: Date.now() - t0, status: 'error', error: e?.message })
     return NextResponse.json({ ok: false, error: e.message }, { status: 500 })

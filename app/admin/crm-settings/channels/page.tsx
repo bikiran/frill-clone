@@ -50,42 +50,27 @@ export default function ChannelsSettings() {
     if (!companyId) return
     ;(async () => {
       const status: Record<string, boolean> = {}
+      // Each channel's check is independent — ask them all at once.
+      const q = (p: any) => Promise.resolve(p).then((r: any) => r?.data ?? null).catch(() => null)
+      const [telnyx, twilio, email, google, realestate] = await Promise.all([
+        q((supabase as any).from('telnyx_integrations').select('api_key, phone_number').eq('company_id', companyId).maybeSingle()),
+        q((supabase as any).from('twilio_integrations').select('account_sid, phone_number').eq('company_id', companyId).maybeSingle()),
+        q((supabase as any).from('email_channels').select('id').eq('company_id', companyId).eq('is_active', true).limit(1)),
+        q((supabase as any).from('google_business_accounts').select('access_token').eq('company_id', companyId).maybeSingle()),
+        q((supabase as any).from('realestate_integrations').select('is_active').eq('company_id', companyId).maybeSingle()),
+      ])
 
       // SMS / Calls — a number on Twilio (below), or a legacy Telnyx integration.
-      try {
-        const { data: telnyx } = await (supabase as any).from('telnyx_integrations')
-          .select('api_key, phone_number').eq('company_id', companyId).maybeSingle()
-        if (telnyx?.api_key && telnyx?.phone_number) { status.sms = true; status.phone = true }
-      } catch {}
-
+      if (telnyx?.api_key && telnyx?.phone_number) { status.sms = true; status.phone = true }
       // Twilio — a second SMS/MMS + calling provider (BYO account).
-      try {
-        const { data: twilio } = await (supabase as any).from('twilio_integrations')
-          .select('account_sid, phone_number').eq('company_id', companyId).maybeSingle()
-        status.twilio = !!(twilio?.account_sid && twilio?.phone_number)
-        if (status.twilio) { status.sms = true; status.phone = true }
-      } catch {}
-
+      status.twilio = !!(twilio?.account_sid && twilio?.phone_number)
+      if (status.twilio) { status.sms = true; status.phone = true }
       // Email — an active inbound address.
-      try {
-        const { data } = await (supabase as any).from('email_channels')
-          .select('id').eq('company_id', companyId).eq('is_active', true).limit(1)
-        status.email = !!data?.length
-      } catch {}
-
+      status.email = !!email?.length
       // Google Reviews — an OAuth token stored.
-      try {
-        const { data } = await (supabase as any).from('google_business_accounts')
-          .select('access_token').eq('company_id', companyId).maybeSingle()
-        status.google = !!data?.access_token
-      } catch {}
-
+      status.google = !!google?.access_token
       // RealEstate — an active realestate.com.au integration.
-      try {
-        const { data } = await (supabase as any).from('realestate_integrations')
-          .select('is_active').eq('company_id', companyId).maybeSingle()
-        status.realestate = !!data?.is_active
-      } catch {}
+      status.realestate = !!realestate?.is_active
 
       // The chat widget is always available.
       status.web_form = true

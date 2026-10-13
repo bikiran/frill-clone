@@ -3,6 +3,7 @@
 import { authFetch } from '@/lib/auth-fetch'
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
+import { peekCompanyUser, resolveCompanyUser } from '@/lib/client-cache'
 import RegulatoryForm from '@/components/RegulatoryForm'
 import Link from 'next/link'
 import { Icon } from '@/components/integrations/ui'
@@ -74,9 +75,10 @@ export default function TelnyxIntegration() {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session?.user) { setLoading(false); return }
       if ((session.user.email || '').toLowerCase() === 'bishalstha76@gmail.com') setIsSuperAdmin(true)
-      let cid: string | null = null
+      // The admin already knows the company; fall back to looking it up.
+      let cid: string | null = peekCompanyUser()?.companyId || (await resolveCompanyUser().catch(() => null))?.companyId || null
       const h = window.location.hostname
-      if (h.endsWith('.colvy.com') && h !== 'colvy.com' && h !== 'www.colvy.com') {
+      if (!cid && h.endsWith('.colvy.com') && h !== 'colvy.com' && h !== 'www.colvy.com') {
         const { data: co } = await (supabase as any).from('companies').select('id').eq('slug', h.replace('.colvy.com', '')).maybeSingle()
         if (co) cid = co.id
       }
@@ -87,14 +89,17 @@ export default function TelnyxIntegration() {
       setCompanyId(cid)
       // Resolve which carrier this company provisions through (Twilio unless a
       // company is still explicitly on legacy Telnyx).
+      // (read alongside the number setup, which doesn't depend on it).
       if (cid) {
-        try {
-          const { data: co } = await (supabase as any).from('companies').select('number_provider, free_number_credits').eq('id', cid).maybeSingle()
-          setNumProvider(co?.number_provider === 'telnyx' ? 'telnyx' : 'twilio')
-          setFreeCredits(Number(co?.free_number_credits || 0))
-        } catch {}
+        await Promise.all([
+          Promise.resolve((supabase as any).from('companies').select('number_provider, free_number_credits').eq('id', cid).maybeSingle())
+            .then(({ data: co }: any) => {
+              setNumProvider(co?.number_provider === 'telnyx' ? 'telnyx' : 'twilio')
+              setFreeCredits(Number(co?.free_number_credits || 0))
+            }).catch(() => {}),
+          loadIntegration(cid),
+        ])
       }
-      if (cid) await loadIntegration(cid)
       // Deep-link from a location: open straight into "add a number" for it.
       const buyForLoc = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('buyForLocation')
       if (buyForLoc) {
@@ -155,12 +160,13 @@ export default function TelnyxIntegration() {
   }, [])
 
   const loadIntegration = async (cid: string) => {
+    // The number list doesn't need the setup answer: ask for both at once.
+    loadNumbers(cid)
     try {
       const res = await authFetch(`/api/telnyx/setup?companyId=${cid}`)
       const data = await res.json()
       if (data.integration) setIntegration(data.integration)
     } catch {}
-    loadNumbers(cid)
   }
 
   const loadNumbers = async (cid: string) => {

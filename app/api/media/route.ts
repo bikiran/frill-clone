@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse, after } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { requireCompanyAccess } from '@/lib/company-access'
 
@@ -24,10 +24,16 @@ export async function GET(req: NextRequest) {
     if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
 
     // Auto-purge trash older than 30 days (best-effort; no-op pre-migration).
-    try {
-      const cutoff = new Date(Date.now() - 30 * 86_400_000).toISOString()
-      await db.from('media_items').delete().eq('company_id', companyId).lt('trashed_at', cutoff)
-    } catch {}
+    // Done after the response so the list never waits on it; the trash view
+    // still purges first so it doesn't show what's about to go.
+    const purge = async () => {
+      try {
+        const cutoff = new Date(Date.now() - 30 * 86_400_000).toISOString()
+        await db.from('media_items').delete().eq('company_id', companyId).lt('trashed_at', cutoff)
+      } catch {}
+    }
+    if (trashed) await purge()
+    else after(purge)
 
     const foldersQuery = db.from('media_folders').select('*').eq('company_id', companyId).order('sort_order', { ascending: true }).order('name', { ascending: true })
 
