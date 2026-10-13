@@ -23,6 +23,12 @@ export function proxy(req: NextRequest) {
       url.pathname = '/landing'
       return NextResponse.rewrite(url)
     }
+    // The home page's real address is "/"; send direct visits to /landing
+    // there so it never shows up in Google as a second home page.
+    if (path === '/landing') {
+      url.pathname = '/'
+      return NextResponse.redirect(url, 308)
+    }
     // All other colvy.com paths (/signin, /signup, /pricing, etc.) serve normally
     return NextResponse.next()
   }

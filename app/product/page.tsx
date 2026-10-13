@@ -2,8 +2,8 @@ import type { Metadata } from 'next'
 import Client from './Client'
 
 export const metadata: Metadata = {
-  title: "Product",
-  description: "Everything in Colvy: an omnichannel shared inbox, a lightweight CRM, and feedback boards, roadmaps and changelogs.",
+  title: "Features: Shared Inbox, CRM, Phone, AI Agents & Feedback",
+  description: "Everything in Colvy: a shared inbox for every channel, a CRM, business phone and SMS, store orders and payments, AI agents, and feedback boards, roadmaps and changelogs.",
   alternates: { canonical: "/product" },
 }
 

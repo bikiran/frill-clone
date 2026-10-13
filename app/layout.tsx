@@ -15,16 +15,16 @@ const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
-    default: 'Colvy — Omnichannel Inbox, CRM & Customer Feedback',
+    default: 'Colvy — Shared Inbox, CRM & Business Phone for Small Businesses',
     template: '%s · Colvy',
   },
   description:
-    'Colvy is the all-in-one customer platform: a shared inbox across Messenger, Instagram, WhatsApp, SMS and email, a lightweight CRM, and product feedback boards, roadmaps and changelogs — all in one place.',
+    'Colvy is the all-in-one customer platform for small businesses: one shared inbox for WhatsApp, Instagram, Messenger, email, SMS and live chat, with a CRM, business phone, store orders, payments, AI agents and customer feedback built in.',
   applicationName: 'Colvy',
   keywords: [
-    'customer support inbox', 'shared inbox', 'omnichannel inbox', 'CRM',
-    'customer feedback', 'feature request board', 'product roadmap', 'changelog',
-    'Messenger', 'Instagram DM', 'WhatsApp', 'live chat', 'help desk',
+    'shared inbox', 'omnichannel inbox', 'small business CRM', 'business phone',
+    'business SMS', 'WhatsApp', 'Instagram DM', 'Messenger', 'live chat', 'help desk',
+    'WooCommerce', 'Shopify', 'AI agents', 'customer feedback',
   ],
   icons: {
     icon: '/favicon.png',
@@ -34,16 +34,16 @@ export const metadata: Metadata = {
     type: 'website',
     siteName: 'Colvy',
     url: SITE_URL,
-    title: 'Colvy — Omnichannel Inbox, CRM & Customer Feedback',
+    title: 'Colvy — Shared Inbox, CRM & Business Phone for Small Businesses',
     description:
-      'One shared inbox across Messenger, Instagram, WhatsApp, SMS and email, a lightweight CRM, and product feedback boards, roadmaps and changelogs.',
+      'One shared inbox for WhatsApp, Instagram, Messenger, email, SMS and live chat, with a CRM, business phone, store orders, payments and AI agents built in.',
     images: [{ url: '/og.png', width: 1731, height: 909, alt: 'Colvy — customer communication made simple' }],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Colvy — Omnichannel Inbox, CRM & Customer Feedback',
+    title: 'Colvy — Shared Inbox, CRM & Business Phone for Small Businesses',
     description:
-      'One shared inbox across Messenger, Instagram, WhatsApp, SMS and email, a lightweight CRM, and product feedback boards, roadmaps and changelogs.',
+      'One shared inbox for WhatsApp, Instagram, Messenger, email, SMS and live chat, with a CRM, business phone, store orders, payments and AI agents built in.',
     images: ['/og.png'],
   },
   robots: {
@@ -67,7 +67,7 @@ const structuredData = [
     url: SITE_URL,
     logo: `${SITE_URL}/logo.png`,
     description:
-      'Colvy is an all-in-one customer platform: an omnichannel shared inbox, a lightweight CRM, and product feedback boards, roadmaps and changelogs.',
+      'Colvy is an all-in-one customer platform for small businesses: a shared inbox across every channel, a CRM, business phone, store orders, payments, AI agents and customer feedback.',
     contactPoint: {
       '@type': 'ContactPoint',
       email: 'support@colvy.com',
@@ -90,7 +90,7 @@ const structuredData = [
     operatingSystem: 'Web, iOS, Android',
     url: SITE_URL,
     description:
-      'One shared inbox across Messenger, Instagram, WhatsApp, SMS, email, live chat and phone, plus a lightweight CRM and customer feedback boards.',
+      'One shared inbox across WhatsApp, Instagram, Messenger, SMS, email, live chat and phone, with a CRM, WooCommerce and Shopify orders, payments, AI agents and customer feedback boards.',
     offers: { '@type': 'Offer', price: '0', priceCurrency: 'AUD' },
     publisher: { '@id': ORG_ID },
   },
