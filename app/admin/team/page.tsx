@@ -5,6 +5,7 @@ import { newInviteToken } from '@/lib/invite-token'
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { peekCompanyUser } from '@/lib/client-cache'
 import ConfirmModal from '@/components/ConfirmModal'
 import { SkeletonList } from '@/components/Skeleton'
 import PageHeader from '@/components/PageHeader'
@@ -148,9 +149,10 @@ export default function TeamPage() {
       const u = sess?.session?.user
       if (!u) { setMembers([]); setLoading(false); return }
 
-      let cid: string | null = null
+      // The admin shell has already checked which company this person may use.
+      let cid: string | null = peekCompanyUser()?.companyId || null
       const host = typeof window !== 'undefined' ? window.location.hostname : ''
-      if (host.endsWith('.colvy.com') && host !== 'colvy.com' && host !== 'www.colvy.com') {
+      if (!cid && host.endsWith('.colvy.com') && host !== 'colvy.com' && host !== 'www.colvy.com') {
         const slug = host.split('.')[0]
         const { data: coBySlug } = await (supabase as any).from('companies').select('id, owner_id').eq('slug', slug).maybeSingle()
         if (coBySlug) {
@@ -168,8 +170,18 @@ export default function TeamPage() {
       setCompanyId(cid)
       if (!cid) { setMembers([]); setLoading(false); return }
 
-      const { data } = await (supabase as any).from('team_members').select('*').eq('company_id', cid).order('created_at', { ascending: false })
-      let rows: any[] = data || []
+      // Members and outlets side by side; the list shows as soon as members
+      // arrive, and profile names fill in after.
+      const [{ data }, locsRes] = await Promise.all([
+        (supabase as any).from('team_members').select('*').eq('company_id', cid).order('created_at', { ascending: false }),
+        // Outlets for the "default outlet" picker (scoped to this company).
+        Promise.resolve((supabase as any).from('company_locations')
+          .select('id, label, suburb, is_primary').eq('company_id', cid).order('is_primary', { ascending: false })).catch(() => ({ data: [] })),
+      ])
+      const rows: any[] = data || []
+      setMembers(rows)
+      setOutlets(locsRes?.data || [])
+      setLoading(false)
       // Fill in real profile names for members who've signed in (their name
       // lives in auth metadata, which the client can't read for other users —
       // so resolve it server-side).
@@ -181,21 +193,12 @@ export default function TeamPage() {
             body: JSON.stringify({ userIds: ids }),
           })
           const { names } = await res.json()
-          rows = rows.map((m: any) => ({
+          setMembers(cur => cur.map((m: any) => ({
             ...m,
             display_name: m.name || names?.[m.user_id]?.name || null,
             avatar_url: m.avatar_url || names?.[m.user_id]?.avatar_url || null,
-          }))
+          })))
         } catch { /* fall back to email */ }
-      }
-      setMembers(rows)
-      // Outlets for the "default outlet" picker (scoped to this company).
-      if (cid) {
-        try {
-          const { data: locs } = await (supabase as any).from('company_locations')
-            .select('id, label, suburb, is_primary').eq('company_id', cid).order('is_primary', { ascending: false })
-          setOutlets(locs || [])
-        } catch {}
       }
     } catch {}
     setLoading(false)

@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
+import { peekCompanyUser } from '@/lib/client-cache'
 import EmojiPicker from '@/components/EmojiPicker'
 import { confirmDialog } from '@/components/ConfirmDialog'
 
@@ -38,10 +39,21 @@ export default function HelpCategoriesPage() {
       if (!authData.session?.user) return
       const uid = authData.session.user.id
 
-      // Robust company resolution: subdomain slug → owner → team membership.
+      // The admin already knows the company: read it and its categories at once.
       let co: any = null
+      let cats: any[] | null = null
+      const known = peekCompanyUser()?.companyId
+      if (known) {
+        const [coRes, catRes] = await Promise.all([
+          (supabase as any).from('companies').select('*').eq('id', known).maybeSingle(),
+          (supabase as any).from('help_categories').select('*').eq('company_id', known).order('position', { ascending: true }),
+        ])
+        co = coRes.data || null
+        cats = catRes.data || null
+      }
+      // Otherwise: subdomain slug → owner → team membership.
       const host = typeof window !== 'undefined' ? window.location.hostname : ''
-      if (host.endsWith('.colvy.com') && host !== 'colvy.com' && host !== 'www.colvy.com') {
+      if (!co && host.endsWith('.colvy.com') && host !== 'colvy.com' && host !== 'www.colvy.com') {
         const slug = host.replace('.colvy.com', '')
         const { data } = await (supabase as any).from('companies').select('*').eq('slug', slug).maybeSingle()
         co = data || null
@@ -60,11 +72,14 @@ export default function HelpCategoriesPage() {
 
       setCompany(co)
       if (co?.id) {
-        const { data: cats } = await (supabase as any)
-          .from('help_categories')
-          .select('*')
-          .eq('company_id', co.id)
-          .order('position', { ascending: true })
+        if (!cats || co.id !== known) {
+          const { data } = await (supabase as any)
+            .from('help_categories')
+            .select('*')
+            .eq('company_id', co.id)
+            .order('position', { ascending: true })
+          cats = data
+        }
 
         if (cats && cats.length > 0) {
           setCategories(cats)

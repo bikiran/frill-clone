@@ -2666,15 +2666,16 @@ export default function InboxPage() {
 
   const loadTeam = async (cid: string) => {
     const members: TeamMember[] = []
-    // Company owner
-    const { data: co } = await (supabase as any).from('companies').select('owner_id, name').eq('id', cid).maybeSingle()
+    // Company owner and team side by side. Team members — no company_id filter
+    // (invited members can have a null company_id, and RLS already scopes
+    // rows). Filtering hid everyone but the owner in the assignee pickers.
+    const [{ data: co }, { data }] = await Promise.all([
+      (supabase as any).from('companies').select('owner_id, name').eq('id', cid).maybeSingle(),
+      (supabase as any).from('team_members').select('*'),
+    ])
     if (co?.owner_id) {
       members.push({ id: co.owner_id, user_id: co.owner_id, name: co.name ? `${co.name} (Owner)` : 'Owner', role: 'owner' })
     }
-    // Team members — no company_id filter (invited members can have a null
-    // company_id, and RLS already scopes rows). Filtering hid everyone but the
-    // owner in the assignee pickers.
-    const { data } = await (supabase as any).from('team_members').select('*')
     for (const m of data || []) {
       if (cid && m.company_id && m.company_id !== cid) continue
       const uid = m.user_id || m.id
@@ -2687,8 +2688,10 @@ export default function InboxPage() {
         email: m.email,
       } as any)
     }
+    // Pickers work straight away; real profile names fill in a moment later.
+    setTeamMembers([...members])
     await enrichNames(members as any)
-    setTeamMembers(members)
+    setTeamMembers([...members])
   }
 
   // ── Select conversation ────────────────────────────────────────────────────

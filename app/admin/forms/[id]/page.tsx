@@ -172,9 +172,18 @@ export default function FormBuilder() {
   }, [])
   const autoSaveTimer = useRef<NodeJS.Timeout | null>(null)
   const isFirstLoad = useRef(true)
+  // A colour taken from the logo is only shown, not saved (as before).
+  const brandColorPending = useRef(false)
 
   useEffect(() => {
     const init = async () => {
+      // The company's branding is only needed when the form has no colour of
+      // its own; ask for it alongside the form so it never holds the editor up.
+      const brandP = supabase.auth.getSession().then(async ({ data: authData }: any) => {
+        if (!authData?.session?.user?.id) return null
+        const { data: co } = await (supabase as any).from('companies').select('logo_url, accent_color').eq('owner_id', authData.session.user.id).maybeSingle()
+        return co || null
+      }).catch(() => null)
       const { data, error } = await (supabase as any).from('forms').select('*').eq('id', formId).maybeSingle()
       if (error || !data) { router.push('/admin/forms'); return }
       setForm(data)
@@ -187,31 +196,18 @@ export default function FormBuilder() {
       if (data.end_actions) setEndActions(data.end_actions)
       if (data.show_confetti !== undefined) setShowConfetti(data.show_confetti)
       
-      // Extract color from company logo if no theme set
+      setLoading(false)
+
+      // No colour set: take one from the company logo, in the background.
       if (!data.theme?.color) {
         try {
-          const { data: authData } = await supabase.auth.getSession()
-          if (authData?.session?.user?.id) {
-            const { data: co } = await (supabase as any)
-              .from('companies')
-              .select('logo_url, accent_color')
-              .eq('owner_id', authData.session.user.id)
-              .maybeSingle()
-            
-            if (co?.logo_url) {
-              const color = await extractDominantColor(co.logo_url)
-              setThemeColor(color)
-              console.log('[FORM BUILDER] Extracted color from logo:', color)
-            } else if (co?.accent_color) {
-              setThemeColor(co.accent_color)
-            }
-          }
+          const co = await brandP
+          const color = co?.logo_url ? await extractDominantColor(co.logo_url) : co?.accent_color
+          if (color) { brandColorPending.current = true; setThemeColor(color) }
         } catch (e) {
           console.error('[FORM BUILDER] Error extracting logo color:', e)
         }
       }
-      
-      setLoading(false)
     }
     init()
   }, [formId])
@@ -220,6 +216,7 @@ export default function FormBuilder() {
   useEffect(() => {
     if (isFirstLoad.current) { isFirstLoad.current = false; return }
     if (loading) return
+    if (brandColorPending.current) { brandColorPending.current = false; return }
     setIsDirty(true)
     if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
     autoSaveTimer.current = setTimeout(() => handleSave(), 1000)

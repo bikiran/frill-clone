@@ -3,6 +3,7 @@
 import { authFetch } from '@/lib/auth-fetch'
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
+import { peekCompanyUser } from '@/lib/client-cache'
 import Link from 'next/link'
 import { Icon } from '@/components/integrations/ui'
 
@@ -17,9 +18,10 @@ export default function StripeIntegration() {
     const init = async () => {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session?.user) { setLoading(false); return }
-      let cid: string | null = null
+      // The admin already knows the company; fall back to looking it up.
+      let cid: string | null = peekCompanyUser()?.companyId || null
       const h = window.location.hostname
-      if (h.endsWith('.colvy.com') && h !== 'colvy.com' && h !== 'www.colvy.com') {
+      if (!cid && h.endsWith('.colvy.com') && h !== 'colvy.com' && h !== 'www.colvy.com') {
         const { data: co } = await (supabase as any).from('companies').select('id').eq('slug', h.replace('.colvy.com', '')).maybeSingle()
         if (co) cid = co.id
       }
