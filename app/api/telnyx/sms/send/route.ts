@@ -8,6 +8,11 @@ import { SmsQuotaError } from '@/lib/sms-quota'
 import { requireCompanyAccess } from '@/lib/company-access'
 import { isInternalCall } from '@/lib/internal-call'
 
+// Twilio's limits for one picture message (MMS): 10 media, 5 MB in total.
+// A little under 5 MB, for headers and carriers that count slightly differently.
+const MMS_MAX_MEDIA = 10
+const MMS_MAX_BYTES = 4.5 * 1024 * 1024
+
 function admin() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -73,6 +78,7 @@ export async function POST(req: NextRequest) {
     // short /m/ link. Videos/large files stay link-based even on MMS providers so
     // they can't be rejected for exceeding the carrier's MMS size cap.
     const mmsUrls: string[] = []
+    const mmsSizes: number[] = []
     const isImageAtt = (a: any) => a?.kind === 'image' || String(a?.type || '').startsWith('image/')
     if (atts.length > 0) {
       // Send media links on the COMPANY's own subdomain (roxyaquarium.colvy.com)
@@ -90,7 +96,9 @@ export async function POST(req: NextRequest) {
       const links: string[] = []
       for (const a of atts) {
         // Photo on an MMS-capable provider → send the real image, no link needed.
-        if (sender.supportsMms && isImageAtt(a) && a.url) { mmsUrls.push(a.url); continue }
+        // (A photo too big for one picture message goes as a link instead.)
+        const bytes = Number(a?.size) || 0
+        if (sender.supportsMms && isImageAtt(a) && a.url && bytes <= MMS_MAX_BYTES) { mmsUrls.push(a.url); mmsSizes.push(bytes); continue }
         try {
           // A per-attachment expiry (set in the composer's media preview) makes
           // the /m/ viewer stop serving the file after the deadline. 'access'
@@ -160,13 +168,32 @@ export async function POST(req: NextRequest) {
     const statusCallback = sender.provider === 'twilio'
       ? `${(process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com').replace(/\/$/, '')}/api/twilio/webhook`
       : undefined
+    // A picture message carries at most 10 images and about 5 MB, so more
+    // photos than that went out as one request Twilio rejected — the whole
+    // message failed ("couldn't be sent") at around 10 photos. Split them into
+    // as many picture messages as needed; the text rides on the first.
+    const batches: string[][] = []
+    let cur: string[] = [], curBytes = 0
+    mmsUrls.forEach((u, i) => {
+      const b = mmsSizes[i] || 0
+      if (cur.length && (cur.length >= MMS_MAX_MEDIA || curBytes + b > MMS_MAX_BYTES)) { batches.push(cur); cur = []; curBytes = 0 }
+      cur.push(u); curBytes += b
+    })
+    if (cur.length) batches.push(cur)
     const result = await sender.send({
       to: e164,
       text: body,
-      mediaUrls: mmsUrls.length ? mmsUrls : undefined,
+      mediaUrls: batches[0],
       statusCallback,
     })
     const providerMessageId = result.id
+    // The rest of the photos. The first message (and its text) already went, so
+    // a failure here is reported rather than failing the whole send.
+    let mediaNotSent = 0
+    for (const batch of batches.slice(1)) {
+      try { await sender.send({ to: e164, text: '', mediaUrls: batch, statusCallback }) }
+      catch (e: any) { mediaNotSent += batch.length; console.error('[sms/send] extra MMS batch failed', e?.message || e) }
+    }
 
     // Log into the conversation thread as an agent message sent via SMS
     if (conversationId && !skipChatMessage) {
@@ -238,10 +265,10 @@ export async function POST(req: NextRequest) {
           channel: 'sms', sms_number: e164, status: 'open',
         }).eq('id', convId)
       }
-      return NextResponse.json({ ok: true, id: providerMessageId, conversationId: convId })
+      return NextResponse.json({ ok: true, id: providerMessageId, conversationId: convId, ...(mediaNotSent ? { mediaNotSent } : {}) })
     }
 
-    return NextResponse.json({ ok: true, id: providerMessageId })
+    return NextResponse.json({ ok: true, id: providerMessageId, ...(mediaNotSent ? { mediaNotSent } : {}) })
   } catch (err: any) {
     // Plan doesn't include SMS, or the monthly allowance is used up — answer
     // 402 with the reason so the composer and campaign runner can surface it
