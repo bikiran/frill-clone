@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { notifyWaitlist, resolveWaitlistSettings } from '@/lib/waitlist'
 import { isWithinSendingHours } from '@/lib/campaign-sender'
+import { withJobLog } from '@/lib/job-log'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -20,7 +21,7 @@ const admin = () => createClient(
  * sending hours (e.g. a WooCommerce update at 11pm → texts go out at 9am).
  * Vercel Cron runs it every five minutes (vercel.json); CRON_SECRET guards it.
  */
-export async function GET(req: NextRequest) {
+async function getHandler(req: NextRequest) {
   const denied = cronOr401(req)
   if (denied) return denied
   try {
@@ -52,3 +53,5 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: false, error: e?.message })
   }
 }
+
+export const GET = withJobLog('waitlist', getHandler)

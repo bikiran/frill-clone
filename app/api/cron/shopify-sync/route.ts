@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { reconcileStore } from '@/lib/shopify-sync'
 import { promoteDueCheckouts } from '@/lib/shopify-checkouts'
 import { syncDueShopifyBilling } from '@/lib/shopify-billing'
+import { withJobLog } from '@/lib/job-log'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
@@ -23,7 +24,7 @@ const admin = () => createClient(
  * promotes held checkouts that are still unpaid to abandoned carts (for every
  * store, including one still importing).
  */
-export async function GET(req: NextRequest) {
+async function getHandler(req: NextRequest) {
   const secret = process.env.CRON_SECRET
   if (secret && (req.headers.get('authorization') || '') !== `Bearer ${secret}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -52,3 +53,5 @@ export async function GET(req: NextRequest) {
   try { billing = await syncDueShopifyBilling(db) } catch (e: any) { billing = { error: e?.message || 'failed' } }
   return NextResponse.json({ ok: true, stores: results.length, results, billing })
 }
+
+export const GET = withJobLog('shopify-sync', getHandler)

@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { runCartRecovery } from '@/lib/cart-recovery'
 import { queueCartFollowups } from '@/lib/agent/sales'
 import { queueSalesFollowups } from '@/lib/agent/followups'
+import { withJobLog } from '@/lib/job-log'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -17,7 +18,7 @@ export const maxDuration = 60
  * (lib/agent/sales.ts).
  * Runs on a schedule (see vercel.json). Honours CRON_SECRET like the others.
  */
-export async function GET(req: NextRequest) {
+async function getHandler(req: NextRequest) {
   const secret = process.env.CRON_SECRET
   if (secret) {
     const auth = req.headers.get('authorization') || ''
@@ -36,3 +37,5 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: false, error: e?.message || 'Failed' }, { status: 500 })
   }
 }
+
+export const GET = withJobLog('cart-recovery', getHandler)

@@ -3,6 +3,7 @@ import { internalHeaders } from '@/lib/internal-call'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { notifyCompany } from '@/lib/notify'
+import { withJobLog } from '@/lib/job-log'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -22,8 +23,8 @@ const admin = () => createClient(
  *
  * Vercel Cron runs it every ten minutes (vercel.json); CRON_SECRET guards it.
  */
-export async function GET(req: NextRequest) { return run(req) }
-export async function POST(req: NextRequest) { return run(req) }
+async function getHandler(req: NextRequest) { return run(req) }
+async function postHandler(req: NextRequest) { return run(req) }
 
 async function run(req: NextRequest) {
   const denied = cronOr401(req)
@@ -245,3 +246,7 @@ async function run(req: NextRequest) {
     return NextResponse.json({ error: e.message }, { status: 500 })
   }
 }
+
+export const GET = withJobLog('calendar-reminders', getHandler)
+
+export const POST = withJobLog('calendar-reminders', postHandler)

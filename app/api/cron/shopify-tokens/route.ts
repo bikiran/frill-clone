@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getAccessToken } from '@/lib/shopify-auth'
 import { notifyCompany } from '@/lib/notify'
+import { withJobLog } from '@/lib/job-log'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 120
@@ -22,7 +23,7 @@ const WINDOW_DAYS = 30
  * silently need reinstalling. A store whose refresh token is already dead is
  * flagged (needs_reauth) and the workspace is told once.
  */
-export async function GET(req: NextRequest) {
+async function getHandler(req: NextRequest) {
   const secret = process.env.CRON_SECRET
   if (secret && (req.headers.get('authorization') || '') !== `Bearer ${secret}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -50,3 +51,5 @@ export async function GET(req: NextRequest) {
   }
   return NextResponse.json({ ok: true, checked: stores?.length || 0, refreshed, failed })
 }
+
+export const GET = withJobLog('shopify-tokens', getHandler)
