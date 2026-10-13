@@ -33,6 +33,7 @@ import { getEffectiveEntitlements } from '@/lib/entitlements-client'
 import { flagEnabled } from '@/lib/feature-flags'
 import RecordSaleModal from '@/components/RecordSaleModal'
 import Link from 'next/link'
+import AiCallNote from '@/components/AiCallNote'
 import CallCard from '@/components/CallCard'
 import LiveCallBanner from '@/components/LiveCallBanner'
 import DraftTasks from '@/components/DraftTasks'
@@ -9212,6 +9213,14 @@ export default function InboxPage() {
                 // team reads it in sequence, but is visually unmistakable (amber
                 // card with a left accent, a lock, a "Team only" badge and the
                 // author) so it's never confused with a customer message.
+                // The AI phone agent's call: one compact card with the transcript
+                // on demand, instead of a call card plus a long note.
+                if (isInternal && (msg as any).metadata?.phone_agent) return (
+                  <div key={msg.id} id={`cmsg-${msg.id}`} data-cmsg="1">
+                    {dateDivider}
+                    <AiCallNote content={msg.content} metadata={(msg as any).metadata} createdAt={msg.created_at} highlight={(showMsgSearch && msgSearch.trim()) ? msgSearch : searchTerm} />
+                  </div>
+                )
                 if (isInternal) {
                   const noteAuthor = (msg as any).sender_name || 'Team'
                   const noteInitials = noteAuthor.split(/\s+/).filter(Boolean).map((w: string) => w[0]).slice(0, 2).join('').toUpperCase() || 'T'

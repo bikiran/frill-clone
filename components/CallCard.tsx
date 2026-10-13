@@ -148,6 +148,8 @@ export default function CallCard({ callId, meta, timestamp, highlight, accent = 
     // for the recording + summary to upload, so keep polling those.
     const st = String(call?.status || '')
     if (call && !call.recording_url && !['completed', 'answered'].includes(st) && !st.startsWith('voicemail')) return
+    // Answered by the AI phone agent: not recorded (the transcript is a note).
+    if (call && !call.recording_url && call.routing_state?.phone_agent && !call.is_voicemail && !st.startsWith('voicemail')) return
     let n = 0
     const iv = setInterval(() => {
       n++
@@ -176,6 +178,7 @@ export default function CallCard({ callId, meta, timestamp, highlight, accent = 
   const inbound = (call?.direction || meta?.direction) === 'inbound'
   const status = String(call?.status || '')
   const isVoicemail = !!call?.is_voicemail || status.startsWith('voicemail')
+  const aiAnswered = !!call?.routing_state?.phone_agent && !isVoicemail
   // A missed call never connected: no recording, no talk time, and a status that
   // says so. (Voicemail takes precedence — it's a missed call that left a message.)
   const isMissed = !isVoicemail && !call?.recording_url && (duration || 0) <= 0 &&
@@ -183,6 +186,14 @@ export default function CallCard({ callId, meta, timestamp, highlight, accent = 
   const when = timestamp ? new Date(timestamp).toLocaleString('en-AU', { day: '2-digit', month: 'short', hour: 'numeric', minute: '2-digit' }) : ''
 
   // Missed call — a compact timeline pill, not a full card (there's nothing to
+  // Answered by the AI phone agent: its own compact card (the transcript note,
+  // AiCallNote) covers the call, so this one steps aside. Before the row loads,
+  // the call's agent name says so; a call that went on to voicemail keeps its card.
+  const aiHasNote = call
+    ? !!call.routing_state?.phone_agent?.transcriptMessageId && !call.recording_url && !isVoicemail
+    : (meta?.agent_name === 'AI phone agent')
+  if (aiHasNote) return null
+
   // play or summarise). Rendered once the row loads so we know it truly missed.
   if (call && isMissed) {
     const num = inbound ? call.from_number : call.to_number
@@ -340,6 +351,10 @@ export default function CallCard({ callId, meta, timestamp, highlight, accent = 
           {call?.recording_error ? (
             <p style={{ margin: 0, fontSize: 11.5, color: '#dc2626', lineHeight: 1.5 }}>
               {call.recording_error}
+            </p>
+          ) : aiAnswered ? (
+            <p style={{ margin: 0, fontSize: 11.5, color: 'var(--slate)' }}>
+              Not recorded. The AI phone agent’s transcript is in the note below.
             </p>
           ) : (
             <p style={{ margin: 0, fontSize: 11.5, color: 'var(--slate)', fontStyle: 'italic' }}>

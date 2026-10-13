@@ -6,7 +6,7 @@ import { xmlEscape, twilioIdentity } from '@/lib/twilio-service'
 import { companyForInboundNumber } from '@/lib/inbound-company'
 import { ensureContactByPhone } from '@/lib/contact-capture'
 import { alertCall } from '@/lib/call-alerts'
-import { getPhoneAgent, answersCaller, startPhoneCall, phoneListenTwiml, phoneRelayTwiml, relayConfigured } from '@/lib/phone-agent'
+import { getPhoneAgent, answersCaller, startPhoneCall, newPhoneCall, phoneListenTwiml, phoneRelayTwiml, relayConfigured } from '@/lib/phone-agent'
 
 export const dynamic = 'force-dynamic'
 
@@ -57,6 +57,12 @@ export async function POST(req: NextRequest) {
       // Not a number we manage — say so rather than hanging silently.
       return twiml('<Response><Say>This number is not configured.</Say><Hangup/></Response>')
     }
+    // The AI phone agent's settings and the business name, read alongside the
+    // caller lookups below rather than after them (the caller hears ringing
+    // until we answer).
+    const agentP = getPhoneAgent(db, companyId)
+    const coNameP: Promise<string> = Promise.resolve(db.from('companies').select('name').eq('id', companyId).maybeSingle())
+      .then((r: any) => r.data?.name || '', () => '')
     const { data: integ } = await db.from('twilio_integrations').select('*').eq('company_id', companyId).maybeSingle()
     if (!integ) {
       return twiml('<Response><Say>This number is not configured.</Say><Hangup/></Response>')
@@ -142,11 +148,16 @@ export async function POST(req: NextRequest) {
     // through the normal ringing below, exactly as before.
     if (callRowId) {
       try {
-        const agent = await getPhoneAgent(db, companyId)
+        const agent = await agentP
         if (answersCaller(agent, from)) {
-          const { data: co } = await db.from('companies').select('name').eq('id', companyId).maybeSingle()
-          const state = await startPhoneCall(db, { companyId, companyName: co?.name || '', conversationId, contactId, from })
+          const companyName = await coNameP
           const realtime = relayConfigured()
+          // Real-time calls answer at once; what the agent needs to know loads
+          // while the greeting plays (the relay's "start"). Turn-by-turn calls
+          // load it now.
+          const state = realtime
+            ? newPhoneCall(companyName)
+            : await startPhoneCall(db, { companyId, companyName, conversationId, contactId, from })
           state.realtime = realtime
           const now = new Date().toISOString()
           await db.from('calls').update({

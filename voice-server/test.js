@@ -45,7 +45,9 @@ c.ws.send(JSON.stringify({ type: 'prompt', voicePrompt: 'When do you close?', la
 await wait(400)
 const texts = c.got.filter(m => m.type === 'text')
 ok(texts.length === 4 && texts.slice(0, 3).map(t => t.token).join('') === 'We are open until 5pm today.' && texts[3].last === true, `reply streamed in pieces then marked last (${JSON.stringify(texts)})`)
-ok(colvyCalls[0]?.event === 'prompt' && colvyCalls[0].said === 'When do you close?' && colvyCalls[0].secret === 'test-secret' && colvyCalls[0].callRowId === 'call1', 'forwarded to Colvy with the secret and the call')
+ok(colvyCalls[0]?.event === 'start' && colvyCalls[0].callRowId === 'call1' && colvyCalls[0].secret === 'test-secret', 'Colvy told the call started as soon as it connects')
+const firstPrompt = colvyCalls.find(x => x.event === 'prompt')
+ok(firstPrompt?.said === 'When do you close?' && firstPrompt.secret === 'test-secret' && firstPrompt.callRowId === 'call1', 'forwarded to Colvy with the secret and the call')
 
 // 2. Caller talks over a reply: it's cut off and Colvy hears what they heard
 c.ws.send(JSON.stringify({ type: 'prompt', voicePrompt: 'Something slow please', last: true }))
