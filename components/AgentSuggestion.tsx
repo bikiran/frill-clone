@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { WhyLink } from '@/components/WhyAgent'
 import { authFetch } from '@/lib/auth-fetch'
 
@@ -33,6 +33,15 @@ export function SuggestionCard({ s, companyId, onDone, compact }: { s: Suggestio
   const fixed = isBooking || isOutside
   const agentName = ({ support: 'Support Agent', reception: 'Reception Agent', reputation: 'Reputation Agent', sales: 'Sales Agent', operations: 'Operations Agent' } as Record<string, string>)[String(s.run?.role_key || '')] || 'An agent'
   const [error, setError] = useState('')
+  // The edit box grows with the text (up to most of the screen), so editing
+  // never means scrolling inside a few lines.
+  const editRef = useRef<HTMLTextAreaElement>(null)
+  useLayoutEffect(() => {
+    const el = editRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${Math.min(el.scrollHeight + 2, Math.round(window.innerHeight * 0.6))}px`
+  }, [text, editing])
 
   const decide = async (action: 'approve' | 'reject') => {
     setBusy(action === 'approve' ? 'send' : 'dismiss'); setError('')
@@ -59,7 +68,7 @@ export function SuggestionCard({ s, companyId, onDone, compact }: { s: Suggestio
         : isBooking
         ? <p className="agsg-text">{String(s.args?._preview || (s.action_key === 'cancel_booking' ? 'Cancel this booking' : 'Move this booking'))}. The customer gets the usual booking message{s.action_key === 'cancel_booking' ? ', and your cancellation policy decides any refund' : ''}.</p>
         : editing
-        ? <textarea className="agsg-edit" value={text} onChange={e => setText(e.target.value)} rows={Math.min(8, Math.max(3, Math.ceil(text.length / 60)))} autoFocus aria-label={isReview ? 'Edit the public reply' : isCart ? 'Edit the follow-up' : isOrder ? 'Edit the update' : 'Edit the reply'} />
+        ? <textarea ref={editRef} className="agsg-edit" value={text} onChange={e => setText(e.target.value)} rows={4} autoFocus aria-label={isReview ? 'Edit the public reply' : isCart ? 'Edit the follow-up' : isOrder ? 'Edit the update' : 'Edit the reply'} />
         : <p className="agsg-text">{text}</p>}
       {isCart && <p className="agsg-note">Goes out by SMS, else email. {'{link}'} becomes their checkout link and “Reply STOP to opt out.” is added.</p>}
       {isFollowup && <p className="agsg-note">{s.run?.input?.kind === 'quote' ? '{link} becomes their pay link. ' : ''}Goes in their conversation — by email or text on those threads, otherwise SMS, else email.</p>}
@@ -126,7 +135,7 @@ export default function AgentSuggestion({ companyId, conversationId, onChange }:
 }
 
 const CSS = `
-.agsg{border:1px solid color-mix(in srgb,var(--coral,#e2553f) 22%,#e5e7eb);border-radius:16px;background:#fff;overflow:hidden;box-shadow:0 8px 24px rgba(15,23,42,.06);animation:agsgIn .45s ${EASE} both;max-width:640px;margin-left:auto}
+.agsg{border:1px solid color-mix(in srgb,var(--coral,#e2553f) 22%,#e5e7eb);border-radius:16px;background:#fff;overflow:hidden;box-shadow:0 8px 24px rgba(15,23,42,.06);animation:agsgIn .45s ${EASE} both;width:100%;box-sizing:border-box;max-width:640px;margin-left:auto}
 @keyframes agsgIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
 @media (prefers-reduced-motion: reduce){.agsg{animation:none}}
 .agsg-head{display:flex;align-items:flex-start;gap:10px;padding:11px 13px;background:color-mix(in srgb,var(--coral,#e2553f) 6%,#fff);border-bottom:1px solid color-mix(in srgb,var(--coral,#e2553f) 14%,#f1f1f1)}
@@ -135,7 +144,7 @@ const CSS = `
 .agsg-s{margin:2px 0 0;font-size:12px;color:#71717a;line-height:1.45;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .agsg-why{flex-shrink:0;font-size:12.5px;font-weight:700;color:var(--coral,#e2553f);text-decoration:none;padding:3px 2px}
 .agsg-text{margin:0;padding:12px 14px;font-size:14px;line-height:1.55;color:#18181b;white-space:pre-wrap}
-.agsg-edit{display:block;width:calc(100% - 24px);margin:10px 12px 0;box-sizing:border-box;padding:10px 12px;border-radius:12px;border:1px solid #e4e4e7;font-size:14px;line-height:1.5;font-family:inherit;color:#18181b;resize:vertical;outline:none;transition:border-color .2s ease,box-shadow .2s ease}
+.agsg-edit{display:block;width:calc(100% - 24px);margin:10px 12px 0;box-sizing:border-box;padding:10px 12px;border-radius:12px;border:1px solid #e4e4e7;font-size:14px;line-height:1.55;font-family:inherit;color:#18181b;resize:vertical;min-height:96px;outline:none;transition:border-color .2s ease,box-shadow .2s ease}
 .agsg-edit:focus{border-color:var(--coral,#e2553f);box-shadow:0 0 0 3px color-mix(in srgb,var(--coral,#e2553f) 15%,transparent)}
 .agsg-note{margin:0;padding:0 14px 4px;font-size:12px;color:#71717a;line-height:1.45}
 .agsg-err{margin:6px 14px 0;font-size:12.5px;color:#b42318}
