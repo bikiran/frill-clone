@@ -16,6 +16,12 @@ import { getActiveCall, subscribeActiveCall } from '@/lib/active-call'
 import AdminBanner from '@/components/AdminBanner'
 import TrialBanner from '@/components/TrialBanner'
 import ImpersonationBanner from '@/components/ImpersonationBanner'
+import BackendStatusBanner from '@/components/BackendStatusBanner'
+import { isBackendDown } from '@/lib/net-timeout'
+// Thrown instead of denying access when the database simply didn't answer: a
+// returning admin keeps their remembered workspace (and sees the outage
+// banner); a fresh open shows the "Try again" screen. Never signs anyone out.
+const BACKEND_DOWN = 'backend unavailable'
 import DemoBanner from '@/components/DemoBanner'
 import DemoTour from '@/components/DemoTour'
 
@@ -182,6 +188,7 @@ const NAV_GROUPS: { label: string | null; items: NavItem[] }[] = [
       { label: 'Command Centre', href: '/admin/command-centre', icon: 'command' },
       { label: 'Analytics', href: '/admin/analytics', icon: 'analytics' },
       { label: 'Customer Insights', href: '/admin/insights/customers', icon: 'users' },
+      { label: 'Customer Segments', href: '/admin/customers/segments', icon: 'segments' },
       { label: 'Location Insights', href: '/admin/insights/location', icon: 'analytics' },
     ],
   },
@@ -239,7 +246,7 @@ const SEARCH_EXTRAS: SearchItem[] = [
   { label: 'AI settings', href: '/admin/crm-settings/ai', section: 'AI', keywords: 'assistant colvy ai reply auto reply' },
   { label: 'AI knowledge', href: '/admin/crm-settings/ai-knowledge', section: 'AI', keywords: 'colvy ai library facts files website train learn answers' },
   { label: 'Outside tools (MCP)', href: '/admin/integrations/mcp', section: 'AI', keywords: 'mcp claude chatgpt connect ai tools server' },
-  { label: 'Calls & SMS', href: '/admin/integrations/calls', section: 'Integrations', keywords: 'phone number sms calling voicemail' },
+  { label: 'Calls & SMS', href: '/admin/crm-settings/channels/calls', section: 'Business Settings', keywords: 'phone number sms calling voicemail' },
   { label: 'Shopify', href: '/admin/integrations/shopify', section: 'Integrations', keywords: 'store ecommerce' },
   { label: 'WooCommerce', href: '/admin/integrations/woocommerce', section: 'Integrations', keywords: 'store ecommerce wordpress orders' },
   { label: 'Stripe', href: '/admin/integrations/stripe', section: 'Integrations', keywords: 'payments card' },
@@ -725,7 +732,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           // A subdomain with no company (typo, deleted workspace) has nothing to
           // administer — send the super admin to the platform panel rather than
           // rendering a company-less admin that reads as a broken 404.
-          if (!co) { clearAdminGate(); window.location.href = 'https://admin.colvy.com'; return }
+          if (!co) { if (isBackendDown()) throw new Error(BACKEND_DOWN); clearAdminGate(); window.location.href = 'https://admin.colvy.com'; return }
           setCompany(co)
         } else {
           const co = await getCompanyByOwner(u.id)
@@ -743,7 +750,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
         if (!subdomainCo) {
           // Subdomain doesn't exist — deny access
-          clearAdminGate(); router.push('/')
+          if (isBackendDown()) throw new Error(BACKEND_DOWN); clearAdminGate(); router.push('/')
           return
         }
 
@@ -770,10 +777,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         // If they own their OWN company, send them to their own admin; otherwise back to the board.
         const userCo = await getCompanyByOwner(u.id)
         if (userCo?.slug) {
-          clearAdminGate(); window.location.href = `https://${userCo.slug}.colvy.com/admin`
+          if (isBackendDown()) throw new Error(BACKEND_DOWN); clearAdminGate(); window.location.href = `https://${userCo.slug}.colvy.com/admin`
         } else {
           // User owns no company — deny access, back to the public board
-          clearAdminGate(); router.push('/')
+          if (isBackendDown()) throw new Error(BACKEND_DOWN); clearAdminGate(); router.push('/')
         }
         return
       }
@@ -797,7 +804,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         return
       }
       // Not an admin of anything — deny
-      clearAdminGate(); router.push('/')
+      if (isBackendDown()) throw new Error(BACKEND_DOWN); clearAdminGate(); router.push('/')
     }).catch(() => setAuthError(true))
     } // end initAuth
     initAuth().catch(() => setAuthError(true))
@@ -907,6 +914,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     <div style={{ display: 'flex', minHeight: 'calc(100vh - 56px)' }}>
       {/* Super-admin impersonation banner (shows only when a session is active) */}
       <ImpersonationBanner />
+      {/* Shown when the database stops answering (lib/net-timeout) */}
+      <BackendStatusBanner />
       {/* Demo showcase banner + guided tour (shown only inside a demo workspace) */}
       <DemoBanner company={company} />
       {company?.is_demo && <DemoTour />}

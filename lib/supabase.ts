@@ -1,4 +1,5 @@
 import { createClient as createSupabaseClient, type SupabaseClient } from '@supabase/supabase-js'
+import { supabaseFetch } from './net-timeout'
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://mtfhctgdayeqrguodksv.supabase.co'
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'sb_publishable_2JjaAFpxrqOb4BvEQjeAsw_4Ohehd_O'
@@ -23,6 +24,9 @@ export const supabase = (() => {
         // Use implicit flow (default) — simpler and more compatible with Next.js routing
         flowType: 'implicit',
       },
+      // Reads give up after a while instead of hanging when the database is
+      // down, so pages can show an error (lib/net-timeout).
+      global: { fetch: supabaseFetch },
     })
   }
   return supabaseClient

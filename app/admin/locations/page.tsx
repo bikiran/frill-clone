@@ -75,7 +75,7 @@ export default function LocationsPage() {
   // Send the user to the Calls page in "add a number" mode, pre-assigning this
   // location so the purchased number is tied to it.
   const buyForLocation = (locationId: string) => {
-    window.location.href = `/admin/integrations/calls?buyForLocation=${locationId}`
+    window.location.href = `/admin/crm-settings/channels/calls?buyForLocation=${locationId}`
   }
 
   const save = async () => {

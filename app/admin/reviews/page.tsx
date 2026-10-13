@@ -518,7 +518,7 @@ export default function ReviewsPage() {
               Connect Google and sync to see your ratings here.
             </p>
           )}
-          <a href="/admin/integrations/google-reviews"
+          <a href="/admin/crm-settings/channels/google-reviews"
             style={{ display: 'block', textAlign: 'center', marginTop: 16, padding: '11px', borderRadius: 12, border: '1px solid var(--border)', textDecoration: 'none', color: 'var(--ink)', fontWeight: 700, fontSize: 13 }}>
             Manage Connected Accounts
           </a>
