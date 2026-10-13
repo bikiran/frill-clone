@@ -15,7 +15,7 @@ import { deliverAutomatedMessage } from '@/lib/channel-fallback'
 import { linkContactIdentity, linkedContacts } from '@/lib/identity'
 import { attributeOrderToLinks } from '@/lib/link-attribution'
 import { notifyCompany, pushInboundMessage } from '@/lib/notify'
-import { DEFAULT_ORDER_MESSAGES, isStaleOrderMessage } from '@/lib/order-messages'
+import { DEFAULT_ORDER_MESSAGES, isStaleOrderMessage, withCompletedFallbacks, isPickupMethod, completedKey, trackingAlreadySent } from '@/lib/order-messages'
 import { findCustomerGoogleReview } from '@/lib/review-match'
 import { logEnquiryReopened } from '@/lib/conversation-timeline'
 
@@ -37,6 +37,7 @@ export type NormalOrder = {
   lastName: string
   address: { address_1?: string; address_2?: string; city?: string; state?: string; postcode?: string; country?: string } | null
   isPos: boolean                // an in-store sale: never message the customer
+  shippingMethod?: string | null // e.g. "Flat rate", "Click & Collect - Somerton"
   createdAt: string | null
   chatConversationId?: string | null   // set when the order was created from a Colvy chat
 }
@@ -74,8 +75,8 @@ export async function runOrderAutomation(db: any, companyId: string, o: NormalOr
     if (!val) savedMsgs[k] = ''
     else if (!isStaleOrderMessage(val, company?.name)) savedMsgs[k] = val as string
   }
-  const messages: Record<string, string> = { ...DEFAULT_ORDER_MESSAGES, ...savedMsgs }
-  const template = messages[status]
+  const messages: Record<string, string> = { ...DEFAULT_ORDER_MESSAGES, ...withCompletedFallbacks(savedMsgs) }
+  let template = messages[status]
 
   const email = o.email
   const phone = o.phone
@@ -234,6 +235,19 @@ export async function runOrderAutomation(db: any, companyId: string, o: NormalOr
   }
 
   // ── The customer message ──────────────────────────────────────────────────
+  // Completed: shipped (tracking sent or not yet) or picked up.
+  if (status === 'completed' && !seenEvent && !o.isPos) {
+    let convIds: string[] = [conv.id]
+    if (contact?.id) {
+      try {
+        const { data: cvs } = await db.from('conversations').select('id').eq('company_id', companyId).eq('contact_id', contact.id).limit(50)
+        convIds = Array.from(new Set([conv.id, ...(cvs || []).map((c: any) => c.id)]))
+      } catch {}
+    }
+    const pickup = isPickupMethod(o.shippingMethod)
+    const trackingSent = pickup ? false : await trackingAlreadySent(db, companyId, { channel: o.channel, externalId: o.externalId, createdAt: o.createdAt, conversationIds: convIds })
+    template = messages[completedKey({ pickup, trackingSent })]
+  }
   const isNewOrderStatus = THANKYOU.includes(status)
   let shouldSend = !seenEvent && !!template && (cfg.enabled || isNewOrderStatus)
   if (shouldSend && o.isPos) shouldSend = false   // bought in person — no SMS
