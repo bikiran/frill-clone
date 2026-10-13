@@ -53,16 +53,38 @@ export async function POST(req: NextRequest) {
     if (!companyId || !action) return NextResponse.json({ error: 'companyId and action required' }, { status: 400 })
 
     const db = admin()
+    // The access check runs alongside the lookups it guards; nothing is
+    // returned or changed until it (and the conversation's business) pass.
+    const convP = conversationId
+      ? db.from('conversations').select('id, company_id, contact_id').eq('id', conversationId).maybeSingle()
+      : Promise.resolve({ data: null as any })
+    // Listing is just our own table (no Stripe, no contact): read it now too.
+    const cardsP = action === 'list_cards'
+      ? convP.then(({ data: c }: any) => c?.contact_id && c.company_id === companyId
+        ? db.from('saved_cards')
+          .select('id, brand, last4, exp_month, exp_year, is_default, created_at')
+          .eq('company_id', companyId).eq('contact_id', c.contact_id)
+          .order('created_at', { ascending: false })
+        : { data: [] })
+      : null
+    const [access, { data: conv }] = await Promise.all([requireCompanyAccess(req, db, companyId), convP])
     // Workspace members only.
-    if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
-    const { s, opts } = await stripeFor(db, companyId)
-
-    // The customer this is for.
-    const { data: conv } = await db.from('conversations').select('*').eq('id', conversationId).maybeSingle()
+    if (!access.ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     if (conv && conv.company_id !== companyId) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
-    const { data: contact } = conv?.contact_id
-      ? await db.from('contacts').select('*').eq('id', conv.contact_id).maybeSingle()
-      : { data: null as any }
+
+    // ── LIST SAVED CARDS ─────────────────────────────────────────────────────
+    if (cardsP) {
+      const { data: cards } = await cardsP
+      return NextResponse.json({ cards: cards || [] })
+    }
+
+    // Stripe and the customer, together.
+    const [{ s, opts }, { data: contact }] = await Promise.all([
+      stripeFor(db, companyId),
+      conv?.contact_id
+        ? db.from('contacts').select('*').eq('id', conv.contact_id).maybeSingle()
+        : Promise.resolve({ data: null as any }),
+    ])
 
     // ── SAVE CARD ────────────────────────────────────────────────────────────
     // Sends the customer a secure Stripe page to store their card. We never see
@@ -92,15 +114,6 @@ export async function POST(req: NextRequest) {
       }).select().maybeSingle()
 
       return NextResponse.json({ ok: true, url: session.url, messageId: msg?.id })
-    }
-
-    // ── LIST SAVED CARDS ─────────────────────────────────────────────────────
-    if (action === 'list_cards') {
-      if (!contact?.id) return NextResponse.json({ cards: [] })
-      const { data: cards } = await db.from('saved_cards')
-        .select('*').eq('company_id', companyId).eq('contact_id', contact.id)
-        .order('created_at', { ascending: false })
-      return NextResponse.json({ cards: cards || [] })
     }
 
     // ── CHARGE SAVED CARD ────────────────────────────────────────────────────
