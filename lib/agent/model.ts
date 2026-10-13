@@ -6,7 +6,7 @@
 // locally hosted model) means adding one class here.
 
 import Anthropic from '@anthropic-ai/sdk'
-import { modelFor, trackAi } from '@/lib/ai-models'
+import { modelFor, trackAi, type AiJob } from '@/lib/ai-models'
 
 export type NeutralBlock =
   | { type: 'text'; text: string }
@@ -24,6 +24,7 @@ export type ModelRequest = {
   tools?: ToolSpec[]
   maxTokens?: number
   companyId?: string | null       // whose run this is, for the AI usage numbers
+  job?: AiJob                     // bill and pick the model as this job instead of the tier's
 }
 
 export type ModelResponse = {
@@ -59,7 +60,8 @@ export class AnthropicModel implements ModelClient {
 
   async generate(req: ModelRequest): Promise<ModelResponse> {
     // Picked per job on Platform admin → AI models (lib/ai-models.ts).
-    const model = await modelFor(req.tier === 'smart' ? 'agent_smart' : 'agent_fast')
+    const job: AiJob = req.job || (req.tier === 'smart' ? 'agent_smart' : 'agent_fast')
+    const model = await modelFor(job)
     const response: any = await (this.client as any).beta.messages.create({
       model,
       max_tokens: req.maxTokens || 8000,
@@ -74,7 +76,7 @@ export class AnthropicModel implements ModelClient {
       messages: toAnthropic(req.messages),
     })
 
-    await trackAi(req.tier === 'smart' ? 'agent_smart' : 'agent_fast', req.companyId, response)
+    await trackAi(job, req.companyId, response)
     const content: NeutralBlock[] = []
     const toolCalls: ModelResponse['toolCalls'] = []
     for (const b of response.content || []) {
