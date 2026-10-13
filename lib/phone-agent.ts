@@ -375,7 +375,7 @@ export function relayVoice(voice: string): { provider: 'Amazon' | 'Google'; voic
   return { provider: 'Amazon', voice: voice.replace(/^Polly\./, '') }
 }
 
-export function phoneRelayTwiml(p: { relayUrl: string; doneUrl: string; voice: string; greeting: string; callRowId: string; companyId: string; hints?: string }): string {
+export function phoneRelayTwiml(p: { relayUrl: string; doneUrl: string; voice: string; greeting: string; callRowId: string; companyId: string }): string {
   const exp = Math.floor(Date.now() / 1000) + 3600
   const v = relayVoice(p.voice)
   const param = (name: string, value: string) => `<Parameter name="${esc(name)}" value="${esc(value)}"/>`
@@ -383,7 +383,9 @@ export function phoneRelayTwiml(p: { relayUrl: string; doneUrl: string; voice: s
     `<Connect action="${esc(p.doneUrl)}">` +
       `<ConversationRelay url="${esc(p.relayUrl)}" welcomeGreeting="${esc(p.greeting)}" welcomeGreetingInterruptible="any" ` +
         `language="en-AU" ttsProvider="${v.provider}" voice="${esc(v.voice)}" transcriptionProvider="Google" speechModel="telephony" ` +
-        `interruptible="any" dtmfDetection="true"${p.hints ? ` hints="${esc(p.hints)}"` : ''}>` +
+        // No hints: Google's telephony model rejects them for en-AU (Twilio 64101),
+        // which fails the whole call before the greeting.
+        `interruptible="any" dtmfDetection="true">` +
         param('callRowId', p.callRowId) + param('companyId', p.companyId) + param('exp', String(exp)) +
         param('sig', relaySignature(p.callRowId, p.companyId, exp)) +
       `</ConversationRelay>` +
