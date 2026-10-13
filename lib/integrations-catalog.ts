@@ -11,6 +11,8 @@ export type Integration = {
   category: string
   /** Has its own page at /admin/integrations/<id>. */
   isDedicated?: boolean
+  // Lives somewhere else in the admin (e.g. a Business Settings channel page).
+  href?: string
   fields?: IntegrationField[]
   /** Colvy events this integration can act on (ids from INTEGRATION_EVENTS). Omitted = all. */
   events?: string[]
@@ -145,6 +147,7 @@ export const INTEGRATIONS: Integration[] = [
     logo: '/logos/calls.svg',
     category: 'Communication',
     isDedicated: true,
+    href: '/admin/crm-settings/channels/calls',
   },
   {
     id: 'slack',
@@ -292,4 +295,4 @@ export const INTEGRATIONS: Integration[] = [
 export const CATEGORIES = ['All', ...Array.from(new Set(INTEGRATIONS.map(i => i.category)))]
 
 /** Where an integration's settings live. */
-export const integrationHref = (i: Integration) => i.isDedicated ? `/admin/integrations/${i.id}` : `/admin/integrations?i=${i.id}`
+export const integrationHref = (i: Integration) => i.href || (i.isDedicated ? `/admin/integrations/${i.id}` : `/admin/integrations?i=${i.id}`)

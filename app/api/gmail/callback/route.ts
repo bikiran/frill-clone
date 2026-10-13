@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
   const back = (q: string) => {
     const dest = returnTo
       ? returnTo
-      : `${base}/admin/integrations/email`
+      : `${base}/admin/crm-settings/channels/email`
     return NextResponse.redirect(`${dest}${dest.includes('?') ? '&' : '?'}${q}`)
   }
 

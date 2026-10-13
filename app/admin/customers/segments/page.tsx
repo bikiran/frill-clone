@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
+import { peekCompanyUser, resolveCompanyUser } from '@/lib/client-cache'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { SegmentationService, CustomerSegment } from '@/lib/segmentation-service'
 
@@ -21,26 +22,27 @@ export default function CustomerSegmentationPage() {
   useEffect(() => {
     const init = async () => {
       try {
-        const { data: company } = await (supabase as any)
-          .from('companies')
-          .select('id')
-          .eq('slug', slug)
-          .single()
-
-        if (!company) {
+        // The company from ?slug= when given; otherwise the one the admin is in
+        // (the page used to need ?slug= and showed "Company not found" without it).
+        let cid: string | null = null
+        if (slug) {
+          const { data: company } = await (supabase as any).from('companies').select('id').eq('slug', slug).maybeSingle()
+          cid = company?.id || null
+        }
+        if (!cid) cid = peekCompanyUser()?.companyId || (await resolveCompanyUser().catch(() => null))?.companyId || null
+        if (!cid) {
           setError('Company not found')
           return
         }
 
-        setCompanyId(company.id)
+        setCompanyId(cid)
 
-        // Fetch all customers
-        const { data: customersData } = await (supabase as any)
-          .from('woocommerce_customers')
-          .select('*')
-          .eq('company_id', company.id)
-          .order('total_spend', { ascending: false })
-
+        // Customers from both stores (WooCommerce and Shopify keep the same
+        // spend / order fields), most valuable first.
+        const q = (table: string) => Promise.resolve((supabase as any).from(table).select('*')
+          .eq('company_id', cid).order('total_spend', { ascending: false })).then((r: any) => r.data || []).catch(() => [])
+        const [woo, shop] = await Promise.all([q('woocommerce_customers'), q('shopify_customers')])
+        const customersData = [...woo, ...shop].sort((a: any, b: any) => (Number(b.total_spend) || 0) - (Number(a.total_spend) || 0))
         setCustomers(customersData || [])
       } catch (err: any) {
         setError(err.message || 'Failed to load data')

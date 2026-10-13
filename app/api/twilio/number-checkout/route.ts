@@ -61,8 +61,8 @@ export async function POST(req: NextRequest) {
         locality: locality || '',
         areaCode: areaCode || '',
       },
-      success_url: `${origin}/admin/integrations/calls?provisioning=1&provider=twilio&session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${origin}/admin/integrations/calls`,
+      success_url: `${origin}/admin/crm-settings/channels/calls?provisioning=1&provider=twilio&session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${origin}/admin/crm-settings/channels/calls`,
     })
 
     return NextResponse.json({ url: session.url })

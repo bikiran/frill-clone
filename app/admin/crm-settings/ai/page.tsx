@@ -49,7 +49,8 @@ export default function AiSettingsPage() {
     if (!companyId) return
     setChecking(true)
     try {
-      const res = await authFetch(`/api/ai/reply?companyId=${companyId}`)
+      // The check asks the AI a question, which can take a while.
+      const res = await authFetch(`/api/ai/reply?companyId=${companyId}`, { signal: AbortSignal.timeout(90_000) })
       setDiag(await res.json())
     } catch (e: any) { setDiag({ ok: false, error: e.message }) }
     finally { setChecking(false) }
