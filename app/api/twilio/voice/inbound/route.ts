@@ -157,7 +157,7 @@ export async function POST(req: NextRequest) {
           if (realtime) {
             return twiml(phoneRelayTwiml({
               relayUrl: process.env.VOICE_RELAY_URL!, doneUrl: `${base}/api/twilio/voice/agent-done?${cbQuery}`,
-              voice: agent.voice, greeting: state.greeting, callRowId, companyId, hints: co?.name || undefined,
+              voice: agent.voice, greeting: state.greeting, callRowId, companyId,
             }))
           }
           return twiml(phoneListenTwiml(`${base}/api/twilio/voice/agent?${cbQuery}`, agent.voice, state.greeting))
