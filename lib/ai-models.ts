@@ -19,6 +19,7 @@ export type AiJob =
   | 'knowledge_search' | 'knowledge_answer' | 'unanswered_scan' | 'help_import' | 'form_builder'
   | 'review_reply' | 'review_sentiment' | 'social_reply' | 'social_classify'
   | 'conversation_summary' | 'call_summary' | 'call_transcript' | 'dictation' | 'translate' | 'contact_capture' | 'card_scan'
+  | 'phone_agent'
 
 // modern: the feature sends newer request options (effort, structured output,
 // fallbacks), so only Claude 5-generation models are offered for it.
@@ -39,6 +40,7 @@ export const AI_JOBS: Record<AiJob, { label: string; group: string; about: strin
   social_reply: { group: 'Reviews and social', label: 'Comment reply drafts', about: '“Generate AI reply” on Facebook and Instagram comments.', default: 'claude-sonnet-4-6' },
   social_classify: { group: 'Reviews and social', label: 'Comment sorting', about: 'Risk, sentiment and category for new comments.', default: 'claude-sonnet-4-6' },
   conversation_summary: { group: 'Team tools', label: 'Conversation summaries', about: 'The AI summary at the top of a conversation.', default: 'claude-haiku-4-5' },
+  phone_agent: { group: 'Calls', label: 'Phone agent', about: 'The AI answering phone calls. A fast model keeps the caller waiting less.', default: process.env.AGENT_MODEL_FAST || 'claude-haiku-5-5', modern: true },
   call_summary: { group: 'Calls', label: 'Quick call summaries', about: 'Short summaries of calls and voice notes.', default: 'claude-haiku-4-5' },
   dictation: { group: 'Team tools', label: 'Voice dictation tidy-up', about: 'Cleaning up dictated text before it’s used.', default: 'claude-haiku-4-5' },
   call_transcript: { group: 'Calls', label: 'Recorded call notes', about: 'Summary, follow-ups, contact details and translation from a recorded call.', default: 'claude-sonnet-4-6' },

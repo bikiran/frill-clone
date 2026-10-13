@@ -6,6 +6,7 @@ import { xmlEscape, twilioIdentity } from '@/lib/twilio-service'
 import { companyForInboundNumber } from '@/lib/inbound-company'
 import { ensureContactByPhone } from '@/lib/contact-capture'
 import { alertCall } from '@/lib/call-alerts'
+import { getPhoneAgent, answersCaller, startPhoneCall, phoneListenTwiml } from '@/lib/phone-agent'
 
 export const dynamic = 'force-dynamic'
 
@@ -135,6 +136,25 @@ export async function POST(req: NextRequest) {
     } catch (e: any) { console.error('[twilio inbound] call row insert failed', e?.message || e) }
 
     const cbQuery = `callRowId=${encodeURIComponent(callRowId || '')}&companyId=${encodeURIComponent(companyId)}&conversationId=${encodeURIComponent(conversationId || '')}`
+
+    // AI phone agent, test stage: a call from one of the business's test
+    // numbers is answered by the agent straight away. Every other caller goes
+    // through the normal ringing below, exactly as before.
+    if (callRowId) {
+      try {
+        const agent = await getPhoneAgent(db, companyId)
+        if (answersCaller(agent, from)) {
+          const { data: co } = await db.from('companies').select('name').eq('id', companyId).maybeSingle()
+          const state = await startPhoneCall(db, { companyId, companyName: co?.name || '', conversationId, contactId, from })
+          const now = new Date().toISOString()
+          await db.from('calls').update({
+            status: 'completed', answered_at: now, ended_at: now, agent_name: 'AI phone agent',
+            cause: 'phone_agent: answered (test)', routing_state: { phone_agent: state, phone_voice: agent.voice },
+          }).eq('id', callRowId)
+          return twiml(phoneListenTwiml(`${base}/api/twilio/voice/agent?${cbQuery}`, agent.voice, state.greeting))
+        }
+      } catch (e: any) { console.error('[twilio inbound] phone agent start failed — ringing as normal', e?.message || e) }
+    }
 
     // Who's online? (heartbeat in the last 2 minutes.) Ring each one's browser
     // client by its Voice-SDK identity. Twilio bridges the caller to whoever
