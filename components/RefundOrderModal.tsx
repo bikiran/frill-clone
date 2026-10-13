@@ -20,7 +20,7 @@ export default function RefundOrderModal({
   order: any
   accent?: string
   onClose: () => void
-  onDone?: (amount: number) => void
+  onDone?: (amount: number, reason: string) => void
 }) {
   // A Shopify order is refunded through Shopify — the routes recognise "shopify-<id>".
   const orderId = order.sales_channel === 'shopify' && order.external_order_id
@@ -107,6 +107,13 @@ export default function RefundOrderModal({
   const fullyRefunded = !loading && orderTotal > 0 && available < 0.01
   // No line items to choose from → refund what's left, as one amount.
   const total = noItems ? available : itemsTotal + (refundShipping ? shippingLeft : 0)
+  // Every item still refundable is chosen in full, and shipping too if any is left.
+  const canChooseAll = !noItems && items.some(it => it.max > 0)
+  const allChosen = canChooseAll && items.every(it => it.refundQty === it.max) && (shippingLeft <= 0 || refundShipping)
+  const chooseEverything = () => {
+    setItems(its => its.map(it => ({ ...it, refundQty: it.max })))
+    setRefundShipping(shippingLeft > 0)
+  }
 
   const submit = async () => {
     setError('')
@@ -114,7 +121,13 @@ export default function RefundOrderModal({
     if (!noItems && chosen.length === 0 && !(refundShipping && shippingLeft > 0)) { setError('Select at least one item or shipping to refund.'); return }
     if (total <= 0) { setError('Nothing to refund.'); return }
     if (orderTotal > 0 && total > available + 0.01) { setError(`At most ${money(available)} is left to refund on this order.`); return }
-    if (!await confirmDialog(`Refund ${money(total)} for order #${order.order_number}?\n\nThis returns money through the payment gateway and cannot be undone here.`)) return
+    // Only shipping ticked is an easy slip when the whole order was meant to go
+    // back (items start at 0), so say plainly what is and isn't included.
+    const shippingOnly = !noItems && chosen.length === 0 && refundShipping
+    const question = shippingOnly
+      ? `Refund ${money(total)} for shipping only on order #${order.order_number}?\n\nNo items are included, so they stay paid. To refund the whole order, choose “Refund everything”.`
+      : `Refund ${money(total)} for order #${order.order_number}?\n\nThis returns money through the payment gateway and cannot be undone here.`
+    if (!await confirmDialog(question)) return
     setBusy(true)
     try {
       const lineItems = chosen.map(it => ({
@@ -134,7 +147,7 @@ export default function RefundOrderModal({
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.error || 'Refund failed')
-      onDone?.(Number(data.amount || total))
+      onDone?.(Number(data.amount || total), reason)
       onClose()
     } catch (e: any) {
       setError(e?.message || 'Could not issue the refund'); setBusy(false)
@@ -147,7 +160,7 @@ export default function RefundOrderModal({
     <div onClick={() => !busy && onClose()} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 6400, padding: 20 }}>
       <div onClick={e => e.stopPropagation()} style={box}>
         <h3 style={{ margin: '0 0 3px', fontSize: 17, fontWeight: 800, color: 'var(--ink)' }}>Refund order #{order.order_number}</h3>
-        <p style={{ margin: 0, fontSize: 12.5, color: 'var(--slate)' }}>Choose items to refund, optionally shipping, and whether to restock.</p>
+        <p style={{ margin: 0, fontSize: 12.5, color: 'var(--slate)' }}>Refund the whole order, or choose items and shipping. Restock is optional.</p>
 
         {loading ? (
           <p style={{ padding: '28px 0', textAlign: 'center', color: 'var(--slate)', fontSize: 13 }}>Loading order…</p>
@@ -157,6 +170,12 @@ export default function RefundOrderModal({
               <div role="status" style={{ marginTop: 14, padding: '10px 12px', borderRadius: 11, background: '#ecfdf5', border: '1px solid #a7f3d0', color: '#047857', fontSize: 13, fontWeight: 700 }}>
                 This order has already been refunded in full ({money(alreadyRefunded)}).
               </div>
+            )}
+            {canChooseAll && !fullyRefunded && (
+              <button type="button" onClick={chooseEverything} disabled={allChosen}
+                style={{ marginTop: 14, width: '100%', padding: '10px 12px', borderRadius: 11, border: `1.5px solid ${accent}`, background: allChosen ? accent : 'var(--card,#fff)', color: allChosen ? '#fff' : accent, fontSize: 13.5, fontWeight: 800, cursor: allChosen ? 'default' : 'pointer' }}>
+                {allChosen ? `✓ Everything selected · ${money(total)}` : `Refund everything · ${money(available)}`}
+              </button>
             )}
             {noItems && !fullyRefunded && <p style={{ margin: '14px 0 0', fontSize: 13, color: 'var(--slate)' }}>No line items found — a refund of {money(available)} (what&rsquo;s left on the order) will be issued.</p>}
             <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 8 }}>
