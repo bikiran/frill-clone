@@ -17,6 +17,7 @@ import { localNow, prettyDate, prettyTime } from '@/lib/business-hours'
 import { notifyCompany, pushInboundMessage } from '@/lib/notify'
 import type { ActionContext, ActionDef } from '@/lib/agent/types'
 import { createHmac, timingSafeEqual } from 'crypto'
+import { after } from 'next/server'
 import { getPhoneCatalog, closestProducts, type PhoneCatalog } from '@/lib/phone-catalog'
 
 // ── Settings (an agent_policies row: role "phone", action "answer_calls") ────
@@ -361,6 +362,12 @@ export async function phoneTurn(db: any, args: {
   return result(false, 'Sorry, I’m having trouble checking that right now. Can I take a message so someone calls you back?')
 }
 
+/** Work the caller needn't wait for. Kept alive past the response with after() when inside a request. */
+function inBackground(work: () => Promise<unknown>) {
+  const p = work().catch(e => console.error('[phone agent] background work failed', e?.message || e))
+  try { after(() => p) } catch { /* outside a request (tests, scripts): it simply runs */ }
+}
+
 async function takeMessage(db: any, actx: ActionContext, args: { companyId: string; conversationId: string | null; from: string; callerName: string | null }, input: any): Promise<boolean> {
   const name = String(input.name || args.callerName || '').trim().slice(0, 80) || 'A caller'
   const about = String(input.about || '').trim().slice(0, 1000)
@@ -377,17 +384,21 @@ async function takeMessage(db: any, actx: ActionContext, args: { companyId: stri
     })
     if (!out.ok) return false
   } catch { return false }
-  try { await notifyCompany({ db, companyId: args.companyId, type: 'call', message: `Call-back requested by ${name}: ${about.slice(0, 120)}`, actorName: name, conversationId: args.conversationId || undefined }) } catch {}
-  if (args.conversationId) {
-    try { await pushInboundMessage({ companyId: args.companyId, conversationId: args.conversationId, title: 'Call-back requested', body: `${name}: ${about.slice(0, 120)}`, route: `/conversation/${args.conversationId}` }) } catch {}
-  }
+  // The team's alerts don't hold up the caller: the AI confirms straight away
+  // and they go out alongside.
+  inBackground(() => Promise.all([
+    notifyCompany({ db, companyId: args.companyId, type: 'call', message: `Call-back requested by ${name}: ${about.slice(0, 120)}`, actorName: name, conversationId: args.conversationId || undefined }),
+    args.conversationId
+      ? pushInboundMessage({ companyId: args.companyId, conversationId: args.conversationId, title: 'Call-back requested', body: `${name}: ${about.slice(0, 120)}`, route: `/conversation/${args.conversationId}` })
+      : null,
+  ]))
   return true
 }
 
 /** The call so far, as the thread shows it. */
 export function transcriptText(state: PhoneCallState): string {
   const lines = [`AI: ${state.greeting}`, ...state.turns.map(t => `${t.who === 'caller' ? 'Caller' : 'AI'}: ${t.text}`)]
-  const agentMs = state.turns.filter(t => t.who === 'agent' && t.ms).map(t => t.ms as number)
+  const agentMs = state.turns.filter(t => t.who === 'agent' && typeof t.ms === 'number').map(t => t.ms as number)
   const avg = agentMs.length ? (agentMs.reduce((a, b) => a + b, 0) / agentMs.length / 1000).toFixed(1) : null
   return `📞 Answered by the AI phone agent (test${state.realtime ? ', real-time' : ''})${avg ? ` · replies started after ${avg}s on average` : ''}\n\n${lines.join('\n')}`
 }
@@ -405,7 +416,7 @@ export async function saveCallState(db: any, call: { id: string; company_id: str
     try {
       const content = transcriptText(state)
       // What the inbox's AI call card shows without reading the transcript.
-      const agentMs = state.turns.filter(t => t.who === 'agent' && t.ms).map(t => t.ms as number)
+      const agentMs = state.turns.filter(t => t.who === 'agent' && typeof t.ms === 'number').map(t => t.ms as number)
       const metadata = {
         phone_agent: true, call_id: call.id, test: true, realtime: !!state.realtime,
         duration_seconds: dur, avg_reply_ms: agentMs.length ? Math.round(agentMs.reduce((a, b) => a + b, 0) / agentMs.length) : null,
