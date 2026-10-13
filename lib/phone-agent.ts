@@ -17,10 +17,20 @@ import { localNow, prettyDate, prettyTime } from '@/lib/business-hours'
 import { notifyCompany, pushInboundMessage } from '@/lib/notify'
 import type { ActionContext, ActionDef } from '@/lib/agent/types'
 import { createHmac, timingSafeEqual } from 'crypto'
+import { getPhoneCatalog, closestProducts, type PhoneCatalog } from '@/lib/phone-catalog'
 
 // ── Settings (an agent_policies row: role "phone", action "answer_calls") ────
 
-export type PhoneAgentSettings = { enabled: boolean; testNumbers: string[]; voice: string }
+export type PhoneAgentSettings = { enabled: boolean; testNumbers: string[]; voice: string; stt: PhoneStt }
+
+// How real-time calls hear the caller. Deepgram is told the business's product
+// names; Flux also decides faster when the caller has finished speaking.
+export type PhoneStt = 'deepgram-flux' | 'deepgram-nova3' | 'google'
+export const PHONE_STT: { id: PhoneStt; label: string }[] = [
+  { id: 'deepgram-flux', label: 'Deepgram Flux: fastest turn-taking, knows your product names' },
+  { id: 'deepgram-nova3', label: 'Deepgram Nova-3: Australian English, knows your product names' },
+  { id: 'google', label: 'Google (the original setting)' },
+]
 
 // Generative voices first: they sound like a person. The older ones stay so a
 // saved choice keeps working.
@@ -44,7 +54,8 @@ export function cleanPhoneAgent(raw: any): PhoneAgentSettings {
   const nums = (Array.isArray(raw?.testNumbers) ? raw.testNumbers : Array.isArray(raw?.test_numbers) ? raw.test_numbers : [])
     .map((n: any) => String(n || '').trim()).filter((n: string) => tail(n).length >= 8)
   const voice = PHONE_VOICES.some(v => v.id === raw?.voice) ? raw.voice : DEFAULT_VOICE
-  return { enabled: !!raw?.enabled, testNumbers: Array.from(new Set<string>(nums)).slice(0, MAX_TEST_NUMBERS), voice }
+  const stt: PhoneStt = PHONE_STT.some(o => o.id === raw?.stt) ? raw.stt : 'deepgram-flux'
+  return { enabled: !!raw?.enabled, testNumbers: Array.from(new Set<string>(nums)).slice(0, MAX_TEST_NUMBERS), voice, stt }
 }
 
 export async function getPhoneAgent(db: any, companyId: string): Promise<PhoneAgentSettings> {
@@ -59,7 +70,7 @@ export async function getPhoneAgent(db: any, companyId: string): Promise<PhoneAg
 
 export async function setPhoneAgent(db: any, companyId: string, raw: any, userId: string | null): Promise<PhoneAgentSettings> {
   const s = cleanPhoneAgent(raw)
-  const row = { autonomy: s.enabled ? 'act_within_limits' : 'off', limits: { mode: 'test', test_numbers: s.testNumbers, voice: s.voice }, updated_by: userId, updated_at: new Date().toISOString() }
+  const row = { autonomy: s.enabled ? 'act_within_limits' : 'off', limits: { mode: 'test', test_numbers: s.testNumbers, voice: s.voice, stt: s.stt }, updated_by: userId, updated_at: new Date().toISOString() }
   const { data: existing } = await db.from('agent_policies').select('id')
     .eq('company_id', companyId).eq('role_key', 'phone').eq('action_key', 'answer_calls').limit(1)
   if (existing?.[0]) {
@@ -96,15 +107,17 @@ export type PhoneCallState = {
   contextReady?: boolean   // contextText/timezone/verified/facts loaded (real-time calls load them while the greeting plays)
   facts?: { tool: string; asked?: string; text: string }[]   // lookups already done this call, so they aren't repeated
   messageAbout?: string    // what the message taken this call was about
+  knownProducts?: string[] // some of what the business sells, to work out misheard names
 }
 
 /** The call's state before anything is looked up: enough to answer straight away. */
-export function newPhoneCall(companyName: string): PhoneCallState {
+export function newPhoneCall(companyName: string, catalog?: PhoneCatalog | null): PhoneCallState {
   const name = companyName || 'us'
   return {
     greeting: `Hi, thanks for calling ${name}. The team can't get to the phone right now, so you're speaking with ${name}'s AI assistant. I can check an order, our opening hours or stock, or take a message. How can I help?`,
     contextText: '', timezone: 'Australia/Melbourne', verified: false, turns: [], silences: 0,
     companyName, contextReady: false, facts: [],
+    knownProducts: (catalog?.names || []).slice(0, 60),
   }
 }
 
@@ -138,7 +151,7 @@ export async function loadPhoneContext(db: any, state: PhoneCallState, args: { c
 
 /** Turn-by-turn calls: everything up front. */
 export async function startPhoneCall(db: any, args: { companyId: string; companyName: string; conversationId: string | null; contactId: string | null; from: string }): Promise<PhoneCallState> {
-  const state = newPhoneCall(args.companyName)
+  const state = newPhoneCall(args.companyName, await getPhoneCatalog(db, args.companyId))
   await loadPhoneContext(db, state, args)
   return state
 }
@@ -179,6 +192,7 @@ function systemPrompt(state: PhoneCallState, p: { companyName: string; from: str
     '- You already said you are an AI assistant in the greeting; only repeat it if asked.',
     '- Only when you are about to use a lookup tool, start with a few words such as “One moment, let me check.” Don’t say that before take_message or end_call, or when you can answer from what you already know.',
     '- Never repeat something you have already told the caller unless they ask again. Answer only what they just asked.',
+    '- What the caller says reaches you through speech recognition, which mishears words, especially product names (a name can arrive as ordinary words that only sound like it). Work out what they most likely meant for a business like this one, using the product names below, and look that up. If you’re unsure, check in a few words (“Did you mean …?”) rather than saying you have nothing by that name.',
     '- Use your tools for every fact: opening hours, the caller’s orders, stock and the business’s own knowledge. Never guess or invent prices, stock, dates, delivery times or policies. If the tools don’t give you the answer, offer to take a message.',
     '- Opening hours for the next week are already looked up below; answer hours questions straight from them. Only use get_business_hours for a date more than a week away.',
     `- Orders: ${state.verified ? 'you may look up orders linked to this caller. ' : ''}For any other order, ask for the order number and the email address or postcode on it before sharing anything.`,
@@ -189,6 +203,7 @@ function systemPrompt(state: PhoneCallState, p: { companyName: string; from: str
     ...(lateNight ? [`- It’s after midnight, so a caller who says “tomorrow” may mean later today (${prettyDate(now.date)}). If it matters, check which day they mean.`] : []),
     '',
     state.contextText,
+    ...(state.knownProducts?.length ? ['', `Some of what ${p.companyName || 'the business'} sells (for working out misheard names; check stock before saying anything about it): ${state.knownProducts.join(', ')}.`] : []),
     ...(facts.length ? ['', 'Already looked up on this call (current; use these instead of looking them up again):', ...facts.map(f => `- ${f.tool}: ${f.text}`)] : []),
   ].filter(s => s !== undefined).join('\n')
 }
@@ -286,7 +301,17 @@ export async function phoneTurn(db: any, args: {
       const bad = validateInput(action, input)
       if (bad) { results.push({ type: 'tool_result', id: call.id, content: bad, isError: true }); continue }
       try {
-        const out = await action.run(actx, input)
+        let out = await action.run(actx, input)
+        // Nothing by that name: try the products that sound closest to what
+        // was heard ("rominos" → Rummy Nose Tetra), and say that's what it is.
+        if (call.name === 'check_stock' && out.ok && !(out.data as any)?.products?.length && input.query) {
+          const near = closestProducts(String(input.query), (await getPhoneCatalog(db, args.companyId))?.names || [], 2)
+          if (near.length) {
+            const tries = await Promise.all(near.map(n => action.run(actx, { query: n.name }).catch(() => null)))
+            const products = tries.flatMap(t => (t?.ok && (t.data as any)?.products) || [])
+            if (products.length) out = { ...out, data: { heard: input.query, closestMatches: near.map(n => n.name), products, note: 'Nothing matched what the caller said exactly; these products sound closest. Check with the caller that this is what they meant.' } }
+          }
+        }
         // Remember it for the rest of the call (newest replaces the same lookup).
         if (out.ok) {
           const asked = Object.keys(input).length ? JSON.stringify(input) : ''
@@ -442,16 +467,29 @@ export function relayVoice(voice: string): { provider: 'Amazon' | 'Google' | 'El
   return { provider: 'Amazon', voice: voice.replace(/^Polly\./, '') }
 }
 
-export function phoneRelayTwiml(p: { relayUrl: string; doneUrl: string; voice: string; greeting: string; callRowId: string; companyId: string }): string {
+/** How the caller is heard, as ConversationRelay attributes. */
+export function relayListening(stt: PhoneStt, hints: string[]): string {
+  // Hints only go to Deepgram: Google's telephony model rejects them for en-AU
+  // (Twilio 64101), which fails the whole call before the greeting.
+  const h = hints.length ? ` hints="${esc(hints.join(','))}"` : ''
+  if (stt === 'deepgram-flux') {
+    // Flux decides when the caller has finished (eotThreshold, lower = sooner);
+    // speechTimeout caps the silence it waits. Its English model is asked for
+    // in the default code; the voice stays Australian.
+    return `transcriptionProvider="Deepgram" speechModel="flux" transcriptionLanguage="en-US" eotThreshold="0.7" speechTimeout="2000" ignoreBackchannel="true"${h}`
+  }
+  if (stt === 'deepgram-nova3') return `transcriptionProvider="Deepgram" speechModel="nova-3-general"${h}`
+  return `transcriptionProvider="Google" speechModel="telephony"`
+}
+
+export function phoneRelayTwiml(p: { relayUrl: string; doneUrl: string; voice: string; greeting: string; callRowId: string; companyId: string; stt?: PhoneStt; hints?: string[] }): string {
   const exp = Math.floor(Date.now() / 1000) + 3600
   const v = relayVoice(p.voice)
   const param = (name: string, value: string) => `<Parameter name="${esc(name)}" value="${esc(value)}"/>`
   return `<Response>` +
     `<Connect action="${esc(p.doneUrl)}">` +
       `<ConversationRelay url="${esc(p.relayUrl)}" welcomeGreeting="${esc(p.greeting)}" welcomeGreetingInterruptible="any" ` +
-        `language="en-AU" ttsProvider="${v.provider}" voice="${esc(v.voice)}" transcriptionProvider="Google" speechModel="telephony" ` +
-        // No hints: Google's telephony model rejects them for en-AU (Twilio 64101),
-        // which fails the whole call before the greeting.
+        `language="en-AU" ttsProvider="${v.provider}" voice="${esc(v.voice)}" ${relayListening(p.stt || 'google', p.hints || [])} ` +
         `interruptible="any" dtmfDetection="true">` +
         param('callRowId', p.callRowId) + param('companyId', p.companyId) + param('exp', String(exp)) +
         param('sig', relaySignature(p.callRowId, p.companyId, exp)) +

@@ -6,6 +6,7 @@ import { xmlEscape, twilioIdentity } from '@/lib/twilio-service'
 import { companyForInboundNumber } from '@/lib/inbound-company'
 import { ensureContactByPhone } from '@/lib/contact-capture'
 import { alertCall } from '@/lib/call-alerts'
+import { getPhoneCatalog, phoneHints } from '@/lib/phone-catalog'
 import { getPhoneAgent, answersCaller, startPhoneCall, newPhoneCall, phoneListenTwiml, phoneRelayTwiml, relayConfigured } from '@/lib/phone-agent'
 
 export const dynamic = 'force-dynamic'
@@ -63,6 +64,7 @@ export async function POST(req: NextRequest) {
     const agentP = getPhoneAgent(db, companyId)
     const coNameP: Promise<string> = Promise.resolve(db.from('companies').select('name').eq('id', companyId).maybeSingle())
       .then((r: any) => r.data?.name || '', () => '')
+    const catalogP = agentP.then(a => a.enabled ? getPhoneCatalog(db, companyId) : null, () => null)
     const { data: integ } = await db.from('twilio_integrations').select('*').eq('company_id', companyId).maybeSingle()
     if (!integ) {
       return twiml('<Response><Say>This number is not configured.</Say><Hangup/></Response>')
@@ -150,13 +152,13 @@ export async function POST(req: NextRequest) {
       try {
         const agent = await agentP
         if (answersCaller(agent, from)) {
-          const companyName = await coNameP
+          const [companyName, catalog] = await Promise.all([coNameP, catalogP])
           const realtime = relayConfigured()
           // Real-time calls answer at once; what the agent needs to know loads
           // while the greeting plays (the relay's "start"). Turn-by-turn calls
           // load it now.
           const state = realtime
-            ? newPhoneCall(companyName)
+            ? newPhoneCall(companyName, catalog)
             : await startPhoneCall(db, { companyId, companyName, conversationId, contactId, from })
           state.realtime = realtime
           const now = new Date().toISOString()
@@ -169,6 +171,7 @@ export async function POST(req: NextRequest) {
             return twiml(phoneRelayTwiml({
               relayUrl: process.env.VOICE_RELAY_URL!, doneUrl: `${base}/api/twilio/voice/agent-done?${cbQuery}`,
               voice: agent.voice, greeting: state.greeting, callRowId, companyId,
+              stt: agent.stt, hints: agent.stt === 'google' ? [] : phoneHints(companyName, catalog),
             }))
           }
           return twiml(phoneListenTwiml(`${base}/api/twilio/voice/agent?${cbQuery}`, agent.voice, state.greeting))

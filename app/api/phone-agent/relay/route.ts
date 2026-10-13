@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { phoneTurn, saveCallState, relaySecretOk, loadPhoneContext, type PhoneCallState } from '@/lib/phone-agent'
+import { refreshPhoneCatalog } from '@/lib/phone-catalog'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -34,6 +35,9 @@ export async function POST(req: NextRequest) {
   const loadArgs = { companyId: call.company_id, conversationId: call.conversation_id, contactId: call.contact_id, from: call.from_number }
 
   if (event === 'start') {
+    // The product names (for hearing and finding them) refresh in the
+    // background of the greeting when they're stale.
+    const catalog = refreshPhoneCatalog(db, call.company_id)
     if (!state.contextReady) {
       await loadPhoneContext(db, state, loadArgs)
       // Merge into the row as it is now, in case the caller already spoke.
@@ -48,6 +52,7 @@ export async function POST(req: NextRequest) {
         await db.from('calls').update({ routing_state: { ...(fresh?.routing_state || {}), phone_agent: merged } }).eq('id', call.id)
       }
     }
+    await catalog
     return NextResponse.json({ ok: true })
   }
 
