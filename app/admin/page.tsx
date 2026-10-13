@@ -46,6 +46,10 @@ type Summary = {
   access?: { full: boolean; features: Record<string, boolean> }
 }
 
+// A summary the dashboard can actually render (the API, or an old cache entry,
+// may hand back an error object or a partial shape).
+const isSummary = (d: any): d is Summary => !!(d && d.attention && d.today && Array.isArray(d.today.bookings) && Array.isArray(d.today.tasks) && d.perf && Array.isArray(d.activity))
+
 // Can the signed-in member see this area? Until the first summary arrives (or
 // from an old cached one without `access`) nothing is hidden.
 const canSee = (s: Summary | null, key: string) => !s?.access || s.access.full || s.access.features?.[key] !== false
@@ -142,7 +146,7 @@ export default function AdminDashboard() {
       const tz = Intl.DateTimeFormat().resolvedOptions().timeZone
       const res = await authFetch(`/api/dashboard/summary?companyId=${cid}&tz=${encodeURIComponent(tz)}`)
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Could not load the dashboard')
+      if (!res.ok || !isSummary(data)) throw new Error(data?.error || 'Could not load the dashboard')
       setSummary(data); setSummaryError('')
       writeCache(userIdRef.current, cid, { summary: data })
     } catch (e: any) { setSummaryError(e.message || 'Could not load the dashboard') }
@@ -196,10 +200,10 @@ export default function AdminDashboard() {
       const cached = readCache(u?.id)
       if (cached) {
         cid = cached.companyId; setCompanyId(cid)
-        if (cached.summary) setSummary(cached.summary)
+        if (isSummary(cached.summary)) setSummary(cached.summary)
         if (cached.sales) setSales(cached.sales)
         if (cached.stats) setStats(cached.stats)
-        setRefreshing(!!cached.summary)
+        setRefreshing(isSummary(cached.summary))
         loadAll(cid)
       }
       const resolved = await resolveCompanyId()

@@ -42,7 +42,7 @@ export default function TodayTab({ companyId, onOpenBookings, reloadKey }: { com
   if (!data) return <div className="bk-skel-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(160px,1fr))', gap: 12 }}>{[0, 1, 2, 3].map(i => <div key={i} style={{ ...card, height: 92, background: '#f6f6f7', border: 'none' }} />)}</div>
   if (data.hint) return <div style={{ ...card, background: '#fffbeb', borderColor: '#fde68a', color: '#92400e', fontSize: 13.5, display: 'flex', gap: 8 }}><WarnIcon size={16} /> {data.hint}</div>
 
-  const s = data.stats!
+  const s: Stats = data.stats || { today: 0, next7: 0, newThisWeek: 0, confirmedRate: null, remindedCount: 0, noShowRate: null, noShows: 0, paidCents30: 0, currency: 'aud' }
   const todayLabel = new Date(now).toLocaleDateString('en-AU', { timeZone: tz, weekday: 'long', day: 'numeric', month: 'long' })
 
   return (

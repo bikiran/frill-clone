@@ -168,7 +168,10 @@ function Reveal({ children, delay = 0, y = 28 }: { children: ReactNode; delay?: 
 export default function IntegrationPage() {
   const params = useParams()
   const slug = (params?.slug as string) || 'woocommerce'
-  const intg = INTG[slug] || INTG.woocommerce
+  // Unknown slugs fall back to the default page — and its photo, so a missing
+  // /integrations/<slug>.jpg can't render this page again as its own image.
+  const pageKey = INTG[slug] ? slug : 'woocommerce'
+  const intg = INTG[pageKey]
   const accent = intg.accent
   const [dark, setDark] = useState(false)
   const [user, setUser] = useState<any>(null)
@@ -229,7 +232,7 @@ export default function IntegrationPage() {
         </div>
         <Reveal delay={0.1}>
           <div style={{ position: 'relative', borderRadius: 28, minHeight: 340, overflow: 'hidden', background: `linear-gradient(150deg, ${accent} 0%, ${accent}cc 45%, ${dark ? '#0b0c14' : '#171a2b'} 120%)`, boxShadow: `0 30px 70px ${accent}44` }}>
-            <img src={`/integrations/${slug}.jpg`} alt="" aria-hidden style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+            <img src={`/integrations/${pageKey}.jpg`} alt="" aria-hidden style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
             <div aria-hidden style={{ position: 'absolute', inset: 0, background: `linear-gradient(150deg, ${accent}e6 0%, ${accent}59 42%, rgba(10,12,20,0.5) 115%)` }} />
             <div style={{ position: 'absolute', top: 22, right: 22, color: 'rgba(255,255,255,0.95)', filter: 'drop-shadow(0 2px 8px rgba(0,0,0,0.35))', animation: 'igFloat 6s ease-in-out infinite' }}><FeatureIcon name={intg.features[0].icon} color="rgba(255,255,255,0.95)" size={54} /></div>
             <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 12, padding: 32 }}>

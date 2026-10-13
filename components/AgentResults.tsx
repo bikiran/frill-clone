@@ -45,8 +45,8 @@ export function useAgentResults(companyId: string | null, days: number) {
     try {
       const r = await authFetch(`/api/agent/results?companyId=${companyId}&days=${days}`)
       const d = await r.json()
-      if (!r.ok) { setError(d.error || 'Couldn’t load results.'); return }
-      setData(d); setError('')
+      if (!r.ok || !d?.results?.current || !d.results.previous) { setError(d?.error || 'Couldn’t load results.'); return }
+      setData({ ...d, results: { ...d.results, roles: d.results.roles || [], exceptions: d.results.exceptions || [] }, suggestions: Array.isArray(d.suggestions) ? d.suggestions : [], digest: d.digest || { enabled: false } }); setError('')
     } catch { setError('Couldn’t reach Colvy.') }
   }, [companyId, days])
   useEffect(() => { load() }, [load])

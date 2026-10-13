@@ -151,14 +151,14 @@ export default function CustomDomainPage({ initial, domain }: { initial?: Custom
   const standalone = onInternalPath
   const NavHeader = !standalone ? null : (
     <header style={{ position: 'sticky', top: 0, zIndex: 40, background: '#fff', borderBottom: '1px solid #f0f0f0' }}>
-      <div style={{ maxWidth: 1240, margin: '0 auto', padding: '0 24px', height: 56, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+      <div style={{ maxWidth: 1240, margin: '0 auto', padding: '0 24px', height: 56, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
           {company.logo_url
             ? <img src={company.logo_url} alt={company.name} style={{ height: 28 }} />
             : <div style={{ width: 32, height: 32, borderRadius: 10, background: accent, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 700 }}>{company.name?.[0]?.toUpperCase()}</div>}
-          <span style={{ fontWeight: 700, fontSize: 16, color: '#0d0d0d' }}>{company.name}</span>
+          <span style={{ fontWeight: 700, fontSize: 16, color: '#0d0d0d', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{company.name}</span>
         </div>
-        <nav style={{ display: 'flex', gap: 4 }}>
+        <nav style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
           {navLinks.map(n => (
             <a key={n.label} href={n.href} style={{ padding: '6px 12px', borderRadius: 8, fontSize: 14, fontWeight: n.active ? 600 : 400, color: n.active ? accent : '#6b7280', background: n.active ? accent + '15' : 'transparent', textDecoration: 'none' }}>
               {n.label}

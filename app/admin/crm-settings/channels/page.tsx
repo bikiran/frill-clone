@@ -105,7 +105,7 @@ export default function ChannelsSettings() {
         {CHANNELS.map(ch => {
           const isConnected = !!connected[ch.id]
           return (
-            <div key={ch.id} style={{ border: '1px solid var(--border)', borderRadius: 14, padding: 18, background: '#fff', opacity: ch.ready ? 1 : 0.72 }}>
+            <div key={ch.name} style={{ border: '1px solid var(--border)', borderRadius: 14, padding: 18, background: '#fff', opacity: ch.ready ? 1 : 0.72 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 12 }}>
                 <div style={{ width: 38, height: 38, borderRadius: 10, background: ch.color, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 14, flexShrink: 0 }}>
                   {ch.icon}
