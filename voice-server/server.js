@@ -94,6 +94,8 @@ export function handleConnection(ws) {
       if (!passOk(p)) { log('[relay] refused a call with a bad pass', msg.callSid || ''); ws.close(1008, 'forbidden'); return }
       call = { callRowId: p.callRowId, companyId: p.companyId }
       log('[relay] call connected', call.callRowId)
+      // Colvy loads what the agent needs to know while the greeting plays.
+      colvy('start', call).catch(e => log('[relay] start failed', call.callRowId, e?.message || e))
       return
     }
     if (!call) return

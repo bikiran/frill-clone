@@ -22,10 +22,18 @@ import { createHmac, timingSafeEqual } from 'crypto'
 
 export type PhoneAgentSettings = { enabled: boolean; testNumbers: string[]; voice: string }
 
+// Generative voices first: they sound like a person. The older ones stay so a
+// saved choice keeps working.
 export const PHONE_VOICES: { id: string; label: string }[] = [
-  { id: 'Polly.Olivia-Neural', label: 'Olivia — Australian, female' },
-  { id: 'Google.en-AU-Neural2-C', label: 'Australian, female (Google)' },
-  { id: 'Google.en-AU-Neural2-B', label: 'Australian, male (Google)' },
+  { id: 'Google.en-AU-Chirp3-HD-Aoede', label: 'Aoede — Australian, female (natural)' },
+  { id: 'Google.en-AU-Chirp3-HD-Kore', label: 'Kore — Australian, female (natural)' },
+  { id: 'Google.en-AU-Chirp3-HD-Charon', label: 'Charon — Australian, male (natural)' },
+  { id: 'Google.en-AU-Chirp3-HD-Puck', label: 'Puck — Australian, male (natural)' },
+  { id: 'Polly.Olivia-Generative', label: 'Olivia — Australian, female (natural)' },
+  { id: 'ElevenLabs.9Ft9sm9dzvprPILZmLJl', label: 'ElevenLabs Australian voice (real-time calls)' },
+  { id: 'Polly.Olivia-Neural', label: 'Olivia — Australian, female (older, more robotic)' },
+  { id: 'Google.en-AU-Neural2-C', label: 'Australian, female (older Google)' },
+  { id: 'Google.en-AU-Neural2-B', label: 'Australian, male (older Google)' },
 ]
 const DEFAULT_VOICE = PHONE_VOICES[0].id
 export const MAX_TEST_NUMBERS = 5
@@ -84,28 +92,55 @@ export type PhoneCallState = {
   ended?: boolean
   realtime?: boolean       // answered through the real-time relay (ConversationRelay)
   transcriptMessageId?: string | null
+  companyName?: string
+  contextReady?: boolean   // contextText/timezone/verified/facts loaded (real-time calls load them while the greeting plays)
+  facts?: { tool: string; asked?: string; text: string }[]   // lookups already done this call, so they aren't repeated
+  messageAbout?: string    // what the message taken this call was about
 }
 
-export async function startPhoneCall(db: any, args: { companyId: string; companyName: string; conversationId: string | null; contactId: string | null; from: string }): Promise<PhoneCallState> {
-  let contextText = ''
-  let timezone = 'Australia/Melbourne'
-  let verified = false
-  try {
-    const ctx = await buildContext(db, args.companyId, { conversationId: args.conversationId, contactId: args.contactId })
-    contextText = [ctx.businessText, ctx.customerText, ctx.toneText ? `How the business likes to sound: ${ctx.toneText}` : ''].filter(Boolean).join('\n\n')
-    timezone = ctx.timezone || timezone
-  } catch {}
-  if (args.contactId) {
-    try {
-      const { data: c } = await db.from('contacts').select('phone').eq('id', args.contactId).maybeSingle()
-      verified = tail(c?.phone).length >= 8 && tail(c?.phone) === tail(args.from)
-    } catch {}
-  }
-  const name = args.companyName || 'us'
+/** The call's state before anything is looked up: enough to answer straight away. */
+export function newPhoneCall(companyName: string): PhoneCallState {
+  const name = companyName || 'us'
   return {
     greeting: `Hi, thanks for calling ${name}. The team can't get to the phone right now, so you're speaking with ${name}'s AI assistant. I can check an order, our opening hours or stock, or take a message. How can I help?`,
-    contextText, timezone, verified, turns: [], silences: 0,
+    contextText: '', timezone: 'Australia/Melbourne', verified: false, turns: [], silences: 0,
+    companyName, contextReady: false, facts: [],
   }
+}
+
+/**
+ * Load what the agent knows for this call (business + customer facts, whether
+ * the caller's number matches their record, and this week's opening hours, the
+ * question most callers ask). Fills `state` in place; does nothing if already
+ * loaded.
+ */
+export async function loadPhoneContext(db: any, state: PhoneCallState, args: { companyId: string; conversationId: string | null; contactId: string | null; from: string }): Promise<void> {
+  if (state.contextReady) return
+  const hours = getAction('get_business_hours')
+  const [ctx, contact, hoursOut] = await Promise.all([
+    buildContext(db, args.companyId, { conversationId: args.conversationId, contactId: args.contactId }).catch(() => null),
+    args.contactId
+      ? db.from('contacts').select('phone').eq('id', args.contactId).maybeSingle().then((r: any) => r.data, () => null)
+      : Promise.resolve(null),
+    hours ? hours.run({ db, companyId: args.companyId } as any, {}).catch(() => null) : Promise.resolve(null),
+  ])
+  if (ctx) {
+    state.contextText = [ctx.businessText, ctx.customerText, ctx.toneText ? `How the business likes to sound: ${ctx.toneText}` : ''].filter(Boolean).join('\n\n')
+    state.timezone = ctx.timezone || state.timezone
+  }
+  state.verified = tail(contact?.phone).length >= 8 && tail(contact?.phone) === tail(args.from)
+  state.facts = state.facts || []
+  if (hoursOut?.ok && !state.facts.some(f => f.tool === 'get_business_hours')) {
+    state.facts.unshift({ tool: 'get_business_hours', text: JSON.stringify(hoursOut.data ?? {}).slice(0, 4000) })
+  }
+  state.contextReady = true
+}
+
+/** Turn-by-turn calls: everything up front. */
+export async function startPhoneCall(db: any, args: { companyId: string; companyName: string; conversationId: string | null; contactId: string | null; from: string }): Promise<PhoneCallState> {
+  const state = newPhoneCall(args.companyName)
+  await loadPhoneContext(db, state, args)
+  return state
 }
 
 // ── A turn ───────────────────────────────────────────────────────────────────
@@ -127,12 +162,14 @@ const TAKE_MESSAGE = {
 }
 const END_CALL = {
   name: 'end_call',
-  description: 'End the call once the caller has what they need or says goodbye. Your goodbye is read to them, then the call ends.',
+  description: 'End the call once the caller has what they need or says goodbye. The goodbye you give here is read to them, then the call ends, so don’t also write it as text.',
   input_schema: { type: 'object', additionalProperties: false, required: ['goodbye'], properties: { goodbye: { type: 'string', description: 'One short spoken sentence.' } } },
 }
 
 function systemPrompt(state: PhoneCallState, p: { companyName: string; from: string; callerName: string | null; timezone: string }): string {
   const now = localNow(p.timezone)
+  const facts = state.facts || []
+  const lateNight = Number(now.time.slice(0, 2)) < 5
   return [
     `You are the AI phone assistant for ${p.companyName}, answering a call because the team couldn't get to the phone. It is ${prettyTime(now.time)}, ${prettyDate(now.date)} (${p.timezone}).`,
     `The caller${p.callerName ? ` is ${p.callerName} and` : ''} is calling from ${p.from}. ${state.verified ? 'That number matches their customer record, so you may discuss orders linked to it.' : 'Their number isn’t linked to a customer record we can trust.'}`,
@@ -140,14 +177,19 @@ function systemPrompt(state: PhoneCallState, p: { companyName: string; from: str
     'How to talk:',
     '- This is a phone call. Reply in one to three short spoken sentences. No lists, markdown, links, emojis or abbreviations. Say order numbers digit by digit and prices in words a person would say.',
     '- You already said you are an AI assistant in the greeting; only repeat it if asked.',
-    '- Before you use a lookup, first say a few words so the caller isn’t left in silence, like “Let me check that for you.”',
+    '- Only when you are about to use a lookup tool, start with a few words such as “One moment, let me check.” Don’t say that before take_message or end_call, or when you can answer from what you already know.',
+    '- Never repeat something you have already told the caller unless they ask again. Answer only what they just asked.',
     '- Use your tools for every fact: opening hours, the caller’s orders, stock and the business’s own knowledge. Never guess or invent prices, stock, dates, delivery times or policies. If the tools don’t give you the answer, offer to take a message.',
+    '- Opening hours for the next week are already looked up below; answer hours questions straight from them. Only use get_business_hours for a date more than a week away.',
     `- Orders: ${state.verified ? 'you may look up orders linked to this caller. ' : ''}For any other order, ask for the order number and the email address or postcode on it before sharing anything.`,
     '- If the caller wants a person, a refund, a return, to complain, or anything you can’t do: use take_message (their name and what it’s about), tell them the team will call them back, then end the call.',
     '- When they have what they need, ask if there’s anything else; when they’re done, use end_call.',
     '- Never ask for or accept card numbers, passwords or one-time codes.',
+    ...(state.messageTaken ? [`- You have already taken a message on this call${state.messageAbout ? ` (about: ${state.messageAbout})` : ''}. Don’t take it again; only use take_message for something new.`] : []),
+    ...(lateNight ? [`- It’s after midnight, so a caller who says “tomorrow” may mean later today (${prettyDate(now.date)}). If it matters, check which day they mean.`] : []),
     '',
     state.contextText,
+    ...(facts.length ? ['', 'Already looked up on this call (current; use these instead of looking them up again):', ...facts.map(f => `- ${f.tool}: ${f.text}`)] : []),
   ].filter(s => s !== undefined).join('\n')
 }
 
@@ -176,8 +218,13 @@ export async function phoneTurn(db: any, args: {
     if (!firstAt) firstAt = Date.now()
     if (args.onText && !alreadyStreamed) args.onText(text)
   }
+  const norm = (t: string) => t.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
   const result = (end: boolean, extra?: string): TurnResult => {
-    if (extra) { speak(extra); spoken.push(extra) }
+    // A goodbye the model already wrote as text isn't said twice.
+    if (extra && !norm(spoken.join(' ')).includes(norm(extra))) {
+      if (args.onText && spoken.length) args.onText(' ')
+      speak(extra); spoken.push(extra)
+    }
     const say = spoken.map(t => t.trim()).filter(Boolean).join(' ') || 'Sorry, could you say that again?'
     if (!firstAt) speak(say)
     return { say, end, tookMessage, ms: (firstAt || Date.now()) - started, tools: used }
@@ -229,6 +276,7 @@ export async function phoneTurn(db: any, args: {
       if (call.name === 'take_message') {
         const ok = await takeMessage(db, actx, args, call.input || {})
         tookMessage = tookMessage || ok
+        if (ok) args.state.messageAbout = String(call.input?.about || '').trim().slice(0, 200)
         results.push({ type: 'tool_result', id: call.id, content: ok ? 'Message saved; the team will call back.' : 'Could not save the message.', ...(ok ? {} : { isError: true }) })
         continue
       }
@@ -239,6 +287,13 @@ export async function phoneTurn(db: any, args: {
       if (bad) { results.push({ type: 'tool_result', id: call.id, content: bad, isError: true }); continue }
       try {
         const out = await action.run(actx, input)
+        // Remember it for the rest of the call (newest replaces the same lookup).
+        if (out.ok) {
+          const asked = Object.keys(input).length ? JSON.stringify(input) : ''
+          const facts = (args.state.facts = (args.state.facts || []).filter(f => !(f.tool === call.name && (f.asked || '') === asked)))
+          facts.push({ tool: call.name, asked, text: `${asked ? `${asked} → ` : ''}${JSON.stringify(out.data ?? {})}`.slice(0, 3000) })
+          if (facts.length > 8) facts.splice(0, facts.length - 8)
+        }
         results.push({ type: 'tool_result', id: call.id, content: JSON.stringify(out.ok ? (out.data ?? {}) : { error: out.error }).slice(0, 6000), ...(out.ok ? {} : { isError: true }) })
       } catch (e: any) {
         results.push({ type: 'tool_result', id: call.id, content: `Lookup failed: ${e?.message || e}`, isError: true })
@@ -311,11 +366,15 @@ export async function saveCallState(db: any, call: { id: string; company_id: str
   call.routing_state = routing_state
   await db.from('calls').update({
     routing_state, ended_at: now.toISOString(), ...(dur ? { duration_seconds: dur } : {}),
-    ...(state.messageTaken ? { ai_todos: ['Call the customer back (message taken by the AI phone agent)'] } : {}),
   }).eq('id', call.id)
 }
 
 // ── Twilio TwiML ─────────────────────────────────────────────────────────────
+
+/** A voice <Say> can use (ElevenLabs is real-time only; its fallback is the closest generative voice). */
+export function sayVoice(voice: string): string {
+  return voice.startsWith('ElevenLabs.') ? 'Polly.Olivia-Generative' : voice
+}
 
 const esc = (s: string) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;')
 
@@ -323,20 +382,20 @@ const esc = (s: string) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;'
 export function phoneListenTwiml(actionUrl: string, voice: string, say: string): string {
   return `<Response>` +
     `<Gather input="speech dtmf" numDigits="1" action="${esc(actionUrl)}" method="POST" language="en-AU" speechModel="phone_call" speechTimeout="auto" timeout="6" actionOnEmptyResult="true">` +
-      `<Say voice="${esc(voice)}" language="en-AU">${esc(say)}</Say>` +
+      `<Say voice="${esc(sayVoice(voice))}" language="en-AU">${esc(say)}</Say>` +
     `</Gather>` +
   `</Response>`
 }
 
 /** Say goodbye and hang up. */
 export function phoneGoodbyeTwiml(voice: string, say: string): string {
-  return `<Response><Say voice="${esc(voice)}" language="en-AU">${esc(say)}</Say><Hangup/></Response>`
+  return `<Response><Say voice="${esc(sayVoice(voice))}" language="en-AU">${esc(say)}</Say><Hangup/></Response>`
 }
 
 /** Hand the caller to voicemail (the business's normal greeting and recording). */
 export function phoneVoicemailTwiml(voice: string, greeting: string, recordingCallback: string): string {
   return `<Response>` +
-    `<Say voice="${esc(voice)}" language="en-AU">${esc(greeting)}</Say>` +
+    `<Say voice="${esc(sayVoice(voice))}" language="en-AU">${esc(greeting)}</Say>` +
     `<Record maxLength="180" playBeep="true" trim="trim-silence" recordingStatusCallback="${esc(recordingCallback)}" recordingStatusCallbackEvent="completed"/>` +
     `<Hangup/>` +
   `</Response>`
@@ -370,7 +429,8 @@ export function relaySecretOk(given: string | null | undefined): boolean {
 }
 
 // Our voice choices, as ConversationRelay names them.
-export function relayVoice(voice: string): { provider: 'Amazon' | 'Google'; voice: string } {
+export function relayVoice(voice: string): { provider: 'Amazon' | 'Google' | 'ElevenLabs'; voice: string } {
+  if (voice.startsWith('ElevenLabs.')) return { provider: 'ElevenLabs', voice: voice.slice('ElevenLabs.'.length) }
   if (voice.startsWith('Google.')) return { provider: 'Google', voice: voice.slice('Google.'.length) }
   return { provider: 'Amazon', voice: voice.replace(/^Polly\./, '') }
 }
