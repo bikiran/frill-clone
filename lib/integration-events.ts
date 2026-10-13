@@ -453,7 +453,7 @@ export function sampleEvent(event: string): EventPayload {
     'task.created': { title: 'New task: Call Alex about the tank quote', path: '/admin/tasks', fields: { Due: 'Tomorrow', 'Assigned to': 'Bikiran' } },
     'idea.created': { title: 'New idea: Stock more planted-tank supplies', summary: 'It would be great to see more CO₂ kits and ferts.', path: '/admin', fields: { Status: 'Under review' } },
     'idea.voted': { title: 'New vote on “Stock more planted-tank supplies”', path: '/admin', fields: { Votes: 12 } },
-    'idea.status_changed': { title: '“Stock more planted-tank supplies” is now Planned', path: '/admin/roadmap', fields: { 'New status': 'Planned' } },
+    'idea.status_changed': { title: '“Stock more planted-tank supplies” is now Planned', path: '/roadmap', fields: { 'New status': 'Planned' } },
     'idea.commented': { title: 'New comment on “Stock more planted-tank supplies”', summary: '“Yes please, especially the liquid ferts.”', path: '/admin' },
     'announcement.published': { title: 'Announcement: New opening hours', summary: 'We’re now open until 7pm on Thursdays.', path: '/admin/announcements' },
   }

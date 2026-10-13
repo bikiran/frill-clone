@@ -77,32 +77,48 @@ const icons: Record<string, React.JSX.Element> = {
   orders: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>,
   shipping: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="3" width="15" height="13"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>,
   payments: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/><line x1="6" y1="15" x2="10" y2="15"/></svg>,
+  needs: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="7" x2="12" y2="13"/><line x1="12" y1="16.5" x2="12.01" y2="16.5"/></svg>,
+  results: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>,
+  knowledge: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.66 3.58 3 8 3s8-1.34 8-3V5"/><path d="M4 11v6c0 1.66 3.58 3 8 3s8-1.34 8-3v-6"/></svg>,
+  sliders: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>,
 }
 
-const NAV_GROUPS = [
+// The admin sidebar. Groups run from the everyday work (inbox, AI, orders,
+// support) down to setup (feedback board config, insights, settings).
+// `match` lists extra pages that should light up this item — pages that belong
+// to it but live at a different address (e.g. a contact's profile → Contacts).
+type NavItem = { label: string; href: string; icon: string; match?: string[] }
+const NAV_GROUPS: { label: string | null; items: NavItem[] }[] = [
   {
     label: null,
     items: [{ label: 'Dashboard', href: '/admin', icon: 'dashboard' }],
   },
   {
-    label: 'Feedback',
+    label: 'Inbox & CRM',
     items: [
-      { label: 'Ideas', href: '/admin', icon: 'ideas' },
-      { label: 'Roadmap', href: '/roadmap', icon: 'roadmap' },
-      { label: 'Announcements', href: '/admin/announcements', icon: 'announcements' },
-      { label: 'Polls', href: '/admin/polls', icon: 'polls' },
-      { label: 'Forms', href: '/admin/forms', icon: 'forms' },
-      { label: 'Surveys', href: '/admin/surveys', icon: 'surveys' },
+      { label: 'Inbox', href: '/admin/inbox', icon: 'support' },
+      { label: 'Contacts', href: '/admin/contacts', icon: 'users', match: ['/admin/customers/profile'] },
+      { label: 'Tasks', href: '/admin/tasks', icon: 'check' },
+      { label: 'Notes', href: '/admin/notes', icon: 'notes' },
+      { label: 'Gallery', href: '/admin/gallery', icon: 'gallery' },
+      { label: 'Calendar', href: '/admin/calendar', icon: 'calendar' },
+      { label: 'Bookings', href: '/admin/bookings', icon: 'calendar' },
+      { label: 'Scheduled', href: '/admin/scheduled', icon: 'scheduled' },
+      { label: 'Call Logs', href: '/admin/calls', icon: 'support' },
     ],
   },
   {
-    label: 'Manage',
+    // Everything the AI does and knows, in one place. AI Knowledge and AI
+    // Settings still live inside Settings (so the settings tabs show around
+    // them); these entries just make them findable from the sidebar.
+    label: 'AI',
     items: [
-      { label: 'Statuses', href: '/admin/statuses', icon: 'statuses' },
-      { label: 'Topics', href: '/admin/topics', icon: 'topics' },
-      { label: 'Priorities', href: '/admin/priorities', icon: 'priorities' },
-      { label: 'Segments', href: '/admin/segments', icon: 'segments' },
-      { label: 'Analytics', href: '/admin/analytics', icon: 'analytics' },
+      { label: 'AI Agents', href: '/admin/agents', icon: 'agents' },
+      { label: 'Needs You', href: '/admin/agents/needs-you', icon: 'needs' },
+      { label: 'Results & Goals', href: '/admin/agents/results', icon: 'results' },
+      { label: 'Business Memory', href: '/admin/agents/memory', icon: 'memory' },
+      { label: 'AI Knowledge', href: '/admin/crm-settings/ai-knowledge', icon: 'knowledge' },
+      { label: 'AI Settings', href: '/admin/crm-settings/ai', icon: 'sliders' },
     ],
   },
   {
@@ -115,17 +131,20 @@ const NAV_GROUPS = [
     ],
   },
   {
-    label: 'Inbox & CRM',
+    label: 'Support',
     items: [
-      { label: 'Inbox', href: '/admin/inbox', icon: 'support' },
-      { label: 'Contacts', href: '/admin/contacts', icon: 'users' },
-      { label: 'Tasks', href: '/admin/tasks', icon: 'check' },
-      { label: 'Notes', href: '/admin/notes', icon: 'notes' },
-      { label: 'Gallery', href: '/admin/gallery', icon: 'gallery' },
-      { label: 'Calendar', href: '/admin/calendar', icon: 'calendar' },
-      { label: 'Bookings', href: '/admin/bookings', icon: 'calendar' },
-      { label: 'Scheduled', href: '/admin/scheduled', icon: 'scheduled' },
-      { label: 'Call Logs', href: '/admin/calls', icon: 'support' },
+      { label: 'Tickets', href: '/admin/tickets', icon: 'support' },
+      { label: 'Help Centre', href: '/admin/help', icon: 'help' },
+      { label: 'Help Categories', href: '/admin/settings/help-categories', icon: 'topics' },
+      { label: 'Help Reporting', href: '/admin/help/analytics', icon: 'analytics' },
+      { label: 'Help Settings', href: '/admin/help/settings', icon: 'settings' },
+    ],
+  },
+  {
+    // Reaching customers and your public reputation — split out of Inbox & CRM,
+    // which had grown to 15 items.
+    label: 'Marketing',
+    items: [
       { label: 'Campaigns', href: '/admin/campaigns', icon: 'announcements' },
       { label: 'Waitlists', href: '/admin/waitlists', icon: 'waitlist' },
       { label: 'Links Generator', href: '/admin/links', icon: 'link' },
@@ -135,56 +154,102 @@ const NAV_GROUPS = [
     ],
   },
   {
+    label: 'Feedback',
+    items: [
+      // The ideas board itself (the public board, like Roadmap). ?view=ideas
+      // reaches it even when another page is set as the board's homepage.
+      { label: 'Ideas', href: '/?view=ideas', icon: 'ideas' },
+      { label: 'Roadmap', href: '/roadmap', icon: 'roadmap' },
+      { label: 'Announcements', href: '/admin/announcements', icon: 'announcements' },
+      { label: 'Polls', href: '/admin/polls', icon: 'polls' },
+      { label: 'Forms', href: '/admin/forms', icon: 'forms' },
+      { label: 'Surveys', href: '/admin/surveys', icon: 'surveys' },
+    ],
+  },
+  {
+    // How the feedback board is organised.
+    label: 'Manage',
+    items: [
+      { label: 'Statuses', href: '/admin/statuses', icon: 'statuses' },
+      { label: 'Topics', href: '/admin/topics', icon: 'topics' },
+      { label: 'Priorities', href: '/admin/priorities', icon: 'priorities' },
+      { label: 'Segments', href: '/admin/segments', icon: 'segments' },
+    ],
+  },
+  {
     label: 'Insights',
     items: [
       { label: 'Command Centre', href: '/admin/command-centre', icon: 'command' },
+      { label: 'Analytics', href: '/admin/analytics', icon: 'analytics' },
       { label: 'Customer Insights', href: '/admin/insights/customers', icon: 'users' },
       { label: 'Location Insights', href: '/admin/insights/location', icon: 'analytics' },
     ],
   },
   {
-    label: 'Support',
-    items: [
-      { label: 'Tickets', href: '/admin/tickets', icon: 'support' },
-      { label: 'Help Centre', href: '/admin/help', icon: 'help' },
-      { label: 'Help Categories', href: '/admin/settings/help-categories', icon: 'topics' },
-      { label: 'Help Reporting', href: '/admin/help/analytics', icon: 'analytics' },
-      { label: 'Help Settings', href: '/admin/help/settings', icon: 'settings' },
-
-    ],
-  },
-  {
     label: 'Settings',
     items: [
+      { label: 'Settings', href: '/admin/settings', icon: 'settings' },
+      // Business profile, channels, chat widget, auto-replies, payments, order
+      // automation, policies… (the /admin/crm-settings area). Previously only
+      // reachable from the gear icon inside the Inbox.
+      { label: 'Business Settings', href: '/admin/crm-settings/business', icon: 'company', match: ['/admin/crm-settings'] },
       { label: 'Team', href: '/admin/team', icon: 'team' },
       { label: 'Users', href: '/admin/users', icon: 'users' },
       { label: 'Locations', href: '/admin/locations', icon: 'settings' },
       { label: 'Integrations', href: '/admin/integrations', icon: 'integrations' },
-      { label: 'AI Agents', href: '/admin/agents', icon: 'agents' },
-      { label: 'Business Memory', href: '/admin/agents/memory', icon: 'memory' },
       { label: 'Import Data', href: '/admin/import', icon: 'import_data' },
-      { label: 'Settings', href: '/admin/settings', icon: 'settings' },
       { label: 'Billing', href: '/admin/billing', icon: 'billing' },
       { label: 'Referrals', href: '/admin/referrals', icon: 'link' },
     ],
   },
 ]
 
+// Every address that lights up a sidebar item, longest first. A page lights up
+// the item whose address is the longest whole-segment match, so
+// /admin/help/analytics → Help Reporting (not Help Centre) and
+// /admin/crm-settings/ai → AI Settings (not Business Settings).
+const NAV_MATCHES: { href: string; path: string }[] = NAV_GROUPS
+  .flatMap(g => g.items.flatMap(i => [i.href, ...(i.match || [])].map(path => ({ href: i.href, path }))))
+  .filter(m => m.path.startsWith('/admin/'))
+  .sort((a, b) => b.path.length - a.path.length)
+
 // Extra destinations for the sidebar search that aren't top-level nav items
-// (deeper settings pages). Deduped against the nav items at render time.
+// (deeper settings pages). Deduped against the nav items at render time, and
+// filtered by the member's permissions just like the nav.
 const SEARCH_EXTRAS: SearchItem[] = [
-  { label: 'Business profile', href: '/admin/crm-settings/business', section: 'Settings', keywords: 'company details address hours abn' },
-  { label: 'Channels', href: '/admin/crm-settings/channels', section: 'Settings', keywords: 'whatsapp instagram facebook messenger sms email meta connect' },
-  { label: 'Chat widget', href: '/admin/crm-settings/chat-widget', section: 'Settings', keywords: 'live chat website widget' },
-  { label: 'Auto-replies', href: '/admin/crm-settings/auto-replies', section: 'Settings', keywords: 'automation canned away hours' },
-  { label: 'Contact form', href: '/admin/crm-settings/contact-form', section: 'Settings' },
-  { label: 'AI settings', href: '/admin/ai-settings', section: 'Settings', keywords: 'assistant colvy ai reply' },
-  { label: 'AI knowledge', href: '/admin/crm-settings/ai-knowledge', section: 'Settings', keywords: 'colvy ai library facts files website train learn answers' },
-  { label: 'Statuses', href: '/admin/statuses', section: 'Settings' },
-  { label: 'Topics', href: '/admin/topics', section: 'Settings' },
-  { label: 'Priorities', href: '/admin/priorities', section: 'Settings' },
+  { label: 'Your profile & notifications', href: '/admin/crm-settings/profile', section: 'Business Settings', keywords: 'my settings name signature avatar notifications' },
+  { label: 'Business profile', href: '/admin/crm-settings/business', section: 'Business Settings', keywords: 'company details address hours abn website' },
+  { label: 'Channels', href: '/admin/crm-settings/channels', section: 'Business Settings', keywords: 'whatsapp instagram facebook messenger sms email meta connect calls' },
+  { label: 'Facebook & Instagram', href: '/admin/crm-settings/channels/meta', section: 'Business Settings', keywords: 'meta messenger instagram connect page' },
+  { label: 'Email channel', href: '/admin/crm-settings/channels/email', section: 'Business Settings', keywords: 'gmail outlook inbox connect' },
+  { label: 'Google Reviews channel', href: '/admin/crm-settings/channels/google-reviews', section: 'Business Settings', keywords: 'google business profile reviews connect' },
+  { label: 'Chat widget', href: '/admin/crm-settings/chat-widget', section: 'Business Settings', keywords: 'live chat website widget' },
+  { label: 'Contact form', href: '/admin/crm-settings/contact-form', section: 'Business Settings', keywords: 'website form embed enquiry' },
+  { label: 'Automatic replies', href: '/admin/crm-settings/auto-replies', section: 'Business Settings', keywords: 'auto-replies automation canned away hours' },
+  { label: 'Time savers', href: '/admin/crm-settings/power-ups', section: 'Business Settings', keywords: 'quick responses canned replies conversation categories' },
+  { label: 'Conversation actions', href: '/admin/crm-settings/conversation-actions', section: 'Business Settings', keywords: 'buttons actions inbox' },
+  { label: 'Custom fields', href: '/admin/crm-settings/custom-fields', section: 'Business Settings', keywords: 'contact fields properties' },
+  { label: 'Archived & spam', href: '/admin/crm-settings/archived-spam', section: 'Business Settings', keywords: 'restore hidden enquiries junk' },
+  { label: 'Payment settings', href: '/admin/crm-settings/payments', section: 'Business Settings', keywords: 'invoices transactions receipts' },
+  { label: 'Order automation', href: '/admin/crm-settings/order-automation', section: 'Business Settings', keywords: 'woocommerce order status messages' },
+  { label: 'SMS campaign settings', href: '/admin/crm-settings/campaigns', section: 'Business Settings', keywords: 'bulk sms sender' },
+  { label: 'Policies', href: '/admin/crm-settings/policies', section: 'Business Settings', keywords: 'waivers consent agreements legal' },
+  { label: 'Imports', href: '/admin/crm-settings/imports', section: 'Business Settings', keywords: 'import csv contacts conversations' },
+  { label: 'CSV processor', href: '/admin/crm-settings/csv-processor', section: 'Business Settings', keywords: 'clean csv preview' },
+  { label: 'AI settings', href: '/admin/crm-settings/ai', section: 'AI', keywords: 'assistant colvy ai reply auto reply' },
+  { label: 'AI knowledge', href: '/admin/crm-settings/ai-knowledge', section: 'AI', keywords: 'colvy ai library facts files website train learn answers' },
+  { label: 'Outside tools (MCP)', href: '/admin/integrations/mcp', section: 'AI', keywords: 'mcp claude chatgpt connect ai tools server' },
+  { label: 'Calls & SMS', href: '/admin/integrations/calls', section: 'Integrations', keywords: 'phone number sms calling voicemail' },
+  { label: 'Shopify', href: '/admin/integrations/shopify', section: 'Integrations', keywords: 'store ecommerce' },
+  { label: 'WooCommerce', href: '/admin/integrations/woocommerce', section: 'Integrations', keywords: 'store ecommerce wordpress orders' },
+  { label: 'Stripe', href: '/admin/integrations/stripe', section: 'Integrations', keywords: 'payments card' },
+  { label: 'Prexty', href: '/admin/integrations/prexty', section: 'Integrations', keywords: 'store orders' },
+  { label: 'Campaign templates', href: '/admin/campaigns/templates', section: 'Marketing', keywords: 'sms email template' },
+  { label: 'Social categories', href: '/admin/social/categories', section: 'Marketing', keywords: 'comments tags' },
+  { label: 'Import help articles', href: '/admin/help/import', section: 'Support', keywords: 'help centre import zendesk intercom' },
   { label: 'Terminology', href: '/admin/settings#terminology', section: 'Settings', keywords: 'wording labels rename words' },
   { label: 'Audit logs', href: '/admin/settings/audit-logs', section: 'Settings', keywords: 'security history' },
+  { label: 'Create workspace', href: '/admin/new-workspace', section: 'Settings', keywords: 'new company workspace business' },
 ]
 
 // A few seconds after the admin opens, fetch the Waitlists list in the
@@ -828,21 +893,15 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   // Nav visibility for the current member.
   const canUseNavItem = (item: { href: string; label: string }) => {
-    const featKey = item.label === 'Ideas' ? 'ideas' : featureForPath(item.href)?.key
+    const featKey = item.label === 'Ideas' ? 'ideas' : featureForPath(item.href.split(/[?#]/)[0])?.key
     return !featKey || canUseFeature(myRole, myPerms, featKey)
   }
 
-  const isActive = (href: string) => {
-    if (href === '/admin') return pathname === '/admin'
-    if (!pathname?.startsWith(href)) return false
-    // Only the LONGEST matching nav item is active — prevents /admin/help
-    // lighting up when /admin/help/analytics is the current page.
-    const allHrefs = NAV_GROUPS.flatMap(g => g.items.map(i => i.href))
-    const longestMatch = allHrefs
-      .filter(h => h !== '/admin' && pathname?.startsWith(h))
-      .sort((a, b) => b.length - a.length)[0]
-    return href === longestMatch
-  }
+  // Only the LONGEST whole-segment match is active — prevents /admin/help
+  // lighting up when /admin/help/analytics is the current page.
+  const activeHref = pathname === '/admin' ? '/admin'
+    : NAV_MATCHES.find(m => pathname === m.path || pathname?.startsWith(m.path + '/'))?.href
+  const isActive = (href: string) => href === activeHref
 
   return (
     <div style={{ display: 'flex', minHeight: 'calc(100vh - 56px)' }}>
@@ -999,7 +1058,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           {(() => {
             const navItems: SearchItem[] = NAV_GROUPS.flatMap(g => g.items.filter(canUseNavItem).map(it => ({ label: it.label, href: it.href, section: g.label || 'General' })))
             const seen = new Set(navItems.map(i => i.href))
-            const items = [...navItems, ...SEARCH_EXTRAS.filter(e => !seen.has(e.href))]
+            const items = [...navItems, ...SEARCH_EXTRAS.filter(e => !seen.has(e.href) && canUseNavItem(e))]
             return <SidebarSearch items={items} collapsed={adminCollapsed} />
           })()}
           {NAV_GROUPS.map((group, gi) => {
@@ -1093,7 +1152,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               <p style={{ padding: '0 10px', marginBottom: 4, fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--slate)' }}>
                 Super Admin
               </p>
-              <Link href="/admin/new-workspace"
+              {/* The super-admin "create a company for a customer" form (owner,
+                  plan, industry). Creating a workspace for yourself is the
+                  "Create Workspace" option in the workspace switcher above. */}
+              <Link href="/admin/create-company"
                 style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '7px 10px', borderRadius: 8, fontSize: 13, textDecoration: 'none', color: 'var(--slate)', background: 'transparent' }}>
                 <span style={{ flexShrink: 0, display: 'flex', opacity: 0.65 }}>{icons.company}</span>
                 Create Company
