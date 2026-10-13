@@ -169,7 +169,10 @@ function Reveal({ children, delay = 0, y = 30 }: { children: ReactNode; delay?: 
 export default function SolutionPage() {
   const params = useParams()
   const slug = (params?.slug as string) || 'customer-support'
-  const page = PAGES[slug] || PAGES['customer-support']
+  // Unknown slugs fall back to Customer Support — including its photo, so a
+  // missing /solutions/<slug>.jpg can't render this page again as its own image.
+  const pageKey = PAGES[slug] ? slug : 'customer-support'
+  const page = PAGES[pageKey]
   const accent = page.accent
   const [dark, setDark] = useState(false)
   const [user, setUser] = useState<any>(null)
@@ -233,7 +236,7 @@ export default function SolutionPage() {
         {/* Hero visual — real photography behind the accent overlay + floating chips */}
         <Reveal delay={0.1}>
           <div style={{ position: 'relative', borderRadius: 28, minHeight: 340, overflow: 'hidden', boxShadow: `0 30px 70px ${accent}44` }}>
-            <img src={`/solutions/${slug}.jpg`} alt="" aria-hidden style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+            <img src={`/solutions/${pageKey}.jpg`} alt="" aria-hidden style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
             <div aria-hidden style={{ position: 'absolute', inset: 0, background: `linear-gradient(150deg, ${accent}e6 0%, ${accent}73 42%, rgba(10,12,20,0.55) 118%)` }} />
             <div style={{ position: 'absolute', top: 22, right: 22, color: 'rgba(255,255,255,0.95)', animation: 'solFloat 6s ease-in-out infinite' }}><FeatureIcon name={page.features[0].icon} color="rgba(255,255,255,0.95)" size={54} /></div>
             <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 12, padding: 32 }}>

@@ -45,7 +45,7 @@ export default function MetaChannelsPage() {
 
   const load = async (cid: string) => {
     const res = await authFetch(`/api/meta/channels?companyId=${cid}`)
-    const d = await res.json()
+    const d = await res.json().catch(() => ({}))
     setConfigured(d.configured !== false)
     setMetaRootOrigin(d.rootOrigin || '')
     setIgLoginConfigured(!!d.igLoginConfigured)

@@ -266,7 +266,10 @@ function Faq({ q, a, accent, text, muted, cardBg, cardBorder }: { q: string; a: 
 export default function IndustryPage() {
   const params = useParams()
   const slug = (params?.slug as string) || 'saas'
-  const ind = IND[slug] || IND.saas
+  // Unknown slugs fall back to the default page — and its photo, so a missing
+  // /industries/<slug>.jpg can't render this page again as its own image.
+  const pageKey = IND[slug] ? slug : 'saas'
+  const ind = IND[pageKey]
   const accent = ind.accent
   const [dark, setDark] = useState(false)
   const [user, setUser] = useState<any>(null)
@@ -328,7 +331,7 @@ export default function IndustryPage() {
         </div>
         <Reveal delay={0.1}>
           <div style={{ position: 'relative', borderRadius: 28, minHeight: 340, overflow: 'hidden', background: `linear-gradient(150deg, ${accent} 0%, ${accent}cc 45%, ${dark ? '#0b0c14' : '#171a2b'} 120%)`, boxShadow: `0 30px 70px ${accent}44` }}>
-            <img src={`/industries/${slug}.jpg`} alt="" aria-hidden style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+            <img src={`/industries/${pageKey}.jpg`} alt="" aria-hidden style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
             <div aria-hidden style={{ position: 'absolute', inset: 0, background: `linear-gradient(150deg, ${accent}e6 0%, ${accent}59 42%, rgba(10,12,20,0.5) 115%)` }} />
             <div style={{ position: 'absolute', top: 22, right: 22, color: 'rgba(255,255,255,0.95)', filter: 'drop-shadow(0 2px 8px rgba(0,0,0,0.35))', animation: 'indFloat 6s ease-in-out infinite' }}><FeatureIcon name={ind.features[0].icon} color="rgba(255,255,255,0.95)" size={54} /></div>
             <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 12, padding: 32 }}>

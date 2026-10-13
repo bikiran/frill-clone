@@ -90,7 +90,8 @@ export default function BookingFlow({ slug, domain, initialService }: { slug?: s
       fetch(`/api/book?op=page&${query}`).then(r => r.json().then(d => ({ ok: r.ok, d }))),
       invite ? fetch(`/api/book?op=invite&${query}&token=${encodeURIComponent(invite)}`).then(r => r.json()).catch(() => ({})) : Promise.resolve({}),
     ]).then(([{ ok, d }, inv]: any) => {
-      if (!ok) { setLoadError(d.error || 'This booking page isn’t available.'); return }
+      if (!ok || !d?.company || !d.page || !Array.isArray(d.services)) { setLoadError(d?.error || 'This booking page isn’t available.'); return }
+      d = { ...d, staff: d.staff || [], locations: d.locations || [] }
       setData(d)
       try { document.title = `Book — ${d.company.name}` } catch {}
       const prefill = inv?.prefill

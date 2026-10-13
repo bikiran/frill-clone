@@ -315,7 +315,7 @@ export default function TicketDetail() {
               </div>
             </div>
             {contact?.id && (
-              <button onClick={() => router.push(`/admin/contacts/${contact.id}`)} style={{ width: '100%', marginTop: 12, padding: '8px', borderRadius: 10, border: '1px solid var(--border)', background: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--ink)' }}>View customer</button>
+              <button onClick={() => router.push(`/admin/customers/profile?id=${contact.id}`)} style={{ width: '100%', marginTop: 12, padding: '8px', borderRadius: 10, border: '1px solid var(--border)', background: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--ink)' }}>View customer</button>
             )}
             {ticket.conversation_id && (
               <button onClick={() => router.push(`/admin/inbox?conversation=${ticket.conversation_id}`)} style={{ width: '100%', marginTop: 8, padding: '8px', borderRadius: 10, border: '1px solid var(--border)', background: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--coral)' }}>View conversation</button>

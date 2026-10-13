@@ -52,7 +52,7 @@ export function useNeedsYou(companyId: string | null) {
   useEffect(() => { const c = readCache(companyId); if (c) setDataState(d => d || c) }, [companyId])
   const load = useCallback(async () => {
     if (!companyId) return
-    try { const r = await authFetch(`/api/agent/needs-you?companyId=${companyId}`); if (r.ok) setData(await r.json()) } catch {}
+    try { const r = await authFetch(`/api/agent/needs-you?companyId=${companyId}`); if (r.ok) { const d = await r.json(); if (d && Array.isArray(d.items)) setData({ ...d, counts: d.counts || { now: 0, soon: 0, fyi: 0 }, alerts: d.alerts || { enabled: false } }) } } catch {}
   }, [companyId, setData])
   useEffect(() => { load(); const t = setInterval(load, 60_000); return () => clearInterval(t) }, [load])
   return { data, reload: load, setData }

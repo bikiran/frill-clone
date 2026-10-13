@@ -152,7 +152,7 @@ export default function MobileNav() {
   const logout = async () => {
     if (!await confirmDialog('Log out of Colvy?')) return
     try { await supabase.auth.signOut() } catch {}
-    router.push('/login')
+    router.push('/signin')
   }
 
   const isActive = (href: string) =>

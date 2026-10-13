@@ -277,7 +277,7 @@ export default function IncomingCallListener({ companyId, agentName, showStatusP
             body: JSON.stringify({ companyId, userId }),
           })
           const tData = await tRes.json()
-          if (!tRes.ok || cancelled) { if (!cancelled) setConnErr(tData.error || 'Twilio token error'); return }
+          if (!tRes.ok || cancelled || !tData?.token) { if (!cancelled) setConnErr(tData?.error || 'Twilio token error'); return }
           const { Device } = await import('@twilio/voice-sdk')
           const device = new Device(tData.token, { codecPreferences: ['opus', 'pcmu'] as any })
           clientRef.current = device
@@ -345,6 +345,7 @@ export default function IncomingCallListener({ companyId, agentName, showStatusP
         })
         const data = await res.json()
         if (!res.ok || cancelled) return
+        if (!(data?.sipUser && data?.sipPassword) && !data?.token) return
         const { TelnyxRTC } = await import('@telnyx/webrtc')
         // Register with the connection's SIP username/password when available.
         // Telnyx's Authentication tab is explicit: a Credential SIP Connection
