@@ -57,6 +57,9 @@ export default function AiCallNote({ content, metadata, createdAt, highlight }: 
   const [open, setOpen] = useState(() => !!q && content.toLowerCase().includes(q))
 
   const md = metadata || {}
+  // Each turn's position among the AI's turns, to line up with md.turn_ms.
+  const aiIndex: number[] = []
+  turns.reduce((n, t, i) => { aiIndex[i] = t.who === 'ai' ? n : -1; return t.who === 'ai' ? n + 1 : n }, 0)
   // Older notes carry the facts only in their header line.
   const avgS = md.avg_reply_ms != null
     ? (md.avg_reply_ms / 1000).toFixed(1)
@@ -113,8 +116,11 @@ export default function AiCallNote({ content, metadata, createdAt, highlight }: 
 
           {open ? (
             <div style={{ marginTop: 10, padding: '10px 2px 2px', borderTop: '1px solid #f1f5f9', display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 360, overflowY: 'auto' }}>
-              {turns.map((t, i) => (
-                <div key={i} style={{ display: 'flex', justifyContent: t.who === 'ai' ? 'flex-end' : 'flex-start' }}>
+              {turns.map((t, i) => {
+                // How long this reply took to start (the greeting is AI turn 0).
+                const ms = t.who === 'ai' && Array.isArray(md.turn_ms) ? md.turn_ms[aiIndex[i] - 1] : null
+                return (
+                <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: t.who === 'ai' ? 'flex-end' : 'flex-start' }}>
                   <div style={{
                     maxWidth: '82%', padding: '7px 11px', fontSize: 12.5, lineHeight: 1.45, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
                     borderRadius: t.who === 'ai' ? '12px 12px 4px 12px' : '12px 12px 12px 4px',
@@ -124,8 +130,15 @@ export default function AiCallNote({ content, metadata, createdAt, highlight }: 
                   }}>
                     {t.text}
                   </div>
+                  {typeof ms === 'number' ? (
+                    <span title="How long the caller waited before the AI started this reply"
+                      style={{ fontSize: 10.5, marginTop: 2, color: ms > 2500 ? '#b45309' : '#94a3b8', fontVariantNumeric: 'tabular-nums' }}>
+                      ⚡ {(ms / 1000).toFixed(1)}s
+                    </span>
+                  ) : null}
                 </div>
-              ))}
+                )
+              })}
             </div>
           ) : null}
         </div>

@@ -144,7 +144,7 @@ export async function loadPhoneContext(db: any, state: PhoneCallState, args: { c
   state.verified = tail(contact?.phone).length >= 8 && tail(contact?.phone) === tail(args.from)
   state.facts = state.facts || []
   if (hoursOut?.ok && !state.facts.some(f => f.tool === 'get_business_hours')) {
-    state.facts.unshift({ tool: 'get_business_hours', text: JSON.stringify(hoursOut.data ?? {}).slice(0, 4000) })
+    state.facts.unshift({ tool: 'get_business_hours', text: JSON.stringify(hoursOut.data ?? {}).slice(0, 2500) })
   }
   state.contextReady = true
 }
@@ -179,33 +179,56 @@ const END_CALL = {
   input_schema: { type: 'object', additionalProperties: false, required: ['goodbye'], properties: { goodbye: { type: 'string', description: 'One short spoken sentence.' } } },
 }
 
-function systemPrompt(state: PhoneCallState, p: { companyName: string; from: string; callerName: string | null; timezone: string }): string {
+// The prompt in two parts. The stable part (who we are, how to talk, what the
+// business sells) is the same every turn of a call, so the model provider can
+// reuse it (prompt caching) and only the short live part (the time, what's
+// been looked up) is new each turn. A prompt that changes every turn is never
+// reused, and every turn pays to read it all again.
+function systemPrompt(state: PhoneCallState, p: { companyName: string; from: string; callerName: string | null; timezone: string }): { stable: string; live: string } {
   const now = localNow(p.timezone)
   const facts = state.facts || []
   const lateNight = Number(now.time.slice(0, 2)) < 5
-  return [
-    `You are the AI phone assistant for ${p.companyName}, answering a call because the team couldn't get to the phone. It is ${prettyTime(now.time)}, ${prettyDate(now.date)} (${p.timezone}).`,
+  const stable = [
+    `You are the AI phone assistant for ${p.companyName}, answering a call because the team couldn't get to the phone.`,
     `The caller${p.callerName ? ` is ${p.callerName} and` : ''} is calling from ${p.from}. ${state.verified ? 'That number matches their customer record, so you may discuss orders linked to it.' : 'Their number isn’t linked to a customer record we can trust.'}`,
     '',
     'How to talk:',
     '- This is a phone call. Reply in one to three short spoken sentences. No lists, markdown, links, emojis or abbreviations. Say order numbers digit by digit and prices in words a person would say.',
     '- You already said you are an AI assistant in the greeting; only repeat it if asked.',
-    '- Only when you are about to use a lookup tool, start with a few words such as “One moment, let me check.” Don’t say that before take_message or end_call, or when you can answer from what you already know.',
+    '- When you need a lookup, start your reply with a few words such as “One moment, let me check.” before the tool. Don’t say that before take_message or end_call, or when you can answer from what you already know.',
     '- Never repeat something you have already told the caller unless they ask again. Answer only what they just asked.',
     '- What the caller says reaches you through speech recognition, which mishears words, especially product names (a name can arrive as ordinary words that only sound like it). Work out what they most likely meant for a business like this one, using the product names below, and look that up. If you’re unsure, check in a few words (“Did you mean …?”) rather than saying you have nothing by that name.',
-    '- Use your tools for every fact: opening hours, the caller’s orders, stock and the business’s own knowledge. Never guess or invent prices, stock, dates, delivery times or policies. If the tools don’t give you the answer, offer to take a message.',
+    '- Callers often give sizes in feet or inches, while products are usually listed in centimetres or litres. Convert before searching or comparing (1 foot is about 30 cm, so a 4-foot tank is about 120 cm) and look for that size.',
+    '- Use your tools for every fact: opening hours, the caller’s orders, stock and the business’s own knowledge (delivery, returns, care advice and other policies are in ask_knowledge). Never guess or invent prices, stock, dates, delivery times or policies. If the tools don’t give you the answer, offer to take a message.',
+    '- If what they asked for isn’t in stock or isn’t sold, say so plainly. Only suggest something else if it’s a close match (the same kind of thing), and at most one or two.',
     '- Opening hours for the next week are already looked up below; answer hours questions straight from them. Only use get_business_hours for a date more than a week away.',
     `- Orders: ${state.verified ? 'you may look up orders linked to this caller. ' : ''}For any other order, ask for the order number and the email address or postcode on it before sharing anything.`,
-    '- If the caller wants a person, a refund, a return, to complain, or anything you can’t do: use take_message (their name and what it’s about), tell them the team will call them back, then end the call.',
-    '- When they have what they need, ask if there’s anything else; when they’re done, use end_call.',
+    '- You can’t place orders, hold stock or take payment. If the caller wants to buy something, confirm exactly what (product, size, price, how many) and use take_message so the team can call back to arrange it.',
+    '- If the caller wants a person, a refund, a return, to complain, or anything you can’t do: use take_message (their name and what it’s about) and tell them the team will call them back.',
+    '- After taking a message, ask if there’s anything else. When they have what they need and are done, use end_call.',
     '- Never ask for or accept card numbers, passwords or one-time codes.',
-    ...(state.messageTaken ? [`- You have already taken a message on this call${state.messageAbout ? ` (about: ${state.messageAbout})` : ''}. Don’t take it again; only use take_message for something new.`] : []),
-    ...(lateNight ? [`- It’s after midnight, so a caller who says “tomorrow” may mean later today (${prettyDate(now.date)}). If it matters, check which day they mean.`] : []),
     '',
     state.contextText,
     ...(state.knownProducts?.length ? ['', `Some of what ${p.companyName || 'the business'} sells (for working out misheard names; check stock before saying anything about it): ${state.knownProducts.join(', ')}.`] : []),
-    ...(facts.length ? ['', 'Already looked up on this call (current; use these instead of looking them up again):', ...facts.map(f => `- ${f.tool}: ${f.text}`)] : []),
   ].filter(s => s !== undefined).join('\n')
+  const live = [
+    `It is now ${prettyTime(now.time)}, ${prettyDate(now.date)} (${p.timezone}).`,
+    ...(state.messageTaken ? [`You have already taken a message on this call${state.messageAbout ? ` (about: ${state.messageAbout})` : ''}. Don’t take it again; only use take_message for something new.`] : []),
+    ...(lateNight ? [`It’s after midnight, so a caller who says “tomorrow” may mean later today (${prettyDate(now.date)}). If it matters, check which day they mean.`] : []),
+    ...(facts.length ? ['', 'Already looked up on this call (current; use these instead of looking them up again):', ...facts.map(f => `- ${f.tool}: ${f.text}`)] : []),
+  ].join('\n')
+  return { stable, live }
+}
+
+/** A lookup's result cut to what the AI needs to answer: smaller prompts, faster replies. */
+export function compactLookup(tool: string, data: any): any {
+  if (tool === 'check_stock' && Array.isArray(data?.products)) {
+    return {
+      ...(data.heard ? { heard: data.heard, closestMatches: data.closestMatches, note: data.note } : {}),
+      products: data.products.slice(0, 8).map((p: any) => ({ name: p.name, price: p.price, stockStatus: p.stockStatus, stockQty: p.stockQty ?? null })),
+    }
+  }
+  return data
 }
 
 // ms: how long until the caller heard the first words of the reply.
@@ -268,9 +291,10 @@ export async function phoneTurn(db: any, args: {
   let tookMessage = false
   for (let round = 0; round < 4; round++) {
     if (Date.now() > deadline) break
+    const prompt = systemPrompt(args.state, { companyName: args.companyName, from: args.from, callerName: args.callerName, timezone: args.state.timezone })
     const req = {
       tier: 'fast' as const, job: 'phone_agent' as const, companyId: args.companyId, maxTokens: 600,
-      system: systemPrompt(args.state, { companyName: args.companyName, from: args.from, callerName: args.callerName, timezone: args.state.timezone }),
+      system: prompt.stable, systemLive: prompt.live,
       messages, tools,
     }
     // Streaming: each piece of text goes to the caller the moment it's written.
@@ -282,6 +306,11 @@ export async function phoneTurn(db: any, args: {
     messages.push({ role: 'assistant', content: r.content })
     if (r.text) { spoken.push(r.text); speak(r.text, streamed) }
     if (!r.toolCalls.length) return result(false)
+    // Going to look something up without having said anything yet: say so now,
+    // so the caller isn't left in silence while it runs.
+    if (!spoken.length && args.onText && r.toolCalls.some(c => LOOKUPS.includes(c.name))) {
+      spoken.push('One moment.'); speak('One moment.')
+    }
 
     const results: NeutralBlock[] = []
     let goodbye: string | null = null
@@ -316,10 +345,11 @@ export async function phoneTurn(db: any, args: {
         if (out.ok) {
           const asked = Object.keys(input).length ? JSON.stringify(input) : ''
           const facts = (args.state.facts = (args.state.facts || []).filter(f => !(f.tool === call.name && (f.asked || '') === asked)))
-          facts.push({ tool: call.name, asked, text: `${asked ? `${asked} → ` : ''}${JSON.stringify(out.data ?? {})}`.slice(0, 3000) })
-          if (facts.length > 8) facts.splice(0, facts.length - 8)
+          facts.push({ tool: call.name, asked, text: `${asked ? `${asked} → ` : ''}${JSON.stringify(compactLookup(call.name, out.data ?? {}))}`.slice(0, 1500) })
+          // The week's hours (first) stay; older lookups make way for new ones.
+          while (facts.length > 6) facts.splice(facts[0]?.tool === 'get_business_hours' && !facts[0].asked ? 1 : 0, 1)
         }
-        results.push({ type: 'tool_result', id: call.id, content: JSON.stringify(out.ok ? (out.data ?? {}) : { error: out.error }).slice(0, 6000), ...(out.ok ? {} : { isError: true }) })
+        results.push({ type: 'tool_result', id: call.id, content: JSON.stringify(out.ok ? compactLookup(call.name, out.data ?? {}) : { error: out.error }).slice(0, 6000), ...(out.ok ? {} : { isError: true }) })
       } catch (e: any) {
         results.push({ type: 'tool_result', id: call.id, content: `Lookup failed: ${e?.message || e}`, isError: true })
       }
@@ -380,6 +410,8 @@ export async function saveCallState(db: any, call: { id: string; company_id: str
         phone_agent: true, call_id: call.id, test: true, realtime: !!state.realtime,
         duration_seconds: dur, avg_reply_ms: agentMs.length ? Math.round(agentMs.reduce((a, b) => a + b, 0) / agentMs.length) : null,
         message_taken: !!state.messageTaken, message_about: state.messageAbout || null, ended: end || !!state.ended,
+        // How long each reply took to start, in order (the call card shows them while testing).
+        turn_ms: state.turns.filter(t => t.who === 'agent').map(t => t.ms ?? null),
       }
       if (state.transcriptMessageId) {
         await db.from('messages').update({ content, metadata }).eq('id', state.transcriptMessageId)
