@@ -4,6 +4,7 @@ import { withConnectTicket } from '@/lib/oauth-ticket-client'
 import { authFetch } from '@/lib/auth-fetch'
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
+import { peekCompanyUser } from '@/lib/client-cache'
 import { confirmDialog } from '@/components/ConfirmDialog'
 
 export default function MetaChannelsPage() {
@@ -20,19 +21,23 @@ export default function MetaChannelsPage() {
 
   useEffect(() => {
     ;(async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) { setLoading(false); return }
-      let cid: string | null = null
-      const { data: owned } = await (supabase as any).from('companies').select('id').eq('owner_id', user.id).order('created_at', { ascending: true }).limit(1)
-      cid = owned?.[0]?.id || null
-      if (!cid) {
+      // The admin already knows the company (no extra sign-in check needed).
+      let cid: string | null = peekCompanyUser()?.companyId || null
+      const user = cid ? null : (await supabase.auth.getUser()).data.user
+      if (!cid && !user) { setLoading(false); return }
+      const { data: owned } = cid ? { data: null } : await (supabase as any).from('companies').select('id').eq('owner_id', user!.id).order('created_at', { ascending: true }).limit(1)
+      cid = cid || owned?.[0]?.id || null
+      if (!cid && user) {
         const { data: tm } = await (supabase as any).from('team_members').select('company_id').eq('user_id', user.id).limit(1)
         cid = tm?.[0]?.company_id || null
       }
       setCompanyId(cid)
       if (cid) {
-        await load(cid)
-        const { data: co } = await (supabase as any).from('companies').select('inbox_settings').eq('id', cid).maybeSingle()
+        // Connected channels and inbox settings side by side.
+        const [, { data: co }] = await Promise.all([
+          load(cid),
+          (supabase as any).from('companies').select('inbox_settings').eq('id', cid).maybeSingle(),
+        ])
         setInboxSettings(co?.inbox_settings || {})
       }
       setLoading(false)

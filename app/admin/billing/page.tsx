@@ -181,6 +181,9 @@ export default function BillingPage() {
       const u = data?.session?.user
       if (!u) { router.push('/signin'); return }
       setUser(u)
+      // The subscription belongs to the person, not the company: start reading
+      // it now rather than after the company and add-on lookups.
+      const subP = Promise.resolve((supabase as any).from('subscriptions').select('*').eq('user_id', u.id).maybeSingle()).catch(() => ({ data: null }))
 
       // Load company — slug-first for reliability
       let co: any = null
@@ -208,6 +211,11 @@ export default function BillingPage() {
         setBrandingAddon(on)
         return on
       }
+      // The add-on check and (for Shopify billing) the Shopify plan, side by side.
+      const back = new URLSearchParams(window.location.search).get('shopify_plan')
+      const shopP = co?.billing_provider === 'shopify'
+        ? authFetch(`/api/shopify/billing?companyId=${co.id}${back ? '&refresh=1' : ''}`).then(async r => ({ ok: r.ok, d: await r.json() })).catch(() => null)
+        : null
       const addonOn = await readAddon()
       // Back from the add-on checkout: Stripe's webhook can land a few seconds
       // after the redirect, so check again for up to ~30s.
@@ -221,17 +229,13 @@ export default function BillingPage() {
       }
 
       // Billed through Shopify? (lib/shopify-billing)
-      if (co?.billing_provider === 'shopify') {
-        try {
-          const back = new URLSearchParams(window.location.search).get('shopify_plan')
-          const r = await authFetch(`/api/shopify/billing?companyId=${co.id}${back ? '&refresh=1' : ''}`)
-          const d = await r.json()
-          if (r.ok && d.provider === 'shopify') { setShopifyBilling(d); setPageLoading(false); return }
-        } catch {}
+      if (shopP) {
+        const res = await shopP
+        if (res?.ok && res.d?.provider === 'shopify') { setShopifyBilling(res.d); setPageLoading(false); return }
       }
 
-      // Load subscription
-      const { data: sub } = await (supabase as any).from('subscriptions').select('*').eq('user_id', u.id).maybeSingle()
+      // Load subscription (already on its way)
+      const { data: sub } = await subP
       setSubscription(sub)
 
       // Load billing history from Stripe via API

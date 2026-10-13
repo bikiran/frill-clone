@@ -70,13 +70,14 @@ export default function WooCommerceIntegration() {
       try {
         setCompanyId(cid)
         setError('')
-        await fetchIntegration(cid)
-        // If a background sync is already running, resume showing progress
-        try {
-          const sres = await authFetch(`/api/woocommerce/sync-status?companyId=${cid}`)
-          const { job } = await sres.json()
-          if (job && job.status === 'running') { setSyncing(true); setSuccess(job.message || 'Syncing…'); pollSyncStatusFor(cid) }
-        } catch {}
+        // The store setup and any running sync, asked at the same time.
+        await Promise.all([
+          fetchIntegration(cid),
+          // If a background sync is already running, resume showing progress
+          authFetch(`/api/woocommerce/sync-status?companyId=${cid}`).then(r => r.json()).then(({ job }) => {
+            if (job && job.status === 'running') { setSyncing(true); setSuccess(job.message || 'Syncing…'); pollSyncStatusFor(cid) }
+          }).catch(() => {}),
+        ])
       } catch (err: any) {
         setError(err.message || 'Failed to load page')
       }

@@ -72,16 +72,20 @@ export default function OrderDetailPage() {
       const cid = await getMyCompanyId()
       if (!cid || !orderId) { setLoading(false); setNotFound(true); return }
       setCompanyId(cid)
-      try { const { data: co } = await (supabase as any).from('companies').select('accent_color').eq('id', cid).maybeSingle(); if (co?.accent_color) setAccent(co.accent_color) } catch {}
+      // The brand colour, the order and its notes/items/tasks don't depend on
+      // each other — ask for all of them at once.
+      Promise.resolve((supabase as any).from('companies').select('accent_color').eq('id', cid).maybeSingle())
+        .then(({ data: co }: any) => { if (co?.accent_color) setAccent(co.accent_color) }).catch(() => {})
       const { data: { session } } = await supabase.auth.getSession()
       if (session?.user) setMe({ id: session.user.id, name: session.user.user_metadata?.display_name || session.user.email?.split('@')[0] || 'You' })
       try {
         const token = session?.access_token
+        const relatedP = loadRelated(orderId, cid).catch(() => {})
         const res = await fetch(`/api/orders?companyId=${encodeURIComponent(cid)}&id=${encodeURIComponent(orderId)}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
         const j = await res.json().catch(() => ({}))
         if (!j.order) { setNotFound(true); setLoading(false); return }
         setOrder(j.order)
-        await loadRelated(orderId, cid)
+        await relatedP
       } catch { setNotFound(true) }
       setLoading(false)
     })()

@@ -18,11 +18,14 @@ export default function BusinessSettings() {
   useEffect(() => {
     if (!companyId) return
     ;(async () => {
-      const { data: co } = await (supabase as any).from('companies').select('*').eq('id', companyId).maybeSingle()
+      // Business details, outlets and team — side by side.
+      const [{ data: co }, { data: locs }, { data: team }] = await Promise.all([
+        (supabase as any).from('companies').select('*').eq('id', companyId).maybeSingle(),
+        (supabase as any).from('company_locations').select('*').eq('company_id', companyId).order('is_primary', { ascending: false }),
+        (supabase as any).from('team_members').select('*').eq('company_id', companyId),
+      ])
       setCompany(co)
-      const { data: locs } = await (supabase as any).from('company_locations').select('*').eq('company_id', companyId).order('is_primary', { ascending: false })
       setLocations(locs || [])
-      const { data: team } = await (supabase as any).from('team_members').select('*').eq('company_id', companyId)
       setMembers(team || [])
     })()
   }, [companyId])

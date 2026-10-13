@@ -1,7 +1,7 @@
 'use client'
 
 import { authFetch } from '@/lib/auth-fetch'
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { peekCompanyUser } from '@/lib/client-cache'
@@ -136,7 +136,13 @@ export default function PaymentsPage() {
     const since = r !== 'all' ? new Date(Date.now() - parseInt(r) * 86400000).toISOString() : null
     let q = (supabase as any).from('chat_payments').select('*').eq('company_id', cid)
     if (since) q = q.gte('created_at', since)
-    const { data } = await q.order('created_at', { ascending: false }).limit(1000)
+    let sq = (supabase as any).from('conversation_sales').select('*').eq('company_id', cid)
+    if (since) sq = sq.gte('sale_at', since)
+    // Pay links and recorded sales side by side.
+    const [{ data }, salesRes] = await Promise.all([
+      q.order('created_at', { ascending: false }).limit(1000),
+      Promise.resolve(sq.order('sale_at', { ascending: false }).limit(1000)).catch(() => ({ data: null })),
+    ])
     const stripeRows: Payment[] = (data || []).map((p: any) => ({ ...p, source: 'stripe' as const }))
 
     // Manually recorded sales (bank transfer, cash, etc.) — merge them into the
@@ -145,9 +151,7 @@ export default function PaymentsPage() {
     // if the table isn't present yet (migration not run) we just show Stripe rows.
     let saleRows: Payment[] = []
     try {
-      let sq = (supabase as any).from('conversation_sales').select('*').eq('company_id', cid)
-      if (since) sq = sq.gte('sale_at', since)
-      const { data: sales } = await sq.order('sale_at', { ascending: false }).limit(1000)
+      const sales = salesRes?.data
       saleRows = (sales || []).map((s: any): Payment => ({
         id: `sale:${s.id}`,
         company_id: s.company_id,
@@ -181,23 +185,29 @@ export default function PaymentsPage() {
     // Sales can be attributed to a contact directly (no conversation), so gather
     // those contact ids too.
     const directContactIds = Array.from(new Set(rows.map(p => p.contact_id).filter(Boolean))) as string[]
-    let convContactIds: string[] = []
-    if (convIds.length) {
-      const { data: cs } = await (supabase as any).from('conversations').select('id, contact_id, subject, sms_number, channel').in('id', convIds)
-      const cmap: Record<string, any> = {}
-      for (const c of cs || []) cmap[c.id] = c
-      setConvs(cmap)
-      convContactIds = (cs || []).map((c: any) => c.contact_id).filter(Boolean)
-    }
-    const ctIds = Array.from(new Set([...convContactIds, ...directContactIds]))
-    if (ctIds.length) {
-      const { data: cts } = await (supabase as any).from('contacts').select('id, name, phone, email').in('id', ctIds)
-      const ctmap: Record<string, any> = {}
+    // Threads and the directly-attributed customers together; then any
+    // customers only reachable through a thread.
+    const ctmap: Record<string, any> = {}
+    const loadContacts = async (ids: string[]) => {
+      if (!ids.length) return
+      const { data: cts } = await (supabase as any).from('contacts').select('id, name, phone, email').in('id', ids)
       for (const c of cts || []) ctmap[c.id] = c
-      setContacts(ctmap)
     }
+    const [cs] = await Promise.all([
+      convIds.length ? (supabase as any).from('conversations').select('id, contact_id, subject, sms_number, channel').in('id', convIds).then((r: any) => r.data || []) : Promise.resolve([]),
+      loadContacts(directContactIds),
+    ])
+    if (convIds.length) {
+      const cmap: Record<string, any> = {}
+      for (const c of cs) cmap[c.id] = c
+      setConvs(cmap)
+    }
+    await loadContacts(Array.from(new Set((cs as any[]).map((c: any) => c.contact_id).filter((id: string) => id && !ctmap[id]))))
+    if (Object.keys(ctmap).length) setContacts(ctmap)
   }, [])
 
+  // Which company + range was last loaded, so opening the page loads once.
+  const loadedKey = useRef('')
   useEffect(() => {
     ;(async () => {
       try {
@@ -221,13 +231,20 @@ export default function PaymentsPage() {
         }
         if (!cid) { setLoading(false); return }
         setCompanyId(cid)
-        try { const { data: co } = await (supabase as any).from('companies').select('name').eq('id', cid).maybeSingle(); setCompanyName(co?.name || '') } catch {}
+        Promise.resolve((supabase as any).from('companies').select('name').eq('id', cid).maybeSingle())
+          .then(({ data: co }: any) => setCompanyName(co?.name || '')).catch(() => {})
+        loadedKey.current = `${cid}:${range}`
         await load(cid, range)
       } finally { setLoading(false) }
     })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
-  useEffect(() => { if (companyId) load(companyId, range) }, [range, companyId, load])
+  // Reload when the range changes (the first load above already covers opening the page).
+  useEffect(() => {
+    if (!companyId || loadedKey.current === `${companyId}:${range}`) return
+    loadedKey.current = `${companyId}:${range}`
+    load(companyId, range)
+  }, [range, companyId, load])
 
   const customerOf = useCallback((p: Payment) => {
     const conv = p.conversation_id ? convs[p.conversation_id] : null

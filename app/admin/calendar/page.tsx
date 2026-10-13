@@ -224,15 +224,17 @@ export default function CalendarPage() {
     if (!companyId) return
     ;(async () => {
       const members: any[] = []
-      const { data: co } = await (supabase as any).from('companies')
-        .select('owner_id, name').eq('id', companyId).maybeSingle()
+      // Owner and team side by side.
+      // Read the team the way the Team page does — no company_id filter, since
+      // invited members can have a null company_id and RLS already scopes the
+      // rows. Filtering by company_id was hiding everyone except the owner.
+      const [{ data: co }, { data: tm }] = await Promise.all([
+        (supabase as any).from('companies').select('owner_id, name').eq('id', companyId).maybeSingle(),
+        (supabase as any).from('team_members').select('*'),
+      ])
       if (co?.owner_id) {
         members.push({ id: co.owner_id, user_id: co.owner_id, name: co.name ? `${co.name} (Owner)` : 'Owner' })
       }
-      // Read the way the Team page does — no company_id filter, since invited
-      // members can have a null company_id and RLS already scopes the rows.
-      // Filtering by company_id was hiding everyone except the owner.
-      const { data: tm } = await (supabase as any).from('team_members').select('*')
       for (const m of (tm || [])) {
         if (companyId && m.company_id && m.company_id !== companyId) continue
         const uid = m.user_id || m.id
@@ -244,8 +246,10 @@ export default function CalendarPage() {
           pending: m.status === 'invited',
         })
       }
+      // Show the team now; real profile names fill in a moment later.
+      setTeam([...members])
       await enrichNames(members)
-      setTeam(members)
+      setTeam([...members])
     })()
   }, [companyId])
 
