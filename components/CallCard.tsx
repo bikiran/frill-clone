@@ -186,6 +186,14 @@ export default function CallCard({ callId, meta, timestamp, highlight, accent = 
   const when = timestamp ? new Date(timestamp).toLocaleString('en-AU', { day: '2-digit', month: 'short', hour: 'numeric', minute: '2-digit' }) : ''
 
   // Missed call — a compact timeline pill, not a full card (there's nothing to
+  // Answered by the AI phone agent: its own compact card (the transcript note,
+  // AiCallNote) covers the call, so this one steps aside. Before the row loads,
+  // the call's agent name says so; a call that went on to voicemail keeps its card.
+  const aiHasNote = call
+    ? !!call.routing_state?.phone_agent?.transcriptMessageId && !call.recording_url && !isVoicemail
+    : (meta?.agent_name === 'AI phone agent')
+  if (aiHasNote) return null
+
   // play or summarise). Rendered once the row loads so we know it truly missed.
   if (call && isMissed) {
     const num = inbound ? call.from_number : call.to_number

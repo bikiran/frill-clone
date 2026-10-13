@@ -349,12 +349,19 @@ export async function saveCallState(db: any, call: { id: string; company_id: str
   if (call.conversation_id) {
     try {
       const content = transcriptText(state)
+      // What the inbox's AI call card shows without reading the transcript.
+      const agentMs = state.turns.filter(t => t.who === 'agent' && t.ms).map(t => t.ms as number)
+      const metadata = {
+        phone_agent: true, call_id: call.id, test: true, realtime: !!state.realtime,
+        duration_seconds: dur, avg_reply_ms: agentMs.length ? Math.round(agentMs.reduce((a, b) => a + b, 0) / agentMs.length) : null,
+        message_taken: !!state.messageTaken, message_about: state.messageAbout || null, ended: end || !!state.ended,
+      }
       if (state.transcriptMessageId) {
-        await db.from('messages').update({ content }).eq('id', state.transcriptMessageId)
+        await db.from('messages').update({ content, metadata }).eq('id', state.transcriptMessageId)
       } else {
         const { data: m } = await db.from('messages').insert({
           conversation_id: call.conversation_id, company_id: call.company_id, sender_type: 'agent', sender_name: 'AI phone agent',
-          content, is_internal: true, metadata: { phone_agent: true, call_id: call.id },
+          content, is_internal: true, metadata,
         }).select('id').maybeSingle()
         state.transcriptMessageId = m?.id || null
       }
