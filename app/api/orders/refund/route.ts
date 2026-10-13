@@ -128,24 +128,43 @@ export async function POST(req: NextRequest) {
         amount: String(refundAmount),
         reason: reason || 'Refunded from Colvy',
         api_refund: true,
+        // Restock only when asked. Quantities are always sent (below) so the
+        // refund records how many of each item came back, which the order
+        // drawer shows; api_restock decides whether stock goes back up.
+        api_restock: !!restock,
+      }
+
+      // The order's own tax rate ids and shipping line id, which WooCommerce
+      // needs to put the refund against the right lines (callers rarely know
+      // them). Best-effort: without them the money is still refunded.
+      const taxIdByLine = new Map<string, any>()
+      let shippingLineId: any = null
+      if (hasItems || shippingNum > 0) {
+        try {
+          const oRes = await fetch(`${integ.store_url}/wp-json/wc/v3/orders/${orderId}`, { headers: { 'Authorization': auth } })
+          const o = oRes.ok ? await oRes.json().catch(() => null) : null
+          for (const li of o?.line_items || []) if (li?.taxes?.[0]?.id != null) taxIdByLine.set(String(li.id), li.taxes[0].id)
+          shippingLineId = o?.shipping_lines?.[0]?.id ?? null
+        } catch {}
       }
 
       if (hasItems) {
         // WooCommerce expects per-line refund_total and refund_tax keyed by tax id.
-        payload.line_items = (lineItems || []).map((li: any) => ({
-          id: li.id,
-          quantity: restock ? (Number(li.qty) || 0) : undefined,
-          refund_total: Number(li.total) || 0,
-          refund_tax: li.taxId != null
-            ? [{ id: li.taxId, refund_total: Number(li.tax) || 0 }]
-            : undefined,
-        }))
+        payload.line_items = (lineItems || []).map((li: any) => {
+          const taxId = li.taxId ?? taxIdByLine.get(String(li.id)) ?? null
+          return {
+            id: li.id,
+            quantity: Number(li.qty) || 0,
+            refund_total: Number(li.total) || 0,
+            refund_tax: taxId != null && Number(li.tax) > 0
+              ? [{ id: taxId, refund_total: Number(li.tax) || 0 }]
+              : undefined,
+          }
+        })
       }
-      // restock is driven by including quantity above; WooCommerce restocks any
-      // line item that carries a quantity on the refund.
 
       if (shippingNum > 0) {
-        payload.shipping_lines = [{ id: 0, refund_total: shippingNum }]
+        payload.shipping_lines = [{ id: shippingLineId ?? 0, refund_total: shippingNum }]
       }
 
       const res = await fetch(`${integ.store_url}/wp-json/wc/v3/orders/${orderId}/refunds`, {
