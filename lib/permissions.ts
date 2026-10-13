@@ -2,12 +2,20 @@ import { createClient } from '@supabase/supabase-js'
 
 export type UserRole = 'viewer' | 'editor' | 'admin' | 'owner'
 
-const supabase = createClient(
+// Fallback client, made only when a caller doesn't pass its own. Callers should
+// pass a client that carries the user's session (the browser one), otherwise
+// row-level security hides the company and team rows and everyone reads as a
+// viewer. Created lazily so importing this file never spins up a second auth
+// client in the browser.
+let fallback: any = null
+const fallbackClient = () => (fallback ||= createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-)
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '',
+  { auth: { persistSession: false, autoRefreshToken: false } },
+))
 
-export async function getUserRole(userId: string, companyId: string): Promise<UserRole> {
+export async function getUserRole(userId: string, companyId: string, db?: any): Promise<UserRole> {
+  const supabase = db || fallbackClient()
   try {
     // Check if user is company owner
     const { data: company } = await (supabase as any)

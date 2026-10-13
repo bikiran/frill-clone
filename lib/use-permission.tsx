@@ -44,7 +44,7 @@ export function usePermission(required: PermissionRequired = 'view') {
       }
 
       // Get user role
-      const role = await getUserRole(session.user.id, companyId)
+      const role = await getUserRole(session.user.id, companyId, supabase)
       setUserRole(role)
 
       // Check permissions
