@@ -134,7 +134,18 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'Could not ring the team' }, { status: 500 })
       }
 
-      const toName = others.length === 1 ? (others[0].agent_name || 'a colleague') : `${others.length} available agents`
+      // agent_presence has no name column — look the single colleague up in
+      // team_members so the UI can say who is being rung.
+      let toName = `${others.length} available agents`
+      if (others.length === 1) {
+        let name: string | null = null
+        try {
+          const { data: tm } = await db.from('team_members').select('name')
+            .eq('company_id', companyId).eq('user_id', others[0].user_id).maybeSingle()
+          name = (tm as any)?.name || null
+        } catch {}
+        toName = name || 'a colleague'
+      }
 
       await db.from('calls').update({
         consult_call_control_id: consultLeg,

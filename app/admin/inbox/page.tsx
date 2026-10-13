@@ -73,6 +73,7 @@ type Message = {
   id: string; conversation_id: string; sender_type: string
   sender_name: string | null; sender_email: string | null
   content: string; attachments: any[]; metadata: any; created_at: string; is_read: boolean
+  email_attachments?: any[]
 }
 type Contact = {
   id: string; name: string | null; email: string | null; phone: string | null
@@ -2917,7 +2918,8 @@ export default function InboxPage() {
         ;(['phone', 'email', 'address', 'name'] as const).forEach(async (k) => {
           const val = filtered[k]
           if (!val) return
-          let already = (conv.__contact && conv.__contact[k]) // may be undefined
+          // The joined contact row lives on `contacts` (there is no `__contact`).
+          let already = (conv as any).contacts?.[k] // may be undefined
           // A contact auto-created from a chat gets a placeholder name
           // ("Visitor", or the raw phone number). Those aren't real names, so
           // let a detected one replace them.
@@ -6058,7 +6060,7 @@ export default function InboxPage() {
   // Automatically save an AI-detected field to the contact when it's empty,
   // and record that AI filled it so we can show an AI badge next to it.
   const autoSaveAiField = async (conv: any, field: string, value: string) => {
-    let contactId = conv.contact_id || conv.__contact?.id
+    let contactId = conv.contact_id || conv.contacts?.id
     if (contactId) {
       const { data: existing } = await (supabase as any).from('contacts').select(`${field}, ai_saved_fields`).eq('id', contactId).maybeSingle()
       let current = existing?.[field]
@@ -7731,7 +7733,7 @@ export default function InboxPage() {
           onDeliver={deliverToCustomer}
           onClose={() => { setShowCreateOrder(false); setOrderPrefillCart(null) }}
           onCreated={(order) => {
-            if (orderPrefillCart?.id) { (supabase as any).from('abandoned_carts').update({ status: 'recovered', recovered_order_id: order?.id }).eq('id', orderPrefillCart.id); setAbandonedCarts(prev => prev.filter(c => c.id !== orderPrefillCart.id)) }
+            if (orderPrefillCart?.id) { (supabase as any).from('abandoned_carts').update({ status: 'recovered', recovered_order_id: order?.id }).eq('id', orderPrefillCart.id).then(() => {}, () => {}); setAbandonedCarts(prev => prev.filter(c => c.id !== orderPrefillCart.id)) }
             if (selected) selectConversation(selected)
           }}
         />
@@ -11371,6 +11373,8 @@ export default function InboxPage() {
                             const upd = aiTodos.map((x: any, xi: number) => xi === i ? { ...x, done: !x.done } : x)
                             setAiTodos(upd)
                             ;(supabase as any).from('conversations').update({ ai_todos: upd }).eq('id', selected.id)
+                              // A query builder only runs once awaited/then'd — without this the tick was never saved.
+                              .then(() => {}, () => {})
                           }} style={{ marginTop: 2 }} />
                           <span style={{ textDecoration: t.done ? 'line-through' : 'none', opacity: t.done ? 0.6 : 1 }}>
                             <Highlight text={t.text} q={(showMsgSearch && msgSearch.trim()) ? msgSearch : searchTerm} accent={companyInfo?.accent_color || 'var(--coral)'} />
@@ -11668,7 +11672,7 @@ export default function InboxPage() {
                           {String(o.status || '').toLowerCase() === 'processing' && (
                             <button type="button" onClick={() => markOrderCompleted(payload)} style={miniBtn('#15803d')}>Mark completed</button>
                           )}
-                          {/pickup|collect/i.test(String(o.shipping_method || payload.shipping_method || '')) && (
+                          {/pickup|collect/i.test(String(o.shipping_method || '')) && (
                             <button type="button"
                               onClick={() => setPickupModal({ payload, locationId: (selected as any)?.assigned_location_id || outlets.find(x => x.is_primary)?.id || outlets[0]?.id || '' })}
                               style={miniBtn('#0891b2')}>Ready for pickup</button>

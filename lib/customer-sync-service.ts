@@ -4,7 +4,7 @@
 
 import { createClient } from '@supabase/supabase-js'
 
-interface SyncResult {
+export interface SyncResult {
   success: boolean
   newCount: number
   updatedCount: number

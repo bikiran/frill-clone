@@ -1,4 +1,4 @@
-import { createClient as createSupabaseClient } from '@supabase/supabase-js'
+import { createClient as createSupabaseClient, type SupabaseClient } from '@supabase/supabase-js'
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://mtfhctgdayeqrguodksv.supabase.co'
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'sb_publishable_2JjaAFpxrqOb4BvEQjeAsw_4Ohehd_O'
@@ -9,7 +9,9 @@ const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'sb_publi
 // The cross-subdomain session handoff is done via explicit token-in-URL redirect
 // in the signin page, which works regardless of cookie storage.
 
-let supabaseClient: ReturnType<typeof createSupabaseClient> | null = null
+// Typed as the untyped (Database = any) client. `ReturnType<typeof createClient>`
+// resolved the generic schema to `never`, so every .from() call type-errored.
+let supabaseClient: SupabaseClient | null = null
 
 export const supabase = (() => {
   if (!supabaseClient) {

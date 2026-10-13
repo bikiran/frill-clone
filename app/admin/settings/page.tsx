@@ -152,7 +152,7 @@ export default function SettingsPage() {
   const [boardDomain, setBoardDomain] = useState('')       // e.g. feedback.acme.com
   const [helpDomain, setHelpDomain] = useState('')         // e.g. help.acme.com
   const [domainVerifying, setDomainVerifying] = useState<string | null>(null)
-  const [domainStatus, setDomainStatus] = useState<Record<string, 'unverified'|'verifying'|'verified'|'error'>>({})
+  const [domainStatus, setDomainStatus] = useState<Record<string, 'unverified'|'verifying'|'verified'|'pending'|'error'>>({})
   // A verified domain is soft-locked; "Change" flips this to re-open the field.
   const [domainEditing, setDomainEditing] = useState<Record<string, boolean>>({})
   // Guest access

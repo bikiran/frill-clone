@@ -245,7 +245,7 @@ export default function AnnouncementsAdmin() {
                     <div className="flex items-center justify-between">
                       <span className="text-sm" style={{ color: 'var(--slate)' }}>Reactions</span>
                       <span className="font-semibold" style={{ color: 'var(--ink)' }}>
-                        {Object.values(selected.reactions || {}).reduce((a: any, b: any) => a + b, 0)}
+                        {(Object.values(selected.reactions || {}) as any[]).reduce((a: number, b: any) => a + (Number(b) || 0), 0)}
                       </span>
                     </div>
                   </div>

@@ -383,9 +383,9 @@ export class TelnyxService {
     })
   }
   // Start recording (voicemail).
-  async recordStart(callControlId: string, opts?: { max_length_secs?: number }) {
+  async recordStart(callControlId: string, opts?: { max_length_secs?: number; format?: 'mp3' | 'wav'; channels?: 'single' | 'dual' }) {
     return this.cc(callControlId, 'record_start', {
-      format: 'mp3', channels: 'single',
+      format: opts?.format || 'mp3', channels: opts?.channels || 'single',
       ...(opts?.max_length_secs ? { max_length_secs: opts.max_length_secs } : {}),
       // Stop the recording when the caller stops talking / hangs up.
       trim: 'trim-silence',
