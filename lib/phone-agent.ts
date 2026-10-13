@@ -16,6 +16,7 @@ import { buildContext } from '@/lib/agent/memory'
 import { localNow, prettyDate, prettyTime } from '@/lib/business-hours'
 import { notifyCompany, pushInboundMessage } from '@/lib/notify'
 import type { ActionContext, ActionDef } from '@/lib/agent/types'
+import { createHmac, timingSafeEqual } from 'crypto'
 
 // ── Settings (an agent_policies row: role "phone", action "answer_calls") ────
 
@@ -81,6 +82,7 @@ export type PhoneCallState = {
   silences: number
   messageTaken?: boolean
   ended?: boolean
+  realtime?: boolean       // answered through the real-time relay (ConversationRelay)
   transcriptMessageId?: string | null
 }
 
@@ -138,6 +140,7 @@ function systemPrompt(state: PhoneCallState, p: { companyName: string; from: str
     'How to talk:',
     '- This is a phone call. Reply in one to three short spoken sentences. No lists, markdown, links, emojis or abbreviations. Say order numbers digit by digit and prices in words a person would say.',
     '- You already said you are an AI assistant in the greeting; only repeat it if asked.',
+    '- Before you use a lookup, first say a few words so the caller isn’t left in silence, like “Let me check that for you.”',
     '- Use your tools for every fact: opening hours, the caller’s orders, stock and the business’s own knowledge. Never guess or invent prices, stock, dates, delivery times or policies. If the tools don’t give you the answer, offer to take a message.',
     `- Orders: ${state.verified ? 'you may look up orders linked to this caller. ' : ''}For any other order, ask for the order number and the email address or postcode on it before sharing anything.`,
     '- If the caller wants a person, a refund, a return, to complain, or anything you can’t do: use take_message (their name and what it’s about), tell them the team will call them back, then end the call.',
@@ -148,6 +151,7 @@ function systemPrompt(state: PhoneCallState, p: { companyName: string; from: str
   ].filter(s => s !== undefined).join('\n')
 }
 
+// ms: how long until the caller heard the first words of the reply.
 export type TurnResult = { say: string; end: boolean; tookMessage: boolean; ms: number; tools: string[] }
 
 /**
@@ -158,10 +162,26 @@ export type TurnResult = { say: string; end: boolean; tookMessage: boolean; ms: 
 export async function phoneTurn(db: any, args: {
   companyId: string; companyName: string; siteOrigin: string; conversationId: string | null; contactId: string | null
   from: string; callerName: string | null; state: PhoneCallState; said: string; deadlineMs?: number
+  /** Real-time calls: speak the reply as it's written, instead of all at the end. */
+  onText?: (text: string) => void
 }): Promise<TurnResult> {
   const started = Date.now()
   const deadline = started + (args.deadlineMs ?? 9000)
   const model = getModelClient()
+  // Everything the caller hears this turn, and when they first heard it.
+  const spoken: string[] = []
+  let firstAt = 0
+  const speak = (text: string, alreadyStreamed = false) => {
+    if (!text) return
+    if (!firstAt) firstAt = Date.now()
+    if (args.onText && !alreadyStreamed) args.onText(text)
+  }
+  const result = (end: boolean, extra?: string): TurnResult => {
+    if (extra) { speak(extra); spoken.push(extra) }
+    const say = spoken.map(t => t.trim()).filter(Boolean).join(' ') || 'Sorry, could you say that again?'
+    if (!firstAt) speak(say)
+    return { say, end, tookMessage, ms: (firstAt || Date.now()) - started, tools: used }
+  }
   const actions = LOOKUPS.map(k => getAction(k)).filter(Boolean) as ActionDef[]
   const tools = [...actions.map(toolSpec), TAKE_MESSAGE, END_CALL]
   const actx: ActionContext = {
@@ -186,13 +206,20 @@ export async function phoneTurn(db: any, args: {
   let tookMessage = false
   for (let round = 0; round < 4; round++) {
     if (Date.now() > deadline) break
-    const r = await model.generate({
-      tier: 'fast', job: 'phone_agent', companyId: args.companyId, maxTokens: 600,
+    const req = {
+      tier: 'fast' as const, job: 'phone_agent' as const, companyId: args.companyId, maxTokens: 600,
       system: systemPrompt(args.state, { companyName: args.companyName, from: args.from, callerName: args.callerName, timezone: args.state.timezone }),
       messages, tools,
-    })
+    }
+    // Streaming: each piece of text goes to the caller the moment it's written.
+    let streamed = false
+    let gap = spoken.length > 0
+    const r = args.onText && model.generateStream
+      ? await model.generateStream(req, t => { streamed = true; if (gap) { args.onText!(' '); gap = false } speak(t) })
+      : await model.generate(req)
     messages.push({ role: 'assistant', content: r.content })
-    if (!r.toolCalls.length) return { say: r.text || 'Sorry, could you say that again?', end: false, tookMessage, ms: Date.now() - started, tools: used }
+    if (r.text) { spoken.push(r.text); speak(r.text, streamed) }
+    if (!r.toolCalls.length) return result(false)
 
     const results: NeutralBlock[] = []
     let goodbye: string | null = null
@@ -217,14 +244,11 @@ export async function phoneTurn(db: any, args: {
         results.push({ type: 'tool_result', id: call.id, content: `Lookup failed: ${e?.message || e}`, isError: true })
       }
     }
-    if (goodbye) {
-      const said = [r.text, goodbye].filter(Boolean).join(' ')
-      return { say: said, end: true, tookMessage, ms: Date.now() - started, tools: used }
-    }
+    if (goodbye) return result(true, goodbye)
     messages.push({ role: 'user', content: results })
   }
   // Out of time or rounds: never leave the caller hanging.
-  return { say: 'Sorry, I’m having trouble checking that right now. Can I take a message so someone calls you back?', end: false, tookMessage, ms: Date.now() - started, tools: used }
+  return result(false, 'Sorry, I’m having trouble checking that right now. Can I take a message so someone calls you back?')
 }
 
 async function takeMessage(db: any, actx: ActionContext, args: { companyId: string; conversationId: string | null; from: string; callerName: string | null }, input: any): Promise<boolean> {
@@ -255,7 +279,40 @@ export function transcriptText(state: PhoneCallState): string {
   const lines = [`AI: ${state.greeting}`, ...state.turns.map(t => `${t.who === 'caller' ? 'Caller' : 'AI'}: ${t.text}`)]
   const agentMs = state.turns.filter(t => t.who === 'agent' && t.ms).map(t => t.ms as number)
   const avg = agentMs.length ? (agentMs.reduce((a, b) => a + b, 0) / agentMs.length / 1000).toFixed(1) : null
-  return `📞 Answered by the AI phone agent (test)${avg ? ` · replies took ${avg}s on average` : ''}\n\n${lines.join('\n')}`
+  return `📞 Answered by the AI phone agent (test${state.realtime ? ', real-time' : ''})${avg ? ` · replies started after ${avg}s on average` : ''}\n\n${lines.join('\n')}`
+}
+
+/**
+ * Save the call as it stands: the state on the call row, and the transcript as
+ * one internal note in the caller's conversation (created the first time,
+ * updated after). Called after every turn, so a caller hanging up mid-call
+ * still leaves the full record.
+ */
+export async function saveCallState(db: any, call: { id: string; company_id: string; conversation_id: string | null; answered_at: string | null; routing_state: any }, state: PhoneCallState, end: boolean) {
+  const now = new Date()
+  const dur = call.answered_at ? Math.max(1, Math.round((now.getTime() - new Date(call.answered_at).getTime()) / 1000)) : null
+  if (call.conversation_id) {
+    try {
+      const content = transcriptText(state)
+      if (state.transcriptMessageId) {
+        await db.from('messages').update({ content }).eq('id', state.transcriptMessageId)
+      } else {
+        const { data: m } = await db.from('messages').insert({
+          conversation_id: call.conversation_id, company_id: call.company_id, sender_type: 'agent', sender_name: 'AI phone agent',
+          content, is_internal: true, metadata: { phone_agent: true, call_id: call.id },
+        }).select('id').maybeSingle()
+        state.transcriptMessageId = m?.id || null
+      }
+      await db.from('conversations').update({ last_message: '📞 Answered by the AI phone agent', last_message_at: now.toISOString() }).eq('id', call.conversation_id)
+    } catch (e: any) { console.error('[phone agent] transcript save failed', e?.message || e) }
+  }
+  if (end) state.ended = true
+  const routing_state = { ...(call.routing_state || {}), phone_agent: state }
+  call.routing_state = routing_state
+  await db.from('calls').update({
+    routing_state, ended_at: now.toISOString(), ...(dur ? { duration_seconds: dur } : {}),
+    ...(state.messageTaken ? { ai_todos: ['Call the customer back (message taken by the AI phone agent)'] } : {}),
+  }).eq('id', call.id)
 }
 
 // ── Twilio TwiML ─────────────────────────────────────────────────────────────
@@ -282,5 +339,54 @@ export function phoneVoicemailTwiml(voice: string, greeting: string, recordingCa
     `<Say voice="${esc(voice)}" language="en-AU">${esc(greeting)}</Say>` +
     `<Record maxLength="180" playBeep="true" trim="trim-silence" recordingStatusCallback="${esc(recordingCallback)}" recordingStatusCallbackEvent="completed"/>` +
     `<Hangup/>` +
+  `</Response>`
+}
+
+// ── Real-time calls (Twilio ConversationRelay) ───────────────────────────────
+//
+// Twilio turns speech into text and reads text aloud in real time, over a
+// WebSocket to a small always-on relay server (voice-server/, hosted outside
+// Vercel, which can't hold WebSockets). The relay forwards each thing the
+// caller says to /api/phone-agent/relay and streams the reply back word by
+// word, so the caller hears the first words while the rest is still being
+// written. Turned on by VOICE_RELAY_URL + VOICE_RELAY_SECRET; without them
+// calls use the turn-by-turn mode above.
+
+
+export function relayConfigured(): boolean {
+  return !!(process.env.VOICE_RELAY_URL && process.env.VOICE_RELAY_SECRET)
+}
+
+/** A short-lived pass for one call, checked by the relay before it talks to anyone. */
+export function relaySignature(callRowId: string, companyId: string, exp: number, secret = process.env.VOICE_RELAY_SECRET || ''): string {
+  return createHmac('sha256', secret).update(`${callRowId}.${companyId}.${exp}`).digest('hex')
+}
+
+/** The relay's calls into Colvy carry the shared secret. */
+export function relaySecretOk(given: string | null | undefined): boolean {
+  const want = process.env.VOICE_RELAY_SECRET || ''
+  const a = Buffer.from(String(given || '')), b = Buffer.from(want)
+  return !!want && a.length === b.length && timingSafeEqual(a, b)
+}
+
+// Our voice choices, as ConversationRelay names them.
+export function relayVoice(voice: string): { provider: 'Amazon' | 'Google'; voice: string } {
+  if (voice.startsWith('Google.')) return { provider: 'Google', voice: voice.slice('Google.'.length) }
+  return { provider: 'Amazon', voice: voice.replace(/^Polly\./, '') }
+}
+
+export function phoneRelayTwiml(p: { relayUrl: string; doneUrl: string; voice: string; greeting: string; callRowId: string; companyId: string; hints?: string }): string {
+  const exp = Math.floor(Date.now() / 1000) + 3600
+  const v = relayVoice(p.voice)
+  const param = (name: string, value: string) => `<Parameter name="${esc(name)}" value="${esc(value)}"/>`
+  return `<Response>` +
+    `<Connect action="${esc(p.doneUrl)}">` +
+      `<ConversationRelay url="${esc(p.relayUrl)}" welcomeGreeting="${esc(p.greeting)}" welcomeGreetingInterruptible="any" ` +
+        `language="en-AU" ttsProvider="${v.provider}" voice="${esc(v.voice)}" transcriptionProvider="Google" speechModel="telephony" ` +
+        `interruptible="any" dtmfDetection="true"${p.hints ? ` hints="${esc(p.hints)}"` : ''}>` +
+        param('callRowId', p.callRowId) + param('companyId', p.companyId) + param('exp', String(exp)) +
+        param('sig', relaySignature(p.callRowId, p.companyId, exp)) +
+      `</ConversationRelay>` +
+    `</Connect>` +
   `</Response>`
 }

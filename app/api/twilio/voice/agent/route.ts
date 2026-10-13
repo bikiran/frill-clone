@@ -1,7 +1,7 @@
 import { twilioSignatureOk } from '@/lib/twilio-signature'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { phoneTurn, transcriptText, phoneListenTwiml, phoneGoodbyeTwiml, phoneVoicemailTwiml, type PhoneCallState } from '@/lib/phone-agent'
+import { phoneTurn, saveCallState, phoneListenTwiml, phoneGoodbyeTwiml, phoneVoicemailTwiml, type PhoneCallState } from '@/lib/phone-agent'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 30
@@ -39,31 +39,7 @@ export async function POST(req: NextRequest) {
 
   // Keep the call row and the thread's transcript up to date after every turn,
   // so a caller hanging up mid-call still leaves the full record.
-  const save = async (end: boolean) => {
-    const now = new Date()
-    const dur = call.answered_at ? Math.max(1, Math.round((now.getTime() - new Date(call.answered_at).getTime()) / 1000)) : null
-    if (call.conversation_id) {
-      try {
-        const content = transcriptText(state)
-        if (state.transcriptMessageId) {
-          await db.from('messages').update({ content }).eq('id', state.transcriptMessageId)
-        } else {
-          const { data: m } = await db.from('messages').insert({
-            conversation_id: call.conversation_id, company_id: companyId, sender_type: 'agent', sender_name: 'AI phone agent',
-            content, is_internal: true, metadata: { phone_agent: true, call_id: call.id },
-          }).select('id').maybeSingle()
-          state.transcriptMessageId = m?.id || null
-        }
-        await db.from('conversations').update({ last_message: '📞 Answered by the AI phone agent', last_message_at: now.toISOString() }).eq('id', call.conversation_id)
-      } catch (e: any) { console.error('[phone agent] transcript save failed', e?.message || e) }
-    }
-    if (end) state.ended = true
-    await db.from('calls').update({
-      routing_state: { ...(call.routing_state || {}), phone_agent: state },
-      ended_at: now.toISOString(), ...(dur ? { duration_seconds: dur } : {}),
-      ...(state.messageTaken ? { ai_todos: ['Call the customer back (message taken by the AI phone agent)'] } : {}),
-    }).eq('id', call.id)
-  }
+  const save = (end: boolean) => saveCallState(db, call, state, end)
 
   // 0 → voicemail, the business's own greeting and recording.
   if (get('Digits') === '0') {

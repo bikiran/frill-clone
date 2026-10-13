@@ -39,6 +39,8 @@ export type ModelResponse = {
 export interface ModelClient {
   readonly provider: string
   generate(req: ModelRequest): Promise<ModelResponse>
+  /** Like generate, but hands over the reply's text as it's written (the phone agent speaks it straight away). */
+  generateStream?(req: ModelRequest, onText: (text: string) => void): Promise<ModelResponse>
 }
 
 // ── Anthropic ────────────────────────────────────────────────────────────────
@@ -63,20 +65,39 @@ export class AnthropicModel implements ModelClient {
     const job: AiJob = req.job || (req.tier === 'smart' ? 'agent_smart' : 'agent_fast')
     const model = await modelFor(job)
     const response: any = await (this.client as any).beta.messages.create({
+      ...this.params(req, model),
+      // If a safety classifier declines, the API retries on a fallback model.
+      betas: ['server-side-fallback-2026-07-01'],
+      fallbacks: 'default',
+    })
+    await trackAi(job, req.companyId, response)
+    return this.parse(response, model)
+  }
+
+  async generateStream(req: ModelRequest, onText: (text: string) => void): Promise<ModelResponse> {
+    const job: AiJob = req.job || (req.tier === 'smart' ? 'agent_smart' : 'agent_fast')
+    const model = await modelFor(job)
+    const stream: any = (this.client as any).messages.stream(this.params(req, model))
+    stream.on('text', (delta: string) => { if (delta) onText(delta) })
+    const response: any = await stream.finalMessage()
+    await trackAi(job, req.companyId, response)
+    return this.parse(response, model)
+  }
+
+  private params(req: ModelRequest, model: string) {
+    return {
       model,
       max_tokens: req.maxTokens || 8000,
       // Agent steps are short decisions; low effort keeps a customer waiting less.
       output_config: { effort: 'low' },
-      // If a safety classifier declines, the API retries on a fallback model.
-      betas: ['server-side-fallback-2026-07-01'],
-      fallbacks: 'default',
       // The role prompt + tools are identical every step of a run — cache them.
       system: [{ type: 'text', text: req.system, cache_control: { type: 'ephemeral' } }],
       ...(req.tools?.length ? { tools: req.tools } : {}),
       messages: toAnthropic(req.messages),
-    })
+    }
+  }
 
-    await trackAi(job, req.companyId, response)
+  private parse(response: any, model: string): ModelResponse {
     const content: NeutralBlock[] = []
     const toolCalls: ModelResponse['toolCalls'] = []
     for (const b of response.content || []) {
