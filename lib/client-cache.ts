@@ -123,6 +123,7 @@ if (typeof window !== 'undefined') {
     if (event === 'SIGNED_OUT' || (lastUserId !== undefined && uid !== lastUserId)) {
       clearCompanyUser()
       clearAdminGate()
+      clearStored()
     }
     lastUserId = uid
   })
@@ -144,4 +145,38 @@ export function writeCache<T>(key: string, value: T): void {
 
 export function hasCache(key: string): boolean {
   return dataCache.has(key)
+}
+
+// ── Same, but also kept in this browser ─────────────────────────────────────
+// For pages whose data is slow to work out (the AI pages): the last result is
+// kept in localStorage too, so even a fresh page load paints straight away and
+// refreshes underneath. Wiped on sign-out. Keys should include the company id.
+const STORED_PREFIX = 'colvy:c:'
+
+export function readStored<T>(key: string | null | undefined): T | undefined {
+  if (!key) return undefined
+  if (dataCache.has(key)) return dataCache.get(key) as T
+  try {
+    const raw = localStorage.getItem(STORED_PREFIX + key)
+    if (raw == null) return undefined
+    const v = JSON.parse(raw) as T
+    dataCache.set(key, v)
+    return v
+  } catch { return undefined }
+}
+
+export function writeStored<T>(key: string | null | undefined, value: T): void {
+  if (!key) return
+  dataCache.set(key, value)
+  try { localStorage.setItem(STORED_PREFIX + key, JSON.stringify(value)) } catch { /* full or blocked: memory copy still works */ }
+}
+
+export function clearStored(): void {
+  for (const k of Array.from(dataCache.keys())) dataCache.delete(k)
+  try {
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const k = localStorage.key(i)
+      if (k && (k.startsWith(STORED_PREFIX) || k.startsWith('colvy:needs-you:'))) localStorage.removeItem(k)
+    }
+  } catch {}
 }

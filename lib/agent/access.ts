@@ -3,7 +3,7 @@
 
 import type { NextRequest } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { requireCompanyAccess } from '@/lib/company-access'
+import { bearerToken, isStaffRow, SUPER_ADMIN, verifyToken } from '@/lib/company-access'
 import { canUseFeature, hasFullAccess } from '@/lib/permissions'
 
 export function agentDb() {
@@ -12,19 +12,23 @@ export function agentDb() {
 
 export async function agentAccess(req: NextRequest, companyId: string | null | undefined): Promise<{ ok: boolean; db: any; userId?: string }> {
   const db = agentDb()
-  const access = await requireCompanyAccess(req, db, companyId)
-  if (!access.ok || !companyId) return { ok: false, db }
-  if (!access.userId) return { ok: true, db }
-  const [{ data: co }, { data: rows }] = await Promise.all([
-    db.from('companies').select('owner_id').eq('id', companyId).maybeSingle(),
-    db.from('team_members').select('role, permissions').eq('company_id', companyId).eq('user_id', access.userId).limit(1),
-  ])
-  if (co?.owner_id === access.userId) return { ok: true, db, userId: access.userId }
-  const row = rows?.[0]
-  if (!row) return { ok: true, db, userId: access.userId }   // platform admin
-  const role = String(row.role || 'viewer').toLowerCase()
-  const ok = hasFullAccess(role) || canUseFeature(role, row.permissions && typeof row.permissions === 'object' ? row.permissions : null, 'agents')
-  return { ok, db, userId: access.userId }
+  // Same rules as requireCompanyAccess (owner, staff, or the platform admin),
+  // plus the "agents" permission — worked out from one round of lookups.
+  try {
+    const user = companyId ? await verifyToken(db, bearerToken(req)) : null
+    if (!user || !companyId) return { ok: false, db }
+    if (user.email === SUPER_ADMIN) return { ok: true, db, userId: user.id }
+    const [{ data: co }, { data: rows }] = await Promise.all([
+      db.from('companies').select('owner_id').eq('id', companyId).maybeSingle(),
+      db.from('team_members').select('role, status, permissions').eq('company_id', companyId).eq('user_id', user.id).limit(5),
+    ])
+    if (co?.owner_id === user.id) return { ok: true, db, userId: user.id }
+    const row = (rows || []).find(isStaffRow)
+    if (!row) return { ok: false, db }
+    const role = String(row.role || 'viewer').toLowerCase()
+    const ok = hasFullAccess(role) || canUseFeature(role, row.permissions && typeof row.permissions === 'object' ? row.permissions : null, 'agents')
+    return { ok, db, userId: user.id }
+  } catch { return { ok: false, db } }
 }
 
 export const missingAgentTables = (e: any) => /agent_runs|agent_steps|agent_approvals/i.test(String(e?.message || '')) && /does not exist|schema cache|relation/i.test(String(e?.message || ''))
@@ -38,4 +42,19 @@ export async function staffName(db: any, companyId: string, userId: string | nul
   const { data } = await db.auth.admin.getUserById(userId).catch(() => ({ data: null }))
   const u = (data as any)?.user
   return u?.user_metadata?.display_name || u?.user_metadata?.full_name || u?.email?.split('@')[0] || null
+}
+
+/** Display names for several team members at once: one team lookup, then any gaps filled side by side. */
+export async function staffNames(db: any, companyId: string, userIds: string[]): Promise<Record<string, string | null>> {
+  const ids = Array.from(new Set(userIds.filter(Boolean)))
+  const out: Record<string, string | null> = {}
+  if (!ids.length) return out
+  const { data } = await db.from('team_members').select('user_id, name, email').eq('company_id', companyId).in('user_id', ids)
+  for (const tm of data || []) out[tm.user_id] = tm.name || tm.email?.split('@')[0] || null
+  await Promise.all(ids.filter(id => !out[id]).map(async id => {
+    const { data } = await db.auth.admin.getUserById(id).catch(() => ({ data: null }))
+    const u = (data as any)?.user
+    out[id] = u?.user_metadata?.display_name || u?.user_metadata?.full_name || u?.email?.split('@')[0] || null
+  }))
+  return out
 }

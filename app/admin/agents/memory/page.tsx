@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { authFetch } from '@/lib/auth-fetch'
-import { resolveCompanyUser, peekCompanyUser } from '@/lib/client-cache'
+import { resolveCompanyUser, peekCompanyUser, readStored, writeStored } from '@/lib/client-cache'
 import { confirmDialog } from '@/components/ConfirmDialog'
 
 // Business Memory (Agent Engine, Phase 5): what Colvy's AI agents know about
@@ -64,15 +64,21 @@ const TONE_META: Record<string, { icon: React.ReactNode; desc: string }> = {
 
 export default function BusinessMemoryPage() {
   const [companyId, setCompanyId] = useState<string | null>(peekCompanyUser()?.companyId || null)
-  const [items, setItems] = useState<Item[]>([])
-  const [templates, setTemplates] = useState<Templates | null>(null)
-  const [coverage, setCoverage] = useState<Coverage | null>(null)
-  const [loaded, setLoaded] = useState(false)
+  // The last copy kept in this browser paints at once; the fresh one replaces it.
+  const cacheKey = companyId ? `agents-memory:${companyId}` : null
+  const cached = readStored<any>(cacheKey)
+  const [items, setItems] = useState<Item[]>(cached?.items || [])
+  const [templates, setTemplates] = useState<Templates | null>(cached?.templates || null)
+  const [coverage, setCoverage] = useState<Coverage | null>(cached?.coverage || null)
+  const [loaded, setLoaded] = useState(!!cached)
   const [needsMigration, setNeedsMigration] = useState(false)
   const [error, setError] = useState('')
 
   useEffect(() => { resolveCompanyUser().then(r => setCompanyId(r.companyId)).catch(() => {}) }, [])
-  const apply = (d: any) => { setItems(d.items || []); if (d.templates) setTemplates(d.templates); if (d.coverage) setCoverage(d.coverage); setNeedsMigration(!!d.needsMigration) }
+  const apply = useCallback((d: any) => {
+    setItems(d.items || []); if (d.templates) setTemplates(d.templates); if (d.coverage) setCoverage(d.coverage); setNeedsMigration(!!d.needsMigration)
+    if (!d.needsMigration) writeStored(cacheKey, { items: d.items || [], templates: d.templates || null, coverage: d.coverage || null })
+  }, [cacheKey])
   const load = useCallback(async () => {
     if (!companyId) return
     try {
@@ -81,7 +87,7 @@ export default function BusinessMemoryPage() {
       if (!r.ok || d.error) setError(d.error || 'Couldn’t load memory.')
       else apply(d)
     } catch { setError('Couldn’t reach Colvy.') } finally { setLoaded(true) }
-  }, [companyId])
+  }, [companyId, apply])
   useEffect(() => { load() }, [load])
 
   const save: Save = async (body) => {

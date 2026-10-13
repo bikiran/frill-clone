@@ -3,16 +3,38 @@
 
 import type { NextRequest } from 'next/server'
 
-const SUPER_ADMIN = 'bishalstha76@gmail.com'
+export const SUPER_ADMIN = 'bishalstha76@gmail.com'
+
+// Checking a sign-in token is a round trip to Supabase Auth. A page like AI
+// Agents fires several requests at once with the same token, so a verified
+// token is remembered for a few seconds on this server instance. Short enough
+// that signing out still takes effect almost straight away.
+const VERIFIED_TTL_MS = 20_000
+const verified = new Map<string, { user: any; at: number }>()
+
+/** The user behind an access token (checked with Supabase Auth), or null. */
+export async function verifyToken(db: any, token: string): Promise<any | null> {
+  if (!token) return null
+  const hit = verified.get(token)
+  if (hit && Date.now() - hit.at < VERIFIED_TTL_MS) return hit.user
+  const { data } = await db.auth.getUser(token)
+  const user = data?.user || null
+  if (user) {
+    if (verified.size > 500) verified.clear()
+    verified.set(token, { user, at: Date.now() })
+  } else verified.delete(token)
+  return user
+}
+
+export const bearerToken = (req: NextRequest) => (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '')
 
 // The caller (Bearer access token) must be the company's owner, one of its team
 // members, or the platform super-admin.
 export async function requireCompanyAccess(req: NextRequest, db: any, companyId: string | null | undefined): Promise<{ ok: boolean; userId?: string }> {
   try {
-    const token = (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '')
+    const token = bearerToken(req)
     if (!token || !companyId) return { ok: false }
-    const { data } = await db.auth.getUser(token)
-    const user = data?.user
+    const user = await verifyToken(db, token)
     if (!user) return { ok: false }
     if (user.email === SUPER_ADMIN) return { ok: true, userId: user.id }
     // Owner and team checks run together rather than one after the other.
@@ -48,10 +70,8 @@ export async function isStaffMember(db: any, companyId: string | null | undefine
 // The signed-in user behind the request's Bearer token, or null.
 export async function callerUser(req: NextRequest, db: any): Promise<{ id: string; email?: string } | null> {
   try {
-    const token = (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '')
-    if (!token) return null
-    const { data } = await db.auth.getUser(token)
-    return data?.user ? { id: data.user.id, email: data.user.email || undefined } : null
+    const user = await verifyToken(db, bearerToken(req))
+    return user ? { id: user.id, email: user.email || undefined } : null
   } catch { return null }
 }
 

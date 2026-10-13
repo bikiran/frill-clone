@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { authFetch } from '@/lib/auth-fetch'
+import { readStored, writeStored } from '@/lib/client-cache'
 import { confirmDialog } from '@/components/ConfirmDialog'
 import { GoalsPanel } from '@/components/AgentGoals'
 
@@ -38,7 +39,11 @@ const periodWord = (days: number) => days === 7 ? 'last week' : `the ${days} day
 const waitText = (m: number | null) => m == null ? '—' : m < 1 ? 'under a minute' : m < 60 ? `${Math.round(m)} min` : m < 1440 ? `${(m / 60).toFixed(1).replace(/\.0$/, '')} hrs` : `${(m / 1440).toFixed(1).replace(/\.0$/, '')} days`
 
 export function useAgentResults(companyId: string | null, days: number) {
-  const [data, setData] = useState<Payload | null>(null)
+  // The last results kept in this browser paint at once; the fresh ones replace them.
+  const key = companyId ? `agents-results:${companyId}:${days}` : null
+  const [data, setDataState] = useState<Payload | null>(() => readStored<Payload>(key) || null)
+  useEffect(() => { const c = readStored<Payload>(key); if (c) setDataState(c) }, [key])
+  const setData = useCallback((d: Payload | null) => { setDataState(d); if (d) writeStored(key, d) }, [key])
   const [error, setError] = useState('')
   const load = useCallback(async () => {
     if (!companyId) return
@@ -48,7 +53,7 @@ export function useAgentResults(companyId: string | null, days: number) {
       if (!r.ok || !d?.results?.current || !d.results.previous) { setError(d?.error || 'Couldn’t load results.'); return }
       setData({ ...d, results: { ...d.results, roles: d.results.roles || [], exceptions: d.results.exceptions || [] }, suggestions: Array.isArray(d.suggestions) ? d.suggestions : [], digest: d.digest || { enabled: false } }); setError('')
     } catch { setError('Couldn’t reach Colvy.') }
-  }, [companyId, days])
+  }, [companyId, days, setData])
   useEffect(() => { load() }, [load])
   return { data, error, reload: load, setData }
 }

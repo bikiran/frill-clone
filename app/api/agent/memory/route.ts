@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { agentAccess, staffName } from '@/lib/agent/access'
+import { agentAccess, staffNames } from '@/lib/agent/access'
 import { listMemory, saveMemory, setMemoryStatus, knowledgeCoverage, POLICY_TEMPLATES, TONE_STYLES } from '@/lib/agent/business-memory'
 import { DEFAULT_THRESHOLDS } from '@/lib/order-assess'
 
@@ -11,8 +11,7 @@ async function payload(db: any, companyId: string) {
   const [items, coverage] = await Promise.all([listMemory(db, companyId), knowledgeCoverage(db, companyId)])
   // Who edited the reply a proposal was learned from.
   const ids = Array.from(new Set(items.map(i => i.content?.evidence?.edited_by).filter(Boolean)))
-  const names: Record<string, string | null> = {}
-  for (const uid of ids.slice(0, 20)) names[uid] = await staffName(db, companyId, uid)
+  const names = await staffNames(db, companyId, ids.slice(0, 20))
   return {
     items: items.map(i => (i.content?.evidence?.edited_by ? { ...i, content: { ...i.content, evidence: { ...i.content.evidence, edited_by_name: names[i.content.evidence.edited_by] || null } } } : i)),
     coverage,
