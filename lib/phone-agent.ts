@@ -196,9 +196,10 @@ function systemPrompt(state: PhoneCallState, p: { companyName: string; from: str
     'How to talk:',
     '- This is a phone call. Reply in one to three short spoken sentences. No lists, markdown, links, emojis or abbreviations. Say order numbers digit by digit and prices in words a person would say.',
     '- You already said you are an AI assistant in the greeting; only repeat it if asked.',
-    '- When you need a lookup, start your reply with a few words such as “One moment, let me check.” before the tool. Don’t say that before take_message or end_call, or when you can answer from what you already know.',
+    '- When you need a lookup, start your reply with a few words such as “One moment, let me check.” before the tool. Don’t say that when you can answer from what you already know.',
+    '- When you take a message, say a short acknowledgement in the same reply, before the tool (“Sure, I’ll pass that on.”). The caller is then told the team will call back and asked if there’s anything else, so don’t add that yourself.',
     '- Never repeat something you have already told the caller unless they ask again. Answer only what they just asked.',
-    '- What the caller says reaches you through speech recognition, which mishears words, especially product names (a name can arrive as ordinary words that only sound like it). Work out what they most likely meant for a business like this one, using the product names below, and look that up. If you’re unsure, check in a few words (“Did you mean …?”) rather than saying you have nothing by that name.',
+    '- What the caller says reaches you through speech recognition, which mishears words, especially product names (a name can arrive as ordinary words that only sound like it). Work out what they most likely meant for a business like this one, using the product names below, and look that up. If you’re fairly sure what they meant, just answer using the right name. Only if you’re genuinely unsure, ask in a few words (“Did you mean …?”) and wait for their answer; never ask and answer in the same breath.',
     '- Callers often give sizes in feet or inches, while products are usually listed in centimetres or litres. Convert before searching or comparing (1 foot is about 30 cm, so a 4-foot tank is about 120 cm) and look for that size.',
     '- Use your tools for every fact: opening hours, the caller’s orders, stock and the business’s own knowledge (delivery, returns, care advice and other policies are in ask_knowledge). Never guess or invent prices, stock, dates, delivery times or policies. If the tools don’t give you the answer, offer to take a message.',
     '- If what they asked for isn’t in stock or isn’t sold, say so plainly. Only suggest something else if it’s a close match (the same kind of thing), and at most one or two.',
@@ -315,12 +316,14 @@ export async function phoneTurn(db: any, args: {
 
     const results: NeutralBlock[] = []
     let goodbye: string | null = null
+    let tookNow = false
     for (const call of r.toolCalls) {
       used.push(call.name)
       if (call.name === 'end_call') { goodbye = String(call.input?.goodbye || 'Thanks for calling. Goodbye.'); results.push({ type: 'tool_result', id: call.id, content: 'ok' }); continue }
       if (call.name === 'take_message') {
         const ok = await takeMessage(db, actx, args, call.input || {})
         tookMessage = tookMessage || ok
+        tookNow = tookNow || ok
         if (ok) args.state.messageAbout = String(call.input?.about || '').trim().slice(0, 200)
         results.push({ type: 'tool_result', id: call.id, content: ok ? 'Message saved; the team will call back.' : 'Could not save the message.', ...(ok ? {} : { isError: true }) })
         continue
@@ -356,6 +359,16 @@ export async function phoneTurn(db: any, args: {
       }
     }
     if (goodbye) return result(true, goodbye)
+    // Only a message was taken this round: confirm it ourselves rather than
+    // asking the AI to write the confirmation, which costs a whole second
+    // round (about 2 seconds with a larger model).
+    if (tookNow && r.toolCalls.every(c => c.name === 'take_message')) {
+      const said = spoken.join(' ')
+      if (/anything else/i.test(said)) return result(false)
+      if (/call (you )?back/i.test(said)) return result(false, 'Is there anything else I can help with?')
+      if (/pass(ed)? (that|it|this|your \w+) on|let the team know|note (that|it) (down|for)/i.test(said)) return result(false, 'The team will call you back. Is there anything else I can help with?')
+      return result(false, 'I’ve passed that on, and the team will call you back. Is there anything else I can help with?')
+    }
     messages.push({ role: 'user', content: results })
   }
   // Out of time or rounds: never leave the caller hanging.
