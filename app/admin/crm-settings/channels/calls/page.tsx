@@ -5,6 +5,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { peekCompanyUser, resolveCompanyUser } from '@/lib/client-cache'
 import RegulatoryForm from '@/components/RegulatoryForm'
+import CallAnswerSettings from '@/components/CallAnswerSettings'
 import Link from 'next/link'
 import { Icon } from '@/components/integrations/ui'
 
@@ -335,6 +336,8 @@ export default function TelnyxIntegration() {
             )}
           </div>
           )}
+
+          {companyId && <CallAnswerSettings companyId={companyId} />}
 
           {/* All numbers this company owns */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>

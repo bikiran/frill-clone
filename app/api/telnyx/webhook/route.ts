@@ -14,6 +14,22 @@ import { companyForInboundNumber } from '@/lib/inbound-company'
 import { ensureContactByPhone, findContactByPhone } from '@/lib/contact-capture'
 import { logEnquiryReopened } from '@/lib/conversation-timeline'
 import { emitInboundEvent, emitCallEvent } from '@/lib/integration-hooks'
+import { alertCall, transcribeCall } from '@/lib/call-alerts'
+
+// Is any of these agent legs still ringing (or talking)? Asked of Telnyx, not
+// our own table, so two legs ending at the same moment can't each think the
+// other is still up. A leg Telnyx can't find has ended. Checked twice, a
+// moment apart, because a leg that ended together with this one can take a
+// beat to show as ended.
+async function anyLegRinging(svc: TelnyxService, legs: string[]): Promise<boolean> {
+  if (!legs.length) return false
+  const check = async () => (await Promise.all(legs.map(id =>
+    svc.getCall(id).then((d: any) => !!d?.data?.is_alive, () => false)))).some(Boolean)
+  if (!(await check())) return false
+  await new Promise(r => setTimeout(r, 1500))
+  return check()
+}
+
 
 function admin() {
   return createClient(
@@ -674,6 +690,19 @@ export async function POST(req: NextRequest) {
               }
             } catch {}
           }
+          // A first-time caller gets a thread too, so a missed call or voicemail
+          // from them shows in the inbox (not only on the Calls page) and can be
+          // followed up there. Same as the Twilio inbound route.
+          if (!conversationId && fromNum) {
+            try {
+              const { data: created } = await db.from('conversations').insert({
+                company_id: companyId, contact_id: contactId || null, channel: 'phone',
+                sms_number: fromNum, status: 'open', subject: callerName || fromNum,
+                last_message: '📞 Incoming call', last_message_at: new Date().toISOString(), is_unread: true,
+              }).select('id').maybeSingle()
+              conversationId = created?.id || null
+            } catch (e: any) { console.error('[telnyx inbound] conversation create failed', e?.message || e) }
+          }
 
           // Create the call row.
           //
@@ -1155,11 +1184,13 @@ export async function POST(req: NextRequest) {
               is_voicemail: true,
             }).eq('telnyx_call_control_id', callControlId)
             try { await setCallPreview(db as any, recRow?.conversation_id, '📞 Voicemail') } catch {}
-            // Notify the company there's a new voicemail.
-            const { data: c } = await db.from('calls').select('id, company_id, from_number, caller_name, contact_id').eq('telnyx_call_control_id', callControlId).maybeSingle()
+            // Tell the team (bell + phone), and transcribe it so the message
+            // can be read without playing it.
+            const { data: c } = await db.from('calls').select('id, company_id, conversation_id, from_number, caller_name, contact_id').eq('telnyx_call_control_id', callControlId).maybeSingle()
             if (c?.company_id) {
-              try { await notifyCompany({ db, companyId: c.company_id, type: 'call', message: `New voicemail from ${c.caller_name || c.from_number}`, actorName: c.caller_name || c.from_number }) } catch {}
+              await alertCall(db, c.company_id, c.conversation_id, 'New voicemail', c.caller_name || c.from_number || 'a caller')
               await emitCallEvent(db, 'voicemail.received', c.id)
+              transcribeCall(req.nextUrl.origin, c.id, c.company_id, c.conversation_id)
             }
           }
         } catch (e) { console.error('[telnyx voicemail save] failed', e) }
@@ -1242,22 +1273,46 @@ export async function POST(req: NextRequest) {
                 try { await db.from('calls').update({ routing_state: { ...rs, pending: false } }).eq('id', parentRow.id) } catch {}
               }
 
-              if (integ3.voicemail_enabled !== false) {
+              // Voicemail is only for a call nobody answered. A leg also ends
+              // when a colleague answered (we hang up the other phones) or when
+              // one person declines while others are still ringing — sending
+              // the caller to voicemail then played the greeting over a live
+              // conversation, or cut off phones that were still ringing.
+              if (parentRow.status !== 'ringing_agents') {
+                log.info('[telnyx hangup] leg ended on a call that is no longer ringing — no voicemail', { callControlId, status: parentRow.status })
+                return NextResponse.json({ ok: true })
+              }
+              const otherLegs = [
+                ...(Array.isArray(parentRow.ringing_leg_ids) ? parentRow.ringing_leg_ids : []),
+                parentRow.agent_call_control_id,
+              ].filter((id: string) => id && id !== callControlId)
+              if (await anyLegRinging(svc, otherLegs)) {
+                log.info('[telnyx hangup] a leg ended but other phones are still ringing — keeping the caller', { callControlId })
+                return NextResponse.json({ ok: true })
+              }
+
+              // Record WHY the agent leg ended so Call Diagnostics can tell a
+              // real no-answer (normal_clearing / timeout after ringing the full
+              // window) apart from an agent leg that failed instantly — a
+              // call_rejected / SIP error means the browser's SIP endpoint
+              // wasn't reachable, which is the usual "rings once → voicemail".
+              const legCause = payload?.hangup_cause || payload?.hangup_source || 'no_answer'
+              const rungCount = Array.isArray(parentRow.ringing_leg_ids) ? parentRow.ringing_leg_ids.length : 0
+              const voicemailOn = integ3.voicemail_enabled !== false
+              // Claim the call: only the first leg to get here moves it on, so
+              // legs ending together can't play the greeting twice.
+              const { data: claimed } = await db.from('calls').update({
+                ...(voicemailOn ? { status: 'voicemail_greeting', is_voicemail: true } : { status: 'no_answer' }),
+                // On `cause` (not transcription — that's overwritten by the
+                // voicemail recording's transcript) so it survives to show in
+                // Call Diagnostics' "Hangup cause".
+                cause: `agent_leg_ended: ${legCause} (rung ${rungCount})`,
+                routing_state: { ...(rs || {}), no_answer: true },
+              }).eq('id', parentRow.id).eq('status', 'ringing_agents').select('id')
+              if (!claimed?.length) return NextResponse.json({ ok: true })
+
+              if (voicemailOn) {
                 await svc.speak(parentRow.telnyx_call_control_id, integ3.voicemail_greeting || 'Please leave a message after the tone.')
-                // Record WHY the agent leg ended so Call Diagnostics can tell a
-                // real no-answer (normal_clearing / timeout after ringing the full
-                // window) apart from an agent leg that failed instantly — a
-                // call_rejected / SIP error means the browser's SIP endpoint
-                // wasn't reachable, which is the usual "rings once → voicemail".
-                const legCause = payload?.hangup_cause || payload?.hangup_source || 'no_answer'
-                const rungCount = Array.isArray(parentRow.ringing_leg_ids) ? parentRow.ringing_leg_ids.length : 0
-                await db.from('calls').update({
-                  status: 'voicemail_greeting', is_voicemail: true,
-                  // On `cause` (not transcription — that's overwritten by the
-                  // voicemail recording's transcript) so it survives to show in
-                  // Call Diagnostics' "Hangup cause".
-                  cause: `agent_leg_ended: ${legCause} (rung ${rungCount})`,
-                }).eq('id', parentRow.id)
               } else {
                 await svc.hangupCall(parentRow.telnyx_call_control_id)
               }
@@ -1277,6 +1332,7 @@ export async function POST(req: NextRequest) {
         const status = statusMap[eventType] || eventType.replace('call.', '')
         const update: any = { status }
         let hangupCallRowId = ''
+        let hangupRow: any = null
         if (eventType === 'call.hangup') {
           update.ended_at = new Date().toISOString()
           const dur = payload?.call_duration_secs || payload?.duration_secs || 0
@@ -1288,8 +1344,13 @@ export async function POST(req: NextRequest) {
           // Only downgrade to missed for inbound calls that never connected;
           // don't clobber a voicemail state the inbound flow already set.
           const { data: existing } = await db.from('calls')
-            .select('id, status, is_voicemail, conversation_id').or(`telnyx_call_control_id.eq.${callControlId},telnyx_call_session_id.eq.${sessionId}`).maybeSingle()
-          if (existing?.is_voicemail || String(existing?.status || '').startsWith('voicemail')) {
+            .select('id, company_id, status, is_voicemail, conversation_id, ended_at, caller_name, from_number').or(`telnyx_call_control_id.eq.${callControlId},telnyx_call_session_id.eq.${sessionId}`).maybeSingle()
+          if (isInbound && existing?.status === 'voicemail_greeting') {
+            // Hung up during the greeting: no message was left, so it's a
+            // missed call (and gets the missed-call alert), not a voicemail.
+            update.status = 'missed'
+            update.is_voicemail = false
+          } else if (existing?.is_voicemail || String(existing?.status || '').startsWith('voicemail')) {
             update.status = 'voicemail'
           } else if (isInbound && !answered && !dur) {
             update.status = 'missed'
@@ -1297,6 +1358,7 @@ export async function POST(req: NextRequest) {
             update.status = 'completed'
           }
           hangupCallRowId = existing?.id || ''
+          hangupRow = existing
           // Reflect the outcome in the inbox list. A voicemail hangup shows
           // "Missed call" provisionally; call.recording.saved upgrades it to
           // "Voicemail" if the caller actually left a message.
@@ -1312,7 +1374,14 @@ export async function POST(req: NextRequest) {
         // ensureCallCard re-reads the freshly-updated row, so it sees the final
         // status/duration. Skipped internally for voicemail/missed/unconnected.
         if (hangupCallRowId) await ensureCallCard(db, hangupCallRowId)
-        if (hangupCallRowId && update.status === 'missed') await emitCallEvent(db, 'call.missed', hangupCallRowId)
+        if (hangupCallRowId && update.status === 'missed') {
+          await emitCallEvent(db, 'call.missed', hangupCallRowId)
+          // Only on the first hangup for this call (a retried webhook finds
+          // ended_at already set), so nobody gets the alert twice.
+          if (!hangupRow?.ended_at && hangupRow?.company_id) {
+            await alertCall(db, hangupRow.company_id, hangupRow.conversation_id, 'Missed call', hangupRow.caller_name || hangupRow.from_number || 'a caller')
+          }
+        }
       }
       return NextResponse.json({ ok: true })
     }
