@@ -47,6 +47,7 @@ export function toNormalOrder(o: any): NormalOrder {
     lastName: bill.lastName || ship.lastName || o.customer?.lastName || '',
     address: a.address1 || a.city ? { address_1: a.address1 || '', address_2: a.address2 || '', city: a.city || '', state: a.provinceCode || a.province || '', postcode: a.zip || '', country: a.countryCodeV2 || a.country || '' } : null,
     isPos: String(o.sourceName || '').toLowerCase() === 'pos',
+    shippingMethod: o.shippingLines?.nodes?.[0]?.title || null,
     createdAt: o.processedAt || o.createdAt || null,
     chatConversationId: chatConv,
   }

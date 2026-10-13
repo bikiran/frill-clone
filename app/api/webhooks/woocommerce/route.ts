@@ -9,7 +9,7 @@ import { notifyCompany, pushInboundMessage } from '@/lib/notify'
 import { logWebhookEvent } from '@/lib/webhook-log'
 import { upsertWooOrder } from '@/lib/orders-sync'
 import { wooDateToISO } from '@/lib/orders'
-import { DEFAULT_ORDER_MESSAGES, isStaleOrderMessage } from '@/lib/order-messages'
+import { DEFAULT_ORDER_MESSAGES, isStaleOrderMessage, withCompletedFallbacks, isPickupMethod, completedKey, trackingAlreadySent } from '@/lib/order-messages'
 import { findCustomerGoogleReview } from '@/lib/review-match'
 import { logEnquiryReopened } from '@/lib/conversation-timeline'
 import { notifyWaitlist, resolveWaitlistSettings } from '@/lib/waitlist'
@@ -117,8 +117,8 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
     if (!val) savedMsgs[k] = ''
     else if (!isStaleOrderMessage(val, company?.name)) savedMsgs[k] = val as string
   }
-  const messages = { ...DEFAULT_ORDER_MESSAGES, ...savedMsgs }
-  const template = messages[status]
+  const messages: Record<string, string> = { ...DEFAULT_ORDER_MESSAGES, ...withCompletedFallbacks(savedMsgs) }
+  let template = messages[status]
 
   const email = order.billing?.email
   const phone = order.billing?.phone
@@ -384,18 +384,37 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
     await db.from('order_chat_events').insert({ ...dupeKey, conversation_id: conv.id })
   }
 
+  // In-store POS sale (pushed to WooCommerce by Prexty)? Never send the customer
+  // an automated order SMS/email — they bought in person, and the nightly bulk
+  // upload of the day's sales would otherwise text every one of them. The order
+  // is still recorded below; only the customer-facing message is suppressed.
+  const pos = posSaleInfo(order)
+
+  // Completed: shipped (tracking sent or not yet) or picked up.
+  if (status === 'completed' && !seenEvent && !pos.isPos) {
+    let convIds: string[] = [conv.id]
+    if (contact?.id) {
+      try {
+        const { data: cvs } = await db.from('conversations').select('id').eq('company_id', companyId).eq('contact_id', contact.id).limit(50)
+        convIds = Array.from(new Set([conv.id, ...(cvs || []).map((c: any) => c.id)]))
+      } catch {}
+    }
+    const line = (order.shipping_lines || [])[0] || {}
+    const pickup = isPickupMethod(line.method_title, line.method_id)
+    const trackingSent = pickup ? false : await trackingAlreadySent(db, companyId, {
+      channel: 'woocommerce', externalId: String(order.id),
+      createdAt: wooDateToISO(order),
+      conversationIds: convIds,
+    })
+    template = messages[completedKey({ pickup, trackingSent })]
+  }
+
   // The automation message sends when enabled. For a brand-new order we ALWAYS
   // greet the customer (a thank-you), because an order with no acknowledgement
   // in the chat is worse than none at all — the customer is looking at a widget
   // that says nothing about the order they just placed.
   const isNewOrderStatus = ['processing', 'on-hold', 'completed'].includes(status)
   let shouldSend = !seenEvent && template && (cfg.enabled || isNewOrderStatus)
-
-  // In-store POS sale (pushed to WooCommerce by Prexty)? Never send the customer
-  // an automated order SMS/email — they bought in person, and the nightly bulk
-  // upload of the day's sales would otherwise text every one of them. The order
-  // is still recorded below; only the customer-facing message is suppressed.
-  const pos = posSaleInfo(order)
   if (shouldSend && pos.isPos) {
     shouldSend = false
     console.log('[Order automation] suppressed customer message — POS sale', {

@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useCompanyUser, S, ToggleRow } from '../_shared'
-import { DEFAULT_ORDER_MESSAGES, isStaleOrderMessage } from '@/lib/order-messages'
+import { DEFAULT_ORDER_MESSAGES, isStaleOrderMessage, withCompletedFallbacks } from '@/lib/order-messages'
 import { resolveCartRecovery, fillCartMessage, CART_DELAYS, DEFAULT_CART_MESSAGE, type CartRecoverySettings } from '@/lib/cart-recovery-shared'
 
 // Placeholders: {name} first name, {full_name}, #{order} order number, {business}, {amount}, {total}.
@@ -13,7 +13,9 @@ const STATUSES: { key: string; label: string; hint: string; default: string }[] 
   { key: 'failed', label: 'Failed payment', hint: 'Use {name} and #{order}. Sent when an order payment fails.', default: DEFAULT_ORDER_MESSAGES['failed'] },
   { key: 'cancelled', label: 'Cancelled', hint: 'Use {name} and #{order}. Sent when an order is cancelled.', default: DEFAULT_ORDER_MESSAGES['cancelled'] },
   { key: 'refunded', label: 'Refunded', hint: 'Use {amount} for the refunded amount, #{order} for the order.', default: DEFAULT_ORDER_MESSAGES['refunded'] },
-  { key: 'completed', label: 'Completed', hint: 'Use {name} and #{order}. Sent when an order is completed.', default: DEFAULT_ORDER_MESSAGES['completed'] },
+  { key: 'completed', label: 'Completed: shipped', hint: 'Sent when a shipped order is marked completed and you’ve already sent the customer tracking from Colvy.', default: DEFAULT_ORDER_MESSAGES['completed'] },
+  { key: 'completed_no_tracking', label: 'Completed: shipped, tracking not sent yet', hint: 'Sent when a shipped order is marked completed before you’ve sent tracking from Colvy.', default: DEFAULT_ORDER_MESSAGES['completed_no_tracking'] },
+  { key: 'completed_pickup', label: 'Completed: picked up', hint: 'Sent when a click & collect order is marked completed (collected). In-store POS sales never get a message.', default: DEFAULT_ORDER_MESSAGES['completed_pickup'] },
   { key: 'on-hold', label: 'On hold', hint: 'Use {name} and #{order}. Sent when an order goes on hold.', default: DEFAULT_ORDER_MESSAGES['on-hold'] },
 ]
 
@@ -65,7 +67,7 @@ export default function OrderAutomationSettings() {
       for (const [k, v] of Object.entries(cfg.messages || {})) {
         if (typeof v === 'string' && !isStaleOrderMessage(v, co?.name)) msgs[k] = v
       }
-      setMessages(msgs)
+      setMessages(withCompletedFallbacks(msgs))
       setDoa(cfg.doa || {})
       setReviewUrl(cfg.review_url || '')
       setAlsoSms(!!cfg.also_sms)
@@ -83,8 +85,12 @@ export default function OrderAutomationSettings() {
     // Turning the cart message on stamps when, so it only ever messages carts
     // abandoned from then on — never a backlog.
     const cart_recovery = { ...cart, enabled_at: cart.enabled ? (cart.enabled_at || new Date().toISOString()) : null }
+    // With a saved Completed message, store the other Completed boxes as shown,
+    // so one reset to its default isn't replaced by the Completed wording.
+    const toSave = { ...messages }
+    if (toSave.completed !== undefined) for (const k of ['completed_no_tracking', 'completed_pickup']) toSave[k] ??= DEFAULT_ORDER_MESSAGES[k]
     await (supabase as any).from('companies').update({
-      order_chat_automation: { ...loadedCfg.current, enabled, review_url: reviewUrl, messages, also_sms: alsoSms, also_email: alsoEmail, doa, cart_recovery },
+      order_chat_automation: { ...loadedCfg.current, enabled, review_url: reviewUrl, messages: toSave, also_sms: alsoSms, also_email: alsoEmail, doa, cart_recovery },
     }).eq('id', companyId)
     loadedCfg.current = { ...loadedCfg.current, cart_recovery }
     setCart(cart_recovery)
@@ -144,7 +150,7 @@ export default function OrderAutomationSettings() {
 
           <div style={S.card}>
             <h2 style={S.h2}>Google review reminder</h2>
-            <p style={{ ...S.hint, marginBottom: 10 }}>Added after the "completed" message. Paste your Google review link.</p>
+            <p style={{ ...S.hint, marginBottom: 10 }}>Added after each Completed message. Paste your Google review link.</p>
             <input value={reviewUrl} onChange={e => setReviewUrl(e.target.value)} placeholder="https://g.page/r/…/review" style={S.input} />
           </div>
         </>
