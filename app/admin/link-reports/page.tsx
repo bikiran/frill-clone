@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
+import { peekCompanyUser, resolveCompanyUser } from '@/lib/client-cache'
 import { SkeletonList } from '@/components/Skeleton'
 
 type Link = {
@@ -83,8 +84,9 @@ export default function LinkReportsPage() {
   useEffect(() => {
     ;(async () => {
       try {
-        let cid: string | null = null
-        if (typeof window !== 'undefined') {
+        // The admin already knows the company; fall back to looking it up.
+        let cid: string | null = peekCompanyUser()?.companyId || (await resolveCompanyUser().catch(() => null))?.companyId || null
+        if (!cid && typeof window !== 'undefined') {
           const host = window.location.hostname
           if (host.endsWith('.colvy.com') && host !== 'colvy.com') {
             const slug = host.replace('.colvy.com', '')
@@ -115,31 +117,47 @@ export default function LinkReportsPage() {
   const load = async (cid: string, r: string) => {
     const since = r !== 'all' ? new Date(Date.now() - parseInt(r) * 86400000).toISOString() : null
 
+    // Everything that only needs the company, side by side.
     let lq = (supabase as any).from('short_links').select('*').eq('company_id', cid)
     if (since) lq = lq.gte('created_at', since)
-    const { data: ls } = await lq.order('created_at', { ascending: false }).limit(1000)
-    const linkRows: Link[] = ls || []
-    setLinks(linkRows)
-
     let cq = (supabase as any).from('link_clicks').select('*').eq('company_id', cid)
     if (since) cq = cq.gte('clicked_at', since)
-    const { data: cs } = await cq.order('clicked_at', { ascending: false }).limit(5000)
+    let vq = (supabase as any).from('link_conversions').select('*').eq('company_id', cid)
+    if (since) vq = vq.gte('converted_at', since)
+    const [{ data: ls }, { data: cs }, vs, co, tm, { data: outs }] = await Promise.all([
+      lq.order('created_at', { ascending: false }).limit(1000),
+      cq.order('clicked_at', { ascending: false }).limit(5000),
+      // Conversions only exist once the V192 migration has been run.
+      Promise.resolve(vq.limit(5000)).catch(() => ({ data: [] })),
+      Promise.resolve((supabase as any).from('companies').select('name, owner_id').eq('id', cid).maybeSingle()).catch(() => ({ data: null })),
+      // no name/display_name columns — derive from email
+      Promise.resolve((supabase as any).from('team_members').select('email').eq('company_id', cid)).catch(() => ({ data: [] })),
+      (supabase as any).from('company_locations').select('id, label, suburb').eq('company_id', cid),
+    ])
+    const linkRows: Link[] = ls || []
+    setLinks(linkRows)
     setClicks(cs || [])
-
-    // Conversions only exist once the V192 migration has been run.
-    try {
-      let vq = (supabase as any).from('link_conversions').select('*').eq('company_id', cid)
-      if (since) vq = vq.gte('converted_at', since)
-      const { data: vs } = await vq.limit(5000)
-      setConversions(vs || [])
-    } catch { setConversions([]) }
+    setConversions(vs?.data || [])
+    const om: Record<string, string> = {}
+    for (const o of (outs || [])) om[o.id] = o.label || o.suburb || 'Outlet'
+    setOutlets(om)
+    // The agent filter previously listed only names already stamped on links.
+    // Links sent before attribution existed have sent_by = null, so the filter
+    // came up empty — load the actual team as well.
+    const names = new Set<string>()
+    if (co?.data?.name) names.add(`${co.data.name} (Owner)`)
+    for (const m of (tm?.data || [])) {
+      const n = m.email ? String(m.email).split('@')[0] : null
+      if (n) names.add(n)
+    }
+    setTeam(Array.from(names).sort())
 
     // Resolve the people and threads behind the links.
     // Load conversations first (including their contact_id) so links that were
     // created without their own contact_id — most of them — can still show the
     // customer via the thread they belong to.
     const convIds = Array.from(new Set(linkRows.map(l => l.conversation_id).filter(Boolean))) as string[]
-    let convMap: Record<string, any> = {}
+    const convMap: Record<string, any> = {}
     if (convIds.length) {
       const { data: cv } = await (supabase as any).from('conversations')
         .select('id, subject, channel, assigned_name, assigned_location_id, contact_id').in('id', convIds.slice(0, 500))
@@ -157,28 +175,6 @@ export default function LinkReportsPage() {
       for (const c of (cts || [])) m[c.id] = c
       setContacts(m)
     }
-    // The agent filter previously listed only names already stamped on links.
-    // Links sent before attribution existed have sent_by = null, so the filter
-    // came up empty — load the actual team as well.
-    try {
-      const names = new Set<string>()
-      const { data: co } = await (supabase as any).from('companies')
-        .select('name, owner_id').eq('id', cid).maybeSingle()
-      if (co?.name) names.add(`${co.name} (Owner)`)
-      const { data: tm } = await (supabase as any).from('team_members')
-        .select('email').eq('company_id', cid)     // no name/display_name columns — derive from email
-      for (const m of (tm || [])) {
-        const n = m.email ? String(m.email).split('@')[0] : null
-        if (n) names.add(n)
-      }
-      setTeam(Array.from(names).sort())
-    } catch { /* the link-derived list still works */ }
-
-    const { data: outs } = await (supabase as any).from('company_locations')
-      .select('id, label, suburb').eq('company_id', cid)
-    const om: Record<string, string> = {}
-    for (const o of (outs || [])) om[o.id] = o.label || o.suburb || 'Outlet'
-    setOutlets(om)
   }
 
   // ── Derived indexes ───────────────────────────────────────────────────────

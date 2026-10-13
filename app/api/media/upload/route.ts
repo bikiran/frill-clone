@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { requireCompanyAccess } from '@/lib/company-access'
 import { uploadToR2, r2Configured } from '@/lib/r2'
 import { processJobById } from '@/lib/transcode'
+import { makeImageThumb } from '@/lib/image-thumb'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -24,9 +25,11 @@ function mediaFields(url: string, kind: string) {
     : { url, thumbnail_url: url, processing_status: 'ready' }
 }
 
-// Transcode right after responding; the cron worker is the backstop.
+// Transcode a video (or make a photo's small thumbnail) right after
+// responding; the cron worker is the backstop for both.
 function enqueue(db: any, item: any, kind: string) {
   if (kind === 'video' && item?.id) after(async () => { try { await processJobById(db, item.id) } catch {} })
+  if (kind === 'image' && item?.id) after(async () => { try { await makeImageThumb(db, item) } catch {} })
 }
 
 // POST multipart: upload a file into the media-gallery bucket and create a

@@ -246,29 +246,30 @@ export default function CommandCentrePage() {
     if (!cid) { setLoading(false); return }
     setCompanyId(cid)
 
-    const { data: locs } = await (supabase as any).from('company_locations')
-      .select('id, label, suburb, is_primary').eq('company_id', cid).order('is_primary', { ascending: false })
-    setLocations((locs || []).map((l: any) => ({ id: l.id, name: l.label || l.suburb || 'Outlet' })))
-
+    // Outlets, calls (then the callers' outlets), the team and SMS are
+    // independent — load them side by side.
     const since = new Date(Date.now() - 30 * 864e5).toISOString()
-    const { data: cs } = await (supabase as any).from('calls')
-      .select('id, direction, status, is_voicemail, duration_seconds, from_number, to_number, caller_name, contact_name, agent_name, contact_id, created_at, ended_at, sentiment, recording_url')
-      .eq('company_id', cid).gte('created_at', since).order('created_at', { ascending: false }).limit(2000)
-    const rows: Call[] = cs || []
-    setCalls(rows)
-
-    const cids = Array.from(new Set(rows.map((c: Call) => c.contact_id).filter(Boolean))) as string[]
-    if (cids.length) {
-      const map: Record<string, string> = {}
-      for (let i = 0; i < cids.length; i += 300) {
-        const { data } = await (supabase as any).from('contacts').select('id, location_id').in('id', cids.slice(i, i + 300))
-        for (const c of data || []) if (c.location_id) map[c.id] = c.location_id
+    const locsP = (supabase as any).from('company_locations')
+      .select('id, label, suburb, is_primary').eq('company_id', cid).order('is_primary', { ascending: false })
+      .then(({ data: locs }: any) => setLocations((locs || []).map((l: any) => ({ id: l.id, name: l.label || l.suburb || 'Outlet' }))))
+    const callsP = (async () => {
+      const { data: cs } = await (supabase as any).from('calls')
+        .select('id, direction, status, is_voicemail, duration_seconds, from_number, to_number, caller_name, contact_name, agent_name, contact_id, created_at, ended_at, sentiment, recording_url')
+        .eq('company_id', cid).gte('created_at', since).order('created_at', { ascending: false }).limit(2000)
+      const rows: Call[] = cs || []
+      setCalls(rows)
+      const cids = Array.from(new Set(rows.map((c: Call) => c.contact_id).filter(Boolean))) as string[]
+      if (cids.length) {
+        const chunks: string[][] = []
+        for (let i = 0; i < cids.length; i += 300) chunks.push(cids.slice(i, i + 300))
+        const found = await Promise.all(chunks.map(ch => (supabase as any).from('contacts').select('id, location_id').in('id', ch).then((r: any) => r.data || [])))
+        const map: Record<string, string> = {}
+        for (const c of found.flat()) if (c.location_id) map[c.id] = c.location_id
+        setContactLoc(map)
       }
-      setContactLoc(map)
-    }
-
-    await loadTeam(cid)
+    })()
     loadSms(cid)
+    await Promise.all([locsP, callsP, loadTeam(cid)].map(p => Promise.resolve(p).catch(() => {})))
     setLoading(false)
   }
 

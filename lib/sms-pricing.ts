@@ -136,17 +136,12 @@ export function parsePricingRow(row: any): SmsPricing {
  * the built-in default. Accepts any supabase-like client (browser or service).
  */
 export async function resolveSmsPricing(db: any, companyId?: string | null): Promise<SmsPricing> {
-  // Explicit per-company override, if present.
-  if (companyId) {
-    try {
-      const { data } = await db.from('sms_pricing').select('*').eq('company_id', companyId).maybeSingle()
-      if (data) return parsePricingRow(data)
-    } catch { /* table may not exist yet */ }
-  }
-  // Global platform default.
-  try {
-    const { data } = await db.from('platform_settings').select('value').eq('key', 'sms_pricing').maybeSingle()
-    if (data?.value) return parsePricingRow(data.value)
-  } catch { /* table may not exist yet */ }
+  // The per-company override wins over the platform default; read both at once.
+  const [own, platform] = await Promise.all([
+    companyId ? Promise.resolve(db.from('sms_pricing').select('*').eq('company_id', companyId).maybeSingle()).catch(() => null) : null,
+    Promise.resolve(db.from('platform_settings').select('value').eq('key', 'sms_pricing').maybeSingle()).catch(() => null),
+  ])
+  if (own?.data) return parsePricingRow(own.data)
+  if (platform?.data?.value) return parsePricingRow(platform.data.value)
   return DEFAULT_PRICING
 }

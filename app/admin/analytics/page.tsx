@@ -106,16 +106,17 @@ export default function AnalyticsPage() {
   const loadTaskStats = async (cid: string, start: string, end: string) => {
     const empty = { total: 0, open: 0, overdue: 0, completed: 0, byOutlet: [] as any[] }
     try {
-      const { data: locs } = await (supabase as any)
-        .from('company_locations').select('id, label, suburb').eq('company_id', cid)
-      const locName: Record<string, string> = {}
-      for (const l of locs || []) locName[l.id] = l.label || l.suburb || 'Outlet'
-
       // Prefer selecting location_ids (V227); fall back if the column isn't there.
       const run = (cols: string) => (supabase as any)
         .from('conversation_tasks').select(cols)
         .eq('company_id', cid).gte('created_at', start).lte('created_at', end)
-      let res = await run('id, done, due_date, created_at, location_id, location_ids')
+      const [{ data: locs }, first] = await Promise.all([
+        (supabase as any).from('company_locations').select('id, label, suburb').eq('company_id', cid),
+        run('id, done, due_date, created_at, location_id, location_ids'),
+      ])
+      const locName: Record<string, string> = {}
+      for (const l of locs || []) locName[l.id] = l.label || l.suburb || 'Outlet'
+      let res = first
       if (res.error) res = await run('id, done, due_date, created_at, location_id')
       const tasks: any[] = res.data || []
 
@@ -172,141 +173,104 @@ export default function AnalyticsPage() {
         setLoading(false)
       }
 
-      // Ideas with proper company_id filtering
-      const { data: ideas } = await (supabase as any)
-        .from('ideas')
-        .select('id,title,votes,status,created_at')
-        .eq('company_id', cid)
-        .gte('created_at', start)
-        .lte('created_at', end)
+      // Ideas, help, the widget and tasks don't depend on each other: load the
+      // four side by side (each one's own follow-up reads run in parallel too).
+      const ideasP = (async () => {
+        const [{ data: ideas }, allIdeas] = await Promise.all([
+          (supabase as any).from('ideas').select('id,title,votes,status,created_at')
+            .eq('company_id', cid).gte('created_at', start).lte('created_at', end),
+          // "All time" also counts votes stored on the ideas (includes guest votes).
+          timeRange === 'all' ? (supabase as any).from('ideas').select('votes').eq('company_id', cid) : Promise.resolve({ data: null }),
+        ])
+        const ideasList = ideas || []
+        // Total votes: count actual vote rows in the time window, scoped to this company's ideas.
+        // Summing ideas.votes would miss the date filter and double-count with the period picker.
+        const ideaIds = ideasList.map((i: any) => i.id)
+        let totalVotes = 0
+        let commentsCount = 0
+        if (ideaIds.length > 0) {
+          const [{ count: voteCount }, { count }] = await Promise.all([
+            (supabase as any).from('votes').select('*', { count: 'exact', head: true })
+              .in('idea_id', ideaIds).gte('created_at', start).lte('created_at', end),
+            (supabase as any).from('comments').select('*', { count: 'exact', head: true })
+              .in('idea_id', ideaIds).gte('created_at', start).lte('created_at', end),
+          ])
+          totalVotes = voteCount || 0
+          commentsCount = count || 0
+        }
+        if (allIdeas?.data) {
+          const accum = (allIdeas.data || []).reduce((s: number, i: any) => s + (i.votes || 0), 0)
+          // Use the higher number — accumulated covers guest votes not in votes table
+          totalVotes = Math.max(totalVotes, accum)
+        }
+        const top = [...ideasList].sort((a: any, b: any) => (b.votes || 0) - (a.votes || 0)).slice(0, 5)
+        const recent = [...ideasList].sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).slice(0, 5)
+        const statsObj = { totalIdeas: ideasList.length, totalVotes, totalComments: commentsCount, topIdeas: top, recentIdeas: recent }
+        setStats(statsObj)
+        return statsObj
+      })()
 
-      const ideasList = ideas || []
-      
-      // Total votes: count actual vote rows in the time window, scoped to this company's ideas.
-      // Summing ideas.votes would miss the date filter and double-count with the period picker.
-      const ideaIds = ideasList.map((i: any) => i.id)
-      let totalVotes = 0
-      let commentsCount = 0
-      if (ideaIds.length > 0) {
-        // Votes in this period on this company's ideas
-        const { count: voteCount } = await (supabase as any)
-          .from('votes')
-          .select('*', { count: 'exact', head: true })
-          .in('idea_id', ideaIds)
-          .gte('created_at', start)
-          .lte('created_at', end)
-        totalVotes = voteCount || 0
+      const helpP = (async () => {
+        const [{ data: articles }, { data: tickets }] = await Promise.all([
+          (supabase as any).from('help_articles').select('*').eq('company_id', cid).gte('created_at', start).lte('created_at', end),
+          (supabase as any).from('support_tickets').select('*').eq('company_id', cid).gte('created_at', start).lte('created_at', end),
+        ])
+        const artList = articles || []
+        const ticketList = tickets || []
+        const byStatus: Record<string, number> = {}
+        ticketList.forEach((t: any) => { byStatus[t.status] = (byStatus[t.status] || 0) + 1 })
 
-        // Comments in this period
-        const { count } = await (supabase as any)
-          .from('comments')
-          .select('*', { count: 'exact', head: true })
-          .in('idea_id', ideaIds)
-          .gte('created_at', start)
-          .lte('created_at', end)
-        commentsCount = count || 0
-      }
-      
-      // For "All Time" — also show total accumulated votes on the ideas (includes guest votes)
-      // These are already stored on ideas.votes
-      if (timeRange === 'all') {
-        const { data: allIdeasForVotes } = await (supabase as any)
-          .from('ideas')
-          .select('votes')
-          .eq('company_id', cid)
-        const accum = (allIdeasForVotes || []).reduce((s: number, i: any) => s + (i.votes || 0), 0)
-        // Use the higher number — accumulated covers guest votes not in votes table
-        totalVotes = Math.max(totalVotes, accum)
-      }
+        // help_article_views table may exist for accurate tracking
+        let helpViews = artList.reduce((s: number, a: any) => s + (a.views || 0), 0)
+        const helpLikes = artList.reduce((s: number, a: any) => s + (a.likes || 0), 0)
+        if (artList.length) {
+          try {
+            const { count: viewCount } = await (supabase as any)
+              .from('help_article_views')
+              .select('*', { count: 'exact', head: true })
+              .in('article_id', artList.map((a: any) => a.id))
+              .gte('viewed_at', start)
+              .lte('viewed_at', end)
+            if (viewCount !== null && viewCount !== undefined) helpViews = viewCount
+          } catch {}
+        }
+        const helpObj = {
+          totalArticles: artList.length,
+          totalViews: helpViews,
+          totalLikes: helpLikes,
+          totalTickets: ticketList.length,
+          openTickets: byStatus['open'] || 0,
+          topArticles: [...artList].sort((a: any, b: any) => (b.views || 0) - (a.views || 0)).slice(0, 5),
+          ticketsByStatus: byStatus,
+        }
+        setHelpStats(helpObj)
+        return helpObj
+      })()
 
-      const top = [...ideasList].sort((a: any, b: any) => (b.votes || 0) - (a.votes || 0)).slice(0, 5)
-      const recent = [...ideasList].sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).slice(0, 5)
-
-      const statsObj = {
-        totalIdeas: ideasList.length,
-        totalVotes,
-        totalComments: commentsCount,
-        topIdeas: top,
-        recentIdeas: recent,
-      }
-      setStats(statsObj)
-
-      // Help articles
-      const { data: articles } = await (supabase as any)
-        .from('help_articles')
-        .select('*')
-        .eq('company_id', cid)
-        .gte('created_at', start)
-        .lte('created_at', end)
-
-      const artList = articles || []
-
-      // Support tickets
-      const { data: tickets } = await (supabase as any)
-        .from('support_tickets')
-        .select('*')
-        .eq('company_id', cid)
-        .gte('created_at', start)
-        .lte('created_at', end)
-
-      const ticketList = tickets || []
-      const byStatus: Record<string, number> = {}
-      ticketList.forEach((t: any) => { byStatus[t.status] = (byStatus[t.status] || 0) + 1 })
-
-      // help_article_views table may exist for accurate tracking
-      let helpViews = artList.reduce((s: number, a: any) => s + (a.views || 0), 0)
-      let helpLikes = artList.reduce((s: number, a: any) => s + (a.likes || 0), 0)
-      try {
-        const { count: viewCount } = await (supabase as any)
-          .from('help_article_views')
-          .select('*', { count: 'exact', head: true })
-          .in('article_id', artList.map((a: any) => a.id))
-          .gte('viewed_at', start)
-          .lte('viewed_at', end)
-        if (viewCount !== null) helpViews = viewCount
-      } catch {}
-
-      const helpObj = {
-        totalArticles: artList.length,
-        totalViews: helpViews,
-        totalLikes: helpLikes,
-        totalTickets: ticketList.length,
-        openTickets: byStatus['open'] || 0,
-        topArticles: [...artList].sort((a: any, b: any) => (b.views || 0) - (a.views || 0)).slice(0, 5),
-        ticketsByStatus: byStatus,
-      }
-      setHelpStats(helpObj)
-
-      // Widget analytics — created_at is the tracked timestamp column
-      let widgetEvents: any[] = []
-      try {
-        const { data: we1 } = await (supabase as any)
-          .from('widget_analytics')
-          .select('tab, event, created_at')
-          .eq('company_id', cid)
-          .gte('created_at', start)
-          .lte('created_at', end)
-        widgetEvents = we1 || []
-      } catch { widgetEvents = [] }
-
-      const events = widgetEvents
-      const viewEvents = events.filter((e: any) => e.event === 'view')
-      const byTab: Record<string, number> = {}
-      events.forEach((e: any) => {
-        if (e.tab) byTab[e.tab] = (byTab[e.tab] || 0) + 1
-      })
-
-      const widgetObj = {
-        totalViews: viewEvents.length,
-        byTab,
-        avgViewsPerDay: daysBack > 0 ? Math.round(viewEvents.length / daysBack) : 0,
-      }
-      setWidgetStats(widgetObj)
+      const widgetP = (async () => {
+        // Widget analytics — created_at is the tracked timestamp column
+        let events: any[] = []
+        try {
+          const { data: we1 } = await (supabase as any)
+            .from('widget_analytics')
+            .select('tab, event, created_at')
+            .eq('company_id', cid)
+            .gte('created_at', start)
+            .lte('created_at', end)
+          events = we1 || []
+        } catch { events = [] }
+        const viewEvents = events.filter((e: any) => e.event === 'view')
+        const byTab: Record<string, number> = {}
+        events.forEach((e: any) => { if (e.tab) byTab[e.tab] = (byTab[e.tab] || 0) + 1 })
+        const widgetObj = { totalViews: viewEvents.length, byTab, avgViewsPerDay: daysBack > 0 ? Math.round(viewEvents.length / daysBack) : 0 }
+        setWidgetStats(widgetObj)
+        return widgetObj
+      })()
 
       // Tasks by outlet — a task with several outlets counts toward each.
-      const taskObj = await loadTaskStats(cid, start, end)
-      setTaskStats(taskObj)
+      const taskP = loadTaskStats(cid, start, end).then(t => { setTaskStats(t); return t })
 
+      const [statsObj, helpObj, widgetObj, taskObj] = await Promise.all([ideasP, helpP, widgetP, taskP])
       writeCache(cacheKey, { stats: statsObj, helpStats: helpObj, widgetStats: widgetObj, taskStats: taskObj })
     } catch (err) {
       console.error('Analytics error:', err)

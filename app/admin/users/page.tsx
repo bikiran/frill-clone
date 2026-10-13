@@ -3,6 +3,7 @@
 import { authFetch } from '@/lib/auth-fetch'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
+import { peekCompanyUser, resolveCompanyUser } from '@/lib/client-cache'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { SkeletonList } from '@/components/Skeleton'
 import { SegmentationService } from '@/lib/segmentation-service'
@@ -247,6 +248,8 @@ export default function UsersPage() {
           const { data: co } = await sb.from('companies').select('id').eq('slug', slug).maybeSingle()
           if (co) companyId = co.id
         }
+        // Otherwise the admin already knows the company.
+        if (!companyId) companyId = peekCompanyUser()?.companyId || (await resolveCompanyUser().catch(() => null))?.companyId || null
 
         if (!companyId && typeof window !== 'undefined') {
           const h = window.location.hostname
@@ -276,29 +279,23 @@ export default function UsersPage() {
         setResolvedCompanyId(companyId)
         const company = { id: companyId }
 
-        // Check if any WooCommerce integration exists (a company can have several)
-        const { data: wooRows } = await sb
-          .from('woocommerce_integrations')
-          .select('id, is_active')
-          .eq('company_id', company.id)
-          .limit(1)
+        // Integrations, team, and the first page of customers don't depend on
+        // each other — read them all at once.
+        const q = (p: any) => Promise.resolve(p).catch(() => ({ data: null, count: null }))
+        const [{ data: wooRows }, { data: shopRows }, { data: teamMembers }, wooPage, spend, shopPage] = await Promise.all([
+          // a company can have several WooCommerce integrations
+          q(sb.from('woocommerce_integrations').select('id, is_active').eq('company_id', company.id).limit(1)),
+          q(sb.from('shopify_integrations').select('id').eq('company_id', company.id).eq('is_active', true).limit(1)),
+          q(sb.from('team_members').select('*').eq('company_id', company.id)),
+          // Paginated fetch — Supabase caps at 1000 rows default; we fetch 100/page
+          q(sb.from('woocommerce_customers').select('*', { count: 'exact' }).eq('company_id', company.id).order('total_spend', { ascending: false }).range(0, 99)),
+          // Aggregate total spend from DB (sum over all rows, not just the page)
+          q(sb.from('woocommerce_customers').select('total_spend').eq('company_id', company.id).gt('total_spend', 0).limit(10000)),
+          q(sb.from('shopify_customers').select('*').eq('company_id', company.id).order('total_spend', { ascending: false }).range(0, 99)),
+        ])
         const wooIntegration = wooRows?.[0]
-
         setHasWooCommerce(!!wooIntegration)
-
-        // Check for a connected Shopify store too
-        const { data: shopRows } = await sb
-          .from('shopify_integrations')
-          .select('id')
-          .eq('company_id', company.id)
-          .eq('is_active', true)
-          .limit(1)
         setHasShopify(!!(shopRows && shopRows.length > 0))
-
-        const { data: teamMembers } = await sb
-          .from('team_members')
-          .select('*')
-          .eq('company_id', company.id)
 
         const allUsers: User[] = [
           ...(teamMembers || []).map(m => ({
@@ -320,25 +317,9 @@ export default function UsersPage() {
             body: JSON.stringify({ companyId: company.id, force: false })
           }).catch(err => console.error('Auto-sync error:', err))
 
-          // Paginated fetch — Supabase caps at 1000 rows default; we fetch 100/page
-          const { data: customers, count: custCount } = await sb
-            .from('woocommerce_customers')
-            .select('*', { count: 'exact' })
-            .eq('company_id', company.id)
-            .order('total_spend', { ascending: false })
-            .range(0, 99)
-
-          setTotalCustomers(custCount || 0)
-
-          // Aggregate total spend from DB (sum over all rows, not just the page)
-          const { data: spendData } = await (sb as any)
-            .from('woocommerce_customers')
-            .select('total_spend')
-            .eq('company_id', company.id)
-            .gt('total_spend', 0)
-            .limit(10000)  // covers up to 10K customers for the sum
-
-          const dbSpend = (spendData || []).reduce((s: number, r: any) => s + (parseFloat(r.total_spend) || 0), 0)
+          const customers: any[] = wooPage?.data || []
+          setTotalCustomers(wooPage?.count || 0)
+          const dbSpend = (spend?.data || []).reduce((s: number, r: any) => s + (parseFloat(r.total_spend) || 0), 0)
           setTotalSpendDb(Math.round(dbSpend))
 
           allUsers.push(
@@ -358,27 +339,20 @@ export default function UsersPage() {
 
         // Also pull Shopify customers (independent of WooCommerce) so they show
         // even for merchants who only use Shopify.
-        try {
-          const { data: shopCustomers } = await (sb as any)
-            .from('shopify_customers')
-            .select('*')
-            .eq('company_id', company.id)
-            .order('total_spend', { ascending: false })
-            .range(0, 99)
-          if (shopCustomers && shopCustomers.length > 0) {
-            allUsers.push(...shopCustomers.map((c: any) => ({
-              id: c.id,
-              type: 'customer' as const,
-              email: c.email,
-              first_name: c.first_name,
-              last_name: c.last_name,
-              phone: c.phone,
-              total_spend: c.total_spend,
-              total_orders: c.total_orders,
-              source: 'shopify',
-            })))
-          }
-        } catch {}
+        const shopCustomers: any[] = shopPage?.data || []
+        if (shopCustomers.length > 0) {
+          allUsers.push(...shopCustomers.map((c: any) => ({
+            id: c.id,
+            type: 'customer' as const,
+            email: c.email,
+            first_name: c.first_name,
+            last_name: c.last_name,
+            phone: c.phone,
+            total_spend: c.total_spend,
+            total_orders: c.total_orders,
+            source: 'shopify',
+          }) as any))
+        }
 
         setUsers(allUsers)
       } catch (err) {

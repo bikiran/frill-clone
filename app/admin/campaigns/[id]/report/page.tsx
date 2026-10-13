@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { peekCompanyUser, resolveCompanyUser } from '@/lib/client-cache'
 import { SkeletonList } from '@/components/Skeleton'
 import { aud } from '@/lib/sms-pricing'
 
@@ -44,8 +45,9 @@ export default function CampaignReportPage() {
   useEffect(() => {
     ;(async () => {
       try {
-        let cid: string | null = null
-        if (typeof window !== 'undefined') {
+        // The admin already knows the company; fall back to looking it up.
+        let cid: string | null = peekCompanyUser()?.companyId || (await resolveCompanyUser().catch(() => null))?.companyId || null
+        if (!cid && typeof window !== 'undefined') {
           const host = window.location.hostname
           if (host.endsWith('.colvy.com') && host !== 'colvy.com') {
             const slug = host.replace('.colvy.com', '')
@@ -67,43 +69,40 @@ export default function CampaignReportPage() {
         if (!cid) { setLoading(false); return }
         setCompanyId(cid)
 
-        const { data: c } = await (supabase as any).from('campaigns')
-          .select('*').eq('id', campaignId).maybeSingle()
+        // The campaign, who it went to, its links and the outlets — side by side.
+        const [{ data: c }, { data: rs }, { data: ls }, { data: outs }] = await Promise.all([
+          (supabase as any).from('campaigns').select('*').eq('id', campaignId).maybeSingle(),
+          (supabase as any).from('campaign_recipients').select('*').eq('campaign_id', campaignId).limit(20000),
+          (supabase as any).from('short_links').select('*').eq('campaign_id', campaignId),
+          (supabase as any).from('company_locations').select('id, label, suburb').eq('company_id', cid),
+        ])
         setCampaign(c)
-
-        const { data: rs } = await (supabase as any).from('campaign_recipients')
-          .select('*').eq('campaign_id', campaignId).limit(20000)
         setRecipients(rs || [])
-
-        const { data: ls } = await (supabase as any).from('short_links')
-          .select('*').eq('campaign_id', campaignId)
         setLinks(ls || [])
-        const linkIds = (ls || []).map((l: any) => l.id)
-        if (linkIds.length) {
-          const { data: cl } = await (supabase as any).from('link_clicks')
-            .select('*').in('link_id', linkIds.slice(0, 200))
-          setClicks(cl || [])
-          const { data: cv } = await (supabase as any).from('link_conversions')
-            .select('*').in('link_id', linkIds.slice(0, 200))
-          setConversions(cv || [])
-        }
-
-        const ids = Array.from(new Set((rs || []).map((r: any) => r.contact_id).filter(Boolean)))
-        if (ids.length) {
-          const m: Record<string, any> = {}
-          for (let i = 0; i < ids.length; i += 200) {
-            const { data: cts } = await (supabase as any).from('contacts')
-              .select('id, name, phone, email, location_id').in('id', ids.slice(i, i + 200))
-            for (const x of (cts || [])) m[x.id] = x
-          }
-          setContacts(m)
-        }
-
-        const { data: outs } = await (supabase as any).from('company_locations')
-          .select('id, label, suburb').eq('company_id', cid)
         const om: Record<string, string> = {}
         for (const o of (outs || [])) om[o.id] = o.label || o.suburb || 'Outlet'
         setOutlets(om)
+
+        // Then clicks, conversions and the recipients' names, also side by side
+        // (names in batches of 200, a few batches at a time).
+        const linkIds = (ls || []).map((l: any) => l.id).slice(0, 200)
+        const ids = Array.from(new Set((rs || []).map((r: any) => r.contact_id).filter(Boolean))) as string[]
+        const batches: string[][] = []
+        for (let i = 0; i < ids.length; i += 200) batches.push(ids.slice(i, i + 200))
+        const m: Record<string, any> = {}
+        const loadNames = async () => {
+          for (let i = 0; i < batches.length; i += 6) {
+            const rows = await Promise.all(batches.slice(i, i + 6).map(b => (supabase as any).from('contacts')
+              .select('id, name, phone, email, location_id').in('id', b).then((r: any) => r.data || [])))
+            for (const x of rows.flat()) m[x.id] = x
+          }
+          if (batches.length) setContacts({ ...m })
+        }
+        await Promise.all([
+          linkIds.length ? (supabase as any).from('link_clicks').select('*').in('link_id', linkIds).then(({ data: cl }: any) => setClicks(cl || [])) : null,
+          linkIds.length ? (supabase as any).from('link_conversions').select('*').in('link_id', linkIds).then(({ data: cv }: any) => setConversions(cv || [])) : null,
+          loadNames(),
+        ])
       } finally { setLoading(false) }
     })()
   }, [campaignId])

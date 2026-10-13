@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
+import { peekCompanyUser, resolveCompanyUser } from '@/lib/client-cache'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import ConfirmModal from '@/components/ConfirmModal'
@@ -50,12 +51,13 @@ export default function SegmentsPage() {
   }
 
   const fetchUsers = async () => {
-    // Resolve the company (subdomain slug → owner → team membership).
+    // The admin already knows the company; otherwise resolve it
+    // (subdomain slug → owner → team membership).
+    let cid: string | null = peekCompanyUser()?.companyId || (await resolveCompanyUser().catch(() => null))?.companyId || null
     const { data: { session } } = await supabase.auth.getSession()
     if (!session?.user) { setAllUsers([]); return }
-    let cid: string | null = null
     const h = typeof window !== 'undefined' ? window.location.hostname : ''
-    if (h.endsWith('.colvy.com') && h !== 'colvy.com' && h !== 'www.colvy.com') {
+    if (!cid && h.endsWith('.colvy.com') && h !== 'colvy.com' && h !== 'www.colvy.com') {
       const { data: co } = await (supabase as any).from('companies').select('id').eq('slug', h.replace('.colvy.com', '')).maybeSingle()
       cid = co?.id || null
     }
@@ -83,30 +85,24 @@ export default function SegmentsPage() {
       }
     }
 
-    // 1) Feedback board users (ideas) — scoped to THIS company only.
     if (cid) {
-      try {
-        const { data: ideas } = await supabase.from('ideas').select('user_id, created_by_name, created_at').eq('company_id', cid)
-        ;(ideas || []).forEach((i: any) => { if (i.user_id) add(i.user_id, { id: i.user_id, name: i.created_by_name || 'Anonymous', last_seen: i.created_at }, 'feedback') })
-      } catch {}
-    }
-
-    if (cid) {
+      // The four sources are read side by side, then merged in this order:
+      // feedback board, chat contacts, WooCommerce, Shopify.
+      const q = (p: any) => Promise.resolve(p).then((r: any) => r?.data || []).catch(() => [])
+      const [ideas, contacts, woo, shop] = await Promise.all([
+        q(supabase.from('ideas').select('user_id, created_by_name, created_at').eq('company_id', cid)),
+        q((supabase as any).from('contacts').select('id, name, email, phone, created_at').eq('company_id', cid)),
+        q((supabase as any).from('woocommerce_customers').select('id, email, first_name, last_name, phone, total_spend, total_orders').eq('company_id', cid)),
+        q((supabase as any).from('shopify_customers').select('id, email, first_name, last_name, phone, total_spend, total_orders').eq('company_id', cid)),
+      ])
+      // 1) Feedback board users (ideas) — scoped to THIS company only.
+      ideas.forEach((i: any) => { if (i.user_id) add(i.user_id, { id: i.user_id, name: i.created_by_name || 'Anonymous', last_seen: i.created_at }, 'feedback') })
       // 2) Chat contacts
-      try {
-        const { data: contacts } = await (supabase as any).from('contacts').select('id, name, email, phone, created_at').eq('company_id', cid)
-        ;(contacts || []).forEach((c: any) => add(c.email || c.id, { id: c.id, name: c.name || 'Contact', email: c.email, phone: c.phone, last_seen: c.created_at }, 'chat'))
-      } catch {}
+      contacts.forEach((c: any) => add(c.email || c.id, { id: c.id, name: c.name || 'Contact', email: c.email, phone: c.phone, last_seen: c.created_at }, 'chat'))
       // 3) WooCommerce customers
-      try {
-        const { data: woo } = await (supabase as any).from('woocommerce_customers').select('id, email, first_name, last_name, phone, total_spend, total_orders').eq('company_id', cid)
-        ;(woo || []).forEach((c: any) => add(c.email || c.id, { id: c.id, name: `${c.first_name || ''} ${c.last_name || ''}`.trim() || c.email, email: c.email, phone: c.phone, total_spend: c.total_spend, total_orders: c.total_orders }, 'woocommerce'))
-      } catch {}
+      woo.forEach((c: any) => add(c.email || c.id, { id: c.id, name: `${c.first_name || ''} ${c.last_name || ''}`.trim() || c.email, email: c.email, phone: c.phone, total_spend: c.total_spend, total_orders: c.total_orders }, 'woocommerce'))
       // 4) Shopify customers
-      try {
-        const { data: shop } = await (supabase as any).from('shopify_customers').select('id, email, first_name, last_name, phone, total_spend, total_orders').eq('company_id', cid)
-        ;(shop || []).forEach((c: any) => add(c.email || c.id, { id: c.id, name: `${c.first_name || ''} ${c.last_name || ''}`.trim() || c.email, email: c.email, phone: c.phone, total_spend: c.total_spend, total_orders: c.total_orders }, 'shopify'))
-      } catch {}
+      shop.forEach((c: any) => add(c.email || c.id, { id: c.id, name: `${c.first_name || ''} ${c.last_name || ''}`.trim() || c.email, email: c.email, phone: c.phone, total_spend: c.total_spend, total_orders: c.total_orders }, 'shopify'))
     }
 
     setAllUsers(Array.from(userMap.values()))

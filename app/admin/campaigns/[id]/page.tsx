@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { peekCompanyUser, resolveCompanyUser } from '@/lib/client-cache'
 import { SkeletonList } from '@/components/Skeleton'
 import EmojiPicker from '@/components/EmojiPicker'
 import { analyseSms, renderVariables, SMS_VARIABLES } from '@/lib/sms-segments'
@@ -109,8 +110,9 @@ export default function CampaignEditorPage() {
   useEffect(() => {
     ;(async () => {
       try {
-        let cid: string | null = null
-        if (typeof window !== 'undefined') {
+        // The admin already knows the company; fall back to looking it up.
+        let cid: string | null = peekCompanyUser()?.companyId || (await resolveCompanyUser().catch(() => null))?.companyId || null
+        if (!cid && typeof window !== 'undefined') {
           const host = window.location.hostname
           if (host.endsWith('.colvy.com') && host !== 'colvy.com') {
             const slug = host.replace('.colvy.com', '')
@@ -131,6 +133,24 @@ export default function CampaignEditorPage() {
         }
         if (!cid) { setLoading(false); return }
         setCompanyId(cid)
+
+        // The campaign and the pickers' lists don't depend on each other.
+        const sideLists = Promise.all([
+          (supabase as any).from('company_locations').select('id, label, suburb').eq('company_id', cid)
+            .then(({ data: outs }: any) => setOutlets(outs || [])),
+          // Real per-part pricing, so cost estimates aren't guesses. Resolves the
+          // platform-wide default (set by the super admin) with a per-company
+          // override taking precedence.
+          resolveSmsPricing(supabase, cid).then(setPricing).catch(() => { /* defaults until the pricing tables exist */ }),
+          (supabase as any).from('contacts').select('tags').eq('company_id', cid).not('tags', 'is', null).limit(2000)
+            .then(({ data: cts }: any) => {
+              const t = new Set<string>()
+              for (const row of (cts || [])) for (const x of (row.tags || [])) t.add(String(x))
+              setAllTags(Array.from(t).sort())
+            }),
+          (supabase as any).from('campaigns').select('id, name').eq('company_id', cid).eq('status', 'sent').limit(50)
+            .then(({ data: prior }: any) => setPastCampaigns(prior || [])),
+        ]).catch(() => {})
 
         const { data: c } = await (supabase as any).from('campaigns')
           .select('*').eq('id', campaignId).maybeSingle()
@@ -169,26 +189,7 @@ export default function CampaignEditorPage() {
           }
         }
 
-        const { data: outs } = await (supabase as any).from('company_locations')
-          .select('id, label, suburb').eq('company_id', cid)
-        setOutlets(outs || [])
-
-        // Real per-part pricing, so cost estimates aren't guesses. Resolves the
-        // platform-wide default (set by the super admin) with a per-company
-        // override taking precedence.
-        try {
-          setPricing(await resolveSmsPricing(supabase, cid))
-        } catch { /* fall back to defaults until the pricing tables exist */ }
-
-        const { data: cts } = await (supabase as any).from('contacts')
-          .select('tags').eq('company_id', cid).not('tags', 'is', null).limit(2000)
-        const t = new Set<string>()
-        for (const row of (cts || [])) for (const x of (row.tags || [])) t.add(String(x))
-        setAllTags(Array.from(t).sort())
-
-        const { data: prior } = await (supabase as any).from('campaigns')
-          .select('id, name').eq('company_id', cid).eq('status', 'sent').limit(50)
-        setPastCampaigns(prior || [])
+        await sideLists
       } finally { setLoading(false) }
     })()
   }, [campaignId])
