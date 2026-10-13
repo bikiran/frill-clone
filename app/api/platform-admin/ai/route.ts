@@ -6,7 +6,7 @@ import { logSuperAdminAudit } from '@/lib/super-admin-audit'
 export const dynamic = 'force-dynamic'
 
 const SUPER_ADMIN = 'bishalstha76@gmail.com'
-const admin = () => createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, { auth: { autoRefreshToken: false, persistSession: false } })
+const admin = () => createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { auth: { autoRefreshToken: false, persistSession: false } })
 
 async function superAdmin(req: NextRequest, db: any): Promise<{ id: string; email: string } | null> {
   try {

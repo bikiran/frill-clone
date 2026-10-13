@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { PLAN_PRICES } from '@/lib/plan'
 
 const SUPER_ADMIN = 'bishalstha76@gmail.com'
 
@@ -7,9 +8,11 @@ const SUPER_ADMIN = 'bishalstha76@gmail.com'
 // present in the app: entitlements (pro/enterprise) and the self-serve checkout
 // tiers (startup/business/growth). Enterprise is custom-priced → 0 in the
 // estimate; real revenue comes from live subscription amounts below.
+// Current plans come from lib/plan (feedback / omnichannel / everything …);
+// the legacy self-serve tiers are kept so old rows still estimate sensibly.
 const PLAN_PRICE: Record<string, number> = {
-  free: 0, trial: 0, suspended: 0,
-  startup: 25, business: 49, growth: 149, pro: 99, enterprise: 0,
+  startup: 25, business: 49, growth: 149,
+  ...Object.fromEntries(Object.entries(PLAN_PRICES).map(([k, v]) => [k, v || 0])),
 }
 // A company is "paying" if it's on any plan that isn't free/trial/suspended.
 const NON_PAID = new Set(['free', 'trial', 'suspended', ''])
@@ -156,7 +159,15 @@ export async function GET(req: NextRequest) {
         .sort((a, b) => b.total - a.total).slice(0, 5)
     } catch { /* conversation_sales may not exist yet */ }
 
+    // ── Bookings + pay links (REAL), last 30 days. Best-effort per table.
+    const headCount = async (q: any) => { try { const { count, error } = await q; return error ? null : (count || 0) } catch { return null } }
+    const [bookings30d, payLinksPaid30d] = await Promise.all([
+      headCount(db.from('bookings').select('id', { count: 'exact', head: true }).gte('created_at', thirtyAgo)),
+      headCount(db.from('chat_payments').select('id', { count: 'exact', head: true }).eq('status', 'paid').gte('created_at', thirtyAgo)),
+    ])
+
     return NextResponse.json({
+      bookings30d, payLinksPaid30d,
       companies: totalCompanies,
       active: activeSet.size,
       dac: dacSet.size,

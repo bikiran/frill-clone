@@ -9,7 +9,7 @@ const SUPER_ADMIN = 'bishalstha76@gmail.com'
 function admin() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     { auth: { autoRefreshToken: false, persistSession: false } }
   )
 }
@@ -33,12 +33,25 @@ const plainObject = (v: any) => (v && typeof v === 'object' && !Array.isArray(v)
  * admin reads and saves through here with the service role.
  *
  * GET  ?companyId=                → { row }
+ * GET  (no companyId)             → { rows } every override, with company names
  * POST { companyId, features, limits, reason } → { ok }
  */
 export async function GET(req: NextRequest) {
   const db = admin()
   if (!(await superAdmin(req, db))) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
   const companyId = req.nextUrl.searchParams.get('companyId')
+  // No companyId → every override on the platform (Feature Flags overview).
+  if (!companyId) {
+    const { data, error } = await db.from('company_entitlements').select('company_id, features, limits, reason, updated_by, updated_at').order('updated_at', { ascending: false }).limit(2000)
+    if (error) return NextResponse.json({ error: error.message, missing: /does not exist|schema cache/i.test(error.message), rows: [] }, { status: /does not exist|schema cache/i.test(error.message) ? 200 : 500 })
+    const ids = Array.from(new Set((data || []).map((r: any) => r.company_id).filter(Boolean)))
+    const names: Record<string, any> = {}
+    for (let i = 0; i < ids.length; i += 200) {
+      const { data: cos } = await db.from('companies').select('id, name, slug, plan').in('id', ids.slice(i, i + 200))
+      for (const c of cos || []) names[c.id] = c
+    }
+    return NextResponse.json({ rows: (data || []).map((r: any) => ({ ...r, company: names[r.company_id] || null })) })
+  }
   if (!isUuid(companyId)) return NextResponse.json({ error: 'companyId required' }, { status: 400 })
   const { data, error } = await db.from('company_entitlements').select('*').eq('company_id', companyId).maybeSingle()
   if (error) return NextResponse.json({ error: error.message, missing: /does not exist|schema cache/i.test(error.message) }, { status: 500 })
