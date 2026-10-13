@@ -78,6 +78,8 @@ const I = {
   billing:    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>,
   flags:      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>,
   system:     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>,
+  agent:      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="8" width="16" height="12" rx="3"/><path d="M12 8V4"/><circle cx="12" cy="3" r="1"/><circle cx="9" cy="14" r="1.2"/><circle cx="15" cy="14" r="1.2"/></svg>,
+  plug:       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M9 2v6"/><path d="M15 2v6"/><path d="M6 8h12v4a6 6 0 0 1-12 0z"/><path d="M12 18v4"/></svg>,
   audit:      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>,
   settings:   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>,
   search:     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>,
@@ -122,7 +124,8 @@ const NAV = [
   { key: 'jobs',       label: 'Background Jobs',  icon: 'system' },
   { key: 'apilogs',    label: 'API Logs',         icon: 'audit' },
   { key: 'devices',    label: 'Mobile Devices',   icon: 'users' },
-  { key: 'integrations', label: 'Integrations',   icon: 'system' },
+  { key: 'integrations', label: 'Integrations',   icon: 'plug' },
+  { key: 'agents',     label: 'AI Agents',        icon: 'agent' },
   { section: 'Platform' },
   { key: 'ai',         label: 'AI Models & Usage', icon: 'system' },
   { key: 'sms',        label: 'SMS Pricing',      icon: 'billing' },
@@ -255,6 +258,76 @@ function SearchBar({ placeholder, value, onChange }: { placeholder: string; valu
 // PAGE COMPONENTS
 // ══════════════════════════════════════════════════════════════════════════════
 
+// The business drawer's quick health picture (from /api/platform-admin/company-health).
+function CompanyHealthPanel({ hc, onPause, onResume, msg }: { hc: any; onPause: () => void; onResume: () => void; msg: string }) {
+  const box: React.CSSProperties = { padding: 12, borderRadius: 12, border: '1px solid var(--sa-border)', background: 'var(--sa-card)', marginBottom: 12 }
+  const h: React.CSSProperties = { fontSize: 11, fontWeight: 800, color: 'var(--sa-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0 0 8px' }
+  if (hc === null) return <div style={box}><p style={{ fontSize: 12.5, color: 'var(--sa-muted)', margin: 0 }}>Checking channels, agents and errors…</p></div>
+  if (hc.error) return <div style={box}><p style={{ fontSize: 12.5, color: '#ef4444', margin: 0 }}>Health check unavailable: {hc.error}</p></div>
+  const channels = Object.entries(hc.channels || {}) as [string, any][]
+  const a = hc.agents || {}
+  const act = hc.activity || {}
+  const errs = [...(hc.errors?.api || []).map((e: any) => ({ k: `api-${e.id}`, src: e.source || 'api', text: e.message, at: e.created_at })),
+    ...(hc.errors?.webhooks || []).map((e: any) => ({ k: `wh-${e.id}`, src: `${e.source} webhook`, text: e.error || e.event_type || e.status, at: e.created_at })),
+    ...(a.recentFailures || []).map((r: any) => ({ k: `run-${r.id}`, src: `${AGENT_ROLE_LABEL[r.role_key] || r.role_key} Agent`, text: r.error || r.summary || 'Run failed', at: r.created_at }))]
+    .sort((x, y) => String(y.at).localeCompare(String(x.at))).slice(0, 6)
+  const agentsOn = (a.enabledRoles || []).length > 0
+  return (
+    <div>
+      <div style={box}>
+        <p style={h}>Channels connected</p>
+        {channels.length === 0 ? <p style={{ fontSize: 12.5, color: 'var(--sa-muted)', margin: 0 }}>Nothing connected yet.</p> : (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {channels.map(([type, c]) => <Pill key={type} text={`${type} ${c.active}${c.total !== c.active ? `/${c.total}` : ''}${c.issues ? ` · ${c.issues} issue${c.issues === 1 ? '' : 's'}` : ''}`} color={c.issues ? '#f59e0b' : c.active ? '#10b981' : '#6b7280'} />)}
+          </div>
+        )}
+        {(hc.connections || []).length > 0 && (
+          <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {hc.connections.slice(0, 5).map((c: any, i: number) => <p key={i} style={{ fontSize: 12, color: '#f59e0b', margin: 0 }} title={c.error || ''}>{c.type}: {c.note} — <span style={{ color: 'var(--sa-muted)' }}>{c.detail}</span></p>)}
+          </div>
+        )}
+      </div>
+      <div style={box}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+          <p style={{ ...h, margin: 0, flex: 1 }}>AI agents</p>
+          {a.paused ? <button onClick={onResume} style={{ ...paBtn('#10b981'), padding: '4px 10px' }}>Resume agents…</button>
+            : agentsOn ? <button onClick={onPause} style={{ ...paBtn('#ef4444'), padding: '4px 10px' }}>Pause agents…</button> : null}
+        </div>
+        {a.tablesMissing ? <p style={{ fontSize: 12.5, color: 'var(--sa-muted)', margin: 0 }}>Agent Engine not set up on this database.</p> : (
+          <>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 6 }}>
+              {a.platformPaused ? <Pill text="Paused platform-wide" color="#ef4444" /> : a.paused ? <Pill text={`Paused by ${a.paused.by || 'someone'}`} color="#ef4444" /> : agentsOn ? <Pill text="On" color="#10b981" /> : <Pill text="Off" color="#6b7280" />}
+              {agentsOn && <span style={{ fontSize: 12, color: 'var(--sa-text)' }}>{a.enabledRoles.map((k: string) => AGENT_ROLE_LABEL[k] || k).join(', ')}</span>}
+            </div>
+            <p style={{ fontSize: 12, color: 'var(--sa-muted)', margin: 0 }}>{a.runs7d || 0} runs in 7 days · <span style={{ color: a.failed7d ? '#ef4444' : 'inherit' }}>{a.failed7d || 0} failed</span> · <span style={{ color: a.pendingApprovals ? '#f59e0b' : 'inherit' }}>{a.pendingApprovals || 0} waiting for approval</span></p>
+          </>
+        )}
+        {msg && <p style={{ fontSize: 12, color: 'var(--sa-text)', margin: '6px 0 0' }}>{msg}</p>}
+      </div>
+      <div style={box}>
+        <p style={h}>Recent errors · 7 days</p>
+        {errs.length === 0 ? <p style={{ fontSize: 12.5, color: '#10b981', margin: 0, fontWeight: 600 }}>No errors recorded.</p> : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+            {errs.map(e => (
+              <div key={e.k} style={{ display: 'flex', gap: 8, fontSize: 12 }}>
+                <span style={{ color: '#ef4444', fontWeight: 700, flexShrink: 0 }}>{e.src}</span>
+                <span style={{ color: 'var(--sa-muted)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={e.text}>{e.text}</span>
+                <span style={{ color: 'var(--sa-muted)', flexShrink: 0 }}>{agoText(e.at)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      <div style={{ ...box, display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+        {[['Open conversations', act.openConversations], ['Calls · 7d', `${act.calls7d || 0}${act.missedCalls7d ? ` (${act.missedCalls7d} missed)` : ''}`], ['Bookings · 30d', act.bookings30d],
+          ['Bookings · next 7d', act.bookingsNext7d], ['Pay links paid · 30d', `${act.payLinksPaid30d || 0}${act.payLinksPaidAmount30d ? ` · $${Number(act.payLinksPaidAmount30d).toLocaleString()}` : ''}`], ['Pay links pending', act.payLinksPending30d]].map(([k, v]) => (
+          <div key={k as string}><p style={{ fontSize: 10.5, color: 'var(--sa-muted)', margin: 0 }}>{k}</p><p style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--sa-text)', margin: '2px 0 0' }}>{v ?? 0}</p></div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 // Business detail — a deep-dive drawer for one company with tabs. Uses only
 // real data (company row, team_members, company_admin_notes).
 function BusinessDetail({ co, onClose, onAction }: { co: any; onClose: () => void; onAction: (type: string, co: any) => void }) {
@@ -319,7 +392,25 @@ function BusinessDetail({ co, onClose, onAction }: { co: any; onClose: () => voi
     setNoteBody(''); loadNotes()
   }
   const togglePin = async (n: any) => { await (supabase as any).from('company_admin_notes').update({ pinned: !n.pinned }).eq('id', n.id); loadNotes() }
-  const delNote = async (n: any) => { await (supabase as any).from('company_admin_notes').delete().eq('id', n.id); loadNotes() }
+  const delNote = async (n: any) => {
+    if (!(await confirmDialog({ title: 'Delete this admin note?', message: 'It is removed for every admin. This can’t be undone.', confirmLabel: 'Delete note', tone: 'danger' }))) return
+    await (supabase as any).from('company_admin_notes').delete().eq('id', n.id); loadNotes()
+  }
+
+  // ── Quick health: channels, AI agents, recent errors, activity ─────────────
+  const [hc, setHc] = useState<any>(null)
+  const [pauseOpen, setPauseOpen] = useState(false)
+  const [hcMsg, setHcMsg] = useState('')
+  const loadHealth = async () => {
+    const r = await paJson(`/api/platform-admin/company-health?companyId=${co.id}`)
+    setHc(r.ok ? r.data : { error: r.data.error || 'Could not load health' })
+  }
+  useEffect(() => { loadHealth() }, [co.id]) // eslint-disable-line react-hooks/exhaustive-deps
+  const resumeAgents = async () => {
+    setHcMsg('')
+    const r = await setCompanyAgentsPaused(co, false, '')
+    if (r.ok) { setHcMsg('Agents resumed.'); loadHealth() } else if (r.error) setHcMsg(r.error)
+  }
 
   // ── Subscription management (change plan, trial, complimentary) ─────────────
   const [sub, setSub] = useState({
@@ -328,6 +419,8 @@ function BusinessDetail({ co, onClose, onAction }: { co: any; onClose: () => voi
     is_complimentary: !!co.is_complimentary,
     complimentary_reason: co.complimentary_reason || '',
   })
+  // Keep the Subscription tab in step when the plan changes from the action bar.
+  useEffect(() => { setSub(s => (s.plan === (co.plan || 'free') ? s : { ...s, plan: co.plan || 'free' })) }, [co.plan])
   const [savingSub, setSavingSub] = useState('')
   const [subMsg, setSubMsg] = useState('')
   const subErr = (e: any) => setSubMsg(/does not exist|schema cache|column/i.test(e?.message || '') ? 'Run COLVY_V221_COMPANY_SUBSCRIPTION_FIELDS.sql, then reload.' : (e?.message || 'Could not save'))
@@ -482,6 +575,11 @@ function BusinessDetail({ co, onClose, onAction }: { co: any; onClose: () => voi
   if (plan === 'trial' && ageDays > 21) health -= 25
   if ((users?.length || 0) === 0) health -= 20
   if (plan === 'free' && ageDays > 45) health -= 10
+  if (hc && !hc.error) {
+    if ((hc.connections || []).length) health -= Math.min(20, 8 * hc.connections.length)
+    if (hc.agents?.failed7d) health -= 10
+    if ((hc.errors?.api || []).length || (hc.errors?.webhooks || []).length) health -= 5
+  }
   health = Math.max(0, Math.min(100, health))
   const healthColor = health >= 75 ? '#10b981' : health >= 45 ? '#f59e0b' : '#ef4444'
 
@@ -512,8 +610,8 @@ function BusinessDetail({ co, onClose, onAction }: { co: any; onClose: () => voi
           <button onClick={() => onAction('impersonate', co)} style={paBtn('#ff7a6b', true)}>Enter workspace</button>
           <a href={`https://${co.slug}.colvy.com`} target="_blank" rel="noopener" style={{ ...paBtn(), textDecoration: 'none' }}>View public</a>
           {plan === 'suspended'
-            ? <button onClick={() => { onAction('reactivate', co); onClose() }} style={paBtn()}>Reactivate</button>
-            : <button onClick={() => { onAction('suspend', co); onClose() }} style={paBtn('#ef4444')}>Suspend</button>}
+            ? <button onClick={() => onAction('reactivate', co)} style={paBtn()}>Reactivate…</button>
+            : <button onClick={() => onAction('suspend', co)} style={paBtn('#ef4444')}>Suspend…</button>}
         </div>
         {/* tabs */}
         <div style={{ display: 'flex', gap: 4, padding: '10px 16px 0', borderBottom: '1px solid var(--sa-border)' }}>
@@ -529,6 +627,7 @@ function BusinessDetail({ co, onClose, onAction }: { co: any; onClose: () => voi
                 <span style={{ fontSize: 12.5, fontWeight: 700, color: healthColor }}>Account health {health}/100</span>
                 <span style={{ fontSize: 11.5, color: 'var(--sa-muted)', marginLeft: 8 }}>{plan === 'suspended' ? 'Suspended' : (users?.length || 0) === 0 ? 'No team members yet' : 'Looking healthy'}</span>
               </div>
+              <CompanyHealthPanel hc={hc} onPause={() => setPauseOpen(true)} onResume={resumeAgents} msg={hcMsg} />
               <Row k="Business name" v={co.name} />
               <Row k="Slug" v={co.slug} />
               <Row k="Plan" v={(sub.plan || 'free') + (sub.is_complimentary ? ' · complimentary' : '')} />
@@ -544,7 +643,7 @@ function BusinessDetail({ co, onClose, onAction }: { co: any; onClose: () => voi
           )}
 
           {tab === 'plan' && (() => {
-            const PLANS = ['free', 'trial', 'feedback', 'omnichannel', 'everything', 'enterprise', 'suspended']
+            const PLANS = CONSOLE_PLANS
             const planColor: Record<string, string> = { free: '#6b7280', trial: '#6366f1', feedback: '#7c5cff', omnichannel: '#2b59ff', everything: '#ff6a4d', pro: '#10b981', enterprise: '#8b5cf6', suspended: '#ef4444' }
             const trialLeft = sub.trial_ends_at ? Math.ceil((new Date(sub.trial_ends_at).getTime() - Date.now()) / 86400000) : null
             return (
@@ -800,19 +899,20 @@ function BusinessDetail({ co, onClose, onAction }: { co: any; onClose: () => voi
             </div>
           )}
 
+          {pauseOpen && <PauseAgentsModal co={co} onClose={() => setPauseOpen(false)} onDone={() => { setHcMsg('Agents paused.'); loadHealth() }} />}
           {tab === 'danger' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div style={{ padding: 14, borderRadius: 12, border: '1px solid #ef444455', background: '#ef444410' }}>
                 <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)', margin: '0 0 4px' }}>Suspend business</p>
                 <p style={{ fontSize: 12, color: 'var(--sa-muted)', margin: '0 0 10px' }}>Sets the plan to suspended. The workspace stays but is flagged.</p>
                 {plan === 'suspended'
-                  ? <button onClick={() => { onAction('reactivate', co); onClose() }} style={paBtn('#10b981', true)}>Reactivate</button>
-                  : <button onClick={() => { onAction('suspend', co); onClose() }} style={paBtn('#ef4444', true)}>Suspend business</button>}
+                  ? <button onClick={() => onAction('reactivate', co)} style={paBtn('#10b981', true)}>Reactivate…</button>
+                  : <button onClick={() => onAction('suspend', co)} style={paBtn('#ef4444', true)}>Suspend business…</button>}
               </div>
               <div style={{ padding: 14, borderRadius: 12, border: '1px solid var(--sa-border)' }}>
                 <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)', margin: '0 0 4px' }}>Seed sample data</p>
-                <p style={{ fontSize: 12, color: 'var(--sa-muted)', margin: '0 0 10px' }}>Clears and re-seeds example ideas for this workspace.</p>
-                <button onClick={() => { onAction('seed', co); onClose() }} style={paBtn()}>Seed sample data</button>
+                <p style={{ fontSize: 12, color: 'var(--sa-muted)', margin: '0 0 10px' }}>Deletes this workspace’s ideas, announcements, help articles, statuses and topics, then re-seeds examples.</p>
+                <button onClick={() => onAction('seed', co)} style={paBtn('#ef4444')}>Delete & seed sample data…</button>
               </div>
               <div style={{ padding: 14, borderRadius: 12, border: '1px solid var(--sa-border)' }}>
                 <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)', margin: '0 0 4px' }}>Repair inline email images</p>
@@ -877,78 +977,398 @@ function ImpersonationSessionsPage() {
   )
 }
 
-// Operations · Integrations — connected channels across every business, with
-// status (real data: email_channels, woocommerce_integrations, telnyx).
+// ── Small shared helpers for the operations views ─────────────────────────
+// GET/POST one of our platform-admin routes as the signed-in super admin.
+async function paJson(url: string, init?: RequestInit): Promise<{ ok: boolean; status: number; data: any }> {
+  try {
+    const res = await authFetch(url, init)
+    const data = await res.json().catch(() => ({}))
+    return { ok: res.ok, status: res.status, data: data || {} }
+  } catch (e: any) {
+    return { ok: false, status: 0, data: { error: e?.message || 'Network error' } }
+  }
+}
+function agoText(d?: string | null): string {
+  if (!d) return 'never'
+  const t = new Date(d).getTime()
+  if (!Number.isFinite(t)) return '—'
+  const m = Math.floor((Date.now() - t) / 60000)
+  if (m < 1) return 'just now'
+  if (m < 60) return `${m}m ago`
+  const h = Math.floor(m / 60); if (h < 48) return `${h}h ago`
+  return `${Math.floor(h / 24)}d ago`
+}
+function Pill({ text, color }: { text: string; color: string }) {
+  return <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 9px', borderRadius: 999, background: color + '22', color, whiteSpace: 'nowrap' }}>{text}</span>
+}
+function Notice({ tone = 'warn', children }: { tone?: 'warn' | 'error' | 'info'; children: React.ReactNode }) {
+  const c = tone === 'error' ? '#ef4444' : tone === 'info' ? '#6366f1' : '#f59e0b'
+  return <div style={{ padding: '12px 14px', borderRadius: 10, background: c + '18', border: `1px solid ${c}55`, fontSize: 13, color: 'var(--sa-text)', marginBottom: 14, lineHeight: 1.5 }}>{children}</div>
+}
+function StatTile({ label, value, color = 'var(--sa-text)', loading }: { label: string; value: React.ReactNode; color?: string; loading?: boolean }) {
+  return (
+    <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 14, padding: 16 }}>
+      <p style={{ fontSize: 24, fontWeight: 800, color, margin: 0 }}>{loading ? '…' : value}</p>
+      <p style={{ fontSize: 11.5, color: 'var(--sa-muted)', margin: '2px 0 0' }}>{label}</p>
+    </div>
+  )
+}
+const paTh: React.CSSProperties = { padding: '12px 16px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--sa-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', whiteSpace: 'nowrap' }
+const paTd: React.CSSProperties = { padding: '11px 16px', fontSize: 12.5, color: 'var(--sa-text)' }
+function paChip(active: boolean, color?: string): React.CSSProperties {
+  return { padding: '7px 13px', borderRadius: 9, border: `1px solid ${active ? (color || '#ff7a6b') : 'var(--sa-border)'}`, background: active ? (color || '#ff7a6b') + '22' : 'var(--sa-card)', color: active ? (color || '#ff7a6b') : 'var(--sa-text)', fontSize: 12.5, fontWeight: active ? 700 : 500, cursor: 'pointer' }
+}
+
+// Pause / resume every AI agent for one business — the same switch the
+// business has on its Agents page. Asks for a reason, then confirms.
+async function setCompanyAgentsPaused(co: { id: string; name?: string }, pause: boolean, reason: string): Promise<{ ok: boolean; error?: string }> {
+  const name = co.name || 'this business'
+  if (pause && !reason.trim()) return { ok: false, error: 'A reason is required (audited).' }
+  const yes = await confirmDialog(pause
+    ? { title: `Pause all AI agents for ${name}?`, message: 'Queued agent runs are cancelled, running ones stop at their next step, and new messages won’t start agents until someone resumes them. The business sees “Agents were paused by Colvy support”. Recorded in the audit log.', confirmLabel: 'Pause agents', tone: 'danger' }
+    : { title: `Resume AI agents for ${name}?`, message: 'Agents start working again with the business’s own settings. Recorded in the audit log.', confirmLabel: 'Resume agents', tone: 'primary' })
+  if (!yes) return { ok: false }
+  const r = await paJson('/api/platform-admin/agents', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: pause ? 'pause' : 'resume', companyId: co.id, reason: reason.trim() }) })
+  return r.ok ? { ok: true } : { ok: false, error: r.data.error || 'Could not change the pause switch' }
+}
+
+// A small modal that collects the (audited) reason before pausing agents.
+function PauseAgentsModal({ co, onClose, onDone }: { co: { id: string; name?: string }; onClose: () => void; onDone: () => void }) {
+  const [reason, setReason] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const go = async () => {
+    setBusy(true); setErr('')
+    const r = await setCompanyAgentsPaused(co, true, reason)
+    setBusy(false)
+    if (r.ok) { onDone(); onClose() } else if (r.error) setErr(r.error)
+  }
+  return (
+    <div onClick={() => !busy && onClose()} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 420, padding: 20 }}>
+      <div onClick={e => e.stopPropagation()} style={{ width: 440, maxWidth: '94vw', background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, padding: 24 }}>
+        <p style={{ fontSize: 16, fontWeight: 800, color: 'var(--sa-text)', margin: '0 0 4px' }}>Pause AI agents · {co.name || 'business'}</p>
+        <p style={{ fontSize: 12.5, color: 'var(--sa-muted)', margin: '0 0 14px', lineHeight: 1.5 }}>Emergency stop for this business only. Their agents stop sending, replying and acting until someone resumes them (here or on their Agents page).</p>
+        <label style={paLabel}>Reason (required, audited)</label>
+        <input value={reason} onChange={e => setReason(e.target.value)} placeholder="e.g. Agent sending wrong order updates — investigating" style={paInput} autoFocus />
+        {err && <p style={{ fontSize: 12, color: '#ef4444', margin: '10px 0 0' }}>{err}</p>}
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 18 }}>
+          <button onClick={onClose} disabled={busy} style={paBtn()}>Cancel</button>
+          <button onClick={go} disabled={busy || !reason.trim()} style={{ ...paBtn('#ef4444', true), opacity: busy || !reason.trim() ? 0.6 : 1 }}>{busy ? 'Pausing…' : 'Pause agents…'}</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Operations · Integrations — every connected channel, store and outside tool
+// across all businesses, with a health note per connection. Server-side
+// (/api/platform-admin/integrations) so secrets never reach the browser.
 function IntegrationsPage() {
-  const [cos, setCos] = useState<Record<string, any>>({})
-  const [rows, setRows] = useState<any[] | null>(null)
-  useEffect(() => {
-    ;(async () => {
-      const [c, e, w, t] = await Promise.all([
-        (supabase as any).from('companies').select('id,name,slug'),
-        (supabase as any).from('email_channels').select('*'),
-        (supabase as any).from('woocommerce_integrations').select('*'),
-        (supabase as any).from('telnyx_integrations').select('*'),
-      ])
-      const map: Record<string, any> = {}; (c.data || []).forEach((x: any) => { map[x.id] = x })
-      setCos(map)
-      const staleDays = (d: string) => d ? (Date.now() - new Date(d).getTime()) / 86400000 : Infinity
-      const all: any[] = [
-        ...(e.data || []).map((x: any) => ({ type: 'Email', color: '#8b5cf6', company_id: x.company_id, detail: x.inbound_address, active: x.is_active !== false, last: x.created_at, note: '' })),
-        ...(w.data || []).map((x: any) => ({ type: 'WooCommerce', color: '#96588a', company_id: x.company_id, detail: x.store_url, active: x.is_active !== false, last: x.last_synced_at || x.created_at, note: staleDays(x.last_synced_at) > 2 ? 'Sync stale' : '' })),
-        ...(t.data || []).map((x: any) => ({ type: 'Phone (Telnyx)', color: '#0891b2', company_id: x.company_id, detail: x.phone_number, active: x.is_active === true, last: x.created_at, note: x.is_active ? '' : 'Inactive' })),
-      ]
-      setRows(all)
-    })()
-  }, [])
-  const list = rows || []
-  const byType = (t: string) => list.filter(r => r.type === t)
-  const summary = [
-    { type: 'Email', color: '#8b5cf6' },
-    { type: 'WooCommerce', color: '#96588a' },
-    { type: 'Phone (Telnyx)', color: '#0891b2' },
-  ].map(s => ({ ...s, total: byType(s.type).length, active: byType(s.type).filter(r => r.active).length, warn: byType(s.type).filter(r => r.note).length }))
-  const th: React.CSSProperties = { padding: '12px 16px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--sa-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }
-  const td: React.CSSProperties = { padding: '11px 16px', fontSize: 12.5, color: 'var(--sa-text)' }
+  const [d, setD] = useState<any>(null)
+  const [err, setErr] = useState('')
+  const [type, setType] = useState('all')
+  const [onlyIssues, setOnlyIssues] = useState(false)
+  const [q, setQ] = useState('')
+  const load = async () => {
+    setErr('')
+    const r = await paJson('/api/platform-admin/integrations')
+    if (!r.ok) { setErr(r.data.error || 'Could not load integrations'); setD({ rows: [], types: [], missing: [] }); return }
+    setD(r.data)
+  }
+  useEffect(() => { load() }, [])
+  const rows: any[] = Array.isArray(d?.rows) ? d.rows : []
+  const types: any[] = Array.isArray(d?.types) ? d.types : []
+  const colorOf = (t: string) => types.find(x => x.type === t)?.color || '#6b7280'
+  const summary = types.map(t => {
+    const list = rows.filter(r => r.type === t.type)
+    return { ...t, total: list.length, active: list.filter(r => r.active).length, warn: list.filter(r => r.active && r.note).length }
+  }).filter(s => s.total > 0 || type === s.type)
+  const list = rows.filter(r => {
+    if (type !== 'all' && r.type !== type) return false
+    if (onlyIssues && !(r.active && r.note)) return false
+    if (q.trim()) {
+      const hay = `${r.type} ${r.detail} ${r.company?.name || ''} ${r.company?.slug || ''} ${r.note} ${r.error || ''}`.toLowerCase()
+      if (!hay.includes(q.trim().toLowerCase())) return false
+    }
+    return true
+  }).sort((a, b) => Number(!!(b.active && b.note)) - Number(!!(a.active && a.note)))
+  const issues = rows.filter(r => r.active && r.note).length
   return (
     <div>
-      <SectionHeader title="Integrations" sub="Connected channels across every business" />
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(200px,1fr))', gap: 12, marginBottom: 20 }}>
+      <SectionHeader title="Integrations" sub="Connected channels, stores, phone numbers and outside tools across every business"
+        action={<button onClick={() => { setD(null); load() }} style={paBtn()}>Refresh</button>} />
+      {err && <Notice tone="error">{err}</Notice>}
+      {Array.isArray(d?.missing) && d.missing.length > 0 && <p style={{ fontSize: 11.5, color: 'var(--sa-muted)', margin: '0 0 12px' }}>Not set up on this database (skipped): {d.missing.join(', ')}</p>}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(180px,1fr))', gap: 12, marginBottom: 18 }}>
+        <div onClick={() => setOnlyIssues(o => !o)} style={{ background: 'var(--sa-card)', border: `1px solid ${onlyIssues ? '#f59e0b' : 'var(--sa-border)'}`, borderRadius: 14, padding: 16, cursor: 'pointer' }}>
+          <p style={{ fontSize: 24, fontWeight: 800, color: issues ? '#f59e0b' : '#10b981', margin: 0 }}>{d === null ? '…' : issues}</p>
+          <p style={{ fontSize: 11.5, color: 'var(--sa-muted)', margin: '2px 0 0' }}>Need attention{onlyIssues ? ' · filtered' : ''}</p>
+        </div>
         {summary.map(s => (
-          <div key={s.type} style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 14, padding: 16 }}>
+          <div key={s.type} onClick={() => setType(type === s.type ? 'all' : s.type)} style={{ background: 'var(--sa-card)', border: `1px solid ${type === s.type ? s.color : 'var(--sa-border)'}`, borderRadius: 14, padding: 16, cursor: 'pointer' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
               <span style={{ width: 9, height: 9, borderRadius: '50%', background: s.color }} />
               <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--sa-text)' }}>{s.type}</span>
             </div>
-            <p style={{ fontSize: 24, fontWeight: 800, color: 'var(--sa-text)', margin: 0 }}>{rows === null ? '…' : s.total}</p>
+            <p style={{ fontSize: 24, fontWeight: 800, color: 'var(--sa-text)', margin: 0 }}>{s.total}</p>
             <p style={{ fontSize: 11.5, color: 'var(--sa-muted)', margin: '2px 0 0' }}>{s.active} active{s.warn ? ` · ${s.warn} need attention` : ''}</p>
           </div>
         ))}
       </div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 14, alignItems: 'center' }}>
+        <SearchBar placeholder="Search business, store, number, error…" value={q} onChange={setQ} />
+        <button onClick={() => setType('all')} style={paChip(type === 'all')}>All types</button>
+        <button onClick={() => setOnlyIssues(o => !o)} style={paChip(onlyIssues, '#f59e0b')}>Needs attention</button>
+      </div>
       <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, overflow: 'auto' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
-          <thead><tr style={{ borderBottom: '1px solid var(--sa-border)' }}>{['Type', 'Business', 'Detail', 'Last activity', 'Status'].map(h => <th key={h} style={th}>{h}</th>)}</tr></thead>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
+          <thead><tr style={{ borderBottom: '1px solid var(--sa-border)' }}>{['Type', 'Business', 'Detail', 'Last activity', 'Status'].map(h => <th key={h} style={paTh}>{h}</th>)}</tr></thead>
           <tbody>
-            {rows === null ? <tr><td colSpan={5} style={{ padding: 40, textAlign: 'center', color: 'var(--sa-muted)' }}>Loading…</td></tr>
-            : list.length === 0 ? <tr><td colSpan={5} style={{ padding: 40, textAlign: 'center', color: 'var(--sa-muted)' }}>No connected integrations.</td></tr>
+            {d === null ? <tr><td colSpan={5} style={{ padding: 40, textAlign: 'center', color: 'var(--sa-muted)' }}>Loading…</td></tr>
+            : list.length === 0 ? <tr><td colSpan={5} style={{ padding: 40, textAlign: 'center', color: 'var(--sa-muted)' }}>{rows.length === 0 ? 'No connected integrations.' : 'Nothing matches these filters.'}</td></tr>
             : list.map((r, i) => (
-              <tr key={i} style={{ borderBottom: i < list.length - 1 ? '1px solid var(--sa-border)' : 'none' }}>
-                <td style={td}><span style={{ fontSize: 11, fontWeight: 700, color: r.color }}>{r.type}</span></td>
-                <td style={td}>{cos[r.company_id]?.name || cos[r.company_id]?.slug || '—'}</td>
-                <td style={{ ...td, color: 'var(--sa-muted)', maxWidth: 240, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={r.detail}>{r.detail || '—'}</td>
-                <td style={{ ...td, color: 'var(--sa-muted)' }}>{r.last ? new Date(r.last).toLocaleDateString() : '—'}</td>
-                <td style={td}>
-                  {r.note
-                    ? <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 9px', borderRadius: 999, background: '#f59e0b22', color: '#f59e0b' }}>{r.note}</span>
-                    : r.active
-                      ? <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 9px', borderRadius: 999, background: '#10b98122', color: '#10b981' }}>Connected</span>
-                      : <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 9px', borderRadius: 999, background: '#6b728022', color: '#6b7280' }}>Inactive</span>}
+              <tr key={r.key || i} style={{ borderBottom: i < list.length - 1 ? '1px solid var(--sa-border)' : 'none' }}>
+                <td style={paTd}><span style={{ fontSize: 11, fontWeight: 700, color: colorOf(r.type) }}>{r.type}</span></td>
+                <td style={paTd}>{r.company?.name || r.company?.slug || '—'}</td>
+                <td style={{ ...paTd, color: 'var(--sa-muted)', maxWidth: 300, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={r.error ? `${r.detail}\n${r.error}` : r.detail}>{r.detail || '—'}</td>
+                <td style={{ ...paTd, color: 'var(--sa-muted)' }} title={r.last ? new Date(r.last).toLocaleString() : ''}>{r.last ? agoText(r.last) : '—'}</td>
+                <td style={paTd} title={r.error || ''}>
+                  {r.active && r.note ? <Pill text={r.note} color={/expired|error|uninstalled|re-auth/i.test(r.note) ? '#ef4444' : '#f59e0b'} />
+                    : r.active ? <Pill text="Connected" color="#10b981" />
+                    : <Pill text={r.note || 'Inactive'} color="#6b7280" />}
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+    </div>
+  )
+}
+
+// Operations · AI Agents — the Agent Engine across every business: who has
+// agents on, runs and failures, approvals waiting on people, stuck runs, the
+// weekly digest and "Needs you" phone alerts, outside tools, and a per-business
+// pause switch for emergencies.
+const AGENT_ROLE_LABEL: Record<string, string> = { support: 'Support', reception: 'Reception', sales: 'Sales', operations: 'Operations', reputation: 'Reputation', custom: 'Custom' }
+const RUN_STATUS_COLOR: Record<string, string> = { queued: '#6366f1', running: '#0891b2', awaiting_approval: '#f59e0b', completed: '#10b981', escalated: '#8b5cf6', failed: '#ef4444', cancelled: '#6b7280' }
+
+function AgentRunDetail({ runId, onClose }: { runId: string; onClose: () => void }) {
+  const [d, setD] = useState<any>(null)
+  useEffect(() => { (async () => { const r = await paJson(`/api/platform-admin/agents?runId=${runId}`); setD(r.ok ? r.data : { error: r.data.error || 'Could not load run' }) })() }, [runId])
+  const run = d?.run
+  const steps: any[] = Array.isArray(d?.steps) ? d.steps : []
+  const Row = ({ k, v }: { k: string; v: any }) => (
+    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, padding: '9px 0', borderBottom: '1px solid var(--sa-border)' }}>
+      <span style={{ fontSize: 12.5, color: 'var(--sa-muted)' }}>{k}</span>
+      <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--sa-text)', textAlign: 'right', wordBreak: 'break-word' }}>{v ?? '—'}</span>
+    </div>
+  )
+  const sc = RUN_STATUS_COLOR[String(run?.status)] || '#6b7280'
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 380, display: 'flex', justifyContent: 'flex-end' }}>
+      <div onClick={e => e.stopPropagation()} style={{ width: 620, maxWidth: '96vw', height: '100%', background: 'var(--sa-bg)', borderLeft: '1px solid var(--sa-border)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <div style={{ padding: '18px 20px', borderBottom: '1px solid var(--sa-border)', display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p style={{ fontSize: 16, fontWeight: 800, color: 'var(--sa-text)', margin: 0 }}>{run ? `${AGENT_ROLE_LABEL[run.role_key] || run.role_key} Agent run` : 'Agent run'}</p>
+            <p style={{ fontSize: 12, color: 'var(--sa-muted)', margin: 0 }}>{run?.company?.name || '—'} · {run?.created_at ? new Date(run.created_at).toLocaleString() : ''}</p>
+          </div>
+          {run && <Pill text={String(run.status).replace(/_/g, ' ')} color={sc} />}
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--sa-muted)', cursor: 'pointer', fontSize: 20, lineHeight: 1 }}>×</button>
+        </div>
+        <div style={{ flex: 1, overflowY: 'auto', padding: 20 }}>
+          {d === null ? <p style={{ color: 'var(--sa-muted)', fontSize: 13 }}>Loading…</p> : d.error ? <Notice tone="error">{d.error}</Notice> : (
+            <>
+              <Row k="Business" v={run.company?.name} />
+              <Row k="Agent" v={AGENT_ROLE_LABEL[run.role_key] || run.role_key} />
+              <Row k="Mode" v={run.mode} />
+              <Row k="Trigger" v={String(run.trigger_type || '').replace(/_/g, ' ')} />
+              <Row k="Intent" v={run.intent} />
+              <Row k="Outcome" v={run.outcome} />
+              <Row k="Model" v={run.model} />
+              <Row k="Tokens" v={`${run.tokens_in || 0} in · ${run.tokens_out || 0} out`} />
+              <Row k="Finished" v={run.finished_at ? new Date(run.finished_at).toLocaleString() : '—'} />
+              {run.error && <Row k="Error" v={run.error} />}
+              {run.summary && <p style={{ fontSize: 13, color: 'var(--sa-text)', lineHeight: 1.55, margin: '14px 0 0', padding: '10px 12px', borderRadius: 10, background: 'var(--sa-card)', border: '1px solid var(--sa-border)' }}>{run.summary}</p>}
+              <p style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--sa-text)', margin: '18px 0 8px' }}>Steps ({steps.length})</p>
+              {steps.length === 0 ? <p style={{ fontSize: 12.5, color: 'var(--sa-muted)' }}>No steps recorded.</p> : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {steps.map(s => {
+                    const bad = s.status === 'error' || s.decision === 'denied'
+                    return (
+                      <div key={s.id} style={{ padding: '8px 11px', borderRadius: 9, border: `1px solid ${bad ? '#ef444455' : 'var(--sa-border)'}`, background: 'var(--sa-card)' }}>
+                        <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: 10.5, color: 'var(--sa-muted)', minWidth: 22 }}>#{s.seq}</span>
+                          <span style={{ fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', color: bad ? '#ef4444' : 'var(--sa-text)' }}>{s.kind}{s.action_key ? ` · ${s.action_key}` : ''}</span>
+                          {s.decision && <span style={{ fontSize: 11, color: 'var(--sa-muted)' }}>{s.decision}{s.autonomy ? ` (${s.autonomy})` : ''}</span>}
+                          {s.status && <span style={{ fontSize: 11, color: bad ? '#ef4444' : 'var(--sa-muted)' }}>{s.status}</span>}
+                        </div>
+                        {(s.reason || s.decision_reason) && <p style={{ fontSize: 12, color: 'var(--sa-muted)', margin: '4px 0 0', lineHeight: 1.45 }}>{s.reason || s.decision_reason}</p>}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function AgentsPage() {
+  const [days, setDays] = useState(7)
+  const [d, setD] = useState<any>(null)
+  const [err, setErr] = useState('')
+  const [tab, setTab] = useState('businesses')
+  const [q, setQ] = useState('')
+  const [selRun, setSelRun] = useState<string | null>(null)
+  const [pauseFor, setPauseFor] = useState<any>(null)
+  const [msg, setMsg] = useState('')
+  const load = async () => {
+    setErr('')
+    const r = await paJson(`/api/platform-admin/agents?days=${days}`)
+    if (!r.ok) { setErr(r.data.error || 'Could not load agent activity'); setD({ companies: [], failures: [], stuck: [], recent: [], connections: [] }); return }
+    setD(r.data)
+  }
+  useEffect(() => { load() }, [days]) // eslint-disable-line react-hooks/exhaustive-deps
+  const t = d?.totals || {}
+  const companies: any[] = (Array.isArray(d?.companies) ? d.companies : []).filter((c: any) => !q.trim() || `${c.name} ${c.slug}`.toLowerCase().includes(q.trim().toLowerCase()))
+  const resume = async (c: any) => {
+    setMsg('')
+    const r = await setCompanyAgentsPaused(c, false, '')
+    if (r.ok) { setMsg(`Agents resumed for ${c.name}.`); load() } else if (r.error) setMsg(r.error)
+  }
+  const n = (v: number) => v >= 1e6 ? `${(v / 1e6).toFixed(1)}M` : v >= 1e3 ? `${(v / 1e3).toFixed(1)}k` : String(v || 0)
+  const runTable = (rows: any[], empty: string) => (
+    <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, overflow: 'auto' }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
+        <thead><tr style={{ borderBottom: '1px solid var(--sa-border)' }}>{['Business', 'Agent', 'Trigger', 'Status', 'What happened', 'When', ''].map((h, i) => <th key={i} style={paTh}>{h}</th>)}</tr></thead>
+        <tbody>
+          {d === null ? <tr><td colSpan={7} style={{ padding: 40, textAlign: 'center', color: 'var(--sa-muted)' }}>Loading…</td></tr>
+          : rows.length === 0 ? <tr><td colSpan={7} style={{ padding: 40, textAlign: 'center', color: 'var(--sa-muted)' }}>{empty}</td></tr>
+          : rows.map((r, i) => (
+            <tr key={r.id} onClick={() => setSelRun(r.id)} style={{ borderBottom: i < rows.length - 1 ? '1px solid var(--sa-border)' : 'none', cursor: 'pointer' }}>
+              <td style={paTd}>{r.company?.name || '—'}</td>
+              <td style={paTd}>{AGENT_ROLE_LABEL[r.role_key] || r.role_key}{r.mode === 'sandbox' ? <span style={{ color: 'var(--sa-muted)' }}> · sandbox</span> : null}</td>
+              <td style={{ ...paTd, color: 'var(--sa-muted)' }}>{String(r.trigger_type || '—').replace(/_/g, ' ')}</td>
+              <td style={paTd}><Pill text={String(r.status).replace(/_/g, ' ')} color={RUN_STATUS_COLOR[r.status] || '#6b7280'} /></td>
+              <td style={{ ...paTd, color: r.error ? '#ef4444' : 'var(--sa-muted)', maxWidth: 320, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={r.error || r.summary || ''}>{r.error || r.summary || '—'}</td>
+              <td style={{ ...paTd, color: 'var(--sa-muted)', whiteSpace: 'nowrap' }} title={r.created_at ? new Date(r.created_at).toLocaleString() : ''}>{agoText(r.updated_at && r.status !== 'completed' ? r.updated_at : r.created_at)}</td>
+              <td style={{ ...paTd, color: 'var(--sa-muted)', textAlign: 'right' }}>›</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+  const conns: any[] = Array.isArray(d?.connections) ? d.connections : []
+  const TABS: [string, string][] = [
+    ['businesses', `Businesses${d?.companies ? ` (${d.companies.length})` : ''}`],
+    ['failures', `Failures${d?.failures ? ` (${d.failures.length})` : ''}`],
+    ['stuck', `Stuck${d?.stuck ? ` (${d.stuck.length})` : ''}`],
+    ['recent', 'Recent runs'],
+    ['tools', `Outside tools${conns.length ? ` (${conns.length})` : ''}`],
+  ]
+  return (
+    <div>
+      <SectionHeader title="AI Agents" sub="The Agent Engine across every business — activity, failures, approvals waiting on people, and an emergency pause per business"
+        action={<div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {[1, 7, 30].map(x => <button key={x} onClick={() => setDays(x)} style={{ ...paBtn(days === x ? '#ff7a6b' : 'var(--sa-muted)', days === x), padding: '6px 12px' }}>{x === 1 ? '24h' : `${x} days`}</button>)}
+          <button onClick={() => { setD(null); load() }} style={paBtn()}>Refresh</button>
+        </div>} />
+      {err && <Notice tone="error">{err}</Notice>}
+      {msg && <Notice tone="info">{msg}</Notice>}
+      {d?.platformPaused && <Notice tone="error"><b>All agents are paused platform-wide</b> (AGENTS_DISABLED=1 in the environment). Remove it in Vercel to let agents run.</Notice>}
+      {d?.missing ? <Notice>Run <b>COLVY_V353_AGENT_ENGINE.sql</b> to enable the Agent Engine. Nothing to show until then.</Notice> : (
+        <>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(150px,1fr))', gap: 12, marginBottom: 18 }}>
+            <StatTile label={`Runs · ${days === 1 ? '24h' : `${days}d`}`} value={n(t.runs)} color="#6366f1" loading={d === null} />
+            <StatTile label="Completed" value={n(t.completed)} color="#10b981" loading={d === null} />
+            <StatTile label="Failed" value={n(t.failed)} color={t.failed ? '#ef4444' : '#10b981'} loading={d === null} />
+            <StatTile label="Handed to a person" value={n(t.escalated)} color="#8b5cf6" loading={d === null} />
+            <StatTile label="Approvals waiting" value={n(t.pendingApprovals)} color={t.pendingApprovals ? '#f59e0b' : 'var(--sa-text)'} loading={d === null} />
+            <StatTile label="Stuck runs (15m+)" value={n(t.stuck)} color={t.stuck ? '#ef4444' : '#10b981'} loading={d === null} />
+            <StatTile label="Businesses with agents on" value={n(t.companiesWithAgents)} color="#0891b2" loading={d === null} />
+            <StatTile label="Paused businesses" value={n(t.paused)} color={t.paused ? '#ef4444' : 'var(--sa-text)'} loading={d === null} />
+            <StatTile label="Tokens in / out" value={`${n(t.tokensIn)} / ${n(t.tokensOut)}`} loading={d === null} />
+          </div>
+          <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--sa-border)', marginBottom: 16, flexWrap: 'wrap' }}>
+            {TABS.map(([k, l]) => (
+              <button key={k} onClick={() => setTab(k)} style={{ padding: '8px 12px', border: 'none', borderBottom: tab === k ? '2px solid #ff7a6b' : '2px solid transparent', background: 'transparent', color: tab === k ? 'var(--sa-text)' : 'var(--sa-muted)', fontSize: 13, fontWeight: tab === k ? 700 : 500, cursor: 'pointer' }}>{l}</button>
+            ))}
+          </div>
+
+          {tab === 'businesses' && (
+            <>
+              <div style={{ marginBottom: 12 }}><SearchBar placeholder="Search businesses…" value={q} onChange={setQ} /></div>
+              <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, overflow: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1020 }}>
+                  <thead><tr style={{ borderBottom: '1px solid var(--sa-border)' }}>{['Business', 'Agents on', 'State', 'Runs', 'Failed', 'Waiting', 'Weekly digest', 'Needs-you alerts', 'Tools', ''].map((h, i) => <th key={i} style={paTh}>{h}</th>)}</tr></thead>
+                  <tbody>
+                    {d === null ? <tr><td colSpan={10} style={{ padding: 40, textAlign: 'center', color: 'var(--sa-muted)' }}>Loading…</td></tr>
+                    : companies.length === 0 ? <tr><td colSpan={10} style={{ padding: 40, textAlign: 'center', color: 'var(--sa-muted)' }}>{(d.companies || []).length === 0 ? 'No business has set up agents yet.' : 'No businesses match.'}</td></tr>
+                    : companies.map((c, i) => {
+                      const on = (c.enabledRoles || []).length > 0
+                      return (
+                        <tr key={c.id} style={{ borderBottom: i < companies.length - 1 ? '1px solid var(--sa-border)' : 'none' }}>
+                          <td style={{ ...paTd, fontWeight: 600 }}>{c.name}<div style={{ fontSize: 11, color: 'var(--sa-muted)', fontWeight: 400 }}>{c.slug}</div></td>
+                          <td style={{ ...paTd, color: on ? 'var(--sa-text)' : 'var(--sa-muted)' }}>{on ? c.enabledRoles.map((k: string) => AGENT_ROLE_LABEL[k] || k).join(', ') : 'None'}</td>
+                          <td style={paTd} title={c.paused?.paused ? `Paused by ${c.paused.byName || 'someone'}${c.paused.at ? ` · ${new Date(c.paused.at).toLocaleString()}` : ''}` : ''}>
+                            {c.paused?.paused ? <Pill text={`Paused · ${c.paused.byName || '—'}`} color="#ef4444" /> : on ? <Pill text="Active" color="#10b981" /> : <Pill text="Off" color="#6b7280" />}
+                          </td>
+                          <td style={paTd}>{c.runs}</td>
+                          <td style={{ ...paTd, color: c.failed ? '#ef4444' : 'var(--sa-muted)', fontWeight: c.failed ? 700 : 400 }}>{c.failed}</td>
+                          <td style={{ ...paTd, color: c.pendingApprovals ? '#f59e0b' : 'var(--sa-muted)' }} title={c.oldestApprovalAt ? `Oldest waiting since ${new Date(c.oldestApprovalAt).toLocaleString()}` : ''}>{c.pendingApprovals}{c.oldestApprovalAt ? <span style={{ fontSize: 11 }}> · {agoText(c.oldestApprovalAt)}</span> : null}</td>
+                          <td style={{ ...paTd, color: 'var(--sa-muted)' }}>{c.digest?.enabled === false ? 'Off' : `On${c.digest?.lastWeek ? ` · sent ${c.digest.lastWeek}` : ' · not sent yet'}`}</td>
+                          <td style={{ ...paTd, color: 'var(--sa-muted)' }}>{c.alerts?.enabled === false ? 'Off' : `On · ${c.alerts?.notified7d || 0} in 7d`}{c.alerts?.lastNotifiedAt ? <div style={{ fontSize: 11 }}>last {agoText(c.alerts.lastNotifiedAt)}</div> : null}</td>
+                          <td style={{ ...paTd, color: c.connections?.errors ? '#ef4444' : 'var(--sa-muted)' }}>{c.connections?.total || 0}{c.connections?.errors ? ` · ${c.connections.errors} error` : ''}</td>
+                          <td style={paTd}>
+                            {c.paused?.paused
+                              ? <button onClick={() => resume(c)} style={paBtn('#10b981')}>Resume…</button>
+                              : <button onClick={() => setPauseFor(c)} style={paBtn('#ef4444')}>Pause agents…</button>}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <p style={{ fontSize: 11.5, color: 'var(--sa-muted)', margin: '10px 2px 0', lineHeight: 1.5 }}>Weekly digest = the Sunday agent summary email (cron/agent-digest); “sent” is the last ISO week it went out. Needs-you alerts = phone pushes from the 15-minute sweep (cron/needs-you), counted from the items it has already alerted on.</p>
+            </>
+          )}
+          {tab === 'failures' && runTable(Array.isArray(d?.failures) ? d.failures : [], 'No failed agent runs in this period.')}
+          {tab === 'stuck' && runTable(Array.isArray(d?.stuck) ? d.stuck : [], 'Nothing stuck — no run has sat queued or running for over 15 minutes.')}
+          {tab === 'recent' && runTable(Array.isArray(d?.recent) ? d.recent : [], 'No agent runs in this period.')}
+          {tab === 'tools' && (
+            d?.connectionsMissing ? <Notice>Run <b>COLVY_V355_AGENT_CONNECTIONS.sql</b> to let businesses connect outside tools (MCP).</Notice> : (
+              <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, overflow: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 820 }}>
+                  <thead><tr style={{ borderBottom: '1px solid var(--sa-border)' }}>{['Business', 'Connection', 'Server', 'Tools on', 'Agents', 'Last checked', 'Status'].map(h => <th key={h} style={paTh}>{h}</th>)}</tr></thead>
+                  <tbody>
+                    {d === null ? <tr><td colSpan={7} style={{ padding: 40, textAlign: 'center', color: 'var(--sa-muted)' }}>Loading…</td></tr>
+                    : conns.length === 0 ? <tr><td colSpan={7} style={{ padding: 40, textAlign: 'center', color: 'var(--sa-muted)' }}>No outside tools connected yet.</td></tr>
+                    : conns.map((x, i) => (
+                      <tr key={x.id} style={{ borderBottom: i < conns.length - 1 ? '1px solid var(--sa-border)' : 'none' }}>
+                        <td style={paTd}>{x.company?.name || '—'}</td>
+                        <td style={{ ...paTd, fontWeight: 600 }}>{x.name}</td>
+                        <td style={{ ...paTd, color: 'var(--sa-muted)' }}>{x.server_name || x.host || '—'}</td>
+                        <td style={paTd}>{x.toolsOn} / {x.tools}</td>
+                        <td style={{ ...paTd, color: 'var(--sa-muted)' }}>{(x.roles || []).map((k: string) => AGENT_ROLE_LABEL[k] || k).join(', ') || '—'}</td>
+                        <td style={{ ...paTd, color: 'var(--sa-muted)' }}>{agoText(x.synced_at)}</td>
+                        <td style={paTd} title={x.last_error || ''}>{!x.enabled ? <Pill text="Off" color="#6b7280" /> : (x.status === 'error' || x.last_error) ? <Pill text="Error" color="#ef4444" /> : x.status === 'ok' ? <Pill text="OK" color="#10b981" /> : <Pill text="Not checked" color="#f59e0b" />}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )
+          )}
+        </>
+      )}
+      {selRun && <AgentRunDetail runId={selRun} onClose={() => setSelRun(null)} />}
+      {pauseFor && <PauseAgentsModal co={pauseFor} onClose={() => setPauseFor(null)} onDone={() => { setMsg(`Agents paused for ${pauseFor.name}.`); load() }} />}
     </div>
   )
 }
@@ -1455,24 +1875,45 @@ function WebhookExplorerPage() {
   )
 }
 
-// Operations · Background Jobs — health of the scheduled workers (email sync,
-// campaign sender) with cadence, duration, throughput and failures. Real data
-// from job_runs (COLVY_V218). The registry lists the jobs Colvy actually runs.
+// Operations · Background Jobs — health of the scheduled workers with cadence,
+// duration, throughput and failures. Real data from job_runs (COLVY_V218).
+// The registry mirrors EVERY cron in vercel.json (plus the hourly demo reset).
 // `staleMs` is the age past which "no run" is a problem — a generous multiple of
-// the job's cadence, so a 3-min job and a daily job aren't judged by the same
-// ruler. Any job key that appears in job_runs but isn't listed here still gets a
-// heartbeat card (derived below), so new workers are observable without edits.
-const JOBS: { key: string; label: string; schedule: string; desc: string; color: string; staleMs?: number }[] = [
-  { key: 'email-sync', label: 'Email Sync', schedule: 'Every 5 min', desc: 'Pulls new mail into every connected Gmail mailbox', color: '#8b5cf6', staleMs: 20 * 60000 },
-  { key: 'order-sync', label: 'Order Sync', schedule: 'Every 3 min', desc: 'Pulls WooCommerce orders and reconciles the board to the store (recovers paid-but-cancelled, applies terminal states)', color: '#0ea5e9', staleMs: 15 * 60000 },
-  { key: 'campaigns-process', label: 'Campaign Worker', schedule: 'Every 2 min', desc: 'Starts scheduled campaigns and drips the next sending batch', color: '#ff7a6b', staleMs: 10 * 60000 },
-  { key: 'transcode-worker', label: 'Transcode Worker', schedule: 'Every minute', desc: 'Drains the video transcode queue and reclaims stuck jobs', color: '#ec4899', staleMs: 8 * 60000 },
-  { key: 'task-reminders', label: 'Task Reminders', schedule: 'Every 15 min', desc: 'Pushes a reminder when a task becomes due', color: '#f59e0b', staleMs: 45 * 60000 },
-  { key: 'sweep-stale-calls', label: 'Stale-Call Sweep', schedule: 'Every 15 min', desc: 'Closes calls stuck live after a lost hangup webhook', color: '#14b8a6', staleMs: 45 * 60000 },
-  { key: 'demo-seed', label: 'Demo Reset', schedule: 'Hourly', desc: 'Rebuilds the public Harbour & Bean showcase workspace', color: '#6366f1', staleMs: 150 * 60000 },
-  { key: 'sync-reviews', label: 'Review Sync', schedule: 'Every 6 hours', desc: 'Pulls new Google reviews into connected businesses', color: '#eab308', staleMs: 8 * 3600000 },
-  { key: 'trial-nudges', label: 'Trial Nudges', schedule: 'Daily', desc: 'Emails trial owners at T-3 days, expiry, and T+3 to drive conversion', color: '#f59e0b', staleMs: 26 * 3600000 },
-  { key: 'expire-media', label: 'Media Expiry', schedule: 'Daily', desc: 'Purges expired share links and 30-day-old trashed media', color: '#0891b2', staleMs: 26 * 3600000 },
+// the job's cadence. `logs` says how the worker reports in:
+//   always — writes a job_runs row every run (idle runs too)
+//   work   — writes a row only when it actually did something, so silence is
+//            normal ("Quiet"), not a failure
+//   none   — doesn't call logJobRun yet, so this console can't see it run
+// Any job key that appears in job_runs but isn't listed here still gets a card.
+type JobDef = { key: string; label: string; schedule: string; desc: string; color: string; staleMs?: number; logs: 'always' | 'work' | 'none'; path: string }
+const JOBS: JobDef[] = [
+  { key: 'email-sync', label: 'Email Sync', schedule: 'Every 5 min', desc: 'Pulls new mail into every connected Gmail mailbox', color: '#8b5cf6', staleMs: 20 * 60000, logs: 'always', path: '/api/cron/email-sync' },
+  { key: 'order-sync', label: 'Order Sync', schedule: 'Every 3 min', desc: 'Pulls WooCommerce orders and reconciles the board to the store (recovers paid-but-cancelled, applies terminal states)', color: '#0ea5e9', staleMs: 15 * 60000, logs: 'always', path: '/api/cron/order-sync' },
+  { key: 'campaigns-process', label: 'Campaign Worker', schedule: 'Every 2 min', desc: 'Starts scheduled campaigns and drips the next sending batch', color: '#ff7a6b', staleMs: 10 * 60000, logs: 'always', path: '/api/campaigns/process' },
+  { key: 'send-scheduled', label: 'Scheduled Messages', schedule: 'Every minute', desc: 'Sends messages agents scheduled for later', color: '#10b981', staleMs: 8 * 60000, logs: 'always', path: '/api/cron/send-scheduled' },
+  { key: 'transcode-worker', label: 'Transcode Worker', schedule: 'Every minute', desc: 'Drains the video transcode queue and reclaims stuck jobs', color: '#ec4899', staleMs: 8 * 60000, logs: 'always', path: '/api/cron/transcode-worker' },
+  { key: 'agent-worker', label: 'Agent Worker', schedule: 'Every minute', desc: 'Runs queued AI agent work and expires old approvals (logs only when it ran something)', color: '#6366f1', staleMs: 6 * 3600000, logs: 'work', path: '/api/cron/agent-worker' },
+  { key: 'import-worker', label: 'Import Worker', schedule: 'Every minute', desc: 'Processes contact / data import jobs (logs only when it ran something)', color: '#0891b2', staleMs: 7 * 86400000, logs: 'work', path: '/api/cron/import-worker' },
+  { key: 'task-reminders', label: 'Task Reminders', schedule: 'Every 15 min', desc: 'Pushes a reminder when a task becomes due', color: '#f59e0b', staleMs: 45 * 60000, logs: 'always', path: '/api/cron/task-reminders' },
+  { key: 'sweep-stale-calls', label: 'Stale-Call Sweep', schedule: 'Every 15 min', desc: 'Closes calls stuck live after a lost hangup webhook', color: '#14b8a6', staleMs: 45 * 60000, logs: 'always', path: '/api/cron/sweep-stale-calls' },
+  { key: 'ai-knowledge', label: 'AI Knowledge Refresh', schedule: 'Hourly (:25)', desc: 'Re-indexes business knowledge the AI answers from', color: '#7c5cff', staleMs: 150 * 60000, logs: 'always', path: '/api/cron/ai-knowledge' },
+  { key: 'demo-seed', label: 'Demo Reset', schedule: 'Hourly', desc: 'Rebuilds the public Harbour & Bean showcase workspace', color: '#6366f1', staleMs: 150 * 60000, logs: 'always', path: '/api/demo/seed' },
+  { key: 'sync-reviews', label: 'Review Sync', schedule: 'Every 6 hours', desc: 'Pulls new Google reviews into connected businesses', color: '#eab308', staleMs: 8 * 3600000, logs: 'always', path: '/api/cron/sync-reviews' },
+  { key: 'refresh-meta-tokens', label: 'Meta Token Refresh', schedule: 'Daily 04:00 UTC', desc: 'Refreshes Facebook / Instagram page tokens and flags ones that need reconnecting', color: '#0866ff', staleMs: 26 * 3600000, logs: 'always', path: '/api/cron/refresh-meta-tokens' },
+  { key: 'trial-nudges', label: 'Trial Nudges', schedule: 'Daily', desc: 'Emails trial owners at T-3 days, expiry, and T+3 to drive conversion', color: '#f59e0b', staleMs: 26 * 3600000, logs: 'always', path: '/api/cron/trial-nudges' },
+  { key: 'expire-media', label: 'Media Expiry', schedule: 'Daily', desc: 'Purges expired share links and 30-day-old trashed media', color: '#0891b2', staleMs: 26 * 3600000, logs: 'always', path: '/api/cron/expire-media' },
+  // Not reporting to job_runs yet — listed so nothing scheduled is invisible.
+  { key: 'needs-you', label: 'Needs-you Phone Alerts', schedule: 'Every 15 min', desc: 'Pushes a phone alert for anything newly urgent on “Needs you” (missed goals, drafts waiting, unpicked hand-overs). Per-business counts are on AI Agents.', color: '#ef4444', logs: 'none', path: '/api/cron/needs-you' },
+  { key: 'agent-digest', label: 'Weekly Agent Digest', schedule: 'Sundays 21:30 UTC', desc: 'Emails each business a summary of what its agents did. Per-business “last sent” is on AI Agents.', color: '#8b5cf6', logs: 'none', path: '/api/cron/agent-digest' },
+  { key: 'operations', label: 'Operations Agent Sweep', schedule: 'Every 3 hours', desc: 'Operations Agent looks for orders that need a customer update', color: '#0ea5e9', logs: 'none', path: '/api/cron/operations' },
+  { key: 'booking-reminders', label: 'Booking Reminders', schedule: 'Every 10 min', desc: 'Sends booking reminders to customers', color: '#10b981', logs: 'none', path: '/api/cron/booking-reminders' },
+  { key: 'calendar-reminders', label: 'Calendar Reminders', schedule: 'Every 10 min', desc: 'Reminds staff about calendar events', color: '#14b8a6', logs: 'none', path: '/api/calendar/reminders' },
+  { key: 'waitlist', label: 'Waitlist', schedule: 'Every 5 min', desc: 'Offers freed-up booking slots to the waitlist', color: '#0891b2', logs: 'none', path: '/api/cron/waitlist' },
+  { key: 'cart-recovery', label: 'Cart Recovery', schedule: 'Every 10 min', desc: 'Follows up abandoned carts', color: '#f59e0b', logs: 'none', path: '/api/cron/cart-recovery' },
+  { key: 'reviews-dispatch', label: 'Review Requests', schedule: 'Every 10 min', desc: 'Sends queued review-request messages', color: '#eab308', logs: 'none', path: '/api/reviews/dispatch' },
+  { key: 'ticket-sla', label: 'Ticket SLA', schedule: 'Every 5 min', desc: 'Flags tickets that breach their response / resolution targets', color: '#ef4444', logs: 'none', path: '/api/cron/ticket-sla' },
+  { key: 'shopify-sync', label: 'Shopify Sync', schedule: 'Every 15 min', desc: 'Pulls Shopify orders, products and checkouts (store health is on Integrations)', color: '#5e8e3e', logs: 'none', path: '/api/cron/shopify-sync' },
+  { key: 'shopify-tokens', label: 'Shopify Token Refresh', schedule: 'Daily 04:40 UTC', desc: 'Refreshes expiring Shopify app tokens', color: '#5e8e3e', logs: 'none', path: '/api/cron/shopify-tokens' },
 ]
 const DEFAULT_STALE_MS = 3600000 // 1h fallback for jobs without an explicit cadence
 const prettyJob = (k: string) => k.replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
@@ -1549,8 +1990,12 @@ function BackgroundJobsPage() {
   const registryKeys = new Set(JOBS.map(j => j.key))
   const derivedJobs = Array.from(new Set(all.map(r => r.job).filter(Boolean)))
     .filter(k => !registryKeys.has(k))
-    .map(k => ({ key: k as string, label: prettyJob(k as string), schedule: 'Scheduled', desc: 'Background worker', color: '#6366f1', staleMs: undefined as number | undefined }))
-  const cards = [...JOBS, ...derivedJobs]
+    .map(k => ({ key: k as string, label: prettyJob(k as string), schedule: 'Scheduled', desc: 'Background worker', color: '#6366f1', staleMs: undefined as number | undefined, logs: 'always' as const, path: '' }))
+  const cards: JobDef[] = [...JOBS, ...derivedJobs]
+  // Instrumented first; the not-yet-logging crons go last.
+  const silent = (j: JobDef) => j.logs === 'none' && !all.some(r => r.job === j.key)
+  cards.sort((a, b) => Number(silent(a)) - Number(silent(b)))
+  const unlogged = cards.filter(silent)
   const list = all.filter(r => jobFilter === 'all' || r.job === jobFilter)
   const th: React.CSSProperties = { padding: '12px 16px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--sa-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }
   const td: React.CSSProperties = { padding: '11px 16px', fontSize: 12.5, color: 'var(--sa-text)' }
@@ -1571,6 +2016,9 @@ function BackgroundJobsPage() {
         <div style={{ padding: '14px 16px', borderRadius: 10, background: '#f59e0b18', border: '1px solid #f59e0b55', fontSize: 13, color: 'var(--sa-text)' }}>Run <b>COLVY_V218_JOB_RUNS.sql</b> to start recording job runs. The workers keep running either way — this just gives them a visible heartbeat here.</div>
       ) : (
         <>
+          {unlogged.length > 0 && (
+            <Notice tone="info">{unlogged.length} scheduled job{unlogged.length === 1 ? ' doesn’t' : 's don’t'} report to job_runs yet ({unlogged.map(j => j.label).join(', ')}), so they show as “Not logged”. They still run on Vercel’s schedule — add a <code>logJobRun()</code> call to each cron route to see their heartbeat here.</Notice>
+          )}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(280px,1fr))', gap: 14, marginBottom: 22 }}>
             {cards.map(j => {
               const s = stat(j.key)
@@ -1584,9 +2032,15 @@ function BackgroundJobsPage() {
                       <p style={{ fontSize: 14, fontWeight: 800, color: 'var(--sa-text)', margin: 0 }}>{j.label}</p>
                       <p style={{ fontSize: 11.5, color: 'var(--sa-muted)', margin: 0 }}>{j.schedule}</p>
                     </div>
-                    {rows !== null && (
-                      <span style={{ fontSize: 10.5, fontWeight: 800, padding: '3px 9px', borderRadius: 999, background: (s.last && !stale ? '#10b981' : s.last ? '#f59e0b' : '#6b7280') + '22', color: s.last && !stale ? '#10b981' : s.last ? '#f59e0b' : '#6b7280' }}>{s.last ? (stale ? 'Stale' : 'Healthy') : 'No runs'}</span>
-                    )}
+                    {rows !== null && (() => {
+                      // Not reporting yet → can't judge; "work"-only loggers are quiet when idle.
+                      const [txt, c] = !s.last
+                        ? (j.logs === 'none' ? ['Not logged', '#6b7280'] : j.logs === 'work' ? ['Quiet', '#6b7280'] : ['No runs', '#f59e0b'])
+                        : s.last.status === 'error' ? ['Failing', '#ef4444']
+                        : stale ? (j.logs === 'work' ? ['Quiet', '#6b7280'] : ['Stale', '#f59e0b'])
+                        : ['Healthy', '#10b981']
+                      return <span title={j.path ? `${j.path} · ${j.logs === 'none' ? 'does not write job_runs yet' : j.logs === 'work' ? 'logs only when it did work' : 'logs every run'}` : ''} style={{ fontSize: 10.5, fontWeight: 800, padding: '3px 9px', borderRadius: 999, background: c + '22', color: c }}>{txt}</span>
+                    })()}
                   </div>
                   <p style={{ fontSize: 12, color: 'var(--sa-muted)', margin: '0 0 14px', lineHeight: 1.4 }}>{j.desc}</p>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 10 }}>
@@ -1961,19 +2415,22 @@ function MobileDevicesPage() {
 }
 
 // Platform · Audit Logs — a chronological trail of privileged platform actions.
-// Merges the two records that actually capture admin activity and are readable
-// cross-company: impersonation sessions (an admin entered a workspace) and
-// company admin notes (an admin annotated a business). Both are real data.
+// Merges impersonation sessions (an admin entered a workspace), company admin
+// notes, and the server-side super_admin_audit log (plan/trial/credit/
+// entitlement/AI-model/agent-pause changes made through the audited routes).
 function AuditPage() {
   const [rows, setRows] = useState<any[] | null>(null)
   const [q, setQ] = useState('')
   const [kind, setKind] = useState('all')
+  const [auditNote, setAuditNote] = useState('')
   const load = async () => {
-    const [co, imp, notes] = await Promise.all([
+    const [co, imp, notes, sa] = await Promise.all([
       (supabase as any).from('companies').select('id,name,slug'),
       (supabase as any).from('impersonation_sessions').select('*').order('started_at', { ascending: false }).limit(200),
       (supabase as any).from('company_admin_notes').select('*').order('created_at', { ascending: false }).limit(200),
+      paJson('/api/platform-admin/audit?limit=200'),
     ])
+    setAuditNote(sa.ok ? (sa.data.needsMigration ? 'Run COLVY_V319_SUPER_ADMIN_AUDIT.sql to record plan, credit, entitlement, AI and agent-pause changes here.' : '') : `Admin action log unavailable: ${sa.data.error || 'error'}`)
     const coMap: Record<string, any> = {}; (co.data || []).forEach((x: any) => { coMap[x.id] = x })
     const events: any[] = []
     ;(imp.data || []).forEach((s: any) => events.push({
@@ -1988,6 +2445,17 @@ function AuditPage() {
       business: coMap[n.company_id]?.name || coMap[n.company_id]?.slug || '—',
       detail: `Added ${n.category || 'general'} note — ${String(n.body || '').slice(0, 120)}`,
     }))
+    // super_admin_audit — written by the audited server routes (plan / trial
+    // changes, credit, entitlements, AI model choices, agent pause, impersonation).
+    ;((sa.ok && Array.isArray(sa.data.entries)) ? sa.data.entries : []).forEach((e: any) => {
+      if (String(e.action || '').startsWith('impersonate_')) return   // already listed from impersonation_sessions
+      events.push({
+        id: `sa-${e.id}`, kind: 'admin', at: e.created_at,
+        actor: e.admin_email || 'admin',
+        business: e.company_id ? (coMap[e.company_id]?.name || coMap[e.company_id]?.slug || '—') : 'Platform',
+        detail: `${String(e.action || '').replace(/[._]/g, ' ')}${e.summary ? ` — ${e.summary}` : ''}`,
+      })
+    })
     events.sort((a, b) => new Date(b.at || 0).getTime() - new Date(a.at || 0).getTime())
     setRows(events)
   }
@@ -2004,6 +2472,7 @@ function AuditPage() {
   const meta: Record<string, { label: string; color: string }> = {
     impersonation: { label: 'Impersonation', color: '#f59e0b' },
     note: { label: 'Admin note', color: '#6366f1' },
+    admin: { label: 'Admin action', color: '#8b5cf6' },
   }
   const th: React.CSSProperties = { padding: '12px 16px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--sa-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }
   const td: React.CSSProperties = { padding: '11px 16px', fontSize: 12.5, color: 'var(--sa-text)' }
@@ -2012,10 +2481,11 @@ function AuditPage() {
     <div>
       <SectionHeader title="Audit Logs" sub="A trail of privileged platform actions across every business"
         action={<button onClick={() => { setRows(null); load() }} style={paBtn()}>Refresh</button>} />
+      {auditNote && <Notice>{auditNote}</Notice>}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16, alignItems: 'center' }}>
         <SearchBar placeholder="Search actor, business, detail…" value={q} onChange={setQ} />
         <div style={{ display: 'flex', gap: 6 }}>
-          {[['all', 'All'], ['impersonation', 'Impersonation'], ['note', 'Admin notes']].map(([k, l]) => (
+          {[['all', 'All'], ['admin', 'Admin actions'], ['impersonation', 'Impersonation'], ['note', 'Admin notes']].map(([k, l]) => (
             <button key={k} onClick={() => setKind(k)} style={chip(kind === k)}>{l}</button>
           ))}
         </div>
@@ -2170,12 +2640,12 @@ function DemoWorkspacesPage() {
                       <td style={td}>
                         <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
                           {slug && <button onClick={() => enterWorkspace(slug)} style={paBtn('#6366f1')}>Open</button>}
-                          <button onClick={() => act('reset', r.id)} disabled={!!busy} style={paBtn()}>{busy === r.id + 'reset' ? '…' : 'Reset'}</button>
+                          <button onClick={async () => { if (await confirmDialog({ title: `Reset ${r.business_name || r.company?.name || 'this demo'}?`, message: 'Wipes the demo’s data and re-seeds the sample records.', confirmLabel: 'Reset demo', tone: 'danger' })) act('reset', r.id) }} disabled={!!busy} style={paBtn()}>{busy === r.id + 'reset' ? '…' : 'Reset…'}</button>
                           <button onClick={() => act('extend', r.id, { days: 14 })} disabled={!!busy} style={paBtn()}>+14d</button>
                           {r.status === 'disabled'
                             ? <button onClick={() => act('enable', r.id)} disabled={!!busy} style={paBtn('#10b981')}>Enable</button>
-                            : <button onClick={() => act('disable', r.id)} disabled={!!busy} style={paBtn('#f59e0b')}>Disable</button>}
-                          {r.status !== 'converted' && <button onClick={() => act('convert', r.id)} disabled={!!busy} style={paBtn('#8b5cf6')}>Convert</button>}
+                            : <button onClick={async () => { if (await confirmDialog({ title: 'Disable this demo workspace?', message: 'Anyone using its link loses access until you enable it again.', confirmLabel: 'Disable', tone: 'danger' })) act('disable', r.id) }} disabled={!!busy} style={paBtn('#f59e0b')}>Disable…</button>}
+                          {r.status !== 'converted' && <button onClick={async () => { if (await confirmDialog({ title: 'Convert this demo to a real workspace?', message: 'It stops being a demo (no expiry, no sample-data resets). Use this when the prospect signs up.', confirmLabel: 'Convert', tone: 'primary' })) act('convert', r.id) }} disabled={!!busy} style={paBtn('#8b5cf6')}>Convert…</button>}
                           <button onClick={async () => { if (await confirmDialog('Delete this demo workspace and all its sample data? This cannot be undone.')) act('delete', r.id) }} disabled={!!busy} style={paBtn('#ef4444')}>Delete</button>
                         </div>
                       </td>
@@ -2365,20 +2835,12 @@ function WebFormsPage() {
   )
 }
 
-function OverviewPage({ data }: { data: any }) {
-  const sparkA = [12,18,15,22,19,28,25,32,30,38,35,42]
-  const sparkB = [5,8,6,11,9,14,12,16,14,19,17,22]
-  const barData = [
-    { label: 'Mon', value: 42 }, { label: 'Tue', value: 58 }, { label: 'Wed', value: 51 },
-    { label: 'Thu', value: 67 }, { label: 'Fri', value: 73 }, { label: 'Sat', value: 38 }, { label: 'Sun', value: 29 },
-  ]
-  const retentionData = [100, 72, 61, 54, 49, 45, 42, 40, 38, 37, 36, 35]
-
+function OverviewPage({ data, pulse, onRefresh, onGo }: { data: any; pulse: any; onRefresh: () => void; onGo: (page: string) => void }) {
   return (
     <div>
       <SectionHeader title="Overview" sub={`Last updated ${new Date().toLocaleTimeString()}`}
         action={
-          <button style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 10, border: '1px solid var(--sa-border)', background: 'var(--sa-card)', color: 'var(--sa-muted)', fontSize: 13, cursor: 'pointer' }}>
+          <button onClick={onRefresh} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 10, border: '1px solid var(--sa-border)', background: 'var(--sa-card)', color: 'var(--sa-muted)', fontSize: 13, cursor: 'pointer' }}>
             {I.refresh} Refresh
           </button>
         }
@@ -2418,7 +2880,7 @@ function OverviewPage({ data }: { data: any }) {
           <KPI label="MRR" value={`$${(data.mrr ?? 0).toLocaleString()}`} sub={data.mrrSource === 'subscriptions' ? 'live from Stripe subs' : 'est. from plans'} color="#8b5cf6" />
           <KPI label="ARR" value={`$${(data.arr ?? 0).toLocaleString()}`} sub="annual run rate" color="#ec4899" />
           <KPI label="ARPA" value={`$${(data.arpa ?? 0).toLocaleString()}`} sub="avg revenue / account" color="#8b5cf6" />
-          <KPI label="Paying customers" value={data.paid?.toLocaleString() ?? '—'} sub="pro + enterprise" color="#10b981" />
+          <KPI label="Paying customers" value={data.paid?.toLocaleString() ?? '—'} sub="on a paid plan" color="#10b981" />
           <KPI label="New paid · 30d" value={data.newPaidLast30?.toLocaleString() ?? '—'} sub="subscriptions started" color="#10b981" />
           <KPI label="Churn · 30d" value={data.churn != null ? `${data.churn}%` : '—'} sub={`${data.canceledLast30 ?? 0} cancelled`} color="#ef4444" />
           <KPI label="Active trials" value={data.activeTrials?.toLocaleString() ?? '—'} sub="not yet expired" color="#f59e0b" />
@@ -2426,6 +2888,8 @@ function OverviewPage({ data }: { data: any }) {
           <KPI label="Trial → paid" value={data.conversion != null ? `${data.conversion}%` : '—'} sub="paid ÷ (paid + trial)" color="#0891b2" />
           <KPI label="Expired trials" value={data.expiredTrials?.toLocaleString() ?? '—'} sub="lapsed, not converted" color="#6b7280" />
           <KPI label="Sales logged · 30d" value={`$${(data.salesLogged30d ?? 0).toLocaleString()}`} sub={`${data.salesCount30d ?? 0} in-chat sales`} color="#16a34a" />
+          <KPI label="Pay links paid · 30d" value={data.payLinksPaid30d != null ? data.payLinksPaid30d.toLocaleString() : '—'} sub="Stripe pay links in chat" color="#635bff" />
+          <KPI label="Bookings · 30d" value={data.bookings30d != null ? data.bookings30d.toLocaleString() : '—'} sub="booked across all workspaces" color="#0891b2" />
         </div>
         {/* Top workspaces by revenue tenants attribute to Colvy (in-chat sales). */}
         {Array.isArray(data.topSalesCompanies) && data.topSalesCompanies.length > 0 && (
@@ -2482,59 +2946,59 @@ function OverviewPage({ data }: { data: any }) {
         </div>
       </div>
 
-      {/* System health + activity */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-        {/* System health */}
+      {/* Platform health (real, last 24h) + recent admin activity */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 14 }}>
         <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, padding: 20 }}>
-          <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)', marginBottom: 16 }}>System Health</p>
-          {[
-            { label: 'API Latency', value: '48ms', status: 'healthy', pct: 95 },
-            { label: 'Database', value: '12ms', status: 'healthy', pct: 98 },
-            { label: 'Storage Used', value: '34%', status: 'healthy', pct: 34 },
-            { label: 'Email Delivery', value: '99.2%', status: 'healthy', pct: 99 },
-            { label: 'Webhook Success', value: '97.8%', status: 'healthy', pct: 98 },
-            { label: 'Queue Depth', value: '12 jobs', status: 'healthy', pct: 5 },
-          ].map(s => (
-            <div key={s.label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-              <div style={{ flex: 1, marginRight: 16 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                  <span style={{ fontSize: 12, color: 'var(--sa-muted)' }}>{s.label}</span>
-                  <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--sa-text)' }}>{s.value}</span>
-                </div>
-                <Progress value={s.pct} color="#10b981" />
-              </div>
-              <Badge status={s.status} />
+          <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)', marginBottom: 4 }}>Platform health</p>
+          <p style={{ fontSize: 11, color: 'var(--sa-muted)', marginBottom: 14 }}>Failures in the last 24 hours · click a row to dig in</p>
+          {pulse === null ? <p style={{ fontSize: 12.5, color: 'var(--sa-muted)' }}>Checking…</p>
+          : pulse?.error ? <p style={{ fontSize: 12.5, color: '#ef4444' }}>Couldn’t load health: {pulse.error}</p>
+          : [
+            { label: 'Background jobs', value: `${pulse.jobs?.errors || 0} failed / ${pulse.jobs?.runs || 0} runs`, bad: (pulse.jobs?.errors || 0) > 0, go: 'jobs' },
+            { label: 'API errors', value: `${pulse.api?.errors || 0} errors · ${pulse.api?.warnings || 0} warnings`, bad: (pulse.api?.errors || 0) > 0, go: 'apilogs' },
+            { label: 'Webhooks', value: `${pulse.webhooks?.errors || 0} errors / ${pulse.webhooks?.total || 0} received`, bad: (pulse.webhooks?.errors || 0) > 0, go: 'webhooks' },
+            { label: 'AI agent runs', value: `${pulse.agents?.failed || 0} failed · ${pulse.agents?.stuck || 0} stuck / ${pulse.agents?.runs || 0}`, bad: (pulse.agents?.failed || 0) + (pulse.agents?.stuck || 0) > 0 || !!pulse.agents?.platformPaused, go: 'agents' },
+            { label: 'Connections', value: `${pulse.connections?.broken || 0} need attention / ${pulse.connections?.total || 0}`, bad: (pulse.connections?.broken || 0) > 0, go: 'integrations' },
+            { label: 'Stripe events', value: `${pulse.stripe?.events || 0} received`, bad: false, go: 'system' },
+          ].map(r => (
+            <div key={r.label} onClick={() => onGo(r.go)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '9px 0', borderBottom: '1px solid var(--sa-border)', cursor: 'pointer' }}>
+              <span style={{ fontSize: 12.5, color: 'var(--sa-muted)' }}>{r.label}</span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--sa-text)' }}>{r.value}</span>
+                <Badge status={r.bad ? 'degraded' : 'healthy'} />
+              </span>
             </div>
           ))}
         </div>
 
-        {/* Activity feed */}
         <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, padding: 20 }}>
-          <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)', marginBottom: 16 }}>Recent Activity</p>
-          {[
-            { action: 'New company signed up', detail: 'prexty.colvy.com', time: '2m ago', color: '#10b981' },
-            { action: 'Subscription upgraded', detail: 'Free → Growth plan', time: '8m ago', color: '#6366f1' },
-            { action: 'Support ticket opened', detail: '#1042 — Help center not loading', time: '14m ago', color: '#f59e0b' },
-            { action: 'Company suspended', detail: 'spam-board.colvy.com', time: '31m ago', color: '#ef4444' },
-            { action: 'New company signed up', detail: 'neplay.colvy.com', time: '45m ago', color: '#10b981' },
-            { action: 'Feature flag toggled', detail: 'AI Assistant → enabled for roxy', time: '1h ago', color: '#8b5cf6' },
-            { action: 'Webhook failure', detail: '3 failed deliveries — acme.io', time: '2h ago', color: '#ef4444' },
-            { action: 'Subscription renewed', detail: 'Growth plan — $149/mo', time: '3h ago', color: '#10b981' },
-          ].map((a, i) => (
-            <div key={i} style={{ display: 'flex', gap: 12, marginBottom: 14, alignItems: 'flex-start' }}>
-              <div style={{ width: 7, height: 7, borderRadius: '50%', background: a.color, marginTop: 5, flexShrink: 0 }} />
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <p style={{ fontSize: 13, color: 'var(--sa-text)', marginBottom: 2 }}>{a.action}</p>
-                <p style={{ fontSize: 12, color: 'var(--sa-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.detail}</p>
+          <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)', marginBottom: 14 }}>Recent activity</p>
+          {pulse === null ? <p style={{ fontSize: 12.5, color: 'var(--sa-muted)' }}>Loading…</p> : (() => {
+            const items = [
+              ...((pulse?.audit || []) as any[]).map(a => ({ k: `a-${a.id}`, at: a.created_at, color: '#8b5cf6', action: a.summary || String(a.action || '').replace(/[._]/g, ' '), detail: [a.company, a.admin_email].filter(Boolean).join(' · ') })),
+              ...((pulse?.signups || []) as any[]).map(c => ({ k: `c-${c.id}`, at: c.created_at, color: '#10b981', action: 'New company signed up', detail: `${c.name || c.slug} · ${c.slug}.colvy.com · ${c.plan || 'free'}` })),
+            ].sort((x, y) => String(y.at).localeCompare(String(x.at))).slice(0, 9)
+            if (items.length === 0) return <p style={{ fontSize: 12.5, color: 'var(--sa-muted)' }}>Nothing recorded yet.</p>
+            return items.map(a => (
+              <div key={a.k} style={{ display: 'flex', gap: 12, marginBottom: 14, alignItems: 'flex-start' }}>
+                <div style={{ width: 7, height: 7, borderRadius: '50%', background: a.color, marginTop: 5, flexShrink: 0 }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <p style={{ fontSize: 13, color: 'var(--sa-text)', marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={a.action}>{a.action}</p>
+                  <p style={{ fontSize: 12, color: 'var(--sa-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.detail}</p>
+                </div>
+                <span style={{ fontSize: 11, color: 'var(--sa-muted)', flexShrink: 0, whiteSpace: 'nowrap' }}>{agoText(a.at)}</span>
               </div>
-              <span style={{ fontSize: 11, color: 'var(--sa-muted)', flexShrink: 0, whiteSpace: 'nowrap' }}>{a.time}</span>
-            </div>
-          ))}
+            ))
+          })()}
+          {pulse?.auditMissing && <p style={{ fontSize: 11.5, color: 'var(--sa-muted)', margin: 0 }}>Admin actions appear here once COLVY_V319_SUPER_ADMIN_AUDIT.sql has run.</p>}
         </div>
       </div>
     </div>
   )
 }
+
+// Plans the console can set (lib/plan). Legacy values still display as-is.
+const CONSOLE_PLANS = ['free', 'trial', 'feedback', 'omnichannel', 'everything', 'enterprise', 'suspended']
 
 function paBtn(color = 'var(--sa-muted)', filled = false): React.CSSProperties {
   return { padding: '7px 13px', borderRadius: 9, border: filled ? 'none' : '1px solid var(--sa-border)', background: filled ? color : 'transparent', color: filled ? '#fff' : color, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', display: 'inline-block' }
@@ -2550,6 +3014,49 @@ function paField(label: string, value: string, onChange: (v: string) => void, pl
       <label style={paLabel}>{label}</label>
       <input value={value || ''} onChange={e => onChange(e.target.value)} placeholder={placeholder} style={paInput} />
       {hint && <p style={{ fontSize: 11, color: 'var(--sa-muted)', marginTop: 4 }}>{hint}</p>}
+    </div>
+  )
+}
+
+// Safe impersonation: capture a reason + mode, record an audited session, then
+// open the workspace with the session id so it shows the banner. Shared by
+// Companies ("Enter workspace") and Users ("Login as").
+function ImpersonateModal({ co, onClose }: { co: { id?: string; slug: string; name?: string }; onClose: () => void }) {
+  const [reason, setReason] = useState('')
+  const [mode, setMode] = useState('full')
+  const [minutes, setMinutes] = useState(60)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const start = async () => {
+    if (!reason.trim()) { setErr('A reason is required.'); return }
+    setBusy(true); setErr('')
+    const r = await auditedEnterWorkspace(co, reason.trim(), mode, minutes)
+    if (!r.ok) { setBusy(false); setErr(r.error || 'Could not start session'); return }
+    onClose()
+  }
+  return (
+    <div onClick={() => !busy && onClose()} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 400, padding: 20 }}>
+      <div onClick={e => e.stopPropagation()} style={{ width: 440, maxWidth: '94vw', background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, padding: 24 }}>
+        <p style={{ fontSize: 16, fontWeight: 800, color: 'var(--sa-text)', margin: '0 0 4px' }}>Enter {co.name || co.slug} workspace</p>
+        <p style={{ fontSize: 12.5, color: 'var(--sa-muted)', margin: '0 0 18px', lineHeight: 1.5 }}>You'll enter as super admin using your own account. This session is recorded in the audit log, and a banner shows inside the workspace until you exit.</p>
+        <label style={paLabel}>Reason (required)</label>
+        <input value={reason} onChange={e => setReason(e.target.value)} placeholder="e.g. Investigating support ticket #1042" style={paInput} autoFocus />
+        <label style={paLabel}>Mode</label>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {[['full', 'Full support'], ['read_only', 'Read-only']].map(([v, l]) => (
+            <button key={v} onClick={() => setMode(v)} style={{ flex: 1, padding: '9px', borderRadius: 9, border: `1px solid ${mode === v ? '#ff7a6b' : 'var(--sa-border)'}`, background: mode === v ? '#ff7a6b22' : 'transparent', color: mode === v ? '#ff7a6b' : 'var(--sa-muted)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>{l}</button>
+          ))}
+        </div>
+        <label style={paLabel}>Auto-expire after</label>
+        <select value={minutes} onChange={e => setMinutes(Number(e.target.value))} style={paInput}>
+          {[15, 30, 60, 120, 240].map(m => <option key={m} value={m}>{m} minutes</option>)}
+        </select>
+        {err && <p style={{ fontSize: 12, color: '#ef4444', margin: '12px 0 0' }}>{err}</p>}
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 20 }}>
+          <button onClick={onClose} disabled={busy} style={{ padding: '9px 16px', borderRadius: 9, border: '1px solid var(--sa-border)', background: 'transparent', color: 'var(--sa-muted)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
+          <button onClick={start} disabled={busy} style={{ padding: '9px 18px', borderRadius: 9, border: 'none', background: '#ff7a6b', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>{busy ? 'Entering…' : 'Enter workspace →'}</button>
+        </div>
+      </div>
     </div>
   )
 }
@@ -2662,33 +3169,33 @@ function CompaniesPage() {
       }
     } catch {}
   }, [loading])
-  const startImpersonation = async () => {
-    if (!imp?.reason?.trim()) { setImp((s: any) => ({ ...s, err: 'A reason is required.' })); return }
-    setImp((s: any) => ({ ...s, busy: true, err: '' }))
-    const r = await auditedEnterWorkspace(imp.co, imp.reason, imp.mode, imp.minutes)
-    if (!r.ok) { setImp((s: any) => ({ ...s, busy: false, err: r.error })); return }
-    setImp(null)
-  }
 
   const action = async (type: string, co: any) => {
     setMsg('')
     // Safe impersonation: capture a reason + mode, record an audit session,
     // then open the workspace with the session id so it shows the banner.
-    if (type === 'impersonate') { setImp({ co, reason: '', mode: 'full', minutes: 60, busy: false, err: '' }); return }
+    if (type === 'impersonate') { setImp({ co }); return }
     if (type === 'view') { window.open(`https://${co.slug}.colvy.com`, '_blank'); return }
+    // Plan changes go through the audited server route (super_admin_audit).
+    const setPlan = async (plan: string, done: string) => {
+      const r = await paJson('/api/platform-admin/company', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId: co.id, patch: { plan } }) })
+      if (!r.ok) { setMsg(`Could not update ${co.name}: ${r.data.error || 'failed'}`); return }
+      setCompanies(prev => prev.map(c => c.id === co.id ? { ...c, plan } : c))
+      setDetailCo((d: any) => d && d.id === co.id ? { ...d, plan } : d)
+      setMsg(done)
+    }
     if (type === 'suspend') {
-      await (supabase as any).from('companies').update({ plan: 'suspended' }).eq('id', co.id)
-      setCompanies(prev => prev.map(c => c.id === co.id ? { ...c, plan: 'suspended' } : c))
-      setMsg(`${co.name} suspended`)
+      if (!(await confirmDialog({ title: `Suspend ${co.name}?`, message: 'Sets the plan to “suspended”, which switches off every paid feature for this business. Recorded in the audit log; reactivate any time.', confirmLabel: 'Suspend', tone: 'danger' }))) return
+      await setPlan('suspended', `${co.name} suspended`)
     }
     if (type === 'reactivate') {
-      await (supabase as any).from('companies').update({ plan: 'free' }).eq('id', co.id)
-      setCompanies(prev => prev.map(c => c.id === co.id ? { ...c, plan: 'free' } : c))
-      setMsg(`${co.name} reactivated`)
+      if (!(await confirmDialog({ title: `Reactivate ${co.name}?`, message: 'Puts the business back on the Free plan. Change the plan afterwards in the business’s Subscription tab if they should be on a paid plan.', confirmLabel: 'Reactivate', tone: 'primary' }))) return
+      await setPlan('free', `${co.name} reactivated (Free plan)`)
     }
     if (type === 'seed') {
-      await authFetch('/api/seed-company', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId: co.id, companyName: co.name, clearFirst: true }) })
-      setMsg(`Sample data seeded for ${co.name}`)
+      if (!(await confirmDialog({ title: `Reset ${co.name}'s board with sample data?`, message: 'This DELETES the workspace’s ideas, announcements, help articles, statuses and topics, then adds example content. Only use it on test or demo workspaces.', confirmLabel: 'Delete & re-seed', tone: 'danger' }))) return
+      const r = await paJson('/api/seed-company', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId: co.id, companyName: co.name, clearFirst: true }) })
+      setMsg(r.ok ? `Sample data seeded for ${co.name}` : `Seeding failed: ${r.data.error || 'error'}`)
     }
   }
 
@@ -2708,38 +3215,14 @@ function CompaniesPage() {
       {msg && <div style={{ padding: '10px 16px', borderRadius: 10, background: '#d1fae5', color: '#065f46', fontSize: 13, marginBottom: 16, fontWeight: 500 }}>{msg}</div>}
 
       {/* Safe impersonation modal */}
-      {imp && (
-        <div onClick={() => !imp.busy && setImp(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 400, padding: 20 }}>
-          <div onClick={e => e.stopPropagation()} style={{ width: 440, maxWidth: '94vw', background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, padding: 24 }}>
-            <p style={{ fontSize: 16, fontWeight: 800, color: 'var(--sa-text)', margin: '0 0 4px' }}>Enter {imp.co.name} workspace</p>
-            <p style={{ fontSize: 12.5, color: 'var(--sa-muted)', margin: '0 0 18px', lineHeight: 1.5 }}>You'll enter as super admin using your own account. This session is recorded in the audit log, and a banner shows inside the workspace until you exit.</p>
-            <label style={paLabel}>Reason (required)</label>
-            <input value={imp.reason} onChange={e => setImp((s: any) => ({ ...s, reason: e.target.value }))} placeholder="e.g. Investigating support ticket #1042" style={paInput} autoFocus />
-            <label style={paLabel}>Mode</label>
-            <div style={{ display: 'flex', gap: 8 }}>
-              {[['full', 'Full support'], ['read_only', 'Read-only']].map(([v, l]) => (
-                <button key={v} onClick={() => setImp((s: any) => ({ ...s, mode: v }))} style={{ flex: 1, padding: '9px', borderRadius: 9, border: `1px solid ${imp.mode === v ? '#ff7a6b' : 'var(--sa-border)'}`, background: imp.mode === v ? '#ff7a6b22' : 'transparent', color: imp.mode === v ? '#ff7a6b' : 'var(--sa-muted)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>{l}</button>
-              ))}
-            </div>
-            <label style={paLabel}>Auto-expire after</label>
-            <select value={imp.minutes} onChange={e => setImp((s: any) => ({ ...s, minutes: Number(e.target.value) }))} style={paInput}>
-              {[15, 30, 60, 120, 240].map(m => <option key={m} value={m}>{m} minutes</option>)}
-            </select>
-            {imp.err && <p style={{ fontSize: 12, color: '#ef4444', margin: '12px 0 0' }}>{imp.err}</p>}
-            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 20 }}>
-              <button onClick={() => setImp(null)} disabled={imp.busy} style={{ padding: '9px 16px', borderRadius: 9, border: '1px solid var(--sa-border)', background: 'transparent', color: 'var(--sa-muted)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
-              <button onClick={startImpersonation} disabled={imp.busy} style={{ padding: '9px 18px', borderRadius: 9, border: 'none', background: '#ff7a6b', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>{imp.busy ? 'Entering…' : 'Enter workspace →'}</button>
-            </div>
-          </div>
-        </div>
-      )}
+      {imp && <ImpersonateModal co={imp.co} onClose={() => setImp(null)} />}
 
       {detailCo && <BusinessDetail co={detailCo} onClose={() => setDetailCo(null)} onAction={action} />}
 
       <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap' as const }}>
         <SearchBar placeholder="Search companies..." value={search} onChange={setSearch} />
         <div style={{ display: 'flex', gap: 6 }}>
-          {['all', 'free', 'trial', 'startup', 'business', 'growth', 'suspended'].map(f => (
+          {['all', ...CONSOLE_PLANS].map(f => (
             <button key={f} onClick={() => setFilter(f)}
               style={{ padding: '7px 12px', borderRadius: 8, border: '1px solid var(--sa-border)', background: filter === f ? '#ff7a6b' : 'var(--sa-card)', color: filter === f ? '#fff' : 'var(--sa-muted)', fontSize: 12, fontWeight: filter === f ? 700 : 400, cursor: 'pointer', textTransform: 'capitalize' as const }}>
               {f}
@@ -2825,7 +3308,7 @@ function CompaniesPage() {
 
               <label style={paLabel}>Plan</label>
               <select value={form.plan} onChange={e => setForm({ ...form, plan: e.target.value })} style={paInput}>
-                {['free', 'trial', 'startup', 'business', 'growth', 'suspended'].map(p => <option key={p} value={p}>{p}</option>)}
+                {Array.from(new Set([...CONSOLE_PLANS, form.plan].filter(Boolean))).map(p => <option key={p} value={p}>{PLAN_NAMES[p as Plan] || p}</option>)}
               </select>
 
               {/* Which carrier backs this company's phone-number provisioning +
@@ -2933,6 +3416,7 @@ function UsersPage() {
   const [attachRole, setAttachRole] = useState('editor')   // 'editor' == Agent
   const [attachBusy, setAttachBusy] = useState(false)
   const [attachMsg, setAttachMsg] = useState('')
+  const [loginAs, setLoginAs] = useState<any>(null)
 
   const load = async () => {
     setLoading(true)
@@ -3045,13 +3529,7 @@ function UsersPage() {
                 <td style={{ padding: '12px 16px' }}>
                   <div style={{ display: 'flex', gap: 6 }}>
                     <button onClick={() => openAttach(u)} style={{ padding: '5px 9px', borderRadius: 7, border: '1px solid var(--sa-border)', background: orphan ? '#ecfdf5' : 'transparent', color: '#059669', cursor: 'pointer', fontSize: 12, whiteSpace: 'nowrap' }}>+ Workspace</button>
-                    {u.companies[0]?.slug && <button onClick={async () => {
-                      const co = u.companies[0]
-                      const reason = window.prompt(`Reason for entering ${co.name || co.slug} as an admin — recorded in the audit log:`, 'Support / troubleshooting')
-                      if (!reason || !reason.trim()) return
-                      const r = await auditedEnterWorkspace({ id: co.id, slug: co.slug, name: co.name }, reason.trim())
-                      if (!r.ok) alert(r.error || 'Could not start session')
-                    }} style={{ padding: '5px 9px', borderRadius: 7, border: '1px solid var(--sa-border)', background: 'transparent', color: '#6366f1', cursor: 'pointer', fontSize: 12 }}>Login as</button>}
+                    {u.companies?.[0]?.slug && <button onClick={() => setLoginAs(u.companies[0])} style={{ padding: '5px 9px', borderRadius: 7, border: '1px solid var(--sa-border)', background: 'transparent', color: '#6366f1', cursor: 'pointer', fontSize: 12 }}>Login as</button>}
                   </div>
                 </td>
               </tr>
@@ -3059,6 +3537,8 @@ function UsersPage() {
           </tbody>
         </table>
       </div>
+
+      {loginAs && <ImpersonateModal co={{ id: loginAs.id, slug: loginAs.slug, name: loginAs.name }} onClose={() => setLoginAs(null)} />}
 
       {/* Add-to-workspace repair modal */}
       {attachFor && (
@@ -3258,73 +3738,57 @@ function AnalyticsPage() {
   )
 }
 
-function FeatureFlagsPage({ data }: { data: any }) {
-  const [flags, setFlags] = useState<Record<string, boolean>>({
-    help_center: true, live_chat: true, ideas_board: true, roadmaps: true,
-    announcements: true, ai_assistant: false, whatsapp: false, white_label: false,
-    custom_domain: false, api_access: false, sso: false,
-  })
-  const [companies, setCompanies] = useState<any[]>([])
-  const [selCo, setSelCo] = useState<string>('global')
-  const [saved, setSaved] = useState(false)
-
-  useEffect(() => {
-    ;(async () => {
-      const { data: cos } = await (supabase as any).from('companies').select('id,name,slug').order('name')
-      setCompanies(cos || [])
-    })()
-  }, [])
-
-  const save = () => { setSaved(true); setTimeout(() => setSaved(false), 2000) }
-
-  const flagConfig = [
-    { key: 'help_center', label: 'Help Center', desc: 'Public knowledge base and support docs', plan: 'all' },
-    { key: 'ideas_board', label: 'Ideas Board', desc: 'Customer feedback and idea voting', plan: 'all' },
-    { key: 'roadmaps', label: 'Roadmaps', desc: 'Public roadmap kanban board', plan: 'all' },
-    { key: 'announcements', label: 'Announcements', desc: 'Changelog and release notes', plan: 'all' },
-    { key: 'live_chat', label: 'Live Chat', desc: 'Real-time customer support chat', plan: 'startup+' },
-    { key: 'ai_assistant', label: 'AI Assistant', desc: 'GPT-powered idea summarization and triage', plan: 'business+' },
-    { key: 'white_label', label: 'White Label', desc: 'Remove Colvy branding from board', plan: 'business+' },
-    { key: 'custom_domain', label: 'Custom Domain', desc: 'Use your own domain (help.yourco.com)', plan: 'business+' },
-    { key: 'api_access', label: 'API Access', desc: 'REST API and webhook access', plan: 'growth' },
-    { key: 'whatsapp', label: 'WhatsApp Integration', desc: 'Collect feedback via WhatsApp', plan: 'growth' },
-    { key: 'sso', label: 'SSO / SAML', desc: 'Single sign-on via Google, SAML 2.0', plan: 'enterprise' },
-  ]
-
+// Platform · Feature Flags — the REAL per-business switches: every
+// company_entitlements override (features forced on/off, custom limits, and
+// operational features switched off). Read-only here; each business is edited
+// in its drawer (Companies → business → Entitlements), which is audited.
+function FeatureFlagsPage() {
+  const [d, setD] = useState<any>(null)
+  const [q, setQ] = useState('')
+  useEffect(() => { (async () => { const r = await paJson('/api/platform-admin/entitlements'); setD(r.ok ? r.data : { error: r.data.error || 'Could not load overrides', missing: !!r.data.missing, rows: [] }) })() }, [])
+  const rows: any[] = Array.isArray(d?.rows) ? d.rows : []
+  const label = (k: string) => OVERRIDABLE_FEATURES.find(f => f.key === k)?.label || OPERATIONAL_FLAGS.find(f => f.key === k)?.label || k
+  const limitLabel = (k: string) => OVERRIDABLE_LIMITS.find(l => l.key === k)?.label || k
+  const isOperational = (k: string) => OPERATIONAL_FLAGS.some(f => f.key === k)
+  const list = rows.filter(r => !q.trim() || `${r.company?.name || ''} ${r.company?.slug || ''} ${r.reason || ''}`.toLowerCase().includes(q.trim().toLowerCase()))
+  const opOff = OPERATIONAL_FLAGS.map(f => ({ ...f, n: rows.filter(r => r.features?.[f.key] === false).length }))
   return (
     <div>
-      <SectionHeader title="Feature Flags" sub="Enable or disable features globally or per company"
-        action={
-          <button onClick={save} style={{ padding: '8px 18px', borderRadius: 10, background: saved ? '#10b981' : '#ff7a6b', color: '#fff', fontSize: 13, fontWeight: 700, border: 'none', cursor: 'pointer' }}>
-            {saved ? '✓ Saved' : 'Save Changes'}
-          </button>
-        }
-      />
-      {/* Scope selector */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' as const }}>
-        <button onClick={() => setSelCo('global')} style={{ padding: '7px 14px', borderRadius: 9, border: `1.5px solid ${selCo === 'global' ? '#ff7a6b' : 'var(--sa-border)'}`, background: selCo === 'global' ? '#ff7a6b18' : 'var(--sa-card)', color: selCo === 'global' ? '#ff7a6b' : 'var(--sa-muted)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-          Global defaults
-        </button>
-        <select value={selCo} onChange={e => setSelCo(e.target.value)}
-          style={{ padding: '7px 12px', borderRadius: 9, border: '1px solid var(--sa-border)', background: 'var(--sa-card)', color: 'var(--sa-text)', fontSize: 13, cursor: 'pointer', outline: 'none' }}>
-          <option value="global">Global defaults</option>
-          {companies.map(c => <option key={c.id} value={c.id}>{c.name} ({c.slug})</option>)}
-        </select>
+      <SectionHeader title="Feature Flags" sub="Per-business feature and limit overrides on top of each plan — edit a business in Companies → Entitlements" />
+      {d?.missing ? <Notice>Run <b>COLVY_V222_COMPANY_ENTITLEMENTS.sql</b> to store per-business overrides.</Notice> : d?.error ? <Notice tone="error">{d.error}</Notice> : null}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(220px,1fr))', gap: 12, marginBottom: 18 }}>
+        <StatTile label="Businesses with overrides" value={rows.length} color="#6366f1" loading={d === null} />
+        {opOff.map(f => <StatTile key={f.key} label={`${f.label} · switched off`} value={f.n} color={f.n ? '#f59e0b' : 'var(--sa-text)'} loading={d === null} />)}
       </div>
-
-      <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, overflow: 'hidden' }}>
-        {flagConfig.map((f, i) => (
-          <div key={f.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: i < flagConfig.length - 1 ? '1px solid var(--sa-border)' : 'none' }}>
-            <div style={{ flex: 1 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 3 }}>
-                <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--sa-text)' }}>{f.label}</span>
-                <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 999, background: 'var(--sa-hover)', color: 'var(--sa-muted)', fontWeight: 600, textTransform: 'uppercase' as const, letterSpacing: '0.05em' }}>{f.plan}</span>
-              </div>
-              <p style={{ fontSize: 12, color: 'var(--sa-muted)' }}>{f.desc}</p>
-            </div>
-            <Toggle on={flags[f.key]} onChange={() => setFlags(p => ({ ...p, [f.key]: !p[f.key] }))} />
-          </div>
-        ))}
+      <div style={{ marginBottom: 12 }}><SearchBar placeholder="Search business or reason…" value={q} onChange={setQ} /></div>
+      <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, overflow: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 820 }}>
+          <thead><tr style={{ borderBottom: '1px solid var(--sa-border)' }}>{['Business', 'Plan', 'Overrides', 'Reason', 'Updated'].map(h => <th key={h} style={paTh}>{h}</th>)}</tr></thead>
+          <tbody>
+            {d === null ? <tr><td colSpan={5} style={{ padding: 40, textAlign: 'center', color: 'var(--sa-muted)' }}>Loading…</td></tr>
+            : list.length === 0 ? <tr><td colSpan={5} style={{ padding: 40, textAlign: 'center', color: 'var(--sa-muted)' }}>{rows.length === 0 ? 'No overrides — every business is on its plan defaults.' : 'No businesses match.'}</td></tr>
+            : list.map((r, i) => {
+              const feats = Object.entries(r.features || {}).filter(([k]) => k !== 'brandingAddon')
+              const lims = Object.entries(r.limits || {})
+              return (
+                <tr key={r.company_id} style={{ borderBottom: i < list.length - 1 ? '1px solid var(--sa-border)' : 'none', verticalAlign: 'top' }}>
+                  <td style={{ ...paTd, fontWeight: 600 }}>{r.company?.name || 'Deleted business'}<div style={{ fontSize: 11, color: 'var(--sa-muted)', fontWeight: 400 }}>{r.company?.slug || ''}</div></td>
+                  <td style={paTd}><Badge status={r.company?.plan || 'free'} /></td>
+                  <td style={paTd}>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                      {r.features?.brandingAddon && <Pill text="Branding add-on (paid)" color="#8b5cf6" />}
+                      {feats.map(([k, v]) => <Pill key={k} text={`${label(k)}: ${v ? 'on' : 'off'}`} color={v ? '#10b981' : isOperational(k) ? '#f59e0b' : '#ef4444'} />)}
+                      {lims.map(([k, v]) => <Pill key={k} text={`${limitLabel(k)}: ${v}`} color="#0891b2" />)}
+                      {!feats.length && !lims.length && !r.features?.brandingAddon && <span style={{ color: 'var(--sa-muted)' }}>None (plan defaults)</span>}
+                    </div>
+                  </td>
+                  <td style={{ ...paTd, color: 'var(--sa-muted)', maxWidth: 260 }}>{r.reason || '—'}</td>
+                  <td style={{ ...paTd, color: 'var(--sa-muted)', whiteSpace: 'nowrap' }} title={r.updated_by || ''}>{r.updated_at ? new Date(r.updated_at).toLocaleDateString() : '—'}</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
       </div>
     </div>
   )
@@ -3333,6 +3797,8 @@ function FeatureFlagsPage({ data }: { data: any }) {
 function SystemPage() {
   const [checks, setChecks] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [pulse, setPulse] = useState<any>(null)
+  useEffect(() => { (async () => { const r = await paJson('/api/platform-admin/pulse'); setPulse(r.ok ? r.data : { error: r.data.error || 'Could not load' }) })() }, [])
 
   useEffect(() => {
     ;(async () => {
@@ -3391,6 +3857,38 @@ function SystemPage() {
           </div>
         ))}
       </div>
+
+      <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)', margin: '4px 0 10px' }}>Failures · last 24 hours</p>
+      {pulse === null ? <p style={{ color: 'var(--sa-muted)', marginBottom: 26 }}>Loading…</p> : pulse.error ? <Notice tone="error">{pulse.error}</Notice> : (
+        <>
+          {(pulse.issues || []).length > 0 && <Notice>{pulse.issues.join(' · ')}</Notice>}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 14, marginBottom: 14 }}>
+            {[
+              { label: 'Background jobs', value: `${pulse.jobs?.errors || 0} failed`, note: `${pulse.jobs?.runs || 0} runs logged`, bad: (pulse.jobs?.errors || 0) > 0 },
+              { label: 'API errors', value: String(pulse.api?.errors || 0), note: `${pulse.api?.warnings || 0} warnings`, bad: (pulse.api?.errors || 0) > 0 },
+              { label: 'Webhook errors', value: String(pulse.webhooks?.errors || 0), note: `${pulse.webhooks?.total || 0} received`, bad: (pulse.webhooks?.errors || 0) > 0 },
+              { label: 'AI agent runs', value: `${pulse.agents?.failed || 0} failed`, note: `${pulse.agents?.stuck || 0} stuck · ${pulse.agents?.runs || 0} runs${pulse.agents?.platformPaused ? ' · PAUSED platform-wide' : ''}`, bad: (pulse.agents?.failed || 0) + (pulse.agents?.stuck || 0) > 0 || !!pulse.agents?.platformPaused },
+              { label: 'Connections', value: `${pulse.connections?.broken || 0} need attention`, note: `${pulse.connections?.total || 0} active connections`, bad: (pulse.connections?.broken || 0) > 0 },
+              { label: 'Stripe events', value: String(pulse.stripe?.events || 0), note: 'Webhook deliveries received (server count)', bad: false },
+            ].map(m => (
+              <div key={m.label} style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 14, padding: 18 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <span style={{ fontSize: 13, color: 'var(--sa-muted)' }}>{m.label}</span>
+                  <Badge status={m.bad ? 'degraded' : 'healthy'} />
+                </div>
+                <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--sa-text)', marginBottom: 4 }}>{m.value}</div>
+                <span style={{ fontSize: 11, color: 'var(--sa-muted)' }}>{m.note}</span>
+              </div>
+            ))}
+          </div>
+          {(pulse.connections?.sample || []).length > 0 && (
+            <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 14, padding: 16, marginBottom: 26 }}>
+              <p style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--sa-text)', margin: '0 0 8px' }}>Connections needing attention</p>
+              {pulse.connections.sample.map((c: any, i: number) => <p key={i} style={{ fontSize: 12.5, color: 'var(--sa-muted)', margin: '0 0 4px' }}><b style={{ color: '#f59e0b' }}>{c.note}</b> · {c.type} · {c.company || '—'} · {c.detail}</p>)}
+            </div>
+          )}
+        </>
+      )}
 
       <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)', margin: '4px 0 10px' }}>Not monitored here</p>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 14 }}>
@@ -3856,6 +4354,7 @@ function SmsPricingPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [savedAt, setSavedAt] = useState('')
+  const [saveErr, setSaveErr] = useState('')
   const [missing, setMissing] = useState(false)
   useEffect(() => {
     ;(async () => {
@@ -3867,7 +4366,7 @@ function SmsPricingPage() {
     })()
   }, [])
   const save = async () => {
-    setSaving(true)
+    setSaving(true); setSaveErr('')
     try {
       const { data: { session } } = await supabase.auth.getSession()
       const { error } = await (supabase as any).from('platform_settings').upsert({
@@ -3875,7 +4374,7 @@ function SmsPricingPage() {
       }, { onConflict: 'key' })
       if (error) { if (/does not exist|schema cache/i.test(error.message)) { setMissing(true); return } throw error }
       setSavedAt(new Date().toLocaleTimeString())
-    } catch (e: any) { alert('Could not save: ' + e.message) } finally { setSaving(false) }
+    } catch (e: any) { setSaveErr('Could not save: ' + (e?.message || 'error')) } finally { setSaving(false) }
   }
   const costAud = p.fx_rate > 0 ? p.carrier_cost / p.fx_rate : 0
   const marginAt = (price: number) => {
@@ -3893,7 +4392,7 @@ function SmsPricingPage() {
   return (
     <div style={{ maxWidth: 860 }}>
       <SectionHeader title="SMS Pricing" sub="Global SMS pricing — applies to every organisation's campaign cost estimates"
-        action={<div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>{savedAt && <span style={{ fontSize: 12, color: '#10b981' }}>Saved {savedAt}</span>}<button onClick={save} disabled={saving} style={paBtn('#ff7a6b', true)}>{saving ? 'Saving…' : 'Save pricing'}</button></div>} />
+        action={<div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>{saveErr ? <span style={{ fontSize: 12, color: '#ef4444' }}>{saveErr}</span> : savedAt && <span style={{ fontSize: 12, color: '#10b981' }}>Saved {savedAt}</span>}<button onClick={save} disabled={saving} style={paBtn('#ff7a6b', true)}>{saving ? 'Saving…' : 'Save pricing'}</button></div>} />
       {missing && <div style={{ padding: '14px 16px', borderRadius: 10, background: '#f59e0b18', border: '1px solid #f59e0b55', fontSize: 13, color: 'var(--sa-text)', marginBottom: 14 }}>Run <b>COLVY_V220_PLATFORM_SETTINGS.sql</b> to store the global pricing. Until then the built-in default applies.</div>}
       <div style={card}>
         <label style={label}>Price charged to customers</label>
@@ -3968,6 +4467,8 @@ function AiModelsPage() {
       const r = await authFetch(`/api/platform-admin/ai?days=${days}`)
       const j = await r.json()
       if (!r.ok) { setMsg(j.error || 'Could not load'); return }
+      j.jobs = Array.isArray(j.jobs) ? j.jobs : []; j.models = Array.isArray(j.models) ? j.models : []; j.companies = Array.isArray(j.companies) ? j.companies : []
+      j.total = j.total || { calls: 0, tokensIn: 0, tokensOut: 0, cost: 0, costKnown: true }
       setD(j)
       setPicks(Object.fromEntries(j.jobs.map((x: any) => [x.key, x.picked || x.default])))
       setPrices(Object.fromEntries(j.models.map((m: any) => [m.id, { in: m.price?.in != null ? String(m.price.in) : '', out: m.price?.out != null ? String(m.price.out) : '' }])))
@@ -4060,6 +4561,21 @@ function AiModelsPage() {
         )}
       </div>
 
+      {Array.isArray(d.otherModels) && d.otherModels.length > 0 && (
+        <div style={card}>
+          <p style={{ margin: '0 0 4px', fontWeight: 800, fontSize: 15, color: 'var(--sa-text)' }}>Other models seen</p>
+          <p style={{ margin: '0 0 12px', fontSize: 12.5, color: 'var(--sa-muted)' }}>Calls recorded on models that aren’t in the switchboard list (older code paths or env overrides). Their cost isn’t estimated.</p>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 420 }}>
+              <thead><tr><th style={th}>Model</th><th style={th}>Calls</th><th style={th}>Tokens in</th><th style={th}>Tokens out</th></tr></thead>
+              <tbody>{d.otherModels.map((m: any) => (
+                <tr key={m.id}><td style={{ ...td, fontWeight: 700 }}>{m.id}</td><td style={td}>{n(m.usage?.calls || 0)}</td><td style={td}>{n(m.usage?.tokensIn || 0)}</td><td style={td}>{n(m.usage?.tokensOut || 0)}</td></tr>
+              ))}</tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       <div style={card}>
         <p style={{ margin: '0 0 4px', fontWeight: 800, fontSize: 15, color: 'var(--sa-text)' }}>Prices (USD per million tokens)</p>
         <p style={{ margin: '0 0 12px', fontSize: 12.5, color: 'var(--sa-muted)' }}>Used only for the cost estimates. Leave blank if you don’t know a price.</p>
@@ -4104,12 +4620,11 @@ function SettingsPage() {
           <Row label="Admin panel" value="admin.colvy.com" />
         </div>
         <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, padding: 22 }}>
-          <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)', marginBottom: 6 }}>Plan pricing (MRR basis, AUD/mo)</p>
-          <Row label="Startup" value="$19" />
-          <Row label="Business" value="$49" />
-          <Row label="Growth" value="$149" />
-          <Row label="Enterprise" value="$399" />
-          <p style={{ fontSize: 11.5, color: 'var(--sa-muted)', marginTop: 10 }}>Used only when a company has no live Stripe subscription. Real subscriptions use the actual billed amount. Edit these in <code>app/api/platform-admin/analytics/route.ts</code>.</p>
+          <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)', marginBottom: 6 }}>Plan list prices (per month)</p>
+          {(['feedback', 'omnichannel', 'everything', 'enterprise'] as Plan[]).map(k => (
+            <Row key={k} label={PLAN_NAMES[k]} value={PLAN_PRICES[k] == null ? 'Custom' : `$${PLAN_PRICES[k]}`} />
+          ))}
+          <p style={{ fontSize: 11.5, color: 'var(--sa-muted)', marginTop: 10 }}>From <code>lib/plan.ts</code>. The overview MRR uses live Stripe subscription amounts when there are any, and these list prices only as an estimate otherwise.</p>
         </div>
         <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, padding: 22 }}>
           <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)', marginBottom: 6 }}>Integrations status</p>
@@ -4170,6 +4685,14 @@ export default function SuperAdmin() {
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchQ, setSearchQ] = useState('')
   const [searchIdx, setSearchIdx] = useState(0)
+  const [pulse, setPulse] = useState<any>(null)
+
+  // Overview numbers + live health signals (both service-role server routes).
+  const loadDashboard = async () => {
+    const [a, p] = await Promise.all([paJson('/api/platform-admin/analytics'), paJson('/api/platform-admin/pulse')])
+    if (a.ok) setData(a.data)
+    setPulse(p.ok ? p.data : { error: p.data.error || 'Could not load health', issues: [] })
+  }
 
   const setDark = (v: boolean) => {
     setDarkState(v)
@@ -4223,13 +4746,9 @@ export default function SuperAdmin() {
         return
       }
       setAuthed(true)
-      // Load real, computed stats from the analytics endpoint (service-role:
-      // reads across all companies + subscriptions, computes activity/MRR).
-      try {
-        const res = await fetch('/api/platform-admin/analytics', { headers: { 'Authorization': `Bearer ${s.session.access_token}` } })
-        const d = await res.json()
-        if (res.ok) setData(d)
-      } catch {}
+      // Real, computed stats (analytics: companies, subscriptions, MRR…) and
+      // health signals (pulse: failures across jobs, logs, webhooks, agents).
+      loadDashboard()
     })
   }, [])
 
@@ -4404,21 +4923,25 @@ export default function SuperAdmin() {
         <div style={{ height: 54, borderBottom: '1px solid var(--sa-border)', display: 'flex', alignItems: 'center', padding: '0 24px', gap: 12, background: 'var(--sa-sidebar)', position: 'sticky', top: 0, zIndex: 30 }}>
           <div style={{ flex: 1, position: 'relative', maxWidth: 400 }}>
             <div style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--sa-muted)' }}>{I.search}</div>
-            <input placeholder="Search companies, users..." style={{ width: '100%', padding: '7px 12px 7px 34px', borderRadius: 9, border: '1px solid var(--sa-border)', background: 'var(--sa-hover)', color: 'var(--sa-text)', fontSize: 13, outline: 'none' }} />
+            <input readOnly onFocus={e => { e.currentTarget.blur(); setSearchOpen(true) }} onClick={() => setSearchOpen(true)} placeholder="Jump to a section… (⌘K)" style={{ cursor: 'pointer', width: '100%', padding: '7px 12px 7px 34px', borderRadius: 9, border: '1px solid var(--sa-border)', background: 'var(--sa-hover)', color: 'var(--sa-text)', fontSize: 13, outline: 'none' }} />
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
-            <span style={{ padding: '4px 10px', borderRadius: 999, background: '#10b98120', color: '#10b981', fontSize: 11, fontWeight: 700 }}>● All systems operational</span>
+            {(() => {
+              const issues: string[] = Array.isArray(pulse?.issues) ? pulse.issues : []
+              const [txt, c] = pulse === null ? ['● Checking…', '#6b7280'] : pulse.error ? ['● Health unavailable', '#6b7280'] : issues.length ? [`● ${issues.length} issue${issues.length === 1 ? '' : 's'} · 24h`, '#f59e0b'] : ['● All systems operational', '#10b981']
+              return <button onClick={() => setPage(issues.length ? 'system' : 'overview')} title={issues.join('\n') || 'No failures in the last 24 hours'} style={{ padding: '4px 10px', borderRadius: 999, background: c + '20', color: c, fontSize: 11, fontWeight: 700, border: 'none', cursor: 'pointer' }}>{txt}</button>
+            })()}
           </div>
           <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'linear-gradient(135deg, #ff7a6b, #6366f1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>B</div>
         </div>
 
         {/* Page content */}
         <div style={{ padding: '28px 28px', maxWidth: 1400 }}>
-          {page === 'overview'   && <OverviewPage data={data} />}
+          {page === 'overview'   && <OverviewPage data={data} pulse={pulse} onRefresh={() => { setPulse(null); loadDashboard() }} onGo={setPage} />}
           {page === 'companies'  && <CompaniesPage />}
           {page === 'users'      && <UsersPage />}
           {page === 'analytics'  && <AnalyticsPage />}
-          {page === 'flags'      && <FeatureFlagsPage data={data} />}
+          {page === 'flags'      && <FeatureFlagsPage />}
           {page === 'system'     && <SystemPage />}
           {page === 'audit'      && <AuditPage />}
           {page === 'subs'       && <SubscriptionsPage />}
@@ -4439,6 +4962,7 @@ export default function SuperAdmin() {
           {page === 'apilogs'      && <ApiLogsPage />}
           {page === 'devices'      && <MobileDevicesPage />}
           {page === 'integrations' && <IntegrationsPage />}
+          {page === 'agents'       && <AgentsPage />}
           {page === 'billing'    && <BillingPage />}
           {page === 'legal'      && <LegalAdminPage />}
           {page === 'banner'     && <PlatformBannerAdmin />}
