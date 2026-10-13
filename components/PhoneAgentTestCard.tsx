@@ -59,6 +59,11 @@ export default function PhoneAgentTestCard({ companyId }: { companyId: string })
             style={{ padding: '9px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 14, marginBottom: 14, background: '#fff' }}>
             {(d.voices || []).map((v: any) => <option key={v.id} value={v.id}>{v.label}</option>)}
           </select>
+          <p style={{ margin: '0 0 12px', fontSize: 12.5, color: d.realtime ? '#15803d' : 'var(--slate)' }}>
+            {d.realtime
+              ? 'Real-time: on. Replies start speaking as they’re written, and callers can talk over the AI.'
+              : 'Real-time: off. Replies take a few seconds each. Real-time needs the voice relay server set up (see voice-server/README.md).'}
+          </p>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <button type="button" onClick={save} disabled={!dirty || busy}
               style={{ padding: '8px 16px', borderRadius: 9, border: 'none', background: 'var(--coral)', color: '#fff', fontSize: 13, fontWeight: 700, cursor: dirty && !busy ? 'pointer' : 'default', opacity: dirty && !busy ? 1 : 0.55 }}>

@@ -1,7 +1,7 @@
 import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { getPhoneAgent, setPhoneAgent, PHONE_VOICES, MAX_TEST_NUMBERS } from '@/lib/phone-agent'
+import { getPhoneAgent, setPhoneAgent, PHONE_VOICES, MAX_TEST_NUMBERS, relayConfigured } from '@/lib/phone-agent'
 
 export const dynamic = 'force-dynamic'
 
@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
   const db = admin()
   if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
   const [settings, prov] = await Promise.all([getPhoneAgent(db, companyId), provider(db, companyId)])
-  return NextResponse.json({ ...settings, voices: PHONE_VOICES, maxTestNumbers: MAX_TEST_NUMBERS, supported: prov === 'twilio' })
+  return NextResponse.json({ ...settings, voices: PHONE_VOICES, maxTestNumbers: MAX_TEST_NUMBERS, supported: prov === 'twilio', realtime: relayConfigured() })
 }
 
 export async function PATCH(req: NextRequest) {

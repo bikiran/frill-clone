@@ -6,7 +6,7 @@ import { xmlEscape, twilioIdentity } from '@/lib/twilio-service'
 import { companyForInboundNumber } from '@/lib/inbound-company'
 import { ensureContactByPhone } from '@/lib/contact-capture'
 import { alertCall } from '@/lib/call-alerts'
-import { getPhoneAgent, answersCaller, startPhoneCall, phoneListenTwiml } from '@/lib/phone-agent'
+import { getPhoneAgent, answersCaller, startPhoneCall, phoneListenTwiml, phoneRelayTwiml, relayConfigured } from '@/lib/phone-agent'
 
 export const dynamic = 'force-dynamic'
 
@@ -146,11 +146,20 @@ export async function POST(req: NextRequest) {
         if (answersCaller(agent, from)) {
           const { data: co } = await db.from('companies').select('name').eq('id', companyId).maybeSingle()
           const state = await startPhoneCall(db, { companyId, companyName: co?.name || '', conversationId, contactId, from })
+          const realtime = relayConfigured()
+          state.realtime = realtime
           const now = new Date().toISOString()
           await db.from('calls').update({
             status: 'completed', answered_at: now, ended_at: now, agent_name: 'AI phone agent',
             cause: 'phone_agent: answered (test)', routing_state: { phone_agent: state, phone_voice: agent.voice },
           }).eq('id', callRowId)
+          // Real-time when the relay server is set up; otherwise turn by turn.
+          if (realtime) {
+            return twiml(phoneRelayTwiml({
+              relayUrl: process.env.VOICE_RELAY_URL!, doneUrl: `${base}/api/twilio/voice/agent-done?${cbQuery}`,
+              voice: agent.voice, greeting: state.greeting, callRowId, companyId, hints: co?.name || undefined,
+            }))
+          }
           return twiml(phoneListenTwiml(`${base}/api/twilio/voice/agent?${cbQuery}`, agent.voice, state.greeting))
         }
       } catch (e: any) { console.error('[twilio inbound] phone agent start failed — ringing as normal', e?.message || e) }
