@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { fmtMoney, CARRIER_LABEL, carrierTrackUrl, isClickCollect, buildOrderLineKeys, variationLabel } from '@/lib/orders'
 import { barcodeSVG } from '@/lib/barcode'
@@ -10,6 +10,10 @@ type Order = any
 // Renders packing slips or 4×6 shipping labels for a set of orders, self-loading
 // its data. Used inline in the in-page print modal (no iframe, so no app-shell
 // flash) and by the standalone /admin/orders/print page.
+//
+// onLoaded fires once everything a printout needs is on screen: the data AND
+// the logo and product photos (capped, so one dead image can't hold it up).
+// Printing before that printed "Preparing documents…" or blank photo boxes.
 export default function OrderPrintDoc({ doc, companyId, ids, onLoaded }: { doc: 'packing_slip' | 'label'; companyId: string; ids: string[]; onLoaded?: () => void }) {
   const [orders, setOrders] = useState<Order[]>([])
   const [itemsByOrder, setItemsByOrder] = useState<Record<string, any[]>>({})
@@ -20,18 +24,38 @@ export default function OrderPrintDoc({ doc, companyId, ids, onLoaded }: { doc: 
   const [company, setCompany] = useState<any>(null)
   const [fromAddr, setFromAddr] = useState<any>(null)
   const [loading, setLoading] = useState(true)
+  const rootRef = useRef<HTMLDivElement>(null)
+  const onLoadedRef = useRef(onLoaded)
+  onLoadedRef.current = onLoaded
 
   useEffect(() => {
     let cancelled = false
     ;(async () => {
       if (!companyId || !ids.length) { setLoading(false); return }
+      // Everything keyed by the order ids loads at the same time as the orders
+      // themselves (it used to wait for them first).
+      const sideP = Promise.all([
+        (supabase as any).from('companies').select('*').eq('id', companyId).maybeSingle(),
+        (supabase as any).from('company_locations').select('*').eq('company_id', companyId).order('is_primary', { ascending: false }).limit(1).maybeSingle(),
+        (supabase as any).from('order_items').select('*').in('order_id', ids),
+        (supabase as any).from('order_shipments').select('*').in('order_id', ids).order('created_at', { ascending: false }),
+        (supabase as any).from('order_notes').select('*').in('order_id', ids).order('created_at', { ascending: true }),
+        // Per-line fulfilment — which items are already sent. Absent table
+        // (migration pending) just resolves to no sent flags.
+        (supabase as any).from('order_fulfillments').select('order_id, line_key, sent').in('order_id', ids).then((r: any) => r, () => ({ data: [] })),
+        // Out-of-stock flags (pending) so the slip shows what the packer can't
+        // fulfil yet. Absent table just resolves to none.
+        (supabase as any).from('order_stock_alerts').select('order_id, line_key, status').in('order_id', ids).eq('status', 'pending').then((r: any) => r, () => ({ data: [] })),
+      ])
       let rows: Order[] = []
       try {
-        const { data: s } = await supabase.auth.getSession()
+        const [{ data: s }, { data: ord }] = await Promise.all([
+          supabase.auth.getSession(),
+          // Read the orders directly (RLS-permissive, index-served) instead of
+          // the serverless /api/orders — no cold start on the print path.
+          (supabase as any).from('orders').select('*').eq('company_id', companyId).in('id', ids),
+        ])
         const token = s?.session?.access_token
-        // Read the orders directly (RLS-permissive, index-served) instead of the
-        // serverless /api/orders — no cold start on the print path.
-        const { data: ord } = await (supabase as any).from('orders').select('*').eq('company_id', companyId).in('id', ids)
         const byId = new Map<string, Order>((ord || []).map((o: Order) => [o.id, o]))
         rows = ids.map(id => byId.get(id)).filter(Boolean) as Order[]
         // The customer's checkout note is normally already stored (webhook/V281).
@@ -59,19 +83,7 @@ export default function OrderPrintDoc({ doc, companyId, ids, onLoaded }: { doc: 
           if (noteMap.size) rows = rows.map((o: any) => noteMap.get(o.id) ? { ...o, customer_note: o.customer_note || noteMap.get(o.id) } : o)
         }
       } catch {}
-      const [{ data: co }, { data: loc }, { data: items }, { data: ships }, { data: nts }, ful, oos] = await Promise.all([
-        (supabase as any).from('companies').select('*').eq('id', companyId).maybeSingle(),
-        (supabase as any).from('company_locations').select('*').eq('company_id', companyId).order('is_primary', { ascending: false }).limit(1).maybeSingle(),
-        (supabase as any).from('order_items').select('*').in('order_id', ids),
-        (supabase as any).from('order_shipments').select('*').in('order_id', ids).order('created_at', { ascending: false }),
-        (supabase as any).from('order_notes').select('*').in('order_id', ids).order('created_at', { ascending: true }),
-        // Per-line fulfilment — which items are already sent. Absent table
-        // (migration pending) just resolves to no sent flags.
-        (supabase as any).from('order_fulfillments').select('order_id, line_key, sent').in('order_id', ids).then((r: any) => r, () => ({ data: [] })),
-        // Out-of-stock flags (pending) so the slip shows what the packer can't
-        // fulfil yet. Absent table just resolves to none.
-        (supabase as any).from('order_stock_alerts').select('order_id, line_key, status').in('order_id', ids).eq('status', 'pending').then((r: any) => r, () => ({ data: [] })),
-      ])
+      const [{ data: co }, { data: loc }, { data: items }, { data: ships }, { data: nts }, ful, oos] = await sideP
       if (cancelled) return
       setOrders(rows); setCompany(co || null); setFromAddr(loc || null)
       const ib: Record<string, any[]> = {}; for (const it of items || []) (ib[it.order_id] ||= []).push(it); setItemsByOrder(ib)
@@ -79,11 +91,26 @@ export default function OrderPrintDoc({ doc, companyId, ids, onLoaded }: { doc: 
       const nb: Record<string, any[]> = {}; for (const n of nts || []) (nb[n.order_id] ||= []).push(n); setNotesByOrder(nb)
       const fb: Record<string, Record<string, boolean>> = {}; for (const f of (ful?.data || [])) { (fb[f.order_id] ||= {})[f.line_key] = !!f.sent } setFulByOrder(fb)
       const ob: Record<string, Record<string, boolean>> = {}; for (const a of (oos?.data || [])) { (ob[a.order_id] ||= {})[a.line_key] = true } setOosByOrder(ob)
-      setLoading(false); onLoaded?.()
+      setLoading(false)
     })()
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [companyId, ids.join(',')])
+
+  // Once the documents are on screen, wait for their images (logo, product
+  // photos), up to 4 seconds, then say the printout is ready.
+  useEffect(() => {
+    if (loading) return
+    let done = false
+    const finish = () => { if (!done) { done = true; onLoadedRef.current?.() } }
+    const imgs = Array.from(rootRef.current?.querySelectorAll('img') || []).filter(i => !i.complete)
+    if (!imgs.length) { finish(); return }
+    let left = imgs.length
+    const one = () => { if (--left <= 0) finish() }
+    imgs.forEach(i => { i.addEventListener('load', one, { once: true }); i.addEventListener('error', one, { once: true }) })
+    const cap = setTimeout(finish, 4000)
+    return () => { done = true; clearTimeout(cap); imgs.forEach(i => { i.removeEventListener('load', one); i.removeEventListener('error', one) }) }
+  }, [loading])
 
   const accent = company?.accent_color || '#0f172a'
   const senderName = company?.name || 'Warehouse'
@@ -92,7 +119,7 @@ export default function OrderPrintDoc({ doc, companyId, ids, onLoaded }: { doc: 
   if (!orders.length) return <div style={{ padding: 40, fontFamily: 'system-ui', color: '#64748b' }}>Nothing to print.</div>
 
   return (
-    <div className="order-print-root" style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif', color: '#0f172a', background: '#fff' }}>
+    <div ref={rootRef} className="order-print-root" style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif', color: '#0f172a', background: '#fff' }}>
       <style>{`
         @media print {
           @page { size: ${doc === 'label' ? '4in 6in' : 'A4'}; margin: ${doc === 'label' ? '0' : '14mm'}; }

@@ -1553,6 +1553,16 @@ export function CreateLabelModal({ order, companyId, accent, onClose, onDone, on
 export function PrintModal({ doc, companyId, ids, title, accent, onClose }: { doc: 'packing_slip' | 'label'; companyId: string; ids: string[]; title: string; accent: string; onClose: () => void }) {
   const [mounted, setMounted] = useState(false)
   useEffect(() => { setMounted(true) }, [])
+  // Print only once the documents (data and images) are ready. Pressing Print
+  // earlier queues it: the print dialog opens the moment they are, instead of
+  // printing the "Preparing documents…" placeholder.
+  const [ready, setReady] = useState(false)
+  const [queued, setQueued] = useState(false)
+  useEffect(() => {
+    if (!ready || !queued) return
+    const t = setTimeout(() => { setQueued(false); try { window.print() } catch {} }, 50)
+    return () => clearTimeout(t)
+  }, [ready, queued])
   if (!mounted || typeof document === 'undefined') return null
   // Rendered through a portal at <body> so that when printing we can hide every
   // other body child and let each order's .doc-page break onto its own page
@@ -1573,11 +1583,14 @@ export function PrintModal({ doc, companyId, ids, title, accent, onClose }: { do
         <div className="no-print" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: '#0f172a', color: '#fff', flexShrink: 0 }}>
           <strong style={{ fontSize: 14 }}>{title}</strong>
           <div style={{ flex: 1 }} />
-          <button type="button" onClick={() => window.print()} style={{ padding: '7px 16px', borderRadius: 8, border: 'none', background: accent, color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>Print</button>
+          <button type="button" onClick={() => { if (ready) window.print(); else setQueued(true) }} aria-busy={!ready}
+            style={{ padding: '7px 16px', borderRadius: 8, border: 'none', background: accent, color: '#fff', fontSize: 13, fontWeight: 700, cursor: queued ? 'progress' : 'pointer', opacity: ready ? 1 : 0.75 }}>
+            {ready ? 'Print' : queued ? 'Printing when ready…' : 'Preparing…'}
+          </button>
           <button type="button" onClick={onClose} style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.3)', background: 'transparent', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Close</button>
         </div>
         <div className="order-print-scroll" style={{ flex: 1, overflow: 'auto', background: '#f1f5f9' }}>
-          <OrderPrintDoc doc={doc} companyId={companyId} ids={ids} />
+          <OrderPrintDoc doc={doc} companyId={companyId} ids={ids} onLoaded={() => setReady(true)} />
         </div>
       </div>
     </div>,
