@@ -18,6 +18,8 @@ import { notifyCompany, pushInboundMessage } from '@/lib/notify'
 import type { ActionContext, ActionDef } from '@/lib/agent/types'
 import { createHmac, timingSafeEqual } from 'crypto'
 import { after } from 'next/server'
+import { resolveSmsSender } from '@/lib/sms-provider'
+import { internalHeaders } from '@/lib/internal-call'
 import { getPhoneCatalog, closestProducts, type PhoneCatalog } from '@/lib/phone-catalog'
 
 // ── Settings (an agent_policies row: role "phone", action "answer_calls") ────
@@ -109,6 +111,7 @@ export type PhoneCallState = {
   facts?: { tool: string; asked?: string; text: string }[]   // lookups already done this call, so they aren't repeated
   messageAbout?: string    // what the message taken this call was about
   knownProducts?: string[] // some of what the business sells, to work out misheard names
+  textsSent?: number       // texts sent to the caller this call (capped)
 }
 
 /** The call's state before anything is looked up: enough to answer straight away. */
@@ -174,6 +177,28 @@ const TAKE_MESSAGE = {
     },
   },
 }
+// Texts go only to the number the caller is ringing from, a few per call.
+const MAX_TEXTS = 3
+const TEXT_CALLER = {
+  name: 'text_caller',
+  description: 'Text the caller something they’ll want written down: an address, email address, website, order number or similar. It goes to the number they’re calling from.',
+  input_schema: {
+    type: 'object', additionalProperties: false, required: ['message'],
+    properties: { message: { type: 'string', description: 'The whole text message, short and complete (under 400 characters). Plain words; links and addresses in full.' } },
+  },
+}
+const TEXT_UPLOAD_LINK = {
+  name: 'text_upload_link',
+  description: 'Text the caller a private link to upload photos and videos, which land in their conversation for the team. Use when they want to show something (a sick fish, their setup, a damaged item) or offer to send pictures.',
+  input_schema: {
+    type: 'object', additionalProperties: false, required: ['what'],
+    properties: {
+      what: { type: 'string', description: 'What to upload, in one line, e.g. “Photos or a short video of the fish”.' },
+      photos_only: { type: 'boolean' },
+    },
+  },
+}
+
 const END_CALL = {
   name: 'end_call',
   description: 'End the call once the caller has what they need or says goodbye. The goodbye you give here is read to them, then the call ends, so don’t also write it as text.',
@@ -208,6 +233,7 @@ function systemPrompt(state: PhoneCallState, p: { companyName: string; from: str
     '- You can’t place orders, hold stock or take payment. If the caller wants to buy something, confirm exactly what (product, size, price, how many) and use take_message so the team can call back to arrange it.',
     '- If the caller wants a person, a refund, a return, to complain, or anything you can’t do: use take_message (their name and what it’s about) and tell them the team will call them back.',
     '- After taking a message, ask if there’s anything else. When they have what they need and are done, use end_call.',
+    '- You can text the caller (only the number they’re calling from): text_upload_link when they want to show you something in photos or video, and text_caller for anything worth having in writing, like an address, email address, website or order number. Offer it when it helps; spell things out only if they’d rather not get a text.',
     '- Never ask for or accept card numbers, passwords or one-time codes.',
     '',
     state.contextText,
@@ -270,7 +296,7 @@ export async function phoneTurn(db: any, args: {
     return { say, end, tookMessage, ms: (firstAt || Date.now()) - started, tools: used }
   }
   const actions = LOOKUPS.map(k => getAction(k)).filter(Boolean) as ActionDef[]
-  const tools = [...actions.map(toolSpec), TAKE_MESSAGE, END_CALL]
+  const tools = [...actions.map(toolSpec), TAKE_MESSAGE, TEXT_CALLER, TEXT_UPLOAD_LINK, END_CALL]
   const actx: ActionContext = {
     db, companyId: args.companyId, companyName: args.companyName, siteOrigin: args.siteOrigin,
     runId: '', roleKey: 'support', roleName: 'Phone agent', mode: 'live',
@@ -317,6 +343,7 @@ export async function phoneTurn(db: any, args: {
     const results: NeutralBlock[] = []
     let goodbye: string | null = null
     let tookNow = false
+    const doneNow: string[] = []   // texts/messages that succeeded this round, which Colvy confirms itself
     for (const call of r.toolCalls) {
       used.push(call.name)
       if (call.name === 'end_call') { goodbye = String(call.input?.goodbye || 'Thanks for calling. Goodbye.'); results.push({ type: 'tool_result', id: call.id, content: 'ok' }); continue }
@@ -324,8 +351,19 @@ export async function phoneTurn(db: any, args: {
         const ok = await takeMessage(db, actx, args, call.input || {})
         tookMessage = tookMessage || ok
         tookNow = tookNow || ok
+        if (ok) doneNow.push('take_message')
         if (ok) args.state.messageAbout = String(call.input?.about || '').trim().slice(0, 200)
         results.push({ type: 'tool_result', id: call.id, content: ok ? 'Message saved; the team will call back.' : 'Could not save the message.', ...(ok ? {} : { isError: true }) })
+        continue
+      }
+      if (call.name === 'text_caller' || call.name === 'text_upload_link') {
+        const sent = (args.state.textsSent || 0) >= MAX_TEXTS
+          ? { ok: false, error: `Already sent ${MAX_TEXTS} texts on this call.` }
+          : call.name === 'text_caller'
+            ? await textCaller(db, args, String(call.input?.message || ''))
+            : await textUploadLink(db, args, String(call.input?.what || ''), !!call.input?.photos_only)
+        if (sent.ok) { args.state.textsSent = (args.state.textsSent || 0) + 1; doneNow.push(call.name) }
+        results.push({ type: 'tool_result', id: call.id, content: sent.ok ? 'Sent.' : `Not sent: ${sent.error}`, ...(sent.ok ? {} : { isError: true }) })
         continue
       }
       const action = getAction(call.name)
@@ -359,20 +397,66 @@ export async function phoneTurn(db: any, args: {
       }
     }
     if (goodbye) return result(true, goodbye)
-    // Only a message was taken this round: confirm it ourselves rather than
-    // asking the AI to write the confirmation, which costs a whole second
-    // round (about 2 seconds with a larger model).
-    if (tookNow && r.toolCalls.every(c => c.name === 'take_message')) {
+    // Only messages taken / texts sent this round, all done: confirm them
+    // ourselves rather than asking the AI to write the confirmation, which
+    // costs a whole second round (about 2 seconds with a larger model).
+    if (doneNow.length && doneNow.length === r.toolCalls.length) {
       const said = spoken.join(' ')
-      if (/anything else/i.test(said)) return result(false)
-      if (/call (you )?back/i.test(said)) return result(false, 'Is there anything else I can help with?')
-      if (/pass(ed)? (that|it|this|your \w+) on|let the team know|note (that|it) (down|for)/i.test(said)) return result(false, 'The team will call you back. Is there anything else I can help with?')
-      return result(false, 'I’ve passed that on, and the team will call you back. Is there anything else I can help with?')
+      const parts: string[] = []
+      for (const name of Array.from(new Set(doneNow))) {
+        if (name === 'take_message') {
+          if (/call (you )?back/i.test(said)) continue
+          parts.push(/pass(ed)? (that|it|this|your \w+) on|let the team know|note (that|it) (down|for)/i.test(said)
+            ? 'The team will call you back.' : 'I’ve passed that on, and the team will call you back.')
+        } else parts.push(name === 'text_upload_link' ? 'I’ve just texted you a link where you can upload your photos and videos.' : 'I’ve just texted that to you.')
+      }
+      if (!/anything else/i.test(said)) parts.push('Is there anything else I can help with?')
+      return result(false, parts.join(' ') || undefined)
     }
     messages.push({ role: 'user', content: results })
   }
   // Out of time or rounds: never leave the caller hanging.
   return result(false, 'Sorry, I’m having trouble checking that right now. Can I take a message so someone calls you back?')
+}
+
+/** Text the caller (the number they're ringing from) and record it in their conversation. */
+async function textCaller(db: any, args: { companyId: string; conversationId: string | null; from: string }, message: string): Promise<{ ok: boolean; error?: string }> {
+  const text = message.trim().slice(0, 480)
+  if (!text) return { ok: false, error: 'Nothing to send.' }
+  if (!args.from) return { ok: false, error: 'No number to text.' }
+  try {
+    const sender = await resolveSmsSender(db, args.companyId)
+    if (!sender) return { ok: false, error: 'No SMS number is set up for this business.' }
+    await sender.send({ to: args.from, text })
+  } catch (e: any) { return { ok: false, error: e?.message || 'The text didn’t send.' } }
+  if (args.conversationId) {
+    inBackground(async () => {
+      await db.from('messages').insert({
+        conversation_id: args.conversationId, company_id: args.companyId, sender_type: 'agent', sender_name: 'AI phone agent',
+        content: text, message_type: 'text', delivery_channel: 'sms', is_read: true, metadata: { auto: true, sent_by: 'phone_agent' },
+      })
+    })
+  }
+  return { ok: true }
+}
+
+/** Text the caller a private upload link (a media request on their conversation). */
+async function textUploadLink(db: any, args: { companyId: string; conversationId: string | null; contactId: string | null; siteOrigin: string }, what: string, photosOnly: boolean): Promise<{ ok: boolean; error?: string }> {
+  if (!args.conversationId) return { ok: false, error: 'No conversation to attach the photos to.' }
+  try {
+    const res = await fetch(`${args.siteOrigin.replace(/\/$/, '')}/api/media-requests`, {
+      method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({
+        companyId: args.companyId, conversationId: args.conversationId, contactId: args.contactId,
+        prompt: what.trim().slice(0, 200) || 'Please upload your photos or videos here.',
+        accept: photosOnly ? ['image'] : ['image', 'video'], maxFiles: 10, expiryHours: null, createdBy: 'AI phone agent', deliveryChannel: 'sms',
+      }),
+    })
+    const d = await res.json().catch(() => ({}))
+    if (!res.ok || !d?.link) return { ok: false, error: d?.error || 'Couldn’t create the upload link.' }
+    if (!d.texted) return { ok: false, error: d.smsError || 'The upload link couldn’t be texted.' }
+    return { ok: true }
+  } catch (e: any) { return { ok: false, error: e?.message || 'Couldn’t create the upload link.' } }
 }
 
 /** Work the caller needn't wait for. Kept alive past the response with after() when inside a request. */
