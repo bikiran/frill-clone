@@ -2079,7 +2079,15 @@ export default function InboxPage() {
   const [realtimeNonce, setRealtimeNonce] = useState(0)
 
   // ── Forward media to another contact ─────────────────────────────────────
-  const [forwarding, setForwarding] = useState<any>(null)   // the attachment
+  // The message's photos/videos being forwarded, and which of them are ticked.
+  // Forward on a photo in a multi-photo message offers the whole set, so all of
+  // them can go in one send (it used to forward only the tile clicked).
+  const [forwarding, setForwarding] = useState<any[] | null>(null)
+  const [forwardPicked, setForwardPicked] = useState<boolean[]>([])
+  const openForward = (items: any[]) => {
+    setForwarding(items); setForwardPicked(items.map(() => true))
+    setForwardSearch(''); setForwardResults([])
+  }
   const [forwardSearch, setForwardSearch] = useState('')
   const [forwardResults, setForwardResults] = useState<any[]>([])
   const [forwardBusy, setForwardBusy] = useState(false)
@@ -2096,6 +2104,8 @@ export default function InboxPage() {
 
   const forwardTo = async (contactTarget: any) => {
     if (!companyId || !forwarding || !user) return
+    const picked = forwarding.filter((_, i) => forwardPicked[i])
+    if (!picked.length) return
     setForwardBusy(true)
     try {
       // Find-or-create a conversation with that person, so the media lands in a
@@ -2131,7 +2141,7 @@ export default function InboxPage() {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               companyId, conversationId: convId, to: phone,
-              text: '', attachments: [forwarding], senderName: me, skipChatMessage: true,
+              text: '', attachments: picked, senderName: me, skipChatMessage: true,
             }),
           })
           if (!res.ok) {
@@ -2146,12 +2156,12 @@ export default function InboxPage() {
       await (supabase as any).from('messages').insert({
         conversation_id: convId, company_id: companyId,
         sender_type: 'agent', sender_id: user.id, sender_name: me, sender_email: user.email,
-        content: '', attachments: [forwarding],
+        content: '', attachments: picked,
         delivery_channel: phone ? 'sms' : 'chat',
         metadata: { forwarded: true },
       })
       await (supabase as any).from('conversations').update({
-        last_message: '📎 Attachment', last_message_at: new Date().toISOString(),
+        last_message: picked.length === 1 ? '📎 Attachment' : `📎 ${picked.length} attachments`, last_message_at: new Date().toISOString(),
       }).eq('id', convId)
 
       setForwarding(null); setForwardSearch(''); setForwardResults([])
@@ -6924,14 +6934,40 @@ export default function InboxPage() {
             style={{ width: 420, maxWidth: '95vw', maxHeight: '85vh', overflowY: 'auto', background: '#fff', borderRadius: 18, padding: 22 }}>
             <h3 style={{ margin: '0 0 14px', fontSize: 17, fontWeight: 800, color: 'var(--ink)' }}>Forward to…</h3>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 10, borderRadius: 10, background: 'var(--canvas)', marginBottom: 16 }}>
-              {forwarding.kind === 'video'
-                ? <video src={forwarding.url} style={{ width: 46, height: 46, borderRadius: 8, objectFit: 'cover', flexShrink: 0 }} />
-                : <img src={forwarding.url} alt="" style={{ width: 46, height: 46, borderRadius: 8, objectFit: 'cover', flexShrink: 0 }} />}
-              <span style={{ fontSize: 13, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {forwarding.name || (forwarding.kind === 'video' ? 'Video' : 'Photo')}
-              </span>
-            </div>
+            {forwarding.length === 1 ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 10, borderRadius: 10, background: 'var(--canvas)', marginBottom: 16 }}>
+                {forwarding[0].kind === 'video'
+                  ? <video src={toPublicUrl(forwarding[0].url)} style={{ width: 46, height: 46, borderRadius: 8, objectFit: 'cover', flexShrink: 0 }} />
+                  : <img src={toPublicUrl(forwarding[0].thumbUrl || forwarding[0].url)} alt="" style={{ width: 46, height: 46, borderRadius: 8, objectFit: 'cover', flexShrink: 0 }} />}
+                <span style={{ fontSize: 13, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {forwarding[0].name || (forwarding[0].kind === 'video' ? 'Video' : 'Photo')}
+                </span>
+              </div>
+            ) : (
+              <div style={{ padding: 10, borderRadius: 10, background: 'var(--canvas)', marginBottom: 16 }}>
+                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, marginBottom: 8 }}>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>{forwardPicked.filter(Boolean).length} of {forwarding.length} selected</span>
+                  <span style={{ fontSize: 11.5, color: 'var(--slate)' }}>Tap to leave one out</span>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(58px, 1fr))', gap: 6 }}>
+                  {forwarding.map((a, i) => {
+                    const on = !!forwardPicked[i]
+                    return (
+                      <button key={i} type="button" aria-pressed={on} aria-label={`${on ? 'Leave out' : 'Include'} ${a.name || (a.kind === 'video' ? 'video' : 'photo')} ${i + 1}`}
+                        onClick={() => setForwardPicked(p => p.map((v, j) => j === i ? !v : v))}
+                        style={{ position: 'relative', aspectRatio: '1', padding: 0, border: 'none', borderRadius: 8, overflow: 'hidden', cursor: 'pointer', background: '#e5e7eb', outline: on ? '2px solid var(--coral)' : 'none', outlineOffset: -2 }}>
+                        {a.kind === 'video' && !a.thumbUrl
+                          ? <video src={toPublicUrl(a.url) + '#t=0.1'} preload="metadata" muted style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', opacity: on ? 1 : 0.4 }} />
+                          : <img src={toPublicUrl(a.thumbUrl || a.url)} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', opacity: on ? 1 : 0.4 }} />}
+                        <span style={{ position: 'absolute', top: 4, right: 4, width: 18, height: 18, borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', background: on ? 'var(--coral)' : 'rgba(255,255,255,0.85)', border: on ? 'none' : '1.5px solid #a1a1aa', color: '#fff' }}>
+                          {on && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>}
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
 
             <input autoFocus value={forwardSearch}
               onChange={e => searchForwardTargets(e.target.value)}
@@ -6945,7 +6981,7 @@ export default function InboxPage() {
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {forwardResults.map(c => (
-                  <button key={c.id} type="button" onClick={() => forwardTo(c)} disabled={forwardBusy}
+                  <button key={c.id} type="button" onClick={() => forwardTo(c)} disabled={forwardBusy || !forwardPicked.some(Boolean)}
                     style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, width: '100%', textAlign: 'left', padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer' }}>
                     <span style={{ minWidth: 0 }}>
                       <span style={{ display: 'block', fontSize: 13.5, fontWeight: 700, color: 'var(--ink)' }}>{c.name || 'No name'}</span>
@@ -9510,8 +9546,8 @@ export default function InboxPage() {
                                         )}
 
                                         <button type="button" className="chat-att-fwd"
-                                          onClick={e => { e.stopPropagation(); setForwarding(a); setForwardSearch(''); setForwardResults([]) }}
-                                          title="Forward to another contact"
+                                          onClick={e => { e.stopPropagation(); openForward(media) }}
+                                          title={n > 1 ? 'Forward these photos to another contact' : 'Forward to another contact'}
                                           style={{ position: 'absolute', top: 5, right: 5, width: 24, height: 24, borderRadius: 7, border: 'none', background: 'rgba(0,0,0,0.55)', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, backdropFilter: 'blur(3px)', opacity: 0, transition: 'opacity 0.12s' }}>
                                           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 17 20 12 15 7"/><path d="M4 18v-2a4 4 0 0 1 4-4h12"/></svg>
                                         </button>
@@ -11319,7 +11355,7 @@ export default function InboxPage() {
                             </div>
                             {/* Forward it to another customer */}
                             <button type="button"
-                              onClick={e => { e.stopPropagation(); setForwarding(a); setForwardSearch(''); setForwardResults([]) }}
+                              onClick={e => { e.stopPropagation(); openForward([a]) }}
                               title="Forward to another contact"
                               style={{ position: 'absolute', top: 4, right: 4, width: 22, height: 22, borderRadius: 6, border: 'none', background: 'rgba(0,0,0,0.55)', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, backdropFilter: 'blur(3px)' }}>
                               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 17 20 12 15 7"/><path d="M4 18v-2a4 4 0 0 1 4-4h12"/></svg>
