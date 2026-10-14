@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { xmlEscape, twilioIdentity } from '@/lib/twilio-service'
 import { companyForInboundNumber } from '@/lib/inbound-company'
-import { ensureContactByPhone } from '@/lib/contact-capture'
+import { ensureContactByPhone, findContactByPhone } from '@/lib/contact-capture'
 import { alertCall } from '@/lib/call-alerts'
 import { getPhoneCatalog, phoneHints } from '@/lib/phone-catalog'
 import { getPhoneAgent, answersCaller, startPhoneCall, newPhoneCall, phoneListenTwiml, phoneRelayTwiml, relayConfigured } from '@/lib/phone-agent'
@@ -20,7 +20,6 @@ function admin() {
 }
 
 const twiml = (body: string) => new NextResponse(`<?xml version="1.0" encoding="UTF-8"?>${body}`, { headers: { 'Content-Type': 'text/xml' } })
-const digitsOf = (s: string) => (s || '').replace(/\D/g, '').slice(-9)
 
 // Voicemail TwiML: greet, then record and hand the recording to our callback.
 function voicemailTwiml(base: string, greeting: string, cbQuery: string): string {
@@ -81,18 +80,14 @@ export async function POST(req: NextRequest) {
     try {
       // Query by the last-9-digit tail rather than scanning a capped page of
       // contacts, so a saved caller is matched regardless of contact-list size.
-      const fromTail = digitsOf(from)
-      if (fromTail) {
-        const { data: contacts } = await db.from('contacts')
-          .select('id, name, phone').eq('company_id', companyId).ilike('phone', `%${fromTail}%`).limit(10)
-        const c = (contacts || []).find((x: any) => x.phone && digitsOf(x.phone) === fromTail)
-        if (c) { contactId = c.id; callerName = c.name || null }
-      }
+      const fromTail = (from || '').replace(/\D/g, '').slice(-9)
+      const c = from ? await findContactByPhone(db, companyId, from) : null
+      if (c) { contactId = c.id; callerName = c.name || null }
 
       // Unknown caller → save the number as a contact now, so it's in the CRM and
       // future calls/texts from them resolve to the same person.
       if (!contactId && from) {
-        contactId = await ensureContactByPhone(db, companyId, from, { source: 'phone' })
+        contactId = await ensureContactByPhone(db, companyId, from, { source: 'phone', known: true })
       }
 
       // Find an existing thread by the contact OR by the caller's number — many
@@ -330,6 +325,10 @@ export async function POST(req: NextRequest) {
           // where both are special in the replacement and a name containing one
           // would mangle the result or throw.
           `<Parameter name="callerName" value="${xmlEscape(String(callerName || from || '').replace(/[$\\]/g, ' ').trim())}"/>` +
+          // Lets the web popup show the caller at once instead of looking the
+          // number up again in the browser.
+          `<Parameter name="contactId" value="${xmlEscape(contactId || '')}"/>` +
+          `<Parameter name="callerKnown" value="${callerName ? '1' : ''}"/>` +
         `</Client>`
       )
     }).join('')
