@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import { mediaUploadReplySettings, MEDIA_UPLOAD_REPLY_DEFAULT, MEDIA_UPLOAD_REPLY_HOURS } from '@/lib/media-upload-reply-settings'
 
 // Answer common questions automatically. The business defines the keywords and
 // the exact answer — Colvy never invents a response.
@@ -90,6 +91,8 @@ export default function AutoRepliesPage() {
         )}
       </div>
 
+      {companyId && <MediaUploadReplyCard companyId={companyId} />}
+
       {msg && <p style={{ fontSize: 13, color: 'var(--coral)', margin: '10px 0' }}>{msg}</p>}
 
       {editing && (
@@ -162,6 +165,97 @@ export default function AutoRepliesPage() {
           </div>
         ))}
       </div>
+    </div>
+  )
+}
+
+// "Ask for the original video": when a customer's video arrives by text (squeezed
+// by the carrier to about 1 MB), text them an upload link for the full-quality
+// original. Stored in companies.inbox_settings.media_upload_reply.
+function MediaUploadReplyCard({ companyId }: { companyId: string }) {
+  const [inbox, setInbox] = useState<any>(null)
+  const [enabled, setEnabled] = useState(false)
+  const [photos, setPhotos] = useState(false)
+  const [message, setMessage] = useState(MEDIA_UPLOAD_REPLY_DEFAULT)
+  const [state, setState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+
+  useEffect(() => {
+    ;(async () => {
+      const { data } = await (supabase as any).from('companies').select('inbox_settings').eq('id', companyId).maybeSingle()
+      const st = data?.inbox_settings || {}
+      const s = mediaUploadReplySettings(st)
+      setInbox(st); setEnabled(s.enabled); setPhotos(s.photos); setMessage(s.message)
+    })()
+  }, [companyId])
+
+  const save = async (patch?: Partial<{ enabled: boolean; photos: boolean; message: string }>) => {
+    const next = { enabled, photos, message: message.trim() || MEDIA_UPLOAD_REPLY_DEFAULT, ...patch }
+    setState('saving')
+    // Re-read so another setting saved meanwhile (time format, themes) isn't lost.
+    const { data } = await (supabase as any).from('companies').select('inbox_settings').eq('id', companyId).maybeSingle()
+    const merged = { ...(data?.inbox_settings || inbox || {}), media_upload_reply: next }
+    const { error } = await (supabase as any).from('companies').update({ inbox_settings: merged }).eq('id', companyId)
+    if (error) { setState('error'); return }
+    setInbox(merged); setState('saved')
+    setTimeout(() => setState(s => (s === 'saved' ? 'idle' : s)), 1800)
+  }
+
+  const toggle = (on: boolean) => { setEnabled(on); save({ enabled: on }) }
+  const dirty = !!inbox && (message.trim() || MEDIA_UPLOAD_REPLY_DEFAULT) !== mediaUploadReplySettings(inbox).message
+
+  return (
+    <div style={{ border: '1px solid var(--border)', borderRadius: 14, padding: 18, background: '#fff', marginTop: 18 }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 15, fontWeight: 750, color: 'var(--ink)' }}>Ask for the original video</div>
+          <p style={{ fontSize: 13, color: 'var(--slate)', margin: '4px 0 0', lineHeight: 1.5 }}>
+            Videos sent by text arrive blurry, because carriers shrink them to about 1&nbsp;MB. When one comes in, text the customer a private upload link so they can send the full-quality original. It lands in the same conversation.
+          </p>
+        </div>
+        <button type="button" role="switch" aria-checked={enabled} aria-label="Ask for the original video" onClick={() => toggle(!enabled)}
+          style={{ width: 44, height: 26, borderRadius: 13, border: 'none', padding: 3, cursor: 'pointer', flexShrink: 0, background: enabled ? 'var(--coral)' : '#d1d5db', transition: 'background .2s' }}>
+          <span style={{ display: 'block', width: 20, height: 20, borderRadius: '50%', background: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,.25)', transform: enabled ? 'translateX(18px)' : 'none', transition: 'transform .2s' }} />
+        </button>
+      </div>
+
+      {enabled && (
+        <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
+          <label style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: 'var(--ink)', marginBottom: 6 }}>Message</label>
+          <textarea value={message} maxLength={300} onChange={e => setMessage(e.target.value)}
+            style={{ width: '100%', minHeight: 72, padding: '10px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 14, boxSizing: 'border-box', resize: 'vertical', fontFamily: 'inherit' }} />
+          <p style={{ fontSize: 12, color: 'var(--slate)', margin: '6px 0 12px', lineHeight: 1.5 }}>
+            Colvy adds the link on its own line: <span style={{ color: 'var(--ink)' }}>Upload here (private, full quality): yourbusiness.colvy.com/l/…</span>
+          </p>
+
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+            <input type="checkbox" checked={photos} onChange={e => { setPhotos(e.target.checked); save({ photos: e.target.checked }) }}
+              style={{ width: 17, height: 17, accentColor: 'var(--coral)' }} />
+            <span style={{ fontSize: 13.5, color: 'var(--ink)' }}>Photos too <span style={{ color: 'var(--slate)' }}>(usually clear enough without)</span></span>
+          </label>
+
+          <p style={{ fontSize: 12, color: 'var(--slate)', margin: '0 0 12px', lineHeight: 1.5 }}>
+            Sent at most once every {MEDIA_UPLOAD_REPLY_HOURS} hours per conversation, and skipped when an upload link already went out in that time.
+          </p>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <button type="button" onClick={() => save()} disabled={!dirty || state === 'saving'}
+              style={{ padding: '9px 18px', borderRadius: 9, background: dirty ? 'var(--coral)' : '#f3f4f6', color: dirty ? '#fff' : '#9ca3af', border: 'none', fontSize: 13.5, fontWeight: 700, cursor: dirty ? 'pointer' : 'default' }}>
+              Save message
+            </button>
+            {message.trim() !== MEDIA_UPLOAD_REPLY_DEFAULT && (
+              <button type="button" onClick={() => setMessage(MEDIA_UPLOAD_REPLY_DEFAULT)}
+                style={{ padding: '9px 12px', borderRadius: 9, background: 'transparent', color: 'var(--slate)', border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                Use default
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+      {state !== 'idle' && (
+        <p style={{ fontSize: 12.5, margin: '10px 0 0', color: state === 'error' ? '#dc2626' : 'var(--slate)' }}>
+          {state === 'saving' ? 'Saving…' : state === 'saved' ? '✓ Saved' : 'Couldn’t save — try again.'}
+        </p>
+      )}
     </div>
   )
 }
