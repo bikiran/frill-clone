@@ -12,6 +12,8 @@ const nextConfig = {
     '/api/storage/transcode': ['./node_modules/ffmpeg-static/**'],
     '/api/cron/transcode-worker': ['./node_modules/ffmpeg-static/**'],
     '/api/media/upload': ['./node_modules/ffmpeg-static/**'],
+    '/api/twilio/webhook': ['./node_modules/ffmpeg-static/**'],
+    '/api/media/web-mp4': ['./node_modules/ffmpeg-static/**'],
   },
   // Allow images from any subdomain
   images: {

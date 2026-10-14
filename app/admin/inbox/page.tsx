@@ -60,6 +60,7 @@ import { confirmDialog } from '@/components/ConfirmDialog'
 import RefundOrderModal from '@/components/RefundOrderModal'
 import PrextyMark, { PREXTY } from '@/components/PrextyMark'
 import { notifyIntegrations } from '@/lib/integrations-notify'
+import { isOldPhoneVideo } from '@/lib/web-video'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Conversation = {
@@ -732,6 +733,29 @@ export default function InboxPage() {
   const [ticketPriority, setTicketPriority] = useState('normal')
   const [ticketSaving, setTicketSaving] = useState(false)
   const [messages, setMessages] = useState<Message[]>([])
+  // Old picture-message videos (3GP) play on phones but not in a browser: have
+  // the server turn each one into an MP4 the first time it's on screen, then
+  // show that. Remembered per message, so a refresh that re-reads the thread
+  // mid-conversion still ends up showing the MP4.
+  const webMp4Ref = useRef(new Map<string, any[] | 'pending' | 'failed'>())
+  useEffect(() => {
+    const done = webMp4Ref.current
+    const patch = (id: string, atts: any[]) => setMessages(prev => prev.map(m => m.id === id ? { ...m, attachments: atts } : m))
+    for (const m of messages) {
+      if (!Array.isArray(m.attachments) || !m.attachments.some(a => isOldPhoneVideo(a))) continue
+      const state = done.get(m.id)
+      if (Array.isArray(state)) { if (m.attachments !== state) patch(m.id, state); continue }
+      if (state) continue
+      done.set(m.id, 'pending')
+      authFetch('/api/media/web-mp4', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messageId: m.id }) })
+        .then(r => r.ok ? r.json() : null)
+        .then(j => {
+          if (j?.converted && Array.isArray(j.attachments)) { done.set(m.id, j.attachments); patch(m.id, j.attachments) }
+          else done.set(m.id, 'failed')
+        })
+        .catch(() => done.set(m.id, 'failed'))
+    }
+  }, [messages])
   // The open thread's loaded window: `since` is the created_at of the oldest
   // message loaded, or null when the WHOLE history is loaded. Refreshes re-read
   // only from `since` onwards, so they never drop pages the agent scrolled to.
