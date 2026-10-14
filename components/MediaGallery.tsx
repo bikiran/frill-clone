@@ -95,7 +95,7 @@ export default function MediaGallery({ items, index, onClose, onIndex, onViewDet
             <style>{'@keyframes colvySpin { to { transform: rotate(360deg) } }'}</style>
           </div>
         ) : current.kind === 'video' ? (
-          <VideoPlayer key={current.url} src={current.url} poster={current.poster} style={{ maxWidth: '90vw', maxHeight: '74vh', borderRadius: 8 }} />
+          <VideoPlayer key={current.url} src={current.url} poster={current.poster} fit={{ w: '90vw', h: '74vh' }} style={{ maxWidth: '90vw', maxHeight: '74vh', borderRadius: 8 }} />
         ) : (
           <img loading="lazy" decoding="async" src={current.url} alt={current.name || ''} style={{ maxWidth: '90vw', maxHeight: '74vh', borderRadius: 8, objectFit: 'contain' }} />
         )}

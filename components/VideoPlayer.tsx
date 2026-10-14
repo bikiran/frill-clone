@@ -32,7 +32,11 @@ function Skip({ dir }: { dir: -1 | 1 }) {
   )
 }
 
-export default function VideoPlayer({ src, style, autoPlay = true, poster, ambient = false }: { src: string; style?: React.CSSProperties; autoPlay?: boolean; poster?: string; ambient?: boolean }) {
+// `fit`: the box (CSS lengths, e.g. 90vw × 74vh) the video should fill. Without
+// it a small clip — a 176×320 picture-message video — plays at its own tiny size
+// with the controls crammed on top; with it, it's scaled up (aspect kept) to
+// fill the box like any other video.
+export default function VideoPlayer({ src, style, autoPlay = true, poster, ambient = false, fit }: { src: string; style?: React.CSSProperties; autoPlay?: boolean; poster?: string; ambient?: boolean; fit?: { w: string; h: string } }) {
   const wrapRef = useRef<HTMLDivElement>(null)
   const vRef = useRef<HTMLVideoElement>(null)
   const previewRef = useRef<HTMLVideoElement>(null)
@@ -42,6 +46,7 @@ export default function VideoPlayer({ src, style, autoPlay = true, poster, ambie
   const hideTimer = useRef<any>(null)
 
   const [playing, setPlaying] = useState(false)
+  const [aspect, setAspect] = useState<number | null>(null)
   const [cur, setCur] = useState(0)
   const [dur, setDur] = useState(0)
   const [buffered, setBuffered] = useState(0)
@@ -164,7 +169,10 @@ export default function VideoPlayer({ src, style, autoPlay = true, poster, ambie
       )}
       <video ref={vRef} src={src} playsInline autoPlay={autoPlay} poster={poster} preload={autoPlay ? 'auto' : 'metadata'} onClick={toggle}
         onLoadedData={() => setFirstFrame(true)} onPlaying={() => setFirstFrame(true)}
-        style={{ display: 'block', maxWidth: '100%', maxHeight: '100%', position: 'relative', zIndex: 1, ...style, ...(isFs ? { width: '100%', height: '100%', objectFit: 'contain' } : null) }} />
+        onLoadedMetadata={e => { const v = e.currentTarget; if (v.videoWidth && v.videoHeight) setAspect(v.videoWidth / v.videoHeight) }}
+        style={{ display: 'block', maxWidth: '100%', maxHeight: '100%', position: 'relative', zIndex: 1, ...style,
+          ...(fit && aspect && !isFs ? { width: `min(${fit.w}, calc(${fit.h} * ${aspect.toFixed(4)}))`, height: 'auto', aspectRatio: String(aspect) } : null),
+          ...(isFs ? { width: '100%', height: '100%', objectFit: 'contain' } : null) }} />
 
       {/* Poster shown over the video until its first frame decodes — no black
           flash while it's waiting its turn for a decoder. */}
