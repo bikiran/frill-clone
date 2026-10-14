@@ -15,23 +15,22 @@ import { modelFor, trackAi } from '@/lib/ai-models'
 const digitsOf = (s: string) => (s || '').replace(/\D/g, '').slice(-9)
 
 // Find a company's contact by phone, however the number was saved —
-// "+61455123456", "0455123456" or "0455 123 456". A plain `ilike %455123456%`
-// misses the spaced/dashed forms (the digits aren't contiguous in the column),
-// which made an SMS from a known customer look like a stranger. Tries the
-// contiguous match first, then the normalised column, then a candidate scan on
-// the last three digits compared by the last nine.
+// "+61455123456", "0455123456" or "0455 123 456". The indexed phone_norm column
+// (last 9 digits, kept up to date by V359) answers almost every lookup at once;
+// the contiguous `ilike` covers contacts saved before V359 ran, and the scan on
+// the last three digits catches spaced/dashed numbers among those.
 export async function findContactByPhone(db: any, companyId: string, phone: string): Promise<{ id: string; name: string | null; phone: string | null } | null> {
   const tail = digitsOf(phone)
   if (!companyId || !tail || tail.length < 8) return null
   const same = (c: any) => c?.phone && digitsOf(c.phone) === tail
   try {
+    const { data, error } = await db.from('contacts').select('id, name, phone').eq('company_id', companyId).eq('phone_norm', tail).limit(5)
+    if (!error) { const hit = (data || []).find(same); if (hit) return hit }
+  } catch {}
+  try {
     const { data } = await db.from('contacts').select('id, name, phone').eq('company_id', companyId).ilike('phone', `%${tail}%`).limit(10)
     const hit = (data || []).find(same)
     if (hit) return hit
-  } catch {}
-  try {
-    const { data, error } = await db.from('contacts').select('id, name, phone').eq('company_id', companyId).eq('phone_norm', tail).limit(5)
-    if (!error) { const hit = (data || []).find(same); if (hit) return hit }
   } catch {}
   try {
     const { data } = await db.from('contacts').select('id, name, phone').eq('company_id', companyId).ilike('phone', `%${tail.slice(-3)}`).limit(1000)
@@ -52,12 +51,13 @@ export async function ensureContactByPhone(
   db: any,
   companyId: string,
   phone: string,
-  opts?: { name?: string | null; source?: string },
+  opts?: { name?: string | null; source?: string; known?: boolean },
 ): Promise<string | null> {
   if (!companyId || !phone) return null
   const tail = digitsOf(phone)
   if (!tail || tail.length < 6) return null
-  const existing = await findContactByPhone(db, companyId, phone)
+  // `known`: the caller already looked the number up and found nobody.
+  const existing = opts?.known ? null : await findContactByPhone(db, companyId, phone)
   if (existing) return existing.id
   try {
     const { data: created } = await db.from('contacts').insert({

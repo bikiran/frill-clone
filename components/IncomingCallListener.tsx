@@ -320,7 +320,8 @@ export default function IncomingCallListener({ companyId, agentName, showStatusP
             const rowId = call.customParameters?.get?.('callRowId') || null
             setIncoming({ id: call.parameters?.CallSid || 'twilio', callRowId: rowId, from: fromNum })
             startRing()
-            resolveCaller(fromNum)
+            const cp = (k: string) => call.customParameters?.get?.(k) || null
+            resolveCaller(fromNum, { contactId: cp('contactId'), name: cp('callerKnown') ? cp('callerName') : null })
             call.on('accept', () => { answeredHereRef.current = true; stopRing(); setInCall(true); startTimer() })
             call.on('disconnect', () => { stopRing(); finishCall() })
             call.on('cancel', () => { stopRing(); reset() })
@@ -676,42 +677,52 @@ export default function IncomingCallListener({ companyId, agentName, showStatusP
     } catch {}
   }
 
-  const resolveCaller = async (fromNumber: string) => {
-    setCaller({ number: fromNumber, loading: true })
+  // Who's calling, for the popup. The Twilio call carries the contact the
+  // server already matched (contactId / callerName), so a saved caller shows at
+  // once; otherwise the number is looked up by the indexed phone_norm column
+  // (with a contiguous-digits match for older rows). Store totals load after the
+  // name, and the popup never sits on "Looking up…" for more than a few seconds.
+  const callerSeqRef = useRef(0)
+  const resolveCaller = async (fromNumber: string, known?: { contactId?: string | null; name?: string | null }) => {
+    const seq = ++callerSeqRef.current
+    const still = () => callerSeqRef.current === seq
+    const knownName = known?.name && known.name !== fromNumber ? known.name : null
+    setCaller(knownName ? { number: fromNumber, name: knownName, contactId: known?.contactId || null } : { number: fromNumber, loading: true })
     if (!companyId || !fromNumber) { setCaller({ number: fromNumber }); return }
+    const giveUp = setTimeout(() => { if (still()) setCaller((c: any) => c?.loading ? { number: fromNumber } : c) }, 4000)
     try {
       const digits = fromNumber.replace(/\D/g, '').slice(-9)
       const matchDigits = (list: any[]) => (list || []).find((c: any) => c.phone && c.phone.replace(/\D/g, '').slice(-9) === digits)
-      // Look the caller up by number, not by scanning a capped list. The old
-      // `.limit(500)` silently missed contacts past the first 500 on busy boards
-      // (the call log resolved them server-side, so the popup disagreed). Query
-      // the digits directly; fall back to a wide scan only for numbers stored
-      // with separators that a substring match can't catch.
-      let { data: cands } = await (supabase as any).from('contacts')
-        .select('*').eq('company_id', companyId).ilike('phone', `%${digits}%`).limit(10)
-      let contact = matchDigits(cands)
-      if (!contact) {
-        const { data: more } = await (supabase as any).from('contacts')
-          .select('*').eq('company_id', companyId).order('created_at', { ascending: false }).limit(2000)
-        contact = matchDigits(more)
+      const COLS = 'id, name, email, phone, source, channels_seen'
+      const contacts = (supabase as any).from('contacts').select(COLS).eq('company_id', companyId)
+      let contact: any = null
+      if (known?.contactId) {
+        const { data } = await (supabase as any).from('contacts').select(COLS).eq('id', known.contactId).maybeSingle()
+        contact = data
       }
-      if (contact) {
-        // Pull store context (WooCommerce, else Shopify) if their email matches
-        let woo: any = null
-        if (contact.email) {
-          const { data } = await (supabase as any).from('woocommerce_customers').select('total_orders,total_spend').eq('company_id', companyId).ilike('email', contact.email).maybeSingle()
-          woo = data
-          // Same totals from a Shopify store when there's no WooCommerce match.
-          if (!woo) {
-            const { data: shop } = await (supabase as any).from('shopify_customers').select('total_orders,total_spend').eq('company_id', companyId).eq('email', String(contact.email).toLowerCase()).limit(1)
-            woo = shop?.[0] || null
-          }
-        }
-        setCaller({ number: fromNumber, name: contact.name, email: contact.email, contactId: contact.id, woo, source: contact.source || null, channels: Array.isArray(contact.channels_seen) ? contact.channels_seen : null })
-      } else {
-        setCaller({ number: fromNumber, unknown: true })
+      if (!contact && digits.length >= 8) {
+        const [byNorm, byDigits] = await Promise.all([
+          contacts.eq('phone_norm', digits).limit(5),
+          (supabase as any).from('contacts').select(COLS).eq('company_id', companyId).ilike('phone', `%${digits}%`).limit(10),
+        ])
+        contact = matchDigits(byNorm?.data) || matchDigits(byDigits?.data)
       }
-    } catch { setCaller({ number: fromNumber }) }
+      if (!still()) return
+      if (!contact) { setCaller({ number: fromNumber, unknown: true }); return }
+      const base = { number: fromNumber, name: contact.name || knownName, email: contact.email, contactId: contact.id, source: contact.source || null, channels: Array.isArray(contact.channels_seen) ? contact.channels_seen : null }
+      setCaller(base)
+      // Store context (WooCommerce, else Shopify) when their email matches.
+      if (contact.email) {
+        const email = String(contact.email).toLowerCase()
+        const [{ data: w }, { data: shop }] = await Promise.all([
+          (supabase as any).from('woocommerce_customers').select('total_orders,total_spend').eq('company_id', companyId).ilike('email', contact.email).limit(1),
+          (supabase as any).from('shopify_customers').select('total_orders,total_spend').eq('company_id', companyId).eq('email', email).limit(1),
+        ])
+        const woo = w?.[0] || shop?.[0] || null
+        if (woo && still()) setCaller((c: any) => c?.contactId === contact.id ? { ...c, woo } : c)
+      }
+    } catch { if (still()) setCaller((c: any) => c?.loading ? { number: fromNumber } : c) }
+    finally { clearTimeout(giveUp) }
   }
 
   const startTimer = () => { setSeconds(0); startedAtRef.current = Date.now(); timerRef.current = setInterval(() => setSeconds(s => s + 1), 1000) }
