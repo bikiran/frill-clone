@@ -8,8 +8,8 @@
 // trackAi() records the tokens each call used, per business and job, so the
 // same page can show where the AI spend goes.
 //
-// Choices live in platform_settings (key 'ai_models'); usage in ai_usage
-// (COLVY_V354_AI_SWITCHBOARD.sql). Without them it quietly uses the defaults
+// Choices live in platform_settings (key 'ai_models'); usage in ai_usage_log
+// (COLVY_V358_AI_USAGE_LOG.sql — not ai_usage, which is V208's rate limit). Without them it quietly uses the defaults
 // and skips recording.
 
 import { createClient } from '@supabase/supabase-js'
@@ -112,7 +112,7 @@ export async function trackAi(job: AiJob, companyId: string | null | undefined, 
     const tokensIn = Number(u.input_tokens || 0) + Number(u.cache_read_input_tokens || 0) + Number(u.cache_creation_input_tokens || 0)
     const tokensOut = Number(u.output_tokens || 0)
     if (!tokensIn && !tokensOut) return
-    await (db || admin()).from('ai_usage').insert({ company_id: companyId || null, job, model: String(response?.model || AI_JOBS[job].default), tokens_in: tokensIn, tokens_out: tokensOut }).then(() => {}, () => {})
+    await (db || admin()).from('ai_usage_log').insert({ company_id: companyId || null, job, model: String(response?.model || AI_JOBS[job].default), tokens_in: tokensIn, tokens_out: tokensOut }).then(() => {}, () => {})
   } catch {}
 }
 
