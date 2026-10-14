@@ -136,9 +136,14 @@ const COLUMNS = [
 
 // What the page opens on: the saved default view and names, the user's default
 // outlet, and the team-member defaults (assigned to me / home outlet).
-type StartPrefs = { view: ViewMode | null; names: Record<string, string>; outlet: string | null; mine: boolean; homeOutlet: string | null }
-const EMPTY_PREFS: StartPrefs = { view: null, names: {}, outlet: null, mine: false, homeOutlet: null }
+// assignee: the user's saved default assignee filter ('*' = anyone, 'me', or a
+// team member's user id); without one, team members start on "assigned to me".
+type StartPrefs = { view: ViewMode | null; names: Record<string, string>; outlet: string | null; mine: boolean; homeOutlet: string | null; assignee?: string | null }
+const EMPTY_PREFS: StartPrefs = { view: null, names: {}, outlet: null, mine: false, homeOutlet: null, assignee: null }
 const startOutlet = (p?: StartPrefs | null) => (p ? p.outlet || p.homeOutlet || null : null)
+const ANYONE = '*'
+const startAssignee = (p?: StartPrefs | null): string[] =>
+  !p ? [] : p.assignee ? (p.assignee === ANYONE ? [] : [p.assignee]) : (p.mine ? ['me'] : [])
 
 export default function TasksPage() {
   const router = useRouter()
@@ -171,6 +176,8 @@ export default function TasksPage() {
   const [viewMenu, setViewMenu] = useState<{ view: ViewMode; x: number; y: number } | null>(null)
   const [defaultOutlet, setDefaultOutlet] = useState<string | null>(seedPrefs?.outlet ?? null)
   const [outletMenu, setOutletMenu] = useState<{ x: number; y: number; value: string } | null>(null)
+  const [defaultAssignee, setDefaultAssignee] = useState<string | null>(seedPrefs?.assignee ?? null)
+  const [assigneeMenu, setAssigneeMenu] = useState<{ x: number; y: number; value: string } | null>(null)
   const labelOf = (v: ViewMode) => viewNames[v] || VIEW_LABELS[v]
   const dfltDot: React.CSSProperties = { display: 'inline-block', width: 5, height: 5, borderRadius: '50%', background: 'var(--coral)', marginLeft: 5, verticalAlign: 'middle' }
   const viewMenuItem: React.CSSProperties = { display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', borderRadius: 7, border: 'none', background: 'transparent', color: 'var(--ink)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }
@@ -181,6 +188,16 @@ export default function TasksPage() {
     if (id) setOutletFilter([id]); else setOutletFilter([])
     if (companyId && userId) authFetch('/api/user-prefs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId, companyId, key: 'default_outlet', value: { id } }) }).catch(() => {})
     setOutletMenu(null)
+  }
+
+  // The assignee filter the user starts on (right-click a person, "Assigned to
+  // me" or "Anyone"). Saved to their account like the default outlet.
+  const setDefaultAssigneePref = (v: string | null) => {
+    setDefaultAssignee(v)
+    savePrefs({ assignee: v })
+    setAssigneeFilter(startAssignee({ ...EMPTY_PREFS, ...(prefsRef.current || {}), assignee: v }))
+    if (companyId && userId) authFetch('/api/user-prefs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId, companyId, key: 'default_assignee', value: { value: v } }) }).catch(() => {})
+    setAssigneeMenu(null)
   }
 
   const persistViewPrefs = (names: Record<string, string>, dflt: ViewMode | null) => {
@@ -214,7 +231,7 @@ export default function TasksPage() {
   }, [viewMenu])
 
   const [search, setSearch] = useState('')
-  const [assigneeFilter, setAssigneeFilter] = useState<string[]>(seedPrefs?.mine ? ['me'] : [])  // [] = anyone; else match any
+  const [assigneeFilter, setAssigneeFilter] = useState<string[]>(startAssignee(seedPrefs))  // [] = anyone; else match any
   const [priorityFilter, setPriorityFilter] = useState<string[]>([])  // [] = any priority
   const [colorFilter, setColorFilter] = useState<string[]>([])        // [] = any colour ('' = no colour)
   const [outletFilter, setOutletFilter] = useState<string[]>(startOutlet(seedPrefs) ? [startOutlet(seedPrefs)!] : [])  // [] = all outlets; else match any
@@ -246,10 +263,10 @@ export default function TasksPage() {
   // only the parts whose saved default actually changed are touched, so a
   // background refresh never yanks the view or filters around.
   const applyPrefs = (p: StartPrefs, prev: StartPrefs | null) => {
-    setViewNames(p.names || {}); setDefaultView(p.view || null); setDefaultOutlet(p.outlet || null)
+    setViewNames(p.names || {}); setDefaultView(p.view || null); setDefaultOutlet(p.outlet || null); setDefaultAssignee(p.assignee || null)
     if (!prev || prev.view !== p.view) setView(p.view || 'list')
     if (!prev || startOutlet(prev) !== startOutlet(p)) { const o = startOutlet(p); setOutletFilter(o ? [o] : []) }
-    if (!prev || prev.mine !== p.mine) setAssigneeFilter(p.mine ? ['me'] : [])
+    if (!prev || startAssignee(prev).join() !== startAssignee(p).join()) setAssigneeFilter(startAssignee(p))
     prefsRef.current = p
   }
   const savePrefs = (patch: Partial<StartPrefs>) => {
@@ -325,8 +342,9 @@ export default function TasksPage() {
         let tv: any = savedPrefs?.prefs?.tasks_view
         if (!savedPrefs) { try { tv = JSON.parse(localStorage.getItem(`tasks:viewPrefs:${cid}:${uid}`) || 'null') } catch {} }
         const dv = savedPrefs?.prefs?.default_outlet
+        const da = savedPrefs?.prefs?.default_assignee
         const fresh: StartPrefs = savedPrefs || !prefsRef.current
-          ? { view: tv?.defaultView || null, names: (tv?.names && typeof tv.names === 'object') ? tv.names : {}, outlet: (dv && typeof dv === 'object' && dv.id) || null, mine: isMember, homeOutlet: isMember ? (myMembership.default_location_id || null) : null }
+          ? { view: tv?.defaultView || null, names: (tv?.names && typeof tv.names === 'object') ? tv.names : {}, outlet: (dv && typeof dv === 'object' && dv.id) || null, mine: isMember, homeOutlet: isMember ? (myMembership.default_location_id || null) : null, assignee: (da && typeof da === 'object' && typeof da.value === 'string' && da.value) || null }
           : { ...prefsRef.current, mine: isMember, homeOutlet: isMember ? (myMembership.default_location_id || null) : null }
         applyPrefs(fresh, prefsRef.current)
         setPrefsReady(true)
@@ -1112,6 +1130,20 @@ export default function TasksPage() {
               </div>
             </>
           )}
+          {/* Right-click menu for an assignee — set/clear the user's default. */}
+          {assigneeMenu && (
+            <>
+              <div onClick={() => setAssigneeMenu(null)} onContextMenu={e => { e.preventDefault(); setAssigneeMenu(null) }} style={{ position: 'fixed', inset: 0, zIndex: 400 }} />
+              <div style={{ position: 'fixed', top: assigneeMenu.y, left: assigneeMenu.x, zIndex: 401, background: '#fff', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 12px 32px rgba(0,0,0,0.18)', padding: 6, minWidth: 200 }}>
+                <p style={{ margin: '2px 8px 6px', fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--slate)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 220 }}>
+                  {assigneeMenu.value === ANYONE ? 'Anyone' : assigneeMenu.value === 'me' ? 'Assigned to me' : (team.find((m: any) => m.user_id === assigneeMenu.value)?.name || 'Team member')}
+                </p>
+                {defaultAssignee === assigneeMenu.value
+                  ? <button style={viewMenuItem} onClick={() => setDefaultAssigneePref(null)}>Remove as default</button>
+                  : <button style={viewMenuItem} onClick={() => setDefaultAssigneePref(assigneeMenu.value)}>Make this my default</button>}
+              </div>
+            </>
+          )}
           {/* Bulk select — multi-select the list for delete / status / priority. */}
           {view === 'list' && (
             <button className="ctl" onClick={() => selectMode ? exitSelect() : setSelectMode(true)}
@@ -1143,7 +1175,10 @@ export default function TasksPage() {
                       </FilterField>
                       <FilterField label="Assignee">
                         <MultiSelect allLabel="Anyone" value={assigneeFilter} onChange={setAssigneeFilter}
-                          options={[{ value: 'me', label: 'Assigned to me' }, ...team.map((m: any) => ({ value: m.user_id, label: m.name }))]} />
+                          options={[{ value: 'me', label: 'Assigned to me' }, ...team.map((m: any) => ({ value: m.user_id, label: m.name }))]}
+                          defaultValue={defaultAssignee} allValue={ANYONE}
+                          onItemContext={(v, e) => { e.preventDefault(); setAssigneeMenu({ x: Math.min(e.clientX, window.innerWidth - 220), y: e.clientY, value: v }) }} />
+                        <p style={{ margin: '5px 2px 0', fontSize: 10.5, color: 'var(--slate)' }}>Right-click a person, “Assigned to me” or “Anyone” to set it as your default.</p>
                       </FilterField>
                       <FilterField label="Due in">
                         <div className="seg" style={{ display: 'flex', width: '100%', marginBottom: 6 }}>
@@ -1294,13 +1329,15 @@ function FilterField({ label, hidden, children }: { label: string; hidden?: bool
 
 // A consistent multi-select dropdown for the filters (outlets, assignee,
 // priority, colour) — looks like a normal select but toggles several values.
-function MultiSelect({ options, value, onChange, allLabel = 'All', onItemContext, defaultValue }: {
+function MultiSelect({ options, value, onChange, allLabel = 'All', onItemContext, defaultValue, allValue }: {
   options: { value: string; label: string; color?: string }[]
   value: string[]
   onChange: (v: string[]) => void
   allLabel?: string
   onItemContext?: (value: string, e: React.MouseEvent) => void
   defaultValue?: string | null
+  /** When set, the "All" row can be right-clicked too (as this value) and shows DEFAULT. */
+  allValue?: string
 }) {
   const [open, setOpen] = useState(false)
   const label = value.length === 0 ? allLabel
@@ -1318,7 +1355,12 @@ function MultiSelect({ options, value, onChange, allLabel = 'All', onItemContext
       {open && (
         <div style={{ marginTop: 6, border: '1px solid var(--border)', borderRadius: 9, overflow: 'hidden', maxHeight: 210, overflowY: 'auto' }}>
           <button type="button" onClick={() => onChange([])}
-            style={{ ...row, borderBottom: '1px solid var(--border)', background: value.length === 0 ? 'var(--peach)' : '#fff', color: value.length === 0 ? 'var(--coral)' : 'var(--ink)', fontWeight: 700 }}>{allLabel}</button>
+            onContextMenu={onItemContext && allValue ? (e => onItemContext(allValue, e)) : undefined}
+            title={onItemContext && allValue ? 'Right-click to set as your default' : undefined}
+            style={{ ...row, borderBottom: '1px solid var(--border)', background: value.length === 0 ? 'var(--peach)' : '#fff', color: value.length === 0 ? 'var(--coral)' : 'var(--ink)', fontWeight: 700 }}>
+            <span style={{ flex: 1 }}>{allLabel}</span>
+            {allValue && defaultValue === allValue && <span title="Your default" style={{ fontSize: 10, fontWeight: 800, color: 'var(--coral)', background: '#fff', padding: '1px 6px', borderRadius: 20, flexShrink: 0 }}>DEFAULT</span>}
+          </button>
           {options.map(o => {
             const on = value.includes(o.value)
             return (
