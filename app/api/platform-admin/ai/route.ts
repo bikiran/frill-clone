@@ -36,7 +36,7 @@ export async function GET(req: NextRequest) {
   let missing = false
   // Page through (newest first); enough for a busy month on one screen.
   for (let from = 0; from < 100_000; from += 1000) {
-    const { data, error } = await db.from('ai_usage').select('company_id, job, model, tokens_in, tokens_out').gte('created_at', since).order('created_at', { ascending: false }).range(from, from + 999)
+    const { data, error } = await db.from('ai_usage_log').select('company_id, job, model, tokens_in, tokens_out').gte('created_at', since).order('created_at', { ascending: false }).range(from, from + 999)
     if (error) { missing = /does not exist|schema cache/i.test(error.message || ''); break }
     rows.push(...(data || []))
     if (!data || data.length < 1000) break

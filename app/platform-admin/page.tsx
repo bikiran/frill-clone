@@ -4505,7 +4505,7 @@ function AiModelsPage() {
     <div style={{ maxWidth: 1080 }}>
       <SectionHeader title="AI Models & Usage" sub="Pick the model for each AI job. Every AI call in Colvy goes through these choices."
         action={<div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>{msg && <span style={{ fontSize: 12, color: /Saved/.test(msg) ? '#10b981' : '#ef4444' }}>{msg}</span>}<button onClick={save} disabled={saving || !dirty} style={paBtn('#ff7a6b', true)}>{saving ? 'Saving…' : 'Save changes'}</button></div>} />
-      {d.missing && <div style={{ padding: '14px 16px', borderRadius: 10, background: '#f59e0b18', border: '1px solid #f59e0b55', fontSize: 13, color: 'var(--sa-text)', marginBottom: 14 }}>Run <b>COLVY_V354_AI_SWITCHBOARD.sql</b> to start recording AI usage. Model choices work without it.</div>}
+      {d.missing && <div style={{ padding: '14px 16px', borderRadius: 10, background: '#f59e0b18', border: '1px solid #f59e0b55', fontSize: 13, color: 'var(--sa-text)', marginBottom: 14 }}>Run <b>COLVY_V358_AI_USAGE_LOG.sql</b> to start recording AI usage. Model choices work without it.</div>}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12, marginBottom: 14 }}>
         {[['AI calls', n(d.total.calls)], ['Tokens in', n(d.total.tokensIn)], ['Tokens out', n(d.total.tokensOut)], ['Estimated cost (USD)', usd(d.total)]].map(([k, v]) => (
