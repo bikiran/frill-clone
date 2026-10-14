@@ -57,6 +57,7 @@ import { useAiDraft, AiDraftButton, AiDraftInfo } from '@/components/AiDraft'
 import BookingLinkButton from '@/components/booking/BookingLinkButton'
 import LinkCards, { linkCodesIn, useLinkStats, LastOpen } from '@/components/LinkCards'
 import { confirmDialog } from '@/components/ConfirmDialog'
+import RefundOrderModal from '@/components/RefundOrderModal'
 import PrextyMark, { PREXTY } from '@/components/PrextyMark'
 import { notifyIntegrations } from '@/lib/integrations-notify'
 
@@ -2078,7 +2079,7 @@ export default function InboxPage() {
   const [copiedTaskId, setCopiedTaskId] = useState<string | null>(null)
   const [newTask, setNewTask] = useState('')
   const [newTaskAssignee, setNewTaskAssignee] = useState('')
-  const [refundModal, setRefundModal] = useState<any>(null)
+  const [refundOrder, setRefundOrder] = useState<any>(null)
   const [orderGallery, setOrderGallery] = useState<{ images: { src: string; name: string }[]; index: number } | null>(null)
   const [invoicePreview, setInvoicePreview] = useState<{ doc: any; url: string; fileName: string; orderNumber: string } | null>(null)
   const [invoiceSending, setInvoiceSending] = useState(false)
@@ -4755,126 +4756,37 @@ export default function InboxPage() {
     </>
   )
 
-  // Refund a paid order. This moves real money through the payment gateway, so
-  // it always confirms first and states the amount.
-  const issueOrderRefund = async (payload: any) => {
+  // Refund a paid order in the shared refund window (the one the Orders board
+  // uses): refund everything, or choose items and shipping. It moves real money
+  // through the payment gateway, so it always confirms first and states the amount.
+  const issueOrderRefund = (payload: any) => {
     if (!companyId) return
-    const orderId = payload.order_id || payload.id
-    if (!orderId) { showToast('No order id for this order'); return }
-
-    // Fetch the enriched order (real line items with images + shipping) — the
-    // synced row usually lacks both, which is why shipping never appeared.
-    let rawItems = payload.line_items || payload.items || []
-    let shippingTotal = Number(payload.shipping_total || 0)
-    let shippingMethod: string | null = payload.shipping_method || null
-    let orderTotal = Number(payload.total || 0)
-    let alreadyRefunded = Math.abs(Number(payload.total_refunded ?? payload.refunded_total ?? 0))
-    try {
-      const res = await authFetch(
-        `/api/orders/detail?companyId=${companyId}&orderId=${orderId}` +
-        (payload.integration_id ? `&integrationId=${payload.integration_id}` : ''))
-      const d = await res.json()
-      if (res.ok && d.order) {
-        if (Array.isArray(d.order.line_items) && d.order.line_items.length) rawItems = d.order.line_items
-        if (d.order.shipping_total != null) shippingTotal = Number(d.order.shipping_total)
-        if (d.order.shipping_method) shippingMethod = d.order.shipping_method
-        if (d.order.total != null && Number(d.order.total)) orderTotal = Number(d.order.total)
-        if (d.order.total_refunded != null) alreadyRefunded = Math.abs(Number(d.order.total_refunded))
-      }
-    } catch { /* fall through — modal will offer a full refund */ }
-
-    const items = (rawItems || []).map((li: any, i: number) => {
-      const qty = Number(li.quantity || li.qty || 1)
-      return {
-        id: li.id ?? li.line_item_id ?? i,
-        name: li.name || li.product_name || 'Item',
-        qty,
-        unit: Number(li.total || li.subtotal || li.price || 0) / Math.max(1, qty),
-        total: Number(li.total || li.subtotal || 0),
-        tax: Number(li.total_tax || li.tax || 0),
-        taxId: li.taxId ?? null,
-        refundQty: 0,
-      }
-    })
-    setRefundModal({
-      payload, orderId,
-      orderNumber: payload.order_number || orderId,
-      items,
-      shipping: shippingTotal,
-      shippingMethod,
-      refundShipping: false,
-      restock: true,
-      reason: '',
-      busy: false,
-      orderTotal,
-      alreadyRefunded,
-    })
+    if (!(payload.order_id || payload.id || payload.external_order_id)) { showToast('No order id for this order'); return }
+    setRefundOrder({ ...payload, conversation_id: selected?.id || payload.conversation_id || undefined })
   }
 
-  const submitRefund = async () => {
-    const m = refundModal
-    if (!m || !companyId) return
-    const chosen = m.items
-      .filter((it) => it.refundQty > 0)
-      .map((it) => ({
-        id: it.id,
-        qty: it.refundQty,
-        total: +(it.unit * it.refundQty).toFixed(2),
-        tax: it.qty > 0 ? +((it.tax / it.qty) * it.refundQty).toFixed(2) : 0,
-        taxId: it.taxId,
-      }))
-    const shippingAmt = m.refundShipping ? m.shipping : 0
-    if (chosen.length === 0 && shippingAmt <= 0) {
-      showToast('Select at least one item or shipping to refund')
-      return
-    }
-    const totalRefund = chosen.reduce((s, c) => s + c.total + c.tax, 0) + shippingAmt
-    if (!await confirmDialog(`Refund $${totalRefund.toFixed(2)} for order #${m.orderNumber}?\n\nThis returns money through the payment gateway and cannot be undone here.`)) return
-
-    setRefundModal((v) => ({ ...v, busy: true }))
-    try {
-      const res = await authFetch('/api/orders/refund', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          companyId, orderId: m.orderId,
-          integrationId: m.payload.integration_id || undefined,
-          conversationId: selected?.id || undefined,
-          lineItems: chosen,
-          shipping: shippingAmt,
-          restock: m.restock,
-          reason: m.reason || undefined,
-        }),
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Refund failed')
-      const amt = Number(data.amount || totalRefund)
-      showToast(`Refunded $${amt.toFixed(2)}`)
-      setRefundModal(null)
-      // Reflect the refund in the order panel immediately (the live refetch below
-      // confirms it), so the order shows Partially refunded / Refunded right away.
-      setWooOrders(prev => prev.map((o: any) => {
-        const oid = o.order_id ?? o.woo_order_id ?? o.id
-        if (String(oid) !== String(m.orderId)) return o
-        const refunded = (Number(o.total_refunded) || 0) + amt
-        const full = refunded + 0.005 >= (parseFloat(o.total) || 0)
-        return { ...o, total_refunded: refunded, status: full ? 'refunded' : o.status }
-      }))
-      // Leave a visible trace in the conversation (WooCommerce keeps its own note;
-      // this one shows up in the Colvy thread so the team sees what happened).
-      if (selected) {
-        try {
-          const nm = myName || 'Colvy'
-          await (supabase as any).from('messages').insert({
-            conversation_id: selected.id, company_id: companyId, sender_type: 'agent',
-            sender_name: nm, is_internal: true,
-            content: `💸 Refunded $${amt.toFixed(2)} on order #${m.orderNumber}${m.reason ? ` — ${m.reason}` : ''}.`,
-          })
-        } catch {}
-      }
-      if (selected) { loadWooData(contact?.id || null, contact?.email, contact?.phone); loadConversationExtras(selected.id) }
-    } catch (e) {
-      alert('Could not issue the refund: ' + e.message)
-      setRefundModal((v) => v ? { ...v, busy: false } : v)
+  // After a refund: show it on the order straight away (the refetch below
+  // confirms it) and leave a team note in the thread.
+  const afterOrderRefund = async (payload: any, amt: number, reason: string) => {
+    showToast(`Refunded $${amt.toFixed(2)}`)
+    const refundedId = String(payload.order_id ?? payload.woo_order_id ?? payload.id)
+    setWooOrders(prev => prev.map((o: any) => {
+      const oid = o.order_id ?? o.woo_order_id ?? o.id
+      if (String(oid) !== refundedId) return o
+      const refunded = (Number(o.total_refunded) || 0) + amt
+      const full = refunded + 0.005 >= (parseFloat(o.total) || 0)
+      return { ...o, total_refunded: refunded, status: full ? 'refunded' : o.status }
+    }))
+    if (selected) {
+      try {
+        await (supabase as any).from('messages').insert({
+          conversation_id: selected.id, company_id: companyId, sender_type: 'agent',
+          sender_name: myName || 'Colvy', is_internal: true,
+          content: `💸 Refunded $${amt.toFixed(2)} on order #${payload.order_number || refundedId}${reason ? ` — ${reason}` : ''}.`,
+        })
+      } catch {}
+      loadWooData(contact?.id || null, contact?.email, contact?.phone)
+      loadConversationExtras(selected.id)
     }
   }
 
@@ -7330,101 +7242,10 @@ export default function InboxPage() {
         </div>
       )}
 
-      {refundModal && (
-        <div onClick={() => !refundModal.busy && setRefundModal(null)}
-          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 340, padding: 20 }}>
-          <div onClick={e => e.stopPropagation()}
-            style={{ width: 520, maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto', background: '#fff', borderRadius: 18, padding: 22 }}>
-            <h3 style={{ margin: '0 0 4px', fontSize: 17, fontWeight: 800, color: 'var(--ink)' }}>Refund order #{refundModal.orderNumber}</h3>
-            <p style={{ margin: '0 0 16px', fontSize: 12.5, color: 'var(--slate)' }}>
-              Choose what to return. This moves real money through the payment gateway.
-            </p>
-
-            {refundModal.items.length === 0 && (
-              <p style={{ fontSize: 13, color: 'var(--slate)', marginBottom: 14 }}>
-                No line items available for this order — a full refund will be issued instead.
-              </p>
-            )}
-
-            {/* Items */}
-            <div style={{ display: 'grid', gap: 8, marginBottom: 14 }}>
-              {refundModal.items.map((it: any, idx: number) => (
-                <div key={it.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border)', background: it.refundQty > 0 ? 'var(--peach)' : '#fff' }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{dec(it.name)}</div>
-                    <div style={{ fontSize: 11.5, color: 'var(--slate)' }}>
-                      ${it.unit.toFixed(2)} each · {it.qty} ordered
-                    </div>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <button type="button" disabled={it.refundQty <= 0}
-                      onClick={() => setRefundModal((v: any) => { const items=[...v.items]; items[idx]={...items[idx], refundQty: Math.max(0, items[idx].refundQty-1)}; return {...v, items} })}
-                      style={{ width: 26, height: 26, borderRadius: 7, border: '1px solid var(--border)', background: '#fff', cursor: it.refundQty<=0?'default':'pointer', fontSize: 15, color: 'var(--slate)' }}>−</button>
-                    <span style={{ minWidth: 22, textAlign: 'center', fontSize: 13.5, fontWeight: 700, color: 'var(--ink)' }}>{it.refundQty}</span>
-                    <button type="button" disabled={it.refundQty >= it.qty}
-                      onClick={() => setRefundModal((v: any) => { const items=[...v.items]; items[idx]={...items[idx], refundQty: Math.min(items[idx].qty, items[idx].refundQty+1)}; return {...v, items} })}
-                      style={{ width: 26, height: 26, borderRadius: 7, border: '1px solid var(--border)', background: '#fff', cursor: it.refundQty>=it.qty?'default':'pointer', fontSize: 15, color: 'var(--coral)' }}>+</button>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {/* Shipping */}
-            {refundModal.shipping > 0 && (
-              <label style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border)', marginBottom: 10, cursor: 'pointer' }}>
-                <input type="checkbox" checked={refundModal.refundShipping}
-                  onChange={e => setRefundModal((v: any) => ({ ...v, refundShipping: e.target.checked }))} />
-                <span style={{ flex: 1, fontSize: 13.5, color: 'var(--ink)' }}>Refund shipping{refundModal.shippingMethod ? ` (${refundModal.shippingMethod})` : ''}</span>
-                <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>${refundModal.shipping.toFixed(2)}</span>
-              </label>
-            )}
-
-            {/* Restock */}
-            <label style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '10px 12px', borderRadius: 10, background: 'var(--canvas)', marginBottom: 14, cursor: 'pointer' }}>
-              <input type="checkbox" checked={refundModal.restock}
-                onChange={e => setRefundModal((v: any) => ({ ...v, restock: e.target.checked }))} />
-              <span style={{ flex: 1, fontSize: 13.5, color: 'var(--ink)' }}>Restock refunded items</span>
-            </label>
-
-            <input value={refundModal.reason}
-              onChange={e => setRefundModal((v: any) => ({ ...v, reason: e.target.value }))}
-              placeholder="Reason (optional)"
-              style={{ width: '100%', padding: '9px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13, boxSizing: 'border-box', marginBottom: 16 }} />
-
-            {/* Total */}
-            {(() => {
-              const items = refundModal.items.filter((it: any) => it.refundQty > 0)
-              const itemsTotal = items.reduce((s: number, it: any) => s + it.unit * it.refundQty + (it.qty>0 ? (it.tax/it.qty)*it.refundQty : 0), 0)
-              const total = itemsTotal + (refundModal.refundShipping ? refundModal.shipping : 0)
-              const available = Math.max(0, (refundModal.orderTotal || 0) - (refundModal.alreadyRefunded || 0))
-              const over = total > available + 0.001
-              return (
-                <>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 2px', marginBottom: 8, fontSize: 12.5, color: 'var(--slate)' }}>
-                    <span>Available to refund{refundModal.alreadyRefunded > 0 ? ` (already refunded $${refundModal.alreadyRefunded.toFixed(2)})` : ''}</span>
-                    <span style={{ fontWeight: 700, color: 'var(--ink)' }}>${available.toFixed(2)}</span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 14px', borderRadius: 11, background: 'var(--peach)', marginBottom: over ? 6 : 16 }}>
-                    <span style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--ink)' }}>Refund total</span>
-                    <span style={{ fontSize: 18, fontWeight: 800, color: over ? '#dc2626' : 'var(--coral)' }}>${total.toFixed(2)}</span>
-                  </div>
-                  {over && <p style={{ margin: '0 0 14px', fontSize: 11.5, color: '#dc2626' }}>This exceeds the amount available to refund.</p>}
-                </>
-              )
-            })()}
-
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button type="button" onClick={() => setRefundModal(null)} disabled={refundModal.busy}
-                style={{ flex: 1, padding: '11px 0', borderRadius: 10, border: '1px solid var(--border)', background: '#fff', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', color: 'var(--slate)' }}>
-                Cancel
-              </button>
-              <button type="button" onClick={submitRefund} disabled={refundModal.busy}
-                style={{ flex: 2, padding: '11px 0', borderRadius: 10, border: 'none', background: 'var(--coral)', color: '#fff', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', opacity: refundModal.busy ? 0.6 : 1 }}>
-                {refundModal.busy ? 'Refunding…' : 'Issue refund'}
-              </button>
-            </div>
-          </div>
-        </div>
+      {refundOrder && companyId && (
+        <RefundOrderModal companyId={companyId} order={refundOrder} accent={companyInfo?.accent_color || 'var(--coral)'}
+          onClose={() => setRefundOrder(null)}
+          onDone={(amt, reason) => { const o = refundOrder; setRefundOrder(null); afterOrderRefund(o, amt, reason) }} />
       )}
 
       {showPod && (
