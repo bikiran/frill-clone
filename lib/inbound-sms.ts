@@ -12,6 +12,7 @@ import { runKeywordReply } from './keyword-reply'
 import { resolveSmsSender } from './sms-provider'
 import { handleBookingSmsReply } from './booking-replies'
 import { emitInboundEvent } from '@/lib/integration-hooks'
+import { queueMediaUploadReply } from '@/lib/media-upload-reply'
 
 export interface InboundAttachment {
   url: string
@@ -205,6 +206,13 @@ export async function ingestInboundSms(params: {
   // for SMS; the agent checks). It shows live in the inbox with a countdown.
   if (!bookingHandled && !keywordAnswered && text) {
     try { fetch(`${origin}/api/ai/reply`, { method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ conversationId: conv.id, companyId }) }) } catch {}
+  }
+
+  // A video (or photo, if the business asked) came through squeezed by the
+  // carrier: offer an upload link for the original. Runs after the webhook has
+  // answered, and only when switched on in Automatic replies.
+  if (!mediaAttemptFailed && media.length) {
+    queueMediaUploadReply({ db, companyId, conversationId: conv.id, contactId: conv.contact_id || matchedContactId || null, media, origin })
   }
 
   // Failed-media hint auto-reply (only fires when a media attempt truly failed;

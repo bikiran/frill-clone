@@ -1,4 +1,5 @@
 import { telnyxSignatureOk } from '@/lib/telnyx-signature'
+import { queueMediaUploadReply } from '@/lib/media-upload-reply'
 import { internalHeaders } from '@/lib/internal-call'
 import { NextRequest, NextResponse } from 'next/server'
 import { log } from '@/lib/log'
@@ -416,6 +417,12 @@ export async function POST(req: NextRequest) {
         // the agent checks). It shows live in the inbox with a countdown.
         if (!bookingHandled && !keywordAnswered && text) {
           try { fetch(`${req.nextUrl.origin}/api/ai/reply`, { method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ conversationId: conv.id, companyId }) }) } catch {}
+        }
+
+        // A video (or photo, if the business asked) came through squeezed by the
+        // carrier: offer an upload link for the original (Automatic replies).
+        if (!mediaAttemptFailed && inboundMedia.length) {
+          queueMediaUploadReply({ db, companyId, conversationId: conv.id, contactId: conv.contact_id || matchedContactId || null, media: inboundMedia as any[], origin: process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com' })
         }
 
         // Auto-reply to a failed media attempt: text the customer a secure upload
