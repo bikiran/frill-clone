@@ -1,6 +1,6 @@
 import { spawn } from 'child_process'
 import { createWriteStream, existsSync } from 'fs'
-import { mkdtemp, mkdir, readFile, readdir, rm } from 'fs/promises'
+import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { Readable } from 'stream'
@@ -74,14 +74,60 @@ export function trimArgs(item: Pick<Item, 'trim_start' | 'trim_end'>): { input: 
   return { input: ['-ss', start.toFixed(3), '-t', dur.toFixed(3)], posterAt: start + Math.min(1, dur / 2) }
 }
 
-function runFfmpeg(args: string[]): Promise<void> {
+function runFfmpeg(args: string[], timeoutMs?: number): Promise<void> {
   return new Promise((resolve, reject) => {
     const proc = spawn(ffmpegPath, args, { stdio: ['ignore', 'ignore', 'pipe'] })
     let err = ''
+    const timer = timeoutMs ? setTimeout(() => { err += `\ntimed out after ${timeoutMs}ms`; proc.kill('SIGKILL') }, timeoutMs) : null
     proc.stderr.on('data', d => { err += d.toString(); if (err.length > 8000) err = err.slice(-8000) })
-    proc.on('error', reject)
-    proc.on('close', code => code === 0 ? resolve() : reject(new Error(`ffmpeg exited ${code}: ${err.slice(-400)}`)))
+    proc.on('error', e => { if (timer) clearTimeout(timer); reject(e) })
+    proc.on('close', code => { if (timer) clearTimeout(timer); code === 0 ? resolve() : reject(new Error(`ffmpeg exited ${code}: ${err.slice(-400)}`)) })
   })
+}
+
+/**
+ * Convert a small video held in memory (an MMS clip — usually 3GP with H.263 /
+ * AMR audio, which phones play but Chrome can't) into an H.264 / AAC MP4 that
+ * every browser plays, keeping its size (≤1080p). Returns null if ffmpeg fails
+ * or takes longer than `timeoutMs`; callers keep the original then.
+ */
+export async function toWebMp4(bytes: Uint8Array | Buffer, timeoutMs = 20_000): Promise<Buffer | null> {
+  const dir = await mkdtemp(join(tmpdir(), 'colvy-mp4-'))
+  const inPath = join(dir, 'source')
+  const outPath = join(dir, 'out.mp4')
+  const started = Date.now()
+  const left = () => Math.max(1000, timeoutMs - (Date.now() - started))
+  try {
+    await writeFile(inPath, bytes)
+    try {
+      await runFfmpeg([
+        '-y', '-i', inPath,
+        '-map', '0:v:0', '-map', '0:a:0?',
+        '-vf', "scale='min(1920,iw)':'min(1080,ih)':force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p",
+        '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20', '-pix_fmt', 'yuv420p',
+        '-c:a', 'aac', '-b:a', '96k', '-ac', '2',
+        '-movflags', '+faststart',
+        outPath,
+      ], left())
+    } catch (e) {
+      // No usable audio track (or an odd one): try once more with video only.
+      if (Date.now() - started >= timeoutMs) throw e
+      await runFfmpeg([
+        '-y', '-i', inPath, '-map', '0:v:0', '-an',
+        '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p',
+        '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20', '-pix_fmt', 'yuv420p',
+        '-movflags', '+faststart',
+        outPath,
+      ], left())
+    }
+    const out = await readFile(outPath)
+    return out.length ? out : null
+  } catch (e: any) {
+    console.warn('[transcode] toWebMp4 failed:', e?.message || e)
+    return null
+  } finally {
+    await rm(dir, { recursive: true, force: true }).catch(() => {})
+  }
 }
 
 /** Download an R2 object (via its public URL) to a local temp file. */

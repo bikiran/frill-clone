@@ -6,6 +6,11 @@ import { ingestInboundSms, InboundAttachment } from '@/lib/inbound-sms'
 import { uploadToR2, r2Configured } from '@/lib/r2'
 import { logWebhookEvent } from '@/lib/webhook-log'
 import { companyForInboundNumber } from '@/lib/inbound-company'
+import { toWebMp4 } from '@/lib/transcode'
+import { needsWebMp4 } from '@/lib/web-video'
+
+// ffmpeg (MMS video → MP4) needs the Node runtime.
+export const runtime = 'nodejs'
 
 function admin() {
   return createClient(
@@ -25,11 +30,19 @@ const xml = (body: string) => new NextResponse(body, { headers: { 'Content-Type'
 // re-host them on our own public media domain (R2, or Supabase as a fallback).
 async function rehostMedia(svc: TwilioService, db: any, companyId: string, mediaUrl: string): Promise<InboundAttachment | null> {
   try {
-    const { bytes, contentType } = await svc.fetchMedia(mediaUrl)
-    const ct = String(contentType || '')
+    const fetched = await svc.fetchMedia(mediaUrl)
+    let bytes = fetched.bytes
+    let ct = String(fetched.contentType || '')
     const kind: InboundAttachment['kind'] = ct.startsWith('image/') ? 'image'
       : ct.startsWith('video/') ? 'video'
       : ct.startsWith('audio/') ? 'audio' : 'file'
+    // Phones send MMS video as 3GP (or iPhone .mov), which plays on a phone but
+    // not in Chrome. Store an MP4 instead; keep the original if converting fails
+    // or runs long (Twilio stops waiting for this webhook after 15 seconds).
+    if (kind === 'video' && needsWebMp4(ct)) {
+      const mp4 = await toWebMp4(bytes, 8_000)
+      if (mp4) { bytes = mp4; ct = 'video/mp4' }
+    }
     const ext = (ct.split('/')[1] || 'bin').split(';')[0].replace(/[^a-z0-9]/gi, '') || 'bin'
     const sid = mediaUrl.split('/').pop() || Math.random().toString(36).slice(2)
     const key = `${companyId}/mms/${sid}.${ext}`
