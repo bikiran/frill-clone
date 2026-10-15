@@ -100,6 +100,10 @@ function WidgetContent() {
   const [chatCreateError, setChatCreateError] = useState('')
   const [selectedItem, setSelectedItem] = useState<{ type: 'idea' | 'announcement' | 'help'; id: string } | null>(null)
   const [company, setCompany] = useState<any>(null)
+  // The company id as of now, for the page-update listener below: it's set up
+  // once per chat, usually before /api/widget-data has returned the company.
+  const companyIdRef = useRef<string>('')
+  useEffect(() => { companyIdRef.current = company?.id || '' }, [company?.id])
   const [widgetTabs, setWidgetTabs] = useState<any>(null)
   const [terms, setTerms] = useState<Record<string, string>>({})
   // Online booking services (the Book tab shows only when there are some).
@@ -203,6 +207,12 @@ function WidgetContent() {
       if (!d || !d.colvy || d.type !== 'page' || !d.url) return
       setParentPage({ url: d.url, title: d.title || null })
       if (typeof d.clv === 'string' && d.clv) clickRef.current = d.clv
+      // Read now, not when this listener was set up: a restored chat sets it up
+      // before the company has loaded. Until it has, nothing is sent — the
+      // server turns away an update without a companyId — so the click isn't
+      // marked as sent, and the effect that tells a restored chat about it
+      // still does once the company arrives.
+      const companyId = companyIdRef.current
       // The tracked click, the first time an ongoing chat hears about it.
       const clvOnce = () => {
         const c = clickRef.current
@@ -220,7 +230,7 @@ function WidgetContent() {
           if (chatConvId && prevLast && prevLast !== d.url) {
             ;(supabase as any).from('conversation_events').insert({
               conversation_id: chatConvId,
-              company_id: company?.id,
+              company_id: companyId || undefined,
               event_type: 'page_view',
               actor_name: chatName || 'Visitor',
               detail: `Viewing: ${d.title || d.url}`,
@@ -228,16 +238,16 @@ function WidgetContent() {
           }
           return d.history
         })
-        if (chatConvId) {
-          fetch('/api/widget/update', { method: 'POST', headers: { 'Content-Type': 'application/json', ...chatHeaders() }, body: JSON.stringify({ companyId: company?.id, conversationId: chatConvId, clv: clvOnce(), fields: { page_url: d.url, page_title: d.title || null, page_history: d.history, page_seen_at: new Date().toISOString() } }) }).catch(() => {})
+        if (chatConvId && companyId) {
+          fetch('/api/widget/update', { method: 'POST', headers: { 'Content-Type': 'application/json', ...chatHeaders() }, body: JSON.stringify({ companyId, conversationId: chatConvId, clv: clvOnce(), fields: { page_url: d.url, page_title: d.title || null, page_history: d.history, page_seen_at: new Date().toISOString() } }) }).catch(() => {})
         }
         return
       }
       setParentPageHistory(prev => {
         if (prev.length && prev[prev.length - 1].url === d.url) return prev
         const next = [...prev, { url: d.url, title: d.title || null, ts: new Date().toISOString() }]
-        if (chatConvId) {
-          fetch('/api/widget/update', { method: 'POST', headers: { 'Content-Type': 'application/json', ...chatHeaders() }, body: JSON.stringify({ companyId: company?.id, conversationId: chatConvId, clv: clvOnce(), fields: { page_url: d.url, page_title: d.title || null, page_history: next, page_seen_at: new Date().toISOString() } }) }).catch(() => {})
+        if (chatConvId && companyId) {
+          fetch('/api/widget/update', { method: 'POST', headers: { 'Content-Type': 'application/json', ...chatHeaders() }, body: JSON.stringify({ companyId, conversationId: chatConvId, clv: clvOnce(), fields: { page_url: d.url, page_title: d.title || null, page_history: next, page_seen_at: new Date().toISOString() } }) }).catch(() => {})
         }
         return next
       })
@@ -315,7 +325,8 @@ function WidgetContent() {
   // arriving through a Reel / QR link (?clv= on this frame, e.g. from the board
   // chat), never calls /api/widget/start. Tell the ongoing chat about the click
   // once the company is known. widget.js sites may also send it with a page
-  // update; clvSent makes sure only one of them does.
+  // update (only once the company is known, too); clvSent makes sure only one
+  // of them does.
   useEffect(() => {
     const c = clickRef.current
     if (!chatConvId || !company?.id || !c || clvSent.current === c) return
