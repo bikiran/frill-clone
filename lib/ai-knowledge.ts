@@ -13,7 +13,7 @@
 
 import Anthropic from '@anthropic-ai/sdk'
 import { modelFor, trackAi } from '@/lib/ai-models'
-import { memoryForPrompt, memoryBlock, followedMemory } from '@/lib/agent/business-memory'
+import { memoryForPrompt, memoryBlock, followedMemory, answersQuestion } from '@/lib/agent/business-memory'
 
 export type KnowledgeSource = 'fact' | 'help' | 'file' | 'website' | 'announcement' | 'roadmap' | 'idea' | 'chat'
 export type KnowledgeHit = { id?: string; source: string; source_id?: string; title: string | null; content: string; url: string | null; rank?: number }
@@ -454,12 +454,15 @@ export async function answerFromKnowledge(db: any, companyId: string, question: 
     const text = response.content.filter((b: any) => b.type === 'text').map((b: any) => b.text).join('')
     const p = JSON.parse(text)
     const used = new Set((p.used || []).map(String))
+    const sources = hits.map((h, i) => ({ id: `S${i + 1}`, h })).filter(x => used.has(x.id))
+      .map(({ h }) => ({ source: h.source, title: h.title || 'Untitled', url: h.url, excerpt: String(h.content || '').slice(0, 220) }))
+    const followed = followedMemory(memory, used)
     return {
       answer: String(p.answer || '').trim(),
-      grounded: !!p.grounded && used.size > 0,
-      sources: hits.map((h, i) => ({ id: `S${i + 1}`, h })).filter(x => used.has(x.id))
-        .map(({ h }) => ({ source: h.source, title: h.title || 'Untitled', url: h.url, excerpt: String(h.content || '').slice(0, 220) })),
-      memory: followedMemory(memory, used),
+      // Backed by a library source, a must-know fact or an FAQ; following a rule alone answers nothing.
+      grounded: !!p.grounded && (sources.length > 0 || followed.some(answersQuestion)),
+      sources,
+      memory: followed,
     }
   } catch (e: any) {
     console.error('[ai-knowledge] answer', e?.message || e)

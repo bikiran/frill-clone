@@ -18,7 +18,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { retrieve } from '@/lib/ai-agent'
 import { findProducts } from '@/lib/product-search'
 import { logUnanswered } from '@/lib/ai-unanswered'
-import { memoryForPrompt, memoryBlock, followedMemory } from '@/lib/agent/business-memory'
+import { memoryForPrompt, memoryBlock, followedMemory, answersQuestion } from '@/lib/agent/business-memory'
 
 import { statusMeta } from '@/lib/orders'
 import { orderProgress } from '@/lib/order-progress'
@@ -137,8 +137,9 @@ export async function draftReply(db: any, opts: {
     findOrders(db, companyId, contact?.email || null, contact?.phone || null).catch(() => []),
     memoryForPrompt(db, companyId),
   ])
-  // Tagged [M1], [M2]… so the model can say which owner rules it followed.
-  const memText = memoryBlock(memory, { tagged: true })
+  // Tagged [M1], [M2]… so the model can say which owner rules it followed. The
+  // staff note is a person deciding this one reply, so it outranks them.
+  const memText = memoryBlock(memory, { tagged: true, note: 'The one exception is the STAFF NOTE, a person on the team deciding this reply: where it asks for something these disagree with, do what it says and name the item it goes against in "caution".' })
 
   const sources: DraftSource[] = []
   const lines: string[] = []
@@ -227,8 +228,10 @@ Return JSON with: "reply" (the draft), "used" (the IDs of the sources${memText ?
     if (!draft) return { ok: false, error: 'The AI couldn’t come up with a draft for this one.' }
     const used = new Set((parsed.used || []).map(String))
     const followed = followedMemory(memory, used)
-    // Nothing to go on → the owner's unanswered-questions list.
-    if (!used.size) {
+    const usedSources = sources.filter(s => used.has(s.id))
+    // Nothing to go on → the owner's unanswered-questions list. A must-know fact
+    // or FAQ answers a question; following a rule alone doesn’t.
+    if (!usedSources.length && !followed.some(answersQuestion)) {
       const lastCustomer = [...turns].reverse().find(t => t.who === 'Customer')?.text || ''
       await logUnanswered(db, companyId, lastCustomer, { source: 'ai_draft', conversationId: opts.conversationId || null })
     }
@@ -238,7 +241,7 @@ Return JSON with: "reply" (the draft), "used" (the IDs of the sources${memText ?
         payload: { ticket_id: opts.ticketId || null, used: Array.from(used), memory: followed.map(f => f.id), model: response.model },
       })
     } catch {}
-    return { ok: true, draft, sources: sources.filter(s => used.has(s.id)), caution: String(parsed.caution || '').trim(), followed }
+    return { ok: true, draft, sources: usedSources, caution: String(parsed.caution || '').trim(), followed }
   } catch (e: any) {
     if (e instanceof Anthropic.RateLimitError) return { ok: false, error: 'The AI is busy right now — try again in a moment.' }
     if (e instanceof Anthropic.AuthenticationError) return { ok: false, error: 'The server’s AI key was rejected — check ANTHROPIC_API_KEY.' }

@@ -75,11 +75,12 @@ export default function BusinessMemoryPage() {
   const [coverage, setCoverage] = useState<Coverage | null>(cached?.coverage || null)
   const [loaded, setLoaded] = useState(!!cached)
   const [needsMigration, setNeedsMigration] = useState(false)
+  const [promptFull, setPromptFull] = useState(false)
   const [error, setError] = useState('')
 
   useEffect(() => { resolveCompanyUser().then(r => setCompanyId(r.companyId)).catch(() => {}) }, [])
   const apply = useCallback((d: any) => {
-    setItems(d.items || []); if (d.templates) setTemplates(d.templates); if (d.coverage) setCoverage(d.coverage); setNeedsMigration(!!d.needsMigration)
+    setItems(d.items || []); if (d.templates) setTemplates(d.templates); if (d.coverage) setCoverage(d.coverage); setNeedsMigration(!!d.needsMigration); setPromptFull(!!d.promptFull)
     if (!d.needsMigration) writeStored(cacheKey, { items: d.items || [], templates: d.templates || null, coverage: d.coverage || null })
   }, [cacheKey])
   const load = useCallback(async () => {
@@ -124,6 +125,7 @@ export default function BusinessMemoryPage() {
         {loaded && <KnowledgeNote coverage={coverage} />}
 
         {needsMigration && <div className="bm-note warn">{I.alert}<span>Agents need a one-time database update (<b>COLVY_V353_AGENT_ENGINE.sql</b>).</span></div>}
+        {promptFull && <div className="bm-note warn">{I.alert}<span>Not everything here fits in inbox drafts and quick AI replies (auto-replies, review and comment replies, Colvy AI). They take your tone and rules first, then as many facts and common questions as fit. Shorten long facts or remove ones you don’t need.</span></div>}
         {error && <div className="bm-note err" role="alert">{I.alert}<span>{error}</span></div>}
         {!loaded && <div className="bm-card"><p className="bm-p">Loading…</p></div>}
 

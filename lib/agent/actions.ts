@@ -74,9 +74,14 @@ const getConversation: ActionDef = {
 // A question the business's knowledge couldn't answer goes on AI Knowledge →
 // Unanswered (source 'agent'), so the owner can fill the gap once. At most once
 // per run, and only for live runs: a sandbox test isn't a customer asking.
+// Only runs a customer started by writing (a message, a review or a comment):
+// cart, quote, lead and order runs are the business reaching out, and an
+// agent's own search there isn't a customer's question.
+
+const customerWrote = (input: { kind?: string } | undefined) => !input?.kind || input.kind === 'review' || input.kind === 'comment'
 
 async function logKnowledgeGap(ctx: ActionContext) {
-  if (ctx.mode !== 'live' || ctx.scratch.gapLogged) return
+  if (ctx.mode !== 'live' || ctx.scratch.gapLogged || !customerWrote(ctx.scratch.runInput)) return
   ctx.scratch.gapLogged = true
   // The customer's own words when they read as a question, else what the agent searched for.
   const candidates = [String(ctx.scratch.runInput?.message || ''), ...((ctx.scratch.knowledgeGaps || []) as string[])]
@@ -84,10 +89,18 @@ async function logKnowledgeGap(ctx: ActionContext) {
   if (text) await logUnanswered(ctx.db, ctx.companyId, text, { source: 'agent', conversationId: ctx.conversationId })
 }
 
-/** End of a run: every knowledge search came up empty → log the gap. */
+/**
+ * End of a run: every knowledge search came up empty and the agent didn't
+ * reply → log the gap. A reply (sent, or waiting for the team) means it
+ * answered from something else, like Business Memory, stock or opening hours;
+ * an agent with only "I'll check" to say escalates with knowledge_gap.
+ */
 export async function flushKnowledgeGaps(ctx: ActionContext) {
-  if (ctx.scratch.knowledgeGaps?.length && !ctx.scratch.knowledgeFound) await logKnowledgeGap(ctx)
+  if (ctx.scratch.knowledgeGaps?.length && !ctx.scratch.knowledgeFound && !ctx.scratch.replied) await logKnowledgeGap(ctx)
 }
+
+/** An action that answers the customer (a message, a public reply, a follow-up), as opposed to handing over. */
+export const isCustomerReply = (a: ActionDef) => a.category === 'communicate' && a.key !== 'escalate_to_human'
 
 const askKnowledgeBase = readTool('ask_knowledge', 'Search the business’s own knowledge (help articles, facts, files, website). Use before answering any question about policies, products or services.', obj({ question: { type: 'string' } }, ['question']), true)
 const askKnowledge: ActionDef = {

@@ -153,8 +153,12 @@ export type PromptMemory = {
 }
 
 const PROMPT_KINDS = ['tone', 'policy', 'instruction', 'faq']
-// When the cap bites, FAQs go first, then rules; tone and must-know facts stay.
+// How items read in a prompt, and their [M#] order: tone, facts, rules, FAQs.
 const PROMPT_ORDER: Record<string, number> = { tone: 0, policy: 1, instruction: 2, faq: 3 }
+// What stays when the cap bites: tone, then rules (short, and what must never
+// happen), then must-know facts (up to 1,200 characters each), then FAQs. So a
+// few long facts can't push "never promise same-day delivery" out of a prompt.
+const KEEP_ORDER: Record<string, number> = { tone: 0, instruction: 1, policy: 2, faq: 3 }
 const CHECK_WITH = 'anywhere else'
 const EMPTY_MEMORY: PromptMemory = { toneText: '', lines: [], text: '', taggedText: '', items: [], ids: [], refs: [], truncated: false }
 
@@ -183,21 +187,26 @@ async function loadPromptMemory(db: SupabaseClient, companyId: string, max: numb
   } catch { return EMPTY_MEMORY }
   if (!rows.length) return EMPTY_MEMORY
 
-  // Most important first (stable within a kind: the order the owner added them).
-  const sorted = rows.map((r, i) => ({ r, i })).sort((a, b) => (PROMPT_ORDER[a.r.kind] - PROMPT_ORDER[b.r.kind]) || (a.i - b.i)).map(x => x.r)
-  const kept: MemoryRow[] = []
-  const tags: Record<string, string> = {}
-  let n = 0, truncated = false
-  for (const r of sorted) {
+  // Within a kind, the order the owner added them.
+  const pos = new Map(rows.map((r, i) => [r.id, i]))
+  const by = (order: Record<string, number>) => (a: MemoryRow, b: MemoryRow) => (order[a.kind] - order[b.kind]) || ((pos.get(a.id) ?? 0) - (pos.get(b.id) ?? 0))
+  const tagsFor = (list: MemoryRow[]) => {
+    const t: Record<string, string> = {}
+    let n = 0
+    for (const r of list) if (r.kind !== 'tone') t[r.id] = `M${++n}`
+    return t
+  }
+  let kept: MemoryRow[] = []
+  let truncated = false
+  for (const r of [...rows].sort(by(KEEP_ORDER))) {
     if (!renderMemory([r]).refs.length) continue   // nothing to say (an empty fact)
-    const tag = r.kind === 'tone' ? null : `M${n + 1}`
-    const tryTags = tag ? { ...tags, [r.id]: tag } : tags
-    const t = renderMemory([...kept, r], { tags: tryTags, checkWith: CHECK_WITH })
+    const trial = [...kept, r].sort(by(PROMPT_ORDER))
+    const t = renderMemory(trial, { tags: tagsFor(trial), checkWith: CHECK_WITH })
     // Measured on the tagged text, the longer of the two, so both fit.
     if (composeMemory(t.toneText, t.lines).length > max) { truncated = true; continue }
-    kept.push(r)
-    if (tag) { tags[r.id] = tag; n++ }
+    kept = trial
   }
+  const tags = tagsFor(kept)
   const plain = renderMemory(kept, { checkWith: CHECK_WITH })
   const tagged = renderMemory(kept, { tags, checkWith: CHECK_WITH })
   return {
@@ -249,6 +258,13 @@ export function followedMemory(mem: PromptMemory, used: Iterable<unknown>): { id
 }
 
 /**
+ * Whether a memory item a model followed answers a customer's question: a
+ * must-know fact or an FAQ does. A rule ("always offer click & collect") only
+ * shapes the reply, so following one alone still means nothing answered it.
+ */
+export const answersQuestion = (item: { kind: string }) => item.kind === 'policy' || item.kind === 'faq'
+
+/**
  * Suggest an item (a fact or a rule) for the owner to keep or dismiss on the
  * Business Memory page. Like learned proposals, it does nothing until kept.
  */
@@ -264,7 +280,8 @@ export async function proposeMemory(db: SupabaseClient, companyId: string, item:
   const kind = item.kind === 'policy' ? 'policy' : 'instruction'
   const title = kind === 'policy' ? clip(item.title, 80) : ''
   const { data: row, error } = await db.from('business_memory').insert({
-    company_id: companyId, kind, key: `${item.source}_${slug(title || text).slice(0, 26)}_${Math.random().toString(36).slice(2, 6)}`,
+    // 'assistant_' + 25 + '_' + 4 = 40 characters, the most slug() keeps.
+    company_id: companyId, kind, key: `${item.source}_${slug(title || text).slice(0, 25)}_${Math.random().toString(36).slice(2, 6)}`,
     content: { text, ...(title ? { title } : {}), ...(item.evidence ? { evidence: item.evidence } : {}) },
     status: 'proposed', source: item.source, updated_at: new Date().toISOString(),
   }).select('id').maybeSingle()
@@ -285,12 +302,19 @@ export async function listMemory(db: any, companyId: string): Promise<MemoryRow[
 export async function saveMemory(db: any, companyId: string, item: { kind: string; key?: string | null; content: any }, userId: string | null): Promise<MemoryRow | null> {
   const kind = String(item.kind || '')
   if (!(KINDS as readonly string[]).includes(kind)) throw new Error('Unknown kind of memory.')
-  const key = kind === 'tone' ? 'voice'
+  let key = kind === 'tone' ? 'voice'
     : kind === 'rule' ? 'order_status_thresholds'
       : item.key ? slug(item.key)
         // A new rule or FAQ: its own key, so two that start alike don't overwrite each other.
         : kind === 'policy' ? slug(item.content?.title || item.content?.text || '')
           : `${slug(item.content?.text || '').slice(0, 30)}_${Math.random().toString(36).slice(2, 6)}`
+  // Editing an item whose stored key slug() would change (older learned_ and
+  // assistant_ suggestions run to 41 characters): update that row, not a copy.
+  const given = String(item.key || '')
+  if (given && given !== key && kind !== 'tone' && kind !== 'rule') {
+    const { data: same } = await db.from('business_memory').select('id').eq('company_id', companyId).eq('kind', kind).eq('key', given).maybeSingle()
+    if (same) key = given
+  }
   const content = cleanContent(kind, key, item.content)
   if (!content) {
     // Emptying a policy or rule removes it (archived, so history stays).

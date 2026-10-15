@@ -68,7 +68,7 @@ export async function proposeFromEdit(db: any, opts: { companyId: string; approv
   const kind = call.input.kind === 'policy' ? 'policy' : 'instruction'
   const title = String(call.input.title || '').trim().slice(0, 80)
   const { data, error } = await db.from('business_memory').insert({
-    company_id: opts.companyId, kind, key: `learned_${slug(title || text).slice(0, 28)}_${Math.random().toString(36).slice(2, 6)}`,
+    company_id: opts.companyId, kind, key: `learned_${slug(title || text).slice(0, 27)}_${Math.random().toString(36).slice(2, 6)}`,
     content: { text, ...(kind === 'policy' && title ? { title } : {}), evidence: { approval_id: ap.id, run_id: ap.run_id, draft: draft.slice(0, 1000), sent: sent.slice(0, 1000), edited_by: ap.decided_by || null } },
     status: 'proposed', source: 'learned', updated_at: new Date().toISOString(),
   }).select('id').maybeSingle()
