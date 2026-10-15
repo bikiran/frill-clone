@@ -26,8 +26,15 @@ export const metadata: Metadata = {
     'business SMS', 'WhatsApp', 'Instagram DM', 'Messenger', 'live chat', 'help desk',
     'WooCommerce', 'Shopify', 'AI agents', 'customer feedback',
   ],
+  // The black rounded tile (the app icon), so the mark stays visible on dark
+  // browser tabs. Google shows the favicon beside every result and wants a
+  // square in a multiple of 48px.
   icons: {
-    icon: '/favicon.png',
+    icon: [
+      { url: '/favicon-48.png', sizes: '48x48', type: 'image/png' },
+      { url: '/icon-192.png', sizes: '192x192', type: 'image/png' },
+      { url: '/favicon.png', sizes: '256x256', type: 'image/png' },
+    ],
     apple: '/apple-touch-icon.png',
   },
   openGraph: {
@@ -58,14 +65,24 @@ export const metadata: Metadata = {
 // with), and can earn richer results. Only verifiable facts are declared — no
 // ratings or prices are invented here (the free tier is declared as $0).
 const ORG_ID = `${SITE_URL}/#organization`
+// Official Colvy profiles elsewhere. Google uses these to tie the brand
+// together (and for a knowledge panel). Add social profiles here as they're
+// set up, e.g. 'https://www.linkedin.com/company/colvy'.
+const SAME_AS = [
+  'https://apps.apple.com/app/id6803380512',
+  'https://play.google.com/store/apps/details?id=com.colvy.app',
+]
 const structuredData = [
   {
     '@context': 'https://schema.org',
     '@type': 'Organization',
     '@id': ORG_ID,
     name: 'Colvy',
+    alternateName: 'Colvy App',
     url: SITE_URL,
-    logo: `${SITE_URL}/logo.png`,
+    logo: { '@type': 'ImageObject', '@id': `${SITE_URL}/#logo`, url: `${SITE_URL}/logo.png`, contentUrl: `${SITE_URL}/logo.png`, width: 256, height: 256, caption: 'Colvy' },
+    image: { '@id': `${SITE_URL}/#logo` },
+    sameAs: SAME_AS,
     description:
       'Colvy is an all-in-one customer platform for small businesses: a shared inbox across every channel, a CRM, business phone, store orders, payments, AI agents and customer feedback.',
     contactPoint: {
@@ -78,8 +95,11 @@ const structuredData = [
     '@context': 'https://schema.org',
     '@type': 'WebSite',
     '@id': `${SITE_URL}/#website`,
+    // The site name Google shows above each result (instead of "colvy.com").
     name: 'Colvy',
+    alternateName: ['Colvy App', 'colvy.com'],
     url: SITE_URL,
+    inLanguage: 'en-AU',
     publisher: { '@id': ORG_ID },
   },
   {
@@ -92,6 +112,8 @@ const structuredData = [
     description:
       'One shared inbox across WhatsApp, Instagram, Messenger, SMS, email, live chat and phone, with a CRM, WooCommerce and Shopify orders, payments, AI agents and customer feedback boards.',
     offers: { '@type': 'Offer', price: '0', priceCurrency: 'AUD' },
+    image: `${SITE_URL}/og.png`,
+    sameAs: SAME_AS,
     publisher: { '@id': ORG_ID },
   },
 ]

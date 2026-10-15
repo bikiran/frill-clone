@@ -8,12 +8,23 @@ import MarketingFooter from '@/components/MarketingFooter'
 import MarketingNav from '@/components/MarketingNav'
 import FeatureIcon from '@/components/FeatureIcon'
 
-// Product overview — the feedback suite (ideas → roadmap → announcements),
-// plus the help center and the tools around it. Pillars deep-link to the
-// per-feature pages under /product/[feature]. Copy matches the real product.
+// Product overview — everything in Colvy up top (inbox, phones, CRM, orders,
+// AI, bookings, feedback), each linking to its own page; then the feedback
+// suite (ideas → roadmap → announcements), the help center and the tools
+// around it. Copy matches the real product.
 
 const CORAL = '#ff6a4d', BLUE = '#2b59ff', GREEN = '#00c48c', PURPLE = '#7c5cff', CYAN = '#0891b2', YELLOW = '#ffcb45', PINK = '#ff4d8d', INK = '#0f1119'
 const ACCENT = CORAL
+
+// Everything in Colvy — one card per area, each linking to its own page.
+const AREAS = [
+  { icon: 'inbox', color: CORAL, title: 'Shared inbox & CRM', desc: 'WhatsApp, Instagram, Messenger, SMS, email and live chat in one thread per customer, with their full history beside it.', href: '/inbox-crm' },
+  { icon: 'phone', color: GREEN, title: 'Business phone & AI receptionist', desc: 'Local numbers, browser and mobile calling, recordings and transcripts. AI answers when you can’t and texts the caller back.', href: '/phones' },
+  { icon: 'cart', color: BLUE, title: 'Orders & payments', desc: 'WooCommerce and Shopify orders in the chat. Send payment links, refund and update orders without switching tabs.', href: '/solutions/payments' },
+  { icon: 'ai', color: PURPLE, title: 'AI agents', desc: 'Agents that answer questions, chase carts, reply to reviews and hand off to your team, within limits you set.', href: '/ai-assistant' },
+  { icon: 'calendar', color: CYAN, title: 'Bookings', desc: 'Online booking with deposits and reminders, in the same place as the conversation.', href: '/product/booking' },
+  { icon: 'idea', color: PINK, title: 'Feedback, roadmap & help center', desc: 'Idea boards, a public roadmap, a changelog and a help center your customers can use themselves.', href: '#feedback' },
+]
 
 // The four headline pillars, each with its own deep-dive page.
 const PILLARS = [
@@ -132,9 +143,9 @@ export default function ProductPage() {
         <div aria-hidden style={{ position: 'absolute', inset: 0, backgroundImage: gridImg, backgroundSize: '54px 54px', WebkitMaskImage: 'radial-gradient(ellipse 70% 60% at 40% 40%, #000 40%, transparent 80%)', maskImage: 'radial-gradient(ellipse 70% 60% at 40% 40%, #000 40%, transparent 80%)', pointerEvents: 'none' }} />
         <div style={{ position: 'relative' }}>
           <Reveal>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 14px', borderRadius: 999, background: ACCENT + '18', color: ACCENT, fontSize: 12.5, fontWeight: 800, letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: 18 }}><FeatureIcon name="idea" color={ACCENT} size={15} />The feedback loop</span>
-            <h1 style={{ fontSize: 'clamp(38px, 5.8vw, 68px)', fontWeight: 900, letterSpacing: '-0.035em', lineHeight: 1.02, margin: '0 0 18px' }}>Feedback in, <span style={{ color: ACCENT }}>shipped features</span> out</h1>
-            <p style={{ fontSize: 'clamp(16px, 1.9vw, 20px)', color: muted, maxWidth: 520, lineHeight: 1.6, margin: '0 0 30px' }}>Collect ideas, plan a public roadmap, and announce what you ship — one connected suite your customers actually enjoy using.</p>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 14px', borderRadius: 999, background: ACCENT + '18', color: ACCENT, fontSize: 12.5, fontWeight: 800, letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: 18 }}><FeatureIcon name="sparkle" color={ACCENT} size={15} />Everything in Colvy</span>
+            <h1 style={{ fontSize: 'clamp(38px, 5.8vw, 68px)', fontWeight: 900, letterSpacing: '-0.035em', lineHeight: 1.02, margin: '0 0 18px' }}>Your inbox, phone, CRM and AI, <span style={{ color: ACCENT }}>in one app</span></h1>
+            <p style={{ fontSize: 'clamp(16px, 1.9vw, 20px)', color: muted, maxWidth: 540, lineHeight: 1.6, margin: '0 0 30px' }}>Every message and call in one shared inbox, with your customers, orders and payments beside it, AI that answers when you’re busy, and feedback boards your customers enjoy using.</p>
             <div className="pd-hero-cta" style={{ display: 'flex', gap: 12 }}>
               <button onClick={go} className="pd-btn" style={btnPrimary}>{user ? 'Go to dashboard' : 'Start free — no card'} <ArrowRight /></button>
               <a href="/pricing" className="pd-btn" style={btnGhost}>See pricing</a>
@@ -144,11 +155,11 @@ export default function ProductPage() {
         <Reveal delay={0.1}>
           {/* Hero photo */}
           <div style={{ position: 'relative', borderRadius: 28, minHeight: 340, overflow: 'hidden', background: `linear-gradient(150deg, ${ACCENT} 0%, ${ACCENT}cc 45%, ${dark ? '#0b0c14' : '#171a2b'} 120%)`, boxShadow: `0 30px 70px ${ACCENT}44` }}>
-            <Image src="/feature/product.jpg" alt="" aria-hidden fill priority sizes="(max-width: 900px) 100vw, 50vw" style={{ objectFit: 'cover' }} />
+            <Image src="/solutions/hub.jpg" alt="" aria-hidden fill priority sizes="(max-width: 900px) 100vw, 50vw" style={{ objectFit: 'cover' }} />
             <div aria-hidden style={{ position: 'absolute', inset: 0, background: `linear-gradient(150deg, ${ACCENT}e6 0%, ${ACCENT}59 42%, rgba(10,12,20,0.5) 115%)` }} />
-            <div style={{ position: 'absolute', top: 22, right: 22, color: 'rgba(255,255,255,0.95)', filter: 'drop-shadow(0 2px 8px rgba(0,0,0,0.35))', animation: 'pdFloat 6s ease-in-out infinite' }}><FeatureIcon name="idea" color="rgba(255,255,255,0.95)" size={54} /></div>
+            <div style={{ position: 'absolute', top: 22, right: 22, color: 'rgba(255,255,255,0.95)', filter: 'drop-shadow(0 2px 8px rgba(0,0,0,0.35))', animation: 'pdFloat 6s ease-in-out infinite' }}><FeatureIcon name="inbox" color="rgba(255,255,255,0.95)" size={54} /></div>
             <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 12, padding: 32 }}>
-              {['+147 votes', 'On the roadmap', 'Shipped ✓'].map((c, i) => (
+              {['New WhatsApp message', 'AI answered a call', 'Order paid ✓'].map((c, i) => (
                 <span key={c} style={{ alignSelf: i % 2 ? 'flex-end' : 'flex-start', fontSize: 14, fontWeight: 800, color: '#fff', background: 'rgba(255,255,255,0.16)', backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.3)', borderRadius: 999, padding: '9px 16px', animation: `pdFloat ${5 + i * 0.6}s ease-in-out ${i * 0.3}s infinite` }}>{c}</span>
               ))}
             </div>
@@ -156,11 +167,32 @@ export default function ProductPage() {
         </Reveal>
       </section>
 
-      {/* THE LOOP */}
-      <section style={{ maxWidth: 1160, margin: '0 auto', padding: '10px 24px 44px' }}>
+      {/* EVERYTHING IN COLVY */}
+      <section style={{ maxWidth: 1160, margin: '0 auto', padding: '10px 24px 56px' }}>
         <Reveal>
-          <h2 style={{ fontSize: 'clamp(24px, 3.4vw, 38px)', fontWeight: 900, letterSpacing: '-0.02em', textAlign: 'center', margin: '0 0 8px' }}>One connected <span style={{ color: ACCENT }}>loop</span></h2>
-          <p style={{ fontSize: 16, color: muted, maxWidth: 560, margin: '0 auto 30px', lineHeight: 1.55, textAlign: 'center' }}>Every piece feeds the next — so feedback never dead-ends in a spreadsheet.</p>
+          <h2 style={{ fontSize: 'clamp(24px, 3.4vw, 38px)', fontWeight: 900, letterSpacing: '-0.02em', textAlign: 'center', margin: '0 0 8px' }}>One app for <span style={{ color: ACCENT }}>every customer conversation</span></h2>
+          <p style={{ fontSize: 16, color: muted, maxWidth: 600, margin: '0 auto 30px', lineHeight: 1.55, textAlign: 'center' }}>Replace the inbox, phone system, CRM and feedback tools you’re juggling with one place your whole team works from.</p>
+        </Reveal>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 18 }}>
+          {AREAS.map((a, i) => (
+            <Reveal key={a.title} delay={(i % 3) * 0.05}>
+              <a href={a.href} className="pd-card pd-pillar" style={{ display: 'block', height: '100%', borderRadius: 22, padding: 26, background: cardBg, border: `1px solid ${cardBorder}`, textDecoration: 'none', color: text }}>
+                <span style={{ width: 48, height: 48, borderRadius: 14, background: a.color + '16', border: `1px solid ${a.color}33`, color: a.color, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}><FeatureIcon name={a.icon} color={a.color} size={24} /></span>
+                <h3 style={{ fontSize: 18.5, fontWeight: 900, letterSpacing: '-0.01em', margin: '0 0 7px', color: text }}>{a.title}</h3>
+                <p style={{ fontSize: 14.5, lineHeight: 1.6, color: muted, margin: '0 0 14px' }}>{a.desc}</p>
+                <span className="pd-explore" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 14, fontWeight: 800, color: a.color, transition: 'gap 0.22s' }}>Explore <ArrowRight s={15} /></span>
+              </a>
+            </Reveal>
+          ))}
+        </div>
+      </section>
+
+      {/* THE LOOP — the feedback suite */}
+      <section id="feedback" style={{ maxWidth: 1160, margin: '0 auto', padding: '10px 24px 44px', scrollMarginTop: 80 }}>
+        <Reveal>
+          <span style={{ display: 'block', textAlign: 'center', fontSize: 12.5, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: ACCENT, marginBottom: 8 }}>The feedback suite</span>
+          <h2 style={{ fontSize: 'clamp(24px, 3.4vw, 38px)', fontWeight: 900, letterSpacing: '-0.02em', textAlign: 'center', margin: '0 0 8px' }}>Feedback in, <span style={{ color: ACCENT }}>shipped features</span> out</h2>
+          <p style={{ fontSize: 16, color: muted, maxWidth: 560, margin: '0 auto 30px', lineHeight: 1.55, textAlign: 'center' }}>Collect ideas, plan a public roadmap and announce what you ship. Every piece feeds the next, so feedback never dead-ends in a spreadsheet.</p>
         </Reveal>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 18 }}>
           {LOOP.map((s, i) => (
@@ -303,8 +335,8 @@ export default function ProductPage() {
       <section style={{ padding: 'clamp(48px, 8vw, 96px) 24px', textAlign: 'center', background: `linear-gradient(135deg, ${ACCENT}, ${PINK} 55%, ${PURPLE})` }}>
         <Reveal>
           <div style={{ maxWidth: 720, margin: '0 auto' }}>
-            <h2 style={{ fontSize: 'clamp(28px, 5vw, 52px)', fontWeight: 900, letterSpacing: '-0.03em', lineHeight: 1.05, color: '#fff', margin: '0 0 12px' }}>Ready to close the feedback loop?</h2>
-            <p style={{ fontSize: 17, color: 'rgba(255,255,255,0.9)', margin: '0 0 30px' }}>Ship better products with your customers, not just for them. Free to start — no credit card.</p>
+            <h2 style={{ fontSize: 'clamp(28px, 5vw, 52px)', fontWeight: 900, letterSpacing: '-0.03em', lineHeight: 1.05, color: '#fff', margin: '0 0 12px' }}>Bring every customer conversation into one place</h2>
+            <p style={{ fontSize: 17, color: 'rgba(255,255,255,0.9)', margin: '0 0 30px' }}>Inbox, phone, CRM, AI and feedback in one app. Free to start, no credit card.</p>
             <button onClick={go} className="pd-btn" style={{ padding: '16px 38px', borderRadius: 999, background: '#fff', color: INK, fontWeight: 900, fontSize: 17, border: 'none', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8, boxShadow: '0 14px 40px rgba(0,0,0,0.2)' }}>Get started free <ArrowRight /></button>
           </div>
         </Reveal>
