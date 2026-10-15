@@ -49,13 +49,17 @@ export async function GET(req: NextRequest) {
   const [settings, co, catalog, paused, bookable, closedNow, ids, { data: integ }] = await Promise.all([
     getPhoneAgent(db, companyId), company(db, companyId), getPhoneCatalog(db, companyId), agentsPaused(db, companyId),
     phoneBookable(db, companyId), businessClosedNow(db, companyId),
-    teamIds(db, companyId).catch(() => [] as string[]),
+    teamIds(db, companyId).catch(() => null),
     db.from('twilio_integrations').select('ring_seconds, voicemail_enabled').eq('company_id', companyId).maybeSingle(),
   ])
-  const team = (await Promise.all(ids.slice(0, 60).map(async id => ({ id, name: await resolveAgentName(db, id, companyId) }))))
+  const team = (await Promise.all((ids || []).slice(0, 60).map(async id => ({ id, name: await resolveAgentName(db, id, companyId) }))))
     .sort((a, b) => a.name.localeCompare(b.name))
+  // A call-back assignee who has since left the team gets no tasks (the calls
+  // check), so the card shows "Nobody" and its form matches what it shows.
+  const tasks = ids && settings.tasks.assigneeId && !ids.includes(settings.tasks.assigneeId)
+    ? { ...settings.tasks, assigneeId: null, assigneeName: null } : settings.tasks
   return NextResponse.json({
-    ...settings, voices: PHONE_VOICES, sttOptions: PHONE_STT, maxTestNumbers: MAX_TEST_NUMBERS, supported: co.provider === 'twilio', realtime: relayConfigured(),
+    ...settings, tasks, voices: PHONE_VOICES, sttOptions: PHONE_STT, maxTestNumbers: MAX_TEST_NUMBERS, supported: co.provider === 'twilio', realtime: relayConfigured(),
     companyName: co.name,
     productNames: catalog?.names?.length || 0,
     // For the card's summary and hints.
@@ -88,9 +92,12 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: 'Add at least one test number, like your mobile.' }, { status: 400 })
     }
     // The assignee must be on this business's team; their name comes from us, not the browser.
+    // One saved earlier who has since left the team is quietly cleared, so it
+    // can't block every other change (turning the AI off included).
     const assigneeId = String(tasks.assigneeId || tasks.assignee_id || '')
-    if (assigneeId) {
-      if (!(await teamIds(db, companyId)).includes(assigneeId)) return NextResponse.json({ error: 'Pick someone on your team for call-back tasks.' }, { status: 400 })
+    const onTeam = !!assigneeId && (await teamIds(db, companyId)).includes(assigneeId)
+    if (assigneeId && !onTeam && assigneeId !== current.tasks.assigneeId) return NextResponse.json({ error: 'Pick someone on your team for call-back tasks.' }, { status: 400 })
+    if (onTeam) {
       next.tasks = { ...tasks, assigneeId, assignee_id: undefined, assigneeName: await resolveAgentName(db, assigneeId, companyId), assignee_name: undefined }
     } else next.tasks = { ...tasks, assigneeId: null, assignee_id: null, assigneeName: null, assignee_name: null }
 

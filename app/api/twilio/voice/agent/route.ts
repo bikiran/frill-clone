@@ -1,7 +1,7 @@
 import { twilioSignatureOk } from '@/lib/twilio-signature'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { phoneTurn, saveCallState, phoneListenTwiml, phoneGoodbyeTwiml, phoneVoicemailTwiml, type PhoneCallState } from '@/lib/phone-agent'
+import { phoneTurn, saveCallState, phoneListenTwiml, phoneGoodbyeTwiml, phoneVoicemailTwiml, aiCallMissed, callerNeverSpoke, setupOf, NO_VOICEMAIL_SAY, TROUBLE_SAY, type PhoneCallState } from '@/lib/phone-agent'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 30
@@ -41,10 +41,18 @@ export async function POST(req: NextRequest) {
   // so a caller hanging up mid-call still leaves the full record.
   const save = (end: boolean) => saveCallState(db, call, state, end)
 
-  // 0 → voicemail, the business's own greeting and recording.
+  // 0 → voicemail, the business's own greeting and recording. With voicemail
+  // switched off there's none to give: goodbye, and it's a missed call, as it
+  // would have been without the AI.
   if (get('Digits') === '0') {
-    const { data: integ } = await db.from('twilio_integrations').select('voicemail_greeting').eq('company_id', companyId).maybeSingle()
+    const { data: integ } = await db.from('twilio_integrations').select('voicemail_enabled, voicemail_greeting').eq('company_id', companyId).maybeSingle()
     state.turns.push({ who: 'caller', text: '(pressed 0 for voicemail)' })
+    if (integ?.voicemail_enabled === false) {
+      state.turns.push({ who: 'agent', text: NO_VOICEMAIL_SAY })
+      await save(true)
+      await aiCallMissed(db, call, 'pressed 0 for voicemail, which is off')
+      return twiml(phoneGoodbyeTwiml(voice, NO_VOICEMAIL_SAY))
+    }
     await save(true)
     await db.from('calls').update({ status: 'voicemail_greeting', is_voicemail: true }).eq('id', call.id)
     const recCb = `${base}/api/twilio/voice/recording?callRowId=${encodeURIComponent(call.id)}&companyId=${encodeURIComponent(companyId)}&conversationId=${encodeURIComponent(call.conversation_id || '')}&kind=voicemail`
@@ -57,6 +65,8 @@ export async function POST(req: NextRequest) {
     if (state.silences >= 2) {
       state.turns.push({ who: 'agent', text: 'I’ll let you go. Call back any time, or send us a message. Goodbye.' })
       await save(true)
+      // Not a word from the caller: a missed call, as ringing out would have been.
+      if (callerNeverSpoke(state) && setupOf(state).reason !== 'test') await aiCallMissed(db, call, 'caller didn’t say anything')
       return twiml(phoneGoodbyeTwiml(voice, 'I’ll let you go. Call back any time, or send us a message. Goodbye.'))
     }
     await save(false)
@@ -75,12 +85,19 @@ export async function POST(req: NextRequest) {
     await save(r.end)
     return r.end ? twiml(phoneGoodbyeTwiml(voice, r.say)) : listen(r.say)
   } catch (e: any) {
-    // Something broke: don't strand the caller — offer voicemail.
+    // Something broke: don't strand the caller — offer voicemail, or with
+    // voicemail off, ask them to call back and treat it as a missed call.
     console.error('[phone agent] turn failed', e?.message || e)
+    const { data: integ } = await db.from('twilio_integrations').select('voicemail_enabled, voicemail_greeting').eq('company_id', companyId).maybeSingle()
     state.turns.push({ who: 'caller', text: said })
+    if (integ?.voicemail_enabled === false) {
+      state.turns.push({ who: 'agent', text: '(Something went wrong; asked to call back.)' })
+      await save(true)
+      await aiCallMissed(db, call, 'the AI had trouble and voicemail is off')
+      return twiml(phoneGoodbyeTwiml(voice, TROUBLE_SAY))
+    }
     state.turns.push({ who: 'agent', text: '(Something went wrong; sent to voicemail.)' })
     await save(true)
-    const { data: integ } = await db.from('twilio_integrations').select('voicemail_greeting').eq('company_id', companyId).maybeSingle()
     const recCb = `${base}/api/twilio/voice/recording?callRowId=${encodeURIComponent(call.id)}&companyId=${encodeURIComponent(companyId)}&conversationId=${encodeURIComponent(call.conversation_id || '')}&kind=voicemail`
     return twiml(phoneVoicemailTwiml(voice, `Sorry, I'm having trouble on my end. ${integ?.voicemail_greeting || 'Please leave a message after the tone.'}`, recCb))
   }

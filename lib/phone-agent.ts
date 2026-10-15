@@ -25,6 +25,9 @@ import { resolveSmsSender } from '@/lib/sms-provider'
 import { internalHeaders } from '@/lib/internal-call'
 import { isStaffMember } from '@/lib/company-access'
 import { getPhoneCatalog, closestProducts, phoneHints, type PhoneCatalog } from '@/lib/phone-catalog'
+import { alertCall } from '@/lib/call-alerts'
+import { setCallPreview } from '@/lib/call-card'
+import { queueMissedCallText } from '@/lib/missed-call-text'
 import {
   cleanReceptionist, receptionistLimits, defaultCallSetup, phoneToolNames, callGreeting, greetingSaysAi, phoneTail,
   PHONE_LOOKUPS, type ReceptionistSettings, type PhoneCallSetup, type AnswerReason,
@@ -121,19 +124,70 @@ export function closedFromHours(h: BusinessHours, at?: Date): boolean | null {
   return places.every(p => p.openNow === false) ? true : null
 }
 
+// Google's hours as last read, kept on an agent_policies row (role "phone",
+// action "hours", like the product names), so deciding "closed now" as a call
+// comes in doesn't wait on Google while the caller hears ringing, and a slow or
+// failing Google doesn't make a closed business look open. Hours saved in
+// Colvy are read straight from the database, so they aren't copied.
+const HOURS_ACTION = 'hours'
+const HOURS_REFRESH_MS = 15 * 60_000     // older: read Google again once the call is decided
+const HOURS_TRUST_MS = 24 * 3600_000     // older: ask Google first, as when there's no copy
+
+async function savedGoogleHours(db: Db, companyId: string): Promise<{ hours: BusinessHours; at: number } | null> {
+  try {
+    const { data } = await db.from('agent_policies').select('limits')
+      .eq('company_id', companyId).eq('role_key', 'phone').eq('action_key', HOURS_ACTION).limit(1)
+    const l = data?.[0]?.limits
+    const at = Date.parse(l?.at || '')
+    return Array.isArray(l?.hours?.places) && l.hours.places.length && at ? { hours: l.hours, at } : null
+  } catch { return null }
+}
+
+/** The hours as they are now (Google first). Google's are kept for next time; a business whose hours no longer come from Google loses its copy. */
+async function readHoursNow(db: Db, companyId: string, hadCopy: boolean): Promise<BusinessHours | null> {
+  try {
+    const hours = await loadBusinessHours(db, companyId)
+    if (hours.places.some(p => p.source === 'google')) {
+      const at = new Date().toISOString()
+      const row = { autonomy: 'off', limits: { hours, at }, updated_at: at }
+      const { data: existing } = await db.from('agent_policies').select('id')
+        .eq('company_id', companyId).eq('role_key', 'phone').eq('action_key', HOURS_ACTION).limit(1)
+      if (existing?.[0]) await db.from('agent_policies').update(row).eq('id', existing[0].id)
+      else await db.from('agent_policies').insert({ company_id: companyId, role_key: 'phone', action_key: HOURS_ACTION, ...row })
+    } else if (hadCopy && !hours.googleUnreachable) {
+      await db.from('agent_policies').delete().eq('company_id', companyId).eq('role_key', 'phone').eq('action_key', HOURS_ACTION)
+    }
+    return hours
+  } catch (e) {
+    console.error('[phone agent] opening hours read failed', e instanceof Error ? e.message : e)
+    return null
+  }
+}
+
 /**
- * Is the business closed right now? Google's hours (with holiday and special
- * hours) when they come back quickly; otherwise the hours saved in Colvy, so
- * the caller isn't left hearing ringing while Google is slow. null when it
- * can't tell (no hours saved): the call is then handled as if open.
+ * Is the business closed right now? From the copy of Google's hours (with
+ * holiday and special hours) when there's a recent one, so nobody waits on
+ * Google; the copy is then refreshed after the call is decided. Without one,
+ * Google's hours if they come back quickly, else the last copy, else the hours
+ * saved in Colvy. null when it can't tell (no hours anywhere): the call is then
+ * handled as if open.
  */
 export async function businessClosedNow(db: Db, companyId: string, opts: { googleWaitMs?: number } = {}): Promise<boolean | null> {
   try {
+    const saved = await savedGoogleHours(db, companyId)
+    const age = saved ? Date.now() - saved.at : Infinity
+    if (saved && age < HOURS_TRUST_MS) {
+      if (age > HOURS_REFRESH_MS) inBackground(() => readHoursNow(db, companyId, true))
+      return closedFromHours(saved.hours)
+    }
+    const now = readHoursNow(db, companyId, !!saved)
+    inBackground(() => now)   // still saved when Google answers after the caller stopped waiting
     let timer: ReturnType<typeof setTimeout> | undefined
     const late = new Promise<null>(r => { timer = setTimeout(() => r(null), opts.googleWaitMs ?? 2500) })
-    const h = await Promise.race([loadBusinessHours(db, companyId).catch(() => null), late])
+    const h = await Promise.race([now, late])
     if (timer) clearTimeout(timer)
-    return closedFromHours(h || await loadBusinessHours(db, companyId, { google: false }))
+    if (h && !h.googleUnreachable) return closedFromHours(h)
+    return closedFromHours(saved?.hours || h || await loadBusinessHours(db, companyId, { google: false }))
   } catch { return null }
 }
 
@@ -501,8 +555,9 @@ export async function phoneTurn(db: any, args: {
         continue
       }
       if (call.name === 'text_caller' || call.name === 'text_upload_link' || call.name === 'text_booking_link') {
-        const sent = (args.state.textsSent || 0) >= MAX_TEXTS
-          ? { ok: false, error: `Already sent ${MAX_TEXTS} texts on this call.` }
+        const refused = (args.state.textsSent || 0) >= MAX_TEXTS ? `Already sent ${MAX_TEXTS} texts on this call.` : await whyNoText(db, args)
+        const sent = refused
+          ? { ok: false, error: refused }
           : call.name === 'text_caller'
             ? await textCaller(db, args, String(call.input?.message || ''))
             : call.name === 'text_booking_link'
@@ -574,6 +629,38 @@ export async function phoneTurn(db: any, args: {
   return result(false, setup.skills.message
     ? 'Sorry, I’m having trouble checking that right now. Can I take a message so someone calls you back?'
     : 'Sorry, I’m having trouble checking that right now. Could you ask me again in a moment?')
+}
+
+// Texts on a call only go to a caller who hasn't opted out (replied STOP) or
+// been blocked, and only a few a day to one number: caller ID can be faked, so
+// nobody can have the AI text someone else's phone over and over.
+const MAX_TEXTS_A_DAY = 6
+type TextableContact = { phone?: string | null; is_blocked?: boolean | null; unsubscribed_at?: string | null }
+
+/** Why the caller can't be texted now, or null when they can. Can't check → no text. */
+async function whyNoText(db: Db, args: { companyId: string; conversationId: string | null; contactId: string | null; from: string }): Promise<string | null> {
+  const key = tail(args.from)
+  if (key.length < 8) return 'The caller’s number is hidden.'
+  try {
+    const none = { data: null, error: null }
+    const [byId, byPhone, byNorm] = await Promise.all([
+      args.contactId ? db.from('contacts').select('is_blocked, unsubscribed_at').eq('id', args.contactId).eq('company_id', args.companyId).maybeSingle() : none,
+      db.from('contacts').select('phone, is_blocked, unsubscribed_at').eq('company_id', args.companyId).ilike('phone', `%${key}%`).limit(20),
+      // phone_norm (V359) also finds numbers saved with spaces; it may not be there yet.
+      Promise.resolve(db.from('contacts').select('is_blocked, unsubscribed_at').eq('company_id', args.companyId).eq('phone_norm', key).limit(20)).catch(() => none),
+    ])
+    if (byId.error || byPhone.error) return 'Couldn’t check the caller can be texted.'
+    const found: (TextableContact | null)[] = [byId.data, ...(byPhone.data || []).filter((c: TextableContact) => tail(c.phone) === key), ...(byNorm.error ? [] : byNorm.data || [])]
+    if (found.some(c => c?.is_blocked || c?.unsubscribed_at)) return 'The caller has opted out of texts from the business. Tell them instead.'
+    if (args.conversationId) {
+      const { count, error } = await db.from('messages').select('id', { count: 'exact', head: true })
+        .eq('conversation_id', args.conversationId).eq('sender_name', 'AI phone agent').eq('delivery_channel', 'sms')
+        .gte('created_at', new Date(Date.now() - 86_400_000).toISOString())
+      if (error) return 'Couldn’t check the caller can be texted.'
+      if ((count || 0) >= MAX_TEXTS_A_DAY) return 'This number has already had several texts today. Tell them instead.'
+    }
+    return null
+  } catch { return 'Couldn’t check the caller can be texted.' }
 }
 
 /** Text the caller (the number they're ringing from) and record it in their conversation. */
@@ -739,6 +826,37 @@ export async function saveCallState(db: any, call: { id: string; company_id: str
   }).eq('id', call.id)
 }
 
+/** The caller never said a word to the AI (hung up on the greeting, or stayed silent) and no message was taken. */
+export function callerNeverSpoke(state: PhoneCallState): boolean {
+  return !state.messageTaken && !state.turns.some(t => t.who === 'caller')
+}
+
+/**
+ * The AI's call ended without anyone being helped: the caller never said a
+ * word, or wanted voicemail with voicemail switched off, or the AI broke down
+ * with no voicemail to fall back on. It's then a missed call, as it would have
+ * been without the AI: marked missed (so it's among the calls to return), the
+ * "Missed call" preview, the team's alert and, if the business switched it on,
+ * the missed-call text (which still skips anyone who opted out). A call that
+ * has gone to voicemail is left to the voicemail.
+ */
+export async function aiCallMissed(db: Db, call: { id: string; company_id: string; conversation_id: string | null }, why: string): Promise<void> {
+  try {
+    const { data: row } = await db.from('calls').select('cause, caller_name, from_number, is_voicemail').eq('id', call.id).maybeSingle()
+    if (!row || row.is_voicemail) return
+    const { data: marked } = await db.from('calls').update({
+      status: 'missed', answered_at: null, duration_seconds: null, ended_at: new Date().toISOString(),
+      cause: `${row.cause ? `${row.cause}; ` : 'phone_agent: '}missed, ${why}`,
+    }).eq('id', call.id).neq('status', 'missed').or('is_voicemail.is.null,is_voicemail.eq.false').select('id')
+    if (!marked?.length) return
+    inBackground(() => Promise.all([
+      setCallPreview(db, call.conversation_id, '📞 Missed call'),
+      alertCall(db, call.company_id, call.conversation_id, 'Missed call', row.caller_name || row.from_number || 'a caller'),
+    ]))
+    queueMissedCallText({ db, companyId: call.company_id, callId: call.id })
+  } catch (e) { console.error('[phone agent] missed call not recorded', e instanceof Error ? e.message : e) }
+}
+
 // ── Twilio TwiML ─────────────────────────────────────────────────────────────
 
 /** A voice <Say> can use (ElevenLabs is real-time only; its fallback is the closest generative voice). */
@@ -761,6 +879,10 @@ export function phoneListenTwiml(actionUrl: string, voice: string, say: string):
 export function phoneGoodbyeTwiml(voice: string, say: string): string {
   return `<Response><Say voice="${esc(sayVoice(voice))}" language="en-AU">${esc(say)}</Say><Hangup/></Response>`
 }
+
+// What the caller hears instead of voicemail when the business has it switched off.
+export const NO_VOICEMAIL_SAY = 'We can’t take a voicemail right now, so please call back later or send us a message. Goodbye.'
+export const TROUBLE_SAY = 'Sorry, I’m having trouble on my end, so please call back later or send us a message. Goodbye.'
 
 /** Hand the caller to voicemail (the business's normal greeting and recording). */
 export function phoneVoicemailTwiml(voice: string, greeting: string, recordingCallback: string): string {

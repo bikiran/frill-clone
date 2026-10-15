@@ -25,7 +25,11 @@ export type HoursPlace = {
   special: SpecialDay[]
   status?: 'open' | 'closed_temporarily' | 'closed_permanently'
 }
-export type BusinessHours = { timezone: string; places: HoursPlace[]; notes: string[]; missing?: string[] }
+export type BusinessHours = {
+  timezone: string; places: HoursPlace[]; notes: string[]; missing?: string[]
+  /** Google is connected but couldn't be read, so these are the hours saved in Colvy. */
+  googleUnreachable?: boolean
+}
 
 const WEEKDAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
 const pad = (n: any) => String(Number(n) || 0).padStart(2, '0')
@@ -239,6 +243,7 @@ export async function loadBusinessHours(db: any, companyId: string, opts: { goog
   const notes: string[] = []
   let places: HoursPlace[] = []
   let missing: string[] = []
+  let googleUnreachable = false
 
   if (opts.google !== false) {
     try {
@@ -247,19 +252,24 @@ export async function loadBusinessHours(db: any, companyId: string, opts: { goog
         places = g.places.filter(p => Object.keys(p.week).length || p.special.length || p.status !== 'open')
         if (places.length) missing = g.missing
       }
-    } catch { notes.push('Couldn’t reach Google Business Profile just now, so these are the hours saved in Colvy.') }
+    } catch {
+      googleUnreachable = true
+      notes.push('Couldn’t reach Google Business Profile just now, so these are the hours saved in Colvy.')
+    }
   }
   if (!places.length) {
     const week = colvyWeek(co?.business_hours)
     if (week) places.push({ name: co?.name || 'The business', source: 'colvy', week, special: [] })
   }
   if (missing.length) notes.push(`No Google Business Profile listing found for ${missing.join(', ')}. Check the store is on the Google account connected to Colvy, with the same address as in Colvy → Locations.`)
-  return { timezone, places, notes, missing }
+  return { timezone, places, notes, missing, ...(googleUnreachable ? { googleUnreachable } : {}) }
 }
 
 // ── What a customer needs to hear ────────────────────────────────────────────
 
 function minutes(t: string) { const [h, m] = t.split(':').map(Number); return h * 60 + m }
+/** Runs past midnight: marked so by Google, or closes before it opens (5pm–1am). */
+const pastMidnight = (r: Range) => !!r.overnight || minutes(r.to) < minutes(r.from)
 
 export function dayHours(place: HoursPlace, date: string): { ranges: Range[] | undefined; special: boolean } {
   const sp = place.special.find(s => s.date === date)
@@ -278,9 +288,12 @@ export function hoursOutlook(h: BusinessHours, opts: { at?: Date; days?: number;
   const places = h.places.map(p => {
     const today = dayHours(p, now.date).ranges
     const t = minutes(now.time)
+    // Yesterday's hours that ran past midnight (Friday 5pm–1am) are still open in the small hours.
+    const lateFromYesterday = (dayHours(p, addDays(now.date, -1)).ranges || []).some(r => pastMidnight(r) && t < minutes(r.to))
     const openNow = p.status && p.status !== 'open' ? false
-      : today === undefined ? null
-        : today.some(r => t >= minutes(r.from) && (r.overnight || t < minutes(r.to)))
+      : lateFromYesterday ? true
+        : today === undefined ? null
+          : today.some(r => t >= minutes(r.from) && (pastMidnight(r) || t < minutes(r.to)))
     return {
       store: p.name,
       address: p.address || null,

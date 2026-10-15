@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { phoneTurn, saveCallState, relaySecretOk, loadPhoneContext, type PhoneCallState } from '@/lib/phone-agent'
+import { phoneTurn, saveCallState, relaySecretOk, loadPhoneContext, aiCallMissed, callerNeverSpoke, setupOf, TROUBLE_SAY, type PhoneCallState } from '@/lib/phone-agent'
 import { refreshPhoneCatalog } from '@/lib/phone-catalog'
 
 export const dynamic = 'force-dynamic'
@@ -22,7 +22,8 @@ function admin() {
 //                newline-separated JSON: {"t":"text","text":…}… then
 //                {"t":"done","end":bool,"voicemail"?:true}
 //   interrupt  — the caller talked over the reply; records what they heard
-//   closed     — the call ended; final save
+//   closed     — the call ended; final save (a caller who never said a word
+//                is a missed call, as ringing out would have been)
 export async function POST(req: NextRequest) {
   if (!relaySecretOk(req.headers.get('x-relay-secret'))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   const body = await req.json().catch(() => ({}))
@@ -67,6 +68,7 @@ export async function POST(req: NextRequest) {
   }
   if (event === 'closed') {
     await saveCallState(db, call, state, true)
+    if (callerNeverSpoke(state) && setupOf(state).reason !== 'test') await aiCallMissed(db, call, 'caller hung up without saying anything')
     return NextResponse.json({ ok: true })
   }
   if (event !== 'prompt') return NextResponse.json({ error: 'Unknown event' }, { status: 400 })
@@ -98,11 +100,19 @@ export async function POST(req: NextRequest) {
         send({ t: 'done', end: r.end })
       } catch (e: any) {
         console.error('[phone agent relay] turn failed', e?.message || e)
+        // Voicemail, unless the business has it switched off: then a goodbye,
+        // and it's a missed call.
+        let voicemail = true
+        try {
+          const { data: integ } = await db.from('twilio_integrations').select('voicemail_enabled').eq('company_id', call.company_id).maybeSingle()
+          voicemail = integ?.voicemail_enabled !== false
+        } catch {}
         state.turns.push({ who: 'caller', text: said })
-        state.turns.push({ who: 'agent', text: '(Something went wrong; sent to voicemail.)' })
+        state.turns.push({ who: 'agent', text: voicemail ? '(Something went wrong; sent to voicemail.)' : '(Something went wrong; asked to call back.)' })
         try { await saveCallState(db, call, state, true) } catch {}
-        send({ t: 'text', text: 'Sorry, I’m having trouble on my end, so I’ll pass you to voicemail.' })
-        send({ t: 'done', end: true, voicemail: true })
+        send({ t: 'text', text: voicemail ? 'Sorry, I’m having trouble on my end, so I’ll pass you to voicemail.' : TROUBLE_SAY })
+        send({ t: 'done', end: true, ...(voicemail ? { voicemail: true } : {}) })
+        if (!voicemail) await aiCallMissed(db, call, 'the AI had trouble and voicemail is off')
       }
       controller.close()
     },
