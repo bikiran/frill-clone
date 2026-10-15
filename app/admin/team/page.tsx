@@ -1,7 +1,6 @@
 'use client'
 
 import { authFetch } from '@/lib/auth-fetch'
-import { newInviteToken } from '@/lib/invite-token'
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
@@ -11,6 +10,13 @@ import { SkeletonList } from '@/components/Skeleton'
 import PageHeader from '@/components/PageHeader'
 import { PERMISSION_SUITES, ALL_FEATURE_KEYS, restrictedDefault } from '@/lib/permissions'
 
+
+// Create User's throwaway password. Math.random isn't a secure source; the
+// browser's crypto is. The suffix keeps any "needs a symbol and a digit" rule happy.
+function makeTempPassword(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(12))
+  return Array.from(bytes, b => b.toString(36).padStart(2, '0')).join('') + 'A!1'
+}
 
 export default function TeamPage() {
   const router = useRouter()
@@ -34,6 +40,14 @@ export default function TeamPage() {
   // The last invite link we generated, shown so it can be shared directly when
   // email delivery is unavailable (or as a reliable backup either way).
   const [lastInvite, setLastInvite] = useState<{ email: string; link: string } | null>(null)
+  // The viewer's own role here, from the server. Only owners and admins can
+  // change the team; everyone else sees it read-only. Null until known (the
+  // controls stay as they were — the server has the final say either way).
+  const [myRole, setMyRole] = useState<string | null>(null)
+  const [canManage, setCanManage] = useState<boolean | null>(null)
+  const viewOnly = canManage === false
+  const MY_ROLE_LABEL: Record<string, string> = { owner: 'Owner', admin: 'Admin', editor: 'Agent', viewer: 'Viewer' }
+  const myRoleLabel = MY_ROLE_LABEL[myRole || 'owner'] || 'Owner'
   // Owner edit of a member's profile (display name + photo).
   const [editMember, setEditMember] = useState<any>(null)
   const [editName, setEditName] = useState('')
@@ -72,21 +86,33 @@ export default function TeamPage() {
       setEditUploading(false)
     }
   }
+  // Every change to the team goes through /api/team/members, which checks the
+  // caller is an owner or admin, applies the rules (no raising your own role,
+  // owners protected) and writes the audit log. The database no longer accepts
+  // team_members writes from the browser (COLVY_V364).
+  const teamApi = async (method: 'POST' | 'PATCH' | 'DELETE', body: Record<string, any>) => {
+    const res = await authFetch('/api/team/members', {
+      method, headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ companyId, ...body }),
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(data?.error || 'Something went wrong')
+    return data
+  }
+
   const saveMemberProfile = async () => {
     if (!editMember) return
     setEditSaving(true)
     try {
       const patch = { name: editName.trim() || null, avatar_url: editAvatar || null, department: editDept || null }
-      const { error } = await (supabase as any).from('team_members').update(patch).eq('id', editMember.id)
-      if (error) throw error
+      await teamApi('PATCH', { memberId: editMember.id, ...patch })
       setMembers(ms => ms.map(m => m.id === editMember.id
         ? { ...m, name: patch.name, avatar_url: patch.avatar_url, department: patch.department, display_name: patch.name || m.display_name }
         : m))
       showMsg('Member profile updated.')
       setEditMember(null)
     } catch (e: any) {
-      const msg = String(e?.message || 'error')
-      showMsg('Could not save: ' + msg + (msg.toLowerCase().includes('column') ? ' — run migrations COLVY_V307 and V308 in Supabase first.' : ''), true)
+      showMsg('Could not save: ' + String(e?.message || 'error'), true)
     } finally {
       setEditSaving(false)
     }
@@ -117,14 +143,12 @@ export default function TeamPage() {
     if (!permMember) return
     setPermSaving(true)
     try {
-      const { error } = await (supabase as any).from('team_members').update({ permissions: permDraft }).eq('id', permMember.id)
-      if (error) throw error
+      await teamApi('PATCH', { memberId: permMember.id, permissions: permDraft })
       setMembers(ms => ms.map(m => m.id === permMember.id ? { ...m, permissions: permDraft } : m))
       showMsg(`Permissions updated for ${permMember.display_name || permMember.email}.`)
       setPermMember(null)
     } catch (e: any) {
-      const msg = String(e?.message || 'error')
-      showMsg('Could not save permissions: ' + msg + (msg.toLowerCase().includes('permissions') || msg.toLowerCase().includes('column') ? ' — run migration COLVY_V306 in Supabase first.' : ''), true)
+      showMsg('Could not save permissions: ' + String(e?.message || 'error'), true)
     } finally {
       setPermSaving(false)
     }
@@ -170,6 +194,12 @@ export default function TeamPage() {
       setCompanyId(cid)
       if (!cid) { setMembers([]); setLoading(false); return }
 
+      // Whether this person may change the team (owner/admin), alongside.
+      authFetch(`/api/team/members?companyId=${encodeURIComponent(cid)}`)
+        .then(r => r.ok ? r.json() : null)
+        .then(d => { if (d) { setMyRole(d.role || null); setCanManage(!!d.canManage) } })
+        .catch(() => {})
+
       // Members and outlets side by side; the list shows as soon as members
       // arrive, and profile names fill in after.
       const [{ data }, locsRes] = await Promise.all([
@@ -206,8 +236,8 @@ export default function TeamPage() {
 
   const updateDefaultOutlet = async (id: string, locId: string) => {
     setMembers(ms => ms.map(m => m.id === id ? { ...m, default_location_id: locId || null } : m))
-    try { await (supabase as any).from('team_members').update({ default_location_id: locId || null }).eq('id', id) }
-    catch { /* best effort — the column may need the V213 migration */ }
+    try { await teamApi('PATCH', { memberId: id, default_location_id: locId || null }) }
+    catch (e: any) { showMsg('Could not change the outlet: ' + e.message, true); fetchMembers() }
   }
 
   const showMsg = (text: string, isError = false) => {
@@ -217,53 +247,33 @@ export default function TeamPage() {
     setTimeout(() => setMsg(''), isError ? 8000 : 4000)
   }
 
+  // The workspace this page manages: the one fetchMembers resolved (which
+  // handles a board subdomain and membership), else the oldest one this person
+  // owns, looked up with a fresh session id (the `user` state can lag).
+  const resolveCompanyId = async (): Promise<string | null> => {
+    if (companyId) return companyId
+    const uid = user?.id || (await supabase.auth.getSession()).data.session?.user?.id || null
+    if (!uid) return null
+    const { data: owned } = await (supabase as any).from('companies').select('id').eq('owner_id', uid).order('created_at', { ascending: true }).limit(1)
+    return owned?.[0]?.id || null
+  }
+
   const inviteMember = async () => {
     if (!inviteEmail.trim()) return
     setWorking(true)
     try {
-      // Resolve the inviter's company (for the slug + name in the invite link).
-      // PREFER the company fetchMembers already resolved into state — it correctly
-      // handles a board subdomain and membership, not just ownership. Re-resolving
-      // from scratch here (owner-only + a .maybeSingle() on team_members) failed
-      // for anyone who is a MEMBER of the company on its subdomain, or who belongs
-      // to more than one company (maybeSingle returns null when several rows
-      // match) — which is exactly the "Could not determine your company" error.
-      let company: any = null
-      if (companyId) {
-        const { data } = await (supabase as any).from('companies').select('id, name, slug').eq('id', companyId).maybeSingle()
-        company = data || null
-      }
-      if (!company?.id) {
-        // Fall back to a fresh session user id (the `user` state can lag) and use
-        // limit(1), never maybeSingle, so multiple memberships don't blow up.
-        const uid = user?.id || (await supabase.auth.getSession()).data.session?.user?.id || null
-        if (uid) {
-          const { data: owned } = await (supabase as any).from('companies').select('id, name, slug').eq('owner_id', uid).order('created_at', { ascending: true }).limit(1)
-          company = owned?.[0] || null
-          if (!company?.id) {
-            const { data: tm } = await (supabase as any).from('team_members').select('company_id').eq('user_id', uid).not('company_id', 'is', null).limit(1)
-            const cid = tm?.[0]?.company_id
-            if (cid) { const { data } = await (supabase as any).from('companies').select('id, name, slug').eq('id', cid).maybeSingle(); company = data || null }
-          }
-        }
-      }
-
-      if (!company?.id) {
+      const cid = await resolveCompanyId()
+      if (!cid) {
         showMsg('Could not determine your company — reload the page and try again.', true)
         setWorking(false)
         return
       }
-
-      const invite = await newInviteToken()
-      const { error } = await (supabase as any).from('team_members').insert({
-        email: inviteEmail.trim().toLowerCase(),
-        role: inviteRole,
-        status: 'invited',
-        invited_by: user?.id,
-        company_id: company.id,
-        invite_token_hash: invite.hash,
-      })
-      if (error) throw error
+      // The server checks the inviter, writes the invite row and hands back the
+      // link's one-time code (only its hash is stored), plus the workspace's
+      // slug and name for the link and the email.
+      const created = await teamApi('POST', { companyId: cid, email: inviteEmail.trim().toLowerCase(), role: inviteRole })
+      const company = created.company || {}
+      const invite = { token: created.token as string }
 
       // Send a stable invite link (NOT a magic link — those expire fast and get
       // consumed by email prefetch bots, causing "otp_expired"). This link points
@@ -299,27 +309,19 @@ export default function TeamPage() {
       setShowInvite(false)
       fetchMembers()
     } catch (err: any) {
-      alert('Failed: ' + err.message + '\n\nMake sure DATABASE_SETUP.sql has been run.')
+      showMsg('Could not invite: ' + err.message, true)
     }
     setWorking(false)
   }
 
   const createUser = async () => {
     if (!createEmail.trim()) return
-    // Generate a secure random temporary password — user will reset via forgot-password
-    const tempPassword = Math.random().toString(36).slice(-8) + Math.random().toString(36).toUpperCase().slice(-4) + '!1'
+    // A random temporary password nobody knows — the user sets their own via forgot-password
+    const tempPassword = makeTempPassword()
     setWorking(true)
     try {
-      // Scope the new user to this workspace. Prefer the company fetchMembers
-      // already resolved; fall back to an owner lookup with a fresh session id.
-      let cid = companyId
-      if (!cid) {
-        const uid = user?.id || (await supabase.auth.getSession()).data.session?.user?.id || null
-        if (uid) {
-          const { data: owned } = await (supabase as any).from('companies').select('id').eq('owner_id', uid).order('created_at', { ascending: true }).limit(1)
-          cid = owned?.[0]?.id || null
-        }
-      }
+      // Scope the new user to this workspace.
+      const cid = await resolveCompanyId()
       if (!cid) {
         showMsg('Could not determine your company — reload the page and try again.', true)
         setWorking(false)
@@ -354,36 +356,27 @@ export default function TeamPage() {
   }
 
   const updateRole = async (id: string, role: string) => {
-    await (supabase as any).from('team_members').update({ role }).eq('id', id)
+    setMembers(ms => ms.map(m => m.id === id ? { ...m, role } : m))
+    try { await teamApi('PATCH', { memberId: id, role }) }
+    catch (e: any) { showMsg('Could not change the role: ' + e.message, true) }
     fetchMembers()
   }
 
-  // Mobile number used for SMS reminders on assigned calendar events.
-  // Normalised to +61 E.164 so Telnyx accepts it — "0405 636 304" and
-  // "405636304" both become "+61405636304".
-  const normaliseAuMobile = (raw: string): string | null => {
-    const t = raw.trim()
-    if (!t) return null
-    let d = t.replace(/[^\d+]/g, '')
-    if (d.startsWith('+')) return d
-    d = d.replace(/\D/g, '')
-    if (d.startsWith('61')) return `+${d}`
-    if (d.startsWith('0')) return `+61${d.slice(1)}`
-    if (d.length === 9) return `+61${d}`
-    return `+${d}`
-  }
-
+  // Mobile number used for SMS reminders on assigned calendar events. The
+  // server tidies it into +61 form ("0405 636 304" and "405636304" both become
+  // "+61405636304") so Telnyx accepts it.
   const updatePhone = async (id: string, raw: string) => {
-    const phone = normaliseAuMobile(raw)
-    setMembers(ms => ms.map(m => m.id === id ? { ...m, phone } : m))
+    const before = members.find(m => m.id === id)?.phone || null
+    if ((raw.trim() || null) === before) return
     try {
-      const { error } = await (supabase as any).from('team_members').update({ phone }).eq('id', id)
-      if (error) showMsg('Could not save the number: ' + error.message)
-    } catch (e: any) { showMsg('Could not save the number') }
+      const { member } = await teamApi('PATCH', { memberId: id, phone: raw.trim() || null })
+      setMembers(ms => ms.map(m => m.id === id ? { ...m, phone: member?.phone ?? null } : m))
+    } catch (e: any) { showMsg('Could not save the number: ' + e.message, true) }
   }
 
   const removeMember = async (id: string) => {
-    await supabase.from('team_members').delete().eq('id', id)
+    try { await teamApi('DELETE', { memberId: id }) }
+    catch (e: any) { showMsg('Could not remove them: ' + e.message, true) }
     setConfirmDelete(null)
     fetchMembers()
   }
@@ -392,39 +385,16 @@ export default function TeamPage() {
   const resendInvite = async (m: any) => {
     setResendingId(m.id)
     try {
-      // Resolve the company (slug + name) for the invite link. Prefer the invite
-      // row's own company_id, then the company already resolved into state, then
-      // an owner lookup with a fresh session id — never rely on owner-only, which
-      // breaks for members on a subdomain.
-      let company: any = null
-      const cid = m.company_id || companyId
-      if (cid) {
-        const { data } = await (supabase as any).from('companies').select('id, name, slug').eq('id', cid).maybeSingle()
-        company = data || null
-      }
-      if (!company?.slug) {
-        const uid = user?.id || (await supabase.auth.getSession()).data.session?.user?.id || null
-        if (uid) {
-          const { data: owned } = await (supabase as any).from('companies').select('id, name, slug').eq('owner_id', uid).order('created_at', { ascending: true }).limit(1)
-          company = owned?.[0] || null
-        }
-      }
+      // A fresh code each resend, so the old link stops working. The server
+      // checks this person may manage the team and returns the workspace's slug
+      // and name for the link.
+      const { token, company } = await teamApi('POST', { action: 'resend', memberId: m.id })
       if (!company?.slug) {
         showMsg('Could not resolve your company — reload the page and try again.', true)
         setResendingId(null)
         return
       }
-      // If this invite row was created before company_id was enforced, backfill
-      // it so acceptance works.
-      if (!m.company_id && company.id) {
-        try { await (supabase as any).from('team_members').update({ company_id: company.id }).eq('id', m.id) } catch {}
-      }
-      // A fresh token each resend; the old link stops working.
-      const invite = await newInviteToken()
-      {
-        const { error: tokErr } = await (supabase as any).from('team_members').update({ invite_token_hash: invite.hash }).eq('id', m.id)
-        if (tokErr) throw tokErr
-      }
+      const invite = { token: token as string }
       const origin = typeof window !== 'undefined' ? window.location.origin : 'https://colvy.com'
       const inviteLink = `${origin}/team/join?company=${encodeURIComponent(company.slug)}&email=${encodeURIComponent(m.email)}&role=${m.role}&token=${invite.token}`
       const res = await authFetch('/api/send-team-invite', {
@@ -465,7 +435,7 @@ export default function TeamPage() {
         subtitle="Manage who can access your workspace"
         bleed={24}
         bleedTop={32}
-        action={
+        action={viewOnly ? undefined :
           <>
           <button onClick={() => setShowCreate(true)}
             className="px-4 py-2 rounded-lg border text-sm font-medium transition-smooth cursor-pointer hover:bg-gray-50"
@@ -480,6 +450,12 @@ export default function TeamPage() {
           </>
         }
       />
+
+      {viewOnly && (
+        <div className="mb-4 p-3 rounded-lg text-sm" style={{ background: '#f8fafc', border: '1px solid var(--border)', color: 'var(--slate)' }}>
+          Only the owner or an admin can invite people or change roles and access. Ask one of them if something here needs updating.
+        </div>
+      )}
 
       {msg && (
         <div className="mb-4 p-3 rounded-lg text-sm font-medium" style={msgErr ? { background: '#fee2e2', color: '#b91c1c' } : { background: '#d1fae5', color: '#059669' }}>
@@ -546,12 +522,12 @@ export default function TeamPage() {
             </div>
             <div className="min-w-0">
               <p className="text-sm font-semibold truncate" style={{ color: 'var(--ink)' }}>{user.email}</p>
-              <p className="text-xs" style={{ color: 'var(--slate)' }}>You (Owner)</p>
+              <p className="text-xs" style={{ color: 'var(--slate)' }}>You ({myRoleLabel})</p>
             </div>
           </div>
           <div className="col-span-2" />
           <div className="col-span-2">
-            <span className="text-xs px-2 py-1 rounded-full font-semibold" style={{ background: 'var(--peach)', color: 'var(--coral)' }}>Owner</span>
+            <span className="text-xs px-2 py-1 rounded-full font-semibold" style={{ background: 'var(--peach)', color: 'var(--coral)' }}>{myRoleLabel}</span>
           </div>
           <div className="col-span-1">
             <span className="text-xs px-2 py-1 rounded-full" style={{ background: '#d1fae5', color: '#059669' }}>Active</span>
@@ -566,11 +542,11 @@ export default function TeamPage() {
             <div className="text-4xl mb-3">👥</div>
             <p className="text-sm mb-2 font-medium" style={{ color: 'var(--ink)' }}>No team members yet</p>
             <p className="text-xs mb-4" style={{ color: 'var(--slate)' }}>Invite colleagues or create users on-the-fly</p>
-            <div className="flex gap-2 justify-center">
+            {!viewOnly && <div className="flex gap-2 justify-center">
               <button onClick={() => setShowCreate(true)} className="text-sm font-medium cursor-pointer hover:opacity-70" style={{ color: 'var(--coral)' }}>+ Create User</button>
               <span style={{ color: 'var(--slate)' }}>·</span>
               <button onClick={() => setShowInvite(true)} className="text-sm font-medium cursor-pointer hover:opacity-70" style={{ color: 'var(--coral)' }}>+ Invite Member</button>
-            </div>
+            </div>}
           </div>
         ) : (
           visibleMembers.map(m => (
@@ -586,7 +562,7 @@ export default function TeamPage() {
                   </p>
                   {m.display_name && <p className="text-xs truncate" style={{ color: 'var(--slate)' }}>{m.email}</p>}
                   {outlets.length > 0 && (
-                    <select value={m.default_location_id || ''} onChange={e => updateDefaultOutlet(m.id, e.target.value)}
+                    <select value={m.default_location_id || ''} onChange={e => updateDefaultOutlet(m.id, e.target.value)} disabled={viewOnly}
                       title="Default outlet — used to pre-filter their Tasks page"
                       className="text-xs mt-1 px-2 py-1 rounded border focus:outline-none cursor-pointer bg-white max-w-full"
                       style={{ borderColor: 'var(--border)', color: m.default_location_id ? 'var(--coral)' : 'var(--slate)' }}>
@@ -603,13 +579,16 @@ export default function TeamPage() {
                   defaultValue={m.phone || ''}
                   placeholder="+61…"
                   onBlur={e => updatePhone(m.id, e.target.value)}
+                  disabled={viewOnly}
                   className="text-xs px-2 py-1 rounded border focus:outline-none w-full bg-white"
                   style={{ borderColor: 'var(--border)', color: 'var(--ink)' }} />
               </div>
               <div className="col-span-2">
-                <select value={m.role} onChange={e => updateRole(m.id, e.target.value)}
+                <select value={m.role} onChange={e => updateRole(m.id, e.target.value)} disabled={viewOnly}
                   className="text-xs px-2 py-1 rounded border focus:outline-none cursor-pointer bg-white"
                   style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
+                  {/* A co-owner shows as Owner; ownership isn't handed out from here. */}
+                  {(m.role || '').toLowerCase() === 'owner' && <option value={m.role} disabled>Owner</option>}
                   <option value="admin">Admin</option>
                   <option value="editor">Agent</option>
                   <option value="viewer">Viewer</option>
@@ -622,6 +601,7 @@ export default function TeamPage() {
                 </span>
               </div>
               <div className="col-span-3 text-right flex items-center justify-end gap-2.5 whitespace-nowrap">
+                {viewOnly ? <span className="text-xs" style={{ color: 'var(--slate)' }}>—</span> : <>
                 <button onClick={() => openEdit(m)} className="text-xs font-medium cursor-pointer hover:underline" style={{ color: 'var(--slate)' }}>
                   Edit
                 </button>
@@ -638,6 +618,7 @@ export default function TeamPage() {
                 <button onClick={() => setConfirmDelete(m)} className="text-xs font-medium cursor-pointer hover:underline" style={{ color: '#dc2626' }}>
                   Remove
                 </button>
+                </>}
               </div>
             </div>
           ))
