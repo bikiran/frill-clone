@@ -50,28 +50,37 @@ const prefsKey = (companyId: string) => `colvy-setup-v2-${companyId}`
 // The checklist before this one (the feedback-board steps) kept { done, hidden }
 // here. Whoever hid that one said they don't want a setup checklist on their
 // dashboard, so this one starts hidden for them too (?setup=1 still opens it).
+// Prefs saved from here on carry `migrated: true`, meaning that's been taken
+// into account. Ones without it (nothing saved yet, or saved by this
+// checklist's first release, which didn't look at the old key) still check it.
 const oldPrefsKey = (companyId: string) => `colvy-setup-${companyId}`
+function oldChecklistHidden(companyId: string): boolean {
+  try {
+    const old = JSON.parse(localStorage.getItem(oldPrefsKey(companyId)) || 'null')
+    return !!old && old.hidden === true
+  } catch { return false }
+}
 function readPrefs(companyId: string): Prefs {
   const blank: Prefs = { hidden: false, skipped: [], seen: null, completed: false }
   if (typeof window === 'undefined') return blank
   try {
     const raw = localStorage.getItem(prefsKey(companyId))
-    if (raw == null) {
-      const old = JSON.parse(localStorage.getItem(oldPrefsKey(companyId)) || 'null')
-      return old && old.hidden === true ? { ...blank, hidden: true } : blank
-    }
-    const v = JSON.parse(raw)
-    if (!v || typeof v !== 'object') return blank
-    return {
+    const v = raw == null ? null : JSON.parse(raw)
+    if (raw != null && (!v || typeof v !== 'object')) return blank
+    const p: Prefs = v ? {
       hidden: v.hidden === true,
       skipped: Array.isArray(v.skipped) ? v.skipped : [],
       seen: Array.isArray(v.seen) ? v.seen : null,
       completed: v.completed === true,
-    }
+    } : blank
+    // Every save starts from what's read here, so once this is saved (with
+    // the marker) it sticks, and "Hide" / ?setup=1 decide from then on.
+    if (v?.migrated !== true && !p.hidden && oldChecklistHidden(companyId)) return { ...p, hidden: true }
+    return p
   } catch { return blank }
 }
 function writePrefs(companyId: string, p: Prefs) {
-  try { localStorage.setItem(prefsKey(companyId), JSON.stringify(p)) } catch { /* private mode — fine */ }
+  try { localStorage.setItem(prefsKey(companyId), JSON.stringify({ ...p, migrated: true })) } catch { /* private mode — fine */ }
 }
 
 // One analytics event per step, the first time this browser sees it done.
@@ -89,15 +98,21 @@ const STEP_EVENT: Record<SetupStepKey, [ColvyEvent, Record<string, string>]> = {
 const TRACK_MAX_AGE_DAYS = 30
 
 /**
- * Whether the dashboard should fetch fresh setup numbers. Not when this device
- * has the checklist hidden or finished and the workspace is past the age where
- * ticks are counted (going by `last`, the numbers it last had): nothing would
- * show or be tracked. Arriving via ?setup=1 always checks.
+ * Whether the dashboard should fetch fresh setup numbers. Not when the
+ * checklist can't show on this device — hidden, or finished here and `last`
+ * (the numbers it last had, which it's showing) still finished — and the
+ * workspace is past the age where ticks are counted: nothing would show or be
+ * tracked. Arriving via ?setup=1 always checks.
  */
-export function setupWorthLoading(companyId: string, last: Pick<SetupStatus, 'ageDays'> | null | undefined, link: SetupLink): boolean {
+export function setupWorthLoading(companyId: string, last: Pick<SetupStatus, 'ageDays' | 'steps'> | null | undefined, link: SetupLink): boolean {
   if (link.open) return true
   const p = readPrefs(companyId)
-  if (!p.hidden && !p.completed) return true
+  // The checklist's own "complete": every step done, or skipped. `completed`
+  // alone isn't enough — it never resets, while a step can be added back or
+  // come undone (a store uninstalled) and the checklist shows again.
+  const finished = () => !!last && setupSteps().every(m =>
+    p.skipped.includes(m.key) || last.steps.some(st => st.key === m.key && st.state === 'done'))
+  if (!p.hidden && !(p.completed && finished())) return true
   return !(last && last.ageDays != null && last.ageDays > TRACK_MAX_AGE_DAYS)
 }
 
