@@ -349,9 +349,12 @@ export default function CustomerTimeline({ contactId, contactName, mode = 'inlin
                         // AI replies are saved as the business's, flagged is_ai.
                         const ai = !!m.is_ai || m.sender_type === 'ai'
                         const team = ai || m.sender_type === 'agent'
+                        // A contact-form submission is every field, one per
+                        // line, with what they asked for last: show it whole.
+                        const whole = m.channel === 'form' && m.sender_type === 'visitor'
                         return (
                           <div key={m.id} className={`ctl-msg${team ? ' team' : ''}`}>
-                            <div className="ctl-bubble">
+                            <div className={`ctl-bubble${whole ? ' ctl-whole' : ''}`}>
                               {ai && <span className="ctl-ai">{ICONS.agent(10)} AI</span>}
                               {m.content || (m.attachment_count ? '' : '…')}
                               {!!m.attachment_count && <span className="ctl-att">{ICONS.clip(11)} {m.attachment_count} attachment{m.attachment_count === 1 ? '' : 's'}</span>}
@@ -468,6 +471,7 @@ const CSS = `
 .ctl-msg.team { align-items: flex-end; }
 .ctl-bubble { max-width: 85%; padding: 8px 12px; border-radius: 14px 14px 14px 4px; background: var(--canvas); border: 1px solid var(--border); color: var(--ink); font-size: 13px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 8; -webkit-box-orient: vertical; overflow: hidden; }
 .ctl-msg.team .ctl-bubble { border-radius: 14px 14px 4px 14px; background: var(--coral); border-color: transparent; color: #fff; }
+.ctl-bubble.ctl-whole { -webkit-line-clamp: none; }
 .ctl-ai { display: inline-flex; align-items: center; gap: 3px; margin-right: 6px; font-size: 10px; font-weight: 800; letter-spacing: .04em; opacity: .85; }
 .ctl-att { display: flex; align-items: center; gap: 4px; margin-top: 4px; font-size: 11.5px; opacity: .8; }
 .ctl-meta { margin: 2px 4px 0 !important; font-size: 10.5px; color: var(--slate); }

@@ -91,12 +91,15 @@ const money = (n: unknown, cur?: string) => {
   try { return new Intl.NumberFormat('en-AU', { style: 'currency', currency: String(cur || 'aud').toUpperCase() }).format(v) } catch { return `$${v.toFixed(2)}` }
 }
 const cap = (s: unknown) => { const t = String(s || '').replace(/[_-]+/g, ' ').trim(); return t ? t[0].toUpperCase() + t.slice(1) : '' }
-// Emails go into PostgREST filters as they are, so only plain addresses are
-// matched on: no list punctuation, quotes or backslashes, and no LIKE
-// wildcards (% and *, which PostgREST reads as %). Anything else is left out
-// rather than cleaned up — a cleaned-up address could be somebody else's.
-const SAFE_EMAIL = /^[a-z0-9.!#$&'+\/=?^`{|}~_-]+@[a-z0-9.-]+\.[a-z]{2,}$/
-// …and in an ilike pattern _ is a wildcard too, so escape it.
+// Emails go into PostgREST filters as they are, so an address with list
+// punctuation, quotes or backslashes is left out rather than cleaned up — a
+// cleaned-up address could be somebody else's. In an in-list the rest
+// (unicode, * and %) is literal.
+const LIST_UNSAFE = /[,()"\\]/
+// An ilike pattern also reads % and * (PostgREST's %) as wildcards, so an
+// address with either isn't matched that way at all…
+const LIKE_UNSAFE = /[%*]/
+// …and _ is a wildcard too, so escape it.
 const likeSafe = (s: string) => s.replace(/_/g, '\\_')
 // A booking's times read in its own time zone — what the customer was told
 // (lib/booking.ts) and what the Bookings page shows — not the viewer's.
@@ -145,7 +148,8 @@ export async function GET(req: NextRequest) {
   const people: Row[] = linked.length ? linked : [owner]
   if (!people.some(p => p.id === owner.id)) people.push(owner)
   const contactIds: string[] = people.map(p => p.id)
-  const emails = uniq(people.map(c => emailKey(c.email)).filter(e => SAFE_EMAIL.test(e)))
+  const emails = uniq(people.map(c => emailKey(c.email)).filter(e => e && !LIST_UNSAFE.test(e)))
+  const likeEmails = emails.filter(e => !LIKE_UNSAFE.test(e))
   const phones = uniq(people.map(c => phoneKey(c.phone)).filter(k => k.length >= 8))
 
   // Their conversations — newest first. A customer with only orders or
@@ -165,25 +169,31 @@ export async function GET(req: NextRequest) {
   // "This person's" rows on a table with contact_id + conversation_id, for one
   // chunk of their conversations.
   const byPerson = (ids: string[]) => [`contact_id.in.${list(contactIds)}`, ids.length ? `conversation_id.in.${list(ids)}` : ''].filter(Boolean).join(',')
-  const inboxLink = (convId?: string | null) => convId && convById[convId] ? `/admin/inbox?conversation=${convId}` : undefined
+  // Only for members who can open the inbox (the admin layout sends anyone
+  // else back to the dashboard).
+  const inboxLink = (convId?: string | null) => allowed('message') && convId && convById[convId] ? `/admin/inbox?conversation=${convId}` : undefined
 
   // Read rows from a table, trying each column set in turn (a column added by a
   // later migration may not be in this database yet). null = the table isn't
   // there at all, so that kind is skipped. With `ids` (chunks of ids), one
   // request per chunk — base and extra get the chunk — merged back into one
-  // list: each row once, in order, up to the limit.
+  // list: each row once, in order, up to the limit. The chunks go one after
+  // another, so a long history doesn't fire dozens of requests at once.
   type Try = [cols: string, extra?: (q: Builder, ids: string[]) => Builder]
   type Read = { ts?: string; ascending?: boolean; limit: number; paged?: boolean; ids?: string[][] }
   const fetchRows = async (table: string, tries: Try[], base: (q: Builder, ids: string[]) => Builder, o: Read): Promise<Row[] | null> => {
     for (const [cols, extra] of tries) {
       try {
-        const res: Row[] = await Promise.all((o.ids || [[]]).map(ids => {
+        const res: Row[] = []
+        for (const ids of o.ids || [[]]) {
           let q = base(db.from(table).select(cols), ids)
           if (extra) q = extra(q, ids)
           if (o.paged && before && o.ts) q = q.lt(o.ts, before)
           if (o.ts) q = q.order(o.ts, { ascending: !!o.ascending, nullsFirst: false })
-          return q.limit(o.limit)
-        }))
+          const r = await q.limit(o.limit)
+          res.push(r)
+          if (r.error) break
+        }
         if (res.some(r => r.error)) continue
         if (res.length === 1) return res[0].data || []
         const seen = new Set<unknown>()
@@ -229,7 +239,7 @@ export async function GET(req: NextRequest) {
   const wooByEmail = (cols: string, o: { limit: number; paged?: boolean }) => emails.length
     ? fetchRows('woocommerce_orders', [
       [cols, (q: Builder) => q.in('customer_email_norm', emails)],
-      [cols, (q: Builder) => q.or(emails.map(e => `customer_email.ilike.${likeSafe(e)}`).join(','))],
+      ...(likeEmails.length ? [[cols, (q: Builder) => q.or(likeEmails.map(e => `customer_email.ilike.${likeSafe(e)}`).join(','))] as Try] : []),
     ], q => q.eq('company_id', companyId), { ts: 'order_date', ...o })
     : Promise.resolve([] as Row[])
   const wooByPhone = (cols: string, o: { limit: number; paged?: boolean }) => phones.length
@@ -305,9 +315,9 @@ export async function GET(req: NextRequest) {
       (q, ids) => q.in('conversation_id', ids), convChunks) : none,
     // Notes kept on a WooCommerce customer record (customer_notes is keyed on
     // woocommerce_customers, matched to this person by email).
-    want('note') && emails.length ? (async () => {
+    want('note') && likeEmails.length ? (async () => {
       const custs = await fetchRows('woocommerce_customers', [['id']],
-        q => q.eq('company_id', companyId).or(emails.map(e => `email.ilike.${likeSafe(e)}`).join(',')), { limit: 20 })
+        q => q.eq('company_id', companyId).or(likeEmails.map(e => `email.ilike.${likeSafe(e)}`).join(',')), { limit: 20 })
       const ids = (custs || []).map((c: Row) => c.id)
       if (!ids.length) return []
       return pull('customer_notes', 'created_at', EVENT_LIMIT, [['id, customer_id, content, created_at']], q => q.eq('company_id', companyId).in('customer_id', ids))
@@ -355,20 +365,34 @@ export async function GET(req: NextRequest) {
   // Some messages stand for something shown as its own card, so they're shown
   // once, as the card: a call's card in the thread (metadata.call_id) and the
   // AI phone agent's transcript are the call itself — with its recording and
-  // summary — when this member can see calls; a payment request is its payment
-  // and an upload request its media request when those are on this page too;
-  // and the "📅 Booked online" note (lib/booking.ts) is the booking.
+  // summary — when this member can see calls; a payment request is its payment,
+  // as are the "✅ Payment received" pill (lib/chat-payment-confirm.ts) and the
+  // saved-card charge note (app/api/stripe/cards), and an upload request its
+  // media request when those are on this page too; and the "📅 Booked online"
+  // note (lib/booking.ts) is the booking. (A refund pill stays: the card can't
+  // say how much of it was refunded.)
   const showCalls = allowed('call')
   const asCard = (m: Row) =>
     (showCalls && m.metadata?.call_id && (m.metadata?.call_event || m.metadata?.phone_agent))
     || (m.message_type === 'payment' && want('payment'))
+    || (m.metadata?.payment_id && (m.metadata?.payment_confirmed || m.metadata?.charge) && want('payment'))
     || (m.message_type === 'media_request' && want('media'))
     || (m.sender_type === 'system' && m.metadata?.booking_id && want('booking') && String(m.content || '').startsWith('📅 Booked'))
+  // An AI phone agent call has no summary (there's no recording to summarise),
+  // so what it was about comes from its transcript as that folds into the call:
+  // the message it took, or what the caller said.
+  const aiCallGist: Record<string, string> = {}
   // A team-only note (is_internal) was never sent to the customer: it's a note,
   // not a message, like the inbox's "Team only" card.
   const teamNotes: Row[] = [], msgList: Row[] = []
   for (const m of msgRows as Row[]) {
-    if (asCard(m)) continue
+    if (asCard(m)) {
+      if (m.metadata?.phone_agent && m.metadata?.call_id) {
+        const about = String(m.metadata.message_about || '').trim()
+        aiCallGist[m.metadata.call_id] = about ? `Took a message: ${about}` : String(m.content || '').split('\n').filter(l => l.startsWith('Caller: ')).join('\n')
+      }
+      continue
+    }
     if (m.is_internal) { if (readTeamNotes) teamNotes.push(m) } else if (readMsgs) msgList.push(m)
   }
   const messages = msgList
@@ -442,8 +466,9 @@ export async function GET(req: NextRequest) {
     if (!connected && !voicemail && !missed) continue   // still ringing / in progress
     const inbound = c.direction === 'inbound'
     const title = voicemail ? 'Voicemail' : missed ? (inbound ? 'Missed call' : 'Outgoing call · no answer') : `${inbound ? 'Incoming' : 'Outgoing'} call${secs ? ` · ${mmss(secs)}` : ''}`
+    const who = c.agent_name ? `${inbound ? 'Answered by' : 'Called by'} ${c.agent_name}` : ''
     push({ id: 'call-' + c.id, kind: 'call', source: 'Phone', date: iso(c.created_at), title,
-      detail: c.ai_summary ? clip(c.ai_summary, 320) : c.agent_name ? `${inbound ? 'Answered by' : 'Called by'} ${c.agent_name}` : undefined,
+      detail: c.ai_summary ? clip(c.ai_summary, 320) : clip([who, aiCallGist[c.id]].filter(Boolean).join('\n'), 320) || undefined,
       status: voicemail ? 'Voicemail' : missed ? 'Missed' : undefined, tone: missed ? 'bad' : voicemail ? 'warn' : undefined,
       recordingUrl: /^https?:\/\//i.test(String(c.recording_url || '')) ? c.recording_url : undefined, link: inboxLink(c.conversation_id) || '/admin/calls', conversationId: c.conversation_id || undefined })
   }
@@ -482,7 +507,7 @@ export async function GET(req: NextRequest) {
     const title = st === 'paid' ? 'Payment received' : st === 'refunded' ? 'Payment refunded' : st === 'failed' ? 'Payment failed'
       : p.payment_method === 'saved_card' ? 'Card charge started' : 'Payment link sent'
     push({ id: 'pay-' + p.id, kind: 'payment', source: 'Payment', date: iso(p.created_at), at: st === 'paid' && p.paid_at ? iso(p.paid_at) : undefined, title,
-      detail: [money(amt, p.currency), clip(p.description, 120)].filter(Boolean).join(' · '),
+      detail: [money(amt, p.currency), p.payment_method === 'saved_card' ? 'Saved card' : '', clip(p.description, 120)].filter(Boolean).join(' · '),
       status: st === 'paid' ? 'Paid' : cap(st), tone: st === 'paid' ? 'good' : st === 'failed' ? 'bad' : st === 'refunded' ? 'muted' : 'warn',
       link: '/admin/payments', conversationId: p.conversation_id || undefined })
   }
@@ -537,7 +562,6 @@ export async function GET(req: NextRequest) {
     // Oldest → newest within the page (the order the drawer has always used).
     messages: pageMessages,
     activity: pageActivity,
-    conversations: allowed('message') ? Object.values(convById).map((c: Row) => ({ id: c.id, channel: c.channel, subject: c.subject })) : [],
     linkedCount: linked.length,
     companyId,
     groups,
@@ -560,8 +584,9 @@ export async function GET(req: NextRequest) {
       canPay && convIds.length ? fetchRows('chat_payments', [['amount_cents, refunded_cents, currency'], ['amount_cents, currency']], (q, ids) => q.in('conversation_id', ids).eq('status', 'paid'), { limit: 1000, ids: convChunks }) : none,
       convIds.length ? fetchRows('conversation_tasks', [['id, done, status'], ['id, done']], (q, ids) => q.in('conversation_id', ids), { limit: 1000, ids: convChunks }) : none,
       // The last message the customer sent or was sent — not a team-only note
-      // (is_internal, V188), which never reached them.
-      allowed('message') && convIds.length ? fetchRows('messages', [
+      // (is_internal, V188), which never reached them. Only when and on which
+      // channel, never what was said, so members without the inbox get it too.
+      convIds.length ? fetchRows('messages', [
         ['created_at, delivery_channel, conversation_id', (q: Builder) => q.eq('is_internal', false)],
         ['created_at, delivery_channel, conversation_id'],
       ], (q, ids) => q.in('conversation_id', ids).neq('sender_type', 'system'), { ts: 'created_at', limit: 1, ids: convChunks }) : none,
