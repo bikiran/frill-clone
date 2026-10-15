@@ -670,8 +670,9 @@ export default function AppChrome({
   if (isFullPage) {
     // Colvy's own prospects need a way to reach us from the marketing site. Show
     // the Colvy live-chat bubble on marketing pages (routing into Colvy's own
-    // support workspace), but NOT on auth / upload / widget / super-admin pages.
-    const authOrUtility = ['/signin', '/signup', '/forgot-password', '/reset-password', '/auth', '/u/', '/widget', '/platform-admin', '/book', '/oauth', '/pay/'].some(p => pathname?.startsWith(p))
+    // support workspace), but NOT on auth / upload / widget / super-admin pages,
+    // nor on a business's own public forms (their customers aren't our prospects).
+    const authOrUtility = ['/signin', '/signup', '/forgot-password', '/reset-password', '/auth', '/u/', '/widget', '/platform-admin', '/book', '/oauth', '/pay/', '/forms/', '/f/'].some(p => pathname?.startsWith(p))
     const showMarketingChat = (isMarketingRoot || isFullPageRoute) && !authOrUtility && !isPlatformHost
     const supportSlug = process.env.NEXT_PUBLIC_COLVY_SUPPORT_SLUG || 'colvy'
     return (

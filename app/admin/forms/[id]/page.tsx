@@ -101,6 +101,21 @@ const QUESTION_CATEGORIES = [
 const QUESTION_TYPES: { type: string; label: string; icon: string }[] =
   QUESTION_CATEGORIES.flatMap(c => c.types as readonly { type: string; label: string; icon: string }[])
 
+// Each group of question types gets its own soft colour (as on Typeform), so the
+// list of questions reads at a glance: contact details pink, choices purple…
+const CATEGORY_TINT: Record<string, { bg: string; fg: string }> = {
+  'Contact info': { bg: '#fde4ea', fg: '#b4235a' },
+  'Choice': { bg: '#ebe5fc', fg: '#6a45d6' },
+  'Rating & ranking': { bg: '#daf3ea', fg: '#0f7a5c' },
+  'Text & video': { bg: '#dfeafc', fg: '#2a62c9' },
+  'Other': { bg: '#fdedd5', fg: '#b25e09' },
+}
+const TYPE_TINT: Record<string, { bg: string; fg: string }> = Object.fromEntries(
+  QUESTION_CATEGORIES.flatMap(c => c.types.map(t => [t.type, CATEGORY_TINT[c.label]] as const)),
+)
+const tintOf = (type: string) => TYPE_TINT[type] || { bg: '#eef0f3', fg: '#4b5563' }
+const WITH_OPTIONS = ['multiple_choice', 'dropdown', 'checkbox', 'picture_choice', 'ranking']
+
 function TypeIcon({ type, size = 16 }: { type: string; size?: number }) {
   const p = { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const }
   switch (type) {
@@ -159,6 +174,9 @@ export default function FormBuilder() {
   const [isDirty, setIsDirty] = useState(false)
   const [previewStep, setPreviewStep] = useState(-1) // -1 = welcome screen
   const [showAddMenu, setShowAddMenu] = useState(false)
+  const [addQuery, setAddQuery] = useState('')
+  const [justAdded, setJustAdded] = useState<string | null>(null)   // plays the row's slide-in, focuses its title
+  const [dragOver, setDragOver] = useState<number | null>(null)
   const [aiOpen, setAiOpen] = useState(false)
   // Mobile responsiveness
   const [isMobile, setIsMobile] = useState(false)
@@ -254,15 +272,29 @@ export default function FormBuilder() {
     const newQ: Question = {
       id: crypto.randomUUID(),
       type,
-      title: 'New question',
+      title: '',
       description: '',
       required: false,
-      options: type === 'multiple_choice' ? ['Option 1', 'Option 2'] : undefined,
+      options: WITH_OPTIONS.includes(type) ? ['Option 1', 'Option 2'] : undefined,
     }
     setQuestions(prev => [...prev, newQ])
     setSelectedQ(newQ.id)
+    // Show the new question straight away, ready to type its wording.
+    setPreviewStep(questions.length)
+    setJustAdded(newQ.id)
+    setTimeout(() => setJustAdded(id => (id === newQ.id ? null : id)), 900)
     setShowAddMenu(false)
+    setAddQuery('')
+    if (isMobile) setMobilePanel('preview')
   }
+
+  // Esc closes the add-content picker.
+  useEffect(() => {
+    if (!showAddMenu) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setShowAddMenu(false) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [showAddMenu])
 
   // Colvy AI: put a whole version of the form in place (new draft, undo or redo).
   const applySnapshot = (s: FormSnapshot) => {
@@ -336,7 +368,59 @@ export default function FormBuilder() {
   const aiDocked = aiOpen && isWide
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 56px)' }}>
+    <div style={{ ['--ff' as any]: themeColor, display: 'flex', flexDirection: 'column', height: 'calc(100vh - 56px)' }}>
+      <style>{`
+        .fb-add { width: 100%; display: flex; align-items: center; justify-content: center; gap: 7px; padding: 10px 12px; margin-bottom: 14px; border-radius: 8px; border: none; background: #18181b; color: #fff; font-size: 13.5px; font-weight: 700; cursor: pointer; transition: transform .12s, background .15s; }
+        .fb-add:hover { background: #000; }
+        .fb-add:active { transform: scale(.98); }
+        .fb-row { position: relative; width: 100%; display: flex; align-items: center; gap: 10px; padding: 7px 8px; margin-bottom: 2px; border-radius: 8px; border: none; background: transparent; cursor: pointer; text-align: left; transition: background .15s; }
+        .fb-row[draggable="true"] { cursor: grab; }
+        .fb-row:hover { background: #f4f4f5; }
+        .fb-row.on { background: #f1f1f3; box-shadow: inset 3px 0 0 var(--tint, #18181b); }
+        .fb-row.drop::before { content: ''; position: absolute; left: 6px; right: 6px; top: -2px; height: 2px; border-radius: 2px; background: var(--tint, #18181b); }
+        .fb-badge { display: inline-flex; align-items: center; gap: 5px; height: 24px; min-width: 24px; padding: 0 7px; border-radius: 6px; font-size: 12px; flex-shrink: 0; justify-content: center; }
+        .fb-badge b { font-weight: 700; }
+        .fb-row-title { flex: 1; min-width: 0; font-size: 13px; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .fb-row-x { display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 6px; border: none; background: transparent; color: #9ca3af; cursor: pointer; flex-shrink: 0; opacity: 0; transition: opacity .15s, background .15s, color .15s; }
+        .fb-row:hover .fb-row-x, .fb-row.on .fb-row-x, .fb-row-x:focus-visible { opacity: 1; }
+        .fb-row-x:hover { background: #fee2e2; color: #dc2626; }
+        @media (hover: none) { .fb-row-x { opacity: 1; } }
+        @keyframes fbRowIn { from { opacity: 0; transform: translateX(-10px); background: #fff7ed; } 60% { background: #fff7ed; } to { opacity: 1; transform: none; } }
+        .fb-row-new { animation: fbRowIn .6s cubic-bezier(.16,1,.3,1) both; }
+
+        @keyframes fbFade { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes fbPop { from { opacity: 0; transform: translateY(10px) scale(.98); } to { opacity: 1; transform: none; } }
+        .fb-modal-bg { position: fixed; inset: 0; z-index: 60; background: rgba(15, 15, 20, .35); display: flex; align-items: flex-start; justify-content: center; padding: 8vh 16px 16px; animation: fbFade .18s ease both; }
+        .fb-modal { width: min(820px, 100%); max-height: 80vh; display: flex; flex-direction: column; background: #fff; border-radius: 14px; box-shadow: 0 24px 64px -12px rgba(0,0,0,.3); overflow: hidden; animation: fbPop .28s cubic-bezier(.16,1,.3,1) both; }
+        .fb-modal-ai { width: 100%; display: flex; align-items: center; gap: 12px; padding: 10px 12px; margin-bottom: 16px; border-radius: 10px; border: 1px solid #ffd6cc; background: linear-gradient(135deg, #fff6f3, #fff1ea); cursor: pointer; transition: transform .12s, box-shadow .15s; }
+        .fb-modal-ai:hover { box-shadow: 0 4px 14px -6px rgba(226, 85, 63, .35); }
+        .fb-modal-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 6px 18px; }
+        .fb-cat { font-size: 11px; font-weight: 700; color: var(--slate); text-transform: uppercase; letter-spacing: .06em; margin: 4px 0 6px; }
+        .fb-type { width: 100%; display: flex; align-items: center; gap: 10px; padding: 6px 8px; border: none; border-radius: 8px; background: transparent; cursor: pointer; text-align: left; font-size: 13.5px; color: var(--ink); transition: background .12s; }
+        .fb-type:hover { background: #f4f4f5; }
+        .fb-type-ic { width: 28px; height: 28px; border-radius: 7px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: transform .15s cubic-bezier(.34,1.56,.64,1); }
+        .fb-type:hover .fb-type-ic { transform: scale(1.08); }
+        .fb-bare:focus { box-shadow: none !important; }
+        .fb-icon-btn { display: flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 8px; border: none; background: transparent; color: var(--slate); cursor: pointer; }
+        .fb-icon-btn:hover { background: #f4f4f5; color: var(--ink); }
+
+        .fb-soft { border: 1px solid color-mix(in srgb, currentColor 30%, transparent); background: color-mix(in srgb, currentColor 6%, #fff); transition: background .15s; }
+        .fb-soft:hover { background: color-mix(in srgb, currentColor 11%, #fff); }
+        .fb-ghost { border: 1px solid var(--border); background: #fff; color: var(--ink); transition: background .15s, border-color .15s; }
+        .fb-ghost:hover { background: #f4f4f5; border-color: #d4d4d8; }
+
+        @keyframes fbPvIn { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
+        .fb-pv-in { animation: fbPvIn .45s cubic-bezier(.16,1,.3,1) both; }
+        .fb-pv-choice { display: flex; align-items: center; gap: 10px; padding: 7px 10px 7px 7px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--ff) 45%, transparent); background: color-mix(in srgb, var(--ff) 8%, #fff); }
+        .fb-pv-key { min-width: 22px; height: 22px; padding: 0 5px; border-radius: 4px; border: 1px solid color-mix(in srgb, var(--ff) 55%, transparent); background: #fff; color: var(--ff); font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+        .fb-pv-line { border-bottom: 1px solid color-mix(in srgb, var(--ff) 40%, transparent); padding-bottom: 8px; font-size: 20px; color: color-mix(in srgb, var(--ff) 35%, #b8b8be); }
+        .fb-pv-ok { display: inline-flex; align-items: center; gap: 7px; padding: 9px 18px; border-radius: 6px; border: none; background: var(--ff); color: #fff; font-weight: 700; font-size: 15px; cursor: default; }
+        .fb-pv-x { background: none; border: none; cursor: pointer; color: #9ca3af; opacity: 0; transition: opacity .15s, color .15s; font-size: 16px; line-height: 1; }
+        .fb-pv-choice:hover .fb-pv-x { opacity: 1; }
+        .fb-pv-x:hover { color: #dc2626; }
+        @media (hover: none) { .fb-pv-x { opacity: 1; } }
+        @media (prefers-reduced-motion: reduce) { .fb-row-new, .fb-modal, .fb-modal-bg, .fb-pv-in { animation: none !important; } }
+      `}</style>
       {/* Top bar */}
       <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 8 : 12, padding: isMobile ? '8px 12px' : '10px 20px', borderBottom: '1px solid var(--border)', background: '#fff', flexShrink: 0, flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
         <Link href="/admin/forms" style={{ color: 'var(--slate)', display: 'flex' }}>
@@ -407,44 +491,60 @@ export default function FormBuilder() {
 
       <div style={{ flex: 1, display: 'grid', gridTemplateColumns: isMobile ? '1fr' : aiDocked ? '280px 1fr 452px' : '280px 1fr 320px', transition: 'grid-template-columns .32s cubic-bezier(.22,1,.36,1)', overflow: 'hidden' }}>
         {/* LEFT: Question list */}
-        <div style={{ borderRight: isMobile ? 'none' : '1px solid var(--border)', overflowY: 'auto', padding: 16, background: '#fafafa', display: isMobile && mobilePanel !== 'steps' ? 'none' : 'block' }}>
-          <button
-            onClick={() => { setPreviewStep(-1); if (isMobile) setMobilePanel('preview') }}
-            style={{ width: '100%', textAlign: 'left', padding: '10px 12px', borderRadius: 10, marginBottom: 6, cursor: 'pointer', border: 'none', background: previewStep === -1 ? '#fff' : 'transparent', boxShadow: previewStep === -1 ? '0 1px 4px rgba(0,0,0,0.08)' : 'none' }}>
-            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--slate)' }}>Welcome screen</span>
+        <div style={{ borderRight: isMobile ? 'none' : '1px solid var(--border)', overflowY: 'auto', padding: 14, background: '#fff', display: isMobile && mobilePanel !== 'steps' ? 'none' : 'block' }}>
+          <button type="button" className="fb-add" onClick={() => { setAddQuery(''); setShowAddMenu(true) }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Add content
           </button>
 
-          {questions.map((q, i) => (
-            <div key={q.id}
-              draggable
-              onDragStart={(e) => e.dataTransfer.setData('text/plain', String(i))}
-              onDragOver={e => e.preventDefault()}
-              onDrop={e => { const from = parseInt(e.dataTransfer.getData('text/plain')); reorder(from, i) }}
-              onClick={() => { setSelectedQ(q.id); setPreviewStep(i); if (isMobile) setMobilePanel('preview') }}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderRadius: 10, marginBottom: 6, cursor: 'grab',
-                background: selectedQ === q.id ? '#fff' : 'transparent',
-                boxShadow: selectedQ === q.id ? '0 1px 4px rgba(0,0,0,0.08)' : 'none',
-                border: selectedQ === q.id ? `1.5px solid ${themeColor}` : '1.5px solid transparent',
-              }}>
-              <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--slate)', width: 16, flexShrink: 0 }}>{i + 1}</span>
-              <span style={{ color: themeColor, flexShrink: 0 }}><TypeIcon type={QUESTION_TYPES.find(t => t.type === q.type)?.icon || 'text'} size={14} /></span>
-              <span style={{ fontSize: 13, color: 'var(--ink)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{q.title || 'Untitled'}</span>
-              <button onClick={e => { e.stopPropagation(); deleteQuestion(q.id) }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', opacity: 0.6, flexShrink: 0 }}>
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-              </button>
-            </div>
-          ))}
+          <button type="button"
+            className={`fb-row${previewStep === -1 ? ' on' : ''}`}
+            onClick={() => { setPreviewStep(-1); setSelectedQ(null); if (isMobile) setMobilePanel('preview') }}>
+            <span className="fb-badge" style={{ background: '#eef0f3', color: '#4b5563' }}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="6 4 20 12 6 20 6 4"/></svg>
+            </span>
+            <span className="fb-row-title" style={{ color: 'var(--slate)' }}>Welcome screen</span>
+          </button>
 
-          <button
-            onClick={() => { setPreviewStep(questions.length); if (isMobile) setMobilePanel('preview') }}
-            style={{ width: '100%', textAlign: 'left', padding: '10px 12px', borderRadius: 10, marginBottom: 12, cursor: 'pointer', border: 'none', background: previewStep === questions.length ? '#fff' : 'transparent', boxShadow: previewStep === questions.length ? '0 1px 4px rgba(0,0,0,0.08)' : 'none' }}>
-            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--slate)' }}>Thank you screen</span>
+          {questions.map((q, i) => {
+            const tint = tintOf(q.type)
+            return (
+              <div key={q.id}
+                draggable
+                onDragStart={(e) => e.dataTransfer.setData('text/plain', String(i))}
+                onDragOver={e => { e.preventDefault(); if (dragOver !== i) setDragOver(i) }}
+                onDragLeave={() => setDragOver(d => (d === i ? null : d))}
+                onDragEnd={() => setDragOver(null)}
+                onDrop={e => { const from = parseInt(e.dataTransfer.getData('text/plain')); setDragOver(null); if (!Number.isNaN(from) && from !== i) reorder(from, i) }}
+                onClick={() => { setSelectedQ(q.id); setPreviewStep(i); if (isMobile) setMobilePanel('preview') }}
+                className={`fb-row${selectedQ === q.id && previewStep === i ? ' on' : ''}${justAdded === q.id ? ' fb-row-new' : ''}${dragOver === i ? ' drop' : ''}`}
+                style={{ ['--tint' as any]: tint.fg }}>
+                <span className="fb-badge" style={{ background: tint.bg, color: tint.fg }}>
+                  <TypeIcon type={QUESTION_TYPES.find(t => t.type === q.type)?.icon || 'text'} size={13} />
+                  <b>{i + 1}</b>
+                </span>
+                <span className="fb-row-title" style={q.title ? undefined : { color: '#a1a1aa' }}>{q.title || 'Untitled question'}</span>
+                {q.required && <span aria-label="Required" title="Required" style={{ color: tint.fg, fontWeight: 800, fontSize: 13, flexShrink: 0 }}>*</span>}
+                <button type="button" className="fb-row-x" aria-label="Delete question" title="Delete"
+                  onClick={e => { e.stopPropagation(); deleteQuestion(q.id) }}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+                </button>
+              </div>
+            )
+          })}
+
+          <button type="button"
+            className={`fb-row${previewStep === questions.length ? ' on' : ''}`}
+            onClick={() => { setPreviewStep(questions.length); setSelectedQ(null); if (isMobile) setMobilePanel('preview') }}>
+            <span className="fb-badge" style={{ background: '#dcfce7', color: '#15803d' }}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            </span>
+            <span className="fb-row-title" style={{ color: 'var(--slate)' }}>Thank you screen</span>
           </button>
 
           {questions.length === 0 && (
             <button onClick={() => setAiOpen(true)} className="fb-ai-card"
-              style={{ width: '100%', textAlign: 'left', padding: '14px 14px 13px', borderRadius: 14, marginBottom: 10, cursor: 'pointer', border: '1px solid #ffd6cc', background: 'linear-gradient(135deg, #fff6f3, #fff1ea)', display: 'flex', gap: 11, alignItems: 'flex-start' }}>
+              style={{ width: '100%', textAlign: 'left', padding: '14px 14px 13px', borderRadius: 12, marginTop: 10, cursor: 'pointer', border: '1px solid #ffd6cc', background: 'linear-gradient(135deg, #fff6f3, #fff1ea)', display: 'flex', gap: 11, alignItems: 'flex-start' }}>
               <span style={{ width: 30, height: 30, borderRadius: '50%', background: 'linear-gradient(135deg, #ff7a6b, #ff9d72)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><AiSpark size={16} /></span>
               <span>
                 <span style={{ display: 'block', fontSize: 13, fontWeight: 800, color: 'var(--ink)' }}>Build it with Colvy AI</span>
@@ -452,64 +552,86 @@ export default function FormBuilder() {
               </span>
             </button>
           )}
-
-          <div style={{ position: 'relative' }}>
-            <button onClick={() => setShowAddMenu(!showAddMenu)}
-              style={{ width: '100%', padding: '10px', borderRadius: 10, border: `1.5px dashed ${themeColor}`, background: 'transparent', color: themeColor, fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-              Add question
-            </button>
-            {showAddMenu && (
-              <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 6, background: '#fff', borderRadius: 14, boxShadow: '0 12px 32px rgba(0,0,0,0.18)', border: '1px solid var(--border)', overflow: 'hidden', zIndex: 10, maxHeight: 420, display: 'flex', flexDirection: 'column' }}>
-                <div style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)', display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: 11, fontWeight: 700, padding: '5px 10px', borderRadius: 999, background: themeColor, color: '#fff', whiteSpace: 'nowrap' }}>Add elements</span>
-                  <button onClick={() => { setShowAddMenu(false); setAiOpen(true) }}
-                    style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 999, background: 'linear-gradient(135deg, #fff5f2, #fff0e8)', color: '#e2553f', border: '1px solid #ffd6cc', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                    <AiSpark size={12} />Create with AI
-                  </button>
-                </div>
-                <div style={{ overflowY: 'auto', padding: '8px 0' }}>
-                  {QUESTION_CATEGORIES.map(cat => (
-                    <div key={cat.label} style={{ marginBottom: 4 }}>
-                      <p style={{ fontSize: 10, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: '0.06em', padding: '6px 14px 4px' }}>{cat.label}</p>
-                      {cat.types.map(t => (
-                        <button key={t.type} onClick={() => addQuestion(t.type as Question['type'])}
-                          style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px', border: 'none', background: 'transparent', cursor: 'pointer', textAlign: 'left' }}
-                          onMouseEnter={e => (e.currentTarget.style.background = '#fafafa')}
-                          onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-                          <span style={{ color: themeColor, flexShrink: 0 }}><TypeIcon type={t.icon} size={15} /></span>
-                          <span style={{ fontSize: 13, color: 'var(--ink)' }}>{t.label}</span>
-                        </button>
-                      ))}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
         </div>
+
+        {/* Add content: every question type, grouped and colour-coded */}
+        {showAddMenu && (
+          <div className="fb-modal-bg" onClick={() => setShowAddMenu(false)}>
+            <div className="fb-modal" role="dialog" aria-modal="true" aria-label="Add content" onClick={e => e.stopPropagation()}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 16px', borderBottom: '1px solid var(--border)' }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                <input autoFocus className="fb-bare" value={addQuery} onChange={e => setAddQuery(e.target.value)} placeholder="Search question types"
+                  onKeyDown={e => {
+                    if (e.key !== 'Enter') return
+                    const q = addQuery.trim().toLowerCase()
+                    const hit = q && QUESTION_TYPES.find(t => t.label.toLowerCase().includes(q))
+                    if (hit) addQuestion(hit.type as Question['type'])
+                  }}
+                  style={{ flex: 1, border: 'none', outline: 'none', fontSize: 15, background: 'transparent', color: 'var(--ink)' }} />
+                <button type="button" onClick={() => setShowAddMenu(false)} aria-label="Close" className="fb-icon-btn">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+              </div>
+              <div style={{ overflowY: 'auto', padding: '14px 16px 18px' }}>
+                {!addQuery && (
+                  <button type="button" className="fb-modal-ai" onClick={() => { setShowAddMenu(false); setAiOpen(true) }}>
+                    <span style={{ width: 30, height: 30, borderRadius: 8, background: 'linear-gradient(135deg, #ff7a6b, #ff9d72)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><AiSpark size={15} /></span>
+                    <span style={{ textAlign: 'left' }}>
+                      <span style={{ display: 'block', fontSize: 13.5, fontWeight: 700, color: 'var(--ink)' }}>Create with Colvy AI</span>
+                      <span style={{ display: 'block', fontSize: 12, color: 'var(--slate)' }}>Describe what you need and AI writes the questions</span>
+                    </span>
+                  </button>
+                )}
+                <div className="fb-modal-grid">
+                  {QUESTION_CATEGORIES.map(cat => {
+                    const q = addQuery.trim().toLowerCase()
+                    const types = cat.types.filter(t => !q || t.label.toLowerCase().includes(q) || cat.label.toLowerCase().includes(q))
+                    if (!types.length) return null
+                    const tint = CATEGORY_TINT[cat.label]
+                    return (
+                      <div key={cat.label}>
+                        <p className="fb-cat">{cat.label}</p>
+                        {types.map(t => (
+                          <button key={t.type} type="button" className="fb-type" onClick={() => addQuestion(t.type as Question['type'])}>
+                            <span className="fb-type-ic" style={{ background: tint.bg, color: tint.fg }}><TypeIcon type={t.icon} size={15} /></span>
+                            {t.label}
+                          </button>
+                        ))}
+                      </div>
+                    )
+                  })}
+                </div>
+                {addQuery && !QUESTION_TYPES.some(t => t.label.toLowerCase().includes(addQuery.trim().toLowerCase())) && !QUESTION_CATEGORIES.some(c => c.label.toLowerCase().includes(addQuery.trim().toLowerCase())) && (
+                  <p style={{ fontSize: 13, color: 'var(--slate)', padding: '8px 0' }}>No question type matches “{addQuery}”.</p>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* CENTER: Live preview */}
         <div style={{ overflowY: 'auto', background: '#f4f4f5', display: isMobile && mobilePanel !== 'preview' ? 'none' : 'flex', alignItems: isMobile ? 'flex-start' : 'center', justifyContent: 'center', padding: isMobile ? 12 : 32 }}>
           <div style={{ width: '100%', maxWidth: 560, background: '#fff', borderRadius: isMobile ? 14 : 20, boxShadow: '0 8px 32px rgba(0,0,0,0.08)', padding: isMobile ? 20 : 48, minHeight: isMobile ? 280 : 360, display: 'flex', flexDirection: 'column', justifyContent: 'center', marginTop: isMobile ? 8 : 0 }}>
             {previewStep === -1 ? (
-              <div>
-                <div style={{ width: 48, height: 48, borderRadius: 14, background: themeColor, marginBottom: 24, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round"><polyline points="9 18 15 12 9 6"/></svg>
+              <div key="pv-welcome" className="fb-pv-in" style={{ textAlign: 'center' }}>
+                <h1 style={{ fontSize: 28, fontWeight: 600, color: '#0d0d0d', marginBottom: 10, lineHeight: 1.25, letterSpacing: '-0.015em' }}>{title}</h1>
+                <textarea className="fb-bare" value={welcomeMessage} onChange={e => setWelcomeMessage(e.target.value)} placeholder="Add a welcome message (optional)"
+                  style={{ fontSize: 16, color: '#4b5563', lineHeight: 1.55, marginBottom: 24, border: 'none', outline: 'none', resize: 'none', width: '100%', background: 'transparent', textAlign: 'center' }} rows={2} />
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
+                  <span className="fb-pv-ok" style={{ fontSize: 17, padding: '10px 22px' }}>Start</span>
+                  <span style={{ fontSize: 12, color: '#6b6b70' }}>press <b style={{ color: '#3f3f46' }}>Enter ↵</b></span>
                 </div>
-                <h1 style={{ fontSize: 28, fontWeight: 800, color: '#0d0d0d', marginBottom: 12, lineHeight: 1.2 }}>{title}</h1>
-                <textarea value={welcomeMessage} onChange={e => setWelcomeMessage(e.target.value)}
-                  style={{ fontSize: 15, color: '#6b6b70', lineHeight: 1.6, marginBottom: 28, border: 'none', outline: 'none', resize: 'none', width: '100%', background: 'transparent' }} rows={2} />
-                <button style={{ padding: '12px 28px', borderRadius: 12, background: themeColor, color: '#fff', fontWeight: 700, fontSize: 14, border: 'none', cursor: 'pointer', width: 'fit-content' }}>
-                  Start
-                </button>
+                <p style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: '#6b6b70', marginTop: 14 }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg>
+                  Takes {Math.max(1, Math.round((questions.length * 12) / 60))} minute{Math.max(1, Math.round((questions.length * 12) / 60)) === 1 ? '' : 's'}
+                </p>
               </div>
             ) : previewStep === questions.length ? (
-              <div style={{ textAlign: 'center' }}>
+              <div key="pv-thanks" className="fb-pv-in" style={{ textAlign: 'center' }}>
                 <div style={{ width: 56, height: 56, borderRadius: '50%', background: '#dcfce7', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
                   <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>
                 </div>
-                <textarea value={thankYouMessage} onChange={e => setThankYouMessage(e.target.value)}
+                <textarea className="fb-bare" value={thankYouMessage} onChange={e => setThankYouMessage(e.target.value)}
                   style={{ fontSize: 18, fontWeight: 700, color: '#0d0d0d', textAlign: 'center', border: 'none', outline: 'none', resize: 'none', width: '100%', background: 'transparent', marginBottom: 20 }} rows={2} />
                 {endActions.length > 0 && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxWidth: 280, margin: '0 auto' }}>
@@ -522,8 +644,7 @@ export default function FormBuilder() {
                 )}
               </div>
             ) : questions[previewStep] ? (
-              <div>
-                <p style={{ fontSize: 12, fontWeight: 700, color: themeColor, marginBottom: 8 }}>QUESTION {previewStep + 1} OF {questions.length}</p>
+              <div key={`pv-${questions[previewStep].id}`} className="fb-pv-in">
                 {questions[previewStep].mediaUrl && (
                   questions[previewStep].mediaType === 'video' ? (
                     <video src={questions[previewStep].mediaUrl} controls style={{ width: '100%', borderRadius: 14, marginBottom: 16, maxHeight: 220, objectFit: 'cover' }} />
@@ -531,47 +652,54 @@ export default function FormBuilder() {
                     <img src={questions[previewStep].mediaUrl} alt="" style={{ width: '100%', borderRadius: 14, marginBottom: 16, maxHeight: 220, objectFit: 'cover' }} />
                   )
                 )}
-                <input value={questions[previewStep].title} onChange={e => updateQuestion(questions[previewStep].id, { title: e.target.value })}
-                  placeholder={questions[previewStep].type === 'statement' ? 'Heading (optional)…' : 'Type your question...'}
-                  style={{ fontSize: 24, fontWeight: 800, color: '#0d0d0d', border: 'none', outline: 'none', width: '100%', marginBottom: 8, background: 'transparent' }} />
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 6 }}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 14, fontWeight: 600, color: themeColor, flexShrink: 0 }}>
+                    {previewStep + 1}
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+                  </span>
+                  <input className="fb-bare" value={questions[previewStep].title} onChange={e => updateQuestion(questions[previewStep].id, { title: e.target.value })}
+                    autoFocus={justAdded === questions[previewStep].id}
+                    placeholder={questions[previewStep].type === 'statement' ? 'Heading (optional)…' : 'Your question here.'}
+                    style={{ flex: 1, minWidth: 0, fontSize: 22, fontWeight: 500, color: '#0d0d0d', border: 'none', outline: 'none', background: 'transparent', letterSpacing: '-0.01em' }} />
+                </div>
                 {questions[previewStep].type === 'statement' ? (
                   <textarea value={questions[previewStep].description} onChange={e => updateQuestion(questions[previewStep].id, { description: e.target.value })}
                     placeholder="Write your information text here — this is shown to the person (add an image above too)."
                     rows={5}
                     style={{ fontSize: 15, lineHeight: 1.6, color: '#374151', border: '1px solid var(--border)', borderRadius: 10, outline: 'none', width: '100%', marginBottom: 24, background: '#fff', padding: '10px 12px', resize: 'vertical', boxSizing: 'border-box' }} />
                 ) : (
-                  <input value={questions[previewStep].description} onChange={e => updateQuestion(questions[previewStep].id, { description: e.target.value })}
-                    placeholder="Add a description (optional)"
-                    style={{ fontSize: 14, color: '#6b6b70', border: 'none', outline: 'none', width: '100%', marginBottom: 24, background: 'transparent' }} />
+                  <input className="fb-bare" value={questions[previewStep].description} onChange={e => updateQuestion(questions[previewStep].id, { description: e.target.value })}
+                    placeholder="Description (optional)"
+                    style={{ fontSize: 15, color: '#4b5563', border: 'none', outline: 'none', width: '100%', marginBottom: 24, background: 'transparent' }} />
                 )}
 
                 {/* Render input type preview */}
                 {questions[previewStep].type === 'short_text' && (
-                  <div style={{ borderBottom: '2px solid #e5e5e5', paddingBottom: 8, fontSize: 16, color: '#9ca3af' }}>Type your answer here...</div>
+                  <div className="fb-pv-line">Type your answer here...</div>
                 )}
                 {questions[previewStep].type === 'long_text' && (
-                  <div style={{ borderBottom: '2px solid #e5e5e5', paddingBottom: 8, fontSize: 16, color: '#9ca3af', minHeight: 60 }}>Type your answer here...</div>
+                  <div className="fb-pv-line" style={{ minHeight: 60 }}>Type your answer here...</div>
                 )}
                 {questions[previewStep].type === 'email' && (
-                  <div style={{ borderBottom: '2px solid #e5e5e5', paddingBottom: 8, fontSize: 16, color: '#9ca3af' }}>name@example.com</div>
+                  <div className="fb-pv-line">name@example.com</div>
                 )}
                 {questions[previewStep].type === 'number' && (
-                  <div style={{ borderBottom: '2px solid #e5e5e5', paddingBottom: 8, fontSize: 16, color: '#9ca3af' }}>0</div>
+                  <div className="fb-pv-line">0</div>
                 )}
                 {questions[previewStep].type === 'date' && (
-                  <div style={{ borderBottom: '2px solid #e5e5e5', paddingBottom: 8, fontSize: 16, color: '#9ca3af' }}>DD / MM / YYYY</div>
+                  <div className="fb-pv-line">DD / MM / YYYY</div>
                 )}
                 {questions[previewStep].type === 'yes_no' && (
                   <div style={{ display: 'flex', gap: 10 }}>
                     {['Yes', 'No'].map(o => (
-                      <div key={o} style={{ flex: 1, padding: '12px', borderRadius: 10, border: '2px solid #e5e5e5', textAlign: 'center', fontSize: 14, color: '#374151' }}>{o}</div>
+                      <div key={o} className="fb-pv-choice" style={{ minWidth: 130, fontSize: 15, color: '#0d0d0d' }}><span className="fb-pv-key">{o[0]}</span>{o}</div>
                     ))}
                   </div>
                 )}
                 {questions[previewStep].type === 'rating' && (
                   <div style={{ display: 'flex', gap: 6 }}>
                     {[1, 2, 3, 4, 5].map(n => (
-                      <svg key={n} width="32" height="32" viewBox="0 0 24 24" fill="none" stroke={themeColor} strokeWidth="1.5"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                      <svg key={n} width="34" height="34" viewBox="0 0 24 24" fill={`${themeColor}14`} stroke={themeColor} strokeWidth="1.3" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
                     ))}
                   </div>
                 )}
@@ -581,7 +709,7 @@ export default function FormBuilder() {
                       const isPic = questions[previewStep].type === 'picture_choice'
                       const img = (questions[previewStep].optionImages || [])[oi]
                       return (
-                      <div key={oi} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 10, border: '2px solid #e5e5e5' }}>
+                      <div key={oi} className="fb-pv-choice" style={{ maxWidth: 380 }}>
                         {isPic ? (
                           <label style={{ width: 40, height: 40, borderRadius: 8, flexShrink: 0, cursor: 'pointer', overflow: 'hidden', border: '1px solid #e5e5e5', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f3f4f6', color: '#9ca3af' }}>
                             {img ? <img src={img} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
@@ -589,46 +717,46 @@ export default function FormBuilder() {
                             <input type="file" accept="image/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) uploadOptionImage(f, questions[previewStep].id, oi) }} />
                           </label>
                         ) : (
-                          <span style={{ width: 22, height: 22, borderRadius: 6, border: '2px solid #d1d5db', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: '#9ca3af', flexShrink: 0 }}>
-                            {String.fromCharCode(65 + oi)}
+                          <span className="fb-pv-key">
+                            {questions[previewStep].type === 'ranking' ? oi + 1 : String.fromCharCode(65 + oi)}
                           </span>
                         )}
-                        <input value={opt} onChange={e => {
+                        <input className="fb-bare" value={opt} onChange={e => {
                           const opts = [...(questions[previewStep].options || [])]
                           opts[oi] = e.target.value
                           updateQuestion(questions[previewStep].id, { options: opts })
-                        }} style={{ flex: 1, border: 'none', outline: 'none', fontSize: 14, background: 'transparent' }} />
+                        }} style={{ flex: 1, minWidth: 0, border: 'none', outline: 'none', fontSize: 15, background: 'transparent', color: '#0d0d0d' }} />
                         <button onClick={() => {
                           const opts = (questions[previewStep].options || []).filter((_, idx) => idx !== oi)
                           const imgs = (questions[previewStep].optionImages || []).filter((_, idx) => idx !== oi)
                           updateQuestion(questions[previewStep].id, { options: opts, optionImages: imgs })
-                        }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', opacity: 0.5 }}>×</button>
+                        }} className="fb-pv-x" aria-label="Remove option">×</button>
                       </div>
                       )
                     })}
                     <button onClick={() => {
                       const opts = [...(questions[previewStep].options || []), `Option ${(questions[previewStep].options || []).length + 1}`]
                       updateQuestion(questions[previewStep].id, { options: opts })
-                    }} style={{ fontSize: 13, color: themeColor, background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', fontWeight: 600 }}>+ Add option</button>
+                    }} style={{ fontSize: 13, color: themeColor, background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', fontWeight: 600, padding: '4px 2px', width: 'fit-content' }}>+ Add option</button>
                     {questions[previewStep].type === 'picture_choice' && <p style={{ fontSize: 11.5, color: '#9ca3af' }}>Tap the square to add an image to each option.</p>}
                   </div>
                 )}
                 {questions[previewStep].type === 'nps' && (
-                  <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', gap: 4 }}>
                     {[...Array(11)].map((_, n) => (
-                      <div key={n} style={{ width: 32, height: 32, borderRadius: 8, border: '2px solid #e5e5e5', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 600, color: '#9ca3af' }}>{n}</div>
+                      <div key={n} className="fb-pv-choice" style={{ flex: 1, minWidth: 30, justifyContent: 'center', padding: '8px 0', fontSize: 13, fontWeight: 600, color: '#0d0d0d' }}>{n}</div>
                     ))}
                   </div>
                 )}
                 {questions[previewStep].type === 'opinion_scale' && (
                   <div style={{ display: 'flex', gap: 6 }}>
                     {[1,2,3,4,5,6,7].map(n => (
-                      <div key={n} style={{ width: 34, height: 34, borderRadius: '50%', border: '2px solid #e5e5e5', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 600, color: '#9ca3af' }}>{n}</div>
+                      <div key={n} className="fb-pv-choice" style={{ flex: 1, justifyContent: 'center', padding: '9px 0', fontSize: 13, fontWeight: 600, color: '#0d0d0d' }}>{n}</div>
                     ))}
                   </div>
                 )}
                 {['contact_info', 'phone', 'address', 'website', 'video_audio', 'signature', 'payment', 'file_upload', 'scheduler', 'legal'].includes(questions[previewStep].type) && (
-                  <div style={{ borderBottom: '2px solid #e5e5e5', paddingBottom: 8, fontSize: 14, color: '#9ca3af' }}>
+                  <div className="fb-pv-line" style={{ fontSize: 15 }}>
                     {QUESTION_TYPES.find(t => t.type === questions[previewStep].type)?.label} input preview
                   </div>
                 )}
@@ -662,9 +790,15 @@ export default function FormBuilder() {
                   </div>
                 )}
 
-                <button style={{ marginTop: 28, padding: '11px 24px', borderRadius: 12, background: themeColor, color: '#fff', fontWeight: 700, fontSize: 14, border: 'none', cursor: 'pointer' }}>
-                  OK
-                </button>
+                {(!['multiple_choice', 'dropdown', 'yes_no', 'rating', 'nps', 'opinion_scale', 'legal', 'picture_choice'].includes(questions[previewStep].type) || questions[previewStep].multiSelect) && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 28 }}>
+                    <span className="fb-pv-ok">
+                      {previewStep === questions.length - 1 ? 'Submit' : questions[previewStep].type === 'statement' ? 'Continue' : 'OK'}
+                      {previewStep < questions.length - 1 && questions[previewStep].type !== 'statement' && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>}
+                    </span>
+                    <span style={{ fontSize: 12, color: '#6b6b70' }}>press <b style={{ color: '#3f3f46' }}>Enter ↵</b></span>
+                  </div>
+                )}
               </div>
             ) : null}
           </div>
@@ -723,7 +857,7 @@ export default function FormBuilder() {
                     </button>
                   </div>
                 ) : (
-                  <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '14px', borderRadius: 10, border: `1.5px dashed ${themeColor}`, color: themeColor, fontSize: 12, fontWeight: 600, cursor: mediaUploading === selected.id ? 'wait' : 'pointer' }}>
+                  <label className="fb-soft" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '14px', borderRadius: 10, color: themeColor, fontSize: 12, fontWeight: 600, cursor: mediaUploading === selected.id ? 'wait' : 'pointer' }}>
                     {mediaUploading === selected.id ? 'Uploading...' : (
                       <>
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -921,7 +1055,7 @@ export default function FormBuilder() {
                         } 
                       })
                     }}
-                      style={{ width: '100%', padding: '6px 10px', borderRadius: 6, background: 'white', border: '1px dashed var(--border)', fontSize: 11, color: 'var(--slate)', cursor: 'pointer', marginBottom: 10, fontWeight: 500 }}>
+                      className="fb-ghost" style={{ width: '100%', padding: '6px 10px', borderRadius: 6, fontSize: 11, cursor: 'pointer', marginBottom: 10, fontWeight: 600 }}>
                       + Add rule
                     </button>
 
@@ -932,7 +1066,7 @@ export default function FormBuilder() {
                   </div>
                 ) : (
                   <button onClick={() => updateQuestion(selected.id, { conditional_logic: { condition: 'show', rules: [], logic: 'all' } })}
-                    style={{ width: '100%', padding: '8px 12px', borderRadius: 8, background: 'var(--canvas)', border: '1px dashed var(--border)', fontSize: 12, color: 'var(--ink)', cursor: 'pointer', fontWeight: 500 }}>
+                    className="fb-ghost" style={{ width: '100%', padding: '8px 12px', borderRadius: 8, fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>
                     + Add condition
                   </button>
                 )}
@@ -988,7 +1122,7 @@ export default function FormBuilder() {
                 </div>
               ))}
               <button onClick={() => setEndActions([...endActions, { type: 'website', label: 'Visit our website', url: '' }])}
-                style={{ width: '100%', padding: '9px', borderRadius: 10, border: `1.5px dashed ${themeColor}`, background: 'transparent', color: themeColor, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                className="fb-soft" style={{ width: '100%', padding: '9px', borderRadius: 10, color: themeColor, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
                 + Add button
               </button>
             </>

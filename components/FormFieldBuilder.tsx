@@ -75,7 +75,7 @@ export function FormFieldBuilder({
 
   if (fields.length === 0) {
     return (
-      <div className="p-6 border-2 border-dashed rounded-lg text-center" style={{ borderColor: 'var(--border)' }}>
+      <div className="p-6 border rounded-lg text-center" style={{ borderColor: 'var(--border)', background: '#fafafa' }}>
         <p className="text-sm mb-4" style={{ color: 'var(--slate)' }}>No fields yet</p>
         <button
           onClick={addField}
@@ -264,7 +264,7 @@ export function FormFieldBuilder({
       {/* Add Field Button */}
       <button
         onClick={addField}
-        className="w-full py-2 rounded-lg border-2 border-dashed text-sm font-medium transition-smooth cursor-pointer hover:bg-gray-50"
+        className="w-full py-2 rounded-lg border text-sm font-semibold transition-smooth cursor-pointer hover:bg-gray-50"
         style={{ borderColor: 'var(--border)', color: 'var(--coral)' }}>
         + Add Field
       </button>
