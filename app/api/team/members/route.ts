@@ -5,7 +5,7 @@ import {
   loadTeam, checkInvite, checkUpdate, checkRemove, guardTarget, canManageTeamRole,
   cleanPermissions, cleanPhone, cleanText, cleanUrl, cleanEmail, isUuid,
   roleOf, normRole, memberLabel, logTeamEvent, ROLE_LABEL,
-  type TeamContext, type TeamRow,
+  findTeamMember, findTeamMembersByEmail, type TeamRow,
 } from '@/lib/team-management'
 
 export const dynamic = 'force-dynamic'
@@ -41,9 +41,6 @@ const publicRow = (r: TeamRow | null | undefined) => {
   return rest
 }
 
-const findMember = (ctx: TeamContext, memberId: unknown): TeamRow | null =>
-  isUuid(memberId) ? ctx.rows.find(r => r.id === memberId) || null : null
-
 const missingColumn = (msg: string) => /column|schema cache/i.test(msg || '')
 
 export async function GET(req: NextRequest) {
@@ -64,7 +61,7 @@ export async function POST(req: NextRequest) {
 
     // ── Resend: a fresh code, so the old link stops working ────────────────
     if (body?.action === 'resend') {
-      const target = findMember(ctx, body.memberId)
+      const target = await findTeamMember(db, ctx, body.memberId)
       const v = guardTarget(ctx, target)
       if (!v.ok) return fail(v.status!, v.error!)
       if (String(target!.status || '').toLowerCase() === 'active') return fail(400, 'They’ve already joined.')
@@ -83,7 +80,7 @@ export async function POST(req: NextRequest) {
     const email = cleanEmail(body?.email)
     if (!email) return fail(400, 'That email address doesn’t look right.')
 
-    const already = ctx.rows.find(r => String(r.email || '').toLowerCase() === email)
+    const [already] = await findTeamMembersByEmail(db, ctx, email)
     if (already) {
       const joined = String(already.status || '').toLowerCase() === 'active'
       return fail(409, joined ? `${email} is already on the team.` : `${email} already has an invite — use Resend to send a new link.`)
@@ -131,7 +128,7 @@ export async function PATCH(req: NextRequest) {
     const t = await loadTeam(req, db, body?.companyId)
     if (!t.ok) return fail(t.status!, t.error!)
     const ctx = t.ctx!
-    const target = findMember(ctx, body?.memberId)
+    const target = await findTeamMember(db, ctx, body?.memberId)
 
     const patch: Record<string, unknown> = {}
     for (const [k, clean] of Object.entries(FIELDS)) {
@@ -198,7 +195,7 @@ export async function DELETE(req: NextRequest) {
     const t = await loadTeam(req, db, body?.companyId)
     if (!t.ok) return fail(t.status!, t.error!)
     const ctx = t.ctx!
-    const target = findMember(ctx, body?.memberId)
+    const target = await findTeamMember(db, ctx, body?.memberId)
     const v = checkRemove(ctx, target)
     if (!v.ok) return fail(v.status!, v.error!)
 

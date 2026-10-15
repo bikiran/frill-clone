@@ -41,6 +41,8 @@ export type TeamRow = {
   email?: string | null; role?: string | null; status?: string | null
   [column: string]: unknown
 }
+// `rows` is NOT the whole team: only the caller's own rows and every owner row,
+// which is all the rules below read (see teamContextFor).
 export type TeamContext = { company: TeamCompany; rows: TeamRow[]; caller: TeamCaller }
 
 // One shape rather than a union: this project compiles with strict off, which
@@ -226,17 +228,48 @@ export const cleanEmail = (raw: unknown): string | null => {
 
 // ── Loading who's asking ────────────────────────────────────────────────────
 
-/** The workspace, its whole team, and the caller's role in it. */
+/**
+ * The workspace, the caller's role in it, and the team rows the rules read:
+ * the caller's own (their role) and every owner's ("at least one owner").
+ * Not the whole team: every visitor who signs in on a board gets a 'viewer'
+ * row, and past 1,000 rows one query stops returning them all, so callers and
+ * members further down would go missing. Look a member up on its own instead.
+ */
 export async function teamContextFor(db: any, user: { id: string; email?: string | null }, companyId: string): Promise<{ ok: boolean; status?: number; error?: string; ctx?: TeamContext }> {
-  const [{ data: company }, { data: rows, error }] = await Promise.all([
+  const team = () => db.from('team_members').select('*').eq('company_id', companyId)
+  const [{ data: company }, mine, owners] = await Promise.all([
     db.from('companies').select('id, owner_id, name, slug').eq('id', companyId).maybeSingle(),
-    db.from('team_members').select('*').eq('company_id', companyId),
+    team().eq('user_id', user.id),
+    team().ilike('role', 'owner'),
   ])
   if (!company) return { ok: false, status: 404, error: 'Workspace not found.' }
+  const error = mine.error || owners.error
   if (error) return { ok: false, status: 500, error: error.message }
-  const { role, platformAdmin } = callerRole(user, company, rows || [])
+  const rows: TeamRow[] = [...(mine.data || [])]
+  for (const r of owners.data || []) if (!rows.some(x => x.id === r.id)) rows.push(r)
+  const { role, platformAdmin } = callerRole(user, company, rows)
   if (!role) return { ok: false, status: 403, error: 'Not authorized' }
-  return { ok: true, ctx: { company, rows: rows || [], caller: { userId: user.id, email: lower(user.email), role, platformAdmin } } }
+  return { ok: true, ctx: { company, rows, caller: { userId: user.id, email: lower(user.email), role, platformAdmin } } }
+}
+
+/** One member of this workspace by id. A member of another workspace isn't found. */
+export async function findTeamMember(db: any, ctx: TeamContext, memberId: unknown): Promise<TeamRow | null> {
+  if (!isUuid(memberId)) return null
+  const { data, error } = await db.from('team_members').select('*')
+    .eq('id', memberId).eq('company_id', ctx.company.id).maybeSingle()
+  if (error) throw new Error(error.message)
+  return data || null
+}
+
+/** This workspace's rows for an email address, whatever case they were saved in. */
+export async function findTeamMembersByEmail(db: any, ctx: TeamContext, email: string): Promise<TeamRow[]> {
+  // ilike so 'Jane@Roxy.Example' still matches. LIKE's wildcards (% and _,
+  // and * for PostgREST) can be part of an address, so each is sent as "any
+  // one character" and the exact match is made here.
+  const { data, error } = await db.from('team_members').select('*')
+    .eq('company_id', ctx.company.id).ilike('email', email.replace(/[\\%_*]/g, '_'))
+  if (error) throw new Error(error.message)
+  return (data || []).filter((r: TeamRow) => lower(r.email) === lower(email))
 }
 
 /** Same, for a route: the caller comes from the request's Bearer token. */

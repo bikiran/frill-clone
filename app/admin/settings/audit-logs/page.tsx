@@ -61,6 +61,12 @@ function getActivityIcon(type: string) {
   }
 }
 
+// add_activity_logs.sql made created_at a TIMESTAMP with no time zone, so it
+// comes back without an offset and new Date() would read it as local time (a
+// 2pm change in Sydney listed at 3am). It's UTC. COLVY_V367 fixes the column;
+// this keeps the times right until it has run.
+const loggedAt = (v: string) => new Date(/Z$|[+-]\d{2}:?\d{2}$/.test(v) ? v : v.replace(' ', 'T') + 'Z')
+
 export default function AuditLogsPage() {
   const [logs, setLogs] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -216,7 +222,7 @@ export default function AuditLogsPage() {
                         {users.get(log.user_id) || 'System'}
                       </span>
                       <span style={{ fontSize: 12, color: 'var(--slate)' }}>
-                        {new Date(log.created_at).toLocaleString()}
+                        {loggedAt(log.created_at).toLocaleString()}
                       </span>
                       <span
                         style={{
