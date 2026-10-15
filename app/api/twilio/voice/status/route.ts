@@ -2,8 +2,11 @@ import { twilioSignatureOk } from '@/lib/twilio-signature'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { ensureCallCard } from '@/lib/call-card'
+import { callerNeverSpoke, missedIfCallerSilent, setupOf, type PhoneCallState } from '@/lib/phone-agent'
 
 export const dynamic = 'force-dynamic'
+// Room for the missed-call check a few seconds after an AI call's hang-up.
+export const maxDuration = 30
 
 function admin() {
   return createClient(
@@ -18,6 +21,12 @@ const twiml = (body: string) => new NextResponse(`<?xml version="1.0" encoding="
 // action= handler for an OUTBOUND (SDK) call's <Dial>. Fires when the dial ends.
 // Records the outcome on the call row; the call is over, so we return an empty
 // response (no further TwiML).
+//
+// Also a number's status callback (no callRowId): an incoming call ended. A
+// turn-by-turn AI call whose caller hung up on the greeting gives no other
+// sign (Twilio doesn't post the <Gather> action on a hang-up), so that's where
+// it becomes a missed call, as ringing out would have been. Real-time AI
+// calls are decided by the relay's "closed".
 export async function POST(req: NextRequest) {
   try {
     const form = await req.formData()
@@ -62,6 +71,14 @@ export async function POST(req: NextRequest) {
       // the card (tab closed before hang-up, missed disconnect event, etc.).
       // Idempotent — no-op when the browser already posted it.
       await ensureCallCard(db, callRowId)
+    } else if (callSid) {
+      const db = admin()
+      const { data: call } = await db.from('calls').select('id, company_id, conversation_id, routing_state')
+        .eq('twilio_call_sid', callSid).eq('direction', 'inbound').limit(1).maybeSingle()
+      const state: PhoneCallState | null = call?.routing_state?.phone_agent || null
+      if (call && state && !state.realtime && callerNeverSpoke(state) && setupOf(state).reason !== 'test') {
+        missedIfCallerSilent(db, call, 'caller hung up without saying anything')
+      }
     }
     return twiml('<Response></Response>')
   } catch {

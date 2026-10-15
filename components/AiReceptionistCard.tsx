@@ -113,7 +113,7 @@ export default function AiReceptionistCard({ companyId }: { companyId: string })
         <span style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: '.04em', textTransform: 'uppercase', color: status.c, background: status.b, borderRadius: 6, padding: '2px 7px' }}>{status.t}</span>
       </div>
       <p style={{ margin: '0 0 14px', fontSize: 12.5, color: 'var(--slate)', lineHeight: 1.45 }}>
-        Answers the phone, says it&rsquo;s an AI, and helps with opening hours, orders, stock, bookings and your AI Knowledge. If it can&rsquo;t help it takes a message and creates a call-back task. Callers can press 0 for voicemail. The full conversation is saved as a note in the caller&rsquo;s conversation.
+        Answers the phone, says it&rsquo;s an AI, and helps with opening hours, orders, stock, bookings and your AI Knowledge. If it can&rsquo;t help it takes a message and creates a call-back task. {d.voicemailEnabled ? 'Callers can press 0 for voicemail.' : 'Voicemail is off, so a caller who presses 0 is asked to call back.'} The full conversation is saved as a note in the caller&rsquo;s conversation.
       </p>
       {!d.supported ? (
         <p style={{ margin: 0, fontSize: 12.5, color: '#b45309' }}>The AI receptionist works with Twilio numbers for now. Your calls carry on as they do today.</p>

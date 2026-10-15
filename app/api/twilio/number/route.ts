@@ -115,6 +115,7 @@ export async function POST(req: NextRequest) {
         friendlyName: `Colvy ${String(companyId).slice(0, 8)}`,
         smsUrl: `${base}/api/twilio/webhook`,
         voiceUrl: `${base}/api/twilio/voice/inbound`,
+        statusCallback: `${base}/api/twilio/voice/status`,
         bundleSid,
       })
     } catch (e: any) {
