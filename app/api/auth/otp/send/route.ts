@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import crypto from 'crypto'
 import { platformTwilio, TWILIO_MASTER } from '@/lib/twilio-platform'
+import { verifyTurnstile, requestIp, TURNSTILE_FAILED } from '@/lib/turnstile'
 
 export const dynamic = 'force-dynamic'
 
@@ -102,6 +103,14 @@ export async function POST(req: NextRequest) {
     // Fresh flow (no token yet): make sure the email isn't already registered so
     // we don't send codes into a dead end.
     if (!token) {
+      // Bots: a fresh sign-up must pass Cloudflare Turnstile before Colvy sends
+      // anything (each SMS code costs money). Resends carry the token issued
+      // here, so they've already passed.
+      const human = await verifyTurnstile(body.turnstileToken, requestIp(req.headers))
+      if (!human.ok) {
+        console.warn('[otp/send] turnstile rejected:', human.reason)
+        return NextResponse.json({ error: TURNSTILE_FAILED, code: 'captcha' }, { status: 403 })
+      }
       if (await emailInUse(db, email)) {
         return NextResponse.json({ error: 'An account with this email already exists. Try signing in instead.', code: 'email_in_use' }, { status: 409 })
       }

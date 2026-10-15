@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, Suspense } from 'react'
+import { useState, useEffect, useRef, Suspense } from 'react'
 import { supabase } from '@/lib/supabase'
 import { signInWithGoogle, signInWithGitHub } from '@/lib/auth'
 import { isValidSlug, isSlugAvailable } from '@/lib/board'
@@ -9,6 +9,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import AddressAutocomplete, { AddressParts } from '@/components/AddressAutocomplete'
 import BusinessAutocomplete, { BusinessDetails, BusinessHours, DAYS, emptyHours } from '@/components/BusinessAutocomplete'
 import { INDUSTRIES } from '@/lib/industries'
+import Turnstile, { TurnstileHandle, TURNSTILE_SITE_KEY } from '@/components/Turnstile'
 
 
 const CORAL = '#ff7a6b'
@@ -104,6 +105,11 @@ function SignUpForm() {
   const [showPassword, setShowPassword] = useState(false)
 
   const [loading, setLoading] = useState(false)
+  // Cloudflare Turnstile ("are you human?") for the two forms that create an
+  // account. Empty until it passes; reset after a failed submit (one use each).
+  const [humanToken, setHumanToken] = useState('')
+  const humanRef = useRef<TurnstileHandle>(null)
+  const waitingForHuman = !!TURNSTILE_SITE_KEY && !humanToken
   const [oauthLoading, setOAuthLoading] = useState('')
   const [error, setError] = useState('')
 
@@ -196,10 +202,10 @@ function SignUpForm() {
     try {
       const res = await fetch('/api/auth/otp/send', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim(), phone }),
+        body: JSON.stringify({ email: email.trim(), phone, turnstileToken: humanToken }),
       })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Could not send codes')
+      if (!res.ok) { humanRef.current?.reset(); throw new Error(data.error || 'Could not send codes') }
       setToken(data.token)
       setEmailResend(30); setSmsResend(30)
       track('signup_submitted', { via: 'email', joining: false })
@@ -300,10 +306,10 @@ function SignUpForm() {
     try {
       const res = await fetch('/api/auth/signup', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: joinEmail, password: joinPassword, name: joinName || null, companyId: companyContext.id }),
+        body: JSON.stringify({ email: joinEmail, password: joinPassword, name: joinName || null, companyId: companyContext.id, turnstileToken: humanToken }),
       })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Signup failed')
+      if (!res.ok) { humanRef.current?.reset(); throw new Error(data.error || 'Signup failed') }
       localStorage.setItem('pending_company_join', JSON.stringify({ userId: data.userId, companyId: companyContext.id, email: joinEmail, role: 'viewer' }))
       track('signup_submitted', { via: 'email', joining: true })
       setNeedsConfirmation(true)
@@ -356,7 +362,8 @@ function SignUpForm() {
               <input type="email" value={joinEmail} onChange={e => setJoinEmail(e.target.value)} placeholder="you@company.com" required style={inputStyle} /></div>
             <div style={{ marginBottom: 20 }}><label style={labelStyle}>Password</label>
               <input type="password" value={joinPassword} onChange={e => setJoinPassword(e.target.value)} placeholder="Min. 6 characters" required style={inputStyle} /></div>
-            <button type="submit" disabled={loading} style={{ ...primaryBtn(loading), width: '100%', justifyContent: 'center' }}>{loading ? 'Creating…' : `Join ${companyContext.name}`}</button>
+            <Turnstile ref={humanRef} onToken={setHumanToken} action="join" />
+            <button type="submit" disabled={loading || waitingForHuman} style={{ ...primaryBtn(loading || waitingForHuman), width: '100%', justifyContent: 'center' }}>{loading ? 'Creating…' : waitingForHuman ? 'Checking…' : `Join ${companyContext.name}`}</button>
           </form>
         </div>
       </Shell>
@@ -555,7 +562,8 @@ function SignUpForm() {
                 <p style={{ fontSize: 12, color: '#9ca3af', margin: '6px 2px 0' }}>We&rsquo;ll text a 6-digit code to this number.</p></div>
             </div>
             <style>{`@media (max-width:560px){.contact-grid{grid-template-columns:1fr !important}}`}</style>
-            {footer(true, <button type="button" onClick={sendCodes} disabled={loading} style={primaryBtn(loading)}>{loading ? 'Sending…' : 'Send codes →'}</button>)}
+            <div style={{ marginTop: 16 }}><Turnstile ref={humanRef} onToken={setHumanToken} action="signup" /></div>
+            {footer(true, <button type="button" onClick={sendCodes} disabled={loading || waitingForHuman} style={primaryBtn(loading || waitingForHuman)}>{loading ? 'Sending…' : waitingForHuman ? 'Checking…' : 'Send codes →'}</button>)}
           </div>
         )}
 
