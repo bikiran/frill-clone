@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
 import { peekCompanyUser, resolveCompanyUser } from '@/lib/client-cache'
 import { SkeletonList } from '@/components/Skeleton'
+import { PUBLIC_CHANNEL_LABEL } from '@/lib/link-channels'
 
 type Link = {
   id: string; code: string; target_url: string; label: string | null
@@ -54,6 +55,8 @@ const CHANNEL_LABEL: Record<string, string> = {
   sms: 'SMS', chat: 'Website chat', widget: 'Website chat', email: 'Email',
   messenger: 'Facebook Messenger', instagram: 'Instagram', whatsapp: 'WhatsApp',
   internal: 'Internal agent message', gallery: 'Gallery',
+  // Links made in the Links Generator for a Reel, post, poster…
+  ...PUBLIC_CHANNEL_LABEL,
 }
 const TYPE_LABEL: Record<string, string> = {
   product: 'Product', image: 'Image', help: 'Help article', form: 'Form',
