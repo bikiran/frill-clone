@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { phoneTurn, saveCallState, relaySecretOk, loadPhoneContext, aiCallMissed, callerNeverSpoke, setupOf, TROUBLE_SAY, type PhoneCallState } from '@/lib/phone-agent'
+import { phoneTurn, saveCallState, relaySecretOk, loadPhoneContext, aiCallMissed, missedIfCallerSilent, noteCallerSpoke, callerNeverSpoke, setupOf, TROUBLE_SAY, type PhoneCallState } from '@/lib/phone-agent'
 import { refreshPhoneCatalog } from '@/lib/phone-catalog'
 
 export const dynamic = 'force-dynamic'
@@ -23,7 +23,8 @@ function admin() {
 //                {"t":"done","end":bool,"voicemail"?:true}
 //   interrupt  — the caller talked over the reply; records what they heard
 //   closed     — the call ended; final save (a caller who never said a word
-//                is a missed call, as ringing out would have been)
+//                is a missed call, as ringing out would have been: decided a
+//                few seconds on, in case the call is going to voicemail)
 export async function POST(req: NextRequest) {
   if (!relaySecretOk(req.headers.get('x-relay-secret'))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   const body = await req.json().catch(() => ({}))
@@ -68,12 +69,15 @@ export async function POST(req: NextRequest) {
   }
   if (event === 'closed') {
     await saveCallState(db, call, state, true)
-    if (callerNeverSpoke(state) && setupOf(state).reason !== 'test') await aiCallMissed(db, call, 'caller hung up without saying anything')
+    if (callerNeverSpoke(state) && setupOf(state).reason !== 'test') missedIfCallerSilent(db, call, 'caller hung up without saying anything')
     return NextResponse.json({ ok: true })
   }
   if (event !== 'prompt') return NextResponse.json({ error: 'Unknown event' }, { status: 400 })
 
   const said = String(body.said || '').trim()
+  // Noted straight away, so a hang-up while this reply is worked out isn't
+  // taken for a caller who never said a word.
+  const spoke = noteCallerSpoke(db, call, state)
   const base = (process.env.NEXT_PUBLIC_SITE_URL || new URL(req.url).origin).replace(/\/$/, '')
   // Normally loaded by "start" while the greeting played; if not, now.
   const [companyName] = await Promise.all([
@@ -96,6 +100,7 @@ export async function POST(req: NextRequest) {
         state.turns.push({ who: 'caller', text: said })
         state.turns.push({ who: 'agent', text: r.say, ms: r.ms })
         if (r.tookMessage) state.messageTaken = true
+        await spoke
         await saveCallState(db, call, state, r.end)
         send({ t: 'done', end: r.end })
       } catch (e: any) {
@@ -109,6 +114,7 @@ export async function POST(req: NextRequest) {
         } catch {}
         state.turns.push({ who: 'caller', text: said })
         state.turns.push({ who: 'agent', text: voicemail ? '(Something went wrong; sent to voicemail.)' : '(Something went wrong; asked to call back.)' })
+        await spoke
         try { await saveCallState(db, call, state, true) } catch {}
         send({ t: 'text', text: voicemail ? 'Sorry, I’m having trouble on my end, so I’ll pass you to voicemail.' : TROUBLE_SAY })
         send({ t: 'done', end: true, ...(voicemail ? { voicemail: true } : {}) })

@@ -18,7 +18,8 @@ const twiml = (body: string) => new NextResponse(`<?xml version="1.0" encoding="
 // action>). The relay asks for voicemail by ending with handoffData
 // {"action":"voicemail"}; a session that failed (relay unreachable) also goes
 // to voicemail, so a caller is never left with silence. With voicemail
-// switched off they hear a goodbye instead, and it's a missed call.
+// switched off they hear a goodbye instead, and it's a missed call (unless it
+// was a test call or the AI took a message: see aiCallMissed).
 export async function POST(req: NextRequest) {
   const form = await req.formData()
   if (!(await twilioSignatureOk(req, form))) return new NextResponse('Forbidden', { status: 403 })

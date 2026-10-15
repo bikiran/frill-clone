@@ -1,7 +1,7 @@
 import { twilioSignatureOk } from '@/lib/twilio-signature'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { phoneTurn, saveCallState, phoneListenTwiml, phoneGoodbyeTwiml, phoneVoicemailTwiml, aiCallMissed, callerNeverSpoke, setupOf, NO_VOICEMAIL_SAY, TROUBLE_SAY, type PhoneCallState } from '@/lib/phone-agent'
+import { phoneTurn, saveCallState, phoneListenTwiml, phoneGoodbyeTwiml, phoneVoicemailTwiml, aiCallMissed, noteCallerSpoke, callerNeverSpoke, setupOf, NO_VOICEMAIL_SAY, TROUBLE_SAY, type PhoneCallState } from '@/lib/phone-agent'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 30
@@ -43,7 +43,8 @@ export async function POST(req: NextRequest) {
 
   // 0 → voicemail, the business's own greeting and recording. With voicemail
   // switched off there's none to give: goodbye, and it's a missed call, as it
-  // would have been without the AI.
+  // would have been without the AI (not a test call, or one where the AI
+  // already took a message: see aiCallMissed).
   if (get('Digits') === '0') {
     const { data: integ } = await db.from('twilio_integrations').select('voicemail_enabled, voicemail_greeting').eq('company_id', companyId).maybeSingle()
     state.turns.push({ who: 'caller', text: '(pressed 0 for voicemail)' })
@@ -73,6 +74,9 @@ export async function POST(req: NextRequest) {
     return listen('Sorry, I didn’t catch that. How can I help?')
   }
   state.silences = 0
+  // Noted straight away, so a hang-up while this reply is worked out isn't
+  // taken for a caller who never said a word (the call's status callback).
+  const spoke = noteCallerSpoke(db, call, state)
 
   try {
     const r = await phoneTurn(db, {
@@ -82,12 +86,14 @@ export async function POST(req: NextRequest) {
     state.turns.push({ who: 'caller', text: said })
     state.turns.push({ who: 'agent', text: r.say, ms: r.ms })
     if (r.tookMessage) state.messageTaken = true
+    await spoke
     await save(r.end)
     return r.end ? twiml(phoneGoodbyeTwiml(voice, r.say)) : listen(r.say)
   } catch (e: any) {
     // Something broke: don't strand the caller — offer voicemail, or with
     // voicemail off, ask them to call back and treat it as a missed call.
     console.error('[phone agent] turn failed', e?.message || e)
+    await spoke
     const { data: integ } = await db.from('twilio_integrations').select('voicemail_enabled, voicemail_greeting').eq('company_id', companyId).maybeSingle()
     state.turns.push({ who: 'caller', text: said })
     if (integ?.voicemail_enabled === false) {

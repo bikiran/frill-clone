@@ -31,12 +31,14 @@ async function company(db: Db, companyId: string): Promise<{ provider: 'telnyx' 
 }
 
 // Who call-back tasks can be assigned to: the owner and the team (not board
-// visitors or removed members).
-async function teamIds(db: Db, companyId: string): Promise<string[]> {
-  const [{ data: co }, { data: rows }] = await Promise.all([
+// visitors or removed members). null when the team couldn't be read, so a
+// database blip is never mistaken for an assignee having left.
+async function teamIds(db: Db, companyId: string): Promise<string[] | null> {
+  const [{ data: co, error: coErr }, { data: rows, error: rowsErr }] = await Promise.all([
     db.from('companies').select('owner_id').eq('id', companyId).maybeSingle(),
     db.from('team_members').select('user_id, role, status').eq('company_id', companyId).not('user_id', 'is', null).limit(200),
   ])
+  if (coErr || rowsErr) return null
   const staff = (rows || []).filter(isStaffRow).map(r => String(r.user_id))
   return Array.from(new Set<string>([co?.owner_id ? String(co.owner_id) : '', ...staff].filter(Boolean)))
 }
@@ -52,8 +54,11 @@ export async function GET(req: NextRequest) {
     teamIds(db, companyId).catch(() => null),
     db.from('twilio_integrations').select('ring_seconds, voicemail_enabled').eq('company_id', companyId).maybeSingle(),
   ])
-  const team = (await Promise.all((ids || []).slice(0, 60).map(async id => ({ id, name: await resolveAgentName(db, id, companyId) }))))
-    .sort((a, b) => a.name.localeCompare(b.name))
+  const team = ids
+    ? (await Promise.all(ids.slice(0, 60).map(async id => ({ id, name: await resolveAgentName(db, id, companyId) }))))
+      .sort((a, b) => a.name.localeCompare(b.name))
+    // The team couldn't be read: the saved assignee still shows (and is kept on save).
+    : settings.tasks.assigneeId ? [{ id: settings.tasks.assigneeId, name: settings.tasks.assigneeName || 'Team member' }] : []
   // A call-back assignee who has since left the team gets no tasks (the calls
   // check), so the card shows "Nobody" and its form matches what it shows.
   const tasks = ids && settings.tasks.assigneeId && !ids.includes(settings.tasks.assigneeId)
@@ -93,13 +98,22 @@ export async function PATCH(req: NextRequest) {
     }
     // The assignee must be on this business's team; their name comes from us, not the browser.
     // One saved earlier who has since left the team is quietly cleared, so it
-    // can't block every other change (turning the AI off included).
+    // can't block every other change (turning the AI off included). When the
+    // team can't be read just now, the saved assignee stays as they are, and
+    // a new pick has to wait for a retry.
     const assigneeId = String(tasks.assigneeId || tasks.assignee_id || '')
-    const onTeam = !!assigneeId && (await teamIds(db, companyId)).includes(assigneeId)
-    if (assigneeId && !onTeam && assigneeId !== current.tasks.assigneeId) return NextResponse.json({ error: 'Pick someone on your team for call-back tasks.' }, { status: 400 })
-    if (onTeam) {
-      next.tasks = { ...tasks, assigneeId, assignee_id: undefined, assigneeName: await resolveAgentName(db, assigneeId, companyId), assignee_name: undefined }
-    } else next.tasks = { ...tasks, assigneeId: null, assignee_id: null, assigneeName: null, assignee_name: null }
+    const team = assigneeId ? await teamIds(db, companyId) : []
+    const kept = assigneeId === current.tasks.assigneeId
+    if (!team) {
+      if (!kept) return NextResponse.json({ error: 'Couldn’t check your team just now. Try again in a moment.' }, { status: 503 })
+      next.tasks = { ...tasks, assigneeId, assignee_id: undefined, assigneeName: current.tasks.assigneeName, assignee_name: undefined }
+    } else {
+      const onTeam = !!assigneeId && team.includes(assigneeId)
+      if (assigneeId && !onTeam && !kept) return NextResponse.json({ error: 'Pick someone on your team for call-back tasks.' }, { status: 400 })
+      if (onTeam) {
+        next.tasks = { ...tasks, assigneeId, assignee_id: undefined, assigneeName: await resolveAgentName(db, assigneeId, companyId), assignee_name: undefined }
+      } else next.tasks = { ...tasks, assigneeId: null, assignee_id: null, assigneeName: null, assignee_name: null }
+    }
 
     const saved = await setPhoneAgent(db, companyId, next, access.userId || null)
     // Read the store's product names now, so the next call already knows them.
