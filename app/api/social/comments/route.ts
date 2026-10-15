@@ -5,6 +5,7 @@ import { admin, getFacebookChannel, setCommentHidden, privateReply, setIgComment
 import { isIgLoginChannel, hideInstagramComment, sendInstagramCommentPrivateReply } from '@/lib/instagram-login'
 import { postCommentReply } from '@/lib/social-reply'
 import { modelFor, trackAi } from '@/lib/ai-models'
+import { memoryForPrompt, memoryBlock } from '@/lib/agent/business-memory'
 
 export const dynamic = 'force-dynamic'
 
@@ -60,7 +61,12 @@ export async function POST(req: NextRequest) {
       // Draft a reply with the category's guidelines — the agent edits before posting.
       const key = process.env.ANTHROPIC_API_KEY
       if (!key) return NextResponse.json({ error: 'AI is not configured (ANTHROPIC_API_KEY missing).' }, { status: 500 })
-      const { data: company } = await db.from('companies').select('name').eq('id', companyId).maybeSingle()
+      const [{ data: company }, memory] = await Promise.all([
+        db.from('companies').select('name').eq('id', companyId).maybeSingle(),
+        // The owner's tone and rules apply to public comment replies as well.
+        memoryForPrompt(db, companyId),
+      ])
+      const memText = memoryBlock(memory)
       let guidelines = ''
       if (comment.category) {
         const { data: cat } = await db.from('social_comment_categories').select('reply_guidelines').eq('company_id', companyId).eq('name', comment.category).maybeSingle()
@@ -73,7 +79,7 @@ Commenter: ${comment.author_name || 'A customer'}
 Category: ${comment.category || 'general'}
 Comment: "${comment.message || ''}"
 ${guidelines ? `\nFollow these guidelines for this category:\n${guidelines}` : ''}
-
+${memText ? `\n${memText}\n` : ''}
 Write a short, warm, human reply (1-2 sentences). Don't invent facts or offers. Reply with ONLY the reply text.`
       const res = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',

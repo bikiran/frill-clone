@@ -8,7 +8,8 @@ import { readStored, writeStored } from '@/lib/client-cache'
 import { confirmDialog } from '@/components/ConfirmDialog'
 
 // Settings → AI Knowledge: what Colvy AI may use to answer customers, where it
-// came from, and a place to test answers before auto-reply is switched on.
+// came from, and a place to test answers before auto-reply is switched on. The
+// test answers follow Business Memory too, the same as live replies.
 
 type Overview = {
   needsMigration: boolean
@@ -24,7 +25,7 @@ type Overview = {
   unanswered: { id: string; question: string; count: number; examples: { text: string; source: string; at: string }[]; suggested_answer: string | null; last_seen_at: string }[]
   unansweredReady: boolean
 }
-type TestResult = { answer: string; grounded: boolean; sources: { source: string; title: string; url: string | null; excerpt: string }[] }
+type TestResult = { answer: string; grounded: boolean; sources: { source: string; title: string; url: string | null; excerpt: string }[]; memory?: { id: string; kind: string; title: string }[] }
 
 const CORAL = 'var(--coral, #ff7a6b)'
 
@@ -162,6 +163,17 @@ export default function AiKnowledgePage() {
       await api('/api/ai/knowledge/facts', { method: 'POST', body: JSON.stringify({ companyId, ...factDraft }) })
       setFactDraft(null); flash(factDraft.unansweredId ? 'Answered. Colvy AI knows this from now on.' : 'Fact saved. Colvy AI can use it straight away.'); await load()
     } catch (e: any) { flash(e.message) }
+    finally { setSavingFact(false) }
+  }
+  // An unanswered question can go to Business Memory instead: a must-know fact
+  // every AI reply and agent follows, not just a searchable answer.
+  const saveAsMemory = async () => {
+    if (!factDraft?.unansweredId || !companyId) return
+    setSavingFact(true)
+    try {
+      await api('/api/ai/knowledge/unanswered', { method: 'POST', body: JSON.stringify({ companyId, action: 'save_memory', id: factDraft.unansweredId, question: factDraft.question, answer: factDraft.answer }) })
+      setFactDraft(null); flash('Saved to Business memory. Every AI reply follows it from now on.'); await load()
+    } catch (e) { flash(e instanceof Error ? e.message : 'Couldn’t save that.') }
     finally { setSavingFact(false) }
   }
   const deleteFact = async (id: string) => {
@@ -307,6 +319,14 @@ export default function AiKnowledgePage() {
             <p style={{ margin: '10px 0 0', fontSize: 14.5, lineHeight: 1.6, color: 'var(--ink)' }}>
               {test.answer || 'Colvy AI found nothing about this, so it would pass the question to your team.'}
             </p>
+            {!!test.memory?.length && (
+              <div style={{ marginTop: 12, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 700, color: '#067647' }}><Icon name="shield" size={13} />Followed:</span>
+                {test.memory.map(m => (
+                  <Link key={m.id} href="/admin/agents/memory" title="From your Business memory" style={{ display: 'inline-flex', alignItems: 'center', fontSize: 12, fontWeight: 600, padding: '5px 10px', borderRadius: 999, background: '#fff', border: '1px solid #a6f4c5', color: '#05603a', textDecoration: 'none', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.title}</Link>
+                ))}
+              </div>
+            )}
             {test.sources.length > 0 && (
               <div style={{ marginTop: 12, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                 {test.sources.map((src, i) => {
@@ -347,7 +367,7 @@ export default function AiKnowledgePage() {
               <p className="akn-sub">When Colvy AI can&rsquo;t answer a customer, the question shows up here. Scan your recent conversations to find gaps now.</p>
             </div>
           ) : ov.unanswered.map(u => {
-            const from = Array.from(new Set((u.examples || []).map(e => e.source))).map(x => x === 'ai_reply' ? 'auto-replies' : x === 'ai_draft' ? 'inbox drafts' : 'recent chats').join(', ')
+            const from = Array.from(new Set((u.examples || []).map(e => e.source))).map(x => x === 'ai_reply' ? 'auto-replies' : x === 'ai_draft' ? 'inbox drafts' : x === 'agent' ? 'AI agents' : 'recent chats').join(', ')
             return (
               <div key={u.id} className="akn-row akn-in" style={{ flexDirection: 'column', gap: 8 }}>
                 <div style={{ display: 'flex', gap: 12, width: '100%', alignItems: 'flex-start' }}>
@@ -456,9 +476,15 @@ export default function AiKnowledgePage() {
               <input className="akn-input" value={factDraft.question} onChange={e => setFactDraft({ ...factDraft, question: e.target.value })} placeholder="Do you deliver to my suburb?" autoFocus={!factDraft.question} />
               <label style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: 'var(--ink)', margin: '12px 0 6px' }}>Your answer</label>
               <textarea className="akn-input" value={factDraft.answer} onChange={e => setFactDraft({ ...factDraft, answer: e.target.value })} rows={3} placeholder="We deliver within 30 km of Somerton, Tuesday to Saturday. Live fish are local delivery only." autoFocus={!!factDraft.question} style={{ resize: 'vertical' }} />
-              <div style={{ display: 'flex', gap: 8, marginTop: 12, justifyContent: 'flex-end' }}>
+              <div style={{ display: 'flex', gap: 8, marginTop: 12, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
                 <button className="akn-btn" onClick={() => setFactDraft(null)}>Cancel</button>
-                <button className="akn-btn primary" onClick={saveFact} disabled={savingFact || !factDraft.question.trim() || !factDraft.answer.trim()}>{savingFact ? 'Saving…' : 'Save fact'}</button>
+                {factDraft.unansweredId && (
+                  <button className="akn-btn" onClick={saveAsMemory} disabled={savingFact || !factDraft.question.trim() || !factDraft.answer.trim()}
+                    title="Add it to Business memory: a short fact every AI reply and agent must follow">
+                    <Icon name="shield" size={15} />Save as must-know fact
+                  </button>
+                )}
+                <button className="akn-btn primary" onClick={saveFact} disabled={savingFact || !factDraft.question.trim() || !factDraft.answer.trim()}>{savingFact ? 'Saving…' : factDraft.unansweredId ? 'Answer as fact' : 'Save fact'}</button>
               </div>
             </div>
           )}

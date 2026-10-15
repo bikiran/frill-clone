@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { guardAiRequest } from '@/lib/rate-limit'
 import { createClient } from '@supabase/supabase-js'
 import { modelFor, trackAi } from '@/lib/ai-models'
+import { memoryForPrompt, memoryBlock } from '@/lib/agent/business-memory'
 
 export const dynamic = 'force-dynamic'
 
@@ -32,8 +33,13 @@ export async function POST(req: NextRequest) {
       .select('*').eq('company_id', companyId).eq('review_id', reviewId).maybeSingle()
     if (!review) return NextResponse.json({ error: 'Review not found' }, { status: 404 })
 
-    const { data: company } = await db.from('companies').select('name').eq('id', companyId).maybeSingle()
+    const [{ data: company }, memory] = await Promise.all([
+      db.from('companies').select('name').eq('id', companyId).maybeSingle(),
+      // A public reply must follow the owner's rules too ("never promise same-day delivery").
+      memoryForPrompt(db, companyId),
+    ])
     const business = company?.name || 'our business'
+    const memText = memoryBlock(memory)
 
     const prompt = `You are writing a public reply, on behalf of ${business}, to a Google review.
 
@@ -48,7 +54,7 @@ Write a reply that:
 - If the rating is 3 stars or below, acknowledges the problem specifically and invites them to get in touch to put it right — do not be defensive
 - Does not invent facts, offers, or details we haven't been told
 - Contains no placeholders
-
+${memText ? `\n${memText}\n` : ''}
 Reply with ONLY the reply text, nothing else.`
 
     const res = await fetch('https://api.anthropic.com/v1/messages', {

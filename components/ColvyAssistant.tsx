@@ -58,7 +58,7 @@ const SUGGEST_LABEL: Record<string, string> = {
   task: 'View tasks', reminder: 'View reminders', calendar_event: 'Open calendar', message: 'Open conversation', order: 'Open orders',
   payment_link: 'Open conversation', media_request: 'Open conversation', review_reply: 'Open reviews', comment_reply: 'Open comments',
   ticket_reply: 'Open ticket', booking_link: 'Open conversation', fact: 'Open AI knowledge', idea: 'Open roadmap',
-  form: 'Edit form', poll: 'Open poll', survey: 'Open survey',
+  form: 'Edit form', poll: 'Open poll', survey: 'Open survey', memory: 'Review it',
 }
 
 export default function ColvyAssistant({ companyId, userId, agentName }: { companyId?: string | null; userId?: string | null; agentName?: string | null }) {
@@ -535,7 +535,7 @@ export default function ColvyAssistant({ companyId, userId, agentName }: { compa
 const CARD_ICON: Record<string, string> = {
   calendar_event: 'calendar', reminder: 'clock', message: 'chat', order: 'cart', call: 'phone', task: 'check',
   payment_link: 'card', media_request: 'camera', review_reply: 'star', comment_reply: 'chat', ticket_reply: 'ticket',
-  booking_link: 'calendar', fact: 'book', idea: 'bulb', form: 'form', poll: 'poll', survey: 'poll',
+  booking_link: 'calendar', fact: 'book', idea: 'bulb', form: 'form', poll: 'poll', survey: 'poll', memory: 'book',
 }
 
 function CardIcon({ name, size = 16 }: { name: string; size?: number }) {

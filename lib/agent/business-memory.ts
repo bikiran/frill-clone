@@ -7,10 +7,18 @@
 //               policies live in AI Knowledge / the help centre, searched on demand)
 //   instruction key <slug>                     { text }        rules the agent must follow
 //   rule        key 'order_status_thresholds'  { processing_days, transit_days, stale_days }
+//   faq         key <slug>                     { title (the question), text (the answer) }
 //
 // Only 'active' rows reach the agent. Things an agent learns arrive as
-// 'proposed' (source 'learned') and do nothing until the owner keeps them.
+// 'proposed' (source 'learned', or 'assistant' when a team member asked Colvy
+// AI to remember something) and do nothing until the owner keeps them.
+//
+// The Agent Engine and the phone agent read memory through buildContext; every
+// other AI writer (inbox drafts, Colvy AI auto-reply, review and comment
+// replies, the staff assistant, the AI Knowledge test box) reads it through
+// memoryForPrompt below, so an owner rule holds on every path.
 
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { DEFAULT_THRESHOLDS } from '@/lib/order-assess'
 import type { ContextRef } from './memory'
 
@@ -50,7 +58,8 @@ export function cleanContent(kind: string, key: string, raw: any): any | null {
   if (kind === 'policy' || kind === 'instruction' || kind === 'faq') {
     const text = clip(typeof raw === 'string' ? raw : raw?.text, 2000)
     if (!text) return null
-    const title = clip(raw?.title, 80)
+    // An FAQ's title is the customer's question, which runs longer than a policy name.
+    const title = clip(raw?.title, kind === 'faq' ? 200 : 80)
     const out: any = { text }
     if (title) out.title = title
     if (raw?.evidence && typeof raw.evidence === 'object') out.evidence = raw.evidence
@@ -68,10 +77,15 @@ export function policyTitle(key: string, content: any): string {
 /**
  * What the agent reads: tone as its own section, policies and rules as plain
  * lines, each with a reference for "why did Colvy say this?".
+ *
+ * `tags` puts a short id in front of an item (“[M2] Never promise…”) so a model
+ * can say which items it followed; `checkWith` names where else the model looks
+ * things up, for the “these win” note (the Agent Engine's ask_knowledge).
  */
-export function renderMemory(rows: MemoryRow[]): { toneText: string; lines: string[]; refs: ContextRef[] } {
+export function renderMemory(rows: MemoryRow[], opts: { tags?: Record<string, string>; checkWith?: string } = {}): { toneText: string; lines: string[]; refs: ContextRef[] } {
   const refs: ContextRef[] = []
   const policies: string[] = [], rules: string[] = [], faqs: string[] = [], other: string[] = []
+  const tag = (id: string) => (opts.tags?.[id] ? `[${opts.tags[id]}] ` : '')
   let toneText = ''
   for (const m of rows) {
     const c = m.content || {}
@@ -85,28 +99,177 @@ export function renderMemory(rows: MemoryRow[]): { toneText: string; lines: stri
       ].filter(Boolean).join('\n')
       refs.push({ type: 'business_memory', id: m.id, label: 'Tone of voice' })
     } else if (m.kind === 'policy' && c.text) {
-      policies.push(`- ${policyTitle(m.key, c)}: ${clip(c.text, 1200)}`)
+      policies.push(`- ${tag(m.id)}${policyTitle(m.key, c)}: ${clip(c.text, 1200)}`)
       refs.push({ type: 'business_memory', id: m.id, label: `Fact: ${policyTitle(m.key, c)}` })
     } else if (m.kind === 'instruction' && c.text) {
-      rules.push(`- ${clip(c.text, 600)}`)
+      rules.push(`- ${tag(m.id)}${clip(c.text, 600)}`)
       refs.push({ type: 'business_memory', id: m.id, label: `Rule: ${clip(c.text, 40)}${String(c.text).length > 40 ? '…' : ''}` })
     } else if (m.kind === 'faq' && c.text) {
-      faqs.push(`- ${c.title ? `${c.title}: ` : ''}${clip(c.text, 600)}`)
+      faqs.push(`- ${tag(m.id)}${c.title ? `${c.title}: ` : ''}${clip(c.text, 600)}`)
       refs.push({ type: 'business_memory', id: m.id, label: `FAQ: ${clip(c.title || c.text, 40)}` })
     } else if (m.kind === 'rule') {
       // Thresholds are applied in code by check_order_status, not by the model.
       continue
     } else {
       const text = typeof c === 'string' ? c : (c.text ?? '')
-      if (text) { other.push(`- ${m.key}: ${clip(text, 600)}`); refs.push({ type: 'business_memory', id: m.id, label: `${m.kind}: ${m.key}` }) }
+      if (text) { other.push(`- ${tag(m.id)}${m.key}: ${clip(text, 600)}`); refs.push({ type: 'business_memory', id: m.id, label: `${m.kind}: ${m.key}` }) }
     }
   }
   const lines: string[] = []
-  if (policies.length) lines.push(`Must-know facts from the business (always true — if anything you find with ask_knowledge disagrees, these win):\n${policies.join('\n')}`)
+  if (policies.length) lines.push(`Must-know facts from the business (always true — if anything you find ${opts.checkWith || 'with ask_knowledge'} disagrees, these win):\n${policies.join('\n')}`)
   if (rules.length) lines.push(`Rules from the business (always follow):\n${rules.join('\n')}`)
   if (faqs.length) lines.push(`Answers the business has given before:\n${faqs.join('\n')}`)
   if (other.length) lines.push(`Also:\n${other.join('\n')}`)
   return { toneText, lines, refs }
+}
+
+// ── Memory for every AI prompt ───────────────────────────────────────────────
+// One helper so every AI writer reads the same thing: this company's ACTIVE
+// tone, must-know facts, rules and FAQs, capped so a long list can't blow a
+// prompt's token budget. Proposals and archived items never reach a prompt.
+
+export const MEMORY_HEADING = 'BUSINESS MEMORY (set by the owner)'
+export const MEMORY_RULE = 'These come from the business owner. Always follow them: they override your general knowledge, and anything else you have been given, if they disagree.'
+/** ~900 tokens: room for a good set of rules without crowding out the rest of a prompt. */
+export const MEMORY_PROMPT_MAX_CHARS = 3500
+
+export type MemoryItemRef = { ref: string; id: string; kind: string; title: string }
+export type PromptMemory = {
+  /** Tone guidance lines ('' when no tone is saved). */
+  toneText: string
+  /** Facts, rules and FAQs as prompt lines, grouped like the Agent Engine sees them. */
+  lines: string[]
+  /** Tone + lines as one block ('' when nothing is saved). */
+  text: string
+  /** The same with each fact, rule and FAQ tagged [M1], [M2]… so a model can say which it followed. */
+  taggedText: string
+  /** The tagged items, in prompt order. Tone isn't tagged: it applies to every reply. */
+  items: MemoryItemRef[]
+  /** Every business_memory row that made it into the prompt (tone included). */
+  ids: string[]
+  refs: ContextRef[]
+  /** Some items were left out to stay under the cap. */
+  truncated: boolean
+}
+
+const PROMPT_KINDS = ['tone', 'policy', 'instruction', 'faq']
+// When the cap bites, FAQs go first, then rules; tone and must-know facts stay.
+const PROMPT_ORDER: Record<string, number> = { tone: 0, policy: 1, instruction: 2, faq: 3 }
+const CHECK_WITH = 'anywhere else'
+const EMPTY_MEMORY: PromptMemory = { toneText: '', lines: [], text: '', taggedText: '', items: [], ids: [], refs: [], truncated: false }
+
+const composeMemory = (toneText: string, lines: string[]) => [toneText ? `How replies should sound:\n${toneText}` : '', ...lines].filter(Boolean).join('\n\n')
+
+/** A short name for an item, for “Followed: …” under a draft. */
+export function memoryTitle(row: Pick<MemoryRow, 'kind' | 'key' | 'content'>): string {
+  const c = row.content || {}
+  if (row.kind === 'tone') return 'Tone of voice'
+  if (row.kind === 'policy') return policyTitle(row.key, c)
+  const s = String((row.kind === 'faq' ? c.title || c.text : c.text) || row.key || '').replace(/\s+/g, ' ').trim()
+  return s.length > 60 ? `${s.slice(0, 59)}…` : s
+}
+
+type PromptRow = MemoryRow & { company_id?: string }
+
+async function loadPromptMemory(db: SupabaseClient, companyId: string, max: number): Promise<PromptMemory> {
+  let rows: PromptRow[] = []
+  try {
+    const { data, error } = await db.from('business_memory').select('id, company_id, kind, key, content, status, updated_at')
+      .eq('company_id', companyId).eq('status', 'active').in('kind', PROMPT_KINDS)
+      .order('updated_at', { ascending: true }).limit(200)
+    if (error) return EMPTY_MEMORY   // table not there yet (V353 not run): prompts carry on without it
+    // Belt and braces: only this company's active rows, whatever came back.
+    rows = ((data || []) as PromptRow[]).filter(r => r && r.company_id === companyId && r.status === 'active' && PROMPT_KINDS.includes(r.kind))
+  } catch { return EMPTY_MEMORY }
+  if (!rows.length) return EMPTY_MEMORY
+
+  // Most important first (stable within a kind: the order the owner added them).
+  const sorted = rows.map((r, i) => ({ r, i })).sort((a, b) => (PROMPT_ORDER[a.r.kind] - PROMPT_ORDER[b.r.kind]) || (a.i - b.i)).map(x => x.r)
+  const kept: MemoryRow[] = []
+  const tags: Record<string, string> = {}
+  let n = 0, truncated = false
+  for (const r of sorted) {
+    if (!renderMemory([r]).refs.length) continue   // nothing to say (an empty fact)
+    const tag = r.kind === 'tone' ? null : `M${n + 1}`
+    const tryTags = tag ? { ...tags, [r.id]: tag } : tags
+    const t = renderMemory([...kept, r], { tags: tryTags, checkWith: CHECK_WITH })
+    // Measured on the tagged text, the longer of the two, so both fit.
+    if (composeMemory(t.toneText, t.lines).length > max) { truncated = true; continue }
+    kept.push(r)
+    if (tag) { tags[r.id] = tag; n++ }
+  }
+  const plain = renderMemory(kept, { checkWith: CHECK_WITH })
+  const tagged = renderMemory(kept, { tags, checkWith: CHECK_WITH })
+  return {
+    toneText: plain.toneText,
+    lines: plain.lines,
+    text: composeMemory(plain.toneText, plain.lines),
+    taggedText: composeMemory(tagged.toneText, tagged.lines),
+    items: kept.filter(r => tags[r.id]).map(r => ({ ref: tags[r.id], id: r.id, kind: r.kind, title: memoryTitle(r) })),
+    ids: kept.map(r => r.id),
+    refs: plain.refs,
+    truncated,
+  }
+}
+
+// Per request: a route handler makes its own Supabase client, so keying on the
+// client shares one read between the prompts a single request builds, and never
+// across requests or companies. The short expiry covers long-lived clients.
+const promptCache = new WeakMap<object, Map<string, { at: number; value: Promise<PromptMemory> }>>()
+const PROMPT_CACHE_MS = 20_000
+
+/**
+ * Business Memory for a prompt: tone, must-know facts, rules and FAQs for ONE
+ * company, active items only, at most `maxChars` long. Never throws; returns
+ * an empty memory when there's nothing saved or the table isn't there yet.
+ */
+export async function memoryForPrompt(db: SupabaseClient | null | undefined, companyId: string | null | undefined, opts: { maxChars?: number } = {}): Promise<PromptMemory> {
+  if (!db || !companyId) return EMPTY_MEMORY
+  const max = Math.max(500, Math.min(8000, Math.round(Number(opts.maxChars) || MEMORY_PROMPT_MAX_CHARS)))
+  const key = `${companyId}:${max}`
+  const byDb = typeof db === 'object' ? (promptCache.get(db) || new Map()) : null
+  const hit = byDb?.get(key)
+  if (hit && Date.now() - hit.at < PROMPT_CACHE_MS) return hit.value
+  const value = loadPromptMemory(db, companyId, max)
+  if (byDb) { byDb.set(key, { at: Date.now(), value }); promptCache.set(db, byDb) }
+  return value
+}
+
+/** The labelled section a prompt includes ('' when there's nothing saved). */
+export function memoryBlock(mem: PromptMemory, opts: { tagged?: boolean; heading?: string; note?: string } = {}): string {
+  const body = opts.tagged ? mem.taggedText : mem.text
+  if (!body) return ''
+  return `${opts.heading || MEMORY_HEADING}\n${MEMORY_RULE}${opts.note ? ` ${opts.note}` : ''}\n\n${body}`
+}
+
+/** The tagged items a model said it relied on (by their [M#] ids). */
+export function followedMemory(mem: PromptMemory, used: Iterable<unknown>): { id: string; kind: string; title: string }[] {
+  const said = new Set(Array.from(used, u => String(u).trim().toUpperCase()))
+  return mem.items.filter(i => said.has(i.ref)).map(({ id, kind, title }) => ({ id, kind, title }))
+}
+
+/**
+ * Suggest an item (a fact or a rule) for the owner to keep or dismiss on the
+ * Business Memory page. Like learned proposals, it does nothing until kept.
+ */
+export async function proposeMemory(db: SupabaseClient, companyId: string, item: { kind: 'policy' | 'instruction'; text: string; title?: string; source: string; evidence?: Record<string, unknown> }): Promise<{ ok: boolean; id?: string; reason?: string; error?: string }> {
+  const text = clip(item.text, 600)
+  if (!text) return { ok: false, error: 'There’s nothing to remember.' }
+  const norm = (s: unknown) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+  const { data, error: readErr } = await db.from('business_memory').select('content, status').eq('company_id', companyId).in('status', ['active', 'proposed']).limit(300)
+  if (readErr) return { ok: false, error: /business_memory/.test(readErr.message || '') ? 'Business memory needs a database update first (COLVY_V353_AGENT_ENGINE.sql).' : readErr.message }
+  const known = (data || []) as { content?: { text?: string } | null; status?: string }[]
+  if (known.some(k => norm(k.content?.text) === norm(text))) return { ok: true, reason: 'already known' }
+  if (known.filter(k => k.status === 'proposed').length >= 20) return { ok: false, error: 'There are already 20 suggestions waiting on the Business memory page. Keep or dismiss a few first.' }
+  const kind = item.kind === 'policy' ? 'policy' : 'instruction'
+  const title = kind === 'policy' ? clip(item.title, 80) : ''
+  const { data: row, error } = await db.from('business_memory').insert({
+    company_id: companyId, kind, key: `${item.source}_${slug(title || text).slice(0, 26)}_${Math.random().toString(36).slice(2, 6)}`,
+    content: { text, ...(title ? { title } : {}), ...(item.evidence ? { evidence: item.evidence } : {}) },
+    status: 'proposed', source: item.source, updated_at: new Date().toISOString(),
+  }).select('id').maybeSingle()
+  if (error) return { ok: false, error: error.message }
+  return { ok: true, id: row?.id, reason: 'proposed' }
 }
 
 // ── Reading and saving ───────────────────────────────────────────────────────
