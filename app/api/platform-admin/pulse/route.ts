@@ -18,7 +18,7 @@ export async function GET(req: NextRequest) {
   const stuckBefore = new Date(Date.now() - 15 * 60_000).toISOString()
   const head = { count: 'exact' as const, head: true }
 
-  const [jobRuns, jobErrors, apiErrors, apiWarns, hooks, hookErrors, agentRuns, agentFailed, agentStuck, stripeEvents, audit, signups, integrations] = await Promise.all([
+  const [jobRuns, jobErrors, apiErrors, apiWarns, hooks, hookErrors, agentRuns, agentFailed, agentStuck, stripeEvents, audit, signups, integrations, apiErrorRows, hookErrorRows, jobErrorRows] = await Promise.all([
     countRows(db.from('job_runs').select('id', head).gte('created_at', since)),
     countRows(db.from('job_runs').select('id', head).eq('status', 'error').gte('created_at', since)),
     countRows(db.from('api_logs').select('id', head).eq('level', 'error').gte('created_at', since)),
@@ -32,9 +32,13 @@ export async function GET(req: NextRequest) {
     safe<any[]>(db.from('super_admin_audit').select('id, created_at, admin_email, company_id, action, summary').order('created_at', { ascending: false }).limit(8), []),
     safe<any[]>(db.from('companies').select('id, name, slug, plan, created_at').order('created_at', { ascending: false }).limit(5), []),
     collectIntegrations(db),
+    // The latest failures themselves, so the health page says what went wrong.
+    safe<any[]>(db.from('api_logs').select('id, source, message, route, company_id, created_at').eq('level', 'error').gte('created_at', since).order('created_at', { ascending: false }).limit(5), []),
+    safe<any[]>(db.from('webhook_events').select('id, source, event_type, status, error, company_id, created_at').in('status', ['error', 'rejected']).gte('created_at', since).order('created_at', { ascending: false }).limit(5), []),
+    safe<any[]>(db.from('job_runs').select('id, job, error, created_at').eq('status', 'error').gte('created_at', since).order('created_at', { ascending: false }).limit(5), []),
   ])
   const broken = integrations.rows.filter(r => r.active && r.note)
-  const names = await companyNames(db, [...audit.data.map((a: any) => a.company_id), ...broken.map(b => b.company_id || '')])
+  const names = await companyNames(db, [...audit.data.map((a: any) => a.company_id), ...broken.map(b => b.company_id || ''), ...apiErrorRows.data.map((r: any) => r.company_id), ...hookErrorRows.data.map((r: any) => r.company_id)].filter(Boolean))
 
   const issues: string[] = []
   if (jobErrors) issues.push(`${jobErrors} failed job run${jobErrors === 1 ? '' : 's'}`)
@@ -56,5 +60,10 @@ export async function GET(req: NextRequest) {
     audit: audit.data.map((a: any) => ({ ...a, company: a.company_id ? names[a.company_id]?.name || null : null })),
     auditMissing: audit.missing,
     signups: signups.data,
+    recentErrors: {
+      api: apiErrorRows.data.map((r: any) => ({ at: r.created_at, source: r.source || null, route: r.route || null, message: String(r.message || '').slice(0, 300), company: r.company_id ? names[r.company_id]?.name || null : null })),
+      webhooks: hookErrorRows.data.map((r: any) => ({ at: r.created_at, source: r.source, event: r.event_type || null, status: r.status, error: String(r.error || '').slice(0, 300), company: r.company_id ? names[r.company_id]?.name || null : null })),
+      jobs: jobErrorRows.data.map((r: any) => ({ at: r.created_at, job: r.job || null, error: String(r.error || '').slice(0, 300) })),
+    },
   })
 }

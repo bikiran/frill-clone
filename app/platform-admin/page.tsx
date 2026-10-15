@@ -3794,7 +3794,7 @@ function FeatureFlagsPage() {
   )
 }
 
-function SystemPage() {
+function SystemPage({ onGo }: { onGo?: (p: any) => void }) {
   const [checks, setChecks] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [pulse, setPulse] = useState<any>(null)
@@ -3864,14 +3864,15 @@ function SystemPage() {
           {(pulse.issues || []).length > 0 && <Notice>{pulse.issues.join(' · ')}</Notice>}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 14, marginBottom: 14 }}>
             {[
-              { label: 'Background jobs', value: `${pulse.jobs?.errors || 0} failed`, note: `${pulse.jobs?.runs || 0} runs logged`, bad: (pulse.jobs?.errors || 0) > 0 },
-              { label: 'API errors', value: String(pulse.api?.errors || 0), note: `${pulse.api?.warnings || 0} warnings`, bad: (pulse.api?.errors || 0) > 0 },
-              { label: 'Webhook errors', value: String(pulse.webhooks?.errors || 0), note: `${pulse.webhooks?.total || 0} received`, bad: (pulse.webhooks?.errors || 0) > 0 },
-              { label: 'AI agent runs', value: `${pulse.agents?.failed || 0} failed`, note: `${pulse.agents?.stuck || 0} stuck · ${pulse.agents?.runs || 0} runs${pulse.agents?.platformPaused ? ' · PAUSED platform-wide' : ''}`, bad: (pulse.agents?.failed || 0) + (pulse.agents?.stuck || 0) > 0 || !!pulse.agents?.platformPaused },
-              { label: 'Connections', value: `${pulse.connections?.broken || 0} need attention`, note: `${pulse.connections?.total || 0} active connections`, bad: (pulse.connections?.broken || 0) > 0 },
-              { label: 'Stripe events', value: String(pulse.stripe?.events || 0), note: 'Webhook deliveries received (server count)', bad: false },
+              { label: 'Background jobs', value: `${pulse.jobs?.errors || 0} failed`, note: `${pulse.jobs?.runs || 0} runs logged`, bad: (pulse.jobs?.errors || 0) > 0, go: 'jobs' },
+              { label: 'API errors', value: String(pulse.api?.errors || 0), note: `${pulse.api?.warnings || 0} warnings`, bad: (pulse.api?.errors || 0) > 0, go: 'apilogs' },
+              { label: 'Webhook errors', value: String(pulse.webhooks?.errors || 0), note: `${pulse.webhooks?.total || 0} received`, bad: (pulse.webhooks?.errors || 0) > 0, go: 'webhooks' },
+              { label: 'AI agent runs', value: `${pulse.agents?.failed || 0} failed`, note: `${pulse.agents?.stuck || 0} stuck · ${pulse.agents?.runs || 0} runs${pulse.agents?.platformPaused ? ' · PAUSED platform-wide' : ''}`, bad: (pulse.agents?.failed || 0) + (pulse.agents?.stuck || 0) > 0 || !!pulse.agents?.platformPaused, go: 'agents' },
+              { label: 'Connections', value: `${pulse.connections?.broken || 0} need attention`, note: `${pulse.connections?.total || 0} active connections`, bad: (pulse.connections?.broken || 0) > 0, go: 'integrations' },
+              { label: 'Stripe events', value: String(pulse.stripe?.events || 0), note: 'Webhook deliveries received (server count)', bad: false, go: '' },
             ].map(m => (
-              <div key={m.label} style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 14, padding: 18 }}>
+              <div key={m.label} onClick={m.go && onGo ? () => onGo(m.go) : undefined} title={m.go ? 'Open the full log' : undefined}
+                style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 14, padding: 18, cursor: m.go && onGo ? 'pointer' : 'default' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
                   <span style={{ fontSize: 13, color: 'var(--sa-muted)' }}>{m.label}</span>
                   <Badge status={m.bad ? 'degraded' : 'healthy'} />
@@ -3881,6 +3882,32 @@ function SystemPage() {
               </div>
             ))}
           </div>
+          {/* What actually failed — the latest few of each kind. */}
+          {(() => {
+            const re = pulse.recentErrors || {}
+            const rows: { kind: string; go: string; at: string; title: string; detail: string }[] = [
+              ...(re.api || []).map((r: any) => ({ kind: 'API', go: 'apilogs', at: r.at, title: [r.source, r.route].filter(Boolean).join(' · ') || 'API', detail: [r.message, r.company].filter(Boolean).join(' — ') })),
+              ...(re.webhooks || []).map((r: any) => ({ kind: r.status === 'rejected' ? 'Webhook rejected' : 'Webhook', go: 'webhooks', at: r.at, title: [r.source, r.event].filter(Boolean).join(' · '), detail: [r.error || 'No error message recorded', r.company].filter(Boolean).join(' — ') })),
+              ...(re.jobs || []).map((r: any) => ({ kind: 'Job', go: 'jobs', at: r.at, title: r.job || 'Background job', detail: r.error || 'No error message recorded' })),
+            ].sort((a, b) => String(b.at).localeCompare(String(a.at)))
+            if (!rows.length) return null
+            return (
+              <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 14, padding: '6px 16px', marginBottom: 14 }}>
+                <p style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--sa-text)', margin: '10px 0 4px' }}>Latest errors</p>
+                {rows.map((r, i) => (
+                  <div key={i} onClick={onGo ? () => onGo(r.go) : undefined}
+                    style={{ display: 'flex', gap: 12, alignItems: 'baseline', padding: '9px 0', borderTop: i ? '1px solid var(--sa-border)' : 'none', cursor: onGo ? 'pointer' : 'default' }}>
+                    <span style={{ fontSize: 11, fontWeight: 800, color: '#b45309', background: 'rgba(245,158,11,0.12)', padding: '2px 7px', borderRadius: 6, whiteSpace: 'nowrap' }}>{r.kind}</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ margin: 0, fontSize: 12.5, fontWeight: 700, color: 'var(--sa-text)' }}>{r.title}</p>
+                      <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--sa-muted)', wordBreak: 'break-word' }}>{r.detail}</p>
+                    </div>
+                    <span style={{ fontSize: 11, color: 'var(--sa-muted)', whiteSpace: 'nowrap' }}>{r.at ? new Date(r.at).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : ''}</span>
+                  </div>
+                ))}
+              </div>
+            )
+          })()}
           {(pulse.connections?.sample || []).length > 0 && (
             <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 14, padding: 16, marginBottom: 26 }}>
               <p style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--sa-text)', margin: '0 0 8px' }}>Connections needing attention</p>
@@ -4942,7 +4969,7 @@ export default function SuperAdmin() {
           {page === 'users'      && <UsersPage />}
           {page === 'analytics'  && <AnalyticsPage />}
           {page === 'flags'      && <FeatureFlagsPage />}
-          {page === 'system'     && <SystemPage />}
+          {page === 'system'     && <SystemPage onGo={setPage} />}
           {page === 'audit'      && <AuditPage />}
           {page === 'subs'       && <SubscriptionsPage />}
           {page === 'ideas'      && <CrossCompanyContent title="Ideas" sub="All ideas across every company board" table="ideas" extraCol={{ header: 'Votes', render: (r) => <span>{r.votes ?? 0}</span> }} />}
