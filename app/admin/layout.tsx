@@ -504,7 +504,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         const end = new Date(); end.setHours(23, 59, 59, 999)
         const { data } = await (supabase as any)
           .from('conversation_tasks')
-          .select('id, done, status, due_date, assigned_to_id, assignees')
+          .select('id, done, status, due_date, assigned_to_id, assignees, series_id')
           .eq('company_id', company.id)
           .lte('due_date', end.toISOString())
           .limit(500)
@@ -514,7 +514,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           if (t.assigned_to_id === uid) return true
           return Array.isArray(t.assignees) && t.assignees.some((a: any) => a?.id === uid)
         })
-        if (active) setTaskDue(mine.length)
+        // A repeating task counts once: missed copies fold into its latest
+        // one on the Tasks page, so the badge matches what's listed there.
+        const seriesSeen = new Set(mine.filter((t: any) => t.series_id).map((t: any) => t.series_id))
+        const due = mine.filter((t: any) => !t.series_id).length + seriesSeen.size
+        if (active) setTaskDue(due)
       } catch { if (active) setTaskDue(0) }
     }
     load()
