@@ -12,39 +12,61 @@ export const SUPER_ADMIN = 'bishalstha76@gmail.com'
 const VERIFIED_TTL_MS = 20_000
 const verified = new Map<string, { user: any; at: number }>()
 
-/** The user behind an access token (checked with Supabase Auth), or null. */
-export async function verifyToken(db: any, token: string): Promise<any | null> {
-  if (!token) return null
+// An error that isn't a 4xx answer: the service didn't answer (network, a
+// timeout, a 5xx), as opposed to turning the request down.
+const noAnswer = (error: any, status?: number) => {
+  if (!error) return false
+  const s = Number(status ?? error?.status)
+  return !(s >= 400 && s < 500)
+}
+
+// The token's user; with no user, `unavailable` says Supabase Auth didn't
+// answer rather than rejecting the token.
+async function checkToken(db: any, token: string): Promise<{ user: any | null; unavailable: boolean }> {
+  if (!token) return { user: null, unavailable: false }
   const hit = verified.get(token)
-  if (hit && Date.now() - hit.at < VERIFIED_TTL_MS) return hit.user
-  const { data } = await db.auth.getUser(token)
+  if (hit && Date.now() - hit.at < VERIFIED_TTL_MS) return { user: hit.user, unavailable: false }
+  const { data, error } = await db.auth.getUser(token)
   const user = data?.user || null
   if (user) {
     if (verified.size > 500) verified.clear()
     verified.set(token, { user, at: Date.now() })
   } else verified.delete(token)
-  return user
+  return { user, unavailable: !user && noAnswer(error) }
+}
+
+/** The user behind an access token (checked with Supabase Auth), or null. */
+export async function verifyToken(db: any, token: string): Promise<any | null> {
+  return (await checkToken(db, token)).user
 }
 
 export const bearerToken = (req: NextRequest) => (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '')
 
 // The caller (Bearer access token) must be the company's owner, one of its team
 // members, or the platform super-admin.
-export async function requireCompanyAccess(req: NextRequest, db: any, companyId: string | null | undefined): Promise<{ ok: boolean; userId?: string }> {
+//
+// A refusal carries `unavailable: true` when the answer is really "couldn't
+// check just now" (Supabase Auth or the database didn't answer). Most routes
+// refuse either way; one that must not mistake a blip for "not a member"
+// (GET /api/setup/status, which /onboarding uses to pick a workspace) can
+// answer 503 instead of 403.
+export async function requireCompanyAccess(req: NextRequest, db: any, companyId: string | null | undefined): Promise<{ ok: boolean; userId?: string; unavailable?: boolean }> {
   try {
     const token = bearerToken(req)
     if (!token || !companyId) return { ok: false }
-    const user = await verifyToken(db, token)
-    if (!user) return { ok: false }
+    const { user, unavailable } = await checkToken(db, token)
+    if (!user) return unavailable ? { ok: false, unavailable } : { ok: false }
     if (user.email === SUPER_ADMIN) return { ok: true, userId: user.id }
     // Owner and team checks run together rather than one after the other.
-    const [{ data: co }, staff] = await Promise.all([
-      db.from('companies').select('id').eq('id', companyId).eq('owner_id', user.id).maybeSingle(),
-      isStaffMember(db, companyId, user.id),
+    const read = async (q: () => PromiseLike<any>) => { try { return await q() } catch (error) { return { data: null, error } } }
+    const [own, team] = await Promise.all([
+      read(() => db.from('companies').select('id').eq('id', companyId).eq('owner_id', user.id).maybeSingle()),
+      read(() => db.from('team_members').select('id, role, status').eq('company_id', companyId).eq('user_id', user.id).limit(5)),
     ])
-    if (co || staff) return { ok: true, userId: user.id }
+    if (own?.data || (team?.data || []).some(isStaffRow)) return { ok: true, userId: user.id }
+    if (noAnswer(own?.error, own?.status) || noAnswer(team?.error, team?.status)) return { ok: false, unavailable: true }
     return { ok: false }
-  } catch { return { ok: false } }
+  } catch { return { ok: false, unavailable: true } }
 }
 
 // Staff are team rows that aren't board visitors and haven't been removed.

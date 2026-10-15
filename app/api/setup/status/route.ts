@@ -10,6 +10,11 @@ import { computeSetupStatus, redactSetupStatus, type SetupDb } from '@/lib/setup
 // for the dashboard checklist and the /onboarding launcher. Members only. The
 // owner and admins also get the details (the connected address, Page name,
 // number); other staff just see done / waiting / to do.
+//
+// 403 means "not one of yours" and nothing else: /onboarding on a workspace's
+// subdomain sends someone to their own workspace on that answer. When the
+// check itself couldn't be made (Supabase Auth or the database didn't answer)
+// it's a 503, so a blip never looks like "not a member".
 
 export const dynamic = 'force-dynamic'
 
@@ -44,6 +49,7 @@ export async function GET(req: NextRequest) {
   }
   const db = admin()
   const access = await requireCompanyAccess(req, db, companyId)
+  if (!access.ok && access.unavailable) return NextResponse.json({ error: 'Couldn’t check your access just now. Try again in a moment.' }, { status: 503 })
   if (!access.ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
 
   const [status, full] = await Promise.all([

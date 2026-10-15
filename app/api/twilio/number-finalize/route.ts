@@ -4,6 +4,7 @@ import Stripe from 'stripe'
 import { createClient } from '@supabase/supabase-js'
 import { platformTwilio, platformTwilioConfigured, TWILIO_MASTER, colvyBaseUrl } from '@/lib/twilio-platform'
 import { consumeFreeCredit, refundFreeCredit } from '@/lib/free-number-credits'
+import { noteNumberOrder, noteNumberOrderResult, type NumberOrder } from '@/lib/number-orders'
 
 function admin() {
   return createClient(
@@ -17,7 +18,18 @@ function admin() {
 // Twilio-backed number. Verifies the session is paid, then provisions the number
 // DIRECTLY against the platform Twilio account (no dependence on the webhook).
 // Idempotent. Mirrors /api/telnyx/number-finalize.
+//
+// A paid checkout is recorded (lib/number-orders) once its payment checks out,
+// and again with how this call ended, so the setup checklist can say "setting
+// up your number" or "needs attention" instead of offering another purchase.
 export async function POST(req: NextRequest) {
+  const track: { order: NumberOrder | null } = { order: null }
+  const res = await finalize(req, track)
+  if (track.order) await noteNumberOrderResult(admin(), track.order, res)
+  return res
+}
+
+async function finalize(req: NextRequest, track: { order: NumberOrder | null }) {
   let freeConsumed = false
   let freeCompanyId: string | undefined
   try {
@@ -63,6 +75,8 @@ export async function POST(req: NextRequest) {
         if (session.metadata?.kind !== 'phone_number' || session.metadata?.companyId !== companyId) {
           return NextResponse.json({ error: 'This payment is for a different purchase.' }, { status: 403 })
         }
+        track.order = { sessionId, companyId, provider: 'twilio' }
+        await noteNumberOrder(db, track.order, 'provisioning')
         // …and each paid checkout buys one number, once.
         if (subscriptionId) {
           const { data: used } = await db.from('phone_numbers').select('phone_number').eq('stripe_subscription_id', subscriptionId).maybeSingle()

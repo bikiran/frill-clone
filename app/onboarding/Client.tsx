@@ -8,7 +8,8 @@ import { boardUrl, redirectToUserAdmin, RESERVED_SUBDOMAINS } from '@/lib/redire
 import { track } from '@/lib/analytics'
 import type { SetupStatus, SetupStepKey } from '@/lib/setup-status'
 import { SETUP_HOME, SKIPPABLE_STEPS, addQuery, withReturnTo } from '@/lib/setup-return'
-import { setupSteps, CheckMark, ArrowRight, MailIcon, SocialIcon, StoreIcon, PhoneIcon, BoltIcon, PeopleIcon } from '@/components/setup-steps'
+import { setupSteps, stepAction, CheckMark, ArrowRight, MailIcon, SocialIcon, StoreIcon, PhoneIcon, BoltIcon, PeopleIcon } from '@/components/setup-steps'
+import { noteSetupSeen } from '@/components/SetupChecklist'
 
 // ── After sign-up: a short guided launcher ────────────────────────────────────
 // Welcome → "what do you use?" (email, Facebook & Instagram, store, phone) →
@@ -61,14 +62,19 @@ async function openInWorkspace(slug: string | undefined, path: string) {
   window.location.href = boardUrl(slug, path)
 }
 
-// What's connected in this workspace, or null. Staff only (the API answers 403
-// to anyone else), so a null also means "not one of yours".
-async function loadSetupStatus(companyId: string): Promise<SetupStatus | null> {
+type Status = SetupStatus & { full?: boolean }
+
+// What's connected in this workspace. Staff only: the API answers 403 to
+// anyone else, and that's the one answer meaning "not one of yours". Anything
+// else that isn't a status (a network error, a timeout, a 5xx — it answers 503
+// when it couldn't check) is just a check that failed.
+async function loadSetupStatus(companyId: string): Promise<Status | 'not-staff' | 'failed'> {
   try {
     const r = await authFetch(`/api/setup/status?companyId=${companyId}`)
+    if (r.status === 403) return 'not-staff'
     const s = await r.json().catch(() => null)
-    return r.ok && Array.isArray(s?.steps) ? s : null
-  } catch { return null }
+    return r.ok && Array.isArray(s?.steps) ? s : 'failed'
+  } catch { return 'failed' }
 }
 
 export default function OnboardingPage() {
@@ -76,6 +82,8 @@ export default function OnboardingPage() {
   const [user, setUser] = useState<{ id: string; email?: string; user_metadata?: Record<string, unknown> } | null>(null)
   const [loaded, setLoaded] = useState(false)
   const [status, setStatus] = useState<SetupStatus | null>(null)
+  // The status couldn't be loaded: nothing shows as connected, and they're told why.
+  const [statusFailed, setStatusFailed] = useState(false)
   const [screen, setScreen] = useState<0 | 1 | 2>(0)
   const [picks, setPicks] = useState<Set<Pick>>(new Set(['email', 'meta', 'store', 'phone']))
   const [going, setGoing] = useState('')
@@ -97,15 +105,27 @@ export default function OnboardingPage() {
         fetch('/api/companies/ensure-domain', { method: 'POST', headers: { Authorization: `Bearer ${token}` } }).catch(() => {})
       }
 
-      // Opened on the workspace's own subdomain (Restart setup): that one — if
-      // they work there. Anyone signed in can open acme.colvy.com/onboarding (a
-      // customer from its public board, say); they get their own workspace.
+      // Opened on the workspace's own subdomain (Restart setup): that one —
+      // unless the API says they don't work there. Anyone signed in can open
+      // acme.colvy.com/onboarding (a customer from its public board, say);
+      // they get their own workspace. A check that failed says nothing about
+      // that, so it never moves anyone to another workspace: a quick failure
+      // (a blip, a cold start's 5xx) gets one more go, then they stay here
+      // without the numbers.
       let co: Ws | null = null
-      let st: SetupStatus | null = null
+      let here: Ws | null = null
+      let st: Status | 'not-staff' | 'failed' | undefined
       if (slug) {
-        const here = await getCompanyBySlug(slug)
-        st = here?.id ? await loadSetupStatus(here.id) : null
-        if (st) co = here
+        here = await getCompanyBySlug(slug)
+        if (here?.id) {
+          const t0 = Date.now()
+          st = await loadSetupStatus(here.id)
+          if (st === 'failed' && Date.now() - t0 < 5000) {
+            await new Promise(r => setTimeout(r, 800))
+            st = await loadSetupStatus(here.id)
+          }
+          if (st !== 'not-staff') co = here
+        }
       }
       // A workspace created seconds ago can briefly be unreadable (row
       // replication / RLS catch-up). Retry a few times instead of giving up on
@@ -174,14 +194,18 @@ export default function OnboardingPage() {
       // What's already connected (e.g. a store installed from Shopify before
       // signing up) — ticked and locked on the "what do you use?" screen.
       if (co?.id) {
-        const s = st || await loadSetupStatus(co.id)
-        if (s) {
+        const s = co === here && st !== undefined ? st : await loadSetupStatus(co.id)
+        if (typeof s === 'object') {
           setStatus(s)
           const industry = s.industry || co.industry || ''
           const next = new Set<Pick>(['email', 'meta', 'store', 'phone'])
           if (NO_STORE_INDUSTRIES.includes(industry) && s.store == null) next.delete('store')
           setPicks(next)
-        }
+          // On the workspace's own subdomain this device's checklist is right
+          // here: these ticks are now seen, so the ?setup=1 visit this trip
+          // ends on only cheers what gets done from here on.
+          if (co === here && s.full !== false) noteSetupSeen(co.id, s)
+        } else setStatusFailed(true)
       }
 
       setCompany(co)
@@ -189,8 +213,11 @@ export default function OnboardingPage() {
     })
   }, [])
 
-  const stateOf = (k: SetupStepKey) => status?.steps.find(s => s.key === k)?.state || 'todo'
+  const stepOf = (k: SetupStepKey) => status?.steps.find(s => s.key === k)
+  const stateOf = (k: SetupStepKey) => stepOf(k)?.state || 'todo'
   const isDone = (k: SetupStepKey) => stateOf(k) === 'done'
+  // A to-do that needs attention (a paid number that didn't set up).
+  const needsFix = (k: SetupStepKey) => stateOf(k) === 'todo' && !!stepOf(k)?.attention
 
   // Leaving for the workspace = onboarding done. Once per workspace per browser,
   // and not again for a Restart setup on the workspace's own subdomain.
@@ -209,12 +236,14 @@ export default function OnboardingPage() {
   const metas = setupSteps(status)
   const plan = metas.filter(m => !(SKIPPABLE_STEPS as readonly string[]).includes(m.key) || picks.has(m.key as Pick))
   const todo = plan.filter(m => stateOf(m.key) === 'todo')
-  const first = todo[0]
-  const minutes = todo.reduce((a, m) => a + m.minutes, 0)
+  // Something that needs attention comes first.
+  const first = todo.find(m => needsFix(m.key)) || todo[0]
+  const minutes = todo.filter(m => !needsFix(m.key)).reduce((a, m) => a + m.minutes, 0)
+  const firstAction = first ? stepAction(first, stepOf(first.key)) : null
 
   const start = async () => {
     setGoing('start'); markDone()
-    await openInWorkspace(company?.slug, first ? withReturnTo(first.href, checklistPath) : checklistPath)
+    await openInWorkspace(company?.slug, firstAction ? withReturnTo(firstAction.href, checklistPath) : checklistPath)
   }
   const toDashboard = async () => { setGoing('dash'); markDone(); await openInWorkspace(company?.slug, checklistPath) }
   const skipAll = async () => { setGoing('skip'); markDone(); await openInWorkspace(company?.slug, '/admin') }
@@ -223,6 +252,11 @@ export default function OnboardingPage() {
     if (isDone(k)) return
     setPicks(prev => { const n = new Set(prev); if (n.has(k)) n.delete(k); else n.add(k); return n })
   }
+
+  // Shown when what's connected couldn't be checked, so nothing unticked is taken as "not connected".
+  const checkFailed = statusFailed && (
+    <p className="onb-warn" role="status">We couldn&rsquo;t check what&rsquo;s already connected just now. Your dashboard checklist ticks off anything that is.</p>
+  )
 
   const firstName = String(user?.user_metadata?.display_name || user?.user_metadata?.full_name || '').trim().split(/\s+/)[0] || ''
 
@@ -304,6 +338,8 @@ export default function OnboardingPage() {
         .onb-later { display: block; margin: 18px auto 0; background: none; border: 0; font-size: 13.5px; color: var(--slate); cursor: pointer; }
         .onb-later:hover { color: var(--ink); text-decoration: underline; }
         .onb-note { margin: -8px 0 18px; font-size: 12.5px; color: var(--slate); }
+        .onb-note.is-attention { color: #b91c1c; }
+        .onb-warn { margin: -6px 0 18px; padding: 9px 12px; border-radius: 10px; background: #fffbeb; border: 1px solid #fde68a; color: #92400e; font-size: 12.5px; line-height: 1.45; }
         @media (max-width: 480px) {
           .onb { padding-top: 24px; }
           .onb-card { padding: 22px 18px; border-radius: 18px; }
@@ -344,6 +380,7 @@ export default function OnboardingPage() {
           <div className="onb-card" key="pick">
             <h1 className="onb-h">What does {company.name || 'your business'} use?</h1>
             <p className="onb-p">Tick everything you&rsquo;d like in Colvy. You can add the rest any time.</p>
+            {checkFailed}
             <div className="onb-picks" role="group" aria-label="What you use">
               {PICKS.map(p => {
                 const locked = isDone(p.key)
@@ -378,7 +415,9 @@ export default function OnboardingPage() {
             <h1 className="onb-h">{first ? 'Here’s your plan' : 'You’re all set'}</h1>
             <p className="onb-p">
               {first
-                ? <>About {minutes} minutes, one step at a time. After each one you&rsquo;ll land back on your checklist, ready for the next.</>
+                ? minutes
+                  ? <>About {minutes} minutes, one step at a time. After each one you&rsquo;ll land back on your checklist, ready for the next.</>
+                  : <>Just one thing to sort out. After it you&rsquo;ll land back on your checklist.</>
                 : <>Everything you picked is already connected. Your dashboard has the rest.</>}
             </p>
             <ol className="onb-plan">
@@ -388,17 +427,20 @@ export default function OnboardingPage() {
                   <li key={m.key} className={`${st === 'done' ? 'done' : ''} ${first?.key === m.key ? 'first' : ''}`}>
                     <span className="onb-plan-ic" aria-hidden="true">{st === 'done' ? <CheckMark size={15} /> : <m.Icon size={15} />}</span>
                     <span>{st === 'done' ? m.doneTitle : m.title}</span>
-                    <span className="onb-plan-m">{st === 'done' ? 'Done' : st === 'waiting' ? 'Waiting for approval' : `~${m.minutes} min`}</span>
+                    <span className="onb-plan-m">{st === 'done' ? 'Done' : st === 'waiting' ? (stepOf(m.key)?.detail || 'Waiting for approval') : needsFix(m.key) ? 'Needs attention' : `~${m.minutes} min`}</span>
                   </li>
                 )
               })}
             </ol>
-            {first?.key === 'phone' && <p className="onb-note">A new Australian number needs a quick ID check, which can take a day or two to approve.</p>}
+            {checkFailed}
+            {first && needsFix(first.key)
+              ? <p className="onb-note is-attention">{stepOf(first.key)?.detail || 'This needs your attention'}.</p>
+              : first?.key === 'phone' && <p className="onb-note">A new Australian number needs a quick ID check, which can take a day or two to approve.</p>}
             <div className="onb-actions">
               <button type="button" className="onb-btn onb-ghost" onClick={() => setScreen(1)} disabled={!!going}>Back</button>
               {first ? (
                 <button type="button" className="onb-btn onb-primary" onClick={start} disabled={!!going}>
-                  {going === 'start' ? 'Opening…' : <>{first.cta} <ArrowRight size={16} /></>}
+                  {going === 'start' ? 'Opening…' : <>{firstAction?.label} <ArrowRight size={16} /></>}
                 </button>
               ) : (
                 <button type="button" className="onb-btn onb-primary" onClick={toDashboard} disabled={!!going}>

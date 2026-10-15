@@ -7,10 +7,14 @@
 //   meta        an active Facebook Page or Instagram account in meta_channels
 //   store       an active Shopify or WooCommerce store
 //   phone       a number in phone_numbers (or a bring-your-own Twilio/Telnyx
-//               number). A pending number reads as "waiting". A submitted AU
-//               ID check with no number is still "to do": the number is bought
-//               straight after checkout, so on its own it's a checkout that
-//               wasn't finished, not something to wait for.
+//               number). A pending number reads as "waiting", and so does a
+//               paid checkout whose number is being bought (number_orders,
+//               lib/number-orders). A paid one whose number didn't set up
+//               needs attention: its button finishes that purchase rather
+//               than starting another. A submitted AU ID check with no paid
+//               checkout is still "to do": the number is bought straight
+//               after checkout, so on its own it's a checkout that wasn't
+//               finished, not something to wait for.
 //   customers   at least one contact (Shopify's connect imports them)
 //   team        someone besides the owner, joined or invited
 //   automation  anything that answers or messages customers for them
@@ -26,6 +30,12 @@ export type SetupStep = {
   state: SetupState
   /** Short, plain detail: what's connected, or why it's waiting. */
   detail: string | null
+  /**
+   * A to-do that needs attention rather than a fresh start (a number that was
+   * paid for but didn't finish setting up): the button that fixes it, in
+   * place of the step's usual one.
+   */
+  attention?: { label: string; href: string }
 }
 
 export type SetupStatus = {
@@ -47,6 +57,12 @@ const DAY = 864e5
 // moves a bundle on from there (the number is bought straight after checkout),
 // so without a number it's a purchase that wasn't finished, not a wait.
 const BUNDLE_SENT = ['submitted', 'validating', 'pending', 'in_review', 'in-review', 'pending_review', 'pending-review']
+// A paid number is bought within a minute or so (the calls page keeps trying
+// for about that long). Still "being set up" after this, it's stuck.
+const PROVISIONING_MAX_MS = 10 * 60_000
+// The calls page tries a failed set-up a few more times, seconds apart, so a
+// failure this fresh may still come good.
+const RETRY_GRACE_MS = 60_000
 
 // The bits of a Supabase query builder used here (the service-role client in
 // the API route, an in-memory fake in tests).
@@ -92,7 +108,7 @@ const list = (xs: string[]) => xs.length <= 2 ? xs.join(' and ') : `${xs.slice(0
 
 export async function computeSetupStatus(db: SetupDb, companyId: string, now: Date = new Date()): Promise<SetupStatus> {
   const [
-    company, email, meta, shopify, woo, numbers, bundle, twilio, telnyx,
+    company, email, meta, shopify, woo, numbers, bundle, order, twilio, telnyx,
     contacts, staff, invitedViewers, keywordReplies, agents,
   ] = await Promise.all([
     // `*` so a JSON settings column that isn't there yet can't fail the read.
@@ -103,6 +119,8 @@ export async function computeSetupStatus(db: SetupDb, companyId: string, now: Da
     rows(() => db.from('woocommerce_integrations').select('store_url').eq('company_id', companyId).eq('is_active', true).limit(10)),
     rows(() => db.from('phone_numbers').select('phone_number, status').eq('company_id', companyId).limit(50)),
     one(() => db.from('number_regulatory_bundles').select('status, created_at').eq('company_id', companyId).order('created_at', { ascending: false }).limit(1).maybeSingle()),
+    // The latest paid number checkout (COLVY_V373; none before it runs).
+    one(() => db.from('number_orders').select('stripe_session_id, provider, status, created_at, updated_at').eq('company_id', companyId).order('created_at', { ascending: false }).limit(1).maybeSingle()),
     one(() => db.from('twilio_integrations').select('phone_number').eq('company_id', companyId).limit(1).maybeSingle()),
     one(() => db.from('telnyx_integrations').select('phone_number').eq('company_id', companyId).limit(1).maybeSingle()),
     count(() => db.from('contacts').select('id', { count: 'exact', head: true }).eq('company_id', companyId)),
@@ -148,10 +166,27 @@ export async function computeSetupStatus(db: SetupDb, companyId: string, now: Da
   const pendingNumber = numbers.some(r => str(r.status).toLowerCase() === 'pending')
   const byo = [twilio?.phone_number, telnyx?.phone_number].map(v => str(v).trim()).find(Boolean) || ''
   const bundleStatus = str(bundle?.status).toLowerCase()
+  // A paid checkout with no live number: still being bought, or it didn't work
+  // (failed, or "being set up" for far too long).
+  const orderStatus = str(order?.status).toLowerCase()
+  const orderAt = Date.parse(str(order?.updated_at || order?.created_at))
+  const orderAge = isFinite(orderAt) ? now.getTime() - orderAt : Infinity
+  const settingUp = (orderStatus === 'provisioning' && orderAge < PROVISIONING_MAX_MS) || (orderStatus === 'failed' && orderAge < RETRY_GRACE_MS)
+  const stuck = !settingUp && (orderStatus === 'provisioning' || orderStatus === 'failed') && !!str(order?.stripe_session_id)
   let phone: SetupStep
   if (live.length) phone = { key: 'phone', state: 'done', detail: live.length === 1 ? str(live[0].phone_number) : plural(live.length, 'number') }
   else if (byo) phone = { key: 'phone', state: 'done', detail: byo }
   else if (pendingNumber) phone = { key: 'phone', state: 'waiting', detail: 'Waiting for approval' }
+  else if (settingUp) phone = { key: 'phone', state: 'waiting', detail: 'Setting up your number' }
+  // The calls page's own finish-the-purchase step, for this checkout: it
+  // buys the number that was paid for (or says it already has).
+  else if (stuck) phone = {
+    key: 'phone', state: 'todo', detail: 'Payment received, but your number didn’t finish setting up. Your payment is safe',
+    attention: {
+      label: 'Finish setting up',
+      href: `/admin/crm-settings/channels/calls?provisioning=1&provider=${str(order?.provider) === 'telnyx' ? 'telnyx' : 'twilio'}&session_id=${encodeURIComponent(str(order?.stripe_session_id))}`,
+    },
+  }
   else if (bundleStatus === 'approved') phone = { key: 'phone', state: 'todo', detail: 'Approved — pick your number' }
   else if (bundleStatus === 'rejected') phone = { key: 'phone', state: 'todo', detail: 'Your ID check needs another look' }
   else if (BUNDLE_SENT.includes(bundleStatus)) phone = { key: 'phone', state: 'todo', detail: 'ID details sent — pick your number' }
@@ -206,7 +241,10 @@ export async function computeSetupStatus(db: SetupDb, companyId: string, now: Da
   }
 }
 
-/** The same status without the details (connected addresses, page names, numbers). */
+/**
+ * The same status without the details (connected addresses, page names,
+ * numbers). Why a step is waiting or needs attention isn't one of those.
+ */
 export function redactSetupStatus(s: SetupStatus): SetupStatus {
-  return { ...s, steps: s.steps.map(st => ({ ...st, detail: st.state === 'waiting' ? st.detail : null })) }
+  return { ...s, steps: s.steps.map(st => ({ ...st, detail: st.state === 'waiting' || st.attention ? st.detail : null })) }
 }

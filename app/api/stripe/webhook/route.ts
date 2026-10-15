@@ -6,6 +6,7 @@ import { confirmChatPayment } from '@/lib/chat-payment-confirm'
 import { internalPlanForTier } from '@/lib/plan'
 import { BRANDING_ADDON, setBrandingAddon } from '@/lib/branding-addon'
 import { stripeSecretFor } from '@/lib/company-secrets'
+import { noteNumberOrder, noteNumberOrderResult, type NumberOrder } from '@/lib/number-orders'
 
 const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || ''
 
@@ -252,12 +253,15 @@ export async function POST(req: NextRequest) {
         }
         // Phone number purchase — provision the number now that payment is set up
         if (meta.kind === 'phone_number' && meta.companyId) {
+          // Provision on whichever carrier this purchase was for. Both endpoints
+          // take the same shape; the customer never learns which one ran.
+          const prov = meta.provider === 'telnyx' ? 'telnyx' : 'twilio'
+          // Recorded as paid and being set up, then how it went (lib/number-orders).
+          const order: NumberOrder = { sessionId: String(session.id || ''), companyId: String(meta.companyId), provider: prov }
+          await noteNumberOrder(supabase, order, 'provisioning')
           try {
             const origin = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
-            // Provision on whichever carrier this purchase was for. Both endpoints
-            // take the same shape; the customer never learns which one ran.
-            const prov = meta.provider === 'telnyx' ? 'telnyx' : 'twilio'
-            await fetch(`${origin}/api/${prov}/number`, {
+            const res = await fetch(`${origin}/api/${prov}/number`, {
               method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
               body: JSON.stringify({
                 companyId: meta.companyId,
@@ -267,8 +271,10 @@ export async function POST(req: NextRequest) {
                 stripeSubscriptionId: session.subscription,
               }),
             })
-          } catch (e) {
+            await noteNumberOrderResult(supabase, order, res)
+          } catch (e: any) {
             console.error('Post-payment number provisioning failed:', e)
+            await noteNumberOrder(supabase, order, 'failed', { error: e?.message })
           }
         }
         break
