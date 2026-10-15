@@ -19,8 +19,15 @@ export default function EmbedDialog({ bookingUrl, services, onClose, flash }: {
   const inline = `<iframe id="${id}" src="${url}?embed=1" title="Book online" style="width:100%;min-height:720px;border:0;display:block" loading="lazy"></iframe>
 <script>
   window.addEventListener('message', function (e) {
+    var f = document.getElementById('${id}');
+    if (!f) return;
     if (e.data && e.data.type === 'colvy-booking-height') {
-      document.getElementById('${id}').style.height = e.data.height + 'px';
+      f.style.height = e.data.height + 'px';
+    }
+    // A Reel / QR link that led to this page (?clv=): hand it to the booking page.
+    var m = /[?&]clv=([^&#]+)/.exec(location.search);
+    if (m && e.data && e.data.type === 'clv_request' && e.source === f.contentWindow) {
+      f.contentWindow.postMessage({ colvy: true, type: 'clv', clv: decodeURIComponent(m[1]) }, e.origin);
     }
   });
 </script>`

@@ -8,7 +8,9 @@
 //      centre, or its website running the chat widget), adds ?clv=<click id>
 //      to the address it redirects to.
 //   2. The chat widget, the booking page and public forms read ?clv= and send
-//      it with the chat / booking / form.
+//      it with the chat / booking / form. Embedded on the business's website
+//      they get it from widget.js or the embed code there
+//      (lib/click-ref-client.ts); the board / help centre chat from LiveChat.
 //   3. When that visitor becomes a contact, stitchLinkClick() puts the contact
 //      on the click (so the 7-day order attribution in lib/link-attribution.ts
 //      credits their WooCommerce / Shopify orders too) and records what

@@ -3,7 +3,7 @@
  * Plugin Name:       Colvy
  * Plugin URI:        https://colvy.com
  * Description:       Colvy for WordPress & WooCommerce, in one plugin — chat widget, order and abandoned-cart sync, "Notify me" on sold-out products, booking page embed, branding and live stats from your Colvy inbox.
- * Version:           3.0.3
+ * Version:           3.0.4
  * Author:            Colvy
  * Author URI:        https://colvy.com
  * Requires at least: 6.0
@@ -18,7 +18,7 @@
 if ( ! defined( 'ABSPATH' ) ) exit;
 if ( defined( 'COLVYWP_VERSION' ) ) return; // a second copy is installed — the first one runs
 
-define( 'COLVYWP_VERSION', '3.0.3' );
+define( 'COLVYWP_VERSION', '3.0.4' );
 define( 'COLVYWP_FILE', __FILE__ );
 define( 'COLVYWP_URL', plugin_dir_url( __FILE__ ) );
 if ( ! defined( 'COLVY_API_BASE' ) ) define( 'COLVY_API_BASE', 'https://colvy.com' );
@@ -427,7 +427,11 @@ add_shortcode( 'colvy_booking', function ( $atts ) {
 	$url = $acc['company']['booking_url'] . ( $atts['service'] ? '/' . rawurlencode( sanitize_title( $atts['service'] ) ) : '' );
 	$id  = 'colvy-booking-' . wp_rand( 1000, 9999 );
 	return '<iframe id="' . esc_attr( $id ) . '" src="' . esc_url( add_query_arg( 'embed', '1', $url ) ) . '" title="Book online" style="width:100%;min-height:' . (int) $atts['height'] . 'px;border:0;display:block" loading="lazy"></iframe>'
-		. '<script>window.addEventListener("message",function(e){if(e.data&&e.data.type==="colvy-booking-height"){var f=document.getElementById(' . wp_json_encode( $id ) . ');if(f&&f.contentWindow===e.source)f.style.height=e.data.height+"px";}});</script>';
+		// Fits the frame to the page. And when the visitor came from a Colvy Reel /
+		// QR / bio link (?clv= on this page), hands that click to the booking page
+		// when it asks, so the booking is credited to the link (widget.js does the
+		// same when the chat widget is on).
+		. '<script>window.addEventListener("message",function(e){var f=document.getElementById(' . wp_json_encode( $id ) . ');if(!f||!e.data||f.contentWindow!==e.source)return;if(e.data.type==="colvy-booking-height")f.style.height=e.data.height+"px";var m=/[?&]clv=([^&#]+)/.exec(location.search);if(m&&e.data.type==="clv_request"){try{f.contentWindow.postMessage({colvy:true,type:"clv",clv:decodeURIComponent(m[1])},e.origin);}catch(x){}}});</script>';
 } );
 
 // Settings link on the Plugins screen.

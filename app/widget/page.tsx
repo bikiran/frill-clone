@@ -311,6 +311,18 @@ function WidgetContent() {
     } catch {}
   }, [slug])
 
+  // Smart links: a returning visitor whose saved chat was restored above, now
+  // arriving through a Reel / QR link (?clv= on this frame, e.g. from the board
+  // chat), never calls /api/widget/start. Tell the ongoing chat about the click
+  // once the company is known. widget.js sites may also send it with a page
+  // update; clvSent makes sure only one of them does.
+  useEffect(() => {
+    const c = clickRef.current
+    if (!chatConvId || !company?.id || !c || clvSent.current === c) return
+    clvSent.current = c
+    fetch('/api/widget/update', { method: 'POST', headers: { 'Content-Type': 'application/json', ...chatHeaders() }, body: JSON.stringify({ companyId: company.id, conversationId: chatConvId, clv: c }) }).catch(() => {})
+  }, [chatConvId, company?.id])
+
   // Subscribe to agent replies on the active chat conversation
   useEffect(() => {
     // Waits for the company as well as the conversation. With `[chatConvId]`
@@ -1871,6 +1883,8 @@ function WidgetContent() {
                         throw new Error(startData.error || 'Could not start the chat')
                       }
                       const conv = { id: startData.conversationId }
+                      // The start call carried the click; don't send it again.
+                      if (clickRef.current) clvSent.current = clickRef.current
                       chatAuth.key = startData.chatKey || ''
                       contactId = startData.contactId || null
 

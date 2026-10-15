@@ -77,7 +77,31 @@ export async function POST(req: NextRequest) {
     // Reverse the Link Reports revenue credit for a full refund so the report
     // reflects money actually kept.
     if (full) {
-      try { await db.from('link_conversions').delete().eq('company_id', companyId).eq('order_id', `pay_${pay.id}`).eq('stage', 'paid') } catch {}
+      // confirmChatPayment keys a pay link's credit by the payment intent (the
+      // webhook and verify-payment always pass one), else pay_<id> (older rows,
+      // the V287 backfill). Both are unique to this payment.
+      const payKeys = Array.from(new Set([`pay_${pay.id}`, pay.stripe_payment_intent, paymentIntent].filter(Boolean))) as string[]
+      try { await db.from('link_conversions').delete().eq('company_id', companyId).in('order_id', payKeys).eq('stage', 'paid') } catch {}
+      // A pay link for a WooCommerce order is keyed by the Woo order id instead,
+      // on the pay link itself (found the same way confirmChatPayment found it).
+      try {
+        if (pay.message_id) {
+          const { data: m } = await db.from('messages').select('message_payload').eq('id', pay.message_id).maybeSingle()
+          const p = (m as { message_payload?: { checkout_url?: string; order_id?: string | number | null } } | null)?.message_payload || {}
+          const code = (String(p.checkout_url || '').match(/\/l\/([A-Za-z0-9_-]+)/) || [])[1]
+          if (code && p.order_id) {
+            const { data: link } = await db.from('short_links').select('id').eq('code', code).maybeSingle()
+            if (link?.id) await db.from('link_conversions').delete().eq('company_id', companyId).eq('link_id', link.id).eq('order_id', String(p.order_id)).eq('stage', 'paid')
+          }
+        }
+      } catch {}
+      // A booking's online payment is credited as book_<booking id>
+      // (lib/link-attribution.ts) — same as refundBooking(), reverse it too.
+      try {
+        const { data: bks } = await db.from('bookings').select('id').eq('company_id', companyId).eq('chat_payment_id', pay.id).limit(5)
+        const ids = (bks || []).map((b: { id: string }) => `book_${b.id}`)
+        if (ids.length) await db.from('link_conversions').delete().eq('company_id', companyId).in('order_id', ids).eq('stage', 'paid')
+      } catch {}
     }
 
     // Post a pill + timeline event into the conversation, and let the team know.

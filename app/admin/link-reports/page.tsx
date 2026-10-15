@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { peekCompanyUser, resolveCompanyUser } from '@/lib/client-cache'
 import { SkeletonList } from '@/components/Skeleton'
 import {
-  PUBLIC_CHANNEL_LABEL, LINK_OUTCOMES, isPublicChannel, linkFunnel, linkOutcome, clickSource, isBookingPayment, type Funnel,
+  PUBLIC_LINK_CHANNELS, PUBLIC_CHANNEL_LABEL, LINK_OUTCOMES, isPublicChannel, linkFunnel, linkOutcome, clickSource, isBookingPayment, type Funnel,
 } from '@/lib/link-channels'
 
 type Link = {
@@ -71,6 +71,9 @@ export default function LinkReportsPage() {
   const [loading, setLoading] = useState(true)
   const [companyId, setCompanyId] = useState<string | null>(null)
   const [links, setLinks] = useState<Link[]>([])
+  // Reel / QR / bio links made before the period that were active in it — for
+  // the Social & QR tab only (see load()).
+  const [olderPublic, setOlderPublic] = useState<Link[]>([])
   const [clicks, setClicks] = useState<Click[]>([])
   const [conversions, setConversions] = useState<Conversion[]>([])
   const [contacts, setContacts] = useState<Record<string, any>>({})
@@ -141,9 +144,26 @@ export default function LinkReportsPage() {
       (supabase as any).from('company_locations').select('id, label, suburb').eq('company_id', cid),
     ])
     const linkRows: Link[] = ls || []
+    // A Reel, QR poster or link in bio is used for months, so the Social & QR
+    // tab also needs public links made before the period that had clicks or
+    // results in it. Looked up by that activity (not the newest old links), so
+    // a year-old poster is never crowded out by newer links.
+    let older: Link[] = []
+    if (since) {
+      const made = new Set(linkRows.map(l => l.id))
+      const activeIds = Array.from(new Set([...(cs || []), ...(vs?.data || [])].map((r: { link_id: string }) => r.link_id)))
+        .filter(id => id && !made.has(id))
+      const batches: string[][] = []
+      for (let i = 0; i < activeIds.length; i += 200) batches.push(activeIds.slice(i, i + 200))
+      const found = await Promise.all(batches.map(ids => Promise.resolve(supabase.from('short_links').select('*').eq('company_id', cid)
+        .in('id', ids).in('channel', PUBLIC_LINK_CHANNELS.map(c => c.id)).lt('created_at', since))
+        .then(r => (r.data || []) as Link[]).catch(() => [] as Link[])))
+      older = found.flat()
+    }
     setLinks(linkRows)
     setClicks(cs || [])
     setConversions(vs?.data || [])
+    setOlderPublic(older)
     const om: Record<string, string> = {}
     for (const o of (outs || [])) om[o.id] = o.label || o.suburb || 'Outlet'
     setOutlets(om)
@@ -222,7 +242,7 @@ export default function LinkReportsPage() {
     ...team,
   ])).sort(), [links, team])
 
-  const visible = useMemo(() => links.filter(l => {
+  const matchesFilters = (l: Link) => {
     if (fChannel && (l.channel || '') !== fChannel) return false
     if (fType && (l.link_type || 'external') !== fType) return false
     if (fAgent && (l.sent_by || '') !== fAgent) return false
@@ -236,7 +256,8 @@ export default function LinkReportsPage() {
       if (!hay.includes(q)) return false
     }
     return true
-  }), [links, fChannel, fType, fAgent, fOutlet, fOutcome, search, contacts, convByLink, clicksByLink])
+  }
+  const visible = useMemo(() => links.filter(matchesFilters), [links, fChannel, fType, fAgent, fOutlet, fOutcome, search, contacts, convByLink, clicksByLink])
 
   const visibleIds = useMemo(() => new Set(visible.map(l => l.id)), [visible])
   const vClicks = useMemo(() => clicks.filter(c => visibleIds.has(c.link_id)), [clicks, visibleIds])
@@ -262,7 +283,8 @@ export default function LinkReportsPage() {
   const repeatClickers = Math.max(0, totalClicks - uniqueClicks)
   // Revenue includes paid bookings (smart links); the order count doesn't.
   const paidConv = vConv.filter(v => v.stage === 'paid')
-  const orders = new Set(paidConv.filter(v => !isBookingPayment(v)).map(v => v.order_id ?? v.id)).size
+  const orderConv = paidConv.filter(v => !isBookingPayment(v))
+  const orders = new Set(orderConv.map(v => v.order_id ?? v.id)).size
   const revenue = paidConv.reduce((s, v) => s + (Number(v.revenue) || 0), 0)
   // Media/image links (e.g. 44962.jpg, storage URLs) get clicked but can never
   // "convert", so they unfairly drag the rate down — exclude them from the
@@ -274,7 +296,8 @@ export default function LinkReportsPage() {
   }
   const clickedLinks = visible.filter(l => !isMediaLink(l) && (clicksByLink[l.id]?.length || l.clicks || 0) > 0).length
   const conversionRate = clickedLinks ? Math.round((orders / clickedLinks) * 100) : 0
-  const aov = orders ? revenue / orders : 0
+  // Orders' own revenue only: paid bookings aren't in the order count.
+  const aov = orders ? orderConv.reduce((s, v) => s + (Number(v.revenue) || 0), 0) / orders : 0
 
   /** Average time from a link being sent to its first click. */
   const avgTimeToClick = (rows: Link[]) => {
@@ -316,13 +339,17 @@ export default function LinkReportsPage() {
   // ── Social & QR ───────────────────────────────────────────────────────────
   // Links made for a Reel, post, TikTok, video, poster or newsletter, grouped
   // by where they were posted and what they're called, with what each led to.
+  // Picked by activity: older links count when they had clicks or results in
+  // the period (and only that activity counts).
   const social = useMemo(() => {
-    const pub = visible.filter(l => isPublicChannel(l.channel))
+    const olderIds = new Set(olderPublic.map(l => l.id))
+    const pub = [...visible, ...olderPublic.filter(matchesFilters)].filter(l => isPublicChannel(l.channel))
     const ids = new Set(pub.map(l => l.id))
-    const pClicks = vClicks.filter(c => ids.has(c.link_id))
-    const pConv = vConv.filter(v => ids.has(v.link_id))
-    // Clicks counted before per-click rows existed only live on the counter.
-    const counterOnly = (ls: Link[]) => ls.reduce((s, l) => s + (clicksByLink[l.id]?.length ? 0 : (l.clicks || 0)), 0)
+    const pClicks = clicks.filter(c => ids.has(c.link_id))
+    const pConv = conversions.filter(v => ids.has(v.link_id))
+    // Clicks counted before per-click rows existed only live on the counter
+    // (a lifetime total, so never for an older link).
+    const counterOnly = (ls: Link[]) => ls.reduce((s, l) => s + ((clicksByLink[l.id]?.length || olderIds.has(l.id)) ? 0 : (l.clicks || 0)), 0)
     const funnelOf = (ls: Link[]): Funnel => {
       const gid = new Set(ls.map(l => l.id))
       const f = linkFunnel(pClicks.filter(c => gid.has(c.link_id)), pConv.filter(v => gid.has(v.link_id)))
@@ -340,7 +367,7 @@ export default function LinkReportsPage() {
     const src: Record<string, number> = {}
     for (const c of pClicks) { const s = clickSource(c.referrer, c.user_agent); src[s] = (src[s] || 0) + 1 }
     return { count: pub.length, rows, total: funnelOf(pub), sources: Object.entries(src).sort((a, b) => b[1] - a[1]), clickRows: pClicks.length }
-  }, [visible, vClicks, vConv, clicksByLink])
+  }, [visible, olderPublic, clicks, conversions, clicksByLink])
 
   const card: React.CSSProperties = { border: '1px solid var(--border)', borderRadius: 14, background: '#fff', padding: 16 }
   const statNum: React.CSSProperties = { fontSize: 24, fontWeight: 800, color: 'var(--ink)', margin: '4px 0 0' }
@@ -507,6 +534,7 @@ export default function LinkReportsPage() {
             Links you made in <a href="/admin/links" style={{ color: 'var(--coral)', fontWeight: 700, textDecoration: 'none' }}>Links Generator</a> for
             Reels, posts, TikTok, YouTube, QR codes and newsletters. When someone who tapped one chats, books or fills in a
             form on your site, it&apos;s credited here — and what they buy in the next 7 days counts as revenue influenced.
+            Links made earlier show too when they had clicks or results in this period.
           </p>
           {social.count === 0 ? (
             <div style={{ ...card, textAlign: 'center', padding: 28 }}>

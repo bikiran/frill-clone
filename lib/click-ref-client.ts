@@ -26,3 +26,28 @@ export function captureClickRef(): string | null {
   } catch { /* nothing remembered */ }
   return null
 }
+
+/**
+ * Embedded on the business's own website (the booking or form embed code),
+ * the ?clv= is on the host page, not ours, and our storage there is separate.
+ * Ask the host page: widget.js (and the booking / form embed code) answer with
+ * the click the visitor arrived through. Calls `onRef` at most once; returns a
+ * cleanup function.
+ */
+export function askHostForClickRef(onRef: (id: string) => void): () => void {
+  if (typeof window === 'undefined' || window.parent === window) return () => {}
+  let done = false
+  const onMessage = (e: MessageEvent) => {
+    if (done || e.source !== window.parent || !e.data?.colvy || e.data.type !== 'clv') return
+    const id = cleanClickRef(e.data.clv)
+    if (!id) return
+    done = true
+    onRef(id)
+  }
+  window.addEventListener('message', onMessage)
+  // Again a little later, in case the host's widget.js loads after us.
+  const ask = () => { if (!done) try { window.parent.postMessage({ colvy: true, type: 'clv_request' }, '*') } catch { /* no host */ } }
+  ask()
+  const timers = [setTimeout(ask, 1500), setTimeout(ask, 4000)]
+  return () => { done = true; window.removeEventListener('message', onMessage); timers.forEach(clearTimeout) }
+}

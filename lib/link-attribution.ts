@@ -86,15 +86,17 @@ export async function attributeOrderToLinks(opts: {
  *      link in the 7 days before booking.
  *
  * Writes 'booking' (order id book_<id>) and, when paid, a 'paid' row carrying
- * the booking's price, so revenue totals that already add up 'paid' rows
- * include it. Same "revenue influenced" model as attributeOrderToLinks.
+ * the money taken online (the deposit or the full price — what a refund gives
+ * back), so revenue totals that already add up 'paid' rows include it. Same
+ * "revenue influenced" model as attributeOrderToLinks.
  * Returns the credited link id, or null. Never throws.
  */
 export async function attributeBookingToLinks(opts: {
   companyId: string
   contactId?: string | null
   bookingId: string
-  priceCents?: number | null
+  /** What was paid online for the booking (bookings.amount_due_cents). */
+  paidCents?: number | null
   paid?: boolean
   currency?: string | null
   bookedAt?: string | null
@@ -140,7 +142,7 @@ export async function attributeBookingToLinks(opts: {
       currency: opts.currency || 'AUD', clicked_at: clickedAt, converted_at: bookedAt.toISOString(),
     }
     await creditLink(db, { ...base, stage: 'booking', revenue: 0 })
-    if (opts.paid) await creditLink(db, { ...base, stage: 'paid', revenue: Math.max(0, Number(opts.priceCents) || 0) / 100, converted_at: new Date().toISOString() })
+    if (opts.paid) await creditLink(db, { ...base, stage: 'paid', revenue: Math.max(0, Number(opts.paidCents) || 0) / 100, converted_at: new Date().toISOString() })
     return linkId
   } catch {
     return null

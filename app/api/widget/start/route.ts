@@ -4,6 +4,7 @@ import { createClient } from '@supabase/supabase-js'
 import { checkBurst, callerKey } from '@/lib/rate-limit'
 import { clickRefFromVisit } from '@/lib/link-channels'
 import { stitchLinkClick } from '@/lib/link-stitch'
+import { ilikeExact, exactEmailRow } from '@/lib/phone'
 
 export const dynamic = 'force-dynamic'
 
@@ -72,8 +73,8 @@ export async function POST(req: NextRequest) {
     if (email) {
       const { data } = await db.from('contacts')
         .select('id, name, email, phone').eq('company_id', companyId)
-        .ilike('email', email).limit(1)
-      existing = data?.[0] || null
+        .ilike('email', ilikeExact(email)).limit(10)
+      existing = exactEmailRow(data, email)
     }
     if (!existing && last8) {
       // Match on the last 8 digits so 0405… and +61405… are the same person.
