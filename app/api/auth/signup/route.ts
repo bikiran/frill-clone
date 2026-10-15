@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { verifyTurnstile, requestIp, TURNSTILE_FAILED } from '@/lib/turnstile'
 
 // Full server-side signup flow. This bypasses two problems with doing
 // signUp() directly from the browser:
@@ -13,8 +14,18 @@ export async function POST(req: NextRequest) {
     // mode: 'code' is the mobile app. It has no browser to land a confirmation
     // link in, so it needs the six-digit code that Supabase issues alongside
     // the link, typed back into the app instead.
-    const { email, password, name, slug, industry, companyId, mode } = await req.json()
+    const { email, password, name, slug, industry, companyId, mode, turnstileToken } = await req.json()
     const wantCode = mode === 'code'
+
+    // Bots: web sign-ups must pass Cloudflare Turnstile. The mobile app (code
+    // mode) has no browser widget; it still has to confirm the emailed code.
+    if (!wantCode) {
+      const human = await verifyTurnstile(turnstileToken, requestIp(req.headers))
+      if (!human.ok) {
+        console.warn('[signup] turnstile rejected:', human.reason)
+        return NextResponse.json({ error: TURNSTILE_FAILED, code: 'captcha' }, { status: 403 })
+      }
+    }
 
     if (!email || !password) {
       return NextResponse.json({ error: 'Email and password are required' }, { status: 400 })
