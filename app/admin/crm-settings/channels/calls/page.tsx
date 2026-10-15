@@ -6,7 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { peekCompanyUser, resolveCompanyUser } from '@/lib/client-cache'
 import RegulatoryForm from '@/components/RegulatoryForm'
 import CallAnswerSettings from '@/components/CallAnswerSettings'
-import PhoneAgentTestCard from '@/components/PhoneAgentTestCard'
+import AiReceptionistCard from '@/components/AiReceptionistCard'
 import Link from 'next/link'
 import { Icon } from '@/components/integrations/ui'
 
@@ -339,7 +339,7 @@ export default function TelnyxIntegration() {
           )}
 
           {companyId && <CallAnswerSettings companyId={companyId} />}
-          {companyId && <PhoneAgentTestCard companyId={companyId} />}
+          {companyId && <AiReceptionistCard companyId={companyId} />}
 
           {/* All numbers this company owns */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
