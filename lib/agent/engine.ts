@@ -11,7 +11,7 @@
 
 import { createHash } from 'crypto'
 import { getModelClient, type ModelClient, type NeutralBlock, type NeutralMessage, type ToolSpec } from './model'
-import { getAction, validateInput, FINISH_ACTION, flushKnowledgeGaps, isCustomerReply } from './actions'
+import { getAction, validateInput, FINISH_ACTION, flushKnowledgeGaps, noteReply } from './actions'
 import { loadExternalActions } from './external-tools'
 import { retireStaleSuggestions } from './approvals'
 import { decide, loadPolicies } from './policy'
@@ -267,7 +267,7 @@ export async function runAgent(db: any, runId: string, deadline: number, model: 
         const decision: Decision = await decide(actx, role, action, input, policies)
         const base = { kind: 'action', action_key: action.key, input, reason, decision: decision.verdict, decision_reason: decision.reason, autonomy: decision.autonomy }
         // It answered the customer (sent, or for the team to approve): an empty knowledge search alone isn't a gap then.
-        if (decision.verdict !== 'denied' && isCustomerReply(action)) actx.scratch.replied = true
+        if (decision.verdict !== 'denied') noteReply(actx, action, input)
 
         if (decision.verdict === 'allowed') {
           // Last check before anything leaves Colvy.

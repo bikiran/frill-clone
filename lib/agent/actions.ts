@@ -74,11 +74,12 @@ const getConversation: ActionDef = {
 // A question the business's knowledge couldn't answer goes on AI Knowledge →
 // Unanswered (source 'agent'), so the owner can fill the gap once. At most once
 // per run, and only for live runs: a sandbox test isn't a customer asking.
-// Only runs a customer started by writing (a message, a review or a comment):
-// cart, quote, lead and order runs are the business reaching out, and an
-// agent's own search there isn't a customer's question.
+// Only runs a customer started by writing (a message, a review, a comment, or a
+// lead, whose message is the customer's own enquiry): cart, quote and order
+// runs are the business reaching out, and an agent's own search there isn't a
+// customer's question.
 
-const customerWrote = (input: { kind?: string } | undefined) => !input?.kind || input.kind === 'review' || input.kind === 'comment'
+const customerWrote = (input: { kind?: string } | undefined) => !input?.kind || ['review', 'comment', 'lead'].includes(input.kind)
 
 async function logKnowledgeGap(ctx: ActionContext) {
   if (ctx.mode !== 'live' || ctx.scratch.gapLogged || !customerWrote(ctx.scratch.runInput)) return
@@ -90,17 +91,32 @@ async function logKnowledgeGap(ctx: ActionContext) {
 }
 
 /**
- * End of a run: every knowledge search came up empty and the agent didn't
- * reply → log the gap. A reply (sent, or waiting for the team) means it
- * answered from something else, like Business Memory, stock or opening hours;
- * an agent with only "I'll check" to say escalates with knowledge_gap.
+ * End of a run: log the gap when a reply said it couldn't answer (knowledge_gap
+ * on the reply), or when every knowledge search came up empty and the agent
+ * didn't answer some other way. A reply (sent, or waiting for the team) with no
+ * hand-over means it answered from something else, like Business Memory, stock
+ * or opening hours. A reply AND a hand-over is the "say you'll check with the
+ * team and escalate" path, so that still logs.
  */
 export async function flushKnowledgeGaps(ctx: ActionContext) {
-  if (ctx.scratch.knowledgeGaps?.length && !ctx.scratch.knowledgeFound && !ctx.scratch.replied) await logKnowledgeGap(ctx)
+  const s = ctx.scratch
+  if (s.gapReply || (s.knowledgeGaps?.length && !s.knowledgeFound && (!s.replied || s.escalated))) await logKnowledgeGap(ctx)
 }
 
 /** An action that answers the customer (a message, a public reply, a follow-up), as opposed to handing over. */
 export const isCustomerReply = (a: ActionDef) => a.category === 'communicate' && a.key !== 'escalate_to_human'
+
+/**
+ * The engine calls this for each action it runs, records or queues for the
+ * team. A reply answers the customer, unless it says (knowledge_gap) that the
+ * business's knowledge didn't cover the question: an "I'll check", or "send us
+ * a message" under a comment.
+ */
+export function noteReply(ctx: ActionContext, action: ActionDef, input: { knowledge_gap?: unknown } | null | undefined) {
+  if (!isCustomerReply(action)) return
+  if (input?.knowledge_gap === true) ctx.scratch.gapReply = true
+  else ctx.scratch.replied = true
+}
 
 const askKnowledgeBase = readTool('ask_knowledge', 'Search the business’s own knowledge (help articles, facts, files, website). Use before answering any question about policies, products or services.', obj({ question: { type: 'string' } }, ['question']), true)
 const askKnowledge: ActionDef = {
@@ -235,6 +251,7 @@ const sendMessage: ActionDef = {
   input: obj({
     text: { type: 'string', description: 'The message to send.' },
     topic: { type: 'string', enum: TOPICS, description: 'What the reply answers: opening_hours, order_status, stock, store_info (from the business’s knowledge), booking (services, times, their bookings), or other.' },
+    knowledge_gap: { type: 'boolean', description: 'true when this reply doesn’t answer the customer’s question because the business’s knowledge doesn’t cover it (you only say you’ll check with the team).' },
   }, ['text', 'topic']),
   category: 'communicate', risk: 'medium', maxAutonomy: 'act_within_limits', customerSafe: true,
   autoCheck: sendOnItsOwn,

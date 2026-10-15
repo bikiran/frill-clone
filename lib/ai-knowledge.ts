@@ -13,7 +13,7 @@
 
 import Anthropic from '@anthropic-ai/sdk'
 import { modelFor, trackAi } from '@/lib/ai-models'
-import { memoryForPrompt, memoryBlock, followedMemory, answersQuestion } from '@/lib/agent/business-memory'
+import { memoryForPrompt, memoryBlock, followedMemory, memoryAnswers } from '@/lib/agent/business-memory'
 
 export type KnowledgeSource = 'fact' | 'help' | 'file' | 'website' | 'announcement' | 'roadmap' | 'idea' | 'chat'
 export type KnowledgeHit = { id?: string; source: string; source_id?: string; title: string | null; content: string; url: string | null; rank?: number }
@@ -459,8 +459,9 @@ export async function answerFromKnowledge(db: any, companyId: string, question: 
     const followed = followedMemory(memory, used)
     return {
       answer: String(p.answer || '').trim(),
-      // Backed by a library source, a must-know fact or an FAQ; following a rule alone answers nothing.
-      grounded: !!p.grounded && (sources.length > 0 || followed.some(answersQuestion)),
+      // The model says it's answered, backed by a library source or by Business
+      // Memory it cited (a must-know fact, an FAQ, or a rule like "we never ship to WA").
+      grounded: !!p.grounded && (sources.length > 0 || memoryAnswers(followed, true)),
       sources,
       memory: followed,
     }

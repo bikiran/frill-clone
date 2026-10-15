@@ -265,6 +265,16 @@ export function followedMemory(mem: PromptMemory, used: Iterable<unknown>): { id
 export const answersQuestion = (item: { kind: string }) => item.kind === 'policy' || item.kind === 'faq'
 
 /**
+ * Whether the memory items a model followed answered the customer. A must-know
+ * fact or an FAQ does. A rule can ("we never ship live fish to WA") but often
+ * only shapes the reply ("always use Australian spelling"), so a rule counts
+ * only when the model also reported no gap: an empty "caution" on an inbox
+ * draft, or grounded in the AI Knowledge test box.
+ */
+export const memoryAnswers = (followed: { kind: string }[], noGap: boolean) =>
+  followed.some(answersQuestion) || (noGap && followed.some(f => f.kind === 'instruction'))
+
+/**
  * Suggest an item (a fact or a rule) for the owner to keep or dismiss on the
  * Business Memory page. Like learned proposals, it does nothing until kept.
  */

@@ -18,7 +18,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { retrieve } from '@/lib/ai-agent'
 import { findProducts } from '@/lib/product-search'
 import { logUnanswered } from '@/lib/ai-unanswered'
-import { memoryForPrompt, memoryBlock, followedMemory, answersQuestion } from '@/lib/agent/business-memory'
+import { memoryForPrompt, memoryBlock, followedMemory, memoryAnswers } from '@/lib/agent/business-memory'
 
 import { statusMeta } from '@/lib/orders'
 import { orderProgress } from '@/lib/order-progress'
@@ -229,9 +229,11 @@ Return JSON with: "reply" (the draft), "used" (the IDs of the sources${memText ?
     const used = new Set((parsed.used || []).map(String))
     const followed = followedMemory(memory, used)
     const usedSources = sources.filter(s => used.has(s.id))
-    // Nothing to go on → the owner's unanswered-questions list. A must-know fact
-    // or FAQ answers a question; following a rule alone doesn’t.
-    if (!usedSources.length && !followed.some(answersQuestion)) {
+    const caution = String(parsed.caution || '').trim()
+    // Nothing to go on → the owner's unanswered-questions list. A source, a
+    // must-know fact or an FAQ answers a question; a rule only when the draft
+    // flagged no gap in "caution" (that's where it explains one).
+    if (!usedSources.length && !memoryAnswers(followed, !caution)) {
       const lastCustomer = [...turns].reverse().find(t => t.who === 'Customer')?.text || ''
       await logUnanswered(db, companyId, lastCustomer, { source: 'ai_draft', conversationId: opts.conversationId || null })
     }
@@ -241,7 +243,7 @@ Return JSON with: "reply" (the draft), "used" (the IDs of the sources${memText ?
         payload: { ticket_id: opts.ticketId || null, used: Array.from(used), memory: followed.map(f => f.id), model: response.model },
       })
     } catch {}
-    return { ok: true, draft, sources: usedSources, caution: String(parsed.caution || '').trim(), followed }
+    return { ok: true, draft, sources: usedSources, caution, followed }
   } catch (e: any) {
     if (e instanceof Anthropic.RateLimitError) return { ok: false, error: 'The AI is busy right now — try again in a moment.' }
     if (e instanceof Anthropic.AuthenticationError) return { ok: false, error: 'The server’s AI key was rejected — check ANTHROPIC_API_KEY.' }
