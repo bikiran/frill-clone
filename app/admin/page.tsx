@@ -137,8 +137,12 @@ export default function AdminDashboard() {
   // once it's come from the server rather than this device's cache.
   const [setup, setSetup] = useState<(SetupStatus & { full?: boolean }) | null>(null)
   const [setupFresh, setSetupFresh] = useState(false)
-  // What the URL says about setup (?setup=1 after a connect flow), read once.
-  const [setupLink] = useState<SetupLink>(() => readSetupLink())
+  // What the URL says about setup (?setup=1 after a connect flow), read once
+  // on mount; null until then, and the checklist waits for it. Not read while
+  // rendering: arriving by a client-side link (the "Back to setup" bar), Next
+  // only puts the new URL in the address bar once the page commits, so the
+  // first render still sees the page they came from.
+  const [setupLink, setSetupLink] = useState<SetupLink | null>(null)
   // The setup numbers last had (cached or fetched), to tell whether checking
   // again is worth the queries.
   const lastSetupRef = useRef<(SetupStatus & { full?: boolean }) | null>(null)
@@ -221,9 +225,11 @@ export default function AdminDashboard() {
   useEffect(() => {
     let timer: any = null
     let cid: string | null = null
+    // By now the address bar has this page's URL, however they got here.
+    const link = readSetupLink()
     const onFocus = () => { if (cid && document.visibilityState === 'visible') loadSummary(cid) }
     // Setup is only checked while the checklist can show on this device.
-    const wantSetup = (id: string) => setupWorthLoading(id, lastSetupRef.current, setupLink)
+    const wantSetup = (id: string) => setupWorthLoading(id, lastSetupRef.current, link)
     // Coming back to this tab (e.g. after connecting something in another one)
     // re-checks setup too, so a step ticks without a reload — unless it's not
     // theirs to run (the checklist never shows for restricted staff).
@@ -235,7 +241,7 @@ export default function AdminDashboard() {
     ;(async () => {
       const { data } = await supabase.auth.getSession()
       const u = data.session?.user || null
-      setUser(u); userIdRef.current = u?.id
+      setUser(u); setSetupLink(link); userIdRef.current = u?.id
       // Paint the last numbers straight away and start refreshing them without
       // waiting to look the workspace up again.
       const cached = readCache(u?.id)
@@ -262,7 +268,6 @@ export default function AdminDashboard() {
       document.addEventListener('visibilitychange', onVisible)
     })()
     return () => { if (timer) clearInterval(timer); document.removeEventListener('visibilitychange', onVisible) }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadSummary, loadSetup])
 
   if (!user) return <div className="p-8" style={{ color: 'var(--slate)' }}>Loading...</div>
@@ -271,8 +276,8 @@ export default function AdminDashboard() {
   const runsIt = (!summary?.access || summary.access.full) && setup?.full !== false
   // Not tied to "complete": a finished checklist hides itself (after its
   // celebration), and keeping the slot steady stops it jumping down the page.
-  const setupTop = !!setup && (setupLink.open || (setup.ageDays != null && setup.ageDays < SETUP_FRESH_DAYS))
-  const checklist = companyId && setup && runsIt
+  const setupTop = !!setup && (!!setupLink?.open || (setup.ageDays != null && setup.ageDays < SETUP_FRESH_DAYS))
+  const checklist = companyId && setup && setupLink && runsIt
     ? <SetupChecklist key={companyId} companyId={companyId} status={setup} fresh={setupFresh} prominent={setupTop} link={setupLink} />
     : null
 

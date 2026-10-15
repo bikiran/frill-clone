@@ -27,7 +27,11 @@ export type SetupLink = {
   notice: string
 }
 
-/** What the dashboard URL says about setup. Browser only. */
+/**
+ * What the dashboard URL says about setup. Browser only, and from an effect:
+ * while a client-side navigation renders, the address bar still has the
+ * previous page's URL.
+ */
 export function readSetupLink(): SetupLink {
   const none: SetupLink = { open: false, skip: [], notice: '' }
   if (typeof window === 'undefined') return none
