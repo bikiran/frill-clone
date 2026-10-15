@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { platformTwilio, platformTwilioConfigured, TWILIO_MASTER, colvyBaseUrl } from '@/lib/twilio-platform'
+import { platformTwilio, platformTwilioConfigured, TWILIO_MASTER, colvyBaseUrl, numberStatusCallbackUrl } from '@/lib/twilio-platform'
 
 export const dynamic = 'force-dynamic'
 
@@ -83,7 +83,7 @@ export async function POST(req: NextRequest) {
         phoneNumberSid: sid,
         smsUrl: `${base}/api/twilio/webhook`,
         voiceUrl: `${base}/api/twilio/voice/inbound`,
-        statusCallback: `${base}/api/twilio/voice/status`,
+        statusCallback: numberStatusCallbackUrl(),
       })
     } catch (e: any) {
       return NextResponse.json({ error: `Found the number but could not configure its webhooks: ${e.message}` }, { status: 502 })

@@ -2,7 +2,7 @@ import { callerUser } from '@/lib/company-access'
 import { isInternalCall } from '@/lib/internal-call'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { platformTwilio, platformTwilioConfigured, TWILIO_MASTER, colvyBaseUrl } from '@/lib/twilio-platform'
+import { platformTwilio, platformTwilioConfigured, TWILIO_MASTER, colvyBaseUrl, numberStatusCallbackUrl } from '@/lib/twilio-platform'
 
 function admin() {
   return createClient(
@@ -115,7 +115,7 @@ export async function POST(req: NextRequest) {
         friendlyName: `Colvy ${String(companyId).slice(0, 8)}`,
         smsUrl: `${base}/api/twilio/webhook`,
         voiceUrl: `${base}/api/twilio/voice/inbound`,
-        statusCallback: `${base}/api/twilio/voice/status`,
+        statusCallback: numberStatusCallbackUrl(),
         bundleSid,
       })
     } catch (e: any) {

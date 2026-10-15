@@ -28,6 +28,8 @@ import { getPhoneCatalog, closestProducts, phoneHints, type PhoneCatalog } from 
 import { alertCall } from '@/lib/call-alerts'
 import { setCallPreview } from '@/lib/call-card'
 import { queueMissedCallText } from '@/lib/missed-call-text'
+import { googleTokenUsable } from '@/lib/google-business'
+import { platformTwilio, numberStatusCallbackUrl } from '@/lib/twilio-platform'
 import { emitCallEvent } from '@/lib/integration-hooks'
 import {
   cleanReceptionist, receptionistLimits, defaultCallSetup, phoneToolNames, callGreeting, greetingSaysAi, phoneTail,
@@ -156,9 +158,10 @@ async function savedGoogleHours(db: Db, companyId: string): Promise<{ hours: Bus
  * read)? Those look just like "not connected" from the hours alone. Told from
  * the connection's row as the hours read left it, so Google isn't asked for a
  * token a second time while the caller hears ringing: a token that worked, or
- * was just refreshed, is still in date there. Without a refresh token, or
- * without the app's Google keys, a token never refreshes: Google is gone, not
- * down.
+ * was just refreshed, is still usable there. One in its last minute is not
+ * (the hours read tried to refresh it), the same test the read made. Without
+ * a refresh token, or without the app's Google keys, a token never refreshes:
+ * Google is gone, not down.
  */
 async function googleDown(db: Db, companyId: string): Promise<boolean> {
   try {
@@ -167,7 +170,7 @@ async function googleDown(db: Db, companyId: string): Promise<boolean> {
     if (error) return true
     const acc = data?.[0]
     if (!acc) return false                                      // not connected
-    if (acc.access_token && Date.parse(acc.token_expires_at || '') > Date.now()) return false   // connected and working: it really has no hours
+    if (googleTokenUsable(acc)) return false                    // connected and working: it really has no hours
     return !!acc.refresh_token && !!(process.env.GOOGLE_CLIENT_ID || process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID) && !!process.env.GOOGLE_CLIENT_SECRET
   } catch { return true }
 }
@@ -590,8 +593,15 @@ export async function phoneTurn(db: any, args: {
         const ok = await takeMessage(db, actx, args, call.input || {}, setup)
         tookMessage = tookMessage || ok
         tookNow = tookNow || ok
-        if (ok) doneNow.push('take_message')
-        if (ok) args.state.messageAbout = String(call.input?.about || '').trim().slice(0, 200)
+        // Noted on the call's state at once, not from the turn's result: a
+        // turn that breaks after this (the model failing in a later round)
+        // returns nothing, and a call where the AI took a message must never
+        // be treated as missed.
+        if (ok) {
+          doneNow.push('take_message')
+          args.state.messageTaken = true
+          args.state.messageAbout = String(call.input?.about || '').trim().slice(0, 200)
+        }
         results.push({ type: 'tool_result', id: call.id, content: ok ? 'Message saved; the team will call back.' : 'Could not save the message.', ...(ok ? {} : { isError: true }) })
         continue
       }
@@ -1089,4 +1099,71 @@ export async function answerWithAgent(db: Db, p: {
     })
   }
   return phoneListenTwiml(`${p.base}/api/twilio/voice/agent?${p.cbQuery}`, p.agent.voice, state.greeting)
+}
+
+// ── Numbers bought before they had a status callback ─────────────────────────
+//
+// A turn-by-turn call whose caller hangs up on the greeting gives no sign but
+// the number's status callback (Twilio doesn't post the <Gather> action on a
+// hang-up). Numbers Colvy buys or assigns get one; numbers it bought before
+// that don't. They get it here, once each, when the AI may answer callers
+// other than the test numbers: as such a call comes in (after it's answered)
+// and when the owner picks a mode like that. Only numbers in Colvy's own
+// Twilio account (a business's own Twilio account is theirs to set up), and
+// only when unset: a status callback someone else set is left alone. The
+// numbers done are kept on an agent_policies row (role "phone", action
+// "status_callback", like the hours copy), so Twilio is asked once per
+// number, not once per call; one Twilio couldn't do is tried again a day on.
+const STATUS_CALLBACK_ACTION = 'status_callback'
+const STATUS_CALLBACK_RETRY_MS = 24 * 3600_000
+// Numbers this server has checked, or is checking: not even the database is asked again.
+const statusCallbackChecked = new Set<string>()
+
+/** Can the AI answer callers other than the test numbers? Only their calls need a number's status callback. */
+export function answersRealCallers(s: Pick<PhoneAgentSettings, 'enabled' | 'mode'>): boolean {
+  return s.enabled && s.mode !== 'test'
+}
+
+/**
+ * Give Colvy's Twilio numbers that have no status callback the one a purchase
+ * sets. `numbers`: numbers in Colvy's Twilio account (E.164); without them,
+ * every number the business has from Colvy. Never throws.
+ */
+export async function ensureStatusCallbacks(db: Db, companyId: string, numbers?: string[]): Promise<void> {
+  try {
+    const svc = platformTwilio()
+    if (!svc) return
+    let list = numbers
+    if (!list) {
+      const { data } = await db.from('phone_numbers').select('phone_number')
+        .eq('company_id', companyId).eq('provider', 'twilio').eq('provisioned_by_colvy', true).neq('status', 'released').limit(20)
+      list = (data || []).map((r: { phone_number: string | null }) => r.phone_number || '')
+    }
+    const todo = Array.from(new Set(list.filter(Boolean))).filter(n => !statusCallbackChecked.has(n))
+    if (!todo.length) return
+    todo.forEach(n => statusCallbackChecked.add(n))
+    const { data, error } = await db.from('agent_policies').select('id, limits')
+      .eq('company_id', companyId).eq('role_key', 'phone').eq('action_key', STATUS_CALLBACK_ACTION).limit(1)
+    if (error) throw new Error(error.message)
+    const row = data?.[0]
+    const done: Record<string, string> = { ...(row?.limits?.numbers || {}) }
+    const failed: Record<string, string> = { ...(row?.limits?.failed || {}) }
+    const due = todo.filter(n => !done[n] && !(Date.now() - Date.parse(failed[n] || '') < STATUS_CALLBACK_RETRY_MS))
+    if (!due.length) return
+    for (const n of due) {
+      const at = new Date().toISOString()
+      try {
+        const pn = await svc.getIncomingNumber(n)
+        if (pn?.sid && !pn.status_callback) await svc.configureNumberWebhooks({ phoneNumberSid: pn.sid, statusCallback: numberStatusCallbackUrl() })
+        done[n] = at
+        delete failed[n]
+      } catch (e) {
+        failed[n] = at
+        console.error('[phone agent] status callback not set', n, e instanceof Error ? e.message : e)
+      }
+    }
+    const fields = { autonomy: 'off', limits: { numbers: done, failed }, updated_at: new Date().toISOString() }
+    if (row) await db.from('agent_policies').update(fields).eq('id', row.id)
+    else await db.from('agent_policies').insert({ company_id: companyId, role_key: 'phone', action_key: STATUS_CALLBACK_ACTION, ...fields })
+  } catch (e) { console.error('[phone agent] status callbacks not checked', e instanceof Error ? e.message : e) }
 }
