@@ -9,7 +9,7 @@ const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
 // A per-path crawl hint. The home page changes most; legal pages barely at all.
 function hints(path: string): { priority: number; changeFrequency: MetadataRoute.Sitemap[number]['changeFrequency'] } {
   if (path === '') return { priority: 1, changeFrequency: 'weekly' }
-  if (['pricing', 'product', 'inbox-crm', 'channels', 'solutions', 'industries'].includes(path)) {
+  if (['pricing', 'product', 'inbox-crm', 'channels', 'solutions', 'industries', 'for', 'business-phone-number-australia', 'all-in-one-customer-platform'].includes(path) || path.startsWith('for/')) {
     return { priority: 0.9, changeFrequency: 'weekly' }
   }
   if (['privacy', 'terms', 'security'].includes(path)) return { priority: 0.3, changeFrequency: 'yearly' }
@@ -25,6 +25,7 @@ function sourceFile(path: string): string {
   if (path.startsWith('channels/')) return 'app/channels/[slug]/Client.tsx'
   if (path.startsWith('solutions/')) return 'app/solutions/[slug]/Client.tsx'
   if (path.startsWith('industries/')) return 'app/industries/[slug]/Client.tsx'
+  if (path.startsWith('for/')) return 'app/for/[slug]/content.tsx'
   return `app/${path}/Client.tsx` // static wrapped pages keep their UI in Client.tsx
 }
 

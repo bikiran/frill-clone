@@ -12,6 +12,15 @@ function admin() {
   )
 }
 
+// Australian landline area code (the digit after +61) for each city the
+// "Get a business number" screen offers. Matches lib/telnyx-service.ts.
+const AU_CITY_NDC: Record<string, string> = {
+  'Melbourne': '3', 'Hobart': '3', 'Geelong': '3',
+  'Sydney': '2', 'Canberra': '2', 'Newcastle': '2', 'Wollongong': '2',
+  'Brisbane': '7', 'Gold Coast': '7', 'Cairns': '7', 'Townsville': '7',
+  'Perth': '8', 'Adelaide': '8', 'Darwin': '8',
+}
+
 const NOT_CONFIGURED = 'Twilio number provisioning is not configured yet. The platform admin needs to set TWILIO_MASTER_ACCOUNT_SID and TWILIO_MASTER_AUTH_TOKEN in the environment.'
 
 // GET: search available AU numbers to show the customer before they buy. Mirrors
@@ -24,7 +33,27 @@ export async function GET(req: NextRequest) {
     if (!svc) return NextResponse.json({ error: NOT_CONFIGURED }, { status: 503 })
     const type = (req.nextUrl.searchParams.get('type') as any) || 'local'
     const areaCode = req.nextUrl.searchParams.get('areaCode') || undefined
-    const raw = await svc.searchAvailableNumbers({ country: 'AU', type, areaCode, limit: 12 })
+    const city = req.nextUrl.searchParams.get('city') || ''
+    // Twilio's AreaCode filter only works for US/Canada numbers, so the city a
+    // business picked was being ignored and a Melbourne shop could be offered a
+    // Sydney 02 number. Keep only numbers with the city's area code instead.
+    const ndc = type === 'local' ? (AU_CITY_NDC[city] || (areaCode && /^[2378]$/.test(areaCode) ? areaCode : '')) : ''
+    let raw: any[] = []
+    if (ndc) {
+      const inArea = (list: any[]) => list.filter(n => String(n.phone_number || '').startsWith(`+61${ndc}`))
+      raw = inArea(await svc.searchAvailableNumbers({ country: 'AU', type, limit: 50 }))
+      // Not enough in the first page: ask for the city by name, then by pattern.
+      // Either can be refused for a country, so failures just fall through.
+      if (raw.length < 3 && city) {
+        try { raw = [...raw, ...inArea(await svc.searchAvailableNumbers({ country: 'AU', type, inLocality: city, limit: 30 }))] } catch {}
+      }
+      if (raw.length < 3) {
+        try { raw = [...raw, ...inArea(await svc.searchAvailableNumbers({ country: 'AU', type, contains: `+61${ndc}********`, limit: 30 }))] } catch {}
+      }
+      raw = raw.filter((n, i, a) => a.findIndex(m => m.phone_number === n.phone_number) === i)
+    } else {
+      raw = await svc.searchAvailableNumbers({ country: 'AU', type, areaCode, limit: 12 })
+    }
     const monthly = parseFloat(process.env.COLVY_NUMBER_PRICE_AUD || '15')
     const numbers = raw.slice(0, 6).map((n: any) => ({
       phone_number: n.phone_number,
@@ -34,6 +63,7 @@ export async function GET(req: NextRequest) {
     if (numbers.length === 0) {
       return NextResponse.json({ numbers: [], error: type === 'mobile'
         ? 'No mobile numbers are available right now — landline numbers work for both calls and SMS, or try again shortly.'
+        : ndc && city ? `No ${city} (0${ndc}) numbers are free right now. Try a nearby city with the same area code, or a mobile number.`
         : 'No numbers available right now — please try again shortly.' })
     }
     return NextResponse.json({ numbers })

@@ -317,7 +317,7 @@ export class TwilioService {
 
   // ── Number provisioning (used with the platform account) ────────────────────
   // Search buyable numbers in a country. `type` maps to Twilio's number classes.
-  async searchAvailableNumbers(params: { country?: string; type?: 'local' | 'mobile' | 'national' | 'tollfree'; areaCode?: string; contains?: string; limit?: number }): Promise<any[]> {
+  async searchAvailableNumbers(params: { country?: string; type?: 'local' | 'mobile' | 'national' | 'tollfree'; areaCode?: string; contains?: string; inLocality?: string; limit?: number }): Promise<any[]> {
     const country = params.country || 'AU'
     const kind = params.type === 'mobile' ? 'Mobile'
       : params.type === 'national' ? 'National'
@@ -328,6 +328,7 @@ export class TwilioService {
     q.set('VoiceEnabled', 'true')
     if (params.areaCode) q.set('AreaCode', params.areaCode)
     if (params.contains) q.set('Contains', params.contains)
+    if (params.inLocality) q.set('InLocality', params.inLocality)
     const data = await this.req(`/AvailablePhoneNumbers/${country}/${kind}.json?${q.toString()}`, 'GET')
     return data?.available_phone_numbers || []
   }

@@ -15,9 +15,12 @@ const ACCENT = PINK
 const CARDS = [
   { icon: 'bolt', title: 'SaaS & tech', desc: 'Feedback → roadmap → ship, plus support that scales.', href: '/industries/saas', accent: PURPLE },
   { icon: 'star', title: 'Agencies', desc: 'Every client in one white-label workspace.', href: '/industries/agencies', accent: CORAL },
-  { icon: 'tag', title: 'Retail & e-commerce', desc: 'Sell, support and get reviews inside the chat.', href: '/industries/ecommerce', accent: BLUE },
+  { icon: 'tag', title: 'Ecommerce', desc: 'Turn DMs into paid orders, then track, follow up and get the review.', href: '/for/ecommerce', accent: BLUE },
+  { icon: 'pin', title: 'Multi-location retail', desc: 'A number for every store, one inbox, stock by store.', href: '/for/multi-location-retail', accent: CYAN },
+  { icon: 'calendar', title: 'Service businesses', desc: 'Missed call to booked job to five-star review.', href: '/for/service-businesses', accent: CORAL },
+  { icon: 'chat', title: 'Restaurants', desc: 'Nothing missed during service: calls, DMs, functions, reviews.', href: '/for/restaurants', accent: PINK },
   { icon: 'reaction', title: 'Hospitality', desc: 'Bookings, guest comms and reviews in one thread.', href: '/industries/hospitality', accent: GREEN },
-  { icon: 'pin', title: 'Real estate', desc: 'Catch every lead and follow up automatically.', href: '/industries/real-estate', accent: CYAN },
+  { icon: 'pin', title: 'Real estate', desc: 'Answer every enquiry, book every inspection.', href: '/for/real-estate', accent: CYAN },
   { icon: 'help', title: 'Healthcare', desc: 'Reminders, recalls and patient comms, handled with care.', href: '/industries/healthcare', accent: PINK },
 ]
 

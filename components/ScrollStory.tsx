@@ -9,11 +9,14 @@ import { useEffect, useRef, useState, ReactNode } from 'react'
 // the AI answering a call, and the follow-ups that bring customers back.
 // Everything is driven by scroll position (no timers), so it moves exactly as
 // fast as the visitor scrolls. With reduced motion it's five still panels.
+//
+// Other pages (the /for/* workflow pages, the platform page) pass their own
+// beats and cards; with no props it tells the homepage story.
 
-type Pose = { x: number; y: number; r?: number; s?: number; o?: number }
-type Stage = { key: string; eyebrow: string; title: string; body: string; bg: string; ink: string; poses: Record<string, Pose> }
+export type Pose = { x: number; y: number; r?: number; s?: number; o?: number }
+export type Stage = { key: string; eyebrow: string; title: string; body: string; bg: string; ink: string; poses: Record<string, Pose> }
 
-const STAGES: Stage[] = [
+const HOME_STAGES: Stage[] = [
   {
     key: 'channels', eyebrow: 'Every channel', title: 'Every message, wherever it starts.',
     body: 'WhatsApp, Instagram, Messenger, SMS, email and phone calls. Customers reach you however they like.',
@@ -56,11 +59,11 @@ const mix = (a: string, b: string, t: number) => {
   return `rgb(${A.map((v, i) => Math.round(v + (B[i] - v) * t)).join(',')})`
 }
 
-function poseAt(id: string, p: number): Pose & { r: number; s: number; o: number } {
-  const i = Math.floor(clamp(p, 0, STAGES.length - 1)), j = Math.min(i + 1, STAGES.length - 1)
+function poseAt(stages: Stage[], id: string, p: number): Pose & { r: number; s: number; o: number } {
+  const i = Math.floor(clamp(p, 0, stages.length - 1)), j = Math.min(i + 1, stages.length - 1)
   const t = ease(p - i)
   const full = (q?: Pose) => q ? { r: 0, s: 1, o: 1, ...q } : undefined
-  let a = full(STAGES[i].poses[id]), b = full(STAGES[j].poses[id])
+  let a = full(stages[i].poses[id]), b = full(stages[j].poses[id])
   // Not in a beat: fade in/out in place (slightly lower and smaller).
   if (!a && !b) return { x: 0, y: 40, r: 0, s: 0.9, o: 0 }
   if (!a) a = { ...b!, y: b!.y + 50, s: b!.s * 0.9, o: 0 }
@@ -72,8 +75,8 @@ function poseAt(id: string, p: number): Pose & { r: number; s: number; o: number
 }
 
 // ── The cards (clean, real-looking product UI with demo data) ─────────────────
-const card: React.CSSProperties = { background: '#fff', color: '#11131c', borderRadius: 18, boxShadow: '0 24px 60px rgba(0,0,0,0.28), 0 2px 6px rgba(0,0,0,0.08)', fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,sans-serif' }
-const Msg = ({ ch, color, who, text, time }: { ch: string; color: string; who: string; text: string; time: string }) => (
+export const card: React.CSSProperties = { background: '#fff', color: '#11131c', borderRadius: 18, boxShadow: '0 24px 60px rgba(0,0,0,0.28), 0 2px 6px rgba(0,0,0,0.08)', fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,sans-serif' }
+export const Msg = ({ ch, color, who, text, time }: { ch: string; color: string; who: string; text: string; time: string }) => (
   <div style={{ ...card, width: 250, padding: '13px 15px' }}>
     <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 7 }}>
       <span style={{ width: 22, height: 22, borderRadius: 7, background: color, color: '#fff', fontSize: 10, fontWeight: 900, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{ch[0]}</span>
@@ -84,8 +87,8 @@ const Msg = ({ ch, color, who, text, time }: { ch: string; color: string; who: s
     <div style={{ marginTop: 7, fontSize: 9.5, fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase', color }}>{ch}</div>
   </div>
 )
-const CHIP: Record<string, string> = { WhatsApp: '#16a34a', Instagram: '#db2777', Messenger: '#2563eb', SMS: '#0891b2', Email: '#7c3aed', Phone: '#ea580c' }
-const CARDS: Record<string, ReactNode> = {
+export const CHIP: Record<string, string> = { WhatsApp: '#16a34a', Instagram: '#db2777', Messenger: '#2563eb', SMS: '#0891b2', Email: '#7c3aed', Phone: '#ea580c' }
+const HOME_CARDS: Record<string, ReactNode> = {
   wa: <Msg ch="WhatsApp" color={CHIP.WhatsApp} who="Priya Nair" text="Can I book a tank clean-out for Friday?" time="2m" />,
   ig: <Msg ch="Instagram" color={CHIP.Instagram} who="Mia Chen" text="Is the 4ft reef tank still available? 🐠" time="now" />,
   fb: <Msg ch="Messenger" color={CHIP.Messenger} who="Leo Martin" text="Are you open this Sunday?" time="5m" />,
@@ -173,9 +176,11 @@ const CARDS: Record<string, ReactNode> = {
     </div>
   ),
 }
-const ORDER = ['inbox', 'call', 'order', 'pay', 'wa', 'ig', 'fb', 'sms', 'em', 'ph', 'review', 'restock']   // paint order (later = on top)
+const HOME_ORDER = ['inbox', 'call', 'order', 'pay', 'wa', 'ig', 'fb', 'sms', 'em', 'ph', 'review', 'restock']   // paint order (later = on top)
 
-export default function ScrollStory() {
+export default function ScrollStory({ stages: STAGES = HOME_STAGES, cards: CARDS = HOME_CARDS, order: ORDER = HOME_ORDER, label = 'What Colvy does' }: {
+  stages?: Stage[]; cards?: Record<string, ReactNode>; order?: string[]; label?: string
+} = {}) {
   const ref = useRef<HTMLElement>(null)
   const [p, setP] = useState(0)
   const [still, setStill] = useState(false)
@@ -195,7 +200,7 @@ export default function ScrollStory() {
     window.addEventListener('scroll', onScroll, { passive: true })
     window.addEventListener('resize', onScroll)
     return () => { window.removeEventListener('scroll', onScroll); window.removeEventListener('resize', onScroll); cancelAnimationFrame(raf) }
-  }, [])
+  }, [STAGES.length])
 
   const i = Math.floor(clamp(p, 0, STAGES.length - 1)), j = Math.min(i + 1, STAGES.length - 1)
   const t = ease(p - i)
@@ -205,7 +210,7 @@ export default function ScrollStory() {
   const visual = (at: number) => (
     <div className="ss-visual" style={{ position: 'relative', width: 560, height: 560 }}>
       {ORDER.map(id => {
-        const q = poseAt(id, at)
+        const q = poseAt(STAGES, id, at)
         if (q.o < 0.01) return null
         return (
           <div key={id} style={{ position: 'absolute', left: '50%', top: '50%', transform: `translate(-50%,-50%) translate3d(${q.x}px,${q.y}px,0) rotate(${q.r}deg) scale(${q.s})`, opacity: q.o, willChange: 'transform, opacity' }}>
@@ -218,7 +223,7 @@ export default function ScrollStory() {
 
   if (still) {
     return (
-      <section aria-label="What Colvy does">
+      <section aria-label={label}>
         {STAGES.map((s, k) => (
           <div key={s.key} className="ss-still" style={{ background: s.bg, color: s.ink, padding: 'clamp(56px, 8vw, 96px) 24px' }}>
             <div className="ss-grid" style={{ maxWidth: 1240, margin: '0 auto', display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: 40, alignItems: 'center' }}>
@@ -233,7 +238,7 @@ export default function ScrollStory() {
   }
 
   return (
-    <section ref={ref} aria-label="What Colvy does" style={{ position: 'relative', height: `${STAGES.length * 110}vh`, background: bg }}>
+    <section ref={ref} aria-label={label} style={{ position: 'relative', height: `${STAGES.length * 110}vh`, background: bg }}>
       <div style={{ position: 'sticky', top: 0, height: '100vh', overflow: 'hidden', background: bg, color: ink }}>
         <div className="ss-grid" style={{ maxWidth: 1240, height: '100%', margin: '0 auto', padding: '0 24px', display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: 40, alignItems: 'center' }}>
           {/* The words for each beat, crossfading and sliding as you scroll. */}
