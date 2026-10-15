@@ -27,7 +27,11 @@ export type SetupLink = {
   notice: string
 }
 
-/** What the dashboard URL says about setup. Browser only. */
+/**
+ * What the dashboard URL says about setup. Browser only, and from an effect:
+ * while a client-side navigation renders, the address bar still has the
+ * previous page's URL.
+ */
 export function readSetupLink(): SetupLink {
   const none: SetupLink = { open: false, skip: [], notice: '' }
   if (typeof window === 'undefined') return none
@@ -47,22 +51,40 @@ export function readSetupLink(): SetupLink {
 
 export type Prefs = { hidden: boolean; skipped: SetupStepKey[]; seen: SetupStepKey[] | null; completed: boolean }
 const prefsKey = (companyId: string) => `colvy-setup-v2-${companyId}`
+// The checklist before this one (the feedback-board steps) kept { done, hidden }
+// here. Whoever hid that one said they don't want a setup checklist on their
+// dashboard, so this one starts hidden for them too (?setup=1 still opens it).
+// Prefs saved from here on carry `migrated: true`, meaning that's been taken
+// into account. Ones without it (nothing saved yet, or saved by this
+// checklist's first release, which didn't look at the old key) still check it.
+const oldPrefsKey = (companyId: string) => `colvy-setup-${companyId}`
+function oldChecklistHidden(companyId: string): boolean {
+  try {
+    const old = JSON.parse(localStorage.getItem(oldPrefsKey(companyId)) || 'null')
+    return !!old && old.hidden === true
+  } catch { return false }
+}
 function readPrefs(companyId: string): Prefs {
   const blank: Prefs = { hidden: false, skipped: [], seen: null, completed: false }
   if (typeof window === 'undefined') return blank
   try {
-    const v = JSON.parse(localStorage.getItem(prefsKey(companyId)) || 'null')
-    if (!v || typeof v !== 'object') return blank
-    return {
+    const raw = localStorage.getItem(prefsKey(companyId))
+    const v = raw == null ? null : JSON.parse(raw)
+    if (raw != null && (!v || typeof v !== 'object')) return blank
+    const p: Prefs = v ? {
       hidden: v.hidden === true,
       skipped: Array.isArray(v.skipped) ? v.skipped : [],
       seen: Array.isArray(v.seen) ? v.seen : null,
       completed: v.completed === true,
-    }
+    } : blank
+    // Every save starts from what's read here, so once this is saved (with
+    // the marker) it sticks, and "Hide" / ?setup=1 decide from then on.
+    if (v?.migrated !== true && !p.hidden && oldChecklistHidden(companyId)) return { ...p, hidden: true }
+    return p
   } catch { return blank }
 }
 function writePrefs(companyId: string, p: Prefs) {
-  try { localStorage.setItem(prefsKey(companyId), JSON.stringify(p)) } catch { /* private mode — fine */ }
+  try { localStorage.setItem(prefsKey(companyId), JSON.stringify({ ...p, migrated: true })) } catch { /* private mode — fine */ }
 }
 
 // One analytics event per step, the first time this browser sees it done.
@@ -78,6 +100,25 @@ const STEP_EVENT: Record<SetupStepKey, [ColvyEvent, Record<string, string>]> = {
 // Only young workspaces count towards "how long does setup take", so an
 // established business opening the new checklist doesn't skew it.
 const TRACK_MAX_AGE_DAYS = 30
+
+/**
+ * Whether the dashboard should fetch fresh setup numbers. Not when the
+ * checklist can't show on this device — hidden, or finished here and `last`
+ * (the numbers it last had, which it's showing) still finished — and the
+ * workspace is past the age where ticks are counted: nothing would show or be
+ * tracked. Arriving via ?setup=1 always checks.
+ */
+export function setupWorthLoading(companyId: string, last: Pick<SetupStatus, 'ageDays' | 'steps'> | null | undefined, link: SetupLink): boolean {
+  if (link.open) return true
+  const p = readPrefs(companyId)
+  // The checklist's own "complete": every step done, or skipped. `completed`
+  // alone isn't enough — it never resets, while a step can be added back or
+  // come undone (a store uninstalled) and the checklist shows again.
+  const finished = () => !!last && setupSteps().every(m =>
+    p.skipped.includes(m.key) || last.steps.some(st => st.key === m.key && st.state === 'done'))
+  if (!p.hidden && !(p.completed && finished())) return true
+  return !(last && last.ageDays != null && last.ageDays > TRACK_MAX_AGE_DAYS)
+}
 
 const sinceSignup = (s: SetupStatus) => {
   const t = s.createdAt ? Date.parse(s.createdAt) : NaN
@@ -133,7 +174,12 @@ export default function SetupChecklist({ companyId, status, fresh, prominent, li
   prominent: boolean
   link: SetupLink
 }) {
-  const [prefs, setPrefs] = useState<Prefs>(() => readPrefs(companyId))
+  // Arriving via ?setup=1 un-hides it (saved by settleProgress below), but
+  // "Hide" on that same visit still hides it.
+  const [prefs, setPrefs] = useState<Prefs>(() => {
+    const p = readPrefs(companyId)
+    return link.open ? { ...p, hidden: false } : p
+  })
   // Ticks seen before this visit. With none on record, nothing is "new" —
   // except when they've just come back from setting something up.
   const [baseline] = useState<SetupStepKey[] | null>(() => prefs.seen ?? (link.open ? [] : null))
@@ -186,7 +232,7 @@ export default function SetupChecklist({ companyId, status, fresh, prominent, li
   }
 
   const cheering = newly.length > 0 && !dismissedCheer
-  if (prefs.hidden && !link.open) return null
+  if (prefs.hidden) return null
   // Finished and nothing new to celebrate: out of the way.
   if (complete && !cheering && !link.open) return null
 

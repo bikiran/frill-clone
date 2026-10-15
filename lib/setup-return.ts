@@ -21,6 +21,25 @@ export const SKIPPABLE_STEPS = ['email', 'meta', 'store', 'phone'] as const
 const STORE_KEY = 'colvy-setup-return'
 const TTL_MS = 2 * 3600_000
 
+// The pages the checklist's steps open (components/setup-steps), which is also
+// where their connect flows come back to. The remembered way back only counts
+// on these; anywhere else in the admin, the setup trip is over.
+const SETUP_PAGES = [
+  '/admin/crm-settings/channels/email',
+  '/admin/crm-settings/channels/meta',
+  '/admin/integrations/shopify',
+  '/admin/integrations/woocommerce',
+  '/admin/crm-settings/channels/calls',
+  '/admin/contacts',
+  '/admin/team',
+  '/admin/crm-settings/auto-replies',
+]
+
+/** Is this admin path one of the pages a setup step opens? */
+export function isSetupPage(pathname: string): boolean {
+  return SETUP_PAGES.some(p => pathname === p || pathname.startsWith(`${p}/`))
+}
+
 /**
  * The path itself if it's a relative path inside the admin ("/admin",
  * "/admin?setup=1", "/admin/team?x=1"), else ''. Rejects absolute and
@@ -82,12 +101,13 @@ export function readSetupReturn(): string {
 
 /**
  * Where this page should send people back to when they're mid-setup: the
- * page's own `?returnTo=` (remembered for the tab), else what this tab
- * remembered from earlier in the flow, else ''. Call it from an event handler.
+ * page's own `?returnTo=` (remembered for the tab), else — on a setup step's
+ * page — what this tab remembered from earlier in the flow, else ''. Call it
+ * from an event handler.
  */
 export function currentSetupReturn(): string {
   if (typeof window === 'undefined') return ''
   const fromUrl = safeSetupPath(new URLSearchParams(window.location.search).get('returnTo'))
   if (fromUrl) { rememberSetupReturn(fromUrl); return fromUrl }
-  return readSetupReturn()
+  return isSetupPage(window.location.pathname) ? readSetupReturn() : ''
 }

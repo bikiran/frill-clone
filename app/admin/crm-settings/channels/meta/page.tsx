@@ -44,7 +44,8 @@ export default function MetaChannelsPage() {
       setLoading(false)
 
       const p = new URLSearchParams(window.location.search)
-      if (p.get('connected')) setMsg(`Connected ${p.get('connected')} channel(s). Map each to an outlet below.`)
+      if (p.get('connected') === '0') setMsg('Connection failed: Facebook didn’t give Colvy access to any Pages. Check you manage the Page, then connect again and pick it.')
+      else if (p.get('connected')) setMsg(`Connected ${p.get('connected')} channel(s). Map each to an outlet below.`)
       if (p.get('error')) setMsg('Connection failed: ' + p.get('error'))
     })()
   }, [])

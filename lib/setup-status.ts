@@ -7,8 +7,10 @@
 //   meta        an active Facebook Page or Instagram account in meta_channels
 //   store       an active Shopify or WooCommerce store
 //   phone       a number in phone_numbers (or a bring-your-own Twilio/Telnyx
-//               number). A submitted AU regulatory bundle or a pending number
-//               reads as "waiting" — approval can take a day or two.
+//               number). A pending number reads as "waiting". A submitted AU
+//               ID check with no number is still "to do": the number is bought
+//               straight after checkout, so on its own it's a checkout that
+//               wasn't finished, not something to wait for.
 //   customers   at least one contact (Shopify's connect imports them)
 //   team        someone besides the owner, joined or invited
 //   automation  anything that answers or messages customers for them
@@ -41,8 +43,10 @@ export type SetupStatus = {
 export const SETUP_ORDER: SetupStepKey[] = ['email', 'meta', 'store', 'phone', 'customers', 'team', 'automation']
 
 const DAY = 864e5
-// Regulatory bundle states that mean "sent off, waiting on the carrier".
-const BUNDLE_WAITING = ['submitted', 'validating', 'pending', 'in_review', 'in-review', 'pending_review', 'pending-review']
+// Regulatory bundle states that mean the ID details were sent off. Nothing
+// moves a bundle on from there (the number is bought straight after checkout),
+// so without a number it's a purchase that wasn't finished, not a wait.
+const BUNDLE_SENT = ['submitted', 'validating', 'pending', 'in_review', 'in-review', 'pending_review', 'pending-review']
 
 // The bits of a Supabase query builder used here (the service-role client in
 // the API route, an in-memory fake in tests).
@@ -147,9 +151,10 @@ export async function computeSetupStatus(db: SetupDb, companyId: string, now: Da
   let phone: SetupStep
   if (live.length) phone = { key: 'phone', state: 'done', detail: live.length === 1 ? str(live[0].phone_number) : plural(live.length, 'number') }
   else if (byo) phone = { key: 'phone', state: 'done', detail: byo }
-  else if (pendingNumber || BUNDLE_WAITING.includes(bundleStatus)) phone = { key: 'phone', state: 'waiting', detail: 'Waiting for approval' }
+  else if (pendingNumber) phone = { key: 'phone', state: 'waiting', detail: 'Waiting for approval' }
   else if (bundleStatus === 'approved') phone = { key: 'phone', state: 'todo', detail: 'Approved — pick your number' }
   else if (bundleStatus === 'rejected') phone = { key: 'phone', state: 'todo', detail: 'Your ID check needs another look' }
+  else if (BUNDLE_SENT.includes(bundleStatus)) phone = { key: 'phone', state: 'todo', detail: 'ID details sent — pick your number' }
   else phone = { key: 'phone', state: 'todo', detail: null }
   steps.push(phone)
 

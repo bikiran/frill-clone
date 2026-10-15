@@ -12,6 +12,14 @@ const admin = () => createClient(
   { auth: { autoRefreshToken: false, persistSession: false } }
 )
 
+// How many outlets the business has (0 if it can't tell).
+async function outletCount(db: ReturnType<typeof admin>, companyId: string): Promise<number> {
+  try {
+    const { count } = await db.from('company_locations').select('id', { count: 'exact', head: true }).eq('company_id', companyId)
+    return count || 0
+  } catch { return 0 }
+}
+
 // Instagram redirects here after the business authorises via Instagram Login.
 // We exchange the code for a long-lived Instagram user token, read the profile,
 // and store it as an `instagram` meta_channels row. The page_id is a synthetic
@@ -94,6 +102,12 @@ export async function GET(req: NextRequest) {
     // delivered. Best-effort — the connection is already stored either way.
     subscribeInstagramWebhooks(igId, token).catch(() => {})
 
+    // From the setup checklist: straight back there, unless there are several
+    // outlets to map the account to — the settings page first, with its
+    // "Back to setup" bar.
+    if (returnTo && await outletCount(db, companyId) > 1) {
+      return NextResponse.redirect(home(`connected=1&returnTo=${encodeURIComponent(returnTo)}`))
+    }
     return NextResponse.redirect(connectedTo('connected=1'))
   } catch (e: any) {
     return NextResponse.redirect(home(`error=${encodeURIComponent(e.message || 'connect failed')}`))
