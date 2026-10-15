@@ -102,6 +102,26 @@ export function linkFunnel(clicks: FunnelClick[], conversions: FunnelConversion[
   }
 }
 
+/** The outcomes Link Reports filters by, from least to furthest. */
+export const LINK_OUTCOMES = ['Not opened', 'Clicked', 'Conversation', 'Lead', 'Added to cart', 'Checkout started', 'Booked', 'Order created', 'Purchased']
+
+/**
+ * The furthest stage a link reached. Smart links add 'conversation' (a chat
+ * or enquiry started), 'lead' (a new contact) and 'booking'; a paid booking's
+ * 'paid' row (book_<id>) reads as Booked, not Purchased.
+ */
+export function linkOutcome(conversions: FunnelConversion[], clicked: boolean): string {
+  const has = (test: (v: FunnelConversion) => boolean) => conversions.some(test)
+  if (has(v => v.stage === 'paid' && !isBookingPayment(v))) return 'Purchased'
+  if (has(v => v.stage === 'created')) return 'Order created'
+  if (has(v => v.stage === 'booking' || v.stage === 'booked' || (v.stage === 'paid' && isBookingPayment(v)))) return 'Booked'
+  if (has(v => v.stage === 'checkout')) return 'Checkout started'
+  if (has(v => v.stage === 'cart')) return 'Added to cart'
+  if (has(v => v.stage === 'lead')) return 'Lead'
+  if (has(v => v.stage === 'conversation')) return 'Conversation'
+  return clicked ? 'Clicked' : 'Not opened'
+}
+
 // ── Where a click came from ─────────────────────────────────────────────────
 
 /**
