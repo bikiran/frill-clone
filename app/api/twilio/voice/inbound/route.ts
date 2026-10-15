@@ -6,8 +6,11 @@ import { xmlEscape, twilioIdentity } from '@/lib/twilio-service'
 import { companyForInboundNumber } from '@/lib/inbound-company'
 import { ensureContactByPhone, findContactByPhone } from '@/lib/contact-capture'
 import { alertCall } from '@/lib/call-alerts'
-import { getPhoneCatalog, phoneHints } from '@/lib/phone-catalog'
-import { getPhoneAgent, answersCaller, startPhoneCall, newPhoneCall, phoneListenTwiml, phoneRelayTwiml, relayConfigured } from '@/lib/phone-agent'
+import { getPhoneCatalog } from '@/lib/phone-catalog'
+import { getPhoneAgent, answerWithAgent, businessClosedNow, phoneBookable } from '@/lib/phone-agent'
+import { aiAnswerDecision, needsHoursCheck, mayAnswerAtStart } from '@/lib/phone-receptionist'
+import { agentsPaused } from '@/lib/agent/pilot'
+import { queueMissedCallText } from '@/lib/missed-call-text'
 
 export const dynamic = 'force-dynamic'
 
@@ -59,11 +62,16 @@ export async function POST(req: NextRequest) {
     }
     // The AI phone agent's settings and the business name, read alongside the
     // caller lookups below rather than after them (the caller hears ringing
-    // until we answer).
+    // until we answer). What it needs to answer straight away (product names,
+    // whether anything is bookable, whether the business is closed now) only
+    // loads when it might.
     const agentP = getPhoneAgent(db, companyId)
     const coNameP: Promise<string> = Promise.resolve(db.from('companies').select('name').eq('id', companyId).maybeSingle())
       .then((r: any) => r.data?.name || '', () => '')
-    const catalogP = agentP.then(a => a.enabled ? getPhoneCatalog(db, companyId) : null, () => null)
+    const catalogP = agentP.then(a => mayAnswerAtStart(a, from) ? getPhoneCatalog(db, companyId) : null, () => null)
+    const bookableP = agentP.then(a => mayAnswerAtStart(a, from) && a.skills.booking ? phoneBookable(db, companyId) : false, () => false)
+    const closedP: Promise<boolean | null> = agentP.then(a => needsHoursCheck(a, from) ? businessClosedNow(db, companyId) : null, () => null)
+    const pausedP: Promise<boolean> = agentP.then(a => a.enabled && a.mode !== 'test' ? agentsPaused(db, companyId).then(p => p.paused) : false, () => false)
     const { data: integ } = await db.from('twilio_integrations').select('*').eq('company_id', companyId).maybeSingle()
     if (!integ) {
       return twiml('<Response><Say>This number is not configured.</Say><Hangup/></Response>')
@@ -140,36 +148,20 @@ export async function POST(req: NextRequest) {
 
     const cbQuery = `callRowId=${encodeURIComponent(callRowId || '')}&companyId=${encodeURIComponent(companyId)}&conversationId=${encodeURIComponent(conversationId || '')}`
 
-    // AI phone agent, test stage: a call from one of the business's test
-    // numbers is answered by the agent straight away. Every other caller goes
-    // through the normal ringing below, exactly as before.
+    // AI receptionist, as the call comes in: a test number is always answered
+    // by the AI straight away; beyond that the owner's mode decides (out of
+    // hours: when the business is closed now; always: every call). Everyone
+    // else goes through the normal ringing below, exactly as before.
     if (callRowId) {
       try {
         const agent = await agentP
-        if (answersCaller(agent, from)) {
-          const [companyName, catalog] = await Promise.all([coNameP, catalogP])
-          const realtime = relayConfigured()
-          // Real-time calls answer at once; what the agent needs to know loads
-          // while the greeting plays (the relay's "start"). Turn-by-turn calls
-          // load it now.
-          const state = realtime
-            ? newPhoneCall(companyName, catalog)
-            : await startPhoneCall(db, { companyId, companyName, conversationId, contactId, from })
-          state.realtime = realtime
-          const now = new Date().toISOString()
-          await db.from('calls').update({
-            status: 'completed', answered_at: now, ended_at: now, agent_name: 'AI phone agent',
-            cause: 'phone_agent: answered (test)', routing_state: { phone_agent: state, phone_voice: agent.voice },
-          }).eq('id', callRowId)
-          // Real-time when the relay server is set up; otherwise turn by turn.
-          if (realtime) {
-            return twiml(phoneRelayTwiml({
-              relayUrl: process.env.VOICE_RELAY_URL!, doneUrl: `${base}/api/twilio/voice/agent-done?${cbQuery}`,
-              voice: agent.voice, greeting: state.greeting, callRowId, companyId,
-              stt: agent.stt, hints: agent.stt === 'google' ? [] : phoneHints(companyName, catalog),
-            }))
+        if (agent.enabled) {
+          const [closedNow, paused] = await Promise.all([closedP, pausedP])
+          const reason = aiAnswerDecision(agent, { from, moment: 'incoming', closedNow, paused })
+          if (reason) {
+            const [companyName, catalog, bookable] = await Promise.all([coNameP, catalogP, bookableP])
+            return twiml(await answerWithAgent(db, { agent, reason, bookable, base, cbQuery, callRowId, companyId, companyName, catalog, conversationId, contactId, from }))
           }
-          return twiml(phoneListenTwiml(`${base}/api/twilio/voice/agent?${cbQuery}`, agent.voice, state.greeting))
         }
       } catch (e: any) { console.error('[twilio inbound] phone agent start failed — ringing as normal', e?.message || e) }
     }
@@ -263,6 +255,23 @@ export async function POST(req: NextRequest) {
     // Twilio push does that — so dropping it leaves ringing intact.
 
     if (identities.length === 0) {
+      // Nobody to ring, so this is where voicemail starts. The AI receptionist
+      // takes it instead when the owner chose "when nobody answers".
+      if (callRowId) {
+        try {
+          const agent = await agentP
+          const reason = agent.enabled ? aiAnswerDecision(agent, { from, moment: 'no_answer', paused: await pausedP }) : null
+          if (reason) {
+            const [companyName, catalog, bookable] = await Promise.all([
+              coNameP, getPhoneCatalog(db, companyId), agent.skills.booking ? phoneBookable(db, companyId) : false,
+            ])
+            return twiml(await answerWithAgent(db, {
+              agent, reason, bookable, base, cbQuery, callRowId, companyId, companyName, catalog, conversationId, contactId, from,
+              causeDetail: `with nobody online (online heartbeats=${(online || []).length}, push devices=${(mobileTokens || []).length})`,
+            }))
+          }
+        } catch (e) { console.error('[twilio inbound] phone agent (nobody online) failed — voicemail as normal', e instanceof Error ? e.message : e) }
+      }
       // Nobody online → straight to voicemail (if enabled). Record WHY on `cause`
       // (shown as "Hangup cause" in Call Diagnostics) so this is diagnosable: no
       // agent had a fresh presence heartbeat AND none had a push token to wake.
@@ -270,6 +279,7 @@ export async function POST(req: NextRequest) {
         // No voicemail: it's a missed call — record it and tell the team.
         if (callRowId) { try { await db.from('calls').update({ status: 'missed', ended_at: new Date().toISOString(), cause: 'no_agent: nobody online, voicemail off' }).eq('id', callRowId) } catch {} }
         await alertCall(db, companyId, conversationId, 'Missed call', callerName || from || 'a caller')
+        queueMissedCallText({ db, companyId, callId: callRowId })
         return twiml('<Response><Hangup/></Response>')
       }
       try {
@@ -278,6 +288,9 @@ export async function POST(req: NextRequest) {
           cause: `no_agent: nobody online (online heartbeats=${(online || []).length}, push devices=${(mobileTokens || []).length})`,
         }).eq('id', callRowId || '')
       } catch {}
+      // Nobody can take it, so text the caller back now if switched on (as in
+      // inbound-status: don't wait for a voicemail that may never come).
+      queueMissedCallText({ db, companyId, callId: callRowId })
       return twiml(voicemailTwiml(base, greeting, cbQuery))
     }
 

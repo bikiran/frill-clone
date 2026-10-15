@@ -9,6 +9,7 @@ import { WooCommerceService } from '@/lib/woocommerce-service'
 import { shopifyCreateDiscountCode, shopifyCreateOrder, shopifyStoreFor } from '@/lib/shopify-create'
 import { trackLinksInText } from '@/lib/link-tracking'
 import { modelFor, trackAi } from '@/lib/ai-models'
+import { memoryForPrompt, memoryBlock } from '@/lib/agent/business-memory'
 
 const admin = () => createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -491,10 +492,13 @@ export async function runAiAgent(opts: {
 
   async function composeAndSend(): Promise<AiResult> {
 
-  const [knowledge, products] = await Promise.all([
+  const [knowledge, products, memory] = await Promise.all([
     retrieve(db, companyId, last.content),
     findProducts(db, companyId, last.content).catch(() => [] as any[]),
+    // The owner's tone, must-know facts and rules — the same ones the AI agents follow.
+    memoryForPrompt(db, companyId),
   ])
+  const memText = memoryBlock(memory)
   const business = company?.name || 'the business'
   const isSms = String(conv.channel || '') === 'sms'
 
@@ -596,7 +600,7 @@ WHAT YOU KNOW
 Everything below comes from ${business}'s own material. It is the ONLY thing you may treat as fact about this business:
 
 ${knowledgeBlock}
-
+${memText ? `\n${memText}\n` : ''}
 LIVE STOCK AND PRICES (from the online store, right now)
 ${productBlock}
 Only state stock or prices from this list. If the product they asked about isn't listed, say you'll check with the team and hand to a human — never guess. Link the product when it helps.
@@ -777,7 +781,7 @@ WHAT YOU CANNOT DO
     const runId = await startActivity(db, {
       companyId, roleKey: 'colvy_ai', trigger: 'inbound_message', conversationId: opts.conversationId, contactId: contact?.id || null,
       input: { message: String(last.content || '').slice(0, 2000), channel: conv.channel },
-      contextRefs: [{ type: 'company', id: companyId, label: 'Business profile' }, ...(knowledge.length ? [{ type: 'knowledge', id: companyId, label: `${knowledge.length} knowledge match${knowledge.length === 1 ? '' : 'es'}` }] : [])],
+      contextRefs: [{ type: 'company', id: companyId, label: 'Business profile' }, ...memory.refs, ...(knowledge.length ? [{ type: 'knowledge', id: companyId, label: `${knowledge.length} knowledge match${knowledge.length === 1 ? '' : 'es'}` }] : [])],
     })
 
     // Post it, clearly marked as AI (and text it, for an SMS conversation).

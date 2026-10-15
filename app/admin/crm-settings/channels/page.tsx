@@ -15,7 +15,7 @@ const CHANNELS = [
   { id: 'email',     name: 'Email',            color: '#EA4335', icon: 'M',
     href: '/admin/crm-settings/channels/email', ready: true,
     note: 'Customers email you; replies thread back.' },
-  { id: 'web_form',  name: 'Web Form',         color: '#0EA5E9', icon: '▤',
+  { id: 'webform',   name: 'Web Form',         color: '#0EA5E9', icon: '▤',
     href: '/admin/crm-settings/channels/web-form', ready: true,
     note: 'Point your website forms at a per-location address.' },
   { id: 'sms',       name: 'SMS',              color: '#00c08b', icon: '✉',
@@ -52,12 +52,13 @@ export default function ChannelsSettings() {
       const status: Record<string, boolean> = {}
       // Each channel's check is independent — ask them all at once.
       const q = (p: any) => Promise.resolve(p).then((r: any) => r?.data ?? null).catch(() => null)
-      const [telnyx, twilio, email, google, realestate] = await Promise.all([
+      const [telnyx, twilio, email, google, realestate, meta] = await Promise.all([
         q((supabase as any).from('telnyx_integrations').select('api_key, phone_number').eq('company_id', companyId).maybeSingle()),
         q((supabase as any).from('twilio_integrations').select('account_sid, phone_number').eq('company_id', companyId).maybeSingle()),
-        q((supabase as any).from('email_channels').select('id').eq('company_id', companyId).eq('is_active', true).limit(1)),
+        q((supabase as any).from('email_channels').select('id, provider').eq('company_id', companyId).eq('is_active', true).limit(50)),
         q((supabase as any).from('google_business_accounts').select('access_token').eq('company_id', companyId).maybeSingle()),
         q((supabase as any).from('realestate_integrations').select('is_active').eq('company_id', companyId).maybeSingle()),
+        q(supabase.from('meta_channels').select('platform').eq('company_id', companyId).eq('is_active', true).limit(50)),
       ])
 
       // SMS / Calls — a number on Twilio (below), or a legacy Telnyx integration.
@@ -65,8 +66,16 @@ export default function ChannelsSettings() {
       // Twilio — a second SMS/MMS + calling provider (BYO account).
       status.twilio = !!(twilio?.account_sid && twilio?.phone_number)
       if (status.twilio) { status.sms = true; status.phone = true }
-      // Email — an active inbound address.
-      status.email = !!email?.length
+      // Email — an active mailbox. Web-form addresses live in the same table
+      // but are their own channel.
+      const mail = (email || []) as { provider?: string | null }[]
+      status.email = mail.some(r => r.provider !== 'webform')
+      status.webform = mail.some(r => r.provider === 'webform')
+      // Instagram / Messenger — an active Page or Instagram account (a Page
+      // connect brings its linked Instagram along as its own row).
+      const social = (meta || []) as { platform?: string }[]
+      status.instagram = social.some(r => r.platform === 'instagram')
+      status.facebook = social.some(r => r.platform === 'facebook')
       // Google Reviews — an OAuth token stored.
       status.google = !!google?.access_token
       // RealEstate — an active realestate.com.au integration.
@@ -122,12 +131,6 @@ export default function ChannelsSettings() {
             </div>
           )
         })}
-      </div>
-
-      <div style={{ marginTop: 22, padding: 16, borderRadius: 12, background: 'var(--canvas)', border: '1px solid var(--border)' }}>
-        <p style={{ margin: 0, fontSize: 12.5, color: 'var(--slate)', lineHeight: 1.6 }}>
-          <strong>Instagram, Messenger and WhatsApp</strong> aren&rsquo;t built yet. They need a Meta Developer app, Business Verification, and (for Instagram/Messenger) Meta App Review, which takes time to approve. We&rsquo;d rather show an honest status than a button that does nothing.
-        </p>
       </div>
     </div>
   )

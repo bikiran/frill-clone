@@ -11,7 +11,7 @@
 
 import { createHash } from 'crypto'
 import { getModelClient, type ModelClient, type NeutralBlock, type NeutralMessage, type ToolSpec } from './model'
-import { getAction, validateInput, FINISH_ACTION } from './actions'
+import { getAction, validateInput, FINISH_ACTION, flushKnowledgeGaps } from './actions'
 import { loadExternalActions } from './external-tools'
 import { retireStaleSuggestions } from './approvals'
 import { decide, loadPolicies } from './policy'
@@ -315,6 +315,8 @@ export async function runAgent(db: any, runId: string, deadline: number, model: 
     }
 
     const totals = { tokens_in: tokensIn, tokens_out: tokensOut, model: modelName }
+    // A question its knowledge searches never answered → AI Knowledge → Unanswered.
+    await flushKnowledgeGaps(actx).catch(() => {})
     if (!finished) {
       return finishRun({ ...totals, status: 'failed', outcome: 'incomplete', summary: `Stopped after ${role.maxSteps} steps without finishing. A person should take a look.` })
     }

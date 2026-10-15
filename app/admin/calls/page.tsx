@@ -40,7 +40,14 @@ export default function CallsPage() {
   const [calls, setCalls] = useState<Call[]>(seededCalls ?? [])
   const [companyId, setCompanyId] = useState<string | null>(seededCid)
   const [loading, setLoading] = useState(!seededCalls)
-  const [filter, setFilter] = useState<'all' | 'inbound' | 'outbound' | 'missed' | 'voicemail'>('all')
+  // A link can open a tab directly (the home dashboard links ?filter=missed).
+  const [filter, setFilter] = useState<'all' | 'inbound' | 'outbound' | 'missed' | 'voicemail'>(() => {
+    try {
+      const f = new URLSearchParams(window.location.search).get('filter')
+      if (f === 'inbound' || f === 'outbound' || f === 'missed' || f === 'voicemail') return f
+    } catch {}
+    return 'all'
+  })
   const [search, setSearch] = useState('')
   // Advanced filters (all default to '' = any). Applied on top of the direction tab.
   const emptyAdv = { outcome: '', agent: '', date: '', from: '', to: '', duration: '', number: '', contact: '', recording: '', transcription: '', summary: '', sentiment: '', transferred: '' }

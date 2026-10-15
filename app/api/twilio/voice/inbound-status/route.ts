@@ -7,6 +7,11 @@ import { setCallPreview } from '@/lib/call-card'
 import { resolveAgentName } from '@/lib/agent-name'
 import { emitCallEvent } from '@/lib/integration-hooks'
 import { alertCall } from '@/lib/call-alerts'
+import { getPhoneAgent, answerWithAgent, phoneBookable } from '@/lib/phone-agent'
+import { aiAnswerDecision } from '@/lib/phone-receptionist'
+import { agentsPaused } from '@/lib/agent/pilot'
+import { getPhoneCatalog } from '@/lib/phone-catalog'
+import { queueMissedCallText } from '@/lib/missed-call-text'
 
 export const dynamic = 'force-dynamic'
 
@@ -129,6 +134,39 @@ export async function POST(req: NextRequest) {
       return twiml('<Response><Hangup/></Response>')
     }
 
+    // Nobody picked up (rang out, declined or unreachable) and the caller is
+    // still on the line: this is where voicemail starts. The AI receptionist
+    // takes the call instead when the owner chose "when nobody answers". Any
+    // other outcome, or anything going wrong here, goes to voicemail as before.
+    const callerStatus = (get('CallStatus') || '').toLowerCase()
+    if (callRowId && companyId && ['no-answer', 'busy', 'failed'].includes(dialStatus) && !['completed', 'canceled', 'busy', 'failed', 'no-answer'].includes(callerStatus)) {
+      try {
+        const agent = await getPhoneAgent(db, companyId)
+        if (agent.enabled && agent.mode !== 'test') {
+          const { data: call } = await db.from('calls').select('id, company_id, from_number, contact_id, conversation_id, routing_state').eq('id', callRowId).maybeSingle()
+          if (call && call.company_id === companyId) {
+            const paused = (await agentsPaused(db, companyId)).paused
+            const reason = aiAnswerDecision(agent, { from: call.from_number || '', moment: 'no_answer', paused })
+            if (reason) {
+              const [{ data: co }, catalog, bookable] = await Promise.all([
+                db.from('companies').select('name').eq('id', companyId).maybeSingle(),
+                getPhoneCatalog(db, companyId),
+                agent.skills.booking ? phoneBookable(db, companyId) : Promise.resolve(false),
+              ])
+              const cbQuery = `callRowId=${encodeURIComponent(callRowId)}&companyId=${encodeURIComponent(companyId)}&conversationId=${encodeURIComponent(conversationId || call.conversation_id || '')}`
+              const body = await answerWithAgent(db, {
+                agent, reason, bookable, base, cbQuery, callRowId, companyId, companyName: co?.name || '', catalog,
+                conversationId: call.conversation_id || conversationId || null, contactId: call.contact_id || null, from: call.from_number || '',
+                // Why the team's ring ended, for Call Diagnostics.
+                routing: call.routing_state, causeDetail: `after ${ringOutcome}`,
+              })
+              return twiml(body)
+            }
+          }
+        }
+      } catch (e) { console.error('[twilio inbound-status] phone agent failed — voicemail as normal', e instanceof Error ? e.message : e) }
+    }
+
     // Nobody answered → voicemail (if enabled).
     const { data: integ } = await db.from('twilio_integrations').select('voicemail_enabled, voicemail_greeting').eq('company_id', companyId).maybeSingle()
     if (integ?.voicemail_enabled === false) {
@@ -139,9 +177,15 @@ export async function POST(req: NextRequest) {
         const { data: c } = await db.from('calls').select('caller_name, from_number').eq('id', callRowId).maybeSingle()
         await alertCall(db, companyId, conversationId || null, 'Missed call', c?.caller_name || c?.from_number || 'a caller')
       } catch {}
+      // Text the caller back, if the business switched that on.
+      queueMissedCallText({ db, companyId, callId: callRowId })
       return twiml('<Response><Hangup/></Response>')
     }
     if (callRowId) { try { await db.from('calls').update({ status: 'voicemail_greeting', is_voicemail: true, cause: ringOutcome }).eq('id', callRowId) } catch {} }
+    // Nobody answered, so text the caller back if switched on. Sent now rather
+    // than after the voicemail: a caller who hangs up at the greeting leaves no
+    // recording, and is the one most likely to ring someone else.
+    queueMissedCallText({ db, companyId, callId: callRowId })
     // Provisional — if they hang up without leaving a message it stays "Missed
     // call"; the recording callback upgrades it to "Voicemail" if one is left.
     try { await setCallPreview(db as any, conversationId, '📞 Missed call') } catch {}

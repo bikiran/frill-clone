@@ -22,6 +22,7 @@ import { getException, checkOrderTracking, sendOrderUpdate } from './ops-actions
 import { getOpportunity, sendSalesFollowup } from './followup-actions'
 import { listServices, checkAvailability, findMyBookings, bookingLink, rescheduleBookingAction, cancelBookingAction } from './booking-actions'
 import { sendAgentMessage } from './send'
+import { logUnanswered, isRealQuestion } from '@/lib/ai-unanswered'
 
 const obj = (properties: Record<string, any>, required: string[] = []): JsonSchema => ({ type: 'object', properties, required, additionalProperties: false })
 
@@ -69,10 +70,42 @@ const getConversation: ActionDef = {
   },
 }
 
+// ── Knowledge gaps ───────────────────────────────────────────────────────────
+// A question the business's knowledge couldn't answer goes on AI Knowledge →
+// Unanswered (source 'agent'), so the owner can fill the gap once. At most once
+// per run, and only for live runs: a sandbox test isn't a customer asking.
+
+async function logKnowledgeGap(ctx: ActionContext) {
+  if (ctx.mode !== 'live' || ctx.scratch.gapLogged) return
+  ctx.scratch.gapLogged = true
+  // The customer's own words when they read as a question, else what the agent searched for.
+  const candidates = [String(ctx.scratch.runInput?.message || ''), ...((ctx.scratch.knowledgeGaps || []) as string[])]
+  const text = candidates.find(t => t && isRealQuestion(t))
+  if (text) await logUnanswered(ctx.db, ctx.companyId, text, { source: 'agent', conversationId: ctx.conversationId })
+}
+
+/** End of a run: every knowledge search came up empty → log the gap. */
+export async function flushKnowledgeGaps(ctx: ActionContext) {
+  if (ctx.scratch.knowledgeGaps?.length && !ctx.scratch.knowledgeFound) await logKnowledgeGap(ctx)
+}
+
+const askKnowledgeBase = readTool('ask_knowledge', 'Search the business’s own knowledge (help articles, facts, files, website). Use before answering any question about policies, products or services.', obj({ question: { type: 'string' } }, ['question']), true)
+const askKnowledge: ActionDef = {
+  ...askKnowledgeBase,
+  async run(ctx, args) {
+    const r = await askKnowledgeBase.run(ctx, args)
+    // Logged at the end of the run (flushKnowledgeGaps), so a later search that
+    // does find the answer means it was never a gap.
+    if (r.ok && r.data?.found === false) (ctx.scratch.knowledgeGaps ||= []).push(String(args?.question || '').slice(0, 300))
+    if (r.ok && r.data?.found === true) ctx.scratch.knowledgeFound = true
+    return r
+  },
+}
+
 const READS: ActionDef[] = [
   getConversation,
   readTool('get_contact', 'A customer’s saved details by contact id.', obj({ contactId: { type: 'string' } }, ['contactId']), true),
-  readTool('ask_knowledge', 'Search the business’s own knowledge (help articles, facts, files, website). Use before answering any question about policies, products or services.', obj({ question: { type: 'string' } }, ['question']), true),
+  askKnowledge,
   readTool('check_stock', 'Live stock for a product by name or SKU.', obj({ query: { type: 'string' } }, ['query']), true),
   // Staff-only lookups: they search across ALL customers, so a customer-facing
   // role must not use them in live mode (customer roles use
@@ -207,6 +240,7 @@ const escalateToHuman: ActionDef = {
   input: obj({
     message_for_team: { type: 'string', description: 'Why a person is needed, in one or two sentences the team will read.' },
     urgency: { type: 'string', enum: ['normal', 'high'] },
+    knowledge_gap: { type: 'boolean', description: 'true when you are handing over because the business’s knowledge doesn’t answer the customer’s question.' },
   }, ['message_for_team']),
   category: 'communicate', risk: 'low', maxAutonomy: 'autonomous', customerSafe: true,
   async run(ctx, args) {
@@ -219,6 +253,8 @@ const escalateToHuman: ActionDef = {
       await ctx.db.from('conversations').update({ ai_enabled: false }).eq('company_id', ctx.companyId).eq('id', ctx.conversationId).then(() => {}, () => {})
     }
     await notifyCompany({ db: ctx.db, companyId: ctx.companyId, type: 'agent_escalation', message: `${ctx.roleName} needs a person: ${why}`, actorName: ctx.roleName, conversationId: ctx.conversationId || undefined })
+    // Handed over for want of an answer → the owner's unanswered-questions list.
+    if (args?.knowledge_gap === true) await logKnowledgeGap(ctx)
     return { ok: true, data: { escalated: true }, entityType: ctx.conversationId ? 'conversation' : undefined, entityId: ctx.conversationId || undefined, summary: `Escalated: ${why}` }
   },
 }

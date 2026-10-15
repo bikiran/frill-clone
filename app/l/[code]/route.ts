@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { recordLinkClick } from '@/lib/link-click'
+import { isPublicChannel } from '@/lib/link-channels'
+import { isOwnSurface, loadCompanySurfaces, withClickRef } from '@/lib/link-stitch'
 
 // Redirects /l/<code> to the stored target URL and records the click.
 // The redirect is the priority: click logging is best-effort and must never
@@ -14,7 +16,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ code
       { auth: { autoRefreshToken: false, persistSession: false } }
     )
     const { data } = await db.from('short_links')
-      .select('id, company_id, target_url, clicks, contact_id, kind').eq('code', code).maybeSingle()
+      .select('id, company_id, target_url, clicks, contact_id, kind, channel').eq('code', code).maybeSingle()
     if (!data?.target_url) {
       return new NextResponse('Link not found', { status: 404 })
     }
@@ -45,7 +47,20 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ code
 
     // Click event (device / city) + the link's counter. Awaited: serverless
     // can freeze the function once the redirect is sent.
-    await recordLinkClick(db, data, req.headers)
+    const clickId = await recordLinkClick(db, data, req.headers)
+
+    // Smart links: a public link (a Reel, a QR poster…) has no customer on it,
+    // so its clicks are anonymous. When it points at the business's own pages
+    // — where the chat widget, booking page or form can read it back — pass
+    // the click on as ?clv=, so the chat, booking or enquiry that follows is
+    // credited to this link (lib/link-stitch.ts). Links sent to a particular
+    // customer already know who clicked and are left exactly as they were.
+    if (clickId && !data.contact_id && isPublicChannel(data.channel) && data.company_id) {
+      try {
+        const co = await loadCompanySurfaces(db, data.company_id)
+        if (co && isOwnSurface(target, co)) target = withClickRef(target, clickId)
+      } catch { /* redirect to the plain target */ }
+    }
 
     return NextResponse.redirect(target)
   } catch {

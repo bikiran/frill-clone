@@ -5,6 +5,7 @@ import SlotPicker, { viewerTz, tzShort } from '@/components/booking/SlotPicker'
 import { ParallaxBackdrop, MOTION_CSS } from '@/components/booking/motion'
 import AddressAutocomplete from '@/components/AddressAutocomplete'
 import { CalendarIcon, LockIcon } from '@/components/booking/icons'
+import { captureClickRef } from '@/lib/click-ref-client'
 
 // The public booking page: service → (staff) → time → details → pay/confirm.
 // Rendered at colvy.com/book/<slug>[/<service>], <slug>.colvy.com/book[/<service>]
@@ -79,13 +80,14 @@ export default function BookingFlow({ slug, domain, initialService }: { slug?: s
 
   const query = slug ? `slug=${encodeURIComponent(slug)}` : `domain=${encodeURIComponent(domain || '')}`
   // ?i=<token> personal link from the inbox · ?embed=1 inside a website · ?src=widget|link
-  const [ctx, setCtx] = useState<{ invite: string | null; embed: boolean; src: string }>({ invite: null, embed: false, src: 'page' })
+  // · ?clv=<click> the Reel / QR link that brought them (lib/click-ref-client)
+  const [ctx, setCtx] = useState<{ invite: string | null; embed: boolean; src: string; clv: string | null }>({ invite: null, embed: false, src: 'page', clv: null })
 
   useEffect(() => {
     const sp = new URLSearchParams(window.location.search)
     const invite = sp.get('i')
     const embed = sp.get('embed') === '1'
-    setCtx({ invite, embed, src: invite ? 'invite' : embed ? 'embed' : (sp.get('src') === 'widget' ? 'widget' : sp.get('src') === 'link' ? 'link' : 'page') })
+    setCtx({ invite, embed, src: invite ? 'invite' : embed ? 'embed' : (sp.get('src') === 'widget' ? 'widget' : sp.get('src') === 'link' ? 'link' : 'page'), clv: captureClickRef() })
     Promise.all([
       fetch(`/api/book?op=page&${query}`).then(r => r.json().then(d => ({ ok: r.ok, d }))),
       invite ? fetch(`/api/book?op=invite&${query}&token=${encodeURIComponent(invite)}`).then(r => r.json()).catch(() => ({})) : Promise.resolve({}),
@@ -139,7 +141,7 @@ export default function BookingFlow({ slug, domain, initialService }: { slug?: s
           slug, domain, serviceId: service.id, staff, startsAt: slot, locationId: locationId || null,
           name: form.name, email: form.email, phone: form.phone, address: form.address, notes: form.notes,
           answers, timezone: viewerTz(),
-          source: ctx.src, invite: ctx.invite,
+          source: ctx.src, invite: ctx.invite, clv: ctx.clv,
         }),
       })
       const d = await r.json()

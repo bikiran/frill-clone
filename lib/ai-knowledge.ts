@@ -13,6 +13,7 @@
 
 import Anthropic from '@anthropic-ai/sdk'
 import { modelFor, trackAi } from '@/lib/ai-models'
+import { memoryForPrompt, memoryBlock, followedMemory } from '@/lib/agent/business-memory'
 
 export type KnowledgeSource = 'fact' | 'help' | 'file' | 'website' | 'announcement' | 'roadmap' | 'idea' | 'chat'
 export type KnowledgeHit = { id?: string; source: string; source_id?: string; title: string | null; content: string; url: string | null; rank?: number }
@@ -404,21 +405,26 @@ export type KnowledgeAnswer = {
   answer: string
   grounded: boolean
   sources: { source: string; title: string; url: string | null; excerpt: string }[]
+  /** Business Memory items (must-know facts, rules, FAQs) the answer followed. */
+  memory: { id: string; kind: string; title: string }[]
 }
 
 
 /**
- * Answer a customer-style question using ONLY the library. `grounded` is false
- * when the sources don't cover it, which is what auto-reply will use to hand
- * over to a person instead of guessing.
+ * Answer a customer-style question using ONLY the library and the owner's
+ * Business Memory (the same rules live replies follow, so the AI Knowledge test
+ * box shows what customers would really get). `grounded` is false when neither
+ * covers it, which is what auto-reply will use to hand over to a person
+ * instead of guessing.
  */
 export async function answerFromKnowledge(db: any, companyId: string, question: string): Promise<KnowledgeAnswer | { error: string }> {
-  const hits = await smartSearchKnowledge(db, companyId, question, 8)
-  if (!hits.length) return { answer: '', grounded: false, sources: [] }
+  const [hits, memory] = await Promise.all([smartSearchKnowledge(db, companyId, question, 8), memoryForPrompt(db, companyId)])
+  if (!hits.length && !memory.items.length) return { answer: '', grounded: false, sources: [], memory: [] }
   if (!process.env.ANTHROPIC_API_KEY) return { error: 'Colvy AI isn’t set up on this server yet.' }
 
   const { data: co } = await db.from('companies').select('name').eq('id', companyId).maybeSingle()
   const lines = hits.map((h, i) => `[S${i + 1}] (${h.source}) ${h.title || ''}\n${String(h.content || '').slice(0, 1500)}`)
+  const memText = memoryBlock(memory, { tagged: true })
 
   try {
     const client = new Anthropic()
@@ -440,8 +446,8 @@ export async function answerFromKnowledge(db: any, companyId: string, question: 
       // If a safety classifier declines, the API retries on a fallback model within the same call.
       betas: ['server-side-fallback-2026-07-01'],
       fallbacks: 'default',
-      system: `You answer customer questions for ${co?.name || 'a small business'}, as the business ("we"). Use ONLY the numbered sources. If they don't clearly answer the question, set grounded to false and say briefly that you'll check with the team, without guessing. Never invent prices, stock, dates or policies. Ideas and roadmap items are customer suggestions and plans, not promises. Keep it short, warm and plain: two to four sentences, no markdown, no emojis. In used, list the source ids (like "S2") you relied on.`,
-      messages: [{ role: 'user', content: `SOURCES\n${lines.join('\n\n')}\n\n---\n\nCUSTOMER QUESTION\n${String(question).slice(0, 1000)}` }],
+      system: `You answer customer questions for ${co?.name || 'a small business'}, as the business ("we"). Use ONLY the numbered sources${memText ? ' and the Business Memory below' : ''}. If they don't clearly answer the question, set grounded to false and say briefly that you'll check with the team, without guessing. Never invent prices, stock, dates or policies. Ideas and roadmap items are customer suggestions and plans, not promises. Keep it short, warm and plain: two to four sentences, no markdown, no emojis. In used, list the source ids (like "S2")${memText ? ' and Business Memory ids (like "M1")' : ''} you relied on or followed.${memText ? `\n\n${memText}` : ''}`,
+      messages: [{ role: 'user', content: `SOURCES\n${lines.length ? lines.join('\n\n') : '(nothing in the library matches this question)'}\n\n---\n\nCUSTOMER QUESTION\n${String(question).slice(0, 1000)}` }],
     })
     await trackAi('knowledge_answer', companyId, response)
     if (response.stop_reason === 'refusal') return { error: 'Colvy AI declined to answer that one.' }
@@ -453,6 +459,7 @@ export async function answerFromKnowledge(db: any, companyId: string, question: 
       grounded: !!p.grounded && used.size > 0,
       sources: hits.map((h, i) => ({ id: `S${i + 1}`, h })).filter(x => used.has(x.id))
         .map(({ h }) => ({ source: h.source, title: h.title || 'Untitled', url: h.url, excerpt: String(h.content || '').slice(0, 220) })),
+      memory: followedMemory(memory, used),
     }
   } catch (e: any) {
     console.error('[ai-knowledge] answer', e?.message || e)

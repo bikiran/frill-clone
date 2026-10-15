@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { emitInboundEvent } from '@/lib/integration-hooks'
 import { emitIntegrationEvent } from '@/lib/integration-events'
+import { cleanClickRef } from '@/lib/link-channels'
+import { stitchLinkClick } from '@/lib/link-stitch'
 
 export const dynamic = 'force-dynamic'
 
@@ -45,6 +47,7 @@ export async function POST(req: NextRequest) {
 
     // Find or create the contact (by email, else phone).
     let contactId: string | null = null
+    let contactCreated = false
     try {
       if (email) {
         const { data: ex } = await db.from('contacts').select('id').eq('company_id', companyId).ilike('email', email).limit(1)
@@ -55,6 +58,7 @@ export async function POST(req: NextRequest) {
           company_id: companyId, name, email: email || null, phone: phone || null,
         }).select('id').maybeSingle()
         contactId = created?.id || null
+        contactCreated = !!contactId
       }
     } catch {}
 
@@ -96,6 +100,14 @@ export async function POST(req: NextRequest) {
         form_id: formId, company_id: companyId, data, contact_id: contactId, conversation_id: conversationId,
       })
     } catch {}
+
+    // Smart links: the visitor came through a Reel / QR link (?clv=) — credit
+    // the enquiry, and the new contact, to it. Only a click belonging to this
+    // form's business counts (lib/link-stitch.ts).
+    const clickRef = cleanClickRef(body.clv)
+    if (clickRef && companyId) {
+      await stitchLinkClick(db, { companyId, clickRef, contactId, conversationId, contactIsNew: contactCreated })
+    }
 
     return NextResponse.json({ ok: true })
   } catch (e: any) {

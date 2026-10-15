@@ -11,7 +11,12 @@ export type ActivityType =
   | 'announcement_created'
   | 'announcement_deleted'
   | 'team_member_invited'
+  | 'team_member_invite_resent'
+  | 'team_member_added'
   | 'team_member_removed'
+  | 'team_member_role_changed'
+  | 'team_member_permissions_changed'
+  | 'team_member_updated'
   | 'settings_updated'
   | 'integration_added'
 
@@ -31,15 +36,22 @@ export async function logActivity(
   request?: Request
 ) {
   try {
-    const ip = request?.headers.get('x-forwarded-for') || request?.headers.get('cf-connecting-ip') || 'unknown'
+    // x-forwarded-for is "client, proxy, proxy" — the first entry is the person.
+    const fwd = request?.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
+    const ip = fwd || request?.headers.get('x-real-ip') || request?.headers.get('cf-connecting-ip') || 'unknown'
     const userAgent = request?.headers.get('user-agent') || 'unknown'
 
-    await (supabase as any).from('activity_logs').insert({
+    // Pass a service-role client: since COLVY_V364 only the server may write
+    // here, so a signed-in browser can't forge or tidy up its own history.
+    const { error } = await (supabase as any).from('activity_logs').insert({
       ...activity,
       ip_address: ip,
-      user_agent: userAgent,
+      user_agent: userAgent.slice(0, 500),
       created_at: new Date().toISOString(),
     })
+    // Supabase reports a failed insert (e.g. the table hasn't been created
+    // yet) rather than throwing — say so in the server log, carry on.
+    if (error) console.warn('Activity log not written:', error.message)
   } catch (error) {
     console.error('Failed to log activity:', error)
     // Don't throw - activity logging shouldn't break the main operation

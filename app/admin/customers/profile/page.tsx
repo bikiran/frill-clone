@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { SegmentationService } from '@/lib/segmentation-service'
 import { notifyIntegrations } from '@/lib/integrations-notify'
+import CustomerTimeline from '@/components/CustomerTimeline'
 
 export default function CustomerProfilePage() {
   const searchParams = useSearchParams()
@@ -38,6 +39,12 @@ export default function CustomerProfilePage() {
   const [savingTask, setSavingTask] = useState(false)
   const noteRef = useRef<HTMLTextAreaElement | null>(null)
   const taskRef = useRef<HTMLInputElement | null>(null)
+  // Products / Calls / Orders cards fold away once the timeline (which already
+  // shows calls and orders) takes the centre; a tap opens them.
+  const [openCards, setOpenCards] = useState<Record<string, boolean>>({})
+  // Bumped when a note or task is added or ticked off here, so the timeline
+  // re-reads and shows it.
+  const [timelineTick, setTimelineTick] = useState(0)
 
   useEffect(() => {
     const init = async () => {
@@ -395,16 +402,6 @@ export default function CustomerProfilePage() {
     ...(Array.isArray(contactRow?.tags) ? contactRow.tags : []),
   ].filter(Boolean)))
 
-  // Recent Activity — no contact timeline table exists, so synthesise one from
-  // orders + calls + notes + tasks + the contact's creation.
-  const activity = [
-    ...orders.map((o: any) => ({ t: o.order_date, icon: '🛒', label: `Order #${o.woo_order_id} ${o.status || 'placed'}` })),
-    ...calls.map((c: any) => ({ t: c.created_at, icon: c.direction === 'inbound' ? '📥' : '📤', label: `${c.direction === 'inbound' ? 'Incoming' : 'Outgoing'} call${c.status ? ` · ${c.status}` : ''}` })),
-    ...notes.map((n: any) => ({ t: n.created_at, icon: '📝', label: 'Note added' })),
-    ...tasks.map((t: any) => ({ t: t.created_at, icon: '✅', label: `Task: ${t.title || t.text || ''}`.trim() })),
-    ...(contactRow?.created_at ? [{ t: contactRow.created_at, icon: '👤', label: 'Contact created' }] : []),
-  ].filter(a => a.t).sort((a, b) => new Date(b.t).getTime() - new Date(a.t).getTime()).slice(0, 8)
-
   const relTime = (v: string) => {
     const d = new Date(v).getTime(); if (isNaN(d)) return ''
     const mins = Math.floor((Date.now() - d) / 60000)
@@ -479,6 +476,7 @@ export default function CustomerProfilePage() {
         setNotes(ns => [{ id: data?.id || `tmp-${Date.now()}`, content: body, author: me.name, created_at: data?.created_at || new Date().toISOString() }, ...ns])
       }
       setNoteBody('')
+      setTimelineTick(n => n + 1)
     } catch {} finally { setSavingNote(false) }
   }
 
@@ -503,7 +501,7 @@ export default function CustomerProfilePage() {
         inserted = d2
       } else inserted = data
       if (inserted?.id) notifyIntegrations('task.created', { id: inserted.id, companyId })
-      if (inserted) setTasks(ts => [inserted, ...ts])
+      if (inserted) { setTasks(ts => [inserted, ...ts]); setTimelineTick(n => n + 1) }
       setTaskText(''); setTaskDue('')
     } catch {} finally { setSavingTask(false) }
   }
@@ -515,6 +513,7 @@ export default function CustomerProfilePage() {
       await (supabase as any).from('conversation_tasks')
         .update({ done, status: done ? 'done' : 'todo', completed_at: done ? new Date().toISOString() : null, completed_by: done ? me.name : null })
         .eq('id', t.id)
+      setTimelineTick(n => n + 1)
     } catch {}
   }
 
@@ -544,6 +543,22 @@ export default function CustomerProfilePage() {
     </div>
   )
   const I = { fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const }
+
+  // A card heading that folds the card. With the timeline on the page the
+  // detail cards start folded; without one (no linked contact) they start open.
+  // They stay folded while the contact is still being looked up, so they don't
+  // open and then snap shut as the timeline arrives.
+  const isOpen = (k: string) => openCards[k] ?? (!!companyId && !contactId)
+  const foldHead = (k: string, title: string, extra?: React.ReactNode) => (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', marginBottom: isOpen(k) ? 14 : 0 }}>
+      <button type="button" onClick={() => setOpenCards(o => ({ ...o, [k]: !isOpen(k) }))} aria-expanded={isOpen(k)}
+        style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: 0, border: 'none', background: 'none', cursor: 'pointer', fontSize: 15, fontWeight: 700, color: 'var(--ink)', textAlign: 'left' }}>
+        <svg width="14" height="14" viewBox="0 0 24 24" {...I} style={{ color: 'var(--slate)', transform: isOpen(k) ? 'rotate(90deg)' : 'none', transition: 'transform .15s' }}><polyline points="9 18 15 12 9 6"/></svg>
+        {title}
+      </button>
+      {isOpen(k) && extra}
+    </div>
+  )
 
   return (
     <div style={{ padding: 24, fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
@@ -603,6 +618,18 @@ export default function CustomerProfilePage() {
             {statCard(<svg width="17" height="17" viewBox="0 0 24 24" {...I}><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>, 'Total Orders', String(displayOrders), displayOrders === 1 ? 'Order' : 'Orders', '#7c3aed')}
             {statCard(<svg width="17" height="17" viewBox="0 0 24 24" {...I}><path d="M20.59 13.41 13.42 20.6a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><circle cx="7" cy="7" r="1.2" fill="currentColor" stroke="none"/></svg>, 'Avg Order Value', displayAov > 0 ? fmtMoney(displayAov) : 'N/A', 'Per order', '#d97706')}
           </div>
+
+          {/* Timeline — everything that's happened with this customer, on every
+              channel, in one stream. The centre of the profile. */}
+          {contactId && (
+            <div style={card}>
+              <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
+                <h3 style={{ ...cardTitle, margin: 0, fontSize: 15 }}>Timeline</h3>
+                <span style={{ fontSize: 12, color: 'var(--slate)' }}>Messages, orders, bookings, calls and more</span>
+              </div>
+              <CustomerTimeline contactId={contactId} contactName={fullName} refreshKey={timelineTick} />
+            </div>
+          )}
 
           {/* Contact Information */}
           <div style={card}>
@@ -676,20 +703,17 @@ export default function CustomerProfilePage() {
       {/* Products Purchased — searchable accordion list */}
       {rawItems.length > 0 && (
         <div style={card}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, flexWrap: 'wrap', gap: 10 }}>
-            <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: 'var(--ink)' }}>
-              Products Purchased ({rawItems.length})
-            </h3>
+          {foldHead('products', `Products Purchased (${rawItems.length})`, (
             <input
               type="text" placeholder="Search products..."
               value={productSearch} onChange={e => setProductSearch(e.target.value)}
               style={{ padding: '7px 12px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 13, outline: 'none', minWidth: 200 }}
             />
-          </div>
+          ))}
 
           {/* Rows must not shrink: in a height-capped flex column with overflow
               hidden they squash into empty slivers instead of scrolling. */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 520, overflowY: 'auto', paddingRight: 4 }}>
+          {isOpen('products') && <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 520, overflowY: 'auto', paddingRight: 4 }}>
             {filteredProducts.length === 0 && <p style={{ color: '#888', fontSize: 13 }}>No products match your search.</p>}
             {filteredProducts.map((item: any, idx: number) => {
               // WooCommerce line items vary in shape depending on how they were
@@ -755,15 +779,15 @@ export default function CustomerProfilePage() {
                 </div>
               )
             })}
-          </div>
+          </div>}
         </div>
       )}
 
       {/* Call History */}
       {calls.length > 0 && (
         <div style={card}>
-          <h3 style={cardTitle}>Call History ({calls.length})</h3>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {foldHead('calls', `Call History (${calls.length})`)}
+          {isOpen('calls') && <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {calls.map((call: any) => {
               const dur = call.duration_seconds || 0
               const durStr = dur > 0 ? `${Math.floor(dur / 60)}m ${dur % 60}s` : (call.status === 'completed' ? 'No answer' : call.status)
@@ -771,7 +795,9 @@ export default function CustomerProfilePage() {
                 <div key={call.id} style={{ borderRadius: 8, border: '1px solid var(--border)', padding: '12px 14px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{ fontSize: 15 }}>{call.direction === 'inbound' ? '📥' : '📤'}</span>
+                      <span style={{ width: 28, height: 28, borderRadius: '50%', flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: '#2563eb', background: 'color-mix(in srgb, #2563eb 13%, transparent)' }}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" {...I}>{call.direction === 'inbound' ? <path d="M16 2v6h6M22 2l-6 6" /> : <path d="M22 8V2h-6M16 8l6-6" />}<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" /></svg>
+                      </span>
                       <div>
                         <p style={{ margin: 0, fontSize: 13.5, fontWeight: 600, color: 'var(--ink)' }}>
                           {call.direction === 'inbound' ? 'Incoming' : 'Outgoing'} call · {durStr}
@@ -785,8 +811,9 @@ export default function CustomerProfilePage() {
                     <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 6, fontWeight: 600, background: call.status === 'answered' || call.status === 'completed' ? '#dcfce7' : '#fef3c7', color: call.status === 'answered' || call.status === 'completed' ? '#059669' : '#d97706', textTransform: 'capitalize' }}>{call.status}</span>
                   </div>
                   {call.ai_summary && (
-                    <div style={{ marginTop: 8, padding: '8px 10px', borderRadius: 8, background: '#faf5ff', fontSize: 12.5, color: 'var(--ink)', lineHeight: 1.5 }}>
-                      ✨ {call.ai_summary}
+                    <div style={{ marginTop: 8, padding: '8px 10px', borderRadius: 8, background: 'color-mix(in srgb, #7c3aed 9%, transparent)', fontSize: 12.5, color: 'var(--ink)', lineHeight: 1.5, display: 'flex', gap: 6, alignItems: 'flex-start' }}>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="#7c3aed" aria-hidden="true" style={{ flexShrink: 0, marginTop: 4 }}><path d="M12 2l1.6 5.3L19 9l-5.4 1.7L12 16l-1.6-5.3L5 9l5.4-1.7z" /></svg>
+                      <span>{call.ai_summary}</span>
                     </div>
                   )}
                   {call.recording_url && !call.ai_summary && (
@@ -794,8 +821,9 @@ export default function CustomerProfilePage() {
                       const res = await authFetch('/api/telnyx/call-summary', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ callId: call.id }) })
                       const d = await res.json()
                       if (d.summary) setCalls(cs => cs.map(c => c.id === call.id ? { ...c, ai_summary: d.summary } : c))
-                    }} style={{ marginTop: 8, fontSize: 12, color: '#7c3aed', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>
-                      ✨ Generate AI summary
+                    }} style={{ marginTop: 8, display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: '#7c3aed', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600, padding: 0 }}>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l1.6 5.3L19 9l-5.4 1.7L12 16l-1.6-5.3L5 9l5.4-1.7z" /></svg>
+                      Generate AI summary
                     </button>
                   )}
                   <div style={{ display: 'flex', gap: 16, marginTop: 10, paddingTop: 8, borderTop: '1px solid var(--border)' }}>
@@ -811,14 +839,14 @@ export default function CustomerProfilePage() {
                 </div>
               )
             })}
-          </div>
+          </div>}
         </div>
       )}
 
       {/* Order History */}
       <div style={card}>
-        <h3 style={cardTitle}>Order History ({customer.total_orders || orders.length || 0})</h3>
-        {orders.length > 0 ? (
+        {foldHead('orders', `Order History (${customer.total_orders || orders.length || 0})`)}
+        {!isOpen('orders') ? null : orders.length > 0 ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {orders.map((order: any) => {
               const orderTotal = parseFloat(order.total || order.order_total || 0)
@@ -1002,23 +1030,6 @@ export default function CustomerProfilePage() {
             </p>
           </div>
 
-          {/* Recent Activity — synthesised from orders, calls, notes & tasks */}
-          {activity.length > 0 && (
-            <div style={card}>
-              <h3 style={cardTitle}>Recent Activity</h3>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                {activity.map((a, i) => (
-                  <div key={i} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-                    <span style={{ fontSize: 14, lineHeight: '18px', flexShrink: 0 }}>{a.icon}</span>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <p style={{ margin: 0, fontSize: 12.5, color: 'var(--ink)', lineHeight: 1.4, overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.label}</p>
-                      <p style={{ margin: '2px 0 0', fontSize: 10.5, color: 'var(--slate)' }}>{relTime(a.t)}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
       </div>{/* flex wrapper */}
     </div>
