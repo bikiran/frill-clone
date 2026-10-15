@@ -73,7 +73,10 @@ async function replyOnItsOwn(ctx: ActionContext, args: any, _limits: PolicyLimit
 export const replyToCommentAction: ActionDef = {
   key: 'reply_to_comment',
   description: 'Post a public reply to this Facebook or Instagram comment. Plain text, 1–2 short sentences. Never include order numbers, phone numbers, emails or anything private.',
-  input: obj({ text: { type: 'string', description: 'The public reply.' } }, ['text']),
+  input: obj({
+    text: { type: 'string', description: 'The public reply.' },
+    knowledge_gap: { type: 'boolean', description: 'true when the reply doesn’t answer a question they asked because the business’s knowledge doesn’t cover it (you invite them to get in touch instead).' },
+  }, ['text']),
   category: 'communicate', risk: 'medium', maxAutonomy: 'act_within_limits', customerSafe: true,
   autoCheck: replyOnItsOwn,
   async run(ctx, args) {

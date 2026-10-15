@@ -67,8 +67,9 @@ function buildSystem(ctx: AssistantContext, memory?: PromptMemory): string {
   if (ctx.ticketId) ctxLines.push(`Open ticket id: ${ctx.ticketId}`)
   const hint = routeHint(ctx.currentRoute)
   // The owner's tone, must-know facts and rules: what the AI agents follow, so a
-  // reply written here says the same thing an agent would.
-  const memText = memory ? memoryBlock(memory, { heading: 'BUSINESS MEMORY (set by the owner) — for anything a customer will read', note: 'Apply them to every message, ticket, review and comment reply you write for a customer.' }) : ''
+  // reply written here says the same thing an agent would. What the user asks
+  // for outright still wins: a person decides, and checks it before it goes.
+  const memText = memory ? memoryBlock(memory, { heading: 'BUSINESS MEMORY (set by the owner) — for anything a customer will read', note: `Apply them to every message, ticket, review and comment reply you write for a customer. The one exception: when ${ctx.userName} explicitly asks for something one of them disagrees with, do what they asked and point out the conflict in one short line.` }) : ''
 
   return `You are Colvy, the in-app assistant for ${ctx.companyName}. You help ${ctx.userName} (role: ${ctx.role}) get things done by turning plain instructions into actions.
 
