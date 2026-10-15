@@ -19,7 +19,9 @@ export default function TeamPage() {
   const [members, setMembers] = useState<any[]>([])
   const [outlets, setOutlets] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
-  const [showInvite, setShowInvite] = useState(false)
+  // `?invite=1` (the setup checklist's "Invite a teammate") opens the invite
+  // form straight away. The admin shell only renders pages in the browser.
+  const [showInvite, setShowInvite] = useState(() => typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('invite') === '1')
   const [showCreate, setShowCreate] = useState(false)
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviteRole, setInviteRole] = useState('editor')

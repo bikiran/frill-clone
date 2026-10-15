@@ -5,6 +5,7 @@ import { authFetch } from '@/lib/auth-fetch'
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { confirmDialog } from '@/components/ConfirmDialog'
+import { currentSetupReturn } from '@/lib/setup-return'
 
 // Multi-account email. Two kinds of mailbox:
 //   Gmail   — sign in with Google. The ONLY way to use an @gmail.com address.
@@ -71,7 +72,9 @@ export default function EmailPage() {
 
   const connectGmail = async (locationId?: string) => {
     if (!companyId) return
-    const returnTo = window.location.href.split('?')[0]
+    // From the setup checklist: Google sends them straight back to it.
+    const setupBack = currentSetupReturn()
+    const returnTo = setupBack ? `${window.location.origin}${setupBack}` : window.location.href.split('?')[0]
     try {
       window.location.href = await withConnectTicket(`https://colvy.com/api/gmail/start?companyId=${companyId}&locationId=${locationId || ''}&returnTo=${encodeURIComponent(returnTo)}`, companyId, 'gmail')
     } catch (e: any) { alert(e.message) }
