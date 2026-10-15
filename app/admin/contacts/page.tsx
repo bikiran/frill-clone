@@ -13,6 +13,7 @@ import { findMatchingContacts, applyRelationship } from '@/lib/contact-matching'
 import { SegmentationService } from '@/lib/segmentation-service'
 import AddressAutocomplete from '@/components/AddressAutocomplete'
 import { confirmDialog } from '@/components/ConfirmDialog'
+import CustomerTimeline from '@/components/CustomerTimeline'
 
 type Contact = { id: string; name: string | null; email: string | null; phone: string | null; address: string | null; city: string | null; country: string | null; source: string; tags: string[]; subscribed_to_marketing: boolean; created_at: string; total_spend?: number; total_orders?: number; last_order_date?: string | null; rfm_category?: string; __aov?: number; relationship_type?: string; company_name?: string | null; notes?: string | null }
 
@@ -591,7 +592,7 @@ export default function ContactsPage() {
 
       {/* Contact detail panel */}
       {(selected || (editMode && !selected)) && (
-        <div style={{ width: 320, borderLeft: '1px solid var(--border)', background: '#fff', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <div style={{ width: 320, borderLeft: '1px solid var(--border)', background: 'var(--card, #fff)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           <div style={{ padding: '16px 18px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: 'var(--ink)' }}>{!selected ? 'New Contact' : editMode ? 'Edit Contact' : 'Contact'}</h3>
             <div style={{ display: 'flex', gap: 8 }}>
@@ -745,6 +746,19 @@ export default function ContactsPage() {
                   {(selected.relationship_type && selected.relationship_type !== 'customer') && (
                     <p style={{ margin: '5px 0 0', fontSize: 11, color: 'var(--slate)' }}>Excluded from marketing by default.</p>
                   )}
+                </div>
+
+                {/* History — everything that's happened with this person,
+                    on every channel, without leaving the list. */}
+                <div style={{ borderTop: '1px solid var(--border)', paddingTop: 14 }}>
+                  <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, marginBottom: 10 }}>
+                    <p style={{ ...labelStyle, margin: 0 }}>History</p>
+                    <button type="button" onClick={() => router.push(`/admin/customers/profile?id=${selected.id}`)}
+                      style={{ padding: 0, border: 'none', background: 'none', fontSize: 12, fontWeight: 700, color: 'var(--coral)', cursor: 'pointer' }}>
+                      Full profile →
+                    </button>
+                  </div>
+                  <CustomerTimeline key={selected.id} contactId={selected.id} contactName={selected.name || selected.email || undefined} compact />
                 </div>
               </div>
             )}
