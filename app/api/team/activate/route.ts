@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { hashInviteToken } from '@/lib/invite-token'
+import { emailPattern, sameEmail, type TeamRow } from '@/lib/team-management'
 
 export const dynamic = 'force-dynamic'
 
 /**
- * POST /api/team/activate   { companySlug }   Authorization: Bearer <token>
+ * POST /api/team/activate   { companySlug, token }   Authorization: Bearer <access token>
  *
  * Accept an invitation when the invited person is already signed in.
  *
@@ -14,10 +16,12 @@ export const dynamic = 'force-dynamic'
  * stranger add themselves to any company and, through is_company_member, read
  * everything in it.
  *
- * Which invitation is activated is decided by the access token, never by the
- * request body. The caller can only ever claim an invitation addressed to the
- * email on their own session, so a valid token for one account cannot accept an
- * invitation belonging to another.
+ * Two things must both hold, as for /api/team/accept-invite: the invitation is
+ * addressed to exactly the email on the caller's own session, and the caller has
+ * the invite link's code (`token`). The email alone isn't proof: an address
+ * can be confirmed without owning it (Create User marks the accounts it makes
+ * as confirmed), and it was matched with LIKE, so 'john_smith@…' claimed the
+ * invitation sent to 'john.smith@…' and made its holder an admin.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -37,7 +41,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Session expired — sign in again' }, { status: 401 })
     }
 
-    const { companySlug } = await req.json().catch(() => ({ companySlug: null }))
+    const { companySlug, token: inviteToken } = await req.json().catch(() => ({ companySlug: null, token: null }))
+    if (!inviteToken || typeof inviteToken !== 'string') {
+      return NextResponse.json({ error: 'This invite link is missing its code. Ask your inviter to send a new invite.' }, { status: 400 })
+    }
     let companyId: string | null = null
     if (companySlug) {
       const { data: co } = await (db as any).from('companies').select('id').eq('slug', companySlug).maybeSingle()
@@ -45,14 +52,18 @@ export async function POST(req: NextRequest) {
     }
 
     const email = user.email.toLowerCase()
-    // Only an open invitation: a removed member must not be able to switch
-    // themselves back on by opening an old link.
-    const { data: rows } = await (db as any).from('team_members')
-      .select('*').ilike('email', email).in('status', ['invited', 'pending'])
+    // Only an open invitation whose code matches: a removed member must not be
+    // able to switch themselves back on by opening an old link, and a resend
+    // retires the old code.
+    const { data: found } = await (db as any).from('team_members')
+      .select('*').ilike('email', emailPattern(email))
+      .eq('invite_token_hash', await hashInviteToken(inviteToken))
+      .in('status', ['invited', 'pending'])
       .order('created_at', { ascending: false })
-    const invite = (rows || []).find((r: any) => companyId && r.company_id === companyId)
-      || (rows || []).find((r: any) => r.company_id == null)
-      || (rows || [])[0]
+    const rows = (found || []).filter((r: TeamRow) => sameEmail(r.email, email))
+    const invite = rows.find((r: any) => companyId && r.company_id === companyId)
+      || rows.find((r: any) => r.company_id == null)
+      || rows[0]
 
     if (!invite) {
       return NextResponse.json({ error: 'Invitation not found. Ask your inviter to resend it.' }, { status: 404 })
