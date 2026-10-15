@@ -4,6 +4,8 @@ import { useEffect, useState, useRef, ReactNode } from 'react'
 import { supabase } from '@/lib/supabase'
 import { redirectToUserAdmin } from '@/lib/redirect'
 import OmniInboxDemo from '@/components/OmniInboxDemo'
+import ColvyAppDemo from '@/components/ColvyAppDemo'
+import ScrollStory from '@/components/ScrollStory'
 import MarketingFooter from '@/components/MarketingFooter'
 import MarketingNav from '@/components/MarketingNav'
 
@@ -32,11 +34,10 @@ const CAPABILITIES = ['making sales', 'every channel', 'phone calls', 'call summ
 // Opaque floating chat bubbles — positioned to the RIGHT half + corners so they
 // never sit on the headline or body copy.
 const BUBBLES = [
-  { text: "I've sent the payment 🙌", color: GREEN, x: '2%', y: '6%', depth: 1.2, delay: 0 },
-  { text: 'Order #123466 · Paid ✅', color: BLUE, x: '60%', y: '-2%', depth: 1.0, delay: 0.5 },
-  { text: '★★★★★ thank you!', color: YELLOW, x: '88%', y: '40%', depth: 1.3, delay: 0.9 },
-  { text: 'Sale recorded · $385', color: PURPLE, x: '54%', y: '86%', depth: 0.7, delay: 1.3 },
-  { text: 'Can I get 2 more?', color: CORAL, x: '90%', y: '80%', depth: 0.9, delay: 1.1 },
+  // Three, on the edges, so they frame the live demo instead of covering it.
+  { text: '★★★★★ thank you!', color: YELLOW, x: '-5%', y: '-5%', depth: 1.2, delay: 0 },
+  { text: 'Can I get 2 more?', color: CORAL, x: '76%', y: '22%', depth: 1.0, delay: 0.6 },
+  { text: 'Order #4821 · Paid ✅', color: GREEN, x: '-7%', y: '86%', depth: 0.8, delay: 1.1 },
 ]
 
 // Big-text ticker just above the feature bands.
@@ -378,7 +379,7 @@ export default function LandingPage() {
   const btnGhost: React.CSSProperties = { padding: '15px 26px', borderRadius: 999, border: `2px solid ${dark ? 'rgba(255,255,255,0.16)' : 'rgba(15,17,25,0.12)'}`, background: 'transparent', color: text, fontWeight: 700, fontSize: 15, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 8, cursor: 'pointer' }
 
   return (
-    <div ref={rootRef} className="cv-root" style={{ background: bg, color: text, fontFamily: font, minHeight: '100vh', overflowX: 'hidden', transition: 'background 0.3s, color 0.3s', ['--sy' as any]: 0, ['--mx' as any]: 0, ['--my' as any]: 0 }}>
+    <div ref={rootRef} className="cv-root" style={{ background: bg, color: text, fontFamily: font, minHeight: '100vh', overflowX: 'clip', transition: 'background 0.3s, color 0.3s', ['--sy' as any]: 0, ['--mx' as any]: 0, ['--my' as any]: 0 }}>
       <style>{`
         @keyframes floatY { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-14px)} }
         @keyframes marquee { from{transform:translateX(0)} to{transform:translateX(-50%)} }
@@ -457,7 +458,7 @@ export default function LandingPage() {
                 <div style={{ position: 'relative', borderRadius: 21, overflow: 'hidden', boxShadow: '0 0 0 1px rgba(0,0,0,0.4)' }}>
                   {/* subtle screen sheen */}
                   <div aria-hidden style={{ position: 'absolute', inset: 0, zIndex: 4, pointerEvents: 'none', background: 'linear-gradient(120deg, rgba(255,255,255,0.14), transparent 30%)' }} />
-                  <OmniInboxDemo dark={dark} />
+                  <ColvyAppDemo dark={dark} />
                 </div>
               </div>
             </div>
@@ -475,6 +476,11 @@ export default function LandingPage() {
           <div className="cv-marquee-track">{[...BRANDS, ...BRANDS].map((b, i) => (<div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0 30px', flexShrink: 0 }}><img src={b.logo} alt="" loading="lazy" decoding="async" width={24} height={24} style={{ width: 24, height: 24, opacity: dark ? 0.85 : 0.7, filter: dark ? 'invert(1)' : 'none' }} /><span style={{ fontSize: 17, fontWeight: 800, color: muted, whiteSpace: 'nowrap' }}>{b.name}</span></div>))}</div>
         </div>
       </section>
+
+      {/* SCROLL STORY — pins while you scroll; colours shift and the product
+          cards fly between beats (Linktree-style). Wrapped in a div so the
+          below-the-fold content-visibility rule (sections only) leaves it be. */}
+      <div><ScrollStory /></div>
 
       {/* BIG BOLD COLVY BRAND BAND (full-bleed, dark, animated capability) */}
       <section style={{ position: 'relative', background: INK, color: '#fff', padding: 'clamp(64px, 9vw, 120px) 24px', overflow: 'hidden' }}>
