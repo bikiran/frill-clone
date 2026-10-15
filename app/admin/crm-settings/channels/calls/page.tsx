@@ -212,7 +212,7 @@ export default function TelnyxIntegration() {
       })
       setAvailable(clean)
       if (clean.length === 0) setError(data.error || (numberType === 'mobile'
-        ? 'No mobile numbers available from our provider right now — a landline number also handles calls and SMS.'
+        ? 'No mobile numbers available from our provider right now. Please try again shortly — texting needs a mobile (04) number.'
         : 'No numbers available right now — please check back shortly.'))
     } catch (e: any) { setError(e.message) }
     setSearching(false)
@@ -447,7 +447,7 @@ export default function TelnyxIntegration() {
                 <option value="Darwin">Darwin (08)</option>
               </select>
               <p style={{ margin: '5px 0 0', fontSize: 11.5, color: 'var(--slate)' }}>
-                Customers see a local number for your area. Landlines handle both calls and SMS.
+                Customers see a local number for your area. Landline numbers are for calls; choose a mobile (04) number to text customers.
               </p>
             </div>
           )}
