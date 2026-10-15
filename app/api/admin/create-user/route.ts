@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { teamContextFor, checkRoleChange, roleOf, normRole, memberLabel, logTeamEvent, ROLE_LABEL } from '@/lib/team-management'
 
 export const dynamic = 'force-dynamic'
 
@@ -46,6 +47,12 @@ export async function POST(req: NextRequest) {
     // Only these roles; making someone an owner is for the super admin alone.
     const ROLES = callerEmail === SUPER_ADMIN ? ['owner', 'admin', 'editor', 'viewer'] : ['admin', 'editor', 'viewer']
     if (role && !ROLES.includes(String(role))) return NextResponse.json({ error: 'Invalid role' }, { status: 400 })
+
+    // The workspace's team and the caller's place in it — checked before any
+    // account is made — for the same rules the Team page's own changes go
+    // through (lib/team-management.ts) and for the audit log.
+    const team = companyId ? await teamContextFor(supabaseAdmin, caller, companyId) : null
+    if (team && !team.ok) return NextResponse.json({ error: team.error }, { status: team.status })
 
     let userId: string | null = null
     let userEmail = email.trim().toLowerCase()
@@ -111,24 +118,40 @@ export async function POST(req: NextRequest) {
       if (createdNewUser && userId) { try { await (supabaseAdmin.auth.admin as any).deleteUser(userId) } catch {} }
       return NextResponse.json({ error: 'companyId required to add the user to a workspace' }, { status: 400 })
     }
+    const nextRole = String(role || 'editor').toLowerCase()
     try {
       let existing: any = null
       if (userId) {
         const { data } = await (supabaseAdmin as any)
-          .from('team_members').select('id').eq('company_id', cid).eq('user_id', userId).limit(1)
+          .from('team_members').select('*').eq('company_id', cid).eq('user_id', userId).limit(1)
         existing = data?.[0] || null
       }
       if (existing) {
+        // An existing member: this is a role change in disguise, so it must not
+        // demote an owner, the last owner, or let an admin touch an owner.
+        const v = checkRoleChange(team!.ctx!, existing, nextRole, { allowOwner: callerEmail === SUPER_ADMIN })
+        if (!v.ok) return NextResponse.json({ error: v.error }, { status: v.status })
         const { error } = await (supabaseAdmin as any).from('team_members')
           .update({ role: role || 'editor', status: 'active', email: userEmail })
           .eq('id', existing.id)
         if (error) throw error
+        const before = roleOf(existing, team!.ctx!.company)
+        const after = normRole(nextRole)
+        if (before !== after) {
+          await logTeamEvent(supabaseAdmin, team!.ctx!, 'team_member_role_changed',
+            `Changed ${memberLabel(existing)}’s role from ${ROLE_LABEL[before]} to ${ROLE_LABEL[after]}`, existing,
+            { before: { role: before, status: existing.status || null }, after: { role: after, status: 'active' }, via: 'create_user' }, req)
+        }
       } else {
-        const { error } = await (supabaseAdmin as any).from('team_members').insert({
+        const { data: added, error } = await (supabaseAdmin as any).from('team_members').insert({
           email: userEmail, role: role || 'editor', status: 'active', user_id: userId,
           company_id: cid,
-        })
+        }).select('*').maybeSingle()
         if (error) throw error
+        const r = normRole(nextRole)
+        await logTeamEvent(supabaseAdmin, team!.ctx!, 'team_member_added',
+          `Added ${userEmail} as ${ROLE_LABEL[r]}${createdNewUser ? ' (new account)' : ''}`, added || { email: userEmail, user_id: userId },
+          { after: { role: r, status: 'active' }, created_account: createdNewUser }, req)
       }
     } catch (e: any) {
       // Roll back a just-created account so we never leave an orphan behind.

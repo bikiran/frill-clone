@@ -86,7 +86,12 @@ export default function OnboardingPage() {
             }
             if (Object.keys(patch).length) await supabase.from('companies').update(patch).eq('id', co.id)
             if (prof.fullName) {
-              try { await supabase.from('team_members').update({ name: prof.fullName }).eq('company_id', co.id).eq('user_id', u.id) } catch {}
+              try {
+                await authFetch('/api/team/me', {
+                  method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ companyId: co.id, name: prof.fullName }),
+                })
+              } catch {}
               try { await supabase.auth.updateUser({ data: { display_name: prof.fullName, full_name: prof.fullName } }) } catch {}
             }
             localStorage.removeItem('pending_business_profile')

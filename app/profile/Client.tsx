@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { authFetch } from '@/lib/auth-fetch'
 import { getRandomName } from '@/lib/randomNames'
 import Link from 'next/link'
 import { confirmDialog } from '@/components/ConfirmDialog'
@@ -124,19 +125,19 @@ export default function ProfilePage() {
       if (editEmail && editEmail !== user.email) updates.email = editEmail
       const { error } = await supabase.auth.updateUser(updates)
       // Save the mobile on the workspace membership so SMS reminders can find it.
+      // Through the server: the database no longer takes team_members writes
+      // from the browser. It tidies the number into +61 form the same way.
+      let phoneErr = ''
       try {
-        const t = editPhone.trim()
-        let phone: string | null = null
-        if (t) {
-          let d = t.replace(/[^\d+]/g, '')
-          if (d.startsWith('+')) phone = d
-          else { d = d.replace(/\D/g, ''); phone = d.startsWith('61') ? `+${d}` : d.startsWith('0') ? `+61${d.slice(1)}` : d.length === 9 ? `+61${d}` : `+${d}` }
-        }
-        await (supabase as any).from('team_members').update({ phone }).eq('user_id', user.id)
+        const r = await authFetch('/api/team/me', {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phone: editPhone.trim() || null }),
+        })
+        if (!r.ok) phoneErr = (await r.json().catch(() => ({})))?.error || 'the mobile wasn’t saved'
       } catch {}
       if (error) throw error
       setDisplayName(editName)
-      setSavedMsg(editEmail !== user.email ? 'Email change requested — check your inbox!' : 'Profile saved!')
+      setSavedMsg(editEmail !== user.email ? 'Email change requested — check your inbox!' : phoneErr ? `Profile saved, but not the mobile: ${phoneErr}` : 'Profile saved!')
       setTimeout(() => setSavedMsg(''), 3000)
     } catch (err: any) {
       alert('Failed to save: ' + err.message)
