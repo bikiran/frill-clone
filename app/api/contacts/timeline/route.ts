@@ -169,9 +169,11 @@ export async function GET(req: NextRequest) {
   // "This person's" rows on a table with contact_id + conversation_id, for one
   // chunk of their conversations.
   const byPerson = (ids: string[]) => [`contact_id.in.${list(contactIds)}`, ids.length ? `conversation_id.in.${list(ids)}` : ''].filter(Boolean).join(',')
-  // Only for members who can open the inbox (the admin layout sends anyone
-  // else back to the dashboard).
+  // A card only links to a page this member can open: the admin layout sends
+  // anyone else back to the dashboard (lib/permissions canAccessPath).
   const inboxLink = (convId?: string | null) => allowed('message') && convId && convById[convId] ? `/admin/inbox?conversation=${convId}` : undefined
+  // A link click shows for Links or Link Reports: open whichever they have.
+  const linkClickHref = can('link_reports') ? '/admin/link-reports' : can('links') ? '/admin/links' : undefined
 
   // Read rows from a table, trying each column set in turn (a column added by a
   // later migration may not be in this database yet). null = the table isn't
@@ -333,6 +335,8 @@ export async function GET(req: NextRequest) {
     want('sale') ? pull('conversation_sales', 'created_at', EVENT_LIMIT, [['id, amount, currency, payment_method, sold_by_name, note, conversation_id, created_at']],
       (q, ids) => q.eq('company_id', companyId).or(byPerson(ids)), convChunks) : none,
     want('payment') && convIds.length ? pull('chat_payments', 'created_at', EVENT_LIMIT, [
+      // card_brand / card_last4 came with V289.
+      ['id, conversation_id, amount_cents, currency, description, status, payment_method, saved_card_id, card_brand, card_last4, paid_at, created_at'],
       ['id, conversation_id, amount_cents, currency, description, status, payment_method, paid_at, created_at'],
       ['*'],
     ], (q, ids) => q.in('conversation_id', ids), convChunks) : none,
@@ -379,22 +383,43 @@ export async function GET(req: NextRequest) {
     || (m.message_type === 'media_request' && want('media'))
     || (m.sender_type === 'system' && m.metadata?.booking_id && want('booking') && String(m.content || '').startsWith('📅 Booked'))
   // An AI phone agent call has no summary (there's no recording to summarise),
-  // so what it was about comes from its transcript as that folds into the call:
-  // the message it took, or what the caller said.
+  // so what it was about comes from its transcript (lib/phone-agent): the
+  // message it took, or what the caller said.
   const aiCallGist: Record<string, string> = {}
+  const keepGist = (m: Row) => {
+    if (!m.metadata?.phone_agent || !m.metadata?.call_id) return
+    const about = String(m.metadata.message_about || '').trim()
+    aiCallGist[m.metadata.call_id] = about ? `Took a message: ${about}` : String(m.content || '').split('\n').filter(l => l.startsWith('Caller: ')).join('\n')
+  }
   // A team-only note (is_internal) was never sent to the customer: it's a note,
   // not a message, like the inbox's "Team only" card.
   const teamNotes: Row[] = [], msgList: Row[] = []
   for (const m of msgRows as Row[]) {
-    if (asCard(m)) {
-      if (m.metadata?.phone_agent && m.metadata?.call_id) {
-        const about = String(m.metadata.message_about || '').trim()
-        aiCallGist[m.metadata.call_id] = about ? `Took a message: ${about}` : String(m.content || '').split('\n').filter(l => l.startsWith('Caller: ')).join('\n')
-      }
-      continue
-    }
+    if (asCard(m)) { keepGist(m); continue }
     if (m.is_internal) { if (readTeamNotes) teamNotes.push(m) } else if (readMsgs) msgList.push(m)
   }
+
+  // Detail some cards need from rows this page didn't read, in one more round:
+  //  • an AI call's transcript when it isn't among this page's messages — it's
+  //    saved a little after the call, so a page can end between the two, and
+  //    the Calls filter reads no messages. Only for members with the inbox, as
+  //    it's what was said.
+  //  • the card a saved-card charge went on: its payment row keeps only
+  //    saved_card_id (V289's card_brand / card_last4 are for link payments).
+  const gistless = (callRows as Row[]).filter(c => !c.ai_summary && c.agent_name === 'AI phone agent' && c.conversation_id && !(c.id in aiCallGist))
+  const savedCardIds = uniq((payRows as Row[]).filter(p => p.saved_card_id && !p.card_brand).map(p => String(p.saved_card_id)))
+  const [transcripts, savedCardRows] = await Promise.all([
+    gistless.length && allowed('message')
+      ? fetchRows('messages', [['content, metadata']], q => q.in('conversation_id', uniq(gistless.map(c => c.conversation_id)))
+        .eq('is_internal', true).in('metadata->>call_id', gistless.map(c => c.id)), { limit: 2 * gistless.length })
+      : none,
+    savedCardIds.length ? fetchRows('saved_cards', [['id, brand, last4']], q => q.eq('company_id', companyId).in('id', savedCardIds), { limit: savedCardIds.length }) : none,
+  ])
+  for (const m of transcripts || []) keepGist(m)
+  const savedCard: Record<string, Row> = {}
+  for (const c of savedCardRows || []) savedCard[c.id] = c
+  // As the Payments page writes a card: "VISA •••• 4242".
+  const cardLabel = (brand: unknown, last4: unknown) => brand ? `${String(brand).toUpperCase()} •••• ${last4 || '••••'}` : ''
   const messages = msgList
     .map(m => {
       const conv = convById[m.conversation_id] || {}
@@ -445,13 +470,13 @@ export async function GET(req: NextRequest) {
     const done = !!t.done || t.status === 'done'
     push({ id: 'task-' + t.id, kind: 'task', source: 'Task', date: iso(t.created_at), at: !done && t.due_date ? iso(t.due_date) : undefined,
       title: clip(t.title || t.text || 'Task', 140), detail: t.created_by ? `Added by ${t.created_by}` : undefined,
-      status: done ? 'Done' : 'Open', tone: done ? 'good' : 'warn', link: `/admin/tasks?task=${t.id}`, conversationId: t.conversation_id || undefined })
+      status: done ? 'Done' : 'Open', tone: done ? 'good' : 'warn', link: can('tasks') ? `/admin/tasks?task=${t.id}` : inboxLink(t.conversation_id), conversationId: t.conversation_id || undefined })
   }
   for (const n of convNoteRows as Row[]) {
     push({ id: 'note-' + n.id, kind: 'note', source: n.author_name || 'Team', date: iso(n.created_at), title: 'Note', detail: clip(n.content, 400), link: inboxLink(n.conversation_id), conversationId: n.conversation_id || undefined })
   }
   for (const n of custNoteRows as Row[]) {
-    push({ id: 'cnote-' + n.id, kind: 'note', source: 'Profile', date: iso(n.created_at), title: 'Note', detail: clip(n.content, 400), link: `/admin/customers/profile?id=${n.customer_id}` })
+    push({ id: 'cnote-' + n.id, kind: 'note', source: 'Profile', date: iso(n.created_at), title: 'Note', detail: clip(n.content, 400), link: can('contacts') ? `/admin/customers/profile?id=${n.customer_id}` : undefined })
   }
   for (const m of teamNotes) {
     push({ id: 'tnote-' + m.id, kind: 'note', source: m.sender_name || 'Team', date: iso(m.created_at), title: 'Team note', detail: clip(m.content, 400) || undefined,
@@ -493,7 +518,8 @@ export async function GET(req: NextRequest) {
       const said = d.message || d.enquiry || d.comments || d.notes
         || Object.values(d).filter(v => typeof v === 'string').sort((a: string, b: string) => b.length - a.length)[0]
       push({ id: 'form-' + f.id, kind: 'form', source: 'Contact form', date: iso(f.created_at), title: `Sent the ${names[f.form_id] || 'contact'} form`,
-        detail: clip(said, 200) || undefined, link: inboxLink(f.conversation_id) || `/admin/crm-settings/contact-form/${f.form_id}`, conversationId: f.conversation_id || undefined })
+        detail: clip(said, 200) || undefined, conversationId: f.conversation_id || undefined,
+        link: inboxLink(f.conversation_id) || (f.form_id && can('inbox_settings') ? `/admin/crm-settings/contact-form/${f.form_id}` : undefined) })
     }
   }
   for (const s of saleRows as Row[]) {
@@ -506,8 +532,10 @@ export async function GET(req: NextRequest) {
     const st = String(p.status || 'pending').toLowerCase()
     const title = st === 'paid' ? 'Payment received' : st === 'refunded' ? 'Payment refunded' : st === 'failed' ? 'Payment failed'
       : p.payment_method === 'saved_card' ? 'Card charge started' : 'Payment link sent'
+    const sc = p.saved_card_id ? savedCard[p.saved_card_id] : null
+    const card = cardLabel(p.card_brand, p.card_last4) || (sc ? cardLabel(sc.brand, sc.last4) : '')
     push({ id: 'pay-' + p.id, kind: 'payment', source: 'Payment', date: iso(p.created_at), at: st === 'paid' && p.paid_at ? iso(p.paid_at) : undefined, title,
-      detail: [money(amt, p.currency), p.payment_method === 'saved_card' ? 'Saved card' : '', clip(p.description, 120)].filter(Boolean).join(' · '),
+      detail: [money(amt, p.currency), p.payment_method === 'saved_card' ? 'Saved card' : '', card, clip(p.description, 120)].filter(Boolean).join(' · '),
       status: st === 'paid' ? 'Paid' : cap(st), tone: st === 'paid' ? 'good' : st === 'failed' ? 'bad' : st === 'refunded' ? 'muted' : 'warn',
       link: '/admin/payments', conversationId: p.conversation_id || undefined })
   }
@@ -517,7 +545,7 @@ export async function GET(req: NextRequest) {
     const where = [[c.city, c.region].filter(Boolean).join(', '), c.device].filter(Boolean).join(' · ')
     push({ id: 'click-' + c.id, kind: 'link', source: 'Link', date: iso(c.clicked_at),
       title: kind === 'payment' ? 'Opened a payment link' : kind === 'media' || kind === 'file' ? 'Opened shared files' : 'Clicked a link',
-      detail: [l.label || hostOf(l.target_url), where].filter(Boolean).join(' · ') || undefined, link: '/admin/link-reports' })
+      detail: [l.label || hostOf(l.target_url), where].filter(Boolean).join(' · ') || undefined, link: linkClickHref })
   }
   for (const m of mediaRows as Row[]) {
     const st = String(m.status || 'open').toLowerCase()
