@@ -46,11 +46,15 @@
 -- Deploy the code first (branch claude/security-lockdown). The old Team page
 -- writes from the browser and stops working the moment this runs.
 -- Step 1 prints what is about to be dropped.
--- The mobile app lives in another repo: make sure it only READS team_members
--- (its own row, for role and permissions) — any write from it will now fail.
+-- The mobile app (separate repo, colvy-mobile) still writes team_members
+-- directly. Saving your own name / mobile on Profile keeps working: step 2
+-- leaves a narrow bridge for exactly that (your own row, those two columns).
+-- Its Team screen (change role, remove, invite) will get "permission denied"
+-- until the app calls /api/team/members like the web does — use the web Team
+-- page for those in the meantime.
 --
 -- ── VERIFY AFTERWARDS ───────────────────────────────────────────────────────
---   1. Step 5: team_members has only team_members_read; activity_logs only
+--   1. Step 5: team_members has only team_members_read (+ team_members_self_profile); activity_logs only
 --      activity_logs_member_read; api writes = 0 on both.
 --   2. As the owner or an admin, on Team: change a role, permissions, outlet
 --      and mobile; invite, resend and remove someone. Each one shows up under
@@ -112,6 +116,15 @@ BEGIN
   REVOKE ALL ON public.team_members FROM anon, authenticated;
   GRANT SELECT ON public.team_members TO authenticated;
   GRANT ALL ON public.team_members TO service_role;
+
+  -- Bridge for installed mobile app builds, whose Profile screen saves your own
+  -- name and mobile straight to your row. Only those two columns, only your
+  -- own row: role, permissions and company can't be touched this way.
+  GRANT UPDATE (name, phone) ON public.team_members TO authenticated;
+  CREATE POLICY team_members_self_profile ON public.team_members
+    FOR UPDATE TO authenticated
+    USING (user_id = auth.uid())
+    WITH CHECK (user_id = auth.uid());
 END $$;
 
 -- ── STEP 3: activity_logs (the audit log) ───────────────────────────────────
