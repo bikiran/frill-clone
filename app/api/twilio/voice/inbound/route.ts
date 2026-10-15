@@ -6,6 +6,7 @@ import { xmlEscape, twilioIdentity } from '@/lib/twilio-service'
 import { companyForInboundNumber } from '@/lib/inbound-company'
 import { ensureContactByPhone, findContactByPhone } from '@/lib/contact-capture'
 import { alertCall } from '@/lib/call-alerts'
+import { queueMissedCallText } from '@/lib/missed-call-text'
 import { getPhoneCatalog, phoneHints } from '@/lib/phone-catalog'
 import { getPhoneAgent, answersCaller, startPhoneCall, newPhoneCall, phoneListenTwiml, phoneRelayTwiml, relayConfigured } from '@/lib/phone-agent'
 
@@ -270,6 +271,7 @@ export async function POST(req: NextRequest) {
         // No voicemail: it's a missed call — record it and tell the team.
         if (callRowId) { try { await db.from('calls').update({ status: 'missed', ended_at: new Date().toISOString(), cause: 'no_agent: nobody online, voicemail off' }).eq('id', callRowId) } catch {} }
         await alertCall(db, companyId, conversationId, 'Missed call', callerName || from || 'a caller')
+        queueMissedCallText({ db, companyId, callId: callRowId })
         return twiml('<Response><Hangup/></Response>')
       }
       try {
@@ -278,6 +280,9 @@ export async function POST(req: NextRequest) {
           cause: `no_agent: nobody online (online heartbeats=${(online || []).length}, push devices=${(mobileTokens || []).length})`,
         }).eq('id', callRowId || '')
       } catch {}
+      // Nobody can take it, so text the caller back now if switched on (as in
+      // inbound-status: don't wait for a voicemail that may never come).
+      queueMissedCallText({ db, companyId, callId: callRowId })
       return twiml(voicemailTwiml(base, greeting, cbQuery))
     }
 

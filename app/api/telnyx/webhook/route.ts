@@ -16,6 +16,7 @@ import { ensureContactByPhone, findContactByPhone } from '@/lib/contact-capture'
 import { logEnquiryReopened } from '@/lib/conversation-timeline'
 import { emitInboundEvent, emitCallEvent } from '@/lib/integration-hooks'
 import { alertCall, transcribeCall } from '@/lib/call-alerts'
+import { queueMissedCallText } from '@/lib/missed-call-text'
 
 // Is any of these agent legs still ringing (or talking)? Asked of Telnyx, not
 // our own table, so two legs ending at the same moment can't each think the
@@ -1388,6 +1389,12 @@ export async function POST(req: NextRequest) {
           if (!hangupRow?.ended_at && hangupRow?.company_id) {
             await alertCall(db, hangupRow.company_id, hangupRow.conversation_id, 'Missed call', hangupRow.caller_name || hangupRow.from_number || 'a caller')
           }
+        }
+        // The caller has hung up on a call nobody answered (rang out, hung up
+        // at the greeting, or left a voicemail): text them back if switched on.
+        // Once per call — a retried webhook finds ended_at already set.
+        if (hangupCallRowId && isInbound && !hangupRow?.ended_at && hangupRow?.company_id && (update.status === 'missed' || update.status === 'voicemail')) {
+          queueMissedCallText({ db, companyId: hangupRow.company_id, callId: hangupCallRowId })
         }
       }
       return NextResponse.json({ ok: true })

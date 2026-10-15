@@ -19,6 +19,11 @@ type Summary = {
   attention: {
     unread: number; unassigned: number
     missedCalls: number; voicemails: number; callsToday: number
+    // Last 7 days. Missing from summaries cached before it existed.
+    missedOutcome?: {
+      missed: number; recovered: number; textedBack: number; toCallBack: number
+      toReturn: { number: string; name: string | null; conversationId: string | null; at: string; attempts: number }[]
+    } | null
     awaiting: number; oldestDays: number | null
     overdueTasks: number; dueToday: number
     ticketsOverdue: number; ticketsSoon: number
@@ -286,10 +291,18 @@ export default function AdminDashboard() {
 
 function NeedsAttention({ s, refreshing }: { s: Summary | null; refreshing?: boolean }) {
   const a = s?.attention
+  // Missed calls stay until someone gets back to the caller, rather than
+  // vanishing at midnight. The link opens the call log on the missed ones.
+  const mo = a?.missedOutcome
+  const cc = canSee(s, 'command_centre')
+  const missedHref = cc ? '/admin/command-centre?tab=logs&range=7d&dir=inbound&outcome=missed' : '/admin/calls?filter=missed'
   const tiles = a ? [
     { key: 'unread', feature: 'inbox', label: 'Unread messages', n: a.unread, urgent: true, href: '/admin/inbox?view=unread', icon: ChatI,
       sub: a.unread ? 'Customers waiting on a reply' : 'Inbox is caught up' },
-    { key: 'calls', feature: 'calls', label: 'Missed calls today', n: a.missedCalls + a.voicemails, urgent: true, href: canSee(s, 'command_centre') ? '/admin/command-centre' : '/admin/calls', icon: PhoneMissI,
+    mo ? { key: 'calls', feature: 'calls', label: 'Missed calls to return', n: mo.toCallBack, urgent: true, href: missedHref, icon: PhoneMissI,
+      sub: mo.missed ? `${mo.recovered} of ${plural(mo.missed, 'missed call')} recovered · ${mo.toCallBack} still to call back` : 'None in the last 7 days',
+      hint: mo.textedBack ? `Last 7 days. ${plural(mo.textedBack, 'caller')} texted back automatically.` : 'Last 7 days' }
+    : { key: 'calls', feature: 'calls', label: 'Missed calls today', n: a.missedCalls + a.voicemails, urgent: true, href: cc ? '/admin/command-centre' : '/admin/calls', icon: PhoneMissI,
       sub: a.voicemails ? `${plural(a.voicemails, 'voicemail')} · ${plural(a.callsToday, 'call')} today` : `${plural(a.callsToday, 'call')} today` },
     { key: 'orders', feature: 'orders', label: 'Orders to fulfil', n: a.awaiting, urgent: (a.oldestDays ?? 0) >= 3, href: '/admin/orders', icon: BoxI,
       sub: a.awaiting ? (a.oldestDays ? `Oldest waiting ${plural(a.oldestDays, 'day')}` : 'All from today') : 'Nothing waiting to ship' },
@@ -330,7 +343,7 @@ function NeedsAttention({ s, refreshing }: { s: Summary | null; refreshing?: boo
             const hot = !clear && t.urgent
             const Icon = t.icon
             return (
-              <Link key={t.key} href={t.href} className={`${card} p-4 flex flex-col sm:flex-row gap-2 sm:gap-3 items-start hover:shadow-md transition-smooth min-w-0`}
+              <Link key={t.key} href={t.href} title={'hint' in t ? t.hint : undefined} className={`${card} p-4 flex flex-col sm:flex-row gap-2 sm:gap-3 items-start hover:shadow-md transition-smooth min-w-0`}
                 style={{ ...cardStyle, borderColor: hot ? '#fecaca' : 'var(--border)' }}>
                 <span className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
                   style={{ background: clear ? '#f0fdf4' : hot ? '#fef2f2' : '#eff6ff' }}>

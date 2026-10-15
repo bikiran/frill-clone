@@ -4,6 +4,7 @@ import { requireCompanyAccess } from '@/lib/company-access'
 import { computeSla, resolveSla } from '@/lib/ticket-sla'
 import { dayKey, startOfDay, callOutcome } from '@/lib/dashboard-time'
 import { ALL_FEATURE_KEYS, canUseFeature, hasFullAccess } from '@/lib/permissions'
+import { missedCallOutcome, type MissedCallOutcome } from '@/lib/outcomes/missed-calls'
 
 // GET /api/dashboard/summary?companyId=&tz=
 //
@@ -121,6 +122,10 @@ export async function GET(req: NextRequest) {
     rows(db.from('stock_waitlist').select('id, customer_name, item_name, created_at').eq('company_id', companyId).order('created_at', { ascending: false }).limit(4)),
     rows(db.from('bookings').select('id, customer_name, service_name, starts_at, created_at').eq('company_id', companyId).in('status', ['pending', 'confirmed']).order('created_at', { ascending: false }).limit(4)),
     rows(db.from('ideas').select('id, title, created_by_name, created_at').eq('company_id', companyId).order('created_at', { ascending: false }).limit(3)),
+    // Missed calls over the same "last 7 days" as the Command Centre's filter
+    // (today and the six days before), and which ones were got back to. Not
+    // reset at midnight: yesterday's unreturned call still needs a call back.
+    safe<MissedCallOutcome | null>(() => missedCallOutcome(db, companyId, { since: new Date(today0.getTime() - 6 * DAY), now }), null),
   ])
   const [access, results] = await Promise.all([accessP, dataP])
   if (!access.ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
@@ -130,7 +135,7 @@ export async function GET(req: NextRequest) {
     unread, unassigned, callsToday, awaiting, oldestAwaiting, tasks, tickets, company,
     reviewsToAnswer, lowReviewsToAnswer, waitlist, carts, bookingsToday,
     orders60, convNow, convPrev, reviews60, callsNow, callsPrev,
-    recentOrders, recentReviews, recentWaitlist, recentBookings, recentIdeas,
+    recentOrders, recentReviews, recentWaitlist, recentBookings, recentIdeas, missedOutcome,
   ] = results
 
   // ── Needs attention ────────────────────────────────────────────────────────
@@ -200,6 +205,12 @@ export async function GET(req: NextRequest) {
     attention: {
       unread: z('inbox', unread), unassigned: z('inbox', unassigned),
       missedCalls: z('calls', missedCalls), voicemails: z('calls', voicemails), callsToday: z('calls', callsToday.length),
+      // Missed calls and voicemails in the last 7 days: how many were returned,
+      // texted back, and who still needs a call (the first few, newest first).
+      missedOutcome: z('calls', missedOutcome ? {
+        missed: missedOutcome.missed, recovered: missedOutcome.recovered, textedBack: missedOutcome.textedBack,
+        toCallBack: missedOutcome.toReturn.length, toReturn: missedOutcome.toReturn.slice(0, 5),
+      } : null, null),
       awaiting: z('orders', awaiting), oldestDays: z('orders', oldestDays, null),
       overdueTasks: z('tasks', overdueTasks.length), dueToday: z('tasks', dueToday.length),
       ticketsOverdue: z('tickets', ticketsOverdue), ticketsSoon: z('tickets', ticketsSoon),

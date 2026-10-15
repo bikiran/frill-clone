@@ -22,6 +22,12 @@ export interface SmsSendParams {
   mediaUrls?: string[]
   /** Provider status-callback URL, for delivery receipts. */
   statusCallback?: string
+  /**
+   * Send from this one of the business's own numbers instead of its usual
+   * texting number — e.g. the line a customer just rang, so the text comes
+   * from the number they know. Callers check it belongs to the business.
+   */
+  from?: string
 }
 
 export interface SmsSendResult {
@@ -111,12 +117,15 @@ export async function resolveSmsSender(db: any, companyId: string): Promise<SmsS
         from,
         supportsMms: true,
         async send(p: SmsSendParams): Promise<SmsSendResult> {
+          // A different number of the business's goes out from that number
+          // directly; otherwise the usual number or Messaging Service.
+          const other = !!p.from && (toE164(p.from) || p.from) !== (toE164(t.phone_number || '') || t.phone_number)
           try {
             const r = await svc.sendMessage({
               to: p.to,
               text: p.text,
-              from: t.phone_number || undefined,
-              messagingServiceSid: t.messaging_service_sid || undefined,
+              from: other ? p.from : (t.phone_number || undefined),
+              messagingServiceSid: other ? undefined : (t.messaging_service_sid || undefined),
               mediaUrls: p.mediaUrls,
               statusCallback: p.statusCallback,
             })
@@ -143,7 +152,7 @@ export async function resolveSmsSender(db: any, companyId: string): Promise<SmsS
         // links appended to the body by the caller, so `send` is text-only.
         try {
           const r = await svc.sendSMS({
-            from: integ.phone_number,
+            from: p.from || integ.phone_number,
             to: p.to,
             text: p.text,
             messaging_profile_id: integ.messaging_profile_id || undefined,

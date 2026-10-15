@@ -7,6 +7,7 @@ import { uploadToR2, r2Configured } from '@/lib/r2'
 import { ensureCallCard, setCallPreview } from '@/lib/call-card'
 import { emitCallEvent } from '@/lib/integration-hooks'
 import { alertCall, transcribeCall } from '@/lib/call-alerts'
+import { queueMissedCallText } from '@/lib/missed-call-text'
 
 export const dynamic = 'force-dynamic'
 
@@ -101,6 +102,9 @@ export async function POST(req: NextRequest) {
         const convId = c.conversation_id || conversationId || null
         await alertCall(db, c.company_id, convId, 'New voicemail', c.caller_name || c.from_number || 'a caller')
         transcribeCall((process.env.NEXT_PUBLIC_SITE_URL || new URL(req.url).origin).replace(/\/$/, ''), rowId, c.company_id, convId)
+        // Normally already texted when the call went to voicemail; this only
+        // sends if that didn't happen (the 12-hour claim stops a second text).
+        queueMissedCallText({ db, companyId: c.company_id, callId: rowId })
       }
       await emitCallEvent(db, 'voicemail.received', rowId)
       return NextResponse.json({ ok: true })
