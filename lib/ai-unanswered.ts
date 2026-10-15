@@ -1,7 +1,8 @@
 // Questions Colvy AI couldn't answer from the knowledge library (server only).
 //
 // Logged when auto-reply hands a customer to a person because of a knowledge
-// gap, or an inbox draft found nothing to go on; and found in bulk by
+// gap, an inbox draft found nothing to go on, or an AI agent's knowledge search
+// came up empty (or it handed over for want of an answer); and found in bulk by
 // scanRecentQuestions(). Similar questions are grouped so the owner answers
 // each one once, as a fact. Everything here is best effort: logging must never
 // break a reply.
@@ -90,7 +91,7 @@ async function upsertGroup(db: any, companyId: string, g: { question: string; co
 }
 
 /** Record one question Colvy AI couldn't answer. Never throws. */
-export async function logUnanswered(db: any, companyId: string, text: string, opts: { source: 'ai_reply' | 'ai_draft'; conversationId?: string | null }) {
+export async function logUnanswered(db: any, companyId: string, text: string, opts: { source: 'ai_reply' | 'ai_draft' | 'agent'; conversationId?: string | null }) {
   try {
     const q = questionFrom(text)
     if (q.length < 6 || !isRealQuestion(q)) return

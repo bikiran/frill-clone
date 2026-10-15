@@ -6,10 +6,12 @@ import { authFetch } from '@/lib/auth-fetch'
 import { resolveCompanyUser, peekCompanyUser, readStored, writeStored } from '@/lib/client-cache'
 import { confirmDialog } from '@/components/ConfirmDialog'
 
-// Business Memory (Agent Engine, Phase 5): what Colvy's AI agents know about
-// this business and must follow — how replies sound, the policies, the rules,
-// and when an order needs a person. Things an agent learns from the team's
-// edits arrive here as suggestions and do nothing until someone keeps them.
+// Business Memory (Agent Engine, Phase 5): what Colvy's AI knows about this
+// business and must follow — how replies sound, the policies, the rules, short
+// answers to common questions, and when an order needs a person. Every AI reply
+// and draft in Colvy reads it. Things an agent learns from the team's edits (or
+// a team member asks Colvy AI to remember) arrive here as suggestions and do
+// nothing until someone keeps them.
 
 const EASE = 'cubic-bezier(.22,1,.36,1)'
 
@@ -55,6 +57,7 @@ const I = {
   gauge: <Svg size={18} d={<><path d="M12 20a8 8 0 1 1 8-8" /><path d="M12 12l4-4" /><path d="M20 20h-4" /></>} />,
   info: <Svg size={16} d={<><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></>} />,
   arrow: <Svg size={13} d={<><line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" /></>} />,
+  chat: <Svg size={18} d={<><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /><path d="M9.5 8.5a2.5 2.5 0 1 1 3.3 2.4c-.5.2-.8.6-.8 1.1v.5" /><line x1="12" y1="14.5" x2="12.01" y2="14.5" /></>} />,
 }
 const TONE_META: Record<string, { icon: React.ReactNode; desc: string }> = {
   warm: { icon: I.smile, desc: 'Friendly, helpful and natural.' },
@@ -106,6 +109,7 @@ export default function BusinessMemoryPage() {
   const tone = active.find(i => i.kind === 'tone')
   const policies = active.filter(i => i.kind === 'policy')
   const rules = active.filter(i => i.kind === 'instruction')
+  const faqs = active.filter(i => i.kind === 'faq')
   const thresholds = active.find(i => i.kind === 'rule' && i.key === 'order_status_thresholds')
 
   return (
@@ -115,7 +119,7 @@ export default function BusinessMemoryPage() {
         <nav className="bm-crumbs" aria-label="Breadcrumb"><Link href="/admin/agents">AI Agents</Link><span aria-hidden="true">/</span><span>Business memory</span></nav>
         <div style={{ margin: '8px 0 20px' }}>
           <h1 style={{ margin: 0, fontSize: 'clamp(22px, 3.4vw, 30px)', fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--ink)' }}>Business memory</h1>
-          <p style={{ margin: '4px 0 0', fontSize: 14, color: 'var(--slate)', maxWidth: 680, lineHeight: 1.55 }}>How your AI agents sound and the rules they always follow. It’s part of every reply, and changes apply from the next message.</p>
+          <p style={{ margin: '4px 0 0', fontSize: 14, color: 'var(--slate)', maxWidth: 680, lineHeight: 1.55 }}>How your AI sounds and the rules it always follows. It’s part of every AI reply and draft in Colvy — agents, auto-replies, inbox drafts, review and comment replies — and changes apply from the next message.</p>
         </div>
         {loaded && <KnowledgeNote coverage={coverage} />}
 
@@ -130,9 +134,10 @@ export default function BusinessMemoryPage() {
               <ToneCard item={tone} tones={templates.tones} save={save} />
               <RulesCard items={rules} save={save} />
               <PoliciesCard items={policies} templates={templates.policies} coverage={coverage} save={save} />
+              <FaqsCard items={faqs} save={save} />
             </div>
             <aside className="bm-side">
-              <Glance active={active} tone={templates.tones[tone?.content?.style || 'warm']?.label || 'Warm & friendly'} rules={rules.length} facts={policies.length} waiting={proposals.length} />
+              <Glance active={active} tone={templates.tones[tone?.content?.style || 'warm']?.label || 'Warm & friendly'} rules={rules.length} facts={policies.length} faqs={faqs.length} waiting={proposals.length} />
               <ThresholdsCard item={thresholds} defaults={templates.thresholds} save={save} />
               <div className="bm-tip bm-fade">{I.info}<span>Opening hours come live from Google Business Profile, so there’s no need to add them here.</span></div>
             </aside>
@@ -157,7 +162,7 @@ function KnowledgeNote({ coverage }: { coverage: Coverage | null }) {
         <span className="bm-know-ic">{I.book}</span>
         <div style={{ minWidth: 0 }}>
           <p className="bm-h">Connected knowledge</p>
-          <p className="bm-p">Agents search AI Knowledge before answering, so full policies and FAQs don’t need copying here. Keep them there, where customers can read them too.</p>
+          <p className="bm-p">Agents search AI Knowledge before answering, so full policies and long FAQs don’t need copying here. Keep them there, where customers can read them too.</p>
         </div>
       </div>
       <div className="bm-stats">
@@ -173,13 +178,14 @@ function KnowledgeNote({ coverage }: { coverage: Coverage | null }) {
   )
 }
 
-function Glance({ active, tone, rules, facts, waiting }: { active: Item[]; tone: string; rules: number; facts: number; waiting: number }) {
+function Glance({ active, tone, rules, facts, faqs, waiting }: { active: Item[]; tone: string; rules: number; facts: number; faqs: number; waiting: number }) {
   const last = active.reduce<string | null>((m, i) => (i.updated_at && (!m || i.updated_at > m) ? i.updated_at : m), null)
   const rows: [React.ReactNode, string, string][] = [
     [I.clock, 'Last updated', last ? when(last) : 'Not yet'],
     [I.voice, 'Tone', tone],
     [I.rule, 'Rules', `${rules} active`],
     [I.doc, 'Must-know facts', facts ? `${facts}` : 'None'],
+    [I.chat, 'Common questions', faqs ? `${faqs}` : 'None'],
   ]
   return (
     <div className="bm-card bm-fade">
@@ -223,7 +229,7 @@ function SaveBar({ dirty, busy, onSave, onCancel, label = 'Save', disabled }: { 
 function Proposals({ items, save }: { items: Item[]; save: Save }) {
   return (
     <div className="bm-card bm-fade bm-learn">
-      <CardHead icon={I.spark} title="Suggested by your agents" sub="Learned from replies your team edited before sending. Nothing here is used until you keep it." />
+      <CardHead icon={I.spark} title="Suggested by your agents" sub="Learned from replies your team edited before sending, or things your team asked Colvy AI to remember. Nothing here is used until you keep it." />
       <ul className="bm-list">{items.map(p => <Proposal key={p.id} p={p} save={save} />)}</ul>
     </div>
   )
@@ -241,10 +247,12 @@ function Proposal({ p, save }: { p: Item; save: Save }) {
   }
   return (
     <li className="bm-prop">
-      <span className="bm-tag">{p.kind === 'policy' ? `Fact${p.content?.title ? ` · ${p.content.title}` : ''}` : 'Rule'}</span>
+      <span className="bm-tag">{p.kind === 'policy' ? `Fact${p.content?.title ? ` · ${p.content.title}` : ''}` : p.kind === 'faq' ? `Common question${p.content?.title ? ` · ${p.content.title}` : ''}` : 'Rule'}</span>
       <textarea className="bm-input" rows={rowsFor(text, 2, 6)} value={text} onChange={e => setText(e.target.value)} aria-label="Suggested memory" />
       <div className="bm-meta">
-        Learned from a reply {ev.edited_by_name || 'your team'} edited · {when(p.updated_at)}
+        {ev.from === 'assistant'
+          ? <>Suggested by {ev.proposed_by_name || 'your team'} in Colvy AI · {when(p.updated_at)}</>
+          : <>Learned from a reply {ev.edited_by_name || 'your team'} edited · {when(p.updated_at)}</>}
         {(ev.draft || ev.sent) && <button type="button" className="bm-linkbtn" onClick={() => setShowEdit(s => !s)} aria-expanded={showEdit}>{showEdit ? 'Hide the edit' : 'See the edit'}</button>}
       </div>
       {showEdit && (
@@ -402,6 +410,52 @@ function RuleRow({ n, item, save, onDone }: { n: number; item?: Item; save: Save
       <SaveBar dirty={dirty} busy={busy} disabled={!text.trim()} onCancel={() => (item ? setText(saved) : onDone?.())} onSave={async () => {
         setBusy(true)
         const ok = await save({ kind: 'instruction', key: item?.key || null, content: { text } })
+        setBusy(false)
+        if (ok && !item) onDone?.()
+      }} />
+    </li>
+  )
+}
+
+// ── Common questions (FAQ) ───────────────────────────────────────────────────
+// Short question-and-answer pairs agents give as they are. Saved as kind 'faq':
+// the question is the title, the answer the text.
+
+function FaqsCard({ items, save }: { items: Item[]; save: Save }) {
+  const [adding, setAdding] = useState(false)
+  return (
+    <div className="bm-card bm-fade">
+      <CardHead icon={I.chat} title="Common questions" sub="Short answers your agents give when a customer asks. Keep each to a sentence or two — longer FAQs belong in your help centre." action={!adding ? <button type="button" className="bm-primary bm-add" onClick={() => setAdding(true)}>{I.plus} Add question</button> : null} />
+      {items.length === 0 && !adding && <p className="bm-empty">None yet. For example: “Do you sell live plants?” — “Yes, in store only. They don’t travel well, so we don’t post them.”</p>}
+      <ul className="bm-list">
+        {items.map(i => <FaqRow key={i.id} item={i} save={save} />)}
+        {adding && <FaqRow save={save} onDone={() => setAdding(false)} />}
+      </ul>
+    </div>
+  )
+}
+
+function FaqRow({ item, save, onDone }: { item?: Item; save: Save; onDone?: () => void }) {
+  const saved = useMemo(() => ({ q: String(item?.content?.title || ''), a: String(item?.content?.text || '') }), [item])
+  const [d, setD] = useState(saved)
+  const [busy, setBusy] = useState(false)
+  // A fresh copy from the server (after a save) resets the fields.
+  const [shown, setShown] = useState(saved)
+  if (shown !== saved) { setShown(saved); setD(saved) }
+  const dirty = item ? !same(d, saved) : true
+  return (
+    <li className="bm-item">
+      <div className="bm-item-head">
+        <input className="bm-input bm-title-in" value={d.q} onChange={e => setD({ ...d, q: e.target.value })} placeholder="The question, e.g. Do you sell live plants?" maxLength={200} autoFocus={!item} aria-label="Question" />
+        <button type="button" className="bm-icon" aria-label="Remove question" onClick={async () => {
+          if (!item) { onDone?.(); return }
+          if (await confirmDialog({ title: 'Remove this question?', message: saved.q || saved.a, confirmLabel: 'Remove', tone: 'danger' })) await save({ id: item.id, status: 'archived' })
+        }}>{I.trash}</button>
+      </div>
+      <textarea className="bm-input" rows={rowsFor(d.a, 2, 8)} value={d.a} onChange={e => setD({ ...d, a: e.target.value })} placeholder="The answer, in a sentence or two." maxLength={600} aria-label="Answer" />
+      <SaveBar dirty={dirty} busy={busy} disabled={!d.q.trim() || !d.a.trim()} onCancel={() => (item ? setD(saved) : onDone?.())} onSave={async () => {
+        setBusy(true)
+        const ok = await save({ kind: 'faq', key: item?.key || null, content: { title: d.q.trim(), text: d.a } })
         setBusy(false)
         if (ok && !item) onDone?.()
       }} />

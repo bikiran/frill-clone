@@ -6,6 +6,7 @@ import {
   type AssistantContext,
 } from '@/lib/ai-assistant/tools'
 import { modelFor, trackAi } from '@/lib/ai-models'
+import { memoryForPrompt, memoryBlock, type PromptMemory } from '@/lib/agent/business-memory'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Colvy AI assistant — the tool-use loop.
@@ -55,7 +56,7 @@ function routeHint(route?: string | null): string {
   return ''
 }
 
-function buildSystem(ctx: AssistantContext): string {
+function buildSystem(ctx: AssistantContext, memory?: PromptMemory): string {
   const today = new Date().toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
   const ctxLines: string[] = []
   if (ctx.currentRoute) ctxLines.push(`Current page: ${ctx.currentRoute}`)
@@ -65,6 +66,9 @@ function buildSystem(ctx: AssistantContext): string {
   if (ctx.outletId) ctxLines.push(`Current outlet id: ${ctx.outletId}`)
   if (ctx.ticketId) ctxLines.push(`Open ticket id: ${ctx.ticketId}`)
   const hint = routeHint(ctx.currentRoute)
+  // The owner's tone, must-know facts and rules: what the AI agents follow, so a
+  // reply written here says the same thing an agent would.
+  const memText = memory ? memoryBlock(memory, { heading: 'BUSINESS MEMORY (set by the owner) — for anything a customer will read', note: 'Apply them to every message, ticket, review and comment reply you write for a customer.' }) : ''
 
   return `You are Colvy, the in-app assistant for ${ctx.companyName}. You help ${ctx.userName} (role: ${ctx.role}) get things done by turning plain instructions into actions.
 
@@ -86,7 +90,7 @@ HOW YOU WORK
 - Keep your chat replies to one short sentence. The UI shows a card for every action and data result, so don't repeat what's on the card or rebuild figures as a table.
 - Plain text only: no markdown tables or heavy formatting.
 - Never claim you did something you didn't. If a tool fails, say briefly what went wrong and what would fix it.
-
+${memText ? `\n${memText}\n` : ''}
 WHAT YOU CAN DO
 - Look up contacts, outlets, team members, orders, conversations, calls, tasks, tickets, Google reviews and Facebook/Instagram comments.
 - Tasks & reminders: create (with assignees, an outlet, a due date, a link to an order/conversation) and update them (done/reopen, priority, due date, reassign).
@@ -96,9 +100,10 @@ WHAT YOU CAN DO
 - Sending a payment link for an amount (send_payment_link), asking a customer to upload photos/videos (request_media), sending an online booking link (send_booking_link).
 - Orders: assign to an outlet or clear it (assign_order_outlet, several at once is fine), change status, cancel, refund.
 - Knowledge: look things up in the business's own knowledge (ask_knowledge) and teach Colvy AI new facts for customer answers (add_fact, e.g. "remember we're closed Christmas Day").
+- Business Memory: suggest a rule or must-know fact every AI reply should follow (propose_memory, e.g. "remember we never ship live fish to WA", "never promise same-day delivery"). The owner keeps or dismisses it on the Business memory page; say it's waiting for them.
 
 SAFETY
-- Tasks, reminders, events, sales, facts and assigning orders to an outlet are internal — just do them.
+- Tasks, reminders, events, sales, facts, Business Memory suggestions and assigning orders to an outlet are internal — just do them.
 - These always go through the check-before-sending card and only happen when the user taps it: send_message, reply_ticket, reply_review, reply_social_comment, send_payment_link, request_media, send_booking_link, update_order_status, cancel_order, refund_order. Calling the tool only prepares it — never say it was sent or done until the user confirms.
 - A refund or payment link involves real money — only ever use the amount the user gave.
 - You cannot delete records or take a new payment. If asked, say it's not something you can do yet.`
@@ -166,7 +171,7 @@ export async function runAssistant(opts: {
   while (messages.length && messages[0].role !== 'user') messages.shift()
   messages.push({ role: 'user', content: String(message || '').trim() })
 
-  const system = buildSystem(ctx)
+  const system = buildSystem(ctx, await memoryForPrompt(db, ctx.companyId))
 
   try {
     for (let step = 0; step < MAX_STEPS; step++) {
