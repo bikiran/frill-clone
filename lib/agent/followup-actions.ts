@@ -124,7 +124,10 @@ async function followupOnItsOwn(ctx: ActionContext, args: any, _limits: PolicyLi
 export const sendSalesFollowup: ActionDef = {
   key: 'send_sales_followup',
   description: 'Send the customer your one follow-up about their quote, payment request or enquiry. Plain text, 1–3 short sentences. For a quote with a pay link, put {link} where it should go. Never offer discounts unless the business’s rules say you may.',
-  input: obj({ text: { type: 'string', description: 'The follow-up, with {link} for the pay link if there is one.' } }, ['text']),
+  input: obj({
+    text: { type: 'string', description: 'The follow-up, with {link} for the pay link if there is one.' },
+    knowledge_gap: { type: 'boolean', description: 'Enquiries only: true when the follow-up doesn’t answer what they asked because the business’s knowledge doesn’t cover it (you offer to find out instead).' },
+  }, ['text']),
   category: 'communicate', risk: 'medium', maxAutonomy: 'act_within_limits', customerSafe: true,
   autoCheck: followupOnItsOwn,
   async run(ctx, args) {
