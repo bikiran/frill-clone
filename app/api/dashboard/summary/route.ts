@@ -206,10 +206,11 @@ export async function GET(req: NextRequest) {
       unread: z('inbox', unread), unassigned: z('inbox', unassigned),
       missedCalls: z('calls', missedCalls), voicemails: z('calls', voicemails), callsToday: z('calls', callsToday.length),
       // Missed calls and voicemails in the last 7 days: how many were returned,
-      // texted back, and who still needs a call (the first few, newest first).
+      // texted back, and who still needs a call (newest first; the dashboard
+      // shows five and the rest on request, as no other page lists them).
       missedOutcome: z('calls', missedOutcome ? {
         missed: missedOutcome.missed, recovered: missedOutcome.recovered, textedBack: missedOutcome.textedBack,
-        toCallBack: missedOutcome.toReturn.length, toReturn: missedOutcome.toReturn.slice(0, 5),
+        toCallBack: missedOutcome.toReturn.length, toReturn: missedOutcome.toReturn.slice(0, 50),
       } : null, null),
       awaiting: z('orders', awaiting), oldestDays: z('orders', oldestDays, null),
       overdueTasks: z('tasks', overdueTasks.length), dueToday: z('tasks', dueToday.length),

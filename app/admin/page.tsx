@@ -328,14 +328,18 @@ export default function AdminDashboard() {
 
 function NeedsAttention({ s, refreshing }: { s: Summary | null; refreshing?: boolean }) {
   const a = s?.attention
+  const [allCallBack, setAllCallBack] = useState(false)
   // Missed calls stay until someone gets back to the caller, rather than
   // vanishing at midnight. The tile opens the list of callers still waiting
   // (under the tiles); the call log shows every incoming call of the week,
-  // voicemails included, since its "missed" filter leaves those out.
+  // voicemails included, since its "missed" filter leaves those out. Only this
+  // list knows who is still waiting, so it shows five and the rest on request.
   const mo = a?.missedOutcome
   const cc = canSee(s, 'command_centre')
   const missedHref = cc ? '/admin/command-centre?tab=logs&range=7d&dir=inbound' : '/admin/calls?filter=inbound'
   const callBack = mo?.toReturn || []
+  const callBackShown = allCallBack ? callBack : callBack.slice(0, 5)
+  const notSent = mo ? mo.toCallBack - callBack.length : 0
   const tiles = a ? [
     { key: 'unread', feature: 'inbox', label: 'Unread messages', n: a.unread, urgent: true, href: '/admin/inbox?view=unread', icon: ChatI,
       sub: a.unread ? 'Customers waiting on a reply' : 'Inbox is caught up' },
@@ -405,7 +409,7 @@ function NeedsAttention({ s, refreshing }: { s: Summary | null; refreshing?: boo
             <Link href={missedHref} className="text-xs font-semibold" style={{ color: 'var(--coral)' }}>Call log</Link>
           </div>
           <ul className="dash-rows">
-            {callBack.map(r => {
+            {callBackShown.map(r => {
               const detail = [r.name ? r.number : '', r.attempts > 1 ? plural(r.attempts, 'missed call') : '', r.voicemail ? 'Voicemail' : '', r.textedBack ? 'Texted back' : ''].filter(Boolean).join(' · ')
               const body = (
                 <>
@@ -426,8 +430,16 @@ function NeedsAttention({ s, refreshing }: { s: Summary | null; refreshing?: boo
                 </li>
               )
             })}
-            {mo && mo.toCallBack > callBack.length && (
-              <li><Link href={missedHref} className="block px-5 py-2.5 text-xs" style={{ color: 'var(--slate)' }}>+{mo.toCallBack - callBack.length} more in the call log</Link></li>
+            {callBack.length > 5 && (
+              <li>
+                <button type="button" onClick={() => setAllCallBack(v => !v)} className="block w-full text-left px-5 py-2.5 text-xs font-semibold" style={{ color: 'var(--coral)' }}>
+                  {allCallBack ? 'Show fewer' : `Show ${callBack.length - 5} more`}
+                </button>
+              </li>
+            )}
+            {/* Past the 50 the summary sends (or an older cached summary's 5). */}
+            {notSent > 0 && (allCallBack || callBack.length <= 5) && (
+              <li className="px-5 py-2.5 text-xs" style={{ color: 'var(--slate)' }}>{plural(notSent, 'older caller')} not listed</li>
             )}
           </ul>
         </div>

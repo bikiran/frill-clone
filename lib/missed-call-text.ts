@@ -136,9 +136,19 @@ async function contactState(db: any, companyId: string, key: string, contactId: 
   return 'ok'
 }
 
-/** Record an opt-out the carrier reported, the way a STOP reply is recorded. */
+/**
+ * Record an opt-out the carrier reported, the way a STOP reply is recorded.
+ * Not when the customer's latest say was texting the business START or YES
+ * (lib/inbound-sms writes that onto the contact): the carrier can go on
+ * blocking a number they once texted STOP to after Colvy recorded that opt-in,
+ * so the block is older than their latest choice, not a new opt-out.
+ */
 async function recordCarrierOptOut(db: any, companyId: string, contactId: string, now: Date) {
   try {
+    const { data: ct, error } = await db.from('contacts').select('consent_basis, consent_source')
+      .eq('id', contactId).eq('company_id', companyId).maybeSingle()
+    if (error || !ct) return
+    if (ct.consent_basis === 'express' && /^replied [A-Z]+ by SMS$/.test(String(ct.consent_source || ''))) return
     const { data } = await db.from('contacts').update({
       subscribed_to_marketing: false, consent_basis: 'none', consent_source: 'replied STOP (reported by the carrier)',
       unsubscribed_at: now.toISOString(), unsubscribe_method: 'sms_keyword',
@@ -258,12 +268,17 @@ export async function sendMissedCallText(p: { db: any; companyId: string; callId
       })
       // The customer's reply matches back to this thread by number. A call-only
       // thread now continues by text; an email, web chat or Facebook thread the
-      // call happened to land in keeps its channel and its SMS setting (a chat
-      // visitor who didn't tick "continue by text" keeps their choice).
+      // call happened to land in keeps its channel. Texting stays on for the
+      // thread (upload links and the like go by text) unless a chat visitor gave
+      // their number and didn't tick "continue by text": a thread that already
+      // had a number with texting off keeps that choice. Call-only threads have
+      // the number with texting off too, but only as the column default.
       const callOnly = ['', 'phone', 'call', 'voice', 'sms'].includes(String(conv.channel || '').toLowerCase())
+      const keepsChoice = !callOnly && !!conv.sms_number && conv.sms_enabled === false
       await db.from('conversations').update({
         last_message: text.slice(0, 200), last_message_at: nowIso, updated_at: nowIso,
-        ...(callOnly ? { channel: 'sms', sms_enabled: true } : {}), sms_number: conv.sms_number || to,
+        ...(callOnly ? { channel: 'sms' } : {}), sms_number: conv.sms_number || to,
+        ...(keepsChoice ? {} : { sms_enabled: true }),
         ...(conv.channel_number ? {} : { channel_number: from || sender.from || null }),
       }).eq('id', conv.id)
     } catch (e: any) { log.warn('[missed call text] sent, but not saved to the conversation', e?.message || e) }
