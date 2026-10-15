@@ -70,31 +70,83 @@ export default function PublicForm() {
   // Question types where a single tap/click is an unambiguous answer — auto-advance
   const AUTO_ADVANCE_TYPES = ['multiple_choice', 'dropdown', 'yes_no', 'rating', 'nps', 'opinion_scale', 'legal', 'picture_choice']
 
+  // ── Moving between questions ────────────────────────────────────────────────
+  // Like Typeform: the current question slides up and out, the next one rises in
+  // from below (and the other way round going back). `leaving` plays the exit
+  // for a beat before the step actually changes.
+  const [dir, setDir] = useState<'fwd' | 'back'>('fwd')
+  const [leaving, setLeaving] = useState(false)
+  const [err, setErr] = useState('')          // inline "please fill this in" note
+  const [flash, setFlash] = useState('')      // the choice blinking before auto-advance
+  const [hoverStar, setHoverStar] = useState(0)
+  const answerRef = useRef<HTMLDivElement>(null)
+  const moving = useRef(false)
+  const reduceMotion = typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+
+  const go = (to: number) => {
+    if (moving.current) return
+    setErr('')
+    setDir(to < step ? 'back' : 'fwd')
+    if (reduceMotion) { setStep(to); return }
+    moving.current = true
+    setLeaving(true)
+    setTimeout(() => {
+      setStep(to); setLeaving(false); setFlash('')
+      moving.current = false
+    }, 170)
+  }
+
+  // Any change to an answer clears the "please fill this in" note.
+  useEffect(() => { setErr('') }, [answers])
+
+  const complain = (msg: string) => {
+    setErr(msg)
+    if (!reduceMotion) answerRef.current?.animate?.(
+      [0, -8, 7, -5, 3, 0].map(x => ({ transform: `translateX(${x}px)` })),
+      { duration: 380, easing: 'cubic-bezier(.36,.07,.19,.97)' },
+    )
+  }
+
+  const isEmpty = (v: any) => v === undefined || v === null || v === '' || (Array.isArray(v) && v.length === 0)
+
   const handleNext = () => {
+    if (moving.current) return
+    if (step === -1) { go(0); return }
     // A payment step can't be skipped until it's actually paid.
     if (current?.type === 'payment' && Number(current?.amountCents) > 0 && answers[current.id]?.status !== 'paid') {
-      alert('Please complete the payment to continue.')
+      complain('Please complete the payment to continue')
       return
     }
+    const v = current ? answers[current.id] : undefined
     // A statement is informational — it has no answer, so never block on "required".
-    if (current?.type !== 'statement' && current?.required && (answers[current.id] === undefined || answers[current.id] === '' || (Array.isArray(answers[current.id]) && answers[current.id].length === 0))) {
-      alert('This question is required')
+    if (current?.type !== 'statement' && current?.required && isEmpty(v)) {
+      complain(['multiple_choice', 'checkbox', 'picture_choice', 'dropdown', 'yes_no', 'legal'].includes(current?.type) ? 'Please make a selection' : 'Please fill this in')
       return
     }
-    if (step < visibleQuestions.length - 1) setStep(step + 1)
+    if (current?.type === 'email' && !isEmpty(v) && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(v).trim())) {
+      complain('Hmm… that email doesn’t look right')
+      return
+    }
+    if (step < visibleQuestions.length - 1) go(step + 1)
     else handleSubmit()
   }
 
+  const goBack = () => { if (step > 0) go(step - 1) }
+
   const selectAndAdvance = (questionId: string, value: any) => {
-    setAnswers(p => ({ ...p, [questionId]: value }))
+    if (moving.current) return
+    const next = { ...answers, [questionId]: value }
+    setAnswers(next)
+    setErr('')
+    // Blink the picked choice, then move on. Count against the questions that
+    // will be visible WITH this answer (conditional logic can show or hide later
+    // ones), and submit on the last one rather than stepping past the end.
+    setFlash(`${questionId}:${JSON.stringify(value)}`)
+    const nextVisible = getVisibleQuestions(questions, next)
     setTimeout(() => {
-      // Mirror handleNext: advance within the VISIBLE questions, and SUBMIT on the
-      // last one. The old code compared against questions.length (ignoring
-      // conditional logic) and read a stale `step`, so tapping the final answer
-      // stepped past the end instead of submitting — leaving a blank page.
-      if (step < visibleQuestions.length - 1) setStep(step + 1)
-      else handleSubmit()
-    }, 280)
+      if (step < nextVisible.length - 1) go(step + 1)
+      else { setFlash(''); handleSubmit() }
+    }, reduceMotion ? 120 : 420)
   }
 
   const handleSubmit = async () => {
@@ -153,7 +205,7 @@ export default function PublicForm() {
       const { data: { publicUrl } } = supabase.storage.from('idea-images').getPublicUrl(data.path)
       setAnswers(p => ({ ...p, [questionId]: { name: file.name, url: publicUrl } }))
     } catch (e: any) {
-      alert('File upload failed: ' + e.message)
+      complain('That upload didn’t work — ' + (e?.message || 'please try again'))
     }
     setUploadingFile(false)
   }
@@ -329,16 +381,75 @@ export default function PublicForm() {
     setSchedBusy(false)
   }
 
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Enter' && !e.shiftKey && step >= -1 && step < questions.length && !submitted) {
-        e.preventDefault()
-        handleNext()
-      }
+  // Keyboard, Typeform style: Enter = OK, letters pick choices (A, B, C…),
+  // Y / N answer yes-no, digits pick a rating or scale. Letters and digits are
+  // ignored while typing in a field. Kept in a ref so the listener always sees
+  // the latest answers without re-binding on every keystroke.
+  const onKey = useRef<(e: KeyboardEvent) => void>(() => {})
+  onKey.current = (e: KeyboardEvent) => {
+    if (submitted || e.metaKey || e.ctrlKey || e.altKey) return
+    const t = e.target as HTMLElement | null
+    const tag = t?.tagName
+    const typing = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || !!t?.isContentEditable
+    if (e.key === 'Enter') {
+      // Enter on a focused choice means OK (as on Typeform), not "pick it again".
+      if (e.shiftKey || tag === 'A' || (tag === 'BUTTON' && !t?.classList.contains('ff-choice'))) return
+      e.preventDefault()
+      handleNext()
+      return
     }
+    if (typing || !current || e.repeat) return
+    const k = e.key.toLowerCase()
+    const opts: string[] = current.options || []
+    const letter = /^[a-z]$/.test(k) ? k.charCodeAt(0) - 97 : -1
+    const digit = /^[0-9]$/.test(k) ? Number(k) : -1
+    const toggle = (opt: string) => {
+      const arr: string[] = answers[current.id] || []
+      setAnswers(p => ({ ...p, [current.id]: arr.includes(opt) ? arr.filter(o => o !== opt) : [...arr, opt] }))
+      setErr('')
+    }
+    switch (current.type) {
+      case 'multiple_choice':
+      case 'picture_choice':
+        if (letter < 0 || letter >= opts.length) return
+        if (current.type === 'multiple_choice' && current.multiSelect) toggle(opts[letter])
+        else selectAndAdvance(current.id, opts[letter])
+        break
+      case 'checkbox':
+        if (letter < 0 || letter >= opts.length) return
+        toggle(opts[letter])
+        break
+      case 'yes_no':
+        if (k === 'y') selectAndAdvance(current.id, 'Yes')
+        else if (k === 'n') selectAndAdvance(current.id, 'No')
+        else return
+        break
+      case 'legal':
+        if (k !== 'y') return
+        selectAndAdvance(current.id, true)
+        break
+      case 'rating':
+        if (digit < 1 || digit > 5) return
+        selectAndAdvance(current.id, digit)
+        break
+      case 'opinion_scale':
+        if (digit < 1 || digit > 7) return
+        selectAndAdvance(current.id, digit)
+        break
+      case 'nps':
+        if (digit < 0) return
+        selectAndAdvance(current.id, digit)
+        break
+      default:
+        return
+    }
+    e.preventDefault()
+  }
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => onKey.current(e)
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [step, answers, questions])
+  }, [])
 
   // Safety net: if step ever lands past the last visible question without a
   // submission (e.g. an edge in conditional logic), submit rather than render a
@@ -461,26 +572,127 @@ export default function PublicForm() {
     </div>
   )
 
+  // One choice row, Typeform style: a key badge (A, B, C… or Y / N), the label,
+  // and a tick when picked. `blink` plays the double flash before auto-advance.
+  const isFlash = (qid: string, v: any) => flash === `${qid}:${JSON.stringify(v)}`
+  const choice = (o: { k: string; label: React.ReactNode; on: boolean; blink?: boolean; onClick: () => void; checkbox?: boolean }) => (
+    <button type="button" onClick={o.onClick} aria-pressed={o.on}
+      className={`ff-choice${o.on ? ' on' : ''}${o.blink ? ' ff-blink' : ''}`}>
+      <span className="ff-key"><span className="ff-keyword">Key </span>{o.k}</span>
+      <span className="ff-label">{o.label}</span>
+      <svg className="ff-tick" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+    </button>
+  )
+  const ARROW = <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+  const enterHint = <span className="ff-hint">press <b>Enter ↵</b></span>
+  const minutes = Math.max(1, Math.round((visibleQuestions.length * 12) / 60))
+  const stage = leaving ? `ff-out-${dir}` : `ff-in-${dir}`
+
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#fff', padding: 24, position: 'relative' }}>
+    <div style={{ ['--ff' as any]: themeColor, minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#fff', padding: '64px 24px 96px', position: 'relative', overflowX: 'clip' }}>
       <style>{`
-        @keyframes ffFade { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
-        .ff-anim { animation: ffFade 0.4s cubic-bezier(0.16,1,0.3,1) both; }
-        .ff-input { transition: border-color 0.2s; }
-        .ff-input:focus { border-color: var(--ff-color) !important; }
+        @keyframes ffInUp { from { opacity: 0; transform: translateY(44px); } to { opacity: 1; transform: none; } }
+        @keyframes ffInDown { from { opacity: 0; transform: translateY(-44px); } to { opacity: 1; transform: none; } }
+        @keyframes ffOutUp { to { opacity: 0; transform: translateY(-44px); } }
+        @keyframes ffOutDown { to { opacity: 0; transform: translateY(44px); } }
+        .ff-in-fwd > * { animation: ffInUp .55s cubic-bezier(.16,1,.3,1) both; }
+        .ff-in-back > * { animation: ffInDown .55s cubic-bezier(.16,1,.3,1) both; }
+        .ff-in-fwd > :nth-child(2), .ff-in-back > :nth-child(2) { animation-delay: .04s; }
+        .ff-in-fwd > :nth-child(3), .ff-in-back > :nth-child(3) { animation-delay: .08s; }
+        .ff-in-fwd > :nth-child(4), .ff-in-back > :nth-child(4) { animation-delay: .12s; }
+        .ff-in-fwd > :nth-child(n+5), .ff-in-back > :nth-child(n+5) { animation-delay: .16s; }
+        .ff-out-fwd { animation: ffOutUp .17s cubic-bezier(.4,0,1,1) both; }
+        .ff-out-back { animation: ffOutDown .17s cubic-bezier(.4,0,1,1) both; }
+
+        .ff-qhead { display: flex; gap: 10px; align-items: baseline; margin-bottom: 8px; }
+        .ff-num { display: inline-flex; align-items: center; gap: 3px; font-size: 15px; font-weight: 600; color: var(--ff); flex-shrink: 0; transform: translateY(-2px); }
+        .ff-title { font-size: clamp(21px, 2.6vw, 26px); font-weight: 500; color: #0d0d0d; line-height: 1.35; letter-spacing: -0.01em; margin: 0; }
+        .ff-desc { font-size: 17px; color: #4b5563; line-height: 1.55; margin: 0 0 4px; }
+        /* Answers line up under the question text, past the number. On phones the
+           number sits above the question instead, so everything is flush left. */
+        .ff-indent { padding-left: 34px; }
+        @media (max-width: 600px) {
+          .ff-qhead { flex-direction: column; gap: 6px; }
+          .ff-num { transform: none; }
+          .ff-indent { padding-left: 0; }
+        }
+
+        .ff-input { width: 100%; font-size: clamp(20px, 3vw, 28px); padding: 6px 0 10px; border: none; border-bottom: 1px solid color-mix(in srgb, var(--ff) 40%, transparent); border-radius: 0; outline: none; background: transparent; color: var(--ff); font-family: inherit; transition: border-color .2s, box-shadow .2s; }
+        .ff-input:focus { border-color: transparent !important; border-bottom-color: var(--ff) !important; box-shadow: 0 1px 0 var(--ff); }
+        .ff-input::placeholder { color: color-mix(in srgb, var(--ff) 35%, #b8b8be); }
+        select.ff-input { cursor: pointer; }
+
+        .ff-choices { display: flex; flex-direction: column; gap: 8px; width: fit-content; min-width: min(100%, 300px); max-width: 100%; }
+        .ff-choice { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 12px 8px 8px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--ff) 45%, transparent); background: color-mix(in srgb, var(--ff) 8%, #fff); color: #0d0d0d; font-size: 17px; text-align: left; cursor: pointer; transition: background .15s, box-shadow .15s, transform .1s; font-family: inherit; }
+        .ff-choice:hover { background: color-mix(in srgb, var(--ff) 15%, #fff); }
+        .ff-choice:active { transform: scale(.985); }
+        .ff-choice.on { border-color: var(--ff); box-shadow: inset 0 0 0 1px var(--ff); background: color-mix(in srgb, var(--ff) 16%, #fff); }
+        .ff-key { min-width: 24px; height: 24px; padding: 0 6px; border-radius: 4px; border: 1px solid color-mix(in srgb, var(--ff) 55%, transparent); background: #fff; color: var(--ff); font-size: 12px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; transition: background .15s, color .15s; white-space: nowrap; }
+        .ff-keyword { display: none; }
+        @media (hover: hover) { .ff-choice:hover .ff-keyword { display: inline; margin-right: 3px; } }
+        .ff-choice.on .ff-key { background: var(--ff); border-color: var(--ff); color: #fff; }
+        .ff-label { flex: 1; min-width: 0; }
+        .ff-tick { color: var(--ff); flex-shrink: 0; opacity: 0; transform: scale(.5); transition: opacity .2s, transform .25s cubic-bezier(.34,1.56,.64,1); }
+        .ff-choice.on .ff-tick { opacity: 1; transform: none; }
+        @keyframes ffBlink { 0%, 50%, 100% { background: color-mix(in srgb, var(--ff) 16%, #fff); } 25%, 75% { background: color-mix(in srgb, var(--ff) 4%, #fff); } }
+        .ff-blink { animation: ffBlink .4s linear 1; }
+        .ff-row { display: flex; gap: 10px; flex-wrap: wrap; }
+        .ff-row .ff-choice { width: auto; min-width: 150px; }
+        .ff-scale { display: flex; gap: 6px; }
+        .ff-scale .ff-choice { flex: 1; min-width: 0; justify-content: center; padding: 12px 0; font-weight: 600; font-size: 16px; }
+        .ff-star { background: none; border: none; cursor: pointer; padding: 2px; transition: transform .18s cubic-bezier(.34,1.56,.64,1); }
+        .ff-star:hover { transform: scale(1.12); }
+        .ff-star:active { transform: scale(.94); }
+
+        .ff-drop { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 32px; border-radius: 10px; border: 1px solid color-mix(in srgb, var(--ff) 30%, transparent); background: color-mix(in srgb, var(--ff) 6%, #fff); color: var(--ff); transition: background .15s, border-color .15s; }
+        .ff-drop:hover { background: color-mix(in srgb, var(--ff) 11%, #fff); border-color: color-mix(in srgb, var(--ff) 55%, transparent); }
+
+        .ff-actions { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+        .ff-ok { display: inline-flex; align-items: center; gap: 8px; padding: 10px 20px; border-radius: 6px; border: none; background: var(--ff); color: #fff; font-size: 17px; font-weight: 700; cursor: pointer; font-family: inherit; box-shadow: 0 4px 14px -6px color-mix(in srgb, var(--ff) 70%, transparent); transition: transform .12s, filter .15s; }
+        .ff-ok:hover { filter: brightness(1.06); }
+        .ff-ok:active { transform: scale(.97); }
+        .ff-ok:disabled { opacity: .6; cursor: default; }
+        .ff-hint { font-size: 12.5px; color: #6b6b70; }
+        .ff-hint b { font-weight: 700; color: #3f3f46; }
+        @media (hover: none) { .ff-hint { display: none; } }
+
+        @keyframes ffErrIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+        .ff-err { display: inline-flex; align-items: center; gap: 8px; margin-top: 14px; padding: 6px 12px; border-radius: 4px; background: #fdecec; color: #c0262d; font-size: 14px; font-weight: 500; animation: ffErrIn .25s cubic-bezier(.16,1,.3,1) both; }
+
+        .ff-nav { position: fixed; right: 20px; bottom: 20px; display: flex; gap: 1px; border-radius: 6px; overflow: hidden; z-index: 20; box-shadow: 0 2px 10px rgba(0,0,0,.08); }
+        .ff-nav button { width: 40px; height: 36px; border: none; background: var(--ff); color: #fff; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: filter .15s; }
+        .ff-nav button:hover:not(:disabled) { filter: brightness(1.08); }
+        .ff-nav button:disabled { opacity: .4; cursor: default; }
+        .ff-bar { position: fixed; top: 0; left: 0; right: 0; height: 4px; background: color-mix(in srgb, var(--ff) 18%, #fff); z-index: 10; }
+        .ff-bar > div { height: 100%; background: var(--ff); transition: width .5s cubic-bezier(.16,1,.3,1); }
+
+        @media (prefers-reduced-motion: reduce) {
+          .ff-in-fwd > *, .ff-in-back > *, .ff-out-fwd, .ff-out-back, .ff-blink, .ff-err { animation: none !important; }
+        }
       `}</style>
 
       <Confetti show={showConfetti} color={themeColor} />
 
       {step >= 0 && !submitted && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, height: 4, background: '#f0f0f0', zIndex: 10 }}>
-          <div style={{ height: '100%', width: `${((step + 1) / questions.length) * 100}%`, background: themeColor, transition: 'width 0.3s ease' }} />
+        <div className="ff-bar" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round((step / Math.max(1, visibleQuestions.length)) * 100)}>
+          <div style={{ width: `${(step / Math.max(1, visibleQuestions.length)) * 100}%` }} />
         </div>
       )}
 
-      <div style={{ width: '100%', maxWidth: 600 }}>
+      {step >= 0 && !submitted && current && (
+        <div className="ff-nav">
+          <button type="button" onClick={goBack} disabled={step === 0} aria-label="Previous question">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="18 15 12 9 6 15"/></svg>
+          </button>
+          <button type="button" onClick={handleNext} disabled={step >= visibleQuestions.length - 1} aria-label="Next question">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+        </div>
+      )}
+
+      <div style={{ width: '100%', maxWidth: 640 }}>
         {submitted ? (
-          <div key="thanks" className="ff-anim" style={{ textAlign: 'center' }}>
+          <div key="thanks" className="ff-in-fwd" style={{ textAlign: 'center' }}>
             <div style={{ marginBottom: 24 }}><StatusMark kind="success" size={88} celebrate /></div>
             <h1 style={{ fontSize: 24, fontWeight: 800, color: '#0d0d0d', marginBottom: (form.end_actions || []).length > 0 ? 28 : 0 }}>{form.thank_you_message || 'Thanks for completing this form!'}</h1>
             {(form.end_actions || []).length > 0 && (
@@ -512,20 +724,20 @@ export default function PublicForm() {
             )}
           </div>
         ) : step === -1 ? (
-          <div key="welcome" className="ff-anim">
-            <div style={{ width: 56, height: 56, borderRadius: 16, background: themeColor, marginBottom: 28, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round"><polyline points="9 18 15 12 9 6"/></svg>
+          <div key="welcome" className={leaving ? stage : 'ff-in-fwd'} style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+            <h1 style={{ fontSize: 'clamp(26px, 3.6vw, 34px)', fontWeight: 600, color: '#0d0d0d', margin: '0 0 12px', lineHeight: 1.25, letterSpacing: '-0.015em' }}>{form.title}</h1>
+            {form.welcome_message && <p style={{ fontSize: 18, color: '#4b5563', lineHeight: 1.55, margin: '0 0 28px', maxWidth: 520 }}>{form.welcome_message}</p>}
+            <div className="ff-actions" style={{ justifyContent: 'center', marginTop: form.welcome_message ? 0 : 16 }}>
+              <button type="button" className="ff-ok" onClick={() => go(0)} style={{ fontSize: 19, padding: '12px 26px' }}>Start</button>
+              {enterHint}
             </div>
-            <h1 style={{ fontSize: 32, fontWeight: 800, color: '#0d0d0d', marginBottom: 16, lineHeight: 1.2 }}>{form.title}</h1>
-            <p style={{ fontSize: 16, color: '#6b6b70', lineHeight: 1.6, marginBottom: 32 }}>{form.welcome_message}</p>
-            <button onClick={() => setStep(0)}
-              style={{ padding: '13px 32px', borderRadius: 14, background: themeColor, color: '#fff', fontWeight: 700, fontSize: 15, border: 'none', cursor: 'pointer' }}>
-              Start →
-            </button>
-            <p style={{ fontSize: 12, color: '#9ca3af', marginTop: 16 }}>Press <kbd style={{ padding: '1px 6px', borderRadius: 4, background: '#f0f0f0', fontSize: 11 }}>Enter ↵</kbd></p>
+            <p style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13.5, color: '#6b6b70', marginTop: 18 }}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg>
+              Takes {minutes} minute{minutes === 1 ? '' : 's'}
+            </p>
 
             {formIsScannable && (
-              <div style={{ marginTop: 28, paddingTop: 24, borderTop: '1px solid #eee' }}>
+              <div style={{ marginTop: 28, paddingTop: 24, borderTop: '1px solid #eee', alignSelf: 'stretch' }}>
                 <input
                   ref={cardInputRef}
                   type="file"
@@ -547,7 +759,7 @@ export default function PublicForm() {
                 >
                   {scanning ? 'Scanning…' : '📇 Scan a business card'}
                 </button>
-                <p style={{ fontSize: 12.5, color: '#9ca3af', marginTop: 10, maxWidth: 380 }}>
+                <p style={{ fontSize: 12.5, color: '#9ca3af', margin: '10px auto 0', maxWidth: 380 }}>
                   Snap or upload a card and we&rsquo;ll fill in the contact details for you.
                 </p>
                 {scanMsg && (
@@ -559,156 +771,131 @@ export default function PublicForm() {
             )}
           </div>
         ) : current ? (
-          <div key={current.id} className="ff-anim">
-            <p style={{ fontSize: 13, fontWeight: 700, color: themeColor, marginBottom: 10 }}>{step + 1} → {questions.length}</p>
-
+          <div key={current.id} className={stage}>
             {current.mediaUrl && (
               current.mediaType === 'video' ? (
-                <video src={current.mediaUrl} controls style={{ width: '100%', borderRadius: 16, marginBottom: 20, maxHeight: 280, objectFit: 'cover' }} />
+                <video src={current.mediaUrl} controls style={{ width: '100%', borderRadius: 10, marginBottom: 24, maxHeight: 300, objectFit: 'cover', display: 'block' }} />
               ) : (
-                <img src={current.mediaUrl} alt="" style={{ width: '100%', borderRadius: 16, marginBottom: 20, maxHeight: 280, objectFit: 'cover' }} />
+                <img src={current.mediaUrl} alt="" style={{ width: '100%', borderRadius: 10, marginBottom: 24, maxHeight: 300, objectFit: 'cover', display: 'block' }} />
               )
             )}
 
-            {current.title && (
-              <h2 style={{ fontSize: 26, fontWeight: 800, color: '#0d0d0d', marginBottom: 8, lineHeight: 1.3 }}>
-                {current.title}{current.type !== 'statement' && current.required && <span style={{ color: themeColor }}> *</span>}
-              </h2>
-            )}
-            {/* Statement body is the main content — render it large. Other types
-                show the description as a small subtitle. */}
-            {current.type === 'statement'
-              ? (current.description && <p style={{ fontSize: 17, color: '#374151', lineHeight: 1.7, whiteSpace: 'pre-wrap', marginTop: current.title ? 4 : 0 }}>{current.description}</p>)
-              : (current.description && <p style={{ fontSize: 15, color: '#6b6b70', marginBottom: 28 }}>{current.description}</p>)}
+            <div className="ff-qhead">
+              <span className="ff-num">{step + 1}{ARROW}</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                {current.title && (
+                  <h2 className="ff-title">
+                    {current.title}{current.type !== 'statement' && current.required && <span style={{ color: themeColor }}> *</span>}
+                  </h2>
+                )}
+                {/* Statement body is the main content — render it large. Other types
+                    show the description as a subtitle. */}
+                {current.type === 'statement'
+                  ? (current.description && <p style={{ fontSize: 18, color: '#374151', lineHeight: 1.7, whiteSpace: 'pre-wrap', margin: current.title ? '8px 0 0' : 0 }}>{current.description}</p>)
+                  : (current.description && <p className="ff-desc" style={{ marginTop: current.title ? 6 : 0 }}>{current.description}</p>)}
+              </div>
+            </div>
 
-            <div style={{ marginTop: current.description ? 0 : 28, marginBottom: 36 }}>
+            <div ref={answerRef} className="ff-indent" style={{ marginTop: current.type === 'statement' ? 20 : 30, marginBottom: 28 }}>
               {current.type === 'short_text' && (
                 <input autoFocus value={answers[current.id] || ''} onChange={e => setAnswers(p => ({ ...p, [current.id]: e.target.value }))}
-                  className="ff-input" style={{ ['--ff-color' as any]: themeColor, width: '100%', fontSize: 20, padding: '8px 0', border: 'none', borderBottom: '2.5px solid #e5e5e5', outline: 'none' }}
+                  className="ff-input"
                   placeholder="Type your answer here..." />
               )}
               {current.type === 'long_text' && (
                 <textarea autoFocus value={answers[current.id] || ''} onChange={e => setAnswers(p => ({ ...p, [current.id]: e.target.value }))}
-                  className="ff-input" rows={3} style={{ ['--ff-color' as any]: themeColor, width: '100%', fontSize: 18, padding: '8px 0', border: 'none', borderBottom: '2.5px solid #e5e5e5', outline: 'none', resize: 'none' }}
+                  className="ff-input" rows={3} style={{ resize: 'none', fontSize: 'clamp(18px, 2.6vw, 24px)' }}
                   placeholder="Type your answer here..." />
               )}
               {current.type === 'email' && (
                 <input autoFocus type="email" value={answers[current.id] || ''} onChange={e => setAnswers(p => ({ ...p, [current.id]: e.target.value }))}
-                  className="ff-input" style={{ ['--ff-color' as any]: themeColor, width: '100%', fontSize: 20, padding: '8px 0', border: 'none', borderBottom: '2.5px solid #e5e5e5', outline: 'none' }}
+                  className="ff-input"
                   placeholder="name@example.com" />
               )}
               {current.type === 'number' && (
                 <input autoFocus type="number" value={answers[current.id] || ''} onChange={e => setAnswers(p => ({ ...p, [current.id]: e.target.value }))}
-                  className="ff-input" style={{ ['--ff-color' as any]: themeColor, width: '100%', fontSize: 20, padding: '8px 0', border: 'none', borderBottom: '2.5px solid #e5e5e5', outline: 'none' }}
+                  className="ff-input"
                   placeholder="0" />
               )}
               {current.type === 'date' && (
                 <input autoFocus type="date" value={answers[current.id] || ''} onChange={e => setAnswers(p => ({ ...p, [current.id]: e.target.value }))}
-                  className="ff-input" style={{ ['--ff-color' as any]: themeColor, width: '100%', fontSize: 18, padding: '8px 0', border: 'none', borderBottom: '2.5px solid #e5e5e5', outline: 'none' }} />
+                  className="ff-input" />
               )}
               {current.type === 'yes_no' && (
-                <div style={{ display: 'flex', gap: 12 }}>
-                  {['Yes', 'No'].map(o => (
-                    <button key={o} onClick={() => selectAndAdvance(current.id, o)}
-                      style={{ flex: 1, padding: '16px', borderRadius: 14, border: `2.5px solid ${answers[current.id] === o ? themeColor : '#e5e5e5'}`, background: answers[current.id] === o ? `${themeColor}10` : '#fff', fontSize: 16, fontWeight: 600, color: answers[current.id] === o ? themeColor : '#374151', cursor: 'pointer', transition: 'all 0.15s' }}>
-                      {o}
-                    </button>
-                  ))}
+                <div className="ff-row">
+                  {['Yes', 'No'].map(o => <span key={o}>{choice({
+                    k: o[0], label: o, on: answers[current.id] === o, blink: isFlash(current.id, o),
+                    onClick: () => selectAndAdvance(current.id, o),
+                  })}</span>)}
                 </div>
               )}
               {current.type === 'rating' && (
-                <div style={{ display: 'flex', gap: 10 }}>
-                  {[1, 2, 3, 4, 5].map(n => (
-                    <button key={n} onClick={() => selectAndAdvance(current.id, n)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
-                      <svg width="40" height="40" viewBox="0 0 24 24" fill={(answers[current.id] || 0) >= n ? themeColor : 'none'} stroke={themeColor} strokeWidth="1.5"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-                    </button>
-                  ))}
-                </div>
-              )}
-              {current.type === 'multiple_choice' && !(current as any).multiSelect && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  {(current.options || []).map((opt: string, oi: number) => (
-                    <button key={oi} onClick={() => selectAndAdvance(current.id, opt)}
-                      style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 16px', borderRadius: 12, border: `2.5px solid ${answers[current.id] === opt ? themeColor : '#e5e5e5'}`, background: answers[current.id] === opt ? `${themeColor}10` : '#fff', cursor: 'pointer', textAlign: 'left' }}>
-                      <span style={{ width: 26, height: 26, borderRadius: 7, border: `2px solid ${answers[current.id] === opt ? themeColor : '#d1d5db'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: answers[current.id] === opt ? themeColor : '#9ca3af', flexShrink: 0 }}>
-                        {String.fromCharCode(65 + oi)}
-                      </span>
-                      <span style={{ fontSize: 16, color: '#0d0d0d' }}>{opt}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-              {/* Multiple Choice with "multiple selection" on behaves like a
-                  checkbox group: pick several, then press OK (no auto-advance). */}
-              {current.type === 'multiple_choice' && (current as any).multiSelect && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  {(current.options || []).map((opt: string, oi: number) => {
-                    const selectedArr: string[] = answers[current.id] || []
-                    const isChecked = selectedArr.includes(opt)
+                <div style={{ display: 'flex', gap: 6 }} onMouseLeave={() => setHoverStar(0)}>
+                  {[1, 2, 3, 4, 5].map(n => {
+                    const lit = (hoverStar || answers[current.id] || 0) >= n
                     return (
-                      <button key={oi} onClick={() => {
-                          const next = isChecked ? selectedArr.filter(o => o !== opt) : [...selectedArr, opt]
-                          setAnswers(p => ({ ...p, [current.id]: next }))
-                        }}
-                        style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 16px', borderRadius: 12, border: `2.5px solid ${isChecked ? themeColor : '#e5e5e5'}`, background: isChecked ? `${themeColor}10` : '#fff', cursor: 'pointer', textAlign: 'left' }}>
-                        <span style={{ width: 26, height: 26, borderRadius: 7, border: `2px solid ${isChecked ? themeColor : '#d1d5db'}`, background: isChecked ? themeColor : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: '#fff', flexShrink: 0 }}>
-                          {isChecked ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg> : <span style={{ color: '#9ca3af' }}>{String.fromCharCode(65 + oi)}</span>}
-                        </span>
-                        <span style={{ fontSize: 16, color: '#0d0d0d' }}>{opt}</span>
+                      <button key={n} type="button" className={`ff-star${isFlash(current.id, n) ? ' ff-blink' : ''}`} aria-label={`${n} star${n > 1 ? 's' : ''}`}
+                        onMouseEnter={() => setHoverStar(n)} onClick={() => selectAndAdvance(current.id, n)}>
+                        <svg width="44" height="44" viewBox="0 0 24 24" fill={lit ? themeColor : `${themeColor}14`} stroke={themeColor} strokeWidth="1.3" strokeLinejoin="round" style={{ transition: 'fill .15s', display: 'block' }}><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                        <span style={{ display: 'block', fontSize: 12, color: '#9ca3af', marginTop: 2 }}>{n}</span>
                       </button>
                     )
                   })}
-                  <p style={{ fontSize: 12, color: '#9ca3af', marginTop: 4 }}>Select all that apply, then press OK</p>
+                </div>
+              )}
+              {current.type === 'multiple_choice' && !(current as any).multiSelect && (
+                <div className="ff-choices">
+                  {(current.options || []).map((opt: string, oi: number) => <span key={oi}>{choice({
+                    k: String.fromCharCode(65 + oi), label: opt, on: answers[current.id] === opt, blink: isFlash(current.id, opt),
+                    onClick: () => selectAndAdvance(current.id, opt),
+                  })}</span>)}
+                </div>
+              )}
+              {/* Multiple Choice with "multiple selection" on, and Checkboxes, are a
+                  pick-several group: choose, then press OK (no auto-advance). */}
+              {((current.type === 'multiple_choice' && (current as any).multiSelect) || current.type === 'checkbox') && (
+                <div className="ff-choices">
+                  {(current.options || []).map((opt: string, oi: number) => {
+                    const selectedArr: string[] = answers[current.id] || []
+                    const isChecked = selectedArr.includes(opt)
+                    return <span key={oi}>{choice({
+                      k: String.fromCharCode(65 + oi), label: opt, on: isChecked,
+                      onClick: () => {
+                        const next = isChecked ? selectedArr.filter(o => o !== opt) : [...selectedArr, opt]
+                        setAnswers(p => ({ ...p, [current.id]: next })); setErr('')
+                      },
+                    })}</span>
+                  })}
+                  <p style={{ fontSize: 13, color: '#6b6b70', margin: '4px 0 0' }}>Choose as many as you like</p>
                 </div>
               )}
               {current.type === 'dropdown' && (
                 <select value={answers[current.id] || ''} onChange={e => selectAndAdvance(current.id, e.target.value)}
-                  className="ff-input" style={{ ['--ff-color' as any]: themeColor, width: '100%', fontSize: 18, padding: '10px 0', border: 'none', borderBottom: '2.5px solid #e5e5e5', outline: 'none', background: 'transparent', cursor: 'pointer' }}>
+                  className="ff-input">
                   <option value="">Select an option...</option>
                   {(current.options || []).map((opt: string, oi: number) => <option key={oi} value={opt}>{opt}</option>)}
                 </select>
               )}
-              {current.type === 'checkbox' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  {(current.options || []).map((opt: string, oi: number) => {
-                    const selectedArr: string[] = answers[current.id] || []
-                    const isChecked = selectedArr.includes(opt)
-                    return (
-                      <button key={oi} onClick={() => {
-                          const next = isChecked ? selectedArr.filter(o => o !== opt) : [...selectedArr, opt]
-                          setAnswers(p => ({ ...p, [current.id]: next }))
-                        }}
-                        style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 16px', borderRadius: 12, border: `2.5px solid ${isChecked ? themeColor : '#e5e5e5'}`, background: isChecked ? `${themeColor}10` : '#fff', cursor: 'pointer', textAlign: 'left' }}>
-                        <span style={{ width: 22, height: 22, borderRadius: 6, border: `2px solid ${isChecked ? themeColor : '#d1d5db'}`, background: isChecked ? themeColor : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                          {isChecked && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>}
-                        </span>
-                        <span style={{ fontSize: 16, color: '#0d0d0d' }}>{opt}</span>
-                      </button>
-                    )
-                  })}
-                  <p style={{ fontSize: 12, color: '#9ca3af', marginTop: 4 }}>Select all that apply, then press OK</p>
-                </div>
-              )}
               {current.type === 'nps' && (
                 <div>
-                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+                  <div className="ff-scale">
                     {[...Array(11)].map((_, n) => (
-                      <button key={n} onClick={() => selectAndAdvance(current.id, n)}
-                        style={{ width: 38, height: 38, borderRadius: 10, border: `2px solid ${answers[current.id] === n ? themeColor : '#e5e5e5'}`, background: answers[current.id] === n ? themeColor : '#fff', color: answers[current.id] === n ? '#fff' : '#374151', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+                      <button key={n} type="button" onClick={() => selectAndAdvance(current.id, n)}
+                        className={`ff-choice${answers[current.id] === n ? ' on' : ''}${isFlash(current.id, n) ? ' ff-blink' : ''}`}>
                         {n}
                       </button>
                     ))}
                   </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#9ca3af' }}>
-                    <span>Not likely</span><span>Very likely</span>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: '#6b6b70', marginTop: 10 }}>
+                    <span>Not likely at all</span><span>Extremely likely</span>
                   </div>
                 </div>
               )}
               {current.type === 'opinion_scale' && (
-                <div style={{ display: 'flex', gap: 8 }}>
-                  {[1,2,3,4,5,6,7].map(n => (
-                    <button key={n} onClick={() => selectAndAdvance(current.id, n)}
-                      style={{ width: 42, height: 42, borderRadius: '50%', border: `2px solid ${answers[current.id] === n ? themeColor : '#e5e5e5'}`, background: answers[current.id] === n ? themeColor : '#fff', color: answers[current.id] === n ? '#fff' : '#374151', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+                <div className="ff-scale" style={{ maxWidth: 520 }}>
+                  {[1, 2, 3, 4, 5, 6, 7].map(n => (
+                    <button key={n} type="button" onClick={() => selectAndAdvance(current.id, n)}
+                      className={`ff-choice${answers[current.id] === n ? ' on' : ''}${isFlash(current.id, n) ? ' ff-blink' : ''}`}>
                       {n}
                     </button>
                   ))}
@@ -716,17 +903,13 @@ export default function PublicForm() {
               )}
               {['contact_info', 'phone', 'address', 'website'].includes(current.type) && (
                 <input autoFocus value={answers[current.id] || ''} onChange={e => setAnswers(p => ({ ...p, [current.id]: e.target.value }))}
-                  className="ff-input" style={{ ['--ff-color' as any]: themeColor, width: '100%', fontSize: 20, padding: '8px 0', border: 'none', borderBottom: '2.5px solid #e5e5e5', outline: 'none' }}
+                  className="ff-input"
                   placeholder={current.type === 'phone' ? '+61 4XX XXX XXX' : current.type === 'website' ? 'https://...' : current.type === 'address' ? 'Street, suburb, state, postcode' : 'Your name'} />
               )}
               {current.type === 'legal' && (
-                <button onClick={() => selectAndAdvance(current.id, true)}
-                  style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 16px', borderRadius: 12, border: `2.5px solid ${answers[current.id] ? themeColor : '#e5e5e5'}`, background: answers[current.id] ? `${themeColor}10` : '#fff', cursor: 'pointer', textAlign: 'left', width: '100%' }}>
-                  <span style={{ width: 22, height: 22, borderRadius: 6, border: `2px solid ${answers[current.id] ? themeColor : '#d1d5db'}`, background: answers[current.id] ? themeColor : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                    {answers[current.id] && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>}
-                  </span>
-                  <span style={{ fontSize: 15, color: '#0d0d0d' }}>I agree</span>
-                </button>
+                <div className="ff-choices">
+                  {choice({ k: 'Y', label: 'I accept', on: !!answers[current.id], blink: isFlash(current.id, true), onClick: () => selectAndAdvance(current.id, true) })}
+                </div>
               )}
               {current.type === 'file_upload' && (
                 <div>
@@ -739,7 +922,7 @@ export default function PublicForm() {
                       </button>
                     </div>
                   ) : (
-                    <label style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, padding: '32px', borderRadius: 14, border: `2px dashed ${themeColor}`, cursor: uploadingFile ? 'wait' : 'pointer', color: themeColor }}>
+                    <label className="ff-drop" style={{ cursor: uploadingFile ? 'wait' : 'pointer' }}>
                       <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
                       <span style={{ fontSize: 14, fontWeight: 600 }}>{uploadingFile ? 'Uploading...' : 'Click to upload a file'}</span>
                       <input ref={fileInputRef} type="file" accept={current.fileAccept !== 'any' ? current.fileAccept : undefined} className="hidden" disabled={uploadingFile}
@@ -754,14 +937,19 @@ export default function PublicForm() {
                     const img = (current.optionImages || [])[oi]
                     const selected = answers[current.id] === opt
                     return (
-                      <button key={oi} onClick={() => selectAndAdvance(current.id, opt)}
-                        style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', borderRadius: 14, border: `2.5px solid ${selected ? themeColor : '#e5e5e5'}`, background: selected ? `${themeColor}10` : '#fff', cursor: 'pointer', padding: 0, textAlign: 'left' }}>
+                      <button key={oi} type="button" onClick={() => selectAndAdvance(current.id, opt)} aria-pressed={selected}
+                        className={`ff-choice${selected ? ' on' : ''}${isFlash(current.id, opt) ? ' ff-blink' : ''}`}
+                        style={{ flexDirection: 'column', alignItems: 'stretch', gap: 8, padding: 8 }}>
                         {img
-                          ? <img src={img} alt="" style={{ width: '100%', aspectRatio: '4/3', objectFit: 'cover' }} />
-                          : <div style={{ width: '100%', aspectRatio: '4/3', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f3f4f6', color: '#c0c4cc' }}>
+                          ? <img src={img} alt="" style={{ width: '100%', aspectRatio: '4/3', objectFit: 'cover', borderRadius: 4, display: 'block' }} />
+                          : <div style={{ width: '100%', aspectRatio: '4/3', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#fff', borderRadius: 4, color: '#c0c4cc' }}>
                               <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
                             </div>}
-                        <span style={{ padding: '10px 12px', fontSize: 14, fontWeight: 600, color: '#0d0d0d' }}>{opt}</span>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span className="ff-key">{String.fromCharCode(65 + oi)}</span>
+                          <span className="ff-label" style={{ fontSize: 15 }}>{opt}</span>
+                          <svg className="ff-tick" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                        </span>
                       </button>
                     )
                   })}
@@ -839,7 +1027,7 @@ export default function PublicForm() {
                       </button>
                     </div>
                   ) : (
-                    <label style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, padding: '32px', borderRadius: 14, border: `2px dashed ${themeColor}`, cursor: uploadingFile ? 'wait' : 'pointer', color: themeColor }}>
+                    <label className="ff-drop" style={{ cursor: uploadingFile ? 'wait' : 'pointer' }}>
                       <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
                       <span style={{ fontSize: 14, fontWeight: 600 }}>{uploadingFile ? 'Uploading...' : 'Upload a video or audio file'}</span>
                       <input type="file" accept="video/*,audio/*" className="hidden" disabled={uploadingFile}
@@ -925,21 +1113,28 @@ export default function PublicForm() {
               )}
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-              {(!AUTO_ADVANCE_TYPES.includes(current.type) || (current.type === 'multiple_choice' && (current as any).multiSelect)) && !(current.type === 'payment' && answers[current.id]?.status !== 'paid') && (
-                <button onClick={handleNext} disabled={submitting}
-                  style={{ padding: '12px 28px', borderRadius: 12, background: themeColor, color: '#fff', fontWeight: 700, fontSize: 15, border: 'none', cursor: 'pointer', opacity: submitting ? 0.6 : 1 }}>
-                  {submitting ? 'Submitting...' : step === visibleQuestions.length - 1 ? 'Submit →' : current.type === 'statement' ? 'Continue →' : 'OK →'}
+            {err && (
+              <div className="ff-indent" style={{ marginTop: -14, marginBottom: 18 }}>
+                <div className="ff-err" role="alert">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                  {err}
+                </div>
+              </div>
+            )}
+
+            {(!AUTO_ADVANCE_TYPES.includes(current.type) || (current.type === 'multiple_choice' && (current as any).multiSelect)) && !(current.type === 'payment' && answers[current.id]?.status !== 'paid') && (
+              <div className="ff-actions ff-indent">
+                <button type="button" className="ff-ok" onClick={handleNext} disabled={submitting}>
+                  {submitting ? 'Submitting…' : step === visibleQuestions.length - 1 ? 'Submit' : current.type === 'statement' ? 'Continue' : 'OK'}
+                  {!submitting && step < visibleQuestions.length - 1 && current.type !== 'statement' && (
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                  )}
                 </button>
-              )}
-              {step > 0 && (
-                <button onClick={() => setStep(step - 1)}
-                  style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'none', border: 'none', color: '#9ca3af', fontSize: 13, cursor: 'pointer', fontWeight: 500 }}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
-                  Back
-                </button>
-              )}
-            </div>
+                {current.type === 'long_text'
+                  ? <span className="ff-hint"><b>Shift ⇧ + Enter ↵</b> to make a line break</span>
+                  : enterHint}
+              </div>
+            )}
           </div>
         ) : null}
       </div>
