@@ -9,6 +9,7 @@ import { replyToReview } from '@/lib/google-business'
 import { loadCompanyPublic, createInvite, bookingPageUrl } from '@/lib/booking'
 import { smartSearchKnowledge } from '@/lib/ai-knowledge'
 import { BUILDER_TOOLS, BUILDER_TOOL_NAMES, runBuilderAction, runBuilderRead } from '@/lib/ai-assistant/builders'
+import { proposeMemory } from '@/lib/agent/business-memory'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Colvy AI assistant — controlled tool layer.
@@ -377,6 +378,19 @@ export const ASSISTANT_TOOLS: ToolDef[] = [
     name: 'add_fact', safety: 'immediate',
     description: "Teach Colvy AI a fact for answering customers — 'remember that we're closed on Christmas Day', 'our CO2 refills are $25'. Reversible.",
     input_schema: { type: 'object', properties: { question: { type: 'string', description: 'how a customer would ask it' }, answer: { type: 'string' } }, required: ['question', 'answer'] },
+  },
+  {
+    name: 'propose_memory', safety: 'immediate',
+    description: "Suggest a rule or must-know fact for Business Memory — something EVERY AI reply must follow, e.g. 'remember we never ship live fish to WA', 'never promise same-day delivery'. It waits for the owner to keep it on the Business memory page. For a question customers ask and its answer, use add_fact instead.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        kind: { type: 'string', enum: ['rule', 'fact'], description: 'rule = something to always or never do; fact = something about the business that must never be got wrong' },
+        title: { type: 'string', description: 'For a fact: a 2–4 word title, e.g. "Shipping to WA"' },
+        text: { type: 'string', description: 'One short, general sentence (no customer names or order numbers).' },
+      },
+      required: ['kind', 'text'],
+    },
   },
   // Forms, polls and surveys (lib/ai-assistant/builders.ts).
   ...BUILDER_TOOLS,
@@ -1217,6 +1231,19 @@ export async function executeAction(db: SupabaseClient, ctx: AssistantContext, n
     if (error || !data) return { ok: false, error: /ai_facts/.test(error?.message || '') ? 'The AI knowledge library isn\'t set up yet (database update V326).' : (error?.message || 'Could not save that.') }
     await logAiEvent(D, { companyId: ctx.companyId, userId: ctx.userId, action: 'Added AI fact', tool: name, entityType: 'fact', entityId: data.id, input: { question, answer }, result: { ok: true } })
     return { ok: true, entityType: 'fact', entityId: data.id, card: { kind: 'fact', title: 'Colvy AI will remember this', lines: [question, answer.slice(0, 160)], href: '/admin/crm-settings/ai-knowledge' }, undo: null }
+  }
+
+  if (name === 'propose_memory') {
+    // Only a suggestion: nothing reaches a prompt until the owner keeps it.
+    const text = String(args?.text || '').trim().slice(0, 600)
+    if (!text) return { ok: false, error: 'Say what Colvy AI should remember.' }
+    const kind = args?.kind === 'fact' ? 'policy' : 'instruction'
+    const title = kind === 'policy' ? String(args?.title || '').trim().slice(0, 80) : ''
+    const r = await proposeMemory(D, ctx.companyId, { kind, text, title, source: 'assistant', evidence: { from: 'assistant', proposed_by: ctx.userId || null, proposed_by_name: ctx.userName || null } })
+    if (!r.ok) return { ok: false, error: r.error || 'Could not save that suggestion.' }
+    if (r.reason === 'already known') return { ok: true, entityType: 'memory', card: { kind: 'memory', title: 'Already in Business memory', lines: [text.slice(0, 160)], href: '/admin/agents/memory' }, undo: null }
+    await logAiEvent(D, { companyId: ctx.companyId, userId: ctx.userId, action: 'Suggested Business Memory', tool: name, entityType: 'memory', entityId: r.id, input: { kind, title, text }, result: { ok: true } })
+    return { ok: true, entityType: 'memory', entityId: r.id, card: { kind: 'memory', title: 'Suggested for Business memory', lines: [title ? `${title}: ${text.slice(0, 140)}` : text.slice(0, 160), 'Waiting for the owner to keep it'], href: '/admin/agents/memory' }, undo: null }
   }
 
   if (name === 'reply_ticket') {

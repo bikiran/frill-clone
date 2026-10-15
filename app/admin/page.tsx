@@ -7,18 +7,31 @@ import { supabase } from '@/lib/supabase'
 import { authFetch } from '@/lib/auth-fetch'
 import Link from 'next/link'
 
-import { LightbulbIcon, MegaphoneIcon, SurveyIcon, PollIcon, StarIcon, TicketIcon, CheckIcon, ChevronDownIcon, ChevronRightIcon } from '@/components/Icons'
+import { LightbulbIcon, MegaphoneIcon, SurveyIcon, PollIcon, StarIcon, TicketIcon, CheckIcon } from '@/components/Icons'
+import SetupChecklist, { readSetupLink, type SetupLink } from '@/components/SetupChecklist'
+import type { SetupStatus } from '@/lib/setup-status'
 
 // ── Admin home ────────────────────────────────────────────────────────────────
 // Leads with what needs someone today (unread chats, missed calls, orders to
 // pack, overdue tasks…), then today's bookings and tasks, then how the last 30
-// days compare with the 30 before. The feedback board and the setup checklist
-// sit underneath — useful when starting out, noise for a business in full swing.
+// days compare with the 30 before. The feedback board sits underneath.
+//
+// The setup checklist (components/SetupChecklist) opens at the very top for a
+// new workspace (under two weeks old) and when someone comes back from a
+// connect flow (?setup=1), until everything's connected. For an older
+// workspace it sits at the bottom, folded, out of the way of a business in
+// full swing.
+const SETUP_FRESH_DAYS = 14
 
 type Summary = {
   attention: {
     unread: number; unassigned: number
     missedCalls: number; voicemails: number; callsToday: number
+    // Last 7 days. Missing from summaries cached before it existed.
+    missedOutcome?: {
+      missed: number; recovered: number; textedBack: number; toCallBack: number
+      toReturn: { number: string; name: string | null; conversationId: string | null; at: string; attempts: number }[]
+    } | null
     awaiting: number; oldestDays: number | null
     overdueTasks: number; dueToday: number
     ticketsOverdue: number; ticketsSoon: number
@@ -93,7 +106,7 @@ const eyebrow = 'text-xs font-semibold uppercase tracking-wider'
 // the signed-in user and this workspace's hostname.
 const CACHE_KEY = 'colvy-dash-v2'   // v2: summaries carry the member's access
 const CACHE_MAX_AGE = 7 * 864e5
-type DashCache = { host: string; userId: string; companyId: string; at: number; summary?: Summary; sales?: any; stats?: any }
+type DashCache = { host: string; userId: string; companyId: string; at: number; summary?: Summary; sales?: any; stats?: any; setup?: SetupStatus }
 function readCache(userId: string | undefined): DashCache | null {
   if (!userId) return null
   try {
@@ -120,6 +133,12 @@ export default function AdminDashboard() {
   const [stats, setStats] = useState<{ ideas: number; announcements: number; surveys: number; polls: number; topics: number; statuses: number } | null>(null)
   // True while fresh numbers are on their way and the page is showing cached ones.
   const [refreshing, setRefreshing] = useState(false)
+  // Setup progress, worked out on the server from what's connected. `fresh`
+  // once it's come from the server rather than this device's cache.
+  const [setup, setSetup] = useState<(SetupStatus & { full?: boolean }) | null>(null)
+  const [setupFresh, setSetupFresh] = useState(false)
+  // What the URL says about setup (?setup=1 after a connect flow), read once.
+  const [setupLink] = useState<SetupLink>(() => readSetupLink())
   const userIdRef = useRef<string | undefined>(undefined)
 
   const resolveCompanyId = async () => {
@@ -151,6 +170,16 @@ export default function AdminDashboard() {
       writeCache(userIdRef.current, cid, { summary: data })
     } catch (e: any) { setSummaryError(e.message || 'Could not load the dashboard') }
     finally { setRefreshing(false) }
+  }, [])
+
+  const loadSetup = useCallback(async (cid: string) => {
+    try {
+      const res = await authFetch(`/api/setup/status?companyId=${cid}`)
+      const data = await res.json()
+      if (!res.ok || !Array.isArray(data?.steps)) return
+      setSetup(data); setSetupFresh(true)
+      writeCache(userIdRef.current, cid, { setup: data })
+    } catch { /* the checklist just doesn't show this time */ }
   }, [])
 
   const loadSales = async (cid: string) => {
@@ -190,7 +219,10 @@ export default function AdminDashboard() {
     let timer: any = null
     let cid: string | null = null
     const onFocus = () => { if (cid && document.visibilityState === 'visible') loadSummary(cid) }
-    const loadAll = (id: string) => { loadSummary(id); loadSales(id); loadStats(id) }
+    // Coming back to this tab (e.g. after connecting something in another one)
+    // re-checks setup too, so a step ticks without a reload.
+    const onVisible = () => { onFocus(); if (cid && document.visibilityState === 'visible') loadSetup(cid) }
+    const loadAll = (id: string) => { loadSummary(id); loadSales(id); loadStats(id); loadSetup(id) }
     ;(async () => {
       const { data } = await supabase.auth.getSession()
       const u = data.session?.user || null
@@ -203,6 +235,7 @@ export default function AdminDashboard() {
         if (isSummary(cached.summary)) setSummary(cached.summary)
         if (cached.sales) setSales(cached.sales)
         if (cached.stats) setStats(cached.stats)
+        if (cached.setup && Array.isArray(cached.setup.steps)) setSetup(cached.setup)
         setRefreshing(isSummary(cached.summary))
         loadAll(cid)
       }
@@ -210,19 +243,28 @@ export default function AdminDashboard() {
       if (resolved !== cid) {
         // First visit on this device, or the workspace changed — start clean.
         cid = resolved; setCompanyId(cid)
-        setSummary(null); setSales(null); setStats(null); setRefreshing(false)
+        setSummary(null); setSales(null); setStats(null); setSetup(null); setSetupFresh(false); setRefreshing(false)
         if (!cid) { setSummaryError('No workspace found for this account'); return }
         loadAll(cid)
       }
       // Keep the numbers current while the tab is open.
       timer = setInterval(onFocus, 60_000)
-      document.addEventListener('visibilitychange', onFocus)
+      document.addEventListener('visibilitychange', onVisible)
     })()
-    return () => { if (timer) clearInterval(timer); document.removeEventListener('visibilitychange', onFocus) }
+    return () => { if (timer) clearInterval(timer); document.removeEventListener('visibilitychange', onVisible) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loadSummary])
+  }, [loadSummary, loadSetup])
 
   if (!user) return <div className="p-8" style={{ color: 'var(--slate)' }}>Loading...</div>
+
+  // Workspace setup is for the people who run it, not restricted staff.
+  const runsIt = (!summary?.access || summary.access.full) && setup?.full !== false
+  // Not tied to "complete": a finished checklist hides itself (after its
+  // celebration), and keeping the slot steady stops it jumping down the page.
+  const setupTop = !!setup && (setupLink.open || (setup.ageDays != null && setup.ageDays < SETUP_FRESH_DAYS))
+  const checklist = companyId && setup && runsIt
+    ? <SetupChecklist key={companyId} companyId={companyId} status={setup} fresh={setupFresh} prominent={setupTop} link={setupLink} />
+    : null
 
   return (
     <main className="px-4 md:px-8 py-6 md:py-8">
@@ -234,6 +276,7 @@ export default function AdminDashboard() {
           <div className={`${card} p-4 mb-6 text-sm`} style={{ ...cardStyle, color: '#b91c1c' }}>{summaryError}</div>
         )}
 
+        {setupTop && checklist}
         <NeedsAttention s={summary} refreshing={refreshing} />
         <Today s={summary} />
         <Performance s={summary} />
@@ -275,8 +318,7 @@ export default function AdminDashboard() {
         })()}
 
         <FeedbackStrip stats={stats} s={summary} />
-        {/* Workspace setup is for the people who run it, not restricted staff. */}
-        {companyId && (!summary?.access || summary.access.full) && <SetupChecklist companyId={companyId} stats={stats} />}
+        {!setupTop && checklist}
       </div>
     </main>
   )
@@ -286,10 +328,18 @@ export default function AdminDashboard() {
 
 function NeedsAttention({ s, refreshing }: { s: Summary | null; refreshing?: boolean }) {
   const a = s?.attention
+  // Missed calls stay until someone gets back to the caller, rather than
+  // vanishing at midnight. The link opens the call log on the missed ones.
+  const mo = a?.missedOutcome
+  const cc = canSee(s, 'command_centre')
+  const missedHref = cc ? '/admin/command-centre?tab=logs&range=7d&dir=inbound&outcome=missed' : '/admin/calls?filter=missed'
   const tiles = a ? [
     { key: 'unread', feature: 'inbox', label: 'Unread messages', n: a.unread, urgent: true, href: '/admin/inbox?view=unread', icon: ChatI,
       sub: a.unread ? 'Customers waiting on a reply' : 'Inbox is caught up' },
-    { key: 'calls', feature: 'calls', label: 'Missed calls today', n: a.missedCalls + a.voicemails, urgent: true, href: canSee(s, 'command_centre') ? '/admin/command-centre' : '/admin/calls', icon: PhoneMissI,
+    mo ? { key: 'calls', feature: 'calls', label: 'Missed calls to return', n: mo.toCallBack, urgent: true, href: missedHref, icon: PhoneMissI,
+      sub: mo.missed ? `${mo.recovered} of ${plural(mo.missed, 'missed call')} recovered · ${mo.toCallBack} still to call back` : 'None in the last 7 days',
+      hint: mo.textedBack ? `Last 7 days. ${plural(mo.textedBack, 'caller')} texted back automatically.` : 'Last 7 days' }
+    : { key: 'calls', feature: 'calls', label: 'Missed calls today', n: a.missedCalls + a.voicemails, urgent: true, href: cc ? '/admin/command-centre' : '/admin/calls', icon: PhoneMissI,
       sub: a.voicemails ? `${plural(a.voicemails, 'voicemail')} · ${plural(a.callsToday, 'call')} today` : `${plural(a.callsToday, 'call')} today` },
     { key: 'orders', feature: 'orders', label: 'Orders to fulfil', n: a.awaiting, urgent: (a.oldestDays ?? 0) >= 3, href: '/admin/orders', icon: BoxI,
       sub: a.awaiting ? (a.oldestDays ? `Oldest waiting ${plural(a.oldestDays, 'day')}` : 'All from today') : 'Nothing waiting to ship' },
@@ -330,7 +380,7 @@ function NeedsAttention({ s, refreshing }: { s: Summary | null; refreshing?: boo
             const hot = !clear && t.urgent
             const Icon = t.icon
             return (
-              <Link key={t.key} href={t.href} className={`${card} p-4 flex flex-col sm:flex-row gap-2 sm:gap-3 items-start hover:shadow-md transition-smooth min-w-0`}
+              <Link key={t.key} href={t.href} title={'hint' in t ? t.hint : undefined} className={`${card} p-4 flex flex-col sm:flex-row gap-2 sm:gap-3 items-start hover:shadow-md transition-smooth min-w-0`}
                 style={{ ...cardStyle, borderColor: hot ? '#fecaca' : 'var(--border)' }}>
                 <span className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
                   style={{ background: clear ? '#f0fdf4' : hot ? '#fef2f2' : '#eff6ff' }}>
@@ -600,107 +650,6 @@ function FeedbackStrip({ stats, s }: { stats: { ideas: number; announcements: nu
           </Link>
         ))}
       </div>
-    </section>
-  )
-}
-
-// ── Setup checklist ───────────────────────────────────────────────────────────
-// Steps tick themselves off as things get created; the rest can be ticked by
-// hand. Remembered per workspace on this device, and hidden once complete.
-
-const STEPS = [
-  { key: 'topics', label: 'Set up your topics', desc: 'Topics help categorise ideas so customers find what matters.', link: '/admin/topics', linkText: 'Manage topics' },
-  { key: 'statuses', label: 'Configure statuses', desc: 'Create custom statuses for your roadmap workflow.', link: '/admin/statuses', linkText: 'Manage statuses' },
-  { key: 'idea', label: 'Add your first idea', desc: 'Create a sample idea to see how the feedback board works.', link: '/', linkText: 'Go to ideas' },
-  { key: 'announcement', label: 'Publish an announcement', desc: 'Share what you’ve shipped to keep customers in the loop.', link: '/admin/announcements/new', linkText: 'Create announcement' },
-  { key: 'survey', label: 'Create your first survey', desc: 'Gather customer feedback with targeted surveys.', link: '/admin/surveys', linkText: 'Create survey' },
-  { key: 'poll', label: 'Create your first poll', desc: 'Engage customers with quick polls.', link: '/admin/polls', linkText: 'Create poll' },
-  { key: 'terminology', label: 'Customise terminology', desc: 'Tailor the wording to match your brand (optional).', link: '/admin/terminology', linkText: 'Customise terms' },
-  { key: 'invite', label: 'Invite team members', desc: 'Add teammates to share the inbox and orders.', link: '/admin/team', linkText: 'Manage team' },
-]
-
-function SetupChecklist({ companyId, stats }: { companyId: string; stats: { ideas: number; announcements: number; surveys: number; polls: number; topics: number; statuses: number } | null }) {
-  const storeKey = `colvy-setup-${companyId}`
-  const [manual, setManual] = useState<Set<string>>(new Set())
-  const [hidden, setHidden] = useState(false)
-  const [open, setOpen] = useState(false)
-  const [ready, setReady] = useState(false)
-
-  useEffect(() => {
-    try {
-      const v = JSON.parse(localStorage.getItem(storeKey) || '{}')
-      setManual(new Set(v.done || [])); setHidden(!!v.hidden)
-    } catch {}
-    setReady(true)
-  }, [storeKey])
-
-  const save = (done: Set<string>, hide: boolean) => {
-    try { localStorage.setItem(storeKey, JSON.stringify({ done: Array.from(done), hidden: hide })) } catch {}
-  }
-
-  const auto = new Set<string>()
-  if (stats) {
-    if (stats.topics) auto.add('topics')
-    if (stats.statuses) auto.add('statuses')
-    if (stats.ideas) auto.add('idea')
-    if (stats.announcements) auto.add('announcement')
-    if (stats.surveys) auto.add('survey')
-    if (stats.polls) auto.add('poll')
-  }
-  const done = new Set([...auto, ...manual])
-  const progress = Math.round((STEPS.filter(s => done.has(s.key)).length / STEPS.length) * 100)
-  if (!ready || !stats || hidden || progress === 100) return null
-
-  const toggle = (k: string) => {
-    if (auto.has(k)) return
-    const next = new Set(manual); if (next.has(k)) next.delete(k); else next.add(k)
-    setManual(next); save(next, hidden)
-  }
-
-  return (
-    <section className={`${card} overflow-hidden mb-8`} style={cardStyle}>
-      <div className="flex items-center gap-3 px-5 py-4">
-        <button type="button" onClick={() => setOpen(o => !o)} className="flex-1 flex items-center gap-3 text-left cursor-pointer min-w-0" aria-expanded={open}>
-          <span className="shrink-0" style={{ color: 'var(--slate)' }}>{open ? <ChevronDownIcon size={18} /> : <ChevronRightIcon size={18} />}</span>
-          <span className="min-w-0 flex-1">
-            <span className="block font-semibold text-sm" style={{ color: 'var(--ink)' }}>Setup checklist</span>
-            <span className="flex items-center gap-2 mt-1.5">
-              <span className="h-1.5 rounded-full flex-1 max-w-[220px]" style={{ background: 'var(--canvas)' }}>
-                <span className="block h-1.5 rounded-full transition-all duration-500" style={{ background: 'var(--coral)', width: `${progress}%` }} />
-              </span>
-              <span className="text-xs font-semibold tabular-nums" style={{ color: 'var(--slate)' }}>{progress}%</span>
-            </span>
-          </span>
-        </button>
-        <button type="button" onClick={() => { setHidden(true); save(manual, true) }}
-          className="text-xs font-medium px-3 py-1.5 rounded-lg hover:bg-gray-50 transition-smooth shrink-0" style={{ color: 'var(--slate)' }}>
-          Hide
-        </button>
-      </div>
-      {open && (
-        <ul className="dash-rows border-t" style={cardStyle}>
-          {STEPS.map(step => {
-            const isDone = done.has(step.key)
-            return (
-              <li key={step.key} className="px-5 py-3.5 flex items-start gap-3">
-                <button type="button" onClick={() => toggle(step.key)} disabled={auto.has(step.key)}
-                  aria-label={isDone ? `Mark "${step.label}" not done` : `Mark "${step.label}" done`}
-                  className="w-5 h-5 mt-0.5 rounded-full border-2 flex items-center justify-center shrink-0 transition-smooth cursor-pointer disabled:cursor-default"
-                  style={{ borderColor: isDone ? '#10b981' : '#d1d5db', background: isDone ? '#10b981' : 'white' }}>
-                  {isDone && <CheckIcon size={11} color="white" />}
-                </button>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold" style={{ color: isDone ? 'var(--slate)' : 'var(--ink)', textDecoration: isDone ? 'line-through' : 'none' }}>{step.label}</p>
-                  {!isDone && <p className="text-xs mt-0.5" style={{ color: 'var(--slate)' }}>{step.desc}</p>}
-                </div>
-                {!isDone && (
-                  <Link href={step.link} className="text-xs font-semibold shrink-0 mt-0.5" style={{ color: 'var(--coral)' }}>{step.linkText}</Link>
-                )}
-              </li>
-            )
-          })}
-        </ul>
-      )}
     </section>
   )
 }

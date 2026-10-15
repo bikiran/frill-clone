@@ -7351,7 +7351,16 @@ export default function InboxPage() {
 
       {showTimeline && contact && (
         <ContactTimeline contactId={contact.id} contactName={contact.name || contact.email || undefined}
-          onClose={() => setShowTimeline(false)} />
+          onClose={() => setShowTimeline(false)}
+          onOpenConversation={async (id: string) => {
+            // Open that thread right here rather than reloading the inbox.
+            setShowTimeline(false)
+            if (id === selected?.id) return
+            try {
+              const { data } = await supabase.from('conversations').select('*').eq('id', id).maybeSingle()
+              if (data) await selectConversation(data)
+            } catch {}
+          }} />
       )}
 
       {showDialer && (
@@ -11121,11 +11130,18 @@ export default function InboxPage() {
                           )
                         })}
                       </div>
-                      <button type="button" onClick={() => setShowTimeline(true)}
-                        style={{ marginTop: 9, width: '100%', padding: '7px 0', borderRadius: 8, border: '1px solid var(--border)', background: '#fff', color: '#2563eb', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
-                        View all conversations →
-                      </button>
                     </div>
+                  )}
+
+                  {/* The customer's whole history — every channel, orders,
+                      bookings, calls, payments, tasks and notes — for anyone
+                      with a contact, not just people on several channels. */}
+                  {contact && (
+                    <button type="button" onClick={() => setShowTimeline(true)}
+                      style={{ marginBottom: 14, width: '100%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '8px 0', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--card)', color: 'var(--coral)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>
+                      Customer timeline
+                    </button>
                   )}
 
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>

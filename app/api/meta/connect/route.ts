@@ -1,4 +1,5 @@
 import { readValue, signValue, safeReturn } from '@/lib/oauth-state'
+import { safeSetupPath } from '@/lib/setup-return'
 import { NextRequest, NextResponse } from 'next/server'
 import { metaLoginUrl, isMetaConfigured, META_PAGE_SCOPES, META_MESSAGING_SCOPES, META_SCOPES, META_LOGIN_CONFIG_ID } from '@/lib/meta'
 
@@ -28,7 +29,12 @@ export async function GET(req: NextRequest) {
   if (!ticket || ticket.purpose !== 'meta' || ticket.companyId !== companyId) {
     return NextResponse.json({ error: 'Open Settings → Channels and press Connect again.' }, { status: 401 })
   }
-  const state = signValue({ kind: 'state', purpose: 'meta', companyId, userId: ticket.userId, origin }, 30 * 60 * 1000)
+  // Where to land after a successful connect, e.g. the dashboard's setup
+  // checklist (`/admin?setup=1`). Only a relative path inside the admin is
+  // kept, and it's joined onto the validated origin above, so it can never
+  // point at another site. Without it, people go back to the settings page.
+  const returnTo = safeSetupPath(url.searchParams.get('returnTo'))
+  const state = signValue({ kind: 'state', purpose: 'meta', companyId, userId: ticket.userId, origin, ...(returnTo ? { returnTo } : {}) }, 30 * 60 * 1000)
 
   // Which permissions to ask for. Default is the four approved Page scopes
   // (what the Social-Engagement comments feature needs); `?scopes=full` also

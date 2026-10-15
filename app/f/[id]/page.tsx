@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { useShowPoweredBy } from '@/lib/use-powered-by'
 import { StatusMark } from '@/components/StatusMark'
+import { captureClickRef } from '@/lib/click-ref-client'
 
 type Field = { key: string; label: string; type: string; required: boolean }
 
@@ -18,6 +19,10 @@ export default function PublicContactForm() {
   const [err, setErr] = useState('')
   const rootRef = useRef<HTMLDivElement>(null)
   const showPoweredBy = useShowPoweredBy(form?.company_id)
+  // The Reel / QR link that brought them here (?clv=), so the enquiry is
+  // credited to it.
+  const clickRef = useRef<string | null>(null)
+  useEffect(() => { clickRef.current = captureClickRef() }, [])
 
   useEffect(() => {
     (async () => {
@@ -53,7 +58,7 @@ export default function PublicContactForm() {
     try {
       const res = await fetch('/api/contact-form/submit', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ formId, data: values }),
+        body: JSON.stringify({ formId, data: values, clv: clickRef.current }),
       })
       const d = await res.json()
       if (!res.ok) throw new Error(d.error || 'Could not submit')

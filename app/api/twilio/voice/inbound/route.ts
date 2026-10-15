@@ -10,6 +10,7 @@ import { getPhoneCatalog } from '@/lib/phone-catalog'
 import { getPhoneAgent, answerWithAgent, businessClosedNow, phoneBookable } from '@/lib/phone-agent'
 import { aiAnswerDecision, needsHoursCheck, mayAnswerAtStart } from '@/lib/phone-receptionist'
 import { agentsPaused } from '@/lib/agent/pilot'
+import { queueMissedCallText } from '@/lib/missed-call-text'
 
 export const dynamic = 'force-dynamic'
 
@@ -278,6 +279,7 @@ export async function POST(req: NextRequest) {
         // No voicemail: it's a missed call — record it and tell the team.
         if (callRowId) { try { await db.from('calls').update({ status: 'missed', ended_at: new Date().toISOString(), cause: 'no_agent: nobody online, voicemail off' }).eq('id', callRowId) } catch {} }
         await alertCall(db, companyId, conversationId, 'Missed call', callerName || from || 'a caller')
+        queueMissedCallText({ db, companyId, callId: callRowId })
         return twiml('<Response><Hangup/></Response>')
       }
       try {
@@ -286,6 +288,9 @@ export async function POST(req: NextRequest) {
           cause: `no_agent: nobody online (online heartbeats=${(online || []).length}, push devices=${(mobileTokens || []).length})`,
         }).eq('id', callRowId || '')
       } catch {}
+      // Nobody can take it, so text the caller back now if switched on (as in
+      // inbound-status: don't wait for a voicemail that may never come).
+      queueMissedCallText({ db, companyId, callId: callRowId })
       return twiml(voicemailTwiml(base, greeting, cbQuery))
     }
 

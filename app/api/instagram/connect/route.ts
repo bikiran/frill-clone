@@ -1,4 +1,5 @@
 import { readValue, signValue, safeReturn } from '@/lib/oauth-state'
+import { safeSetupPath } from '@/lib/setup-return'
 import { NextRequest, NextResponse } from 'next/server'
 import { instagramLoginUrl, isInstagramLoginConfigured, IG_LOGIN_SCOPES, INSTAGRAM_REDIRECT_URI } from '@/lib/instagram-login'
 
@@ -25,7 +26,12 @@ export async function GET(req: NextRequest) {
   if (!ticket || ticket.purpose !== 'instagram' || ticket.companyId !== companyId) {
     return NextResponse.json({ error: 'Open Settings → Channels and press Connect again.' }, { status: 401 })
   }
-  const state = signValue({ kind: 'state', purpose: 'instagram', companyId, userId: ticket.userId, origin }, 30 * 60 * 1000)
+  // Where to land after a successful connect, e.g. the dashboard's setup
+  // checklist (`/admin?setup=1`). Only a relative path inside the admin is
+  // kept, and it's joined onto the validated origin above, so it can never
+  // point at another site. Without it, people go back to the settings page.
+  const returnTo = safeSetupPath(url.searchParams.get('returnTo'))
+  const state = signValue({ kind: 'state', purpose: 'instagram', companyId, userId: ticket.userId, origin, ...(returnTo ? { returnTo } : {}) }, 30 * 60 * 1000)
 
   const loginUrl = instagramLoginUrl(state)
 

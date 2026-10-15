@@ -2,15 +2,19 @@
 
 import { authFetch } from '@/lib/auth-fetch'
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { confirmDialog } from '@/components/ConfirmDialog'
 
 // "✨ Draft reply" — AI writes the next reply from your help centre, product
-// catalogue, the customer's orders and the thread; you review and send.
-// Shared by the inbox (chat/SMS + email composers) and the ticket page.
+// catalogue, the customer's orders and the thread, following the owner's
+// Business Memory; you review and send. Shared by the inbox (chat/SMS + email
+// composers) and the ticket page.
 
 export type DraftSource = { id: string; kind: 'knowledge' | 'product' | 'order'; label: string; url?: string | null }
-export type DraftInfo = { sources: DraftSource[]; caution: string }
+/** A Business Memory item the AI said it followed (a must-know fact, rule or FAQ). */
+export type DraftFollowed = { id: string; kind: string; title: string }
+export type DraftInfo = { sources: DraftSource[]; caution: string; followed?: DraftFollowed[] }
 
 export function useAiDraft(opts: {
   companyId: string | null
@@ -42,7 +46,7 @@ export function useAiDraft(opts: {
       const d = await res.json().catch(() => ({}))
       if (!res.ok || !d.draft) throw new Error(d.error || 'Couldn’t draft a reply right now')
       opts.onDraft(d.draft)
-      setInfo({ sources: d.sources || [], caution: d.caution || '' })
+      setInfo({ sources: d.sources || [], caution: d.caution || '', followed: Array.isArray(d.followed) ? d.followed : [] })
     } catch (e: any) { setError(e.message || 'Couldn’t draft a reply right now') } finally { setBusy(false) }
   }
 
@@ -75,6 +79,7 @@ export function AiDraftButton({ busy, onClick, height = 32, orb = false }: { bus
 const BookIcon = () => <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5z" /><path d="M4 19.5A2.5 2.5 0 0 0 6.5 22H20v-5" /></svg>
 const TagIcon = () => <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z" /><circle cx="7.5" cy="7.5" r="1.5" /></svg>
 const BoxIcon = () => <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 8 12 3 3 8v8l9 5 9-5z" /><path d="M3 8l9 5 9-5M12 13v8" /></svg>
+const ShieldIcon = () => <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><path d="m9 12 2 2 4-4" /></svg>
 const KIND_ICON: Record<string, React.ReactNode> = { knowledge: <BookIcon />, product: <TagIcon />, order: <BoxIcon /> }
 
 export function AiDraftInfo({ info, error, busy, onRedo, onClose }: {
@@ -107,9 +112,20 @@ export function AiDraftInfo({ info, error, busy, onRedo, onClose }: {
               )
               return s.url ? <a key={s.id} href={s.url} target="_blank" rel="noreferrer" style={{ textDecoration: 'none' }}>{chip}</a> : <span key={s.id}>{chip}</span>
             })
-          : <span style={{ fontSize: 11.5, color: 'var(--slate)', padding: '3px 0' }}>Written from the conversation only — no matching help article, product or order.</span>}
+          : <span style={{ fontSize: 11.5, color: 'var(--slate)', padding: '3px 0' }}>{info!.followed?.length ? 'No matching help article, product or order.' : 'Written from the conversation only — no matching help article, product or order.'}</span>}
         <button type="button" onClick={onClose} title="Dismiss" style={{ marginLeft: 'auto', background: 'none', border: 'none', color: '#a78bfa', cursor: 'pointer', fontSize: 14, lineHeight: 1 }}>×</button>
       </div>
+      {!!info!.followed?.length && (
+        // Which of the owner's rules and facts the AI said it followed.
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11.5, fontWeight: 700, color: '#047857' }}><ShieldIcon /> Followed:</span>
+          {info!.followed.map(f => (
+            <Link key={f.id} href="/admin/agents/memory" title="From your Business memory" style={{ textDecoration: 'none', minWidth: 0, maxWidth: '100%' }}>
+              <span style={{ display: 'inline-block', fontSize: 11.5, fontWeight: 600, color: '#065f46', background: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: 999, padding: '2px 8px', maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', verticalAlign: 'middle' }}>{f.title}</span>
+            </Link>
+          ))}
+        </div>
+      )}
       {info!.caution && (
         <div style={{ marginTop: 6, fontSize: 12, color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, padding: '5px 8px', display: 'flex', gap: 6, alignItems: 'flex-start' }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 1 }}><path d="M10.3 3.9 2.4 17.5A2 2 0 0 0 4.1 20.5h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" /><path d="M12 9.5v4M12 17h.01" /></svg>{info!.caution}</div>
       )}

@@ -2,6 +2,8 @@ import { chatKeyFor } from '@/lib/widget-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { checkBurst, callerKey } from '@/lib/rate-limit'
+import { clickRefFromVisit } from '@/lib/link-channels'
+import { stitchLinkClick } from '@/lib/link-stitch'
 
 export const dynamic = 'force-dynamic'
 
@@ -82,6 +84,7 @@ export async function POST(req: NextRequest) {
         (c.phone || '').replace(/\D/g, '').slice(-8) === last8) || null
     }
 
+    let contactCreated = false
     if (existing) {
       contactId = existing.id
       const patch: any = {}
@@ -96,6 +99,7 @@ export async function POST(req: NextRequest) {
         company_id: companyId, name, email, phone, source: 'widget',
       }).select('id').maybeSingle()
       contactId = created?.id || null
+      contactCreated = !!contactId
     }
 
     // ── Conversation: reuse, or create ──────────────────────────────────────
@@ -190,6 +194,15 @@ export async function POST(req: NextRequest) {
 
     if (!conv?.id) {
       return NextResponse.json({ error: 'Could not start the chat (no conversation was created)' }, { status: 500 })
+    }
+
+    // Smart links: if the visitor arrived through a Reel / QR / social link
+    // (?clv= on the page, or remembered by widget.js), credit this chat — and a
+    // brand-new contact — to that link, and put the contact on the click.
+    // Only a click belonging to this company counts (lib/link-stitch.ts).
+    const clickRef = clickRefFromVisit({ ref: b.clv, pageUrl: page.url, history: pageHistory })
+    if (clickRef) {
+      await stitchLinkClick(db, { companyId, clickRef, contactId, conversationId: conv.id, contactIsNew: contactCreated })
     }
 
     return NextResponse.json({

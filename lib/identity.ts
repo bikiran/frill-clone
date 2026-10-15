@@ -62,13 +62,14 @@ export async function linkContactIdentity(
 }
 
 // All contacts in the same identity group (for the profile's linked-channels
-// panel and the merged timeline).
+// panel and the merged timeline). Empty when the contact isn't in a group —
+// callers that need "at least this contact" fall back to it themselves.
 export async function linkedContacts(db: DB, contactId: string): Promise<any[]> {
   const { data: me } = await (db as any).from('contacts')
     .select('identity_group_id').eq('id', contactId).maybeSingle()
   if (!me?.identity_group_id) return []
   const { data } = await (db as any).from('contacts')
-    .select('id, name, email, phone, channels_seen, source, meta_user_id')
+    .select('id, company_id, name, email, phone, channels_seen, source, meta_user_id, created_at')
     .eq('identity_group_id', me.identity_group_id)
   return data || []
 }

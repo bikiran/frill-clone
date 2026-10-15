@@ -6,6 +6,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { peekCompanyUser } from '@/lib/client-cache'
 import { confirmDialog } from '@/components/ConfirmDialog'
+import { currentSetupReturn, addQuery } from '@/lib/setup-return'
 
 export default function MetaChannelsPage() {
   const [companyId, setCompanyId] = useState<string | null>(null)
@@ -65,6 +66,12 @@ export default function MetaChannelsPage() {
   }
 
   const locLabel = (l: any) => l.label || l.suburb || 'Outlet'
+
+  // Opened from the setup checklist: once connected, land back on it.
+  const setupHref = (href: string) => {
+    const back = currentSetupReturn()
+    return back ? addQuery(href, `returnTo=${encodeURIComponent(back)}`) : href
+  }
 
   // Company-wide display preference: render Instagram conversations in the inbox
   // with an Instagram-style theme (gradient outgoing bubbles + header).
@@ -131,7 +138,7 @@ export default function MetaChannelsPage() {
             onClick={async e => {
               e.preventDefault()
               if (!configured) { setMsg('Configure the Meta app first (see above).'); return }
-              const href = (e.currentTarget as HTMLAnchorElement).href
+              const href = setupHref((e.currentTarget as HTMLAnchorElement).href)
               try { window.location.href = await withConnectTicket(href, companyId!, 'meta') } catch (er: any) { setMsg(er.message) }
             }}
             style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '11px 16px', borderRadius: 10, background: '#1877F2', color: '#fff', fontSize: 13.5, fontWeight: 700, textDecoration: 'none', opacity: configured ? 1 : 0.6 }}>
@@ -157,9 +164,9 @@ export default function MetaChannelsPage() {
             <a href={companyId ? `${igRootOrigin}/api/instagram/connect?companyId=${companyId}&origin=${encodeURIComponent(typeof window !== 'undefined' ? window.location.origin : '')}` : undefined}
               onClick={async e => {
                 e.preventDefault()
-                const href = (e.currentTarget as HTMLAnchorElement).href
-                if (!href || !companyId) return
-                try { window.location.href = await withConnectTicket(href, companyId, 'instagram') } catch (er: any) { setMsg(er.message) }
+                const raw = (e.currentTarget as HTMLAnchorElement).href
+                if (!raw || !companyId) return
+                try { window.location.href = await withConnectTicket(setupHref(raw), companyId, 'instagram') } catch (er: any) { setMsg(er.message) }
               }}
               style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '11px 16px', borderRadius: 10, background: 'linear-gradient(45deg,#feda75,#d62976,#4f5bd5)', color: '#fff', fontSize: 13.5, fontWeight: 700, textDecoration: 'none' }}>
               Connect Instagram directly

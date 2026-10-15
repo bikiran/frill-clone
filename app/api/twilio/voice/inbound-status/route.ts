@@ -11,6 +11,7 @@ import { getPhoneAgent, answerWithAgent, phoneBookable } from '@/lib/phone-agent
 import { aiAnswerDecision } from '@/lib/phone-receptionist'
 import { agentsPaused } from '@/lib/agent/pilot'
 import { getPhoneCatalog } from '@/lib/phone-catalog'
+import { queueMissedCallText } from '@/lib/missed-call-text'
 
 export const dynamic = 'force-dynamic'
 
@@ -176,9 +177,15 @@ export async function POST(req: NextRequest) {
         const { data: c } = await db.from('calls').select('caller_name, from_number').eq('id', callRowId).maybeSingle()
         await alertCall(db, companyId, conversationId || null, 'Missed call', c?.caller_name || c?.from_number || 'a caller')
       } catch {}
+      // Text the caller back, if the business switched that on.
+      queueMissedCallText({ db, companyId, callId: callRowId })
       return twiml('<Response><Hangup/></Response>')
     }
     if (callRowId) { try { await db.from('calls').update({ status: 'voicemail_greeting', is_voicemail: true, cause: ringOutcome }).eq('id', callRowId) } catch {} }
+    // Nobody answered, so text the caller back if switched on. Sent now rather
+    // than after the voicemail: a caller who hangs up at the greeting leaves no
+    // recording, and is the one most likely to ring someone else.
+    queueMissedCallText({ db, companyId, callId: callRowId })
     // Provisional — if they hang up without leaving a message it stays "Missed
     // call"; the recording callback upgrades it to "Voicemail" if one is left.
     try { await setCallPreview(db as any, conversationId, '📞 Missed call') } catch {}

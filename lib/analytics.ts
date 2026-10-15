@@ -38,6 +38,17 @@ export type ColvyEvent =
   | 'sale_recorded'         // a tenant logged an attributed sale (props: amount, currency, payment_method)
   // Activation depth — did new workspaces actually get used?
   | 'onboarding_completed'  // finished the post-signup onboarding (props: slug)
+  // Setup steps (dashboard checklist, components/SetupChecklist). Each fires
+  // once per workspace per browser when the step is first seen done, with
+  // minutes_since_signup so time-to-live can be measured.
+  | 'setup_started'         // picked what they use in /onboarding (props: picks)
+  | 'channel_connected'     // email or Facebook/Instagram connected (props: channel, minutes_since_signup)
+  | 'store_connected'       // Shopify or WooCommerce connected (props: store, minutes_since_signup)
+  | 'number_purchased'      // a business phone number is live (props: minutes_since_signup)
+  | 'customers_added'       // first customers in Colvy (props: minutes_since_signup)
+  | 'team_invited'          // a teammate joined or was invited (props: minutes_since_signup)
+  | 'automation_enabled'    // first automation switched on (props: minutes_since_signup)
+  | 'setup_completed'       // every setup step done or skipped (props: minutes_since_signup, skipped)
   | 'board_viewed'          // a tenant ideas board was opened (props: idea_count)
   | 'idea_submitted'        // a customer submitted an idea (props: topics)
 

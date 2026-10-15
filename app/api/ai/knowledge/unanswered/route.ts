@@ -3,6 +3,8 @@ import { createClient } from '@supabase/supabase-js'
 import { requireCompanyAccess } from '@/lib/company-access'
 import { guardAiRequest } from '@/lib/rate-limit'
 import { scanRecentQuestions } from '@/lib/ai-unanswered'
+import { agentAccess } from '@/lib/agent/access'
+import { saveMemory, slug } from '@/lib/agent/business-memory'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 120
@@ -15,6 +17,7 @@ const admin = () => createClient(
 
 // POST { companyId, action: 'scan' } → look back over recent conversations for unanswered questions.
 // POST { companyId, action: 'dismiss' | 'reopen', id }
+// POST { companyId, action: 'save_memory', id, question, answer } → answer it as a Business Memory must-know fact.
 export async function POST(req: NextRequest) {
   try {
     const db = admin()
@@ -28,6 +31,26 @@ export async function POST(req: NextRequest) {
       const r = await scanRecentQuestions(db, companyId)
       if ('error' in r) return NextResponse.json({ error: r.error }, { status: 422 })
       return NextResponse.json({ ok: true, ...r })
+    }
+    if (b.action === 'save_memory') {
+      // Business Memory belongs to AI Agents, so this also needs that permission
+      // (the same check as the Business memory page).
+      const access = await agentAccess(req, companyId)
+      if (!access.ok) return NextResponse.json({ error: 'Only people with access to AI Agents can change Business memory.' }, { status: 403 })
+      const question = String(b.question || '').replace(/\s+/g, ' ').trim()
+      const answer = String(b.answer || '').trim()
+      if (!question || !answer) return NextResponse.json({ error: 'Add both a question and an answer.' }, { status: 400 })
+      const { data: row } = await db.from('ai_unanswered').select('id').eq('id', String(b.id || '')).eq('company_id', companyId).maybeSingle()
+      if (!row) return NextResponse.json({ error: 'That question isn’t on the list any more.' }, { status: 404 })
+      try {
+        // Its own key per question, so it never replaces one of the owner's other facts.
+        await saveMemory(db, companyId, { kind: 'policy', key: `q_${slug(question).slice(0, 36)}`, content: { title: question.slice(0, 80), text: answer } }, access.userId || null)
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : ''
+        return NextResponse.json({ error: /business_memory/.test(msg) ? 'Business memory needs a database update first (COLVY_V353_AGENT_ENGINE.sql).' : msg || 'Couldn’t save to Business memory.' }, { status: 500 })
+      }
+      await db.from('ai_unanswered').update({ status: 'answered' }).eq('id', row.id).eq('company_id', companyId)
+      return NextResponse.json({ ok: true })
     }
     if (b.action === 'dismiss' || b.action === 'reopen') {
       const { error } = await db.from('ai_unanswered').update({ status: b.action === 'dismiss' ? 'dismissed' : 'open' })

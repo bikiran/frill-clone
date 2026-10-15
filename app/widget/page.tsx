@@ -35,6 +35,11 @@ function WidgetContent() {
     const u = params.get('purl'); const t = params.get('ptitle')
     return u ? [{ url: u, title: t || null, ts: new Date().toISOString() }] : []
   })
+  // Smart links: the tracked click (a Reel, a QR poster…) that brought this
+  // visitor to the site, as remembered by widget.js. Sent with the chat so it's
+  // credited to that link. clvSent: only tell an ongoing chat about it once.
+  const clickRef = useRef<string>(params.get('clv') || '')
+  const clvSent = useRef<string>('')
 
   const [tab, setTab] = useState<'feedback' | 'roadmap' | 'updates' | 'help' | 'chat' | 'book'>('feedback')
   const [chatConvId, setChatConvId] = useState<string | null>(null)
@@ -197,6 +202,14 @@ function WidgetContent() {
       const d: any = e.data
       if (!d || !d.colvy || d.type !== 'page' || !d.url) return
       setParentPage({ url: d.url, title: d.title || null })
+      if (typeof d.clv === 'string' && d.clv) clickRef.current = d.clv
+      // The tracked click, the first time an ongoing chat hears about it.
+      const clvOnce = () => {
+        const c = clickRef.current
+        if (!c || clvSent.current === c) return undefined
+        clvSent.current = c
+        return c
+      }
       // The embedding script keeps the authoritative history (it runs on the
       // real site and can see every page). Prefer it wholesale.
       if (Array.isArray(d.history) && d.history.length) {
@@ -216,7 +229,7 @@ function WidgetContent() {
           return d.history
         })
         if (chatConvId) {
-          fetch('/api/widget/update', { method: 'POST', headers: { 'Content-Type': 'application/json', ...chatHeaders() }, body: JSON.stringify({ companyId: company?.id, conversationId: chatConvId, fields: { page_url: d.url, page_title: d.title || null, page_history: d.history, page_seen_at: new Date().toISOString() } }) }).catch(() => {})
+          fetch('/api/widget/update', { method: 'POST', headers: { 'Content-Type': 'application/json', ...chatHeaders() }, body: JSON.stringify({ companyId: company?.id, conversationId: chatConvId, clv: clvOnce(), fields: { page_url: d.url, page_title: d.title || null, page_history: d.history, page_seen_at: new Date().toISOString() } }) }).catch(() => {})
         }
         return
       }
@@ -224,7 +237,7 @@ function WidgetContent() {
         if (prev.length && prev[prev.length - 1].url === d.url) return prev
         const next = [...prev, { url: d.url, title: d.title || null, ts: new Date().toISOString() }]
         if (chatConvId) {
-          fetch('/api/widget/update', { method: 'POST', headers: { 'Content-Type': 'application/json', ...chatHeaders() }, body: JSON.stringify({ companyId: company?.id, conversationId: chatConvId, fields: { page_url: d.url, page_title: d.title || null, page_history: next, page_seen_at: new Date().toISOString() } }) }).catch(() => {})
+          fetch('/api/widget/update', { method: 'POST', headers: { 'Content-Type': 'application/json', ...chatHeaders() }, body: JSON.stringify({ companyId: company?.id, conversationId: chatConvId, clv: clvOnce(), fields: { page_url: d.url, page_title: d.title || null, page_history: next, page_seen_at: new Date().toISOString() } }) }).catch(() => {})
         }
         return next
       })
@@ -1850,6 +1863,7 @@ function WidgetContent() {
                           smsOptIn,
                           page: { url: parentPage.url || null, title: parentPage.title || null },
                           pageHistory: parentPageHistory,
+                          clv: clickRef.current || null,
                         }),
                       })
                       const startData = await startRes.json().catch(() => ({}))
@@ -2382,7 +2396,7 @@ function WidgetContent() {
                 const price = s.price_cents ? `$${(s.price_cents / 100).toFixed(s.price_cents % 100 ? 2 : 0)}` : 'Free'
                 const dur = s.duration_mins < 60 ? `${s.duration_mins} min` : `${Math.floor(s.duration_mins / 60)} hr${s.duration_mins % 60 ? ` ${s.duration_mins % 60} min` : ''}`
                 return (
-                  <button key={s.id} onClick={() => { trackWidgetEvent('book_service'); window.open(`${window.location.origin}/book/${encodeURIComponent(slug)}/${s.slug}?src=widget`, '_blank', 'noopener') }}
+                  <button key={s.id} onClick={() => { trackWidgetEvent('book_service'); window.open(`${window.location.origin}/book/${encodeURIComponent(slug)}/${s.slug}?src=widget${clickRef.current ? `&clv=${encodeURIComponent(clickRef.current)}` : ''}`, '_blank', 'noopener') }}
                     style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '11px 12px', borderRadius: 12, border: '1px solid #eef0f3', background: '#fff', cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit' }}>
                     <span style={{ width: 4, alignSelf: 'stretch', borderRadius: 4, background: s.color || accentColor }} />
                     <span style={{ flex: 1, minWidth: 0 }}>
