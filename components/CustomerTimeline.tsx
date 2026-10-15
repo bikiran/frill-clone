@@ -16,12 +16,14 @@ import { TIMELINE_FILTERS, type TimelineEvent, type TimelineGroup, type Timeline
 //   mode="drawer" — a slide-over from the right (the inbox).
 
 type Msg = {
-  id: string; conversation_id: string; sender_type: string; sender_name: string | null; content: string
+  id: string; conversation_id: string; sender_type: string; sender_name: string | null; is_ai?: boolean; content: string
   channel: string; created_at: string; attachment_count?: number; conversation_subject: string | null; link?: string
 }
 type Entry = { key: string; ms: number; m?: Msg; e?: TimelineEvent }
-type View = { entries: Entry[]; nextBefore: string | null; hasMore: boolean; loading: boolean; loaded: boolean; error: string }
-const EMPTY: View = { entries: [], nextBefore: null, hasMore: false, loading: false, loaded: false, error: '' }
+// error: the first page failed (nothing to show). olderError: "Show older"
+// failed — what's already on screen stays.
+type View = { entries: Entry[]; nextBefore: string | null; hasMore: boolean; loading: boolean; loaded: boolean; error: string; olderError: string }
+const EMPTY: View = { entries: [], nextBefore: null, hasMore: false, loading: false, loaded: false, error: '', olderError: '' }
 const STEP = 40   // entries revealed per "Show older"
 
 type Props = {
@@ -84,6 +86,7 @@ const CH: Record<string, { label: string; icon: string; color: string }> = {
   call:      { label: 'Phone',     icon: 'call',      color: '#2563eb' },
   phone:     { label: 'Phone',     icon: 'call',      color: '#2563eb' },
   note:      { label: 'Note',      icon: 'note',      color: '#ca8a04' },
+  form:      { label: 'Contact form', icon: 'form',   color: '#4f46e5' },
 }
 const ch = (c: string) => CH[c] || { label: c ? c[0].toUpperCase() + c.slice(1) : 'Message', icon: 'chat', color: '#6b7280' }
 
@@ -107,8 +110,13 @@ const ACT: Record<string, { icon: string; color: string }> = {
 const TONE: Record<string, string> = { good: '#16a34a', warn: '#d97706', bad: '#dc2626', muted: 'var(--slate)' }
 const tint = (c: string, pct = 14) => `color-mix(in srgb, ${c} ${pct}%, transparent)`
 
-const timeOf = (ms: number) => new Date(ms).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' })
-const dateTime = (iso: string) => new Date(iso).toLocaleString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })
+// Times are the viewer's, except a booking's, which are in its own time zone
+// (`tz`) — as on the Bookings page and in what the customer was sent.
+const inZone = (ms: number, o: Intl.DateTimeFormatOptions, tz?: string) => {
+  try { return new Date(ms).toLocaleString('en-AU', { ...o, timeZone: tz }) } catch { return new Date(ms).toLocaleString('en-AU', o) }
+}
+const timeOf = (ms: number, tz?: string) => inZone(ms, { hour: 'numeric', minute: '2-digit' }, tz)
+const dateTime = (iso: string, tz?: string) => inZone(Date.parse(iso), { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }, tz)
 const dayKey = (ms: number) => { const d = new Date(ms); return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}` }
 const dayLabel = (ms: number, now: number) => {
   if (dayKey(ms) === dayKey(now)) return 'Today'
@@ -147,6 +155,7 @@ export default function CustomerTimeline({ contactId, contactName, mode = 'inlin
   const [groups, setGroups] = useState<string[] | null>(null)
   const [companyId, setCompanyId] = useState<string | null>(null)
   const [linkedCount, setLinkedCount] = useState(0)
+  const [olderConversations, setOlderConversations] = useState(false)
   const [shown, setShown] = useState(STEP)
   const [openThreads, setOpenThreads] = useState<Set<string>>(new Set())
   const [now, setNow] = useState(0)
@@ -156,7 +165,7 @@ export default function CustomerTimeline({ contactId, contactName, mode = 'inlin
 
   const load = useCallback(async (f: string, before: string | null) => {
     const forContact = contactId
-    setViews(v => ({ ...v, [f]: { ...(v[f] || EMPTY), loading: true, error: '' } }))
+    setViews(v => ({ ...v, [f]: { ...(v[f] || EMPTY), loading: true, ...(before ? { olderError: '' } : { error: '' }) } }))
     try {
       const q = new URLSearchParams({ contactId })
       if (f !== 'all') q.set('types', f)
@@ -170,6 +179,7 @@ export default function CustomerTimeline({ contactId, contactName, mode = 'inlin
       if (Array.isArray(d.groups)) setGroups(d.groups)
       if (d.companyId) setCompanyId(d.companyId)
       if (typeof d.linkedCount === 'number') setLinkedCount(d.linkedCount)
+      if (typeof d.olderConversations === 'boolean') setOlderConversations(d.olderConversations)
       const fresh: Entry[] = [
         ...(d.messages || []).map((m: Msg) => ({ key: 'm-' + m.id, ms: Date.parse(m.created_at), m })),
         ...(d.activity || []).map((e: TimelineEvent) => ({ key: 'e-' + e.id, ms: Date.parse(e.date), e })),
@@ -179,11 +189,15 @@ export default function CustomerTimeline({ contactId, contactName, mode = 'inlin
         const prev = before ? (v[f]?.entries || []) : []
         const seen = new Set(prev.map(x => x.key))
         const entries = [...prev, ...fresh.filter(x => !seen.has(x.key))].sort((a, b) => b.ms - a.ms)
-        return { ...v, [f]: { entries, nextBefore: d.nextBefore || null, hasMore: !!d.hasMore, loading: false, loaded: true, error: '' } }
+        return { ...v, [f]: { entries, nextBefore: d.nextBefore || null, hasMore: !!d.hasMore, loading: false, loaded: true, error: '', olderError: '' } }
       })
     } catch (e) {
       if (alive.current !== forContact) return
-      setViews(v => ({ ...v, [f]: { ...(v[f] || EMPTY), loading: false, loaded: true, error: (e as Error)?.message || 'Couldn’t load the history.' } }))
+      // An older page failing keeps everything already loaded, and its cursor.
+      setViews(v => {
+        const error = (e as Error)?.message || 'Couldn’t load the history.'
+        return { ...v, [f]: { ...(v[f] || EMPTY), loading: false, loaded: true, ...(before ? { olderError: error } : { error }) } }
+      })
     }
   }, [contactId, showSummary])
 
@@ -229,6 +243,8 @@ export default function CustomerTimeline({ contactId, contactName, mode = 'inlin
     if (shown < view.entries.length) { setShown(s => s + STEP); return }
     if (view.hasMore && !view.loading) { load(filter, view.nextBefore); setShown(s => s + STEP) }
   }
+  // After a failed "Show older": the same page again (more were already revealed).
+  const retryOlder = () => { if (view.hasMore && !view.loading) load(filter, view.nextBefore) }
 
   // Build the stream: day headings, conversation runs, events.
   const blocks: Block[] = []
@@ -254,11 +270,14 @@ export default function CustomerTimeline({ contactId, contactName, mode = 'inlin
 
   const tiles: { label: string; value: string; sub?: string }[] = []
   if (summary) {
-    if (summary.lifetimeValue != null) tiles.push({ label: 'Lifetime value', value: money(summary.lifetimeValue, summary.currency), sub: summary.orderCount ? `${summary.orderCount} order${summary.orderCount === 1 ? '' : 's'}` : 'No orders yet' })
+    // orderCount is null when this member can't see orders: the value is then
+    // payments alone, and "No orders yet" wouldn't be true.
+    if (summary.lifetimeValue != null) tiles.push({ label: 'Lifetime value', value: money(summary.lifetimeValue, summary.currency), sub: summary.orderCount == null ? 'Payments only' : summary.orderCount ? `${summary.orderCount} order${summary.orderCount === 1 ? '' : 's'}` : 'No orders yet' })
     tiles.push({ label: 'First seen', value: summary.firstSeen ? new Date(summary.firstSeen).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' }) : '—', sub: summary.firstSeen && now ? ago(summary.firstSeen, now) : undefined })
     tiles.push({ label: 'Last contact', value: summary.lastContact && now ? ago(summary.lastContact.at, now) : '—', sub: summary.lastContact ? ch(summary.lastContact.channel).label : undefined })
     tiles.push({ label: 'Open tasks', value: String(summary.openTasks), sub: summary.openTasks ? 'To do' : 'All clear' })
-    if (!groups || groups.includes('bookings')) tiles.push({ label: 'Next booking', value: summary.nextBooking ? new Date(summary.nextBooking.at).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' }) : 'None', sub: summary.nextBooking ? [timeOf(Date.parse(summary.nextBooking.at)), summary.nextBooking.service].filter(Boolean).join(' · ') : undefined })
+    const nb = summary.nextBooking
+    if (!groups || groups.includes('bookings')) tiles.push({ label: 'Next booking', value: nb ? inZone(Date.parse(nb.at), { weekday: 'short', day: 'numeric', month: 'short' }, nb.tz) : 'None', sub: nb ? [timeOf(Date.parse(nb.at), nb.tz), nb.service].filter(Boolean).join(' · ') : undefined })
     if (summary.avgRating != null) tiles.push({ label: 'Reviews', value: `${summary.avgRating}★`, sub: `${summary.reviewCount} review${summary.reviewCount === 1 ? '' : 's'}` })
   }
   const channelLabels = Array.from(new Set((summary?.channels || []).filter(c => !['note', 'woocommerce', 'shopify', 'pos', 'prexty'].includes(c)).map(c => ch(c).label)))
@@ -327,11 +346,13 @@ export default function CustomerTimeline({ contactId, contactName, mode = 'inlin
                     <div className="ctl-msgs">
                       {msgs.map(m => {
                         if (m.sender_type === 'system') return <p key={m.id} className="ctl-sys">{m.content}</p>
-                        const team = m.sender_type === 'agent' || m.sender_type === 'ai'
+                        // AI replies are saved as the business's, flagged is_ai.
+                        const ai = !!m.is_ai || m.sender_type === 'ai'
+                        const team = ai || m.sender_type === 'agent'
                         return (
                           <div key={m.id} className={`ctl-msg${team ? ' team' : ''}`}>
                             <div className="ctl-bubble">
-                              {m.sender_type === 'ai' && <span className="ctl-ai">{ICONS.agent(10)} AI</span>}
+                              {ai && <span className="ctl-ai">{ICONS.agent(10)} AI</span>}
                               {m.content || (m.attachment_count ? '' : '…')}
                               {!!m.attachment_count && <span className="ctl-att">{ICONS.clip(11)} {m.attachment_count} attachment{m.attachment_count === 1 ? '' : 's'}</span>}
                             </div>
@@ -357,7 +378,7 @@ export default function CustomerTimeline({ contactId, contactName, mode = 'inlin
                     {e.status && <span className="ctl-pill" style={{ color: TONE[e.tone || 'muted'], background: tint(e.tone && e.tone !== 'muted' ? TONE[e.tone] : '#6b7280', 13) }}>{e.status}</span>}
                     <span className="ctl-time">{timeOf(b.ms)}</span>
                   </div>
-                  {e.at && <p className="ctl-at">{AT_LABEL[e.kind] || 'At'} {dateTime(e.at)}</p>}
+                  {e.at && <p className="ctl-at">{AT_LABEL[e.kind] || 'At'} {dateTime(e.at, e.tz)}</p>}
                   {e.detail && <p className="ctl-detail">{e.detail}</p>}
                   <div className="ctl-acts">
                     <span className="ctl-src">{e.source}</span>
@@ -372,11 +393,18 @@ export default function CustomerTimeline({ contactId, contactName, mode = 'inlin
         </div>
       )}
 
-      {view.loaded && !view.error && canShowMore && (
+      {view.loaded && !view.error && view.olderError ? (
+        <div className="ctl-empty">
+          <p>{view.olderError}</p>
+          <button type="button" className="ctl-more" onClick={retryOlder} disabled={view.loading}>{view.loading ? 'Loading…' : 'Try again'}</button>
+        </div>
+      ) : view.loaded && !view.error && canShowMore ? (
         <button type="button" className="ctl-more" onClick={showOlder} disabled={view.loading}>
           {view.loading ? 'Loading…' : 'Show older'}
         </button>
-      )}
+      ) : view.loaded && !view.error && olderConversations && blocks.length > 0 && ['all', 'messages', 'tasks'].includes(filter) ? (
+        <p className="ctl-reach" style={{ textAlign: 'center' }}>Messages from older conversations aren’t shown here — find them in the inbox.</p>
+      ) : null}
     </div>
   )
 

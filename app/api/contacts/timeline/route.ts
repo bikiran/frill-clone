@@ -6,6 +6,7 @@ import { createClient } from '@supabase/supabase-js'
 import { linkedContacts } from '@/lib/identity'
 import { phoneKey, emailKey } from '@/lib/phone'
 import { ROLE_NAMES } from '@/lib/agent/results'
+import { isValidTimeZone } from '@/lib/booking-time'
 import { cutPage, toMs, KIND_GROUP, TIMELINE_GROUP_KEYS, type TimelineEvent, type TimelineGroup, type TimelineSummary } from '@/lib/customer-timeline'
 
 export const dynamic = 'force-dynamic'
@@ -46,13 +47,16 @@ const admin = () => createClient(
 const MSG_LIMIT = 120          // messages per page
 const EVENT_LIMIT = 40         // rows per other source per page
 const PAGE_SIZE = 160          // most items one page shows
-const MAX_CONVERSATIONS = 250  // keeps the conversation id list a sensible URL length
+const MAX_CONVERSATIONS = 1000 // newest conversations read (one database page)
+const ID_CHUNK = 200           // ids per request: the list goes in the URL
 
 // Team permission (lib/permissions feature keys) each kind needs — any one of
-// them. Kinds not listed (messages, notes, tasks, forms, media requests,
-// identity changes) are part of the customer record itself, which the inbox and
-// the profile already show to anyone allowed in.
+// them. Messages, contact-form submissions and media requests are the
+// conversations themselves, so they need the inbox, like the page they open.
+// Kinds not listed (notes, tasks, identity changes) are part of the customer
+// record itself, which the profile already shows to anyone allowed in.
 const NEEDS: Record<string, string[]> = {
+  message: ['inbox'], form: ['inbox'], media: ['inbox'],
   order: ['orders'], sale: ['payments'], payment: ['payments'], call: ['calls'], booking: ['bookings'],
   ticket: ['tickets'], review: ['reviews'], comment: ['social'], agent: ['agents'], link: ['links', 'link_reports'],
 }
@@ -87,10 +91,16 @@ const money = (n: unknown, cur?: string) => {
   try { return new Intl.NumberFormat('en-AU', { style: 'currency', currency: String(cur || 'aud').toUpperCase() }).format(v) } catch { return `$${v.toFixed(2)}` }
 }
 const cap = (s: unknown) => { const t = String(s || '').replace(/[_-]+/g, ' ').trim(); return t ? t[0].toUpperCase() + t.slice(1) : '' }
-// Values going into a PostgREST or()/in() list: no list punctuation.
-const listSafe = (s: string) => s.replace(/[,()"\\]/g, '')
-// …and into an ilike pattern: % and _ are wildcards there, so escape them.
-const likeSafe = (s: string) => listSafe(s).replace(/[%_]/g, m => '\\' + m)
+// Emails go into PostgREST filters as they are, so only plain addresses are
+// matched on: no list punctuation, quotes or backslashes, and no LIKE
+// wildcards (% and *, which PostgREST reads as %). Anything else is left out
+// rather than cleaned up — a cleaned-up address could be somebody else's.
+const SAFE_EMAIL = /^[a-z0-9.!#$&'+\/=?^`{|}~_-]+@[a-z0-9.-]+\.[a-z]{2,}$/
+// …and in an ilike pattern _ is a wildcard too, so escape it.
+const likeSafe = (s: string) => s.replace(/_/g, '\\_')
+// A booking's times read in its own time zone — what the customer was told
+// (lib/booking.ts) and what the Bookings page shows — not the viewer's.
+const bookingTz = (b: Row) => { const tz = String(b.timezone || '').trim(); return tz && isValidTimeZone(tz) ? tz : 'Australia/Melbourne' }
 const hostOf = (u: unknown) => { try { return new URL(String(u)).hostname.replace(/^www\./, '') } catch { return '' } }
 const mmss = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
 
@@ -135,7 +145,7 @@ export async function GET(req: NextRequest) {
   const people: Row[] = linked.length ? linked : [owner]
   if (!people.some(p => p.id === owner.id)) people.push(owner)
   const contactIds: string[] = people.map(p => p.id)
-  const emails = uniq(people.map(c => emailKey(c.email)).filter(Boolean)).map(listSafe)
+  const emails = uniq(people.map(c => emailKey(c.email)).filter(e => SAFE_EMAIL.test(e)))
   const phones = uniq(people.map(c => phoneKey(c.phone)).filter(k => k.length >= 8))
 
   // Their conversations — newest first. A customer with only orders or
@@ -148,23 +158,45 @@ export async function GET(req: NextRequest) {
   const convIds = Object.keys(convById)
 
   const list = (ids: string[]) => `(${ids.join(',')})`
-  // "This person's" rows on a table with contact_id + conversation_id.
-  const byPerson = () => [`contact_id.in.${list(contactIds)}`, convIds.length ? `conversation_id.in.${list(convIds)}` : ''].filter(Boolean).join(',')
+  // Ids go in the request URL, so a long list is read 200 at a time (as
+  // elsewhere in the codebase) and the answers merged. Most people have one chunk.
+  const chunk = (ids: string[]) => { const out: string[][] = []; for (let i = 0; i < ids.length; i += ID_CHUNK) out.push(ids.slice(i, i + ID_CHUNK)); return out }
+  const convChunks = convIds.length ? chunk(convIds) : [[]]
+  // "This person's" rows on a table with contact_id + conversation_id, for one
+  // chunk of their conversations.
+  const byPerson = (ids: string[]) => [`contact_id.in.${list(contactIds)}`, ids.length ? `conversation_id.in.${list(ids)}` : ''].filter(Boolean).join(',')
   const inboxLink = (convId?: string | null) => convId && convById[convId] ? `/admin/inbox?conversation=${convId}` : undefined
 
   // Read rows from a table, trying each column set in turn (a column added by a
   // later migration may not be in this database yet). null = the table isn't
-  // there at all, so that kind is skipped.
-  type Try = [cols: string, extra?: (q: Builder) => Builder]
-  const fetchRows = async (table: string, tries: Try[], base: (q: Builder) => Builder, o: { ts?: string; ascending?: boolean; limit: number; paged?: boolean }): Promise<Row[] | null> => {
+  // there at all, so that kind is skipped. With `ids` (chunks of ids), one
+  // request per chunk — base and extra get the chunk — merged back into one
+  // list: each row once, in order, up to the limit.
+  type Try = [cols: string, extra?: (q: Builder, ids: string[]) => Builder]
+  type Read = { ts?: string; ascending?: boolean; limit: number; paged?: boolean; ids?: string[][] }
+  const fetchRows = async (table: string, tries: Try[], base: (q: Builder, ids: string[]) => Builder, o: Read): Promise<Row[] | null> => {
     for (const [cols, extra] of tries) {
       try {
-        let q = base(db.from(table).select(cols))
-        if (extra) q = extra(q)
-        if (o.paged && before && o.ts) q = q.lt(o.ts, before)
-        if (o.ts) q = q.order(o.ts, { ascending: !!o.ascending, nullsFirst: false })
-        const { data, error } = await q.limit(o.limit)
-        if (!error) return data || []
+        const res: Row[] = await Promise.all((o.ids || [[]]).map(ids => {
+          let q = base(db.from(table).select(cols), ids)
+          if (extra) q = extra(q, ids)
+          if (o.paged && before && o.ts) q = q.lt(o.ts, before)
+          if (o.ts) q = q.order(o.ts, { ascending: !!o.ascending, nullsFirst: false })
+          return q.limit(o.limit)
+        }))
+        if (res.some(r => r.error)) continue
+        if (res.length === 1) return res[0].data || []
+        const seen = new Set<unknown>()
+        const rows = res.flatMap(r => (r.data || []) as Row[]).filter(r => r.id == null || (!seen.has(r.id) && !!seen.add(r.id)))
+        const ts = o.ts
+        if (ts) {
+          const dir = o.ascending ? 1 : -1
+          rows.sort((a, b) => {
+            const x = toMs(a[ts]), y = toMs(b[ts])
+            return Number.isFinite(x) && Number.isFinite(y) ? (x - y) * dir : Number.isFinite(x) ? -1 : Number.isFinite(y) ? 1 : 0
+          })
+        }
+        return rows.slice(0, o.limit)
       } catch { /* try the next column set */ }
     }
     return null
@@ -172,8 +204,8 @@ export async function GET(req: NextRequest) {
   // One page of a source, newest first, older than the cursor. Notes when the
   // source came back full, so the merge knows how far down it's complete.
   const fullOldest: number[] = []
-  const pull = async (table: string, ts: string, limit: number, tries: Try[], base: (q: Builder) => Builder): Promise<Row[]> => {
-    const rows = await fetchRows(table, tries, base, { ts, limit, paged: true })
+  const pull = async (table: string, ts: string, limit: number, tries: Try[], base: (q: Builder, ids: string[]) => Builder, ids?: string[][]): Promise<Row[]> => {
+    const rows = await fetchRows(table, tries, base, { ts, limit, paged: true, ids })
     if (!rows) return []
     if (rows.length >= limit) {
       const oldest = Math.min(...rows.map(r => toMs(r[ts])).filter(Number.isFinite))
@@ -192,8 +224,13 @@ export async function GET(req: NextRequest) {
     [cols, (q: Builder) => q.or(orderOr.join(','))],
   ]
   const WOO_COLS = 'id, woo_order_id, total, currency, status, order_date'
+  // By email: the lower-cased customer_email_norm (V265), which an index
+  // serves; before V265, a case-insensitive match over the store's orders.
   const wooByEmail = (cols: string, o: { limit: number; paged?: boolean }) => emails.length
-    ? fetchRows('woocommerce_orders', [[cols]], q => q.eq('company_id', companyId).or(emails.map(e => `customer_email.ilike.${likeSafe(e)}`).join(',')), { ts: 'order_date', ...o })
+    ? fetchRows('woocommerce_orders', [
+      [cols, (q: Builder) => q.in('customer_email_norm', emails)],
+      [cols, (q: Builder) => q.or(emails.map(e => `customer_email.ilike.${likeSafe(e)}`).join(','))],
+    ], q => q.eq('company_id', companyId), { ts: 'order_date', ...o })
     : Promise.resolve([] as Row[])
   const wooByPhone = (cols: string, o: { limit: number; paged?: boolean }) => phones.length
     ? fetchRows('woocommerce_orders', [[cols]], q => q.eq('company_id', companyId).in('billing_phone_norm', phones), { ts: 'order_date', ...o })
@@ -225,13 +262,19 @@ export async function GET(req: NextRequest) {
   // Short links sent to this person (for click events).
   const personLinks = async (): Promise<Row[]> => {
     const tries: Try[] = [
-      ['id, label, kind, link_type, target_url', (q: Builder) => q.or(byPerson())],
-      ['id, label, target_url', (q: Builder) => q.or(byPerson())],
+      ['id, label, kind, link_type, target_url', (q: Builder, ids: string[]) => q.or(byPerson(ids))],
+      ['id, label, target_url', (q: Builder, ids: string[]) => q.or(byPerson(ids))],
       // short_links.contact_id came with V189; before that only the conversation.
-      ...(convIds.length ? [['id, label, target_url', (q: Builder) => q.in('conversation_id', convIds)] as Try] : []),
+      ...(convIds.length ? [['id, label, target_url', (q: Builder, ids: string[]) => q.in('conversation_id', ids)] as Try] : []),
     ]
-    return (await fetchRows('short_links', tries, q => q.eq('company_id', companyId), { limit: 300 })) || []
+    return (await fetchRows('short_links', tries, q => q.eq('company_id', companyId), { limit: 300, ids: convChunks })) || []
   }
+
+  // What the page reads from the messages table: the conversation itself, and
+  // the team-only notes kept in it (a Tasks & notes item, never a message).
+  const readMsgs = want('message') && convIds.length > 0
+  const readTeamNotes = allowed('message') && want('note') && convIds.length > 0
+  const MSG_COLS = 'id, conversation_id, sender_type, sender_name, content, delivery_channel, created_at, attachments, metadata'
 
   // The at-a-glance numbers run alongside the page itself.
   const summaryP = wantSummary ? summarise().catch(() => null) : null
@@ -241,21 +284,25 @@ export async function GET(req: NextRequest) {
     callRows, ticketRows, formRows, saleRows, payRows, linkClicks, mediaRows, agentRows,
     reviewRows, gReviewRows, commentRows, auditRows,
   ] = await Promise.all([
-    want('message') && convIds.length ? pull('messages', 'created_at', MSG_LIMIT, [
-      ['id, conversation_id, sender_type, sender_name, content, delivery_channel, created_at, attachments, metadata'],
-      ['id, conversation_id, sender_type, sender_name, content, created_at'],
-    ], q => q.in('conversation_id', convIds)) : none,
+    readMsgs || readTeamNotes ? pull('messages', 'created_at', MSG_LIMIT, [
+      // is_internal (V188) marks a team-only note the customer never got;
+      // is_ai (V164) a reply the AI sent; message_type (V119) a payment or
+      // upload request. Only what this page shows is read.
+      [MSG_COLS + ', is_internal, is_ai, message_type', (q: Builder) => readMsgs && readTeamNotes ? q : q.eq('is_internal', readTeamNotes)],
+      // A database from before those has no team notes.
+      ...(readMsgs ? [[MSG_COLS], ['id, conversation_id, sender_type, sender_name, content, created_at']] as Try[] : []),
+    ], (q, ids) => q.in('conversation_id', ids), convChunks) : none,
     want('order') ? pull('orders', 'order_date', EVENT_LIMIT, orderTries(ORDER_COLS), q => q.eq('company_id', companyId)) : none,
     want('order') ? pullWoo(wooByEmail) : none,
     want('order') ? pullWoo(wooByPhone) : none,
-    want('booking') ? pull('bookings', 'created_at', EVENT_LIMIT, [['id, service_name, starts_at, status, staff_name, location_label, conversation_id, created_at']],
-      q => q.eq('company_id', companyId).or(byPerson())) : none,
+    want('booking') ? pull('bookings', 'created_at', EVENT_LIMIT, [['id, service_name, starts_at, timezone, status, staff_name, location_label, conversation_id, created_at']],
+      (q, ids) => q.eq('company_id', companyId).or(byPerson(ids)), convChunks) : none,
     want('task') && convIds.length ? pull('conversation_tasks', 'created_at', EVENT_LIMIT, [
       ['id, conversation_id, text, title, done, status, due_date, created_by, created_at'],
       ['id, conversation_id, text, done, due_date, created_at'],
-    ], q => q.in('conversation_id', convIds)) : none,
+    ], (q, ids) => q.in('conversation_id', ids), convChunks) : none,
     want('note') && convIds.length ? pull('conversation_notes', 'created_at', EVENT_LIMIT, [['id, conversation_id, author_name, content, created_at']],
-      q => q.in('conversation_id', convIds)) : none,
+      (q, ids) => q.in('conversation_id', ids), convChunks) : none,
     // Notes kept on a WooCommerce customer record (customer_notes is keyed on
     // woocommerce_customers, matched to this person by email).
     want('note') && emails.length ? (async () => {
@@ -268,48 +315,63 @@ export async function GET(req: NextRequest) {
     want('call') ? pull('calls', 'created_at', EVENT_LIMIT, [
       ['id, conversation_id, direction, status, duration_seconds, recording_url, ai_summary, is_voicemail, agent_name, created_at'],
       ['id, conversation_id, direction, status, duration_seconds, recording_url, ai_summary, agent_name, created_at'],
-    ], q => q.or(byPerson())) : none,
+    ], (q, ids) => q.eq('company_id', companyId).or(byPerson(ids)), convChunks) : none,
     want('ticket') ? pull('support_tickets', 'created_at', EVENT_LIMIT, [['id, ticket_number, subject, status, priority, conversation_id, created_at']],
-      q => q.or(byPerson())) : none,
+      (q, ids) => q.eq('company_id', companyId).or(byPerson(ids)), convChunks) : none,
     want('form') ? pull('contact_form_submissions', 'created_at', EVENT_LIMIT, [['id, form_id, data, conversation_id, created_at']],
-      q => q.eq('company_id', companyId).or(byPerson())) : none,
+      (q, ids) => q.eq('company_id', companyId).or(byPerson(ids)), convChunks) : none,
     want('sale') ? pull('conversation_sales', 'created_at', EVENT_LIMIT, [['id, amount, currency, payment_method, sold_by_name, note, conversation_id, created_at']],
-      q => q.eq('company_id', companyId).or(byPerson())) : none,
+      (q, ids) => q.eq('company_id', companyId).or(byPerson(ids)), convChunks) : none,
     want('payment') && convIds.length ? pull('chat_payments', 'created_at', EVENT_LIMIT, [
       ['id, conversation_id, amount_cents, currency, description, status, payment_method, paid_at, created_at'],
       ['*'],
-    ], q => q.in('conversation_id', convIds)) : none,
+    ], (q, ids) => q.in('conversation_id', ids), convChunks) : none,
     want('link') ? (async () => {
       const links = await personLinks()
       if (!links.length) return []
       const byId: Record<string, Row> = {}
       for (const l of links) byId[l.id] = l
-      const ids = links.map(l => l.id)
-      const clicks = await fetchRows('link_clicks', [['id, link_id, clicked_at, city, region, country, device']], q => q.in('link_id', ids), { ts: 'clicked_at', limit: EVENT_LIMIT, paged: true })
+      const ids = chunk(links.map(l => l.id))
+      const clicks = await fetchRows('link_clicks', [['id, link_id, clicked_at, city, region, country, device']], (q, part) => q.in('link_id', part), { ts: 'clicked_at', limit: EVENT_LIMIT, paged: true, ids })
       if (clicks) {
         if (clicks.length >= EVENT_LIMIT) fullOldest.push(Math.min(...clicks.map(c => toMs(c.clicked_at)).filter(Number.isFinite)))
         return clicks.map(c => ({ ...c, link: byId[c.link_id] }))
       }
       // No per-click table (before V189): the link's last click is all we know.
-      const last = await pull('short_links', 'last_clicked_at', EVENT_LIMIT, [['id, last_clicked_at']], q => q.in('id', ids))
+      const last = await pull('short_links', 'last_clicked_at', EVENT_LIMIT, [['id, last_clicked_at']], (q, part) => q.in('id', part), ids)
       return last.filter(l => l.last_clicked_at).map(l => ({ id: l.id, link_id: l.id, clicked_at: l.last_clicked_at, link: byId[l.id] }))
     })() : none,
     want('media') ? pull('media_requests', 'created_at', EVENT_LIMIT, [['id, prompt, status, created_by, conversation_id, created_at']],
-      q => q.eq('company_id', companyId).or(byPerson())) : none,
+      (q, ids) => q.eq('company_id', companyId).or(byPerson(ids)), convChunks) : none,
     want('agent') ? pull('agent_runs', 'created_at', EVENT_LIMIT, [['id, role_key, status, outcome, summary, conversation_id, created_at']],
-      q => q.eq('company_id', companyId).eq('mode', 'live').in('status', ['completed', 'escalated', 'awaiting_approval']).or(byPerson())) : none,
-    want('review') ? pull('reviews', 'review_date', EVENT_LIMIT, [['id, platform, rating, review_text, review_date']], q => q.in('contact_id', contactIds)) : none,
-    want('review') ? pull('google_reviews', 'review_created_at', EVENT_LIMIT, [['id, star_rating, comment, review_created_at']], q => q.in('contact_id', contactIds)) : none,
+      (q, ids) => q.eq('company_id', companyId).eq('mode', 'live').in('status', ['completed', 'escalated', 'awaiting_approval']).or(byPerson(ids)), convChunks) : none,
+    want('review') ? pull('reviews', 'review_date', EVENT_LIMIT, [['id, platform, rating, review_text, review_date']], q => q.eq('company_id', companyId).in('contact_id', contactIds)) : none,
+    want('review') ? pull('google_reviews', 'review_created_at', EVENT_LIMIT, [['id, star_rating, comment, review_created_at']], q => q.eq('company_id', companyId).in('contact_id', contactIds)) : none,
     want('comment') ? pull('social_comments', 'commented_at', EVENT_LIMIT, [['id, platform, message, commented_at']], q => q.eq('company_id', companyId).in('contact_id', contactIds)) : none,
-    want('audit') ? pull('customer_identity_audit', 'created_at', EVENT_LIMIT, [['id, action, detail, actor_name, created_at']], q => q.in('contact_id', contactIds)) : none,
+    want('audit') ? pull('customer_identity_audit', 'created_at', EVENT_LIMIT, [['id, action, detail, actor_name, created_at']], q => q.eq('company_id', companyId).in('contact_id', contactIds)) : none,
   ])
 
   // ── Messages ───────────────────────────────────────────────────────────────
-  // A call's card in the thread (metadata.call_id) is shown as the call itself
-  // below — with its recording and summary — when this member can see calls.
+  // Some messages stand for something shown as its own card, so they're shown
+  // once, as the card: a call's card in the thread (metadata.call_id) and the
+  // AI phone agent's transcript are the call itself — with its recording and
+  // summary — when this member can see calls; a payment request is its payment
+  // and an upload request its media request when those are on this page too;
+  // and the "📅 Booked online" note (lib/booking.ts) is the booking.
   const showCalls = allowed('call')
-  const messages = (msgRows as Row[])
-    .filter(m => !(showCalls && m.metadata?.call_event && m.metadata?.call_id))
+  const asCard = (m: Row) =>
+    (showCalls && m.metadata?.call_id && (m.metadata?.call_event || m.metadata?.phone_agent))
+    || (m.message_type === 'payment' && want('payment'))
+    || (m.message_type === 'media_request' && want('media'))
+    || (m.sender_type === 'system' && m.metadata?.booking_id && want('booking') && String(m.content || '').startsWith('📅 Booked'))
+  // A team-only note (is_internal) was never sent to the customer: it's a note,
+  // not a message, like the inbox's "Team only" card.
+  const teamNotes: Row[] = [], msgList: Row[] = []
+  for (const m of msgRows as Row[]) {
+    if (asCard(m)) continue
+    if (m.is_internal) { if (readTeamNotes) teamNotes.push(m) } else if (readMsgs) msgList.push(m)
+  }
+  const messages = msgList
     .map(m => {
       const conv = convById[m.conversation_id] || {}
       // delivery_channel defaults to 'chat', so a plain 'chat' says nothing —
@@ -320,6 +382,8 @@ export async function GET(req: NextRequest) {
         conversation_id: m.conversation_id,
         sender_type: m.sender_type,
         sender_name: m.sender_name || null,
+        // AI replies are saved as the business's (sender_type 'agent', is_ai).
+        is_ai: !!m.is_ai || m.sender_type === 'ai',
         content: clip(m.content, 2000),
         channel: dc && dc !== 'chat' ? dc : String(conv.channel || dc || 'chat').toLowerCase(),
         delivery_channel: m.delivery_channel || null,
@@ -349,7 +413,7 @@ export async function GET(req: NextRequest) {
   for (const b of bookingRows as Row[]) {
     if (b.status === 'expired') continue   // a hold that was never paid for or confirmed
     const st = BOOKING_STATUS[b.status] || { label: cap(b.status), tone: 'muted' as const }
-    push({ id: 'booking-' + b.id, kind: 'booking', source: 'Booking', date: iso(b.created_at), at: iso(b.starts_at) || undefined,
+    push({ id: 'booking-' + b.id, kind: 'booking', source: 'Booking', date: iso(b.created_at), at: iso(b.starts_at) || undefined, tz: bookingTz(b),
       title: `Booked ${b.service_name || 'an appointment'}`, detail: [b.staff_name ? `with ${b.staff_name}` : '', b.location_label].filter(Boolean).join(' · '),
       status: st.label, tone: st.tone, link: '/admin/bookings?tab=bookings', conversationId: b.conversation_id || undefined })
   }
@@ -364,6 +428,10 @@ export async function GET(req: NextRequest) {
   }
   for (const n of custNoteRows as Row[]) {
     push({ id: 'cnote-' + n.id, kind: 'note', source: 'Profile', date: iso(n.created_at), title: 'Note', detail: clip(n.content, 400), link: `/admin/customers/profile?id=${n.customer_id}` })
+  }
+  for (const m of teamNotes) {
+    push({ id: 'tnote-' + m.id, kind: 'note', source: m.sender_name || 'Team', date: iso(m.created_at), title: 'Team note', detail: clip(m.content, 400) || undefined,
+      status: 'Team only', tone: 'muted', link: inboxLink(m.conversation_id), conversationId: m.conversation_id || undefined })
   }
   for (const c of callRows as Row[]) {
     const st = String(c.status || '').toLowerCase()
@@ -384,14 +452,18 @@ export async function GET(req: NextRequest) {
     push({ id: 'ticket-' + t.id, kind: 'ticket', source: 'Ticket', date: iso(t.created_at), title: `Ticket${t.ticket_number ? ` #${t.ticket_number}` : ''} opened`,
       detail: clip(t.subject, 160) || undefined, status: cap(st), tone: ['resolved', 'closed'].includes(st) ? 'good' : 'warn', link: `/admin/tickets/${t.id}` })
   }
-  if ((formRows as Row[]).length) {
-    const formIds = uniq((formRows as Row[]).map(f => f.form_id).filter(Boolean))
+  // A submission is also the first message of the conversation it opened
+  // (app/api/contact-form/submit), which shows in full with the messages: a card
+  // as well would say it twice. Only one with no conversation gets a card.
+  const forms = (formRows as Row[]).filter(f => !(readMsgs && f.conversation_id && convById[f.conversation_id]))
+  if (forms.length) {
+    const formIds = uniq(forms.map(f => f.form_id).filter(Boolean))
     const names: Record<string, string> = {}
     try {
       const { data } = await db.from('contact_forms').select('id, name').in('id', formIds)
       for (const f of data || []) names[f.id] = f.name
     } catch { /* names are a nicety */ }
-    for (const f of formRows as Row[]) {
+    for (const f of forms) {
       const d = f.data && typeof f.data === 'object' ? f.data : {}
       const said = d.message || d.enquiry || d.comments || d.notes
         || Object.values(d).filter(v => typeof v === 'string').sort((a: string, b: string) => b.length - a.length)[0]
@@ -465,12 +537,15 @@ export async function GET(req: NextRequest) {
     // Oldest → newest within the page (the order the drawer has always used).
     messages: pageMessages,
     activity: pageActivity,
-    conversations: Object.values(convById).map((c: Row) => ({ id: c.id, channel: c.channel, subject: c.subject })),
+    conversations: allowed('message') ? Object.values(convById).map((c: Row) => ({ id: c.id, channel: c.channel, subject: c.subject })) : [],
     linkedCount: linked.length,
     companyId,
     groups,
     hasMore: !!nextBefore,
     nextBefore,
+    // More conversations than one read covers: the oldest ones' messages,
+    // tasks and notes aren't in here, so the end of the list isn't the start.
+    olderConversations: allowed('message') && convIds.length >= MAX_CONVERSATIONS,
     ...(summaryP ? { summary: await summaryP } : {}),
   })
 
@@ -481,15 +556,20 @@ export async function GET(req: NextRequest) {
       canOrders ? fetchRows('orders', orderTries(ORDER_COLS), q => q.eq('company_id', companyId), { limit: 1000 }) : none,
       canOrders ? wooByEmail(WOO_COLS, { limit: 1000 }) : none,
       canOrders ? wooByPhone(WOO_COLS, { limit: 1000 }) : none,
-      canPay ? fetchRows('conversation_sales', [['amount, currency']], q => q.eq('company_id', companyId).or(byPerson()), { limit: 1000 }) : none,
-      canPay && convIds.length ? fetchRows('chat_payments', [['amount_cents, refunded_cents, currency'], ['amount_cents, currency']], q => q.in('conversation_id', convIds).eq('status', 'paid'), { limit: 1000 }) : none,
-      convIds.length ? fetchRows('conversation_tasks', [['id, done, status'], ['id, done']], q => q.in('conversation_id', convIds), { limit: 1000 }) : none,
-      convIds.length ? fetchRows('messages', [['created_at, delivery_channel, conversation_id']], q => q.in('conversation_id', convIds).neq('sender_type', 'system'), { ts: 'created_at', limit: 1 }) : none,
-      allowed('call') ? fetchRows('calls', [['created_at']], q => q.or(byPerson()), { ts: 'created_at', limit: 1 }) : none,
-      allowed('booking') ? fetchRows('bookings', [['id, starts_at, service_name, status']],
-        q => q.eq('company_id', companyId).or(byPerson()).in('status', ['pending', 'confirmed']).gte('starts_at', new Date().toISOString()), { ts: 'starts_at', ascending: true, limit: 1 }) : none,
-      allowed('review') ? fetchRows('google_reviews', [['star_rating']], q => q.in('contact_id', contactIds), { limit: 200 }) : none,
-      allowed('review') ? fetchRows('reviews', [['rating']], q => q.in('contact_id', contactIds), { limit: 200 }) : none,
+      canPay ? fetchRows('conversation_sales', [['id, amount, currency']], (q, ids) => q.eq('company_id', companyId).or(byPerson(ids)), { limit: 1000, ids: convChunks }) : none,
+      canPay && convIds.length ? fetchRows('chat_payments', [['amount_cents, refunded_cents, currency'], ['amount_cents, currency']], (q, ids) => q.in('conversation_id', ids).eq('status', 'paid'), { limit: 1000, ids: convChunks }) : none,
+      convIds.length ? fetchRows('conversation_tasks', [['id, done, status'], ['id, done']], (q, ids) => q.in('conversation_id', ids), { limit: 1000, ids: convChunks }) : none,
+      // The last message the customer sent or was sent — not a team-only note
+      // (is_internal, V188), which never reached them.
+      allowed('message') && convIds.length ? fetchRows('messages', [
+        ['created_at, delivery_channel, conversation_id', (q: Builder) => q.eq('is_internal', false)],
+        ['created_at, delivery_channel, conversation_id'],
+      ], (q, ids) => q.in('conversation_id', ids).neq('sender_type', 'system'), { ts: 'created_at', limit: 1, ids: convChunks }) : none,
+      allowed('call') ? fetchRows('calls', [['created_at']], (q, ids) => q.eq('company_id', companyId).or(byPerson(ids)), { ts: 'created_at', limit: 1, ids: convChunks }) : none,
+      allowed('booking') ? fetchRows('bookings', [['id, starts_at, timezone, service_name, status']],
+        (q, ids) => q.eq('company_id', companyId).or(byPerson(ids)).in('status', ['pending', 'confirmed']).gte('starts_at', new Date().toISOString()), { ts: 'starts_at', ascending: true, limit: 1, ids: convChunks }) : none,
+      allowed('review') ? fetchRows('google_reviews', [['star_rating']], q => q.eq('company_id', companyId).in('contact_id', contactIds), { limit: 200 }) : none,
+      allowed('review') ? fetchRows('reviews', [['rating']], q => q.eq('company_id', companyId).in('contact_id', contactIds), { limit: 200 }) : none,
     ])
 
     let currency = ''
@@ -525,11 +605,12 @@ export async function GET(req: NextRequest) {
     return {
       lifetimeValue: canOrders || canPay ? Math.round(total * 100) / 100 : null,
       currency: currency || 'AUD',
-      orderCount: counted1.length + counted2.length,
+      // Not 0 when orders are hidden from this member: that would read as "no orders".
+      orderCount: canOrders ? counted1.length + counted2.length : null,
       firstSeen: dates.length ? new Date(Math.min(...dates)).toISOString() : null,
       lastContact,
       openTasks: (tasks || []).filter((t: Row) => !(t.done || t.status === 'done')).length,
-      nextBooking: nb ? { id: nb.id, at: iso(nb.starts_at), service: nb.service_name || null, status: nb.status } : null,
+      nextBooking: nb ? { id: nb.id, at: iso(nb.starts_at), tz: bookingTz(nb), service: nb.service_name || null, status: nb.status } : null,
       avgRating: ratings.length ? Math.round((ratings.reduce((a, b) => a + b, 0) / ratings.length) * 10) / 10 : null,
       reviewCount: ratings.length,
       channels,
