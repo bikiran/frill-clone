@@ -44,6 +44,7 @@ export type TimelineEvent = {
   detail?: string
   link?: string             // where "Open" goes in the admin
   at?: string               // a second time worth showing (a booking's appointment time)
+  tz?: string               // the time zone `at` is shown in (a booking's own); else the viewer's
   status?: string
   tone?: 'good' | 'warn' | 'bad' | 'muted'
   recordingUrl?: string
@@ -54,11 +55,11 @@ export type TimelineEvent = {
 export type TimelineSummary = {
   lifetimeValue: number | null    // null when the viewer can't see orders or payments
   currency: string
-  orderCount: number
+  orderCount: number | null       // null when the viewer can't see orders
   firstSeen: string | null
   lastContact: { at: string; channel: string } | null
   openTasks: number
-  nextBooking: { id: string; at: string; service: string | null; status: string } | null
+  nextBooking: { id: string; at: string; tz: string; service: string | null; status: string } | null
   avgRating: number | null
   reviewCount: number
   channels: string[]
