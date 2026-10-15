@@ -261,15 +261,25 @@ export async function findTeamMember(db: any, ctx: TeamContext, memberId: unknow
   return data || null
 }
 
+/**
+ * An email address as an ilike pattern, so 'Jane@Roxy.Example' still matches.
+ * LIKE's wildcards (% and _, and * for PostgREST) can be part of an address, so
+ * each is sent as "any one character": 'j_smith@x' would otherwise also match
+ * 'j.smith@x', and 'j%' every address starting with j. The pattern can still
+ * match a little more than the address, so ALWAYS keep only the rows that pass
+ * sameEmail().
+ */
+export const emailPattern = (email: string) => String(email || '').replace(/[\\%_*]/g, '_')
+
+/** The same address, ignoring case and surrounding spaces. */
+export const sameEmail = (a: unknown, b: unknown) => !!lower(a) && lower(a) === lower(b)
+
 /** This workspace's rows for an email address, whatever case they were saved in. */
 export async function findTeamMembersByEmail(db: any, ctx: TeamContext, email: string): Promise<TeamRow[]> {
-  // ilike so 'Jane@Roxy.Example' still matches. LIKE's wildcards (% and _,
-  // and * for PostgREST) can be part of an address, so each is sent as "any
-  // one character" and the exact match is made here.
   const { data, error } = await db.from('team_members').select('*')
-    .eq('company_id', ctx.company.id).ilike('email', email.replace(/[\\%_*]/g, '_'))
+    .eq('company_id', ctx.company.id).ilike('email', emailPattern(email))
   if (error) throw new Error(error.message)
-  return (data || []).filter((r: TeamRow) => lower(r.email) === lower(email))
+  return (data || []).filter((r: TeamRow) => sameEmail(r.email, email))
 }
 
 /** Same, for a route: the caller comes from the request's Bearer token. */

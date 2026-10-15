@@ -34,12 +34,17 @@ function JoinTeamContent() {
 
   useEffect(() => {
     loadInvitation()
-  }, [company, email])
+  }, [company, email, inviteToken])
 
   const loadInvitation = async () => {
     try {
       if (!company || !email) {
         setError('Invalid invitation link')
+        setLoading(false)
+        return
+      }
+      if (!inviteToken) {
+        setError('This invite link is missing its code. Ask your inviter to send a new invite.')
         setLoading(false)
         return
       }
@@ -69,11 +74,13 @@ function JoinTeamContent() {
       // company_id was never filled in. It answers with whether an invitation
       // exists and its status, and nothing else: the row itself is not the
       // browser's business, and the acceptance below no longer needs its id.
+      // It only answers for this link's code, which is cleared once the invite
+      // is accepted and replaced when it's resent.
       const emailLc = decodeURIComponent(email).trim().toLowerCase()
-      const invRes = await fetch(`/api/team/invite?email=${encodeURIComponent(emailLc)}&companySlug=${encodeURIComponent(company)}`)
+      const invRes = await fetch(`/api/team/invite?email=${encodeURIComponent(emailLc)}&companySlug=${encodeURIComponent(company)}&token=${encodeURIComponent(inviteToken)}`)
       const inv = await invRes.json().catch(() => ({ found: false }))
 
-      if (!inv?.found) throw new Error('Invitation not found or expired')
+      if (!inv?.found) throw new Error('This invite link isn’t valid any more: it has been used, or a newer one was sent. If you’ve already joined, sign in; otherwise ask your inviter for a new link.')
       if (inv.status === 'active') {
         setError('You are already a member of this team')
         setLoading(false)
@@ -100,9 +107,8 @@ function JoinTeamContent() {
       // only worked because anyone could write to that table — the same
       // permission that let a stranger add themselves to any company and, via
       // is_company_member, read everything in it. The endpoint takes the access
-      // token and activates the invitation addressed to THAT session's email,
-      // so the row being claimed is decided by who you are, not by what you ask
-      // for.
+      // token and the link's code, and activates only the invitation addressed
+      // to THAT session's email with that code.
       if (session?.user && session.user.email === email) {
         const res = await fetch('/api/team/activate', {
           method: 'POST',
@@ -110,7 +116,7 @@ function JoinTeamContent() {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${session.access_token}`,
           },
-          body: JSON.stringify({ companySlug: company }),
+          body: JSON.stringify({ companySlug: company, token: inviteToken }),
         })
         const out = await res.json().catch(() => ({}))
         if (!res.ok) throw new Error(out?.error || 'Could not accept the invitation.')

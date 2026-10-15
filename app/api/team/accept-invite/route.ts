@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { createHash } from 'crypto'
+import { emailPattern, sameEmail, type TeamRow } from '@/lib/team-management'
 
 export const dynamic = 'force-dynamic'
 
@@ -38,14 +39,17 @@ export async function POST(req: NextRequest) {
       const { data: co } = await admin.from('companies').select('id').eq('slug', companySlug).maybeSingle()
       companyId = co?.id || null
     }
-    // Only a still-open invitation for this email whose code matches.
-    const { data: invites } = await admin.from('team_members').select('*')
-      .ilike('email', userEmail).eq('invite_token_hash', tokenHash)
+    // Only a still-open invitation for exactly this email whose code matches
+    // (as a LIKE pattern 'john_smith@…' would also take john.smith's invite,
+    // and the account made below for it).
+    const { data: found } = await admin.from('team_members').select('*')
+      .ilike('email', emailPattern(userEmail)).eq('invite_token_hash', tokenHash)
       .in('status', ['invited', 'pending'])
       .order('created_at', { ascending: false })
-    const invite = (invites || []).find((r: any) => companyId && r.company_id === companyId)
-      || (invites || []).find((r: any) => r.company_id == null)
-      || (invites || [])[0]
+    const invites = (found || []).filter((r: TeamRow) => sameEmail(r.email, userEmail))
+    const invite = invites.find((r: any) => companyId && r.company_id === companyId)
+      || invites.find((r: any) => r.company_id == null)
+      || invites[0]
     if (!invite) return NextResponse.json({ error: 'This invite link isn’t valid any more. Ask your inviter to send a new one.' }, { status: 404 })
     if (invite.company_id == null && companyId) {
       try { await admin.from('team_members').update({ company_id: companyId }).eq('id', invite.id) } catch {}
