@@ -5,7 +5,7 @@ import { useParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { useShowPoweredBy } from '@/lib/use-powered-by'
 import { StatusMark } from '@/components/StatusMark'
-import { captureClickRef } from '@/lib/click-ref-client'
+import { askHostForClickRef, captureClickRef } from '@/lib/click-ref-client'
 
 type Field = { key: string; label: string; type: string; required: boolean }
 
@@ -20,9 +20,13 @@ export default function PublicContactForm() {
   const rootRef = useRef<HTMLDivElement>(null)
   const showPoweredBy = useShowPoweredBy(form?.company_id)
   // The Reel / QR link that brought them here (?clv=), so the enquiry is
-  // credited to it.
+  // credited to it. Embedded on the business's website, it's on the host page
+  // and widget.js there hands it over.
   const clickRef = useRef<string | null>(null)
-  useEffect(() => { clickRef.current = captureClickRef() }, [])
+  useEffect(() => {
+    clickRef.current = captureClickRef()
+    return askHostForClickRef(id => { if (!clickRef.current) clickRef.current = id })
+  }, [])
 
   useEffect(() => {
     (async () => {

@@ -41,6 +41,14 @@ export function emailKey(raw?: string | null): string {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e) ? e : ''
 }
 
+// An email (or any typed value) as an ilike() pattern that matches only itself,
+// ignoring case. In a LIKE pattern % and _ are wildcards, and PostgREST reads *
+// as %, so a visitor typing "%" as their email would otherwise match whichever
+// contact the database returned first. Escaped, * can never act as a wildcard.
+export function ilikeExact(raw?: string | null): string {
+  return String(raw || '').replace(/[\\%_*]/g, m => '\\' + m)
+}
+
 // Pull the first email / phone out of a free-text message (a customer replying
 // with "it's sarah@gmail.com" or "0412 345 678"). Returns normalized keys plus
 // the raw match for display.

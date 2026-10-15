@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import Portal from './Portal'
+import { captureClickRef } from '@/lib/click-ref-client'
 
 export default function LiveChat({ slug: slugProp }: { slug?: string } = {}) {
   const [open, setOpen] = useState(false)
@@ -11,6 +12,10 @@ export default function LiveChat({ slug: slugProp }: { slug?: string } = {}) {
   // on the help centre / custom domain matches the widget on the customer's own
   // site (accent colour instead of the default Colvy coral).
   const [accent, setAccent] = useState<string>('')
+  // Smart links: the Reel / QR / bio link that brought this visitor here
+  // (?clv=, remembered for 7 days on this site — so the booking page on the
+  // same site gets it too), passed to the chat so it's credited to that link.
+  const [clickRef] = useState<string | null>(() => captureClickRef())
 
   // Target workspace: an explicit slug (e.g. Colvy's own support board on the
   // marketing site) wins; otherwise derive it from the board subdomain, or —
@@ -178,7 +183,7 @@ export default function LiveChat({ slug: slugProp }: { slug?: string } = {}) {
           {/* Widget iframe */}
           <div style={{ flex: 1, overflow: 'hidden', width: '100%' }}>
             <iframe
-              src={`${widgetOrigin()}/widget?embedded=true${slug ? `&slug=${slug}` : ''}`}
+              src={`${widgetOrigin()}/widget?embedded=true${slug ? `&slug=${slug}` : ''}${clickRef ? `&clv=${encodeURIComponent(clickRef)}` : ''}`}
               style={{
                 width: '100%',
                 height: '100%',

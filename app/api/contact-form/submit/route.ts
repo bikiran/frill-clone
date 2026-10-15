@@ -4,6 +4,7 @@ import { emitInboundEvent } from '@/lib/integration-hooks'
 import { emitIntegrationEvent } from '@/lib/integration-events'
 import { cleanClickRef } from '@/lib/link-channels'
 import { stitchLinkClick } from '@/lib/link-stitch'
+import { ilikeExact } from '@/lib/phone'
 
 export const dynamic = 'force-dynamic'
 
@@ -50,7 +51,7 @@ export async function POST(req: NextRequest) {
     let contactCreated = false
     try {
       if (email) {
-        const { data: ex } = await db.from('contacts').select('id').eq('company_id', companyId).ilike('email', email).limit(1)
+        const { data: ex } = await db.from('contacts').select('id').eq('company_id', companyId).ilike('email', ilikeExact(email)).limit(1)
         contactId = ex?.[0]?.id || null
       }
       if (!contactId) {

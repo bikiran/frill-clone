@@ -26,6 +26,7 @@ import { sendCustomerEmail } from '@/lib/customer-email'
 import { shortenUrl } from '@/lib/short-link'
 import { stitchLinkClick } from '@/lib/link-stitch'
 import { attributeBookingToLinks } from '@/lib/link-attribution'
+import { ilikeExact } from '@/lib/phone'
 
 const MIN = 60_000
 const HOUR = 3_600_000
@@ -356,7 +357,7 @@ async function ensureContact(db: any, companyId: string, c: { name: string; emai
       hit = data || null
     }
     if (!hit && c.email) {
-      const { data } = await db.from('contacts').select('id, name, email, phone').eq('company_id', companyId).ilike('email', c.email).limit(1)
+      const { data } = await db.from('contacts').select('id, name, email, phone').eq('company_id', companyId).ilike('email', ilikeExact(c.email)).limit(1)
       hit = data?.[0] || null
     }
     if (!hit && c.phone && tail9(c.phone).length >= 8) {
@@ -658,16 +659,16 @@ export async function confirmBooking(db: any, bookingId: string, opts: { origin:
   bk.contact_id = contactId; bk.conversation_id = conversationId
   if (b.chat_payment_id && conversationId) { try { await db.from('chat_payments').update({ conversation_id: conversationId }).eq('id', b.chat_payment_id) } catch {} }
 
-  // Smart links: credit the booking (and its price, once paid) to the link
-  // that led to it — the Reel / QR click the page was opened through, or else
-  // a tracked link this customer clicked in the last 7 days. The click gets the
-  // contact, so their orders that week are credited too. Analytics only.
+  // Smart links: credit the booking (and what was paid online, once paid) to
+  // the link that led to it — the Reel / QR click the page was opened through,
+  // or else a tracked link this customer clicked in the last 7 days. The click
+  // gets the contact, so their orders that week are credited too. Analytics only.
   try {
     const clickRef = opts.clickRef || b.source_click_id || null
     if (clickRef) await stitchLinkClick(db, { companyId: b.company_id, clickRef, contactId, contactIsNew: !!made.created, at: Date.parse(b.created_at) || Date.now() })
     await attributeBookingToLinks({
       db, companyId: b.company_id, contactId, bookingId: b.id, clickRef,
-      priceCents: b.price_cents || b.amount_due_cents || 0, paid: !!opts.paid, currency: b.currency, bookedAt: b.created_at,
+      paidCents: b.amount_due_cents || 0, paid: !!opts.paid, currency: b.currency, bookedAt: b.created_at,
     })
   } catch {}
 

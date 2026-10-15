@@ -43,6 +43,44 @@
   }
   var CLV = clickRef()
 
+  // This business's Colvy booking page and forms, embedded here (the booking /
+  // form embed code) or linked ("Book now"), can't see this page's ?clv= and
+  // keep their own storage. Hand it over: answer an embedded page that asks,
+  // and add it to links to them as they're followed. Only ever to this
+  // business's own Colvy pages.
+  function ownColvyPage(u) {
+    var h = String(u.hostname || '').toLowerCase()
+    var p = String(u.pathname || '').toLowerCase()
+    var s = String(slug).toLowerCase()
+    if (h === s + '.colvy.com') return /^\/(book|f)(\/|$)/.test(p)
+    if (h !== 'colvy.com' && h !== 'www.colvy.com') return false
+    return p === '/book/' + s || p.indexOf('/book/' + s + '/') === 0 || p.indexOf('/f/') === 0
+  }
+  function ownColvyOrigin(o) {
+    var s = String(slug).toLowerCase()
+    return o === 'https://colvy.com' || o === 'https://www.colvy.com' || o === 'https://' + s + '.colvy.com'
+  }
+  function answerClickRef(e) {
+    if (!ownColvyOrigin(e.origin) || !e.source) return
+    CLV = clickRef() || CLV
+    if (!CLV) return
+    try { e.source.postMessage({ colvy: true, type: 'clv', clv: CLV }, e.origin) } catch (err) {}
+  }
+  function decorateLink(e) {
+    try {
+      var a = e.target && e.target.closest ? e.target.closest('a[href]') : null
+      if (!a) return
+      var u = new URL(a.href, window.location.href)
+      if (!ownColvyPage(u) || u.searchParams.get('clv')) return
+      CLV = clickRef() || CLV
+      if (!CLV) return
+      u.searchParams.set('clv', CLV)
+      a.href = u.toString()
+    } catch (err) {}
+  }
+  document.addEventListener('mousedown', decorateLink, true)
+  document.addEventListener('click', decorateLink, true)
+
   var pi = parentInfo()
   var WIDGET_URL = BASE + '/widget?slug=' + encodeURIComponent(slug)
     + '&purl=' + encodeURIComponent(pi.url)
@@ -246,6 +284,8 @@
     // The iframe can ask for the current parent page (fallback if purl wasn't
     // in the initial src, e.g. cached old iframe). Reply with the real URL.
     if (d.type === 'request_parent_page') { sendPage(); return }
+    // An embedded Colvy booking page / form asking for the tracked click.
+    if (d.type === 'clv_request') { answerClickRef(e); return }
     if (d.type === 'size') { setSize(d.mode); return }
     if (d.type === 'close') { if (open) toggle(); setSize('normal'); return }
     if (d.type === 'new_message' && !open) {

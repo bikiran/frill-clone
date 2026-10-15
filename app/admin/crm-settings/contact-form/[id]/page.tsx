@@ -48,7 +48,7 @@ export default function ContactFormBuilder() {
   }
 
   const embedCode = `<iframe src="${origin}/f/${formId}" title="${form.name}" loading="lazy" style="width:100%;max-width:520px;border:none;overflow:hidden" id="colvy-form-${formId}"></iframe>
-<script>window.addEventListener("message",function(e){if(e.data&&e.data.colvyForm==="${formId}"&&e.data.height){var f=document.getElementById("colvy-form-${formId}");if(f)f.style.height=e.data.height+"px";}});</script>`
+<script>window.addEventListener("message",function(e){var f=document.getElementById("colvy-form-${formId}");if(!f)return;if(e.data&&e.data.colvyForm==="${formId}"&&e.data.height){f.style.height=e.data.height+"px";}var m=/[?&]clv=([^&#]+)/.exec(location.search);if(m&&e.data&&e.data.type==="clv_request"&&e.source===f.contentWindow){f.contentWindow.postMessage({colvy:true,type:"clv",clv:decodeURIComponent(m[1])},e.origin);}});</script>`
 
   const radius = Number(form.corner_radius ?? 12)
   const accent = form.accent_color || '#202124'

@@ -5,7 +5,7 @@ import SlotPicker, { viewerTz, tzShort } from '@/components/booking/SlotPicker'
 import { ParallaxBackdrop, MOTION_CSS } from '@/components/booking/motion'
 import AddressAutocomplete from '@/components/AddressAutocomplete'
 import { CalendarIcon, LockIcon } from '@/components/booking/icons'
-import { captureClickRef } from '@/lib/click-ref-client'
+import { askHostForClickRef, captureClickRef } from '@/lib/click-ref-client'
 
 // The public booking page: service → (staff) → time → details → pay/confirm.
 // Rendered at colvy.com/book/<slug>[/<service>], <slug>.colvy.com/book[/<service>]
@@ -104,6 +104,10 @@ export default function BookingFlow({ slug, domain, initialService }: { slug?: s
       if (pre || only) { setService(pre || only); setStep('time') }
     }).catch(() => setLoadError('Couldn’t load this page. Please refresh.'))
   }, [query, initialService])
+  // Embedded on the business's website, the Reel / QR click (?clv=) is on the
+  // host page — widget.js or the embed code there hands it over.
+  const hostClv = useRef<string | null>(null)
+  useEffect(() => askHostForClickRef(id => { hostClv.current = id }), [])
 
   const accent = data?.company.accent_color && /^#[0-9a-f]{6}$/i.test(data.company.accent_color) ? data.company.accent_color : '#ff7a6b'
   const tz = data?.timezone || 'Australia/Melbourne'
@@ -141,7 +145,7 @@ export default function BookingFlow({ slug, domain, initialService }: { slug?: s
           slug, domain, serviceId: service.id, staff, startsAt: slot, locationId: locationId || null,
           name: form.name, email: form.email, phone: form.phone, address: form.address, notes: form.notes,
           answers, timezone: viewerTz(),
-          source: ctx.src, invite: ctx.invite, clv: ctx.clv,
+          source: ctx.src, invite: ctx.invite, clv: ctx.clv || hostClv.current,
         }),
       })
       const d = await r.json()

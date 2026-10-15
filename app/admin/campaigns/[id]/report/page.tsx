@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { peekCompanyUser, resolveCompanyUser } from '@/lib/client-cache'
 import { SkeletonList } from '@/components/Skeleton'
 import { aud } from '@/lib/sms-pricing'
+import { isBookingPayment } from '@/lib/link-channels'
 
 function parseTs(d: string | null | undefined): Date | null {
   if (!d) return null
@@ -119,7 +120,9 @@ export default function CampaignReportPage() {
   const clickRate = delivered ? (uniqueClicks / delivered) * 100 : 0
 
   const paid = conversions.filter(c => c.stage === 'paid')
-  const orders = new Set(paid.map(c => c.order_id ?? c.id)).size
+  // A paid booking (book_<id>) is revenue but not an order — the same rule as
+  // Link Reports, so both pages count the same orders.
+  const orders = new Set(paid.filter(c => !isBookingPayment(c)).map(c => c.order_id ?? c.id)).size
   const revenue = paid.reduce((s, c) => s + (Number(c.revenue) || 0), 0)
   const purchasers = new Set(paid.map(c => c.contact_id).filter(Boolean))
   const conversionRate = uniqueClicks ? (orders / uniqueClicks) * 100 : 0

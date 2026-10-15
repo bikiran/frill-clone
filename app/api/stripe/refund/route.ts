@@ -78,6 +78,13 @@ export async function POST(req: NextRequest) {
     // reflects money actually kept.
     if (full) {
       try { await db.from('link_conversions').delete().eq('company_id', companyId).eq('order_id', `pay_${pay.id}`).eq('stage', 'paid') } catch {}
+      // A booking's online payment is credited as book_<booking id>
+      // (lib/link-attribution.ts) — same as refundBooking(), reverse it too.
+      try {
+        const { data: bks } = await db.from('bookings').select('id').eq('company_id', companyId).eq('chat_payment_id', pay.id).limit(5)
+        const ids = (bks || []).map((b: { id: string }) => `book_${b.id}`)
+        if (ids.length) await db.from('link_conversions').delete().eq('company_id', companyId).in('order_id', ids).eq('stage', 'paid')
+      } catch {}
     }
 
     // Post a pill + timeline event into the conversation, and let the team know.
