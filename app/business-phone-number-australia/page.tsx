@@ -5,7 +5,7 @@ import Client from './Client'
 
 export const metadata: Metadata = {
   title: 'Get a Business Phone Number Online in Australia',
-  description: 'Get a local 02, 03, 07 or 08 or an 04 mobile business number online in minutes. Calls and texts in one shared inbox, on your browser or phone, from $15 a month.',
+  description: 'Get a local 02, 03, 07 or 08 business number for calls, or an 04 mobile for calls and texts, online in minutes. Answer in one shared inbox on your browser or phone, from $15 a month.',
   alternates: { canonical: '/business-phone-number-australia' },
 }
 

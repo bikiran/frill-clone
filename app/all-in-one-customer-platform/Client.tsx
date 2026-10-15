@@ -45,7 +45,7 @@ const STAGES: Stage[] = [
   },
   {
     key: 'follow', eyebrow: '5 · The follow-up', title: 'Then it looks after them.',
-    body: 'Order updates, booking reminders, cart follow-ups and a review request go out on their own, and every review gets a reply.',
+    body: 'Order updates, booking reminders, cart follow-ups and a review request go out on their own, and new Google reviews get a reply drafted for you, or posted if you allow it.',
     bg: '#4c1658', ink: '#f6cdfa',
     poses: { order: { x: 150, y: -170, s: 0.75, o: 0.3, r: 4 }, update: { x: -70, y: -90, r: -3 }, review: { x: 60, y: 110, r: 2 } },
   },
@@ -67,12 +67,12 @@ const CARDS = {
         </div>
         <div style={{ position: 'absolute', left: 14, right: 14, bottom: 16, color: '#fff' }}>
           <div style={{ fontSize: 14, fontWeight: 900, lineHeight: 1.25 }}>The oak side table is back 🌿</div>
-          <div style={{ marginTop: 8, display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11.5, fontWeight: 800, padding: '6px 10px', borderRadius: 999, background: '#fff', color: '#111' }}><Ico name="link" size={13} /> bloom.colvy.link/oak</div>
+          <div style={{ marginTop: 8, display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11.5, fontWeight: 800, padding: '6px 10px', borderRadius: 999, background: '#fff', color: '#111' }}><Ico name="link" size={13} /> bloom.colvy.com/l/oak</div>
         </div>
       </div>
     </div>
   ),
-  link: <ActionCard icon="qr" tint="#db2777" title="bloom.colvy.link/oak" sub="Instagram Reel · Oak table restock" left="1,284 clicks · 71% mobile" right="Tracking" rightTone="#db2777" />,
+  link: <ActionCard icon="qr" tint="#db2777" title="bloom.colvy.com/l/oak" sub="Instagram Reel · Oak table restock" left="1,284 clicks · 71% mobile" right="Tracking" rightTone="#db2777" />,
   chat: <ChatCard title="Ella Murphy" sub="Live chat · from the oak table Reel" channel="Instagram" lines={[{ from: 'them', text: 'Saw your Reel! Is the oak table still $189?' }, { from: 'ai', text: 'It is! 4 left in natural oak. Want a payment link?' }]} chips={[{ text: 'Came from: Oak Reel', tone: '#be185d' }]} />,
   trail: <TrailCard title="Ella Murphy · history" steps={[
     { icon: 'link', text: 'Clicked the oak table Reel link', when: 'Mon', tone: '#db2777' },
@@ -83,7 +83,7 @@ const CARDS = {
   ]} />,
   pay: <ActionCard icon="card" tint="#4f46e5" title="Pay $189.00" sub="Oak side table · natural" left="Sent to Ella · Instagram" right="✓ Paid" />,
   order: <StatusCard title="Order #10482" badge="Paid" sub="Ella Murphy · Express post · Brunswick VIC" strip="● Linked to the oak table Reel" stripTone="#be185d" />,
-  update: <NoteCard label="SMS · Order update" text="Your oak side table is on its way! Track it here: bloom.colvy.link/t4Kp" left="Sent automatically" right="Delivered" />,
+  update: <NoteCard label="SMS · Order update" text="Your oak side table is on its way! Track it here: bloom.colvy.com/l/t4Kp" left="Sent automatically" right="Delivered" />,
   review: <ReviewCard text="Saw it on Instagram, bought it in the DMs, delivered in 3 days. Love it!" reply="Thank you Ella, enjoy!" />,
   funnel: <ReportCard title="Oak table Reel · example" figure="$2,457" caption="revenue from one link" bars={[2, 4, 7, 9, 6, 5, 8]} rows={[['Clicks', '1,284'], ['Chats started', '41'], ['Orders', '13']]} tone="#be123c" width={310} />,
 }
@@ -91,11 +91,11 @@ const ORDER = ['link', 'reel', 'chat', 'trail', 'order', 'pay', 'update', 'revie
 
 // The separate tools a business usually juggles, and what Colvy does instead.
 const STACK: { icon: string; tool: string; colvy: string; tone: string }[] = [
-  { icon: 'chat', tool: 'Shared inbox', colvy: 'Instagram, Messenger, SMS, email and live chat in one thread per customer', tone: '#2563eb' },
+  { icon: 'chat', tool: 'Shared inbox', colvy: 'Instagram, Messenger, SMS, email and live chat in one inbox, with each customer’s channels linked to one profile', tone: '#2563eb' },
   { icon: 'phone', tool: 'Business phone', colvy: 'Australian numbers, calls in the browser and app, recordings and AI summaries', tone: '#00a876' },
   { icon: 'user', tool: 'CRM', colvy: 'Every customer’s messages, calls, orders, bookings and notes in one history', tone: '#7c3aed' },
   { icon: 'cal', tool: 'Booking page', colvy: 'Online booking with deposits and SMS reminders', tone: '#0d9488' },
-  { icon: 'card', tool: 'Payment links', colvy: 'Take payment in any conversation; paid orders recorded automatically', tone: '#4f46e5' },
+  { icon: 'card', tool: 'Payment links', colvy: 'Take payment in any conversation; payments are recorded on the customer’s thread and store orders marked paid', tone: '#4f46e5' },
   { icon: 'spark', tool: 'AI assistant', colvy: 'AI agents that draft or send replies within the rules you set', tone: '#c026d3' },
   { icon: 'link', tool: 'Link tracking', colvy: 'Short links and QR codes tracked from click to sale', tone: '#db2777' },
   { icon: 'send', tool: 'SMS campaigns', colvy: 'Broadcasts to opted-in customers with clicks and sales reported', tone: '#0891b2' },
@@ -216,7 +216,7 @@ export default function PlatformClient() {
         </div>
       </section>
 
-      <CtaBand title="Put every customer in one place." sub="Start free with the inbox, then switch on phones, payments, bookings and AI as you need them." accent={CORAL} onGo={t.go} user={t.user} secondary={{ label: 'See pricing', href: '/pricing' }} />
+      <CtaBand title="Put every customer in one place." sub="Try everything free for 14 days, then keep the plan that fits. Switch on phones, payments, bookings and AI as you need them." accent={CORAL} onGo={t.go} user={t.user} secondary={{ label: 'See pricing', href: '/pricing' }} />
       <MarketingFooter dark={t.dark} />
     </div>
   )

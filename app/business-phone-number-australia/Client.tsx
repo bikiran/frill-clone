@@ -50,7 +50,7 @@ function NumberPicker({ dark }: { dark: boolean }) {
     <div style={{ width: '100%', maxWidth: 440, borderRadius: 24, background: panel, border: `1px solid ${line}`, boxShadow: '0 40px 90px -30px rgba(0,80,60,0.45)', overflow: 'hidden', color: ink }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '16px 18px', borderBottom: `1px solid ${line}` }}>
         <span style={{ width: 34, height: 34, borderRadius: 10, background: GREEN + '1c', color: GREEN, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Ico name="phone" /></span>
-        <div><div style={{ fontWeight: 900, fontSize: 15 }}>Get a business number</div><div style={{ fontSize: 12, color: quiet }}>Calls & SMS · $15/month</div></div>
+        <div><div style={{ fontWeight: 900, fontSize: 15 }}>Get a business number</div><div style={{ fontSize: 12, color: quiet }}>$15/month per number</div></div>
       </div>
       <div style={{ display: 'flex', gap: 6, padding: '14px 18px 4px', flexWrap: 'wrap' }}>
         {CITIES.map((x, i) => (
@@ -69,7 +69,7 @@ function NumberPicker({ dark }: { dark: boolean }) {
         })}
         <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderRadius: 14, background: phase === 2 ? GREEN : (dark ? 'rgba(255,255,255,0.04)' : '#f6f7f9'), color: phase === 2 ? '#fff' : quiet, transition: 'all .45s cubic-bezier(.16,1,.3,1)' }}>
           <Ico name="check" />
-          <span style={{ fontSize: 13.5, fontWeight: 800 }}>{phase === 2 ? `${c.numbers[0]} is ready for calls and texts` : 'Pick a number to continue'}</span>
+          <span style={{ fontSize: 13.5, fontWeight: 800 }}>{phase === 2 ? `${c.numbers[0]} is ready${c.code === '04' ? ' for calls and texts' : ' for calls'}` : 'Pick a number to continue'}</span>
         </div>
       </div>
     </div>
@@ -85,13 +85,13 @@ const STAGES: Stage[] = [
   },
   {
     key: 'ring', eyebrow: 'Answer anywhere', title: 'It rings in your browser and on your phone.',
-    body: 'Calls ring the right person first, then the rest of the team, on the web and in the Colvy app for iPhone and Android.',
+    body: 'Calls ring everyone who’s available at once, on the web and in the Colvy app for iPhone and Android. Whoever answers first takes it.',
     bg: '#0f3d3e', ink: '#ccfbf1',
     poses: { numbers: { x: -150, y: -170, s: 0.75, o: 0.3, r: -4 }, incoming: { x: 20, y: -40 }, app: { x: -40, y: 150, r: -2 } },
   },
   {
     key: 'text', eyebrow: 'Calls and texts', title: 'Texts land in the same thread.',
-    body: 'Customers can text the same number. Calls and SMS sit together in the shared inbox, next to the customer’s orders and history.',
+    body: 'Customers can text your 04 mobile number. Calls and SMS sit together in the shared inbox, next to the customer’s orders and history.',
     bg: '#1f2a6b', ink: '#cdd8ff',
     poses: { incoming: { x: -150, y: -170, s: 0.75, o: 0.3, r: -4 }, thread: { x: 10, y: -20 } },
   },
@@ -103,11 +103,11 @@ const STAGES: Stage[] = [
   },
 ]
 const CARDS = {
-  numbers: <ListCard title="Your numbers" badge="2 numbers" rows={[{ name: 'Richmond store', sub: '(03) 5550 2184 · calls & SMS', tag: 'Local', tone: '#047857', hot: true }, { name: 'Sales mobile', sub: '0491 570 156 · calls & SMS', tag: 'Mobile', tone: '#0369a1' }]} width={320} />,
-  form: <StatusCard title="Business details" badge="Submitted" badgeTone="#047857" sub="Business name, address and proof of address" strip="Checked before the number goes live" stripTone="#047857" width={290} />,
-  incoming: <ActionCard icon="phone" tint="#047857" title="Incoming call · (03) 5550 2184" sub="Mia Chen · returning customer · 3 orders" left="Ringing Sam, then everyone" right="Answer" rightTone="#047857" width={300} />,
+  numbers: <ListCard title="Your numbers" badge="2 numbers" rows={[{ name: 'Richmond store', sub: '(03) 5550 2184 · calls', tag: 'Local', tone: '#047857', hot: true }, { name: 'Sales mobile', sub: '0491 570 156 · calls & SMS', tag: 'Mobile', tone: '#0369a1' }]} width={320} />,
+  form: <StatusCard title="Business details" badge="Submitted" badgeTone="#047857" sub="Business name, address and proof of address" strip="Needed by Australian rules" stripTone="#047857" width={290} />,
+  incoming: <ActionCard icon="phone" tint="#047857" title="Incoming call · (03) 5550 2184" sub="Mia Chen · returning customer · 3 orders" left="Ringing 3 teammates" right="Answer" rightTone="#047857" width={300} />,
   app: <Msg ch="Phone" color={CHIP.Phone} who="Answered on iPhone" text="Tom picked up in the Colvy app · 3:12" time="now" />,
-  thread: <ChatCard title="Mia Chen" sub="Calls & SMS · (03) 5550 2184" channel="SMS" lines={[{ from: 'them', text: 'Thanks for the call! Can you text me the address?' }, { from: 'us', text: '12 Swan St, Richmond. See you Saturday!' }]} chips={[{ text: 'Call · 3:12 earlier', tone: '#0369a1' }]} />,
+  thread: <ChatCard title="Mia Chen" sub="Calls & SMS · 0491 570 156" channel="SMS" lines={[{ from: 'them', text: 'Thanks for the call! Can you text me the address?' }, { from: 'us', text: '12 Swan St, Richmond. See you Saturday!' }]} chips={[{ text: 'Call · 3:12 earlier', tone: '#0369a1' }]} />,
   summary: <StatusCard title="Call summary" badge="AI" badgeTone="#7c3aed" sub="Mia Chen · 3:12 · recorded" strip="Wants a 4ft tank set up; coming in Saturday to pick filters." stripTone="#7c3aed" width={300} />,
   voicemail: <NoteCard label="Voicemail · transcribed" labelTone="#7c3aed" text="Hi, it’s Leo. Just checking if the order’s ready for pickup tomorrow, thanks." left="0:18 · after hours" right="Reply sent" />,
 }
@@ -115,11 +115,11 @@ const ORDER = ['form', 'numbers', 'app', 'incoming', 'thread', 'voicemail', 'sum
 
 const FEATURES: { icon: string; title: string; body: string }[] = [
   { icon: 'phone', title: 'Calls in the browser and app', body: 'Answer and make calls from Colvy on the web, or the iPhone and Android app. No desk phone needed.' },
-  { icon: 'chat', title: 'SMS on the same number', body: 'Landline and mobile numbers both send and receive texts, straight into the shared inbox.' },
-  { icon: 'user', title: 'Know who’s calling', body: 'Callers are matched to their customer record, so you see their name, orders and past chats as it rings.' },
-  { icon: 'bell', title: 'Ring the right people', body: 'Each caller’s usual contact is tried first, then everyone available. Choose how long it rings before voicemail.' },
+  { icon: 'chat', title: 'Texts on a mobile number', body: 'An 04 mobile number sends and receives texts, straight into the shared inbox.' },
+  { icon: 'user', title: 'Know who’s calling', body: 'Callers are matched to their customer record, so as it rings you see their name, order count and spend, and where they’ve contacted you before.' },
+  { icon: 'bell', title: 'Ring the whole team', body: 'Every available teammate’s browser and phone rings at once. Choose how long it rings before voicemail.' },
   { icon: 'form', title: 'Recordings and AI summaries', body: 'Calls are recorded and transcribed, with a short AI summary saved on the conversation.' },
-  { icon: 'store', title: 'A number per location', body: 'Add a number for each store or team and assign it to that location. All answered from one inbox.' },
+  { icon: 'store', title: 'A number per location', body: 'Add a number for each store or location and assign it there. Every number is answered from the same inbox.' },
 ]
 
 export default function BusinessNumberClient() {
@@ -148,7 +148,7 @@ export default function BusinessNumberClient() {
         <div className="bn-hero-copy" style={{ position: 'relative', minWidth: 0 }}>
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '7px 14px', borderRadius: 999, background: GREEN + '16', color: GREEN, fontSize: 13, fontWeight: 800 }}>Australian business numbers</span>
           <h1 style={{ fontSize: 'clamp(40px, 5.8vw, 74px)', fontWeight: 900, letterSpacing: '-0.045em', lineHeight: 0.99, margin: '20px 0 22px' }}>Get a business phone number online, in minutes.</h1>
-          <p style={{ fontSize: 'clamp(17px, 1.6vw, 20px)', lineHeight: 1.6, color: t.muted, maxWidth: 560, margin: '0 0 30px' }}>Choose a local 02, 03, 07 or 08 number or an 04 mobile, and answer calls and texts from your browser or phone, in the same inbox as the rest of your customers. <b style={{ color: t.text }}>$15 a month</b> per number.</p>
+          <p style={{ fontSize: 'clamp(17px, 1.6vw, 20px)', lineHeight: 1.6, color: t.muted, maxWidth: 560, margin: '0 0 30px' }}>Choose a local 02, 03, 07 or 08 number for calls, or an 04 mobile for calls and texts, and answer from your browser or phone, in the same inbox as the rest of your customers. <b style={{ color: t.text }}>$15 a month</b> per number.</p>
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
             <button onClick={t.go} style={t.btnPrimary}>{t.user ? 'Get a number in Colvy' : 'Get your number'} <Arrow /></button>
             <a href="#how" style={t.btnGhost}>How it works</a>
@@ -161,29 +161,30 @@ export default function BusinessNumberClient() {
 
       {/* NUMBER TYPES */}
       <section style={{ maxWidth: 980, margin: '0 auto', padding: '30px 24px 40px' }}>
-        <Reveal><SectionHead eyebrow="Number types" accent={GREEN} muted={t.muted} title="Local or mobile. Calls and texts on both." /></Reveal>
+        <Reveal><SectionHead eyebrow="Number types" accent={GREEN} muted={t.muted} title="A local number for calls. A mobile for calls and texts." sub="Many businesses have both: a local number customers recognise, and a mobile for texting." /></Reveal>
         <Reveal delay={0.05}>
           <div style={{ borderRadius: 22, border: `1px solid ${t.cardBorder}`, overflow: 'hidden', background: t.cardBg }}>
             <table className="bn-types" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 15 }}>
               <thead>
                 <tr style={{ background: t.soft }}>
-                  {['Number', 'Area', 'Calls & SMS', 'Price'].map(h => <th key={h} style={{ textAlign: 'left', padding: '14px 18px', fontSize: 12.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: t.muted }}>{h}</th>)}
+                  {['Number', 'Area', 'Calls', 'SMS', 'Price'].map(h => <th key={h} style={{ textAlign: 'left', padding: '14px 18px', fontSize: 12.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: t.muted }}>{h}</th>)}
                 </tr>
               </thead>
               <tbody>
-                {[
-                  ['02 landline', 'Sydney, Canberra and NSW', true, '$15/month'],
-                  ['03 landline', 'Melbourne, Hobart, Victoria and Tasmania', true, '$15/month'],
-                  ['07 landline', 'Brisbane, Gold Coast and Queensland', true, '$15/month'],
-                  ['08 landline', 'Perth, Adelaide and Darwin', true, '$15/month'],
-                  ['04 mobile', 'Anywhere in Australia', true, '$15/month'],
-                  ['1300 / 1800', 'National numbers', false, 'Not available yet'],
-                ].map(([n, a, ok, p]) => (
-                  <tr key={n as string} style={{ borderTop: `1px solid ${t.cardBorder}` }}>
+                {([
+                  ['02 landline', 'Sydney, Canberra and NSW', true, false, '$15/month'],
+                  ['03 landline', 'Melbourne, Hobart, Victoria and Tasmania', true, false, '$15/month'],
+                  ['07 landline', 'Brisbane, Gold Coast and Queensland', true, false, '$15/month'],
+                  ['08 landline', 'Perth, Adelaide and Darwin', true, false, '$15/month'],
+                  ['04 mobile', 'Anywhere in Australia', true, true, '$15/month'],
+                  ['1300 / 1800', 'National numbers', false, false, 'Not available yet'],
+                ] as [string, string, boolean, boolean, string][]).map(([n, a, calls, sms, p]) => (
+                  <tr key={n} style={{ borderTop: `1px solid ${t.cardBorder}` }}>
                     <td style={{ padding: '15px 18px', fontWeight: 900 }}>{n}</td>
                     <td style={{ padding: '15px 18px', color: t.muted }}>{a}</td>
-                    <td style={{ padding: '15px 18px', color: ok ? GREEN : t.muted, fontWeight: 800 }}>{ok ? '✓ Yes' : '—'}</td>
-                    <td style={{ padding: '15px 18px', fontWeight: 700, color: ok ? t.text : t.muted }}>{p}</td>
+                    <td style={{ padding: '15px 18px', color: calls ? GREEN : t.muted, fontWeight: 800 }}>{calls ? '✓' : '—'}</td>
+                    <td style={{ padding: '15px 18px', color: sms ? GREEN : t.muted, fontWeight: 800 }}>{sms ? '✓' : '—'}</td>
+                    <td style={{ padding: '15px 18px', fontWeight: 700, color: calls ? t.text : t.muted }}>{p}</td>
                   </tr>
                 ))}
               </tbody>
@@ -198,8 +199,8 @@ export default function BusinessNumberClient() {
         <div className="bn-grid3" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0,1fr))', gap: 16 }}>
           {[
             { n: 1, title: 'Pick your number', body: 'In Colvy, choose a city for a local landline or pick a mobile, then choose from the numbers available.' },
-            { n: 2, title: 'Pay and add your details', body: 'Pay $15 a month by card. Australian rules need your business name, street address and proof of address, so we ask in one short form.' },
-            { n: 3, title: 'Start calling and texting', body: 'Once your details are checked the number is connected. Calls and texts arrive in your shared inbox, browser and app.' },
+            { n: 2, title: 'Pay and add your details', body: 'Australian rules need your business name, street address and proof of address, so we ask in one short form. Then pay $15 a month by card.' },
+            { n: 3, title: 'Start calling and texting', body: 'Your number is set up straight after payment. Calls (and texts on a mobile number) arrive in your shared inbox, browser and app.' },
           ].map((s, i) => (
             <Reveal key={s.n} delay={i * 0.07}>
               <div className="bn-card" style={{ height: '100%', boxSizing: 'border-box', padding: '26px 24px', borderRadius: 22, background: t.cardBg, border: `1px solid ${t.cardBorder}` }}>
@@ -240,11 +241,11 @@ export default function BusinessNumberClient() {
             <div style={{ padding: '28px 26px', borderRadius: 24, background: `linear-gradient(150deg, ${GREEN}, #0f3d3e)`, color: '#fff' }}>
               <div style={{ fontSize: 13, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', opacity: 0.85 }}>Each number</div>
               <div style={{ fontSize: 52, fontWeight: 900, letterSpacing: '-0.04em', margin: '6px 0 4px' }}>$15<span style={{ fontSize: 18, fontWeight: 700, opacity: 0.85 }}> AUD/month</span></div>
-              <p style={{ fontSize: 15, lineHeight: 1.6, opacity: 0.9, margin: 0 }}>Billed monthly. Cancel any time.</p>
+              <p style={{ fontSize: 15, lineHeight: 1.6, opacity: 0.9, margin: 0 }}>Billed monthly. No lock-in contract.</p>
             </div>
             <div style={{ padding: '28px 26px', borderRadius: 24, background: t.cardBg, border: `1px solid ${t.cardBorder}` }}>
               <div style={{ fontSize: 13, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: t.muted }}>Calls and texts</div>
-              <p style={{ fontSize: 15.5, lineHeight: 1.65, margin: '10px 0 14px' }}>Calling and SMS run on Colvy’s <b>Inbox</b> or <b>Everything</b> plan, with 3,000 SMS a month included. Call minutes are billed on usage.</p>
+              <p style={{ fontSize: 15.5, lineHeight: 1.65, margin: '10px 0 14px' }}>Calling and SMS run on Colvy’s <b>Inbox</b> or <b>Everything</b> plan, with 3,000 SMS a month included. For high-volume calling, contact us for call rates.</p>
               <a href="/pricing" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 800, color: GREEN, textDecoration: 'none' }}>See plans and pricing <Arrow size={14} /></a>
             </div>
           </div>
@@ -259,7 +260,7 @@ export default function BusinessNumberClient() {
         </div>
       </section>
 
-      <CtaBand title="Get your business number today." sub="Sign up, pick a number and start answering calls and texts from one inbox." accent={GREEN} onGo={t.go} user={t.user} secondary={{ label: 'Explore Colvy Phones', href: '/phones' }} />
+      <CtaBand title="Get your business number today." sub="Sign up, pick a number and start answering calls from one inbox, alongside every other customer conversation." accent={GREEN} onGo={t.go} user={t.user} secondary={{ label: 'Explore Colvy Phones', href: '/phones' }} />
       <MarketingFooter dark={t.dark} />
     </div>
   )
