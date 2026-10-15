@@ -29,7 +29,6 @@ import { alertCall } from '@/lib/call-alerts'
 import { setCallPreview } from '@/lib/call-card'
 import { queueMissedCallText } from '@/lib/missed-call-text'
 import { emitCallEvent } from '@/lib/integration-hooks'
-import { getGoogleToken } from '@/lib/google-business'
 import {
   cleanReceptionist, receptionistLimits, defaultCallSetup, phoneToolNames, callGreeting, greetingSaysAi, phoneTail,
   PHONE_LOOKUPS, type ReceptionistSettings, type PhoneCallSetup, type AnswerReason,
@@ -134,6 +133,12 @@ export function closedFromHours(h: BusinessHours, at?: Date): boolean | null {
 const HOURS_ACTION = 'hours'
 const HOURS_REFRESH_MS = 15 * 60_000     // older: read Google again once the call is decided
 const HOURS_TRUST_MS = 24 * 3600_000     // older: ask Google first, as when there's no copy
+// Older: no longer stands in for a Google that can't be read. The copy goes and
+// the hours saved in Colvy decide, as before there was a copy. A connection
+// that is broken for good (a revoked token) looks just like a passing failure,
+// so this is what stops an old "closed" from deciding every call until the
+// owner reconnects Google.
+const HOURS_STANDIN_MS = 3 * 24 * 3600_000
 
 async function savedGoogleHours(db: Db, companyId: string): Promise<{ hours: BusinessHours; at: number } | null> {
   try {
@@ -147,24 +152,37 @@ async function savedGoogleHours(db: Db, companyId: string): Promise<{ hours: Bus
 
 /**
  * Google gave no hours: is that because it's connected but can't be read right
- * now (a token that won't refresh, or the connection itself can't be read)?
- * Those look just like "not connected" from the hours alone.
+ * now (its token just failed to refresh, or the connection itself can't be
+ * read)? Those look just like "not connected" from the hours alone. Told from
+ * the connection's row as the hours read left it, so Google isn't asked for a
+ * token a second time while the caller hears ringing: a token that worked, or
+ * was just refreshed, is still in date there. Without a refresh token, or
+ * without the app's Google keys, a token never refreshes: Google is gone, not
+ * down.
  */
 async function googleDown(db: Db, companyId: string): Promise<boolean> {
   try {
-    if (await getGoogleToken(companyId, db)) return false   // connected and working: it really has no hours
-    const { data, error } = await db.from('google_business_accounts').select('id').eq('company_id', companyId).eq('is_active', true).limit(1)
-    return !!error || !!data?.length
+    const { data, error } = await db.from('google_business_accounts').select('access_token, refresh_token, token_expires_at')
+      .eq('company_id', companyId).eq('is_active', true).limit(1)
+    if (error) return true
+    const acc = data?.[0]
+    if (!acc) return false                                      // not connected
+    if (acc.access_token && Date.parse(acc.token_expires_at || '') > Date.now()) return false   // connected and working: it really has no hours
+    return !!acc.refresh_token && !!(process.env.GOOGLE_CLIENT_ID || process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID) && !!process.env.GOOGLE_CLIENT_SECRET
   } catch { return true }
 }
 
+/** Can a copy of Google's hours read at `copyAt` still stand in for a Google that can't be read? */
+const copyStandsIn = (copyAt: number) => Date.now() - copyAt < HOURS_STANDIN_MS
+
 /**
  * The hours as they are now (Google first). Google's are kept for next time.
- * A business whose hours no longer come from Google loses its copy, but not
- * while Google is connected and just can't be read: then the hours come back
- * marked googleUnreachable, so the copy decides.
+ * A business whose hours no longer come from Google loses its copy (read at
+ * `copyAt`), but not while Google is connected and just can't be read and the
+ * copy is recent enough to stand in: then the hours come back marked
+ * googleUnreachable, so the copy decides.
  */
-async function readHoursNow(db: Db, companyId: string, hadCopy: boolean): Promise<BusinessHours | null> {
+async function readHoursNow(db: Db, companyId: string, copyAt: number | null): Promise<BusinessHours | null> {
   try {
     const hours = await loadBusinessHours(db, companyId)
     if (hours.places.some(p => p.source === 'google')) {
@@ -174,8 +192,8 @@ async function readHoursNow(db: Db, companyId: string, hadCopy: boolean): Promis
         .eq('company_id', companyId).eq('role_key', 'phone').eq('action_key', HOURS_ACTION).limit(1)
       if (existing?.[0]) await db.from('agent_policies').update(row).eq('id', existing[0].id)
       else await db.from('agent_policies').insert({ company_id: companyId, role_key: 'phone', action_key: HOURS_ACTION, ...row })
-    } else if (hadCopy && !hours.googleUnreachable) {
-      if (await googleDown(db, companyId)) return { ...hours, googleUnreachable: true }
+    } else if (copyAt !== null) {
+      if (copyStandsIn(copyAt) && (hours.googleUnreachable || await googleDown(db, companyId))) return { ...hours, googleUnreachable: true }
       await db.from('agent_policies').delete().eq('company_id', companyId).eq('role_key', 'phone').eq('action_key', HOURS_ACTION)
     }
     return hours
@@ -189,26 +207,27 @@ async function readHoursNow(db: Db, companyId: string, hadCopy: boolean): Promis
  * Is the business closed right now? From the copy of Google's hours (with
  * holiday and special hours) when there's a recent one, so nobody waits on
  * Google; the copy is then refreshed after the call is decided. Without one,
- * Google's hours if they come back quickly, else the last copy, else the hours
- * saved in Colvy. null when it can't tell (no hours anywhere): the call is then
- * handled as if open.
+ * Google's hours if they come back quickly, else the last copy if it's still
+ * recent enough to stand in, else the hours saved in Colvy. null when it can't
+ * tell (no hours anywhere): the call is then handled as if open.
  */
 export async function businessClosedNow(db: Db, companyId: string, opts: { googleWaitMs?: number } = {}): Promise<boolean | null> {
   try {
     const saved = await savedGoogleHours(db, companyId)
     const age = saved ? Date.now() - saved.at : Infinity
     if (saved && age < HOURS_TRUST_MS) {
-      if (age > HOURS_REFRESH_MS) inBackground(() => readHoursNow(db, companyId, true))
+      if (age > HOURS_REFRESH_MS) inBackground(() => readHoursNow(db, companyId, saved.at))
       return closedFromHours(saved.hours)
     }
-    const now = readHoursNow(db, companyId, !!saved)
+    const now = readHoursNow(db, companyId, saved ? saved.at : null)
     inBackground(() => now)   // still saved when Google answers after the caller stopped waiting
     let timer: ReturnType<typeof setTimeout> | undefined
     const late = new Promise<null>(r => { timer = setTimeout(() => r(null), opts.googleWaitMs ?? 2500) })
     const h = await Promise.race([now, late])
     if (timer) clearTimeout(timer)
     if (h && !h.googleUnreachable) return closedFromHours(h)
-    return closedFromHours(saved?.hours || h || await loadBusinessHours(db, companyId, { google: false }))
+    const standIn = saved && copyStandsIn(saved.at) ? saved.hours : null
+    return closedFromHours(standIn || h || await loadBusinessHours(db, companyId, { google: false }))
   } catch { return null }
 }
 
