@@ -1,11 +1,20 @@
-import { statusMeta } from '@/lib/orders'
-import { requireCompanyAccess } from '@/lib/company-access'
+import { statusMeta, channelMeta, displayStatus } from '@/lib/orders'
+import { requireCompanyAccess, isStaffRow } from '@/lib/company-access'
+import { canUseFeature, hasFullAccess } from '@/lib/permissions'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { linkedContacts } from '@/lib/identity'
 import { phoneKey, emailKey } from '@/lib/phone'
+import { ROLE_NAMES } from '@/lib/agent/results'
+import { cutPage, toMs, KIND_GROUP, TIMELINE_GROUP_KEYS, type TimelineEvent, type TimelineGroup, type TimelineSummary } from '@/lib/customer-timeline'
 
 export const dynamic = 'force-dynamic'
+
+// Rows from the service-role client are untyped, and so is its query builder.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Row = Record<string, any>
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Builder = any
 
 const admin = () => createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -13,121 +22,517 @@ const admin = () => createClient(
   { auth: { autoRefreshToken: false, persistSession: false } }
 )
 
-// GET /api/contacts/timeline?contactId=…
+// GET /api/contacts/timeline?contactId=…[&before=ISO][&types=orders,calls][&summary=1]
 //
-// Every message this person has exchanged, across EVERY channel — live chat,
-// SMS, email, Messenger, Instagram — merged into one time-ordered stream. The
-// person may be several linked contacts (identity_group_id); we gather all
-// their conversations and interleave the messages, tagging each with its
-// channel and which conversation it belongs to.
+// Everything that has happened with one customer, newest first: messages on
+// every channel (live chat, SMS, email, Messenger, Instagram, WhatsApp) plus
+// orders from every sales channel, bookings, calls, tasks and notes, tickets,
+// contact-form submissions, recorded sales, payments, link clicks, media
+// requests, AI agent actions, reviews, comments and identity changes.
+//
+// The person may be several linked contacts (identity_group_id); we gather all
+// of them. A contact that isn't linked to anyone is simply itself.
+//
+//   before   — "Load older": only things older than this time (the
+//              nextBefore the previous page returned).
+//   types    — only these filter groups (lib/customer-timeline.ts), so a
+//              filter chip reads just what it shows.
+//   summary  — 1 adds the at-a-glance numbers (first page only).
+//
+// Each kind needs the same Team permission as the page it links to (orders,
+// calls, bookings…), so a restricted member never sees more here than they
+// could open.
+
+const MSG_LIMIT = 120          // messages per page
+const EVENT_LIMIT = 40         // rows per other source per page
+const PAGE_SIZE = 160          // most items one page shows
+const MAX_CONVERSATIONS = 250  // keeps the conversation id list a sensible URL length
+
+// Team permission (lib/permissions feature keys) each kind needs — any one of
+// them. Kinds not listed (messages, notes, tasks, forms, media requests,
+// identity changes) are part of the customer record itself, which the inbox and
+// the profile already show to anyone allowed in.
+const NEEDS: Record<string, string[]> = {
+  order: ['orders'], sale: ['payments'], payment: ['payments'], call: ['calls'], booking: ['bookings'],
+  ticket: ['tickets'], review: ['reviews'], comment: ['social'], agent: ['agents'], link: ['links', 'link_reports'],
+}
+
+// What this member may see, from their Team permissions. Owners, admins and
+// the platform admin (who passed the access check without being on the team)
+// see everything. If the lookup fails, the gated kinds stay hidden.
+async function memberCan(db: Builder, companyId: string, userId?: string): Promise<(feature: string) => boolean> {
+  const all = () => true
+  if (!userId) return all
+  try {
+    const [{ data: co }, { data: rows, error }] = await Promise.all([
+      db.from('companies').select('owner_id').eq('id', companyId).maybeSingle(),
+      db.from('team_members').select('role, status, permissions').eq('company_id', companyId).eq('user_id', userId).limit(5),
+    ])
+    if (co?.owner_id === userId) return all
+    if (error) return () => false
+    const row = (rows || []).find(isStaffRow)
+    if (!row) return all
+    const role = String(row.role || 'viewer').toLowerCase()
+    if (hasFullAccess(role)) return all
+    const perms = row.permissions && typeof row.permissions === 'object' ? row.permissions : null
+    return (f: string) => canUseFeature(role, perms, f)
+  } catch { return () => false }
+}
+
+const uniq = <T,>(xs: T[]) => Array.from(new Set(xs))
+const clip = (s: unknown, n: number) => { const t = String(s ?? '').trim(); return t.length > n ? t.slice(0, n - 1).trimEnd() + '…' : t }
+const iso = (v: unknown) => { const ms = toMs(v); return Number.isFinite(ms) ? new Date(ms).toISOString() : '' }
+const money = (n: unknown, cur?: string) => {
+  const v = Number(n); if (!Number.isFinite(v)) return ''
+  try { return new Intl.NumberFormat('en-AU', { style: 'currency', currency: String(cur || 'aud').toUpperCase() }).format(v) } catch { return `$${v.toFixed(2)}` }
+}
+const cap = (s: unknown) => { const t = String(s || '').replace(/[_-]+/g, ' ').trim(); return t ? t[0].toUpperCase() + t.slice(1) : '' }
+// Values going into a PostgREST or()/in() list: no list punctuation.
+const listSafe = (s: string) => s.replace(/[,()"\\]/g, '')
+// …and into an ilike pattern: % and _ are wildcards there, so escape them.
+const likeSafe = (s: string) => listSafe(s).replace(/[%_]/g, m => '\\' + m)
+const hostOf = (u: unknown) => { try { return new URL(String(u)).hostname.replace(/^www\./, '') } catch { return '' } }
+const mmss = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+
+const BOOKING_STATUS: Record<string, { label: string; tone: TimelineEvent['tone'] }> = {
+  pending: { label: 'Pending', tone: 'warn' }, confirmed: { label: 'Confirmed', tone: 'good' }, completed: { label: 'Completed', tone: 'good' },
+  cancelled: { label: 'Cancelled', tone: 'muted' }, no_show: { label: 'No-show', tone: 'bad' },
+}
+const MISSED = ['missed', 'no-answer', 'no_answer', 'failed', 'busy', 'canceled', 'cancelled']
+const AGENT_OUTCOME: Record<string, string> = {
+  replied: 'replied', escalated: 'handed it to the team', needs_info: 'asked for more information',
+  refused: 'declined', incomplete: 'didn’t finish',
+}
+
 export async function GET(req: NextRequest) {
-  const contactId = new URL(req.url).searchParams.get('contactId')
+  const sp = req.nextUrl.searchParams
+  const contactId = sp.get('contactId')
   if (!contactId) return NextResponse.json({ error: 'contactId required' }, { status: 400 })
+  let before: string | null = null
+  if (sp.get('before')) {
+    const ms = toMs(sp.get('before'))
+    if (!Number.isFinite(ms)) return NextResponse.json({ error: 'before must be a date' }, { status: 400 })
+    before = new Date(ms).toISOString()
+  }
+  const wanted = (sp.get('types') || '').split(',').map(s => s.trim()).filter(g => (TIMELINE_GROUP_KEYS as string[]).includes(g)) as TimelineGroup[]
+  const wantSummary = sp.get('summary') === '1' && !before
 
-  const db = admin()
+  const db: Builder = admin()
   // Members of the contact's workspace only.
-  {
-    const { data: owner } = await db.from('contacts').select('company_id').eq('id', contactId).maybeSingle()
-    if (!owner || !(await requireCompanyAccess(req, db, owner.company_id)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
-  }
+  const { data: owner } = await db.from('contacts').select('id, company_id, name, email, phone, channels_seen, created_at').eq('id', contactId).maybeSingle()
+  const access: { ok: boolean; userId?: string } = owner ? await requireCompanyAccess(req, db, owner.company_id) : { ok: false }
+  if (!owner || !access.ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+  const companyId: string = owner.company_id
+  const can = await memberCan(db, companyId, access.userId)
+  // The history belongs to the customer record: the inbox or Contacts.
+  if (!can('contacts') && !can('inbox')) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+  const allowed = (kind: string) => { const f = NEEDS[kind]; return !f || f.some(can) }
+  const want = (kind: string) => allowed(kind) && (wanted.length === 0 || wanted.includes(KIND_GROUP[kind]))
 
-  // All contacts that are the same person (falls back to just this one).
-  const linked = await linkedContacts(db, contactId)
-  const contactIds = linked.length ? linked.map((c: any) => c.id) : [contactId]
+  // Everyone who is this person: their linked contacts in this workspace, or
+  // just this contact when it isn't linked to anyone.
+  const linked = (await linkedContacts(db, contactId).catch(() => [] as Row[])).filter((c: Row) => c.company_id === companyId)
+  const people: Row[] = linked.length ? linked : [owner]
+  if (!people.some(p => p.id === owner.id)) people.push(owner)
+  const contactIds: string[] = people.map(p => p.id)
+  const emails = uniq(people.map(c => emailKey(c.email)).filter(Boolean)).map(listSafe)
+  const phones = uniq(people.map(c => phoneKey(c.phone)).filter(k => k.length >= 8))
 
-  // Their conversations.
-  const { data: convs } = await db.from('conversations')
-    .select('id, channel, subject').in('contact_id', contactIds)
-  const convById: Record<string, any> = {}
-  for (const c of convs || []) convById[c.id] = c
+  // Their conversations — newest first. A customer with only orders or
+  // reviews simply has none; everything else still shows.
+  const { data: convRows } = await db.from('conversations')
+    .select('id, channel, subject, created_at').eq('company_id', companyId).in('contact_id', contactIds)
+    .order('last_message_at', { ascending: false, nullsFirst: false }).limit(MAX_CONVERSATIONS)
+  const convById: Record<string, Row> = {}
+  for (const c of convRows || []) convById[c.id] = c
   const convIds = Object.keys(convById)
-  if (convIds.length === 0) return NextResponse.json({ messages: [], conversations: [] })
 
-  // Messages across all of them, oldest first.
-  const { data: msgs } = await db.from('messages')
-    .select('id, conversation_id, sender_type, sender_name, content, delivery_channel, created_at, attachments')
-    .in('conversation_id', convIds)
-    .order('created_at', { ascending: true })
-    .limit(500)
+  const list = (ids: string[]) => `(${ids.join(',')})`
+  // "This person's" rows on a table with contact_id + conversation_id.
+  const byPerson = () => [`contact_id.in.${list(contactIds)}`, convIds.length ? `conversation_id.in.${list(convIds)}` : ''].filter(Boolean).join(',')
+  const inboxLink = (convId?: string | null) => convId && convById[convId] ? `/admin/inbox?conversation=${convId}` : undefined
 
-  const messages = (msgs || []).map((m: any) => {
-    const conv = convById[m.conversation_id] || {}
-    return {
-      ...m,
-      // Prefer the message's own delivery_channel, else the conversation's.
-      channel: String(m.delivery_channel || conv.channel || 'chat').toLowerCase(),
-      conversation_subject: conv.subject || null,
+  // Read rows from a table, trying each column set in turn (a column added by a
+  // later migration may not be in this database yet). null = the table isn't
+  // there at all, so that kind is skipped.
+  type Try = [cols: string, extra?: (q: Builder) => Builder]
+  const fetchRows = async (table: string, tries: Try[], base: (q: Builder) => Builder, o: { ts?: string; ascending?: boolean; limit: number; paged?: boolean }): Promise<Row[] | null> => {
+    for (const [cols, extra] of tries) {
+      try {
+        let q = base(db.from(table).select(cols))
+        if (extra) q = extra(q)
+        if (o.paged && before && o.ts) q = q.lt(o.ts, before)
+        if (o.ts) q = q.order(o.ts, { ascending: !!o.ascending, nullsFirst: false })
+        const { data, error } = await q.limit(o.limit)
+        if (!error) return data || []
+      } catch { /* try the next column set */ }
     }
-  })
-
-  // ── Non-message activity, merged into the same stream, source-labelled ──────
-  const companyId = linked[0]?.company_id
-    || (await db.from('contacts').select('company_id').eq('id', contactId).maybeSingle()).data?.company_id
-  const emails = Array.from(new Set(linked.map((c: any) => c.email).filter(Boolean).map((e: string) => emailKey(e)).filter(Boolean)))
-  const phones = Array.from(new Set(linked.map((c: any) => c.phone).filter(Boolean).map((p: string) => phoneKey(p)).filter((k: string) => k.length >= 8)))
-  const money = (n: any, cur?: string) => { const v = Number(n); if (isNaN(v)) return ''; try { return new Intl.NumberFormat(undefined, { style: 'currency', currency: (cur || 'aud').toUpperCase() }).format(v) } catch { return `$${v.toFixed(2)}` } }
-
-  const activity: any[] = []
-  const pushOrder = (o: any) => activity.push({ id: 'order-' + o.id, kind: 'order', source: 'WooCommerce', date: o.order_date || o.created_at, title: `Order #${o.woo_order_id}`, detail: [money(o.total, o.currency), o.status].filter(Boolean).join(' · ') })
-
-  if (companyId && (emails.length || phones.length)) {
-    try {
-      const seen = new Set<string>()
-      if (emails.length) {
-        const orExpr = emails.map(e => `customer_email.ilike.${e.replace(/,/g, '')}`).join(',')
-        const { data } = await db.from('woocommerce_orders').select('id, woo_order_id, total, currency, status, order_date').eq('company_id', companyId).or(orExpr).order('order_date', { ascending: false }).limit(50)
-        for (const o of (data || [])) if (!seen.has(o.id)) { seen.add(o.id); pushOrder(o) }
-      }
-      if (phones.length) {
-        const { data } = await db.from('woocommerce_orders').select('id, woo_order_id, total, currency, status, order_date').eq('company_id', companyId).in('billing_phone_norm', phones).order('order_date', { ascending: false }).limit(50)
-        for (const o of (data || [])) if (!seen.has(o.id)) { seen.add(o.id); pushOrder(o) }
-      }
-      // Shopify orders (operational orders table): by linked contact, email or phone.
-      const ors = [
-        contactIds.length ? `contact_id.in.(${contactIds.join(',')})` : '',
-        ...emails.map(e => `customer_email.eq.${e.replace(/[,()]/g, '')}`),
-        phones.length ? `customer_phone_norm.in.(${phones.join(',')})` : '',
-      ].filter(Boolean).join(',')
-      if (ors) {
-        const { data } = await db.from('orders').select('id, order_number, total, currency, status, order_date').eq('company_id', companyId).eq('sales_channel', 'shopify').or(ors).order('order_date', { ascending: false }).limit(50)
-        for (const o of (data || [])) activity.push({ id: 'order-' + o.id, kind: 'order', source: 'Shopify', date: o.order_date, title: `Order #${o.order_number}`, detail: [money(o.total, o.currency), statusMeta(o.status).label].filter(Boolean).join(' · '), link: `/admin/orders/${o.id}` })
-      }
-    } catch {}
+    return null
   }
-  // Reviews (legacy generic table, keyed on contact).
-  try {
-    const { data } = await db.from('reviews').select('id, platform, rating, review_text, review_date, created_at').in('contact_id', contactIds).limit(50)
-    for (const r of (data || [])) activity.push({ id: 'review-' + r.id, kind: 'review', source: r.platform || 'Review', date: r.review_date || r.created_at, title: `${r.rating ? r.rating + '★ ' : ''}Review`, detail: (r.review_text || '').slice(0, 160) })
-  } catch {}
-  // Real synced Google reviews (google_reviews, keyed on contact via V244).
-  try {
-    const { data } = await db.from('google_reviews').select('id, star_rating, comment, review_created_at, created_at').in('contact_id', contactIds).limit(50)
-    for (const r of (data || [])) activity.push({ id: 'greview-' + r.id, kind: 'review', source: 'Google', date: r.review_created_at || r.created_at, title: `${r.star_rating ? r.star_rating + '★ ' : ''}Google review`, detail: (r.comment || '').slice(0, 160), link: `/admin/reviews?review=${r.id}` })
-  } catch {}
-  // Facebook/Instagram comments on a post or ad (social_comments, keyed on
-  // contact via V313).
-  try {
-    const { data } = await db.from('social_comments').select('id, platform, message, commented_at, created_at').in('contact_id', contactIds).limit(50)
-    for (const c of (data || [])) activity.push({ id: 'comment-' + c.id, kind: 'comment', source: c.platform === 'instagram' ? 'Instagram' : 'Facebook', date: c.commented_at || c.created_at, title: `Commented on ${c.platform === 'instagram' ? 'Instagram' : 'Facebook'}`, detail: (c.message || '').slice(0, 160), link: `/admin/social?comment=${c.id}` })
-  } catch {}
-  // In-chat payments (keyed on conversation).
-  try {
-    const { data } = await db.from('chat_payments').select('*').in('conversation_id', convIds).limit(50)
-    for (const p of (data || [])) {
-      const amt = p.amount_cents != null ? p.amount_cents / 100 : p.amount
-      activity.push({ id: 'pay-' + p.id, kind: 'payment', source: 'Payment', date: p.paid_at || p.created_at, title: p.status === 'paid' ? 'Payment received' : `Payment ${p.status || 'requested'}`, detail: money(amt, p.currency) })
+  // One page of a source, newest first, older than the cursor. Notes when the
+  // source came back full, so the merge knows how far down it's complete.
+  const fullOldest: number[] = []
+  const pull = async (table: string, ts: string, limit: number, tries: Try[], base: (q: Builder) => Builder): Promise<Row[]> => {
+    const rows = await fetchRows(table, tries, base, { ts, limit, paged: true })
+    if (!rows) return []
+    if (rows.length >= limit) {
+      const oldest = Math.min(...rows.map(r => toMs(r[ts])).filter(Number.isFinite))
+      if (Number.isFinite(oldest)) fullOldest.push(oldest)
     }
-  } catch {}
-  // Identity / customer-detail changes (audit).
-  try {
-    const { data } = await db.from('customer_identity_audit').select('id, action, detail, actor_name, created_at').in('contact_id', contactIds).order('created_at', { ascending: false }).limit(50)
-    for (const a of (data || [])) activity.push({ id: 'audit-' + a.id, kind: 'audit', source: 'System', date: a.created_at, title: String(a.action || '').replace(/_/g, ' '), detail: [a.detail, a.actor_name ? `by ${a.actor_name}` : ''].filter(Boolean).join(' · ') })
-  } catch {}
+    return rows
+  }
+  const none = Promise.resolve([] as Row[])
+
+  // ── Orders: every sales channel, plus WooCommerce rows not yet synced ──────
+  const ORDER_COLS = 'id, order_number, total, currency, status, payment_status, order_date, sales_channel, source_order_id, external_order_id'
+  const orderOr = [`contact_id.in.${list(contactIds)}`, emails.length ? `customer_email.in.(${emails.join(',')})` : ''].filter(Boolean)
+  const orderTries = (cols: string): Try[] => [
+    // customer_phone_norm came with V340; without it, match on contact and email.
+    ...(phones.length ? [[cols, (q: Builder) => q.or([...orderOr, `customer_phone_norm.in.(${phones.join(',')})`].join(','))] as Try] : []),
+    [cols, (q: Builder) => q.or(orderOr.join(','))],
+  ]
+  const WOO_COLS = 'id, woo_order_id, total, currency, status, order_date'
+  const wooByEmail = (cols: string, o: { limit: number; paged?: boolean }) => emails.length
+    ? fetchRows('woocommerce_orders', [[cols]], q => q.eq('company_id', companyId).or(emails.map(e => `customer_email.ilike.${likeSafe(e)}`).join(',')), { ts: 'order_date', ...o })
+    : Promise.resolve([] as Row[])
+  const wooByPhone = (cols: string, o: { limit: number; paged?: boolean }) => phones.length
+    ? fetchRows('woocommerce_orders', [[cols]], q => q.eq('company_id', companyId).in('billing_phone_norm', phones), { ts: 'order_date', ...o })
+    : Promise.resolve([] as Row[])
+  const pullWoo = async (by: typeof wooByEmail) => {
+    const rows = await by(WOO_COLS, { limit: EVENT_LIMIT, paged: true })
+    if (rows && rows.length >= EVENT_LIMIT) {
+      const oldest = Math.min(...rows.map(r => toMs(r.order_date)).filter(Number.isFinite))
+      if (Number.isFinite(oldest)) fullOldest.push(oldest)
+    }
+    return rows || []
+  }
+  // A WooCommerce order is usually also in the orders table (synced from it):
+  // show it once, as the orders row, which opens in Orders.
+  const mergeOrders = (orderRows: Row[], wooRows: Row[]) => {
+    const synced = new Set<string>()
+    for (const o of orderRows) {
+      if (o.source_order_id) synced.add('id:' + o.source_order_id)
+      if (o.sales_channel === 'woocommerce' && o.external_order_id) synced.add('woo:' + o.external_order_id)
+    }
+    const seen = new Set<string>()
+    const woo = wooRows.filter(w => {
+      if (seen.has(w.id) || synced.has('id:' + w.id) || synced.has('woo:' + String(w.woo_order_id))) return false
+      seen.add(w.id); return true
+    })
+    return { orders: orderRows, woo }
+  }
+
+  // Short links sent to this person (for click events).
+  const personLinks = async (): Promise<Row[]> => {
+    const tries: Try[] = [
+      ['id, label, kind, link_type, target_url', (q: Builder) => q.or(byPerson())],
+      ['id, label, target_url', (q: Builder) => q.or(byPerson())],
+      // short_links.contact_id came with V189; before that only the conversation.
+      ...(convIds.length ? [['id, label, target_url', (q: Builder) => q.in('conversation_id', convIds)] as Try] : []),
+    ]
+    return (await fetchRows('short_links', tries, q => q.eq('company_id', companyId), { limit: 300 })) || []
+  }
+
+  // The at-a-glance numbers run alongside the page itself.
+  const summaryP = wantSummary ? summarise().catch(() => null) : null
+
+  const [
+    msgRows, orderRows, wooEmailRows, wooPhoneRows, bookingRows, taskRows, convNoteRows, custNoteRows,
+    callRows, ticketRows, formRows, saleRows, payRows, linkClicks, mediaRows, agentRows,
+    reviewRows, gReviewRows, commentRows, auditRows,
+  ] = await Promise.all([
+    want('message') && convIds.length ? pull('messages', 'created_at', MSG_LIMIT, [
+      ['id, conversation_id, sender_type, sender_name, content, delivery_channel, created_at, attachments, metadata'],
+      ['id, conversation_id, sender_type, sender_name, content, created_at'],
+    ], q => q.in('conversation_id', convIds)) : none,
+    want('order') ? pull('orders', 'order_date', EVENT_LIMIT, orderTries(ORDER_COLS), q => q.eq('company_id', companyId)) : none,
+    want('order') ? pullWoo(wooByEmail) : none,
+    want('order') ? pullWoo(wooByPhone) : none,
+    want('booking') ? pull('bookings', 'created_at', EVENT_LIMIT, [['id, service_name, starts_at, status, staff_name, location_label, conversation_id, created_at']],
+      q => q.eq('company_id', companyId).or(byPerson())) : none,
+    want('task') && convIds.length ? pull('conversation_tasks', 'created_at', EVENT_LIMIT, [
+      ['id, conversation_id, text, title, done, status, due_date, created_by, created_at'],
+      ['id, conversation_id, text, done, due_date, created_at'],
+    ], q => q.in('conversation_id', convIds)) : none,
+    want('note') && convIds.length ? pull('conversation_notes', 'created_at', EVENT_LIMIT, [['id, conversation_id, author_name, content, created_at']],
+      q => q.in('conversation_id', convIds)) : none,
+    // Notes kept on a WooCommerce customer record (customer_notes is keyed on
+    // woocommerce_customers, matched to this person by email).
+    want('note') && emails.length ? (async () => {
+      const custs = await fetchRows('woocommerce_customers', [['id']],
+        q => q.eq('company_id', companyId).or(emails.map(e => `email.ilike.${likeSafe(e)}`).join(',')), { limit: 20 })
+      const ids = (custs || []).map((c: Row) => c.id)
+      if (!ids.length) return []
+      return pull('customer_notes', 'created_at', EVENT_LIMIT, [['id, customer_id, content, created_at']], q => q.eq('company_id', companyId).in('customer_id', ids))
+    })() : none,
+    want('call') ? pull('calls', 'created_at', EVENT_LIMIT, [
+      ['id, conversation_id, direction, status, duration_seconds, recording_url, ai_summary, is_voicemail, agent_name, created_at'],
+      ['id, conversation_id, direction, status, duration_seconds, recording_url, ai_summary, agent_name, created_at'],
+    ], q => q.or(byPerson())) : none,
+    want('ticket') ? pull('support_tickets', 'created_at', EVENT_LIMIT, [['id, ticket_number, subject, status, priority, conversation_id, created_at']],
+      q => q.or(byPerson())) : none,
+    want('form') ? pull('contact_form_submissions', 'created_at', EVENT_LIMIT, [['id, form_id, data, conversation_id, created_at']],
+      q => q.eq('company_id', companyId).or(byPerson())) : none,
+    want('sale') ? pull('conversation_sales', 'created_at', EVENT_LIMIT, [['id, amount, currency, payment_method, sold_by_name, note, conversation_id, created_at']],
+      q => q.eq('company_id', companyId).or(byPerson())) : none,
+    want('payment') && convIds.length ? pull('chat_payments', 'created_at', EVENT_LIMIT, [
+      ['id, conversation_id, amount_cents, currency, description, status, payment_method, paid_at, created_at'],
+      ['*'],
+    ], q => q.in('conversation_id', convIds)) : none,
+    want('link') ? (async () => {
+      const links = await personLinks()
+      if (!links.length) return []
+      const byId: Record<string, Row> = {}
+      for (const l of links) byId[l.id] = l
+      const ids = links.map(l => l.id)
+      const clicks = await fetchRows('link_clicks', [['id, link_id, clicked_at, city, region, country, device']], q => q.in('link_id', ids), { ts: 'clicked_at', limit: EVENT_LIMIT, paged: true })
+      if (clicks) {
+        if (clicks.length >= EVENT_LIMIT) fullOldest.push(Math.min(...clicks.map(c => toMs(c.clicked_at)).filter(Number.isFinite)))
+        return clicks.map(c => ({ ...c, link: byId[c.link_id] }))
+      }
+      // No per-click table (before V189): the link's last click is all we know.
+      const last = await pull('short_links', 'last_clicked_at', EVENT_LIMIT, [['id, last_clicked_at']], q => q.in('id', ids))
+      return last.filter(l => l.last_clicked_at).map(l => ({ id: l.id, link_id: l.id, clicked_at: l.last_clicked_at, link: byId[l.id] }))
+    })() : none,
+    want('media') ? pull('media_requests', 'created_at', EVENT_LIMIT, [['id, prompt, status, created_by, conversation_id, created_at']],
+      q => q.eq('company_id', companyId).or(byPerson())) : none,
+    want('agent') ? pull('agent_runs', 'created_at', EVENT_LIMIT, [['id, role_key, status, outcome, summary, conversation_id, created_at']],
+      q => q.eq('company_id', companyId).eq('mode', 'live').in('status', ['completed', 'escalated', 'awaiting_approval']).or(byPerson())) : none,
+    want('review') ? pull('reviews', 'review_date', EVENT_LIMIT, [['id, platform, rating, review_text, review_date']], q => q.in('contact_id', contactIds)) : none,
+    want('review') ? pull('google_reviews', 'review_created_at', EVENT_LIMIT, [['id, star_rating, comment, review_created_at']], q => q.in('contact_id', contactIds)) : none,
+    want('comment') ? pull('social_comments', 'commented_at', EVENT_LIMIT, [['id, platform, message, commented_at']], q => q.eq('company_id', companyId).in('contact_id', contactIds)) : none,
+    want('audit') ? pull('customer_identity_audit', 'created_at', EVENT_LIMIT, [['id, action, detail, actor_name, created_at']], q => q.in('contact_id', contactIds)) : none,
+  ])
+
+  // ── Messages ───────────────────────────────────────────────────────────────
+  // A call's card in the thread (metadata.call_id) is shown as the call itself
+  // below — with its recording and summary — when this member can see calls.
+  const showCalls = allowed('call')
+  const messages = (msgRows as Row[])
+    .filter(m => !(showCalls && m.metadata?.call_event && m.metadata?.call_id))
+    .map(m => {
+      const conv = convById[m.conversation_id] || {}
+      // delivery_channel defaults to 'chat', so a plain 'chat' says nothing —
+      // the conversation's own channel is the better guess then.
+      const dc = String(m.delivery_channel || '').toLowerCase()
+      return {
+        id: m.id,
+        conversation_id: m.conversation_id,
+        sender_type: m.sender_type,
+        sender_name: m.sender_name || null,
+        content: clip(m.content, 2000),
+        channel: dc && dc !== 'chat' ? dc : String(conv.channel || dc || 'chat').toLowerCase(),
+        delivery_channel: m.delivery_channel || null,
+        created_at: iso(m.created_at),
+        attachments: Array.isArray(m.attachments) ? m.attachments : [],
+        attachment_count: Array.isArray(m.attachments) ? m.attachments.length : 0,
+        conversation_subject: conv.subject || null,
+        link: `/admin/inbox?conversation=${m.conversation_id}`,
+      }
+    })
+
+  // ── Everything else ────────────────────────────────────────────────────────
+  const activity: TimelineEvent[] = []
+  const push = (e: Omit<TimelineEvent, 'group'> | null) => { if (e && e.date) activity.push({ ...e, group: KIND_GROUP[e.kind] || 'other' }) }
+
+  const { orders: ordRows, woo: wooRows } = mergeOrders(orderRows as Row[], [...(wooEmailRows as Row[]), ...(wooPhoneRows as Row[])])
+  for (const o of ordRows) {
+    const st = displayStatus(o)
+    push({ id: 'order-' + o.id, kind: 'order', source: channelMeta(o.sales_channel).label, date: iso(o.order_date), title: `Order #${o.order_number || o.external_order_id || ''}`.trim(),
+      detail: money(o.total, o.currency), status: statusMeta(st).label, tone: ['cancelled', 'refunded', 'alert'].includes(st) ? 'bad' : st === 'shipped' ? 'good' : 'warn', link: `/admin/orders/${o.id}` })
+  }
+  for (const o of wooRows) {
+    const st = String(o.status || '')
+    push({ id: 'woo-' + o.id, kind: 'order', source: 'WooCommerce', date: iso(o.order_date), title: `Order #${o.woo_order_id}`,
+      detail: money(o.total, o.currency), status: cap(st), tone: ['cancelled', 'refunded', 'failed'].includes(st) ? 'bad' : st === 'completed' ? 'good' : 'warn', link: '/admin/orders' })
+  }
+  for (const b of bookingRows as Row[]) {
+    if (b.status === 'expired') continue   // a hold that was never paid for or confirmed
+    const st = BOOKING_STATUS[b.status] || { label: cap(b.status), tone: 'muted' as const }
+    push({ id: 'booking-' + b.id, kind: 'booking', source: 'Booking', date: iso(b.created_at), at: iso(b.starts_at) || undefined,
+      title: `Booked ${b.service_name || 'an appointment'}`, detail: [b.staff_name ? `with ${b.staff_name}` : '', b.location_label].filter(Boolean).join(' · '),
+      status: st.label, tone: st.tone, link: '/admin/bookings?tab=bookings', conversationId: b.conversation_id || undefined })
+  }
+  for (const t of taskRows as Row[]) {
+    const done = !!t.done || t.status === 'done'
+    push({ id: 'task-' + t.id, kind: 'task', source: 'Task', date: iso(t.created_at), at: !done && t.due_date ? iso(t.due_date) : undefined,
+      title: clip(t.title || t.text || 'Task', 140), detail: t.created_by ? `Added by ${t.created_by}` : undefined,
+      status: done ? 'Done' : 'Open', tone: done ? 'good' : 'warn', link: `/admin/tasks?task=${t.id}`, conversationId: t.conversation_id || undefined })
+  }
+  for (const n of convNoteRows as Row[]) {
+    push({ id: 'note-' + n.id, kind: 'note', source: n.author_name || 'Team', date: iso(n.created_at), title: 'Note', detail: clip(n.content, 400), link: inboxLink(n.conversation_id), conversationId: n.conversation_id || undefined })
+  }
+  for (const n of custNoteRows as Row[]) {
+    push({ id: 'cnote-' + n.id, kind: 'note', source: 'Profile', date: iso(n.created_at), title: 'Note', detail: clip(n.content, 400), link: `/admin/customers/profile?id=${n.customer_id}` })
+  }
+  for (const c of callRows as Row[]) {
+    const st = String(c.status || '').toLowerCase()
+    const secs = Number(c.duration_seconds) || 0
+    const voicemail = !!c.is_voicemail || st.startsWith('voicemail')
+    const missed = !voicemail && MISSED.includes(st)
+    const connected = secs > 0 || !!c.recording_url || !!c.ai_summary || ['completed', 'answered'].includes(st)
+    if (!connected && !voicemail && !missed) continue   // still ringing / in progress
+    const inbound = c.direction === 'inbound'
+    const title = voicemail ? 'Voicemail' : missed ? (inbound ? 'Missed call' : 'Outgoing call · no answer') : `${inbound ? 'Incoming' : 'Outgoing'} call${secs ? ` · ${mmss(secs)}` : ''}`
+    push({ id: 'call-' + c.id, kind: 'call', source: 'Phone', date: iso(c.created_at), title,
+      detail: c.ai_summary ? clip(c.ai_summary, 320) : c.agent_name ? `${inbound ? 'Answered by' : 'Called by'} ${c.agent_name}` : undefined,
+      status: voicemail ? 'Voicemail' : missed ? 'Missed' : undefined, tone: missed ? 'bad' : voicemail ? 'warn' : undefined,
+      recordingUrl: /^https?:\/\//i.test(String(c.recording_url || '')) ? c.recording_url : undefined, link: inboxLink(c.conversation_id) || '/admin/calls', conversationId: c.conversation_id || undefined })
+  }
+  for (const t of ticketRows as Row[]) {
+    const st = String(t.status || 'open').toLowerCase()
+    push({ id: 'ticket-' + t.id, kind: 'ticket', source: 'Ticket', date: iso(t.created_at), title: `Ticket${t.ticket_number ? ` #${t.ticket_number}` : ''} opened`,
+      detail: clip(t.subject, 160) || undefined, status: cap(st), tone: ['resolved', 'closed'].includes(st) ? 'good' : 'warn', link: `/admin/tickets/${t.id}` })
+  }
+  if ((formRows as Row[]).length) {
+    const formIds = uniq((formRows as Row[]).map(f => f.form_id).filter(Boolean))
+    const names: Record<string, string> = {}
+    try {
+      const { data } = await db.from('contact_forms').select('id, name').in('id', formIds)
+      for (const f of data || []) names[f.id] = f.name
+    } catch { /* names are a nicety */ }
+    for (const f of formRows as Row[]) {
+      const d = f.data && typeof f.data === 'object' ? f.data : {}
+      const said = d.message || d.enquiry || d.comments || d.notes
+        || Object.values(d).filter(v => typeof v === 'string').sort((a: string, b: string) => b.length - a.length)[0]
+      push({ id: 'form-' + f.id, kind: 'form', source: 'Contact form', date: iso(f.created_at), title: `Sent the ${names[f.form_id] || 'contact'} form`,
+        detail: clip(said, 200) || undefined, link: inboxLink(f.conversation_id) || `/admin/crm-settings/contact-form/${f.form_id}`, conversationId: f.conversation_id || undefined })
+    }
+  }
+  for (const s of saleRows as Row[]) {
+    push({ id: 'sale-' + s.id, kind: 'sale', source: 'Sale', date: iso(s.created_at), title: `Sale recorded · ${money(s.amount, s.currency)}`,
+      detail: [s.payment_method, s.sold_by_name ? `sold by ${s.sold_by_name}` : '', clip(s.note, 120)].filter(Boolean).join(' · ') || undefined,
+      link: '/admin/payments', conversationId: s.conversation_id || undefined })
+  }
+  for (const p of payRows as Row[]) {
+    const amt = p.amount_cents != null ? Number(p.amount_cents) / 100 : p.amount
+    const st = String(p.status || 'pending').toLowerCase()
+    const title = st === 'paid' ? 'Payment received' : st === 'refunded' ? 'Payment refunded' : st === 'failed' ? 'Payment failed'
+      : p.payment_method === 'saved_card' ? 'Card charge started' : 'Payment link sent'
+    push({ id: 'pay-' + p.id, kind: 'payment', source: 'Payment', date: iso(p.created_at), at: st === 'paid' && p.paid_at ? iso(p.paid_at) : undefined, title,
+      detail: [money(amt, p.currency), clip(p.description, 120)].filter(Boolean).join(' · '),
+      status: st === 'paid' ? 'Paid' : cap(st), tone: st === 'paid' ? 'good' : st === 'failed' ? 'bad' : st === 'refunded' ? 'muted' : 'warn',
+      link: '/admin/payments', conversationId: p.conversation_id || undefined })
+  }
+  for (const c of linkClicks as Row[]) {
+    const l = c.link || {}
+    const kind = String(l.kind || l.link_type || '').toLowerCase()
+    const where = [[c.city, c.region].filter(Boolean).join(', '), c.device].filter(Boolean).join(' · ')
+    push({ id: 'click-' + c.id, kind: 'link', source: 'Link', date: iso(c.clicked_at),
+      title: kind === 'payment' ? 'Opened a payment link' : kind === 'media' || kind === 'file' ? 'Opened shared files' : 'Clicked a link',
+      detail: [l.label || hostOf(l.target_url), where].filter(Boolean).join(' · ') || undefined, link: '/admin/link-reports' })
+  }
+  for (const m of mediaRows as Row[]) {
+    const st = String(m.status || 'open').toLowerCase()
+    push({ id: 'media-' + m.id, kind: 'media', source: m.created_by || 'Team', date: iso(m.created_at), title: 'Asked for photos or files',
+      detail: clip(m.prompt, 160) || undefined, status: st === 'fulfilled' ? 'Received' : cap(st), tone: st === 'fulfilled' ? 'good' : st === 'open' ? 'warn' : 'muted',
+      link: inboxLink(m.conversation_id), conversationId: m.conversation_id || undefined })
+  }
+  for (const r of agentRows as Row[]) {
+    if (r.outcome === 'no_action') continue
+    const who = `${ROLE_NAMES[r.role_key] || 'AI'} agent`
+    const did = r.status === 'awaiting_approval' ? 'is waiting for approval' : AGENT_OUTCOME[r.outcome] || (r.status === 'escalated' ? 'handed it to the team' : 'finished')
+    push({ id: 'agent-' + r.id, kind: 'agent', source: 'AI', date: iso(r.created_at), title: `${who} ${did}`, detail: clip(r.summary, 240) || undefined,
+      runId: r.id, link: `/admin/agents?run=${r.id}`, conversationId: r.conversation_id || undefined })
+  }
+  for (const r of reviewRows as Row[]) {
+    push({ id: 'review-' + r.id, kind: 'review', source: cap(r.platform) || 'Review', date: iso(r.review_date), title: `${r.rating ? r.rating + '★ ' : ''}Review`, detail: clip(r.review_text, 200) || undefined, link: '/admin/reviews' })
+  }
+  for (const r of gReviewRows as Row[]) {
+    push({ id: 'greview-' + r.id, kind: 'review', source: 'Google', date: iso(r.review_created_at), title: `${r.star_rating ? r.star_rating + '★ ' : ''}Google review`, detail: clip(r.comment, 200) || undefined, link: `/admin/reviews?review=${r.id}` })
+  }
+  for (const c of commentRows as Row[]) {
+    const where = c.platform === 'instagram' ? 'Instagram' : 'Facebook'
+    push({ id: 'comment-' + c.id, kind: 'comment', source: where, date: iso(c.commented_at), title: `Commented on ${where}`, detail: clip(c.message, 200) || undefined, link: `/admin/social?comment=${c.id}` })
+  }
+  for (const a of auditRows as Row[]) {
+    push({ id: 'audit-' + a.id, kind: 'audit', source: 'System', date: iso(a.created_at), title: cap(a.action), detail: [a.detail, a.actor_name ? `by ${a.actor_name}` : ''].filter(Boolean).join(' · ') || undefined })
+  }
+
+  // ── One page, newest first ─────────────────────────────────────────────────
+  const merged = [
+    ...messages.map(m => ({ ms: toMs(m.created_at), m })),
+    ...activity.map(a => ({ ms: toMs(a.date), a })),
+  ]
+  const { page, nextBefore } = cutPage(merged, fullOldest, PAGE_SIZE)
+  const pageMessages = page.filter((x: Row) => x.m).map((x: Row) => x.m).reverse()
+  const pageActivity = page.filter((x: Row) => x.a).map((x: Row) => x.a).reverse()
+
+  // Filter chips this member can use.
+  const groups = TIMELINE_GROUP_KEYS.filter(g => g !== 'other' && Object.keys(KIND_GROUP).some(k => KIND_GROUP[k] === g && allowed(k)))
 
   return NextResponse.json({
-    messages,
-    activity: activity.filter(a => a.date).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()),
-    conversations: Object.values(convById),
+    // Oldest → newest within the page (the order the drawer has always used).
+    messages: pageMessages,
+    activity: pageActivity,
+    conversations: Object.values(convById).map((c: Row) => ({ id: c.id, channel: c.channel, subject: c.subject })),
     linkedCount: linked.length,
+    companyId,
+    groups,
+    hasMore: !!nextBefore,
+    nextBefore,
+    ...(summaryP ? { summary: await summaryP } : {}),
   })
+
+  // ── At a glance ────────────────────────────────────────────────────────────
+  async function summarise(): Promise<TimelineSummary> {
+    const canOrders = allowed('order'), canPay = allowed('payment')
+    const [ords, wooE, wooP, sales, paid, tasks, lastMsg, lastCall, next, gRev, rev] = await Promise.all([
+      canOrders ? fetchRows('orders', orderTries(ORDER_COLS), q => q.eq('company_id', companyId), { limit: 1000 }) : none,
+      canOrders ? wooByEmail(WOO_COLS, { limit: 1000 }) : none,
+      canOrders ? wooByPhone(WOO_COLS, { limit: 1000 }) : none,
+      canPay ? fetchRows('conversation_sales', [['amount, currency']], q => q.eq('company_id', companyId).or(byPerson()), { limit: 1000 }) : none,
+      canPay && convIds.length ? fetchRows('chat_payments', [['amount_cents, refunded_cents, currency'], ['amount_cents, currency']], q => q.in('conversation_id', convIds).eq('status', 'paid'), { limit: 1000 }) : none,
+      convIds.length ? fetchRows('conversation_tasks', [['id, done, status'], ['id, done']], q => q.in('conversation_id', convIds), { limit: 1000 }) : none,
+      convIds.length ? fetchRows('messages', [['created_at, delivery_channel, conversation_id']], q => q.in('conversation_id', convIds).neq('sender_type', 'system'), { ts: 'created_at', limit: 1 }) : none,
+      allowed('call') ? fetchRows('calls', [['created_at']], q => q.or(byPerson()), { ts: 'created_at', limit: 1 }) : none,
+      allowed('booking') ? fetchRows('bookings', [['id, starts_at, service_name, status']],
+        q => q.eq('company_id', companyId).or(byPerson()).in('status', ['pending', 'confirmed']).gte('starts_at', new Date().toISOString()), { ts: 'starts_at', ascending: true, limit: 1 }) : none,
+      allowed('review') ? fetchRows('google_reviews', [['star_rating']], q => q.in('contact_id', contactIds), { limit: 200 }) : none,
+      allowed('review') ? fetchRows('reviews', [['rating']], q => q.in('contact_id', contactIds), { limit: 200 }) : none,
+    ])
+
+    let currency = ''
+    const spend = (amt: unknown, cur?: string) => { const v = Number(amt); if (!Number.isFinite(v)) return 0; if (!currency && cur) currency = String(cur).toUpperCase(); return v }
+    const { orders: o1, woo: o2 } = mergeOrders(ords || [], [...(wooE || []), ...(wooP || [])])
+    const counted1 = o1.filter((o: Row) => !['cancelled', 'refunded'].includes(String(o.status)) && !['refunded', 'failed'].includes(String(o.payment_status)) && displayStatus(o) !== 'awaiting_payment')
+    const counted2 = o2.filter((o: Row) => !['cancelled', 'refunded', 'failed', 'pending', 'checkout-draft', 'trash'].includes(String(o.status)))
+    let total = 0
+    for (const o of counted1) total += spend(o.total, o.currency)
+    for (const o of counted2) total += spend(o.total, o.currency)
+    for (const s of sales || []) total += spend(s.amount, s.currency)
+    for (const p of paid || []) total += spend((Number(p.amount_cents) - (Number(p.refunded_cents) || 0)) / 100, p.currency)
+
+    const dates = [
+      ...people.map(p => toMs(p.created_at)),
+      ...(convRows || []).map((c: Row) => toMs(c.created_at)),
+      ...[...o1, ...o2].map((o: Row) => toMs(o.order_date)),
+    ].filter(Number.isFinite)
+    const lm = (lastMsg || [])[0], lc = (lastCall || [])[0]
+    let lastContact: TimelineSummary['lastContact'] = null
+    if (lm) {
+      const dc = String(lm.delivery_channel || '').toLowerCase()
+      lastContact = { at: iso(lm.created_at), channel: dc && dc !== 'chat' ? dc : String(convById[lm.conversation_id]?.channel || 'chat').toLowerCase() }
+    }
+    if (lc && (!lastContact || toMs(lc.created_at) > toMs(lastContact.at))) lastContact = { at: iso(lc.created_at), channel: 'call' }
+    const nb = (next || [])[0]
+    const ratings = [...(gRev || []).map((r: Row) => Number(r.star_rating)), ...(rev || []).map((r: Row) => Number(r.rating))].filter(n => n >= 1 && n <= 5)
+    const channels = uniq([
+      ...(convRows || []).map((c: Row) => String(c.channel || '').toLowerCase()),
+      ...people.flatMap(p => Array.isArray(p.channels_seen) ? p.channels_seen.map((c: Row) => String(c).toLowerCase()) : []),
+    ].filter(Boolean))
+
+    return {
+      lifetimeValue: canOrders || canPay ? Math.round(total * 100) / 100 : null,
+      currency: currency || 'AUD',
+      orderCount: counted1.length + counted2.length,
+      firstSeen: dates.length ? new Date(Math.min(...dates)).toISOString() : null,
+      lastContact,
+      openTasks: (tasks || []).filter((t: Row) => !(t.done || t.status === 'done')).length,
+      nextBooking: nb ? { id: nb.id, at: iso(nb.starts_at), service: nb.service_name || null, status: nb.status } : null,
+      avgRating: ratings.length ? Math.round((ratings.reduce((a, b) => a + b, 0) / ratings.length) * 10) / 10 : null,
+      reviewCount: ratings.length,
+      channels,
+    }
+  }
 }
