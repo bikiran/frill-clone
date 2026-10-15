@@ -1,5 +1,5 @@
 import { telnyxSignatureOk } from '@/lib/telnyx-signature'
-import { queueMediaUploadReply } from '@/lib/media-upload-reply'
+import { queueMediaUploadReply, contactOptOut } from '@/lib/media-upload-reply'
 import { internalHeaders } from '@/lib/internal-call'
 import { NextRequest, NextResponse } from 'next/server'
 import { log } from '@/lib/log'
@@ -433,8 +433,8 @@ export async function POST(req: NextRequest) {
         // Auto-reply to a failed media attempt: text the customer a secure upload
         // link so their photo isn't lost. Throttled to once per conversation per
         // 6h (checks recent media_request messages) so repeated failed MMS don't
-        // spam them.
-        if (mediaAttemptFailed) {
+        // spam them. Never to a customer who opted out of texts or is blocked.
+        if (mediaAttemptFailed && (await contactOptOut(db, companyId, conv.contact_id || matchedContactId || null)) === 'ok') {
           try {
             const sixHoursAgo = new Date(Date.now() - 6 * 3600 * 1000).toISOString()
             const { data: recentReq } = await db.from('messages')

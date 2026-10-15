@@ -12,7 +12,7 @@ import { runKeywordReply } from './keyword-reply'
 import { resolveSmsSender } from './sms-provider'
 import { handleBookingSmsReply } from './booking-replies'
 import { emitInboundEvent } from '@/lib/integration-hooks'
-import { queueMediaUploadReply } from '@/lib/media-upload-reply'
+import { queueMediaUploadReply, contactOptOut } from '@/lib/media-upload-reply'
 
 export interface InboundAttachment {
   url: string
@@ -221,7 +221,8 @@ export async function ingestInboundSms(params: {
 
   // Failed-media hint auto-reply (only fires when a media attempt truly failed;
   // on Twilio, MMS usually arrives, so this rarely triggers). Throttled 6h.
-  if (mediaAttemptFailed) {
+  // Never to a customer who opted out of texts or is blocked.
+  if (mediaAttemptFailed && (await contactOptOut(db, companyId, conv.contact_id || matchedContactId || null)) === 'ok') {
     try {
       const sixHoursAgo = new Date(Date.now() - 6 * 3600 * 1000).toISOString()
       const { data: recentReq } = await db.from('messages')

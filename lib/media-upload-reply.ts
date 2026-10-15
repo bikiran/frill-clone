@@ -18,6 +18,22 @@ import { mediaUploadReplySettings, wantsUploadReply, MEDIA_UPLOAD_REPLY_HOURS } 
 export * from '@/lib/media-upload-reply-settings'
 
 /**
+ * May an automatic reply text this contact? 'opted_out' when they opted out of
+ * texts or are blocked (a texting thread doesn't override that), 'unknown' when
+ * the contact can't be read (don't send). Also used by the failed picture
+ * message reply (lib/inbound-sms, the Telnyx webhook).
+ */
+export async function contactOptOut(db: any, companyId: string, contactId: string | null | undefined): Promise<'ok' | 'opted_out' | 'unknown'> {
+  if (!contactId) return 'ok'
+  try {
+    const { data: ct, error } = await db.from('contacts').select('unsubscribed_at, is_blocked')
+      .eq('id', contactId).eq('company_id', companyId).maybeSingle()
+    if (error) return 'unknown'
+    return ct?.unsubscribed_at || ct?.is_blocked ? 'opted_out' : 'ok'
+  } catch { return 'unknown' }
+}
+
+/**
  * Send the upload link if the business wants it and it hasn't gone out lately.
  * Returns what happened, for logs and tests. Never throws.
  */
@@ -32,13 +48,10 @@ export async function sendMediaUploadReply(p: {
     if (!wantsUploadReply(p.media, s)) return 'not_needed'
 
     // Not to a customer who opted out of texts or is blocked, as with the other
-    // automatic replies (a texting thread doesn't override their opt-out).
-    if (p.contactId) {
-      const { data: ct, error } = await p.db.from('contacts').select('unsubscribed_at, is_blocked')
-        .eq('id', p.contactId).eq('company_id', p.companyId).maybeSingle()
-      if (error) return 'failed'
-      if (ct?.unsubscribed_at || ct?.is_blocked) return 'opted_out'
-    }
+    // automatic replies.
+    const optOut = await contactOptOut(p.db, p.companyId, p.contactId)
+    if (optOut === 'unknown') return 'failed'
+    if (optOut === 'opted_out') return 'opted_out'
 
     const cutoff = new Date(Date.now() - MEDIA_UPLOAD_REPLY_HOURS * 3600_000).toISOString()
     // An upload link already went out recently (by hand, the phone agent, or
