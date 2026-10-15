@@ -3,6 +3,7 @@ import { hidesPoweredBy } from '@/lib/branding'
 import { createClient } from '@supabase/supabase-js'
 import { checkBurst, callerKey } from '@/lib/rate-limit'
 import { addDays, dateInTz, isDate } from '@/lib/booking-time'
+import { cleanClickRef } from '@/lib/link-channels'
 import {
   loadCompanyPublic, resolveBookingSettings, loadStaff, loadLocations, availability, createBooking,
   publicService, isMissingBookingSchema, stripeReady, amountDue, loadInvite, invitePrefill,
@@ -145,6 +146,9 @@ export async function POST(req: NextRequest) {
       origin: req.nextUrl.origin,
       source: ['link', 'widget', 'embed', 'invite'].includes(b.source) ? b.source : 'page',
       inviteToken: typeof b.invite === 'string' ? b.invite : null,
+      // The Reel / QR click that opened the page — checked against this
+      // business when the booking is confirmed (lib/link-stitch.ts).
+      clickRef: cleanClickRef(b.clv),
     })
     if ('error' in r) return NextResponse.json({ error: r.error }, { status: r.status || 400 })
     return NextResponse.json(r)

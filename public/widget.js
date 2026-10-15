@@ -18,10 +18,36 @@
       }
     } catch (e) { return { url: '', title: '' } }
   }
+  // ── Smart links ──────────────────────────────────────────────────────────
+  // A Colvy tracked link for a Reel, TikTok or QR poster lands here with
+  // ?clv=<click id>. Remember it on this site for 7 days, so a chat started
+  // later (on another page, or another day) is credited to the post that
+  // brought the visitor. Only a click id shape is ever kept.
+  var CLV_KEY = 'colvy_clv'
+  var CLV_RE = /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[1-9][0-9]{0,17})$/i
+  function clickRef() {
+    var id = ''
+    try {
+      var m = /[?&]clv=([^&#]+)/.exec(window.location.search || '')
+      if (m) id = decodeURIComponent(m[1])
+    } catch (e) {}
+    if (id && CLV_RE.test(id)) {
+      try { localStorage.setItem(CLV_KEY, JSON.stringify({ id: id, ts: Date.now() })) } catch (e) {}
+      return id
+    }
+    try {
+      var saved = JSON.parse(localStorage.getItem(CLV_KEY) || 'null')
+      if (saved && CLV_RE.test(String(saved.id)) && Date.now() - Number(saved.ts) < 7 * 86400000) return String(saved.id)
+    } catch (e) {}
+    return ''
+  }
+  var CLV = clickRef()
+
   var pi = parentInfo()
   var WIDGET_URL = BASE + '/widget?slug=' + encodeURIComponent(slug)
     + '&purl=' + encodeURIComponent(pi.url)
     + '&ptitle=' + encodeURIComponent(pi.title)
+    + (CLV ? '&clv=' + encodeURIComponent(CLV) : '')
 
   // Config (populated from /api/widget-data): default is CHAT ICON ONLY.
   var cfg = { mode: 'icon', label: 'Chat with us', color: '#ff7a6b', position: 'bottom-right', offsetX: '24', offsetXUnit: 'px', offsetY: '24', offsetYUnit: 'px' }
@@ -319,11 +345,13 @@
     try {
       var hist = recordPage()
       var info = parentInfo()
+      CLV = clickRef() || CLV
       if (popup && popup.contentWindow) {
         popup.contentWindow.postMessage({
           colvy: true, type: 'page',
           url: info.url, title: info.title,
           history: hist,
+          clv: CLV || undefined,
         }, BASE)
       }
     } catch (e) {}
