@@ -26,7 +26,7 @@ import { sendCustomerEmail } from '@/lib/customer-email'
 import { shortenUrl } from '@/lib/short-link'
 import { stitchLinkClick } from '@/lib/link-stitch'
 import { attributeBookingToLinks } from '@/lib/link-attribution'
-import { ilikeExact } from '@/lib/phone'
+import { ilikeExact, exactEmailRow } from '@/lib/phone'
 
 const MIN = 60_000
 const HOUR = 3_600_000
@@ -357,8 +357,8 @@ async function ensureContact(db: any, companyId: string, c: { name: string; emai
       hit = data || null
     }
     if (!hit && c.email) {
-      const { data } = await db.from('contacts').select('id, name, email, phone').eq('company_id', companyId).ilike('email', ilikeExact(c.email)).limit(1)
-      hit = data?.[0] || null
+      const { data } = await db.from('contacts').select('id, name, email, phone').eq('company_id', companyId).ilike('email', ilikeExact(c.email)).limit(10)
+      hit = exactEmailRow(data, c.email)
     }
     if (!hit && c.phone && tail9(c.phone).length >= 8) {
       const { data } = await db.from('contacts').select('id, name, email, phone').eq('company_id', companyId).ilike('phone', `%${tail9(c.phone)}%`).limit(10)

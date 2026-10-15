@@ -41,12 +41,21 @@ export function emailKey(raw?: string | null): string {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e) ? e : ''
 }
 
-// An email (or any typed value) as an ilike() pattern that matches only itself,
-// ignoring case. In a LIKE pattern % and _ are wildcards, and PostgREST reads *
-// as %, so a visitor typing "%" as their email would otherwise match whichever
-// contact the database returned first. Escaped, * can never act as a wildcard.
+// An email (or any typed value) as an ilike() pattern with no wide wildcards,
+// ignoring case. In a LIKE pattern % and _ are wildcards, so a visitor typing
+// "%" as their email would otherwise match whichever contact the database
+// returned first; those are escaped. PostgREST turns every * into %, escaped or
+// not, so there is no way to send a literal *: it goes as _ (any ONE character),
+// which still lets "a*b@x.com" find its own contact. Because that _ can also
+// match "acb@x.com", select a few rows and keep the one exactEmailRow() picks.
 export function ilikeExact(raw?: string | null): string {
-  return String(raw || '').replace(/[\\%_*]/g, m => '\\' + m)
+  return String(raw || '').replace(/[\\%_]/g, m => '\\' + m).replace(/\*/g, '_')
+}
+
+// The row whose email is exactly `raw`, ignoring case (see ilikeExact).
+export function exactEmailRow<T extends { email?: string | null }>(rows: T[] | null | undefined, raw?: string | null): T | null {
+  const want = String(raw || '').toLowerCase()
+  return (rows || []).find(r => String(r?.email || '').toLowerCase() === want) || null
 }
 
 // Pull the first email / phone out of a free-text message (a customer replying

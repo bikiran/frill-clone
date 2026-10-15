@@ -133,15 +133,7 @@ export default function LinkReportsPage() {
     if (since) cq = cq.gte('clicked_at', since)
     let vq = (supabase as any).from('link_conversions').select('*').eq('company_id', cid)
     if (since) vq = vq.gte('converted_at', since)
-    // A Reel, QR poster or link in bio is used for months, so the Social & QR
-    // tab also needs public links made before the period (filtered to the ones
-    // with clicks or results in it below).
-    const oq = since
-      ? Promise.resolve(supabase.from('short_links').select('*').eq('company_id', cid)
-        .in('channel', PUBLIC_LINK_CHANNELS.map(c => c.id)).lt('created_at', since)
-        .order('created_at', { ascending: false }).limit(1000)).catch(() => ({ data: [] }))
-      : Promise.resolve({ data: [] })
-    const [{ data: ls }, { data: cs }, vs, co, tm, { data: outs }, olderRes] = await Promise.all([
+    const [{ data: ls }, { data: cs }, vs, co, tm, { data: outs }] = await Promise.all([
       lq.order('created_at', { ascending: false }).limit(1000),
       cq.order('clicked_at', { ascending: false }).limit(5000),
       // Conversions only exist once the V192 migration has been run.
@@ -150,14 +142,28 @@ export default function LinkReportsPage() {
       // no name/display_name columns — derive from email
       Promise.resolve((supabase as any).from('team_members').select('email').eq('company_id', cid)).catch(() => ({ data: [] })),
       (supabase as any).from('company_locations').select('id, label, suburb').eq('company_id', cid),
-      oq,
     ])
     const linkRows: Link[] = ls || []
+    // A Reel, QR poster or link in bio is used for months, so the Social & QR
+    // tab also needs public links made before the period that had clicks or
+    // results in it. Looked up by that activity (not the newest old links), so
+    // a year-old poster is never crowded out by newer links.
+    let older: Link[] = []
+    if (since) {
+      const made = new Set(linkRows.map(l => l.id))
+      const activeIds = Array.from(new Set([...(cs || []), ...(vs?.data || [])].map((r: { link_id: string }) => r.link_id)))
+        .filter(id => id && !made.has(id))
+      const batches: string[][] = []
+      for (let i = 0; i < activeIds.length; i += 200) batches.push(activeIds.slice(i, i + 200))
+      const found = await Promise.all(batches.map(ids => Promise.resolve(supabase.from('short_links').select('*').eq('company_id', cid)
+        .in('id', ids).in('channel', PUBLIC_LINK_CHANNELS.map(c => c.id)).lt('created_at', since))
+        .then(r => (r.data || []) as Link[]).catch(() => [] as Link[])))
+      older = found.flat()
+    }
     setLinks(linkRows)
     setClicks(cs || [])
     setConversions(vs?.data || [])
-    const active = new Set([...(cs || []), ...(vs?.data || [])].map((r: { link_id: string }) => r.link_id))
-    setOlderPublic(((olderRes?.data || []) as Link[]).filter(l => active.has(l.id)))
+    setOlderPublic(older)
     const om: Record<string, string> = {}
     for (const o of (outs || [])) om[o.id] = o.label || o.suburb || 'Outlet'
     setOutlets(om)

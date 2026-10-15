@@ -6,7 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { peekCompanyUser, resolveCompanyUser } from '@/lib/client-cache'
 import { SkeletonList } from '@/components/Skeleton'
 import { aud } from '@/lib/sms-pricing'
-import { isBookingPayment } from '@/lib/link-channels'
+import { isBookingPayment, linkFunnel } from '@/lib/link-channels'
 
 function parseTs(d: string | null | undefined): Date | null {
   if (!d) return null
@@ -123,9 +123,12 @@ export default function CampaignReportPage() {
   // A paid booking (book_<id>) is revenue but not an order — the same rule as
   // Link Reports, so both pages count the same orders.
   const orders = new Set(paid.filter(c => !isBookingPayment(c)).map(c => c.order_id ?? c.id)).size
+  // Bookings made through the campaign's links, counted as Link Reports does.
+  const bookings = linkFunnel([], conversions).bookings
   const revenue = paid.reduce((s, c) => s + (Number(c.revenue) || 0), 0)
   const purchasers = new Set(paid.map(c => c.contact_id).filter(Boolean))
-  const conversionRate = uniqueClicks ? (orders / uniqueClicks) * 100 : 0
+  // A booking is a result too, so a "book now" campaign doesn't read as 0%.
+  const conversionRate = uniqueClicks ? ((orders + bookings) / uniqueClicks) * 100 : 0
 
   const cost = Number(campaign?.actual_cost) || Number(campaign?.estimated_cost) || 0
   const roi = cost > 0 ? ((revenue - cost) / cost) * 100 : 0
@@ -277,11 +280,12 @@ export default function CampaignReportPage() {
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, marginBottom: 18 }}>
         <div style={card}><div style={statLbl}>Orders</div><p style={statNum}>{orders.toLocaleString()}</p></div>
+        {bookings > 0 && <div style={card}><div style={statLbl}>Bookings</div><p style={statNum}>{bookings.toLocaleString()}</p></div>}
         <div style={card}><div style={statLbl}>Revenue</div>
           <p style={{ ...statNum, color: revenue > 0 ? '#15803d' : 'var(--ink)' }}>{aud(revenue)}</p>
           <p style={{ margin: '2px 0 0', fontSize: 11, color: 'var(--slate)' }}>influenced</p></div>
         <div style={card}><div style={statLbl}>Conversion rate</div><p style={statNum}>{conversionRate.toFixed(1)}%</p>
-          <p style={{ margin: '2px 0 0', fontSize: 11, color: 'var(--slate)' }}>of those who clicked</p></div>
+          <p style={{ margin: '2px 0 0', fontSize: 11, color: 'var(--slate)' }}>{bookings > 0 ? 'ordered or booked, of those who clicked' : 'of those who clicked'}</p></div>
         <div style={card}><div style={statLbl}>Cost</div><p style={statNum}>{aud(cost)}</p></div>
         <div style={card}><div style={statLbl}>Return on spend</div>
           <p style={{ ...statNum, color: roi > 0 ? '#15803d' : roi < 0 ? '#dc2626' : 'var(--ink)' }}>
