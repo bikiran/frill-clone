@@ -1,8 +1,11 @@
-import { requireCompanyAccess } from '@/lib/company-access'
+import { requireCompanyAccess, isStaffRow } from '@/lib/company-access'
 import { NextRequest, NextResponse, after } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { getPhoneAgent, setPhoneAgent, PHONE_VOICES, PHONE_STT, MAX_TEST_NUMBERS, relayConfigured } from '@/lib/phone-agent'
+import { getPhoneAgent, setPhoneAgent, cleanPhoneAgent, PHONE_VOICES, PHONE_STT, MAX_TEST_NUMBERS, relayConfigured, phoneBookable, businessClosedNow } from '@/lib/phone-agent'
+import { MAX_GREETING } from '@/lib/phone-receptionist'
 import { getPhoneCatalog, refreshPhoneCatalog } from '@/lib/phone-catalog'
+import { agentsPaused } from '@/lib/agent/pilot'
+import { resolveAgentName } from '@/lib/agent-name'
 
 export const dynamic = 'force-dynamic'
 
@@ -12,11 +15,30 @@ const admin = () => createClient(
   { auth: { autoRefreshToken: false, persistSession: false } }
 )
 
-// The AI phone agent's settings (test stage): on/off, the numbers it answers,
-// and its voice. Twilio numbers only for now.
-async function provider(db: any, companyId: string) {
-  const { data } = await db.from('companies').select('number_provider').eq('id', companyId).maybeSingle()
-  return data?.number_provider === 'telnyx' ? 'telnyx' : 'twilio'
+// The AI receptionist's settings: on/off, when it answers (test numbers, out
+// of hours, when nobody answers, always), the numbers it always answers, its
+// voice, greeting, skills, things it never discusses and how it files
+// call-back tasks. Twilio numbers only for now; Telnyx numbers carry on as they
+// are.
+type Db = ReturnType<typeof admin>
+
+async function provider(db: Db, companyId: string) {
+  return (await company(db, companyId)).provider
+}
+async function company(db: Db, companyId: string): Promise<{ provider: 'telnyx' | 'twilio'; name: string }> {
+  const { data } = await db.from('companies').select('number_provider, name').eq('id', companyId).maybeSingle()
+  return { provider: data?.number_provider === 'telnyx' ? 'telnyx' : 'twilio', name: data?.name || '' }
+}
+
+// Who call-back tasks can be assigned to: the owner and the team (not board
+// visitors or removed members).
+async function teamIds(db: Db, companyId: string): Promise<string[]> {
+  const [{ data: co }, { data: rows }] = await Promise.all([
+    db.from('companies').select('owner_id').eq('id', companyId).maybeSingle(),
+    db.from('team_members').select('user_id, role, status').eq('company_id', companyId).not('user_id', 'is', null).limit(200),
+  ])
+  const staff = (rows || []).filter(isStaffRow).map(r => String(r.user_id))
+  return Array.from(new Set<string>([co?.owner_id ? String(co.owner_id) : '', ...staff].filter(Boolean)))
 }
 
 export async function GET(req: NextRequest) {
@@ -24,12 +46,26 @@ export async function GET(req: NextRequest) {
   if (!companyId) return NextResponse.json({ error: 'companyId required' }, { status: 400 })
   const db = admin()
   if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
-  const [settings, prov, catalog] = await Promise.all([getPhoneAgent(db, companyId), provider(db, companyId), getPhoneCatalog(db, companyId)])
+  const [settings, co, catalog, paused, bookable, closedNow, ids, { data: integ }] = await Promise.all([
+    getPhoneAgent(db, companyId), company(db, companyId), getPhoneCatalog(db, companyId), agentsPaused(db, companyId),
+    phoneBookable(db, companyId), businessClosedNow(db, companyId),
+    teamIds(db, companyId).catch(() => [] as string[]),
+    db.from('twilio_integrations').select('ring_seconds, voicemail_enabled').eq('company_id', companyId).maybeSingle(),
+  ])
+  const team = (await Promise.all(ids.slice(0, 60).map(async id => ({ id, name: await resolveAgentName(db, id, companyId) }))))
+    .sort((a, b) => a.name.localeCompare(b.name))
   return NextResponse.json({
-    ...settings, voices: PHONE_VOICES, sttOptions: PHONE_STT, maxTestNumbers: MAX_TEST_NUMBERS, supported: prov === 'twilio', realtime: relayConfigured(),
+    ...settings, voices: PHONE_VOICES, sttOptions: PHONE_STT, maxTestNumbers: MAX_TEST_NUMBERS, supported: co.provider === 'twilio', realtime: relayConfigured(),
+    companyName: co.name,
     productNames: catalog?.names?.length || 0,
+    // For the card's summary and hints.
+    ringSeconds: Math.max(20, Number(integ?.ring_seconds) || 25), voicemailEnabled: integ?.voicemail_enabled !== false,
+    paused: paused.paused, bookable, hoursKnown: closedNow !== null, team,
   })
 }
+
+// Fields the card can send; any left out keep their saved value.
+const FIELDS = ['enabled', 'testNumbers', 'voice', 'stt', 'mode', 'alsoNoAnswer', 'greeting', 'skills', 'neverDiscuss', 'tasks'] as const
 
 export async function PATCH(req: NextRequest) {
   try {
@@ -39,12 +75,26 @@ export async function PATCH(req: NextRequest) {
     const db = admin()
     const access = await requireCompanyAccess(req, db, companyId)
     if (!access.ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
-    if (body.enabled && (await provider(db, companyId)) !== 'twilio') return NextResponse.json({ error: 'The phone agent works with Twilio numbers for now.' }, { status: 400 })
-    const raw = Array.isArray(body.testNumbers) ? body.testNumbers : String(body.testNumbers || '').split(/[,\n]/)
-    if (body.enabled && !raw.some((n: any) => String(n || '').replace(/\D/g, '').length >= 8)) {
+    const current = await getPhoneAgent(db, companyId)
+    const next: Record<string, unknown> = { ...current }
+    for (const k of FIELDS) if (body[k] !== undefined) next[k] = body[k]
+    if (body.testNumbers !== undefined && !Array.isArray(body.testNumbers)) next.testNumbers = String(body.testNumbers || '').split(/[,\n]/)
+    const tasks: Record<string, unknown> = { ...current.tasks, ...(body.tasks && typeof body.tasks === 'object' ? body.tasks : {}) }
+
+    if (String(next.greeting || '').trim().length > MAX_GREETING) return NextResponse.json({ error: `Keep the greeting under ${MAX_GREETING} characters.` }, { status: 400 })
+    const check = cleanPhoneAgent(next)
+    if (check.enabled && (await provider(db, companyId)) !== 'twilio') return NextResponse.json({ error: 'The AI receptionist works with Twilio numbers for now.' }, { status: 400 })
+    if (check.enabled && check.mode === 'test' && !check.testNumbers.length) {
       return NextResponse.json({ error: 'Add at least one test number, like your mobile.' }, { status: 400 })
     }
-    const saved = await setPhoneAgent(db, companyId, { enabled: !!body.enabled, testNumbers: raw, voice: body.voice, stt: body.stt }, access.userId || null)
+    // The assignee must be on this business's team; their name comes from us, not the browser.
+    const assigneeId = String(tasks.assigneeId || tasks.assignee_id || '')
+    if (assigneeId) {
+      if (!(await teamIds(db, companyId)).includes(assigneeId)) return NextResponse.json({ error: 'Pick someone on your team for call-back tasks.' }, { status: 400 })
+      next.tasks = { ...tasks, assigneeId, assignee_id: undefined, assigneeName: await resolveAgentName(db, assigneeId, companyId), assignee_name: undefined }
+    } else next.tasks = { ...tasks, assigneeId: null, assignee_id: null, assigneeName: null, assignee_name: null }
+
+    const saved = await setPhoneAgent(db, companyId, next, access.userId || null)
     // Read the store's product names now, so the next call already knows them.
     if (saved.enabled) {
       const refresh = () => refreshPhoneCatalog(admin(), companyId, { force: true }).then(() => {})

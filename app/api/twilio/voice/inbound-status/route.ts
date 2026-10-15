@@ -7,6 +7,10 @@ import { setCallPreview } from '@/lib/call-card'
 import { resolveAgentName } from '@/lib/agent-name'
 import { emitCallEvent } from '@/lib/integration-hooks'
 import { alertCall } from '@/lib/call-alerts'
+import { getPhoneAgent, answerWithAgent, phoneBookable } from '@/lib/phone-agent'
+import { aiAnswerDecision } from '@/lib/phone-receptionist'
+import { agentsPaused } from '@/lib/agent/pilot'
+import { getPhoneCatalog } from '@/lib/phone-catalog'
 import { queueMissedCallText } from '@/lib/missed-call-text'
 
 export const dynamic = 'force-dynamic'
@@ -128,6 +132,39 @@ export async function POST(req: NextRequest) {
       // The call is over — show the outcome (with duration when we have it).
       try { await setCallPreview(db as any, conversationId, durSecs ? `📞 Call ended · ${Math.floor(durSecs / 60)}:${String(durSecs % 60).padStart(2, '0')}` : '📞 Call ended') } catch {}
       return twiml('<Response><Hangup/></Response>')
+    }
+
+    // Nobody picked up (rang out, declined or unreachable) and the caller is
+    // still on the line: this is where voicemail starts. The AI receptionist
+    // takes the call instead when the owner chose "when nobody answers". Any
+    // other outcome, or anything going wrong here, goes to voicemail as before.
+    const callerStatus = (get('CallStatus') || '').toLowerCase()
+    if (callRowId && companyId && ['no-answer', 'busy', 'failed'].includes(dialStatus) && !['completed', 'canceled', 'busy', 'failed', 'no-answer'].includes(callerStatus)) {
+      try {
+        const agent = await getPhoneAgent(db, companyId)
+        if (agent.enabled && agent.mode !== 'test') {
+          const { data: call } = await db.from('calls').select('id, company_id, from_number, contact_id, conversation_id, routing_state').eq('id', callRowId).maybeSingle()
+          if (call && call.company_id === companyId) {
+            const paused = (await agentsPaused(db, companyId)).paused
+            const reason = aiAnswerDecision(agent, { from: call.from_number || '', moment: 'no_answer', paused })
+            if (reason) {
+              const [{ data: co }, catalog, bookable] = await Promise.all([
+                db.from('companies').select('name').eq('id', companyId).maybeSingle(),
+                getPhoneCatalog(db, companyId),
+                agent.skills.booking ? phoneBookable(db, companyId) : Promise.resolve(false),
+              ])
+              const cbQuery = `callRowId=${encodeURIComponent(callRowId)}&companyId=${encodeURIComponent(companyId)}&conversationId=${encodeURIComponent(conversationId || call.conversation_id || '')}`
+              const body = await answerWithAgent(db, {
+                agent, reason, bookable, base, cbQuery, callRowId, companyId, companyName: co?.name || '', catalog,
+                conversationId: call.conversation_id || conversationId || null, contactId: call.contact_id || null, from: call.from_number || '',
+                // Why the team's ring ended, for Call Diagnostics.
+                routing: call.routing_state, causeDetail: `after ${ringOutcome}`,
+              })
+              return twiml(body)
+            }
+          }
+        }
+      } catch (e) { console.error('[twilio inbound-status] phone agent failed — voicemail as normal', e instanceof Error ? e.message : e) }
     }
 
     // Nobody answered → voicemail (if enabled).

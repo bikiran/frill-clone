@@ -70,6 +70,8 @@ export default function CallAnswerSettings({ companyId }: { companyId: string })
       const d = await r.json()
       if (!r.ok || d.error) { setMsg({ ok: false, text: d.error || 'Could not save.' }); return }
       apply(d); setMsg({ ok: true, text: 'Saved.' })
+      // The AI receptionist card's summary mentions the ring time.
+      try { window.dispatchEvent(new CustomEvent('colvy:call-settings', { detail: { ringSeconds: d.ringSeconds, voicemailEnabled: d.voicemailEnabled } })) } catch {}
     } catch { setMsg({ ok: false, text: 'Could not reach Colvy. Try again.' }) } finally { setBusy(false) }
   }
 
@@ -89,7 +91,7 @@ export default function CallAnswerSettings({ companyId }: { companyId: string })
       `}</style>
       <p style={{ margin: '0 0 3px', fontSize: 14, fontWeight: 700, color: 'var(--ink)' }}>When nobody answers</p>
       <p style={{ margin: '0 0 14px', fontSize: 12.5, color: 'var(--slate)', lineHeight: 1.45 }}>
-        Incoming calls ring the customer&rsquo;s preferred person first, then everyone available. If nobody picks up, the caller hears your greeting and can leave a voicemail. You get a notification for missed calls and voicemails, and voicemails are transcribed.
+        Incoming calls ring the customer&rsquo;s preferred person first, then everyone available. If nobody picks up, the caller hears your greeting and can leave a voicemail (or the AI receptionist answers, if you&rsquo;ve set it to below). You get a notification for missed calls and voicemails, and voicemails are transcribed.
       </p>
 
       <label htmlFor="cas-ring" style={label}>Ring for</label>
