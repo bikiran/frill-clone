@@ -28,8 +28,10 @@ export async function retireStaleSuggestions(db: any, companyId: string, convers
     if (!runIds.length) return 0
     const { data: waiting } = await db.from('agent_approvals').select('id, run_id, created_at').eq('company_id', companyId).eq('status', 'pending').in('action_key', REPLY_ACTIONS).in('run_id', runIds)
     if (!waiting?.length) return 0
-    const { data: human } = await db.from('messages').select('created_at').eq('conversation_id', conversationId).eq('sender_type', 'agent').eq('is_ai', false).order('created_at', { ascending: false }).limit(1)
-    const humanAt = human?.[0]?.created_at ? new Date(human[0].created_at).getTime() : 0
+    const { data: human } = await db.from('messages').select('created_at, metadata').eq('conversation_id', conversationId).eq('sender_type', 'agent').eq('is_ai', false).order('created_at', { ascending: false }).limit(5)
+    // The automatic missed-call text (lib/missed-call-text) isn't anyone replying.
+    const lastHuman = (human || []).find((m: any) => !m.metadata?.missed_call_text)
+    const humanAt = lastHuman?.created_at ? new Date(lastHuman.created_at).getTime() : 0
     const stale = waiting.filter((a: any) => a.run_id !== opts.keepRunId || new Date(a.created_at).getTime() < humanAt)
     return await expireAsSuperseded(db, stale)
   } catch { return 0 }

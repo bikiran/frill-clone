@@ -7,7 +7,8 @@
 //   • someone replied in the caller's conversation — a team member, or the AI
 //     agent answering the customer's reply to the missed-call text. Automatic
 //     messages (metadata.auto, including the missed-call text itself) don't
-//     count: they don't answer anyone.
+//     count: they don't answer anyone. Nor do internal notes ("@Sam can you
+//     ring her back?"): the customer never sees them.
 // "Missed" uses callOutcome(), the same rule as the home dashboard and the
 // Command Centre. Hidden numbers can't be rung back, and calls from the
 // business's own numbers or its team aren't customers, so neither is counted.
@@ -55,8 +56,8 @@ export function isMissedInbound(c: any, now: number = Date.now()): boolean {
 /**
  * Work out the outcome from rows already loaded.
  *   calls    — every call (both directions) since `since`
- *   replies  — messages sent by the business (sender_type 'agent') in the missed
- *              callers' conversations since `since`
+ *   replies  — messages sent by the business (sender_type 'agent', internal
+ *              notes included) in the missed callers' conversations since `since`
  *   contactConvs — each caller contact's conversations, so a reply in another
  *              thread with the same person still counts
  *   ownKeys  — the business's own and team numbers (lib/business-numbers)
@@ -80,7 +81,7 @@ export function computeMissedCallOutcome(inp: {
   for (const m of replies) {
     const meta = m?.metadata || {}
     if (meta.missed_call_text) { if (meta.call_id) texted.add(String(meta.call_id)); continue }
-    if (meta.auto) continue
+    if (meta.auto || m.is_internal) continue
     push(replied, String(m.conversation_id || ''), ms(m.created_at))
   }
   const later = (arr: number[] | undefined, at: number) => !!arr && arr.some(x => x > at)
@@ -161,7 +162,7 @@ export async function missedCallOutcome(db: any, companyId: string, opts: { sinc
   const replies: any[] = []
   for (let i = 0; i < convIds.length; i += 100) {
     const chunk = convIds.slice(i, i + 100)
-    replies.push(...await pages(() => db.from('messages').select('conversation_id, created_at, metadata')
+    replies.push(...await pages(() => db.from('messages').select('conversation_id, created_at, metadata, is_internal')
       .in('conversation_id', chunk).eq('sender_type', 'agent').gte('created_at', sinceIso)
       .order('created_at', { ascending: true }), 5000))
   }

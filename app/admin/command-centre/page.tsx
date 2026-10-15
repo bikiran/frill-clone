@@ -144,9 +144,9 @@ export default function CommandCentrePage() {
         if (v.boardRange) setBoardRange(v.boardRange)
       }
     } catch {}
-    // A link can open a filtered view (the home dashboard's "Missed calls to
-    // return" opens ?tab=logs&range=7d&dir=inbound&outcome=missed). It wins
-    // over the saved default, for this visit only.
+    // A link can open a filtered view (the home dashboard's call-back list
+    // opens ?tab=logs&range=7d&dir=inbound). It wins over the saved default,
+    // for this visit only.
     try {
       const q = new URLSearchParams(window.location.search)
       const t = q.get('tab'), r = q.get('range'), d = q.get('dir'), o = q.get('outcome')

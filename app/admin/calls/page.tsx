@@ -40,7 +40,7 @@ export default function CallsPage() {
   const [calls, setCalls] = useState<Call[]>(seededCalls ?? [])
   const [companyId, setCompanyId] = useState<string | null>(seededCid)
   const [loading, setLoading] = useState(!seededCalls)
-  // A link can open a tab directly (the home dashboard links ?filter=missed).
+  // A link can open a tab directly (the home dashboard links ?filter=inbound).
   const [filter, setFilter] = useState<'all' | 'inbound' | 'outbound' | 'missed' | 'voicemail'>(() => {
     try {
       const f = new URLSearchParams(window.location.search).get('filter')

@@ -443,7 +443,7 @@ export async function runAiAgent(opts: {
   // sent, so in a long conversation the AI answered a months-old "hi" instead
   // of the customer's actual question.)
   const { data: msgs } = await db.from('messages')
-    .select('sender_type, content, is_ai, created_at')
+    .select('sender_type, content, is_ai, created_at, metadata')
     .eq('conversation_id', opts.conversationId)
     .order('created_at', { ascending: false }).limit(40)
 
@@ -458,7 +458,8 @@ export async function runAiAgent(opts: {
   // AI went permanently silent in any conversation a person had once touched —
   // even for a brand-new question weeks later. Now it only defers when the human
   // reply is genuinely more recent than the customer's question.
-  const lastAgent = [...history].reverse().find(m => m.sender_type === 'agent')
+  // The automatic missed-call text (lib/missed-call-text) isn't anyone answering.
+  const lastAgent = [...history].reverse().find(m => m.sender_type === 'agent' && !m.metadata?.missed_call_text)
   if (lastAgent && !lastAgent.is_ai) {
     const humanAt = new Date(String(lastAgent.created_at).endsWith('Z') ? lastAgent.created_at : lastAgent.created_at + 'Z').getTime()
     const customerAt = new Date(String(last.created_at).endsWith('Z') ? last.created_at : last.created_at + 'Z').getTime()
@@ -471,7 +472,7 @@ export async function runAiAgent(opts: {
   // Counted since the last HUMAN message, so a person stepping in resets it —
   // otherwise the AI would fall permanently silent after three replies, for the
   // life of the conversation.
-  const lastHumanIdx = history.map(m => m.sender_type === 'agent' && !m.is_ai).lastIndexOf(true)
+  const lastHumanIdx = history.map(m => m.sender_type === 'agent' && !m.is_ai && !m.metadata?.missed_call_text).lastIndexOf(true)
   const sinceHuman = lastHumanIdx >= 0 ? history.slice(lastHumanIdx + 1) : history
   const aiTurns = sinceHuman.filter(m => m.is_ai).length
   const handoffAfter = Number(cfg.handoff_after ?? 3)

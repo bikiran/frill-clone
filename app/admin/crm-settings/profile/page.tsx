@@ -21,7 +21,6 @@ export default function ProfileSettings() {
   // Inbox time format is company-wide (companies.inbox_settings.hour12), so the
   // whole team sees the same clock. Saved straight away when picked.
   const [hour12, setHour12] = useState(true)
-  const [inboxSettings, setInboxSettings] = useState<any>({})
   const [formatSaved, setFormatSaved] = useState(false)
 
   useEffect(() => {
@@ -29,7 +28,6 @@ export default function ProfileSettings() {
     ;(async () => {
       const { data } = await (supabase as any).from('companies').select('inbox_settings').eq('id', companyId).maybeSingle()
       const st = data?.inbox_settings || {}
-      setInboxSettings(st)
       if (typeof st.hour12 === 'boolean') setHour12(st.hour12)
     })()
   }, [companyId])
@@ -37,8 +35,12 @@ export default function ProfileSettings() {
   const changeHour12 = async (v: boolean) => {
     if (!companyId || v === hour12) return
     setHour12(v)
-    const next = { ...inboxSettings, hour12: v }
-    setInboxSettings(next)
+    // Merged into the settings as saved now, not as they were when this page
+    // opened, so a setting changed elsewhere meanwhile (missed-call texts
+    // switched off in Calls & SMS) isn't put back.
+    const { data, error: readErr } = await (supabase as any).from('companies').select('inbox_settings').eq('id', companyId).maybeSingle()
+    if (readErr || !data) { setHour12(!v); return }
+    const next = { ...(data?.inbox_settings || {}), hour12: v }
     const { error } = await (supabase as any).from('companies').update({ inbox_settings: next }).eq('id', companyId)
     if (!error) { setFormatSaved(true); setTimeout(() => setFormatSaved(false), 2000) }
   }

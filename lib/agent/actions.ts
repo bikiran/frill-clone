@@ -224,7 +224,7 @@ async function sendOnItsOwn(ctx: ActionContext, args: any, limits: PolicyLimits)
   const [{ data: conv }, { data: human }, { data: lastIn }] = await Promise.all([
     ctx.db.from('conversations').select('ai_enabled, channel').eq('company_id', ctx.companyId).eq('id', ctx.conversationId).maybeSingle(),
     ctx.scratch.startedAt
-      ? ctx.db.from('messages').select('id').eq('conversation_id', ctx.conversationId).eq('sender_type', 'agent').eq('is_ai', false).gt('created_at', ctx.scratch.startedAt).limit(1)
+      ? ctx.db.from('messages').select('id, metadata').eq('conversation_id', ctx.conversationId).eq('sender_type', 'agent').eq('is_ai', false).gt('created_at', ctx.scratch.startedAt).limit(5)
       : Promise.resolve({ data: [] }),
     ctx.db.from('messages').select('created_at').eq('conversation_id', ctx.conversationId).eq('sender_type', 'visitor').order('created_at', { ascending: false }).limit(1),
   ])
@@ -233,7 +233,8 @@ async function sendOnItsOwn(ctx: ActionContext, args: any, limits: PolicyLimits)
     return 'Meta only allows automatic replies within 24 hours of the customer’s message, so a person sends it.'
   }
   if (conv?.ai_enabled === false) return 'AI replies are switched off for this conversation, so a person approves it.'
-  if (human?.length) return 'Someone on the team replied meanwhile, so a person approves it.'
+  // The automatic missed-call text (lib/missed-call-text) isn't anyone replying.
+  if (human?.some((m: any) => !m.metadata?.missed_call_text)) return 'Someone on the team replied meanwhile, so a person approves it.'
 
   const perHour = limits.max_per_conversation_per_hour
   if (perHour) {
