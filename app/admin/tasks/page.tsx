@@ -17,6 +17,7 @@ import PageGreeting from '@/components/PageGreeting'
 import { peekCompanyUser, resolveCompanyUser, readCache, writeCache } from '@/lib/client-cache'
 import { readLocal, writeLocal } from '@/lib/local-cache'
 import { confirmDialog } from '@/components/ConfirmDialog'
+import { foldRepeats } from '@/lib/task-fold'
 
 function parseTs(d: string | null | undefined): Date | null {
   if (!d) return null
@@ -167,6 +168,13 @@ export default function TasksPage() {
 
   const [bucket, setBucket] = useState<Bucket>('today')
   const [bucketDate, setBucketDate] = useState('')   // for the "Date" bucket
+  // Repeating tasks: fold missed and later copies (see lib/task-fold) unless the
+  // user asks to see every copy.
+  const [showAllRepeats, setShowAllRepeats] = useState(false)
+  // How far ahead Upcoming / back Completed reaches; "Show more" adds a month.
+  const [upcomingDays, setUpcomingDays] = useState(30)
+  const [completedDays, setCompletedDays] = useState(30)
+  useEffect(() => { setUpcomingDays(30); setCompletedDays(30) }, [bucket])
   const [view, setView] = useState<ViewMode>(seedPrefs?.view || 'list')
   // Per-user view preferences: a saved default view (applied wherever they sign
   // in, incl. mobile) and custom names — set via right-clicking a view tab.
@@ -564,92 +572,131 @@ export default function TasksPage() {
     return false
   }, [userId])
 
+  const dayOf = (t: any): number | null => { const p = parseTs(t.due_date); return p ? startOfDay(p).getTime() : null }
+  const fold = useMemo(() => foldRepeats(tasks, { today: startOfDay(new Date()).getTime(), dayOf, isClosed: isDone }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [tasks])
+  // Folded away for this bucket? Older missed copies everywhere; copies after
+  // the next one in Upcoming / All (the Day, Week, Month and Date views still
+  // list every copy, since those are about a span of days).
+  const folded = useCallback((t: any, b: Bucket) => {
+    if (showAllRepeats) return false
+    if (fold.missedHidden.has(t.id)) return true
+    return (b === 'upcoming' || b === 'all') && fold.laterHidden.has(t.id)
+  }, [fold, showAllRepeats])
+
+  // Every filter except the bucket — shared by the counts and the list, so a
+  // chip's number always matches what its list holds.
+  const passesFilters = useCallback((t: any, q: string, dateRange: { start: number; end: number } | null) => {
+    if (assigneeFilter.length) {
+      const ok = assigneeFilter.some(a => a === 'me' ? assignedToMe(t) : (t.assigned_to_id === a || (Array.isArray(t.assignees) && t.assignees.some((x: any) => x.id === a))))
+      if (!ok) return false
+    }
+    if (priorityFilter.length && !priorityFilter.includes(t.priority || 'normal')) return false
+    if (colorFilter.length && !colorFilter.includes(t.color || '')) return false
+    if (outletFilter.length) {
+      const outs = (Array.isArray(t.location_ids) && t.location_ids.length) ? t.location_ids : (t.location_id ? [t.location_id] : [])
+      if (!outs.some((o: string) => outletFilter.includes(o))) return false
+    }
+    if (dateFilter && dateRange) {
+      const d = parseTs(t.due_date)
+      if (!d) return false
+      const time = d.getTime()
+      if (time < dateRange.start || time >= dateRange.end) return false
+    }
+    if (q) {
+      const hay = [t.title, t.text, t.assigned_to, t.order_number, t.order_customer].filter(Boolean).join(' ').toLowerCase()
+      if (!hay.includes(q)) return false
+    }
+    return true
+  }, [assigneeFilter, priorityFilter, colorFilter, outletFilter, dateFilter, assignedToMe])
+
+  // The "Due in" filter's window around its reference date.
+  const dateRange = useMemo(() => {
+    if (!dateFilter) return null
+    const ref = new Date(dateFilter + 'T00:00:00')
+    if (isNaN(ref.getTime())) return null
+    if (datePeriod === 'day') {
+      const s = new Date(ref); const e = new Date(ref); e.setDate(e.getDate() + 1)
+      return { start: s.getTime(), end: e.getTime() }
+    }
+    if (datePeriod === 'week') {
+      const s = new Date(ref); s.setDate(s.getDate() - s.getDay())   // Sunday
+      const e = new Date(s); e.setDate(e.getDate() + 7)
+      return { start: s.getTime(), end: e.getTime() }
+    }
+    return { start: new Date(ref.getFullYear(), ref.getMonth(), 1).getTime(), end: new Date(ref.getFullYear(), ref.getMonth() + 1, 1).getTime() }
+  }, [dateFilter, datePeriod])
+
+  // Which bucket a task belongs to, plus the period buckets it falls in.
+  const bucketOf = (t: any, today: number, wk: { start: number; end: number }, mo: { start: number; end: number }) => {
+    if (isDone(t)) return { main: 'completed' as const, day: false, week: false, month: false }
+    const due = parseTs(t.due_date)
+    // An undated task counts as "Today" so freshly-added tasks surface there.
+    if (!due) return { main: 'today' as const, day: false, week: false, month: false }
+    const dTime = due.getTime()
+    const d = startOfDay(due).getTime()
+    return {
+      main: d < today ? 'overdue' as const : d === today ? 'today' as const : 'upcoming' as const,
+      day: d === today, week: dTime >= wk.start && dTime < wk.end, month: dTime >= mo.start && dTime < mo.end,
+    }
+  }
+
   const counts = useMemo(() => {
     const now = new Date()
     const today = startOfDay(now).getTime()
     const wk = periodRange(now, 'week'); const mo = periodRange(now, 'month')
-    const c = { today: 0, overdue: 0, upcoming: 0, completed: 0, all: tasks.length, day: 0, week: 0, month: 0 }
+    const q = search.trim().toLowerCase()
+    const c = { today: 0, overdue: 0, upcoming: 0, completed: 0, all: 0, day: 0, week: 0, month: 0, foldedMissed: 0 }
     for (const t of tasks) {
-      if (isDone(t)) { c.completed++; continue }
-      const due = parseTs(t.due_date)
-      // An undated task counts as "Today" so freshly-added tasks surface there.
-      if (!due) { c.today++; continue }
-      const dTime = due.getTime()
-      const d = startOfDay(due).getTime()
-      if (d < today) c.overdue++
-      else if (d === today) c.today++
-      else c.upcoming++
-      if (d === today) c.day++
-      if (dTime >= wk.start && dTime < wk.end) c.week++
-      if (dTime >= mo.start && dTime < mo.end) c.month++
+      if (!passesFilters(t, q, dateRange)) continue
+      if (!showAllRepeats && fold.missedHidden.has(t.id)) { c.foldedMissed++; continue }
+      const b = bucketOf(t, today, wk, mo)
+      const later = !showAllRepeats && fold.laterHidden.has(t.id)
+      if (!later) { c.all++; c[b.main]++ }
+      if (b.day) c.day++
+      if (b.week) c.week++
+      if (b.month) c.month++
     }
     return c
-  }, [tasks])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tasks, passesFilters, dateRange, search, fold, showAllRepeats])
 
-  const visible = useMemo(() => {
-    const today = startOfDay(new Date()).getTime()
+  // When a task was finished (for the Completed list's order and headings).
+  const doneAt = (t: any): number | null => (parseTs(t.completed_at) || parseTs(t.due_date))?.getTime() ?? null
+
+  const listing = useMemo(() => {
+    const now = new Date()
+    const today = startOfDay(now).getTime()
+    const wk = periodRange(now, 'week'); const mo = periodRange(now, 'month')
     const q = search.trim().toLowerCase()
-    // Day / week / month window around the chosen reference date.
-    let dateRange: { start: number; end: number } | null = null
-    if (dateFilter) {
-      const ref = new Date(dateFilter + 'T00:00:00')
-      if (!isNaN(ref.getTime())) {
-        if (datePeriod === 'day') {
-          const s = new Date(ref); const e = new Date(ref); e.setDate(e.getDate() + 1)
-          dateRange = { start: s.getTime(), end: e.getTime() }
-        } else if (datePeriod === 'week') {
-          const s = new Date(ref); s.setDate(s.getDate() - s.getDay())   // Sunday
-          const e = new Date(s); e.setDate(e.getDate() + 7)
-          dateRange = { start: s.getTime(), end: e.getTime() }
-        } else {
-          const s = new Date(ref.getFullYear(), ref.getMonth(), 1)
-          const e = new Date(ref.getFullYear(), ref.getMonth() + 1, 1)
-          dateRange = { start: s.getTime(), end: e.getTime() }
-        }
-      }
-    }
-    const nowRef = new Date()
+    const upTo = today + (upcomingDays + 1) * 86400000
+    const backTo = today - completedDays * 86400000
+    let more = 0, moreFrom: number | null = null
     let list = tasks.filter(t => {
-      if (bucket !== 'all') {
-        if (bucket === 'completed') { if (!isDone(t)) return false }
-        else {
-          if (isDone(t)) return false
-          const due = parseTs(t.due_date)
-          const d = due ? startOfDay(due).getTime() : null
-          const dTime = due ? due.getTime() : null
-          // Today now includes undated tasks (freshly-added ones surface here).
-          if (bucket === 'today' && !(d === today || d == null)) return false
-          if (bucket === 'overdue' && !(d != null && d < today)) return false
-          if (bucket === 'upcoming' && !(d != null && d > today)) return false
-          if (bucket === 'day' && d !== today) return false
-          if (bucket === 'week') { const r = periodRange(nowRef, 'week'); if (dTime == null || dTime < r.start || dTime >= r.end) return false }
-          if (bucket === 'month') { const r = periodRange(nowRef, 'month'); if (dTime == null || dTime < r.start || dTime >= r.end) return false }
-          if (bucket === 'date') {
-            if (!bucketDate || dTime == null) return false
-            const r = periodRange(new Date(bucketDate + 'T00:00:00'), 'day')
-            if (dTime < r.start || dTime >= r.end) return false
-          }
-        }
+      if (!passesFilters(t, q, dateRange)) return false
+      if (folded(t, bucket)) return false
+      if (bucket === 'all') return true
+      const b = bucketOf(t, today, wk, mo)
+      if (bucket === 'today' || bucket === 'overdue' || bucket === 'upcoming' || bucket === 'completed') { if (b.main !== bucket) return false }
+      else if (bucket === 'day') { if (!b.day) return false }
+      else if (bucket === 'week') { if (!b.week) return false }
+      else if (bucket === 'month') { if (!b.month) return false }
+      else if (bucket === 'date') {
+        const dTime = parseTs(t.due_date)?.getTime()
+        if (!bucketDate || dTime == null || isDone(t)) return false
+        const r = periodRange(new Date(bucketDate + 'T00:00:00'), 'day')
+        if (dTime < r.start || dTime >= r.end) return false
       }
-      if (assigneeFilter.length) {
-        const ok = assigneeFilter.some(a => a === 'me' ? assignedToMe(t) : (t.assigned_to_id === a || (Array.isArray(t.assignees) && t.assignees.some((x: any) => x.id === a))))
-        if (!ok) return false
+      // Upcoming shows the next month and Completed the last month; the rest
+      // is a "Show more" away, so a long-running board stays quick to read.
+      if (bucket === 'upcoming') {
+        const d = dayOf(t)
+        if (d != null && d >= upTo) { more++; if (moreFrom == null || d < moreFrom) moreFrom = d; return false }
       }
-      if (priorityFilter.length && !priorityFilter.includes(t.priority || 'normal')) return false
-      if (colorFilter.length && !colorFilter.includes(t.color || '')) return false
-      if (outletFilter.length) {
-        const outs = (Array.isArray(t.location_ids) && t.location_ids.length) ? t.location_ids : (t.location_id ? [t.location_id] : [])
-        if (!outs.some((o: string) => outletFilter.includes(o))) return false
-      }
-      if (dateFilter && dateRange) {
-        const d = parseTs(t.due_date)
-        if (!d) return false
-        const time = d.getTime()
-        if (time < dateRange.start || time >= dateRange.end) return false
-      }
-      if (q) {
-        const hay = [t.title, t.text, t.assigned_to, t.order_number, t.order_customer].filter(Boolean).join(' ').toLowerCase()
-        if (!hay.includes(q)) return false
+      if (bucket === 'completed') {
+        const d = doneAt(t)
+        if (d != null && d < backTo) { more++; return false }
       }
       return true
     })
@@ -659,6 +706,11 @@ export default function TasksPage() {
       if (dr) return dr
       if (sortBy === 'priority') { const rank = (p: string) => ({ high: 0, normal: 1, low: 2 } as any)[p || 'normal']; return rank(a.priority) - rank(b.priority) }
       if (sortBy === 'created') return (parseTs(b.created_at)?.getTime() || 0) - (parseTs(a.created_at)?.getTime() || 0)
+      // Due date: newest finished first in Completed; otherwise by day, then
+      // the order set by dragging within a day, then the time.
+      if (bucket === 'completed' || (isDoneT(a) && isDoneT(b))) return (doneAt(b) ?? 0) - (doneAt(a) ?? 0)
+      const ka = dayOf(a) ?? Infinity, kb = dayOf(b) ?? Infinity
+      if (ka !== kb) return ka - kb
       const sa = a.sort_order == null ? Infinity : a.sort_order
       const sb = b.sort_order == null ? Infinity : b.sort_order
       if (sa !== sb) return sa - sb
@@ -666,8 +718,23 @@ export default function TasksPage() {
       const db_ = parseTs(b.due_date)?.getTime() ?? Infinity
       return da - db_
     })
-    return list
-  }, [tasks, bucket, bucketDate, search, assigneeFilter, priorityFilter, colorFilter, outletFilter, dateFilter, datePeriod, sortBy, assignedToMe])
+    return { list, more, moreFrom }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tasks, bucket, bucketDate, search, passesFilters, dateRange, sortBy, folded, upcomingDays, completedDays])
+  const visible = listing.list
+
+  // Date headings for the list: by due day (by finish day in Completed).
+  const groupOf = (t: any): { key: string; label: string; tone: 'overdue' | 'today' | 'plain' | 'done' } => {
+    const today = startOfDay(new Date()).getTime()
+    if (bucket !== 'completed' && isDone(t)) return { key: 'done', label: 'Completed', tone: 'done' }
+    const ms = bucket === 'completed' ? doneAt(t) : dayOf(t)
+    if (ms == null) return { key: 'none', label: 'No date', tone: 'plain' }
+    const day = startOfDay(new Date(ms))
+    const diff = Math.round((day.getTime() - today) / 86400000)
+    const long = day.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', ...(day.getFullYear() !== new Date().getFullYear() ? { year: 'numeric' } : {}) })
+    const label = diff === 0 ? `Today · ${long}` : diff === 1 ? `Tomorrow · ${long}` : diff === -1 ? `Yesterday · ${long}` : long
+    return { key: String(day.getTime()), label, tone: bucket === 'completed' ? 'done' : diff < 0 ? 'overdue' : diff === 0 ? 'today' : 'plain' }
+  }
 
   // For the calendar view we want the whole month regardless of the Today/
   // Overdue/… bucket — only the assignee/priority/search filters apply, so a
@@ -941,6 +1008,30 @@ export default function TasksPage() {
     } catch (e) { console.error('[task scoped update] threw', e); if (companyId) loadTasks(companyId) }
   }
 
+  // Remove missed copies of repeating tasks (past copies nobody ticked off).
+  // The series carries on; only the stale past copies go.
+  const removeTaskIds = async (ids: string[]) => {
+    for (let i = 0; i < ids.length; i += 200) {
+      const { error } = await (supabase as any).from('conversation_tasks').delete().in('id', ids.slice(i, i + 200))
+      if (error) throw error
+    }
+    const gone = new Set(ids)
+    setTasks(prev => prev.filter(t => !gone.has(t.id)))
+  }
+  const clearMissed = async (t: any) => {
+    const ids = fold.missedOf.get(t.id) || []
+    if (!ids.length) return
+    if (!await confirmDialog({ title: 'Clear missed copies?', message: `Remove ${ids.length} missed ${ids.length === 1 ? 'copy' : 'copies'} of “${t.title || t.text}”? It keeps repeating — only past copies nobody ticked off are removed.`, confirmLabel: 'Clear', tone: 'danger' })) return
+    try { await removeTaskIds(ids) } catch (e: any) { alert('Could not clear: ' + (e?.message || e)) }
+  }
+  const clearAllMissed = async () => {
+    const q = search.trim().toLowerCase()
+    const ids = tasks.filter(t => fold.missedHidden.has(t.id) && passesFilters(t, q, dateRange)).map(t => t.id)
+    if (!ids.length) return
+    if (!await confirmDialog({ title: 'Clear all missed copies?', message: `Remove ${ids.length} missed ${ids.length === 1 ? 'copy' : 'copies'} of repeating tasks? Each task keeps repeating, and its latest copy stays — only older copies nobody ticked off are removed.`, confirmLabel: 'Clear all', tone: 'danger' })) return
+    try { await removeTaskIds(ids) } catch (e: any) { alert('Could not clear: ' + (e?.message || e)) }
+  }
+
   // Delete a task, or a scoped slice of its series.
   const deleteScoped = async (task: any, scope?: string) => {
     if (task._source === 'calendar') {
@@ -991,6 +1082,17 @@ export default function TasksPage() {
     <div className="tasks-root">
       <style>{`
         .tasks-root { height: calc(100vh - 56px); display: flex; flex-direction: column; }
+        .day-head { display: flex; align-items: center; gap: 8px; margin: 14px 2px 7px; font-size: 11.5px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: var(--slate); }
+        .day-head .n { font-size: 10.5px; font-weight: 800; padding: 0 6px; border-radius: 10px; background: rgba(0,0,0,0.06); letter-spacing: 0; }
+        .day-head::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+        .day-head.overdue { color: #b91c1c; } .day-head.overdue .n { background: #fee2e2; }
+        .day-head.today { color: var(--coral); } .day-head.today .n { background: var(--peach); }
+        .day-head.done { color: #15803d; } .day-head.done .n { background: #dcfce7; }
+        .repeat-note { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 9px 12px; margin-bottom: 10px; border-radius: 10px; background: #ecfeff; border: 1px solid #cffafe; color: #0e7490; font-size: 12.5px; }
+        .repeat-note button { border: 1px solid #a5f3fc; background: #fff; color: #0e7490; font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 7px; cursor: pointer; }
+        .repeat-note button.danger { border-color: #fecaca; color: #b91c1c; }
+        .list-more { display: flex; align-items: center; justify-content: center; gap: 12px; flex-wrap: wrap; margin: 14px 0 6px; padding: 12px; border: 1px dashed var(--border); border-radius: 12px; font-size: 12.5px; color: var(--slate); }
+        .list-more button { border: 1px solid var(--border); background: #fff; color: var(--ink); font-size: 12.5px; font-weight: 700; padding: 6px 12px; border-radius: 8px; cursor: pointer; }
         .tasks-top { padding: 16px 20px 10px; border-bottom: 1px solid var(--border); }
         .tasks-title-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
         .tasks-buckets { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
@@ -1230,7 +1332,9 @@ export default function TasksPage() {
                   </div>
                   {visible.filter(t => statusOf(t) === col.key).map(t => (
                     <TaskCard key={t.id} t={t} conv={convs[t.conversation_id]} selected={selectedId === t.id}
-                      onClick={() => { setSelectedId(t.id); setShowNew(false) }} statusOf={statusOf} showStatusButtons onStatus={(s: string) => setStatus(t, s)} />
+                      onClick={() => { setSelectedId(t.id); setShowNew(false) }} statusOf={statusOf} showStatusButtons onStatus={(s: string) => setStatus(t, s)}
+                      missed={showAllRepeats ? 0 : (fold.missedOf.get(t.id)?.length || 0)} onClearMissed={() => clearMissed(t)}
+                      later={showAllRepeats || !['upcoming', 'all'].includes(bucket) ? 0 : (fold.laterOf.get(t.id) || 0)} />
                   ))}
                   {visible.filter(t => statusOf(t) === col.key).length === 0 && <p style={{ fontSize: 12, color: '#9ca3af', textAlign: 'center', padding: 16 }}>Nothing here</p>}
                 </div>
@@ -1269,13 +1373,58 @@ export default function TasksPage() {
                   </>)}
                 </div>
               )}
-              {visible.length === 0 && <div style={{ textAlign: 'center', padding: 40, color: 'var(--slate)', fontSize: 13.5 }}>No tasks in “{BUCKETS.find(b => b.key === bucket)?.label}”.</div>}
-              {visible.map(t => (
-                <TaskCard key={t.id} t={t} conv={convs[t.conversation_id]} selected={selectedId === t.id}
-                  selectMode={selectMode} checked={selectedIds.has(t.id)} onSelect={() => toggleSelect(t.id)}
-                  onClick={() => { if (selectMode) { toggleSelect(t.id) } else { setSelectedId(t.id); setShowNew(false) } }}
-                  statusOf={statusOf} onToggle={() => setStatus(t, isDone(t) ? 'todo' : 'done')} />
-              ))}
+              {/* Missed copies of repeating tasks are tucked into their latest card. */}
+              {(counts.foldedMissed > 0 || showAllRepeats) && ['today', 'overdue', 'all'].includes(bucket) && (
+                <div className="repeat-note">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+                  {showAllRepeats
+                    ? <span style={{ flex: 1 }}>Showing every copy of repeating tasks.</span>
+                    : <span style={{ flex: 1 }}><b>{counts.foldedMissed}</b> older missed {counts.foldedMissed === 1 ? 'copy' : 'copies'} of repeating tasks {counts.foldedMissed === 1 ? 'is' : 'are'} tucked into the latest card.</span>}
+                  <button onClick={() => setShowAllRepeats(v => !v)}>{showAllRepeats ? 'Tuck them away' : 'Show them'}</button>
+                  {!showAllRepeats && <button className="danger" onClick={clearAllMissed}>Clear all missed</button>}
+                </div>
+              )}
+              {visible.length === 0 && <div style={{ textAlign: 'center', padding: 40, color: 'var(--slate)', fontSize: 13.5 }}>No tasks in “{BUCKETS.find(b => b.key === bucket)?.label}”{bucket === 'upcoming' && listing.more > 0 ? ' in the next ' + upcomingDays + ' days' : ''}.</div>}
+              {(() => {
+                // Date headings between days (due-date order only — by priority or
+                // newest, days are interleaved so headings would repeat).
+                const withHeads = sortBy === 'due'
+                const groups = withHeads ? visible.map(groupOf) : []
+                const sizes = new Map<string, number>()
+                groups.forEach(g => sizes.set(g.key, (sizes.get(g.key) || 0) + 1))
+                let last = ''
+                const out: React.ReactNode[] = []
+                visible.forEach((t, i) => {
+                  if (withHeads) {
+                    const g = groups[i]
+                    if (g.key !== last) {
+                      last = g.key
+                      out.push(<div key={'h:' + g.key} className={'day-head ' + g.tone}><span>{g.label}</span><span className="n">{sizes.get(g.key)}</span></div>)
+                    }
+                  }
+                  out.push(
+                    <TaskCard key={t.id} t={t} conv={convs[t.conversation_id]} selected={selectedId === t.id}
+                      selectMode={selectMode} checked={selectedIds.has(t.id)} onSelect={() => toggleSelect(t.id)}
+                      onClick={() => { if (selectMode) { toggleSelect(t.id) } else { setSelectedId(t.id); setShowNew(false) } }}
+                      statusOf={statusOf} onToggle={() => setStatus(t, isDone(t) ? 'todo' : 'done')}
+                      missed={showAllRepeats ? 0 : (fold.missedOf.get(t.id)?.length || 0)} onClearMissed={() => clearMissed(t)}
+                      later={showAllRepeats || !['upcoming', 'all'].includes(bucket) ? 0 : (fold.laterOf.get(t.id) || 0)} />
+                  )
+                })
+                return out
+              })()}
+              {listing.more > 0 && (bucket === 'upcoming' || bucket === 'completed') && (
+                <div className="list-more">
+                  <span>
+                    {bucket === 'upcoming'
+                      ? <>{listing.more} more after the next {upcomingDays} days{listing.moreFrom ? <> · next on {new Date(listing.moreFrom).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' })}</> : null}</>
+                      : <>{listing.more} finished more than {completedDays} days ago</>}
+                  </span>
+                  <button onClick={() => bucket === 'upcoming' ? setUpcomingDays(d => d + 30) : setCompletedDays(d => d + 30)}>
+                    {bucket === 'upcoming' ? 'Show the next 30 days' : 'Show 30 days earlier'}
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -1400,7 +1549,7 @@ function FilterRail({ team, assigneeFilter, setAssigneeFilter, priorityFilter, s
   )
 }
 
-function TaskCard({ t, conv, selected, onClick, onToggle, onStatus, showStatusButtons, statusOf, selectMode, checked, onSelect, outlets }: any) {
+function TaskCard({ t, conv, selected, onClick, onToggle, onStatus, showStatusButtons, statusOf, selectMode, checked, onSelect, outlets, missed = 0, onClearMissed, later = 0 }: any) {
   const pr = PRIORITY[(t.priority || 'normal') as keyof typeof PRIORITY]
   const due = parseTs(t.due_date)
   const overdue = due && startOfDay(due).getTime() < startOfDay(new Date()).getTime() && statusOf(t) !== 'done'
@@ -1457,6 +1606,22 @@ function TaskCard({ t, conv, selected, onClick, onToggle, onStatus, showStatusBu
               <span title="Repeating task" style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 5, background: '#ecfeff', color: '#0e7490' }}>
                 <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
                 {t.recurrence.freq}
+              </span>
+            )}
+            {missed > 0 && (
+              <span title={`${missed} earlier ${missed === 1 ? 'copy was' : 'copies were'} never ticked off`}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10, fontWeight: 700, padding: '2px 4px 2px 7px', borderRadius: 5, background: '#fef2f2', color: '#b91c1c' }}>
+                Missed {missed}
+                {onClearMissed && (
+                  <button type="button" onClick={e => { e.stopPropagation(); onClearMissed() }} title="Remove the missed copies"
+                    style={{ border: 'none', background: 'rgba(185,28,28,0.10)', color: '#b91c1c', fontSize: 10, fontWeight: 800, padding: '1px 6px', borderRadius: 4, cursor: 'pointer' }}>Clear</button>
+                )}
+              </span>
+            )}
+            {later > 0 && (
+              <span title="More copies of this repeating task are scheduled after this one"
+                style={{ fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 5, background: '#f4f4f5', color: 'var(--slate)' }}>
+                +{later} scheduled
               </span>
             )}
             {t._source === 'calendar' && (() => {

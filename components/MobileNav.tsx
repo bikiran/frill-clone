@@ -125,14 +125,18 @@ export default function MobileNav() {
         if (!uid) { if (!cancelled) setTaskDue(0); return }
         const end = new Date(); end.setHours(23, 59, 59, 999)
         const { data } = await (supabase as any).from('conversation_tasks')
-          .select('id, done, status, due_date, assigned_to_id, assignees')
+          .select('id, done, status, due_date, assigned_to_id, assignees, series_id')
           .lte('due_date', end.toISOString()).limit(500)
         const mine = (data || []).filter((t: any) => {
           if (t.done || t.status === 'done' || !t.due_date) return false
           if (t.assigned_to_id === uid) return true
           return Array.isArray(t.assignees) && t.assignees.some((a: any) => a?.id === uid)
         })
-        if (!cancelled) setTaskDue(mine.length)
+        // A repeating task counts once: missed copies fold into its latest
+        // one on the Tasks page, so the badge matches what's listed there.
+        const seriesSeen = new Set(mine.filter((t: any) => t.series_id).map((t: any) => t.series_id))
+        const due = mine.filter((t: any) => !t.series_id).length + seriesSeen.size
+        if (!cancelled) setTaskDue(due)
       } catch { /* badge is cosmetic */ }
     }
     tick()
