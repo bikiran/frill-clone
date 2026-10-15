@@ -26,10 +26,12 @@ export const metadata: Metadata = {
     'business SMS', 'WhatsApp', 'Instagram DM', 'Messenger', 'live chat', 'help desk',
     'WooCommerce', 'Shopify', 'AI agents', 'customer feedback',
   ],
-  // Google shows the favicon beside every result: it wants a square icon in a
-  // multiple of 48px, so the 192px one is listed first.
+  // The black rounded tile (the app icon), so the mark stays visible on dark
+  // browser tabs. Google shows the favicon beside every result and wants a
+  // square in a multiple of 48px.
   icons: {
     icon: [
+      { url: '/favicon-48.png', sizes: '48x48', type: 'image/png' },
       { url: '/icon-192.png', sizes: '192x192', type: 'image/png' },
       { url: '/favicon.png', sizes: '256x256', type: 'image/png' },
     ],
