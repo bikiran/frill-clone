@@ -76,6 +76,30 @@ export async function claimMissedCallText(db: any, companyId: string, phone: str
   } catch { return 'error' }
 }
 
+// The provider refused the line the text went from (not set up for texting,
+// not on this account), not the customer: worth one more try from the usual
+// number. Never after a carrier opt-out (Twilio 21610 "unsubscribed recipient",
+// Telnyx 40300 "block rule"): the usual number would get round their STOP.
+const CARRIER_OPT_OUT = /unsubscribed recipient|stop message|block rule|blacklist rule/i
+const FROM_REJECTED = /\bfrom\b.{0,12}\b(number|address)\b|not a twilio phone number|(sms|message)[- ]capable|messaging profile/i
+
+const errText = (e: unknown) => String((e as any)?.message || e || '')
+
+/** The carrier says the customer replied STOP to the number it was sent from. */
+export function isCarrierOptOut(e: unknown): boolean {
+  return CARRIER_OPT_OUT.test(errText(e))
+}
+
+/**
+ * The provider blamed the From number, so the usual number may get through.
+ * Anything else (an opt-out, a landline, a timeout after which the first text
+ * may have gone anyway) isn't retried.
+ */
+export function isFromNumberRejection(e: unknown): boolean {
+  const msg = errText(e)
+  return !CARRIER_OPT_OUT.test(msg) && !isLandlineRejection(msg) && FROM_REJECTED.test(msg)
+}
+
 /** Hand the claim back when the text didn't go out, so the next missed call can try. */
 async function releaseClaim(db: any, companyId: string, phone: string, callId: string) {
   try {
@@ -110,6 +134,22 @@ async function contactState(db: any, companyId: string, key: string, contactId: 
   if (found.some(c => c.is_blocked || c.unsubscribed_at)) return 'opted_out'
   if (found.some(c => /landline|fixed/i.test(String(c.line_type || '')))) return 'not_mobile'
   return 'ok'
+}
+
+/** Record an opt-out the carrier reported, the way a STOP reply is recorded. */
+async function recordCarrierOptOut(db: any, companyId: string, contactId: string, now: Date) {
+  try {
+    const { data } = await db.from('contacts').update({
+      subscribed_to_marketing: false, consent_basis: 'none', consent_source: 'replied STOP (reported by the carrier)',
+      unsubscribed_at: now.toISOString(), unsubscribe_method: 'sms_keyword',
+    }).eq('id', contactId).eq('company_id', companyId).is('unsubscribed_at', null).select('id')
+    if (data?.length) {
+      await db.from('consent_events').insert({
+        company_id: companyId, contact_id: contactId, action: 'unsubscribed', basis: 'none',
+        source: 'Carrier opt-out (missed-call text)', actor: 'customer',
+      })
+    }
+  } catch {}
 }
 
 /** Is any of the business's stores open right now? Unknown hours count as closed. */
@@ -188,8 +228,8 @@ export async function sendMissedCallText(p: { db: any; companyId: string; callId
       sent = await sender.send({ to, text, from, statusCallback })
     } catch (e) {
       err = e
-      // That line may not be set up for texting — try the usual number once.
-      if (from && !isLandlineRejection(e)) {
+      // That line isn't set up for texting — try the usual number once.
+      if (from && isFromNumberRejection(e)) {
         try { sent = await sender.send({ to, text, statusCallback }); err = null } catch (e2) { err = e2 }
       }
     }
@@ -199,6 +239,10 @@ export async function sendMissedCallText(p: { db: any; companyId: string; callId
       if (isLandlineRejection(err) && call.contact_id) {
         try { await db.from('contacts').update({ line_type: 'landline', line_type_checked_at: now.toISOString() }).eq('id', call.contact_id).eq('company_id', companyId) } catch {}
       }
+      // The carrier says they replied STOP: record it as Colvy would a STOP it
+      // received itself (lib/inbound-sms), so none of the business's numbers
+      // texts them again.
+      else if (isCarrierOptOut(err) && call.contact_id) await recordCarrierOptOut(db, companyId, call.contact_id, now)
       log.warn('[missed call text] not sent', err?.message || err)
       return 'failed'
     }
@@ -213,12 +257,13 @@ export async function sendMissedCallText(p: { db: any; companyId: string; callId
         metadata: { auto: true, missed_call_text: true, call_id: callId },
       })
       // The customer's reply matches back to this thread by number. A call-only
-      // thread now continues by text; an email or Facebook thread the call
-      // happened to land in keeps its channel.
+      // thread now continues by text; an email, web chat or Facebook thread the
+      // call happened to land in keeps its channel and its SMS setting (a chat
+      // visitor who didn't tick "continue by text" keeps their choice).
       const callOnly = ['', 'phone', 'call', 'voice', 'sms'].includes(String(conv.channel || '').toLowerCase())
       await db.from('conversations').update({
         last_message: text.slice(0, 200), last_message_at: nowIso, updated_at: nowIso,
-        ...(callOnly ? { channel: 'sms' } : {}), sms_number: conv.sms_number || to, sms_enabled: true,
+        ...(callOnly ? { channel: 'sms', sms_enabled: true } : {}), sms_number: conv.sms_number || to,
         ...(conv.channel_number ? {} : { channel_number: from || sender.from || null }),
       }).eq('id', conv.id)
     } catch (e: any) { log.warn('[missed call text] sent, but not saved to the conversation', e?.message || e) }

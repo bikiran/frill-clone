@@ -73,21 +73,26 @@ export default function MetaChannelsPage() {
     return back ? addQuery(href, `returnTo=${encodeURIComponent(back)}`) : href
   }
 
+  // Merged into the settings as saved now, not as they were when this page
+  // opened, so a setting changed elsewhere meanwhile (missed-call texts
+  // switched off in Calls & SMS) isn't put back.
+  const saveInboxSetting = async (patch: Record<string, boolean>) => {
+    setInboxSettings((s: any) => ({ ...(s || {}), ...patch }))
+    if (!companyId) return
+    const { data, error } = await (supabase as any).from('companies').select('inbox_settings').eq('id', companyId).maybeSingle()
+    if (error || !data) return
+    const next = { ...(data?.inbox_settings || {}), ...patch }
+    await (supabase as any).from('companies').update({ inbox_settings: next }).eq('id', companyId)
+    setInboxSettings(next)
+  }
+
   // Company-wide display preference: render Instagram conversations in the inbox
   // with an Instagram-style theme (gradient outgoing bubbles + header).
-  const setIgTheme = async (on: boolean) => {
-    const next = { ...(inboxSettings || {}), instagram_theme: on }
-    setInboxSettings(next)
-    if (companyId) await (supabase as any).from('companies').update({ inbox_settings: next }).eq('id', companyId)
-  }
+  const setIgTheme = (on: boolean) => saveInboxSetting({ instagram_theme: on })
 
   // The Messenger equivalent: render Facebook Messenger conversations with the
   // signature Messenger blue on outgoing bubbles, header + Send button.
-  const setMsgrTheme = async (on: boolean) => {
-    const next = { ...(inboxSettings || {}), messenger_theme: on }
-    setInboxSettings(next)
-    if (companyId) await (supabase as any).from('companies').update({ inbox_settings: next }).eq('id', companyId)
-  }
+  const setMsgrTheme = (on: boolean) => saveInboxSetting({ messenger_theme: on })
 
   if (loading) return <div style={{ padding: 40, color: 'var(--slate)' }}>Loading…</div>
 

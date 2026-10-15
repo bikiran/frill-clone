@@ -30,7 +30,7 @@ type Summary = {
     // Last 7 days. Missing from summaries cached before it existed.
     missedOutcome?: {
       missed: number; recovered: number; textedBack: number; toCallBack: number
-      toReturn: { number: string; name: string | null; conversationId: string | null; at: string; attempts: number }[]
+      toReturn: { number: string; name: string | null; conversationId: string | null; at: string; attempts: number; voicemail?: boolean; textedBack?: boolean }[]
     } | null
     awaiting: number; oldestDays: number | null
     overdueTasks: number; dueToday: number
@@ -329,14 +329,17 @@ export default function AdminDashboard() {
 function NeedsAttention({ s, refreshing }: { s: Summary | null; refreshing?: boolean }) {
   const a = s?.attention
   // Missed calls stay until someone gets back to the caller, rather than
-  // vanishing at midnight. The link opens the call log on the missed ones.
+  // vanishing at midnight. The tile opens the list of callers still waiting
+  // (under the tiles); the call log shows every incoming call of the week,
+  // voicemails included, since its "missed" filter leaves those out.
   const mo = a?.missedOutcome
   const cc = canSee(s, 'command_centre')
-  const missedHref = cc ? '/admin/command-centre?tab=logs&range=7d&dir=inbound&outcome=missed' : '/admin/calls?filter=missed'
+  const missedHref = cc ? '/admin/command-centre?tab=logs&range=7d&dir=inbound' : '/admin/calls?filter=inbound'
+  const callBack = mo?.toReturn || []
   const tiles = a ? [
     { key: 'unread', feature: 'inbox', label: 'Unread messages', n: a.unread, urgent: true, href: '/admin/inbox?view=unread', icon: ChatI,
       sub: a.unread ? 'Customers waiting on a reply' : 'Inbox is caught up' },
-    mo ? { key: 'calls', feature: 'calls', label: 'Missed calls to return', n: mo.toCallBack, urgent: true, href: missedHref, icon: PhoneMissI,
+    mo ? { key: 'calls', feature: 'calls', label: 'Missed calls to return', n: mo.toCallBack, urgent: true, href: callBack.length ? '#call-back' : missedHref, icon: PhoneMissI,
       sub: mo.missed ? `${mo.recovered} of ${plural(mo.missed, 'missed call')} recovered · ${mo.toCallBack} still to call back` : 'None in the last 7 days',
       hint: mo.textedBack ? `Last 7 days. ${plural(mo.textedBack, 'caller')} texted back automatically.` : 'Last 7 days' }
     : { key: 'calls', feature: 'calls', label: 'Missed calls today', n: a.missedCalls + a.voicemails, urgent: true, href: cc ? '/admin/command-centre' : '/admin/calls', icon: PhoneMissI,
@@ -395,6 +398,40 @@ function NeedsAttention({ s, refreshing }: { s: Summary | null; refreshing?: boo
             )
           })}
       </div>
+      {callBack.length > 0 && canSee(s, 'calls') && (
+        <div id="call-back" className={`${card} overflow-hidden mt-3 scroll-mt-20`} style={cardStyle}>
+          <div className="px-5 py-3.5 border-b flex items-center justify-between" style={cardStyle}>
+            <h3 className="font-semibold text-sm flex items-center gap-2" style={{ color: 'var(--ink)' }}><PhoneMissI size={16} color="var(--slate)" /> Still to call back</h3>
+            <Link href={missedHref} className="text-xs font-semibold" style={{ color: 'var(--coral)' }}>Call log</Link>
+          </div>
+          <ul className="dash-rows">
+            {callBack.map(r => {
+              const detail = [r.name ? r.number : '', r.attempts > 1 ? plural(r.attempts, 'missed call') : '', r.voicemail ? 'Voicemail' : '', r.textedBack ? 'Texted back' : ''].filter(Boolean).join(' · ')
+              const body = (
+                <>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm truncate" style={{ color: 'var(--ink)' }}>{r.name || r.number}</span>
+                    {detail && <span className="block text-xs truncate" style={{ color: 'var(--slate)' }}>{detail}</span>}
+                  </span>
+                  <span className="text-xs shrink-0 tabular-nums" style={{ color: 'var(--slate)' }}>{ago(r.at)}</span>
+                </>
+              )
+              const row = 'px-5 py-3 flex items-center gap-3 hover:bg-gray-50 transition-smooth'
+              // Their conversation, where the call (and any text back) sits; else ring them.
+              return (
+                <li key={r.number}>
+                  {r.conversationId && canSee(s, 'inbox')
+                    ? <Link href={`/admin/inbox?conversation=${r.conversationId}`} className={row}>{body}</Link>
+                    : <a href={`tel:${r.number}`} className={row}>{body}</a>}
+                </li>
+              )
+            })}
+            {mo && mo.toCallBack > callBack.length && (
+              <li><Link href={missedHref} className="block px-5 py-2.5 text-xs" style={{ color: 'var(--slate)' }}>+{mo.toCallBack - callBack.length} more in the call log</Link></li>
+            )}
+          </ul>
+        </div>
+      )}
     </section>
   )
 }

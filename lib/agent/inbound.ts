@@ -55,9 +55,11 @@ export async function startSupportAgentForConversation(db: any, conversationId: 
 
   await new Promise(r => setTimeout(r, opts.debounceMs ?? DEBOUNCE_MS))
 
-  const { data: msgs } = await db.from('messages').select('id, sender_type, is_ai, is_internal, content, created_at, sender_email')
+  const { data: msgs } = await db.from('messages').select('id, sender_type, is_ai, is_internal, content, created_at, sender_email, metadata')
     .eq('conversation_id', conversationId).order('created_at', { ascending: false }).limit(15)
-  const list = (msgs || []).filter((m: any) => !m.is_internal)
+  // The automatic missed-call text (lib/missed-call-text) isn't anyone answering
+  // the customer, so it neither stops the agent nor ends their latest burst.
+  const list = (msgs || []).filter((m: any) => !m.is_internal && !m.metadata?.missed_call_text)
   const lastCustomer = list.find((m: any) => m.sender_type === 'visitor')
   if (!lastCustomer) return { started: false, reason: 'no customer message' }
   if (Date.now() - new Date(lastCustomer.created_at).getTime() > 15 * 60_000) return { started: false, reason: 'stale' }
