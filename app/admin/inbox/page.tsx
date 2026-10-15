@@ -4935,20 +4935,32 @@ export default function InboxPage() {
   // Crucially, when the thread HAS an sms_number the server already texted, so
   // we send nothing — this is what removes the SMS double-send (server + client)
   // that hit SMS-channel media requests.
-  const deliverUploadLink = async (link: string, body: string, texted = false): Promise<string> => {
+  //
+  // When nothing went out it says so. It used to answer "sent" whenever the
+  // thread had an sms_number, even when the server skipped the text (texting
+  // off for the thread) or the provider refused it.
+  const deliverUploadLink = async (link: string, body: string, texted = false, smsError: string | null = null): Promise<string> => {
     const subject = `${companyInfo?.name || 'We'} need a few files from you`
     const ch = activeChannel
     if (ch === 'email' || ch === 'instagram' || ch === 'facebook') {
       return deliverToCustomer({ subject, body, url: link })
     }
+    if (texted) return 'sent'
+    // The server tried to text it and couldn't. Another try from here would
+    // fail the same way, or text it twice after a timeout.
+    if (smsError) throw new Error(smsError)
     // The server also texts the contact's phone when the thread has no
     // sms_number, so only send here when it says it didn't.
-    if (!texted && mediaSmsEnabled && !(selected as any)?.sms_number && smsDestination()) {
+    if (mediaSmsEnabled && !(selected as any)?.sms_number && smsDestination()) {
       return deliverToCustomer({ subject, body, url: link, silent: true })
     }
-    // server already texted (thread has an sms_number), widget with no mobile, or
-    // media-link SMS disabled for this company — the card stays in the thread.
-    return 'sent'
+    // Not texted. A web chat visitor sees the card in the chat; anyone else
+    // hasn't been sent anything.
+    if (isWebChat) return 'Posted in the chat'
+    const why = !mediaSmsEnabled ? 'texting upload links is switched off'
+      : !smsDestination() ? 'no mobile number'
+      : 'texting is off for this conversation'
+    return `Added to the conversation but not texted (${why})`
   }
 
   const requestMediaQuick = async () => {
@@ -4968,7 +4980,11 @@ export default function InboxPage() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Could not create request')
       let how = 'sent'
-      if (data.link) how = await deliverUploadLink(data.link, 'Please upload your photos or videos here:', !!data.texted)
+      if (data.link) {
+        try {
+          how = await deliverUploadLink(data.link, 'Please upload your photos or videos here:', !!data.texted, data.smsError || null)
+        } catch (e: any) { showToast(`Upload link created, but sending failed: ${e.message}`); refreshThread(); return }
+      }
       showToast(`Upload link ${how.toLowerCase()}`)
       refreshThread()
     } catch (e: any) { showToast(e.message || 'Could not send the upload link') }
@@ -5001,7 +5017,7 @@ export default function InboxPage() {
       let how = 'sent'
       if (data.link) {
         try {
-          how = await deliverUploadLink(data.link, `${mrPrompt.trim() || 'Please upload the requested files.'}\nUpload here:`, !!data.texted)
+          how = await deliverUploadLink(data.link, `${mrPrompt.trim() || 'Please upload the requested files.'}\nUpload here:`, !!data.texted, data.smsError || null)
         } catch (e: any) { showToast(`Request created, but sending failed: ${e.message}`); setMrSaving(false); return }
       }
       showToast(`Media request ${how.toLowerCase()}`)

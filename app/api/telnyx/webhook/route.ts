@@ -371,6 +371,10 @@ export async function POST(req: NextRequest) {
           is_unread: true,
           // Inbound text ⇒ this is an SMS conversation now, whatever it started as.
           channel: 'sms',
+          // And it continues by text: texting goes on (upload links and the like
+          // are texted), replacing a "continue by text" box the customer left
+          // unticked in a web chat. Not for a STOP.
+          ...(STOP_WORDS.includes(keyword) ? {} : { sms_enabled: true }),
           // An inbound message reopens a closed enquiry — the customer is back,
           // so they shouldn't stay buried in the Closed tab.
           status: 'open',

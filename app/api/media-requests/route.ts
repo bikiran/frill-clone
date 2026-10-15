@@ -68,6 +68,9 @@ export async function POST(req: NextRequest) {
     // Why it wasn't texted, when it should have been — so the app can say so
     // instead of showing a link the customer never received.
     let smsError: string | null = null
+    // The thread's own number. The inbox texts the link itself only for a thread
+    // without one, so for a thread with one, not texted here means not texted.
+    let threadNumber: string | null = null
 
     if (conversationId) {
       // Actually deliver the link to the customer over SMS. Previously we only
@@ -77,6 +80,7 @@ export async function POST(req: NextRequest) {
       try {
         const { data: conv } = await db.from('conversations')
           .select('sms_number, sms_enabled, contact_id').eq('id', conversationId).maybeSingle()
+        threadNumber = conv?.sms_number || null
         // Recipient: the conversation's SMS number if set, else fall back to the
         // linked contact's phone. Previously only sms_number was used, so a
         // request on a call/mixed thread (no sms_number) recorded the message
@@ -109,9 +113,16 @@ export async function POST(req: NextRequest) {
       // with the channel it really went out on. The client's guess said "chat"
       // whenever it couldn't see a mobile, even though we had just texted it —
       // so a texted link read "Live Chat". Email/Messenger/Instagram are sent
-      // by the client, so its value stands for those.
+      // by the client, so its value stands for those. An "SMS" asked for but not
+      // texted here stands only when the inbox is about to text it (a thread
+      // with no number of its own, and no failed send here); otherwise the card
+      // read "Delivered | SMS" for a link the customer never got.
       const asked = typeof deliveryChannel === 'string' ? deliveryChannel : ''
-      const channel = ['email', 'instagram', 'facebook'].includes(asked) ? asked : texted ? 'sms' : (asked || 'chat')
+      const inboxWillText = !threadNumber && !smsError
+      const channel = ['email', 'instagram', 'facebook'].includes(asked) ? asked
+        : texted ? 'sms'
+        : asked === 'sms' && !inboxWillText ? 'chat'
+        : (asked || 'chat')
       await db.from('messages').insert({
         conversation_id: conversationId, company_id: companyId,
         sender_type: 'agent', sender_name: createdBy || 'Support',

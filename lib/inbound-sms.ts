@@ -69,8 +69,8 @@ export async function ingestInboundSms(params: {
   const keyword = String(text).trim().toUpperCase().replace(/[^A-Z]/g, '')
   const STOP_WORDS = ['STOP', 'STOPALL', 'UNSUBSCRIBE', 'CANCEL', 'END', 'QUIT', 'OPTOUT']
   const START_WORDS = ['START', 'SUBSCRIBE', 'YES', 'OPTIN', 'UNSTOP']
-  if (fromDigits && (STOP_WORDS.includes(keyword) || START_WORDS.includes(keyword))) {
-    const optingOut = STOP_WORDS.includes(keyword)
+  const optingOut = STOP_WORDS.includes(keyword)
+  if (fromDigits && (optingOut || START_WORDS.includes(keyword))) {
     try {
       const { data: all } = await db.from('contacts').select('id, phone').eq('company_id', companyId).limit(2000)
       const match = (all || []).find((c: any) => c.phone && digitsOf(c.phone) === fromDigits)
@@ -154,9 +154,13 @@ export async function ingestInboundSms(params: {
     telnyx_message_id: params.providerMessageId || null,
   }).select('id').maybeSingle()
   await emitInboundEvent(db, { companyId, conversationId: conv.id, text, channel: 'sms', phone: from, messageId: insertedMsg?.id || null })
+  // The customer is texting in, so the thread continues by text: texting goes
+  // on (upload links and the like are texted), replacing a "continue by text"
+  // box they left unticked in a web chat. Not for a STOP.
   await db.from('conversations').update({
     last_message: summary, last_message_at: new Date().toISOString(),
     is_unread: true, channel: 'sms', status: 'open',
+    ...(optingOut ? {} : { sms_enabled: true }),
     unread_count: (conv.unread_count || 0) + 1, updated_at: new Date().toISOString(),
   }).eq('id', conv.id)
 
