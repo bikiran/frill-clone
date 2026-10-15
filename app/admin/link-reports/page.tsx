@@ -4,6 +4,9 @@ import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
 import { peekCompanyUser, resolveCompanyUser } from '@/lib/client-cache'
 import { SkeletonList } from '@/components/Skeleton'
+import {
+  PUBLIC_CHANNEL_LABEL, LINK_OUTCOMES, isPublicChannel, linkFunnel, linkOutcome, clickSource, isBookingPayment, type Funnel,
+} from '@/lib/link-channels'
 
 type Link = {
   id: string; code: string; target_url: string; label: string | null
@@ -17,6 +20,7 @@ type Click = {
   city: string | null; region: string | null; country: string | null
   device: string | null; os: string | null; browser: string | null
   referrer: string | null
+  ip?: string | null; user_agent?: string | null
 }
 type Conversion = {
   id: string; link_id: string; contact_id: string | null
@@ -54,6 +58,8 @@ const CHANNEL_LABEL: Record<string, string> = {
   sms: 'SMS', chat: 'Website chat', widget: 'Website chat', email: 'Email',
   messenger: 'Facebook Messenger', instagram: 'Instagram', whatsapp: 'WhatsApp',
   internal: 'Internal agent message', gallery: 'Gallery',
+  // Links made in the Links Generator for a Reel, post, poster…
+  ...PUBLIC_CHANNEL_LABEL,
 }
 const TYPE_LABEL: Record<string, string> = {
   product: 'Product', image: 'Image', help: 'Help article', form: 'Form',
@@ -79,7 +85,7 @@ export default function LinkReportsPage() {
   const [fAgent, setFAgent] = useState('')
   const [fOutlet, setFOutlet] = useState('')
   const [fOutcome, setFOutcome] = useState('')
-  const [tab, setTab] = useState<'links' | 'channels' | 'agents' | 'outlets' | 'timing' | 'devices'>('links')
+  const [tab, setTab] = useState<'links' | 'social' | 'channels' | 'agents' | 'outlets' | 'timing' | 'devices'>('links')
 
   useEffect(() => {
     ;(async () => {
@@ -164,9 +170,12 @@ export default function LinkReportsPage() {
       for (const c of (cv || [])) convMap[c.id] = c
       setConvs(convMap)
     }
+    // Plus the people behind stitched clicks on Reel / QR links, so a click's
+    // history can say who it turned out to be.
     const contactIds = Array.from(new Set([
       ...linkRows.map(l => l.contact_id),
       ...Object.values(convMap).map((c: any) => c.contact_id),
+      ...((cs || []) as Click[]).map(c => c.contact_id),
     ].filter(Boolean))) as string[]
     if (contactIds.length) {
       const { data: cts } = await (supabase as any).from('contacts')
@@ -191,21 +200,17 @@ export default function LinkReportsPage() {
     return m
   }, [conversions])
 
-  /** Outcome of a link: the furthest stage it reached. */
-  const outcomeOf = (l: Link): string => {
-    const vs = convByLink[l.id] || []
-    if (vs.some(v => v.stage === 'paid')) return 'Purchased'
-    if (vs.some(v => v.stage === 'created')) return 'Order created'
-    if (vs.some(v => v.stage === 'checkout')) return 'Checkout started'
-    if (vs.some(v => v.stage === 'cart')) return 'Added to cart'
-    if ((clicksByLink[l.id]?.length || l.clicks || 0) > 0) return 'Clicked'
-    return 'Not opened'
-  }
+  /** Outcome of a link: the furthest stage it reached (lib/link-channels). */
+  const outcomeOf = (l: Link): string =>
+    linkOutcome(convByLink[l.id] || [], (clicksByLink[l.id]?.length || l.clicks || 0) > 0)
   const OUTCOME_COLOR: Record<string, { bg: string; fg: string }> = {
     'Purchased': { bg: '#dcfce7', fg: '#15803d' },
     'Order created': { bg: '#dbeafe', fg: '#1d4ed8' },
+    'Booked': { bg: '#ccfbf1', fg: '#0f766e' },
     'Checkout started': { bg: '#e0e7ff', fg: '#4338ca' },
     'Added to cart': { bg: '#fef3c7', fg: '#b45309' },
+    'Lead': { bg: '#fae8ff', fg: '#a21caf' },
+    'Conversation': { bg: '#e0f2fe', fg: '#0369a1' },
     'Clicked': { bg: 'var(--peach)', fg: 'var(--coral)' },
     'Not opened': { bg: '#f3f4f6', fg: '#6b7280' },
   }
@@ -255,8 +260,9 @@ export default function LinkReportsPage() {
     return set.size + anon
   })()
   const repeatClickers = Math.max(0, totalClicks - uniqueClicks)
+  // Revenue includes paid bookings (smart links); the order count doesn't.
   const paidConv = vConv.filter(v => v.stage === 'paid')
-  const orders = new Set(paidConv.map(v => v.order_id ?? v.id)).size
+  const orders = new Set(paidConv.filter(v => !isBookingPayment(v)).map(v => v.order_id ?? v.id)).size
   const revenue = paidConv.reduce((s, v) => s + (Number(v.revenue) || 0), 0)
   // Media/image links (e.g. 44962.jpg, storage URLs) get clicked but can never
   // "convert", so they unfairly drag the rate down — exclude them from the
@@ -301,11 +307,40 @@ export default function LinkReportsPage() {
       return {
         key: k, sent: rows.length, clicks: cl.length, unique: uniq,
         clickRate: rows.length ? Math.round((rows.filter(r => (clicksByLink[r.id]?.length || 0) > 0).length / rows.length) * 100) : 0,
-        orders: new Set(cv.map(v => v.order_id ?? v.id)).size,
+        orders: new Set(cv.filter(v => !isBookingPayment(v)).map(v => v.order_id ?? v.id)).size,
         revenue: rev, avgToClick: avgTimeToClick(rows),
       }
     }).sort((a, b) => b.clicks - a.clicks)
   }
+
+  // ── Social & QR ───────────────────────────────────────────────────────────
+  // Links made for a Reel, post, TikTok, video, poster or newsletter, grouped
+  // by where they were posted and what they're called, with what each led to.
+  const social = useMemo(() => {
+    const pub = visible.filter(l => isPublicChannel(l.channel))
+    const ids = new Set(pub.map(l => l.id))
+    const pClicks = vClicks.filter(c => ids.has(c.link_id))
+    const pConv = vConv.filter(v => ids.has(v.link_id))
+    // Clicks counted before per-click rows existed only live on the counter.
+    const counterOnly = (ls: Link[]) => ls.reduce((s, l) => s + (clicksByLink[l.id]?.length ? 0 : (l.clicks || 0)), 0)
+    const funnelOf = (ls: Link[]): Funnel => {
+      const gid = new Set(ls.map(l => l.id))
+      const f = linkFunnel(pClicks.filter(c => gid.has(c.link_id)), pConv.filter(v => gid.has(v.link_id)))
+      const extra = counterOnly(ls)
+      return { ...f, clicks: f.clicks + extra, visitors: f.visitors + extra }
+    }
+    const groups: Record<string, { channel: string; name: string; links: Link[] }> = {}
+    for (const l of pub) {
+      const name = l.label && l.label !== 'Link' ? l.label.trim() : ''
+      ;(groups[`${l.channel}|${name.toLowerCase()}`] ||= { channel: l.channel || '', name, links: [] }).links.push(l)
+    }
+    const rows = Object.entries(groups)
+      .map(([key, g]) => ({ key, channel: g.channel, name: g.name, links: g.links.length, f: funnelOf(g.links) }))
+      .sort((a, b) => b.f.revenue - a.f.revenue || b.f.clicks - a.f.clicks)
+    const src: Record<string, number> = {}
+    for (const c of pClicks) { const s = clickSource(c.referrer, c.user_agent); src[s] = (src[s] || 0) + 1 }
+    return { count: pub.length, rows, total: funnelOf(pub), sources: Object.entries(src).sort((a, b) => b[1] - a[1]), clickRows: pClicks.length }
+  }, [visible, vClicks, vConv, clicksByLink])
 
   const card: React.CSSProperties = { border: '1px solid var(--border)', borderRadius: 14, background: '#fff', padding: 16 }
   const statNum: React.CSSProperties = { fontSize: 24, fontWeight: 800, color: 'var(--ink)', margin: '4px 0 0' }
@@ -377,8 +412,7 @@ export default function LinkReportsPage() {
         )}
         <select value={fOutcome} onChange={e => setFOutcome(e.target.value)} style={sel}>
           <option value="">Any outcome</option>
-          {['Not opened', 'Clicked', 'Added to cart', 'Checkout started', 'Order created', 'Purchased']
-            .map(o => <option key={o} value={o}>{o}</option>)}
+          {LINK_OUTCOMES.map(o => <option key={o} value={o}>{o}</option>)}
         </select>
         {(['7', '30', '90', 'all'] as const).map(r => (
           <button key={r} onClick={() => setRange(r)}
@@ -402,7 +436,7 @@ export default function LinkReportsPage() {
 
       {/* Tabs */}
       <div style={{ display: 'flex', gap: 6, marginBottom: 14, overflowX: 'auto', paddingBottom: 2 }}>
-        {([['links', 'Links'], ['channels', 'Channels'], ['agents', 'Agents'], ['outlets', 'Outlets'], ['timing', 'Timing'], ['devices', 'Devices']] as const).map(([k, label]) => (
+        {([['links', 'Links'], ['social', 'Social & QR'], ['channels', 'Channels'], ['agents', 'Agents'], ['outlets', 'Outlets'], ['timing', 'Timing'], ['devices', 'Devices']] as const).map(([k, label]) => (
           <button key={k} onClick={() => setTab(k)}
             style={{ flexShrink: 0, padding: '7px 14px', borderRadius: 20, cursor: 'pointer', border: '1px solid ' + (tab === k ? 'var(--coral)' : 'var(--border)'), background: tab === k ? 'var(--peach)' : '#fff', color: tab === k ? 'var(--coral)' : 'var(--slate)', fontSize: 12.5, fontWeight: 700 }}>
             {label}
@@ -463,6 +497,79 @@ export default function LinkReportsPage() {
               })}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* ── Social & QR ───────────────────────────────────────────────────── */}
+      {tab === 'social' && (
+        <div style={{ display: 'grid', gap: 12 }}>
+          <p style={{ margin: 0, fontSize: 12.5, color: 'var(--slate)', lineHeight: 1.5 }}>
+            Links you made in <a href="/admin/links" style={{ color: 'var(--coral)', fontWeight: 700, textDecoration: 'none' }}>Links Generator</a> for
+            Reels, posts, TikTok, YouTube, QR codes and newsletters. When someone who tapped one chats, books or fills in a
+            form on your site, it&apos;s credited here — and what they buy in the next 7 days counts as revenue influenced.
+          </p>
+          {social.count === 0 ? (
+            <div style={{ ...card, textAlign: 'center', padding: 28 }}>
+              <p style={{ margin: '0 0 10px', fontSize: 13.5, color: 'var(--ink)', fontWeight: 700 }}>No social or QR links in this period</p>
+              <a href="/admin/links" style={{ display: 'inline-block', padding: '8px 16px', borderRadius: 9, background: 'var(--coral)', color: '#fff', fontSize: 13, fontWeight: 700, textDecoration: 'none' }}>
+                Make a link for your next post
+              </a>
+            </div>
+          ) : (<>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(118px, 1fr))', gap: 10 }}>
+              {([['Clicks', social.total.clicks], ['People', social.total.visitors], ['Chats', social.total.chats], ['New leads', social.total.leads], ['Bookings', social.total.bookings], ['Orders', social.total.orders]] as const).map(([label, n]) => (
+                <div key={label} style={card}><div style={statLbl}>{label}</div><p style={statNum}>{n}</p></div>
+              ))}
+              <div style={card}><div style={statLbl}>Revenue</div><p style={{ ...statNum, color: '#15803d' }}>{money(social.total.revenue)}</p></div>
+            </div>
+
+            <div style={{ border: '1px solid var(--border)', borderRadius: 14, overflow: 'hidden', background: '#fff', overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 860 }}>
+                <thead><tr style={{ background: 'var(--peach)' }}>
+                  <th style={th}>Posted on</th><th style={th}>Name</th>
+                  <th style={{ ...th, textAlign: 'right' }}>Links</th><th style={{ ...th, textAlign: 'right' }}>Clicks</th>
+                  <th style={{ ...th, textAlign: 'right' }}>People</th><th style={{ ...th, textAlign: 'right' }}>Chats</th>
+                  <th style={{ ...th, textAlign: 'right' }}>New leads</th><th style={{ ...th, textAlign: 'right' }}>Bookings</th>
+                  <th style={{ ...th, textAlign: 'right' }}>Orders</th><th style={{ ...th, textAlign: 'right' }}>Revenue</th>
+                </tr></thead>
+                <tbody>
+                  {social.rows.map(r => (
+                    <tr key={r.key} style={{ borderTop: '1px solid var(--border)' }}>
+                      <td style={{ ...td, color: 'var(--ink)', fontWeight: 600, whiteSpace: 'nowrap' }}>{CHANNEL_LABEL[r.channel] || r.channel}</td>
+                      <td style={{ ...td, color: r.name ? 'var(--ink)' : '#9ca3af', maxWidth: 260 }}>{r.name || 'No name'}</td>
+                      <td style={{ ...td, textAlign: 'right' }}>{r.links}</td>
+                      <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: r.f.clicks ? '#059669' : '#9ca3af' }}>{r.f.clicks}</td>
+                      <td style={{ ...td, textAlign: 'right' }}>{r.f.visitors}</td>
+                      <td style={{ ...td, textAlign: 'right' }}>{r.f.chats || '—'}</td>
+                      <td style={{ ...td, textAlign: 'right' }}>{r.f.leads || '—'}</td>
+                      <td style={{ ...td, textAlign: 'right' }}>{r.f.bookings || '—'}</td>
+                      <td style={{ ...td, textAlign: 'right' }}>{r.f.orders || '—'}</td>
+                      <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: r.f.revenue > 0 ? '#15803d' : 'var(--slate)' }}>{r.f.revenue > 0 ? money(r.f.revenue) : '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div style={card}>
+              <h3 style={{ margin: '0 0 4px', fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>Where the clicks came from</h3>
+              <p style={{ margin: '0 0 12px', fontSize: 11.5, color: 'var(--slate)' }}>
+                From the page or app the link was tapped in. QR scans and some apps don&apos;t say, so they show as no referrer.
+              </p>
+              {social.sources.length === 0 && <p style={{ fontSize: 12.5, color: 'var(--slate)', margin: 0 }}>No clicks yet.</p>}
+              {social.sources.slice(0, 10).map(([name, n]) => (
+                <div key={name} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: 10, alignItems: 'center', padding: '5px 0' }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 13, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</div>
+                    <div style={{ height: 6, borderRadius: 3, background: '#f3f4f6', marginTop: 4 }}>
+                      <div style={{ height: 6, borderRadius: 3, background: 'var(--coral)', opacity: 0.8, width: `${Math.max(3, Math.round((n / (social.clickRows || 1)) * 100))}%` }} />
+                    </div>
+                  </div>
+                  <strong style={{ fontSize: 13, color: 'var(--ink)' }}>{n}</strong>
+                </div>
+              ))}
+            </div>
+          </>)}
         </div>
       )}
 
@@ -587,6 +694,14 @@ export default function LinkReportsPage() {
                   {chip('Outcome', oc)}
                   {chip('Revenue', rev > 0 ? money(rev) : '—', rev > 0 ? '#15803d' : undefined)}
                 </div>
+                {isPublicChannel(selected.channel) && (() => {
+                  const f = linkFunnel(clicksByLink[selected.id] || [], convByLink[selected.id] || [], selected.clicks || 0)
+                  return (
+                    <p style={{ margin: '0 0 14px', fontSize: 12.5, color: 'var(--slate)' }}>
+                      {CHANNEL_LABEL[selected.channel || '']}: {f.visitors} {f.visitors === 1 ? 'person' : 'people'} · {f.chats} chat{f.chats === 1 ? '' : 's'} · {f.leads} new lead{f.leads === 1 ? '' : 's'} · {f.bookings} booking{f.bookings === 1 ? '' : 's'} · {f.orders} order{f.orders === 1 ? '' : 's'}
+                    </p>
+                  )
+                })()}
                 {selected.conversation_id && (
                   <a href={`/admin/inbox?conversation=${selected.conversation_id}`}
                     style={{ display: 'inline-block', marginBottom: 14, fontSize: 12.5, fontWeight: 700, color: 'var(--coral)', textDecoration: 'none' }}>
@@ -606,6 +721,11 @@ export default function LinkReportsPage() {
                           {(c.device || c.browser) ? ' · ' : ''}
                           <span style={{ textTransform: 'capitalize' }}>{c.device || ''}</span>{c.os ? ` (${c.os})` : ''}{c.browser ? ` · ${c.browser}` : ''}
                         </div>
+                        {isPublicChannel(selected.channel) && (
+                          <div style={{ fontSize: 11.5, color: 'var(--slate)', marginTop: 2 }}>
+                            From {clickSource(c.referrer, c.user_agent)}{c.contact_id && contacts[c.contact_id]?.name ? ` · ${contacts[c.contact_id].name}` : ''}
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>

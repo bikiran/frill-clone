@@ -24,6 +24,8 @@ import { emitIntegrationEvent } from '@/lib/integration-events'
 import { isExternalSendBlocked } from '@/lib/demo-guard'
 import { sendCustomerEmail } from '@/lib/customer-email'
 import { shortenUrl } from '@/lib/short-link'
+import { stitchLinkClick } from '@/lib/link-stitch'
+import { attributeBookingToLinks } from '@/lib/link-attribution'
 
 const MIN = 60_000
 const HOUR = 3_600_000
@@ -344,7 +346,9 @@ export async function availability(db: any, opts: {
 
 const tail9 = (s: string) => (s || '').replace(/\D/g, '').slice(-9)
 
-async function ensureContact(db: any, companyId: string, c: { name: string; email: string | null; phone: string | null }, knownId?: string) {
+// `out.created` says whether a brand-new contact was made (a new lead, for
+// smart-link reporting).
+async function ensureContact(db: any, companyId: string, c: { name: string; email: string | null; phone: string | null }, knownId?: string, out?: { created?: boolean }) {
   let hit: any = null
   try {
     if (knownId) {
@@ -371,6 +375,7 @@ async function ensureContact(db: any, companyId: string, c: { name: string; emai
   }
   try {
     const { data } = await db.from('contacts').insert({ company_id: companyId, name: c.name || null, email: c.email, phone: c.phone, source: 'booking' }).select('id').maybeSingle()
+    if (data?.id && out) out.created = true
     return (data?.id as string) || null
   } catch { return null }
 }
@@ -449,6 +454,8 @@ export type CreateInput = {
   origin: string
   source?: string
   inviteToken?: string | null
+  /** The tracked click (?clv=) the booking page was opened through, if any. */
+  clickRef?: string | null
 }
 
 export type CreateResult = { ok: true; token: string; checkoutUrl?: string | null; state: 'confirmed' | 'pending' } | { ok: false; error: string; status?: number }
@@ -528,8 +535,16 @@ export async function createBooking(db: any, input: CreateInput): Promise<Create
     if (inv && inv.company_id === company.id) { try { await db.from('bookings').update({ invite_id: inv.id }).eq('id', bookingId) } catch {} }
   }
 
+  // Smart links: remember the Reel / QR click that opened the page, so the
+  // booking can be credited to that link when it's confirmed — for a paid
+  // booking that's later, in the Stripe webhook. The column comes with V361;
+  // before that the update just fails and instant bookings still get it below.
+  if (input.clickRef) {
+    try { await db.from('bookings').update({ source_click_id: input.clickRef }).eq('id', bookingId) } catch {}
+  }
+
   if (!needsPayment) {
-    await confirmBooking(db, bookingId, { origin: input.origin })
+    await confirmBooking(db, bookingId, { origin: input.origin, clickRef: input.clickRef || null })
     return { ok: true, token, state: 'confirmed' }
   }
 
@@ -580,7 +595,7 @@ async function loadBookingCtx(db: any, bookingId: string) {
 // Confirm a held booking. Idempotent: the webhook and the return-page verify
 // can both call it; only one does the side effects. If the hold lapsed and the
 // slot was taken meanwhile, a payment is refunded and the booking cancelled.
-export async function confirmBooking(db: any, bookingId: string, opts: { origin: string; paymentIntent?: string | null; paid?: boolean }): Promise<{ ok: boolean; conflict?: boolean; already?: boolean }> {
+export async function confirmBooking(db: any, bookingId: string, opts: { origin: string; paymentIntent?: string | null; paid?: boolean; clickRef?: string | null }): Promise<{ ok: boolean; conflict?: boolean; already?: boolean }> {
   const ctx = await loadBookingCtx(db, bookingId)
   if (!ctx) return { ok: false }
   const { b, company, service, settings } = ctx
@@ -637,10 +652,24 @@ export async function confirmBooking(db: any, bookingId: string, opts: { origin:
       }
     } catch {}
   }
-  if (!contactId) contactId = await ensureContact(db, b.company_id, { name: b.customer_name || '', email: b.customer_email, phone: b.customer_phone })
+  const made: { created?: boolean } = {}
+  if (!contactId) contactId = await ensureContact(db, b.company_id, { name: b.customer_name || '', email: b.customer_email, phone: b.customer_phone }, undefined, made)
   if (!conversationId) conversationId = await ensureConversation(db, b.company_id, contactId, b)
   bk.contact_id = contactId; bk.conversation_id = conversationId
   if (b.chat_payment_id && conversationId) { try { await db.from('chat_payments').update({ conversation_id: conversationId }).eq('id', b.chat_payment_id) } catch {} }
+
+  // Smart links: credit the booking (and its price, once paid) to the link
+  // that led to it — the Reel / QR click the page was opened through, or else
+  // a tracked link this customer clicked in the last 7 days. The click gets the
+  // contact, so their orders that week are credited too. Analytics only.
+  try {
+    const clickRef = opts.clickRef || b.source_click_id || null
+    if (clickRef) await stitchLinkClick(db, { companyId: b.company_id, clickRef, contactId, contactIsNew: !!made.created, at: Date.parse(b.created_at) || Date.now() })
+    await attributeBookingToLinks({
+      db, companyId: b.company_id, contactId, bookingId: b.id, clickRef,
+      priceCents: b.price_cents || b.amount_due_cents || 0, paid: !!opts.paid, currency: b.currency, bookedAt: b.created_at,
+    })
+  } catch {}
 
   // Calendar
   const answers = (Array.isArray(b.answers) ? b.answers : []).filter((a: any) => a?.value)
@@ -709,6 +738,10 @@ export async function refundBooking(db: any, company: any, b: any, cents: number
     try { await db.from('chat_payments').update({ status: full ? 'refunded' : 'paid', refunded_cents: total, refunded_at: new Date().toISOString() }).eq('id', pay.id) }
     catch { try { await db.from('chat_payments').update({ status: full ? 'refunded' : 'paid' }).eq('id', pay.id) } catch {} }
     await db.from('bookings').update({ refunded_cents: total, payment_status: full ? 'refunded' : 'partially_refunded' }).eq('id', b.id)
+    // A fully refunded booking is no longer revenue for the link that led to
+    // it (same as /api/stripe/refund does for pay links). The booking itself
+    // still counts as a booking.
+    if (full) { try { await db.from('link_conversions').delete().eq('company_id', b.company_id).eq('order_id', `book_${b.id}`).eq('stage', 'paid') } catch {} }
     return { ok: true, refunded: amount }
   } catch (e: any) {
     return { ok: false, error: e?.message || 'Refund failed' }

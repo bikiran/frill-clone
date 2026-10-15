@@ -1,6 +1,8 @@
 import { visitorConversation } from '@/lib/widget-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { clickRefFromVisit } from '@/lib/link-channels'
+import { stitchLinkClick } from '@/lib/link-stitch'
 
 export const dynamic = 'force-dynamic'
 
@@ -48,8 +50,17 @@ export async function POST(req: NextRequest) {
     const db = admin()
 
     // The thread must belong to the company being claimed, and be this visitor's.
-    const conv = await visitorConversation(req, db, companyId, conversationId)
+    const conv = await visitorConversation(req, db, companyId, conversationId, 'contact_id')
     if (!conv) return NextResponse.json({ error: 'Conversation not found' }, { status: 404 })
+
+    // Smart links: a visitor who already chats with the business came back
+    // through a Reel / QR / social link (?clv= on the page they're on). They're
+    // a known contact, so put them on that click — orders they place in the
+    // next 7 days are then credited to the link. No chat or lead is counted:
+    // this thread didn't start from the link.
+    const contactId = (conv as { contact_id?: string | null }).contact_id || null
+    const clickRef = contactId ? clickRefFromVisit({ ref: b.clv, pageUrl: b.fields?.page_url }) : null
+    if (clickRef && contactId) await stitchLinkClick(db, { companyId, clickRef, contactId })
 
     // ── Message reaction ────────────────────────────────────────────────────
     if (b.messageId) {
