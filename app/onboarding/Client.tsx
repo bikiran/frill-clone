@@ -20,6 +20,8 @@ import { setupSteps, CheckMark, ArrowRight, MailIcon, SocialIcon, StoreIcon, Pho
 // Before any of that it still does the old post-signup housekeeping: repair a
 // half-made workspace, re-create a lost one from what signup stashed, apply
 // the business profile from an OAuth signup, and count the funnel events.
+// Signup runs on colvy.com, so none of that happens when this is opened on a
+// workspace's own subdomain (Restart setup) — the workspace is long made.
 
 type Pick = (typeof SKIPPABLE_STEPS)[number]
 type Ws = Company & { industry?: string | null }
@@ -59,6 +61,16 @@ async function openInWorkspace(slug: string | undefined, path: string) {
   window.location.href = boardUrl(slug, path)
 }
 
+// What's connected in this workspace, or null. Staff only (the API answers 403
+// to anyone else), so a null also means "not one of yours".
+async function loadSetupStatus(companyId: string): Promise<SetupStatus | null> {
+  try {
+    const r = await authFetch(`/api/setup/status?companyId=${companyId}`)
+    const s = await r.json().catch(() => null)
+    return r.ok && Array.isArray(s?.steps) ? s : null
+  } catch { return null }
+}
+
 export default function OnboardingPage() {
   const [company, setCompany] = useState<Ws | null>(null)
   const [user, setUser] = useState<{ id: string; email?: string; user_metadata?: Record<string, unknown> } | null>(null)
@@ -80,14 +92,21 @@ export default function OnboardingPage() {
       // content if it's empty. Server-scoped to this user's own company, so
       // it's safe; fire-and-forget so it never blocks onboarding.
       const token = data?.session?.access_token
-      if (token) {
+      const slug = tenantSlug()
+      if (token && !slug) {
         fetch('/api/companies/ensure-domain', { method: 'POST', headers: { Authorization: `Bearer ${token}` } }).catch(() => {})
       }
 
-      // Opened on the workspace's own subdomain (Restart setup): that one.
+      // Opened on the workspace's own subdomain (Restart setup): that one — if
+      // they work there. Anyone signed in can open acme.colvy.com/onboarding (a
+      // customer from its public board, say); they get their own workspace.
       let co: Ws | null = null
-      const slug = tenantSlug()
-      if (slug) co = await getCompanyBySlug(slug)
+      let st: SetupStatus | null = null
+      if (slug) {
+        const here = await getCompanyBySlug(slug)
+        st = here?.id ? await loadSetupStatus(here.id) : null
+        if (st) co = here
+      }
       // A workspace created seconds ago can briefly be unreadable (row
       // replication / RLS catch-up). Retry a few times instead of giving up on
       // the first null.
@@ -119,7 +138,7 @@ export default function OnboardingPage() {
 
       // Funnel: a workspace reached the post-signup screen. Once per workspace
       // per browser so a revisit doesn't re-count it.
-      if (co?.id) {
+      if (co?.id && !slug) {
         try {
           const k = `colvy_ws_tracked_${co.id}`
           if (!localStorage.getItem(k)) { track('workspace_created', { plan: co.plan || null }); localStorage.setItem(k, '1') }
@@ -129,7 +148,7 @@ export default function OnboardingPage() {
       // callback only carries slug/name/industry, so the website/address/phone/
       // hours (and the person's full name) are stashed at signup and applied
       // here once, then cleared.
-      if (co?.id) {
+      if (co?.id && !slug) {
         try {
           const prof = JSON.parse(localStorage.getItem('pending_business_profile') || 'null')
           if (prof) {
@@ -155,17 +174,14 @@ export default function OnboardingPage() {
       // What's already connected (e.g. a store installed from Shopify before
       // signing up) — ticked and locked on the "what do you use?" screen.
       if (co?.id) {
-        try {
-          const r = await authFetch(`/api/setup/status?companyId=${co.id}`)
-          const s = await r.json().catch(() => null)
-          if (r.ok && Array.isArray(s?.steps)) {
-            setStatus(s)
-            const industry = s.industry || co.industry || ''
-            const next = new Set<Pick>(['email', 'meta', 'store', 'phone'])
-            if (NO_STORE_INDUSTRIES.includes(industry) && s.store == null) next.delete('store')
-            setPicks(next)
-          }
-        } catch {}
+        const s = st || await loadSetupStatus(co.id)
+        if (s) {
+          setStatus(s)
+          const industry = s.industry || co.industry || ''
+          const next = new Set<Pick>(['email', 'meta', 'store', 'phone'])
+          if (NO_STORE_INDUSTRIES.includes(industry) && s.store == null) next.delete('store')
+          setPicks(next)
+        }
       }
 
       setCompany(co)
@@ -176,8 +192,10 @@ export default function OnboardingPage() {
   const stateOf = (k: SetupStepKey) => status?.steps.find(s => s.key === k)?.state || 'todo'
   const isDone = (k: SetupStepKey) => stateOf(k) === 'done'
 
-  // Leaving for the workspace = onboarding done. Once per workspace per browser.
+  // Leaving for the workspace = onboarding done. Once per workspace per browser,
+  // and not again for a Restart setup on the workspace's own subdomain.
   const markDone = () => {
+    if (tenantSlug()) return
     try {
       const k = company?.id ? `colvy_onb_done_${company.id}` : null
       if (!k || !localStorage.getItem(k)) { track('onboarding_completed', { slug: company?.slug || null }); if (k) localStorage.setItem(k, '1') }

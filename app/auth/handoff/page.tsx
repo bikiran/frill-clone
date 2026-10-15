@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import { sameSitePath } from '@/lib/same-site-path'
 
 // Cross-subdomain session handoff. The sign-in page on colvy.com redirects here
 // (on the target subdomain) with the access/refresh tokens in the URL hash.
@@ -19,8 +20,7 @@ export default function AuthHandoffPage() {
         const access_token = params.get('access_token')
         const refresh_token = params.get('refresh_token')
         // Same-site paths only — never forward the fresh session to another site.
-        const rawNext = params.get('next') || '/admin'
-        const next = rawNext.startsWith('/') && !rawNext.startsWith('//') ? rawNext : '/admin'
+        const next = sameSitePath(params.get('next')) || '/admin'
         // The console host has no /signin of its own (it would 404).
         const signin = window.location.hostname === 'admin.colvy.com' ? 'https://colvy.com/signin?to=console' : '/signin'
 

@@ -8,7 +8,7 @@ import { authFetch } from '@/lib/auth-fetch'
 import Link from 'next/link'
 
 import { LightbulbIcon, MegaphoneIcon, SurveyIcon, PollIcon, StarIcon, TicketIcon, CheckIcon } from '@/components/Icons'
-import SetupChecklist, { readSetupLink, type SetupLink } from '@/components/SetupChecklist'
+import SetupChecklist, { readSetupLink, setupWorthLoading, type SetupLink } from '@/components/SetupChecklist'
 import type { SetupStatus } from '@/lib/setup-status'
 
 // ── Admin home ────────────────────────────────────────────────────────────────
@@ -139,6 +139,9 @@ export default function AdminDashboard() {
   const [setupFresh, setSetupFresh] = useState(false)
   // What the URL says about setup (?setup=1 after a connect flow), read once.
   const [setupLink] = useState<SetupLink>(() => readSetupLink())
+  // The setup numbers last had (cached or fetched), to tell whether checking
+  // again is worth the queries.
+  const lastSetupRef = useRef<(SetupStatus & { full?: boolean }) | null>(null)
   const userIdRef = useRef<string | undefined>(undefined)
 
   const resolveCompanyId = async () => {
@@ -177,7 +180,7 @@ export default function AdminDashboard() {
       const res = await authFetch(`/api/setup/status?companyId=${cid}`)
       const data = await res.json()
       if (!res.ok || !Array.isArray(data?.steps)) return
-      setSetup(data); setSetupFresh(true)
+      setSetup(data); setSetupFresh(true); lastSetupRef.current = data
       writeCache(userIdRef.current, cid, { setup: data })
     } catch { /* the checklist just doesn't show this time */ }
   }, [])
@@ -219,10 +222,16 @@ export default function AdminDashboard() {
     let timer: any = null
     let cid: string | null = null
     const onFocus = () => { if (cid && document.visibilityState === 'visible') loadSummary(cid) }
+    // Setup is only checked while the checklist can show on this device.
+    const wantSetup = (id: string) => setupWorthLoading(id, lastSetupRef.current, setupLink)
     // Coming back to this tab (e.g. after connecting something in another one)
-    // re-checks setup too, so a step ticks without a reload.
-    const onVisible = () => { onFocus(); if (cid && document.visibilityState === 'visible') loadSetup(cid) }
-    const loadAll = (id: string) => { loadSummary(id); loadSales(id); loadStats(id); loadSetup(id) }
+    // re-checks setup too, so a step ticks without a reload — unless it's not
+    // theirs to run (the checklist never shows for restricted staff).
+    const onVisible = () => {
+      onFocus()
+      if (cid && document.visibilityState === 'visible' && lastSetupRef.current?.full !== false && wantSetup(cid)) loadSetup(cid)
+    }
+    const loadAll = (id: string) => { loadSummary(id); loadSales(id); loadStats(id); if (wantSetup(id)) loadSetup(id) }
     ;(async () => {
       const { data } = await supabase.auth.getSession()
       const u = data.session?.user || null
@@ -235,7 +244,7 @@ export default function AdminDashboard() {
         if (isSummary(cached.summary)) setSummary(cached.summary)
         if (cached.sales) setSales(cached.sales)
         if (cached.stats) setStats(cached.stats)
-        if (cached.setup && Array.isArray(cached.setup.steps)) setSetup(cached.setup)
+        if (cached.setup && Array.isArray(cached.setup.steps)) { setSetup(cached.setup); lastSetupRef.current = cached.setup }
         setRefreshing(isSummary(cached.summary))
         loadAll(cid)
       }
@@ -244,6 +253,7 @@ export default function AdminDashboard() {
         // First visit on this device, or the workspace changed — start clean.
         cid = resolved; setCompanyId(cid)
         setSummary(null); setSales(null); setStats(null); setSetup(null); setSetupFresh(false); setRefreshing(false)
+        lastSetupRef.current = null
         if (!cid) { setSummaryError('No workspace found for this account'); return }
         loadAll(cid)
       }

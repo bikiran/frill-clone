@@ -12,6 +12,14 @@ const admin = () => createClient(
   { auth: { autoRefreshToken: false, persistSession: false } }
 )
 
+// How many outlets the business has (0 if it can't tell).
+async function outletCount(db: ReturnType<typeof admin>, companyId: string): Promise<number> {
+  try {
+    const { count } = await db.from('company_locations').select('id', { count: 'exact', head: true }).eq('company_id', companyId)
+    return count || 0
+  } catch { return 0 }
+}
+
 // Facebook redirects here after the business authorises. We exchange the code
 // for Page tokens and store one meta_channels row per Page (and per linked
 // Instagram account). The business then maps each to an outlet in Settings.
@@ -128,6 +136,12 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    // From the setup checklist: straight back there, unless there's more to do
+    // here first — nothing came through, or several outlets to map the new
+    // accounts to. The settings page says which, and keeps "Back to setup".
+    if (returnTo && (connected === 0 || await outletCount(db, companyId) > 1)) {
+      return NextResponse.redirect(home(`connected=${connected}&returnTo=${encodeURIComponent(returnTo)}`))
+    }
     return NextResponse.redirect(connectedTo(`connected=${connected}`))
   } catch (e: any) {
     return NextResponse.redirect(home(`error=${encodeURIComponent(e.message || 'connect failed')}`))

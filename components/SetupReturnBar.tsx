@@ -3,27 +3,30 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
-import { safeSetupPath, rememberSetupReturn, readSetupReturn, clearSetupReturn } from '@/lib/setup-return'
+import { safeSetupPath, rememberSetupReturn, readSetupReturn, clearSetupReturn, isSetupPage } from '@/lib/setup-return'
 
 // A slim "Back to setup" bar on the settings pages the setup checklist sends
 // people to. It appears when the page was opened with `?returnTo=/admin?…`
 // (or earlier in this tab's setup trip, so it survives a round trip through
 // Shopify or the phone-number checkout) and goes away once they're back on the
-// dashboard or close it. The admin layout renders it inside <Suspense> (it
-// reads the query string) and keys it by path, so closing it lasts one page.
+// dashboard, head off to a page no setup step uses, or close it. The admin
+// layout renders it inside <Suspense> (it reads the query string) and keys it
+// by path, so closing it lasts one page.
 export default function SetupReturnBar() {
   const pathname = usePathname()
   const fromUrl = safeSetupPath(useSearchParams().get('returnTo'))
   const [closed, setClosed] = useState(false)
 
   useEffect(() => {
-    // Back on the dashboard: the trip is over. Otherwise remember where this
-    // page was asked to send people, for the rest of the trip in this tab.
+    // Back on the dashboard, or somewhere setup doesn't go (the inbox, say):
+    // the trip is over. Otherwise remember where this page was asked to send
+    // people, for the rest of the trip in this tab.
     if (pathname === '/admin') clearSetupReturn()
     else if (fromUrl) rememberSetupReturn(fromUrl)
+    else if (!isSetupPage(pathname)) clearSetupReturn()
   }, [pathname, fromUrl])
 
-  const back = closed || pathname === '/admin' ? '' : (fromUrl || readSetupReturn())
+  const back = closed || pathname === '/admin' ? '' : (fromUrl || (isSetupPage(pathname) ? readSetupReturn() : ''))
   if (!back) return null
 
   return (

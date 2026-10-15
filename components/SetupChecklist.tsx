@@ -47,11 +47,20 @@ export function readSetupLink(): SetupLink {
 
 export type Prefs = { hidden: boolean; skipped: SetupStepKey[]; seen: SetupStepKey[] | null; completed: boolean }
 const prefsKey = (companyId: string) => `colvy-setup-v2-${companyId}`
+// The checklist before this one (the feedback-board steps) kept { done, hidden }
+// here. Whoever hid that one said they don't want a setup checklist on their
+// dashboard, so this one starts hidden for them too (?setup=1 still opens it).
+const oldPrefsKey = (companyId: string) => `colvy-setup-${companyId}`
 function readPrefs(companyId: string): Prefs {
   const blank: Prefs = { hidden: false, skipped: [], seen: null, completed: false }
   if (typeof window === 'undefined') return blank
   try {
-    const v = JSON.parse(localStorage.getItem(prefsKey(companyId)) || 'null')
+    const raw = localStorage.getItem(prefsKey(companyId))
+    if (raw == null) {
+      const old = JSON.parse(localStorage.getItem(oldPrefsKey(companyId)) || 'null')
+      return old && old.hidden === true ? { ...blank, hidden: true } : blank
+    }
+    const v = JSON.parse(raw)
     if (!v || typeof v !== 'object') return blank
     return {
       hidden: v.hidden === true,
@@ -78,6 +87,19 @@ const STEP_EVENT: Record<SetupStepKey, [ColvyEvent, Record<string, string>]> = {
 // Only young workspaces count towards "how long does setup take", so an
 // established business opening the new checklist doesn't skew it.
 const TRACK_MAX_AGE_DAYS = 30
+
+/**
+ * Whether the dashboard should fetch fresh setup numbers. Not when this device
+ * has the checklist hidden or finished and the workspace is past the age where
+ * ticks are counted (going by `last`, the numbers it last had): nothing would
+ * show or be tracked. Arriving via ?setup=1 always checks.
+ */
+export function setupWorthLoading(companyId: string, last: Pick<SetupStatus, 'ageDays'> | null | undefined, link: SetupLink): boolean {
+  if (link.open) return true
+  const p = readPrefs(companyId)
+  if (!p.hidden && !p.completed) return true
+  return !(last && last.ageDays != null && last.ageDays > TRACK_MAX_AGE_DAYS)
+}
 
 const sinceSignup = (s: SetupStatus) => {
   const t = s.createdAt ? Date.parse(s.createdAt) : NaN
@@ -133,7 +155,12 @@ export default function SetupChecklist({ companyId, status, fresh, prominent, li
   prominent: boolean
   link: SetupLink
 }) {
-  const [prefs, setPrefs] = useState<Prefs>(() => readPrefs(companyId))
+  // Arriving via ?setup=1 un-hides it (saved by settleProgress below), but
+  // "Hide" on that same visit still hides it.
+  const [prefs, setPrefs] = useState<Prefs>(() => {
+    const p = readPrefs(companyId)
+    return link.open ? { ...p, hidden: false } : p
+  })
   // Ticks seen before this visit. With none on record, nothing is "new" —
   // except when they've just come back from setting something up.
   const [baseline] = useState<SetupStepKey[] | null>(() => prefs.seen ?? (link.open ? [] : null))
@@ -186,7 +213,7 @@ export default function SetupChecklist({ companyId, status, fresh, prominent, li
   }
 
   const cheering = newly.length > 0 && !dismissedCheer
-  if (prefs.hidden && !link.open) return null
+  if (prefs.hidden) return null
   // Finished and nothing new to celebrate: out of the way.
   if (complete && !cheering && !link.open) return null
 
