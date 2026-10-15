@@ -16,6 +16,9 @@ export const STATIC_MARKETING_ROUTES: string[] = [
   'channels',
   'solutions',
   'industries',
+  'for',
+  'business-phone-number-australia',
+  'all-in-one-customer-platform',
   'integrations',
   'ai-assistant',
   'phones',
@@ -49,8 +52,13 @@ export const CHANNEL_SLUGS: string[] = [
 export const SOLUTION_SLUGS: string[] = [
   'customer-support', 'sales', 'marketing', 'reviews', 'feedback', 'bookings', 'payments',
 ]
+// ecommerce and real-estate moved to /for/* (the old /industries URLs redirect).
 export const INDUSTRY_SLUGS: string[] = [
-  'saas', 'agencies', 'ecommerce', 'hospitality', 'real-estate', 'healthcare',
+  'saas', 'agencies', 'hospitality', 'healthcare',
+]
+// Workflow pages; mirrors FOR_PAGES in lib/for-pages.ts.
+export const FOR_SLUGS: string[] = [
+  'ecommerce', 'real-estate', 'multi-location-retail', 'service-businesses', 'restaurants',
 ]
 
 // Every indexable path (relative, e.g. '' or 'channels/whatsapp').
@@ -61,5 +69,6 @@ export function allMarketingPaths(): string[] {
     ...CHANNEL_SLUGS.map(s => `channels/${s}`),
     ...SOLUTION_SLUGS.map(s => `solutions/${s}`),
     ...INDUSTRY_SLUGS.map(s => `industries/${s}`),
+    ...FOR_SLUGS.map(s => `for/${s}`),
   ]
 }

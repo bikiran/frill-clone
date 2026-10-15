@@ -66,7 +66,7 @@ const MENUS: Menu[] = [
         { icon: 'link', title: 'Payments & orders', desc: 'Get paid in the thread', href: '/solutions/payments' },
       ] },
     ],
-    feature: { eyebrow: 'One platform', title: 'Every job, one place', desc: 'Support, sales, marketing, feedback and payments — one inbox, one customer history.', icon: 'target', chips: ['Support', 'Sales', 'Feedback'], href: '/solutions', cta: 'Explore solutions' },
+    feature: { eyebrow: 'One platform', title: 'Every job, one place', desc: 'Support, sales, marketing, feedback and payments — one inbox, one customer history.', icon: 'target', chips: ['Support', 'Sales', 'Feedback'], href: '/all-in-one-customer-platform', cta: 'See the whole platform' },
   },
   {
     key: 'channels', label: 'Channels', accent: BLUE,
@@ -99,7 +99,7 @@ const MENUS: Menu[] = [
         { icon: 'phone', title: 'Mobile App', desc: 'Colvy on iOS & Android', href: '/phones/mobile-app' },
       ] },
       { heading: 'Numbers & routing', items: [
-        { icon: 'pin', title: 'Numbers & Porting', desc: 'Local numbers or bring yours', href: '/phones/numbers-porting' },
+        { icon: 'pin', title: 'Australian numbers', desc: 'Local or mobile, online in minutes', href: '/business-phone-number-australia' },
         { icon: 'target', title: 'IVR & Routing', desc: 'Send callers to the right team', href: '/phones/ivr' },
         { icon: 'link', title: 'Call Forwarding', desc: 'Forward to any number', href: '/phones/call-forwarding' },
         { icon: 'globe', title: 'International', desc: 'Call 100+ countries', href: '/phones/international' },
@@ -184,20 +184,20 @@ const MENUS: Menu[] = [
   {
     key: 'industries', label: 'Industries', accent: PINK,
     columns: [
-      { heading: 'Digital', items: [
-        { icon: 'bolt', title: 'SaaS & tech', desc: 'Feedback → roadmap → ship', href: '/industries/saas' },
-        { icon: 'star', title: 'Agencies', desc: 'Every client in one place', href: '/industries/agencies' },
+      { heading: 'Retail & commerce', items: [
+        { icon: 'tag', title: 'Ecommerce', desc: 'DMs into paid orders', href: '/for/ecommerce' },
+        { icon: 'pin', title: 'Multi-location retail', desc: 'Every store, one inbox', href: '/for/multi-location-retail' },
       ] },
-      { heading: 'Commerce & hospitality', items: [
-        { icon: 'tag', title: 'E-commerce', desc: 'Sell inside the chat', href: '/industries/ecommerce' },
-        { icon: 'reaction', title: 'Hospitality', desc: 'Bookings & guest comms', href: '/industries/hospitality' },
+      { heading: 'Local businesses', items: [
+        { icon: 'calendar', title: 'Service businesses', desc: 'Missed call to five stars', href: '/for/service-businesses' },
+        { icon: 'reaction', title: 'Restaurants', desc: 'Nothing missed during service', href: '/for/restaurants' },
       ] },
-      { heading: 'Service', items: [
-        { icon: 'pin', title: 'Real estate', desc: 'Leads & follow-ups in a thread', href: '/industries/real-estate' },
-        { icon: 'help', title: 'Healthcare', desc: 'Reminders & patient comms', href: '/industries/healthcare' },
+      { heading: 'More', items: [
+        { icon: 'map', title: 'Real estate', desc: 'Every enquiry, every inspection', href: '/for/real-estate' },
+        { icon: 'star', title: 'Other industries', desc: 'SaaS, agencies, hospitality, health', href: '/industries' },
       ] },
     ],
-    feature: { eyebrow: 'Made to fit', title: 'Tuned to your industry', desc: 'The same platform, shaped around how your team actually works.', icon: 'star', chips: ['Retail', 'Hospitality', 'SaaS'], href: '/industries', cta: 'See industries' },
+    feature: { eyebrow: 'Real workflows', title: 'Built around how you work', desc: 'Walk through the journey for your kind of business, from first message to five-star review.', icon: 'star', chips: ['Ecommerce', 'Retail', 'Services'], href: '/for', cta: 'See every workflow' },
   },
 ]
 
@@ -274,7 +274,7 @@ export default function MarketingNav({ dark = false, onToggleDark }: { dark?: bo
   // under /product (the feedback suite + hub) belongs to Product.
   const FEATURE_SLUGS = ['inbox', 'crm', 'gallery', 'notes', 'orders', 'payments', 'links', 'insights', 'calendar', 'tasks', 'broadcasts', 'automation']
   const onFeaturePage = FEATURE_SLUGS.some(s => pathname === `/product/${s}` || pathname.startsWith(`/product/${s}/`)) || pathname.startsWith('/features')
-  const isActive = (k: string) => (k === 'product' && pathname.startsWith('/product') && !onFeaturePage) || (k === 'solutions' && pathname.startsWith('/solutions')) || (k === 'channels' && (pathname.startsWith('/inbox-crm') || pathname.startsWith('/channels'))) || (k === 'phones' && pathname.startsWith('/phones')) || (k === 'integrations' && pathname.startsWith('/integrations')) || (k === 'ai' && pathname.startsWith('/ai-assistant')) || (k === 'features' && onFeaturePage) || (k === 'pricing' && pathname.startsWith('/pricing'))
+  const isActive = (k: string) => (k === 'product' && pathname.startsWith('/product') && !onFeaturePage) || (k === 'solutions' && pathname.startsWith('/solutions')) || (k === 'channels' && (pathname.startsWith('/inbox-crm') || pathname.startsWith('/channels'))) || (k === 'phones' && pathname.startsWith('/phones')) || (k === 'integrations' && pathname.startsWith('/integrations')) || (k === 'ai' && pathname.startsWith('/ai-assistant')) || (k === 'features' && onFeaturePage) || (k === 'pricing' && pathname.startsWith('/pricing')) || (k === 'industries' && (pathname.startsWith('/industries') || pathname === '/for' || pathname.startsWith('/for/'))) || (k === 'phones' && pathname.startsWith('/business-phone-number'))
   const moreActive = MORE_LINKS.some(n => pathname.startsWith(n.href))
 
   const handleDashboard = async () => {

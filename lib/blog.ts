@@ -28,6 +28,80 @@ export type BlogPost = {
 
 export const POSTS: BlogPost[] = [
   {
+    slug: 'how-colvy-helps-run-your-business-efficiently',
+    cover: '/hero/landing-omni.jpg',
+    title: 'How Colvy helps you run your business more efficiently',
+    excerpt: 'Most of the time lost in a small business isn’t the work itself. It’s the switching, the chasing and the “did anyone reply to that?”. Here’s where Colvy takes that time back.',
+    category: 'Product', accent: CORAL, icon: 'bolt',
+    date: '2026-10-15', dateLabel: 'Oct 15, 2026', readTime: '7 min read', author: 'The Colvy Team',
+    content: `Ask a busy owner where their week went and you rarely hear “serving customers”. You hear “checking Instagram, then the email, then the shop phone’s voicemail, then finding that order, then texting the customer back”. The work is fine. It’s everything around the work that eats the day.
+
+Colvy is built to remove that layer. Here’s what that looks like in practice, step by step, and what you can switch on today.
+
+## 1. Stop checking six apps
+
+Every channel your customers use lands in one shared inbox: Instagram and Facebook messages, SMS, email, your website chat and phone calls. Each customer’s channels are linked to one profile, so your team works from one list instead of six.
+
+What it saves you: the rounds of checking, and the messages that sat unread because nobody owned that app.
+
+[See the shared inbox](/inbox-crm)
+
+## 2. Know who you’re talking to before you reply
+
+When a message or call comes in, Colvy matches the person to their customer record by phone or email. Their past orders, bookings, payments and conversations sit next to the chat.
+
+What it saves you: the “can I get your order number?” back-and-forth, and searching your store admin in another tab.
+
+## 3. Let the AI write the first draft
+
+Colvy’s AI drafts replies from your own information: your website, help articles, saved facts, opening hours and live order and stock details. Start with drafts that a person checks and sends. When you trust it, choose exactly which kinds of replies it may send by itself.
+
+Your rules apply everywhere. Tell Colvy “we never promise same-day delivery” once in Business Memory and the AI follows it.
+
+What it saves you: typing the same twenty answers every day.
+
+[Meet Colvy’s AI](/ai-assistant)
+
+## 4. Take the sale where the question was asked
+
+When someone says “I’ll take it”, send a payment link in the same conversation or, if your WooCommerce or Shopify store is connected, create the order for them. When they pay, the payment is recorded against the conversation and an order you created is marked paid in your store.
+
+For appointments, share your booking page. Customers pick a time, pay a deposit if you ask for one, and get SMS reminders the day before and two hours before.
+
+What it saves you: “I’ll send you an invoice”, chasing payments and phone tag over times.
+
+## 5. Make the phone part of the system
+
+Get an Australian business number (a local 02, 03, 07 or 08 landline, or an 04 mobile that can also text) and answer it in the browser or the Colvy app. Calls are recorded, transcribed and summarised on the customer’s conversation.
+
+What it saves you: notes on sticky pads, and the “what did they call about?” question after every missed call.
+
+[Get a business number online](/business-phone-number-australia)
+
+## 6. Put follow-ups on autopilot
+
+The follow-ups that bring customers back are the ones that get skipped on a busy day. Colvy can send them for you: order updates, booking reminders, a nudge on an abandoned cart, a text when an item is back in stock and a review request after a happy order or a finished job.
+
+What it saves you: remembering. And it’s often where the extra sales come from.
+
+## 7. See what’s working
+
+Colvy keeps the numbers as the work happens: which links and campaigns were clicked and what sales followed, which conversations turned into orders, how fast enquiries get answered and which goals are slipping. No spreadsheet at the end of the month.
+
+## Where to start
+
+You don’t need to switch everything on at once. A good order:
+
+1. Connect your channels so every message lands in one inbox.
+2. Connect your store if you sell online, so orders show beside conversations.
+3. Turn on AI drafts and save your most common answers.
+4. Add a business number if calls matter to you.
+5. Switch on one follow-up, such as review requests, and build from there.
+
+If you want to see how it fits your kind of business, we’ve mapped out the full workflow for [ecommerce](/for/ecommerce), [multi-location retail](/for/multi-location-retail), [service businesses](/for/service-businesses), [restaurants](/for/restaurants) and [real estate](/for/real-estate).`,
+    takeaways: ['One inbox for every channel ends the app-checking rounds', 'Customer history beside each chat removes the back-and-forth', 'AI drafts from your own information; you choose what it may send', 'Payments, bookings and follow-ups happen in the same thread'],
+  },
+  {
     slug: 'unify-customer-conversations',
     cover: '/feature/product.jpg',
     title: 'How to unify every customer conversation into one inbox',
