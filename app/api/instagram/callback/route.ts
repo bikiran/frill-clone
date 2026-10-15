@@ -1,4 +1,5 @@
 import { readValue, safeReturn } from '@/lib/oauth-state'
+import { safeSetupPath, addQuery } from '@/lib/setup-return'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { exchangeInstagramCode, instagramLongLivedToken, getInstagramProfile, subscribeInstagramWebhooks } from '@/lib/instagram-login'
@@ -26,21 +27,27 @@ export async function GET(req: NextRequest) {
 
   let companyId = ''
   let origin = ''
+  let returnTo = ''
   // Only a state this server signed for a member (lib/oauth-state); a plain
   // base64 company id is no longer trusted.
   const signed = readValue(state, 'state')
   if (signed && signed.purpose === 'instagram') {
     companyId = signed.companyId || ''
     origin = safeReturn(signed.origin)
+    // Started from the setup checklist: a relative admin path to land on once
+    // connected (checked again here — never trust what comes back blindly).
+    returnTo = safeSetupPath(signed.returnTo)
   }
 
   const cookieOrigin = req.cookies.get('colvy_meta_origin')?.value || ''
-  const home = (params: string) => {
-    const base = origin ? origin
-      : safeReturn(cookieOrigin) ? cookieOrigin
-      : new URL(req.url).origin
-    return `${base}${settingsPath}?${params}`
-  }
+  const baseOrigin = () => origin ? origin
+    : safeReturn(cookieOrigin) ? cookieOrigin
+    : new URL(req.url).origin
+  const home = (params: string) => `${baseOrigin()}${settingsPath}?${params}`
+  // Success goes back to where they started (the setup checklist) when asked;
+  // errors always land on the settings page, which explains them and keeps
+  // its "Back to setup" bar for another try.
+  const connectedTo = (params: string) => returnTo ? `${baseOrigin()}${addQuery(returnTo, params)}` : home(params)
 
   console.log('[instagram callback]', Object.fromEntries(url.searchParams.entries()))
 
@@ -87,7 +94,7 @@ export async function GET(req: NextRequest) {
     // delivered. Best-effort — the connection is already stored either way.
     subscribeInstagramWebhooks(igId, token).catch(() => {})
 
-    return NextResponse.redirect(home('connected=1'))
+    return NextResponse.redirect(connectedTo('connected=1'))
   } catch (e: any) {
     return NextResponse.redirect(home(`error=${encodeURIComponent(e.message || 'connect failed')}`))
   }

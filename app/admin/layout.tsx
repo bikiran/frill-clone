@@ -15,6 +15,7 @@ import { setPhoneHost } from '@/lib/phone-host'
 import { getActiveCall, subscribeActiveCall } from '@/lib/active-call'
 import AdminBanner from '@/components/AdminBanner'
 import TrialBanner from '@/components/TrialBanner'
+import SetupReturnBar from '@/components/SetupReturnBar'
 import ImpersonationBanner from '@/components/ImpersonationBanner'
 import BackendStatusBanner from '@/components/BackendStatusBanner'
 import { isBackendDown } from '@/lib/net-timeout'
@@ -1210,6 +1211,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       <div className="admin-main" style={{ marginLeft: adminCollapsed ? 60 : 220, flex: 1, overflowY: 'auto', minHeight: 'calc(100vh - 56px)', transition: 'margin-left 0.2s ease' }}>
         <AdminBanner />
         <TrialBanner company={company} />
+        {/* "Back to setup" while someone is part-way through the dashboard's
+            setup checklist (it reads the query string, hence Suspense). */}
+        <React.Suspense fallback={null}><SetupReturnBar key={pathname} /></React.Suspense>
         <div className="colvy-mobile-pad">
           {children}
         </div>

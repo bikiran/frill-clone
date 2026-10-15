@@ -1,4 +1,5 @@
 import { readValue, safeReturn } from '@/lib/oauth-state'
+import { safeSetupPath, addQuery } from '@/lib/setup-return'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { exchangeCodeForToken, longLivedToken, listManagedPages, subscribePageWebhooks } from '@/lib/meta'
@@ -26,24 +27,30 @@ export async function GET(req: NextRequest) {
   // the shared root domain, colvy.com).
   let companyId = ''
   let origin = ''
+  let returnTo = ''
   // Only a state this server signed for a member (lib/oauth-state); a plain
   // base64 company id is no longer trusted.
   const signed = readValue(state, 'state')
   if (signed && signed.purpose === 'meta') {
     companyId = signed.companyId || ''
     origin = safeReturn(signed.origin)
+    // Started from the setup checklist: a relative admin path to land on once
+    // connected (checked again here — never trust what comes back blindly).
+    returnTo = safeSetupPath(signed.returnTo)
   }
 
   // Where to send the user when we're done. Their own subdomain if we know it —
   // from the state, or (when Facebook bounced back without state) from the
   // cookie the connect route set — otherwise back here on root.
   const cookieOrigin = req.cookies.get('colvy_meta_origin')?.value || ''
-  const home = (params: string) => {
-    const base = origin ? origin
-      : safeReturn(cookieOrigin) ? cookieOrigin
-      : new URL(req.url).origin
-    return `${base}${settingsPath}?${params}`
-  }
+  const baseOrigin = () => origin ? origin
+    : safeReturn(cookieOrigin) ? cookieOrigin
+    : new URL(req.url).origin
+  const home = (params: string) => `${baseOrigin()}${settingsPath}?${params}`
+  // Success goes back to where they started (the setup checklist) when asked;
+  // errors always land on the settings page, which explains them and keeps
+  // its "Back to setup" bar for another try.
+  const connectedTo = (params: string) => returnTo ? `${baseOrigin()}${addQuery(returnTo, params)}` : home(params)
 
   // Log the full callback query server-side (Vercel logs) so a "no code" case
   // can be inspected precisely — Facebook occasionally returns nothing useful.
@@ -121,7 +128,7 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    return NextResponse.redirect(home(`connected=${connected}`))
+    return NextResponse.redirect(connectedTo(`connected=${connected}`))
   } catch (e: any) {
     return NextResponse.redirect(home(`error=${encodeURIComponent(e.message || 'connect failed')}`))
   }

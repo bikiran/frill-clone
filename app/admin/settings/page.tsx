@@ -898,13 +898,13 @@ export default function SettingsPage() {
               </div>
               <div className="flex items-center justify-between py-3 border-b" style={{ borderColor: 'var(--border)' }}>
                 <div>
-                  <p className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>Restart onboarding</p>
-                  <p className="text-xs mt-0.5" style={{ color: 'var(--slate)' }}>Missed something? Start the onboarding process from the beginning.</p>
+                  <p className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>Restart setup</p>
+                  <p className="text-xs mt-0.5" style={{ color: 'var(--slate)' }}>Missed something? Go back through connecting email, Facebook and Instagram, your store and phone.</p>
                 </div>
-                <button className="px-4 py-2 rounded-xl border text-sm font-semibold cursor-pointer hover:bg-gray-50"
+                <Link href="/onboarding" className="px-4 py-2 rounded-xl border text-sm font-semibold cursor-pointer hover:bg-gray-50 shrink-0"
                   style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
                   Restart
-                </button>
+                </Link>
               </div>
             </div>
           </div>
