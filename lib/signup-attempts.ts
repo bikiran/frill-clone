@@ -36,7 +36,7 @@ export const SUSPICIOUS_SCORE = 3
  * A "call me with the code" counts as an SMS code too, and on top of that
  * only voicePerEmailHour calls go to one sign-up an hour.
  */
-export const OTP_LIMITS = { perEmailHour: 8, perIpHour: 15, emailsPerIpHour: 5, perEmailMinute: 3, perIpMinute: 6, voicePerEmailHour: 3 }
+export const OTP_LIMITS = { perEmailHour: 8, perIpHour: 15, emailsPerIpHour: 5, perEmailMinute: 3, perIpMinute: 6, voicePerEmailHour: 3, perNumberHour: 5, perNumberDay: 10 }
 const MAX_EVENTS = 100
 
 export type SignupEventType =
@@ -178,45 +178,77 @@ const stageOf = (row: any) => row.account_created_at ? 'account_created' : row.m
 // ── Rate limits ────────────────────────────────────────────────────────────
 
 const RATE_WINDOW_SECS = 3600
-const hourly = new Map<string, { start: number; hits: number }>()
+const DAY_SECS = 86_400
+const windows = new Map<string, { start: number; hits: number }>()
 const tooManyEmail = { ok: false, reason: 'email' as const, message: 'Too many codes have been sent to this email. Please wait an hour and try again, or email support@colvy.com.' }
 const tooManyIp = { ok: false, reason: 'ip' as const, message: 'Too many sign-up codes have been requested from this network. Please try again in an hour.' }
 const tooManyCalls = { ok: false, reason: 'email' as const, message: 'We’ve already called this number a few times. Please wait an hour, or email support@colvy.com and we’ll help you finish.' }
+const tooManyToNumber = { ok: false, reason: 'number' as const, message: 'Too many codes have gone to this mobile. Please try again later, or email support@colvy.com and we’ll help you finish.' }
+const globalCap = { ok: false, reason: 'global' as const, message: 'We can’t send more codes right now. Please try again later, or email support@colvy.com and we’ll help you finish.' }
 const waitAMinute = (reason: 'email' | 'ip') => ({ ok: false, reason, message: 'Please wait a minute before asking for another code.' })
 
-/** Per-instance stand-in for signup_rate_claim() before V390: same keys and limits, not shared between servers. */
-function claimInMemory(keys: string[], limits: number[], now: number): string | null {
+/** Daily caps on all sign-up texts and calls together (toll-fraud backstop). */
+export function globalSendCaps() {
+  const n = (v: string | undefined, d: number) => { const x = Number(v); return Number.isFinite(x) && x > 0 ? Math.floor(x) : d }
+  return { sms: n(process.env.SIGNUP_SMS_DAILY_CAP, 300), voice: n(process.env.SIGNUP_VOICE_DAILY_CAP, 50) }
+}
+/** Set when a global cap refused a send on this server (shown on the health card before V390). */
+let capTrippedHere: { kind: 'sms' | 'voice'; at: number } | null = null
+
+/** Per-instance stand-in for signup_rate_claim(): same keys and limits, not shared between servers. */
+function claimInMemory(keys: string[], limits: number[], windowSecs: number, now: number): string | null {
+  const k = (key: string) => `${windowSecs}:${key}`
   for (let i = 0; i < keys.length; i++) {
-    const w = hourly.get(keys[i])
-    if (w && now - w.start < RATE_WINDOW_SECS * 1000 && w.hits + 1 > limits[i]) return keys[i]
+    const w = windows.get(k(keys[i]))
+    if (w && now - w.start < windowSecs * 1000 && w.hits + 1 > limits[i]) return keys[i]
   }
-  for (const k of keys) {
-    const w = hourly.get(k)
-    if (!w || now - w.start >= RATE_WINDOW_SECS * 1000) hourly.set(k, { start: now, hits: 1 })
+  for (const key of keys) {
+    const w = windows.get(k(key))
+    if (!w || now - w.start >= windowSecs * 1000) windows.set(k(key), { start: now, hits: 1 })
     else w.hits++
   }
   return null
 }
 
 /**
- * Claim one code send for this email (per channel) and IP, or say why not.
- * Call it only once the request has passed Cloudflare Turnstile (fresh sign-ups)
- * or the token checks (resends), and the email isn't already registered, so
- * refused bots and existing accounts don't use up a real person's budget.
+ * Claim one hit on each key for a window, atomically (signup_rate_claim, V390)
+ * or per server before it exists. The key over its limit, or null. Fails
+ * closed: when the database answers with an unexpected error the per-server
+ * counters still apply.
+ */
+export async function claimRate(db: any, keys: string[], limits: number[], windowSecs: number, now = Date.now()): Promise<{ over: string | null; shared: boolean }> {
+  if (!keys.length) return { over: null, shared: true }
+  try {
+    const { data, error } = await db.rpc('signup_rate_claim', { p_keys: keys, p_limits: limits, p_window_secs: windowSecs })
+    if (!error) return { over: data || null, shared: true }
+    if (!missingTable(error) && !/function|signup_rate_claim/i.test(String(error.message || ''))) console.warn('[signup-attempts] signup_rate_claim failed, using per-server limits:', error.message)
+  } catch {}
+  return { over: claimInMemory(keys, limits, windowSecs, now), shared: false }
+}
+
+/**
+ * Claim one code send, or say why not. Call it only once the request has
+ * passed Cloudflare Turnstile (fresh sign-ups) or the token checks (resends),
+ * and the email isn't already registered, so refused bots and existing
+ * accounts don't use up a real person's budget.
  *
  *   • per minute, in memory: 3 per email, 6 per IP;
- *   • per hour: 8 email codes and 8 SMS codes per email, 15 requests per IP,
- *     counted atomically by signup_rate_claim() (V390), which locks and bumps
- *     its counters in one statement, so neither a burst of parallel requests
- *     nor a long timeline can get round it. Before V390: the same limits per
- *     server instance, plus fresh sign-ups per email from signup_verifications;
+ *   • per hour: 8 email codes and 8 mobile codes per email (a call counts as
+ *     a mobile code, and 3 calls at most), 15 requests per IP, 5 codes to one
+ *     mobile number;
+ *   • per day: 10 codes to one mobile number, and across all sign-ups
+ *     SIGNUP_SMS_DAILY_CAP texts (300) and SIGNUP_VOICE_DAILY_CAP calls (50);
  *   • 5 different emails per IP an hour, from the recorded attempts.
+ * Counted atomically by signup_rate_claim() (V390), so parallel requests
+ * can't get round them; before V390, per server (plus fresh sign-ups per email
+ * from signup_verifications).
  */
-export async function claimOtpSend(db: any, o: { email: string; ip?: string | null; channel?: 'both' | 'email' | 'sms' | 'voice'; now?: number }): Promise<{ ok: boolean; reason?: 'email' | 'ip'; message?: string }> {
+export async function claimOtpSend(db: any, o: { email: string; ip?: string | null; channel?: 'both' | 'email' | 'sms' | 'voice'; to?: string | null; now?: number }): Promise<{ ok: boolean; reason?: 'email' | 'ip' | 'number' | 'global'; message?: string }> {
   const now = o.now ?? Date.now()
   const email = String(o.email || '').toLowerCase()
   const ip = o.ip || null
   const channel = o.channel || 'both'
+  const to = channel !== 'email' && o.to ? String(o.to) : null
   if (!checkBurst(`otp:e:${email}`, OTP_LIMITS.perEmailMinute)) return waitAMinute('email')
   if (ip && !checkBurst(`otp:ip:${ip}`, OTP_LIMITS.perIpMinute)) return waitAMinute('ip')
   const hourAgo = iso(now - RATE_WINDOW_SECS * 1000)
@@ -229,28 +261,58 @@ export async function claimOtpSend(db: any, o: { email: string; ip?: string | nu
   }
 
   const keys: string[] = [], limits: number[] = []
-  if (channel !== 'sms') { keys.push(`e:${email}:email`); limits.push(OTP_LIMITS.perEmailHour) }
+  if (channel !== 'sms' && channel !== 'voice') { keys.push(`e:${email}:email`); limits.push(OTP_LIMITS.perEmailHour) }
   if (channel !== 'email') { keys.push(`e:${email}:sms`); limits.push(OTP_LIMITS.perEmailHour) }
   if (channel === 'voice') { keys.push(`e:${email}:voice`); limits.push(OTP_LIMITS.voicePerEmailHour) }
+  if (to) { keys.push(`to:${to}`); limits.push(OTP_LIMITS.perNumberHour) }
   if (ip) { keys.push(`ip:${ip}`); limits.push(OTP_LIMITS.perIpHour) }
-  let over: string | null = null
-  let claimed = false
-  try {
-    const { data, error } = await db.rpc('signup_rate_claim', { p_keys: keys, p_limits: limits, p_window_secs: RATE_WINDOW_SECS })
-    if (!error) { claimed = true; over = data || null }
-    else if (!missingTable(error) && !/function|signup_rate_claim/i.test(String(error.message || ''))) claimed = true   // can't tell: don't block a real person
-  } catch {}
-  if (!claimed) {
-    over = claimInMemory(keys, limits, now)
-    if (!over) {
-      try {
-        const { count } = await db.from('signup_verifications').select('id', { count: 'exact', head: true }).eq('email', email).gte('created_at', hourAgo)
-        if ((count || 0) >= OTP_LIMITS.perEmailHour) over = `e:${email}:email`
-      } catch {}
-    }
+  const hour = await claimRate(db, keys, limits, RATE_WINDOW_SECS, now)
+  let over = hour.over
+  if (!over && !hour.shared) {
+    try {
+      const { count } = await db.from('signup_verifications').select('id', { count: 'exact', head: true }).eq('email', email).gte('created_at', hourAgo)
+      if ((count || 0) >= OTP_LIMITS.perEmailHour) over = `e:${email}:email`
+    } catch {}
   }
-  if (over) return over.startsWith('ip:') ? tooManyIp : over.endsWith(':voice') ? tooManyCalls : tooManyEmail
+  if (over) return over.startsWith('ip:') ? tooManyIp : over.startsWith('to:') ? tooManyToNumber : over.endsWith(':voice') ? tooManyCalls : tooManyEmail
+  // Then the day: the destination and the global caps (only once the hour
+  // allowed it, so a refused request doesn't use up a daily slot).
+  const caps = globalSendCaps()
+  const dayKeys: string[] = [], dayLimits: number[] = []
+  if (to) { dayKeys.push(`to:${to}:day`); dayLimits.push(OTP_LIMITS.perNumberDay) }
+  if (channel === 'voice') { dayKeys.push('global:voice:day'); dayLimits.push(caps.voice) }
+  else if (channel !== 'email') { dayKeys.push('global:sms:day'); dayLimits.push(caps.sms) }
+  const day = await claimRate(db, dayKeys, dayLimits, DAY_SECS, now)
+  if (day.over) {
+    if (day.over.startsWith('global:')) {
+      const kind = day.over.startsWith('global:voice') ? 'voice' : 'sms'
+      capTrippedHere = { kind, at: now }
+      console.error(`[signup-attempts] GLOBAL DAILY ${kind.toUpperCase()} CAP REACHED (${kind === 'voice' ? caps.voice : caps.sms}): sign-up codes are refused until the window resets. Check super admin → Signups for abuse, or raise ${kind === 'voice' ? 'SIGNUP_VOICE_DAILY_CAP' : 'SIGNUP_SMS_DAILY_CAP'}.`)
+      return globalCap
+    }
+    return tooManyToNumber
+  }
+
   return { ok: true }
+}
+
+/** Has a global daily cap refused sends? From signup_rate_windows (shared), else this server's own record. */
+export async function globalCapStatus(db: any, now = Date.now()): Promise<{ sms: { used: number; cap: number; hit: boolean }; voice: { used: number; cap: number; hit: boolean } }> {
+  const caps = globalSendCaps()
+  const out = { sms: { used: 0, cap: caps.sms, hit: false }, voice: { used: 0, cap: caps.voice, hit: false } }
+  try {
+    const { data, error } = await db.from('signup_rate_windows').select('key, window_start, hits').in('key', ['global:sms:day', 'global:voice:day'])
+    if (!error) {
+      for (const r of data || []) {
+        if (now - ms(r.window_start) >= DAY_SECS * 1000) continue
+        const k = r.key === 'global:voice:day' ? 'voice' : 'sms'
+        out[k].used = Math.min(r.hits || 0, out[k].cap)
+        out[k].hit = (r.hits || 0) >= out[k].cap
+      }
+    }
+  } catch {}
+  if (capTrippedHere && now - capTrippedHere.at < DAY_SECS * 1000) out[capTrippedHere.kind].hit = true
+  return out
 }
 
 // ── Recording ──────────────────────────────────────────────────────────────
@@ -480,6 +542,8 @@ export async function emailForToken(db: any, token: string): Promise<{ email: st
 
 const SIGNUP_TAGS = ['signup-abandoned', 'signup-completed', 'signup-spam']
 let workspaceCache: { at: number; co: LeadWorkspace | null } | null = null
+/** Re-read at least this often, so a change made on another server shows within a minute. */
+const WORKSPACE_TTL_MS = 60_000
 
 /** platform_settings key for "Where should sign-up leads go?" (super admin → Signups). */
 export const LEAD_WORKSPACE_SETTING = 'signup_lead_workspace'
@@ -508,8 +572,8 @@ export async function setLeadWorkspaceSetting(db: any, companyId: string | null,
   } catch (e: any) { return { ok: false, error: e?.message || 'Could not save' } }
 }
 
-/** Is the platform admin this company's owner, or one of its staff (not a board visitor)? */
-async function platformAdminIn(db: any, co: any): Promise<boolean> {
+/** Is the platform admin this company's owner, or one of its joined staff (not a board visitor)? */
+export async function platformAdminIn(db: any, co: { id: string; owner_id?: string | null }): Promise<boolean> {
   const isAdmin = async (userId: string | null | undefined) => {
     if (!userId) return false
     try { const { data } = await db.auth.admin.getUserById(userId); return String(data?.user?.email || '').toLowerCase() === SUPER_ADMIN } catch { return false }
@@ -529,14 +593,16 @@ async function platformAdminIn(db: any, co: any): Promise<boolean> {
  * from. In order:
  *   1. COLVY_WORKSPACE_ID in the environment (always wins when set and found);
  *   2. the company picked in super admin → Signups ("Where should sign-up
- *      leads go?"), saved in platform_settings;
+ *      leads go?"), saved in platform_settings, while the platform admin is
+ *      its owner or one of its staff (checked again on every read, so a row
+ *      written some other way can't send leads to a stranger's workspace);
  *   3. the company with slug 'colvy' (or COLVY_WORKSPACE_SLUG), only when the
  *      platform admin is its owner or one of its staff, so a business that
  *      somehow took the slug never receives sign-ups.
  * Null when none applies: the Signups page then asks the admin to choose.
  */
 export async function colvyWorkspace(db: any): Promise<LeadWorkspace | null> {
-  if (workspaceCache && Date.now() - workspaceCache.at < 10 * 60_000) return workspaceCache.co
+  if (workspaceCache && Date.now() - workspaceCache.at < WORKSPACE_TTL_MS) return workspaceCache.co
   let co: LeadWorkspace | null = null
   const byId = async (id: string) => {
     const { data } = await db.from('companies').select('id, name, slug, owner_id').eq('id', id).maybeSingle()
@@ -551,7 +617,8 @@ export async function colvyWorkspace(db: any): Promise<LeadWorkspace | null> {
       else console.warn('[signup-attempts] COLVY_WORKSPACE_ID doesn’t match a company')
     } else if (picked) {
       const c = await byId(picked)
-      if (c) co = { id: c.id, name: c.name, slug: c.slug, source: 'setting' }
+      if (c && (await platformAdminIn(db, c))) co = { id: c.id, name: c.name, slug: c.slug, source: 'setting' }
+      else if (c) console.warn('[signup-attempts] the picked lead workspace has no platform admin as owner or staff: ignored')
     }
     if (!co && !pinned) {
       const { data } = await db.from('companies').select('id, name, slug, owner_id').eq('slug', process.env.COLVY_WORKSPACE_SLUG || 'colvy').maybeSingle()
@@ -713,13 +780,15 @@ const smsBucket = (): SmsBucket => ({ sent: 0, delivered: 0, notDelivered: 0, wa
  * sent, delivered, not delivered (refused outright or reported undelivered),
  * still waiting, or never reported; plus the most common error codes.
  */
-export async function signupSmsHealth(db: any, now = Date.now()): Promise<{ day: SmsBucket; week: SmsBucket; topErrors: { code: string | null; label: string; explain: string; count: number }[]; missing: boolean }> {
+type CapStatus = Awaited<ReturnType<typeof globalCapStatus>>
+export async function signupSmsHealth(db: any, now = Date.now()): Promise<{ day: SmsBucket; week: SmsBucket; topErrors: { code: string | null; label: string; explain: string; count: number }[]; missing: boolean; caps: CapStatus }> {
+  const caps = await globalCapStatus(db, now)
   const day = smsBucket(), week = smsBucket()
   const errors = new Map<string, { code: string | null; label: string; explain: string; count: number }>()
   const weekAgo = now - 7 * 864e5, dayAgo = now - 864e5
   try {
     const { data, error } = await db.from(TABLE).select('events, last_code_at').gte('last_code_at', iso(weekAgo)).limit(2000)
-    if (error) return { day, week, topErrors: [], missing: missingTable(error) }
+    if (error) return { day, week, topErrors: [], missing: missingTable(error), caps }
     for (const row of data || []) {
       for (const s of deliveryOf(row, now).sends) {
         const t = ms(s.at)
@@ -741,8 +810,8 @@ export async function signupSmsHealth(db: any, now = Date.now()): Promise<{ day:
         }
       }
     }
-  } catch { return { day, week, topErrors: [], missing: true } }
-  return { day, week, topErrors: Array.from(errors.values()).sort((a, b) => b.count - a.count).slice(0, 4), missing: false }
+  } catch { return { day, week, topErrors: [], missing: true, caps } }
+  return { day, week, topErrors: Array.from(errors.values()).sort((a, b) => b.count - a.count).slice(0, 4), missing: false, caps }
 }
 
 // ── Adding existing sign-ups to the CRM ────────────────────────────────────
@@ -755,15 +824,18 @@ export async function signupSmsHealth(db: any, now = Date.now()): Promise<{ day:
  * updates that contact, and one found by email is reused, so nobody is added
  * twice. dryRun only counts.
  */
-export async function backfillSignupContacts(db: any, o: { dryRun: boolean }): Promise<{
+export const BACKFILL_BATCH = 100
+export async function backfillSignupContacts(db: any, o: { dryRun: boolean; offset?: number; batch?: number }): Promise<{
   ok: boolean; error?: string; workspace?: LeadWorkspace | null
   total: number; eligible: number; toAdd: number; alreadyLinked: number; skippedSpam: number; skippedSuspicious: number
   added?: number; refreshed?: number; skipped?: number
+  /** For a run: where the next batch starts, and whether this was the last one. */
+  nextOffset?: number; done?: boolean
 }> {
   const blank = { total: 0, eligible: 0, toAdd: 0, alreadyLinked: 0, skippedSpam: 0, skippedSuspicious: 0 }
   const co = await colvyWorkspace(db)
   if (!co) return { ok: false, error: 'Choose where sign-up leads should go first.', workspace: null, ...blank }
-  const { data, error } = await db.from(TABLE).select('*').order('first_seen_at', { ascending: true }).limit(2000)
+  const { data, error } = await db.from(TABLE).select('*').order('first_seen_at', { ascending: true }).order('id', { ascending: true }).limit(2000)
   if (error) return { ok: false, error: missingTable(error) ? 'Run COLVY_V390_SIGNUP_ATTEMPTS.sql first: sign-ups recorded before it only live in the verification records.' : error.message, workspace: co, ...blank }
   const rows: any[] = data || []
   const spam = rows.filter(r => r.spam_at)
@@ -774,16 +846,20 @@ export async function backfillSignupContacts(db: any, o: { dryRun: boolean }): P
     toAdd: eligible.filter(r => !r.contact_id).length, alreadyLinked: eligible.filter(r => r.contact_id).length,
   }
   if (o.dryRun) return { ok: true, workspace: co, ...counts }
+  // One batch per request (the page calls again with nextOffset), so a long
+  // list never outlives the request.
+  const start = Math.max(0, o.offset || 0)
+  const end = Math.min(eligible.length, start + (o.batch || BACKFILL_BATCH))
   let added = 0, refreshed = 0, skipped = 0
   const at = iso(Date.now())
-  for (const r of eligible) {
+  for (const r of eligible.slice(start, end)) {
     const id = await syncSignupContact(db, r)
     if (!id) { skipped++; continue }
     if (id === r.contact_id) { refreshed++; continue }
     await db.from(TABLE).update({ contact_id: id, contact_synced_at: at }).eq('id', r.id)
     added++
   }
-  return { ok: true, workspace: co, ...counts, added, refreshed, skipped }
+  return { ok: true, workspace: co, ...counts, added, refreshed, skipped, nextOffset: end, done: end >= eligible.length }
 }
 
 // ── Admin list ─────────────────────────────────────────────────────────────

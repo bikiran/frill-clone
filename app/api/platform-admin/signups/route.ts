@@ -4,13 +4,15 @@ import { logSuperAdminAudit } from '@/lib/super-admin-audit'
 import { sendCustomerEmail } from '@/lib/customer-email'
 import {
   TABLE, listSignups, presentSignup, recordSignupEvent, syncSignupContact, removeSignupContact, colvyWorkspace, cleanEmail,
-  signupSmsHealth, backfillSignupContacts, leadWorkspaceSetting, setLeadWorkspaceSetting,
+  signupSmsHealth, backfillSignupContacts, leadWorkspaceSetting, setLeadWorkspaceSetting, platformAdminIn, claimRate, globalCapStatus,
   type ListFilter, type ListRange,
 } from '@/lib/signup-attempts'
 import { smsConfigured, voiceFallbackReady, smsConfigProblem, smsSender, sendTestSms, messageStatus } from '@/lib/signup-sms'
-import { normaliseSignupMobile, explainDeliveryError } from '@/lib/signup-delivery'
+import { normaliseSignupMobile, explainDeliveryError, destinationAllowed } from '@/lib/signup-delivery'
 
 export const dynamic = 'force-dynamic'
+// "Add all to CRM" runs 100 sign-ups per request; give each request room.
+export const maxDuration = 60
 
 /**
  * Super admin → Signups. Platform super admin only (service role behind it).
@@ -33,14 +35,15 @@ export const dynamic = 'force-dynamic'
 const FILTERS: ListFilter[] = ['all', 'abandoned', 'suspicious', 'completed', 'spam']
 const RANGES: ListRange[] = ['today', '7d', '30d', 'all']
 const senderLabel = (s: { kind: string; value: string } | null) => s ? (s.kind === 'service' ? `Messaging Service ${s.value}` : s.value) : null
-// "Send test SMS to me": a few an hour per admin (each one costs money).
+// "Send test SMS to me": a few an hour per admin (each one costs money),
+// counted by signup_rate_claim so every server shares the count.
 const TEST_SMS_PER_HOUR = 5
-const testSends = new Map<string, number[]>()
 const esc = (v: string) => v.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' } as any)[c])
 
 export async function GET(req: NextRequest) {
   const db = adminDb()
-  if (!(await superAdmin(req, db))) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+  const who = await superAdmin(req, db)
+  if (!who) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
   try {
     const sp = req.nextUrl.searchParams
     if (sp.has('companies')) {
@@ -51,7 +54,15 @@ export async function GET(req: NextRequest) {
       if (term) q = q.or(`name.ilike.%${term}%,slug.ilike.%${term}%`)
       const { data, error } = await q
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-      return NextResponse.json({ companies: data || [] }, { headers: { 'Cache-Control': 'no-store' } })
+      // Which of them the platform admin belongs to (owner or joined staff):
+      // only those can receive sign-up leads.
+      const list: any[] = data || []
+      const ids = list.map(c => c.id)
+      const { data: mine } = ids.length ? await db.from('team_members').select('company_id, role, status').in('company_id', ids).eq('user_id', who.id) : { data: [] }
+      const staff = new Set((mine || []).filter((m: any) => String(m.role || '').toLowerCase() !== 'viewer' && !/^(removed|invited|pending)$/i.test(String(m.status || ''))).map((m: any) => m.company_id))
+      const { data: owners } = ids.length ? await db.from('companies').select('id, owner_id').in('id', ids) : { data: [] }
+      const owned = new Set((owners || []).filter((c: any) => c.owner_id === who.id).map((c: any) => c.id))
+      return NextResponse.json({ companies: list.map(c => ({ id: c.id, name: c.name, slug: c.slug, eligible: owned.has(c.id) || staff.has(c.id) })) }, { headers: { 'Cache-Control': 'no-store' } })
     }
     const filter = (FILTERS as string[]).includes(sp.get('filter') || '') ? sp.get('filter') as ListFilter : 'all'
     const range = (RANGES as string[]).includes(sp.get('range') || '') ? sp.get('range') as ListRange : '30d'
@@ -82,8 +93,11 @@ export async function POST(req: NextRequest) {
     const companyId = body?.companyId ? String(body.companyId) : null
     let co: any = null
     if (companyId) {
-      const { data } = await db.from('companies').select('id, name, slug').eq('id', companyId).maybeSingle()
+      const { data } = await db.from('companies').select('id, name, slug, owner_id').eq('id', companyId).maybeSingle()
       if (!data) return NextResponse.json({ error: 'That company wasn’t found.' }, { status: 404 })
+      // Leads are personal details: only a workspace the platform admin owns
+      // or is staff in (not someone else's business).
+      if (!(await platformAdminIn(db, data))) return NextResponse.json({ error: `You’re not the owner or a team member of ${data.name}, so sign-up leads can’t go there. Add ${who.email} to its team first.`, code: 'not_member' }, { status: 409 })
       co = data
     }
     const saved = await setLeadWorkspaceSetting(db, companyId, who.email)
@@ -94,12 +108,14 @@ export async function POST(req: NextRequest) {
   }
 
   if (action === 'test_sms') {
+    // Your own Australian mobile, typed twice (a typo would text a stranger).
     const m = normaliseSignupMobile(String(body?.phone || ''))
     if (!m.ok) return NextResponse.json({ error: m.error }, { status: 400 })
-    const now = Date.now()
-    const recent = (testSends.get(who.id) || []).filter(t => now - t < 3_600_000)
-    if (recent.length >= TEST_SMS_PER_HOUR) return NextResponse.json({ error: 'That’s 5 test texts this hour. Try again later.' }, { status: 429 })
-    testSends.set(who.id, [...recent, now])
+    const again = normaliseSignupMobile(String(body?.confirm || ''))
+    if (!again.ok || again.e164 !== m.e164) return NextResponse.json({ error: 'The two numbers don’t match. Type your mobile twice.' }, { status: 400 })
+    if (!destinationAllowed(m.e164, ['AU']).ok) return NextResponse.json({ error: 'Test texts go to Australian mobiles only.' }, { status: 400 })
+    const rate = await claimRate(db, [`testsms:${who.id}`], [TEST_SMS_PER_HOUR], 3600)
+    if (rate.over) return NextResponse.json({ error: 'That’s 5 test texts this hour. Try again later.' }, { status: 429 })
     const r = await sendTestSms(m.e164)
     await logSuperAdminAudit(db, { adminId: who.id, adminEmail: who.email, action: 'signup_test_sms', summary: `Sent a test sign-up SMS to ${m.e164}`, detail: { ok: r.ok, sid: r.sid || null, code: r.code || null, sender: r.sender || null } })
     if (!r.ok) {
@@ -120,9 +136,10 @@ export async function POST(req: NextRequest) {
 
   if (action === 'crm_backfill') {
     const dryRun = body?.dryRun !== false
-    const out = await backfillSignupContacts(db, { dryRun })
+    const offset = Math.max(0, Math.floor(Number(body?.offset) || 0))
+    const out = await backfillSignupContacts(db, { dryRun, offset })
     if (!out.ok) return NextResponse.json({ error: out.error, ...out }, { status: 409 })
-    if (!dryRun) await logSuperAdminAudit(db, { adminId: who.id, adminEmail: who.email, companyId: out.workspace?.id, action: 'signup_crm_backfill', summary: `Added existing sign-ups to ${out.workspace?.name}’s CRM`, detail: { added: out.added, refreshed: out.refreshed, skipped: out.skipped, skippedSpam: out.skippedSpam, skippedSuspicious: out.skippedSuspicious } })
+    if (!dryRun && out.done) await logSuperAdminAudit(db, { adminId: who.id, adminEmail: who.email, companyId: out.workspace?.id, action: 'signup_crm_backfill', summary: `Added existing sign-ups to ${out.workspace?.name}’s CRM`, detail: { last_batch: true, offset, added: out.added, refreshed: out.refreshed, skipped: out.skipped, skippedSpam: out.skippedSpam, skippedSuspicious: out.skippedSuspicious } })
     return NextResponse.json(out)
   }
 

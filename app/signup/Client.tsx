@@ -118,6 +118,9 @@ function SignUpForm() {
   const [mobileBusy, setMobileBusy] = useState<'' | 'sms' | 'voice' | 'change'>('')
   const [changingNumber, setChangingNumber] = useState(false)
   const [newMobile, setNewMobile] = useState('')
+  // "Change number" passes Turnstile again (the server texts a new number only then).
+  const [changeHumanToken, setChangeHumanToken] = useState('')
+  const changeHumanRef = useRef<TurnstileHandle>(null)
   const [sentAt, setSentAt] = useState('')
   const [pollKey, setPollKey] = useState(0)
 
@@ -277,10 +280,11 @@ function SignUpForm() {
     try {
       const res = await fetch('/api/auth/otp/send', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, email: email.trim(), phone, channel }),
+        body: JSON.stringify({ token, email: email.trim(), phone, channel, ...(phoneOverride ? { turnstileToken: changeHumanToken } : {}) }),
       })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Could not resend')
+      if (phoneOverride) { changeHumanRef.current?.reset() }
+      if (!res.ok) { if (data.code === 'restart') startOver(data.error); throw new Error(data.error || 'Could not resend') }
       if (data.voiceAvailable !== undefined) setVoiceAvailable(!!data.voiceAvailable)
       if (channel === 'email') {
         setEmailResend(30)
@@ -295,6 +299,14 @@ function SignUpForm() {
       }
     } catch (e: any) { setError(e.message) }
     setMobileBusy('')
+  }
+
+  // The sign-up can't continue (finished, over an hour old, or out of tries):
+  // back to the contact step for fresh codes.
+  const startOver = (why: string) => {
+    setToken(''); setEmailVerified(false); setSmsVerified(false); setEmailCode(''); setSmsCode('')
+    setSmsProblem(''); setEmailProblem(''); setChangingNumber(false); setCalled(false)
+    setStep(4); setTimeout(() => setError(why), 0)
   }
 
   const changeNumber = () => {
@@ -341,7 +353,10 @@ function SignUpForm() {
         body: JSON.stringify({ token, channel, code }),
       })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Could not verify')
+      if (!res.ok) {
+        if (data.code === 'locked' || data.code === 'restart') { startOver(data.error || 'Please start again.'); setLoading(false); return }
+        throw new Error(data.error || 'Could not verify')
+      }
       if (channel === 'email') { setEmailVerified(true); setStep(6) }
       else { setSmsVerified(true); setStep(7) }
     } catch (e: any) { setError(e.message) }
@@ -726,9 +741,10 @@ function SignUpForm() {
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'center', maxWidth: 420, margin: '12px auto 0' }}>
                   <input value={newMobile} onChange={e => setNewMobile(e.target.value)} placeholder="04xx xxx xxx" inputMode="tel" autoComplete="tel"
                     onKeyDown={e => { if (e.key === 'Enter') changeNumber() }} style={{ ...inputStyle, flex: '1 1 200px', width: 'auto' }} />
-                  <button type="button" onClick={changeNumber} disabled={!!mobileBusy || smsResend > 0} style={{ ...primaryBtn(!!mobileBusy || smsResend > 0), padding: '10px 16px', fontSize: 14 }}>
+                  <button type="button" onClick={changeNumber} disabled={!!mobileBusy || smsResend > 0 || (!!TURNSTILE_SITE_KEY && !changeHumanToken)} style={{ ...primaryBtn(!!mobileBusy || smsResend > 0 || (!!TURNSTILE_SITE_KEY && !changeHumanToken)), padding: '10px 16px', fontSize: 14 }}>
                     {mobileBusy === 'change' ? 'Sending…' : 'Text this number'}
                   </button>
+                  <div style={{ flexBasis: '100%', display: 'flex', justifyContent: 'center' }}><Turnstile ref={changeHumanRef} onToken={setChangeHumanToken} action="signup-change-number" /></div>
                 </div>
               )}
             </div>

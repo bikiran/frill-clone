@@ -175,8 +175,8 @@ export default function SignupsPage() {
   const addAllToCrm = async () => {
     setCrmMsg(null); setCrmBusy(true)
     try {
-      const call = async (dryRun: boolean) => {
-        const res = await authFetch('/api/platform-admin/signups', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'crm_backfill', dryRun }) })
+      const call = async (dryRun: boolean, offset = 0) => {
+        const res = await authFetch('/api/platform-admin/signups', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'crm_backfill', dryRun, offset }) })
         const d = await res.json().catch(() => ({}))
         if (!res.ok) throw new Error(d.error || 'That didn’t work')
         return d
@@ -190,8 +190,16 @@ export default function SignupsPage() {
         confirmLabel: 'Add to CRM',
       })
       if (!ok) return
-      const d = await call(false)
-      setCrmMsg({ tone: 'ok', text: `Done: ${d.added} added or linked, ${d.refreshed} refreshed${d.skipped ? `, ${d.skipped} left alone (a customer already has that email and it isn’t verified yet)` : ''}.` })
+      // 100 at a time, with progress.
+      let offset = 0, added = 0, refreshed = 0, skippedN = 0
+      for (let guard = 0; guard < 50; guard++) {
+        setCrmMsg({ tone: 'ok', text: `Adding to the CRM… ${offset} of ${dry.eligible}` })
+        const d = await call(false, offset)
+        added += d.added || 0; refreshed += d.refreshed || 0; skippedN += d.skipped || 0
+        offset = d.nextOffset ?? dry.eligible
+        if (d.done) break
+      }
+      setCrmMsg({ tone: 'ok', text: `Done: ${added} added or linked, ${refreshed} refreshed${skippedN ? `, ${skippedN} left alone (a customer already has that email and it isn’t verified yet)` : ''}.` })
       load()
     } catch (e: any) { setCrmMsg({ tone: 'err', text: e.message }) } finally { setCrmBusy(false) }
   }
@@ -533,7 +541,11 @@ function WorkspacePicker({ current, envPinned, picked, onClose, onSaved }: { cur
     window.addEventListener('keydown', k)
     return () => window.removeEventListener('keydown', k)
   }, [onClose])
-  const save = async (companyId: string | null) => {
+  const save = async (companyId: string | null, name?: string) => {
+    const ok = companyId
+      ? await confirmDialog({ title: `Send sign-up leads to ${name}?`, message: `People who start signing up for Colvy will be added as contacts in ${name}’s CRM, and follow-up emails will go from its email.`, confirmLabel: 'Send leads here' })
+      : await confirmDialog({ title: 'Clear the lead workspace?', message: 'Sign-up leads stop going to a CRM until you choose one (unless a workspace is found by its “colvy” address).', confirmLabel: 'Clear', tone: 'danger' })
+    if (!ok) return
     setSaving(companyId || 'clear'); setErr('')
     try {
       const res = await authFetch('/api/platform-admin/signups', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'set_workspace', companyId }) })
@@ -548,7 +560,7 @@ function WorkspacePicker({ current, envPinned, picked, onClose, onSaved }: { cur
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
           <div style={{ flex: 1, minWidth: 0 }}>
             <h2 style={{ fontSize: 17, fontWeight: 800, color: 'var(--sa-text)', margin: 0 }}>Where should sign-up leads go?</h2>
-            <p style={{ fontSize: 12.5, color: 'var(--sa-muted)', margin: '4px 0 0' }}>People who start signing up are added as contacts in this workspace’s CRM, tagged by how far they got. Follow-up emails go from its email too.</p>
+            <p style={{ fontSize: 12.5, color: 'var(--sa-muted)', margin: '4px 0 0' }}>People who start signing up are added as contacts in this workspace’s CRM, tagged by how far they got. Follow-up emails go from its email too. Only workspaces you own or are a team member of can be chosen.</p>
           </div>
           <button onClick={onClose} aria-label="Close" style={{ background: 'none', border: '1px solid var(--sa-border)', borderRadius: 9, padding: 6, cursor: 'pointer', color: 'var(--sa-muted)', display: 'flex' }}>{Ic.x}</button>
         </div>
@@ -569,7 +581,8 @@ function WorkspacePicker({ current, envPinned, picked, onClose, onSaved }: { cur
                 <div style={{ fontSize: 11.5, color: 'var(--sa-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.slug}.colvy.com · <span style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>{c.id}</span></div>
               </div>
               {isCurrent ? <span style={{ fontSize: 12, fontWeight: 700, color: '#059669', whiteSpace: 'nowrap' }}>Current</span>
-              : <button onClick={() => save(c.id)} disabled={!!saving} style={btn('#ff7a6b', true)}>{saving === c.id ? 'Saving…' : 'Use this'}</button>}
+              : c.eligible ? <button onClick={() => save(c.id, c.name || c.slug)} disabled={!!saving} style={btn('#ff7a6b', true)}>{saving === c.id ? 'Saving…' : 'Use this'}</button>
+              : <span title="Leads are personal details, so they only go to a workspace you own or are a team member of. Add yourself to its team first." style={{ fontSize: 11.5, color: 'var(--sa-muted)', textAlign: 'right', maxWidth: 130, lineHeight: 1.3 }}>Not your workspace: join its team first</span>}
             </div>
           })}
         </div>

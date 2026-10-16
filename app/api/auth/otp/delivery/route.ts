@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { checkBurst } from '@/lib/rate-limit'
+import { requestIp } from '@/lib/turnstile'
 import { TABLE } from '@/lib/signup-attempts'
 import { deliveryOf, deliveryProblem } from '@/lib/signup-delivery'
 import { smsProblemMessage, voiceFallbackReady } from '@/lib/signup-sms'
@@ -22,7 +23,8 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => ({}))
     const token = String(body?.token || '')
     if (!/^[0-9a-f]{20,100}$/i.test(token)) return NextResponse.json({ error: 'This sign-up has expired. Please start again.' }, { status: 400 })
-    if (!checkBurst(`otp:delivery:${token}`, 30)) return NextResponse.json({ error: 'Too many checks' }, { status: 429 })
+    const ip = requestIp(req.headers)
+    if (!checkBurst(`otp:delivery:${token}`, 30) || (ip && !checkBurst(`otp:delivery:ip:${ip}`, 60))) return NextResponse.json({ error: 'Too many checks' }, { status: 429 })
     const db = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, { auth: { autoRefreshToken: false, persistSession: false } }) as any
     const { data: ver } = await db.from('signup_verifications').select('email, consumed_at').eq('token', token).maybeSingle()
     if (!ver?.email || ver.consumed_at) return NextResponse.json({ error: 'This sign-up has expired. Please start again.' }, { status: 404 })

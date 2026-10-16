@@ -3,10 +3,10 @@ import { createClient } from '@supabase/supabase-js'
 import crypto from 'crypto'
 import { verifyTurnstile, requestIp, TURNSTILE_FAILED } from '@/lib/turnstile'
 import { claimOtpSend, recordSignupLater, cleanProfile, cleanAttribution, cleanEmail } from '@/lib/signup-attempts'
-import { normaliseSignupMobile } from '@/lib/signup-delivery'
+import { normaliseSignupMobile, destinationAllowed } from '@/lib/signup-delivery'
 import {
   CODE_TTL_MS, sha, sixDigits, pushCode, sendSignupSms, callSignupCode, signupStatusCallbackUrl,
-  voiceFallbackReady, smsProblemMessage, type SendResult,
+  voiceFallbackReady, smsProblemMessage, smsCountries, voiceCountries, type SendResult,
 } from '@/lib/signup-sms'
 
 export const dynamic = 'force-dynamic'
@@ -33,6 +33,14 @@ export const dynamic = 'force-dynamic'
 // Signups shows whether they actually arrived.
 
 const RESEND_COOLDOWN_MS = 30 * 1000    // min gap between sends for one token
+const SESSION_MAX_MS = 60 * 60 * 1000   // a sign-up token sends nothing after an hour
+//
+// Toll fraud: a resend or call only ever goes to the number already on the
+// sign-up. Changing it needs a fresh Turnstile pass (the page's "Change
+// number"), codes only go to mobile ranges of allowed countries
+// (SIGNUP_SMS_COUNTRIES, default AU,NZ; calls SIGNUP_VOICE_COUNTRIES, default
+// AU), and claimOtpSend caps codes per number (5 an hour, 10 a day) and in
+// total per day (SIGNUP_SMS_DAILY_CAP / SIGNUP_VOICE_DAILY_CAP).
 
 function admin() {
   return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
@@ -104,7 +112,8 @@ export async function POST(req: NextRequest) {
     if (rawPhone || mobileWanted) {
       const m = normaliseSignupMobile(rawPhone)
       if (!m.ok) {
-        if (mobileWanted) return NextResponse.json({ error: rawPhone ? m.error : 'A mobile number is required', code: 'bad_mobile' }, { status: 400 })
+        // A resend without a number uses the one on the sign-up.
+        if (rawPhone ? mobileWanted : mobileWanted && !body.token) return NextResponse.json({ error: rawPhone ? m.error : 'A mobile number is required', code: 'bad_mobile' }, { status: 400 })
       } else phone = m.e164
     }
     if (channel === 'voice') {
@@ -112,6 +121,12 @@ export async function POST(req: NextRequest) {
       if (!body.token) return NextResponse.json({ error: 'Ask for a text first.', code: 'restart' }, { status: 400 })
       if (!voiceFallbackReady()) return NextResponse.json({ error: 'We can’t call right now. Try resending the text, or email support@colvy.com.', code: 'voice_unavailable' }, { status: 503 })
     }
+    const destinationRefused = () => {
+      const dest = destinationAllowed(phone, channel === 'voice' ? voiceCountries() : smsCountries(), channel === 'voice' ? 'voice' : 'sms')
+      return dest.ok ? null : NextResponse.json({ error: dest.error, code: 'country' }, { status: 400 })
+    }
+    // A fresh sign-up: refuse a number we won't text before Turnstile is spent.
+    if (!body.token && mobileWanted) { const no = destinationRefused(); if (no) return no }
 
     const db = admin()
 
@@ -145,8 +160,27 @@ export async function POST(req: NextRequest) {
       if (String(existing.email || '').toLowerCase() !== email) {
         return NextResponse.json({ error: 'To use a different email, start the sign-up again.', code: 'restart' }, { status: 400 })
       }
+      if (existing.consumed_at) return NextResponse.json({ error: 'This sign-up is already complete. Sign in instead.', code: 'restart' }, { status: 409 })
+      if (existing.created_at && Date.now() - new Date(existing.created_at).getTime() > SESSION_MAX_MS) {
+        return NextResponse.json({ error: 'This sign-up has expired. Please start again.', code: 'restart' }, { status: 400 })
+      }
       if (existing?.last_sent_at && Date.now() - new Date(existing.last_sent_at).getTime() < RESEND_COOLDOWN_MS) {
         return NextResponse.json({ error: 'Please wait a moment before requesting another code.' }, { status: 429 })
+      }
+      // Resends go to the number on the sign-up (stored before normalising
+      // existed, so normalise it now too). Email resends ignore any number.
+      const stored = String(existing.phone || '') ? (normaliseSignupMobile(existing.phone).e164 || String(existing.phone)) : ''
+      if (channel === 'email' || !phone) phone = stored
+      if (phone && phone !== stored) {
+        if (channel !== 'sms') return NextResponse.json({ error: 'To use a different number, change it first.', code: 'change_number' }, { status: 400 })
+        // "Change number" must pass Turnstile again: without it, one sign-up
+        // could text any number it liked.
+        const human = await verifyTurnstile(body.turnstileToken, requestIp(req.headers))
+        if (!human.ok) return NextResponse.json({ error: TURNSTILE_FAILED, code: 'captcha' }, { status: 403 })
+      }
+      if (mobileWanted) {
+        if (!phone) return NextResponse.json({ error: 'A mobile number is required', code: 'bad_mobile' }, { status: 400 })
+        const no = destinationRefused(); if (no) return no
       }
     }
 
@@ -154,9 +188,10 @@ export async function POST(req: NextRequest) {
     // after Turnstile, the "already registered" check and the token checks, so
     // bots and dead ends don't use up a real person's allowance. Counted
     // atomically per channel (lib/signup-attempts claimOtpSend).
-    const rate = await claimOtpSend(db, { email, ip: requestIp(req.headers) || null, channel })
+    const rate = await claimOtpSend(db, { email, ip: requestIp(req.headers) || null, channel, to: mobileWanted ? phone : null })
     if (!rate.ok) {
-      recordSignupLater(db, { type: 'rate_limited', email, channel, detail: rate.reason === 'ip' ? 'Too many from this network' : 'Too many for this email' })
+      const why = { ip: 'Too many from this network', number: 'Too many to this mobile', global: 'Daily limit for all sign-up codes reached', email: 'Too many for this email' } as const
+      recordSignupLater(db, { type: 'rate_limited', email, channel, detail: why[rate.reason || 'email'] })
       return NextResponse.json({ error: rate.message, code: 'rate_limited' }, { status: 429 })
     }
 
@@ -169,16 +204,17 @@ export async function POST(req: NextRequest) {
       token, email, phone: phone || null,
       last_sent_at: new Date(nowMs).toISOString(),
       expires_at: new Date(codeExpiry).toISOString(),
-      attempts: 0,
+      // Wrong-code counters are never reset by a resend (only a fresh,
+      // Turnstile-backed start makes a new row at 0).
     }
     // A different mobile number must be verified again, whatever was resent,
     // and codes sent to the old number stop working.
-    const phoneChanged = !!existing && !!phone && (existing.phone || '') !== phone
+    const storedPhone = existing?.phone ? (normaliseSignupMobile(existing.phone).e164 || String(existing.phone)) : ''
+    const phoneChanged = !!existing && !!phone && storedPhone !== phone
     // Only (re)issue the code for the channel(s) being sent; keep the other.
     // Earlier codes for the same channel stay valid for their own 10 minutes.
     if (channel === 'both' || channel === 'email') { row.email_code = pushCode(existing?.email_code, sha(emailCode), codeExpiry, { fresh: !existing }); row.email_verified = false }
     if (mobileWanted || phoneChanged) { row.sms_code = pushCode(existing?.sms_code, sha(smsCode), codeExpiry, { fresh: !existing || phoneChanged }); row.sms_verified = false }
-    if (!phone && existing?.phone) { row.phone = existing.phone; phone = existing.phone }
 
     // Upsert on the unique token. The row id goes in the status callback URL
     // (never the token, which is the browser's secret).

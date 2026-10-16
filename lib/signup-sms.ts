@@ -14,7 +14,7 @@
 import crypto from 'crypto'
 import { platformTwilio, platformTwilioConfigured, TWILIO_MASTER, colvyBaseUrl } from '@/lib/twilio-platform'
 import { xmlEscape } from '@/lib/twilio-service'
-import { explainDeliveryError } from '@/lib/signup-delivery'
+import { explainDeliveryError, countryList } from '@/lib/signup-delivery'
 
 export const CODE_TTL_MS = 10 * 60 * 1000      // each code is valid for 10 minutes
 /** Codes per channel still accepted: the newest and the two before it. */
@@ -64,6 +64,10 @@ export type SendResult = { ok: boolean; sid?: string; code?: string; message?: s
 export function signupStatusCallbackUrl(verificationId: string, kind: 'sms' | 'voice'): string {
   return `${colvyBaseUrl()}/api/auth/otp/status?v=${encodeURIComponent(verificationId)}&k=${kind}`
 }
+
+/** Countries sign-up codes may be texted to (SIGNUP_SMS_COUNTRIES, default AU,NZ) and called (SIGNUP_VOICE_COUNTRIES, default AU). */
+export const smsCountries = () => countryList(process.env.SIGNUP_SMS_COUNTRIES, 'AU,NZ')
+export const voiceCountries = () => countryList(process.env.SIGNUP_VOICE_COUNTRIES, 'AU')
 
 const e164 = (v: string) => /^\+\d{8,15}$/.test(v)
 

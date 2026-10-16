@@ -26,8 +26,11 @@ export function normaliseSignupMobile(raw: string | null | undefined): MobileChe
   let intl = t.startsWith('+')
   if (!intl) {
     if (/^(1[38]00\d{6}|13\d{4})$/.test(d)) return { ok: false, e164: '', error: '13, 1300 and 1800 numbers can’t receive texts. Enter your mobile.' }
+    if (/^05\d{8}$/.test(d)) return { ok: false, e164: '', error: 'Numbers starting 05 can’t receive texts. Enter your mobile (04xx xxx xxx).' }
+    if (/^02\d{7,9}$/.test(d) && !/^0[2378]\d{8}$/.test(d)) return { ok: false, e164: '', error: 'If this is a New Zealand mobile, enter it with +64 (for example +64 21 123 4567).' }
+    if (/^02\d{8}$/.test(d)) return { ok: false, e164: '', error: 'That looks like a Sydney landline (02). Enter your mobile (04xx xxx xxx), or for a New Zealand mobile start with +64.' }
     if (/^0\d{9}$/.test(d)) { d = '61' + d.slice(1); intl = true }            // 0466 077 557
-    else if (/^[45]\d{8}$/.test(d)) { d = '61' + d; intl = true }             // 466 077 557
+    else if (/^4\d{8}$/.test(d)) { d = '61' + d; intl = true }                // 466 077 557
     else if (/^61[45]\d{8}$/.test(d) || /^610[45]\d{8}$/.test(d)) intl = true  // 61466077557
     else return { ok: false, e164: '', error: 'Enter an Australian mobile (04xx xxx xxx), or start with + and the country code.' }
   }
@@ -38,9 +41,53 @@ export function normaliseSignupMobile(raw: string | null | undefined): MobileChe
     const n = d.slice(2)
     if (/^1[38]/.test(n)) return { ok: false, e164: '', error: '13, 1300 and 1800 numbers can’t receive texts. Enter your mobile.' }
     if (/^[2378]\d{8}$/.test(n)) return { ok: false, e164: '', error: 'That looks like a landline. Enter a mobile number (04xx xxx xxx) so we can text you.' }
-    if (!/^[45]\d{8}$/.test(n)) return { ok: false, e164: '', error: 'An Australian mobile has 10 digits and starts with 04. Check the number.' }
+    if (/^5\d{8}$/.test(n)) return { ok: false, e164: '', error: 'Numbers starting 05 can’t receive texts. Enter your mobile (04xx xxx xxx).' }
+    if (!/^4\d{8}$/.test(n)) return { ok: false, e164: '', error: 'An Australian mobile has 10 digits and starts with 04. Check the number.' }
   }
   return { ok: true, e164: '+' + d, error: '' }
+}
+
+// ── Where codes may go ──────────────────────────────────────────────────────
+// Each text or call costs money, and some destinations cost a lot (premium,
+// satellite and "international network" ranges are the classic toll-fraud
+// targets). Codes only go to mobile ranges of the countries the server allows
+// (SIGNUP_SMS_COUNTRIES, default AU,NZ; calls SIGNUP_VOICE_COUNTRIES, default AU).
+
+const COUNTRY: Record<string, { code: string; name: string; mobile: RegExp }> = {
+  AU: { code: '61', name: 'Australian', mobile: /^614\d{8}$/ },
+  NZ: { code: '64', name: 'New Zealand', mobile: /^642\d{7,9}$/ },
+  GB: { code: '44', name: 'UK', mobile: /^447[1-57-9]\d{8}$/ },          // not 070 (personal numbers)
+  IE: { code: '353', name: 'Irish', mobile: /^3538[35-9]\d{7}$/ },
+  US: { code: '1', name: 'US', mobile: /^1[2-9]\d{2}[2-9]\d{6}$/ },
+  CA: { code: '1', name: 'Canadian', mobile: /^1[2-9]\d{2}[2-9]\d{6}$/ },
+  SG: { code: '65', name: 'Singapore', mobile: /^65[89]\d{7}$/ },
+  IN: { code: '91', name: 'Indian', mobile: /^91[6-9]\d{9}$/ },
+  NP: { code: '977', name: 'Nepali', mobile: /^9779[78]\d{8}$/ },
+}
+// +1 numbers that aren't the US or Canada (Caribbean and Pacific islands bill
+// like international calls), plus premium 900/976.
+const NANP_NOT_US_CA = /^1(242|246|264|268|284|340|345|441|473|649|658|664|670|671|684|721|758|767|784|787|809|829|849|868|869|876|900|939|976)/
+
+/** "AU,NZ" → ['AU', 'NZ'] (unknown codes dropped). */
+export function countryList(raw: string | null | undefined, fallback: string): string[] {
+  const list = String(raw ?? '').trim() ? String(raw) : fallback
+  return Array.from(new Set(list.toUpperCase().split(/[\s,;]+/).filter(c => c in COUNTRY)))
+}
+
+const names = (list: string[]) => {
+  const n = list.map(c => COUNTRY[c].name)
+  return n.length <= 1 ? (n[0] || 'no') : `${n.slice(0, -1).join(', ')} and ${n[n.length - 1]}`
+}
+
+/** May a sign-up code be texted (or read out, for 'voice') to this E.164 number? */
+export function destinationAllowed(e164: string, allowed: string[], channel: 'sms' | 'voice' = 'sms'): { ok: boolean; country: string | null; error: string } {
+  const d = String(e164 || '').replace(/\D/g, '')
+  const hit = allowed.find(c => COUNTRY[c] && COUNTRY[c].mobile.test(d) && !(COUNTRY[c].code === '1' && NANP_NOT_US_CA.test(d)))
+  if (hit) return { ok: true, country: hit, error: '' }
+  const error = channel === 'voice'
+    ? `We can only call ${names(allowed)} mobiles with the code. Use the text instead, or email support@colvy.com.`
+    : `Mobile verification is available for ${names(allowed)} numbers. Please contact us at support@colvy.com to sign up with another number.`
+  return { ok: false, country: null, error }
 }
 
 // ── Twilio error codes, in plain English ────────────────────────────────────
