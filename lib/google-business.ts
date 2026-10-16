@@ -7,6 +7,16 @@ const admin = () => createClient(
   { auth: { autoRefreshToken: false, persistSession: false } }
 )
 
+/**
+ * Can a connection's saved access token be used as it is? Not in its last
+ * minute: getGoogleToken refreshes it first, so it can't run out mid-request.
+ * Anything else that asks whether the token works (the phone agent's hours)
+ * uses this too, so the two can't disagree about that minute.
+ */
+export function googleTokenUsable(acc: { access_token?: string | null; token_expires_at?: string | null } | null | undefined): boolean {
+  return !!acc?.access_token && new Date(acc.token_expires_at || '').getTime() > Date.now() + 60_000
+}
+
 // Returns a valid access token for the company, refreshing it if it has expired.
 export async function getGoogleToken(companyId: string, db: any = admin()): Promise<{ token: string; account: any } | null> {
   const { data: rows } = await db.from('google_business_accounts')
@@ -14,8 +24,7 @@ export async function getGoogleToken(companyId: string, db: any = admin()): Prom
   const acc = rows?.[0]
   if (!acc) return null
 
-  const stillValid = acc.token_expires_at && new Date(acc.token_expires_at).getTime() > Date.now() + 60_000
-  if (stillValid && acc.access_token) return { token: acc.access_token, account: acc }
+  if (googleTokenUsable(acc)) return { token: acc.access_token, account: acc }
 
   if (!acc.refresh_token) return null
 

@@ -2,7 +2,7 @@ import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { createClient } from '@supabase/supabase-js'
-import { platformTwilio, platformTwilioConfigured, TWILIO_MASTER, colvyBaseUrl } from '@/lib/twilio-platform'
+import { platformTwilio, platformTwilioConfigured, TWILIO_MASTER, colvyBaseUrl, numberStatusCallbackUrl } from '@/lib/twilio-platform'
 import { consumeFreeCredit, refundFreeCredit } from '@/lib/free-number-credits'
 import { startNumberPurchase, finishNumberOrderFrom, cancelNumberOrder, LIVE_SUBSCRIPTION, CANCELLED_CHECKOUT, type HeldOrder } from '@/lib/number-orders'
 
@@ -168,7 +168,7 @@ async function finalize(req: NextRequest, track: { held: HeldOrder | null }) {
         friendlyName: `Colvy ${String(companyId).slice(0, 8)}`,
         smsUrl: `${base}/api/twilio/webhook`,
         voiceUrl: `${base}/api/twilio/voice/inbound`,
-        statusCallback: `${base}/api/twilio/voice/status`,
+        statusCallback: numberStatusCallbackUrl(),
         bundleSid, addressSid,
       })
     } catch (e: any) {
@@ -183,7 +183,7 @@ async function finalize(req: NextRequest, track: { held: HeldOrder | null }) {
           friendlyName: `Colvy ${String(companyId).slice(0, 8)}`,
           smsUrl: `${base}/api/twilio/webhook`,
           voiceUrl: `${base}/api/twilio/voice/inbound`,
-          statusCallback: `${base}/api/twilio/voice/status`,
+          statusCallback: numberStatusCallbackUrl(),
           bundleSid, addressSid,
         })
         numberToBuy = pick

@@ -3,7 +3,7 @@ import { isInternalCall } from '@/lib/internal-call'
 import { NextRequest, NextResponse } from 'next/server'
 import { startNumberPurchase, finishNumberOrderFrom, numberBoughtFor, type HeldOrder } from '@/lib/number-orders'
 import { createClient } from '@supabase/supabase-js'
-import { platformTwilio, platformTwilioConfigured, TWILIO_MASTER, colvyBaseUrl } from '@/lib/twilio-platform'
+import { platformTwilio, platformTwilioConfigured, TWILIO_MASTER, colvyBaseUrl, numberStatusCallbackUrl } from '@/lib/twilio-platform'
 
 function admin() {
   return createClient(
@@ -137,7 +137,7 @@ async function provision(req: NextRequest, track: { held: HeldOrder | null }) {
         friendlyName: `Colvy ${String(companyId).slice(0, 8)}`,
         smsUrl: `${base}/api/twilio/webhook`,
         voiceUrl: `${base}/api/twilio/voice/inbound`,
-        statusCallback: `${base}/api/twilio/voice/status`,
+        statusCallback: numberStatusCallbackUrl(),
         bundleSid,
       })
     } catch (e: any) {

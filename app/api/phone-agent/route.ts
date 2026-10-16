@@ -1,7 +1,7 @@
 import { requireCompanyAccess, isStaffRow } from '@/lib/company-access'
 import { NextRequest, NextResponse, after } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { getPhoneAgent, setPhoneAgent, cleanPhoneAgent, PHONE_VOICES, PHONE_STT, MAX_TEST_NUMBERS, relayConfigured, phoneBookable, businessClosedNow } from '@/lib/phone-agent'
+import { getPhoneAgent, setPhoneAgent, cleanPhoneAgent, PHONE_VOICES, PHONE_STT, MAX_TEST_NUMBERS, relayConfigured, phoneBookable, businessClosedNow, answersRealCallers, ensureStatusCallbacks } from '@/lib/phone-agent'
 import { MAX_GREETING } from '@/lib/phone-receptionist'
 import { getPhoneCatalog, refreshPhoneCatalog } from '@/lib/phone-catalog'
 import { agentsPaused } from '@/lib/agent/pilot'
@@ -123,6 +123,13 @@ export async function PATCH(req: NextRequest) {
     if (saved.enabled) {
       const refresh = () => refreshPhoneCatalog(admin(), companyId, { force: true }).then(() => {})
       try { after(refresh) } catch { void refresh() }
+    }
+    // The AI now answers more than the test numbers: Colvy numbers bought
+    // before they had a status callback get it now, so the very next caller
+    // who hangs up on the greeting is caught (see ensureStatusCallbacks).
+    if (answersRealCallers(saved)) {
+      const backfill = () => ensureStatusCallbacks(admin(), companyId)
+      try { after(backfill) } catch { void backfill() }
     }
     return NextResponse.json({ ok: true, ...saved })
   } catch (e: any) {
