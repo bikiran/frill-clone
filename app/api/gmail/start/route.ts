@@ -1,4 +1,5 @@
 import { readValue, signValue, safeReturn } from '@/lib/oauth-state'
+import { gmailAuthUrl } from '@/lib/gmail-oauth'
 import { NextRequest, NextResponse } from 'next/server'
 
 export const dynamic = 'force-dynamic'
@@ -19,28 +20,20 @@ export async function GET(req: NextRequest) {
   }
 
   const clientId = process.env.GOOGLE_CLIENT_ID || process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID
+  const base = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
   if (!clientId) {
-    return NextResponse.json({ error: 'Google is not configured (GOOGLE_CLIENT_ID missing).' }, { status: 500 })
+    // Never show a customer an env var name: back to the Email page, which
+    // explains it in plain English and offers forwarding instead.
+    console.error('[gmail/start] GOOGLE_CLIENT_ID is not set')
+    const dest = safeReturn(returnTo) || `${base}/admin/crm-settings/channels/email`
+    return NextResponse.redirect(`${dest}${dest.includes('?') ? '&' : '?'}gmail=error&reason=not_configured`)
   }
 
-  const base = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
   const redirectUri = `${base}/api/gmail/callback`
   const state = signValue({ kind: 'state', purpose: 'gmail', companyId, userId: ticket.userId, locationId, returnTo: safeReturn(returnTo) }, 30 * 60 * 1000)
 
-  const params = new URLSearchParams({
-    client_id: clientId,
-    redirect_uri: redirectUri,
-    response_type: 'code',
-    // Read mail, send mail, and see which address we're connected as.
-    scope: [
-      'https://www.googleapis.com/auth/gmail.readonly',
-      'https://www.googleapis.com/auth/gmail.send',
-      'https://www.googleapis.com/auth/userinfo.email',
-    ].join(' '),
-    access_type: 'offline',   // we need a refresh token
-    prompt: 'consent',        // force a refresh token on reconnect
-    state,
-  })
-
-  return NextResponse.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params}`)
+  // Read mail and send mail: the least that works (see lib/gmail-oauth.ts).
+  // The consent screen's name, logo and privacy/terms links come from the
+  // Google Cloud project's OAuth consent screen, not from this request.
+  return NextResponse.redirect(gmailAuthUrl({ clientId, redirectUri, state }))
 }

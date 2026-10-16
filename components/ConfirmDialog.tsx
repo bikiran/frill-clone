@@ -20,6 +20,10 @@ export type ConfirmOptions = {
   confirmLabel?: string
   cancelLabel?: string
   tone?: 'primary' | 'danger'
+  /** One button only: an in-app replacement for window.alert(). */
+  hideCancel?: boolean
+  /** 'info' for a notice rather than a question (the default for one-button dialogs). */
+  icon?: 'question' | 'info'
 }
 
 export function confirmDialog(opts: string | ConfirmOptions): Promise<boolean> {
@@ -37,6 +41,13 @@ export function confirmDialog(opts: string | ConfirmOptions): Promise<boolean> {
   })
 }
 
+// In-app replacement for window.alert(): one button, never a browser popup.
+//   await alertDialog({ title: 'Couldn’t save', message: '…' })
+export function alertDialog(opts: string | Omit<ConfirmOptions, 'hideCancel' | 'cancelLabel'>): Promise<boolean> {
+  const o: ConfirmOptions = typeof opts === 'string' ? { message: opts } : opts
+  return confirmDialog({ tone: 'primary', confirmLabel: 'OK', ...o, hideCancel: true })
+}
+
 // A confirm that reads like a question: first sentence → title, rest → body.
 function split(o: ConfirmOptions) {
   if (o.title || !o.message) return { title: o.title || 'Are you sure?', body: o.message || '' }
@@ -46,7 +57,7 @@ function split(o: ConfirmOptions) {
 
 const DANGER = /\b(delete|remove|cancel|discard|disconnect|revoke|clear|reset|archive|end|leave|block)\b/i
 
-function Dialog({ onDone, confirmLabel, cancelLabel, tone, ...o }: ConfirmOptions & { onDone: (v: boolean) => void }) {
+function Dialog({ onDone, confirmLabel, cancelLabel, tone, hideCancel, icon, ...o }: ConfirmOptions & { onDone: (v: boolean) => void }) {
   const [closing, setClosing] = useState<null | boolean>(null)
   const okRef = useRef<HTMLButtonElement>(null)
   const { title, body } = split(o)
@@ -105,6 +116,8 @@ function Dialog({ onDone, confirmLabel, cancelLabel, tone, ...o }: ConfirmOption
           <span style={{ width: 38, height: 38, borderRadius: 12, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: danger ? '#fef2f2' : 'var(--peach,#fff1ee)', color: danger ? '#dc2626' : 'var(--coral,#ff7a6b)' }}>
             {danger
               ? <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.3 3.9 2.4 17.5A2 2 0 0 0 4.1 20.5h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" /><path d="M12 9.5v4M12 17h.01" /></svg>
+              : (icon ? icon === 'info' : hideCancel)
+              ? <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="M12 11v5M12 8h.01" /></svg>
               : <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.3M12 17h.01" /></svg>}
           </span>
           <div style={{ minWidth: 0, paddingTop: 2 }}>
@@ -113,7 +126,7 @@ function Dialog({ onDone, confirmLabel, cancelLabel, tone, ...o }: ConfirmOption
           </div>
         </div>
         <div className="cd-actions">
-          <button className="cd-btn cd-cancel" onClick={() => close(false)}>{cancelLabel || 'Cancel'}</button>
+          {!hideCancel && <button className="cd-btn cd-cancel" onClick={() => close(false)}>{cancelLabel || 'Cancel'}</button>}
           <button ref={okRef} className="cd-btn cd-ok" style={{ background: danger ? '#dc2626' : 'var(--coral,#ff7a6b)' }} onClick={() => close(true)}>{okLabel}</button>
         </div>
       </div>

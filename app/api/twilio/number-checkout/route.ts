@@ -2,6 +2,8 @@ import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { createClient } from '@supabase/supabase-js'
+import { billingUnavailableCopy } from '@/lib/billing-config'
+import { alertBillingNotConfigured } from '@/lib/billing-alert'
 
 function admin() {
   return createClient(
@@ -33,7 +35,12 @@ export async function POST(req: NextRequest) {
 
     const secret = (process.env.STRIPE_SECRET_KEY || '').trim()
     if (!secret.startsWith('sk_')) {
-      return NextResponse.json({ error: 'Stripe not configured. Add STRIPE_SECRET_KEY to Vercel.' }, { status: 500 })
+      // Never an env var name to a customer: plain words, and the Colvy team hears about it.
+      console.error('[number-checkout] STRIPE_SECRET_KEY is missing or invalid')
+      const { data: co } = await admin().from('companies').select('name').eq('id', companyId).maybeSingle()
+      await alertBillingNotConfigured(admin(), { companyId, companyName: co?.name || null, tier: 'phone_number', missing: ['STRIPE_SECRET_KEY'] })
+      const copy = billingUnavailableCopy()
+      return NextResponse.json({ error: `Buying a number online isn’t available just yet. ${copy.message}`, setup: true }, { status: 503 })
     }
     const stripe = new Stripe(secret, { apiVersion: '2024-06-20' as any })
     const origin = req.headers.get('origin') || 'https://colvy.com'

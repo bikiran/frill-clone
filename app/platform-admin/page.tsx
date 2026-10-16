@@ -15,6 +15,7 @@ import SignupsPage from '@/components/platform-admin/SignupsPage'
 import EmailHealthCard from '@/components/platform-admin/EmailHealthCard'
 import SignupSmsHealth from '@/components/platform-admin/SignupSmsHealth'
 import WebFormsPage from '@/components/platform-admin/WebFormsPage'
+import BillingConfigCard from '@/components/platform-admin/BillingConfigCard'
 import { COLVY_CONTACT, isColvyNumber } from '@/lib/colvy-contact'
 
 const SUPER_ADMIN = 'bishalstha76@gmail.com'
@@ -4366,6 +4367,8 @@ function BillingPage() {
   const [pending, setPending] = useState(0)
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState('')
+  const [config, setConfig] = useState<any>(null)
+  const [lastAlert, setLastAlert] = useState<any>(null)
 
   useEffect(() => {
     ;(async () => {
@@ -4375,6 +4378,7 @@ function BillingPage() {
         const data = await res.json()
         if (!res.ok) throw new Error(data.error || 'Could not load')
         setPays(data.payments || []); setPaid(data.paid || 0); setPending(data.pending || 0)
+        setConfig(data.config || null); setLastAlert(data.lastAlert || null)
       } catch (e: any) { setErr(e.message) } finally { setLoading(false) }
     })()
   }, [])
@@ -4382,8 +4386,9 @@ function BillingPage() {
   const STATUS_COLOR: Record<string, string> = { paid: '#10b981', pending: '#f59e0b', failed: '#ef4444', cancelled: '#9ca3af' }
   return (
     <div>
-      <SectionHeader title="Billing" sub="In-chat payments collected across all companies" />
+      <SectionHeader title="Billing" sub="Colvy’s own billing setup, and in-chat payments collected across all companies" />
       {err && <div style={{ padding: '10px 14px', borderRadius: 9, background: '#fee2e2', color: '#dc2626', fontSize: 13, marginBottom: 14 }}>{err}</div>}
+      <BillingConfigCard status={config} lastAlert={lastAlert} />
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 14, marginBottom: 20 }}>
         <KPI label="Collected" value={`$${paid.toLocaleString()}`} sub="paid via chat" color="#10b981" />
         <KPI label="Pending" value={`$${pending.toLocaleString()}`} sub="awaiting payment" color="#f59e0b" />
