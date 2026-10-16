@@ -125,30 +125,44 @@ const BUILDER_THEME_KEYS = ['color', 'welcome', 'variables', 'listMode']
  * Builder-managed keys (colour, welcome screen settings, logic variables, list
  * mode) follow the version exactly; any other key the version doesn't have
  * (a background added later, a key from a newer feature) is kept, as the
- * builder's own save keeps it. A version with no theme keeps the current one.
+ * builder's own save keeps it. A version with no theme (or {}) keeps the
+ * current one.
  */
 export function restoredTheme(current: unknown, versionTheme: unknown): Record<string, unknown> {
   const cur = isPlain(current) ? current : {}
-  if (!isPlain(versionTheme)) return { ...cur }
+  // {} is "no theme recorded" too (a row from a hand-made table, or a column
+  // default), never "reset everything to the defaults".
+  if (!isPlain(versionTheme) || !Object.keys(versionTheme).length) return { ...cur }
   const out: Record<string, unknown> = { ...cur, ...versionTheme }
   for (const k of BUILDER_THEME_KEYS) if (!(k in versionTheme)) delete out[k]
   return out
 }
 
+// Columns restored exactly as the version holds them, NULL included (an empty
+// thank-you message or no end actions is a real state). Only a version row
+// without the column at all (a hand-made table) keeps the current value.
+const NULLABLE_COLUMNS: SnapshotColumn[] = ['description', 'welcome_message', 'thank_you_message', 'end_actions']
+
 /**
  * The forms update that puts a version back. Only columns the forms row has
- * are written, and a column the version doesn't hold (an old version made
- * before end_actions was saved) keeps its current value. Questions go back
- * verbatim, with their logic.
+ * are written. Questions go back verbatim, with their logic, except that an
+ * empty list never replaces a form that has questions (it's what a row with
+ * nothing recorded looks like). show_confetti / display_style aren't
+ * meaningful as NULL, so a NULL there keeps the current setting.
  */
 export function restorePatch(form: Record<string, unknown>, version: Record<string, unknown>): Record<string, unknown> {
   const patch: Record<string, unknown> = {}
   for (const c of SNAPSHOT_COLUMNS) {
     if (!(c in form)) continue
     if (c === 'theme') { patch.theme = restoredTheme(form.theme, version.theme); continue }
-    if (c === 'questions') { if (Array.isArray(version.questions)) patch.questions = version.questions; continue }
+    if (c === 'questions') {
+      const vq = version.questions
+      const formHasQuestions = Array.isArray(form.questions) && form.questions.length > 0
+      if (Array.isArray(vq) && (vq.length > 0 || !formHasQuestions)) patch.questions = vq
+      continue
+    }
     if (c === 'title') { if (typeof version.title === 'string' && version.title.trim()) patch.title = version.title; continue }
-    // Text / settings columns: only when the version has a value for it.
+    if (NULLABLE_COLUMNS.includes(c)) { if (c in version) patch[c] = version[c] ?? null; continue }
     if (version[c] !== undefined && version[c] !== null) patch[c] = version[c]
   }
   return patch

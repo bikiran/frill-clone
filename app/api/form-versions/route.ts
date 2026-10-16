@@ -44,44 +44,62 @@ async function latestVersion(db: SupabaseClient, formId: string) {
   return { latest: (Array.isArray(data) ? data[0] : null) as Record<string, unknown> | null, error }
 }
 
-type Recorded = { recorded: true; version_number: number } | { recorded: false; skipped: string }
+type Recorded =
+  | { recorded: true; version_number: number; marked?: 'publish' }
+  | { recorded: false; skipped: string }
 
 /** Records a version of `snap` if the rules allow it, then prunes to the newest VERSION_KEEP. */
 async function record(db: SupabaseClient, formId: string, snap: FormSnapshotRow, reason: SnapshotReason, userId: string | null): Promise<Recorded> {
-  const { latest, error: readErr } = await latestVersion(db, formId)
-  if (readErr) {
-    if (isMissingTable(readErr)) return { recorded: false, skipped: 'no_table' }
-    throw readErr
-  }
-  const decision = shouldSnapshot({ reason, latest, snap, now: Date.now() })
-  if (!decision.save) return { recorded: false, skipped: decision.why }
+  // Two tries: if another request (an autosave snapshot racing a publish) takes
+  // the next number first, read the newest version again and decide again.
+  for (let attempt = 0; ; attempt++) {
+    const { latest, error: readErr } = await latestVersion(db, formId)
+    if (readErr) {
+      if (isMissingTable(readErr)) return { recorded: false, skipped: 'no_table' }
+      throw readErr
+    }
+    const decision = shouldSnapshot({ reason, latest, snap, now: Date.now() })
+    if (!decision.save) {
+      // Publishing a form whose newest version already matches it (the save
+      // just before publish recorded it): that version is what went live.
+      if (reason === 'publish' && decision.why === 'unchanged' && latest?.id && latest.reason !== 'publish') {
+        const { error } = await (db as any).from('form_versions').update({ reason: 'publish' }).eq('id', latest.id).eq('form_id', formId)
+        // A hand-made table without the reason column: nothing to mark.
+        if (!error) return { recorded: true, version_number: Number(latest.version_number) || 0, marked: 'publish' }
+        if (!isMissingColumn(error)) throw error
+      }
+      return { recorded: false, skipped: decision.why }
+    }
 
-  const version_number = (Number(latest?.version_number) || 0) + 1
-  const row = { form_id: formId, version_number, ...snap, reason, created_by: userId, created_at: new Date().toISOString() }
-  let { error } = await (db as any).from('form_versions').insert(row)
-  if (error && isMissingColumn(error)) {
-    // A table made by hand before V382: store what it has room for.
-    const legacy: Record<string, unknown> = { form_id: formId, version_number, created_at: row.created_at }
-    for (const c of LEGACY_COLUMNS) if (c in snap) legacy[c] = snap[c]
-    ;({ error } = await (db as any).from('form_versions').insert(legacy))
-  }
-  if (error) {
-    if (isMissingTable(error)) return { recorded: false, skipped: 'no_table' }
-    // Another save recorded this number a moment ago: one version is enough.
-    if (isDuplicate(error)) return { recorded: false, skipped: 'concurrent' }
-    throw error
-  }
+    const version_number = (Number(latest?.version_number) || 0) + 1
+    const row = { form_id: formId, version_number, ...snap, reason, created_by: userId, created_at: new Date().toISOString() }
+    let { error } = await (db as any).from('form_versions').insert(row)
+    if (error && isMissingColumn(error)) {
+      // A table made by hand before V382: store what it has room for.
+      const legacy: Record<string, unknown> = { form_id: formId, version_number, created_at: row.created_at }
+      for (const c of LEGACY_COLUMNS) if (c in snap) legacy[c] = snap[c]
+      ;({ error } = await (db as any).from('form_versions').insert(legacy))
+    }
+    if (error) {
+      if (isMissingTable(error)) return { recorded: false, skipped: 'no_table' }
+      if (isDuplicate(error)) {
+        if (attempt === 0) continue
+        return { recorded: false, skipped: 'concurrent' }
+      }
+      throw error
+    }
 
-  // Keep the newest VERSION_KEEP. A failed prune only leaves extra rows behind.
-  try {
-    const { data: old } = await (db as any).from('form_versions').select('id')
-      .eq('form_id', formId).order('version_number', { ascending: false }).range(VERSION_KEEP, VERSION_KEEP + 999)
-    const ids = (Array.isArray(old) ? old : []).map((r: any) => r.id).filter(Boolean)
-    if (ids.length) await (db as any).from('form_versions').delete().in('id', ids)
-  } catch (e: any) {
-    console.error('[form-versions] prune failed', e?.message || e)
+    // Keep the newest VERSION_KEEP. A failed prune only leaves extra rows behind.
+    try {
+      const { data: old } = await (db as any).from('form_versions').select('id')
+        .eq('form_id', formId).order('version_number', { ascending: false }).range(VERSION_KEEP, VERSION_KEEP + 999)
+      const ids = (Array.isArray(old) ? old : []).map((r: any) => r.id).filter(Boolean)
+      if (ids.length) await (db as any).from('form_versions').delete().in('id', ids)
+    } catch (e: any) {
+      console.error('[form-versions] prune failed', e?.message || e)
+    }
+    return { recorded: true, version_number }
   }
-  return { recorded: true, version_number }
 }
 
 export async function POST(req: NextRequest) {

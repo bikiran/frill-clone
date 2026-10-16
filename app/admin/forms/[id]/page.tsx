@@ -285,6 +285,7 @@ export default function FormBuilder() {
   // after every keystroke-save. Never awaited, so it can't slow a save down,
   // and any failure (no version table yet, offline) is ignored.
   const snapAsked = useRef({ at: 0, shape: '' })
+  const publishing = useRef(false)
   const requestSnapshot = (reason: 'autosave' | 'publish') => {
     const shape = latest.current.questions.map(q => `${q.id}:${q.type}`).join('|')
     const now = Date.now()
@@ -341,7 +342,8 @@ export default function FormBuilder() {
       savePending.current = true
       if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
       autoSaveTimer.current = setTimeout(() => { void saveRef.current() }, 3000)
-    } else {
+    } else if (!publishing.current) {
+      // (While publishing, the publish request below records this save.)
       requestSnapshot('autosave')
     }
   }
@@ -385,7 +387,14 @@ export default function FormBuilder() {
     if (error || !next) return
     // Publishing records a version of what went live: send any edit still
     // waiting (or in flight) first, so the version matches the live form.
-    if (savePending.current || saveRun.current.busy) await saveRef.current()
+    // That save doesn't ask for an ordinary snapshot of its own: it would race
+    // the publish one and usually take the version as "autosave".
+    publishing.current = true
+    try {
+      if (savePending.current || saveRun.current.busy) await saveRef.current()
+    } finally {
+      publishing.current = false
+    }
     requestSnapshot('publish')
   }
 

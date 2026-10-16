@@ -25,6 +25,11 @@
 --     created_by        uuid  who was signed in (NULL if that user is deleted)
 --     created_at        timestamptz
 --
+-- On a hand-made table it adds the missing columns (existing rows keep NULL
+-- there, never a made-up '[]' / '{}'), renumbers duplicate version numbers,
+-- and makes form_id cascade on delete: a foreign key that doesn't cascade is
+-- replaced, and versions of forms that no longer exist are deleted first.
+--
 -- The server keeps the newest 50 versions per form. A version is recorded
 -- when the form is published, on save at most every 10 minutes (sooner if
 -- questions were removed, changed type or several were added), and around a
@@ -107,13 +112,18 @@ CREATE TABLE IF NOT EXISTS public.form_versions (
 
 -- A table made by hand in the dashboard (id, form_id, version_number,
 -- questions, title, description, theme, created_at): add what it's missing.
--- Nullable here, so existing rows are never rejected.
-ALTER TABLE public.form_versions ADD COLUMN IF NOT EXISTS form_id           UUID REFERENCES public.forms(id) ON DELETE CASCADE;
+-- Nullable here, so existing rows are never rejected. questions, theme and
+-- created_at are added WITHOUT a default and only then given one: a column
+-- added with a default fills every existing row with it, and a restore of an
+-- old row would then read '[]' / '{}' as "no questions, default theme" and
+-- wipe the form (or a fake "now" date would reorder the history).
+-- form_id's foreign key is sorted out below (it must cascade).
+ALTER TABLE public.form_versions ADD COLUMN IF NOT EXISTS form_id           UUID;
 ALTER TABLE public.form_versions ADD COLUMN IF NOT EXISTS version_number    INTEGER;
 ALTER TABLE public.form_versions ADD COLUMN IF NOT EXISTS title             TEXT;
 ALTER TABLE public.form_versions ADD COLUMN IF NOT EXISTS description       TEXT;
-ALTER TABLE public.form_versions ADD COLUMN IF NOT EXISTS questions         JSONB DEFAULT '[]'::jsonb;
-ALTER TABLE public.form_versions ADD COLUMN IF NOT EXISTS theme             JSONB DEFAULT '{}'::jsonb;
+ALTER TABLE public.form_versions ADD COLUMN IF NOT EXISTS questions         JSONB;
+ALTER TABLE public.form_versions ADD COLUMN IF NOT EXISTS theme             JSONB;
 ALTER TABLE public.form_versions ADD COLUMN IF NOT EXISTS welcome_message   TEXT;
 ALTER TABLE public.form_versions ADD COLUMN IF NOT EXISTS thank_you_message TEXT;
 ALTER TABLE public.form_versions ADD COLUMN IF NOT EXISTS end_actions       JSONB;
@@ -121,7 +131,43 @@ ALTER TABLE public.form_versions ADD COLUMN IF NOT EXISTS show_confetti     BOOL
 ALTER TABLE public.form_versions ADD COLUMN IF NOT EXISTS display_style     TEXT;
 ALTER TABLE public.form_versions ADD COLUMN IF NOT EXISTS reason            TEXT;
 ALTER TABLE public.form_versions ADD COLUMN IF NOT EXISTS created_by        UUID REFERENCES auth.users(id) ON DELETE SET NULL;
-ALTER TABLE public.form_versions ADD COLUMN IF NOT EXISTS created_at        TIMESTAMPTZ DEFAULT now();
+ALTER TABLE public.form_versions ADD COLUMN IF NOT EXISTS created_at        TIMESTAMPTZ;
+ALTER TABLE public.form_versions ALTER COLUMN questions  SET DEFAULT '[]'::jsonb;
+ALTER TABLE public.form_versions ALTER COLUMN theme      SET DEFAULT '{}'::jsonb;
+ALTER TABLE public.form_versions ALTER COLUMN created_at SET DEFAULT now();
+
+-- form_id must point at forms and cascade, or deleting a form fails while it
+-- has versions (the Forms list ignores that error, so the form just stays).
+-- A hand-made table may have no foreign key, or one without ON DELETE
+-- CASCADE: replace it. Versions of forms that no longer exist can't be
+-- reached by anyone; they're deleted so the key can be added.
+DO $$
+DECLARE
+  att SMALLINT;
+  r RECORD;
+  good BOOLEAN := false;
+  orphans INTEGER;
+BEGIN
+  SELECT attnum INTO att FROM pg_attribute
+   WHERE attrelid = 'public.form_versions'::regclass AND attname = 'form_id' AND NOT attisdropped;
+  FOR r IN SELECT conname, confrelid, confdeltype, conkey FROM pg_constraint
+            WHERE conrelid = 'public.form_versions'::regclass AND contype = 'f' AND att = ANY (conkey) LOOP
+    IF NOT good AND r.confrelid = 'public.forms'::regclass AND r.confdeltype = 'c' AND r.conkey = ARRAY[att] THEN
+      good := true;
+    ELSE
+      EXECUTE format('ALTER TABLE public.form_versions DROP CONSTRAINT %I', r.conname);
+      RAISE NOTICE 'dropped foreign key % on form_versions.form_id (did not cascade)', r.conname;
+    END IF;
+  END LOOP;
+  IF NOT good THEN
+    DELETE FROM public.form_versions v
+     WHERE v.form_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM public.forms f WHERE f.id = v.form_id);
+    GET DIAGNOSTICS orphans = ROW_COUNT;
+    IF orphans > 0 THEN RAISE NOTICE 'deleted % versions of forms that no longer exist', orphans; END IF;
+    ALTER TABLE public.form_versions
+      ADD CONSTRAINT form_versions_form_id_fkey FOREIGN KEY (form_id) REFERENCES public.forms(id) ON DELETE CASCADE;
+  END IF;
+END $$;
 
 -- The route never sends an id: make sure a hand-made uuid id has a default.
 DO $$
