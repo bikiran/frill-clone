@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { requireCallsAccess, buildInsights, parseWindow, companyTimezone } from '@/lib/command-centre-server'
+import { checkBurst } from '@/lib/rate-limit'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -25,10 +26,16 @@ export async function GET(req: NextRequest) {
   const win = parseWindow(sp.get('from'), sp.get('to'))
   if (!companyId || !win) return NextResponse.json({ error: 'companyId and a valid from/to are required' }, { status: 400 })
   const db = admin()
-  if (!(await requireCallsAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+  const access = await requireCallsAccess(req, db, companyId)
+  if (!access.ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+  // Each person: 20 summaries a minute, and 4 of those may skip the cache.
+  const fresh = sp.get('fresh') === '1'
+  if (!checkBurst(`cc-insights:${access.userId}`, 20) || (fresh && !checkBurst(`cc-insights-fresh:${access.userId}`, 4))) {
+    return NextResponse.json({ error: 'That’s a lot of summaries in a minute. Try again shortly.' }, { status: 429, headers: { 'Retry-After': '60' } })
+  }
   try {
     const tz = await companyTimezone(db, companyId)
-    return NextResponse.json(await buildInsights(db, companyId, { from: win.from, to: win.to, tz, fresh: sp.get('fresh') === '1' }), { headers: { 'Cache-Control': 'no-store' } })
+    return NextResponse.json(await buildInsights(db, companyId, { from: win.from, to: win.to, tz, fresh }), { headers: { 'Cache-Control': 'no-store' } })
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || 'Couldn’t summarise these calls' }, { status: 500 })
   }

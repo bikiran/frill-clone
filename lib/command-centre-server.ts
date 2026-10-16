@@ -16,12 +16,13 @@
 //
 // Who: the business's staff with the Command Centre or Call Logs permission.
 
-import { requireCompanyAccess } from '@/lib/company-access'
+import { requireCompanyAccess, callerUser, SUPER_ADMIN } from '@/lib/company-access'
 import { canUseFeature, hasFullAccess } from '@/lib/permissions'
-import { phoneKey } from '@/lib/phone'
+import { phoneKey, toE164 } from '@/lib/phone'
 import { missedCallOutcome } from '@/lib/outcomes/missed-calls'
 import { loadBusinessHours, hoursOutlook, type BusinessHours } from '@/lib/business-hours'
-import { missedCallTextSettings, renderMissedCallText, textableCaller } from '@/lib/missed-call-text-settings'
+import { missedCallTextSettings, renderMissedCallText, textableCaller, canTextFrom } from '@/lib/missed-call-text-settings'
+import { businessNumbers } from '@/lib/business-numbers'
 import { textOptOut } from '@/lib/sms-consent'
 import { agentsPaused } from '@/lib/agent/pilot'
 import { modelFor, trackAi } from '@/lib/ai-models'
@@ -43,20 +44,34 @@ const clip = (v: any, n: number) => { const t = String(v ?? '').replace(/\s+/g, 
 /** Staff with the Command Centre or Call Logs permission (owner, admins and the platform admin always). */
 export async function requireCallsAccess(req: any, db: Db, companyId: string | null | undefined): Promise<{ ok: boolean; userId?: string }> {
   const a = await requireCompanyAccess(req, db, companyId)
-  if (!a.ok || !a.userId || !companyId) return { ok: a.ok, userId: a.userId }
+  if (!a.ok || !a.userId || !companyId) return { ok: false }
   try {
-    const [{ data: co }, { data: rows }] = await Promise.all([
+    const [co, team] = await Promise.all([
       db.from('companies').select('owner_id').eq('id', companyId).maybeSingle(),
       db.from('team_members').select('role, status, permissions').eq('company_id', companyId).eq('user_id', a.userId).limit(5),
     ])
-    if (co?.owner_id === a.userId) return a
-    const row = (rows || []).find((r: any) => String(r.status || '').toLowerCase() !== 'removed')
-    if (!row) return a   // the platform admin, who isn't on the team
+    if (co?.data?.owner_id === a.userId) return a
+    // Only the owner (above) and the platform admin get past a team read that
+    // failed, or past having no team row; everyone else is checked on their row.
+    const superAdmin = async () => (await callerUser(req, db))?.email === SUPER_ADMIN
+    if (team?.error) return (await superAdmin()) ? a : { ok: false }
+    const row = (team?.data || []).find((r: any) => String(r.status || '').toLowerCase() !== 'removed')
+    if (!row) return (await superAdmin()) ? a : { ok: false }
     const role = String(row.role || 'viewer').toLowerCase()
     if (hasFullAccess(role)) return a
     const perms = row.permissions && typeof row.permissions === 'object' ? row.permissions : null
     return canUseFeature(role, perms, 'command_centre') || canUseFeature(role, perms, 'calls') ? a : { ok: false }
   } catch { return { ok: false } }
+}
+
+/** A few at a time, so a long period doesn't fire hundreds of requests at once. */
+async function mapLimit<T, R>(items: T[], limit: number, fn: (x: T) => Promise<R>): Promise<R[]> {
+  const out: R[] = new Array(items.length)
+  let i = 0
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (i < items.length) { const k = i++; out[k] = await fn(items[k]) }
+  }))
+  return out
 }
 
 // ── Loading calls ────────────────────────────────────────────────────────────
@@ -72,17 +87,18 @@ export const MAX_CALLS = 20000
 async function pageAll(build: () => any, cap: number): Promise<{ rows: any[]; error: any; truncated: boolean }> {
   const rows: any[] = []
   for (let from = 0; from < cap; from += 1000) {
-    const { data, error } = await build().range(from, Math.min(from + 999, cap - 1))
+    const size = Math.min(1000, cap - from)
+    const { data, error } = await build().range(from, from + size - 1)
     if (error) return { rows, error, truncated: false }
     if (!data?.length) break
     rows.push(...data)
-    if (data.length < 1000) return { rows, error: null, truncated: false }
+    if (data.length < size) return { rows, error: null, truncated: false }
   }
   return { rows, error: null, truncated: rows.length >= cap }
 }
 
 /** Raw call rows created in [fromIso, toIso), newest first, de-duplicated. Falls back to the older columns on an older database. */
-export async function loadCallRows(db: Db, companyId: string, fromIso: string, toIso: string | null, cap = MAX_CALLS): Promise<{ rows: any[]; truncated: boolean; removed: number }> {
+export async function loadCallRows(db: Db, companyId: string, fromIso: string, toIso: string | null, cap = MAX_CALLS): Promise<{ rows: any[]; truncated: boolean; removed: number; total: number | null }> {
   const run = (cols: string) => pageAll(() => {
     let q = db.from('calls').select(cols).eq('company_id', companyId).gte('created_at', fromIso)
     if (toIso) q = q.lt('created_at', toIso)
@@ -92,7 +108,16 @@ export async function loadCallRows(db: Db, companyId: string, fromIso: string, t
   if (r.error) r = await run(CALL_COLS_BASIC)
   if (r.error) throw new Error(r.error.message || 'Couldn’t load calls')
   const d = dedupeRows(r.rows)
-  return { rows: d.rows, truncated: r.truncated, removed: d.removed }
+  // More than the cap: say how many there are, so the page can be honest.
+  let total: number | null = null
+  if (r.truncated) {
+    try {
+      let q = db.from('calls').select('id', { count: 'exact', head: true }).eq('company_id', companyId).gte('created_at', fromIso)
+      if (toIso) q = q.lt('created_at', toIso)
+      total = (await q).count ?? null
+    } catch {}
+  }
+  return { rows: d.rows, truncated: r.truncated, removed: d.removed, total }
 }
 
 async function safeRows(q: any): Promise<any[]> {
@@ -117,8 +142,8 @@ export async function enrichCalls(db: Db, companyId: string, rows: any[], lines?
   const contactIds = uniq(rows.map(r => r.contact_id))
   const convIds = uniq(rows.map(r => r.conversation_id))
   const [contactRows, convRows, lineMap] = await Promise.all([
-    Promise.all(chunks(contactIds, 200).map(ids => safeRows(db.from('contacts').select('id, name, location_id').eq('company_id', companyId).in('id', ids)))).then(a => a.flat()),
-    Promise.all(chunks(convIds, 200).map(ids => safeRows(db.from('conversations').select('id, location_id, assigned_location_id').eq('company_id', companyId).in('id', ids)))).then(a => a.flat()),
+    mapLimit(chunks(contactIds, 200), 4, ids => safeRows(db.from('contacts').select('id, name, location_id').eq('company_id', companyId).in('id', ids))).then(a => a.flat()),
+    mapLimit(chunks(convIds, 200), 4, ids => safeRows(db.from('conversations').select('id, location_id, assigned_location_id').eq('company_id', companyId).in('id', ids))).then(a => a.flat()),
     lines ? Promise.resolve(lines) : lineLocations(db, companyId),
   ])
   const contacts = new Map<string, any>(contactRows.map((c: any) => [String(c.id), c]))
@@ -129,7 +154,7 @@ export async function enrichCalls(db: Db, companyId: string, rows: any[], lines?
   const tails = uniq(rows.filter(r => !named(r)).map(r => phoneKey(otherNumber(normaliseCall(r)))).filter(k => k.length >= 9))
   const byTail = new Map<string, any>()
   if (tails.length) {
-    const found = (await Promise.all(chunks(tails, 200).map(t => safeRows(db.from('contacts').select('id, name, location_id, phone_norm').eq('company_id', companyId).in('phone_norm', t).limit(1000))))).flat()
+    const found = (await mapLimit(chunks(tails, 200), 4, t => safeRows(db.from('contacts').select('id, name, location_id, phone_norm').eq('company_id', companyId).in('phone_norm', t).limit(1000)))).flat()
     for (const c of found) if (c.name && !looksLikePhone(c.name) && !byTail.has(String(c.phone_norm))) byTail.set(String(c.phone_norm), c)
   }
 
@@ -247,7 +272,7 @@ export async function loadCallDetail(db: Db, companyId: string, callId: string, 
       return q.order('created_at', { ascending: true }).limit(20)
     })()) : [],
     convId ? safeRows(db.from('messages').select('id, content, created_at, metadata, sender_type, sender_name, is_internal, delivery_channel').eq('conversation_id', convId).gte('created_at', winFrom).order('created_at', { ascending: true }).limit(80)) : [],
-    key.length >= 8 ? safeRows(db.from('calls').select('id, direction, status, is_voicemail, duration_seconds, from_number, to_number, agent_name, answered_by_user_id, answered_at, created_at, ended_at, recording_url').eq('company_id', companyId).gt('created_at', raw.created_at).lte('created_at', new Date(at + 7 * 864e5).toISOString()).order('created_at', { ascending: true }).limit(200)) : [],
+    key.length >= 8 ? safeRows(db.from('calls').select('id, direction, status, is_voicemail, duration_seconds, from_number, to_number, agent_name, answered_by_user_id, answered_at, created_at, ended_at, recording_url').eq('company_id', companyId).or(`from_number.ilike.%${key},to_number.ilike.%${key}`).gt('created_at', raw.created_at).lte('created_at', new Date(at + 7 * 864e5).toISOString()).order('created_at', { ascending: true }).limit(50)) : [],
   ])
 
   // What happened after: the automatic text, replies, and calls with this number.
@@ -298,6 +323,8 @@ export type TextBackDraft = {
   why: string[]
   to: string
   toDisplay: string
+  /** The business line they rang, when it can send texts: the reply comes from the number they know. Null → the usual texting number. */
+  from: string | null
   conversationId: string | null
   contactId: string | null
   consent: 'ok' | 'unknown'
@@ -332,13 +359,16 @@ export async function draftTextBack(db: Db, companyId: string, callId: string, o
   const consent = await textOptOut(db, companyId, verdict.e164, call.contact_id)
   if (consent.state === 'opted_out') return { ok: false, reason: 'opted_out', message: SKIP_MSG.opted_out }
 
-  const [{ data: co }, paused, [enriched], autoMsgs, hours] = await Promise.all([
+  const [{ data: co }, paused, [enriched], autoMsgs, hours, own] = await Promise.all([
     db.from('companies').select('name, inbox_settings, booking_settings').eq('id', companyId).maybeSingle(),
     agentsPaused(db, companyId).catch(() => ({ paused: false })),
     enrichCalls(db, companyId, [raw]),
     call.conversation_id ? safeRows(db.from('messages').select('metadata, created_at').eq('conversation_id', call.conversation_id).gte('created_at', call.created_at).limit(100)) : Promise.resolve([] as any[]),
     loadBusinessHours(db, companyId, { google: false }).catch(() => null),
+    businessNumbers(db, companyId).catch(() => null),
   ])
+  const ourLine = toE164(ours || '')
+  const from = ourLine && own?.lines.has(phoneKey(ourLine)) && canTextFrom(ourLine) ? ourLine : null
   const business = String(co?.name || '').trim() || 'our team'
   const settings = missedCallTextSettings(co?.inbox_settings)
   const template = renderMissedCallText(settings.message, business)
@@ -358,7 +388,7 @@ export async function draftTextBack(db: Db, companyId: string, callId: string, o
   ]
   if (autoTexted) why.push('Your automatic missed-call text already went to them for this call.')
 
-  const base = { ok: true as const, to: verdict.e164, toDisplay: formatPhone(verdict.e164), conversationId: call.conversation_id, contactId: enriched.contact_id, consent: consent.state === 'ok' ? 'ok' as const : 'unknown' as const, autoTexted }
+  const base = { ok: true as const, to: verdict.e164, toDisplay: formatPhone(verdict.e164), from, conversationId: call.conversation_id, contactId: enriched.contact_id, consent: consent.state === 'ok' ? 'ok' as const : 'unknown' as const, autoTexted }
   const model = opts.model === undefined ? (process.env.ANTHROPIC_API_KEY ? (await import('@/lib/agent/model')).getModelClient() : null) : opts.model
   if (paused?.paused || !model) {
     why.push(paused?.paused ? 'AI agents are paused, so this is your missed-call message rather than an AI draft.' : 'This is your missed-call message (Settings → Calls & SMS).')

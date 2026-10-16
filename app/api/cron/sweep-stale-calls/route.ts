@@ -19,11 +19,12 @@ const STALE_MS = 2 * 60 * 60 * 1000 // 2 hours
 
 const LIVE_STATES = ['ringing', 'initiated', 'in_progress', 'ringing_agents', 'dialing_agent', 'dialing_customer', 'voicemail_greeting', 'recording_voicemail']
 
-/** How a call stuck in a live state ends up. */
+/** How a call stuck in a live state ends up. Someone (or the AI receptionist) picking up wins over the voicemail state. */
 function staleCallFinal(c: any): { status: string; is_voicemail?: boolean } {
+  const pickedUp = !!c.answered_at || (String(c.direction || '').toLowerCase() !== 'outbound' && !!c.answered_by_user_id)
+  if (pickedUp) return c.is_voicemail && !c.recording_url ? { status: 'completed', is_voicemail: false } : { status: c.is_voicemail ? 'voicemail' : 'completed' }
   if (c.is_voicemail) return c.recording_url ? { status: 'voicemail' } : { status: 'missed', is_voicemail: false }
-  const answered = (Number(c.duration_seconds) || 0) > 0 || !!c.answered_at
-  return { status: answered ? 'completed' : 'missed' }
+  return { status: (Number(c.duration_seconds) || 0) > 0 ? 'completed' : 'missed' }
 }
 
 /**
@@ -37,6 +38,8 @@ function staleCallFinal(c: any): { status: string; is_voicemail?: boolean } {
  *   • answered (has a duration or an answered_at) → status 'completed'
  *   • never connected                            → status 'missed'
  *   • went to voicemail with a recording         → status 'voicemail'
+ *   • picked up (answered_at), even if it then went to voicemail and nothing
+ *     was left (the AI receptionist took the call) → 'completed'
  *   • went to voicemail with no recording        → status 'missed' (the caller
  *     hung up during the greeting: Twilio sends nothing more then, so the row
  *     sat at "voicemail_greeting" and counted as a voicemail with nothing to
@@ -65,7 +68,7 @@ export async function GET(req: NextRequest) {
   let swept = 0
   try {
     const { data: stuck, error } = await db.from('calls')
-      .select('id, duration_seconds, answered_at, is_voicemail, recording_url')
+      .select('id, direction, duration_seconds, answered_at, answered_by_user_id, is_voicemail, recording_url')
       .in('status', LIVE_STATES)
       .is('ended_at', null)
       .lt('created_at', cutoff)

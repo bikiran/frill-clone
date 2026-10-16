@@ -8,7 +8,7 @@ import { loadStaffRows } from '@/lib/team-list'
 import {
   normaliseCall, outcomeOf, outcomeLabel, aiOutcomeOf, isAiCall, AI_OUTCOME_LABEL, AI_AGENT_NAME, aggregate, byHour, heatmap, leaderboard,
   boardWindow, inWindow, callerDisplay, callAgentMatches, matchesSearch, buildAlerts, otherNumber, normName, formatPhone,
-  fmtDur, fmtTalk, timeAgo, hourLabel, startOfDayTz, zonedParts, RANGES, isRangeKey, DEFAULT_TZ,
+  fmtDur, fmtTalk, timeAgo, hourLabel, startOfDayTz, zonedParts, RANGES, isRangeKey, DEFAULT_TZ, prevToFor, outcomeOf as rankOutcome,
   type CcCall, type RangeKey, type AgentOption, type RecoveryItem, type CallStats,
 } from '@/lib/command-centre'
 import { Icon, Chip, Kpi, Trend, WhyInline, Segmented, Spinner, LiveTimer, Clock, C, card, kicker, ctrl, tint, btn, iconBtn, useNarrow } from './ui'
@@ -63,7 +63,7 @@ export default function CommandCentrePage() {
   const [calls, setCalls] = useState<CcCall[]>([])
   const [callsLoading, setCallsLoading] = useState(true)
   const [callsError, setCallsError] = useState('')
-  const [truncated, setTruncated] = useState(false)
+  const [truncated, setTruncated] = useState<false | { total: number | null }>(false)
   const [roster, setRoster] = useState<Agent[]>([])
   const [locFilter, setLocFilter] = useState('all')
   const [agentFilter, setAgentFilter] = useState('all')
@@ -216,7 +216,7 @@ export default function CommandCentrePage() {
     const r = await authFetch(`/api/command-centre/calls?${q}`)
     const d = await r.json().catch(() => ({}))
     if (!r.ok) throw new Error(d.error || 'Couldn’t load calls')
-    return { calls: (d.calls || []) as CcCall[], truncated: !!d.truncated }
+    return { calls: (d.calls || []) as CcCall[], truncated: d.truncated ? { total: typeof d.total === 'number' ? d.total : null } : false as const }
   }, [])
 
   // Load the period (and today too when the period is in the past, so live
@@ -229,7 +229,7 @@ export default function CommandCentrePage() {
     const needToday = fetchTo != null && fetchTo <= today0
     Promise.all([
       fetchCalls(companyId, fetchFrom, fetchTo),
-      needToday ? fetchCalls(companyId, today0, null) : Promise.resolve({ calls: [] as CcCall[], truncated: false }),
+      needToday ? fetchCalls(companyId, today0, null) : Promise.resolve({ calls: [] as CcCall[], truncated: false as const }),
     ]).then(([a, b]) => {
       if (!live) return
       const seen = new Set(a.calls.map(c => c.id))
@@ -280,8 +280,17 @@ export default function CommandCentrePage() {
         if (!row?.id) return
         setCalls(prev => {
           const i = prev.findIndex(c => c.id === row.id)
-          if (i < 0) return [normaliseCall(row), ...prev]
-          const next = prev.slice(); next[i] = normaliseCall(row, prev[i]); return next
+          if (i >= 0) { const next = prev.slice(); next[i] = normaliseCall(row, prev[i]); return next }
+          const fresh = normaliseCall(row)
+          // A second row for a call already on the board (a provider retry):
+          // keep one, the more complete, as the server does.
+          const j = fresh.pkey ? prev.findIndex(c => c.pkey === fresh.pkey) : -1
+          if (j >= 0) {
+            const RANK = { answered: 3, voicemail: 2, missed: 1, live: 0 } as const
+            if (RANK[rankOutcome(fresh)] <= RANK[rankOutcome(prev[j])]) return prev
+            const next = prev.slice(); next[j] = fresh; return next
+          }
+          return [fresh, ...prev]
         })
         if (payload.eventType === 'INSERT') soon('recent')
         if (row.ended_at || ['missed', 'voicemail', 'completed'].includes(String(row.status || '')) || String(row.direction) === 'outbound') soon('ov')
@@ -362,7 +371,8 @@ export default function CommandCentrePage() {
     return arr
   }, [calls, locFilter, selectedAgent])
 
-  const prevTo = Number.isFinite(win.to) && win.prevTo ? win.prevTo : (win.prevTo ? Math.min(win.from, win.prevFrom + (nowTick - win.from)) : 0)
+  // Open periods compare with the same wall-clock point before (safe across daylight saving).
+  const prevTo = Number.isFinite(win.to) || !win.prevTo ? win.prevTo : prevToFor(range === 'custom' ? 'today' : range, nowTick, tz, win.from)
   const cur = useMemo(() => scoped.filter(c => inWindow(c, win.from, win.to)), [scoped, win])
   const prev = useMemo(() => (prevTo > win.prevFrom ? scoped.filter(c => inWindow(c, win.prevFrom, prevTo)) : []), [scoped, win, prevTo])
   const stats = useMemo(() => aggregate(cur, nowTick), [cur, nowTick])
@@ -764,7 +774,7 @@ export default function CommandCentrePage() {
       </div>
 
       {callsError && <p style={{ margin: '0 0 12px', padding: '9px 12px', borderRadius: 10, background: tint(C.red, 9), color: C.red, fontSize: 13, fontWeight: 600 }}>{callsError}</p>}
-      {truncated && <p style={{ margin: '0 0 12px', fontSize: 12, color: 'var(--slate)' }}>This period has more calls than the board can show at once, so only the most recent 20,000 are counted. Pick a shorter range for exact totals.</p>}
+      {truncated && <p style={{ margin: '0 0 12px', fontSize: 12, color: 'var(--slate)' }}>This period has {truncated.total ? `${truncated.total.toLocaleString('en-AU')} calls` : 'more calls than the board can show at once'}, so the numbers here cover the most recent 20,000. Pick a shorter range for exact totals.</p>}
       {commsMode === 'calls' && selectedAgent && <p style={{ margin: '-6px 0 12px', fontSize: 12, color: 'var(--slate)' }}>Showing calls {selectedAgent === 'ai' ? 'the AI receptionist answered' : `${selectedAgent.name} answered or made`}. Missed calls ring everyone, so they only show for “All team members”. <button type="button" onClick={() => setAgentFilter('all')} style={{ border: 'none', background: 'none', padding: 0, color: 'var(--coral)', fontWeight: 700, cursor: 'pointer', fontSize: 12 }}>Show everyone</button></p>}
 
       {/* ── LIVE BOARD ──────────────────────────────────────────────────────── */}

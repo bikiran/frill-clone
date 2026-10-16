@@ -21,8 +21,12 @@ export function startOfDay(now: Date, tz: string): Date {
  * voicemail, still live, or missed. A missed status wins over talk time (a
  * caller leg answered only to play the voicemail greeting has a duration), and
  * a caller who hung up during the greeting left no message, so it's missed.
- * A row read without created_at is taken as recent, so a ringing call stays live.
  */
 export function callOutcome(c: any): 'answered' | 'voicemail' | 'live' | 'missed' {
-  return outcomeOf(normaliseCall({ ...c, created_at: c?.created_at || new Date().toISOString() }))
+  // A row read without created_at: a ringing call is taken as recent (live),
+  // but a voicemail-state row never is, so a Twilio caller who hung up at the
+  // greeting reads as missed rather than live for ever.
+  const st = String(c?.status || '').toLowerCase()
+  const vmish = !!c?.is_voicemail || st.startsWith('voicemail') || st === 'recording_voicemail'
+  return outcomeOf(normaliseCall({ ...c, created_at: c?.created_at || (vmish ? new Date(0).toISOString() : new Date().toISOString()) }))
 }

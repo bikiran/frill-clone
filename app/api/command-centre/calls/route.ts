@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { requireCallsAccess, loadCallRows, enrichCalls, parseWindow } from '@/lib/command-centre-server'
 
 export const dynamic = 'force-dynamic'
+export const maxDuration = 60
 
 const admin = () => createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -26,9 +27,9 @@ export async function GET(req: NextRequest) {
   const db = admin()
   if (!(await requireCallsAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
   try {
-    const { rows, truncated, removed } = await loadCallRows(db, companyId, new Date(win.from).toISOString(), win.to ? new Date(win.to).toISOString() : null)
+    const { rows, truncated, removed, total } = await loadCallRows(db, companyId, new Date(win.from).toISOString(), win.to ? new Date(win.to).toISOString() : null)
     const calls = await enrichCalls(db, companyId, rows)
-    return NextResponse.json({ calls, truncated, removed }, { headers: { 'Cache-Control': 'no-store' } })
+    return NextResponse.json({ calls, truncated, removed, total }, { headers: { 'Cache-Control': 'no-store' } })
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || 'Couldn’t load calls' }, { status: 500 })
   }

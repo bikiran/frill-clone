@@ -67,6 +67,7 @@ export type CcCall = {
   name: string | null          // the caller's name, never a phone number
   location_id: string | null
   ai: AiCallInfo | null
+  pkey?: string | null         // provider call id, so a duplicate row is recognised (see dedupeRows)
 }
 
 const s = (v: any): string | null => (v == null || v === '' ? null : String(v))
@@ -126,6 +127,7 @@ export function normaliseCall(raw: any, keep?: Partial<CcCall> | null): CcCall {
     name: raw?.name !== undefined ? s(raw.name) : (keep?.name ?? null),
     location_id: raw?.location_id !== undefined ? s(raw.location_id) : (keep?.location_id ?? null),
     ai: aiInfoOf(raw) ?? keep?.ai ?? null,
+    pkey: providerKey(raw) ?? raw?.pkey ?? keep?.pkey ?? null,
   }
 }
 
@@ -134,23 +136,31 @@ export function normaliseCall(raw: any, keep?: Partial<CcCall> | null): CcCall {
 const UNANSWERED = new Set(['missed', 'no_answer', 'no-answer', 'busy', 'failed', 'canceled', 'cancelled', 'rejected'])
 const LIVE_STATES = new Set(['initiated', 'queued', 'ringing', 'in_progress', 'in-progress', 'ringing_agents', 'dialing_agent', 'dialing_customer', 'voicemail_greeting', 'recording_voicemail'])
 
-type OutcomeRow = Pick<CcCall, 'direction' | 'status' | 'is_voicemail' | 'duration_seconds' | 'answered_at' | 'answered_by_user_id' | 'created_at' | 'ended_at' | 'has_recording'>
+type OutcomeRow = Pick<CcCall, 'direction' | 'status' | 'is_voicemail' | 'duration_seconds' | 'answered_at' | 'answered_by_user_id' | 'created_at' | 'ended_at' | 'has_recording'> & { ai?: AiCallInfo | null }
 
 export function outcomeOf(c: OutcomeRow, now: number = Date.now()): Outcome {
   const st = lower(c.status)
-  const age = now - ms(c.created_at)
+  const created = ms(c.created_at)
+  const age = now - created
   const vmish = c.is_voicemail || st.startsWith('voicemail') || st === 'recording_voicemail'
+  // A message was left: the recording is in, or the provider marked it done.
+  const messageLeft = st === 'voicemail' || c.has_recording || (c.is_voicemail && st === 'completed')
+  // answered_at: an agent (or the AI receptionist) was connected. On an
+  // outgoing row answered_by_user_id is who placed the call, not an answer.
+  // Checked before the voicemail state, so a call the AI answered stays
+  // answered whether or not the sweep has tidied its row since: only a
+  // voicemail actually left afterwards (and no message the AI took) makes it
+  // a voicemail to return.
+  if (c.answered_at || (c.direction !== 'outbound' && c.answered_by_user_id)) {
+    return vmish && messageLeft && !c.ai?.messageTaken ? 'voicemail' : 'answered'
+  }
   if (vmish) {
-    // A message was left: the recording is in, or the provider marked it done.
-    if (st === 'voicemail' || c.has_recording) return 'voicemail'
-    // Still on the greeting or recording.
-    if (!c.ended_at && age < VOICEMAIL_SETTLE_MS) return 'live'
+    if (messageLeft) return 'voicemail'
+    // Still on the greeting or recording (a row with no start time is never "fresh").
+    if (!c.ended_at && created > 0 && age < VOICEMAIL_SETTLE_MS) return 'live'
     // Hung up during the greeting: no message, so it's a missed call.
     return 'missed'
   }
-  // answered_at: an agent (or the AI) was connected. On an outgoing row
-  // answered_by_user_id is who placed the call, not a sign anyone picked up.
-  if (c.answered_at || (c.direction !== 'outbound' && c.answered_by_user_id)) return 'answered'
   if (UNANSWERED.has(st)) return 'missed'
   if (st === 'answered' || st === 'completed' || (c.duration_seconds || 0) > 0) return 'answered'
   if (LIVE_STATES.has(st) && !c.ended_at && age < MAX_LIVE_MS) return 'live'
@@ -338,7 +348,7 @@ export type BoardWindow = { from: number; to: number; prevFrom: number; prevTo: 
 export function boardWindow(range: RangeKey, now: number, tz: string, custom?: { from?: string; to?: string }): BoardWindow {
   const today = startOfDayTz(now, tz)
   const p = zonedParts(now, tz)
-  const open = (from: number, prevFrom: number, days: number): BoardWindow => ({ from, to: Infinity, prevFrom, prevTo: Math.min(from, prevFrom + (now - from)), days })
+  const open = (from: number, prevFrom: number, days: number): BoardWindow => ({ from, to: Infinity, prevFrom, prevTo: prevToFor(range, now, tz, from), days })
   switch (range) {
     case 'yesterday': { const from = dayStartOffset(now, tz, 1); return { from, to: today, prevFrom: dayStartOffset(now, tz, 2), prevTo: from, days: 1 } }
     case '7d': return open(dayStartOffset(now, tz, 6), dayStartOffset(now, tz, 13), 7)
@@ -351,15 +361,32 @@ export function boardWindow(range: RangeKey, now: number, tz: string, custom?: {
     case 'all': return { from: 0, to: Infinity, prevFrom: 0, prevTo: 0, days: 0 }
     case 'custom': {
       const ymd = (v?: string) => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(v || '')); return m ? [+m[1], +m[2], +m[3]] as const : null }
-      const a = ymd(custom?.from), b = ymd(custom?.to)
-      if (!a || !b) return { from: today, to: Infinity, prevFrom: dayStartOffset(now, tz, 1), prevTo: dayStartOffset(now, tz, 1) + (now - today), days: 1 }
+      let a = ymd(custom?.from), b = ymd(custom?.to)
+      if (!a || !b) return { from: today, to: Infinity, prevFrom: dayStartOffset(now, tz, 1), prevTo: prevToFor('today', now, tz, today), days: 1 }
+      // Picked the wrong way round: the earlier date is the start.
+      if (a.join('-') > b.join('-')) [a, b] = [b, a]
       const from = zonedTime(a[0], a[1], a[2], 0, 0, tz)
       const to = zonedTime(b[0], b[1], b[2] + 1, 0, 0, tz)
-      const span = Math.max(864e5, to - from)
-      return { from, to: Math.max(to, from + 864e5), prevFrom: from - span, prevTo: from, days: Math.round(span / 864e5) }
+      const days = Math.round((Date.UTC(b[0], b[1] - 1, b[2] + 1) - Date.UTC(a[0], a[1] - 1, a[2])) / 864e5)
+      return { from, to, prevFrom: zonedTime(a[0], a[1], a[2] - days, 0, 0, tz), prevTo: from, days }
     }
     default: return open(today, dayStartOffset(now, tz, 1), 1)
   }
+}
+
+/**
+ * Where "the period before, up to the same point" ends for an open period, by
+ * the clock on the wall: 4pm today is set against 4pm yesterday even on a day
+ * daylight saving starts or ends (when 4pm is 15 or 17 hours after midnight).
+ * Never past the start of the current period.
+ */
+export function prevToFor(range: RangeKey, now: number, tz: string, from: number): number {
+  const p = zonedParts(now, tz)
+  const back = (days: number) => zonedTime(p.y, p.m, p.d - days, p.h, p.mi, tz) + p.s * 1000
+  const t = range === '7d' ? back(7) : range === '30d' ? back(30)
+    : range === 'month' ? zonedTime(p.y, p.m - 1, p.d, p.h, p.mi, tz) + p.s * 1000
+      : back(1)
+  return Math.min(from, t)
 }
 
 export const inWindow = (c: { created_at: string }, from: number, to: number) => { const t = ms(c.created_at); return t >= from && t < to }

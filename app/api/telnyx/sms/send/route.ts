@@ -8,6 +8,10 @@ import { SmsQuotaError } from '@/lib/sms-quota'
 import { requireCompanyAccess } from '@/lib/company-access'
 import { isInternalCall } from '@/lib/internal-call'
 import { assertMayText } from '@/lib/sms-consent'
+import { canTextFrom } from '@/lib/missed-call-text-settings'
+import { isFromNumberRejection } from '@/lib/missed-call-text'
+import { businessNumbers } from '@/lib/business-numbers'
+import { phoneKey } from '@/lib/phone'
 
 // Twilio's limits for one picture message (MMS): 10 media, 5 MB in total.
 // A little under 5 MB, for headers and carriers that count slightly differently.
@@ -36,6 +40,10 @@ export async function POST(req: NextRequest) {
     // checkOptOut: a staff action that sends something on its own (an upload
     // link) asks for the opt-out check that every automated text gets.
     const { companyId, to, text, senderName, attachments, skipChatMessage, checkOptOut } = body0
+    // from: send from this business line instead of the usual texting number
+    // (a text back comes from the number the customer rang). Honoured only
+    // for the business's own lines that can text; anything else is ignored.
+    const fromWanted: string = typeof body0.from === 'string' ? body0.from : ''
     conversationId = body0.conversationId
     if (!companyId) return NextResponse.json({ error: 'Missing companyId' }, { status: 400 })
 
@@ -198,12 +206,22 @@ export async function POST(req: NextRequest) {
       cur.push(u); curBytes += b
     })
     if (cur.length) batches.push(cur)
-    const result = await sender.send({
-      to: e164,
-      text: body,
-      mediaUrls: batches[0],
-      statusCallback,
-    })
+    let fromLine: string | undefined
+    if (fromWanted) {
+      try {
+        const f = toE164(fromWanted)
+        if (f && canTextFrom(f) && phoneKey(f) !== phoneKey(sender.from) && (await businessNumbers(db, companyId)).lines.has(phoneKey(f))) fromLine = f
+      } catch {}
+    }
+    let result
+    try {
+      result = await sender.send({ to: e164, text: body, mediaUrls: batches[0], statusCallback, ...(fromLine ? { from: fromLine } : {}) })
+    } catch (e) {
+      // That line isn't set up for texting after all: the usual number instead.
+      if (!fromLine || !isFromNumberRejection(e)) throw e
+      fromLine = undefined
+      result = await sender.send({ to: e164, text: body, mediaUrls: batches[0], statusCallback })
+    }
     const providerMessageId = result.id
     // The rest of the photos. The first message (and its text) already went, so
     // a failure here is reported rather than failing the whole send.

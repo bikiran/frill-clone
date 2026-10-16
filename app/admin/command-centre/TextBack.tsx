@@ -10,7 +10,7 @@ import { createPortal } from 'react-dom'
 import { authFetch } from '@/lib/auth-fetch'
 import { Icon, Chip, C, btn, kicker, Spinner } from './ui'
 
-type Draft = { text: string; source: 'ai' | 'template'; why: string[]; to: string; toDisplay: string; conversationId: string | null; contactId: string | null; consent: 'ok' | 'unknown'; autoTexted: boolean }
+type Draft = { text: string; source: 'ai' | 'template'; why: string[]; to: string; toDisplay: string; from: string | null; conversationId: string | null; contactId: string | null; consent: 'ok' | 'unknown'; autoTexted: boolean }
 
 export default function TextBack({ companyId, callId, who, senderName, onClose, onSent }: {
   companyId: string; callId: string; who: string; senderName: string | null; onClose: () => void; onSent: () => void
@@ -42,7 +42,7 @@ export default function TextBack({ companyId, callId, who, senderName, onClose, 
     try {
       const r = await authFetch('/api/telnyx/sms/send', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ companyId, conversationId: draft.conversationId || undefined, to: draft.to, text: text.trim(), senderName: senderName || undefined, checkOptOut: true }),
+        body: JSON.stringify({ companyId, conversationId: draft.conversationId || undefined, to: draft.to, from: draft.from || undefined, text: text.trim(), senderName: senderName || undefined, checkOptOut: true }),
       })
       const d = await r.json().catch(() => ({}))
       if (!r.ok) { setError(d.error || 'The text didn’t send.'); return }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { requireCallsAccess, draftTextBack } from '@/lib/command-centre-server'
+import { checkBurst } from '@/lib/rate-limit'
 
 export const dynamic = 'force-dynamic'
 
@@ -25,7 +26,9 @@ export async function POST(req: NextRequest) {
   const companyId = body?.companyId, callId = body?.callId
   if (!companyId || !callId) return NextResponse.json({ error: 'companyId and callId required' }, { status: 400 })
   const db = admin()
-  if (!(await requireCallsAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+  const access = await requireCallsAccess(req, db, companyId)
+  if (!access.ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+  if (!checkBurst(`cc-textback:${access.userId}`, 10)) return NextResponse.json({ error: 'That’s a lot of drafts in a minute. Try again shortly.' }, { status: 429, headers: { 'Retry-After': '60' } })
   try {
     const draft = await draftTextBack(db, companyId, String(callId))
     if ('reason' in draft) return NextResponse.json({ error: draft.message, reason: draft.reason }, { status: draft.reason === 'not_found' ? 404 : 409 })
