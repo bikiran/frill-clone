@@ -8,6 +8,13 @@ import Link from 'next/link'
 import { confirmDialog } from '@/components/ConfirmDialog'
 import { countAllRules, readFormLogic } from '@/lib/form-logic'
 
+// Why a version was saved (older versions have no reason).
+const REASON_LABEL: Record<string, string> = {
+  publish: 'Published',
+  restore: 'Rolled back',
+  before_restore: 'Before a rollback',
+}
+
 export default function FormVersionsPage() {
   const params = useParams()
   const router = useRouter()
@@ -23,6 +30,8 @@ export default function FormVersionsPage() {
     loadData()
   }, [formId])
 
+  const [currentId, setCurrentId] = useState<string | null>(null)
+
   const loadData = async () => {
     try {
       // Load current form
@@ -34,14 +43,14 @@ export default function FormVersionsPage() {
 
       setForm(formData)
 
-      // Load version history
-      const { data: versionsData } = await (supabase as any)
-        .from('form_versions')
-        .select('*')
-        .eq('form_id', formId)
-        .order('version_number', { ascending: false })
-
-      setVersions(versionsData || [])
+      // Version history comes through the server (it also says whether the
+      // newest version still matches the form, and copes with a database
+      // where version history isn't set up yet).
+      const res = await authFetch(`/api/form-versions?formId=${encodeURIComponent(formId)}`)
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(d.error || 'Could not load versions')
+      setVersions(Array.isArray(d.versions) ? d.versions : [])
+      setCurrentId(d.current_version_id || null)
     } catch (error) {
       console.error('Failed to load versions:', error)
     } finally {
@@ -54,41 +63,17 @@ export default function FormVersionsPage() {
 
     setRolling(true)
     try {
-      const version = versions.find(v => v.id === versionId)
-      if (!version) throw new Error('Version not found')
-      // The snapshot's theme carries the welcome settings and logic variables,
-      // so restore it exactly. An old snapshot without a theme (or questions)
-      // keeps the current one instead of wiping the colour and every question.
-      const theme = version.theme && typeof version.theme === 'object' ? version.theme : form.theme
-      const questions = Array.isArray(version.questions) ? version.questions : form.questions
-
-      // Update form with version data
-      const { error } = await (supabase as any)
-        .from('forms')
-        .update({
-          title: version.title,
-          // forms has no description column on every database; only send it where it exists.
-          ...('description' in (form || {}) ? { description: version.description } : {}),
-          questions,
-          theme,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', formId)
-
-      if (error) throw error
-
-      // Create new version for the rollback action
-      await authFetch('/api/form-versions', {
+      // The server puts the version back (questions with their logic, theme
+      // with its welcome settings and variables, messages and endings), after
+      // first saving the form as it is now as a version of its own, so a
+      // rollback can itself be rolled back.
+      const res = await authFetch('/api/form-versions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          formId,
-          title: version.title,
-          description: version.description,
-          questions,
-          theme,
-        }),
+        body: JSON.stringify({ formId, action: 'restore', versionId }),
       })
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(d.error || 'Rollback failed')
 
       // Reload data
       await loadData()
@@ -116,11 +101,11 @@ export default function FormVersionsPage() {
 
         {versions.length === 0 ? (
           <div className="bg-white rounded-2xl border p-8 text-center" style={{ borderColor: 'var(--border)' }}>
-            <p style={{ color: 'var(--slate)' }}>No version history yet. Versions are created automatically when you make changes.</p>
+            <p style={{ color: 'var(--slate)' }}>No version history yet. A version is saved automatically when you publish, and every ten minutes or so while you edit.</p>
           </div>
         ) : (
           <div className="space-y-3">
-            {versions.map((version, idx) => (
+            {versions.map((version) => (
               <div
                 key={version.id}
                 className="bg-white rounded-2xl border p-6 hover:shadow-md transition-all"
@@ -131,7 +116,7 @@ export default function FormVersionsPage() {
                       <span className="px-2 py-1 rounded-full text-xs font-bold" style={{ background: 'var(--canvas)', color: 'var(--slate)' }}>
                         v{version.version_number}
                       </span>
-                      {idx === 0 && (
+                      {version.id === currentId && (
                         <span className="px-2 py-1 rounded-full text-xs font-bold" style={{ background: 'var(--coral)', color: 'white' }}>
                           Current
                         </span>
@@ -139,7 +124,7 @@ export default function FormVersionsPage() {
                     </div>
                     <h3 className="font-semibold mb-1" style={{ color: 'var(--ink)' }}>{version.title}</h3>
                     <p className="text-sm" style={{ color: 'var(--slate)' }}>
-                      {new Date(version.created_at).toLocaleString()} • {version.questions?.length || 0} questions
+                      {new Date(version.created_at).toLocaleString()} • {version.questions?.length || 0} questions{REASON_LABEL[version.reason] ? ` • ${REASON_LABEL[version.reason]}` : ''}
                     </p>
                     {(() => {
                       const rules = countAllRules(readFormLogic(version))
@@ -150,7 +135,7 @@ export default function FormVersionsPage() {
                       ) : null
                     })()}
                   </div>
-                  {idx > 0 && (
+                  {version.id !== currentId && (
                     <button
                       onClick={() => handleRollback(version.id, version.version_number)}
                       disabled={rolling}

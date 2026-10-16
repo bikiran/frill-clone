@@ -14,7 +14,7 @@ const admin = () => createClient(
 )
 
 // POST { formId, messages: [{ role, text }], current: { title, welcome_message,
-// thank_you_message, questions } } → { reply, form | null }. Colvy AI chat in the
+// thank_you_message, questions } } → { reply, form | null, editable_count? }. Colvy AI chat in the
 // form builder; team members of the form's company only.
 export async function POST(req: NextRequest) {
   try {
@@ -42,7 +42,9 @@ export async function POST(req: NextRequest) {
       messages: Array.isArray(b.messages) ? b.messages : [],
     })
     if ('error' in r) return NextResponse.json({ error: r.error }, { status: 422 })
-    return NextResponse.json({ reply: r.reply, form: r.form })
+    // editable_count (long forms only): the AI saw that many leading questions;
+    // the browser keeps the rest as they are.
+    return NextResponse.json({ reply: r.reply, form: r.form, ...(typeof r.editable_count === 'number' ? { editable_count: r.editable_count } : {}) })
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || 'Failed' }, { status: 500 })
   }

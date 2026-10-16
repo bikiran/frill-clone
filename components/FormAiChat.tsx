@@ -50,10 +50,30 @@ const uniq = (a: string[]) => Array.from(new Set(a))
  * theme (welcome screen settings and logic variables) isn't part of the
  * snapshot at all, so the AI can never touch it.
  */
-export function aiDraftToSnapshot(d: AiDraft, base: FormSnapshot): FormSnapshot {
-  const byId = new Map<string, any>((base.questions || []).filter((q: any) => q && q.id).map((q: any) => [q.id, q]))
-  const used = new Set<string>()
-  const questions = (d.questions || []).map((q: any) => {
+export function aiDraftToSnapshot(d: AiDraft, base: FormSnapshot, opts?: { editable?: { ids: string[]; count: number } }): FormSnapshot {
+  // A long form: the AI only saw (and could edit) its leading questions. Every
+  // other question is kept exactly as it is, in its order, after the ones the
+  // AI returned, with its logic untouched; the AI can't overwrite or drop one.
+  // Questions are matched by id; one without an id goes by its position.
+  const editable = opts?.editable
+  const editableIds = new Set(editable?.ids || [])
+  const seen = new Set<string>()
+  const keptFlags = (base.questions || []).map((q: any, i: number) => {
+    if (!editable || !q || typeof q !== 'object') return false
+    const id = typeof q.id === 'string' && q.id ? q.id : null
+    const first = !!id && !seen.has(id)
+    if (id) seen.add(id)
+    if (!id) return i >= editable.count
+    // A second question with the same id past the edited part is its own question.
+    return !(editableIds.has(id) && (first || i < editable.count))
+  })
+  const kept = (base.questions || []).filter((_: any, i: number) => keptFlags[i])
+  // Ids the AI never saw: an AI question claiming one is dropped (the kept question wins).
+  const keptIds = new Set(kept.map((q: any) => q.id).filter((id: any) => id && !editableIds.has(id)))
+  const byId = new Map<string, any>((base.questions || []).filter((q: any, i: number) => q && q.id && !keptFlags[i]).map((q: any) => [q.id, q]))
+  const used = new Set<string>(keptIds)
+  const fromAi = (d.questions || []).filter((q: any) => !(q && typeof q.id === 'string' && keptIds.has(q.id)))
+  const questions = fromAi.map((q: any) => {
     // An id the AI repeats is a new question the second time, never a copy of the first one's logic.
     const prev = q.id && !used.has(q.id) ? byId.get(q.id) : null
     const id = prev ? prev.id : newQuestionId()
@@ -118,7 +138,7 @@ export function aiDraftToSnapshot(d: AiDraft, base: FormSnapshot): FormSnapshot 
     }
     return out
   })
-  return { title: d.title, welcomeMessage: d.welcome_message, thankYouMessage: d.thank_you_message, questions }
+  return { title: d.title, welcomeMessage: d.welcome_message, thankYouMessage: d.thank_you_message, questions: [...questions, ...kept] }
 }
 
 /** How many logic errors the questions have (the chat has no variables; both sides of a comparison lack them equally). */
@@ -216,7 +236,12 @@ export default function FormAiChat({ open, onClose, formId, current, apply }: {
       let reply = d.reply || 'Done.'
       if (d.form) {
         const before = currentRef.current
-        const after = aiDraftToSnapshot(d.form, before)
+        // Long form: the AI was given only the first editable_count questions of
+        // what was sent; everything else is kept as it is.
+        const n = typeof d.editable_count === 'number' ? d.editable_count : null
+        const sent = n === null ? null : (base.questions || []).filter((q: any) => q && typeof q === 'object').slice(0, n)
+        const editable = sent ? { ids: sent.map((q: any) => q.id).filter((id: any) => typeof id === 'string' && id), count: n! } : undefined
+        const after = aiDraftToSnapshot(d.form, before, { editable })
         apply(after)
         change = { before, after, titles: after.questions.map((q: any) => q.title), undone: false }
         if (logicErrorCount(after.questions) > logicErrorCount(before.questions)) reply += `\n\n${LOGIC_ATTENTION_NOTE}`

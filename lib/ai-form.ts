@@ -7,7 +7,7 @@
 
 import Anthropic from '@anthropic-ai/sdk'
 import { modelFor, trackAi } from '@/lib/ai-models'
-import { countRules } from '@/lib/form-logic'
+import { countRules, findReferences, readFormLogic } from '@/lib/form-logic'
 import { isExclusiveChoice, otherChoiceLabel } from '@/lib/form-choice-options'
 
 
@@ -21,6 +21,17 @@ export const AI_QUESTION_TYPES = [
   'long_text', 'short_text', 'statement',
   'number', 'date', 'signature', 'file_upload',
 ] as const
+
+// How many questions the AI gets to edit. It returns the whole edited form in
+// one reply, inside the route's time limit, so this is bounded by how much it
+// can write, not by what it can read. Questions after these are listed to it
+// read-only and stay exactly as they are (FormAiChat puts them back after the
+// questions the AI returns), so a long form never loses its tail.
+export const AI_EDITABLE_QUESTIONS = 60
+// How many of the later (read-only) questions are listed to it, by title.
+export const AI_LISTED_LATER_QUESTIONS = 300
+// The most questions taken from one reply (the AI may add some).
+export const AI_MAX_RETURNED_QUESTIONS = 120
 
 export type AiChatTurn = { role: 'user' | 'assistant'; text: string }
 
@@ -46,7 +57,9 @@ export type AiFormDraft = {
 }
 
 export type AiFormResult =
-  | { ok: true; reply: string; form: AiFormDraft | null }
+  // editable_count: when the form is longer than AI_EDITABLE_QUESTIONS, how many
+  // of its leading questions the AI could edit; the rest must be kept as they are.
+  | { ok: true; reply: string; form: AiFormDraft | null; editable_count?: number }
   | { ok: false; error: string }
 
 const strArr = { type: 'array', items: { type: 'string' } }
@@ -104,6 +117,7 @@ Writing the form:
 - Keep the id of every existing question you keep (even if you reword it). Use "" for new questions. Drop a question by leaving it out.
 - Some questions have logic the owner set up (has_logic true). Keep those questions, their ids, their order relative to each other and the exact wording of their options unless the person asks to change them, because the logic depends on them.
 - Questions of a type you can't create (picture_choice, payment, scheduler, video_audio) must be returned with their id and a type from your list; Colvy keeps their real type.
+- A long form also has later_questions: questions after the ones you can edit, listed read-only. Colvy keeps them exactly as they are, after the questions you return. Never return them and never repeat them as new questions. If asked to change one of them, say it's past the first ${AI_EDITABLE_QUESTIONS} questions and can be edited directly in the builder.
 - welcome_message is one short inviting sentence. thank_you_message is one or two short sentences that say what happens next.
 
 Your reply is shown in the chat: one to three short sentences, no lists and no markdown, saying what you did or answering the question. Never use emojis.`
@@ -123,19 +137,42 @@ export async function chatForm(opts: {
   while (turns.length && turns[0].role !== 'user') turns.shift()
   if (!turns.length || turns[turns.length - 1].role !== 'user') return { ok: false, error: 'Type what you’d like to build.' }
 
-  const current = {
+  const all: any[] = (opts.current.questions || []).filter((q: any) => q && typeof q === 'object')
+  const editable = all.slice(0, AI_EDITABLE_QUESTIONS)
+  const later = all.slice(AI_EDITABLE_QUESTIONS)
+  // An editable question that a later (read-only) question's logic uses: its id,
+  // type and option wording matter even if it has no rules of its own.
+  const usedByLater = new Set<string>()
+  if (later.length) {
+    const laterIds = new Set(later.map(q => q.id).filter((id: any) => typeof id === 'string'))
+    const lf = readFormLogic({ questions: all })
+    for (const q of editable) {
+      if (typeof q.id === 'string' && findReferences(lf, q.id).some(r => laterIds.has(r.questionId))) usedByLater.add(q.id)
+    }
+  }
+  const current: Record<string, unknown> = {
     title: opts.current.title,
     welcome_message: opts.current.welcome_message,
     thank_you_message: opts.current.thank_you_message,
-    questions: (opts.current.questions || []).slice(0, 60).map((q: any) => ({
+    questions: editable.map((q: any) => ({
       id: q.id, type: q.type, title: q.title, description: q.description || '', required: !!q.required,
       options: q.options || [], multi_select: !!q.multiSelect, matrix_rows: q.matrixRows || [], matrix_cols: q.matrixCols || [],
       other_option: ['multiple_choice', 'dropdown', 'checkbox'].includes(q.type) && !!otherChoiceLabel(q),
       exclusive_options: q.type === 'checkbox' || (q.type === 'multiple_choice' && q.multiSelect)
         ? (Array.isArray(q.options) ? q.options : []).filter((o: any) => typeof o === 'string' && isExclusiveChoice(q, o))
         : [],
-      has_logic: countRules(q) > 0,
+      has_logic: countRules(q) > 0 || usedByLater.has(q.id),
     })),
+  }
+  // The rest, compact and read-only: enough to answer questions about them
+  // and to keep the edited part consistent with what follows.
+  if (later.length) {
+    current.later_questions = later.slice(0, AI_LISTED_LATER_QUESTIONS).map((q: any, i: number) => ({
+      number: AI_EDITABLE_QUESTIONS + i + 1,
+      type: typeof q.type === 'string' ? q.type : '',
+      title: String(q.title ?? '').replace(/\s+/g, ' ').trim().slice(0, 120),
+    }))
+    if (later.length > AI_LISTED_LATER_QUESTIONS) current.more_later_questions = later.length - AI_LISTED_LATER_QUESTIONS
   }
   const context = [
     `BUSINESS\nName: ${opts.business.name || 'unknown'}\nIndustry: ${opts.business.industry || 'unknown'}`,
@@ -170,15 +207,16 @@ export async function chatForm(opts: {
     const reply = String(p.reply || '').trim() || 'Done.'
     if (!p.update_form || !Array.isArray(p.questions) || !p.questions.length) return { ok: true, reply, form: null }
     const types = new Set<string>(AI_QUESTION_TYPES)
-    const questions = (p.questions as any[]).filter(q => q && types.has(q.type) && String(q.title || '').trim()).slice(0, 60)
+    const questions = (p.questions as any[]).filter(q => q && types.has(q.type) && String(q.title || '').trim()).slice(0, AI_MAX_RETURNED_QUESTIONS)
     if (!questions.length) return { ok: true, reply, form: null }
     return {
       ok: true,
       reply,
+      ...(later.length ? { editable_count: editable.length } : {}),
       form: {
-        title: String(p.title || '').trim() || current.title,
-        welcome_message: String(p.welcome_message || '').trim() || current.welcome_message,
-        thank_you_message: String(p.thank_you_message || '').trim() || current.thank_you_message,
+        title: String(p.title || '').trim() || opts.current.title,
+        welcome_message: String(p.welcome_message || '').trim() || opts.current.welcome_message,
+        thank_you_message: String(p.thank_you_message || '').trim() || opts.current.thank_you_message,
         questions,
       },
     }

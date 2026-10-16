@@ -4,6 +4,7 @@
 import { Fragment, useState, useEffect, useLayoutEffect, useRef, useMemo } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { authFetch } from '@/lib/auth-fetch'
 import { extractDominantColor } from '@/lib/extract-color'
 import Link from 'next/link'
 import FormAiChat, { FormSnapshot, AiSpark } from '@/components/FormAiChat'
@@ -278,13 +279,39 @@ export default function FormBuilder() {
     return () => { if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current) }
   }, [title, questions, themeColor, welcomeMessage, thankYouMessage, endActions, showConfetti, welcome, variables, listMode])
 
+  // Version history: after a save, ask the server to record a version. The
+  // server decides (lib/form-versions: at most every 10 minutes, sooner for a
+  // big change to the questions, always on publish); this only avoids asking
+  // after every keystroke-save. Never awaited, so it can't slow a save down,
+  // and any failure (no version table yet, offline) is ignored.
+  const snapAsked = useRef({ at: 0, shape: '' })
+  const publishing = useRef(false)
+  const requestSnapshot = (reason: 'autosave' | 'publish') => {
+    const shape = latest.current.questions.map(q => `${q.id}:${q.type}`).join('|')
+    const now = Date.now()
+    if (reason === 'autosave' && now - snapAsked.current.at < 60_000 && shape === snapAsked.current.shape) return
+    snapAsked.current = { at: now, shape }
+    void authFetch('/api/form-versions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ formId, reason }),
+      keepalive: true,
+    }).catch(() => {})
+  }
+
   // Saves are serialised: an edit made while a save is in flight is sent by a
   // follow-up save once it returns, so an older write can never land last.
-  const handleSave = async () => {
+  // The promise settles once everything edited so far is saved (or failed).
+  const saveIdle = useRef<Promise<void>>(Promise.resolve())
+  const handleSave = (): Promise<void> => {
     savePending.current = false
     if (autoSaveTimer.current) { clearTimeout(autoSaveTimer.current); autoSaveTimer.current = null }
-    if (saveRun.current.busy) { saveRun.current.again = true; return }
+    if (saveRun.current.busy) { saveRun.current.again = true; return saveIdle.current }
     saveRun.current.busy = true
+    saveIdle.current = runSave()
+    return saveIdle.current
+  }
+  const runSave = async () => {
     setSaving(true)
     let failed = false
     try {
@@ -315,6 +342,9 @@ export default function FormBuilder() {
       savePending.current = true
       if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
       autoSaveTimer.current = setTimeout(() => { void saveRef.current() }, 3000)
+    } else if (!publishing.current) {
+      // (While publishing, the publish request below records this save.)
+      requestSnapshot('autosave')
     }
   }
   const saveRef = useRef(handleSave)
@@ -353,7 +383,19 @@ export default function FormBuilder() {
   const togglePublish = async () => {
     const next = !isPublished
     setIsPublished(next)
-    await (supabase as any).from('forms').update({ is_published: next }).eq('id', formId)
+    const { error } = await (supabase as any).from('forms').update({ is_published: next }).eq('id', formId)
+    if (error || !next) return
+    // Publishing records a version of what went live: send any edit still
+    // waiting (or in flight) first, so the version matches the live form.
+    // That save doesn't ask for an ordinary snapshot of its own: it would race
+    // the publish one and usually take the version as "autosave".
+    publishing.current = true
+    try {
+      if (savePending.current || saveRun.current.busy) await saveRef.current()
+    } finally {
+      publishing.current = false
+    }
+    requestSnapshot('publish')
   }
 
   const addQuestion = (type: Question['type']) => {
