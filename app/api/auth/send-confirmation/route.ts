@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { checkBurst, callerKey } from '@/lib/rate-limit'
+import { colvyEmailContactHtml } from '@/lib/colvy-contact'
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const esc = (v: any) => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' } as any)[c])
@@ -121,6 +122,7 @@ export async function POST(req: NextRequest) {
             <p style="font-size:12px;color:#9ca3af;margin:0">
               This code expires in an hour. If you didn't ask for it, you can safely ignore this email.
             </p>
+              ${colvyEmailContactHtml()}
           </div>
         ` : `
           <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:560px;margin:0 auto;padding:40px 24px">
@@ -146,6 +148,7 @@ export async function POST(req: NextRequest) {
             <p style="font-size:12px;color:#9ca3af;margin:0">
               This link expires in 24 hours. If you didn't sign up for Colvy, you can safely ignore this email.
             </p>
+              ${colvyEmailContactHtml()}
           </div>
         `,
       }),

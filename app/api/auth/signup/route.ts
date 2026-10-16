@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { verifyTurnstile, requestIp, TURNSTILE_FAILED } from '@/lib/turnstile'
+import { colvyEmailContactHtml } from '@/lib/colvy-contact'
 
 // Full server-side signup flow. This bypasses two problems with doing
 // signUp() directly from the browser:
@@ -166,6 +167,7 @@ export async function POST(req: NextRequest) {
               <p style="font-size:12px;color:#9ca3af;margin:0">
                 This code expires in an hour. If you didn't sign up for Colvy, you can safely ignore this email — nobody can use the code without it.
               </p>
+              ${colvyEmailContactHtml()}
             </div>
           ` : `
             <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:560px;margin:0 auto;padding:40px 24px">
@@ -187,6 +189,7 @@ export async function POST(req: NextRequest) {
               <p style="font-size:12px;color:#9ca3af;margin:0">
                 This link expires in 24 hours. If you didn't sign up for Colvy, you can safely ignore this email.
               </p>
+              ${colvyEmailContactHtml()}
             </div>
           `,
         }),

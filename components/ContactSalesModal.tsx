@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { COLVY_CONTACT } from '@/lib/colvy-contact'
 
 const CORAL = '#ff6a4d'
 
@@ -76,7 +77,7 @@ export default function ContactSalesModal({
               <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
             </div>
             <p style={{ fontSize: 15, color: text, margin: '0 0 6px', fontWeight: 600 }}>Your enquiry is on its way to our team.</p>
-            <p style={{ fontSize: 13.5, color: muted, margin: 0, lineHeight: 1.55 }}>We usually reply within one business day. In a hurry? Email <a href="mailto:support@colvy.com" style={{ color: CORAL, textDecoration: 'none', fontWeight: 600 }}>support@colvy.com</a>.</p>
+            <p style={{ fontSize: 13.5, color: muted, margin: 0, lineHeight: 1.55 }}>We usually reply within one business day. In a hurry? Call <a href={COLVY_CONTACT.telHref} style={{ color: CORAL, textDecoration: 'none', fontWeight: 600, whiteSpace: 'nowrap' }}>{COLVY_CONTACT.phoneDisplay}</a> or email <a href={COLVY_CONTACT.mailHref} style={{ color: CORAL, textDecoration: 'none', fontWeight: 600 }}>{COLVY_CONTACT.email}</a>.</p>
             <button onClick={onClose} className="cs-btn" style={{ marginTop: 20, width: '100%', padding: '12px 0', borderRadius: 12, background: CORAL, color: '#fff', fontWeight: 800, fontSize: 15, border: 'none', cursor: 'pointer' }}>Done</button>
           </div>
         ) : (
@@ -88,7 +89,7 @@ export default function ContactSalesModal({
             <div style={{ marginBottom: 13 }}><label style={label}>Company <span style={{ fontWeight: 500 }}>(optional)</span></label><input className="cs-field" style={inputStyle} value={company} onChange={e => setCompany(e.target.value)} placeholder="Company name" /></div>
             <div style={{ marginBottom: 18 }}><label style={label}>What do you need? <span style={{ fontWeight: 500 }}>(optional)</span></label><textarea className="cs-field" style={{ ...inputStyle, minHeight: 84, resize: 'vertical' }} value={message} onChange={e => setMessage(e.target.value)} placeholder="Team size, channels, timeline…" /></div>
             <button type="submit" disabled={state === 'sending'} className="cs-btn" style={{ width: '100%', padding: '13px 0', borderRadius: 12, background: CORAL, color: '#fff', fontWeight: 800, fontSize: 15, border: 'none', cursor: state === 'sending' ? 'default' : 'pointer', opacity: state === 'sending' ? 0.7 : 1, boxShadow: `0 10px 24px ${CORAL}44` }}>{state === 'sending' ? 'Sending…' : 'Send enquiry'}</button>
-            <p style={{ fontSize: 11.5, color: muted, textAlign: 'center', margin: '12px 0 0' }}>Or email <a href="mailto:support@colvy.com" style={{ color: CORAL, textDecoration: 'none', fontWeight: 600 }}>support@colvy.com</a></p>
+            <p style={{ fontSize: 11.5, color: muted, textAlign: 'center', margin: '12px 0 0' }}>Or call <a href={COLVY_CONTACT.telHref} style={{ color: CORAL, textDecoration: 'none', fontWeight: 600, whiteSpace: 'nowrap' }}>{COLVY_CONTACT.phoneDisplay}</a> · email <a href={COLVY_CONTACT.mailHref} style={{ color: CORAL, textDecoration: 'none', fontWeight: 600 }}>{COLVY_CONTACT.email}</a></p>
           </form>
         )}
       </div>

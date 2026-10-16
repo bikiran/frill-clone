@@ -3,6 +3,7 @@ import { preconnect } from 'react-dom'
 import './globals.css'
 import AppChrome from './AppChrome'
 import JsonLd from '@/components/JsonLd'
+import { COLVY_CONTACT } from '@/lib/colvy-contact'
 import PhoneHost from '@/components/PhoneHost'
 
 // The public marketing site lives on this origin; used to resolve canonical and
@@ -85,11 +86,26 @@ const structuredData = [
     sameAs: SAME_AS,
     description:
       'Colvy is an all-in-one customer platform for small businesses: a shared inbox across every channel, a CRM, business phone, store orders, payments, AI agents and customer feedback.',
-    contactPoint: {
-      '@type': 'ContactPoint',
-      email: 'support@colvy.com',
-      contactType: 'customer support',
-    },
+    telephone: COLVY_CONTACT.phoneE164,
+    email: COLVY_CONTACT.email,
+    contactPoint: [
+      {
+        '@type': 'ContactPoint',
+        telephone: COLVY_CONTACT.phoneE164,
+        email: COLVY_CONTACT.email,
+        contactType: 'customer support',
+        areaServed: 'AU',
+        availableLanguage: ['en'],
+      },
+      {
+        '@type': 'ContactPoint',
+        telephone: COLVY_CONTACT.phoneE164,
+        email: COLVY_CONTACT.email,
+        contactType: 'sales',
+        areaServed: 'AU',
+        availableLanguage: ['en'],
+      },
+    ],
   },
   {
     '@context': 'https://schema.org',

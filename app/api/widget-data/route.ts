@@ -6,6 +6,7 @@ import { statusOf } from '@/lib/engage-core'
 import { effectivePlan, companyHasFeature } from '@/lib/plan'
 import { emitIntegrationEvent } from '@/lib/integration-events'
 import { isPublicNow, sortForPublic, toPublicAnnouncement } from '@/lib/announcements'
+import { publicBoardUrl } from '@/lib/board-url'
 
 // A live announcement as the widget gets it: the public fields, plus the
 // names the widget already reads (description, tag, created_at).
@@ -172,7 +173,19 @@ export async function GET(req: NextRequest) {
     )
     // Don't leak the raw plan to the public widget payload.
     const { plan: _plan, trial_ends_at: _trialEndsAt, ...companyPublic } = company as any
-    const companyOut = { ...companyPublic, hide_powered_by: hidePoweredBySetting && brandingEntitled }
+    // The public board address (lib/board-url.ts). Read on its own so an old
+    // database without the board-domain columns still serves the widget.
+    let boardDomain: { board_domain?: string | null; board_domain_verified?: boolean | null } = {}
+    try {
+      const { data: bd, error: bdErr } = await (supabase as any).from('companies')
+        .select('board_domain, board_domain_verified').eq('id', company.id).maybeSingle()
+      if (!bdErr && bd) boardDomain = bd
+    } catch {}
+    const companyOut = {
+      ...companyPublic,
+      hide_powered_by: hidePoweredBySetting && brandingEntitled,
+      board_url: publicBoardUrl({ slug: company.slug, ...boardDomain }),
+    }
 
     // Location-aware content: if the widget is loaded for a specific outlet
     // (?location=<id>), show company-wide items (no location_ids) PLUS items

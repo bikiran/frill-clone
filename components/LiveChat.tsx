@@ -1,8 +1,9 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, type CSSProperties } from 'react'
 import Portal from './Portal'
 import { captureClickRef } from '@/lib/click-ref-client'
+import { type WidgetSize, isWidgetSize, fromWidgetFrame } from '@/lib/widget-frame'
 
 export default function LiveChat({ slug: slugProp }: { slug?: string } = {}) {
   const [open, setOpen] = useState(false)
@@ -16,6 +17,10 @@ export default function LiveChat({ slug: slugProp }: { slug?: string } = {}) {
   // (?clv=, remembered for 7 days on this site — so the booking page on the
   // same site gets it too), passed to the chat so it's credited to that link.
   const [clickRef] = useState<string | null>(() => captureClickRef())
+  // The widget's window controls (minimise / expand / full screen) ask us to
+  // resize this panel: lib/widget-frame.ts has the protocol.
+  const [size, setSize] = useState<WidgetSize>('normal')
+  const frameRef = useRef<HTMLIFrameElement | null>(null)
 
   // Target workspace: an explicit slug (e.g. Colvy's own support board on the
   // marketing site) wins; otherwise derive it from the board subdomain, or —
@@ -62,6 +67,37 @@ export default function LiveChat({ slug: slugProp }: { slug?: string } = {}) {
     return () => window.removeEventListener('colvy-open-chat', openChat)
   }, [])
 
+  // Messages from our widget iframe only (its window, its origin).
+  useEffect(() => {
+    if (!open) return
+    const onMsg = (e: MessageEvent) => {
+      const frame = frameRef.current
+      let origin = ''
+      try { origin = frame ? new URL(frame.src).origin : '' } catch {}
+      if (!fromWidgetFrame(e, frame, origin)) return
+      const d: any = e.data
+      if (!d || !d.colvy) return
+      if (d.type === 'size' && isWidgetSize(d.mode)) setSize(d.mode)
+      else if (d.type === 'close') { setSize('normal'); setOpen(false) }
+    }
+    window.addEventListener('message', onMsg)
+    return () => window.removeEventListener('message', onMsg)
+  }, [open])
+
+  // Esc on this page leaves full screen, and the widget hears what's on screen
+  // so its buttons match.
+  useEffect(() => {
+    const frame = frameRef.current
+    try { if (frame?.contentWindow) frame.contentWindow.postMessage({ colvy: true, type: 'size_state', mode: size }, new URL(frame.src).origin) } catch {}
+    if (size !== 'fullscreen') return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setSize('normal') }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [size])
+
+  // Closing always comes back at the normal size next time.
+  useEffect(() => { if (!open) setSize('normal') }, [open])
+
   // Where to load the widget iframe from. On a colvy subdomain (or the
   // marketing site) same-origin works. On a custom help/board domain, `/widget`
   // would be rewritten to the custom-domain renderer by the proxy, so load it
@@ -103,10 +139,12 @@ export default function LiveChat({ slug: slugProp }: { slug?: string } = {}) {
         }
       `}</style>
 
-      {/* Floating button - truly fixed to viewport */}
-      <button
+      {/* Floating button - truly fixed to viewport. Hidden while the chat
+          fills the screen (the widget has its own close button then). */}
+      {size !== 'fullscreen' && <button
         onClick={() => setOpen(!open)}
         aria-label={open ? 'Close chat' : 'Chat with us'}
+        aria-expanded={open}
         style={{
           position: 'fixed',
           // Rides above the voice-note player while it's open (AudioDock sets --audio-dock-h).
@@ -131,69 +169,70 @@ export default function LiveChat({ slug: slugProp }: { slug?: string } = {}) {
         onMouseDown={(e) => (e.currentTarget.style.transform = 'scale(0.95)')}
         onMouseUp={(e) => (e.currentTarget.style.transform = 'scale(1.1)')}>
         {open ? (
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         ) : (
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
         )}
-      </button>
+      </button>}
 
-      {/* Widget window - truly fixed to viewport */}
+      {/* Widget window - truly fixed to viewport. The widget's own header
+          (name, window controls, Board link) is its title bar. */}
       {open && (
         <div
+          role="dialog"
+          aria-label="Chat"
+          data-size={size}
           style={{
             position: 'fixed',
-            // Fit within the viewport on phones: cap width/height to the screen and
-            // never let the panel run off the top or sides. On desktop it stays the
-            // usual 384×600 floating panel above the launcher.
-            bottom: 'calc(88px + var(--audio-dock-h, 0px))',
-            right: 24,
-            width: 'min(384px, calc(100vw - 48px))',
-            height: 'min(600px, calc(100dvh - 112px))',
-            maxHeight: 'calc(100dvh - 112px)',
-            borderRadius: 16,
-            boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
             overflow: 'hidden',
             display: 'flex',
             flexDirection: 'column',
             background: 'white',
-            zIndex: 9998,
-            border: '1px solid var(--border)',
+            zIndex: 10000,
             animation: 'slideUp 0.3s ease',
+            transition: 'width 0.22s ease, height 0.22s ease',
+            ...panelStyle(size),
           }}>
-          
-          {/* Header */}
-          <div style={{ padding: '12px 16px', display: 'flex', justifyContent: 'flex-end', borderBottom: '1px solid var(--border)', background: 'white' }}>
-            <button 
-              onClick={() => setOpen(false)}
-              style={{
-                background: 'none',
-                border: 'none',
-                fontSize: 20,
-                fontWeight: 'bold',
-                color: '#9ca3af',
-                cursor: 'pointer',
-                padding: 0,
-                width: 24,
-                height: 24,
-              }}>
-              ×
-            </button>
-          </div>
-
-          {/* Widget iframe */}
           <div style={{ flex: 1, overflow: 'hidden', width: '100%' }}>
             <iframe
+              ref={frameRef}
               src={`${widgetOrigin()}/widget?embedded=true${slug ? `&slug=${slug}` : ''}${clickRef ? `&clv=${encodeURIComponent(clickRef)}` : ''}`}
               style={{
                 width: '100%',
                 height: '100%',
                 border: 'none',
+                display: 'block',
               }}
-              title="Colvy Widget"
+              title="Chat"
+              allow="clipboard-write"
             />
           </div>
         </div>
       )}
     </Portal>
   )
+}
+
+// Where the panel sits for each size. Normal is the usual floating panel above
+// the launcher; expanded is wider and as tall as the window allows; full screen
+// covers the page. On a phone, normal and expanded both fill most of the screen.
+function panelStyle(size: WidgetSize): CSSProperties {
+  if (size === 'fullscreen') {
+    return { inset: 0, width: '100vw', height: '100dvh', borderRadius: 0, border: 'none', boxShadow: 'none' }
+  }
+  const floating: CSSProperties = {
+    bottom: 'calc(88px + var(--audio-dock-h, 0px))',
+    right: 24,
+    borderRadius: 16,
+    boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+    border: '1px solid var(--border)',
+    maxHeight: 'calc(100dvh - 112px)',
+  }
+  if (size === 'expanded') {
+    return { ...floating, width: 'min(560px, calc(100vw - 48px))', height: 'min(820px, calc(100dvh - 112px))' }
+  }
+  if (size === 'compact') {
+    return { ...floating, width: 'min(320px, calc(100vw - 48px))', height: 'min(460px, calc(100dvh - 112px))' }
+  }
+  return { ...floating, width: 'min(384px, calc(100vw - 48px))', height: 'min(600px, calc(100dvh - 112px))' }
 }

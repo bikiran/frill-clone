@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { logJobRun } from '@/lib/job-log'
+import { colvyEmailContactHtml } from '@/lib/colvy-contact'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -37,6 +38,7 @@ function emailFor(kind: string, business: string, billingUrl: string): { subject
         <p style="margin:0 0 20px;color:#4b5563;font-size:14px;line-height:1.6">${body}</p>
         ${btn(label)}
         <p style="margin:20px 0 0;color:#9ca3af;font-size:12px">You’re receiving this because ${business} is on a Colvy trial.</p>
+        ${colvyEmailContactHtml()}
       </div></div>`,
   })
   if (kind === 't_minus_3') return wrap('Your Colvy trial ends in 3 days',

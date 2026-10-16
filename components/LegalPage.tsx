@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
+import { COLVY_CONTACT } from '@/lib/colvy-contact'
 
 export default function LegalPage({ slug }: { slug: 'privacy' | 'terms' }) {
   const [page, setPage] = useState<any>(null)
@@ -63,6 +64,9 @@ export default function LegalPage({ slug }: { slug: 'privacy' | 'terms' }) {
           <Link href="/terms" style={{ color: '#6b7280', textDecoration: 'none' }}>Terms</Link>
           <Link href="/pricing" style={{ color: '#6b7280', textDecoration: 'none' }}>Pricing</Link>
         </div>
+        <p style={{ margin: '0 0 8px' }}>
+          Questions about this page? Call <a href={COLVY_CONTACT.telHref} style={{ color: '#6b7280', textDecoration: 'none', fontWeight: 600 }}>{COLVY_CONTACT.phoneDisplay}</a> or email <a href={COLVY_CONTACT.mailHref} style={{ color: '#6b7280', textDecoration: 'none', fontWeight: 600 }}>{COLVY_CONTACT.email}</a>.
+        </p>
         © {new Date().getFullYear()} Wallets Way Pty Ltd (ABN 54 666 674 602) trading as Colvy. All rights reserved.
       </footer>
     </div>
