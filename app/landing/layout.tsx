@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import ColvyJsonLd from '@/components/ColvyJsonLd'
 
 // colvy.com/ is served by this page (proxy.ts rewrites "/" here), so its
 // title, description and canonical address live here. The canonical is "/"
@@ -12,5 +13,5 @@ export const metadata: Metadata = {
 }
 
 export default function LandingLayout({ children }: { children: React.ReactNode }) {
-  return children
+  return <><ColvyJsonLd />{children}</>
 }
