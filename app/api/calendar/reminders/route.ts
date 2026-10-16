@@ -4,6 +4,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { notifyCompany } from '@/lib/notify'
 import { withJobLog } from '@/lib/job-log'
+import { loadStaffRows } from '@/lib/team-list'
+import { isStaffRow } from '@/lib/company-access'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -54,7 +56,7 @@ async function run(req: NextRequest) {
 
     for (const [companyId, list] of Object.entries(byCompany)) {
       const { data: company } = await db.from('companies')
-        .select('name, slug, calendar_settings').eq('id', companyId).maybeSingle()
+        .select('name, slug, calendar_settings, owner_id').eq('id', companyId).maybeSingle()
 
       const cfg = company?.calendar_settings || {}
       // Off by default — nobody gets surprise emails.
@@ -69,11 +71,23 @@ async function run(req: NextRequest) {
       const tz = cfg.timezone || 'Australia/Melbourne'
       const cutoff = new Date(now.getTime() + leadHours * 3600 * 1000)
 
+      // Who may hear about events: the owner and the staff. Never a board
+      // visitor or a removed member, even one an old event is assigned to.
+      // Read once, and only when an event is due.
+      let staff: Promise<{ rows: any[]; ids: Set<string> }> | null = null
+      const staffOf = () => staff ||= loadStaffRows(db, companyId, 'user_id, email, role, status').catch(() => []).then(all => {
+        const rows = all.filter(isStaffRow)
+        const ids = new Set<string>(rows.map((m: any) => m.user_id).filter(Boolean))
+        if (company?.owner_id) ids.add(company.owner_id)
+        return { rows, ids }
+      })
+
       for (const e of list) {
         const startsAt = new Date(e.starts_at)
         // Only announce events inside the lead window and not already announced.
         if (startsAt > cutoff) continue
         if (e.reminded_at) continue
+        const { rows: staffRows, ids: staffIds } = await staffOf()
 
         const when = e.is_all_day
           ? startsAt.toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long', timeZone: tz })
@@ -111,7 +125,7 @@ async function run(req: NextRequest) {
           if (hasAssignees) {
             // Assigned: notify each assignee.
             for (const a of assignees) {
-              if (!a.id) continue
+              if (!a.id || !staffIds.has(a.id)) continue
               await db.from('notifications').insert({
                 company_id: companyId, user_id: a.id, type: 'calendar',
                 title: line, body: e.notes || null,
@@ -133,7 +147,7 @@ async function run(req: NextRequest) {
         // ── SMS the assignees (only when the event asks for it)
         if (wantSms && hasAssignees) {
           for (const a of assignees) {
-            if (!a.id) continue
+            if (!a.id || !staffIds.has(a.id)) continue
             try {
               const { data: mem } = await db.from('team_members')
                 .select('phone').eq('company_id', companyId).eq('user_id', a.id).maybeSingle()
@@ -179,18 +193,13 @@ async function run(req: NextRequest) {
               // Assigned event: email ONLY the assignees, matching the in-app
               // and SMS behaviour. (Previously this emailed the whole active
               // team even for an assigned event.)
-              const ids = assignees.map((a: any) => a.id).filter(Boolean)
-              if (ids.length) {
-                const { data: members } = await db.from('team_members')
-                  .select('email').eq('company_id', companyId).in('user_id', ids)
-                to = (members || []).map((m: any) => m.email).filter(Boolean)
-              }
+              const ids = new Set(assignees.map((a: any) => a.id).filter(Boolean))
+              to = staffRows.filter((m: any) => ids.has(m.user_id)).map((m: any) => m.email)
             } else {
-              // Unassigned event: fall back to the whole active team.
-              const { data: members } = await db.from('team_members')
-                .select('email').eq('company_id', companyId).eq('status', 'active')
-              to = (members || []).map((m: any) => m.email).filter(Boolean)
+              // Unassigned event: fall back to the whole active staff.
+              to = staffRows.filter((m: any) => m.status === 'active').map((m: any) => m.email)
             }
+            to = Array.from(new Set(to.filter(Boolean)))
 
             if (to.length) {
               const { data: ec } = await db.from('email_channels')
@@ -218,16 +227,20 @@ async function run(req: NextRequest) {
                 `See it in the calendar: ${base}/admin/calendar`,
               ].filter(Boolean).join('\n')
 
-              await fetch('https://api.resend.com/emails', {
-                method: 'POST',
-                headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  from: `${fromName} <${from}>`,
-                  to,
-                  subject: overdue ? `Overdue: ${e.title}` : `Coming up: ${e.title}`,
-                  text: body,
-                }),
-              })
+              // One email per person, so nobody sees the rest of the team's
+              // addresses (Resend's batch endpoint takes up to 100 a call).
+              for (let i = 0; i < to.length; i += 90) {
+                await fetch('https://api.resend.com/emails/batch', {
+                  method: 'POST',
+                  headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+                  body: JSON.stringify(to.slice(i, i + 90).map(addr => ({
+                    from: `${fromName} <${from}>`,
+                    to: [addr],
+                    subject: overdue ? `Overdue: ${e.title}` : `Coming up: ${e.title}`,
+                    text: body,
+                  }))),
+                })
+              }
             }
           } catch (err) { console.error('[calendar reminder] email failed', err) }
         }

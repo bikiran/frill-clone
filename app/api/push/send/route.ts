@@ -44,14 +44,14 @@ export async function POST(req: NextRequest) {
     const { data: allTokens } = await q
     if (!allTokens || allTokens.length === 0) return NextResponse.json({ ok: true, sent: 0 })
 
-    // Only members allowed the feature this push is about (Team page
-    // permissions): someone with Inbox switched off gets no message alerts,
-    // without Orders no order alerts, and so on. Owners and admins always do.
+    // Staff only, every push: never a board visitor or a removed member (a
+    // phone registered before V337 could belong to one). And only members
+    // allowed the feature this push is about (Team page permissions): someone
+    // with Inbox switched off gets no message alerts, without Orders no order
+    // alerts, and so on. Owners and admins always do.
     const features = featuresForPush({ feature, channelId, conversationId, route })
-    const allowed = features.length
-      ? await filterUsersByFeature(db, companyId, allTokens.map((t: any) => t.user_id).filter(Boolean), features)
-      : null
-    const tokens = allowed ? allTokens.filter((t: any) => !t.user_id || allowed.has(t.user_id)) : allTokens
+    const allowed = await filterUsersByFeature(db, companyId, allTokens.map((t: any) => t.user_id).filter(Boolean), features)
+    const tokens = allTokens.filter((t: any) => t.user_id && allowed.has(t.user_id))
     if (tokens.length === 0) return NextResponse.json({ ok: true, sent: 0 })
 
     const category = categoryId || (conversationId ? 'message' : undefined)

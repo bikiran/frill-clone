@@ -27,6 +27,7 @@ import { shortenUrl } from '@/lib/short-link'
 import { stitchLinkClick } from '@/lib/link-stitch'
 import { attributeBookingToLinks } from '@/lib/link-attribution'
 import { ilikeExact, exactEmailRow } from '@/lib/phone'
+import { loadStaffRows } from '@/lib/team-list'
 
 const MIN = 60_000
 const HOUR = 3_600_000
@@ -222,12 +223,12 @@ export async function loadCompanyPublic(db: any, q: { slug?: string | null; doma
 
 export type StaffMember = { id: string; name: string; avatar_url: string | null; email: string | null; phone: string | null }
 
-// Owner + active teammates who have signed in (a user id is what calendar
-// events are assigned to).
+// Owner + active staff who have signed in (a user id is what calendar events
+// are assigned to). Never a board visitor.
 export async function loadStaff(db: any, company: any): Promise<StaffMember[]> {
   const out: StaffMember[] = []
   try {
-    const { data: tm } = await db.from('team_members').select('user_id, name, email, phone, avatar_url, status').eq('company_id', company.id)
+    const tm = await loadStaffRows(db, company.id, 'user_id, name, email, phone, avatar_url, status').catch(() => [])
     for (const m of tm || []) {
       if (!m.user_id || out.some(t => t.id === m.user_id)) continue
       if (['invited', 'pending', 'inactive', 'disabled', 'removed', 'suspended'].includes(String(m.status || '').toLowerCase())) continue

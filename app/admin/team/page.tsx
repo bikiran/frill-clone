@@ -1,7 +1,7 @@
 'use client'
 
 import { authFetch } from '@/lib/auth-fetch'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { peekCompanyUser } from '@/lib/client-cache'
@@ -9,6 +9,7 @@ import ConfirmModal from '@/components/ConfirmModal'
 import { SkeletonList } from '@/components/Skeleton'
 import PageHeader from '@/components/PageHeader'
 import { PERMISSION_SUITES, ALL_FEATURE_KEYS, restrictedDefault } from '@/lib/permissions'
+import { loadTeamList, loadMoreViewers, mergeTeam, isViewerRow, VIEWER_PAGE } from '@/lib/team-list'
 
 
 // Create User's throwaway password. Math.random isn't a secure source; the
@@ -18,6 +19,32 @@ function makeTempPassword(): string {
   return Array.from(bytes, b => b.toString(36).padStart(2, '0')).join('') + 'A!1'
 }
 
+// Fill in real profile names for members who've signed in (their name lives in
+// auth metadata, which the client can't read for other users — so resolve it
+// server-side, up to 1,000 ids a request). Only `rows` are updated.
+async function fillNames(rows: any[], setMembers: (update: (cur: any[]) => any[]) => void) {
+  const ids = Array.from(new Set(rows.map((m: any) => m.user_id).filter(Boolean)))
+  if (!ids.length) return
+  const these = new Set(rows.map((m: any) => m.id))
+  try {
+    const batches: any[][] = []
+    for (let i = 0; i < ids.length; i += 1000) batches.push(ids.slice(i, i + 1000))
+    const found = await Promise.all(batches.map(async userIds => {
+      const res = await authFetch('/api/team/names', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userIds }),
+      })
+      return (await res.json())?.names || {}
+    }))
+    const names = Object.assign({}, ...found)
+    setMembers(cur => cur.map((m: any) => !these.has(m.id) ? m : ({
+      ...m,
+      display_name: m.name || names?.[m.user_id]?.name || null,
+      avatar_url: m.avatar_url || names?.[m.user_id]?.avatar_url || null,
+    })))
+  } catch { /* fall back to email */ }
+}
+
 export default function TeamPage() {
   const router = useRouter()
   const [user, setUser] = useState<any>(null)
@@ -25,6 +52,13 @@ export default function TeamPage() {
   const [members, setMembers] = useState<any[]>([])
   const [outlets, setOutlets] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  // A busy board's team doesn't fit one read (lib/team-list.ts): then staff are
+  // listed first and viewers (board visitors) a page at a time. How many
+  // viewers there are, and how many to read when the list reloads.
+  const [split, setSplit] = useState(false)
+  const [viewerTotal, setViewerTotal] = useState(0)
+  const viewerLimit = useRef(VIEWER_PAGE)
+  const [loadingMore, setLoadingMore] = useState(false)
   // `?invite=1` (the setup checklist's "Invite a teammate") opens the invite
   // form straight away. The admin shell only renders pages in the browser.
   const [showInvite, setShowInvite] = useState(() => typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('invite') === '1')
@@ -203,37 +237,45 @@ export default function TeamPage() {
         .catch(() => {})
 
       // Members and outlets side by side; the list shows as soon as members
-      // arrive, and profile names fill in after.
-      const [{ data }, locsRes] = await Promise.all([
-        (supabase as any).from('team_members').select('*').eq('company_id', cid).order('created_at', { ascending: false }),
+      // arrive, and profile names fill in after. On a busy board staff come in
+      // full and viewers a page at a time, so visitors can't crowd staff out.
+      const want = viewerLimit.current
+      const [team, locsRes] = await Promise.all([
+        loadTeamList(supabase, cid, want),
         // Outlets for the "default outlet" picker (scoped to this company).
         Promise.resolve((supabase as any).from('company_locations')
           .select('id, label, suburb, is_primary').eq('company_id', cid).order('is_primary', { ascending: false })).catch(() => ({ data: [] })),
       ])
-      const rows: any[] = data || []
-      setMembers(rows)
+      // "Show more" pressed while this was loading: keep what it added.
+      if (team.split && viewerLimit.current > want) {
+        team.viewers = mergeTeam(team.viewers, await loadMoreViewers(supabase, cid, want, viewerLimit.current - want))
+      }
+      setMembers(mergeTeam([], [...team.staff, ...team.viewers]))
+      setSplit(team.split)
+      setViewerTotal(team.viewerTotal)
       setOutlets(locsRes?.data || [])
       setLoading(false)
-      // Fill in real profile names for members who've signed in (their name
-      // lives in auth metadata, which the client can't read for other users —
-      // so resolve it server-side).
-      const ids = Array.from(new Set(rows.map((m: any) => m.user_id).filter(Boolean)))
-      if (ids.length) {
-        try {
-          const res = await authFetch('/api/team/names', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userIds: ids }),
-          })
-          const { names } = await res.json()
-          setMembers(cur => cur.map((m: any) => ({
-            ...m,
-            display_name: m.name || names?.[m.user_id]?.name || null,
-            avatar_url: m.avatar_url || names?.[m.user_id]?.avatar_url || null,
-          })))
-        } catch { /* fall back to email */ }
-      }
+      // Staff first, so they're never the ones past the names lookup's limit.
+      await fillNames([...team.staff, ...team.viewers], setMembers)
     } catch {}
     setLoading(false)
+  }
+
+  const showMoreViewers = async () => {
+    if (!companyId || loadingMore) return
+    setLoadingMore(true)
+    // Raised first, so a reload that finishes meanwhile reads these too.
+    const from = viewerLimit.current
+    viewerLimit.current = from + VIEWER_PAGE
+    try {
+      const more = await loadMoreViewers(supabase, companyId, from)
+      setMembers(cur => mergeTeam(cur, more))
+      await fillNames(more, setMembers)
+    } catch (e: any) {
+      if (viewerLimit.current === from + VIEWER_PAGE) viewerLimit.current = from
+      showMsg('Could not load more viewers: ' + String(e?.message || 'error'), true)
+    }
+    setLoadingMore(false)
   }
 
   const updateDefaultOutlet = async (id: string, locId: string) => {
@@ -429,6 +471,86 @@ export default function TeamPage() {
   const visibleMembers = members.filter(
     (m: any) => m.user_id !== user.id && (m.email || '').toLowerCase() !== meEmail
   )
+  // A busy board: staff first, so the board's visitors can't push them down
+  // the list, then the viewers a page at a time. Otherwise everyone is listed
+  // together, newest first, as before.
+  const listed = split ? visibleMembers.filter(m => !isViewerRow(m)) : visibleMembers
+  const listedViewers = split ? visibleMembers.filter(isViewerRow) : []
+  const viewersLoaded = members.filter(isViewerRow).length
+
+  const memberRow = (m: any) => (
+    <div key={m.id} className="grid grid-cols-12 px-5 py-4 border-b last:border-b-0 items-center" style={{ borderColor: 'var(--border)' }}>
+      <div className="col-span-4 flex items-center gap-3">
+        <div className="w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-bold overflow-hidden" style={{ background: '#6b7280' }}>
+          {m.avatar_url ? <img src={m.avatar_url} alt="" className="w-full h-full object-cover" /> : (m.display_name || m.email || '?')[0].toUpperCase()}
+        </div>
+        <div className="min-w-0">
+          <p className="text-sm truncate flex items-center gap-1.5" style={{ color: 'var(--ink)', fontWeight: 600 }}>
+            <span className="truncate">{m.display_name || m.email}</span>
+            {m.department && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded shrink-0" style={{ background: '#eef2ff', color: '#4338ca' }}>{m.department}</span>}
+          </p>
+          {m.display_name && <p className="text-xs truncate" style={{ color: 'var(--slate)' }}>{m.email}</p>}
+          {outlets.length > 0 && (
+            <select value={m.default_location_id || ''} onChange={e => updateDefaultOutlet(m.id, e.target.value)} disabled={viewOnly}
+              title="Default outlet — used to pre-filter their Tasks page"
+              className="text-xs mt-1 px-2 py-1 rounded border focus:outline-none cursor-pointer bg-white max-w-full"
+              style={{ borderColor: 'var(--border)', color: m.default_location_id ? 'var(--coral)' : 'var(--slate)' }}>
+              <option value="">No default outlet</option>
+              {outlets.map((o: any) => <option key={o.id} value={o.id}>{o.label || o.suburb || 'Outlet'}</option>)}
+            </select>
+          )}
+        </div>
+      </div>
+      {/* Mobile — SMS reminders for assigned events go to this number.
+          Saved on blur so it doesn't write on every keystroke. */}
+      <div className="col-span-2 pr-3">
+        <input
+          defaultValue={m.phone || ''}
+          placeholder="+61…"
+          onBlur={e => updatePhone(m.id, e.target.value)}
+          disabled={viewOnly}
+          className="text-xs px-2 py-1 rounded border focus:outline-none w-full bg-white"
+          style={{ borderColor: 'var(--border)', color: 'var(--ink)' }} />
+      </div>
+      <div className="col-span-2">
+        <select value={m.role} onChange={e => updateRole(m.id, e.target.value)} disabled={viewOnly}
+          className="text-xs px-2 py-1 rounded border focus:outline-none cursor-pointer bg-white"
+          style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
+          {/* A co-owner shows as Owner; ownership isn't handed out from here. */}
+          {(m.role || '').toLowerCase() === 'owner' && <option value={m.role} disabled>Owner</option>}
+          <option value="admin">Admin</option>
+          <option value="editor">Agent</option>
+          <option value="viewer">Viewer</option>
+        </select>
+      </div>
+      <div className="col-span-1">
+        <span className="text-xs px-2 py-1 rounded-full"
+          style={{ background: m.status === 'active' ? '#d1fae5' : '#fef3c7', color: m.status === 'active' ? '#059669' : '#ca8a04' }}>
+          {m.status === 'active' ? 'Active' : 'Invited'}
+        </span>
+      </div>
+      <div className="col-span-3 text-right flex items-center justify-end gap-2.5 whitespace-nowrap">
+        {viewOnly ? <span className="text-xs" style={{ color: 'var(--slate)' }}>—</span> : <>
+        <button onClick={() => openEdit(m)} className="text-xs font-medium cursor-pointer hover:underline" style={{ color: 'var(--slate)' }}>
+          Edit
+        </button>
+        {['editor', 'viewer'].includes((m.role || '').toLowerCase()) && (
+          <button onClick={() => openPermissions(m)} className="text-xs font-medium cursor-pointer hover:underline" style={{ color: 'var(--slate)' }}>
+            Permissions
+          </button>
+        )}
+        {m.status !== 'active' && (
+          <button onClick={() => resendInvite(m)} disabled={resendingId === m.id} className="text-xs font-medium cursor-pointer hover:underline" style={{ color: 'var(--coral)' }}>
+            {resendingId === m.id ? 'Sending…' : 'Resend'}
+          </button>
+        )}
+        <button onClick={() => setConfirmDelete(m)} className="text-xs font-medium cursor-pointer hover:underline" style={{ color: '#dc2626' }}>
+          Remove
+        </button>
+        </>}
+      </div>
+    </div>
+  )
 
   return (
     <div className="max-w-4xl mx-auto px-6 py-8">
@@ -551,79 +673,26 @@ export default function TeamPage() {
             </div>}
           </div>
         ) : (
-          visibleMembers.map(m => (
-            <div key={m.id} className="grid grid-cols-12 px-5 py-4 border-b last:border-b-0 items-center" style={{ borderColor: 'var(--border)' }}>
-              <div className="col-span-4 flex items-center gap-3">
-                <div className="w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-bold overflow-hidden" style={{ background: '#6b7280' }}>
-                  {m.avatar_url ? <img src={m.avatar_url} alt="" className="w-full h-full object-cover" /> : (m.display_name || m.email || '?')[0].toUpperCase()}
+          <>
+            {listed.map(memberRow)}
+            {split && (
+              <>
+                <div className="px-5 py-2.5 border-b text-xs" style={{ borderColor: 'var(--border)', background: '#f8fafc', color: 'var(--slate)' }}>
+                  <span className="font-semibold uppercase tracking-wider">Viewers · {viewerTotal.toLocaleString()}</span>
+                  <span className="ml-2">Board visitors and anyone given the Viewer role, newest first</span>
                 </div>
-                <div className="min-w-0">
-                  <p className="text-sm truncate flex items-center gap-1.5" style={{ color: 'var(--ink)', fontWeight: 600 }}>
-                    <span className="truncate">{m.display_name || m.email}</span>
-                    {m.department && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded shrink-0" style={{ background: '#eef2ff', color: '#4338ca' }}>{m.department}</span>}
-                  </p>
-                  {m.display_name && <p className="text-xs truncate" style={{ color: 'var(--slate)' }}>{m.email}</p>}
-                  {outlets.length > 0 && (
-                    <select value={m.default_location_id || ''} onChange={e => updateDefaultOutlet(m.id, e.target.value)} disabled={viewOnly}
-                      title="Default outlet — used to pre-filter their Tasks page"
-                      className="text-xs mt-1 px-2 py-1 rounded border focus:outline-none cursor-pointer bg-white max-w-full"
-                      style={{ borderColor: 'var(--border)', color: m.default_location_id ? 'var(--coral)' : 'var(--slate)' }}>
-                      <option value="">No default outlet</option>
-                      {outlets.map((o: any) => <option key={o.id} value={o.id}>{o.label || o.suburb || 'Outlet'}</option>)}
-                    </select>
-                  )}
-                </div>
-              </div>
-              {/* Mobile — SMS reminders for assigned events go to this number.
-                  Saved on blur so it doesn't write on every keystroke. */}
-              <div className="col-span-2 pr-3">
-                <input
-                  defaultValue={m.phone || ''}
-                  placeholder="+61…"
-                  onBlur={e => updatePhone(m.id, e.target.value)}
-                  disabled={viewOnly}
-                  className="text-xs px-2 py-1 rounded border focus:outline-none w-full bg-white"
-                  style={{ borderColor: 'var(--border)', color: 'var(--ink)' }} />
-              </div>
-              <div className="col-span-2">
-                <select value={m.role} onChange={e => updateRole(m.id, e.target.value)} disabled={viewOnly}
-                  className="text-xs px-2 py-1 rounded border focus:outline-none cursor-pointer bg-white"
-                  style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
-                  {/* A co-owner shows as Owner; ownership isn't handed out from here. */}
-                  {(m.role || '').toLowerCase() === 'owner' && <option value={m.role} disabled>Owner</option>}
-                  <option value="admin">Admin</option>
-                  <option value="editor">Agent</option>
-                  <option value="viewer">Viewer</option>
-                </select>
-              </div>
-              <div className="col-span-1">
-                <span className="text-xs px-2 py-1 rounded-full"
-                  style={{ background: m.status === 'active' ? '#d1fae5' : '#fef3c7', color: m.status === 'active' ? '#059669' : '#ca8a04' }}>
-                  {m.status === 'active' ? 'Active' : 'Invited'}
-                </span>
-              </div>
-              <div className="col-span-3 text-right flex items-center justify-end gap-2.5 whitespace-nowrap">
-                {viewOnly ? <span className="text-xs" style={{ color: 'var(--slate)' }}>—</span> : <>
-                <button onClick={() => openEdit(m)} className="text-xs font-medium cursor-pointer hover:underline" style={{ color: 'var(--slate)' }}>
-                  Edit
-                </button>
-                {['editor', 'viewer'].includes((m.role || '').toLowerCase()) && (
-                  <button onClick={() => openPermissions(m)} className="text-xs font-medium cursor-pointer hover:underline" style={{ color: 'var(--slate)' }}>
-                    Permissions
-                  </button>
+                {listedViewers.map(memberRow)}
+                {viewersLoaded < viewerTotal && (
+                  <div className="px-5 py-3 text-center text-xs" style={{ color: 'var(--slate)' }}>
+                    Showing {viewersLoaded.toLocaleString()} of {viewerTotal.toLocaleString()} ·{' '}
+                    <button onClick={showMoreViewers} disabled={loadingMore} className="font-medium cursor-pointer hover:underline disabled:opacity-50" style={{ color: 'var(--coral)' }}>
+                      {loadingMore ? 'Loading…' : 'Show more'}
+                    </button>
+                  </div>
                 )}
-                {m.status !== 'active' && (
-                  <button onClick={() => resendInvite(m)} disabled={resendingId === m.id} className="text-xs font-medium cursor-pointer hover:underline" style={{ color: 'var(--coral)' }}>
-                    {resendingId === m.id ? 'Sending…' : 'Resend'}
-                  </button>
-                )}
-                <button onClick={() => setConfirmDelete(m)} className="text-xs font-medium cursor-pointer hover:underline" style={{ color: '#dc2626' }}>
-                  Remove
-                </button>
-                </>}
-              </div>
-            </div>
-          ))
+              </>
+            )}
+          </>
         )}
       </div>
       </div>

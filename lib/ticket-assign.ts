@@ -5,15 +5,17 @@
 // recently). Fairer than a strict rotation when people work different hours or
 // someone's queue is already full. Only runs when the company turned on
 // "Auto-assign new tickets" (companies.ticket_sla_settings.auto_assign).
+// Staff only: a board visitor is never given a ticket.
 
 import { resolveSla } from '@/lib/ticket-sla'
+import { loadStaffRows } from '@/lib/team-list'
 
 export async function autoAssignTicket(db: any, companyId: string, ticketId: string): Promise<{ userId: string; name: string } | null> {
   try {
     const { data: co } = await db.from('companies').select('owner_id, ticket_sla_settings').eq('id', companyId).maybeSingle()
     if (!resolveSla(co?.ticket_sla_settings).auto_assign) return null
 
-    const { data: members } = await db.from('team_members').select('user_id, name, email, status').eq('company_id', companyId)
+    const members = await loadStaffRows(db, companyId, 'user_id, name, email, status').catch(() => [])
     const pool = new Map<string, string>()
     for (const m of members || []) {
       if (!m.user_id) continue
@@ -42,14 +44,14 @@ export async function autoAssignTicket(db: any, companyId: string, ticketId: str
   } catch { return null }
 }
 
-// Everyone a ticket can be assigned to: active teammates plus the owner.
+// Everyone a ticket can be assigned to: active staff plus the owner.
 export async function loadTicketTeam(db: any, companyId: string): Promise<{ userId: string; name: string }[]> {
   const team: { userId: string; name: string }[] = []
   try {
     // The owner and the team rows don't depend on each other — fetch together.
     const [{ data: co }, { data: tm }] = await Promise.all([
       db.from('companies').select('owner_id').eq('id', companyId).maybeSingle(),
-      db.from('team_members').select('user_id, name, email, status').eq('company_id', companyId),
+      loadStaffRows(db, companyId, 'user_id, name, email, status').then(data => ({ data }), () => ({ data: null })),
     ])
     for (const m of tm || []) {
       if (!m.user_id || team.some(t => t.userId === m.user_id)) continue
