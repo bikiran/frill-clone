@@ -2532,12 +2532,15 @@ function WidgetInteractive({ msg, companyId, conversationId, respondent, accentC
       setItem(data)
 
       // If this respondent already answered (in a prior session/reload), show the
-      // submitted state instead of a fillable form again.
+      // submitted state instead of a fillable form again. Asked of the server,
+      // which checks this is our chat: chat_interactions is closed to the
+      // public key (V381).
       try {
-        let q = (supabase as any).from('chat_interactions').select('id').eq('message_id', msg.id).limit(1)
-        if (conversationId) q = q.eq('conversation_id', conversationId)
-        const { data: prior } = await q
-        if (prior && prior.length) { setDone(true); return }
+        if (companyId && conversationId && msg.id) {
+          const qs = new URLSearchParams({ companyId, conversationId, messageId: String(msg.id) })
+          const res = await fetch(`/api/widget/interaction?${qs}`, { headers: chatHeaders() })
+          if (res.ok && (await res.json())?.answered) { setDone(true); return }
+        }
       } catch {}
 
       // Pre-fill fields when the smart trigger supplied known customer details.
@@ -2561,10 +2564,21 @@ function WidgetInteractive({ msg, companyId, conversationId, respondent, accentC
 
   const submit = async (response: any) => {
     try {
-      await (supabase as any).from('chat_interactions').insert({
-        company_id: companyId, conversation_id: conversationId, message_id: msg.id,
-        kind, ref_id: payload.ref_id, respondent, response,
+      // Saved by the server, which checks the chat key and that this card is
+      // one the business sent into this chat (V381 closes the table to the
+      // public key).
+      const saved = await fetch('/api/widget/interaction', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', ...chatHeaders() },
+        body: JSON.stringify({ companyId, conversationId, messageId: msg.id, respondent, response }),
       })
+      const result = await saved.json().catch(() => null)
+      // Refused (not our chat, not a card from this business, too long, too
+      // fast): stop. A server fault still posts the answer below, as before,
+      // so the team sees it in the thread.
+      if (!saved.ok) console.error('Could not save response', result?.error || saved.status)
+      if (!saved.ok && saved.status < 500) return
+      // Answered already (another tab, a double tap): don't post it twice.
+      if (result?.already) { setDone(true); return }
       // Also post the answer as a visitor message so the agent sees it
       // Build a human-readable summary instead of dumping JSON into the chat.
       let summary: string
