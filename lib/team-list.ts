@@ -1,5 +1,7 @@
-// The Team page's list (app/admin/team), read in the browser: COLVY_V364 lets
-// staff read their own workspace's team.
+// Reading a workspace's team: the Team page's list (app/admin/team), and
+// everyone who can be assigned or mentioned (loadStaffRows). Works with the
+// browser client (COLVY_V364 lets staff read their own workspace's team) and
+// the service-role one alike.
 //
 // Every visitor who signs in on a board gets a 'viewer' row, and one read
 // returns at most 1,000 rows. The page read the whole team newest first in one
@@ -17,6 +19,10 @@ export const VIEWER_PAGE = 200
 
 /** A Viewer row: a board visitor, or someone given the Viewer role. */
 export const isViewerRow = (m: any) => String(m?.role ?? '').toLowerCase() === 'viewer'
+
+// Staff rows, as a PostgREST or() filter: every role but Viewer, in any case.
+// A missing role is the column's default ('editor'), so it counts.
+export const STAFF_FILTER = 'role.is.null,role.not.ilike.viewer'
 
 /** Newest first, as Postgres orders created_at DESC (no date first), then id. */
 export function newestFirst(a: any, b: any): number {
@@ -40,7 +46,7 @@ export function mergeTeam(cur: any[], more: any[]): any[] {
 // is the column's default ('editor'), so it counts as staff.
 const teamRows = (db: any, companyId: string, part: 'all' | 'staff' | 'viewers', count = false) => {
   let q = db.from('team_members').select('*', count ? { count: 'exact' } : undefined).eq('company_id', companyId)
-  if (part === 'staff') q = q.or('role.is.null,role.not.ilike.viewer')
+  if (part === 'staff') q = q.or(STAFF_FILTER)
   if (part === 'viewers') q = q.ilike('role', 'viewer')
   return q.order('created_at', { ascending: false }).order('id', { ascending: false })
 }
@@ -86,4 +92,24 @@ export async function loadTeamList(db: any, companyId: string, viewers = VIEWER_
 /** `n` more viewers, after the newest `from`. */
 export async function loadMoreViewers(db: any, companyId: string, from: number, n = VIEWER_PAGE): Promise<any[]> {
   return readRows(db, companyId, 'viewers', from, from + n)
+}
+
+/**
+ * A workspace's staff rows, oldest first, every one: the people a conversation,
+ * task, order, ticket, booking or event can be assigned to, or who can be
+ * @mentioned. Board visitors ('viewer' rows) never can. The pickers used to read
+ * the whole team and drop viewers afterwards, if at all; a busy board has more
+ * of them than one read returns, so staff went missing. A row with no
+ * company_id belongs to no workspace (since COLVY_V364 a browser can read only
+ * its own), so it isn't included. Throws if a read fails.
+ */
+export async function loadStaffRows(db: any, companyId: string, columns = '*'): Promise<any[]> {
+  const rows: any[] = []
+  for (let at = 0; ; at += MAX_ROWS) {
+    const { data, error } = await db.from('team_members').select(columns).eq('company_id', companyId).or(STAFF_FILTER)
+      .order('created_at', { ascending: true }).order('id', { ascending: true }).range(at, at + MAX_ROWS - 1)
+    if (error) throw new Error(error.message)
+    rows.push(...(data || []))
+    if ((data || []).length < MAX_ROWS) return rows
+  }
 }

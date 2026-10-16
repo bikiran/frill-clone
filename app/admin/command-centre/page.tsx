@@ -4,6 +4,7 @@ import { authFetch } from '@/lib/auth-fetch'
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { peekCompanyUser } from '@/lib/client-cache'
+import { loadStaffRows } from '@/lib/team-list'
 
 // ── Command Centre ───────────────────────────────────────────────────────────
 // A live call-centre dashboard over the `calls` table: a real-time Live Board,
@@ -188,14 +189,15 @@ export default function CommandCentrePage() {
   // Full team roster + who's available / on a call right now.
   const loadTeam = async (cid: string) => {
     // The roster is a UNION of three sources, because no single one is complete:
-    //   • team_members — invited staff (but often NOT the company owner)
+    //   • team_members — invited staff (but often NOT the company owner); not
+    //     board visitors, who'd crowd staff out of one read on a busy board
     //   • the company owner (companies.owner_id — usually absent from team_members)
     //   • anyone currently in agent_presence (a shared/company account can be
     //     online without a team_members row — this is what the old board used)
     // Reading team_members alone showed "No team members found" for companies
     // whose only online users are the owner / a shared account.
     const [membersRes, coRes, presRes] = await Promise.all([
-      (supabase as any).from('team_members').select('user_id, email, name, role').eq('company_id', cid),
+      loadStaffRows(supabase, cid, 'user_id, email, name, role').then(data => ({ data }), () => ({ data: null })),
       (supabase as any).from('companies').select('owner_id, name').eq('id', cid).maybeSingle(),
       (supabase as any).from('agent_presence').select('user_id, available, last_seen_at')
         .eq('company_id', cid).gte('last_seen_at', new Date(Date.now() - 120000).toISOString()),

@@ -12,6 +12,7 @@ import TaskEditor from '@/components/TaskEditor'
 import RichTextEditor from '@/components/RichTextEditor'
 import MentionInput, { resolveMentions } from '@/components/MentionInput'
 import { enrichNames } from '@/lib/team-names'
+import { loadStaffRows } from '@/lib/team-list'
 import { useDraft } from '@/lib/drafts'
 import PageGreeting from '@/components/PageGreeting'
 import { peekCompanyUser, resolveCompanyUser, readCache, writeCache } from '@/lib/client-cache'
@@ -325,11 +326,13 @@ export default function TasksPage() {
 
         const members: any[] = []
         const uid = session?.user?.id
-        // Saved view/outlet prefs, the owner and the team all load together.
-        const [savedPrefs, { data: co }, { data: tm }] = await Promise.all([
+        // Saved view/outlet prefs, the owner and the staff all load together
+        // (staff only: board visitors can't be assigned, and on a busy board
+        // they'd crowd staff out of one read).
+        const [savedPrefs, { data: co }, tm] = await Promise.all([
           uid ? authFetch(`/api/user-prefs?userId=${uid}&companyId=${cid}`).then(r => r.ok ? r.json() : null).catch(() => null) : Promise.resolve(null),
           (supabase as any).from('companies').select('owner_id, name').eq('id', cid).maybeSingle(),
-          (supabase as any).from('team_members').select('*').or(`company_id.eq.${cid},company_id.is.null`),
+          loadStaffRows(supabase, cid).catch(() => []),
         ])
         for (const m of (tm || [])) {
           if (cid && m.company_id && m.company_id !== cid) continue

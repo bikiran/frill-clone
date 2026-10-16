@@ -10,6 +10,7 @@ import ConfirmModal from './ConfirmModal'
 import { AssignIcon, PinIcon, MergeIcon, ArchiveIcon, TrashIcon, EditIcon, ShareIcon, CloseIcon, EyeIcon, LockIcon } from './Icons'
 import { confirmDialog } from '@/components/ConfirmDialog'
 import { notifyIntegrations } from '@/lib/integrations-notify'
+import { loadStaffRows } from '@/lib/team-list'
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
   new: { label: 'Under consideration', color: '#3b82f6', bg: '#dbeafe' },
@@ -373,13 +374,14 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
   useDismiss(showAssignDropdown, closeAssign, assignRef)
   useDismiss(showMergeDropdown, closeMerge, mergeRef)
 
-  // The company's real people: the owner plus team members who've joined.
+  // The company's real people: the owner plus staff who've joined (not board
+  // visitors, who'd crowd staff out of one read on a busy board).
   const loadTeamPeople = async () => {
     if (teamPeople || !idea.company_id) return
     try {
       const [{ data: co }, { data: tm }] = await Promise.all([
         (supabase as any).from('companies').select('owner_id').eq('id', idea.company_id).maybeSingle(),
-        (supabase as any).from('team_members').select('user_id, email, name, avatar_url, status').eq('company_id', idea.company_id),
+        loadStaffRows(supabase, idea.company_id, 'user_id, email, name, avatar_url, status').then(data => ({ data }), () => ({ data: null })),
       ])
       const rows: any[] = (tm || []).filter((m: any) => m.user_id && m.status !== 'removed' && m.status !== 'invited')
       const ids = Array.from(new Set([co?.owner_id, ...rows.map(m => m.user_id)].filter(Boolean))) as string[]

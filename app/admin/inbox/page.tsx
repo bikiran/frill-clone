@@ -2719,12 +2719,11 @@ export default function InboxPage() {
 
   const loadTeam = async (cid: string) => {
     const members: TeamMember[] = []
-    // Company owner and team side by side. Team members — no company_id filter
-    // (invited members can have a null company_id, and RLS already scopes
-    // rows). Filtering hid everyone but the owner in the assignee pickers.
-    const [{ data: co }, { data }] = await Promise.all([
+    // Company owner and staff side by side. Board visitors can't be assigned or
+    // mentioned, and on a busy board they'd crowd staff out of one read.
+    const [{ data: co }, data] = await Promise.all([
       (supabase as any).from('companies').select('owner_id, name').eq('id', cid).maybeSingle(),
-      (supabase as any).from('team_members').select('*'),
+      import('@/lib/team-list').then(({ loadStaffRows }) => loadStaffRows(supabase, cid)).catch(() => []),
     ])
     if (co?.owner_id) {
       members.push({ id: co.owner_id, user_id: co.owner_id, name: co.name ? `${co.name} (Owner)` : 'Owner', role: 'owner' })

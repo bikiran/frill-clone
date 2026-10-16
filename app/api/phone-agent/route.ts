@@ -6,6 +6,7 @@ import { MAX_GREETING } from '@/lib/phone-receptionist'
 import { getPhoneCatalog, refreshPhoneCatalog } from '@/lib/phone-catalog'
 import { agentsPaused } from '@/lib/agent/pilot'
 import { resolveAgentName } from '@/lib/agent-name'
+import { loadStaffRows } from '@/lib/team-list'
 
 export const dynamic = 'force-dynamic'
 
@@ -34,12 +35,14 @@ async function company(db: Db, companyId: string): Promise<{ provider: 'telnyx' 
 // visitors or removed members). null when the team couldn't be read, so a
 // database blip is never mistaken for an assignee having left.
 async function teamIds(db: Db, companyId: string): Promise<string[] | null> {
-  const [{ data: co, error: coErr }, { data: rows, error: rowsErr }] = await Promise.all([
+  const [{ data: co, error: coErr }, rows] = await Promise.all([
     db.from('companies').select('owner_id').eq('id', companyId).maybeSingle(),
-    db.from('team_members').select('user_id, role, status').eq('company_id', companyId).not('user_id', 'is', null).limit(200),
+    // Staff rows only, all of them: on a busy board the visitors filled the
+    // first 200 rows, and staff past them looked like they'd left.
+    loadStaffRows(db, companyId, 'user_id, role, status').catch(() => null),
   ])
-  if (coErr || rowsErr) return null
-  const staff = (rows || []).filter(isStaffRow).map(r => String(r.user_id))
+  if (coErr || !rows) return null
+  const staff = rows.filter(r => r.user_id && isStaffRow(r)).map(r => String(r.user_id))
   return Array.from(new Set<string>([co?.owner_id ? String(co.owner_id) : '', ...staff].filter(Boolean)))
 }
 
