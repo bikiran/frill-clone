@@ -33,6 +33,7 @@ const I = {
   team: <><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></>,
   settings: <><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></>,
   account: <><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></>,
+  feedback: <><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></>,
   logout: <><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></>,
 }
 
@@ -170,7 +171,8 @@ export default function MobileNav() {
         .colvy-mobile-nav { display: none; }
         @media (max-width: 860px) {
           .colvy-mobile-nav { display: flex; }
-          /* Room for the bar so it never covers the last row of content. */
+          /* Room for the bar so it never covers the last row of content
+             (OverlayWatch adds the AI orb's height on top). */
           .colvy-mobile-pad { padding-bottom: calc(58px + env(safe-area-inset-bottom)); }
         }
       `}</style>
@@ -290,6 +292,13 @@ export default function MobileNav() {
                 <span style={{ color: 'var(--slate)', display: 'flex' }}>{svg(I.account, 19)}</span>
                 Account
               </Link>
+              {/* The Feedback side tab is hidden on phones (it sat over page
+                  content), so it lives here instead. */}
+              <button type="button" onClick={() => { setShowMore(false); window.dispatchEvent(new Event('colvy:open-feedback')) }}
+                style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '12px 18px', width: '100%', textAlign: 'left', border: 'none', background: 'none', cursor: 'pointer', color: 'var(--ink)', fontSize: 14.5, WebkitTapHighlightColor: 'transparent' }}>
+                <span style={{ color: 'var(--slate)', display: 'flex' }}>{svg(I.feedback, 19)}</span>
+                Send feedback
+              </button>
               <button onClick={logout}
                 style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '12px 18px', width: '100%', textAlign: 'left', border: 'none', background: 'none', cursor: 'pointer', color: '#dc2626', fontSize: 14.5, fontWeight: 600, WebkitTapHighlightColor: 'transparent' }}>
                 <span style={{ display: 'flex' }}>{svg(I.logout, 19)}</span>

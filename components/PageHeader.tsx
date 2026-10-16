@@ -36,6 +36,7 @@ export default function PageHeader({
 }) {
   return (
     <div
+      className="ph-root"
       style={{
         background: '#fff',
         borderBottom: '1px solid var(--border)',
@@ -44,13 +45,13 @@ export default function PageHeader({
         ...(sticky ? { position: 'sticky', top: 0, zIndex: 12 } : {}),
       }}
     >
-      <div style={{ display: 'flex', alignItems: icon ? 'center' : 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+      <div className="ph-row" style={{ display: 'flex', alignItems: icon ? 'center' : 'flex-start', justifyContent: 'space-between', gap: 12 }}>
         {icon && <div className="ph-icon" style={{ width: 42, height: 42, borderRadius: 13, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--peach, #fff1ee)', color: 'var(--coral, #ff7a6b)' }}>{icon}</div>}
         <div style={{ minWidth: 0, flex: 1 }}>
           <h1 style={{ margin: 0, fontSize: 21, fontWeight: 800, color: 'var(--ink)', lineHeight: 1.15, letterSpacing: '-0.01em' }}>{title}</h1>
           {subtitle && <p style={{ margin: '3px 0 0', fontSize: 13, color: 'var(--slate)' }}>{subtitle}</p>}
         </div>
-        {action && <div style={{ flexShrink: 0, display: 'flex', gap: 8, alignItems: 'center' }}>{action}</div>}
+        {action && <div className="ph-actions" style={{ flexShrink: 0, display: 'flex', gap: 8, alignItems: 'center' }}>{action}</div>}
       </div>
 
       {children && (
@@ -62,7 +63,14 @@ export default function PageHeader({
       <style>{`
         .ph-toolbar { overflow-x: auto; flex-wrap: nowrap; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
         .ph-toolbar::-webkit-scrollbar { display: none; }
-        @media (max-width: 560px) { .ph-icon { display: none !important; } }
+        @media (max-width: 560px) {
+          .ph-icon { display: none !important; }
+          /* Two or more actions: put them on their own full-width row under
+             the title, so the title isn't squeezed to a word per line. */
+          .ph-row:has(> .ph-actions > :nth-child(2)) { flex-wrap: wrap; }
+          .ph-actions:has(> :nth-child(2)) { flex: 1 1 100%; }
+          .ph-actions:has(> :nth-child(2)) > * { flex: 1 1 0; justify-content: center; text-align: center; white-space: nowrap; }
+        }
         .ph-toolbar > * { flex-shrink: 0; }
         @media (min-width: 768px) {
           .ph-toolbar { flex-wrap: wrap; overflow: visible; }

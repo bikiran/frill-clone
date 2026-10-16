@@ -276,10 +276,11 @@ export default function BillingPage() {
 
   const cur = CURRENCY_RATES[currency] || CURRENCY_RATES.USD
 
+  // The symbol already says which currency (A$, NZ$, €…), so prices read
+  // "A$324/mo", never "A$324 /AUD/mo".
   const formatPrice = (usd: number) => {
     const converted = Math.round(usd * cur.rate)
-    if (currency === 'JPY') return `${cur.symbol}${converted.toLocaleString()}`
-    return `${cur.symbol}${converted}`
+    return `${cur.symbol}${converted.toLocaleString('en-AU')}`
   }
 
   const handleUpgrade = async (planId: string) => {
@@ -496,11 +497,11 @@ export default function BillingPage() {
                 <p className="text-xs mb-4" style={{ color: 'var(--slate)' }}>{plan.desc}</p>
                 <div className="mb-1">
                   <span className="text-4xl font-black" style={{ color: 'var(--ink)' }}>{formatPrice(price)}</span>
-                  <span className="text-sm ml-1" style={{ color: 'var(--slate)' }}>/{currency}/mo</span>
+                  <span className="text-sm" style={{ color: 'var(--slate)' }}>/mo</span>
                 </div>
                 {billing === 'annual' && (
                   <p className="text-xs mb-4" style={{ color: '#16a34a' }}>
-                    {formatPrice(plan.usdAnnual * cur.rate > 99 ? plan.usdAnnual : plan.usdAnnual)} billed annually
+                    {formatPrice(plan.usdAnnual)} billed annually
                   </p>
                 )}
                 <div className="space-y-2.5 mb-6 mt-4">

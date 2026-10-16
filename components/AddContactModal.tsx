@@ -208,7 +208,7 @@ export default function AddContactModal({
 
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 500, padding: 20 }}>
-      <div onClick={e => e.stopPropagation()} style={{ width: 440, maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto', background: '#fff', borderRadius: 18, padding: 24 }}>
+      <div onClick={e => e.stopPropagation()} style={{ width: 440, maxWidth: '95vw', maxHeight: '90dvh', overflowY: 'auto', background: '#fff', borderRadius: 18, padding: '24px 24px 0' }}>
         <h3 style={{ margin: '0 0 2px', fontSize: 18, fontWeight: 800, color: 'var(--ink)' }}>New contact</h3>
         <p style={{ margin: 0, fontSize: 13, color: 'var(--slate)' }}>Added manually — you can message them through Colvy.</p>
 
@@ -237,7 +237,8 @@ export default function AddContactModal({
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, opacity: scanning ? 0.7 : 1,
           }}
         >
-          {scanning ? 'Scanning photo…' : '📇 Scan a business card or photo'}
+          {!scanning && <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>}
+          {scanning ? 'Scanning photo…' : 'Scan a business card or photo'}
         </button>
         <p style={{ margin: '6px 0 0', fontSize: 11.5, color: 'var(--slate)', textAlign: 'center' }}>
           Upload or snap a card — Colvy reads the details and fills the form below.
@@ -327,7 +328,7 @@ export default function AddContactModal({
 
         {error && <p style={{ margin: '12px 0 0', fontSize: 13, color: '#dc2626' }}>{error}</p>}
 
-        <div style={{ display: 'flex', gap: 8, marginTop: 20 }}>
+        <div className="modal-sticky-foot">
           <button type="button" onClick={onClose} style={{ flex: 1, padding: '11px 0', borderRadius: 10, border: '1px solid var(--border)', background: '#fff', color: 'var(--slate)', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>Cancel</button>
           <button type="button" onClick={save} disabled={saving} style={{ flex: 2, padding: '11px 0', borderRadius: 10, border: 'none', background: 'var(--coral)', color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer', opacity: saving ? 0.6 : 1 }}>
             {saving ? 'Saving…' : 'Create contact'}

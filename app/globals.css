@@ -858,3 +858,13 @@ button:hover .action-tooltip,
   box-shadow: 0 10px 30px rgba(0,0,0,0.15);
   margin-top: 4px;
 }
+
+/* A modal's button row that stays in view while the form above it scrolls.
+   Put it as the last child of the modal's scrolling panel (padding-bottom 0 on
+   the panel); it clears the phone's home indicator. */
+.modal-sticky-foot {
+  position: sticky; bottom: 0; z-index: 2;
+  display: flex; gap: 8px;
+  margin-top: 20px; padding: 12px 0 max(16px, env(safe-area-inset-bottom));
+  background: #fff; border-top: 1px solid var(--border);
+}

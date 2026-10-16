@@ -632,7 +632,8 @@ export default function AppChrome({
     if (showNotifications) fetchNotifications()
   }, [showNotifications])
 
-  const userInitial = user?.email?.[0].toUpperCase() || 'A'
+  // Same source as the profile page: their display name first, then the email.
+  const userInitial = (String(user?.user_metadata?.display_name || user?.user_metadata?.full_name || user?.email || 'A').trim()[0] || 'A').toUpperCase()
   // Pages that use their own full-page layout (no nav wrapper).
   // IMPORTANT: window-dependent checks (embed, marketing root) must NOT change
   // the render tree between the server render and the first client render, or
@@ -946,11 +947,14 @@ export default function AppChrome({
                   {showNotifications && (
                     <>
                       <div className="fixed inset-0 z-30" onClick={() => setShowNotifications(false)} />
-                      <div className="absolute top-full right-0 mt-2 max-h-[600px] bg-white rounded-xl shadow-2xl border z-40 flex flex-col overflow-hidden" style={{ borderColor: 'var(--border)', width: 'min(384px, calc(100vw - 24px))' }}>
+                      {/* Phones: a sheet pinned 8px inside the screen edges
+                          (anchored to the bell it ran off the left edge). */}
+                      <style>{`@media (max-width: 640px) { .notif-panel { position: fixed !important; top: 64px !important; left: 8px !important; right: 8px !important; width: auto !important; margin-top: 0 !important; max-height: calc(100dvh - 64px - 16px) !important; z-index: 1000 !important; } }`}</style>
+                      <div className="notif-panel absolute top-full right-0 mt-2 max-h-[600px] bg-white rounded-xl shadow-2xl border z-40 flex flex-col overflow-hidden" role="dialog" aria-label="Notifications" style={{ borderColor: 'var(--border)', width: 'min(384px, calc(100vw - 24px))' }}>
                         {/* Header with filters */}
-                        <div className="p-4 border-b flex items-center justify-between shrink-0" style={{ borderColor: 'var(--border)', background: 'var(--canvas)' }}>
+                        <div className="p-4 border-b flex items-center justify-between gap-2 shrink-0" style={{ borderColor: 'var(--border)', background: 'var(--canvas)' }}>
                           <h3 className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>Notifications</h3>
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 min-w-0">
                             <button
                               onClick={() => setNotificationFilter(notificationFilter === 'unread' ? 'all' : 'unread')}
                               className="px-3 py-1 rounded-full text-xs font-medium transition-smooth cursor-pointer"
@@ -969,6 +973,10 @@ export default function AppChrome({
                                 Mark all as read
                               </button>
                             )}
+                            <button type="button" onClick={() => setShowNotifications(false)} aria-label="Close notifications" title="Close"
+                              className="w-7 h-7 rounded-full flex items-center justify-center cursor-pointer hover:bg-gray-100" style={{ color: 'var(--slate)' }}>
+                              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+                            </button>
                           </div>
                         </div>
                         

@@ -7,7 +7,6 @@ import { peekCompanyUser, resolveCompanyUser } from '@/lib/client-cache'
 import RegulatoryForm from '@/components/RegulatoryForm'
 import CallAnswerSettings from '@/components/CallAnswerSettings'
 import AiReceptionistCard from '@/components/AiReceptionistCard'
-import Link from 'next/link'
 import { Icon } from '@/components/integrations/ui'
 import { finalizeNext } from '@/lib/number-finalize-poll'
 
@@ -277,10 +276,8 @@ export default function TelnyxIntegration() {
   const hasNumber = integration?.phone_number
 
   return (
-    <div className="w-full max-w-[1200px] mx-auto px-4 md:px-8 py-6 md:py-8">
-      <Link href="/admin/crm-settings/channels" className="inline-flex items-center gap-1.5 text-sm mb-5 hover:opacity-70 transition-opacity" style={{ color: 'var(--slate)' }}>
-        <Icon name="back" size={15} /> All channels
-      </Link>
+    <div className="w-full max-w-[1200px] mx-auto md:px-8 py-1 md:py-8">
+      {/* The settings layout's breadcrumb is the way back to Channels. */}
       {showRegForm && companyId && (
         <RegulatoryForm
           companyId={companyId}

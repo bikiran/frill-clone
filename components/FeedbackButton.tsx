@@ -14,6 +14,13 @@ export default function FeedbackButton({ companyId }: { companyId?: string }) {
   const [sent, setSent] = useState(false)
   const [sessionId, setSessionId] = useState('')
 
+  // Phones open it from the More sheet (the side tab is hidden there).
+  useEffect(() => {
+    const show = () => setOpen(true)
+    window.addEventListener('colvy:open-feedback', show)
+    return () => window.removeEventListener('colvy:open-feedback', show)
+  }, [])
+
   useEffect(() => {
     // Stable per-browser session id
     try {
@@ -45,8 +52,11 @@ export default function FeedbackButton({ companyId }: { companyId?: string }) {
   return (
     <>
       {/* Tab button pinned to the right edge */}
+      {/* On phones the tab covered page content (and modal buttons); it is
+          hidden there and reached from the bottom nav's More sheet. */}
+      <style>{`@media (max-width: 860px) { .colvy-feedback-tab { display: none !important; } }`}</style>
       {!open && (
-        <button onClick={() => setOpen(true)} title="Send feedback"
+        <button onClick={() => setOpen(true)} title="Send feedback" className="colvy-feedback-tab"
           style={{
             position: 'fixed', right: 0, top: '50%', transform: 'translateY(-50%) rotate(-90deg)', transformOrigin: 'right center',
             background: 'var(--coral)', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '8px 8px 0 0',

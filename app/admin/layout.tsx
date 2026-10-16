@@ -16,6 +16,7 @@ import { getActiveCall, subscribeActiveCall } from '@/lib/active-call'
 import AdminBanner from '@/components/AdminBanner'
 import TrialBanner from '@/components/TrialBanner'
 import SetupReturnBar from '@/components/SetupReturnBar'
+import OverlayWatch from '@/components/OverlayWatch'
 import ImpersonationBanner from '@/components/ImpersonationBanner'
 import BackendStatusBanner from '@/components/BackendStatusBanner'
 import { isBackendDown } from '@/lib/net-timeout'
@@ -1220,6 +1221,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       </div>
 
       <MobileNav />
+      {/* Hides the bottom nav, AI orb and Feedback tab while a modal or sheet is open. */}
+      <OverlayWatch />
       <FeedbackButton companyId={company?.id} />
       {/* Floating Colvy AI command bar — natural-language actions on any admin
           page. Reads the current page's context (open conversation/contact/
