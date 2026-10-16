@@ -11,6 +11,11 @@ const admin = () => createClient(
 )
 
 /** Marketing messages are only sent between these hours, local time. */
+// A recipient whose opt-out can't be checked is retried by later batches, up
+// to this many checks or this long, then skipped as 'unverified'.
+export const UNVERIFIED_AFTER_TRIES = 3
+export const UNVERIFIED_AFTER_MS = 24 * 3600_000
+
 export const QUIET_START = 9   // 9am
 export const QUIET_END = 20    // 8pm
 
@@ -279,6 +284,22 @@ export async function processCampaignBatch(campaignId: string, batchSize = 60) {
           sent_at: new Date().toISOString(),
         }).eq('id', r.id)
         sent++
+      } else if (data?.optedOut && data?.reason !== 'unknown') {
+        // The opt-out guard found a STOP the audience didn't know about: a
+        // skip, not a failure, so the report counts it as unsubscribed.
+        await db.from('campaign_recipients').update({ status: 'skipped', skip_reason: 'unsubscribed' }).eq('id', r.id)
+      } else if (data?.optedOut) {
+        // Couldn't check the opt-out just now: back to pending, so a later batch
+        // retries. Not for ever: after the 3rd failed check, or once they've
+        // been waiting over a day (created_at), they're skipped as 'unverified'
+        // so the campaign can finish. The count lives in `error`.
+        const tries = (Number(/opt-out check failed (\d+)/.exec(String(r.error || ''))?.[1]) || 0) + 1
+        const waitedTooLong = Date.now() - Date.parse(r.created_at || '') > UNVERIFIED_AFTER_MS
+        if (tries >= UNVERIFIED_AFTER_TRIES || waitedTooLong) {
+          await db.from('campaign_recipients').update({ status: 'skipped', skip_reason: 'unverified', error: `opt-out check failed ${tries} times` }).eq('id', r.id)
+        } else {
+          await db.from('campaign_recipients').update({ status: 'pending', error: `opt-out check failed ${tries} time${tries === 1 ? '' : 's'}` }).eq('id', r.id)
+        }
       } else {
         await db.from('campaign_recipients').update({
           status: 'failed',

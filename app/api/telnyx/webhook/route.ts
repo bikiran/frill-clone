@@ -393,7 +393,9 @@ export async function POST(req: NextRequest) {
         // Nothing canned answered it → Colvy AI (only if switched on for SMS;
         // the agent checks). It shows live in the inbox with a countdown.
         // Not for a STOP.
-        if (!bookingHandled && !keywordAnswered && !optingOut && text) {
+        // Not for a customer who opted out (or can't be checked): no AI run at all.
+        if (!bookingHandled && !keywordAnswered && !optingOut && text
+          && (await textOptOut(db, companyId, from, conv.contact_id || matchedContactId || null)).state === 'ok') {
           try { fetch(`${req.nextUrl.origin}/api/ai/reply`, { method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ conversationId: conv.id, companyId }) }) } catch {}
         }
 

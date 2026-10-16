@@ -13,9 +13,17 @@
 -- SMS whose whole text is a keyword). Until this runs, Colvy reads the
 -- number's own conversations instead, which is slower.
 --
--- Server only (service role): RLS on, no policies. Run in the Supabase SQL
--- editor. Safe to re-run: the table and index are created only if missing,
--- and the backfill skips texts it already copied.
+-- Server only (service role): RLS on, no policies, and no table rights for
+-- the public roles at all.
+--
+-- HOW TO RUN (Supabase SQL editor):
+--   1. Deploy the code first (it works without this table).
+--   2. Run this file.
+--   3. Run it once more. The second run copies keyword texts that arrived
+--      while the first run was working (they weren't in its snapshot of the
+--      messages, and no row was written for them on arrival yet).
+-- Safe to re-run any number of times: the table, indexes and grants are
+-- created only if missing, and the backfill skips texts it already copied.
 -- ============================================================
 
 BEGIN;
@@ -38,6 +46,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_sms_keywords_message
   ON sms_keywords (message_id);
 
 ALTER TABLE sms_keywords ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON sms_keywords FROM anon, authenticated;
 
 -- Backfill. Texts newer than the first row written on arrival are already
 -- recorded, so a re-run only looks at older history.

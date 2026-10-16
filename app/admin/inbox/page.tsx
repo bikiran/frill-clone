@@ -1739,6 +1739,26 @@ export default function InboxPage() {
     return 'chat'
   }, [activeChannel, selected, contact?.phone, contact?.email])
 
+  // Has the customer on this SMS thread opted out of texts? Asked of the server
+  // (/api/inbox/text-optout: every contact with the number, and STOPs that never
+  // reached a contact), not just this contact's flags, so the warning above the
+  // composer doesn't miss anyone. Checked again when a new message comes in.
+  const [smsOptOut, setSmsOptOut] = useState<string | null>(null)
+  const lastInboundId = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) if ((messages[i] as any)?.sender_type === 'visitor') return (messages[i] as any).id || null
+    return null
+  }, [messages])
+  useEffect(() => {
+    setSmsOptOut(null)
+    if (!selected?.id || outboundChannel !== 'sms') return
+    let cancelled = false
+    authFetch(`/api/inbox/text-optout?conversationId=${encodeURIComponent(selected.id)}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (!cancelled) setSmsOptOut(d?.state || null) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [selected?.id, outboundChannel, lastInboundId])
+
   // The name shown in the conversation header. On SMS/phone the "subject" is
   // often a stale auto-detected name (e.g. from an AI guess), so clearing the
   // contact's name left the wrong name stuck in the header. Don't use the
@@ -3401,7 +3421,9 @@ export default function InboxPage() {
   // set, the caller has ALREADY recorded a thread message (e.g. a payment /
   // save-card card with the right delivery_channel), so we just push the link out
   // (skipChatMessage) without inserting a duplicate — and skip the widget insert.
-  const deliverToCustomer = async (opts: { body: string; url?: string | null; subject?: string; silent?: boolean }): Promise<string> => {
+  // checkOptOut: the text is something staff send in one click (a coupon), so it
+  // gets the opt-out check automated texts get (/api/telnyx/sms/send).
+  const deliverToCustomer = async (opts: { body: string; url?: string | null; subject?: string; silent?: boolean; checkOptOut?: boolean }): Promise<string> => {
     if (!selected || !companyId) throw new Error('No conversation selected')
     const me = myName
     const ch = outboundChannel
@@ -3431,7 +3453,7 @@ export default function InboxPage() {
     if (ch === 'sms' && smsNumber) {
       const res = await authFetch('/api/telnyx/sms/send', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ companyId, conversationId: selected.id, to: smsNumber, text: fullBody, senderName: me, skipChatMessage: !!opts.silent }),
+        body: JSON.stringify({ companyId, conversationId: selected.id, to: smsNumber, text: fullBody, senderName: me, skipChatMessage: !!opts.silent, ...(opts.checkOptOut ? { checkOptOut: true } : {}) }),
       })
       const d = await res.json()
       if (!res.ok) throw new Error(d.error || 'SMS failed')
@@ -3455,7 +3477,7 @@ export default function InboxPage() {
       try {
         const res = await authFetch('/api/telnyx/sms/send', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ companyId, conversationId: selected.id, to: smsNumber, text: fullBody, senderName: me, skipChatMessage: true }),
+          body: JSON.stringify({ companyId, conversationId: selected.id, to: smsNumber, text: fullBody, senderName: me, skipChatMessage: true, ...(opts.checkOptOut ? { checkOptOut: true } : {}) }),
         })
         if (!res.ok) smsFailed = (await res.json().catch(() => ({})))?.error || `HTTP ${res.status}`
       } catch (e: any) { smsFailed = e?.message || 'Could not reach the SMS service' }
@@ -4251,11 +4273,12 @@ export default function InboxPage() {
         try {
           const r = await authFetch('/api/telnyx/sms/send', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ companyId, conversationId: selected.id, to: smsNumber, text: body, senderName: me, skipChatMessage: true }),
+            body: JSON.stringify({ companyId, conversationId: selected.id, to: smsNumber, text: body, senderName: me, skipChatMessage: true, checkOptOut: true }),
           })
+          // Labelled SMS only when it was texted (not after an opt-out or failure).
           if (!r.ok) { const d = await r.json().catch(() => ({})); showToast(`Review request saved, but the SMS failed: ${d.error || 'unknown error'}`) }
+          else delivered = 'sms'
         } catch { showToast('Review request saved, but the SMS failed to send.') }
-        delivered = 'sms'
       }
       // else: live-chat widget only — the thread message below IS the delivery.
 
@@ -5083,6 +5106,7 @@ export default function InboxPage() {
             subject: `A ${amount} coupon from ${companyInfo?.name || 'us'}`,
             body: `Here's ${amount} off your next order — use code ${data.code} at checkout.${couponExpiry ? ` Valid for ${couponExpiry} days.` : ''}`,
             url: shop || null,
+            checkOptOut: true,
           })
         } catch (e: any) { showToast(`Coupon created, but sending failed: ${e.message}`); setCouponSaving(false); return }
       }
@@ -10296,7 +10320,7 @@ export default function InboxPage() {
               )}
               {/* Opted out: staff can still type a text (a reply they were asked
                   for), but they should know. Automatic texts are blocked. */}
-              {selected && !internalMode && outboundChannel === 'sms' && ((contact as any)?.unsubscribed_at || (contact as any)?.is_blocked) && (
+              {selected && !internalMode && outboundChannel === 'sms' && (smsOptOut === 'opted_out' || (contact as any)?.unsubscribed_at || (contact as any)?.is_blocked) && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '0 0 8px', padding: '9px 12px', borderRadius: 10, background: '#fef2f2', border: '1px solid #fecaca' }}>
                   <span style={{ fontSize: 16, flexShrink: 0 }}>⛔</span>
                   <span style={{ flex: 1, fontSize: 12.5, color: '#991b1b', fontWeight: 600, lineHeight: 1.4 }}>
