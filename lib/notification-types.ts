@@ -20,9 +20,11 @@ export const STAFF_ONLY_NOTIFICATION_TYPES: readonly string[] = [
 // The types a browser may write for any user: public-board notifications about
 // someone's own idea or comment (lib/notifications.ts createNotification).
 // 'announcement' is board-legitimate too but only the server writes it.
-// Keep in step with migrations/COLVY_V384_NOTIFICATIONS_INSERT_POLICY.sql: the
-// database refuses any other type from a browser unless it is staff-only, the
-// sender is staff of company_id and so is the recipient.
+// Keep in step with migrations/COLVY_V384_NOTIFICATIONS_INSERT_POLICY.sql. From
+// a browser the database takes these only with related_idea_id and with no
+// company_id, conversation_id, title, body or link; it takes a staff-only type
+// only when the sender and the recipient are staff of company_id (other
+// staff-only rows are skipped); anything else is refused.
 export const BOARD_NOTIFICATION_TYPES: readonly string[] = [
   'vote', 'comment', 'reply', 'status_change', 'assigned',
 ]

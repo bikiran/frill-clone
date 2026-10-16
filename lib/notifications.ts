@@ -7,8 +7,10 @@ import { isBoardNotificationType } from '@/lib/notification-types'
 // Staff notifications go through notifyCompany or /api/notify/members, which
 // send to the workspace's staff only.
 export async function createNotification(userId: string, type: string, relatedIdeaId?: string, message?: string, actorName?: string, actorEmail?: string) {
-  if (!isBoardNotificationType(type)) {
-    console.error(`createNotification: '${type}' isn't a board notification; use notifyCompany or /api/notify/members`)
+  // The database (V384) takes a browser's board notification only in this
+  // shape: about an idea, with no workspace, conversation, title or link.
+  if (!isBoardNotificationType(type) || !relatedIdeaId) {
+    console.error(`createNotification: '${type}' needs to be a board notification about an idea; use notifyCompany or /api/notify/members otherwise`)
     return
   }
   try {
