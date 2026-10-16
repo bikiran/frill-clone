@@ -4079,14 +4079,25 @@ export default function InboxPage() {
       if (tm?.user_id) notify.set(tm.user_id, tm.name)
     }
     notify.delete(user?.id || '')
-    for (const [uid] of notify) {
+    // Through the server, which keeps only this workspace's staff (never a board
+    // visitor or a removed member), instead of writing the rows from here. In-app
+    // only, as before.
+    const assigneeUid = assignee?.user_id || ''
+    const groups: Array<[string[], string]> = [
+      [Array.from(notify.keys()).filter(uid => uid === assigneeUid), `${me} assigned you a task`],
+      [Array.from(notify.keys()).filter(uid => uid !== assigneeUid), `${me} mentioned you in a task`],
+    ]
+    for (const [userIds, title] of groups) {
+      if (userIds.length === 0) continue
       try {
-        await (supabase as any).from('notifications').insert({
-          company_id: companyId, user_id: uid, type: 'task_assigned',
-          title: uid === assignee?.user_id ? `${me} assigned you a task` : `${me} mentioned you in a task`,
-          body: newTask.trim().slice(0, 160),
-          link: `/admin/inbox?conversation=${selected.id}`,
-          is_read: false,
+        await authFetch('/api/notify/members', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            companyId, userIds, type: 'task_assigned', title,
+            body: newTask.trim().slice(0, 160),
+            link: `/admin/inbox?conversation=${selected.id}`,
+            channels: ['in_app'],
+          }),
         })
       } catch { /* the task is saved regardless */ }
     }

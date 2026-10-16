@@ -1,6 +1,18 @@
 import { supabase } from '@/lib/supabase'
+import { isBoardNotificationType } from '@/lib/notification-types'
 
+// Board notifications (votes, comments, replies, status changes, assignments)
+// written from the browser. It can't check who the recipient is, so it writes
+// only the board types, which the database also allows from a browser (V384).
+// Staff notifications go through notifyCompany or /api/notify/members, which
+// send to the workspace's staff only.
 export async function createNotification(userId: string, type: string, relatedIdeaId?: string, message?: string, actorName?: string, actorEmail?: string) {
+  // The database (V384) takes a browser's board notification only in this
+  // shape: about an idea, with no workspace, conversation, title or link.
+  if (!isBoardNotificationType(type) || !relatedIdeaId) {
+    console.error(`createNotification: '${type}' needs to be a board notification about an idea; use notifyCompany or /api/notify/members otherwise`)
+    return
+  }
   try {
     await supabase.from('notifications').insert({
       user_id: userId,
