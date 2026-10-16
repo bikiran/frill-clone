@@ -20,12 +20,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'No image provided' }, { status: 400 })
     }
 
-    // The team, or a visitor on one of this business's public forms.
+    // The team, or a visitor on one of this business's PUBLISHED forms (a
+    // draft isn't public, so it doesn't open the scanner to strangers).
     let publicOk = false
     if (formId && companyId) {
-      const { createClient } = await import('@supabase/supabase-js')
-      const db = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, { auth: { autoRefreshToken: false, persistSession: false } })
-      const { data: form } = await db.from('forms').select('company_id').eq('id', formId).maybeSingle()
+      const { formsDb, publishedForm } = await import('@/lib/forms-server')
+      const form = await publishedForm(formsDb(), formId, 'company_id, is_published')
       publicOk = !!form && form.company_id === companyId
     }
     const guard = await guardAiRequest(req, companyId, 'contact-scan', true, publicOk)

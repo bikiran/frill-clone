@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
+import { resolveCompanyUser } from '@/lib/client-cache'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import ConfirmModal from '@/components/ConfirmModal'
@@ -28,25 +29,12 @@ export default function FormsAdmin() {
 
   const fetchForms = async () => {
     try {
-      // Get company_id from current subdomain first
-      const h = typeof window !== 'undefined' ? window.location.hostname : ''
-      let companyId: string | null = null
-      if (h.endsWith('.colvy.com') && h !== 'colvy.com') {
-        const slug = h.replace('.colvy.com', '')
-        const { data: co } = await (supabase as any).from('companies').select('id').eq('slug', slug).maybeSingle()
-        companyId = co?.id || null
-      }
-      if (!companyId) {
-        // Fallback: look up by current user's owner_id
-        const { data: { session } } = await supabase.auth.getSession()
-        if (session?.user) {
-          const { data: co } = await (supabase as any).from('companies').select('id').eq('owner_id', session.user.id).maybeSingle()
-          companyId = co?.id || null
-        }
-      }
-      let q = (supabase as any).from('forms').select('*').order('created_at', { ascending: false })
-      if (companyId) q = q.eq('company_id', companyId)
-      const { data } = await q
+      // The workspace the admin is open on (the layout works it out, staff
+      // included — not just the owner). Without one, show nothing rather than
+      // every form the database lets this account see.
+      const { companyId } = await resolveCompanyUser()
+      if (!companyId) { setForms([]); setLoading(false); return }
+      const { data } = await (supabase as any).from('forms').select('*').eq('company_id', companyId).order('created_at', { ascending: false })
       const formsWithCounts = await Promise.all((data || []).map(async (f: any) => {
         const { count } = await (supabase as any).from('form_responses').select('*', { count: 'exact', head: true }).eq('form_id', f.id)
         return { ...f, response_count: count || 0 }
@@ -57,12 +45,9 @@ export default function FormsAdmin() {
   }
 
   const createForm = async () => {
-    const { data: { session } } = await supabase.auth.getSession()
-    let companyId = null
-    if (session?.user) {
-      const { data: co } = await (supabase as any).from('companies').select('id').eq('owner_id', session.user.id).maybeSingle()
-      companyId = co?.id || null
-    }
+    // Forms belong to the workspace; only its staff may create one (V375).
+    const { companyId } = await resolveCompanyUser()
+    if (!companyId) { alert('Failed to create form: no workspace found for this account.'); return }
     const { data, error } = await (supabase as any).from('forms').insert({
       title: 'Untitled Form',
       company_id: companyId,

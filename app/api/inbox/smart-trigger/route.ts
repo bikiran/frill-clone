@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { formsDb } from '@/lib/forms-server'
 
 function admin() {
   return createClient(
@@ -80,9 +81,13 @@ export async function POST(req: NextRequest) {
     // If the enabled action is linked to a form, attach it so the widget renders it.
     let payload: any = { kind: 'claim_offer', action: claimKey }
     if (actions[claimKey]?.form_id) {
-      const { data: form } = await db.from('forms').select('*').eq('id', actions[claimKey].form_id).maybeSingle()
+      // Only this business's own form (drafts included — it's sent into the
+      // chat, and the widget loads it through /api/widget/form). Service role:
+      // V375 hides drafts from the anon key.
+      const { data: form } = await formsDb().from('forms').select('id, title, questions')
+        .eq('id', actions[claimKey].form_id).eq('company_id', conv.company_id).maybeSingle()
       if (form) {
-        payload = { kind: 'form', ref_id: form.id, title: form.title || 'Claim form', options: form.questions || form.options || null, prefill: {
+        payload = { kind: 'form', ref_id: form.id, title: form.title || 'Claim form', options: form.questions || null, prefill: {
           first_name: contact?.name?.split(' ')[0] || '',
           last_name: contact?.name?.split(' ').slice(1).join(' ') || '',
           email: email || '',
