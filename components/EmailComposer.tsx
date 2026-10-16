@@ -41,6 +41,12 @@ export default function EmailComposer({
   const [bcc, setBcc] = useState('')
   const [showBcc, setShowBcc] = useState(false)
   const [subject, setSubject] = useState(defaultSubject)
+  // Once someone edits the subject (or a saved draft restores one), a new
+  // suggested subject — the thread's latest email changes as messages arrive —
+  // no longer replaces it. Reset per conversation.
+  const subjectEdited = useRef(false)
+  // Declared before the draft restore below, which may mark it edited again.
+  useEffect(() => { subjectEdited.current = false }, [conversationId])
   const [sending, setSending] = useState(false)
   const [err, setErr] = useState('')
 
@@ -94,7 +100,7 @@ export default function EmailComposer({
     let saved: any = null
     try { saved = JSON.parse(localStorage.getItem(draftKey) || 'null') } catch {}
     if (saved) {
-      if (typeof saved.subject === 'string') setSubject(saved.subject)
+      if (typeof saved.subject === 'string') { setSubject(saved.subject); subjectEdited.current = saved.subject !== defaultSubject }
       if (saved.cc) { setCc(saved.cc); setShowCc(true) }
       if (saved.bcc) { setBcc(saved.bcc); setShowBcc(true) }
       if (editorRef.current) editorRef.current.innerHTML = saved.bodyHtml || ''
@@ -218,7 +224,7 @@ export default function EmailComposer({
   const [savingSig, setSavingSig] = useState(false)
 
   useEffect(() => { setTo(toEmail) }, [toEmail])
-  useEffect(() => { setSubject(defaultSubject) }, [defaultSubject])
+  useEffect(() => { if (!subjectEdited.current) setSubject(defaultSubject) }, [defaultSubject])
 
   const loadSigs = async () => {
     if (!companyId) return
@@ -340,7 +346,7 @@ export default function EmailComposer({
       )}
       <div style={row}>
         <span style={rowLabel}>Subject</span>
-        <input value={subject} onChange={e => setSubject(e.target.value)} style={field} placeholder="Subject" />
+        <input value={subject} onChange={e => { subjectEdited.current = true; setSubject(e.target.value) }} style={field} placeholder="Subject" />
       </div>
 
       {/* Signature selector + inline add (Coax-style). */}

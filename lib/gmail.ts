@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { sanitizeHtml } from '@/lib/safe-html'
 import { uploadToR2, r2Configured } from '@/lib/r2'
 import { emitInboundEvent } from '@/lib/integration-hooks'
 
@@ -110,20 +111,16 @@ export function htmlToText(html: string): string {
   return t.trim()
 }
 
-// Make an email's HTML safe to drop into the agent's browser: strip scripts,
-// event handlers, and javascript: URLs, but KEEP the layout so it reads like
-// the real email (Coax shows the actual formatted message, not flattened text).
+// Make an email's HTML safe to show in the inbox. This was a regex filter
+// (strip <script>, on*="…", "javascript:") that let <img onerror=…>, <svg
+// onload>, iframe srcdoc and encoded javascript: URLs through. Now it's the
+// shared allow-list sanitizer (lib/safe-html) with its email profile: tables,
+// legacy layout attributes, inline styles and data: pictures kept; anything
+// that runs, loads a script or frames another page dropped. The inbox also
+// sanitises again on display and shows the full email in a sandboxed frame.
 export function sanitizeEmailHtml(html: string): string {
   if (!html) return ''
-  let t = html
-  t = t.replace(/<script[\s\S]*?<\/script>/gi, '')
-  t = t.replace(/<\/?(html|head|body|meta|link|base|title)[^>]*>/gi, '')
-  t = t.replace(/ on\w+\s*=\s*"[^"]*"/gi, '')
-  t = t.replace(/ on\w+\s*=\s*'[^']*'/gi, '')
-  t = t.replace(/javascript:/gi, '')
-  // Open links in a new tab and don't leak the referrer.
-  t = t.replace(/<a\s/gi, '<a target="_blank" rel="noopener noreferrer" ')
-  return t
+  return sanitizeHtml(String(html), { profile: 'email' })
 }
 
 // Collect attachment metadata (name, mime, size, and the Gmail attachment id
@@ -551,11 +548,13 @@ export async function syncGmailChannel(
       // order update goes out from the order's conversation): its In-Reply-To /
       // References name our sent message, or its subject matches it.
       try {
-        const { findEmailThread, parseMessageIds } = await import('@/lib/inbound-email')
+        const { findEmailThread, parseMessageIds, authVerdict } = await import('@/lib/inbound-email')
+        // Subject alone only for a sender Gmail verified (DKIM/DMARC pass).
+        const verified = authVerdict(header(headers, 'Authentication-Results') || null) === 'pass'
         const found = await findEmailThread(db, {
           companyId, contactId: contact?.id || null,
           ids: parseMessageIds(inReplyTo, header(headers, 'References') || null),
-          subject: /^\s*re\s*:/i.test(subject) ? subject : null,
+          subject: verified && /^\s*re\s*:/i.test(subject) ? subject : null,
         })
         if (found?.conv) conv = found.conv
       } catch { /* fall through */ }
@@ -628,7 +627,7 @@ export async function syncGmailChannel(
     // The Support / Reception Agent, if switched on for email: queued here, run
     // by the agent worker within a minute. Ticket replies stay with the ticket.
     if (!/\[TICK-\d+\]/i.test(subject || '')) {
-      try { const { startSupportAgentForConversation } = await import('@/lib/agent/inbound'); await startSupportAgentForConversation(db, conv.id, { debounceMs: 0, run: false }) } catch (e) { console.warn('[agent] gmail inbound', e) }
+      try { const { startSupportAgentForConversation } = await import('@/lib/agent/inbound'); await startSupportAgentForConversation(db, conv.id, { debounceMs: 0, run: false, channel: 'email' }) } catch (e) { console.warn('[agent] gmail inbound', e) }
     }
 
     // Route ticket replies back onto the ticket. Agent ticket replies carry

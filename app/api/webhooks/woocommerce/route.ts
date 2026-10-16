@@ -567,6 +567,9 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
       preferChannel: 'auto',
       channelSetting: cfg.channel === 'sms' || cfg.channel === 'email' ? cfg.channel : 'auto',
       threadMessageId: autoMsg?.id || null,
+      // Never messaged us: order messages go by email when we have it (#122).
+      newCustomerDefault: 'email',
+      sendingHours: true,
       senderName: businessName,
       subject: `Update on your order #${order.number || order.id}`,
       origin,

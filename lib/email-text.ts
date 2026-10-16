@@ -1,6 +1,8 @@
 // Pure email-text helpers (no server imports), shared by the inbound webhook,
 // the Gmail sync, the body backfill and the inbox's email card.
 
+import { sanitizeHtml } from '@/lib/safe-html'
+
 /** A header's value from Resend's headers object, or a [{name,value}] list. */
 export function headerValue(headers: any, name: string): string | null {
   if (!headers) return null
@@ -103,3 +105,55 @@ export function emailPreview(content: string, attachmentCount: number, subject?:
 export const normSubject = (v: unknown) =>
   String(v || '').replace(/^\s*((re|fwd?|fw|aw|sv)\s*:\s*)+/i, '').replace(/\s+/g, ' ').trim().toLowerCase()
 
+
+// ── Showing a customer's email safely ───────────────────────────────────────
+// The full formatted email is shown in an <iframe sandbox> (no scripts, no
+// same-origin) built from this document. The HTML is sanitised again here, so
+// rows stored before the allow-list sanitiser are made safe on display too, and
+// a Content-Security-Policy inside the frame blocks anything that slipped
+// through from loading or running. Links open in a new tab.
+export function emailFrameDoc(html: string | null | undefined): string {
+  const clean = sanitizeHtml(String(html || ''), { profile: 'email' })
+  return '<!doctype html><html><head><meta charset="utf-8">'
+    + `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src https: data:; media-src https:; style-src 'unsafe-inline'; font-src https: data:; form-action 'none'">`
+    + '<base target="_blank">'
+    + '<style>html,body{margin:0;padding:0}body{padding:2px;font:13.5px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#1a1a1a;overflow-wrap:anywhere}img,video{max-width:100%;height:auto}table{max-width:100%}a{color:#2563eb}blockquote{margin:8px 0;padding-left:10px;border-left:3px solid #e5e7eb;color:#6b6b70}</style>'
+    + `</head><body>${clean}</body></html>`
+}
+
+/**
+ * A starting height for the frame. The sandboxed frame can't be measured from
+ * outside (that would need same-origin or scripts in it), so this estimates
+ * from the content; the frame scrolls inside and can be dragged taller.
+ */
+export function estimateEmailHeight(html: string | null | undefined, width = 640): number {
+  const h = sanitizeHtml(String(html || ''), { profile: 'email' })
+  const text = h.replace(/<(style|script)[\s\S]*?<\/\1>/gi, '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+  const charsPerLine = Math.max(30, Math.floor(width / 7.2))
+  const blocks = (h.match(/<(br|p|div|tr|li|h[1-6]|blockquote)\b/gi) || []).length
+  let px = Math.ceil(text.length / charsPerLine) * 21 + Math.min(blocks, 400) * 11
+  for (const m of h.matchAll(/<img\b[^>]*>/gi)) {
+    const hh = /height\s*=\s*"?(\d{1,4})/i.exec(m[0])?.[1]
+    px += hh ? Math.min(Number(hh), 600) : 180
+  }
+  return Math.max(140, Math.min(px + 24, 1100))
+}
+
+/**
+ * Did the sender pass DKIM or DMARC? From Resend's `authentication` object
+ * ({ dkim, dmarc, spf } as strings, objects or lists), or a Gmail
+ * Authentication-Results header. 'unknown' when there's nothing to go on.
+ */
+export function authVerdict(a: any): 'pass' | 'fail' | 'unknown' {
+  if (!a) return 'unknown'
+  if (typeof a === 'string') {
+    if (/\b(dkim|dmarc)=pass\b/i.test(a)) return 'pass'
+    if (/\b(dkim|dmarc)=(fail|none|softfail|permerror)\b/i.test(a)) return 'fail'
+    return 'unknown'
+  }
+  const results = (v: any): string[] => v == null ? [] : Array.isArray(v) ? v.flatMap(results)
+    : typeof v === 'object' ? results(v.result ?? v.status ?? v.verdict ?? null) : [String(v).toLowerCase()]
+  const got = [...results(a.dkim), ...results(a.dmarc)]
+  if (!got.length) return 'unknown'
+  return got.some(r => r === 'pass') ? 'pass' : 'fail'
+}

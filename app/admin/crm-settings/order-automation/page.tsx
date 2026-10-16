@@ -145,7 +145,9 @@ export default function OrderAutomationSettings() {
           <div style={S.card}>
             <h2 style={S.h2}>How order messages are sent</h2>
             <p style={{ ...S.hint, marginBottom: 12 }}>The message always posts into the customer's conversation. If they aren't on live chat right now, it's also sent to them so they actually see it.</p>
-            <ChannelPicker value={sendBy} onChange={setSendBy} />
+            <ChannelPicker value={sendBy} onChange={setSendBy}
+              autoDesc="If the customer has messaged you before, the channel they last used. If they haven’t, email when you have their address (what customers expect for order updates), otherwise SMS." />
+            <p style={{ ...S.hint, marginTop: 10 }}>Texts are only sent 9am to 8pm. Outside those hours the message goes by email, or the text waits until 9am if there’s no email.</p>
           </div>
 
           <div style={S.card}>
@@ -171,7 +173,8 @@ export default function OrderAutomationSettings() {
         {cart.enabled && (
           <div style={{ marginTop: 14 }}>
             <label style={S.label}>How it's sent</label>
-            <ChannelPicker value={cart.channel} onChange={v => setCart(c => ({ ...c, channel: v }))} />
+            <ChannelPicker value={cart.channel} onChange={v => setCart(c => ({ ...c, channel: v }))}
+              autoDesc="The channel the customer last used to contact you. If they haven’t messaged you: SMS when they have a mobile and haven’t opted out of texts, otherwise email." />
             <div style={{ height: 14 }} />
             <label style={S.label}>Send after</label>
             <select value={cart.delay_minutes} onChange={e => setCart(c => ({ ...c, delay_minutes: Number(e.target.value) }))} style={{ ...S.input, maxWidth: 260, fontSize: 16 }}>
@@ -263,12 +266,12 @@ export default function OrderAutomationSettings() {
 // "How it's sent" for an automation. Automatic follows the shared rule in
 // lib/channel-choice.ts, spelled out here so the business knows what happens.
 const CHANNEL_OPTIONS: { key: 'auto' | 'sms' | 'email'; title: string; desc: string }[] = [
-  { key: 'auto', title: 'Automatic (recommended)', desc: 'The channel the customer last used to contact you. If they haven’t messaged you yet: SMS when they have a mobile and haven’t opted out of texts, otherwise email.' },
+  { key: 'auto', title: 'Automatic (recommended)', desc: '' },
   { key: 'sms', title: 'SMS', desc: 'Always text when they have a mobile and haven’t opted out. Falls back to email if they can’t be texted.' },
   { key: 'email', title: 'Email', desc: 'Always email when you have their address. Falls back to SMS if there’s no email.' },
 ]
 
-function ChannelPicker({ value, onChange }: { value: 'auto' | 'sms' | 'email'; onChange: (v: 'auto' | 'sms' | 'email') => void }) {
+function ChannelPicker({ value, onChange, autoDesc }: { value: 'auto' | 'sms' | 'email'; onChange: (v: 'auto' | 'sms' | 'email') => void; autoDesc: string }) {
   return (
     <div role="radiogroup" aria-label="How it's sent" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10 }}>
       {CHANNEL_OPTIONS.map(o => {
@@ -282,7 +285,7 @@ function ChannelPicker({ value, onChange }: { value: 'auto' | 'sms' | 'email'; o
               </span>
               {o.title}
             </span>
-            <span style={{ display: 'block', marginTop: 4, fontSize: 12.5, lineHeight: 1.5, color: 'var(--slate)' }}>{o.desc}</span>
+            <span style={{ display: 'block', marginTop: 4, fontSize: 12.5, lineHeight: 1.5, color: 'var(--slate)' }}>{o.key === 'auto' ? autoDesc : o.desc}</span>
           </button>
         )
       })}

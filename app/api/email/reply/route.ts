@@ -41,9 +41,17 @@ export async function POST(req: NextRequest) {
     }
     if (await isExternalSendBlocked(conv.company_id, db)) { logBlockedSend(conv.company_id, 'email', db); return NextResponse.json({ error: DEMO_BLOCK_MESSAGE }, { status: 403 }) }
 
-    // Recipient = the composer's To field, falling back to the contact's email.
+    // Recipient = the composer's To field, else whoever last emailed us on this
+    // thread (an email can thread onto an order conversation), else the contact.
     const { data: contact } = await db.from('contacts').select('*').eq('id', conv.contact_id).maybeSingle()
-    const toEmail = (to && String(to).trim()) || contact?.email
+    const { data: lastInbound } = await db.from('messages')
+      .select('email_message_id, email_subject, sender_email')
+      .eq('conversation_id', conversationId)
+      .eq('sender_type', 'visitor')
+      .not('email_message_id', 'is', null)
+      .order('created_at', { ascending: false })
+      .limit(1)
+    const toEmail = (to && String(to).trim()) || lastInbound?.[0]?.sender_email || contact?.email
     // Don't require the conversation to already BE an email thread. A widget /
     // abandoned-cart / chat conversation whose contact has an email address can
     // still be replied to by email — we send a fresh message from the company
@@ -74,20 +82,13 @@ export async function POST(req: NextRequest) {
 
     const { data: company } = await db.from('companies').select('name,slug').eq('id', conv.company_id).maybeSingle()
 
-    // Thread the reply to the customer's most recent message.
-    const { data: lastInbound } = await db.from('messages')
-      .select('email_message_id')
-      .eq('conversation_id', conversationId)
-      .eq('sender_type', 'visitor')
-      .not('email_message_id', 'is', null)
-      .order('created_at', { ascending: false })
-      .limit(1)
+    // Thread the reply to the customer's most recent email.
     const inReplyTo = lastInbound?.[0]?.email_message_id || conv.email_message_id || null
 
     const subject = (subjectOverride && String(subjectOverride).trim())
       ? String(subjectOverride).trim()
-      : (conv.email_subject
-        ? (/^re:/i.test(conv.email_subject) ? conv.email_subject : `Re: ${conv.email_subject}`)
+      : ((lastInbound?.[0]?.email_subject || conv.email_subject)
+        ? (/^re:/i.test(lastInbound?.[0]?.email_subject || conv.email_subject) ? (lastInbound?.[0]?.email_subject || conv.email_subject) : `Re: ${lastInbound?.[0]?.email_subject || conv.email_subject}`)
         : 'Re: your message')
 
     const fromName = channel.from_name || company?.name || 'Support'

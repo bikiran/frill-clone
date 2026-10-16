@@ -262,7 +262,7 @@ export async function POST(req: NextRequest) {
           email: contact?.email || null,
           senderName: businessName,
           subject: `Update on your order #${orderLabel}`,
-          preferChannel: 'auto', threadMessageId: refundMsg?.id || null,
+          preferChannel: 'auto', threadMessageId: refundMsg?.id || null, newCustomerDefault: 'email', sendingHours: true,
           origin, db,
         })
 

@@ -8,8 +8,8 @@ import type { NextRequest } from 'next/server'
  * secret). Other providers can instead add ?token=<EMAIL_WEBHOOK_TOKEN> to the URL.
  *
  * With neither RESEND_WEBHOOK_SECRET nor EMAIL_WEBHOOK_TOKEN set the check can't
- * run, so mail is let through with a warning. EMAIL_WEBHOOK_VERIFY=log turns
- * enforcement off as an emergency switch.
+ * run: production refuses the mail, development lets it through with a warning.
+ * EMAIL_WEBHOOK_VERIFY=log (or off) turns enforcement off as an emergency switch.
  */
 const MAX_AGE_SEC = 5 * 60
 
@@ -22,8 +22,13 @@ export function emailWebhookOk(req: NextRequest, raw: string): boolean {
   const secret = (process.env.RESEND_WEBHOOK_SECRET || '').trim()
   const token = (process.env.EMAIL_WEBHOOK_TOKEN || '').trim()
   if (!secret && !token) {
-    console.warn('[email webhook] RESEND_WEBHOOK_SECRET / EMAIL_WEBHOOK_TOKEN not set; inbound mail is not being verified')
-    return true
+    // In production an unverified endpoint would let anyone post "customer
+    // emails" into any workspace, so it fails closed. EMAIL_WEBHOOK_VERIFY=off
+    // is the explicit emergency switch; development stays open.
+    const prod = process.env.NODE_ENV === 'production' || process.env.VERCEL_ENV === 'production'
+    const off = ['log', 'off'].includes((process.env.EMAIL_WEBHOOK_VERIFY || '').toLowerCase())
+    console.warn(`[email webhook] RESEND_WEBHOOK_SECRET / EMAIL_WEBHOOK_TOKEN not set; ${prod && !off ? 'refusing inbound mail' : 'inbound mail is not being verified'}`)
+    return !prod || off
   }
   let ok = false
   const given = req.nextUrl.searchParams.get('token') || ''

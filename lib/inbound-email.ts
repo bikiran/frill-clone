@@ -9,7 +9,7 @@
 // replies with an empty body in a brand-new conversation.
 
 import { uploadToR2, r2Configured } from '@/lib/r2'
-import { headerValue, parseMessageIds, idVariants, normSubject } from '@/lib/email-text'
+import { headerValue, parseMessageIds, idVariants, normSubject, authVerdict } from '@/lib/email-text'
 
 export * from '@/lib/email-text'
 
@@ -64,6 +64,12 @@ export async function fetchResendReceivedEmail(
   return null
 }
 
+// The conversation belongs to this sender: the same contact (or neither has one).
+function sameContact(conv: any, contactId?: string | null): boolean {
+  if (conv?.contact_id && contactId) return conv.contact_id === contactId
+  return !conv?.contact_id && !contactId
+}
+
 /**
  * Which conversation an inbound email belongs to.
  *  1. In-Reply-To / References → a message we sent or received (messages.email_message_id),
@@ -87,13 +93,15 @@ export async function findEmailThread(db: any, o: {
       for (const h of hits || []) {
         if (!h?.conversation_id || h.conversation_id === o.excludeConversationId) continue
         const { data: conv } = await db.from('conversations').select('*').eq('id', h.conversation_id).eq('company_id', o.companyId).maybeSingle()
-        if (conv) return { conv, via: 'message-id' }
+        // Only onto the sender's own conversation: someone else quoting our
+        // Message-ID (a forward, a spoof) gets a conversation of their own.
+        if (conv && sameContact(conv, o.contactId)) return { conv, via: 'message-id' }
       }
     } catch { /* fall through */ }
     try {
       const { data: convs } = await db.from('conversations').select('*')
         .eq('company_id', o.companyId).in('email_message_id', ids).limit(5)
-      const c = (convs || []).find((x: any) => x.id !== o.excludeConversationId)
+      const c = (convs || []).find((x: any) => x.id !== o.excludeConversationId && sameContact(x, o.contactId))
       if (c) return { conv: c, via: 'message-id' }
     } catch { /* fall through */ }
   }
@@ -119,9 +127,24 @@ export async function findEmailThread(db: any, o: {
   return null
 }
 
+// Files a customer's email may carry, by type. Pictures, videos, audio, PDFs
+// and office documents are stored as what they are; anything else (HTML, SVG,
+// XML, scripts, archives…) is stored as a download that never opens in the
+// browser, so a file from an email can't run on our files domain.
+const SAFE_TYPES = /^(image\/(png|jpe?g|gif|webp|heic|heif|bmp|avif)|video\/(mp4|quicktime|webm|3gpp)|audio\/(mpeg|mp4|aac|wav|ogg|x-m4a)|application\/pdf|text\/(plain|csv)|application\/(msword|vnd\.openxmlformats-officedocument\.[a-z.]+|vnd\.ms-excel|vnd\.ms-powerpoint))$/i
+export const MAX_EMAIL_FILES = 10
+export const MAX_EMAIL_FILE_BYTES = 20 * 1024 * 1024
+export const MAX_EMAIL_TOTAL_BYTES = 25 * 1024 * 1024
+
+export function safeAttachmentType(type: string | null | undefined): { type: string; inline: boolean } {
+  const t = String(type || '').toLowerCase().split(';')[0].trim()
+  return SAFE_TYPES.test(t) ? { type: t, inline: true } : { type: 'application/octet-stream', inline: false }
+}
+
 /**
  * Resend gives attachment METADATA only. Download each file from the
  * Attachments API and keep it on our own R2 → [{url,name,type,size}].
+ * At most 10 files and 25MB in all; unsafe types are stored as downloads.
  */
 export async function hostResendAttachments(emailId: string | null | undefined, companyId: string, meta?: any[] | null, fetchImpl: typeof fetch = fetch): Promise<{ url: string; name: string; type: string; size?: number }[]> {
   try {
@@ -133,20 +156,25 @@ export async function hostResendAttachments(emailId: string | null | undefined, 
     })
     if (!res.ok) return []
     const j: any = await res.json().catch(() => ({}))
-    const list = j.data || j.attachments || []
+    const list = (j.data || j.attachments || []) as any[]
     const out: { url: string; name: string; type: string; size?: number }[] = []
-    for (const a of list) {
+    let total = 0
+    for (let i = 0; i < list.length && out.length < MAX_EMAIL_FILES; i++) {
+      const a = list[i]
       try {
-        if (!a.download_url) continue
+        if (!a?.download_url || !/^https:\/\//i.test(String(a.download_url))) continue
+        if (a.size && (Number(a.size) > MAX_EMAIL_FILE_BYTES || total + Number(a.size) > MAX_EMAIL_TOTAL_BYTES)) continue
         const dl = await fetchImpl(a.download_url)
         if (!dl.ok) continue
         const bytes = Buffer.from(await dl.arrayBuffer())
-        if (!bytes.length || bytes.length > 20 * 1024 * 1024) continue
-        const name = a.filename || 'file'
-        const type = a.content_type || 'application/octet-stream'
-        const safe = String(name).replace(/[^\w.\-]/g, '_')
-        const key = `ticket-attachments/${companyId}/${emailId}-${safe}`
-        const url = await uploadToR2(key, bytes, type)
+        if (!bytes.length || bytes.length > MAX_EMAIL_FILE_BYTES || total + bytes.length > MAX_EMAIL_TOTAL_BYTES) continue
+        total += bytes.length
+        const name = String(a.filename || 'file').slice(0, 180)
+        const { type, inline } = safeAttachmentType(a.content_type)
+        const safe = name.replace(/[^\w.\-]/g, '_')
+        const uniq = String(a.id || i).replace(/[^\w-]/g, '').slice(0, 40) || String(i)
+        const key = `ticket-attachments/${companyId}/${emailId}-${uniq}-${safe}`
+        const url = await uploadToR2(key, bytes, type, inline ? {} : { contentDisposition: `attachment; filename="${safe}"` })
         out.push({ url, name, type, size: bytes.length })
       } catch { /* skip one bad attachment */ }
     }
@@ -168,5 +196,8 @@ export function readReceived(e: ReceivedEmail | null | undefined) {
     threadIds: parseMessageIds(inReplyTo, references),
     attachments: Array.isArray(e.attachments) ? e.attachments : [],
     receivedAt: e.created_at || null,
+    auth: authVerdict((e as any).authentication),
+    from: String(e.from || ''),
+    to: ([] as string[]).concat(e.to || [], e.cc || [], (e as any).received_for || []).map(String),
   }
 }

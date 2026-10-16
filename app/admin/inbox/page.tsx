@@ -1707,6 +1707,8 @@ export default function InboxPage() {
   // lib/channel-choice): used when the customer hasn't messaged on it yet, and
   // for where an email reply comes back to.
   const [channelPick, setChannelPick] = useState<{ convId: string; channel: string; reason?: string; replyTo?: string | null } | null>(null)
+  // Has the customer written on this thread at all (any channel)?
+  const customerSpoke = useMemo(() => messages.some((m: any) => m && m.sender_type !== 'agent' && m.sender_type !== 'system' && !m.is_internal), [messages])
 
   // Where is this customer ACTUALLY talking, right now? The conversation's
   // stored channel goes stale the moment someone moves from the web widget to
@@ -1732,7 +1734,6 @@ export default function InboxPage() {
     // Colvy's own messages): the shared rule decides — their last channel
     // elsewhere, else SMS when they may be texted, else email. Our own last
     // outbound channel is not evidence (an order email made every reply email).
-    const customerSpoke = messages.some((m: any) => m && m.sender_type !== 'agent' && m.sender_type !== 'system' && !m.is_internal)
     if (!customerSpoke && channelPick && channelPick.convId === selected?.id && channelPick.channel && channelPick.channel !== 'none') return channelPick.channel
     // Nothing inbound carried one — fall back to any message, then the row.
     for (let i = messages.length - 1; i >= 0; i--) {
@@ -1740,7 +1741,7 @@ export default function InboxPage() {
       if (dc && dc !== 'chat') return dc
     }
     return String((selected as any)?.channel || 'widget').toLowerCase()
-  }, [messages, selected?.id, (selected as any)?.channel, channelPick])
+  }, [messages, selected?.id, (selected as any)?.channel, channelPick, customerSpoke])
 
   const isWebChat = ['widget', 'chat'].includes(activeChannel)
   // Where a reply or an action (payment link, coupon, form…) actually goes. A
@@ -1779,8 +1780,10 @@ export default function InboxPage() {
     const convId = selected.id
     authFetch(`/api/inbox/channel-choice?conversationId=${encodeURIComponent(convId)}`)
       .then(r => r.ok ? r.json() : null)
-      .then(d => { if (!cancelled && d?.channel) setChannelPick({ convId, channel: d.channel, reason: d.reason, replyTo: d.replyTo || null }) })
-      .catch(() => {})
+      // A failed lookup still counts as answered (channel ''), so the composer
+      // falls back to the thread's own channel instead of waiting.
+      .then(d => { if (!cancelled) setChannelPick({ convId, channel: d?.channel || '', reason: d?.reason, replyTo: d?.replyTo || null }) })
+      .catch(() => { if (!cancelled) setChannelPick({ convId, channel: '' }) })
     return () => { cancelled = true }
   }, [selected?.id, lastInboundId])
 
@@ -2461,11 +2464,16 @@ export default function InboxPage() {
   // fetch it directly and open it rather than silently doing nothing (which left
   // the top thread showing, i.e. the wrong conversation).
   const deepLinkedRef = useRef<string | null>(null)
+  // The channel a deep link asked for (?channel=sms|email|chat), applied once
+  // its conversation is open (see the reset effect by sendChannel).
+  const pendingSendChannelRef = useRef<string | null>(null)
   useEffect(() => {
     if (selected) return
     if (typeof window === 'undefined') return
     const convId = new URLSearchParams(window.location.search).get('conversation')
     if (!convId || deepLinkedRef.current === convId) return
+    const wantCh = new URLSearchParams(window.location.search).get('channel')
+    pendingSendChannelRef.current = (wantCh === 'sms' || wantCh === 'email' || wantCh === 'chat') ? wantCh : null
     const found = conversations.find(c => c.id === convId)
     if (found) { deepLinkedRef.current = convId; selectConversation(found); return }
     // Not in the current folder — load it on its own and open it.
@@ -2489,8 +2497,6 @@ export default function InboxPage() {
   // the device's own apps. Find the contact's most recent conversation, or create
   // an empty one, then open it with the compose channel pre-selected.
   const deepContactRef = useRef<string | null>(null)
-  // The channel a deep link asked for, applied once its conversation is open.
-  const pendingSendChannelRef = useRef<string | null>(null)
   // Find-or-create this contact's conversation and open it. Shared by the
   // on-mount ?contact= deep link AND the live "open this contact" event below.
   const openContactDeepLink = useCallback(async (contactId: string, wantCh: string | null) => {
@@ -2517,7 +2523,10 @@ export default function InboxPage() {
       if (!conv) { deepContactRef.current = null; return }
       conv.contacts = ct
       setConversations(prev => prev.some(c => c.id === conv.id) ? prev : [conv, ...prev])
-      pendingSendChannelRef.current = (wantCh === 'sms' || wantCh === 'email' || wantCh === 'chat') ? wantCh : null
+      // Applied by the per-conversation reset once this one opens; when it's
+      // already open that effect won't run, so it's set directly and cleared.
+      const already = selectedRef.current?.id === conv.id
+      pendingSendChannelRef.current = !already && (wantCh === 'sms' || wantCh === 'email' || wantCh === 'chat') ? wantCh : null
       selectConversation(conv)
       if (wantCh === 'sms' || wantCh === 'email' || wantCh === 'chat') setSendChannel(wantCh)
       // Strip the params so a refresh doesn't re-open / re-create anything.
@@ -4760,9 +4769,9 @@ export default function InboxPage() {
                     </button>
                   </div>
                   <span className="cmp-via">
-                    {internalMode ? 'Only your team sees this' : <>Sending by <b>{({ sms: 'SMS', email: 'email', chat: 'live chat', instagram: 'Instagram', messenger: 'Messenger', whatsapp: 'WhatsApp', call: 'SMS' } as Record<string, string>)[sendChannel !== 'auto' ? sendChannel : outboundChannel] || 'chat'}</b> {sendChannelGlyph(sendChannel !== 'auto' ? sendChannel : outboundChannel, 13)}</>}
+                    {internalMode ? 'Only your team sees this' : channelResolving ? 'Choosing a channel…' : <>Sending by <b>{({ sms: 'SMS', email: 'email', chat: 'live chat', instagram: 'Instagram', messenger: 'Messenger', whatsapp: 'WhatsApp', call: 'SMS' } as Record<string, string>)[sendChannel !== 'auto' ? sendChannel : outboundChannel] || 'chat'}</b> {sendChannelGlyph(sendChannel !== 'auto' ? sendChannel : outboundChannel, 13)}</>}
                     {/* Both a mobile and an email: one tap to the other. */}
-                    {!internalMode && (() => {
+                    {!internalMode && !channelResolving && (() => {
                       const cur = sendChannel !== 'auto' ? sendChannel : outboundChannel
                       const other = cur === 'email' && ((selected as any)?.sms_number || contact?.phone) ? 'sms' : cur === 'sms' && contact?.email ? 'email' : null
                       return other ? (
@@ -5403,6 +5412,13 @@ export default function InboxPage() {
     pendingSendChannelRef.current = null
     setSendChannel(want === 'sms' || want === 'email' || want === 'chat' ? want : 'auto')
   }, [selected?.id])
+  // THE switch between the email composer and the chat / SMS box. Anything
+  // that needs to know "is this reply an email?" (the composer, review links,
+  // inserts) reads this one boolean.
+  const showEmailComposer = sendChannel === 'email' || (activeChannel === 'email' && sendChannel === 'auto')
+  // The customer hasn't written here and the shared rule hasn't answered yet:
+  // show a neutral placeholder rather than one composer that flips to the other.
+  const channelResolving = !customerSpoke && sendChannel === 'auto' && !!selected?.id && channelPick?.convId !== selected?.id
 
   // Right-click context menu on the conversation list.
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; conv: any } | null>(null)
@@ -10038,7 +10054,12 @@ export default function InboxPage() {
               </div>
               {/* Email threads get a proper email composer (To/Cc/Subject +
                   signature) instead of the plain chat box. */}
-              {(sendChannel === 'email' || (activeChannel === 'email' && sendChannel === 'auto')) && !internalMode ? (
+              {channelResolving && !internalMode ? (
+                <div className="cmp-card" aria-busy="true" style={{ overflow: 'hidden' }}>
+                  {renderModeHead()}
+                  <div style={{ height: composerH, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--slate)', fontSize: 12.5 }}>Choosing how to reach this customer…</div>
+                </div>
+              ) : showEmailComposer && !internalMode ? (
                 <EmailComposer
                   header={renderModeHead()}
                   bodyHeight={composerH + 44}

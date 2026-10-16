@@ -30,6 +30,35 @@ const ATTRS: Record<string, string[]> = {
 }
 const STYLE_OK = new Set(['color', 'background-color', 'text-align', 'font-weight', 'font-style', 'text-decoration', 'text-decoration-line', 'font-size', 'border', 'padding', 'min-width', 'vertical-align', 'width'])
 
+// The 'email' profile (customer emails shown in the inbox): emails are laid out
+// with tables, legacy attributes and many inline styles, and Resend inlines
+// pictures as data: URIs. Still an allow-list: nothing that runs, loads a
+// script, positions over the page or reaches outside the message.
+const EMAIL_ATTRS: Record<string, string[]> = {
+  table: ['width', 'border', 'cellpadding', 'cellspacing', 'align', 'bgcolor'],
+  td: ['colspan', 'rowspan', 'width', 'height', 'align', 'valign', 'bgcolor'],
+  th: ['colspan', 'rowspan', 'scope', 'width', 'height', 'align', 'valign', 'bgcolor'],
+  tr: ['align', 'valign', 'bgcolor'], tbody: ['align', 'valign'], thead: ['align', 'valign'], tfoot: ['align', 'valign'],
+  img: ['src', 'alt', 'title', 'width', 'height', 'align', 'border'],
+  p: ['align'], div: ['align'], h1: ['align'], h2: ['align'], h3: ['align'], h4: ['align'],
+}
+const EMAIL_STYLE_OK = new Set([...STYLE_OK,
+  'margin', 'margin-top', 'margin-right', 'margin-bottom', 'margin-left',
+  'padding-top', 'padding-right', 'padding-bottom', 'padding-left',
+  'line-height', 'font-family', 'background', 'border-top', 'border-right', 'border-bottom', 'border-left',
+  'border-collapse', 'border-radius', 'border-color', 'border-width', 'border-style', 'border-spacing',
+  'max-width', 'height', 'display', 'letter-spacing', 'text-transform', 'white-space', 'text-indent',
+  'word-break', 'overflow-wrap', 'table-layout'])
+const EMAIL_DISPLAY = /^(block|inline|inline-block|table|table-cell|table-row|none)$/i
+const EMAIL_ENUM: Record<string, RegExp> = {
+  align: /^(left|right|center|justify)$/i, valign: /^(top|middle|bottom|baseline)$/i,
+}
+/** A data: picture an email carries inline (never SVG, which can hold script). */
+function safeDataImage(raw: string): string | null {
+  const v = String(raw || '').replace(/\s+/g, '')
+  return /^data:image\/(png|jpe?g|gif|webp|bmp);base64,[a-z0-9+/=]+$/i.test(v) && v.length <= 3_000_000 ? v : null
+}
+
 export function escapeHtml(s: string): string {
   return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;')
 }
@@ -56,17 +85,20 @@ export function safeUrl(raw: string | null | undefined, kind: 'link' | 'media' =
   return null
 }
 
-function cleanStyle(raw: string): string {
+function cleanStyle(raw: string, email = false): string {
   const out: string[] = []
   for (const decl of decodeEntities(raw).split(';')) {
     const i = decl.indexOf(':')
     if (i < 0) continue
     const prop = decl.slice(0, i).trim().toLowerCase()
-    const val = decl.slice(i + 1).trim()
-    if (!STYLE_OK.has(prop) || !val || val.length > 80) continue
+    let val = decl.slice(i + 1).trim().replace(/\s*!important\s*$/i, '')
+    // Font names are quoted in emails ("Helvetica Neue"); the quotes go.
+    if (email && prop === 'font-family') val = val.replace(/["']/g, '')
+    if (!(email ? EMAIL_STYLE_OK : STYLE_OK).has(prop) || !val || val.length > (email ? 160 : 80)) continue
     // Colours, lengths, keywords. Nothing that can load or run anything.
-    if (/[^#a-z0-9.,%()\s-]/i.test(val) || /url|expression|javascript|import|var\(/i.test(val)) continue
-    if (!sizeOk(prop, val)) continue
+    if (/[^#a-z0-9.,%()\s-]/i.test(val) || /url|expression|javascript|import|var\(|attr\(|image/i.test(val)) continue
+    if (email && prop === 'display' && !EMAIL_DISPLAY.test(val)) continue
+    if (!sizeOk(prop, val, email)) continue
     out.push(`${prop}: ${val}`)
   }
   return out.join('; ')
@@ -78,8 +110,14 @@ const SIZE_LIMIT: Record<string, { px: number; pct: number; em: number }> = {
   width: { px: 1200, pct: 100, em: 60 }, 'min-width': { px: 400, pct: 100, em: 25 },
   padding: { px: 40, pct: 10, em: 3 }, border: { px: 4, pct: 0, em: 0.3 },
 }
-function sizeOk(prop: string, val: string): boolean {
-  const lim = SIZE_LIMIT[prop]
+const EMAIL_SIZE_LIMIT: Record<string, { px: number; pct: number; em: number }> = {
+  ...SIZE_LIMIT, 'max-width': { px: 1200, pct: 100, em: 60 }, height: { px: 3000, pct: 100, em: 150 },
+  padding: { px: 100, pct: 20, em: 6 }, margin: { px: 100, pct: 20, em: 6 }, border: { px: 10, pct: 0, em: 1 },
+  'line-height': { px: 80, pct: 400, em: 4 }, 'letter-spacing': { px: 20, pct: 0, em: 1 }, 'text-indent': { px: 100, pct: 20, em: 6 },
+}
+function sizeOk(prop: string, val: string, email = false): boolean {
+  const table = email ? EMAIL_SIZE_LIMIT : SIZE_LIMIT
+  const lim = table[prop] || (email ? table[prop.replace(/-(top|right|bottom|left)$/, '')] : undefined)
   if (!lim) return true
   const re = /(-?\d*\.?\d+)\s*(px|%|r?em|pt|vw|vh|vmin|vmax|ch|ex|cm|mm|in)?/gi
   let m: RegExpExecArray | null
@@ -92,8 +130,8 @@ function sizeOk(prop: string, val: string): boolean {
   return true
 }
 
-function cleanAttrs(tag: string, raw: string): string {
-  const allowed = ATTRS[tag] || []
+function cleanAttrs(tag: string, raw: string, email = false): string {
+  const allowed = email ? [...new Set([...(ATTRS[tag] || []), ...(EMAIL_ATTRS[tag] || [])])] : (ATTRS[tag] || [])
   const out: string[] = []
   const re = /([a-zA-Z_:][-a-zA-Z0-9_:.]*)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g
   let m: RegExpExecArray | null
@@ -104,7 +142,7 @@ function cleanAttrs(tag: string, raw: string): string {
     seen.add(name)
     const value = m[2] ?? m[3] ?? m[4] ?? ''
     if (name === 'style') {
-      const st = cleanStyle(value)
+      const st = cleanStyle(value, email)
       if (st) out.push(`style="${escapeHtml(st)}"`)
       continue
     }
@@ -115,19 +153,24 @@ function cleanAttrs(tag: string, raw: string): string {
       continue
     }
     if (name === 'src' || name === 'poster') {
-      const u = safeUrl(value, 'media')
+      const u = safeUrl(value, 'media') || (email && tag === 'img' && name === 'src' ? safeDataImage(value) : null)
       if (u) out.push(`${name}="${escapeHtml(u)}"`)
       continue
     }
     if (['controls', 'playsinline', 'muted', 'loop'].includes(name)) { out.push(name); continue }
-    if (['width', 'height', 'colspan', 'rowspan', 'span', 'start', 'value'].includes(name)) {
+    if (EMAIL_ENUM[name]) {
+      const v = decodeEntities(value).trim()
+      if (EMAIL_ENUM[name].test(v)) out.push(`${name}="${v.toLowerCase()}"`)
+      continue
+    }
+    if (['width', 'height', 'colspan', 'rowspan', 'span', 'start', 'value', 'border', 'cellpadding', 'cellspacing'].includes(name)) {
       const n = decodeEntities(value).trim()
       if (/^\d{1,4}%?$/.test(n)) out.push(`${name}="${n}"`)
       continue
     }
-    if (name === 'color') {
+    if (name === 'color' || name === 'bgcolor') {
       const c = decodeEntities(value).trim()
-      if (/^(#[0-9a-f]{3,8}|[a-z]{3,20})$/i.test(c)) out.push(`color="${c}"`)
+      if (/^(#[0-9a-f]{3,8}|[a-z]{3,20})$/i.test(c)) out.push(`${name}="${c}"`)
       continue
     }
     out.push(`${name}="${escapeHtml(decodeEntities(value).slice(0, 300))}"`)
@@ -138,9 +181,10 @@ function cleanAttrs(tag: string, raw: string): string {
 }
 
 /** Clean HTML down to safe formatting. */
-export function sanitizeHtml(input: string | null | undefined): string {
+export function sanitizeHtml(input: string | null | undefined, opts: { profile?: 'post' | 'email' } = {}): string {
   if (!input) return ''
-  let t = String(input).slice(0, 400_000)
+  const email = opts.profile === 'email'
+  let t = String(input).slice(0, email ? 4_000_000 : 400_000)
   t = t.replace(/<!--[\s\S]*?(-->|$)/g, '').replace(/<!\[CDATA\[[\s\S]*?(\]\]>|$)/gi, '').replace(/<![^>]*>/g, '').replace(/<\?[\s\S]*?(\?>|$)/g, '')
   // Closed ones go with their content; an unclosed one loses only its tag, not
   // the rest of the post. (Safety doesn't rest on this: only ALLOWED tags
@@ -168,7 +212,7 @@ export function sanitizeHtml(input: string | null | undefined): string {
       while (open.length > at) out.push(`</${open.pop()}>`)
       continue
     }
-    const attrs = m[2].toLowerCase() === 'font' ? fontAttrs(m[3]) : cleanAttrs(tag, m[3])
+    const attrs = m[2].toLowerCase() === 'font' ? fontAttrs(m[3], email) : cleanAttrs(tag, m[3], email)
     // A picture or video file with no safe source is just dropped.
     if ((tag === 'img' || tag === 'source') && !/ src="/.test(attrs)) continue
     out.push(`<${tag}${attrs}>`)
@@ -180,10 +224,10 @@ export function sanitizeHtml(input: string | null | undefined): string {
 }
 
 // <font color="#f00"> (what execCommand writes) becomes a span with a colour.
-function fontAttrs(raw: string): string {
+function fontAttrs(raw: string, email = false): string {
   const c = /color\s*=\s*["']?\s*(#[0-9a-f]{3,8}|[a-z]{3,20})/i.exec(raw)?.[1]
   const st = /style\s*=\s*"([^"]*)"/i.exec(raw)?.[1] || ''
-  const style = [c ? `color: ${c}` : '', cleanStyle(st)].filter(Boolean).join('; ')
+  const style = [c ? `color: ${c}` : '', cleanStyle(st, email)].filter(Boolean).join('; ')
   return style ? ` style="${escapeHtml(style)}"` : ''
 }
 

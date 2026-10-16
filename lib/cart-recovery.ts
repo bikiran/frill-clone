@@ -156,6 +156,7 @@ export async function deliverCartMessage(db: any, o: { companyId: string; busine
     preferChannel: 'auto',
     channelSetting: o.channel === 'sms' || o.channel === 'email' ? o.channel : 'auto',
     threadMessageId: msg?.id || null,
+    newCustomerDefault: 'sms', sendingHours: true,
     senderName: o.business, subject: `You left something in your cart at ${o.business}`,
     origin: o.origin, db,
   })

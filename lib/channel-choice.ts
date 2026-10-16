@@ -5,10 +5,13 @@
 //
 // The rule, in order:
 //   1. The channel the customer last used to contact us.
-//   2. Otherwise SMS, when they have a mobile, haven't opted out of texts, and
+//   2. Automated ORDER messages to a customer who has never messaged us: email
+//      when we have it (what customers expect for receipts; see #122).
+//   3. Otherwise SMS, when they have a mobile, haven't opted out of texts, and
 //      the business has an SMS number.
-//   3. Otherwise email, when we have their email address.
+//   4. Otherwise email, when we have their email address.
 // A per-automation setting ('sms' / 'email') goes first when it can be used.
+// Automated texts also keep to sending hours (lib/channel-fallback).
 
 export type ChannelSetting = 'auto' | 'sms' | 'email'
 
@@ -25,6 +28,12 @@ export type ChannelFacts = {
   email?: string | null
   /** An automation's own channel setting. */
   setting?: ChannelSetting | null
+  /**
+   * For a customer who has never messaged the business: which channel an
+   * automated message tries first. Order and website-order messages use
+   * 'email' (customers expect receipts and order updates by email); others 'sms'.
+   */
+  newCustomerDefault?: 'sms' | 'email' | null
 }
 
 export type ChannelChoice = {
@@ -34,21 +43,29 @@ export type ChannelChoice = {
   canEmail: boolean
 }
 
+import { toE164 } from '@/lib/phone'
+
 const MESSAGING = ['sms', 'email', 'whatsapp', 'instagram', 'facebook', 'messenger']
 const WIDGET = ['chat', 'widget', 'live_chat']
 
 /**
- * Can this number take a text? Australian landlines (02/03/07/08, 13/1300/1800)
- * can't; AU mobiles are 04… / +614…. Numbers from elsewhere are given the
- * benefit of the doubt.
+ * Can this number take a text? Read as E.164 (lib/phone, national numbers in
+ * the business's country, Australia by default) with per-country mobile
+ * ranges: AU mobiles are +61 4…, NZ +64 2…, UK +44 7…. AU landlines and
+ * 13 / 1300 / 1800 numbers can't. Other countries' numbers are given the
+ * benefit of the doubt when they're a plausible length.
  */
-export function isMobileNumber(phone: string | null | undefined): boolean {
-  const d = String(phone || '').replace(/\D/g, '')
-  if (d.length < 8) return false
-  if (d.startsWith('614')) return d.length === 11
-  if (d.startsWith('04')) return d.length === 10
-  if (d.startsWith('61') || d.startsWith('0') || d.startsWith('1300') || d.startsWith('1800') || d.startsWith('13')) return false
-  return true
+export function isMobileNumber(phone: string | null | undefined, country: 'AU' = 'AU'): boolean {
+  const raw = String(phone || '').trim()
+  const d = raw.replace(/\D/g, '')
+  if (d.length < 8 || d.length > 15) return false
+  // Australian service numbers written nationally (13 xx xx, 1300…, 1800…).
+  if (country === 'AU' && !raw.startsWith('+') && /^1[38]/.test(d) && d.length <= 10) return false
+  const e = toE164(raw, country).replace(/^\+/, '')
+  if (e.startsWith('61')) return /^614\d{8}$/.test(e)
+  if (e.startsWith('64')) return /^642\d{7,9}$/.test(e)
+  if (e.startsWith('44')) return /^447\d{9}$/.test(e)
+  return e.length >= 10 && e.length <= 15
 }
 
 export function normaliseChannel(ch: string | null | undefined): string {
@@ -92,7 +109,9 @@ export function chooseChannel(f: ChannelFacts, opts: { reachOnly?: boolean } = {
     }
   }
 
-  // 2. SMS when we may text them.
+  // 2. A customer who hasn't messaged yet: an order update goes by email when we have it.
+  if (opts.reachOnly && f.newCustomerDefault === 'email' && canEmail && !last) return out('email', 'They haven’t messaged you yet, so order messages go by email.')
+  // 3. SMS when we may text them.
   if (canSms) return out('sms', 'They have a mobile and haven’t opted out of texts.')
   // 3. Email.
   if (canEmail) return out('email', smsWhyNot ? `Email, because ${smsWhyNot}.` : 'Sent by email.')
@@ -105,12 +124,14 @@ export function chooseChannel(f: ChannelFacts, opts: { reachOnly?: boolean } = {
  * they may be texted on, it opens their conversation ready to send an SMS;
  * otherwise by email; the inbox then follows the same rule for anything else.
  */
-export function contactMessageHref(c: { id: string; phone?: string | null; email?: string | null; unsubscribed_at?: string | null; is_blocked?: boolean | null }, want?: 'sms' | 'email' | null): string {
+export function contactMessageHref(c: { id: string; phone?: string | null; email?: string | null; unsubscribed_at?: string | null; is_blocked?: boolean | null }, want?: 'sms' | 'email' | null, conversationId?: string | null): string {
   const mayText = isMobileNumber(c.phone) && !c.unsubscribed_at && !c.is_blocked
   const ch = want === 'email' && c.email ? 'email'
     : want === 'sms' && mayText ? 'sms'
     : mayText ? 'sms'
     : c.email ? 'email'
     : 'auto'
+  // A specific conversation (the profile's) opens itself, on that channel.
+  if (conversationId) return `/admin/inbox?conversation=${encodeURIComponent(conversationId)}&channel=${ch}`
   return `/admin/inbox?contact=${encodeURIComponent(c.id)}&channel=${ch}`
 }

@@ -58,6 +58,7 @@ export async function smsConsentFor(db: any, companyId: string, phone: string | 
 export async function gatherChannelFacts(db: any, o: {
   companyId: string; conversationId?: string | null; contactId?: string | null
   phone?: string | null; email?: string | null; setting?: ChannelSetting | null
+  newCustomerDefault?: 'sms' | 'email' | null
 }): Promise<ChannelFacts & { contactId: string | null }> {
   let conv: any = null
   if (o.conversationId) {
@@ -85,6 +86,7 @@ export async function gatherChannelFacts(db: any, o: {
     smsConsent: consent,
     businessHasSms: hasSms,
     setting: o.setting || null,
+    newCustomerDefault: o.newCustomerDefault || null,
   }
 }
 

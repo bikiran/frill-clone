@@ -43,9 +43,14 @@ export function pickRole(enabled: Set<string>, text: string): { roleKey: string;
  * opts.run = false only queues the run (the agent worker picks it up within a
  * minute) — for callers that can't wait, like the Gmail sync cron.
  */
-export async function startSupportAgentForConversation(db: any, conversationId: string, opts: { debounceMs?: number; deadlineMs?: number; run?: boolean } = {}) {
+// opts.channel: the channel the customer's message ARRIVED on, when it isn't
+// the conversation's own. An email reply can thread onto an order (chat) or SMS
+// conversation; the agent must then follow the email settings and answer by
+// email, not by text or in a widget nobody is watching.
+export async function startSupportAgentForConversation(db: any, conversationId: string, opts: { debounceMs?: number; deadlineMs?: number; run?: boolean; channel?: string | null } = {}) {
   const { data: conv } = await db.from('conversations').select('id, company_id, channel, contact_id').eq('id', conversationId).maybeSingle()
-  const key = channelKey(conv?.channel)
+  const arrivedOn = opts.channel || conv?.channel
+  const key = channelKey(arrivedOn)
   if (!conv?.company_id || !key) return { started: false, reason: 'channel' }
   const { data: roleRows } = await db.from('agent_roles').select('role_key, enabled').eq('company_id', conv.company_id).in('role_key', ['support', 'reception']).then((r: any) => r, () => ({ data: [] }))
   const enabled = new Set<string>((roleRows || []).filter((r: any) => r.enabled).map((r: any) => r.role_key))
@@ -80,7 +85,7 @@ export async function startSupportAgentForConversation(db: any, conversationId: 
   const { runId, deduped } = await enqueueRun(db, {
     type: 'inbound_message', mode: 'live', companyId: conv.company_id, roleKey,
     conversationId, contactId: conv.contact_id || null, ref: lastCustomer.id, dedupeKey: `msg:${lastCustomer.id}`,
-    input: { message: text.slice(0, 4000), messageId: lastCustomer.id, channel: conv.channel, routed: why },
+    input: { message: text.slice(0, 4000), messageId: lastCustomer.id, channel: arrivedOn, routed: why },
   })
   if (deduped) return { started: false, reason: 'already running', runId }
   // Suggestions drafted for earlier messages are out of date now — this run answers the lot.

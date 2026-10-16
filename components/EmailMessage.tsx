@@ -1,8 +1,8 @@
 'use client'
 
 import { useAttachmentToken } from '@/lib/useAttachmentToken'
-import { useState } from 'react'
-import { quotedDateOf } from '@/lib/email-text'
+import { useEffect, useRef, useState } from 'react'
+import { quotedDateOf, emailFrameDoc, estimateEmailHeight } from '@/lib/email-text'
 
 // Email card. A customer's email reads as a RECEIVED message: on the left,
 // with their name, the time it arrived, the body, the history their mail app
@@ -89,6 +89,17 @@ export default function EmailMessage({ msg, agentColor, onOpenMedia, businessNam
   const attToken = useAttachmentToken(msg?.gmail_message_id ? msg?.conversation_id : null)
   const [showFull, setShowFull] = useState(false)
   const [showQuoted, setShowQuoted] = useState(false)
+  // The frame's width (our own element, measured from outside the sandbox) for
+  // its starting height: a narrow phone needs a taller frame.
+  const bodyRef = useRef<HTMLDivElement | null>(null)
+  const [bodyW, setBodyW] = useState(640)
+  useEffect(() => {
+    const el = bodyRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(() => setBodyW(Math.max(200, Math.round(el.clientWidth))))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
   const isAgent = msg.sender_type === 'agent'
 
   const from = firstAddress(msg.email_from)
@@ -152,11 +163,16 @@ export default function EmailMessage({ msg, agentColor, onOpenMedia, businessNam
         )}
 
         {/* Body */}
-        <div style={{ padding: '8px 14px 14px' }}>
+        <div ref={bodyRef} style={{ padding: '8px 14px 14px' }}>
           {showFull && html ? (
-            // Full formatted email (sanitised server-side).
-            <div style={{ fontSize: 13.5, lineHeight: 1.55, color: 'var(--ink)', overflowX: 'auto' }}
-              dangerouslySetInnerHTML={{ __html: html }} />
+            // The full formatted email, in a sandboxed frame: no scripts and
+            // not same-origin, so nothing in a customer's email can touch the
+            // inbox even if it got past the sanitiser (which runs again here,
+            // for rows stored before it). Drag the corner to make it taller.
+            <div style={{ resize: 'vertical', overflow: 'hidden', height: estimateEmailHeight(html, bodyW - 28), minHeight: 120, maxHeight: '85vh', border: '1px solid var(--border)', borderRadius: 10, background: '#fff' }}>
+              <iframe title={`Email: ${subject || 'message'}`} sandbox="allow-popups allow-popups-to-escape-sandbox" referrerPolicy="no-referrer"
+                srcDoc={emailFrameDoc(html)} style={{ width: '100%', height: '100%', border: 'none', display: 'block' }} />
+            </div>
           ) : text ? (
             <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.55, color: 'var(--ink)', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{text}</p>
           ) : !attachments.length && !html ? (
