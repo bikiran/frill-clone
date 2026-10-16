@@ -21,7 +21,7 @@ import { notifyCompany, pushInboundMessage } from '@/lib/notify'
 import type { ActionContext, ActionDef } from '@/lib/agent/types'
 import { createHmac, timingSafeEqual } from 'crypto'
 import { after } from 'next/server'
-import { resolveSmsSender } from '@/lib/sms-provider'
+import { resolveAutomatedSmsSender, textOptOut } from '@/lib/sms-consent'
 import { internalHeaders } from '@/lib/internal-call'
 import { isStaffMember } from '@/lib/company-access'
 import { getPhoneCatalog, closestProducts, phoneHints, type PhoneCatalog } from '@/lib/phone-catalog'
@@ -691,23 +691,20 @@ export async function phoneTurn(db: any, args: {
 // been blocked, and only a few a day to one number: caller ID can be faked, so
 // nobody can have the AI text someone else's phone over and over.
 const MAX_TEXTS_A_DAY = 6
-type TextableContact = { phone?: string | null; is_blocked?: boolean | null; unsubscribed_at?: string | null }
 
-/** Why the caller can't be texted now, or null when they can. Can't check → no text. */
+/**
+ * Why the caller can't be texted now, or null when they can. Can't check → no
+ * text. Checks the number texted (the caller's) with lib/sms-consent, so a
+ * STOP that never reached a contact counts too; the upload link, which goes
+ * to the thread's number, is checked again where it's sent.
+ */
 async function whyNoText(db: Db, args: { companyId: string; conversationId: string | null; contactId: string | null; from: string }): Promise<string | null> {
   const key = tail(args.from)
   if (key.length < 8) return 'The caller’s number is hidden.'
   try {
-    const none = { data: null, error: null }
-    const [byId, byPhone, byNorm] = await Promise.all([
-      args.contactId ? db.from('contacts').select('is_blocked, unsubscribed_at').eq('id', args.contactId).eq('company_id', args.companyId).maybeSingle() : none,
-      db.from('contacts').select('phone, is_blocked, unsubscribed_at').eq('company_id', args.companyId).ilike('phone', `%${key}%`).limit(20),
-      // phone_norm (V359) also finds numbers saved with spaces; it may not be there yet.
-      Promise.resolve(db.from('contacts').select('is_blocked, unsubscribed_at').eq('company_id', args.companyId).eq('phone_norm', key).limit(20)).catch(() => none),
-    ])
-    if (byId.error || byPhone.error) return 'Couldn’t check the caller can be texted.'
-    const found: (TextableContact | null)[] = [byId.data, ...(byPhone.data || []).filter((c: TextableContact) => tail(c.phone) === key), ...(byNorm.error ? [] : byNorm.data || [])]
-    if (found.some(c => c?.is_blocked || c?.unsubscribed_at)) return 'The caller has opted out of texts from the business. Tell them instead.'
+    const { state } = await textOptOut(db, args.companyId, args.from, args.contactId)
+    if (state === 'unknown') return 'Couldn’t check the caller can be texted.'
+    if (state === 'opted_out') return 'The caller has opted out of texts from the business. Tell them instead.'
     if (args.conversationId) {
       const { count, error } = await db.from('messages').select('id', { count: 'exact', head: true })
         .eq('conversation_id', args.conversationId).eq('sender_name', 'AI phone agent').eq('delivery_channel', 'sms')
@@ -725,7 +722,7 @@ async function textCaller(db: any, args: { companyId: string; conversationId: st
   if (!text) return { ok: false, error: 'Nothing to send.' }
   if (!args.from) return { ok: false, error: 'No number to text.' }
   try {
-    const sender = await resolveSmsSender(db, args.companyId)
+    const sender = await resolveAutomatedSmsSender(db, args.companyId)
     if (!sender) return { ok: false, error: 'No SMS number is set up for this business.' }
     await sender.send({ to: args.from, text })
   } catch (e: any) { return { ok: false, error: e?.message || 'The text didn’t send.' } }

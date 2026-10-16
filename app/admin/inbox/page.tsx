@@ -3448,13 +3448,18 @@ export default function InboxPage() {
       })
       await (supabase as any).from('conversations').update({ last_message: opts.body.slice(0, 120), last_message_at: new Date().toISOString() }).eq('id', selected.id)
     }
+    // A text copy when there's a mobile. Its failure used to be swallowed, so
+    // the toast said "sent" for a text that never went.
     if (smsNumber) {
+      let smsFailed = ''
       try {
-        await authFetch('/api/telnyx/sms/send', {
+        const res = await authFetch('/api/telnyx/sms/send', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ companyId, conversationId: selected.id, to: smsNumber, text: fullBody, senderName: me, skipChatMessage: true }),
         })
-      } catch {}
+        if (!res.ok) smsFailed = (await res.json().catch(() => ({})))?.error || `HTTP ${res.status}`
+      } catch (e: any) { smsFailed = e?.message || 'Could not reach the SMS service' }
+      if (smsFailed) return `Sent in chat, but the text didn’t go out (${smsFailed})`
     }
     return 'Sent in chat'
   }
@@ -4922,6 +4927,11 @@ export default function InboxPage() {
     return 'chat'
   }
 
+  // Does the inbox text the link itself when the server doesn't? Only for a
+  // thread with no number of its own and a mobile to text. Told to the server
+  // up front (callerTexts), so the card is labelled SMS only then.
+  const inboxTextsUploadLink = () => mediaSmsEnabled && !(selected as any)?.sms_number && !!smsDestination()
+
   // Deliver a freshly-created upload link to the customer EXACTLY ONCE.
   //
   // The server (/api/media-requests) always posts the in-thread card and, when
@@ -4934,20 +4944,49 @@ export default function InboxPage() {
   // Crucially, when the thread HAS an sms_number the server already texted, so
   // we send nothing — this is what removes the SMS double-send (server + client)
   // that hit SMS-channel media requests.
-  const deliverUploadLink = async (link: string, body: string, texted = false): Promise<string> => {
+  //
+  // When nothing went out it says so. It used to answer "sent" whenever the
+  // thread had an sms_number, even when the server skipped the text (texting
+  // off for the thread) or the provider refused it.
+  const deliverUploadLink = async (link: string, body: string, texted = false, smsError: string | null = null, token = ''): Promise<string> => {
     const subject = `${companyInfo?.name || 'We'} need a few files from you`
     const ch = activeChannel
     if (ch === 'email' || ch === 'instagram' || ch === 'facebook') {
       return deliverToCustomer({ subject, body, url: link })
     }
+    if (texted) return 'sent'
+    // The server tried to text it and couldn't. Another try from here would
+    // fail the same way, or text it twice after a timeout.
+    if (smsError) throw new Error(smsError)
     // The server also texts the contact's phone when the thread has no
-    // sms_number, so only send here when it says it didn't.
-    if (!texted && mediaSmsEnabled && !(selected as any)?.sms_number && smsDestination()) {
-      return deliverToCustomer({ subject, body, url: link, silent: true })
+    // sms_number, so only send here when it says it didn't. With the opt-out
+    // check automated texts get (checkOptOut); when it doesn't go, the card
+    // (labelled SMS up front) is put right and nothing says "sent".
+    if (inboxTextsUploadLink()) {
+      let failed = ''
+      try {
+        const res = await authFetch('/api/telnyx/sms/send', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ companyId, conversationId: selected?.id, to: smsDestination(), text: `${body}\n${link}`, senderName: myName, skipChatMessage: true, checkOptOut: true }),
+        })
+        if (!res.ok) failed = (await res.json().catch(() => ({})))?.error || `HTTP ${res.status}`
+      } catch (e: any) { failed = e?.message || 'Could not reach the SMS service' }
+      if (!failed) return 'Sent by SMS'
+      if (token && selected) {
+        try {
+          await (supabase as any).from('messages').update({ delivery_channel: 'chat' })
+            .eq('conversation_id', selected.id).eq('message_type', 'media_request').eq('message_payload->>token', token)
+        } catch {}
+      }
+      throw new Error(failed)
     }
-    // server already texted (thread has an sms_number), widget with no mobile, or
-    // media-link SMS disabled for this company — the card stays in the thread.
-    return 'sent'
+    // Not texted. A web chat visitor sees the card in the chat; anyone else
+    // hasn't been sent anything.
+    if (isWebChat) return 'Posted in the chat'
+    const why = !mediaSmsEnabled ? 'texting upload links is switched off'
+      : !smsDestination() ? 'no mobile number'
+      : 'texting is off for this conversation'
+    return `Added to the conversation but not texted (${why})`
   }
 
   const requestMediaQuick = async () => {
@@ -4962,12 +5001,17 @@ export default function InboxPage() {
           accept: ['image', 'video'], maxFiles: 10, expiryHours: null,
           createdBy: myName,
           deliveryChannel: uploadChannel(),
+          callerTexts: !['email', 'instagram', 'facebook'].includes(activeChannel) && inboxTextsUploadLink(),
         }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Could not create request')
       let how = 'sent'
-      if (data.link) how = await deliverUploadLink(data.link, 'Please upload your photos or videos here:', !!data.texted)
+      if (data.link) {
+        try {
+          how = await deliverUploadLink(data.link, 'Please upload your photos or videos here:', !!data.texted, data.smsError || null, data.token || '')
+        } catch (e: any) { showToast(`Upload link created, but sending failed: ${e.message}`); refreshThread(); return }
+      }
       showToast(`Upload link ${how.toLowerCase()}`)
       refreshThread()
     } catch (e: any) { showToast(e.message || 'Could not send the upload link') }
@@ -4988,6 +5032,7 @@ export default function InboxPage() {
           expiryHours: mrExpiry ? parseInt(mrExpiry) : null,
           createdBy: myName,
           deliveryChannel: uploadChannel(),
+          callerTexts: !['email', 'instagram', 'facebook'].includes(activeChannel) && inboxTextsUploadLink(),
         }),
       })
       const data = await res.json()
@@ -5000,7 +5045,7 @@ export default function InboxPage() {
       let how = 'sent'
       if (data.link) {
         try {
-          how = await deliverUploadLink(data.link, `${mrPrompt.trim() || 'Please upload the requested files.'}\nUpload here:`, !!data.texted)
+          how = await deliverUploadLink(data.link, `${mrPrompt.trim() || 'Please upload the requested files.'}\nUpload here:`, !!data.texted, data.smsError || null, data.token || '')
         } catch (e: any) { showToast(`Request created, but sending failed: ${e.message}`); setMrSaving(false); return }
       }
       showToast(`Media request ${how.toLowerCase()}`)
@@ -10247,6 +10292,16 @@ export default function InboxPage() {
                     style={{ padding: '7px 14px', borderRadius: 8, background: 'var(--coral, #ff7a6b)', color: '#fff', fontSize: 12.5, fontWeight: 700, textDecoration: 'none', whiteSpace: 'nowrap', flexShrink: 0 }}>
                     Enable SMS
                   </a>
+                </div>
+              )}
+              {/* Opted out: staff can still type a text (a reply they were asked
+                  for), but they should know. Automatic texts are blocked. */}
+              {selected && !internalMode && outboundChannel === 'sms' && ((contact as any)?.unsubscribed_at || (contact as any)?.is_blocked) && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '0 0 8px', padding: '9px 12px', borderRadius: 10, background: '#fef2f2', border: '1px solid #fecaca' }}>
+                  <span style={{ fontSize: 16, flexShrink: 0 }}>⛔</span>
+                  <span style={{ flex: 1, fontSize: 12.5, color: '#991b1b', fontWeight: 600, lineHeight: 1.4 }}>
+                    {(contact as any)?.is_blocked ? 'This customer is blocked.' : 'This customer opted out of texts (they replied STOP).'} Automatic texts to them are stopped — only text them if they’ve asked you to.
+                  </span>
                 </div>
               )}
               {selected && paymentSignal && !saleDismissed.has(selected.id) && !convHasSale && wooOrders.length === 0 && (

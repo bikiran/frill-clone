@@ -23,10 +23,11 @@ import { after } from 'next/server'
 import { callOutcome } from '@/lib/dashboard-time'
 import { phoneKey, toE164 } from '@/lib/phone'
 import { businessNumbers } from '@/lib/business-numbers'
-import { resolveSmsSender, isLandlineRejection } from '@/lib/sms-provider'
+import { isLandlineRejection } from '@/lib/sms-provider'
 import { isExternalSendBlocked } from '@/lib/demo-guard'
 import { loadBusinessHours, hoursOutlook } from '@/lib/business-hours'
 import { log } from '@/lib/log'
+import { textOptOut, smsKeywordTimes, isTextedOptIn, resolveAutomatedSmsSender } from '@/lib/sms-consent'
 import {
   missedCallTextSettings, renderMissedCallText, textableCaller, canTextFrom,
   MISSED_CALL_TEXT_HOURS, type CallerSkip,
@@ -78,8 +79,9 @@ export async function claimMissedCallText(db: any, companyId: string, phone: str
 
 // The provider refused the line the text went from (not set up for texting,
 // not on this account), not the customer: worth one more try from the usual
-// number. Never after a carrier opt-out (Twilio 21610 "unsubscribed recipient",
-// Telnyx 40300 "block rule"): the usual number would get round their STOP.
+// number. Not after a carrier opt-out (Twilio 21610 "unsubscribed recipient",
+// Telnyx 40300 "block rule"): the usual number would get round their STOP,
+// unless they've since texted the business to opt back in (optedInByText).
 const CARRIER_OPT_OUT = /unsubscribed recipient|stop message|block rule|blacklist rule/i
 const FROM_REJECTED = /\bfrom\b.{0,12}\b(number|address)\b|not a twilio phone number|(sms|message)[- ]capable|messaging profile/i
 
@@ -110,45 +112,54 @@ async function releaseClaim(db: any, companyId: string, phone: string, callId: s
 
 /**
  * Has anyone with this number opted out, been blocked, or been found to be a
- * landline? Rows are read whole so a column an older database lacks can't hide
- * an opt-out; if they can't be read at all the answer is 'unknown' (don't send).
+ * landline? Also opted out when the last keyword they texted was a STOP that
+ * never reached a contact (lib/sms-consent). If it can't be read at all the
+ * answer is 'unknown' (don't send).
  */
-async function contactState(db: any, companyId: string, key: string, contactId: string | null): Promise<'ok' | 'opted_out' | 'not_mobile' | 'unknown'> {
-  const found: any[] = []
-  try {
-    if (contactId) {
-      const { data, error } = await db.from('contacts').select('*').eq('id', contactId).eq('company_id', companyId).maybeSingle()
-      if (error) return 'unknown'
-      if (data) found.push(data)
-    }
-    const { data, error } = await db.from('contacts').select('*').eq('company_id', companyId).ilike('phone', `%${key}%`).limit(20)
-    if (error) return 'unknown'
-    found.push(...(data || []).filter((c: any) => phoneKey(c.phone) === key))
-    // phone_norm also finds numbers saved with spaces ("0412 345 678"). The
-    // column comes from V359, so it may not be there yet.
-    try {
-      const r = await db.from('contacts').select('*').eq('company_id', companyId).eq('phone_norm', key).limit(20)
-      if (!r.error) found.push(...(r.data || []))
-    } catch {}
-  } catch { return 'unknown' }
-  if (found.some(c => c.is_blocked || c.unsubscribed_at)) return 'opted_out'
-  if (found.some(c => /landline|fixed/i.test(String(c.line_type || '')))) return 'not_mobile'
+async function contactState(db: any, companyId: string, phone: string, contactId: string | null): Promise<'ok' | 'opted_out' | 'not_mobile' | 'unknown'> {
+  const { state, contacts } = await textOptOut(db, companyId, phone, contactId)
+  if (state !== 'ok') return state
+  if (contacts.some(c => /landline|fixed/i.test(String(c.line_type || '')))) return 'not_mobile'
   return 'ok'
 }
 
 /**
+ * Has the customer opted back in by text since the STOP behind a carrier
+ * block? The carrier keeps blocking a line they texted STOP to until they text
+ * START to that same line, even when they opted back in on another of the
+ * business's numbers.
+ *   'yes': their latest say on the contact is texting the business START, YES
+ *     or similar (lib/inbound-sms), later than the newest STOP Colvy received
+ *     from their number, in any thread. The block is older than their opt-in.
+ *   'unconfirmed': they opted in by text, but no STOP from them is on record,
+ *     so the block may be newer than the opt-in.
+ *   'no': no opt-in by text (a Shopify tick doesn't count), or a STOP came
+ *     after it.
+ *   'unknown': the contact or their messages can't be read.
+ * Only 'yes' allows sending from another number, and only 'no' records the
+ * block as an opt-out.
+ */
+async function optedInByText(db: any, companyId: string, contactId: string | null, phone: string): Promise<'yes' | 'unconfirmed' | 'no' | 'unknown'> {
+  if (!contactId) return 'no'
+  try {
+    const { data: ct, error } = await db.from('contacts').select('*')
+      .eq('id', contactId).eq('company_id', companyId).maybeSingle()
+    if (error) return 'unknown'
+    if (!isTextedOptIn(ct)) return 'no'
+    const kw = await smsKeywordTimes(db, companyId, phone)
+    if (!kw) return 'unknown'
+    const optedInAt = Date.parse(ct.consent_recorded_at || '')
+    if (kw.stop === null || !Number.isFinite(optedInAt)) return 'unconfirmed'
+    return optedInAt > kw.stop ? 'yes' : 'no'
+  } catch { return 'unknown' }
+}
+
+/**
  * Record an opt-out the carrier reported, the way a STOP reply is recorded.
- * Not when the customer's latest say was texting the business START or YES
- * (lib/inbound-sms writes that onto the contact): the carrier can go on
- * blocking a number they once texted STOP to after Colvy recorded that opt-in,
- * so the block is older than their latest choice, not a new opt-out.
+ * The caller first checks it isn't an old block (optedInByText 'no').
  */
 async function recordCarrierOptOut(db: any, companyId: string, contactId: string, now: Date) {
   try {
-    const { data: ct, error } = await db.from('contacts').select('consent_basis, consent_source')
-      .eq('id', contactId).eq('company_id', companyId).maybeSingle()
-    if (error || !ct) return
-    if (ct.consent_basis === 'express' && /^replied [A-Z]+ by SMS$/.test(String(ct.consent_source || ''))) return
     const { data } = await db.from('contacts').update({
       subscribed_to_marketing: false, consent_basis: 'none', consent_source: 'replied STOP (reported by the carrier)',
       unsubscribed_at: now.toISOString(), unsubscribe_method: 'sms_keyword',
@@ -195,7 +206,7 @@ export async function sendMissedCallText(p: { db: any; companyId: string; callId
     const own = await businessNumbers(db, companyId)
     if (own.all.has(key)) return 'own_number'
 
-    const state = await contactState(db, companyId, key, call.contact_id || null)
+    const state = await contactState(db, companyId, to, call.contact_id || null)
     if (state === 'unknown') return 'failed'
     if (state !== 'ok') return state
 
@@ -220,7 +231,8 @@ export async function sendMissedCallText(p: { db: any; companyId: string; callId
     if (claim === 'error') return 'failed'
     const claimed = claim === 'claimed'
 
-    const sender = await resolveSmsSender(db, companyId)
+    // Every send checks the number it goes to against opt-outs (lib/sms-consent).
+    const sender = await resolveAutomatedSmsSender(db, companyId, { contactId: call.contact_id || null })
     if (!sender) { if (claimed) await releaseClaim(db, companyId, to, callId); return 'no_sms' }
 
     const text = renderMissedCallText(settings.message, co?.name || '')
@@ -234,25 +246,40 @@ export async function sendMissedCallText(p: { db: any; companyId: string; callId
 
     let sent: { id: string | null } | null = null
     let err: any = null
+    let sentFrom = from
+    // Read once, and only when the carrier reports a block.
+    let optedIn: Awaited<ReturnType<typeof optedInByText>> | undefined
+    const optedInSince = async () => {
+      if (optedIn === undefined) optedIn = await optedInByText(db, companyId, call.contact_id || null, to)
+      return optedIn
+    }
     try {
       sent = await sender.send({ to, text, from, statusCallback })
     } catch (e) {
       err = e
-      // That line isn't set up for texting — try the usual number once.
-      if (from && isFromNumberRejection(e)) {
-        try { sent = await sender.send({ to, text, statusCallback }); err = null } catch (e2) { err = e2 }
+      // Try the usual number once when that line isn't set up for texting, or
+      // when the carrier still blocks the line for a STOP the customer has
+      // since taken back by texting the business (only when Colvy can show
+      // the opt-in is the later of the two). A STOP binds the number it was
+      // sent to, and the carrier still refuses the usual number if they texted
+      // STOP to that one too.
+      if (from && (isFromNumberRejection(e) || (isCarrierOptOut(e) && (await optedInSince()) === 'yes'))) {
+        try { sent = await sender.send({ to, text, statusCallback }); err = null; sentFrom = undefined } catch (e2) { err = e2 }
       }
     }
     if (!sent) {
-      if (claimed) await releaseClaim(db, companyId, to, callId)
+      // A carrier block won't have lifted by their next missed call, so the
+      // claim is kept (one try every 12 hours). Anything else hands it back.
+      if (claimed && !isCarrierOptOut(err)) await releaseClaim(db, companyId, to, callId)
       // The carrier says it's a landline: remember, so it isn't tried again.
       if (isLandlineRejection(err) && call.contact_id) {
         try { await db.from('contacts').update({ line_type: 'landline', line_type_checked_at: now.toISOString() }).eq('id', call.contact_id).eq('company_id', companyId) } catch {}
       }
       // The carrier says they replied STOP: record it as Colvy would a STOP it
       // received itself (lib/inbound-sms), so none of the business's numbers
-      // texts them again.
-      else if (isCarrierOptOut(err) && call.contact_id) await recordCarrierOptOut(db, companyId, call.contact_id, now)
+      // texts them again. Not over an opt-in they texted, and not when the
+      // contact can't be read.
+      else if (isCarrierOptOut(err) && call.contact_id && (await optedInSince()) === 'no') await recordCarrierOptOut(db, companyId, call.contact_id, now)
       log.warn('[missed call text] not sent', err?.message || err)
       return 'failed'
     }
@@ -279,7 +306,7 @@ export async function sendMissedCallText(p: { db: any; companyId: string; callId
         last_message: text.slice(0, 200), last_message_at: nowIso, updated_at: nowIso,
         ...(callOnly ? { channel: 'sms' } : {}), sms_number: conv.sms_number || to,
         ...(keepsChoice ? {} : { sms_enabled: true }),
-        ...(conv.channel_number ? {} : { channel_number: from || sender.from || null }),
+        ...(conv.channel_number ? {} : { channel_number: sentFrom || sender.from || null }),
       }).eq('id', conv.id)
     } catch (e: any) { log.warn('[missed call text] sent, but not saved to the conversation', e?.message || e) }
     return 'sent'
