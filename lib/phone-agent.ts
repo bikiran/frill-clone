@@ -255,6 +255,7 @@ export type PhoneCallState = {
   messageAbout?: string    // what the message taken this call was about
   knownProducts?: string[] // some of what the business sells, to work out misheard names
   textsSent?: number       // texts sent to the caller this call (capped)
+  bookingLinks?: number    // of those, booking links (the Command Centre counts them)
   setup?: PhoneCallSetup   // why the AI answered, its skills and rules (missing on older calls: the test-stage defaults)
 }
 
@@ -614,7 +615,11 @@ export async function phoneTurn(db: any, args: {
             : call.name === 'text_booking_link'
               ? await textBookingLink(db, actx, args, String(call.input?.service || ''))
               : await textUploadLink(db, args, String(call.input?.what || ''), !!call.input?.photos_only)
-        if (sent.ok) { args.state.textsSent = (args.state.textsSent || 0) + 1; doneNow.push(call.name) }
+        if (sent.ok) {
+          args.state.textsSent = (args.state.textsSent || 0) + 1
+          if (call.name === 'text_booking_link') args.state.bookingLinks = (args.state.bookingLinks || 0) + 1
+          doneNow.push(call.name)
+        }
         results.push({ type: 'tool_result', id: call.id, content: sent.ok ? 'Sent.' : `Not sent: ${sent.error}`, ...(sent.ok ? {} : { isError: true }) })
         continue
       }
