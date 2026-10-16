@@ -155,7 +155,7 @@ export default function MobileNav() {
 
   const logout = async () => {
     if (!await confirmDialog('Log out of Colvy?')) return
-    try { await supabase.auth.signOut() } catch {}
+    try { await supabase.auth.signOut({ scope: 'local' }) } catch {}
     router.push('/signin')
   }
 

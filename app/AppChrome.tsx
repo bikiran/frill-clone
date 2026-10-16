@@ -486,7 +486,7 @@ export default function AppChrome({
         const { data: verified, error } = await supabase.auth.getUser()
         if (error || !verified?.user) {
           // Stale/invalid session — clear it locally and treat as logged out
-          try { await supabase.auth.signOut() } catch {}
+          try { await supabase.auth.signOut({ scope: 'local' }) } catch {}
           setUser(null)
           checkOwner(null)
           return
@@ -520,7 +520,7 @@ export default function AppChrome({
   const handleLogout = async () => {
     setShowUserMenu(false)
     setShowDrawer(false)
-    await supabase.auth.signOut()
+    await supabase.auth.signOut({ scope: 'local' })
     // Force to home — clears any stale component state
     window.location.href = '/'
   }

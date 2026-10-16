@@ -875,7 +875,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   // Auth resolution hung or failed (stuck/expired session token, backend blip) —
   // give the user a way out instead of an infinite spinner.
   if (authed === null && authError) {
-    const signInAgain = async () => { try { await supabase.auth.signOut() } catch {} ; window.location.href = '/signin' }
+    const signInAgain = async () => { try { await supabase.auth.signOut({ scope: 'local' }) } catch {} ; window.location.href = '/signin' }
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--canvas)', padding: 24 }}>
         <div style={{ maxWidth: 380, textAlign: 'center' }}>
