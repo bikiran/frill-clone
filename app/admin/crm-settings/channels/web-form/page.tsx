@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
+import { authFetch } from '@/lib/auth-fetch'
 import { S, useCompanyUser } from '../../_shared'
 
 const FORMS_DOMAIN = process.env.NEXT_PUBLIC_FORMS_DOMAIN || 'forms.colvy.com'
@@ -13,6 +14,7 @@ const FAQ = [
   { q: 'How do I set up Web Forms?', a: 'In your form builder, set the notification/recipient email to the address below (or add it as a CC). That\'s it — the next submission shows up in your inbox.' },
   { q: 'My forms are coming into Colvy, but they don\'t look right.', a: 'Most form tools let you customise the notification email body. Put each field on its own line (e.g. "Name: {{name}}") so it\'s easy to read in the inbox. Plain-text notifications work best.' },
   { q: 'Do I have to add CC on all forms?', a: 'No. You can either set this address as the sole recipient, or CC it alongside your own inbox — whichever you prefer.' },
+  { q: 'Do I need to change any DNS or email settings?', a: 'No. Colvy runs the forms domain for every business. You only paste the address into your form. "Send a test" emails the address for real and tells you when it arrives.' },
 ]
 
 export default function WebFormChannel() {
@@ -25,7 +27,9 @@ export default function WebFormChannel() {
   const [openFaq, setOpenFaq] = useState<number | null>(null)
   const [companyName, setCompanyName] = useState('')
   const [testing, setTesting] = useState<string | null>(null)
-  const [testMsg, setTestMsg] = useState<Record<string, string>>({})
+  const [testMsg, setTestMsg] = useState<Record<string, { ok: boolean | null; text: string }>>({})
+  // Is the shared forms domain receiving mail right now? (null = couldn't tell)
+  const [status, setStatus] = useState<{ domain: string | null; ready: boolean | null } | null>(null)
 
   const load = async () => {
     if (!companyId) return
@@ -41,6 +45,10 @@ export default function WebFormChannel() {
     setLoading(false)
   }
   useEffect(() => { load() }, [companyId])
+  useEffect(() => {
+    if (!companyId) return
+    authFetch(`/api/web-form/status?companyId=${encodeURIComponent(companyId)}`).then(r => r.ok ? r.json() : null).then(d => setStatus(d)).catch(() => setStatus(null))
+  }, [companyId])
 
   const addressFor = (locationId: string | null) =>
     rows.find(r => (r.location_id || null) === (locationId || null))
@@ -62,17 +70,26 @@ export default function WebFormChannel() {
 
   const copy = (addr: string) => { navigator.clipboard?.writeText(addr); setCopied(addr); setTimeout(() => setCopied(null), 1500) }
 
+  // A real test: Colvy emails the address through Resend, exactly as a
+  // website form would, then watches for it to arrive (up to a minute).
   const sendTest = async (addr: string) => {
-    setTesting(addr); setTestMsg(m => ({ ...m, [addr]: '' }))
+    setTesting(addr); setTestMsg(m => ({ ...m, [addr]: { ok: null, text: 'Sending a test email…' } }))
     try {
-      const { data: { session } } = await supabase.auth.getSession()
-      const res = await fetch('/api/web-form/test', {
-        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token || ''}` },
-        body: JSON.stringify({ address: addr }),
-      })
-      const d = await res.json()
-      setTestMsg(m => ({ ...m, [addr]: res.ok ? 'Test submission sent — check your inbox ✓' : (d.error || 'Test failed') }))
-    } catch (e: any) { setTestMsg(m => ({ ...m, [addr]: e.message || 'Test failed' })) } finally { setTesting(null) }
+      const res = await authFetch('/api/web-form/test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ address: addr }) })
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok) { setTestMsg(m => ({ ...m, [addr]: { ok: false, text: d.error || 'The test couldn’t be sent' } })); return }
+      const started = Date.now()
+      let delivery: string | null = null
+      while (Date.now() - started < 60_000) {
+        await new Promise(r => setTimeout(r, 3000))
+        setTestMsg(m => ({ ...m, [addr]: { ok: null, text: `Sent. Waiting for it to arrive… ${Math.round((Date.now() - started) / 1000)}s` } }))
+        const c = await authFetch(`/api/web-form/test?channelId=${encodeURIComponent(d.channelId)}&token=${encodeURIComponent(d.token)}&emailId=${encodeURIComponent(d.emailId || '')}`).then(r => r.json()).catch(() => null)
+        if (c?.arrived) { setTestMsg(m => ({ ...m, [addr]: { ok: true, text: 'It arrived. Form submissions to this address reach your inbox. (The test is filed as closed.)' } })); return }
+        delivery = c?.delivery || delivery
+        if (delivery === 'bounced' || delivery === 'failed') break
+      }
+      setTestMsg(m => ({ ...m, [addr]: { ok: false, text: delivery === 'bounced' ? 'It didn’t arrive: the email bounced. Colvy’s forms domain isn’t accepting mail yet. This is on our side, not yours.' : 'It didn’t arrive within a minute. Try again shortly, or contact Colvy support.' } }))
+    } catch (e: any) { setTestMsg(m => ({ ...m, [addr]: { ok: false, text: e.message || 'Test failed' } })) } finally { setTesting(null) }
   }
 
   // The rows to show: one per location, plus a company-wide fallback when there
@@ -82,15 +99,28 @@ export default function WebFormChannel() {
     : [{ id: null as string | null, label: companyName || 'All submissions' }]
 
   return (
-    <div style={{ maxWidth: 760 }}>
+    <div>
       <Link href="/admin/crm-settings/channels" style={{ fontSize: 13, color: 'var(--slate)', textDecoration: 'none' }}>← Back to channels</Link>
       <h1 style={{ ...S.h1, marginTop: 12 }}>Web Form</h1>
-      <p style={S.sub}>Give any website form a Colvy address. Point your form's notification email here and every submission lands in your inbox for that location.</p>
+      <p style={S.sub}>Give any website form a Colvy address. Point your form's notification email here and every submission lands in your inbox for that location. There's nothing else to set up.</p>
+
+      {status && status.ready !== null && (
+        <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '12px 14px', borderRadius: 12, marginBottom: 16, border: `1px solid ${status.ready ? '#a7f3d0' : '#fde68a'}`, background: status.ready ? '#ecfdf5' : '#fffbeb' }}>
+          {status.ready
+            ? <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#059669" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 1 }}><circle cx="12" cy="12" r="10"/><polyline points="16 9 10.5 15 8 12.5"/></svg>
+            : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#d97706" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 1 }}><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>}
+          <p style={{ margin: 0, fontSize: 13.5, color: 'var(--ink)', lineHeight: 1.5 }}>
+            {status.ready
+              ? <><b>Receiving.</b> Email sent to your web-form addresses arrives in your inbox.</>
+              : <><b>Not receiving yet.</b> Colvy is still finishing the email setup for {status.domain || 'the forms domain'}, so submissions sent to these addresses won&apos;t arrive yet. This is on our side: you don&apos;t need to change anything, and your addresses will start working as they are.</>}
+          </p>
+        </div>
+      )}
 
       {loading ? (
         <div style={{ textAlign: 'center', padding: 40, color: 'var(--slate)' }}>Loading…</div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 28 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(360px, 100%), 1fr))', gap: 12, marginBottom: 28 }}>
           {targets.map(t => {
             const existing = addressFor(t.id)
             return (
@@ -105,9 +135,9 @@ export default function WebFormChannel() {
                       <code style={{ flex: 1, fontSize: 13.5, color: 'var(--ink)', fontFamily: 'monospace', wordBreak: 'break-all' }}>{existing.inbound_address}</code>
                       <button onClick={() => copy(existing.inbound_address)} title="Copy" style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 8, padding: '6px 8px', cursor: 'pointer', color: 'var(--slate)', fontSize: 12, fontWeight: 600 }}>{copied === existing.inbound_address ? 'Copied!' : 'Copy'}</button>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 10 }}>
-                      <button onClick={() => sendTest(existing.inbound_address)} disabled={testing === existing.inbound_address} style={{ ...S.btnGhost, padding: '7px 14px', fontSize: 12.5 }}>{testing === existing.inbound_address ? 'Sending…' : 'Send a test'}</button>
-                      {testMsg[existing.inbound_address] && <span style={{ fontSize: 12.5, color: testMsg[existing.inbound_address].includes('✓') ? '#059669' : '#dc2626' }}>{testMsg[existing.inbound_address]}</span>}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px 10px', marginTop: 10, flexWrap: 'wrap' }}>
+                      <button onClick={() => sendTest(existing.inbound_address)} disabled={testing === existing.inbound_address} style={{ ...S.btnGhost, padding: '7px 14px', fontSize: 12.5, flexShrink: 0 }}>{testing === existing.inbound_address ? 'Testing…' : 'Send a test'}</button>
+                      {testMsg[existing.inbound_address] && <span style={{ fontSize: 12.5, lineHeight: 1.45, color: testMsg[existing.inbound_address].ok === true ? '#059669' : testMsg[existing.inbound_address].ok === false ? '#dc2626' : 'var(--slate)' }}>{testMsg[existing.inbound_address].text}</span>}
                     </div>
                   </>
                 ) : (
@@ -120,7 +150,7 @@ export default function WebFormChannel() {
       )}
 
       <h2 style={{ ...S.h2, fontSize: 15 }}>FAQs</h2>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(420px, 100%), 1fr))', gap: 8, alignItems: 'start' }}>
         {FAQ.map((f, i) => (
           <div key={i} style={{ border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
             <button onClick={() => setOpenFaq(openFaq === i ? null : i)} style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '13px 15px', background: '#fff', border: 'none', cursor: 'pointer', textAlign: 'left' }}>

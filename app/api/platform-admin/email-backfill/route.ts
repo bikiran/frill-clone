@@ -57,12 +57,14 @@ export async function POST(req: NextRequest) {
       const { data } = await db.from('conversations').select('id, company_id').in('id', convIds.slice(i, i + 200))
       for (const c of data || []) convCompany[c.id] = c.company_id
     }
-    const per: Record<string, { companyId: string; candidates: number; filled: number; rethreaded: number; notFound: number; stillEmpty: number }> = {}
+    const per: Record<string, { companyId: string; candidates: number; filled: number; fromGmail: number; rethreaded: number; notFound: number; stillEmpty: number; alreadyInColvy: number }> = {}
     for (const r of result.rows) {
       const co = companyId || convCompany[r.conversationId] || 'unknown'
-      const p = per[co] ||= { companyId: co, candidates: 0, filled: 0, rethreaded: 0, notFound: 0, stillEmpty: 0 }
+      const p = per[co] ||= { companyId: co, candidates: 0, filled: 0, fromGmail: 0, rethreaded: 0, notFound: 0, stillEmpty: 0, alreadyInColvy: 0 }
       p.candidates++
       if (r.outcome.startsWith('filled')) p.filled++
+      if (r.outcome === 'filled-from-gmail') p.fromGmail++
+      if (r.outcome === 'already-in-colvy') p.alreadyInColvy++
       if (r.outcome.includes('+moved')) p.rethreaded++
       if (['not-found-on-resend', 'fetch-failed', 'mismatch'].includes(r.outcome)) p.notFound++
       if (r.outcome === 'email-has-no-body') p.stillEmpty++
@@ -76,11 +78,17 @@ export async function POST(req: NextRequest) {
       await logSuperAdminAudit(db, {
         adminId: who.id, adminEmail: who.email, companyId,
         action: 'email_backfill_run', summary: `Recovered empty email replies${companyId ? ` for ${workspaces[0]?.name || 'one workspace'}` : ''}: ${result.filled} filled, ${result.rethreaded} re-threaded`,
-        detail: { days, rethread, filled: result.filled, rethreaded: result.rethreaded, notFound: result.notFound, stillEmpty: result.stillEmpty },
+        detail: { days, rethread, filled: result.filled, fromGmail: result.fromGmail, rethreaded: result.rethreaded, notFound: result.notFound, stillEmpty: result.stillEmpty, alreadyInColvy: result.alreadyInColvy },
       })
     }
-    const { scanned, candidates, filled, rethreaded, notFound, stillEmpty } = result
-    return NextResponse.json({ ok: true, dryRun, scanned, candidates, filled, rethreaded, notFound, stillEmpty, days, rethread, workspaces }, { headers: { 'Cache-Control': 'no-store' } })
+    const { scanned, candidates, filled, rethreaded, notFound, stillEmpty, fromGmail, alreadyInColvy } = result
+    // Every row with what happened (or why it couldn't be found), so the page
+    // can list them: date, sender, subject, a link to the conversation.
+    const rows = result.rows.slice(0, 500).map(r => {
+      const co = companyId || convCompany[r.conversationId] || null
+      return { ...r, companyId: co, slug: co ? names[co]?.slug || null : null }
+    })
+    return NextResponse.json({ ok: true, dryRun, scanned, candidates, filled, fromGmail, rethreaded, notFound, stillEmpty, alreadyInColvy, days, rethread, workspaces, rows, resendIndex: result.resendIndex || null }, { headers: { 'Cache-Control': 'no-store' } })
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || 'Recovery failed' }, { status: 500 })
   }
