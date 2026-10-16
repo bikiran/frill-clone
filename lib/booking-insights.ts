@@ -33,6 +33,20 @@ export function computeInsights(rows: any[], tz: string, now = Date.now(), days 
   const byDow = [0, 0, 0, 0, 0, 0, 0]
   const byHour: Record<number, number> = {}
   const services = new Map<string, { name: string; count: number; revenueCents: number }>()
+  // One customer can show up by contact, phone and email on different
+  // bookings: keys seen on the same booking are the same person.
+  const parent = new Map<string, string>()
+  const find = (k: string): string => { let r = k; while (parent.get(r) !== r) r = parent.get(r)!; parent.set(k, r); return r }
+  const join = (keys: string[]) => {
+    for (const k of keys) if (!parent.has(k)) parent.set(k, k)
+    for (const k of keys.slice(1)) { const a = find(keys[0]), b = find(k); if (a !== b) parent.set(b, a) }
+  }
+  const keysOf = (b: any) => [
+    b.contact_id ? `c:${b.contact_id}` : '',
+    String(b.customer_phone || '').replace(/\D/g, '').length >= 9 ? `p:${String(b.customer_phone).replace(/\D/g, '').slice(-9)}` : '',
+    b.customer_email ? `e:${String(b.customer_email).trim().toLowerCase()}` : '',
+  ].filter(Boolean)
+  for (const b of kept) { const k = keysOf(b); if (k.length) join(k) }
   const perCustomer = new Map<string, number>()
   for (const b of kept) {
     const ms = Date.parse(b.starts_at)
@@ -45,8 +59,8 @@ export function computeInsights(rows: any[], tz: string, now = Date.now(), days 
     sv.count++
     sv.revenueCents += Math.max(0, (b.price_cents || 0) - (b.refunded_cents || 0))
     services.set(name, sv)
-    const who = b.contact_id || String(b.customer_phone || '').replace(/\D/g, '').slice(-9) || String(b.customer_email || '').toLowerCase()
-    if (who) perCustomer.set(who, (perCustomer.get(who) || 0) + 1)
+    const k = keysOf(b)
+    if (k.length) { const who = find(k[0]); perCustomer.set(who, (perCustomer.get(who) || 0) + 1) }
   }
   const customers = [...perCustomer.values()]
   const regulars = new Set(rows.filter(b => b.series_id && b.status === 'confirmed' && Date.parse(b.starts_at) > now).map(b => b.series_id)).size

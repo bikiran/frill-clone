@@ -7,8 +7,11 @@ import {
   isMissingBookingSchema, MIGRATION_HINT, manageUrl, customerMessage, repeatBooking,
 } from '@/lib/booking'
 import { computeInsights } from '@/lib/booking-insights'
+import type { InviteEvent } from '@/lib/booking-ics'
 
 export const dynamic = 'force-dynamic'
+// Repeating a booking books up to 26 visits in one request.
+export const maxDuration = 60
 
 const admin = () => createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -89,7 +92,7 @@ export async function GET(req: NextRequest) {
         const cols = 'status, service_name, starts_at, ends_at, price_cents, refunded_cents, contact_id, customer_phone, customer_email'
         const read = (c: string) => db.from('bookings').select(c).eq('company_id', companyId)
           .gte('starts_at', new Date(now - 90 * DAY).toISOString()).lt('starts_at', new Date(now + 120 * DAY).toISOString())
-          .in('status', ['confirmed', 'completed', 'no_show']).limit(5000)
+          .in('status', ['confirmed', 'completed', 'no_show']).order('starts_at', { ascending: false }).limit(5000)
         let r: any = await read(`${cols}, series_id`)
         if (r.error) r = await read(cols)
         if (!r.error) insights = computeInsights(r.data || [], tz, now)
@@ -159,15 +162,20 @@ export async function PATCH(req: NextRequest) {
       // customer's one message for this visit says how many went with it.
       if (!['confirmed', 'pending'].includes(b.status)) return NextResponse.json({ error: 'This booking is already cancelled or finished.' }, { status: 400 })
       let also = 0
+      const events: InviteEvent[] = []
       if (body.series && b.series_id) {
-        const { data: later } = await db.from('bookings').select('id').eq('company_id', companyId).eq('series_id', b.series_id)
+        const { data: later } = await db.from('bookings').select('id, starts_at, ends_at, reschedule_count, service_name').eq('company_id', companyId).eq('series_id', b.series_id)
           .in('status', ['confirmed', 'pending']).gt('starts_at', b.starts_at).neq('id', b.id).limit(100)
+        const company = await loadCompanyPublic(db, { id: companyId })
         for (const l of later || []) {
           const r = await cancelBooking(db, l.id, { by: 'business', reason: body.reason || null, refund: !!body.refund, notifyCustomer: false, origin })
-          if (r.ok) also++
+          if (!r.ok) continue
+          also++
+          // Their calendar drops these too (one CANCEL file with the email).
+          events.push({ uid: l.id, title: `${l.service_name || b.service_name} — ${company?.name || ''}`, startMs: Date.parse(l.starts_at), endMs: Date.parse(l.ends_at), sequence: (l.reschedule_count || 0) + 1, cancelled: true })
         }
       }
-      const r = await cancelBooking(db, b.id, { by: 'business', reason: body.reason || null, refund: !!body.refund, notifyCustomer: body.notify !== false, origin, alsoCancelled: also })
+      const r = await cancelBooking(db, b.id, { by: 'business', reason: body.reason || null, refund: !!body.refund, notifyCustomer: body.notify !== false, origin, alsoCancelled: also, alsoCancelledEvents: events })
       if (!r.ok) return NextResponse.json({ error: r.error }, { status: 400 })
       return NextResponse.json({ ok: true, refunded: r.refunded || 0, refundError: r.refundError || null, alsoCancelled: also })
     }

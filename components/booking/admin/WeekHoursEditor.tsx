@@ -26,10 +26,10 @@ export default function WeekHoursEditor({ value, onChange }: { value: WeekHours;
               <Toggle on={open} onChange={v => set(k, v ? [{ start: '09:00', end: '17:00' }] : [])} />
               <span style={{ fontWeight: 600, fontSize: 13.5, color: open ? 'var(--ink, #111)' : '#9ca3af' }}>{DAY_LABEL[k]}</span>
             </div>
-            <div style={{ flex: 1, minWidth: 220, display: 'grid', gap: 6 }}>
+            <div style={{ flex: 1, minWidth: 'min(220px, 100%)', display: 'grid', gap: 6 }}>
               {!open && <span style={{ fontSize: 13, color: '#9ca3af', paddingTop: 7 }}>Closed</span>}
               {ranges.map((r, i) => (
-                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                   <input type="time" value={r.start} step={300} onChange={e => set(k, ranges.map((x, j) => j === i ? { ...x, start: e.target.value } : x))} style={{ ...input, width: 118 }} />
                   <span style={{ color: '#9ca3af' }}>–</span>
                   <input type="time" value={r.end} step={300} onChange={e => set(k, ranges.map((x, j) => j === i ? { ...x, end: e.target.value } : x))} style={{ ...input, width: 118 }} />

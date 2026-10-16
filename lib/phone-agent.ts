@@ -623,7 +623,9 @@ export async function phoneTurn(db: any, args: {
       const { reason: _reason, ...asked } = call.input || {}
       // Bookings: only the caller's own — their verified record, else the
       // number they're calling from. Never an email or number they say.
-      const input = call.name === 'find_my_bookings' ? (args.state.verified ? {} : { phone: args.from }) : asked
+      const input = call.name === 'find_my_bookings' ? {} : asked
+      // The number they're calling from, as a trusted fact (never the model's input).
+      if (call.name === 'find_my_bookings' && !args.state.verified) actx.scratch.callerPhone = args.from
       if (call.name === 'find_my_bookings' && !args.state.verified && tail(args.from).length < 8) {
         results.push({ type: 'tool_result', id: call.id, content: JSON.stringify({ bookings: [], note: `The caller’s number is hidden, so their bookings can’t be looked up on the phone. ${setup.skills.message ? 'Offer to take a message.' : 'Suggest they check their booking confirmation.'}` }) })
         continue

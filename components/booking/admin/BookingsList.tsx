@@ -69,6 +69,14 @@ export default function BookingsList({ companyId, bookings, timezone, scope, set
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bookings, search, range, sort, timezone])
 
+  // A visit that has later live visits in its regular booking can't be
+  // repeated on its own (that would double up); the last one can extend it.
+  const hasLater = useMemo(() => {
+    const out = new Set<string>()
+    for (const b of bookings) if (b.series_id && bookings.some(x => x.series_id === b.series_id && x.id !== b.id && ['confirmed', 'pending'].includes(x.status) && x.starts_at > b.starts_at)) out.add(b.id)
+    return out
+  }, [bookings])
+
   const groups = useMemo(() => {
     if (sort === 'booked') return [['__booked', rows]] as [string, any[]][]
     const m = new Map<string, any[]>()
@@ -125,7 +133,7 @@ export default function BookingsList({ companyId, bookings, timezone, scope, set
                 )}
               </div>
               <div style={{ display: 'grid', gap: 10 }}>
-                {list.map((b, i) => <Row key={b.id} b={b} i={i} t={t} dayChip={dayChip} onAct={act} onMove={setMoving} onCancel={setCancelling} onNoShow={setNoShow} onRepeat={setRepeating} flash={flash} />)}
+                {list.map((b, i) => <Row key={b.id} b={b} i={i} t={t} dayChip={dayChip} onAct={act} onMove={setMoving} onCancel={setCancelling} onNoShow={setNoShow} onRepeat={setRepeating} canRepeat={!hasLater.has(b.id)} flash={flash} />)}
               </div>
             </section>
           ))}
@@ -140,9 +148,9 @@ export default function BookingsList({ companyId, bookings, timezone, scope, set
   )
 }
 
-function Row({ b, i, t, dayChip, onAct, onMove, onCancel, onNoShow, onRepeat, flash }: {
+function Row({ b, i, t, dayChip, onAct, onMove, onCancel, onNoShow, onRepeat, canRepeat, flash }: {
   b: any; i: number; t: (iso: string) => string; dayChip: (iso: string) => string[]
-  onAct: (b: any, a: string) => void; onMove: (b: any) => void; onCancel: (b: any) => void; onNoShow: (b: any) => void; onRepeat: (b: any) => void; flash: (m: string) => void
+  onAct: (b: any, a: string) => void; onMove: (b: any) => void; onCancel: (b: any) => void; onNoShow: (b: any) => void; onRepeat: (b: any) => void; canRepeat: boolean; flash: (m: string) => void
 }) {
   const st = STATUS[b.status] || STATUS.confirmed
   const past = Date.parse(b.ends_at) < Date.now()
@@ -192,7 +200,7 @@ function Row({ b, i, t, dayChip, onAct, onMove, onCancel, onNoShow, onRepeat, fl
               {menu && (
                 <div className="bl-menu" role="menu">
                   {b.manage_url && <button onClick={() => { navigator.clipboard?.writeText(b.manage_url).then(() => flash('Customer’s booking link copied')); setMenu(false) }}><LinkIcon size={14} /> Copy customer’s link</button>}
-                  {(b.status === 'confirmed' || b.status === 'completed') && b.service_id && <button onClick={() => { setMenu(false); onRepeat(b) }}><RepeatIcon /> Repeat every few weeks</button>}
+                  {(b.status === 'confirmed' || b.status === 'completed') && b.service_id && canRepeat && <button onClick={() => { setMenu(false); onRepeat(b) }}><RepeatIcon /> {b.series_id ? 'Extend regular booking' : 'Repeat every few weeks'}</button>}
                   {b.status === 'confirmed' && past && <button onClick={() => { setMenu(false); onNoShow(b) }}><XIcon size={13} /> Mark no-show</button>}
                   {b.status === 'confirmed' && !past && <button onClick={() => { setMenu(false); onAct(b, 'complete') }}><CheckIcon size={14} /> Mark done</button>}
                   {(b.status === 'completed' || b.status === 'no_show') && <button onClick={() => { setMenu(false); onAct(b, 'confirm') }}>Undo {b.status === 'completed' ? 'done' : 'no-show'}</button>}
@@ -401,7 +409,7 @@ function RepeatDialog({ companyId, b, timezone, onClose, onDone }: { companyId: 
     setBusy(true); setError('')
     try {
       const d = await api('/api/bookings', { method: 'PATCH', json: { companyId, id: b.id, action: 'repeat', everyWeeks: every, count, notify } })
-      const skipped = (d.plan || []).filter((p: any) => !p.ok).length
+      const skipped = (d.plan || []).filter((p: any) => !p.created).length
       onDone(`${d.created} visit${d.created === 1 ? '' : 's'} booked${skipped ? `, ${skipped} skipped` : ''}`)
     } catch (e: any) { setError(e.message); setBusy(false) }
   }
@@ -409,7 +417,7 @@ function RepeatDialog({ companyId, b, timezone, onClose, onDone }: { companyId: 
   const time = (iso: string) => new Date(iso).toLocaleTimeString('en-AU', { timeZone: timezone, hour: 'numeric', minute: '2-digit' }).replace(' ', '').toLowerCase()
 
   return (
-    <Modal title={`Repeat ${b.service_name || 'booking'}`} onClose={onClose} width={560} footer={<>
+    <Modal title={`${b.series_id ? 'Extend' : 'Repeat'} ${b.service_name || 'booking'}`} onClose={onClose} width={560} footer={<>
       <label style={{ ...row, marginRight: 'auto' }}><Toggle on={notify} onChange={setNotify} /> Tell the customer</label>
       <button onClick={onClose} style={btnGhost}>Cancel</button>
       <button onClick={go} disabled={busy || loading || !free} style={btn}>{busy ? 'Booking…' : `Book ${free} visit${free === 1 ? '' : 's'}`}</button>

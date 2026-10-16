@@ -34,12 +34,11 @@ export function fold(line: string) {
 }
 
 export function buildIcs(e: InviteEvent): string {
-  const lines = [
-    'BEGIN:VCALENDAR',
-    'VERSION:2.0',
-    'PRODID:-//Colvy//Bookings//EN',
-    'CALSCALE:GREGORIAN',
-    `METHOD:${e.cancelled ? 'CANCEL' : 'PUBLISH'}`,
+  return buildIcsMany([e], !!e.cancelled)
+}
+
+function vevent(e: InviteEvent, cancelled: boolean): string[] {
+  return [
     'BEGIN:VEVENT',
     `UID:${e.uid}@colvy.com`,
     `SEQUENCE:${e.sequence || 0}`,
@@ -50,9 +49,21 @@ export function buildIcs(e: InviteEvent): string {
     e.location ? `LOCATION:${esc(e.location)}` : '',
     e.description ? `DESCRIPTION:${esc(e.description)}` : '',
     e.url ? `URL:${e.url}` : '',
-    `STATUS:${e.cancelled ? 'CANCELLED' : 'CONFIRMED'}`,
-    e.cancelled ? '' : 'BEGIN:VALARM\r\nTRIGGER:-PT1H\r\nACTION:DISPLAY\r\nDESCRIPTION:Reminder\r\nEND:VALARM',
+    `STATUS:${cancelled ? 'CANCELLED' : 'CONFIRMED'}`,
+    cancelled ? '' : 'BEGIN:VALARM\r\nTRIGGER:-PT1H\r\nACTION:DISPLAY\r\nDESCRIPTION:Reminder\r\nEND:VALARM',
     'END:VEVENT',
+  ]
+}
+
+/** Several events in one file: a regular booking's visits, or their cancellation. */
+export function buildIcsMany(events: InviteEvent[], cancelled = false): string {
+  const lines = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//Colvy//Bookings//EN',
+    'CALSCALE:GREGORIAN',
+    `METHOD:${cancelled ? 'CANCEL' : 'PUBLISH'}`,
+    ...events.flatMap(e => vevent(e, cancelled || !!e.cancelled)),
     'END:VCALENDAR',
   ].filter(Boolean)
   return lines.map(l => l.includes('\r\n') ? l : fold(l)).join('\r\n') + '\r\n'

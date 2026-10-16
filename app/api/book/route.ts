@@ -6,7 +6,7 @@ import { addDays, dateInTz, isDate } from '@/lib/booking-time'
 import { cleanClickRef } from '@/lib/link-channels'
 import {
   loadCompanyPublic, resolveBookingSettings, loadStaff, loadLocations, availability, createBooking,
-  publicService, isMissingBookingSchema, stripeReady, amountDue, loadInvite, invitePrefill,
+  publicService, isMissingBookingSchema, stripeReady, amountDue, loadInvite, invitePrefill, staffOutlets,
 } from '@/lib/booking'
 
 export const dynamic = 'force-dynamic'
@@ -51,6 +51,8 @@ export async function GET(req: NextRequest) {
       const staff = await loadStaff(db, company)
       const bookable = staff.filter(s => settings.staff[s.id]?.bookable)
       const payReady = stripeReady(company)
+      const locations = await loadLocations(db, company.id)
+      const outletIds = new Set<string>(locations.map((l: any) => l.id))
       return NextResponse.json({
         company: { name: company.name, slug: company.slug, logo_url: company.logo_url, accent_color: company.accent_color, hide_powered_by: await hidesPoweredBy(db, company.id, company) },
         page: { show_in_widget: settings.show_in_widget, title: settings.page_title, intro: settings.intro, require_phone: settings.require_phone, require_email: settings.require_email, cancel_hours: settings.cancel_hours, refund_on_cancel: settings.refund_on_cancel, late_cancel: settings.late_cancel, allow_reschedule: settings.allow_reschedule },
@@ -58,8 +60,8 @@ export async function GET(req: NextRequest) {
         // A paid service can't be booked until the business connects Stripe.
         services: (services || []).filter((s: any) => payReady || amountDue(s) === 0).map(publicService),
         // `locations`: the outlets each person takes bookings at (empty = any).
-        staff: bookable.map(s => ({ id: s.id, name: s.name, avatar_url: s.avatar_url, locations: settings.staff[s.id]?.locations || [] })),
-        locations: await loadLocations(db, company.id),
+        staff: bookable.map(s => ({ id: s.id, name: s.name, avatar_url: s.avatar_url, locations: staffOutlets(settings, s.id, outletIds) })),
+        locations,
       }, { headers: { 'Cache-Control': 'no-store' } })
     }
 

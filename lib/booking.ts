@@ -17,7 +17,7 @@ import {
   fmtDateTime, fmtMoney, fmtTime, DEFAULT_HOURS,
   type WeekHours, type SlotResource, type Busy, type Slot, type SlotService,
 } from '@/lib/booking-time'
-import { buildIcs, googleCalendarUrl } from '@/lib/booking-ics'
+import { buildIcs, buildIcsMany, googleCalendarUrl, type InviteEvent } from '@/lib/booking-ics'
 import { createChatCheckoutSession, chatStripe } from '@/lib/chat-checkout'
 import { notifyCompany } from '@/lib/notify'
 import { emitIntegrationEvent } from '@/lib/integration-events'
@@ -26,8 +26,10 @@ import { sendCustomerEmail } from '@/lib/customer-email'
 import { shortenUrl } from '@/lib/short-link'
 import { stitchLinkClick } from '@/lib/link-stitch'
 import { attributeBookingToLinks } from '@/lib/link-attribution'
-import { ilikeExact, exactEmailRow } from '@/lib/phone'
+import { ilikeExact, exactEmailRow, phoneKey } from '@/lib/phone'
 import { loadStaffRows } from '@/lib/team-list'
+import { worksAt } from '@/lib/booking-outlets'
+export { worksAt, staffOutlets, outletGaps } from '@/lib/booking-outlets'
 
 const MIN = 60_000
 const HOUR = 3_600_000
@@ -266,19 +268,19 @@ export async function loadLocations(db: any, companyId: string) {
 
 // The resources a service can be booked against. No bookable staff at all →
 // "solo" mode: the business itself is the one resource, on business hours.
-// With an outlet picked, only people who work there (or anywhere) are offered.
-export function resourcesFor(settings: BookingSettings, staff: StaffMember[], service: any, locationId?: string | null): SlotResource[] {
+// With an outlet picked, only people who work there (or anywhere) are offered
+// — unless that leaves nobody, when everyone is (a missing set-up shouldn't
+// close an outlet; Availability warns about it). `outletIds`: the outlets
+// that still exist, so a deleted one doesn't count.
+export function resourcesFor(settings: BookingSettings, staff: StaffMember[], service: any, locationId?: string | null, outletIds?: Set<string> | null): SlotResource[] {
   const bookable = staff.filter(s => settings.staff[s.id]?.bookable)
   if (!bookable.length) return [{ id: null, hours: settings.hours, off: [] }]
   let allowed = (service.staff_ids || []).length ? bookable.filter(s => service.staff_ids.includes(s.id)) : bookable
-  if (locationId) allowed = allowed.filter(s => worksAt(settings, s.id, locationId))
+  if (locationId) {
+    const here = allowed.filter(s => worksAt(settings, s.id, locationId, outletIds))
+    if (here.length) allowed = here
+  }
   return allowed.map(s => ({ id: s.id, hours: settings.staff[s.id]?.hours || settings.hours, off: settings.staff[s.id]?.off || [] }))
-}
-
-/** Does this person take bookings at that outlet? No outlets set = every outlet. */
-export function worksAt(settings: BookingSettings, staffId: string, locationId: string | null | undefined): boolean {
-  const locs = settings.staff[staffId]?.locations || []
-  return !locationId || !locs.length || locs.includes(locationId)
 }
 
 // Everything that makes a resource busy between two instants: live bookings
@@ -341,7 +343,15 @@ export async function availability(db: any, opts: {
   locationId?: string | null
 }): Promise<{ slots: Slot[]; busy: Map<string, Busy[]> }> {
   const { settings, service } = opts
-  let resources = resourcesFor(settings, opts.staff, service, service.location_mode === 'outlet' ? opts.locationId : null)
+  // Moving a booking that has a person of its own: they keep it, wherever
+  // they're set to work now (the team already accepted that pairing).
+  const keepsPerson = !!opts.excludeBookingId && opts.staffFilter !== 'any'
+  const locationId = service.location_mode === 'outlet' && !keepsPerson ? opts.locationId || null : null
+  let outletIds: Set<string> | null = null
+  if (locationId && Object.values(settings.staff).some(v => v.locations?.length)) {
+    outletIds = new Set((await loadLocations(db, opts.company.id)).map((l: any) => l.id))
+  }
+  let resources = resourcesFor(settings, opts.staff, service, locationId, outletIds)
   if (opts.staffFilter !== 'any') resources = resources.filter(r => r.id === opts.staffFilter)
   if (!resources.length) return { slots: [], busy: new Map() }
   const tz = settings.timezone
@@ -790,7 +800,7 @@ export function policyFor(b: any, settings: BookingSettings, now = Date.now()) {
 
 // `alsoCancelled`: later visits of the same regular booking cancelled with it
 // (quietly) — the customer's one message says so.
-export async function cancelBooking(db: any, bookingId: string, opts: { by: 'customer' | 'business'; reason?: string | null; refund: boolean; notifyCustomer: boolean; origin: string; alsoCancelled?: number }): Promise<{ ok: boolean; refunded?: number; refundError?: string; error?: string }> {
+export async function cancelBooking(db: any, bookingId: string, opts: { by: 'customer' | 'business'; reason?: string | null; refund: boolean; notifyCustomer: boolean; origin: string; alsoCancelled?: number; alsoCancelledEvents?: InviteEvent[] }): Promise<{ ok: boolean; refunded?: number; refundError?: string; error?: string }> {
   const ctx = await loadBookingCtx(db, bookingId)
   if (!ctx) return { ok: false, error: 'Booking not found' }
   const { b, company, service, settings } = ctx
@@ -814,7 +824,7 @@ export async function cancelBooking(db: any, bookingId: string, opts: { by: 'cus
   emitIntegrationEvent(b.company_id, 'booking.cancelled', bookingEvent(bk, `Booking cancelled: ${b.service_name} · ${b.customer_name || 'a customer'}`, {
     'Cancelled by': opts.by === 'customer' ? 'Customer' : 'Team', Reason: bk.cancel_reason, Refunded: refunded ? fmtMoney(refunded, b.currency) : null,
   }), { db })
-  if (opts.notifyCustomer) await customerMessage(db, company, settings, bk, 'cancelled', { refunded, service, origin: opts.origin, alsoCancelled: opts.alsoCancelled })
+  if (opts.notifyCustomer) await customerMessage(db, company, settings, bk, 'cancelled', { refunded, service, origin: opts.origin, alsoCancelled: opts.alsoCancelled, alsoCancelledEvents: opts.alsoCancelledEvents })
   return { ok: true, refunded, refundError }
 }
 
@@ -879,13 +889,93 @@ export async function rescheduleBooking(db: any, bookingId: string, opts: { star
   return { ok: true }
 }
 
+// ── One customer's bookings ──────────────────────────────────────────────────
+
+/** The ways a number may have been typed ("0412 345 678", "+61412345678"…), for an exact match. */
+export function phoneVariants(raw: string | null | undefined): string[] {
+  const k = phoneKey(raw)
+  if (k.length < 9) return []
+  const [a, b, c] = [k.slice(0, 3), k.slice(3, 6), k.slice(6)]
+  return [...new Set([`0${k}`, `+61${k}`, `61${k}`, k, `0${a} ${b} ${c}`, `+61 ${a} ${b} ${c}`, `0${a}-${b}-${c}`, String(raw || '').trim()].filter(Boolean))]
+}
+
+/**
+ * A customer's bookings, by contact, email and phone — each an exact (or
+ * indexed) lookup, never a pattern match across the whole business. Phone:
+ * the usual spellings of the number, plus bookings linked to any contact with
+ * that number (contacts.phone_norm, V359).
+ */
+export async function findCustomerBookings(db: any, companyId: string, who: { contactId?: string | null; email?: string | null; phone?: string | null }, opts: { fromIso: string; toIso?: string; statuses?: string[]; cols?: string; limit?: number }): Promise<any[]> {
+  const cols = opts.cols || '*'
+  const statuses = opts.statuses || ['confirmed', 'pending']
+  const base = () => {
+    let q = db.from('bookings').select(cols).eq('company_id', companyId).in('status', statuses).gte('starts_at', opts.fromIso)
+    if (opts.toIso) q = q.lt('starts_at', opts.toIso)
+    return q.order('starts_at', { ascending: true }).limit(opts.limit || 50)
+  }
+  const email = String(who.email || '').trim().toLowerCase()
+  const key = phoneKey(who.phone)
+  const contactIds = new Set<string>(who.contactId ? [who.contactId] : [])
+  if (key.length >= 9) {
+    try {
+      const { data, error } = await db.from('contacts').select('id').eq('company_id', companyId).eq('phone_norm', key).limit(20)
+      if (!error) for (const c of data || []) contactIds.add(c.id)
+    } catch {}
+  }
+  const reads: PromiseLike<any>[] = []
+  if (contactIds.size) reads.push(base().in('contact_id', [...contactIds]))
+  if (email) reads.push(base().ilike('customer_email', ilikeExact(email)))
+  if (key.length >= 9) reads.push(base().in('customer_phone', phoneVariants(who.phone)))
+  const found = new Map<string, any>()
+  for (const r of await Promise.all(reads)) for (const b of r?.data || []) found.set(b.id, b)
+  return [...found.values()]
+    .filter(b => (b.contact_id && contactIds.has(b.contact_id)) || (email && String(b.customer_email || '').toLowerCase() === email) || (key.length >= 9 && phoneKey(b.customer_phone) === key))
+    .sort((x, y) => Date.parse(x.starts_at) - Date.parse(y.starts_at))
+}
+
+/**
+ * Send a booking's manage link to the phone or email ON THE BOOKING (never to
+ * whoever asked for it): a text through the consent-checked send route, else
+ * an email. Returns where it went, or null.
+ */
+export async function sendManageLink(db: any, company: any, b: any, origin: string): Promise<'sms' | 'email' | null> {
+  if (!company || !b?.manage_token) return null
+  if (await isExternalSendBlocked(company.id, db)) return null
+  const settings = resolveBookingSettings(company.booking_settings)
+  const tz = b.timezone || settings.timezone
+  const url = manageUrl(company, b.manage_token)
+  const first = String(b.customer_name || '').trim().split(/\s+/)[0] || 'there'
+  const text = `Hi ${first}, here's the link to view, move or cancel your ${b.service_name} booking at ${company.name} on ${fmtDateTime(Date.parse(b.starts_at), tz)}: ${url}`
+  if (b.customer_phone && settings.notify_sms) {
+    try {
+      // /api/telnyx/sms/send checks the opt-out (lib/sms-consent) for internal calls.
+      const r = await fetch(`${origin}/api/telnyx/sms/send`, {
+        method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ companyId: company.id, conversationId: b.conversation_id || undefined, to: b.customer_phone, text, senderName: company.name }),
+      })
+      if (r.ok) return 'sms'
+    } catch (e) { console.error('[booking] manage link sms failed', e) }
+  }
+  if (b.customer_email) {
+    const ok = await sendCustomerEmail(db, company, {
+      to: b.customer_email, subject: `Your booking: ${b.service_name}`, text,
+      html: `<p style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:14.5px;color:#111;line-height:1.55">${esc(text.replace(url, ''))}<a href="${esc(url)}">${esc(url)}</a></p>`,
+    })
+    if (ok) return 'email'
+  }
+  return null
+}
+
 // ── Regular bookings (repeat a booking every N weeks) ───────────────────────
 //
 // Fortnightly tank maintenance and the like: the team repeats a booking at the
 // same wall-clock time (10am stays 10am across daylight saving) every N weeks.
 // Each visit is a normal booking — its own reminders, manage link, calendar
 // event — joined by bookings.series_id (V388). A dry run shows which dates are
-// free first; taken or closed dates are skipped, never double-booked.
+// free first; taken, closed or too-far-ahead dates are skipped, and so is any
+// date this customer is already booked at (so repeating twice, or extending a
+// series, never books them twice). A visit already in a series can only be
+// repeated from the series' last visit ("extend").
 
 export type RepeatPlanItem = { start: string; ok: boolean; reason?: string; staff_name?: string | null; created?: boolean }
 export const MAX_REPEAT = 26
@@ -900,13 +990,25 @@ export async function repeatBooking(db: any, bookingId: string, opts: { everyWee
   const count = clampInt(opts.count, 1, MAX_REPEAT, 6)
   const tz = b.timezone && isValidTimeZone(b.timezone) ? b.timezone : settings.timezone
   const now = opts.now ?? Date.now()
+
+  // In a series already: only from its last live visit (that extends it).
+  if (b.series_id) {
+    const { data: later } = await db.from('bookings').select('id, starts_at').eq('company_id', b.company_id).eq('series_id', b.series_id)
+      .in('status', ['confirmed', 'pending']).gt('starts_at', b.starts_at).order('starts_at', { ascending: false }).limit(1)
+    if (later?.length) return { ok: false, error: `This visit is part of a regular booking. Extend it from its last visit (${fmtDateTime(Date.parse(later[0].starts_at), tz)}).`, plan: [], created: 0 }
+  }
+
   const origStart = Date.parse(b.starts_at)
   const z = zonedParts(origStart, tz)
   const hhmm = `${String(z.h).padStart(2, '0')}:${String(z.mi).padStart(2, '0')}`
   const day0 = dateInTz(origStart, tz)
+  const durMs = service.duration_mins * MIN
   const staff = await loadStaff(db, company)
-  // The team books these, so the customer-facing notice / how-far-ahead limits don't apply.
+  // The team books these, so the customer-facing notice doesn't apply; how far
+  // ahead the service can be booked still does.
   const svc = { ...service, min_notice_mins: 0, max_days_ahead: 400 }
+  const maxDays = Math.max(1, service.max_days_ahead || 60)
+  const latest = now + maxDays * 86_400_000
   const closed = new Map(settings.closed.map(c => [c.date, c.label]))
 
   // Dates: every N weeks after the original, the first `count` still to come.
@@ -915,91 +1017,116 @@ export async function repeatBooking(db: any, bookingId: string, opts: { everyWee
     const d = addDays(day0, 7 * every * k)
     if (zonedToUtc(d, hhmm, tz) > now) dates.push(d)
   }
+  if (!dates.length) return { ok: true, plan: [], created: 0 }
+  const lastMs = zonedToUtc(dates[dates.length - 1], hhmm, tz) + durMs
 
-  const plan: (RepeatPlanItem & { resources: (string | null)[] })[] = []
-  for (const d of dates) {
+  // This customer's live bookings over the whole stretch (any person, any
+  // service): a date they're already booked at is skipped.
+  const theirs = await findCustomerBookings(db, b.company_id, { contactId: b.contact_id, email: b.customer_email, phone: b.customer_phone }, {
+    fromIso: new Date(now - 86_400_000).toISOString(), toIso: new Date(lastMs + 86_400_000).toISOString(),
+    statuses: ['confirmed', 'pending'], cols: 'id, starts_at, ends_at, status, hold_expires_at, contact_id, customer_email, customer_phone, series_id', limit: 500,
+  }).catch(() => [] as any[])
+  const nowIso = new Date().toISOString()
+  const liveTheirs = theirs.filter(x => x.id !== b.id && (x.status === 'confirmed' || (x.hold_expires_at && x.hold_expires_at > nowIso)))
+
+  const outletIds = new Set<string>((await loadLocations(db, b.company_id)).map((l: any) => l.id))
+  type Item = RepeatPlanItem & { resources: (string | null)[] }
+  const plan: Item[] = await Promise.all(dates.map(async (d): Promise<Item> => {
     const startMs = zonedToUtc(d, hhmm, tz)
-    const item = { start: new Date(startMs).toISOString(), ok: false, resources: [] as (string | null)[] } as RepeatPlanItem & { resources: (string | null)[] }
-    if (closed.has(d)) { item.reason = `Closed${closed.get(d) ? `: ${closed.get(d)}` : ''}`; plan.push(item); continue }
-    // Same person first (customers like their usual tech); anyone else only
-    // if they didn't ask for someone.
-    const { slots } = await availability(db, { company, settings, service: svc, staff, staffFilter: 'any', fromDate: d, toDate: d, locationId: b.location_id })
-    const slot = slots.find(s => s.start === startMs)
-    const free = slot ? slot.resources : []
-    const resources = free.includes(b.staff_id ?? null) ? [b.staff_id ?? null] : (b.staff_choice === 'specific' ? [] : free)
-    if (!resources.length) {
-      item.reason = free.length ? `${b.staff_name || 'The usual person'} isn’t free` : 'Already booked or outside hours'
-    } else {
-      item.ok = true
-      item.resources = resources
-      item.staff_name = resources[0] ? (staff.find(s => s.id === resources[0])?.name || null) : null
+    const item: Item = { start: new Date(startMs).toISOString(), ok: false, resources: [] }
+    if (startMs > latest) { item.reason = `Further ahead than ${service.name} can be booked (${maxDays} days)`; return item }
+    if (closed.has(d)) { item.reason = `Closed${closed.get(d) ? `: ${closed.get(d)}` : ''}`; return item }
+    if (liveTheirs.some(x => Date.parse(x.starts_at) < startMs + durMs && Date.parse(x.ends_at) > startMs)) { item.reason = 'Already booked in then'; return item }
+    // Same person first (customers like their usual tech); anyone else who
+    // works at that outlet only if they didn't ask for someone.
+    const { slots } = await availability(db, { company, settings, service: svc, staff, staffFilter: 'any', fromDate: d, toDate: d })
+    const free = slots.find(s => s.start === startMs)?.resources || []
+    const usual = b.staff_id ?? null
+    let resources: (string | null)[] = free.includes(usual) ? [usual] : []
+    if (!resources.length && b.staff_choice !== 'specific') {
+      const here = free.filter(id => !id || service.location_mode !== 'outlet' || worksAt(settings, id, b.location_id, outletIds))
+      resources = here.length ? here : free
     }
-    plan.push(item)
-  }
+    if (!resources.length) item.reason = free.length ? `${b.staff_name || 'The usual person'} isn’t free` : 'Already booked or outside hours'
+    else { item.ok = true; item.resources = resources; item.staff_name = resources[0] ? (staff.find(s => s.id === resources[0])?.name || null) : null }
+    return item
+  }))
   const out = () => plan.map(({ resources, ...rest }) => { void resources; return rest })
   if (opts.dryRun) return { ok: true, plan: out(), created: 0 }
 
-  // One id joins the series (V388). Before that migration the visits are
-  // still booked, just not linked.
+  // One id joins the series (V388); the first visit is set only once a
+  // repeat really booked. Before V388 the visits are still booked, unlinked.
   let seriesId: string | null = b.series_id || crypto.randomUUID()
-  if (!b.series_id) {
-    const { error } = await db.from('bookings').update({ series_id: seriesId }).eq('id', b.id)
-    if (error) seriesId = null
-  }
-
   let created = 0
   const answers = Array.isArray(b.answers) ? b.answers : []
   for (const item of plan) {
     if (!item.ok) continue
-    const startMs = Date.parse(item.start)
-    const endMs = startMs + service.duration_mins * MIN
-    let id: string | null = null, who: string | null = null
-    for (const cand of item.resources) {
-      const staffName = cand ? (staff.find(s => s.id === cand)?.name || null) : null
-      const { data, error } = await db.rpc('claim_booking_slot', {
-        p_company: b.company_id, p_service: service.id, p_staff: cand,
-        p_starts: new Date(startMs).toISOString(), p_ends: new Date(endMs).toISOString(),
-        p_busy_from: new Date(startMs - (service.buffer_before || 0) * MIN).toISOString(),
-        p_busy_until: new Date(endMs + (service.buffer_after || 0) * MIN).toISOString(),
-        p_capacity: service.capacity || 1,
-        p_row: {
-          service_name: service.name, staff_name: staffName, staff_choice: b.staff_choice || 'any',
-          location_id: b.location_id || '', location_label: b.location_label, address: b.address,
-          timezone: tz, status: 'pending', hold_expires_at: new Date(Date.now() + INSTANT_HOLD_MINS * MIN).toISOString(), seats: 1,
-          customer_name: b.customer_name, customer_email: b.customer_email, customer_phone: b.customer_phone,
-          customer_timezone: b.customer_timezone, answers, notes: b.notes,
-          price_cents: service.price_cents || 0, amount_due_cents: 0, currency: service.currency || b.currency || 'aud',
-          payment_mode: 'none', payment_status: 'none',
-          manage_token: crypto.randomBytes(24).toString('base64url'), source: 'repeat',
-        },
-        p_exclude: null,
-      })
-      if (error) throw error
-      if (data) { id = data as string; who = staffName; break }
+    try {
+      const startMs = Date.parse(item.start)
+      const endMs = startMs + durMs
+      let id: string | null = null, who: string | null = null
+      for (const cand of item.resources) {
+        const staffName = cand ? (staff.find(s => s.id === cand)?.name || null) : null
+        const { data, error } = await db.rpc('claim_booking_slot', {
+          p_company: b.company_id, p_service: service.id, p_staff: cand,
+          p_starts: new Date(startMs).toISOString(), p_ends: new Date(endMs).toISOString(),
+          p_busy_from: new Date(startMs - (service.buffer_before || 0) * MIN).toISOString(),
+          p_busy_until: new Date(endMs + (service.buffer_after || 0) * MIN).toISOString(),
+          p_capacity: service.capacity || 1,
+          p_row: {
+            service_name: service.name, staff_name: staffName, staff_choice: b.staff_choice || 'any',
+            location_id: b.location_id || '', location_label: b.location_label, address: b.address,
+            timezone: tz, status: 'pending', hold_expires_at: new Date(Date.now() + INSTANT_HOLD_MINS * MIN).toISOString(), seats: 1,
+            customer_name: b.customer_name, customer_email: b.customer_email, customer_phone: b.customer_phone,
+            customer_timezone: b.customer_timezone, answers, notes: b.notes,
+            price_cents: service.price_cents || 0, amount_due_cents: 0, currency: service.currency || b.currency || 'aud',
+            payment_mode: 'none', payment_status: 'none',
+            manage_token: crypto.randomBytes(24).toString('base64url'), source: 'repeat',
+          },
+          p_exclude: null,
+        })
+        if (error) throw error
+        if (data) { id = data as string; who = staffName; break }
+      }
+      if (!id) { item.ok = false; item.reason = 'Just taken'; continue }
+      const link: any = { contact_id: b.contact_id || null, conversation_id: b.conversation_id || null }
+      if (seriesId) {
+        const { error } = await db.from('bookings').update({ ...link, series_id: seriesId }).eq('id', id)
+        if (error) { seriesId = null; await db.from('bookings').update(link).eq('id', id) }
+      } else await db.from('bookings').update(link).eq('id', id)
+      const conf = await confirmBooking(db, id, { origin: opts.origin, quiet: true })
+      if (!conf.ok) {
+        try { await db.from('bookings').update({ status: 'expired' }).eq('id', id).eq('status', 'pending') } catch {}
+        item.ok = false; item.reason = 'Couldn’t confirm it'; continue
+      }
+      item.created = true
+      item.staff_name = who
+      created++
+    } catch (e: any) {
+      console.error('[booking] repeat visit failed', item.start, e?.message || e)
+      item.ok = false; item.reason = 'Couldn’t book it — try again'
     }
-    if (!id) { item.ok = false; item.reason = 'Just taken'; continue }
-    const link: any = { contact_id: b.contact_id || null, conversation_id: b.conversation_id || null }
-    if (seriesId) link.series_id = seriesId
-    { const { error } = await db.from('bookings').update(link).eq('id', id); if (error && seriesId) await db.from('bookings').update({ contact_id: link.contact_id, conversation_id: link.conversation_id }).eq('id', id) }
-    await confirmBooking(db, id, { origin: opts.origin, quiet: true })
-    item.created = true
-    item.staff_name = who
-    created++
   }
 
   if (created) {
+    if (seriesId && !b.series_id) { try { await db.from('bookings').update({ series_id: seriesId }).eq('id', b.id) } catch {} }
     const made = plan.filter(p => p.created)
     const list = made.map(p => fmtDateTime(Date.parse(p.start), tz)).join(', ')
-    const skipped = plan.filter(p => !p.ok).length
+    const skipped = plan.filter(p => !p.created).length
     const freq = every === 1 ? 'every week' : `every ${every} weeks`
     await systemNote(db, b, `Regular booking set up: ${b.service_name}, ${freq}. ${made.length} visit${made.length === 1 ? '' : 's'} booked: ${list}.${skipped ? ` ${skipped} date${skipped === 1 ? ' was' : 's were'} skipped (not free).` : ''}`)
-    if (opts.notifyCustomer) await seriesMessage(db, company, settings, b, made.map(p => Date.parse(p.start)), every, service, opts.origin)
-  }
-  return { ok: true, plan: out(), created, seriesId }
+    if (opts.notifyCustomer) {
+      const { data: rows } = await db.from('bookings').select('id, starts_at, ends_at, reschedule_count, manage_token').eq('company_id', b.company_id).eq('source', 'repeat').in('starts_at', made.map(p => p.start)).eq('status', 'confirmed')
+      const mine = (rows || []).filter((r: any) => made.some(p => p.start === r.starts_at || Date.parse(p.start) === Date.parse(r.starts_at)))
+      await seriesMessage(db, company, settings, b, made.map(p => Date.parse(p.start)), every, service, opts.origin, mine)
+    }
+  } else seriesId = b.series_id || null
+  return { ok: true, plan: out(), created, seriesId: created ? seriesId : (b.series_id || null) }
 }
 
-// One message for a whole series: the dates, and that each gets a reminder.
-async function seriesMessage(db: any, company: any, settings: BookingSettings, b: any, starts: number[], every: number, service: any, origin: string): Promise<{ sms: boolean; email: boolean }> {
+// One message for a whole series: the dates (with a calendar file holding
+// every visit), and that each gets a reminder.
+async function seriesMessage(db: any, company: any, settings: BookingSettings, b: any, starts: number[], every: number, service: any, origin: string, visits: any[] = []): Promise<{ sms: boolean; email: boolean }> {
   const sent = { sms: false, email: false }
   if (!company || !starts.length) return sent
   if (await isExternalSendBlocked(company.id, db)) return sent
@@ -1039,7 +1166,15 @@ async function seriesMessage(db: any, company: any, settings: BookingSettings, b
   <p style="text-align:center;color:#9ca3af;font-size:12px;margin-top:14px">${esc(business)}${hideBadge ? '' : ' · Powered by Colvy'}</p>
 </div></body></html>`
     const text = `Your regular booking\n\n${b.service_name}, ${freq}${where ? ` at ${where}` : ''}:\n${starts.map(ms => fmtDateTime(ms, tz, { withTz: true })).join('\n')}\n\nWe'll send a reminder before each visit.`
-    sent.email = await sendCustomerEmail(db, company, { to: b.customer_email, subject: `Your regular ${b.service_name}: ${freq}`, html, text, attachments: [] })
+    // Every visit in one calendar file, each with its own manage link.
+    const events = visits.map(v => {
+      const url = manageUrl(company, v.manage_token)
+      return { uid: v.id, title: `${b.service_name} — ${business}`, startMs: Date.parse(v.starts_at), endMs: Date.parse(v.ends_at), location: where || null, description: `Manage this visit: ${url}`, url, sequence: v.reschedule_count || 0 }
+    })
+    sent.email = await sendCustomerEmail(db, company, {
+      to: b.customer_email, subject: `Your regular ${b.service_name}: ${freq}`, html, text,
+      attachments: events.length ? [{ filename: 'regular-booking.ics', content: Buffer.from(buildIcsMany(events)).toString('base64') }] : [],
+    })
   }
   return sent
 }
@@ -1063,7 +1198,7 @@ function relWhen(b: any) {
 // which channels went out. `channels` narrows it (e.g. the 2-hour reminder is
 // SMS only).
 export async function customerMessage(db: any, company: any, settings: BookingSettings, b: any, kind: MsgKind,
-  extra: { service?: any; refunded?: number | boolean; origin?: string; channels?: ('sms' | 'email')[]; alsoCancelled?: number }): Promise<{ sms: boolean; email: boolean }> {
+  extra: { service?: any; refunded?: number | boolean; origin?: string; channels?: ('sms' | 'email')[]; alsoCancelled?: number; alsoCancelledEvents?: InviteEvent[] }): Promise<{ sms: boolean; email: boolean }> {
   const sent = { sms: false, email: false }
   if (!company) return sent
   if (await isExternalSendBlocked(company.id, db)) return sent
@@ -1178,7 +1313,7 @@ export async function customerMessage(db: any, company: any, settings: BookingSe
     const withIcs = kind === 'confirmed' || kind === 'rescheduled' || kind === 'cancelled'
     sent.email = await sendCustomerEmail(db, company, {
       to: b.customer_email, subject: subjects[kind], html, text,
-      attachments: withIcs ? [{ filename: kind === 'cancelled' ? 'cancelled.ics' : 'booking.ics', content: Buffer.from(buildIcs(invite)).toString('base64') }] : [],
+      attachments: withIcs ? [{ filename: kind === 'cancelled' ? 'cancelled.ics' : 'booking.ics', content: Buffer.from(kind === 'cancelled' && extra.alsoCancelledEvents?.length ? buildIcsMany([invite, ...extra.alsoCancelledEvents], true) : buildIcs(invite)).toString('base64') }] : [],
     })
   }
   return sent

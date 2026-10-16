@@ -120,7 +120,10 @@ export default function BookingFlow({ slug, domain, initialService }: { slug?: s
   const serviceStaff = useMemo(() => {
     if (!data || !service) return []
     const all = service.staff_ids.length ? data.staff.filter(s => service.staff_ids.includes(s.id)) : data.staff
-    return serviceLocations.length && locationId ? all.filter(s => !s.locations?.length || s.locations.includes(locationId)) : all
+    if (!serviceLocations.length || !locationId) return all
+    // Nobody set to this outlet → everyone (same as the server).
+    const here = all.filter(s => !s.locations?.length || s.locations.includes(locationId))
+    return here.length ? here : all
   }, [data, service, serviceLocations, locationId])
 
   useEffect(() => { setStaff('any'); setSlot(null); setLocationId(serviceLocations.length === 1 ? serviceLocations[0].id : '') }, [service?.id]) // eslint-disable-line react-hooks/exhaustive-deps

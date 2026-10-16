@@ -3,7 +3,9 @@
 import { useState } from 'react'
 import { DEFAULT_HOURS, type WeekHours } from '@/lib/booking-time'
 import { VIC_PUBLIC_HOLIDAYS } from '@/lib/holidays'
+import { outletGaps } from '@/lib/booking-outlets'
 import WeekHoursEditor from './WeekHoursEditor'
+import { WarnIcon } from '@/components/booking/icons'
 import { card, btnGhost, input, label, hint, Toggle } from './shared'
 
 // When people can book: business hours, which teammates take bookings (and
@@ -26,7 +28,10 @@ export default function AvailabilityTab({ settings, setSettings, staff, location
   // Public holidays still to come that aren't listed yet (Victoria).
   const todayStr = todayIn(settings.timezone || 'Australia/Melbourne')
   const listed = new Set((settings.closed || []).map((c: any) => c.date))
-  const holidays = VIC_PUBLIC_HOLIDAYS.filter(h => h.date >= todayStr && !listed.has(h.date))
+  // The list is Victoria's: offered only to a business on Melbourne time.
+  const holidays = settings.timezone === 'Australia/Melbourne' ? VIC_PUBLIC_HOLIDAYS.filter(h => h.date >= todayStr && !listed.has(h.date)) : []
+  // Outlets nobody is set to (when some people have outlets): everyone is offered there.
+  const gaps = locations.length > 1 && anyBookable ? outletGaps(settings, staff.map(s => s.id), locations) : []
   const addHolidays = () => setSettings({ ...settings, closed: [...(settings.closed || []), ...holidays].sort((a: any, b: any) => a.date.localeCompare(b.date)) })
 
   return (
@@ -54,6 +59,12 @@ export default function AvailabilityTab({ settings, setSettings, staff, location
             ? 'Customers can choose one of these people or “anyone available”. A person is busy when they have a booking or a calendar event assigned to them.'
             : 'Nobody is switched on, so bookings go to the business as a whole — one booking at a time, on business hours. Switch people on to let customers book them individually (several bookings can then run at once).'}
         </div>
+        {gaps.length > 0 && (
+          <div role="status" style={{ display: 'flex', gap: 8, alignItems: 'flex-start', padding: '10px 12px', borderRadius: 10, background: '#fffbeb', border: '1px solid #fde68a', color: '#92400e', fontSize: 13, marginBottom: 12 }}>
+            <WarnIcon size={15} style={{ marginTop: 1, flexShrink: 0 }} />
+            <span>Nobody is set to take bookings at {gaps.map(g => g.label).join(', ')}, so everyone is offered there. Open a person’s “Hours &amp; days off” to choose where they work.</span>
+          </div>
+        )}
         <div style={{ display: 'grid', gap: 8 }}>
           {staff.map(s => {
             const st = settings.staff?.[s.id] || { bookable: false, hours: null, off: [], locations: [] }
