@@ -13,6 +13,7 @@ import { OPERATIONAL_FLAGS } from '@/lib/feature-flags'
 import { confirmDialog } from '@/components/ConfirmDialog'
 import SignupsPage from '@/components/platform-admin/SignupsPage'
 import EmailHealthCard from '@/components/platform-admin/EmailHealthCard'
+import SignupSmsHealth from '@/components/platform-admin/SignupSmsHealth'
 import WebFormsPage from '@/components/platform-admin/WebFormsPage'
 import { COLVY_CONTACT, isColvyNumber } from '@/lib/colvy-contact'
 
@@ -337,6 +338,27 @@ function CompanyHealthPanel({ hc, onPause, onResume, msg }: { hc: any; onPause: 
 
 // Business detail — a deep-dive drawer for one company with tabs. Uses only
 // real data (company row, team_members, company_admin_notes).
+// An id with a copy button: the Company ID is what settings like "sign-up
+// leads workspace" and COLVY_WORKSPACE_ID ask for (not the owner's user id).
+function CopyId({ value }: { value?: string | null }) {
+  const [copied, setCopied] = useState(false)
+  if (!value) return <>—</>
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(value); setCopied(true); setTimeout(() => setCopied(false), 1500) } catch {}
+  }
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, justifyContent: 'flex-end', flexWrap: 'wrap', minWidth: 0 }}>
+      <code style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 11.5, fontWeight: 600, wordBreak: 'break-all' }}>{value}</code>
+      <button type="button" onClick={copy} aria-label="Copy" title="Copy" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 7px', borderRadius: 7, border: '1px solid var(--sa-border)', background: 'transparent', color: copied ? '#059669' : 'var(--sa-muted)', fontSize: 11, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+        {copied
+          ? <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+          : <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>}
+        {copied ? 'Copied' : 'Copy'}
+      </button>
+    </span>
+  )
+}
+
 function BusinessDetail({ co, onClose, onAction }: { co: any; onClose: () => void; onAction: (type: string, co: any) => void }) {
   const [tab, setTab] = useState('overview')
   const [users, setUsers] = useState<any[] | null>(null)
@@ -631,6 +653,13 @@ function BusinessDetail({ co, onClose, onAction }: { co: any; onClose: () => voi
         <div style={{ flex: 1, overflowY: 'auto', padding: 20 }}>
           {tab === 'overview' && (
             <div>
+              <div style={{ marginBottom: 12, padding: '10px 12px', borderRadius: 10, border: '1px solid var(--sa-border)', background: 'var(--sa-card)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                <div style={{ minWidth: 0, flex: '1 1 auto' }}>
+                  <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--sa-text)' }}>Company ID</div>
+                  <div style={{ fontSize: 11.5, color: 'var(--sa-muted)' }}>For settings that ask for a company (not the owner’s user ID)</div>
+                </div>
+                <CopyId value={co.id} />
+              </div>
               <div style={{ marginBottom: 12, padding: '10px 12px', borderRadius: 10, background: healthColor + '18', border: `1px solid ${healthColor}44` }}>
                 <span style={{ fontSize: 12.5, fontWeight: 700, color: healthColor }}>Account health {health}/100</span>
                 <span style={{ fontSize: 11.5, color: 'var(--sa-muted)', marginLeft: 8 }}>{plan === 'suspended' ? 'Suspended' : (users?.length || 0) === 0 ? 'No team members yet' : 'Looking healthy'}</span>
@@ -641,7 +670,7 @@ function BusinessDetail({ co, onClose, onAction }: { co: any; onClose: () => voi
               <Row k="Plan" v={(sub.plan || 'free') + (sub.is_complimentary ? ' · complimentary' : '')} />
               <Row k="Trial ends" v={sub.trial_ends_at ? new Date(sub.trial_ends_at).toLocaleDateString() : '—'} />
               <Row k="Industry" v={co.industry} />
-              <Row k="Owner ID" v={co.owner_id} />
+              <Row k="Owner user ID" v={co.owner_id ? <span title="The owner’s login (a user), not the company. Use the Company ID above for workspace settings.">{co.owner_id}</span> : null} />
               <Row k="Business email" v={co.business_email} />
               <Row k="Business mobile" v={co.business_mobile} />
               <Row k="Website" v={co.website} />
@@ -2948,6 +2977,9 @@ function OverviewPage({ data, pulse, onRefresh, onGo }: { data: any; pulse: any;
         </div>
       </div>
 
+      {/* Sign-up code texts: sent vs delivered, top error codes */}
+      {pulse?.signupSms && <div style={{ marginTop: 14 }}><SignupSmsHealth sms={pulse.signupSms} onOpen={() => onGo('signups')} /></div>}
+
       {/* Email health: recover customer replies saved with an empty body */}
       <div style={{ marginTop: 14 }}><EmailHealthCard /></div>
     </div>
@@ -3220,7 +3252,7 @@ function CompaniesPage() {
 
       <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap' as const }}>
         <SearchBar placeholder="Search companies..." value={search} onChange={setSearch} />
-        <div style={{ display: 'flex', gap: 6 }}>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', minWidth: 0 }}>
           {['all', ...CONSOLE_PLANS].map(f => (
             <button key={f} onClick={() => setFilter(f)}
               style={{ padding: '7px 12px', borderRadius: 8, border: '1px solid var(--sa-border)', background: filter === f ? '#ff7a6b' : 'var(--sa-card)', color: filter === f ? '#fff' : 'var(--sa-muted)', fontSize: 12, fontWeight: filter === f ? 700 : 400, cursor: 'pointer', textTransform: 'capitalize' as const }}>

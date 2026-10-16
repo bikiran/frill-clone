@@ -71,3 +71,19 @@ export async function twilioSignatureOk(req: NextRequest, form: FormData | null)
   if (!ok) console.warn('[twilio] signature check failed for', new URL(req.url).pathname, sig ? '(bad signature)' : '(no signature)')
   return ok || mode === 'log' || mode === 'off'
 }
+
+/**
+ * Strict check for callbacks only Colvy's own (master) Twilio account can send,
+ * such as sign-up code delivery reports: the AccountSid must be the master
+ * account and the signature must match its auth token. Unlike
+ * twilioSignatureOk, TWILIO_WEBHOOK_VERIFY doesn't switch this off, and a
+ * business's own Twilio credentials never count.
+ */
+export function twilioMasterSignatureOk(req: NextRequest, form: FormData | null): boolean {
+  const sig = req.headers.get('x-twilio-signature') || ''
+  if (!sig || !form || !TWILIO_MASTER.accountSid || !TWILIO_MASTER.authToken) return false
+  if (String(form.get('AccountSid') || '') !== TWILIO_MASTER.accountSid) return false
+  const ok = candidateUrls(req).some(url => same(sign(TWILIO_MASTER.authToken, url, form), sig))
+  if (!ok) console.warn('[twilio] master signature check failed for', new URL(req.url).pathname)
+  return ok
+}

@@ -8,6 +8,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { authFetch } from '@/lib/auth-fetch'
 import { confirmDialog } from '@/components/ConfirmDialog'
+import SignupSmsHealth from '@/components/platform-admin/SignupSmsHealth'
+import { deliveryProblem, explainDeliveryError } from '@/lib/signup-delivery'
 
 type Filter = 'all' | 'abandoned' | 'suspicious' | 'completed' | 'spam'
 type Range = 'today' | '7d' | '30d' | 'all'
@@ -22,11 +24,35 @@ const STATUS: Record<string, { label: string; color: string }> = {
 const EVENT_LABEL: Record<string, string> = {
   code_sent: 'Code sent', send_failed: 'Code not delivered', rate_limited: 'Refused: too many codes', wrong_code: 'Wrong code entered',
   email_verified: 'Email verified', mobile_verified: 'Mobile verified', account_created: 'Account created', complete_failed: 'Couldn’t finish',
-  marked_spam: 'Marked as spam', unmarked_spam: 'Unmarked as spam', emailed: 'Emailed by Colvy',
+  marked_spam: 'Marked as spam', unmarked_spam: 'Unmarked as spam', emailed: 'Emailed by Colvy', delivery: 'Delivery report',
 }
 const EVENT_COLOR: Record<string, string> = {
   code_sent: '#6366f1', send_failed: '#dc2626', rate_limited: '#dc2626', wrong_code: '#d97706', email_verified: '#0891b2',
-  mobile_verified: '#0891b2', account_created: '#059669', complete_failed: '#dc2626', marked_spam: '#6b7280', unmarked_spam: '#6b7280', emailed: '#ff7a6b',
+  mobile_verified: '#0891b2', account_created: '#059669', complete_failed: '#dc2626', marked_spam: '#6b7280', unmarked_spam: '#6b7280', emailed: '#ff7a6b', delivery: '#6b7280',
+}
+// What happened to a code sent to their mobile (lib/signup-delivery deliveryOf).
+const DELIVERY_COLOR: Record<string, string> = { delivered: '#059669', answered: '#059669', not_delivered: '#dc2626', send_failed: '#dc2626', sending: '#6366f1', no_report: '#6b7280', none: '#6b7280' }
+
+/** A delivery report's own line in the timeline: "SMS delivered", "SMS not delivered — carrier blocked (30007)". */
+function deliveryEventLabel(e: any): { label: string; color: string; explain?: string } {
+  const voice = e.channel === 'voice'
+  const st = String(e.status || '')
+  if (!voice && st === 'delivered') return { label: 'SMS delivered', color: '#059669' }
+  if (voice && st === 'completed') return { label: 'Call answered', color: '#059669' }
+  if (voice && !e.error_code) return { label: `Call not connected — ${({ busy: 'line busy', 'no-answer': 'not answered', canceled: 'cancelled' } as any)[st] || st}`, color: '#dc2626' }
+  const x = explainDeliveryError(e.error_code)
+  return { label: `${voice ? 'Call not connected' : 'SMS not delivered'} — ${x.label}`, color: '#dc2626', explain: x.explain }
+}
+
+/** One line under "Step reached" when the mobile code is the sticking point. */
+function MobileLine({ m, step }: { m: any; step?: number }) {
+  if (!m || m.state === 'none') return null
+  const problem = deliveryProblem(m.state)
+  if (!problem && step !== 6) return null
+  const color = DELIVERY_COLOR[m.state] || '#6b7280'
+  return <div title={m.explain} style={{ display: 'flex', alignItems: 'flex-start', gap: 5, fontSize: 11.5, color, fontWeight: problem ? 700 : 500, marginTop: 3, whiteSpace: 'normal', lineHeight: 1.35, maxWidth: 280 }}>
+    <span style={{ width: 6, height: 6, borderRadius: '50%', background: color, flexShrink: 0, marginTop: 5 }} />{m.label}
+  </div>
 }
 
 const Ic = {
@@ -39,6 +65,9 @@ const Ic = {
   ban: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><line x1="4.93" y1="4.93" x2="19.07" y2="19.07" /></svg>,
   trash: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6" /><path d="M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>,
   external: <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" /></svg>,
+  users: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><line x1="19" y1="8" x2="19" y2="14" /><line x1="22" y1="11" x2="16" y2="11" /></svg>,
+  building: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="2" width="16" height="20" rx="2" /><path d="M9 22v-4h6v4" /><path d="M8 6h.01M16 6h.01M12 6h.01M12 10h.01M12 14h.01M16 10h.01M16 14h.01M8 10h.01M8 14h.01" /></svg>,
+  alert: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>,
 }
 
 function ago(d?: string | null, now = Date.now()): string {
@@ -92,6 +121,9 @@ export default function SignupsPage() {
   const [err, setErr] = useState('')
   const [loading, setLoading] = useState(true)
   const [openId, setOpenId] = useState<string | null>(null)
+  const [picking, setPicking] = useState(false)
+  const [crmBusy, setCrmBusy] = useState(false)
+  const [crmMsg, setCrmMsg] = useState<{ tone: 'ok' | 'err'; text: string } | null>(null)
 
   const [tick, setTick] = useState(0)
   const load = () => { setLoading(true); setErr(''); setTick(t => t + 1) }
@@ -139,6 +171,39 @@ export default function SignupsPage() {
     return d
   }
 
+  // "Add all to CRM": count first, confirm, then run (same rules as new sign-ups).
+  const addAllToCrm = async () => {
+    setCrmMsg(null); setCrmBusy(true)
+    try {
+      const call = async (dryRun: boolean, offset = 0) => {
+        const res = await authFetch('/api/platform-admin/signups', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'crm_backfill', dryRun, offset }) })
+        const d = await res.json().catch(() => ({}))
+        if (!res.ok) throw new Error(d.error || 'That didn’t work')
+        return d
+      }
+      const dry = await call(true)
+      const skipped = [dry.skippedSuspicious ? `${dry.skippedSuspicious} suspicious` : '', dry.skippedSpam ? `${dry.skippedSpam} marked spam` : ''].filter(Boolean).join(' and ')
+      if (!dry.eligible) { setCrmMsg({ tone: 'ok', text: `Nothing to add${skipped ? ` (${skipped} left out)` : ''}.` }); return }
+      const ok = await confirmDialog({
+        title: `Add ${dry.eligible} sign-up${dry.eligible === 1 ? '' : 's'} to ${dry.workspace?.name || 'the CRM'}?`,
+        message: `${dry.toAdd} new, ${dry.alreadyLinked} already linked (refreshed).${skipped ? ` ${skipped[0].toUpperCase() + skipped.slice(1)} left out.` : ''} Same rules as new sign-ups: matched by exact email, the mobile only if it was verified, and no marketing consent. Safe to run again: nobody is added twice.`,
+        confirmLabel: 'Add to CRM',
+      })
+      if (!ok) return
+      // 100 at a time, with progress.
+      let offset = 0, added = 0, refreshed = 0, skippedN = 0
+      for (let guard = 0; guard < 50; guard++) {
+        setCrmMsg({ tone: 'ok', text: `Adding to the CRM… ${offset} of ${dry.eligible}` })
+        const d = await call(false, offset)
+        added += d.added || 0; refreshed += d.refreshed || 0; skippedN += d.skipped || 0
+        offset = d.nextOffset ?? dry.eligible
+        if (d.done) break
+      }
+      setCrmMsg({ tone: 'ok', text: `Done: ${added} added or linked, ${refreshed} refreshed${skippedN ? `, ${skippedN} left alone (a customer already has that email and it isn’t verified yet)` : ''}.` })
+      load()
+    } catch (e: any) { setCrmMsg({ tone: 'err', text: e.message }) } finally { setCrmBusy(false) }
+  }
+
   const chips: [Filter, string][] = [['all', 'All'], ['abandoned', 'Abandoned'], ['suspicious', 'Suspicious'], ['completed', 'Account created'], ['spam', 'Spam']]
   const ranges: [Range, string][] = [['today', 'Today'], ['7d', '7 days'], ['30d', '30 days'], ['all', 'All time']]
 
@@ -157,8 +222,29 @@ export default function SignupsPage() {
           <h1 style={{ fontSize: 22, fontWeight: 800, color: 'var(--sa-text)', margin: 0, letterSpacing: '-0.01em' }}>Signups</h1>
           <p style={{ fontSize: 13, color: 'var(--sa-muted)', margin: '4px 0 0' }}>Everyone who asked for a sign-up code, how far they got and whether they look real</p>
         </div>
-        <button onClick={load} style={btn('var(--sa-muted)')}>{Ic.refresh} Refresh</button>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {data?.workspace && data?.source !== 'legacy' && <button onClick={addAllToCrm} disabled={crmBusy} style={btn('var(--sa-text)')}>{Ic.users} {crmBusy ? 'Working…' : 'Add all to CRM'}</button>}
+          <button onClick={load} style={btn('var(--sa-muted)')}>{Ic.refresh} Refresh</button>
+        </div>
       </div>
+
+      {/* Where leads go */}
+      {data && !data.workspace && (
+        <div role="alert" style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', padding: '12px 14px', borderRadius: 12, border: '1px solid #f59e0b77', background: '#f59e0b14', color: 'var(--sa-text)', fontSize: 13, marginBottom: 14 }}>
+          <span style={{ color: '#d97706', display: 'flex' }}>{Ic.alert}</span>
+          <span style={{ flex: '1 1 320px', minWidth: 0 }}><b>Sign-up leads aren’t going to a CRM yet.</b> Choose which Colvy workspace should receive them (it’s also where follow-up emails are sent from).</span>
+          <button onClick={() => setPicking(true)} style={btn('#ff7a6b', true)}>{Ic.building} Choose workspace</button>
+        </div>
+      )}
+      {data?.workspace && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 12.5, color: 'var(--sa-muted)', marginBottom: 12 }}>
+          <span style={{ display: 'flex' }}>{Ic.building}</span>
+          <span>Sign-up leads go to <b style={{ color: 'var(--sa-text)' }}>{data.workspace.name}</b> ({data.workspace.slug}){data.workspace.source === 'env' ? ' · set by COLVY_WORKSPACE_ID' : data.workspace.source === 'fallback' ? ' · found by its “colvy” address' : ''}</span>
+          <button onClick={() => setPicking(true)} style={{ background: 'none', border: 'none', padding: 0, color: '#ff7a6b', fontWeight: 600, fontSize: 12.5, cursor: 'pointer' }}>Change</button>
+        </div>
+      )}
+      {crmMsg && <div style={{ padding: '9px 12px', borderRadius: 10, fontSize: 12.5, marginBottom: 12, background: crmMsg.tone === 'ok' ? '#05966914' : '#fee2e2', color: crmMsg.tone === 'ok' ? '#059669' : '#b91c1c' }}>{crmMsg.text}</div>}
+      {data?.sms && data?.source !== 'legacy' && <div style={{ marginBottom: 14 }}><SignupSmsHealth sms={data.sms} /></div>}
 
       {data?.source === 'legacy' && (
         <div style={{ padding: '10px 14px', borderRadius: 10, border: '1px solid #f59e0b55', background: '#f59e0b14', color: 'var(--sa-text)', fontSize: 12.5, marginBottom: 14 }}>
@@ -214,6 +300,7 @@ export default function SignupsPage() {
                 <td style={{ ...td, whiteSpace: 'nowrap' }}>
                   <div style={{ fontWeight: 600 }}>{r.step?.label}</div>
                   <div style={{ fontSize: 11.5, color: 'var(--sa-muted)' }}>{r.step?.step >= 8 ? 'Done' : `Step ${r.step?.step} of 7`} · {r.codes_sent || 0} code{r.codes_sent === 1 ? '' : 's'}{r.wrong_codes ? <span style={{ color: '#d97706' }}> · {r.wrong_codes} wrong</span> : null}</div>
+                  {r.step?.step < 8 && <MobileLine m={r.mobile} step={r.step?.step} />}
                 </td>
                 <td style={{ ...td, minWidth: 130, maxWidth: 220 }}><RiskBadge risk={r.risk} /></td>
                 <td style={{ ...td, minWidth: 120, maxWidth: 190 }}>
@@ -242,7 +329,7 @@ export default function SignupsPage() {
               </div>
               <Chip status={r.status} />
             </div>
-            <div style={{ fontSize: 12.5, color: 'var(--sa-text)' }}>{[r.business_name, r.step?.label].filter(Boolean).join(' · ')}</div>
+            <div style={{ fontSize: 12.5, color: 'var(--sa-text)' }}>{[r.business_name, r.step?.label].filter(Boolean).join(' · ')}{r.step?.step < 8 && <MobileLine m={r.mobile} step={r.step?.step} />}</div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
               <RiskBadge risk={r.risk} full />
               <span style={{ fontSize: 12, color: 'var(--sa-muted)' }}>{[placeOf(r), ago(r.last_activity_at)].filter(Boolean).join(' · ')}</span>
@@ -252,6 +339,7 @@ export default function SignupsPage() {
       </div>
 
       {open && <SignupDrawer key={open.id} row={open} workspace={data?.workspace} onClose={() => setOpenId(null)} act={act} />}
+      {picking && <WorkspacePicker current={data?.workspace || null} envPinned={!!data?.leads?.envPinned} picked={data?.leads?.picked || null} onClose={() => setPicking(false)} onSaved={() => { setPicking(false); load() }} />}
     </div>
   )
 }
@@ -269,7 +357,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   </div>
 }
 
-export function SignupDrawer({ row: r, workspace, onClose, act }: { row: any; workspace?: { slug: string; name: string } | null; onClose: () => void; act: (row: any, action: string, extra?: any) => Promise<any> }) {
+export function SignupDrawer({ row: r, workspace, onClose, act }: { row: any; workspace?: { id?: string; slug: string; name: string; source?: string } | null; onClose: () => void; act: (row: any, action: string, extra?: any) => Promise<any> }) {
   const [composing, setComposing] = useState(false)
   const [subject, setSubject] = useState('Finishing your Colvy sign-up')
   // A fresh draft per person (the drawer is keyed by the sign-up).
@@ -361,6 +449,26 @@ export function SignupDrawer({ row: r, workspace, onClose, act }: { row: any; wo
           <Field label="Last activity">{`${when(r.last_activity_at)} (${ago(r.last_activity_at)})`}</Field>
         </Section>
 
+        <Section title="Mobile verification">
+          {!r.mobile || r.mobile.sends.length === 0 ? <p style={{ fontSize: 12.5, color: 'var(--sa-muted)', margin: '6px 0' }}>{r.phone ? 'No code has been sent to their mobile yet.' : 'No mobile number yet.'}</p> : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 6 }}>
+              {r.mobile_verified_at
+                ? <p style={{ fontSize: 12.5, color: '#059669', fontWeight: 600, margin: 0 }}>Mobile verified {when(r.mobile_verified_at)}.</p>
+                : deliveryProblem(r.mobile.state) && r.mobile.who && <p style={{ fontSize: 12.5, color: 'var(--sa-text)', margin: 0 }}>{r.mobile.who === 'person' ? 'Most likely the number itself: they may have mistyped it.' : r.mobile.who === 'colvy' ? 'This is a setting on Colvy’s Twilio account, not something they did.' : 'The phone company stopped it. Usually a sender setting on Colvy’s Twilio account; see below.'}</p>}
+              {r.mobile.sends.map((x: any, i: number) => {
+                const c = DELIVERY_COLOR[x.state] || '#6b7280'
+                return <div key={i} style={{ padding: '9px 11px', borderRadius: 10, border: `1px solid ${deliveryProblem(x.state) ? c + '55' : 'var(--sa-border)'}`, background: deliveryProblem(x.state) ? c + '0d' : 'transparent' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: 12.5, fontWeight: 700, color: c }}>{x.label}</span>
+                    <span style={{ fontSize: 11.5, color: 'var(--sa-muted)', whiteSpace: 'nowrap' }}>{x.channel === 'voice' ? 'Call' : 'Text'} · {when(x.at)}</span>
+                  </div>
+                  {x.explain && <div style={{ fontSize: 12, color: 'var(--sa-muted)', marginTop: 3, lineHeight: 1.45 }}>{x.explain}</div>}
+                </div>
+              })}
+            </div>
+          )}
+        </Section>
+
         <Section title="Where they came from">
           <Field label="Source">{sourceOf(r)}</Field>
           <Field label="Referrer">{r.referrer}</Field>
@@ -387,15 +495,15 @@ export function SignupDrawer({ row: r, workspace, onClose, act }: { row: any; wo
               {events.map((e, i) => (
                 <div key={i} style={{ display: 'flex', gap: 10, paddingBottom: 12, position: 'relative' }}>
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0 }}>
-                    <span style={{ width: 10, height: 10, borderRadius: '50%', background: EVENT_COLOR[e.type] || '#6b7280', marginTop: 4 }} />
+                    <span style={{ width: 10, height: 10, borderRadius: '50%', background: e.type === 'delivery' ? deliveryEventLabel(e).color : (EVENT_COLOR[e.type] || '#6b7280'), marginTop: 4 }} />
                     {i < events.length - 1 && <span style={{ flex: 1, width: 2, background: 'var(--sa-border)', marginTop: 3 }} />}
                   </div>
                   <div style={{ minWidth: 0, flex: 1 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--sa-text)' }}>{EVENT_LABEL[e.type] || e.type}{e.channel && e.channel !== 'both' ? <span style={{ fontWeight: 500, color: 'var(--sa-muted)' }}> · {e.channel === 'sms' ? 'SMS' : 'email'}</span> : e.channel === 'both' ? <span style={{ fontWeight: 500, color: 'var(--sa-muted)' }}> · email and SMS</span> : null}</span>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--sa-text)' }}>{e.type === 'delivery' ? deliveryEventLabel(e).label : (EVENT_LABEL[e.type] || e.type)}{e.type !== 'delivery' && e.channel && e.channel !== 'both' ? <span style={{ fontWeight: 500, color: 'var(--sa-muted)' }}> · {e.channel === 'sms' ? 'SMS' : e.channel === 'voice' ? 'call' : 'email'}</span> : e.type !== 'delivery' && e.channel === 'both' ? <span style={{ fontWeight: 500, color: 'var(--sa-muted)' }}> · email and SMS</span> : null}</span>
                       <span style={{ fontSize: 11.5, color: 'var(--sa-muted)', whiteSpace: 'nowrap' }}>{when(e.at)}</span>
                     </div>
-                    {(e.detail || e.by) && <div style={{ fontSize: 12, color: 'var(--sa-muted)' }}>{[e.detail, e.by ? `by ${e.by}` : ''].filter(Boolean).join(' · ')}</div>}
+                    {(e.detail || e.by || e.sms_error) && <div style={{ fontSize: 12, color: 'var(--sa-muted)' }}>{[e.detail, e.sms_error ? `Twilio refused it: ${explainDeliveryError(e.sms_error, e.sms_error_message).label}` : '', e.by ? `by ${e.by}` : ''].filter(Boolean).join(' · ')}</div>}
                   </div>
                 </div>
               ))}
@@ -404,6 +512,82 @@ export function SignupDrawer({ row: r, workspace, onClose, act }: { row: any; wo
         </Section>
         <p style={{ fontSize: 11.5, color: 'var(--sa-muted)', marginTop: 16 }}>Abandoned sign-ups that aren’t suspicious or marked spam are deleted automatically after 180 days. Verification codes are never stored.</p>
       </aside>
+    </div>
+  )
+}
+
+// "Where should sign-up leads go?": pick the Colvy workspace that receives
+// sign-up contacts (and sends follow-up emails). Saved in platform_settings;
+// COLVY_WORKSPACE_ID in the environment still wins when it's set.
+function WorkspacePicker({ current, envPinned, picked, onClose, onSaved }: { current: any; envPinned: boolean; picked: string | null; onClose: () => void; onSaved: () => void }) {
+  const [q, setQ] = useState('')
+  const [list, setList] = useState<any[] | null>(null)
+  const [err, setErr] = useState('')
+  const [saving, setSaving] = useState('')
+  useEffect(() => {
+    let live = true
+    const t = setTimeout(async () => {
+      try {
+        const res = await authFetch(`/api/platform-admin/signups?companies=${encodeURIComponent(q.trim())}`)
+        const d = await res.json().catch(() => ({}))
+        if (!res.ok) throw new Error(d.error || 'Could not search companies')
+        if (live) { setList(d.companies || []); setErr('') }
+      } catch (e: any) { if (live) setErr(e.message) }
+    }, 250)
+    return () => { live = false; clearTimeout(t) }
+  }, [q])
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', k)
+    return () => window.removeEventListener('keydown', k)
+  }, [onClose])
+  const save = async (companyId: string | null, name?: string) => {
+    const ok = companyId
+      ? await confirmDialog({ title: `Send sign-up leads to ${name}?`, message: `People who start signing up for Colvy will be added as contacts in ${name}’s CRM, and follow-up emails will go from its email.`, confirmLabel: 'Send leads here' })
+      : await confirmDialog({ title: 'Clear the lead workspace?', message: 'Sign-up leads stop going to a CRM until you choose one (unless a workspace is found by its “colvy” address).', confirmLabel: 'Clear', tone: 'danger' })
+    if (!ok) return
+    setSaving(companyId || 'clear'); setErr('')
+    try {
+      const res = await authFetch('/api/platform-admin/signups', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'set_workspace', companyId }) })
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(d.error || 'Could not save')
+      onSaved()
+    } catch (e: any) { setErr(e.message) } finally { setSaving('') }
+  }
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 90, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '8vh 16px 16px', boxSizing: 'border-box' }}>
+      <div onClick={e => e.stopPropagation()} role="dialog" aria-label="Where should sign-up leads go?" style={{ width: 'min(560px, 100%)', maxHeight: '80vh', display: 'flex', flexDirection: 'column', background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, padding: 18, boxSizing: 'border-box' }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <h2 style={{ fontSize: 17, fontWeight: 800, color: 'var(--sa-text)', margin: 0 }}>Where should sign-up leads go?</h2>
+            <p style={{ fontSize: 12.5, color: 'var(--sa-muted)', margin: '4px 0 0' }}>People who start signing up are added as contacts in this workspace’s CRM, tagged by how far they got. Follow-up emails go from its email too. Only workspaces you own or are a team member of can be chosen.</p>
+          </div>
+          <button onClick={onClose} aria-label="Close" style={{ background: 'none', border: '1px solid var(--sa-border)', borderRadius: 9, padding: 6, cursor: 'pointer', color: 'var(--sa-muted)', display: 'flex' }}>{Ic.x}</button>
+        </div>
+        {envPinned && <div style={{ marginTop: 12, padding: '9px 12px', borderRadius: 10, border: '1px solid #f59e0b55', background: '#f59e0b14', fontSize: 12.5, color: 'var(--sa-text)' }}>COLVY_WORKSPACE_ID is set in the environment, so it wins over this choice. Remove it there to use the workspace picked here.</div>}
+        <div style={{ position: 'relative', marginTop: 12 }}>
+          <span style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', color: 'var(--sa-muted)', display: 'flex' }}>{Ic.search}</span>
+          <input autoFocus value={q} onChange={e => setQ(e.target.value)} placeholder="Search companies by name or address…" style={{ ...input, paddingLeft: 32 }} />
+        </div>
+        {err && <div style={{ marginTop: 10, padding: '8px 12px', borderRadius: 9, background: '#fee2e2', color: '#b91c1c', fontSize: 12.5 }}>{err}</div>}
+        <div style={{ marginTop: 10, overflowY: 'auto', minHeight: 0, flex: 1, border: '1px solid var(--sa-border)', borderRadius: 12 }}>
+          {list === null ? <p style={{ fontSize: 12.5, color: 'var(--sa-muted)', padding: 14, margin: 0 }}>Loading…</p>
+          : list.length === 0 ? <p style={{ fontSize: 12.5, color: 'var(--sa-muted)', padding: 14, margin: 0 }}>No companies match.</p>
+          : list.map((c, i) => {
+            const isCurrent = current?.id === c.id
+            return <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderTop: i ? '1px solid var(--sa-border)' : 'none' }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name || c.slug}</div>
+                <div style={{ fontSize: 11.5, color: 'var(--sa-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.slug}.colvy.com · <span style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>{c.id}</span></div>
+              </div>
+              {isCurrent ? <span style={{ fontSize: 12, fontWeight: 700, color: '#059669', whiteSpace: 'nowrap' }}>Current</span>
+              : c.eligible ? <button onClick={() => save(c.id, c.name || c.slug)} disabled={!!saving} style={btn('#ff7a6b', true)}>{saving === c.id ? 'Saving…' : 'Use this'}</button>
+              : <span title="Leads are personal details, so they only go to a workspace you own or are a team member of. Add yourself to its team first." style={{ fontSize: 11.5, color: 'var(--sa-muted)', textAlign: 'right', maxWidth: 130, lineHeight: 1.3 }}>Not your workspace: join its team first</span>}
+            </div>
+          })}
+        </div>
+        {picked && <div style={{ marginTop: 10, display: 'flex', justifyContent: 'flex-end' }}><button onClick={() => save(null)} disabled={!!saving} style={btn('var(--sa-muted)')}>{saving === 'clear' ? 'Clearing…' : 'Clear my choice'}</button></div>}
+      </div>
     </div>
   )
 }
