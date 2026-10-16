@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import crypto from 'crypto'
 import { platformTwilio, TWILIO_MASTER } from '@/lib/twilio-platform'
 import { verifyTurnstile, requestIp, TURNSTILE_FAILED } from '@/lib/turnstile'
+import { checkOtpRate, recordSignupEvent, cleanProfile, cleanAttribution } from '@/lib/signup-attempts'
 
 export const dynamic = 'force-dynamic'
 
@@ -11,6 +12,11 @@ export const dynamic = 'force-dynamic'
 // can't use the per-company sender). Codes are stored HASHED against an opaque
 // token; the account is only created in /api/auth/complete-signup once both
 // channels are verified.
+//
+// Each send is also recorded in signup_attempts (lib/signup-attempts) with what
+// the wizard knew by then (name, business, where they came from), so a sign-up
+// that stops before the account exists still shows in super admin → Signups.
+// Sends are limited per email and per IP (on top of the per-token cooldown).
 
 const CODE_TTL_MS = 10 * 60 * 1000      // codes valid for 10 minutes
 const RESEND_COOLDOWN_MS = 30 * 1000    // min gap between sends for one token
@@ -100,6 +106,14 @@ export async function POST(req: NextRequest) {
 
     const db = admin()
 
+    // Too many codes for this email or from this network: refuse before
+    // anything is sent (and before Cloudflare is asked).
+    const rate = await checkOtpRate(db, { email, ip: requestIp(req.headers) || null })
+    if (!rate.ok) {
+      await recordSignupEvent(db, { type: 'rate_limited', email, headers: req.headers, detail: rate.reason === 'ip' ? 'Too many from this IP' : 'Too many for this email' })
+      return NextResponse.json({ error: rate.message, code: 'rate_limited' }, { status: 429 })
+    }
+
     // Fresh flow (no token yet): make sure the email isn't already registered so
     // we don't send codes into a dead end.
     if (!token) {
@@ -161,6 +175,18 @@ export async function POST(req: NextRequest) {
     let smsSent = false
     if (channel === 'both' || channel === 'email') emailSent = await sendEmailCode(email, emailCode)
     if (channel === 'both' || channel === 'sms') smsSent = phone ? await sendSmsCode(phone, smsCode) : false
+
+    // Record the attempt (never the codes). Profile and attribution come with
+    // the first send; resends only add to the timeline.
+    const wanted = channel === 'both' ? ['email', 'sms'] : [channel]
+    const failed = wanted.filter(c => c === 'email' ? !emailSent : !smsSent)
+    await recordSignupEvent(db, {
+      type: failed.length === wanted.length ? 'send_failed' : 'code_sent',
+      email, channel, phone: phone || existing?.phone || null, headers: req.headers,
+      profile: body.token ? undefined : cleanProfile(body.profile),
+      attribution: body.token ? undefined : cleanAttribution(body.attribution),
+      detail: [body.token ? 'Resend' : 'New sign-up', failed.length ? `${failed.map(c => c === 'sms' ? 'SMS' : 'email').join(' and ')} not delivered` : ''].filter(Boolean).join(' · '),
+    })
 
     return NextResponse.json({ ok: true, token, emailSent, smsSent })
   } catch (err: any) {

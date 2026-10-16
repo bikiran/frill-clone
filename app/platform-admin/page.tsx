@@ -11,6 +11,8 @@ import { SmsPricing, DEFAULT_PRICING, calculateCost, aud, audRate, parsePricingR
 import { PLAN_FEATURES, PLAN_LIMITS, PLAN_NAMES, PLAN_PRICES, OVERRIDABLE_FEATURES, OVERRIDABLE_LIMITS, Plan } from '@/lib/plan'
 import { OPERATIONAL_FLAGS } from '@/lib/feature-flags'
 import { confirmDialog } from '@/components/ConfirmDialog'
+import SignupsPage from '@/components/platform-admin/SignupsPage'
+import EmailHealthCard from '@/components/platform-admin/EmailHealthCard'
 
 const SUPER_ADMIN = 'bishalstha76@gmail.com'
 
@@ -65,6 +67,7 @@ async function auditedEnterWorkspace(
 const I = {
   overview:   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>,
   companies:  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>,
+  signups:    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>,
   users:      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>,
   subs:       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>,
   analytics:  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/><line x1="2" y1="20" x2="22" y2="20"/></svg>,
@@ -101,6 +104,7 @@ const NAV = [
   { section: 'Workspace' },
   { key: 'companies',  label: 'Companies',        icon: 'companies' },
   { key: 'users',      label: 'Users',            icon: 'users' },
+  { key: 'signups',    label: 'Signups',          icon: 'signups' },
   { key: 'subs',       label: 'Subscriptions',    icon: 'subs' },
   { key: 'analytics',  label: 'Analytics',        icon: 'analytics' },
   { section: 'Content' },
@@ -1901,6 +1905,7 @@ const JOBS: JobDef[] = [
   { key: 'sync-reviews', label: 'Review Sync', schedule: 'Every 6 hours', desc: 'Pulls new Google reviews into connected businesses', color: '#eab308', staleMs: 8 * 3600000, logs: 'always', path: '/api/cron/sync-reviews' },
   { key: 'refresh-meta-tokens', label: 'Meta Token Refresh', schedule: 'Daily 04:00 UTC', desc: 'Refreshes Facebook / Instagram page tokens and flags ones that need reconnecting', color: '#0866ff', staleMs: 26 * 3600000, logs: 'always', path: '/api/cron/refresh-meta-tokens' },
   { key: 'trial-nudges', label: 'Trial Nudges', schedule: 'Daily', desc: 'Emails trial owners at T-3 days, expiry, and T+3 to drive conversion', color: '#f59e0b', staleMs: 26 * 3600000, logs: 'always', path: '/api/cron/trial-nudges' },
+  { key: 'signup-retention', label: 'Sign-up Retention', schedule: 'Daily 03:50 UTC', desc: 'Deletes abandoned sign-up attempts (not suspicious or spam) after 180 days quiet', color: '#6b7280', staleMs: 26 * 3600000, logs: 'always', path: '/api/cron/signup-retention' },
   { key: 'expire-media', label: 'Media Expiry', schedule: 'Daily', desc: 'Purges expired share links and 30-day-old trashed media', color: '#0891b2', staleMs: 26 * 3600000, logs: 'always', path: '/api/cron/expire-media' },
   // Not reporting to job_runs yet — listed so nothing scheduled is invisible.
   { key: 'needs-you', label: 'Needs-you Phone Alerts', schedule: 'Every 15 min', desc: 'Pushes a phone alert for anything newly urgent on “Needs you” (missed goals, drafts waiting, unpicked hand-overs). Per-business counts are on AI Agents.', color: '#ef4444', logs: 'none', path: '/api/cron/needs-you' },
@@ -2836,18 +2841,26 @@ function WebFormsPage() {
 }
 
 function OverviewPage({ data, pulse, onRefresh, onGo }: { data: any; pulse: any; onRefresh: () => void; onGo: (page: string) => void }) {
+  const abandoned = pulse?.signupLeads?.abandoned24h || 0
   return (
     <div>
       <SectionHeader title="Overview" sub={`Last updated ${new Date().toLocaleTimeString()}`}
         action={
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          {abandoned > 0 && (
+            <button onClick={() => onGo('signups')} title="People who asked for a sign-up code in the last 24 hours and didn't finish" style={{ padding: '6px 12px', borderRadius: 999, background: '#f59e0b20', color: '#d97706', fontSize: 12, fontWeight: 700, border: 'none', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+              ● {abandoned} abandoned sign-up{abandoned === 1 ? '' : 's'} · 24h
+            </button>
+          )}
           <button onClick={onRefresh} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 10, border: '1px solid var(--sa-border)', background: 'var(--sa-card)', color: 'var(--sa-muted)', fontSize: 13, cursor: 'pointer' }}>
             {I.refresh} Refresh
           </button>
+          </div>
         }
       />
 
       {/* Quick actions */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(230px, 1fr))', gap: 12, marginBottom: 24 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(230px, 100%), 1fr))', gap: 12, marginBottom: 24 }}>
         <a href="https://colvy.com/admin" target="_blank" rel="noopener" style={paQuick('#ff7a6b')}>
           <span style={{ fontSize: 20 }}>🏠</span>
           <div><p style={{ margin: 0, fontSize: 13.5, fontWeight: 700, color: 'var(--sa-text)' }}>Manage colvy.com</p><p style={{ margin: '2px 0 0', fontSize: 11.5, color: 'var(--sa-muted)' }}>Widget, help centre & content for the main site</p></div>
@@ -2863,7 +2876,7 @@ function OverviewPage({ data, pulse, onRefresh, onGo }: { data: any; pulse: any;
       </div>
 
       {/* KPI grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 14, marginBottom: 24 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(220px, 100%), 1fr))', gap: 14, marginBottom: 24 }}>
         <KPI label="Total Companies" value={data.companies?.toLocaleString() ?? '—'} sub="all workspaces" color="#ff7a6b" />
         <KPI label="Active Companies" value={data.active?.toLocaleString() ?? '—'} sub="active in 30 days" color="#6366f1" />
         <KPI label="On trial" value={data.trials?.toLocaleString() ?? '—'} sub="on trial plan" color="#f59e0b" />
@@ -2876,7 +2889,7 @@ function OverviewPage({ data, pulse, onRefresh, onGo }: { data: any; pulse: any;
       {/* Revenue & growth (SaaS metrics) */}
       <div style={{ marginBottom: 24 }}>
         <p style={{ fontSize: 11, fontWeight: 800, color: 'var(--sa-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0 0 10px' }}>Revenue & growth</p>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 14 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(200px, 100%), 1fr))', gap: 14 }}>
           <KPI label="MRR" value={`$${(data.mrr ?? 0).toLocaleString()}`} sub={data.mrrSource === 'subscriptions' ? 'live from Stripe subs' : 'est. from plans'} color="#8b5cf6" />
           <KPI label="ARR" value={`$${(data.arr ?? 0).toLocaleString()}`} sub="annual run rate" color="#ec4899" />
           <KPI label="ARPA" value={`$${(data.arpa ?? 0).toLocaleString()}`} sub="avg revenue / account" color="#8b5cf6" />
@@ -2910,7 +2923,7 @@ function OverviewPage({ data, pulse, onRefresh, onGo }: { data: any; pulse: any;
       <AttentionPanel />
 
       {/* Charts row */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 24 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(320px, 100%), 1fr))', gap: 14, marginBottom: 24 }}>
         {/* Daily active companies (REAL: activity in conversations + ideas) */}
         <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, padding: 20 }}>
           <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)', marginBottom: 4 }}>Daily Active Companies</p>
@@ -2947,7 +2960,7 @@ function OverviewPage({ data, pulse, onRefresh, onGo }: { data: any; pulse: any;
       </div>
 
       {/* Platform health (real, last 24h) + recent admin activity */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 14 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(320px, 100%), 1fr))', gap: 14 }}>
         <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, padding: 20 }}>
           <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)', marginBottom: 4 }}>Platform health</p>
           <p style={{ fontSize: 11, color: 'var(--sa-muted)', marginBottom: 14 }}>Failures in the last 24 hours · click a row to dig in</p>
@@ -2960,12 +2973,13 @@ function OverviewPage({ data, pulse, onRefresh, onGo }: { data: any; pulse: any;
             { label: 'AI agent runs', value: `${pulse.agents?.failed || 0} failed · ${pulse.agents?.stuck || 0} stuck / ${pulse.agents?.runs || 0}`, bad: (pulse.agents?.failed || 0) + (pulse.agents?.stuck || 0) > 0 || !!pulse.agents?.platformPaused, go: 'agents' },
             { label: 'Connections', value: `${pulse.connections?.broken || 0} need attention / ${pulse.connections?.total || 0}`, bad: (pulse.connections?.broken || 0) > 0, go: 'integrations' },
             { label: 'Stripe events', value: `${pulse.stripe?.events || 0} received`, bad: false, go: 'system' },
-          ].map(r => (
+            ...(pulse.signupLeads && !pulse.signupLeads.missing ? [{ label: 'Sign-ups not finished', value: `${pulse.signupLeads.abandoned24h} abandoned · ${pulse.signupLeads.suspicious24h} suspicious`, bad: false, go: 'signups', tag: pulse.signupLeads.abandoned24h || pulse.signupLeads.suspicious24h ? 'Follow up' : 'None' }] : []),
+          ].map((r: any) => (
             <div key={r.label} onClick={() => onGo(r.go)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '9px 0', borderBottom: '1px solid var(--sa-border)', cursor: 'pointer' }}>
               <span style={{ fontSize: 12.5, color: 'var(--sa-muted)' }}>{r.label}</span>
               <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--sa-text)' }}>{r.value}</span>
-                <Badge status={r.bad ? 'degraded' : 'healthy'} />
+                {r.tag ? <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 999, background: r.tag === 'None' ? 'var(--sa-hover)' : '#f59e0b20', color: r.tag === 'None' ? 'var(--sa-muted)' : '#d97706', whiteSpace: 'nowrap' }}>{r.tag}</span> : <Badge status={r.bad ? 'degraded' : 'healthy'} />}
               </span>
             </div>
           ))}
@@ -2993,6 +3007,9 @@ function OverviewPage({ data, pulse, onRefresh, onGo }: { data: any; pulse: any;
           {pulse?.auditMissing && <p style={{ fontSize: 11.5, color: 'var(--sa-muted)', margin: 0 }}>Admin actions appear here once COLVY_V319_SUPER_ADMIN_AUDIT.sql has run.</p>}
         </div>
       </div>
+
+      {/* Email health: recover customer replies saved with an empty body */}
+      <div style={{ marginTop: 14 }}><EmailHealthCard /></div>
     </div>
   )
 }
@@ -4736,6 +4753,8 @@ export default function SuperAdmin() {
       const t = localStorage.getItem('colvy:pa-theme')
       if (t === 'dark') setDarkState(true)
     } catch {}
+    // Phones: start with the narrow icon sidebar so pages get the width.
+    try { if (window.innerWidth < 768) setCollapsed(true) } catch {}
     try {
       // Hash may carry a sub-target (e.g. "companies/<id>" deep-links straight to
       // a company's detail) — the page key is just the first segment.
@@ -4823,6 +4842,11 @@ export default function SuperAdmin() {
         button { font-family: inherit; }
         input { font-family: inherit; }
         select { font-family: inherit; }
+        @media (max-width: 640px) {
+          .pa-content { padding: 16px 12px !important; }
+          .pa-topbar { padding: 0 12px !important; }
+          .pa-topsearch { display: none; }
+        }
       `}</style>
 
       {/* ── SIDEBAR ─────────────────────────────────────────────────────────── */}
@@ -4947,12 +4971,12 @@ export default function SuperAdmin() {
       {/* ── MAIN ────────────────────────────────────────────────────────────── */}
       <main style={{ marginLeft: SIDEBAR_W, flex: 1, minWidth: 0, background: 'var(--sa-bg)', minHeight: '100vh', transition: 'margin-left 0.2s ease' }}>
         {/* Topbar */}
-        <div style={{ height: 54, borderBottom: '1px solid var(--sa-border)', display: 'flex', alignItems: 'center', padding: '0 24px', gap: 12, background: 'var(--sa-sidebar)', position: 'sticky', top: 0, zIndex: 30 }}>
-          <div style={{ flex: 1, position: 'relative', maxWidth: 400 }}>
+        <div className="pa-topbar" style={{ height: 54, borderBottom: '1px solid var(--sa-border)', display: 'flex', alignItems: 'center', padding: '0 24px', gap: 12, background: 'var(--sa-sidebar)', position: 'sticky', top: 0, zIndex: 30 }}>
+          <div className="pa-topsearch" style={{ flex: 1, position: 'relative', maxWidth: 400 }}>
             <div style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--sa-muted)' }}>{I.search}</div>
             <input readOnly onFocus={e => { e.currentTarget.blur(); setSearchOpen(true) }} onClick={() => setSearchOpen(true)} placeholder="Jump to a section… (⌘K)" style={{ cursor: 'pointer', width: '100%', padding: '7px 12px 7px 34px', borderRadius: 9, border: '1px solid var(--sa-border)', background: 'var(--sa-hover)', color: 'var(--sa-text)', fontSize: 13, outline: 'none' }} />
           </div>
-          <div style={{ display: 'flex', gap: 6 }}>
+          <div style={{ display: 'flex', gap: 6, marginLeft: 'auto', minWidth: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
             {(() => {
               const issues: string[] = Array.isArray(pulse?.issues) ? pulse.issues : []
               const [txt, c] = pulse === null ? ['● Checking…', '#6b7280'] : pulse.error ? ['● Health unavailable', '#6b7280'] : issues.length ? [`● ${issues.length} issue${issues.length === 1 ? '' : 's'} · 24h`, '#f59e0b'] : ['● All systems operational', '#10b981']
@@ -4963,10 +4987,12 @@ export default function SuperAdmin() {
         </div>
 
         {/* Page content */}
-        <div style={{ padding: '28px 28px', maxWidth: 1400 }}>
+        {/* Signups uses the full width (no side gap on wide screens). */}
+        <div className="pa-content" style={{ padding: '28px 28px', maxWidth: page === 'signups' ? 'none' : 1400 }}>
           {page === 'overview'   && <OverviewPage data={data} pulse={pulse} onRefresh={() => { setPulse(null); loadDashboard() }} onGo={setPage} />}
           {page === 'companies'  && <CompaniesPage />}
           {page === 'users'      && <UsersPage />}
+          {page === 'signups'    && <SignupsPage />}
           {page === 'analytics'  && <AnalyticsPage />}
           {page === 'flags'      && <FeatureFlagsPage />}
           {page === 'system'     && <SystemPage onGo={setPage} />}

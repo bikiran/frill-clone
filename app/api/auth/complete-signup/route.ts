@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { provisionSubdomain } from '@/lib/provision-domain'
+import { recordSignupEvent, cleanProfile } from '@/lib/signup-attempts'
 
 export const dynamic = 'force-dynamic'
 
@@ -51,6 +52,12 @@ export async function POST(req: NextRequest) {
     }
 
     const email = String(row.email || '').toLowerCase()
+    // For super admin → Signups: what they typed on the last step, and how it ended.
+    const profile = cleanProfile({
+      fullName, businessName: name, businessSlug: slug, industry: biz.industry, website: biz.website,
+      businessPhone: biz.phone, businessCity: biz.city, businessState: biz.state, businessCountry: biz.country,
+    })
+    const failed = (detail: string) => recordSignupEvent(db, { type: 'complete_failed', email, profile, detail, headers: req.headers })
 
     // 2. Create the auth user, already confirmed (we verified the email via OTP).
     const { data: created, error: createErr } = await db.auth.admin.createUser({
@@ -68,8 +75,10 @@ export async function POST(req: NextRequest) {
     })
     if (createErr) {
       if (createErr.message?.toLowerCase().includes('already') || createErr.status === 422) {
+        await failed('An account with this email already exists')
         return NextResponse.json({ error: 'An account with this email already exists. Try signing in instead.', code: 'email_in_use' }, { status: 409 })
       }
+      await failed(`Account not created: ${createErr.message}`)
       return NextResponse.json({ error: createErr.message }, { status: 500 })
     }
     const user = created?.user
@@ -102,8 +111,10 @@ export async function POST(req: NextRequest) {
       // back so they can retry with a different URL cleanly.
       if (coErr.code === '23505') {
         try { await db.auth.admin.deleteUser(user.id) } catch {}
+        await failed(`Board URL ${slug} was taken`)
         return NextResponse.json({ error: 'That board URL is already taken. Please choose another.', code: 'slug_taken' }, { status: 409 })
       }
+      await failed(`Workspace not created: ${coErr.message}`)
       return NextResponse.json({ error: coErr.message }, { status: 400 })
     }
 
@@ -149,6 +160,7 @@ export async function POST(req: NextRequest) {
 
     // 6. Consume the verification row so it can't be reused.
     try { await db.from('signup_verifications').update({ consumed_at: new Date().toISOString() }).eq('token', token) } catch {}
+    await recordSignupEvent(db, { type: 'account_created', email, profile, headers: req.headers, userId: user.id, companyId: company.id, companySlug: company.slug, phone: row.phone || null })
 
     return NextResponse.json({ ok: true, userId: user.id, email, slug, company: { id: company.id, slug: company.slug }, domain })
   } catch (err: any) {
