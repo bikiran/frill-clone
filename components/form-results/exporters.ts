@@ -32,10 +32,16 @@ export function exportCsv(args: ExportArgs) {
   download(new Blob([buildCsv(args)], { type: 'text/csv;charset=utf-8' }), `${safeFileName(args.title)}-responses.csv`)
 }
 
+/** Excel refuses a cell over 32,767 characters (and the whole file with it), so long answers are cut. */
+export const EXCEL_CELL_MAX = 32000
+export function clipCell<T>(v: T): T | string {
+  return typeof v === 'string' && v.length > EXCEL_CELL_MAX ? `${v.slice(0, EXCEL_CELL_MAX)}… (cut: too long for Excel)` : v
+}
+
 export async function buildWorkbook(args: ExportArgs) {
   const XLSX = await import('xlsx')
   const { header, body } = exportTable(args.rows, args.logic, args.verify)
-  const sheet = XLSX.utils.aoa_to_sheet([header, ...body])
+  const sheet = XLSX.utils.aoa_to_sheet([header.map(clipCell), ...body.map(r => r.map(clipCell))])
   sheet['!cols'] = header.map((h, i) => ({ wch: i === 0 ? 38 : Math.min(40, Math.max(12, h.length + 2)) }))
   const book = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(book, sheet, 'Responses')

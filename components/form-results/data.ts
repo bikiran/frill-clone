@@ -7,8 +7,8 @@
 // write (deleting responses) goes through the existing server route.
 
 import {
-  mergeRows, sanitizeStats, RESPONSE_CAP, PAGE_SIZE, DELETE_CHUNK, UUID_RE,
-  type ResultRow, type StatsResult, type VerifyState, type PayRecord, type EventRecord,
+  mergeRows, sanitizeStats, sanitizeClaims, RESPONSE_CAP, PAGE_SIZE, DELETE_CHUNK, UUID_RE,
+  type ResultRow, type StatsResult, type VerifyState, type PayRecord, type EventRecord, type Claims,
 } from './aggregate'
 
 export type DbLike = { from(table: string): any }
@@ -73,14 +73,15 @@ export async function loadResponses(db: DbLike, formId: string, opts: {
   return { rows, capped, total }
 }
 
-async function readIn<T>(db: DbLike, table: string, cols: string[], companyId: string, ids: string[]): Promise<{ rows: T[]; error: boolean }> {
+async function readIn<T>(db: DbLike, table: string, cols: string[], optional: string[], companyId: string, ids: string[]): Promise<{ rows: T[]; error: boolean }> {
   const out: T[] = []
-  let select = cols.join(', ')
+  let select = [...cols, ...optional].join(', ')
   for (let i = 0; i < ids.length; i += 150) {
     const chunk = ids.slice(i, i + 150)
     let res = await db.from(table).select(select).eq('company_id', companyId).in('id', chunk)
-    if (res.error && missingColumn(res.error) && select.includes('refunded_cents')) {
-      select = cols.filter(c => c !== 'refunded_cents').join(', ')
+    // Columns added by later migrations (refunded_cents V288, form_id/question_id V380) may not exist yet.
+    if (res.error && missingColumn(res.error) && optional.length && select !== cols.join(', ')) {
+      select = cols.join(', ')
       res = await db.from(table).select(select).eq('company_id', companyId).in('id', chunk)
     }
     if (res.error) return { rows: out, error: true }
@@ -89,27 +90,55 @@ async function readIn<T>(db: DbLike, table: string, cols: string[], companyId: s
   return { rows: out, error: false }
 }
 
-/** One batched members-only read per table: the payments and bookings that answers claim. */
-export async function loadVerification(db: DbLike, companyId: string | null, ids: { paymentIds: string[]; eventIds: string[] }): Promise<VerifyState> {
+/** Which response first claimed each payment / booking, across every form of the company (POST /api/forms/claims). */
+export async function fetchClaims(fetcher: Fetcher, args: { formId: string; paymentIds: string[]; eventIds: string[] }): Promise<Claims | null> {
+  try {
+    const res = await fetcher('/api/forms/claims', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ formId: args.formId, paymentIds: args.paymentIds, eventIds: args.eventIds }),
+    })
+    if (!res || res.status !== 200) return null
+    return sanitizeClaims(await res.json())
+  } catch {
+    return null
+  }
+}
+
+/**
+ * One batched members-only read per table (the payments and bookings that
+ * answers claim), then the company-wide "first claim" check for the ones that
+ * exist. Any failure → status 'error' (everything shows as unverified, with a
+ * retry banner), never a guess.
+ */
+export async function loadVerification(db: DbLike, companyId: string | null, ids: { paymentIds: string[]; eventIds: string[] },
+  claims?: { fetcher: Fetcher; formId: string }): Promise<VerifyState> {
   const paymentIds = ids.paymentIds.filter(id => UUID_RE.test(id))
   const eventIds = ids.eventIds.filter(id => UUID_RE.test(id))
-  if (!companyId) return { status: paymentIds.length || eventIds.length ? 'error' : 'done', payments: {}, events: {} }
+  if (!paymentIds.length && !eventIds.length) return { status: 'done', payments: {}, events: {}, claims: { payments: {}, events: {} } }
+  if (!companyId) return { status: 'error', payments: {}, events: {}, claims: null }
   try {
     const [p, e] = await Promise.all([
       paymentIds.length
-        ? readIn<PayRecord>(db, 'chat_payments', ['id', 'company_id', 'status', 'amount_cents', 'currency', 'conversation_id', 'description', 'refunded_cents'], companyId, paymentIds)
+        ? readIn<PayRecord>(db, 'chat_payments', ['id', 'company_id', 'status', 'amount_cents', 'currency', 'conversation_id', 'description'], ['refunded_cents', 'form_id', 'question_id'], companyId, paymentIds)
         : Promise.resolve({ rows: [] as PayRecord[], error: false }),
       eventIds.length
-        ? readIn<EventRecord>(db, 'calendar_events', ['id', 'company_id', 'event_type', 'status', 'starts_at', 'ends_at'], companyId, eventIds)
+        ? readIn<EventRecord>(db, 'calendar_events', ['id', 'company_id', 'event_type', 'status', 'starts_at', 'ends_at', 'title'], [], companyId, eventIds)
         : Promise.resolve({ rows: [] as EventRecord[], error: false }),
     ])
     const payments: Record<string, PayRecord> = {}
     for (const r of p.rows) if (r && typeof r.id === 'string') payments[r.id.toLowerCase()] = r
     const events: Record<string, EventRecord> = {}
     for (const r of e.rows) if (r && typeof r.id === 'string') events[r.id.toLowerCase()] = r
-    return { status: p.error || e.error ? 'error' : 'done', payments, events }
+    if (p.error || e.error) return { status: 'error', payments, events, claims: null }
+    // Only ids that are real records can be "Paid"/"Booked", so only those need the company-wide check.
+    const found = { paymentIds: Object.keys(payments), eventIds: Object.keys(events) }
+    let c: Claims | null = { payments: {}, events: {} }
+    if (found.paymentIds.length || found.eventIds.length) {
+      c = claims ? await fetchClaims(claims.fetcher, { formId: claims.formId, ...found }) : null
+    }
+    return { status: c ? 'done' : 'error', payments, events, claims: c }
   } catch {
-    return { status: 'error', payments: {}, events: {} }
+    return { status: 'error', payments: {}, events: {}, claims: null }
   }
 }
 

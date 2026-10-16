@@ -3,6 +3,7 @@
 // Builder-only pieces for app/admin/forms/[id]/page.tsx. The classes they use
 // (fb-tip, fb-toggle, fb-soft, fb-ghost, fb-pv-*) live in the page's <style>.
 
+import { useState } from 'react'
 import type { FormQuestion, WelcomeSettings } from '@/lib/form-logic'
 import { MAX_BUTTON_TEXT } from '@/lib/form-logic'
 import { isExclusiveLabel, otherChoiceLabel } from '@/lib/form-choice-options'
@@ -20,8 +21,14 @@ export function Toggle({ on, onChange, label, color }: { on: boolean; onChange: 
   )
 }
 
+/** "?" with a bubble: hover or focus on desktop, tap to toggle on touch (iOS doesn't focus buttons on tap). */
 export function Tip({ text }: { text: string }) {
-  return <button type="button" className="fb-tip" aria-label={text} data-tip={text}>?</button>
+  const [open, setOpen] = useState(false)
+  return (
+    <button type="button" className="fb-tip" aria-label={text} data-tip={text} data-open={open ? 'true' : undefined}
+      onClick={() => setOpen(o => !o)} onBlur={() => setOpen(false)}
+      onKeyDown={e => { if (e.key === 'Escape') setOpen(false) }}>?</button>
+  )
 }
 
 export function BranchIcon({ size = 12 }: { size?: number }) {

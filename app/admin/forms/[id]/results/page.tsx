@@ -11,10 +11,10 @@ import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { authFetch } from '@/lib/auth-fetch'
 import { confirmDialog } from '@/components/ConfirmDialog'
-import { readFormLogic, summariseLogic, hasAnyLogic } from '@/lib/form-logic'
+import { readFormLogic, hasAnyLogic } from '@/lib/form-logic'
 import {
   applyFilters, averageDuration, buildVerifyContext, completionRate, dateBounds, dateFilterOf, prep,
-  sideEffectIds, variableAverages, EMPTY_VERIFY, RESPONSE_CAP,
+  sideEffectIds, summariseRows, textOf, variableAverages, EMPTY_VERIFY, RESPONSE_CAP,
   type ResultRow, type ResultsFilter, type StatsResult, type VerifyState,
 } from '@/components/form-results/aggregate'
 import { loadResponses, loadVerification, fetchStats, deleteInChunks } from '@/components/form-results/data'
@@ -159,9 +159,9 @@ export default function FormResults() {
     if (!loadDone || !form) return
     let live = true
     const ids = sideEffectIds(rows, logic)
-    if (!ids.paymentIds.length && !ids.eventIds.length) { setVerifyState({ status: 'done', payments: {}, events: {} }); return }
+    if (!ids.paymentIds.length && !ids.eventIds.length) { setVerifyState({ status: 'done', payments: {}, events: {}, claims: { payments: {}, events: {} } }); return }
     setVerifyState(v => ({ ...v, status: 'loading' }))
-    loadVerification(supabase as any, form.company_id || null, ids).then(v => { if (live) setVerifyState(v) })
+    loadVerification(supabase as any, form.company_id || null, ids, { fetcher: authFetch, formId }).then(v => { if (live) setVerifyState(v) })
     return () => { live = false }
     // Rows only shrink after loading (deletes), so re-checking on every delete isn't needed.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -171,12 +171,15 @@ export default function FormResults() {
   const filtered = useMemo(() => applyFilters(rows, filters, logic), [rows, filters, logic])
   const ordered = useMemo(() => (sortDesc ? filtered : [...filtered].reverse()), [filtered, sortDesc])
   const dateRows = useMemo(() => applyFilters(rows, dateFilter ? [dateFilter] : [], logic), [rows, dateFilter, logic])
-  const summary = useMemo(() => summariseLogic(logic, filtered), [logic, filtered])
-  const verify = useMemo(() => buildVerifyContext(form, logic, rows, verifyState), [form, logic, rows, verifyState])
+  const verify = useMemo(() => buildVerifyContext(form, logic, verifyState), [form, logic, verifyState])
   const hasLogic = useMemo(() => hasAnyLogic(logic), [logic])
   const tracked = !!(stats && stats.tracked)
   const showPaths = hasLogic || tracked
   const activeTab: ResultsTab = tab === 'paths' && !showPaths ? 'summary' : tab
+  // "Seen by", branches and drop-off: only for the tabs that show them, and only
+  // once every page has arrived (older rows' estimated paths are cached per row).
+  const wantSummary = loadDone && (activeTab === 'summary' || activeTab === 'paths')
+  const summary = useMemo(() => (wantSummary ? summariseRows(logic, filtered) : null), [wantSummary, logic, filtered])
   const answerFiltered = filters.some(f => f.kind !== 'date')
   const totalKnown = Math.max(load.total ?? rows.length, rows.length)
   const completion = useMemo(() => completionRate(stats, dateRows, load.capped), [stats, dateRows, load.capped])
@@ -219,10 +222,13 @@ export default function FormResults() {
     const after = openId && ids.includes(openId) ? ordered.slice(ordered.findIndex(r => r.id === openId) + 1).find(r => !ids.includes(r.id))?.id ?? null : openId
     let done = 0
     setDeleting(n > 200 ? `Deleting 0 of ${n}…` : 'Deleting…')
+    // Rows leave the page once at the end (not per chunk), so a big delete
+    // doesn't rebuild every card and the summary 50 times.
     const res = await deleteInChunks(authFetch, {
       formId, companyId: form.company_id, ids,
-      onChunk: chunk => { done += chunk.length; removeRows(chunk); if (n > 200) setDeleting(`Deleting ${done} of ${n}…`) },
+      onChunk: chunk => { done += chunk.length; if (n > 200) setDeleting(`Deleting ${done} of ${n}…`) },
     })
+    if (res.deleted.length) removeRows(res.deleted)
     setDeleting(null)
     if (res.error) setNotice(`Deleted ${res.deleted.length.toLocaleString('en-AU')} of ${n.toLocaleString('en-AU')} responses, then stopped: ${res.error}`)
     if (openId && res.deleted.includes(openId)) setOpenId(after)
@@ -232,7 +238,7 @@ export default function FormResults() {
     const list = selectedOnly ? selectedVisible : ordered
     if (!list.length || exportBusy) return
     setExportBusy(format)
-    const args = { title: form?.title || 'Form', rows: list, logic, verify, accent: accent || themeColor }
+    const args = { title: textOf(form?.title) || 'Form', rows: list, logic, verify, accent: accent || themeColor }
     try {
       if (format === 'csv') exportCsv(args)
       else if (format === 'excel') await exportExcel(args)
@@ -273,7 +279,7 @@ export default function FormResults() {
     <div className="fr-root" ref={rootRef} data-wide={wide ? '1' : undefined}>
       <ResultsStyles />
       {formState === 'loading' ? <HeaderSkeleton /> : (
-        <ResultsHeader formId={formId} title={form?.title || ''} isPublished={!!form?.is_published}
+        <ResultsHeader formId={formId} title={textOf(form?.title)} isPublished={!!form?.is_published}
           tab={activeTab} onTab={changeTab} responseCount={filtered.length} showPaths={showPaths} />
       )}
 
@@ -319,7 +325,7 @@ export default function FormResults() {
 
           {activeTab === 'summary' && (
             <div role="tabpanel" id="fr-panel-summary" aria-labelledby="fr-tab-summary">
-              {summary.legacy > 0 && hasLogic && (
+              {summary && summary.legacy > 0 && hasLogic && (
                 <p className="fr-muted" style={{ fontSize: 12.5, margin: '-6px 0 14px', display: 'flex', alignItems: 'center', gap: 6 }}>
                   <Icon name="info" size={13} />{summary.legacy.toLocaleString('en-AU')} older {summary.legacy === 1 ? 'response was' : 'responses were'} submitted before paths were recorded; who saw each question is estimated for {summary.legacy === 1 ? 'it' : 'them'}.
                 </p>
@@ -345,8 +351,12 @@ export default function FormResults() {
 
           {activeTab === 'paths' && (
             <div role="tabpanel" id="fr-panel-paths" aria-labelledby="fr-tab-paths">
-              <PathsPanel logic={logic} summary={summary} stats={stats} submittedSince={completion ? completion.submitted : null}
-                color={themeColor} onVariableFilter={addVariableFilter} />
+              {summary ? (
+                <PathsPanel logic={logic} summary={summary} stats={stats} submittedSince={completion ? completion.submitted : null}
+                  color={themeColor} onVariableFilter={addVariableFilter} />
+              ) : (
+                <div className="fr-card" style={{ padding: 32, textAlign: 'center' }}><p className="fr-muted" style={{ margin: 0 }}>Counting paths once every response has loaded…</p></div>
+              )}
             </div>
           )}
         </>

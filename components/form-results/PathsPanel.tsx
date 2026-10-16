@@ -5,7 +5,7 @@ import {
   describeGroup, describeTarget, formatVariable, variablesInUse,
   type BranchRule, type LogicForm, type LogicSummary,
 } from '@/lib/form-logic'
-import { formatDay, pct, plural, type StatsResult } from './aggregate'
+import { formatDay, pct, plural, titleOr, type StatsResult } from './aggregate'
 import { Icon } from './icons'
 
 function HBar({ label, value, of, color, sub }: { label: string; value: number; of: number; color: string; sub?: string }) {
@@ -21,7 +21,7 @@ function HBar({ label, value, of, color, sub }: { label: string; value: number; 
 const title = (logic: LogicForm, id: string) => {
   const i = logic.indexOf[id]
   if (i === undefined) return '(deleted question)'
-  return `${i + 1}. ${logic.questions[i].title?.trim() || 'Untitled question'}`
+  return `${i + 1}. ${titleOr(logic.questions[i])}`
 }
 
 /** Logic results: drop-off, branch counts and variable distributions. */

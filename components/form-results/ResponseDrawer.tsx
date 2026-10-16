@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { formatVariable, type FormQuestion, type LogicForm } from '@/lib/form-logic'
-import { formatDateTime, formatDuration, pathSteps, prep, plural, type ResultRow, type VerifyContext } from './aggregate'
+import { formatDateTime, formatDuration, pathSteps, prep, plural, titleOr, type ResultRow, type VerifyContext } from './aggregate'
 import { AnswerView } from './AnswerView'
 import { Icon, type IconName } from './icons'
 
@@ -123,7 +123,7 @@ export function ResponseDrawer({ row, logic, verify, color, onClose, onPrev, onN
           {answerQs.length === 0 && <p className="fr-muted" style={{ fontSize: 13 }}>No answers.</p>}
           {answerQs.map(q => (
             <div className="fr-ans" key={q.id}>
-              <div className="fr-ans-q"><span style={{ color }}>{numberOf(q)}.</span> {q.title?.trim() || 'Untitled question'}</div>
+              <div className="fr-ans-q"><span style={{ color }}>{numberOf(q)}.</span> {titleOr(q)}</div>
               <div className="fr-ans-a"><AnswerView row={row} q={q} verify={verify} color={color} /></div>
             </div>
           ))}
@@ -134,7 +134,7 @@ export function ResponseDrawer({ row, logic, verify, color, onClose, onPrev, onN
               </button>
               {showSkipped && (
                 <ul style={{ margin: '8px 0 0', paddingLeft: 18, fontSize: 13, color: 'var(--slate)' }}>
-                  {skipped.map(q => <li key={q.id}>{numberOf(q)}. {q.title?.trim() || 'Untitled question'}</li>)}
+                  {skipped.map(q => <li key={q.id}>{numberOf(q)}. {titleOr(q)}</li>)}
                 </ul>
               )}
             </div>

@@ -203,6 +203,13 @@ function hasBranching(q: FormQuestion): boolean {
   return branchRulesOf(q).length > 0 || (!!o && o.kind !== 'next')
 }
 
+/** null / undefined / objects → '', numbers and booleans → their text. */
+function textOf(v: unknown): string {
+  if (typeof v === 'string') return v
+  if (typeof v === 'number' || typeof v === 'boolean' || typeof v === 'bigint') return String(v)
+  return ''
+}
+
 // ─── 2.1 Normalising ────────────────────────────────────────────────────────
 
 export type LogicForm = { questions: FormQuestion[]; variables: FormVariable[]; indexOf: Record<string, number> }
@@ -210,7 +217,8 @@ export type LogicForm = { questions: FormQuestion[]; variables: FormVariable[]; 
 /**
  * The engine's view of a form. Never drops a renderable question: an id-less
  * question becomes `q_index_<i>` and a duplicate id becomes `<id>_dup<i>`
- * (engine view only; the stored form is untouched). Every consumer that walks
+ * (engine view only; the stored form is untouched). A non-string `title` or
+ * `description` becomes a string ('' for null/missing). Every consumer that walks
  * questions in order uses `LogicForm.questions`, never `form.questions`.
  */
 export function readFormLogic(form: { questions?: unknown; theme?: unknown } | null | undefined): LogicForm {
@@ -224,6 +232,10 @@ export function readFormLogic(form: { questions?: unknown; theme?: unknown } | n
     if (has(indexOf, id)) id = `${id}_dup${i}`
     while (has(indexOf, id)) id = `${id}_dup${i}`
     if (id !== q.id) q = { ...q, id }
+    // title / description are typed as strings; a number or null from an API or
+    // a manual edit would crash readers that call .trim(). Copy only when needed.
+    if (typeof q.title !== 'string') q = { ...q, title: textOf(q.title) }
+    if (typeof q.description !== 'string') q = { ...q, description: textOf(q.description) }
     indexOf[id] = questions.length
     questions.push(q)
   })
@@ -585,10 +597,39 @@ function sanitizeAnswer(v: unknown, q: FormQuestion, hidden: string[]): unknown 
 }
 
 /**
+ * For the time estimate only: whether this question's branching depends on
+ * something the person hasn't answered yet. Then it can't be known where they
+ * will go, and a rule that happens to match a blank answer ("if Q1 is not Yes
+ * → End") must not shorten the estimate. Sources that stay blank whatever the
+ * person does (deleted, later or skipped questions, statements) are decided.
+ * Variable rules are decided once this question is answered (or is a statement).
+ */
+function branchingUndecided(form: LogicForm, q: FormQuestion, index: number, eff: Answers, onPath: Set<string>): boolean {
+  for (const r of branchRulesOf(q)) {
+    for (const rule of rulesOf(r)) {
+      if (isVariableRule(rule)) {
+        if (q.type !== 'statement' && !has(eff, q.id)) return true
+        continue
+      }
+      const src = indexIn(form, rule.questionId)
+      if (src === -1 || src > index || !onPath.has(rule.questionId)) continue
+      if (valueKindOf(form.questions[src]) === 'none') continue
+      if (!has(eff, rule.questionId)) return true
+    }
+  }
+  return false
+}
+
+/**
  * The path a person takes through the form for these answers. Deterministic,
  * O(questions × rules), and it can't loop: the index only ever increases.
  */
 export function computePath(form: LogicForm, rawAnswers: Answers): PathResult {
+  return walkPath(form, rawAnswers, false)
+}
+
+/** The walk behind computePath. `estimate` follows only branching that is already decided (estimateMinutes). */
+function walkPath(form: LogicForm, rawAnswers: Answers, estimate: boolean): PathResult {
   const raw = isObj(rawAnswers) ? rawAnswers : {}
   const qs = form.questions
   let vars = initialVariables(form)
@@ -615,6 +656,7 @@ export function computePath(form: LogicForm, rawAnswers: Answers): PathResult {
     const v = sanitizeAnswer(has(raw, q.id) ? raw[q.id] : undefined, q, hidden)
     if (!isBlankAnswer(v)) eff[q.id] = v
     vars = applyCalculations(q, { form, answers: eff, variables: vars })
+    if (estimate && branchingUndecided(form, q, i, eff, new Set(path))) { i++; continue }
     const t = branchTarget(q, { form, answers: eff, variables: vars }, i)
     if (hasBranching(q)) branches[q.id] = t.ruleId
     if (t.to.kind === 'end') { endedBy = 'jump'; break }
@@ -670,9 +712,15 @@ export function getProgress(form: LogicForm, raw: Answers, currentId: string): {
   return { index, total, ratio: index / Math.max(1, total) }
 }
 
-/** "Takes N minutes": 12 seconds per question on the projected path (today's formula). */
+/**
+ * "Takes N minutes": 12 seconds per question on the projected path (today's
+ * formula). Branching that depends on questions not answered yet is ignored
+ * (treated as "next question"), so a rule that matches a blank answer can't
+ * make a long form say "Takes 1 minute". Display rules apply as before, so old
+ * forms (no branching) get exactly today's number.
+ */
 export function estimateMinutes(form: LogicForm, raw: Answers = {}): number {
-  return Math.max(1, Math.round((computePath(form, raw).path.length * 12) / 60))
+  return Math.max(1, Math.round((walkPath(form, raw, true).path.length * 12) / 60))
 }
 
 // ─── 2.6 What gets submitted ────────────────────────────────────────────────

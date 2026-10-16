@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { formatVariable, variablesInUse, type LogicForm } from '@/lib/form-logic'
-import { cellFor, exportQuestions, formatDateTime, formatDuration, prep, plural, type ResultRow, type VerifyContext } from './aggregate'
+import { cellFor, exportQuestions, formatDateTime, formatDuration, prep, plural, titleOr, type ResultRow, type VerifyContext } from './aggregate'
 import { Icon } from './icons'
 
 const PAGE = 50
@@ -70,7 +70,7 @@ export function ResponsesTable({ rows, logic, verify, selected, onSelect, onOpen
               <th scope="col">Time</th>
               {qs.map(q => {
                 const n = logic.indexOf[q.id] + 1
-                const label = `${n}. ${q.title?.trim() || 'Untitled question'}`
+                const label = `${n}. ${titleOr(q)}`
                 return <th scope="col" key={q.id} title={label}>{label}</th>
               })}
               {vars.map(v => <th scope="col" key={`v-${v.id}`} title={`Variable: ${v.label}`}>{v.label}</th>)}

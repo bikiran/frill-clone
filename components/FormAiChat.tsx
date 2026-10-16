@@ -130,6 +130,14 @@ export function logicErrorCount(questions: any[]): number {
   }
 }
 
+/**
+ * Esc closes Colvy AI, unless something above it already handled the key
+ * (a confirm dialog or the Logic window calls preventDefault).
+ */
+export function closesOnKey(e: { key: string; defaultPrevented: boolean }): boolean {
+  return e.key === 'Escape' && !e.defaultPrevented
+}
+
 export const LOGIC_ATTENTION_NOTE = 'Some logic rules need attention after this change. Open Logic to review them.'
 
 function Spark({ size = 16 }: { size?: number }) {
@@ -166,7 +174,7 @@ export default function FormAiChat({ open, onClose, formId, current, apply }: {
   useEffect(() => { if (open) setTimeout(() => inputRef.current?.focus(), 220) }, [open])
   useEffect(() => {
     if (!open) return
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    const onKey = (e: KeyboardEvent) => { if (closesOnKey(e)) onClose() }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [open, onClose])

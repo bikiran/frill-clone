@@ -61,7 +61,7 @@ const CSS = `
 .fr-kpi-l { font-size: 12px; color: var(--slate); margin-top: 2px; }
 .fr-kpi-s { font-size: 11.5px; color: var(--slate); margin-top: 4px; opacity: .85; }
 
-.fr-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(340px, 100%), 1fr)); gap: 16px; align-items: start; }
+.fr-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(340px, 100%), 1fr)); grid-auto-flow: row dense; gap: 16px; align-items: start; }
 .fr-root[data-wide="1"] .fr-span2 { grid-column: span 2; }
 .fr-qcard { padding: 18px; }
 .fr-qhead { display: flex; align-items: flex-start; gap: 10px; }

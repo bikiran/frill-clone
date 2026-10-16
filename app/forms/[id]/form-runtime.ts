@@ -43,6 +43,28 @@ export function otherBoxOpen(q: any, answer: unknown): boolean {
 }
 
 /**
+ * Whether the "Other" box shows for a question on the path. Uses the
+ * EFFECTIVE answer, so an "Other" that a hide-choices rule has hidden (but
+ * which is still in the raw answer from before) shows no box and no OK button.
+ */
+export function otherBoxShown(run: PathResult, q: any): boolean {
+  return !!q && otherBoxOpen(q, run.answers[q.id])
+}
+
+/**
+ * Whether the question on screen is really the last step ("Submit", down
+ * arrow off). The projected path can end at an UNANSWERED question because a
+ * branch rule matches a blank answer ("if Q1 is not Yes → End"); until it's
+ * answered that end is provisional, so it isn't shown as the last step.
+ */
+export function isFinalStep(form: LogicForm, run: PathResult, questionId: string, nextIsEnd: boolean): boolean {
+  if (!nextIsEnd) return false
+  if (run.endedBy !== 'jump' || run.path[run.path.length - 1] !== questionId) return true
+  const q = questionOf(form, questionId)
+  return q?.type === 'statement' || !isBlankAnswer(run.answers[questionId])
+}
+
+/**
  * Every problem that blocks submitting, over the path only and in path order:
  * the engine's payment / required / email checks, plus an empty "Other" box
  * on a required question whose "Other" option is picked.

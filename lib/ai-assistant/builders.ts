@@ -11,6 +11,21 @@ import { companyLimit } from '@/lib/plan'
 import { answerToPlainText, formatVariable, readFormLogic, readResponseLogic, stripReservedAnswers } from '@/lib/form-logic'
 import { choiceAnswerText, isExclusiveLabel, isOtherLabel, otherChoiceLabel, otherTextOf } from '@/lib/form-choice-options'
 
+// A payment answer is whatever the browser inserted, so its amount_cents can be
+// forged. Never print an amount from it: say "Payment (unverified)" instead.
+// Payment-shaped values nested at any depth (inside a matrix or list) are dropped.
+const UNVERIFIED_PAYMENT = 'Payment (unverified)'
+const paymentShaped = (v: any) => !!v && typeof v === 'object' && !Array.isArray(v) && ('amount_cents' in v || 'payment_id' in v)
+const withoutPayments = (v: any, depth = 0): any =>
+  depth > 4 ? undefined : !v || typeof v !== 'object' ? v
+    : Array.isArray(v) ? v.filter(x => !paymentShaped(x)).map(x => withoutPayments(x, depth + 1))
+    : Object.fromEntries(Object.entries(v).filter(([, x]) => !paymentShaped(x)).map(([k, x]) => [k, withoutPayments(x, depth + 1)]))
+function answerText(v: any, q?: any): string {
+  if (v === undefined || v === null) return ''
+  if (q?.type === 'payment' || paymentShaped(v)) return typeof v === 'object' || String(v).trim() ? UNVERIFIED_PAYMENT : ''
+  return answerToPlainText(withoutPayments(v), q)
+}
+
 // Question types that keep a list of options. (lib/form-logic exports its own
 // CHOICE_TYPES, which also counts picture_choice; the AI can't create those.)
 const CHOICE_TYPES = ['multiple_choice', 'dropdown', 'checkbox', 'ranking']
@@ -302,11 +317,12 @@ export async function runBuilderRead(db: any, ctx: AssistantContext, name: strin
       count(db, 'form_responses', 'form_id', id),
     ])
     // Plain text, never JSON or a data: URL. Reserved keys (__logic, __other)
-    // are not answers; the typed "Other" text is folded into its answer.
+    // are not answers; the typed "Other" text is folded into its answer; a
+    // payment never shows its (unverifiable) amount.
     const show = (raw: any, k: string, v: any): string => {
       const q = byId[k]
       const plain = typeof v === 'string' || (Array.isArray(v) && v.every(x => typeof x === 'string'))
-      const text = q && plain && otherChoiceLabel(q) ? choiceAnswerText(q, v, otherTextOf(raw, k)) : answerToPlainText(v, q)
+      const text = q && plain && otherChoiceLabel(q) ? choiceAnswerText(q, v, otherTextOf(raw, k)) : answerText(v, q)
       return (text || (q?.type === 'signature' && v ? 'Signed' : '')).slice(0, 1000)
     }
     return {

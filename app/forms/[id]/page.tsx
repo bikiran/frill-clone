@@ -13,7 +13,7 @@ import Confetti from '@/components/Confetti'
 import { StatusMark } from '@/components/StatusMark'
 import { notifyIntegrations } from '@/lib/integrations-notify'
 import {
-  abandonQuestionId, buildPublicSubmission, choiceList, hasOtherBox, listProgress, otherBoxOpen, problemFor,
+  abandonQuestionId, buildPublicSubmission, choiceList, hasOtherBox, isFinalStep, listProgress, otherBoxOpen, otherBoxShown, problemFor,
   problemMessage, rankOrderFor, restoreProgress, tint, trackBody, validatePublic, type PublicProblem,
 } from './form-runtime'
 import { ChoiceRow, MediaBlock, OtherInput, Tick, WelcomeMeta } from './parts'
@@ -274,6 +274,8 @@ export default function PublicForm() {
   }
 
   const goBack = () => {
+    // Ignored while a picked choice is blinking: its pending advance would jump forward again.
+    if (moving.current || advancing.current || submittedRef.current) return
     const at = currentIdRef.current
     const p = at !== null ? getPrevStep(logic, answersRef.current, at) : null
     if (p) go(p)
@@ -925,7 +927,7 @@ export default function PublicForm() {
               <option value="">Select an option...</option>
               {vis.map(c => <option key={c.index} value={c.label}>{c.label}</option>)}
             </select>
-            {otherLabel && a === otherLabel && <div style={{ marginTop: 14 }}>{otherBox(q)}</div>}
+            {otherBoxShown(run, q) && <div style={{ marginTop: 14 }}>{otherBox(q)}</div>}
           </>
         )}
         {q.type === 'nps' && (
@@ -1007,7 +1009,7 @@ export default function PublicForm() {
                 )
               })}
             </div>
-            {otherLabel && a === otherLabel && <div style={{ marginTop: 14 }}>{otherBox(q)}</div>}
+            {otherBoxShown(run, q) && <div style={{ marginTop: 14 }}>{otherBox(q)}</div>}
           </>
         )}
         {q.type === 'ranking' && (
@@ -1183,7 +1185,7 @@ export default function PublicForm() {
   const onWelcome = !submitted && (listMode ? !listStarted : currentId === null)
   const showQuestion = !submitted && !listMode && !!current
   const showList = !submitted && listMode && listStarted
-  const atEnd = showQuestion ? getNextStep(logic, answers, current.id).kind === 'end' : false
+  const atEnd = showQuestion ? isFinalStep(logic, run, current.id, getNextStep(logic, answers, current.id).kind === 'end') : false
   const prevId = showQuestion ? getPrevStep(logic, answers, current.id) : null
   const progress = showQuestion ? getProgress(logic, answers, current.id).ratio : showList ? listProgress(logic, run) : 0
   const thankYou = form.thank_you_message || 'Thanks for completing this form!'
@@ -1426,7 +1428,7 @@ export default function PublicForm() {
 
             {err && errorNote(err, { marginTop: -14, marginBottom: 18 })}
 
-            {(!AUTO_ADVANCE_TYPES.includes(current.type) || (current.type === 'multiple_choice' && current.multiSelect) || otherBoxOpen(current, answers[current.id]))
+            {(!AUTO_ADVANCE_TYPES.includes(current.type) || (current.type === 'multiple_choice' && current.multiSelect) || otherBoxShown(run, current))
               && !(current.type === 'payment' && (answers[current.id] as any)?.status !== 'paid') && (
               <div className="ff-actions ff-indent">
                 <button type="button" className="ff-ok" onClick={handleNext} disabled={submitting}>

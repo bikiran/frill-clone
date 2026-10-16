@@ -5,6 +5,21 @@ import { emitIntegrationEvent, type EventPayload } from '@/lib/integration-event
 import { answerToPlainText, formatVariable, readFormLogic, readResponseLogic, stripReservedAnswers, variablesInUse } from '@/lib/form-logic'
 import { choiceAnswerText, otherChoiceLabel, otherTextOf } from '@/lib/form-choice-options'
 
+// A payment answer is whatever the browser inserted, so its amount_cents can be
+// forged. Never print an amount from it: say "Payment (unverified)" instead.
+// Payment-shaped values nested at any depth (inside a matrix or list) are dropped.
+const UNVERIFIED_PAYMENT = 'Payment (unverified)'
+const paymentShaped = (v: any) => !!v && typeof v === 'object' && !Array.isArray(v) && ('amount_cents' in v || 'payment_id' in v)
+const withoutPayments = (v: any, depth = 0): any =>
+  depth > 4 ? undefined : !v || typeof v !== 'object' ? v
+    : Array.isArray(v) ? v.filter(x => !paymentShaped(x)).map(x => withoutPayments(x, depth + 1))
+    : Object.fromEntries(Object.entries(v).filter(([, x]) => !paymentShaped(x)).map(([k, x]) => [k, withoutPayments(x, depth + 1)]))
+function answerText(v: any, q?: any): string {
+  if (v === undefined || v === null) return ''
+  if (q?.type === 'payment' || paymentShaped(v)) return typeof v === 'object' || String(v).trim() ? UNVERIFIED_PAYMENT : ''
+  return answerToPlainText(withoutPayments(v), q)
+}
+
 export const dynamic = 'force-dynamic'
 
 // Events whose record is written from the browser (ideas, votes, comments,
@@ -135,10 +150,11 @@ export async function POST(req: NextRequest) {
     const lg = readResponseLogic(r.answers)
     const otherText: Record<string, string> = {}
     for (const q of qs) { const t = typeof q.id === 'string' ? otherTextOf(r.answers, q.id).trim() : ''; if (t) otherText[q.id] = clip(t, 1000) }
-    // Plain text: files print their name, signatures (data URLs) print nothing, "Other" shows what they typed.
+    // Plain text: files print their name, signatures (data URLs) print nothing, "Other" shows what they typed,
+    // payments never show their (unverifiable) amount.
     const show = (q: any, v: any) => {
       const plain = typeof v === 'string' || (Array.isArray(v) && v.every(x => typeof x === 'string'))
-      return plain && otherChoiceLabel(q) ? choiceAnswerText(q, v, otherText[q.id] || '') : answerToPlainText(v, q)
+      return plain && otherChoiceLabel(q) ? choiceAnswerText(q, v, otherText[q.id] || '') : answerText(v, q)
     }
     const fields: Record<string, string | null> = {}
     for (const q of qs.slice(0, 15)) {
@@ -154,7 +170,7 @@ export async function POST(req: NextRequest) {
         fields[label in fields ? `${label} (calculated)` : label] = formatVariable(lg.variables[v.id])
       }
     }
-    const find = (re: RegExp) => { const q = qs.find(x => re.test(String(x.type || '')) || re.test(String(x.title || x.label || ''))); const v = q ? answers[q.id] : null; return v ? answerToPlainText(v, q) || null : null }
+    const find = (re: RegExp) => { const q = qs.find(x => re.test(String(x.type || '')) || re.test(String(x.title || x.label || ''))); const v = q ? answers[q.id] : null; return v && q?.type !== 'payment' && !paymentShaped(v) ? answerText(v, q) || null : null }
     emitIntegrationEvent(form.company_id, event, {
       title: `New response to “${clip(form.title, 120)}”`,
       path: `/admin/forms/${form.id}/results`,

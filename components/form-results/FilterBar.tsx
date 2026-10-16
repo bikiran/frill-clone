@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { choicesOf, variablesInUse, type FormQuestion, type LogicForm } from '@/lib/form-logic'
 import {
-  answerOpsFor, describeFilter, presetRange, ANSWER_OP_LABEL,
+  answerOpsFor, describeFilter, presetRange, titleOf, titleOr, ANSWER_OP_LABEL,
   type AnswerOp, type DatePreset, type ResultsFilter,
 } from './aggregate'
 import { Icon } from './icons'
@@ -146,7 +146,7 @@ function AddFilter({ logic, onAdd }: { logic: LogicForm; onAdd: (f: ResultsFilte
   const questions = logic.questions.map((q, index) => ({ q, index })).filter(x => answerOpsFor(x.q).length > 0)
   const vars = variablesInUse(logic)
   const s = search.trim().toLowerCase()
-  const qList = s ? questions.filter(x => `${x.index + 1}. ${x.q.title || ''}`.toLowerCase().includes(s)) : questions
+  const qList = s ? questions.filter(x => `${x.index + 1}. ${titleOf(x.q)}`.toLowerCase().includes(s)) : questions
   const vList = s ? vars.filter(v => v.label.toLowerCase().includes(s)) : vars
 
   const choose = (next: Source) => {
@@ -198,7 +198,7 @@ function AddFilter({ logic, onAdd }: { logic: LogicForm; onAdd: (f: ResultsFilte
                 {qList.map(({ q, index }) => (
                   <button key={q.id} type="button" className="fr-menu-item" onClick={() => choose({ kind: 'question', q, index })}>
                     <span className="fr-muted" style={{ minWidth: 20, fontWeight: 700 }}>{index + 1}</span>
-                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{q.title || 'Untitled question'}</span>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{titleOr(q)}</span>
                   </button>
                 ))}
                 {!qList.length && !vList.length && <p className="fr-muted" style={{ fontSize: 13, padding: '6px 10px' }}>Nothing matches</p>}
@@ -210,7 +210,7 @@ function AddFilter({ logic, onAdd }: { logic: LogicForm; onAdd: (f: ResultsFilte
                 <Icon name="left" size={13} />Back
               </button>
               <div style={{ fontSize: 13, fontWeight: 700, overflowWrap: 'anywhere' }}>
-                {src.kind === 'variable' ? src.label : `${src.index + 1}. ${src.q.title || 'Untitled question'}`}
+                {src.kind === 'variable' ? src.label : `${src.index + 1}. ${titleOr(src.q)}`}
               </div>
               {src.kind === 'question' && (
                 <select className="fr-select" aria-label="Condition" value={op} onChange={e => setOp(e.target.value as AnswerOp)}>

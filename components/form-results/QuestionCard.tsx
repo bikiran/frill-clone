@@ -3,7 +3,7 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import { countRules, formatVariable, type FormQuestion, type LogicSummary } from '@/lib/form-logic'
 import {
-  questionStats, tintOf, typeLabel, pct, plural, formatMoney, formatBooking, formatDay,
+  questionStats, tintOf, typeLabel, titleOr, pct, plural, formatMoney, formatBooking, formatDay,
   isWideCard, type QuestionStats, type ResultRow, type VerifyContext, type Bar,
 } from './aggregate'
 import { Icon } from './icons'
@@ -32,7 +32,7 @@ export function QuestionCard({ q, index, rows, summary, verify, color, onOpenRow
         <span className="fr-num" style={{ background: tint.bg, color: tint.fg }}>{index + 1}</span>
         <div style={{ minWidth: 0, flex: 1 }}>
           <div className="fr-type">{typeLabel(q.type)}</div>
-          <h3 className="fr-qtitle" id={`fr-q-${index}`}>{q.title?.trim() || 'Untitled question'}</h3>
+          <h3 className="fr-qtitle" id={`fr-q-${index}`}>{titleOr(q)}</h3>
         </div>
         {rules > 0 && <span className="fr-tag" title={`${plural(rules, 'logic rule')} on this question`}><Icon name="logic" size={12} />Logic</span>}
       </div>
@@ -46,7 +46,7 @@ export function QuestionCard({ q, index, rows, summary, verify, color, onOpenRow
               </span>
             )}
           </>
-        ) : <span>No responses yet</span>}
+        ) : <span>{summary ? 'No responses yet' : 'Counting who saw this…'}</span>}
       </div>
       <CardBody stats={stats} q={q} color={color} onOpenRow={onOpenRow} />
     </section>
@@ -303,7 +303,8 @@ function MediaBody({ items, onOpenRow }: { items: Extract<QuestionStats, { kind:
     <div>
       <div className="fr-gallery">
         {list.map((it, i) => {
-          const inner = it.media === 'image'
+          // Only our own storage / inline images load; other links show as a file tile.
+          const inner = it.media === 'image' && it.inline
             ? <img src={it.url} alt={it.signature ? 'Signature' : it.name || 'Uploaded image'} loading="lazy" style={it.signature ? { objectFit: 'contain', background: '#fff' } : undefined} />
             : <><Icon name={it.media === 'video' ? 'play' : it.media === 'audio' ? 'wave' : 'file'} size={22} /><span>{it.name || (it.media === 'audio' ? 'Recording' : it.media === 'video' ? 'Video' : 'File')}</span></>
           // Signatures and inline (data:) files open in the response drawer; links open in a new tab.

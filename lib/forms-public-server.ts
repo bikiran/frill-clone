@@ -44,13 +44,51 @@ export function clientIp(req: Request): string {
     || 'unknown'
 }
 
-/** Inside scheduled_start / scheduled_end when set (unparseable dates are ignored, as the public page does). */
+// A clock time followed by Z or an offset: '…09:00:00+10', '…T09:00Z', '…09:00:00.5+05:30'.
+const ZONED_RE = /\d{2}:\d{2}(:\d{2}(\.\d+)?)?\s*(z|[+-]\d{2}(:?\d{2})?)$/i
+const HOUR = 3_600_000
+const EVERY_ZONE_MS = 14 * HOUR
+const END_GRACE_MS = 30 * 60_000
+
+/**
+ * A schedule value as an instant, and whether it carried a time zone. A value
+ * without one is read as UTC wall-clock (as Postgres does) and the caller
+ * widens it by ±14h. Null when it doesn't parse.
+ */
+export function parseScheduleTime(v: unknown): { t: number; zoned: boolean } | null {
+  if (v instanceof Date) return Number.isFinite(v.getTime()) ? { t: v.getTime(), zoned: true } : null
+  if (typeof v !== 'string') return null
+  let s = v.trim()
+  if (!s) return null
+  const zoned = ZONED_RE.test(s)
+  s = s.replace(/^(\d{4}-\d{2}-\d{2})[ T]/, '$1T')
+  if (zoned) {
+    s = s.replace(/\s+(?=(z|[+-]\d{2}(:?\d{2})?)$)/i, '')                 // '09:00 +10' → '09:00+10'
+      .replace(/([+-]\d{2})$/, '$1:00')                       // '+10'   → '+10:00'
+      .replace(/([+-]\d{2})(\d{2})$/, '$1:$2')                // '+1000' → '+10:00'
+  } else if (/T\d/.test(s)) {
+    s += 'Z'                                                  // datetime without a zone: UTC wall clock
+  }
+  // A date on its own ('2026-10-20') is already UTC midnight to Date.parse.
+  const t = Date.parse(s)
+  return Number.isFinite(t) ? { t, zoned } : null
+}
+
+/**
+ * Inside scheduled_start / scheduled_end, with V375's rule (form_schedule_open):
+ *   - a value with a time zone is exact;
+ *   - one without (plain timestamp, date, datetime-local text) is a wall-clock
+ *     time in a zone we can't know (the page reads it in the visitor's zone),
+ *     so it only counts once it has passed in every zone (±14h);
+ *   - the end gets 30 minutes' grace;
+ *   - a value that doesn't parse doesn't block anything.
+ * So the routes never refuse a visitor the page let in.
+ */
 export function inSchedule(form: { scheduled_start?: unknown; scheduled_end?: unknown }, now: number): boolean {
-  const at = (v: unknown) => (v ? new Date(v as string).getTime() : NaN)
-  const start = at(form.scheduled_start)
-  const end = at(form.scheduled_end)
-  if (Number.isFinite(start) && now < start) return false
-  if (Number.isFinite(end) && now > end) return false
+  const start = parseScheduleTime(form.scheduled_start)
+  if (start && now < (start.zoned ? start.t : start.t - EVERY_ZONE_MS)) return false
+  const end = parseScheduleTime(form.scheduled_end)
+  if (end && now > (end.zoned ? end.t : end.t + EVERY_ZONE_MS) + END_GRACE_MS) return false
   return true
 }
 
@@ -72,14 +110,14 @@ function resolveDeps(deps: Deps) {
 
 const COUNT_TTL_MS = 60_000
 const COUNT_CACHE_MAX = 500
-const countCache = new Map<string, { count: number | null; at: number }>()
+const countCache = new Map<string, { count: number; at: number }>()
 
 /** Test hook: empties the in-memory count cache. */
 export function resetCountCache() {
   countCache.clear()
 }
 
-function cacheCount(id: string, count: number | null, at: number) {
+function cacheCount(id: string, count: number, at: number) {
   countCache.delete(id)
   while (countCache.size >= COUNT_CACHE_MAX) {
     const oldest = countCache.keys().next().value
@@ -108,23 +146,22 @@ export async function handleFormCount(req: Request, id: string, deps: Deps = {})
     const { db, burst, now } = resolveDeps(deps)
     if (!burst(`form-count:${clientIp(req)}`, 60)) return json({ error: 'Too many requests' }, 429, NO_STORE)
 
-    const key = id.toLowerCase()
-    const t = now()
-    const hit = countCache.get(key)
-    if (hit && t - hit.at < COUNT_TTL_MS) return json({ count: hit.count }, 200, SHARED_60)
-
     if (!db) return json({ count: null }, 200, NO_STORE)
 
+    // The form row is re-read on every request (a primary-key lookup), so a
+    // form that was unpublished, closed or had the toggle switched off stops
+    // showing its count straight away; only the response count is cached.
+    const t = now()
     const { data: form, error } = await db.from('forms')
       .select('id, is_published, theme, scheduled_start, scheduled_end')
       .eq('id', id).maybeSingle()
     if (error) return json({ count: null }, 200, NO_STORE)
     if (!form || form.is_published !== true || !inSchedule(form, t)) return json({ error: 'Not found' }, 404, NO_STORE)
+    if (!resolveWelcome(form.theme).showResponseCount) return json({ count: null }, 200, SHARED_60)
 
-    if (!resolveWelcome(form.theme).showResponseCount) {
-      cacheCount(key, null, t)
-      return json({ count: null }, 200, SHARED_60)
-    }
+    const key = id.toLowerCase()
+    const hit = countCache.get(key)
+    if (hit && t - hit.at < COUNT_TTL_MS) return json({ count: hit.count }, 200, SHARED_60)
 
     const { count, error: countError } = await db.from('form_responses')
       .select('id', { count: 'exact', head: true })

@@ -121,6 +121,24 @@ function withLists(q: FormQuestion, ex: string[], non: string[]): FormQuestion {
 
 const strList = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [])
 
+/**
+ * Adds "Option N", above the Other option when it is last, keeping
+ * optionImages (picture choice) aligned with the options.
+ */
+export function addOption(q: FormQuestion, otherLabel: string | null): FormQuestion {
+  const cur = q.options || []
+  const at = otherLabel !== null && cur.length > 0 && cur[cur.length - 1] === otherLabel ? cur.length - 1 : cur.length
+  const options = [...cur]
+  options.splice(at, 0, `Option ${cur.length + 1}`)
+  const next: FormQuestion = { ...q, options }
+  if (Array.isArray(q.optionImages) && q.optionImages.length > at) {
+    const imgs = [...q.optionImages]
+    imgs.splice(at, 0, '')
+    next.optionImages = imgs
+  }
+  return next
+}
+
 /** Removes option `index` (and its picture), dropping its label from the exclusive lists when no copy is left. */
 export function removeOption(q: FormQuestion, index: number): FormQuestion {
   const opts = q.options || []
@@ -177,7 +195,9 @@ export function renameOption(questions: FormQuestion[], qid: string, index: numb
   const old = opts[index]
   if (old === newLabel) return questions
   const unique = old !== '' && opts.filter(o => o === old).length === 1
-  const follow = unique && newLabel !== ''
+  // Typing into another option's label (e.g. "Yes please" backspaced to "Yes")
+  // must not move that option's rules onto this one.
+  const follow = unique && newLabel !== '' && !opts.some((o, i) => i !== index && o === newLabel)
   const renamed = follow ? renameChoiceRefs(questions, qid, old, newLabel) : questions
   return renamed.map(x => {
     if (x.id !== qid) return x

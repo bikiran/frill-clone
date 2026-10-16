@@ -70,6 +70,10 @@ const hide = (rules, logic = 'all') => ({ condition: 'hide', logic, rules })
 const SCORE = [{ id: 'score', label: 'Score', initial: 0 }]
 const calc = (id, variableId, op, amount, when, extra = {}) => ({ id, variableId, op, amount, when, ...extra })
 const ANSWERED = { kind: 'answered' }
+const br = (id, rules, to, logic = 'all') => ({ id, logic, rules, to })
+const toQ = (questionId) => ({ kind: 'question', questionId })
+const END = { kind: 'end' }
+const NEXT = { kind: 'next' }
 const ids = (qs) => qs.map(q => q.id)
 const legacyShowsRule = (r, answers, qs) => LEGACY.shouldShowQuestion('x', answers, qs, { condition: 'show', logic: 'all', rules: [r] })
 
@@ -426,15 +430,21 @@ section('13a. readFormLogic keeps id-less and duplicate questions')
   ok('path has no duplicates', new Set(run.path).size === run.path.length)
   ok('original objects untouched', raw[0].id === undefined && raw[2].id === 'a')
   ok('unchanged questions are the same objects', f.questions[1] === raw[1])
+  const odd = E.readFormLogic({ questions: [{ id: 'n', type: 'short_text', title: 42, description: null }, { id: 'u', type: 'short_text' }, { id: 'o', type: 'short_text', title: { x: 1 }, description: 7 }, { id: 'b', type: 'short_text', title: false, description: '' }] })
+  eq('non-string titles become strings', odd.questions.map(q => q.title), ['42', '', '', 'false'])
+  eq('non-string descriptions become strings', odd.questions.map(q => q.description), ['', '', '7', ''])
+  let trimThrew = false
+  try { odd.questions.forEach(q => q.title.trim() + q.description.trim()); E.describeTarget(toQ('n'), odd, 'u'); E.describeGroup({ logic: 'all', rules: [R('n', 'is_empty')] }, odd) } catch { trimThrew = true }
+  ok('readers that call .trim() no longer crash', !trimThrew)
+  eq('describeTarget uses the coerced title', E.describeTarget(toQ('n'), odd, 'u'), '1. 42')
+  const rawOdd = { id: 'n', type: 'short_text', title: 42 }
+  E.readFormLogic({ questions: [rawOdd] })
+  ok('stored question untouched', rawOdd.title === 42)
   const clash = E.readFormLogic({ questions: [Q('q_index_1'), { type: 'x' }] })
   ok('generated id never collides', new Set(ids(clash.questions)).size === 2)
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-const br = (id, rules, to, logic = 'all') => ({ id, logic, rules, to })
-const toQ = (questionId) => ({ kind: 'question', questionId })
-const END = { kind: 'end' }
-const NEXT = { kind: 'next' }
 
 section('14. first matching branch rule wins')
 {
@@ -580,6 +590,56 @@ section('22. estimateMinutes equals the old formula')
     }
   }
   eq('default answers argument', E.estimateMinutes(F([Q('a')])), 1)
+}
+
+section('22a. estimateMinutes ignores branching that depends on unanswered questions')
+{
+  const long = (first, n = 30) => [first, ...Array.from({ length: n - 1 }, (_, i) => Q(`q${i + 2}`))]
+  // Reviewer case: "if Q1 is not Yes → End" matches a blank answer (not_equals is true on blank).
+  const notYes = F(long(Q('q1', 'yes_no', { branching: { rules: [br('r', [R('q1', 'not_equals', 'Yes')], END)] } })))
+  eq('runtime projection from no answers still ends after Q1 (unchanged)', E.computePath(notYes, {}).path, ['q1'])
+  eq('estimate from no answers counts the whole form', E.estimateMinutes(notYes, {}), 6)
+  eq('estimate default argument too', E.estimateMinutes(notYes), 6)
+  eq('estimate once Q1 is answered No follows the branch', E.estimateMinutes(notYes, { q1: 'No' }), 1)
+  eq('estimate once Q1 is answered Yes', E.estimateMinutes(notYes, { q1: 'Yes' }), 6)
+  // An "otherwise → End" is not applied while the rules are undecided.
+  const otherwiseEnd = F(long(Q('q1', 'yes_no', { branching: { rules: [br('r', [R('q1', 'equals', 'Yes')], toQ('q30'))], otherwise: END } })))
+  eq('undecided rules: otherwise → End ignored', E.estimateMinutes(otherwiseEnd, {}), 6)
+  eq('decided: otherwise → End applies', E.estimateMinutes(otherwiseEnd, { q1: 'No' }), 1)
+  eq('decided: jump to Q30 applies', E.estimateMinutes(otherwiseEnd, { q1: 'Yes' }), 1)
+  // Branching on a later question that depends on an earlier answered one is decided.
+  const atQ10 = F(Array.from({ length: 30 }, (_, i) => Q(`q${i + 1}`, i === 0 ? 'yes_no' : 'short_text', i === 9 ? { branching: { rules: [br('r', [R('q1', 'equals', 'Yes')], END)] } } : {})))
+  eq('rule at Q10 on answered Q1 applies', E.estimateMinutes(atQ10, { q1: 'Yes' }), 2)
+  eq('rule at Q10 on unanswered Q1 ignored', E.estimateMinutes(atQ10, {}), 6)
+  // Sources that stay blank whatever the person does are decided (same as the runtime path).
+  const deleted = F(long(Q('q1', 'short_text', { branching: { rules: [br('r', [R('gone', 'is_empty')], toQ('q26'))] } })))
+  eq('deleted source: decided, jump applies', [E.estimateMinutes(deleted, {}), E.computePath(deleted, {}).path.length], [1, 6])
+  const later = F(long(Q('q1', 'short_text', { branching: { rules: [br('r', [R('q30', 'is_empty')], toQ('q26'))] } })))
+  eq('later source: decided, jump applies', E.estimateMinutes(later, {}), 1)
+  const stmt = F(long(Q('q1', 'statement', { branching: { rules: [br('r', [R('q1', 'is_empty')], toQ('q26'))] } })))
+  eq('statement source: decided, jump applies', E.estimateMinutes(stmt, {}), 1)
+  const skipped = F([Q('q1', 'yes_no'), Q('q2', 'short_text', { conditional_logic: show([R('q1', 'equals', 'Yes')]) }), Q('q3', 'short_text', { branching: { rules: [br('r', [R('q2', 'is_empty')], END)] } }), ...Array.from({ length: 27 }, (_, i) => Q(`x${i}`))])
+  eq('source skipped by display rules: decided', E.estimateMinutes(skipped, { q1: 'No' }), 1)
+  // Variable rules: decided once the question itself is answered.
+  const varForm = F(long(Q('q1', 'rating', { calculations: [calc('k', 'score', 'add', 0, ANSWERED, { useAnswer: true })], branching: { rules: [br('r', [V('score', 'lt', '3')], END)] } })), SCORE)
+  eq('variable rule with the question unanswered ignored', E.estimateMinutes(varForm, {}), 6)
+  eq('variable rule with the question answered applies', [E.estimateMinutes(varForm, { q1: 1 }), E.estimateMinutes(varForm, { q1: 5 })], [1, 6])
+  // Display rules still apply exactly as before, so old forms are unchanged (test 22 covers the formula).
+  const display = F(long(Q('q1', 'short_text', { conditional_logic: show([R('zz', 'equals', 'x')]) })))
+  eq('display rules still apply', E.estimateMinutes(display, {}), 6)
+  const hidesMany = F([Q('q1'), ...Array.from({ length: 29 }, (_, i) => Q(`h${i}`, 'short_text', { conditional_logic: hide([R('q1', 'is_empty')]) }))])
+  eq('display rules matching blank still shorten it (legacy behaviour)', E.estimateMinutes(hidesMany, {}), 1)
+  // Fuzz: with every answer given, the estimate equals the runtime path.
+  const rr = rng(7)
+  let same = 0, total = 0
+  for (let iter = 0; iter < 300; iter++) {
+    const n = 3 + Math.floor(rr() * 10)
+    const qs = Array.from({ length: n }, (_, i) => Q(`f${i}`, 'yes_no', rr() < 0.5 ? { branching: { rules: [br('r', [R(`f${Math.floor(rr() * (i + 1))}`, pick(rr, ['equals', 'not_equals']), pick(rr, ['Yes', 'No']))], rr() < 0.3 ? END : toQ(`f${Math.min(n - 1, i + 1 + Math.floor(rr() * 3))}`))] } } : {}))
+    const answers = Object.fromEntries(qs.map(q => [q.id, pick(rr, ['Yes', 'No'])]))
+    total++
+    if (E.estimateMinutes(F(qs), answers) === Math.max(1, Math.round((E.computePath(F(qs), answers).path.length * 12) / 60))) same++
+  }
+  eq(`fully answered forms: estimate matches the runtime path (${total} forms)`, same, total)
 }
 
 // ════════════════════════════════════════════════════════════════════════════

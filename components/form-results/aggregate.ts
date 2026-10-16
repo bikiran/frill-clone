@@ -5,7 +5,7 @@
 
 import {
   readResponseLogic, stripReservedAnswers, answerToPlainText, isBlankAnswer, toNum,
-  valueKindOf, choicesOf, formatVariable, variablesInUse,
+  valueKindOf, choicesOf, formatVariable, variablesInUse, computePath, summariseLogic,
   type FormQuestion, type LogicForm, type LogicSummary, type ResponseLogic, type ResponseRow,
 } from '@/lib/form-logic'
 import { choiceAnswerText, otherChoiceLabel, otherTextOf } from '@/lib/form-choice-options'
@@ -71,6 +71,19 @@ const TYPE_TINT: Record<string, { bg: string; fg: string }> = Object.fromEntries
 
 export const tintOf = (type: string) => TYPE_TINT[type] || { bg: '#eef0f3', fg: '#4b5563' }
 export const typeLabel = (type: string) => TYPE_LABEL[type] || 'Question'
+
+// ─── Text of possibly-odd stored values ─────────────────────────────────────
+
+/** Strings as they are; numbers/booleans as text; anything else (null, objects) → ''. */
+export function textOf(v: unknown): string {
+  if (typeof v === 'string') return v
+  if (typeof v === 'number' || typeof v === 'boolean') return String(v)
+  return ''
+}
+/** A question's title, trimmed, safe for any stored value. */
+export const titleOf = (q: { title?: unknown } | null | undefined) => textOf(q?.title).trim()
+/** "N. Title" with a fallback for blank titles. */
+export const titleOr = (q: { title?: unknown } | null | undefined, fallback = 'Untitled question') => titleOf(q) || fallback
 
 // ─── Formatting ─────────────────────────────────────────────────────────────
 
@@ -139,6 +152,26 @@ export function safeUrl(u: unknown): string | null {
   return null
 }
 
+// Same fallback as lib/supabase (not imported: it builds a client).
+const DEFAULT_SUPABASE_URL = 'https://mtfhctgdayeqrguodksv.supabase.co'
+
+/** Public-object prefix of this project's Supabase storage, where the public form uploads files. */
+export function storagePrefix(base: string | undefined = process.env.NEXT_PUBLIC_SUPABASE_URL || DEFAULT_SUPABASE_URL): string | null {
+  try { return `${new URL(base).origin}/storage/v1/object/public/` } catch { return null }
+}
+
+/**
+ * Answers are untrusted, so only our own storage and inline data: media may load
+ * as <img> / <video> / <audio>. Anything else is shown as a plain link (or not at all).
+ */
+export function inlineMediaUrl(u: unknown, prefix: string | null = storagePrefix()): string | null {
+  const s = safeUrl(u)
+  if (!s) return null
+  if (s.startsWith('data:')) return s
+  if (prefix && s.startsWith(prefix) && !/(^|\/)\.\.(\/|$)|%2e%2e/i.test(s.slice(prefix.length))) return s
+  return null
+}
+
 export type MediaKind = 'image' | 'video' | 'audio' | 'file'
 export function mediaKindOf(url: string, name?: unknown): MediaKind {
   const probe = `${url.split(/[?#]/)[0]} ${typeof name === 'string' ? name : ''}`.toLowerCase()
@@ -192,17 +225,26 @@ export type PayRecord = {
   amount_cents: number | null; currency: string | null
   conversation_id: string | null; description: string | null
   refunded_cents?: number | null
+  /** V380: the form and payment question the payment was taken on (null on older rows). */
+  form_id?: string | null
+  question_id?: string | null
 }
 export type EventRecord = {
   id: string; company_id: string | null; event_type: string | null; status: string | null
   starts_at: string | null; ends_at: string | null
+  title?: string | null
 }
+/** The response that first claimed a payment / booking, across every form of the company (/api/forms/claims). */
+export type Claim = { responseId: string; formId: string; questionId: string; createdAt: string }
+export type Claims = { payments: Record<string, Claim>; events: Record<string, Claim> }
 export type VerifyState = {
   status: 'idle' | 'loading' | 'done' | 'error'
   payments: Record<string, PayRecord>
   events: Record<string, EventRecord>
+  /** null until the company-wide claims check has answered. */
+  claims: Claims | null
 }
-export const EMPTY_VERIFY: VerifyState = { status: 'idle', payments: {}, events: {} }
+export const EMPTY_VERIFY: VerifyState = { status: 'idle', payments: {}, events: {}, claims: null }
 
 export type PaymentCheck = {
   state: 'paid' | 'refunded' | 'unverified' | 'checking'
@@ -216,12 +258,13 @@ export type BookingCheck = {
 export type VerifyContext = {
   state: VerifyState
   companyId: string | null
-  /** Descriptions /api/forms/payment writes for this form: each payment question's title, or "Payment to <form title>". */
+  formId: string | null
+  /** The title /api/forms/schedule gives a booking from this form: "Booking — <form title>". */
+  bookingTitle: string
+  /** Older payment rows only (no form_id): descriptions /api/forms/payment wrote for this form. */
   paymentDescriptions: Set<string>
-  /** Expected amount per payment question id. */
+  /** Older payment rows only (no form_id): expected amount per payment question id. */
   paymentAmounts: Record<string, number>
-  /** payment id / calendar event id → the `${rowId}:${questionId}` that claimed it first (oldest response). */
-  firstUse: { payments: Record<string, string>; events: Record<string, string> }
 }
 
 const idOf = (v: unknown, key: string): string | null => {
@@ -229,6 +272,7 @@ const idOf = (v: unknown, key: string): string | null => {
   const x = (v as any)[key]
   return typeof x === 'string' && UUID_RE.test(x) ? x.toLowerCase() : null
 }
+const lower = (v: unknown) => (typeof v === 'string' ? v.toLowerCase() : v == null ? null : String(v))
 
 /** Payment ids and calendar event ids claimed by answers to payment / scheduler questions. */
 export function sideEffectIds(rows: ResultRow[], logic: LogicForm): { paymentIds: string[]; eventIds: string[] } {
@@ -245,51 +289,43 @@ export function sideEffectIds(rows: ResultRow[], logic: LogicForm): { paymentIds
 }
 
 export function buildVerifyContext(
-  form: { title?: unknown; company_id?: unknown } | null,
-  logic: LogicForm, allRows: ResultRow[], state: VerifyState,
+  form: { id?: unknown; title?: unknown; company_id?: unknown } | null,
+  logic: LogicForm, state: VerifyState,
 ): VerifyContext {
-  const formTitle = typeof form?.title === 'string' ? form.title : ''
+  const formTitle = textOf(form?.title)
   const paymentDescriptions = new Set<string>()
   const paymentAmounts: Record<string, number> = {}
   for (const q of logic.questions) {
     if (q.type !== 'payment') continue
-    const t = typeof q.title === 'string' ? q.title.trim() : ''
+    const t = titleOf(q)
     if (t) paymentDescriptions.add(t)
     const cents = Math.round(toNum(q.amountCents))
     if (Number.isFinite(cents) && cents > 0) paymentAmounts[q.id] = cents
   }
   paymentDescriptions.add(`Payment to ${formTitle}`.trim())
-
-  // Oldest response first, so a copied payment id only counts on the original.
-  const firstUse = { payments: {} as Record<string, string>, events: {} as Record<string, string> }
-  const payQs = logic.questions.filter(q => q.type === 'payment')
-  const schQs = logic.questions.filter(q => q.type === 'scheduler')
-  if (payQs.length || schQs.length) {
-    const ordered = [...allRows].sort((a, b) => (prep(a).time - prep(b).time) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
-    for (const row of ordered) {
-      const a = prep(row).answers
-      for (const q of payQs) {
-        const id = idOf(a[q.id], 'payment_id')
-        if (id && !(id in firstUse.payments)) firstUse.payments[id] = `${row.id}:${q.id}`
-      }
-      for (const q of schQs) {
-        const id = idOf(a[q.id], 'calendar_event_id')
-        if (id && !(id in firstUse.events)) firstUse.events[id] = `${row.id}:${q.id}`
-      }
-    }
-  }
   return {
-    state, companyId: typeof form?.company_id === 'string' ? form.company_id : null,
-    paymentDescriptions, paymentAmounts, firstUse,
+    state,
+    companyId: typeof form?.company_id === 'string' ? form.company_id : null,
+    formId: typeof form?.id === 'string' ? form.id.toLowerCase() : null,
+    bookingTitle: `Booking — ${formTitle}`,
+    paymentDescriptions, paymentAmounts,
   }
 }
 
+/** The company-wide first claim must be this very answer (row and question). */
+function claimCheck(claim: Claim | undefined, rowId: string, qid: string, what: 'payment' | 'booking'): string | null {
+  if (!claim) return `Couldn't confirm this ${what} is only counted once.`
+  if (claim.responseId !== rowId || claim.questionId !== qid) return `This ${what} is already counted on another response.`
+  return null
+}
+
 /**
- * "Paid" only when the answer's payment_id is a paid chat_payments row that a
- * form payment on this form would have written: same company, no chat
- * conversation, and the description or amount /api/forms/payment uses for this
- * form. A payment id copied into a second response only counts once (on the
- * oldest response). The amount shown is the database's, never the answer's.
+ * "Paid" only when the answer's payment_id is a paid chat_payments row of this
+ * company, taken on THIS form's question (V380 form_id / question_id), and this
+ * response is the first one anywhere in the company to claim it. Rows from
+ * before V380 have no link, so for those only: no chat conversation, and the
+ * description or amount /api/forms/payment uses for this form. The amount shown
+ * is the database's, never the answer's.
  */
 export function checkPayment(answer: unknown, q: FormQuestion, rowId: string, ctx: VerifyContext | null | undefined): PaymentCheck {
   if (!ctx) return { state: 'unverified', reason: 'Not checked' }
@@ -301,10 +337,18 @@ export function checkPayment(answer: unknown, q: FormQuestion, rowId: string, ct
   if (!rec) return { state: 'unverified', reason: 'No matching payment was found.' }
   if (!ctx.companyId || rec.company_id !== ctx.companyId) return { state: 'unverified', reason: 'No matching payment was found.' }
   if (rec.conversation_id) return { state: 'unverified', reason: 'That payment belongs to a chat, not this form.' }
-  const desc = typeof rec.description === 'string' ? rec.description.trim() : ''
-  const amountOk = ctx.paymentAmounts[q.id] !== undefined && Number(rec.amount_cents) === ctx.paymentAmounts[q.id]
-  if (!ctx.paymentDescriptions.has(desc) && !amountOk) return { state: 'unverified', reason: 'That payment was for something else.' }
-  if (ctx.firstUse.payments[pid] !== `${rowId}:${q.id}`) return { state: 'unverified', reason: 'This payment is already counted on another response.' }
+  const linked = (rec.form_id !== null && rec.form_id !== undefined) || (rec.question_id !== null && rec.question_id !== undefined)
+  if (linked) {
+    if (!ctx.formId || lower(rec.form_id) !== ctx.formId || rec.question_id !== q.id) {
+      return { state: 'unverified', reason: 'That payment was taken on a different form or question.' }
+    }
+  } else {
+    const desc = typeof rec.description === 'string' ? rec.description.trim() : ''
+    const amountOk = ctx.paymentAmounts[q.id] !== undefined && Number(rec.amount_cents) === ctx.paymentAmounts[q.id]
+    if (!ctx.paymentDescriptions.has(desc) && !amountOk) return { state: 'unverified', reason: 'That payment was for something else.' }
+  }
+  const dup = claimCheck(ctx.state.claims?.payments[pid], rowId, q.id, 'payment')
+  if (dup) return { state: 'unverified', reason: dup }
   const amountCents = Math.max(0, Math.round(Number(rec.amount_cents) || 0))
   const currency = rec.currency || 'aud'
   if (rec.status === 'refunded') return { state: 'refunded', amountCents, currency }
@@ -313,7 +357,12 @@ export function checkPayment(answer: unknown, q: FormQuestion, rowId: string, ct
   return { state: 'paid', amountCents, currency, ...(refunded > 0 ? { refundedCents: Math.min(refunded, amountCents) } : {}) }
 }
 
-/** A booking counts when its calendar event exists for this company as a booking; the time shown is the event's. */
+/**
+ * A booking counts when its calendar event is a booking of this company that
+ * /api/forms/schedule made for this form (title "Booking — <form title>"), and
+ * this response is the first in the company to claim it. The time shown is the
+ * calendar's. (Renaming the form makes its older bookings show as unverified.)
+ */
 export function checkBooking(answer: unknown, q: FormQuestion, rowId: string, ctx: VerifyContext | null | undefined): BookingCheck {
   if (!ctx) return { state: 'unverified', reason: 'Not checked' }
   const eid = idOf(answer, 'calendar_event_id')
@@ -324,10 +373,30 @@ export function checkBooking(answer: unknown, q: FormQuestion, rowId: string, ct
   if (!rec || !ctx.companyId || rec.company_id !== ctx.companyId || rec.event_type !== 'booking') {
     return { state: 'unverified', reason: 'No matching booking was found.' }
   }
-  if (ctx.firstUse.events[eid] !== `${rowId}:${q.id}`) return { state: 'unverified', reason: 'This booking is already counted on another response.' }
+  if (rec.title !== ctx.bookingTitle) return { state: 'unverified', reason: 'That booking was made for something else.' }
+  const dup = claimCheck(ctx.state.claims?.events[eid], rowId, q.id, 'booking')
+  if (dup) return { state: 'unverified', reason: dup }
   const out = { startsAt: rec.starts_at || undefined, endsAt: rec.ends_at || undefined }
   if (rec.status === 'cancelled') return { state: 'cancelled', ...out }
   return { state: 'booked', ...out }
+}
+
+/** Claims as the route returned them, keeping only well-formed entries. */
+export function sanitizeClaims(raw: unknown): Claims | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
+  const pick = (m: unknown): Record<string, Claim> => {
+    const out: Record<string, Claim> = {}
+    if (!m || typeof m !== 'object' || Array.isArray(m)) return out
+    for (const [k, v] of Object.entries(m as Record<string, any>)) {
+      if (!UUID_RE.test(k) || !v || typeof v !== 'object') continue
+      if (typeof v.responseId !== 'string' || typeof v.questionId !== 'string') continue
+      out[k.toLowerCase()] = { responseId: v.responseId, questionId: v.questionId, formId: String(v.formId ?? ''), createdAt: String(v.createdAt ?? '') }
+    }
+    return out
+  }
+  const r = raw as any
+  if (r.payments === undefined && r.events === undefined) return null
+  return { payments: pick(r.payments), events: pick(r.events) }
 }
 
 export function paymentText(c: PaymentCheck): string {
@@ -534,7 +603,7 @@ export function describeFilter(f: ResultsFilter, logic: LogicForm): string {
   }
   const idx = logic.indexOf[f.questionId]
   const q = idx === undefined ? undefined : logic.questions[idx]
-  const name = q ? `${idx + 1}. ${q.title || 'Untitled'}` : 'Deleted question'
+  const name = q ? `${idx + 1}. ${titleOr(q, 'Untitled')}` : 'Deleted question'
   if (f.op === 'is_any') return `${name} is ${(f.values || []).join(' or ') || 'anything'}`
   if (f.op === 'contains') return `${name} contains ${f.text || ''}`.trim()
   if (f.op === 'between') return `${name} ${rangeText(f.min, f.max)}`
@@ -567,7 +636,7 @@ export type QuestionStats =
   | { kind: 'text'; items: { text: string; at: string; rowId: string }[] }
   | { kind: 'ranking'; people: number; items: { label: string; avg: number; count: number }[] }
   | { kind: 'matrix'; rows: string[]; cols: string[]; counts: number[][]; rowTotals: number[]; answered: number }
-  | { kind: 'media'; items: { rowId: string; at: string; url: string; name: string; media: MediaKind; signature: boolean }[] }
+  | { kind: 'media'; items: { rowId: string; at: string; url: string; name: string; media: MediaKind; signature: boolean; inline: boolean }[] }
   | { kind: 'payment'; count: number; totals: { currency: string; cents: number; count: number }[]; refunded: number; unverified: number; checking: number }
   | { kind: 'scheduler'; bookings: { rowId: string; startsAt: string; endsAt?: string }[]; next: { startsAt: string; endsAt?: string } | null; cancelled: number; unverified: number; checking: number }
   | { kind: 'none' }
@@ -701,7 +770,7 @@ export function questionStats(q: FormQuestion, rows: ResultRow[], opts: { summar
       const url = safeUrl(raw)
       if (!url) continue
       const name = a && typeof a === 'object' && typeof (a as any).name === 'string' ? (a as any).name : ''
-      items.push({ rowId: row.id, at: row.created_at, url, name, media: mediaKindOf(url, name), signature: type === 'signature' })
+      items.push({ rowId: row.id, at: row.created_at, url, name, media: mediaKindOf(url, name), signature: type === 'signature', inline: inlineMediaUrl(url) !== null })
     }
     return { kind: 'media', items }
   }
@@ -749,6 +818,69 @@ export function questionStats(q: FormQuestion, rows: ResultRow[], opts: { summar
 
 export const isWideCard = (q: FormQuestion) => q.type === 'matrix' || q.type === 'long_text'
 export const isTextCard = (q: FormQuestion) => TEXT_CARD_TYPES.includes(q.type)
+
+// ─── Logic summary with cached estimates ────────────────────────────────────
+
+type Estimate = { onPath: Set<string>; branches: Record<string, string> }
+/** Per form view, per row: the estimated path of an older response (computePath is the expensive part). */
+const estimateCache = new WeakMap<LogicForm, WeakMap<object, Estimate>>()
+
+function estimateFor(logic: LogicForm, row: ResultRow): Estimate {
+  let byRow = estimateCache.get(logic)
+  if (!byRow) { byRow = new WeakMap(); estimateCache.set(logic, byRow) }
+  const hit = byRow.get(row)
+  if (hit) return hit
+  const run = computePath(logic, prep(row).answers)
+  const out = { onPath: new Set(run.path), branches: run.branches }
+  byRow.set(row, out)
+  return out
+}
+
+/**
+ * The engine's summariseLogic, with each older response's estimated path
+ * computed once per form (and cached), so filtering or deleting doesn't
+ * re-walk 10,000 legacy rows. Rows with __logic go through summariseLogic as
+ * they are (cheap); older rows are added here with exactly the engine's rules
+ * (seen = estimated path ∪ answered, all flagged as estimated). The tests check
+ * the result equals summariseLogic on the same rows.
+ */
+export function summariseRows(logic: LogicForm, rows: ResultRow[]): LogicSummary {
+  const fresh: ResultRow[] = [], legacy: ResultRow[] = []
+  for (const r of rows) {
+    if (!r || typeof r !== 'object') continue
+    if (prep(r).logic) fresh.push(r); else legacy.push(r)
+  }
+  const sum = summariseLogic(logic, fresh)
+  if (!legacy.length) return sum
+  const branchQs = Object.keys(sum.branches)
+  for (const row of legacy) {
+    const answers = prep(row).answers
+    const est = estimateFor(logic, row)
+    for (const q of logic.questions) {
+      const answered = !isBlankAnswer(answers[q.id])
+      if (!est.onPath.has(q.id) && !answered) continue
+      const pq = sum.perQuestion[q.id]
+      pq.seen++; pq.seenEstimated++
+      if (answered) pq.answered++
+    }
+    for (const qid of branchQs) {
+      const taken = est.branches[qid]
+      if (typeof taken !== 'string') continue
+      const entries = sum.branches[qid]
+      let e = entries.find(x => x.ruleId === taken && x.ruleId !== 'removed')
+      if (!e) {
+        e = entries.find(x => x.ruleId === 'removed')
+        if (!e) { e = { ruleId: 'removed', to: null, count: 0, estimated: 0 }; entries.push(e) }
+      }
+      e.count++; e.estimated++
+    }
+  }
+  sum.total += legacy.length
+  sum.legacy += legacy.length
+  sum.endings = { default: sum.total }
+  sum.reach = logic.questions.map(q => ({ questionId: q.id, reached: sum.perQuestion[q.id].seen }))
+  return sum
+}
 
 // ─── KPIs (section 7.5) ─────────────────────────────────────────────────────
 
@@ -824,8 +956,7 @@ export function pathSteps(row: ResultRow, logic: LogicForm): { steps: PathStep[]
   const label = (id: string): PathStep => {
     const idx = logic.indexOf[id]
     if (idx === undefined) return { id, label: '(deleted question)', deleted: true }
-    const t = typeof logic.questions[idx].title === 'string' ? logic.questions[idx].title.trim() : ''
-    return { id, label: `${idx + 1}. ${t || 'Untitled question'}`, deleted: false }
+    return { id, label: `${idx + 1}. ${titleOr(logic.questions[idx])}`, deleted: false }
   }
   const steps = lg.path.map((id, i) => {
     const s = label(id)
@@ -855,7 +986,7 @@ export function pathText(row: ResultRow, logic: LogicForm): string {
 export function exportTable(rows: ResultRow[], logic: LogicForm, verify: VerifyContext | null): { header: string[]; body: (string | number)[][] } {
   const qs = exportQuestions(logic)
   const vars = variablesInUse(logic)
-  const header = ['Response ID', 'Submitted at', 'Time to complete (s)', ...qs.map((q, i) => q.title?.trim() || `Question ${i + 1}`), ...vars.map(v => v.label), 'Path']
+  const header = ['Response ID', 'Submitted at', 'Time to complete (s)', ...qs.map((q, i) => titleOr(q, `Question ${i + 1}`)), ...vars.map(v => v.label), 'Path']
   const body = rows.map(r => {
     const t = toNum(r.response_time_seconds as any)
     const lg = prep(r).logic
@@ -892,7 +1023,7 @@ export function pdfSections(rows: ResultRow[], logic: LogicForm, verify: VerifyC
       : exportQuestions(logic)
     const items = qs.map(q => {
       const c = cellFor(r, q, verify, { forExport: true })
-      return { q: q.title?.trim() || 'Untitled question', a: c.state === 'value' ? c.text : '(No answer)' }
+      return { q: titleOr(q), a: c.state === 'value' ? c.text : '(No answer)' }
     })
     for (const v of vars) {
       const x = p.logic?.variables[v.id]
@@ -903,7 +1034,7 @@ export function pdfSections(rows: ResultRow[], logic: LogicForm, verify: VerifyC
 }
 
 export function safeFileName(title: unknown): string {
-  const s = String(title ?? '').replace(/[\\/:*?"<>|\u0000-\u001f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80)
+  const s = textOf(title).replace(/[\\/:*?"<>|\u0000-\u001f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80)
   return s || 'form'
 }
 

@@ -17,7 +17,7 @@ import { otherChoiceLabel } from '@/lib/form-choice-options'
 import {
   LEFT_COLLAPSED_KEY, RIGHT_COLLAPSED_KEY, readCollapsed, writeCollapsed, gridColumns,
   initialWelcome, patchWelcome, buildSavedTheme, errorCounts, hasDisplayRules, rulesSetText,
-  isMultiSelect, isExclusiveChoice, removeOption, renameOption, changeType, OTHER_OPTION_TYPES,
+  isMultiSelect, isExclusiveChoice, addOption, removeOption, renameOption, changeType, OTHER_OPTION_TYPES,
 } from '@/components/form-builder/helpers'
 import { Toggle, BranchIcon, PanelIcon, WelcomeSettingsPanel, WelcomePreview, LogicRow, ChoiceOptionSettings } from '@/components/form-builder/parts'
 
@@ -265,10 +265,14 @@ export default function FormBuilder() {
     const notAnEdit = skipLoadChange.current || brandColorPending.current
     skipLoadChange.current = false
     brandColorPending.current = false
-    if (notAnEdit) return
-    editRev.current++
-    setIsDirty(true)
-    savePending.current = true
+    if (notAnEdit) {
+      // This run's cleanup cleared a pending edit's timer: put it back.
+      if (!savePending.current) return
+    } else {
+      editRev.current++
+      setIsDirty(true)
+      savePending.current = true
+    }
     if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
     autoSaveTimer.current = setTimeout(() => handleSave(), 1000)
     return () => { if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current) }
@@ -282,6 +286,7 @@ export default function FormBuilder() {
     if (saveRun.current.busy) { saveRun.current.again = true; return }
     saveRun.current.busy = true
     setSaving(true)
+    let failed = false
     try {
       do {
         saveRun.current.again = false
@@ -294,13 +299,22 @@ export default function FormBuilder() {
           show_confetti: s.showConfetti,
           updated_at: new Date().toISOString(),
         }).eq('id', formId)
-        if (error) { console.error('[FORM BUILDER] Save failed:', error); break }   // stays "Unsaved changes"
+        if (error) { console.error('[FORM BUILDER] Save failed:', error); failed = true; break }   // stays "Unsaved changes"
         themeBase.current = theme
         if (editRev.current === rev && !saveRun.current.again) setIsDirty(false)
       } while (saveRun.current.again)
+    } catch (e) {
+      console.error('[FORM BUILDER] Save failed:', e)
+      failed = true
     } finally {
       saveRun.current.busy = false
       setSaving(false)
+    }
+    if (failed) {
+      // Still unsaved: retry shortly, and leaving the page flushes it too.
+      savePending.current = true
+      if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
+      autoSaveTimer.current = setTimeout(() => { void saveRef.current() }, 3000)
     }
   }
   const saveRef = useRef(handleSave)
@@ -445,6 +459,10 @@ export default function FormBuilder() {
     setSelectedQ(s => (s === id ? null : s))
   }
 
+  // Colvy AI docks above every overlay (z-index 960), so it would cover the
+  // Logic window's Save/Cancel: close it whenever Logic opens.
+  const openLogic = (id: string | null) => { setAiOpen(false); setLogicFor(id) }
+
   // Renaming an option keeps the logic rules (and exclusive settings) that use it.
   const renameQuestionOption = (qid: string, index: number, label: string) =>
     setQuestions(prev => renameOption(prev, qid, index, label))
@@ -526,7 +544,7 @@ export default function FormBuilder() {
         .fb-set-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
         .fb-tip { position: relative; width: 16px; height: 16px; border-radius: 50%; border: 1px solid var(--border); background: #fff; color: var(--slate); font-size: 10.5px; font-weight: 700; line-height: 1; padding: 0; cursor: help; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
         .fb-tip[data-tip]::after { content: attr(data-tip); position: absolute; z-index: 30; left: 50%; top: calc(100% + 8px); transform: translateX(-50%) translateY(-4px); width: 220px; padding: 8px 10px; border-radius: 8px; background: #18181b; color: #fff; font-size: 11.5px; font-weight: 500; line-height: 1.45; text-align: left; white-space: normal; pointer-events: none; opacity: 0; visibility: hidden; transition: opacity .12s, transform .12s; }
-        .fb-tip[data-tip]:hover::after, .fb-tip[data-tip]:focus-visible::after { opacity: 1; visibility: visible; transform: translateX(-50%); }
+        .fb-tip[data-tip]:hover::after, .fb-tip[data-tip]:focus::after, .fb-tip[data-open="true"]::after { opacity: 1; visibility: visible; transform: translateX(-50%); }
         .fb-count { min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: #f1f1f3; color: var(--ink); font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
         .fb-dot { position: absolute; top: -3px; right: -3px; width: 7px; height: 7px; border-radius: 50%; background: #dc2626; box-shadow: 0 0 0 2px #fff; }
         .fb-pv-pill { display: inline-flex; align-items: center; gap: 5px; margin-bottom: 10px; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--border); background: #f8f8f9; color: var(--slate); font-size: 11.5px; font-weight: 600; cursor: pointer; }
@@ -563,7 +581,7 @@ export default function FormBuilder() {
           {saving ? 'Saving...' : 'Save'}
         </button>
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: isMobile ? 6 : 10, flexWrap: isMobile ? 'wrap' : 'nowrap', flexShrink: 0 }}>
-          <button type="button" className="fb-ghost" onClick={() => setLogicFor(selectedQ ?? null)} disabled={questions.length === 0}
+          <button type="button" className="fb-ghost" onClick={() => openLogic(selectedQ ?? null)} disabled={questions.length === 0}
             aria-label={questions.length === 0 ? 'Logic (add a question first)' : `Logic${totalRules ? `, ${rulesSetText(totalRules)}` : ''}${hasLogicErrors ? ', needs attention' : ''}`}
             title={questions.length === 0 ? 'Add a question first' : 'Logic: show, hide, skip or score questions'}
             style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', gap: 6, padding: isMobile ? '6px 10px' : !isRoomy ? '8px 10px' : '8px 14px', borderRadius: 10, fontSize: isMobile ? 12 : 13, fontWeight: 700, cursor: questions.length === 0 ? 'not-allowed' : 'pointer', opacity: questions.length === 0 ? 0.5 : 1, whiteSpace: 'nowrap' }}>
@@ -790,7 +808,7 @@ export default function FormBuilder() {
                   )
                 )}
                 {hasDisplayRules(questions[previewStep]) && (
-                  <button type="button" className="fb-pv-pill" onClick={() => setLogicFor(questions[previewStep].id)} title="Open Logic">
+                  <button type="button" className="fb-pv-pill" onClick={() => openLogic(questions[previewStep].id)} title="Open Logic">
                     <BranchIcon size={11} />Shown only when its conditions match
                   </button>
                 )}
@@ -882,12 +900,8 @@ export default function FormBuilder() {
                       )
                     })}
                     <button onClick={() => {
-                      const cur = questions[previewStep].options || []
-                      const opts = [...cur]
-                      // Keep "Other" last: new options go in above it.
-                      const at = pvOther !== null && cur[cur.length - 1] === pvOther ? cur.length - 1 : cur.length
-                      opts.splice(at, 0, `Option ${cur.length + 1}`)
-                      updateQuestion(questions[previewStep].id, { options: opts })
+                      const qid = questions[previewStep].id
+                      setQuestions(prev => prev.map(x => (x.id === qid ? addOption(x, OTHER_OPTION_TYPES.includes(x.type) ? otherChoiceLabel(x) : null) : x)))
                     }} style={{ fontSize: 13, color: themeColor, background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', fontWeight: 600, padding: '4px 2px', width: 'fit-content' }}>+ Add option</button>
                     {questions[previewStep].type === 'picture_choice' && <p style={{ fontSize: 11.5, color: '#9ca3af' }}>Tap the square to add an image to each option.</p>}
                   </div>
@@ -1121,7 +1135,7 @@ export default function FormBuilder() {
               )}
 
               {/* Logic: edited in the Logic window (components/FormLogicModal) */}
-              <LogicRow count={countRules(selected)} errors={logicErrors[selected.id] || 0} onOpen={() => setLogicFor(selected.id)} />
+              <LogicRow count={countRules(selected)} errors={logicErrors[selected.id] || 0} onOpen={() => openLogic(selected.id)} />
             </>
           ) : previewStep === questions.length ? (
             <>

@@ -4,7 +4,7 @@ import VoicePlayer from '@/components/VoicePlayer'
 import { answerToPlainText, isBlankAnswer, toNum, type FormQuestion } from '@/lib/form-logic'
 import { otherChoiceLabel } from '@/lib/form-choice-options'
 import {
-  prep, isSkipped, otherTextFor, checkPayment, checkBooking, paymentText, bookingText, cellText, safeUrl, mediaKindOf,
+  prep, isSkipped, otherTextFor, checkPayment, checkBooking, paymentText, bookingText, cellText, safeUrl, inlineMediaUrl, mediaKindOf,
   type ResultRow, type VerifyContext,
 } from './aggregate'
 import { Icon } from './icons'
@@ -78,7 +78,8 @@ export function AnswerView({ row, q, verify, color }: { row: ResultRow; q: FormQ
     const url = safeUrl(rawUrl)
     const name = answer && typeof answer === 'object' && typeof (answer as any).name === 'string' ? (answer as any).name : ''
     if (!url) return <span>{name || 'File'} <span style={muted}>(link not shown)</span></span>
-    const kind = mediaKindOf(url, name)
+    // Untrusted: only our storage and inline data: media render inline; anything else is a plain link.
+    const kind = inlineMediaUrl(url) ? mediaKindOf(url, name) : 'file'
     if (kind === 'image') return <img src={url} alt={q.type === 'signature' ? 'Signature' : name || 'Uploaded image'} style={{ maxWidth: '100%', maxHeight: 240, borderRadius: 8, border: '1px solid var(--border)', background: '#fff' }} />
     if (kind === 'video') return <video src={url} controls style={{ maxWidth: '100%', maxHeight: 240, borderRadius: 8 }} />
     if (kind === 'audio') return <VoicePlayer src={url} name={name || 'Voice answer'} />
