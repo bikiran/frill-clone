@@ -1,6 +1,15 @@
 import { supabase } from '@/lib/supabase'
+import { isStaffOnlyNotificationType } from '@/lib/notification-types'
 
+// Board notifications (votes, comments, replies, status changes) written from
+// the browser. This can't check who the recipient is, so it refuses the
+// staff-only types: those go through notifyCompany or /api/notify/members,
+// which send to the workspace's staff only.
 export async function createNotification(userId: string, type: string, relatedIdeaId?: string, message?: string, actorName?: string, actorEmail?: string) {
+  if (isStaffOnlyNotificationType(type)) {
+    console.error(`createNotification: '${type}' is staff-only; use notifyCompany or /api/notify/members`)
+    return
+  }
   try {
     await supabase.from('notifications').insert({
       user_id: userId,
