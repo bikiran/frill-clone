@@ -5,6 +5,8 @@ import { createClient } from '@supabase/supabase-js'
 import { xmlEscape, twilioIdentity } from '@/lib/twilio-service'
 import { companyForInboundNumber } from '@/lib/inbound-company'
 import { ensureContactByPhone, findContactByPhone } from '@/lib/contact-capture'
+import { loadStaffRows } from '@/lib/team-list'
+import { isStaffRow } from '@/lib/company-access'
 import { alertCall } from '@/lib/call-alerts'
 import { getPhoneCatalog } from '@/lib/phone-catalog'
 import { getPhoneAgent, answerWithAgent, businessClosedNow, phoneBookable } from '@/lib/phone-agent'
@@ -189,9 +191,9 @@ export async function POST(req: NextRequest) {
     // the agent was currently in a DIFFERENT workspace: the call for THIS
     // workspace rang nobody and went straight to voicemail. Instead, ring every
     // member of this company (team_members) that holds a push token on any
-    // workspace.
-    const { data: members } = await db.from('team_members')
-      .select('user_id').eq('company_id', companyId).not('user_id', 'is', null)
+    // workspace. Staff only: a customer's call never rings a board visitor.
+    const members = (await loadStaffRows(db, companyId, 'user_id, role, status').catch(() => []))
+      .filter((m: any) => m.user_id && isStaffRow(m))
     // The workspace OWNER (companies.owner_id) is a full member of the company but
     // is NOT necessarily a row in team_members — so selecting mobiles by
     // team_members alone stopped ringing an owner's phone entirely (every call

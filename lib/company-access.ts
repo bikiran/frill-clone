@@ -2,6 +2,7 @@
 // that read/write company data with the service-role key.
 
 import type { NextRequest } from 'next/server'
+import { loadStaffRows } from '@/lib/team-list'
 
 export const SUPER_ADMIN = 'bishalstha76@gmail.com'
 
@@ -56,6 +57,25 @@ export function isStaffRow(r: any): boolean {
   const role = String(r.role || '').toLowerCase()
   const status = String(r.status || '').toLowerCase()
   return role !== 'viewer' && status !== 'removed'
+}
+
+/**
+ * A workspace's staff by user id: its owner and everyone with a staff row (not
+ * a board visitor, not a removed member). Who a company-wide notification,
+ * email or push may reach. If the team can't be read, just the owner.
+ */
+export async function staffUserIds(db: any, companyId: string): Promise<Set<string>> {
+  const [{ data: co }, rows] = await Promise.all([
+    db.from('companies').select('owner_id').eq('id', companyId).maybeSingle(),
+    loadStaffRows(db, companyId, 'user_id, role, status').catch((e: Error) => {
+      console.error('[staffUserIds] could not read the team', e?.message)
+      return [] as any[]
+    }),
+  ])
+  const ids = new Set<string>()
+  if (co?.owner_id) ids.add(co.owner_id)
+  for (const r of rows) if (r.user_id && isStaffRow(r)) ids.add(r.user_id)
+  return ids
 }
 
 export async function isStaffMember(db: any, companyId: string | null | undefined, userId: string | null | undefined): Promise<boolean> {

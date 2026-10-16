@@ -1,4 +1,5 @@
 import { canUseFeature } from './permissions'
+import { isStaffRow } from './company-access'
 
 /**
  * Server-side feature access for a workspace's members: the same rules as
@@ -44,24 +45,31 @@ export function featuresForPush(p: { feature?: string | null; channelId?: string
 }
 
 /**
- * Of `userIds`, the ones allowed at least one of `features` in this
- * workspace. The owner is always allowed, and so is anyone without a
- * team_members row here (e.g. an owner with no row) — only a member whose
- * permissions switch every one of the features off is dropped.
+ * Of `userIds`, the ones who may hear about this workspace, and are allowed at
+ * least one of `features` (with none given, just the first part). The owner
+ * always is, and so is anyone without a team_members row here (e.g. an owner
+ * with no row). A board visitor ('viewer' row) or a removed member never is:
+ * a viewer row has no permission map, which canUseFeature reads as "everything",
+ * so they used to get message alerts and incoming calls. Staff with no map
+ * still have full access. If the team can't be read, only the owner is.
  */
 export async function filterUsersByFeature(db: any, companyId: string, userIds: string[], features: string[]): Promise<Set<string>> {
   const ids = Array.from(new Set(userIds.filter(Boolean)))
-  if (!features.length || !ids.length) return new Set(ids)
-  const [{ data: co }, { data: rows }] = await Promise.all([
+  if (!ids.length) return new Set()
+  const chunks: string[][] = []
+  for (let i = 0; i < ids.length; i += 200) chunks.push(ids.slice(i, i + 200))
+  const [{ data: co }, ...reads] = await Promise.all([
     db.from('companies').select('owner_id').eq('id', companyId).maybeSingle(),
-    db.from('team_members').select('user_id, role, permissions').eq('company_id', companyId).in('user_id', ids),
+    ...chunks.map(chunk => db.from('team_members').select('user_id, role, status, permissions').eq('company_id', companyId).in('user_id', chunk)),
   ])
-  const byUser = new Map<string, any>()
-  for (const r of rows || []) byUser.set(r.user_id, r)
+  const failed = reads.some((r: any) => r.error)
+  const byUser = new Map<string, any[]>()
+  for (const { data } of reads) for (const r of data || []) (byUser.get(r.user_id) || byUser.set(r.user_id, []).get(r.user_id)!).push(r)
   return new Set(ids.filter(uid => {
     if (co?.owner_id && uid === co.owner_id) return true
-    const m = byUser.get(uid)
-    if (!m) return true
-    return features.some(f => canUseFeature(m.role, m.permissions, f))
+    if (failed) return false
+    const rows = byUser.get(uid)
+    if (!rows) return true
+    return rows.some(m => isStaffRow(m) && (!features.length || features.some(f => canUseFeature(m.role, m.permissions, f))))
   }))
 }
