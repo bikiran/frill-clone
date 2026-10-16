@@ -25,6 +25,7 @@ const fmt = (d: string | null | undefined) => {
 const SKIP_LABEL: Record<string, string> = {
   unsubscribed: 'Unsubscribed', no_consent: 'No marketing consent', blocked: 'Blocked',
   invalid_number: 'No valid mobile', duplicate: 'Duplicate contact',
+  unverified: 'Opt-out couldn’t be checked',
 }
 
 export default function CampaignReportPage() {
