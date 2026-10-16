@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { recordLinkClick } from '@/lib/link-click'
 import { isPublicChannel } from '@/lib/link-channels'
-import { isOwnSurface, loadCompanySurfaces, withClickRef } from '@/lib/link-stitch'
+import { isEngagePage, isOwnSurface, loadCompanySurfaces, withClickRef } from '@/lib/link-stitch'
 
 // Redirects /l/<code> to the stored target URL and records the click.
 // The redirect is the priority: click logging is best-effort and must never
@@ -59,6 +59,13 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ code
       try {
         const co = await loadCompanySurfaces(db, data.company_id)
         if (co && isOwnSurface(target, co)) target = withClickRef(target, clickId)
+      } catch { /* redirect to the plain target */ }
+    } else if (clickId && data.contact_id && data.company_id && /\/(polls|surveys)\//i.test(target)) {
+      // A poll or survey sent to one customer (an SMS campaign): pass the click
+      // on too, so their vote is matched to them and counted once.
+      try {
+        const co = await loadCompanySurfaces(db, data.company_id)
+        if (co && isEngagePage(target, co)) target = withClickRef(target, clickId)
       } catch { /* redirect to the plain target */ }
     }
 

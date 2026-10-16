@@ -6,6 +6,7 @@
 
 import type { AssistantContext } from '@/lib/ai-assistant/tools'
 import { logAiEvent } from '@/lib/ai-assistant/audit'
+import { statusFields, statusOf } from '@/lib/engage-core'
 import { AI_QUESTION_TYPES } from '@/lib/ai-form'
 import { companyLimit } from '@/lib/plan'
 import { answerToPlainText, formatVariable, readFormLogic, readResponseLogic, stripReservedAnswers } from '@/lib/form-logic'
@@ -76,6 +77,7 @@ export const BUILDER_TOOLS = [
         question: { type: 'string' },
         options: { type: 'array', minItems: 2, maxItems: 10, items: { type: 'string' } },
         description: { type: 'string' },
+        publish: { type: 'boolean', description: 'default true: the link works straight away. false keeps it as a draft to check in Colvy first.' },
       },
       required: ['question', 'options'],
     },
@@ -89,6 +91,7 @@ export const BUILDER_TOOLS = [
         title: { type: 'string' },
         type: { type: 'string', enum: [...SURVEY_TYPES] },
         question: { type: 'string', description: 'defaults to the standard question for the type' },
+        publish: { type: 'boolean', description: 'default true: the link works straight away. false keeps it as a draft to check in Colvy first.' },
       },
       required: ['title', 'type'],
     },
@@ -210,16 +213,17 @@ export async function runBuilderAction(db: any, ctx: AssistantContext, name: str
     const cap = await underLimit(db, ctx, 'polls')
     if (cap) return { ok: false, error: cap }
     // Plain strings: what the public poll page and vote counts key on.
+    const publish = args?.publish !== false
     const ins = await insertRow(db, 'polls', {
       company_id: ctx.companyId, question, options, description: clean(args?.description, 500) || null,
-      is_active: true, poll_type: 'single_choice', status: 'active',
+      poll_type: 'single_choice', ...statusFields(publish ? 'live' : 'draft'),
     }, ['description', 'poll_type', 'status'])
     if (!ins.id) return { ok: false, error: ins.error || 'Could not create the poll.' }
     const link = `${base(ctx)}/polls/${ins.id}`
-    await logAiEvent(db, { companyId: ctx.companyId, userId: ctx.userId, action: 'Created poll', tool: name, entityType: 'poll', entityId: ins.id, input: { question, options }, result: { link } })
+    await logAiEvent(db, { companyId: ctx.companyId, userId: ctx.userId, action: 'Created poll', tool: name, entityType: 'poll', entityId: ins.id, input: { question, options, publish }, result: { link } })
     return {
       ok: true, entityType: 'poll', entityId: ins.id, link,
-      card: { kind: 'poll', title: `Poll created: ${question}`, lines: [options.join(' · '), link], href: `/admin/polls/${ins.id}`, link },
+      card: { kind: 'poll', title: `Poll ${publish ? 'created' : 'drafted'}: ${question}`, lines: [options.join(' · '), publish ? link : 'Draft: check it and publish in Colvy'], href: `/admin/polls/${ins.id}${publish ? '' : '?tab=edit'}`, link: publish ? link : null },
       undo: { entityType: 'poll', entityId: ins.id },
     }
   }
@@ -231,13 +235,14 @@ export async function runBuilderAction(db: any, ctx: AssistantContext, name: str
     const cap = await underLimit(db, ctx, 'surveys')
     if (cap) return { ok: false, error: cap }
     const question = clean(args?.question, 300) || (type === 'nps' ? 'How likely are you to recommend us?' : type === 'csat' ? 'How would you rate your experience?' : 'What could we do better?')
-    const ins = await insertRow(db, 'surveys', { company_id: ctx.companyId, title, type, question, is_active: true, status: 'active' }, ['status'])
+    const publish = args?.publish !== false
+    const ins = await insertRow(db, 'surveys', { company_id: ctx.companyId, title, type, question, ...statusFields(publish ? 'live' : 'draft') }, ['status'])
     if (!ins.id) return { ok: false, error: ins.error || 'Could not create the survey.' }
     const link = `${base(ctx)}/surveys/${ins.id}`
-    await logAiEvent(db, { companyId: ctx.companyId, userId: ctx.userId, action: 'Created survey', tool: name, entityType: 'survey', entityId: ins.id, input: { title, type, question }, result: { link } })
+    await logAiEvent(db, { companyId: ctx.companyId, userId: ctx.userId, action: 'Created survey', tool: name, entityType: 'survey', entityId: ins.id, input: { title, type, question, publish }, result: { link } })
     return {
       ok: true, entityType: 'survey', entityId: ins.id, link,
-      card: { kind: 'survey', title: `Survey created: ${title}`, lines: [`${type === 'nps' ? 'NPS' : type === 'csat' ? 'Satisfaction' : 'Open feedback'} · ${question}`, link], href: `/admin/surveys/${ins.id}`, link },
+      card: { kind: 'survey', title: `Survey ${publish ? 'created' : 'drafted'}: ${title}`, lines: [`${type === 'nps' ? 'NPS' : type === 'csat' ? 'Satisfaction' : 'Open feedback'} · ${question}`, publish ? link : 'Draft: check it and publish in Colvy'], href: `/admin/surveys/${ins.id}${publish ? '' : '?tab=edit'}`, link: publish ? link : null },
       undo: { entityType: 'survey', entityId: ins.id },
     }
   }
@@ -265,12 +270,12 @@ export async function runBuilderRead(db: any, ctx: AssistantContext, name: strin
       out.forms = await Promise.all((data || []).map(async (f: any) => ({ id: f.id, title: f.title, live: !!f.is_published, responses: await count(db, 'form_responses', 'form_id', f.id), link: `${base(ctx)}/forms/${f.id}` })))
     }
     if (kind === 'all' || kind === 'polls') {
-      const { data } = await db.from('polls').select('id, question, options, is_active, created_at').eq('company_id', ctx.companyId).order('created_at', { ascending: false }).limit(50)
-      out.polls = await Promise.all((data || []).map(async (p: any) => ({ id: p.id, question: p.question, options: parseOptions(p.options), live: p.is_active !== false, votes: await count(db, 'poll_votes', 'poll_id', p.id), link: `${base(ctx)}/polls/${p.id}` })))
+      const { data } = await db.from('polls').select('*').eq('company_id', ctx.companyId).order('created_at', { ascending: false }).limit(50)
+      out.polls = await Promise.all((data || []).map(async (p: any) => ({ id: p.id, question: p.question, options: parseOptions(p.options), live: statusOf(p) === 'live', status: statusOf(p), votes: await count(db, 'poll_votes', 'poll_id', p.id), link: `${base(ctx)}/polls/${p.id}` })))
     }
     if (kind === 'all' || kind === 'surveys') {
-      const { data } = await db.from('surveys').select('id, title, type, question, is_active, created_at').eq('company_id', ctx.companyId).order('created_at', { ascending: false }).limit(50)
-      out.surveys = await Promise.all((data || []).map(async (s: any) => ({ id: s.id, title: s.title, type: s.type, question: s.question, live: s.is_active !== false, responses: await count(db, 'survey_responses', 'survey_id', s.id), link: `${base(ctx)}/surveys/${s.id}` })))
+      const { data } = await db.from('surveys').select('*').eq('company_id', ctx.companyId).order('created_at', { ascending: false }).limit(50)
+      out.surveys = await Promise.all((data || []).map(async (s: any) => ({ id: s.id, title: s.title, type: s.type, question: s.question, live: statusOf(s) === 'live', status: statusOf(s), responses: await count(db, 'survey_responses', 'survey_id', s.id), link: `${base(ctx)}/surveys/${s.id}` })))
     }
     return out
   }
