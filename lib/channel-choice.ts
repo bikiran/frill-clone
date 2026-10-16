@@ -8,9 +8,13 @@
 //   2. Automated ORDER messages to a customer who has never messaged us: email
 //      when we have it (what customers expect for receipts; see #122).
 //   3. Otherwise SMS, when they have a mobile, haven't opted out of texts, and
-//      the business has an SMS number.
+//      the business has an SMS number. Where the business records an SMS
+//      opt-in (the website chat's "Continue this conversation by text" box),
+//      they must also have ticked it.
 //   4. Otherwise email, when we have their email address.
 // A per-automation setting ('sms' / 'email') goes first when it can be used.
+// In the inbox, a website chat visitor who is on the page right now is
+// answered on live chat.
 // Automated texts also keep to sending hours (lib/channel-fallback).
 
 export type ChannelSetting = 'auto' | 'sms' | 'email'
@@ -24,6 +28,15 @@ export type ChannelFacts = {
   phone?: string | null
   /** 'ok' may text; 'opted_out' / 'unknown' may not (lib/sms-consent). */
   smsConsent?: 'ok' | 'opted_out' | 'unknown' | null
+  /**
+   * false when the business's records say they didn't opt in to texts: a
+   * website chat visitor who gave a mobile but left "Continue this
+   * conversation by text" unticked (lib/channel-choice-server smsOptInFrom).
+   * true / null when they did, or when nothing asks for an opt-in.
+   */
+  smsOptIn?: boolean | null
+  /** The website chat visitor is on the page right now (isLiveOnPage). */
+  liveOnPage?: boolean
   businessHasSms?: boolean
   email?: string | null
   /** An automation's own channel setting. */
@@ -47,6 +60,28 @@ import { toE164 } from '@/lib/phone'
 
 const MESSAGING = ['sms', 'email', 'whatsapp', 'instagram', 'facebook', 'messenger']
 const WIDGET = ['chat', 'widget', 'live_chat']
+
+/**
+ * How fresh the widget's page_seen_at heartbeat must be for the visitor to
+ * count as on the page now: the inbox's isOnPageNow threshold (2 minutes).
+ */
+export const LIVE_ON_PAGE_MS = 120_000
+
+export function isLiveOnPage(pageSeenAt: string | null | undefined, now: number = Date.now()): boolean {
+  if (!pageSeenAt) return false
+  const t = new Date(String(pageSeenAt).replace(' ', 'T')).getTime()
+  return Number.isFinite(t) && now - t < LIVE_ON_PAGE_MS
+}
+
+/**
+ * A contact that came only from the website chat form, with no consent
+ * recorded on it (app/api/widget/start saves source 'widget' and nothing
+ * else). Whether they opted in to texts lives on their chat conversation
+ * (sms_enabled), not on the contact.
+ */
+export function isWidgetOnlyContact(c: { source?: string | null; consent_basis?: string | null } | null | undefined): boolean {
+  return String(c?.source || '').toLowerCase() === 'widget' && !['express', 'inferred'].includes(String(c?.consent_basis || ''))
+}
 
 /**
  * Can this number take a text? Read as E.164 (lib/phone, national numbers in
@@ -81,14 +116,18 @@ export function normaliseChannel(ch: string | null | undefined): string {
  * customer is using.
  */
 export function chooseChannel(f: ChannelFacts, opts: { reachOnly?: boolean } = {}): ChannelChoice {
-  const canSms = isMobileNumber(f.phone) && f.smsConsent === 'ok' && !!f.businessHasSms
+  const canSms = isMobileNumber(f.phone) && f.smsConsent === 'ok' && f.smsOptIn !== false && !!f.businessHasSms
   const canEmail = !!String(f.email || '').includes('@')
   const out = (channel: string, reason: string): ChannelChoice => ({ channel, reason, canSms, canEmail })
   const smsWhyNot = !f.phone ? 'no mobile on file'
     : !isMobileNumber(f.phone) ? 'their number isn’t a mobile'
     : f.smsConsent === 'opted_out' ? 'they opted out of texts'
+    : f.smsOptIn === false ? 'they didn’t opt in to texts on your website chat'
     : f.smsConsent !== 'ok' ? 'their text consent couldn’t be checked'
     : !f.businessHasSms ? 'texting isn’t set up for your business' : ''
+
+  // The visitor is on the website chat right now: answer them there.
+  if (!opts.reachOnly && f.liveOnPage) return out('chat', 'They’re on your website chat right now.')
 
   // 0. The automation's own setting, when it can be used.
   if (f.setting === 'sms' && canSms) return out('sms', 'This automation is set to send by SMS.')
@@ -115,17 +154,20 @@ export function chooseChannel(f: ChannelFacts, opts: { reachOnly?: boolean } = {
   if (canSms) return out('sms', 'They have a mobile and haven’t opted out of texts.')
   // 3. Email.
   if (canEmail) return out('email', smsWhyNot ? `Email, because ${smsWhyNot}.` : 'Sent by email.')
-  if (!opts.reachOnly) return out('chat', 'No mobile or email on file.')
+  if (!opts.reachOnly) return out('chat', f.phone && smsWhyNot ? `Live chat, because ${smsWhyNot} and there’s no email on file.` : 'No mobile or email on file.')
   return out('none', 'No way to reach them: ' + (smsWhyNot || 'no mobile or email on file') + '.')
 }
 
 /**
  * Where the Contacts / customer profile "Message" button goes. With a mobile
- * they may be texted on, it opens their conversation ready to send an SMS;
+ * they may be texted on (not opted out, and not a website chat contact
+ * without a recorded opt-in), it opens their conversation ready to send an SMS;
  * otherwise by email; the inbox then follows the same rule for anything else.
  */
-export function contactMessageHref(c: { id: string; phone?: string | null; email?: string | null; unsubscribed_at?: string | null; is_blocked?: boolean | null }, want?: 'sms' | 'email' | null, conversationId?: string | null): string {
-  const mayText = isMobileNumber(c.phone) && !c.unsubscribed_at && !c.is_blocked
+export function contactMessageHref(c: { id: string; phone?: string | null; email?: string | null; unsubscribed_at?: string | null; is_blocked?: boolean | null; source?: string | null; consent_basis?: string | null }, want?: 'sms' | 'email' | null, conversationId?: string | null): string {
+  // A contact from the website chat form alone isn't offered SMS here: their
+  // opt-in is on the chat, so the inbox's rule (channel-choice) decides.
+  const mayText = isMobileNumber(c.phone) && !c.unsubscribed_at && !c.is_blocked && !isWidgetOnlyContact(c)
   const ch = want === 'email' && c.email ? 'email'
     : want === 'sms' && mayText ? 'sms'
     : mayText ? 'sms'

@@ -13,12 +13,13 @@ const admin = () => createClient(
 )
 
 // GET ?conversationId=…  or  ?companyId=…&contactId=…
-// → { channel, reason, canSms, canEmail, replyTo, repliesToInbox }
+// → { channel, reason, canSms, canEmail, smsOptIn, replyTo, repliesToInbox }
 //
 // Which channel a reply to this customer should default to — the same rule the
 // automated messages use (lib/channel-choice): the channel they last used,
-// else SMS when they have a mobile and haven't opted out and the business can
-// text, else email. Also where an email reply's answer comes back to, for the
+// else SMS when they have a mobile, haven't opted out (and, on the website
+// chat, opted in) and the business can text, else email; a website chat
+// visitor on the page right now gets live chat. Also where an email reply's answer comes back to, for the
 // composer's "Replies come back to this inbox" hint. Workspace members only.
 export async function GET(req: NextRequest) {
   try {
@@ -59,6 +60,9 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       channel: pick.channel, reason: pick.reason, canSms: pick.canSms, canEmail: pick.canEmail,
+      // false: a website chat visitor who didn't opt in to texts (the inbox's
+      // automatic send doesn't text them).
+      smsOptIn: pick.facts.smsOptIn ?? null,
       replyTo,
       // On the Colvy inbound domain the reply comes straight back into this
       // inbox; on the mailbox's own address it arrives there (and the sync brings it in).
