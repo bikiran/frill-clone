@@ -149,7 +149,7 @@ export async function agentResults(db: any, companyId: string, days = 7, now = D
     else if (a.status === 'expired' && !a.result?.superseded) t.unanswered++
     else if (a.status === 'failed') t.failedDeliveries++
     if (sent) {
-      if (a.action_key === 'add_to_waitlist') t.waitlisted++
+      if (a.action_key === 'add_to_waitlist' && a.result?.added) t.waitlisted++   // not "already waiting"
       if (a.action_key === 'reply_to_review') t.reviewsAnswered++
       if (a.action_key === 'reply_to_comment') t.commentsAnswered++
       if (a.action_key === 'send_order_update') { t.customersUpdated++; (inCur ? caughtRuns.cur : caughtRuns.prev).add(run.id) }

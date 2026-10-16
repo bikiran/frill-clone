@@ -4,6 +4,7 @@ import { requireCompanyAccess, resolveWaitlistSettings, isMissingTable, openWait
 import { toE164, emailKey } from '@/lib/phone'
 import { variationStock, pricing, waitlistItemKey, shopifyItemStock, type ItemStock } from '@/lib/waitlist-stock'
 import { describeShopifyItem } from '@/lib/shopify-waitlist'
+import { waitlistEntryHref } from '@/lib/waitlist-ai'
 
 export const dynamic = 'force-dynamic'
 
@@ -167,13 +168,20 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    // Leave a staff-only note in their conversation so the team can see it.
+    // Leave a staff-only note in their conversation so the team can see it (the
+    // inbox shows it as a quiet line; it never becomes the list preview — V385).
     if (conversationId) {
       try {
+        let byName: string | null = null
+        if (access.userId) {
+          const { data: tm } = await db.from('team_members').select('name').eq('company_id', companyId).eq('user_id', access.userId).maybeSingle()
+          byName = (tm as any)?.name || null
+        }
+        const via = phone ? 'an SMS' : 'an email'
         await db.from('messages').insert({
           conversation_id: conversationId, company_id: companyId, sender_type: 'system', is_internal: true,
-          content: `📋 Added to the waitlist for ${itemName} — they'll get an SMS when it's back in stock.`,
-          metadata: { internal: true, waitlist: true, waitlist_id: data?.id },
+          content: `Added to the waitlist for ${itemName} — they'll get ${via} when it's back in stock.`,
+          metadata: { internal: true, waitlist: true, waitlist_id: data?.id, waitlist_href: data?.id ? waitlistEntryHref(data.id) : '/admin/waitlists', item_name: itemName, notify_by: phone ? 'sms' : 'email', added_by_name: byName },
         })
       } catch {}
     }

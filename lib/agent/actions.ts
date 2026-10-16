@@ -22,7 +22,7 @@ import { getException, checkOrderTracking, sendOrderUpdate } from './ops-actions
 import { getOpportunity, sendSalesFollowup } from './followup-actions'
 import { listServices, checkAvailability, findMyBookings, bookingLink, rescheduleBookingAction, cancelBookingAction } from './booking-actions'
 import { sendAgentMessage } from './send'
-import { addToWaitlistAction } from './waitlist-actions'
+import { addToWaitlistAction, waitlistReplyHold } from './waitlist-actions'
 import { logUnanswered, isRealQuestion } from '@/lib/ai-unanswered'
 
 const obj = (properties: Record<string, any>, required: string[] = []): JsonSchema => ({ type: 'object', properties, required, additionalProperties: false })
@@ -220,8 +220,9 @@ async function sendOnItsOwn(ctx: ActionContext, args: any, limits: PolicyLimits)
   const grounded =
     topic === 'opening_hours' ? (done.get_business_hours?.places?.length || 0) > 0
       : topic === 'order_status' ? (ctx.scratch.orderVerdicts?.length || 0) > 0 && ctx.scratch.orderVerdicts.every((v: string) => v === 'normal')
-        // A waiting-list confirmation is backed by the add itself (or finding them already on it).
-        : topic === 'stock' ? (done.check_stock?.products?.length || 0) > 0 || !!(done.add_to_waitlist?.added || done.add_to_waitlist?.alreadyWaiting)
+        // A waiting-list confirmation is backed by the add itself (or finding them already on it, or in stock);
+        // an add that hasn't happened holds the reply (waitlistReplyHold, below).
+        : topic === 'stock' ? (done.check_stock?.products?.length || 0) > 0 || !!(done.add_to_waitlist?.added || done.add_to_waitlist?.alreadyWaiting || done.add_to_waitlist?.inStock)
           : topic === 'store_info' ? done.ask_knowledge?.found === true
             : topic === 'booking' ? !!(done.check_availability || done.find_my_bookings || done.list_services || done.booking_link)
               : false
@@ -231,6 +232,8 @@ async function sendOnItsOwn(ctx: ActionContext, args: any, limits: PolicyLimits)
       : `It didn’t check ${AUTO_TOPICS[topic].needs.replace(/_/g, ' ')} in this run, so a person approves it.`
   }
   if (ctx.scratch.escalated) return 'It also handed this to the team, so a person approves the reply.'
+  const wl = waitlistReplyHold(ctx)
+  if (wl) return wl
   if (!ctx.conversationId) return null
 
   const [{ data: conv }, { data: human }, { data: lastIn }] = await Promise.all([

@@ -10,7 +10,7 @@ import AgentConnections from '@/components/AgentConnections'
 import { ResultsStrip } from '@/components/AgentResults'
 import { NeedsYouCard } from '@/components/NeedsYou'
 import ConversationPicker, { cleanPreview, type PickConv } from '@/components/ConversationPicker'
-import { waitlistEntryHref } from '@/lib/waitlist-ai'
+import { waitlistEntryHref, waitlistPreview } from '@/lib/waitlist-ai'
 
 // AI Agents (Phase 1 of the Agent Engine). Every agent run is recorded — what
 // it knew, every action it asked for, the permission decision and why, and the
@@ -247,7 +247,7 @@ export default function AgentsPage() {
         const { data: cs } = await (supabase as any).from('contacts').select('id, name').in('id', ids)
         for (const c of cs || []) names[c.id] = c.name
       }
-      setConvs((data || []).map((c: any) => ({ id: c.id, name: names[c.contact_id] || 'Unknown customer', channel: c.channel || 'chat', preview: cleanPreview(c.last_message || '').slice(0, 120), at: c.last_message_at || null })))
+      setConvs((data || []).map((c: any) => ({ id: c.id, name: names[c.contact_id] || 'Unknown customer', channel: c.channel || 'chat', preview: cleanPreview(waitlistPreview(c.last_message) || '').slice(0, 120), at: c.last_message_at || null })))
     })().catch(() => {})
   }, [companyId])
 

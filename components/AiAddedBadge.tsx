@@ -2,14 +2,14 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { WhyLink } from '@/components/WhyAgent'
-import { aiAddedBy } from '@/lib/waitlist-ai'
+import { aiAddedBy, waitlistNoteLine } from '@/lib/waitlist-ai'
 
 // "Added by AI" — waitlist entries an AI agent or Colvy AI added, marked the way
 // the app marks AI work (violet spark, as on AI replies in the inbox).
 //
 //   AiAddedPill   on a Waitlists customer row: hover for who and when, click for
 //                 the details with links to the conversation and "Why?"
-//   AiWaitlistNote the staff-only note an AI add leaves in the conversation
+//   WaitlistNoteLine any waitlist note in a conversation, as a quiet event line
 
 export const AI_VIOLET = { c: '#7c3aed', bg: '#f5f3ff', border: '#ddd6fe' }
 
@@ -62,25 +62,46 @@ export function AiAddedPill({ entry, companyId }: { entry: any; companyId: strin
   )
 }
 
-/** The note an AI add leaves in the conversation (staff only). */
-export function AiWaitlistNote({ content, metadata, createdAt, companyId }: { content: string; metadata?: any; createdAt?: string; companyId: string | null }) {
-  // The text without the trailing link (the card links to it).
-  const text = String(content || '').split('\n').filter(l => !/^https?:\/\//.test(l.trim())).join('\n').trim()
-  const href = metadata?.waitlist_href || (metadata?.waitlist_id ? `/admin/waitlists?entry=${metadata.waitlist_id}` : '/admin/waitlists')
-  return (
-    <div style={{ display: 'flex', justifyContent: 'center', margin: '4px 0' }}>
-      <div className="ai-wl-note" style={{ maxWidth: '86%', width: '100%', background: AI_VIOLET.bg, border: `1px solid ${AI_VIOLET.border}`, borderLeft: `4px solid ${AI_VIOLET.c}`, borderRadius: 14, padding: '10px 14px', boxSizing: 'border-box' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 4 }}>
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 800, padding: '2px 8px', borderRadius: 999, background: '#fff', border: `1px solid ${AI_VIOLET.border}`, color: AI_VIOLET.c }}><AiSpark /> Added by AI</span>
-          <span style={{ fontSize: 11, fontWeight: 700, color: '#6d28d9' }}>Waiting list · team only</span>
-          {createdAt && <span style={{ fontSize: 11, color: '#8b8fa3', marginLeft: 'auto' }}>{fmtWhen(createdAt)}</span>}
-        </div>
-        <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.5, color: '#2e1065', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{text}</p>
-        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 6, fontSize: 12.5 }}>
-          <a href={href} style={{ fontWeight: 700, color: AI_VIOLET.c }}>View on Waitlists</a>
-          {metadata?.agent_run_id && <WhyLink companyId={companyId} runId={metadata.agent_run_id} style={{ color: AI_VIOLET.c }} />}
-        </div>
+/**
+ * A waitlist note in the conversation (staff only), as one quiet centred line —
+ * the same look as the inbox's other event lines: grey for a person's add
+ * ("Auto-assigned to … · 5:26 pm"), the AI line (spark, tinted, Why?) for an
+ * AI add ("Handed to the team — … · Support Agent · 4:25 pm  Why?") in violet.
+ */
+export function WaitlistNoteLine({ msg, companyId, fmtTime }: { msg: any; companyId: string | null; fmtTime: (iso: string) => string }) {
+  const l = waitlistNoteLine(msg)
+  const when = msg?.created_at ? fmtTime(msg.created_at) : ''
+  const link = { fontSize: 11.5, fontWeight: 700, textDecoration: 'underline', textUnderlineOffset: 2, whiteSpace: 'nowrap', marginLeft: 6 } as React.CSSProperties
+  // The middle may wrap onto a second line on a phone rather than cut off the item or who added it.
+  const mid = { flex: '0 1 auto', minWidth: 0, maxWidth: 680, fontSize: 11.5, lineHeight: 1.5, textAlign: 'center', whiteSpace: 'normal', overflowWrap: 'anywhere' } as React.CSSProperties
+  const icon = { display: 'inline-block', verticalAlign: '-2px', marginRight: 5 } as React.CSSProperties
+  if (l.ai) {
+    const rule = { flex: '1 1 16px', minWidth: 16, height: 1, background: `color-mix(in srgb, ${AI_VIOLET.c} 22%, transparent)` }
+    return (
+      <div className="wl-note-line ai" style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '8px 0' }}>
+        <div style={rule} />
+        <span style={{ ...mid, fontWeight: 600, color: AI_VIOLET.c }}>
+          <span style={icon}><AiSpark size={13} /></span>
+          {l.text}
+          {when && <span style={{ opacity: 0.55, fontWeight: 500 }}> · {when}</span>}
+          <a href={l.href} style={{ ...link, color: AI_VIOLET.c }}>View</a>
+          {l.runId && <WhyLink companyId={companyId} runId={l.runId} style={{ fontSize: 11.5, marginLeft: 8, color: AI_VIOLET.c }} />}
+        </span>
+        <div style={rule} />
       </div>
+    )
+  }
+  const rule = { flex: '1 1 16px', minWidth: 16, height: 1, background: '#eceef0' }
+  return (
+    <div className="wl-note-line" style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '8px 0' }}>
+      <div style={rule} />
+      <span style={{ ...mid, color: '#9ca3af' }}>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={icon} aria-hidden="true"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></svg>
+        {l.text}{l.by ? ` · by ${l.by}` : ''}
+        {when && <span style={{ color: '#c2c6cb', fontWeight: 500 }}> · {when}</span>}
+        <a href={l.href} style={{ ...link, color: '#9ca3af' }}>View</a>
+      </span>
+      <div style={rule} />
     </div>
   )
 }

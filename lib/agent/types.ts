@@ -75,6 +75,8 @@ export interface ActionDef {
   /** Safe for a role that talks to customers? (false = staff-only data, e.g.
    *  searching all orders by name). */
   customerSafe: boolean
+  /** Daily limits count only steps that created something (entity_id set). */
+  limitCountsEntitiesOnly?: boolean
   /** Money involved, for policy limits. */
   amountCents?(input: any, ctx: ActionContext): Promise<number | null> | number | null
   /** Extra checks before acting on its own ("act_within_limits"): return why a

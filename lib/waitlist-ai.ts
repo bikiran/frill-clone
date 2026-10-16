@@ -32,3 +32,49 @@ export const agentAddedBy = (roleName: string) => `Colvy AI (${String(roleName |
 
 /** Colvy AI acting for a team member. */
 export const assistantAddedBy = (staffName?: string | null) => `Colvy AI (requested by ${String(staffName || '').trim() || 'a team member'})`
+
+// ── Waitlist notes in a conversation ─────────────────────────────────────────
+// Adding someone to a waitlist leaves a staff-only note in their conversation
+// (messages.metadata.waitlist). The inbox shows it as one quiet centred line,
+// like its other event lines, not as a big internal-note card. Older notes
+// predate the metadata fields (and started with an emoji), so they're read
+// from their text too.
+
+const OLD_NOTE = /^\s*📋\s*Added to the waitlist for /
+
+/** A waitlist note, new or old. */
+export const isWaitlistNote = (m: any): boolean => !!m && (!!m.metadata?.waitlist || OLD_NOTE.test(String(m.content || '')))
+
+const tidy = (s: string) => String(s || '').replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]️?/gu, '').replace(/\s+/g, ' ').trim()
+
+export type WaitlistNoteLine = { ai: boolean; text: string; by: string | null; href: string; runId: string | null }
+
+/** What the quiet line says: "Added to the waitlist for X · gets an SMS when it’s back", who, and where it links. */
+export function waitlistNoteLine(m: any): WaitlistNoteLine {
+  const md = m?.metadata || {}
+  const content = String(m?.content || '')
+  const href = md.waitlist_href || (md.waitlist_id ? waitlistEntryHref(String(md.waitlist_id)) : '/admin/waitlists')
+  const runId = md.agent_run_id || null
+  if (md.waitlist_ai) {
+    // "Colvy AI (Support Agent) added Thi to the waitlist for X. They’ll get a text…\nhttps://…"
+    const first = tidy(content.split('\n')[0]).replace(/\.\s+They(’|')ll get .*$/i, '').replace(/\.$/, '').replace(/waiting list/g, 'waitlist')
+    return { ai: true, text: first || `${md.added_by || 'Colvy AI'} added them to the waitlist${md.item_name ? ` for ${md.item_name}` : ''}`, by: null, href, runId }
+  }
+  const by = md.added_by_name || (m?.sender_name && m.sender_type !== 'system' ? m.sender_name : null) || md.added_by || null
+  const old = tidy(content).match(/^Added to the waitlist for (.+?) [—-] they(?:’|')ll get (an SMS|an email|a text)/i)
+  const item = md.item_name || old?.[1] || null
+  if (item && (md.notify_by || old || /^Added to the waitlist/.test(tidy(content)))) {
+    const via = md.notify_by === 'email' || /email/i.test(old?.[2] || '') ? 'an email' : 'an SMS'
+    return { ai: false, text: `Added to the waitlist for ${item} · gets ${via} when it’s back`, by, href, runId }
+  }
+  // Anything else (e.g. "Waiting for X — joined the back-in-stock waitlist on your website on 16 Oct.").
+  return { ai: false, text: tidy(content).replace(/\s+[—-]\s+/g, ' · ').replace(/\.$/, ''), by, href, runId }
+}
+
+/** A conversation-list preview never shows a waitlist note as-is. */
+export function waitlistPreview(text: string | null | undefined): string | null {
+  const t = String(text || '')
+  if (!OLD_NOTE.test(t)) return text ?? null
+  const item = tidy(t).match(/^Added to the waitlist for (.+?)(?: [—-] |$)/i)?.[1]
+  return item ? `Added to waitlist: ${item}` : 'Added to waitlist'
+}

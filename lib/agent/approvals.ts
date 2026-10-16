@@ -167,7 +167,7 @@ export async function decideApproval(db: any, opts: {
     const { _preview, ...args } = ap.args || {}
     const r = await runApprovedWaitlistAction(db, opts.companyId, run, args, opts.user)
     const detail = r.ok ? (r.summary || 'Added to the waiting list') : ''
-    await db.from('agent_approvals').update({ status: r.ok ? 'executed' : 'failed', result: r.ok ? { done: detail } : { error: r.error } }).eq('id', ap.id)
+    await db.from('agent_approvals').update({ status: r.ok ? 'executed' : 'failed', result: r.ok ? { done: detail, added: !!r.entityId } : { error: r.error } }).eq('id', ap.id)
     await logStep(db, run, {
       kind: 'approval', action_key: ap.action_key, decision: 'allowed',
       decision_reason: r.ok ? `${who} approved it — ${detail}.` : `${who} approved it, but it didn’t go through: ${r.error}`,

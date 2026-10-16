@@ -44,6 +44,10 @@ const webUrl = (u?: string | null) => (u && /^https?:\/\//i.test(u) ? u : null)
 const fmtDate = (d: string) => new Date(d).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })
 const money = (n: number) => new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' }).format(n)
 const isWaiting = (e: any) => e.status === 'waiting' || e.status === 'queued'
+// In the tab being viewed, and matching the search (q: lower-cased, trimmed).
+const inView = (e: any, tab: string, newIds: ReadonlySet<string>, q: string) =>
+  (tab === 'all' || (tab === 'new' ? isTaggedNew(e, newIds) : tab === 'waiting' ? OPEN.includes(e.status) : e.status === 'notified'))
+  && (!q || [e.item_name, e.customer_name, e.phone, e.email].some(v => String(v || '').toLowerCase().includes(q)))
 
 export default function WaitlistsPage() {
   const router = useRouter()
@@ -175,10 +179,8 @@ export default function WaitlistsPage() {
     const q = search.trim().toLowerCase()
     const map = new Map<string, any>()
     for (const e of entries) {
-      const inTab = tab === 'all' || (tab === 'new' ? isTaggedNew(e, newIds) : tab === 'waiting' ? OPEN.includes(e.status) : e.status === 'notified')
-      if (!inTab) continue
+      if (!inView(e, tab, newIds, q)) continue
       if (aiOnly && !isAiAdded(e)) continue
-      if (q && ![e.item_name, e.customer_name, e.phone, e.email].some(v => String(v || '').toLowerCase().includes(q))) continue
       const k = groupKey(e)
       const g = map.get(k) || { key: k, name: e.item_name, image: e.item_image, url: e.item_url, productId: waitlistItemKey(e), entries: [] as any[] }
       g.image = g.image || e.item_image
@@ -221,9 +223,10 @@ export default function WaitlistsPage() {
       notified30: entries.filter(e => e.status === 'notified' && e.notified_at && new Date(e.notified_at).getTime() > monthAgo).length,
       newWaiting: waiting.filter(e => isTaggedNew(e, newIds)).length,
       newTotal: countNew(entries, newIds),
-      aiTotal: countAiAdded(entries),
+      // The filter's count: AI-added customers in the tab (and search) you're looking at.
+      aiTotal: countAiAdded(entries.filter(e => inView(e, tab, newIds, search.trim().toLowerCase()))),
     }
-  }, [entries, stock, newIds])
+  }, [entries, stock, newIds, tab, search])
 
   // Opened from a link to one entry: show it (whatever its status), open its item and bring it into view — once.
   const focusDone = useRef(false)
@@ -444,7 +447,7 @@ export default function WaitlistsPage() {
                           onSaved={async () => { setEditing(null); flash('Customer details saved.'); await load(companyId) }} />
                       )
                       return (
-                        <div key={e.id} id={`wl-e-${e.id}`} className="wl-row" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', borderBottom: '1px solid var(--border)', flexWrap: 'wrap', ['--i' as any]: Math.min(i, 12), ...(focusId === String(e.id) ? { background: AI_VIOLET.bg, boxShadow: `inset 3px 0 0 ${isAiAdded(e) ? AI_VIOLET.c : 'var(--coral)'}` } : {}) }}>
+                        <div key={e.id} id={`wl-e-${e.id}`} className="wl-row" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', borderBottom: '1px solid var(--border)', flexWrap: 'wrap', ['--i' as any]: Math.min(i, 12), ...(focusId === String(e.id) ? (isAiAdded(e) ? { background: AI_VIOLET.bg, boxShadow: `inset 3px 0 0 ${AI_VIOLET.c}` } : { background: 'var(--peach, #fff1ee)', boxShadow: 'inset 3px 0 0 var(--coral, #ff7a6b)' }) : {}) }}>
                           <div style={{ flex: '1 1 200px', minWidth: 0 }}>
                             <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--ink)', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                               {e.customer_name || 'Customer'}
