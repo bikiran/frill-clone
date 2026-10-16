@@ -24,6 +24,7 @@ import { barcodeSVG } from '@/lib/barcode'
 import { confirmDialog } from '@/components/ConfirmDialog'
 import { notifyIntegrations } from '@/lib/integrations-notify'
 import { authFetch } from '@/lib/auth-fetch'
+import { loadStaffRows } from '@/lib/team-list'
 import type { OrderRefund } from '@/lib/order-refunds'
 
 type Order = any
@@ -522,7 +523,7 @@ export default function OrdersPage() {
         session?.user
           ? authFetch(`/api/user-prefs?userId=${session.user.id}&companyId=${cid}`).then(r => r.json()).catch(() => null)
           : Promise.resolve(null),
-        (supabase as any).from('team_members').select('*').then((r: any) => r, () => null),
+        loadStaffRows(supabase, cid).then(data => ({ data }), () => null),
       ])
       const coRow = coRes?.data
       if (coRow?.accent_color) setAccent(coRow.accent_color)
@@ -553,9 +554,9 @@ export default function OrdersPage() {
         } catch {}
       }
 
-      // Team — mirror the inbox: include the company owner, and don't filter
-      // team_members by company_id (invited members can have a null company_id;
-      // RLS already scopes them). Filtering by company_id hid everyone.
+      // Team — mirror the inbox: the company owner, then the staff (board
+      // visitors can't be assigned, and on a busy board they'd crowd staff out
+      // of one read).
       const members: { id: string; name: string }[] = []
       if (coRow?.owner_id) members.push({ id: coRow.owner_id, name: coRow.name ? `${coRow.name} (Owner)` : 'Owner' })
       for (const m of tmRes?.data || []) {

@@ -1,4 +1,5 @@
 import { requireCompanyAccess } from '@/lib/company-access'
+import { STAFF_FILTER } from '@/lib/team-list'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
@@ -19,6 +20,8 @@ export async function GET(req: NextRequest) {
   // Workspace members only (team emails).
   if (!(await requireCompanyAccess(req, supabase, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
 
+  // Both lists are staff only: board visitors can't be mentioned, and on a
+  // busy board they'd fill the list.
   if (q.length < 1) {
     // Return all active members of the company, sorted by username
     const { data: members } = await (supabase as any)
@@ -26,6 +29,7 @@ export async function GET(req: NextRequest) {
       .select('email, username, role')
       .eq('company_id', companyId)
       .eq('status', 'active')
+      .or(STAFF_FILTER)
       .order('username', { ascending: true })
       .limit(20)
 
@@ -44,6 +48,7 @@ export async function GET(req: NextRequest) {
     .select('email, username, role')
     .eq('company_id', companyId)
     .eq('status', 'active')
+    .or(STAFF_FILTER)
     .or(`username.ilike.%${q}%,email.ilike.%${q}%`)
     .limit(10)
 

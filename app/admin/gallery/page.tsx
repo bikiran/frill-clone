@@ -15,6 +15,7 @@ import PhoneUploadQR from '@/components/PhoneUploadQR'
 import PageHeader from '@/components/PageHeader'
 import { confirmDialog } from '@/components/ConfirmDialog'
 import { authFetch } from '@/lib/auth-fetch'
+import { loadStaffRows } from '@/lib/team-list'
 
 export default function GalleryPage() {
   const { companyId, user, loading } = useCompanyUser()
@@ -69,7 +70,8 @@ export default function GalleryPage() {
 
   useEffect(() => { loadCategories() }, [loadCategories])
 
-  // Load the team roster (owner + members) so item notes can @mention people.
+  // Load the team roster (owner + staff, not board visitors) so item notes can
+  // @mention people.
   useEffect(() => {
     if (!companyId) return
     let active = true
@@ -78,7 +80,7 @@ export default function GalleryPage() {
         const members: { id: string; user_id: string; name: string; email?: string }[] = []
         const { data: co } = await (supabase as any).from('companies').select('owner_id, name').eq('id', companyId).maybeSingle()
         if (co?.owner_id) members.push({ id: co.owner_id, user_id: co.owner_id, name: co.name ? `${co.name} (Owner)` : 'Owner' })
-        const { data: tm } = await (supabase as any).from('team_members').select('*').eq('company_id', companyId)
+        const tm = await loadStaffRows(supabase, companyId).catch(() => [])
         for (const m of (tm || [])) {
           const uid = m.user_id || m.id
           if (members.some(x => x.user_id === uid)) continue

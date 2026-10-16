@@ -107,10 +107,20 @@ export async function flushKnowledgeGaps(ctx: ActionContext) {
 export const isCustomerReply = (a: ActionDef) => a.category === 'communicate' && a.key !== 'escalate_to_human'
 
 /**
+ * Whether the agent is told when to set knowledge_gap (the engine's rules): a
+ * customer asked something, and one of its replies can say it couldn't answer.
+ * One rule for every role, so a holding or deflecting reply is flagged the same
+ * way whichever agent wrote it; cart, quote and order runs never see it.
+ */
+export function asksForKnowledgeGaps(actions: ActionDef[], runInput: { kind?: string } | undefined): boolean {
+  return customerWrote(runInput) && actions.some(a => isCustomerReply(a) && !!a.input.properties?.knowledge_gap)
+}
+
+/**
  * The engine calls this for each action it runs, records or queues for the
  * team. A reply answers the customer, unless it says (knowledge_gap) that the
  * business's knowledge didn't cover the question: an "I'll check", or "send us
- * a message" under a comment.
+ * a message" under a review or comment.
  */
 export function noteReply(ctx: ActionContext, action: ActionDef, input: { knowledge_gap?: unknown } | null | undefined) {
   if (!isCustomerReply(action)) return

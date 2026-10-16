@@ -10,6 +10,7 @@ import { loadCompanyPublic, createInvite, bookingPageUrl } from '@/lib/booking'
 import { smartSearchKnowledge } from '@/lib/ai-knowledge'
 import { BUILDER_TOOLS, BUILDER_TOOL_NAMES, runBuilderAction, runBuilderRead } from '@/lib/ai-assistant/builders'
 import { proposeMemory } from '@/lib/agent/business-memory'
+import { STAFF_FILTER } from '@/lib/team-list'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Colvy AI assistant — controlled tool layer.
@@ -592,15 +593,16 @@ export async function runReadTool(db: SupabaseClient, ctx: AssistantContext, nam
     const { data } = await query.limit(20)
     return { outlets: (data || []).map((l: any) => ({ id: l.id, name: outletName(l), suburb: l.suburb })) }
   }
+  // Team lookups are staff only: a board visitor is never an assignee.
   if (name === 'get_outlet_members') {
-    const { data } = await D.from('team_members').select('user_id, name, email').eq('company_id', ctx.companyId).eq('default_location_id', args?.outletId)
+    const { data } = await D.from('team_members').select('user_id, name, email').eq('company_id', ctx.companyId).or(STAFF_FILTER).eq('default_location_id', args?.outletId)
     const rows = (data || []).filter((m: any) => m.user_id)
     const names = await resolveNames(D, rows.map((m: any) => m.user_id))
     return { members: rows.map((m: any) => ({ userId: m.user_id, name: names[m.user_id] || m.name || m.email })) }
   }
   if (name === 'search_team_members') {
     const q = String(args?.query || '').trim()
-    let query = D.from('team_members').select('user_id, name, email').eq('company_id', ctx.companyId)
+    let query = D.from('team_members').select('user_id, name, email').eq('company_id', ctx.companyId).or(STAFF_FILTER)
     if (q) query = query.or(`name.ilike.%${q}%,email.ilike.%${q}%`)
     const { data } = await query.limit(20)
     const rows = (data || []).filter((m: any) => m.user_id)
@@ -968,7 +970,7 @@ export async function executeAction(db: SupabaseClient, ctx: AssistantContext, n
     let soldByName = ctx.userName
     if (args?.soldByName) {
       const q = String(args.soldByName).trim()
-      const { data } = await D.from('team_members').select('id, name, user_id').eq('company_id', ctx.companyId).ilike('name', `%${q}%`).limit(1)
+      const { data } = await D.from('team_members').select('id, name, user_id').eq('company_id', ctx.companyId).or(STAFF_FILTER).ilike('name', `%${q}%`).limit(1)
       if (data?.[0]) { soldById = data[0].id || data[0].user_id || null; soldByName = data[0].name || q }
       else { soldById = null; soldByName = q }
     }

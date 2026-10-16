@@ -1,6 +1,7 @@
 import { callerUser } from '@/lib/company-access'
 import { isInternalCall } from '@/lib/internal-call'
 import { NextRequest, NextResponse } from 'next/server'
+import { startNumberPurchase, finishNumberOrderFrom, numberBoughtFor, type HeldOrder } from '@/lib/number-orders'
 import { createClient } from '@supabase/supabase-js'
 import { TelnyxService } from '@/lib/telnyx-service'
 
@@ -59,16 +60,37 @@ export async function GET(req: NextRequest) {
 }
 
 // POST: buy a number and assign it to the company
+//
+// The webhook passes the checkout session, which is claimed first (lib/number-
+// orders) so this and the calls page's finalize never both buy for one
+// checkout; how it ended is recorded against the claim.
 export async function POST(req: NextRequest) {
+  const track: { held: HeldOrder | null } = { held: null }
+  const res = await provision(req, track)
+  if (track.held) await finishNumberOrderFrom(admin(), track.held, res)
+  return res
+}
+
+async function provision(req: NextRequest, track: { held: HeldOrder | null }) {
   try {
     if (!PLATFORM_KEY) return NextResponse.json({ error: 'Number provisioning is not configured yet. The platform admin needs to set TELNYX_MASTER_API_KEY, TELNYX_MESSAGING_PROFILE_ID and TELNYX_CONNECTION_ID in the environment.' }, { status: 503 })
     // Buys a number on Colvy's own account with no payment check of its own:
     // only the Stripe webhook (after a verified payment) may call it.
     if (!isInternalCall(req)) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
-    const { companyId, phoneNumber, stripeSubscriptionId } = await req.json()
+    const { companyId, phoneNumber, stripeSubscriptionId, sessionId } = await req.json()
     if (!companyId) return NextResponse.json({ error: 'Missing companyId' }, { status: 400 })
 
     const db = admin()
+    // One number per paid checkout: bought here only if this call holds the
+    // claim (or, without a session, nothing shows it bought already).
+    if (sessionId) {
+      const start = await startNumberPurchase(db, { sessionId: String(sessionId), companyId, provider: 'telnyx' }, stripeSubscriptionId)
+      track.held = start.held
+      if (start.answer) return NextResponse.json(start.answer.body, { status: start.answer.status })
+    } else {
+      const bought = await numberBoughtFor(db, { companyId, provider: 'telnyx', subscriptionId: stripeSubscriptionId })
+      if (bought) return NextResponse.json({ ok: true, phoneNumber: bought, alreadyDone: true })
+    }
     const svc = new TelnyxService(PLATFORM_KEY)
 
     // If no specific number requested, grab the first available AU local number

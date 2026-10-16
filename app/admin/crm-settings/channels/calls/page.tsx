@@ -9,6 +9,7 @@ import CallAnswerSettings from '@/components/CallAnswerSettings'
 import AiReceptionistCard from '@/components/AiReceptionistCard'
 import Link from 'next/link'
 import { Icon } from '@/components/integrations/ui'
+import { finalizeNext } from '@/lib/number-finalize-poll'
 
 export default function TelnyxIntegration() {
   const [companyId, setCompanyId] = useState<string | null>(null)
@@ -127,6 +128,7 @@ export default function TelnyxIntegration() {
         } : {}
         setSuccess(isFree ? 'Setting up your number, this can take up to a minute…' : 'Payment received — setting up your number, this can take up to a minute…')
         let tries = 0
+        const started = Date.now()
         const attempt = async () => {
           tries++
           try {
@@ -135,19 +137,22 @@ export default function TelnyxIntegration() {
               body: JSON.stringify({ companyId: cid, sessionId, ...freeBody }),
             })
             const d = await res.json()
-            if (res.ok && d.phoneNumber) {
+            const next = finalizeNext(res, d, tries, Date.now() - started)
+            if ('live' in next) {
               const r2 = await authFetch(`/api/${provParam}/setup?companyId=${cid}`)
               const s2 = await r2.json()
               if (s2.integration) setIntegration(s2.integration)
               setSuccess(`Your business number ${d.phoneNumber} is live.`)
               return
             }
-            if (res.status === 202 && tries < 12) { setTimeout(attempt, 3000); return } // payment still settling
-            if (!res.ok) {
-              if (tries < 4) { setTimeout(attempt, 3000); return }
-              setError(d.error || 'Could not set up your number automatically. Your payment is safe — please contact support or try again.')
-              setSuccess('')
+            if ('retryIn' in next) { setTimeout(attempt, next.retryIn); return } // payment settling, or being bought
+            if ('stillSettingUp' in next) {
+              setSuccess('Still setting up your number — this can take a few minutes.')
+              if (cid) loadIntegration(cid)
+              return
             }
+            setError(d.error || 'Could not set up your number automatically. Your payment is safe — please contact support or try again.')
+            setSuccess('')
           } catch {
             if (tries < 4) { setTimeout(attempt, 3000); return }
             setError('Could not reach the server to finish setup. Your payment is safe — please refresh in a minute.')

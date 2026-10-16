@@ -1,16 +1,19 @@
 import { twilioSignatureOk } from '@/lib/twilio-signature'
 import { filterUsersByFeature } from '@/lib/feature-access'
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse, after } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { xmlEscape, twilioIdentity } from '@/lib/twilio-service'
 import { companyForInboundNumber } from '@/lib/inbound-company'
 import { ensureContactByPhone, findContactByPhone } from '@/lib/contact-capture'
+import { loadStaffRows } from '@/lib/team-list'
+import { isStaffRow } from '@/lib/company-access'
 import { alertCall } from '@/lib/call-alerts'
 import { getPhoneCatalog } from '@/lib/phone-catalog'
-import { getPhoneAgent, answerWithAgent, businessClosedNow, phoneBookable } from '@/lib/phone-agent'
+import { getPhoneAgent, answerWithAgent, businessClosedNow, phoneBookable, answersRealCallers, ensureStatusCallbacks } from '@/lib/phone-agent'
 import { aiAnswerDecision, needsHoursCheck, mayAnswerAtStart } from '@/lib/phone-receptionist'
 import { agentsPaused } from '@/lib/agent/pilot'
 import { queueMissedCallText } from '@/lib/missed-call-text'
+import { TWILIO_MASTER } from '@/lib/twilio-platform'
 
 export const dynamic = 'force-dynamic'
 
@@ -72,6 +75,14 @@ export async function POST(req: NextRequest) {
     const bookableP = agentP.then(a => mayAnswerAtStart(a, from) && a.skills.booking ? phoneBookable(db, companyId) : false, () => false)
     const closedP: Promise<boolean | null> = agentP.then(a => needsHoursCheck(a, from) ? businessClosedNow(db, companyId) : null, () => null)
     const pausedP: Promise<boolean> = agentP.then(a => a.enabled && a.mode !== 'test' ? agentsPaused(db, companyId).then(p => p.paused) : false, () => false)
+    // A number in Colvy's own Twilio account that was bought before numbers
+    // got a status callback gets it once the AI may answer real callers
+    // (lib/phone-agent.ts). Checked after the call is answered, so the caller
+    // never waits on it; once per number, not on every call.
+    if (TWILIO_MASTER.accountSid && get('AccountSid') === TWILIO_MASTER.accountSid) {
+      const backfill = () => agentP.then(a => answersRealCallers(a) ? ensureStatusCallbacks(db, companyId, [to]) : undefined, () => undefined)
+      try { after(backfill) } catch { void backfill() }
+    }
     const { data: integ } = await db.from('twilio_integrations').select('*').eq('company_id', companyId).maybeSingle()
     if (!integ) {
       return twiml('<Response><Say>This number is not configured.</Say><Hangup/></Response>')
@@ -189,9 +200,9 @@ export async function POST(req: NextRequest) {
     // the agent was currently in a DIFFERENT workspace: the call for THIS
     // workspace rang nobody and went straight to voicemail. Instead, ring every
     // member of this company (team_members) that holds a push token on any
-    // workspace.
-    const { data: members } = await db.from('team_members')
-      .select('user_id').eq('company_id', companyId).not('user_id', 'is', null)
+    // workspace. Staff only: a customer's call never rings a board visitor.
+    const members = (await loadStaffRows(db, companyId, 'user_id, role, status').catch(() => []))
+      .filter((m: any) => m.user_id && isStaffRow(m))
     // The workspace OWNER (companies.owner_id) is a full member of the company but
     // is NOT necessarily a row in team_members — so selecting mobiles by
     // team_members alone stopped ringing an owner's phone entirely (every call

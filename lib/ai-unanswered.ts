@@ -77,9 +77,14 @@ async function upsertGroup(db: any, companyId: string, g: { question: string; co
       .filter((x: any) => x.s >= 0.6).sort((a: any, b: any) => b.s - a.s)[0]?.r
   const now = new Date().toISOString()
   if (match) {
-    const examples = [...g.examples, ...(Array.isArray(match.examples) ? match.examples : [])].slice(0, 5)
+    const old: Example[] = Array.isArray(match.examples) ? match.examples : []
+    // The same conversation asking again (a lead follow-up after the Support
+    // run, another draft) isn't one more customer asking: no new count or example.
+    const convs = new Set(old.map(e => e?.conversation_id).filter(Boolean))
+    const fresh = g.examples.filter(e => !e.conversation_id || !convs.has(e.conversation_id))
+    const examples = [...fresh, ...old].slice(0, 5)
     await db.from('ai_unanswered').update({
-      count: (match.count || 0) + g.count, examples, last_seen_at: now,
+      count: (match.count || 0) + Math.max(0, g.count - (g.examples.length - fresh.length)), examples, last_seen_at: now,
       ...(g.suggested && !match.suggested_answer ? { suggested_answer: g.suggested } : {}),
     }).eq('id', match.id)
   } else {

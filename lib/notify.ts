@@ -1,4 +1,5 @@
 import { internalHeaders } from '@/lib/internal-call'
+import { staffUserIds } from '@/lib/company-access'
 import { createClient } from '@supabase/supabase-js'
 
 function admin() {
@@ -10,17 +11,11 @@ function admin() {
 }
 
 // Resolve the user ids who should receive a company's activity notifications:
-// the owner plus all team members. Optionally exclude one user (e.g. the actor).
+// the owner plus the staff. Never a board visitor: their bell is on the public
+// board, and these carry customers' messages, orders and bookings. Nor a
+// removed member. Optionally exclude one user (e.g. the actor).
 async function companyRecipients(db: any, companyId: string, excludeUserId?: string): Promise<string[]> {
-  const ids = new Set<string>()
-  try {
-    const { data: co } = await db.from('companies').select('owner_id').eq('id', companyId).maybeSingle()
-    if (co?.owner_id) ids.add(co.owner_id)
-  } catch {}
-  try {
-    const { data: tm } = await db.from('team_members').select('user_id').eq('company_id', companyId)
-    ;(tm || []).forEach((r: any) => r.user_id && ids.add(r.user_id))
-  } catch {}
+  const ids = await staffUserIds(db, companyId)
   if (excludeUserId) ids.delete(excludeUserId)
   return Array.from(ids)
 }

@@ -1,4 +1,4 @@
-import { requireCompanyAccess } from '@/lib/company-access'
+import { requireCompanyAccess, staffUserIds } from '@/lib/company-access'
 import { internalHeaders } from '@/lib/internal-call'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
@@ -22,15 +22,20 @@ const admin = () => createClient(
  */
 export async function POST(req: NextRequest) {
   try {
-    const { companyId, conversationId, userIds, mentionedBy, preview, context } =
+    const { companyId, conversationId, userIds: asked, mentionedBy, preview, context } =
       await req.json()
 
-    if (!companyId || !Array.isArray(userIds) || userIds.length === 0) {
+    if (!companyId || !Array.isArray(asked) || asked.length === 0) {
       return NextResponse.json({ ok: true, sent: 0, skipped: 'nothing to send' })
     }
     const db = admin()
     // Workspace members only.
     if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+    // ...and only this workspace's staff and owner are told: never a board
+    // visitor, nor any other account id passed in.
+    const staff = await staffUserIds(db, companyId)
+    const userIds: string[] = Array.from(new Set(asked.filter((id: unknown) => typeof id === 'string' && staff.has(id))))
+    if (userIds.length === 0) return NextResponse.json({ ok: true, sent: 0, skipped: 'nobody on the team to tell' })
 
     // Resolve the mentioned users' email addresses and the company details.
     const { data: members } = await db

@@ -54,6 +54,8 @@ const dur = (ms: number) => {
   return `${(h / 24).toFixed(1)}d`
 }
 
+const PUBLIC_CHANNEL_IDS = PUBLIC_LINK_CHANNELS.map(c => c.id)
+
 const CHANNEL_LABEL: Record<string, string> = {
   sms: 'SMS', chat: 'Website chat', widget: 'Website chat', email: 'Email',
   messenger: 'Facebook Messenger', instagram: 'Instagram', whatsapp: 'WhatsApp',
@@ -71,9 +73,12 @@ export default function LinkReportsPage() {
   const [loading, setLoading] = useState(true)
   const [companyId, setCompanyId] = useState<string | null>(null)
   const [links, setLinks] = useState<Link[]>([])
-  // Reel / QR / bio links made before the period that were active in it — for
-  // the Social & QR tab only (see load()).
-  const [olderPublic, setOlderPublic] = useState<Link[]>([])
+  // Reel / QR / bio links that belong in the period but aren't in `links` (made
+  // in it but pushed out of the newest 1000, or made before it and active in
+  // it) — for the Social & QR tab only (see load()). periodStart: when the
+  // loaded period began.
+  const [extraPublic, setExtraPublic] = useState<Link[]>([])
+  const [periodStart, setPeriodStart] = useState<number | null>(null)
   const [clicks, setClicks] = useState<Click[]>([])
   const [conversions, setConversions] = useState<Conversion[]>([])
   const [contacts, setContacts] = useState<Record<string, any>>({})
@@ -133,7 +138,8 @@ export default function LinkReportsPage() {
     if (since) cq = cq.gte('clicked_at', since)
     let vq = (supabase as any).from('link_conversions').select('*').eq('company_id', cid)
     if (since) vq = vq.gte('converted_at', since)
-    const [{ data: ls }, { data: cs }, vs, co, tm, { data: outs }] = await Promise.all([
+    const start = since ? Date.parse(since) : null
+    const [{ data: ls }, { data: cs }, vs, co, tm, { data: outs }, publicLinks] = await Promise.all([
       lq.order('created_at', { ascending: false }).limit(1000),
       cq.order('clicked_at', { ascending: false }).limit(5000),
       // Conversions only exist once the V192 migration has been run.
@@ -142,28 +148,29 @@ export default function LinkReportsPage() {
       // no name/display_name columns — derive from email
       Promise.resolve((supabase as any).from('team_members').select('email').eq('company_id', cid)).catch(() => ({ data: [] })),
       (supabase as any).from('company_locations').select('id, label, suburb').eq('company_id', cid),
+      // This business's Reel / QR / bio links (see below). They're made one at
+      // a time in the Links Generator, so it's a short list; most recently
+      // clicked first in case it's ever a long one.
+      Promise.resolve(supabase.from('short_links').select('*').eq('company_id', cid).in('channel', PUBLIC_CHANNEL_IDS)
+        .order('last_clicked_at', { ascending: false, nullsFirst: false }).limit(2000))
+        .then(r => (r.data || []) as Link[]).catch(() => [] as Link[]),
     ])
     const linkRows: Link[] = ls || []
-    // A Reel, QR poster or link in bio is used for months, so the Social & QR
-    // tab also needs public links made before the period that had clicks or
-    // results in it. Looked up by that activity (not the newest old links), so
-    // a year-old poster is never crowded out by newer links.
-    let older: Link[] = []
-    if (since) {
-      const made = new Set(linkRows.map(l => l.id))
-      const activeIds = Array.from(new Set([...(cs || []), ...(vs?.data || [])].map((r: { link_id: string }) => r.link_id)))
-        .filter(id => id && !made.has(id))
-      const batches: string[][] = []
-      for (let i = 0; i < activeIds.length; i += 200) batches.push(activeIds.slice(i, i + 200))
-      const found = await Promise.all(batches.map(ids => Promise.resolve(supabase.from('short_links').select('*').eq('company_id', cid)
-        .in('id', ids).in('channel', PUBLIC_LINK_CHANNELS.map(c => c.id)).lt('created_at', since))
-        .then(r => (r.data || []) as Link[]).catch(() => [] as Link[])))
-      older = found.flat()
-    }
+    // A Reel, QR poster or link in bio is used for months, and a campaign (one
+    // link per recipient) can push it out of the newest 1000 links above, and
+    // its clicks out of the newest 5000. So the Social & QR tab takes public
+    // links from their own short list too: every one made in the period (for
+    // "All time", every one), and ones made before it that had clicks or
+    // results in it — so a year-old poster isn't crowded out either.
+    const made = new Set(linkRows.map(l => l.id))
+    const activeIds = new Set([...(cs || []), ...(vs?.data || [])].map((r: { link_id: string }) => r.link_id))
+    const madeInPeriod = (l: Link) => { const t = parseTs(l.created_at); return start == null || (!!t && t.getTime() >= start) }
+    const extra = publicLinks.filter(l => !made.has(l.id) && (madeInPeriod(l) || activeIds.has(l.id)))
     setLinks(linkRows)
     setClicks(cs || [])
     setConversions(vs?.data || [])
-    setOlderPublic(older)
+    setExtraPublic(extra)
+    setPeriodStart(start)
     const om: Record<string, string> = {}
     for (const o of (outs || [])) om[o.id] = o.label || o.suburb || 'Outlet'
     setOutlets(om)
@@ -339,17 +346,22 @@ export default function LinkReportsPage() {
   // ── Social & QR ───────────────────────────────────────────────────────────
   // Links made for a Reel, post, TikTok, video, poster or newsletter, grouped
   // by where they were posted and what they're called, with what each led to.
-  // Picked by activity: older links count when they had clicks or results in
-  // the period (and only that activity counts).
+  // Every public link made in the period, even one pushed out of the newest
+  // 1000; a link made before it counts when it had clicks or results in the
+  // period (and only that activity counts).
   const social = useMemo(() => {
-    const olderIds = new Set(olderPublic.map(l => l.id))
-    const pub = [...visible, ...olderPublic.filter(matchesFilters)].filter(l => isPublicChannel(l.channel))
+    const pub = [...visible, ...extraPublic.filter(matchesFilters)].filter(l => isPublicChannel(l.channel))
     const ids = new Set(pub.map(l => l.id))
     const pClicks = clicks.filter(c => ids.has(c.link_id))
     const pConv = conversions.filter(v => ids.has(v.link_id))
     // Clicks counted before per-click rows existed only live on the counter
-    // (a lifetime total, so never for an older link).
-    const counterOnly = (ls: Link[]) => ls.reduce((s, l) => s + ((clicksByLink[l.id]?.length || olderIds.has(l.id)) ? 0 : (l.clicks || 0)), 0)
+    // (a lifetime total, so never for a link made before the period).
+    const madeBefore = (l: Link) => {
+      if (periodStart == null) return false
+      const made = parseTs(l.created_at)
+      return !made || made.getTime() < periodStart
+    }
+    const counterOnly = (ls: Link[]) => ls.reduce((s, l) => s + ((clicksByLink[l.id]?.length || madeBefore(l)) ? 0 : (l.clicks || 0)), 0)
     const funnelOf = (ls: Link[]): Funnel => {
       const gid = new Set(ls.map(l => l.id))
       const f = linkFunnel(pClicks.filter(c => gid.has(c.link_id)), pConv.filter(v => gid.has(v.link_id)))
@@ -367,7 +379,7 @@ export default function LinkReportsPage() {
     const src: Record<string, number> = {}
     for (const c of pClicks) { const s = clickSource(c.referrer, c.user_agent); src[s] = (src[s] || 0) + 1 }
     return { count: pub.length, rows, total: funnelOf(pub), sources: Object.entries(src).sort((a, b) => b[1] - a[1]), clickRows: pClicks.length }
-  }, [visible, olderPublic, clicks, conversions, clicksByLink])
+  }, [visible, extraPublic, periodStart, clicks, conversions, clicksByLink])
 
   const card: React.CSSProperties = { border: '1px solid var(--border)', borderRadius: 14, background: '#fff', padding: 16 }
   const statNum: React.CSSProperties = { fontSize: 24, fontWeight: 800, color: 'var(--ink)', margin: '4px 0 0' }
