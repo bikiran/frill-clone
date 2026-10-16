@@ -11,6 +11,7 @@ import WaitlistAddModal from '@/components/WaitlistAddModal'
 import Pagination, { usePagination } from '@/components/Pagination'
 import { confirmDialog } from '@/components/ConfirmDialog'
 import { waitlistItemKey } from '@/lib/waitlist-keys'
+import { WAITLIST_SEEN_KEY, resolveNewSince, collectNewIds, isTaggedNew, countNew, sortNewFirst } from '@/lib/waitlist-new'
 import { BellIcon, GearIcon, PlusIcon, ChatIcon, TagIcon, XIcon, EditIcon, ExternalIcon, ChevronDownIcon } from '@/components/booking/icons'
 
 // Back-in-stock waitlists. Customers who asked for something that's out of
@@ -51,14 +52,29 @@ export default function WaitlistsPage() {
   const [settings, setSettings] = useState<any>({ auto_notify: true, template: DEFAULT_TEMPLATE, timezone: 'Australia/Melbourne' })
   const [loading, setLoading] = useState(true)
   const [setupMsg, setSetupMsg] = useState('')
-  const [tab, setTab] = useState<'waiting' | 'notified' | 'all'>('waiting')
+  const [tab, setTab] = useState<'waiting' | 'notified' | 'all' | 'new'>('waiting')
   const [search, setSearch] = useState('')
   const [open, setOpen] = useState<Record<string, boolean>>({})
   const [editing, setEditing] = useState<string | null>(null)
 
-  // Opening Waitlists clears the side-menu "new sign-ups" badge.
+  // "New" tags: sign-ups since the previous visit, collected as entries load
+  // and kept for this whole visit (notifying or editing doesn't clear them).
+  const [newSince, setNewSince] = useState<string | null>(null)
+  const [firstVisit, setFirstVisit] = useState(false)
+  const [newIds, setNewIds] = useState<ReadonlySet<string>>(() => new Set())
+  const newSinceRef = useRef<string | null>(null)
+
+  // Opening Waitlists clears the side-menu "new sign-ups" badge. The previous
+  // visit is read first — it's what this visit's "New" tags are judged from.
   useEffect(() => {
-    try { localStorage.setItem('colvy-waitlist-seen-at', new Date().toISOString()); window.dispatchEvent(new Event('waitlist-seen')) } catch {}
+    if (!newSinceRef.current) {
+      let prev: string | null = null
+      try { prev = localStorage.getItem(WAITLIST_SEEN_KEY) } catch {}
+      const r = resolveNewSince(prev)
+      newSinceRef.current = r.since
+      setNewSince(r.since); setFirstVisit(r.firstVisit)
+    }
+    try { localStorage.setItem(WAITLIST_SEEN_KEY, new Date().toISOString()); window.dispatchEvent(new Event('waitlist-seen')) } catch {}
   }, [])
   const [busy, setBusy] = useState('')
   const [toast, setToast] = useState('')
@@ -90,6 +106,8 @@ export default function WaitlistsPage() {
       for (const k in shown) if (shown[k]?.approx && known[k] && !known[k].approx) shown[k] = known[k]
       setStock(shown)
       setEntries(d.entries || [])
+      // Tag from the server's list (not the cached one) so the count matches the badge.
+      setNewIds(prev => collectNewIds(prev, d.entries || [], newSinceRef.current))
       if (d.settings) setSettings(d.settings)
       if (d.businessName) setBusinessName(d.businessName)
       setLoading(false)
@@ -145,7 +163,7 @@ export default function WaitlistsPage() {
     const q = search.trim().toLowerCase()
     const map = new Map<string, any>()
     for (const e of entries) {
-      const inTab = tab === 'all' || (tab === 'waiting' ? OPEN.includes(e.status) : e.status === 'notified')
+      const inTab = tab === 'all' || (tab === 'new' ? isTaggedNew(e, newIds) : tab === 'waiting' ? OPEN.includes(e.status) : e.status === 'notified')
       if (!inTab) continue
       if (q && ![e.item_name, e.customer_name, e.phone, e.email].some(v => String(v || '').toLowerCase().includes(q))) continue
       const k = groupKey(e)
@@ -159,6 +177,7 @@ export default function WaitlistsPage() {
     list.forEach(g => { g.url = webUrl(g.url) || webUrl(g.productId ? stock[String(g.productId)]?.permalink : null) })
     list.forEach(g => {
       g.waiting = g.entries.filter(isWaiting).length
+      g.newCount = g.entries.filter((e: any) => isTaggedNew(e, newIds)).length
       // Current price from the store, and what the waitlist is worth if each
       // person waiting buys one once it's back.
       const p = g.productId ? stock[String(g.productId)] : null
@@ -167,8 +186,9 @@ export default function WaitlistsPage() {
       g.approx = !!p?.approx
       g.potential = g.price != null ? g.price * g.waiting : null
     })
-    return list.sort((a, b) => b.waiting - a.waiting || b.entries.length - a.entries.length)
-  }, [entries, tab, search, stock])
+    // Items with new customers float to the top of the usual order.
+    return sortNewFirst(list, (a, b) => b.waiting - a.waiting || b.entries.length - a.entries.length)
+  }, [entries, tab, search, stock, newIds])
 
   const stats = useMemo(() => {
     const monthAgo = Date.now() - 30 * 86400000
@@ -185,8 +205,13 @@ export default function WaitlistsPage() {
       items: new Set(waiting.map(groupKey)).size,
       queued: entries.filter(e => e.status === 'queued').length,
       notified30: entries.filter(e => e.status === 'notified' && e.notified_at && new Date(e.notified_at).getTime() > monthAgo).length,
+      newWaiting: waiting.filter(e => isTaggedNew(e, newIds)).length,
+      newTotal: countNew(entries, newIds),
     }
-  }, [entries, stock])
+  }, [entries, stock, newIds])
+
+  // The New filter only shows while there's something new in it.
+  useEffect(() => { if (tab === 'new' && !stats.newTotal) setTab('waiting') }, [tab, stats.newTotal])
 
   // One card per item; page through them once the list gets long.
   const pg = usePagination(groups, { key: 'waitlists', defaultSize: 25, resetOn: [tab, search] })
@@ -291,7 +316,8 @@ export default function WaitlistsPage() {
       {/* Stat tiles — a swipeable row on phones */}
       <div className="wl-stats" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 12, marginBottom: 18 }}>
         {[
-          { label: 'Customers waiting', value: String(stats.waiting), c: '#2563eb', bg: '#eff6ff' },
+          { label: 'Customers waiting', value: String(stats.waiting), c: '#2563eb', bg: '#eff6ff',
+            ...(stats.newWaiting ? { sub: `+${stats.newWaiting} new ${firstVisit ? 'in the last 2 days' : 'since your last visit'}`, subC: NEW_PILL.c } : {}) },
           { label: 'Items with a waitlist', value: String(stats.items), c: '#7c3aed', bg: '#f5f3ff' },
           { label: 'Potential revenue', value: money(stats.potential), c: '#059669', bg: '#f0fdf4',
             sub: stats.unpriced ? `${stats.unpriced} without a price` : 'If everyone waiting buys one',
@@ -304,7 +330,7 @@ export default function WaitlistsPage() {
             <div style={{ minWidth: 38, height: 38, padding: s.value.length > 3 ? '0 10px' : 0, borderRadius: 10, background: s.bg, color: s.c, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 15, flexShrink: 0, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{s.value}</div>
             <div style={{ minWidth: 0 }}>
               <div style={{ fontSize: 13, color: 'var(--slate)', fontWeight: 600 }}>{s.label}</div>
-              {s.sub && <div style={{ fontSize: 11.5, color: 'var(--slate)', marginTop: 1, opacity: 0.85 }}>{s.sub}</div>}
+              {s.sub && <div style={{ fontSize: 11.5, color: s.subC || 'var(--slate)', fontWeight: s.subC ? 700 : undefined, marginTop: 1, opacity: s.subC ? 1 : 0.85 }}>{s.sub}</div>}
             </div>
           </div>
         ))}
@@ -313,8 +339,8 @@ export default function WaitlistsPage() {
       {/* Tabs + search */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
         <div style={{ display: 'inline-flex', background: 'var(--canvas)', border: '1px solid var(--border)', borderRadius: 10, padding: 3 }}>
-          {(['waiting', 'notified', 'all'] as const).map(t => (
-            <button key={t} onClick={() => setTab(t)} style={{ padding: '7px 14px', borderRadius: 8, border: 'none', background: tab === t ? '#fff' : 'transparent', boxShadow: tab === t ? '0 1px 3px rgba(0,0,0,0.08)' : 'none', color: tab === t ? 'var(--ink)' : 'var(--slate)', fontSize: 13, fontWeight: 700, cursor: 'pointer', textTransform: 'capitalize' }}>{t}</button>
+          {(['waiting', 'notified', 'all', ...(stats.newTotal ? ['new' as const] : [])] as const).map(t => (
+            <button key={t} onClick={() => setTab(t)} style={{ padding: '7px 14px', borderRadius: 8, border: 'none', background: tab === t ? '#fff' : 'transparent', boxShadow: tab === t ? '0 1px 3px rgba(0,0,0,0.08)' : 'none', color: tab === t ? 'var(--ink)' : t === 'new' ? NEW_PILL.c : 'var(--slate)', fontSize: 13, fontWeight: 700, cursor: 'pointer', textTransform: 'capitalize' }}>{t === 'new' ? `New (${stats.newTotal})` : t}</button>
           ))}
         </div>
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search item or customer…" style={{ ...inp, maxWidth: 300 }} />
@@ -353,7 +379,7 @@ export default function WaitlistsPage() {
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4, flexWrap: 'wrap' }}>
                         <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 999, background: badge.bg, color: badge.c }}>{badge.label}</span>
                         <span style={{ fontSize: 12.5, color: 'var(--slate)' }}>
-                          {g.waiting} waiting · {g.entries.length} total
+                          {g.waiting} waiting{g.newCount > 0 && <> · <span style={{ color: NEW_PILL.c, fontWeight: 700 }}>{g.newCount} new</span></>} · {g.entries.length} total
                           {g.potential != null && g.waiting > 0 && <> · <span style={{ color: '#059669', fontWeight: 700 }}>{money(g.potential)} potential</span></>}
                         </span>
                       </div>
@@ -386,8 +412,9 @@ export default function WaitlistsPage() {
                       return (
                         <div key={e.id} className="wl-row" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', borderBottom: '1px solid var(--border)', flexWrap: 'wrap', ['--i' as any]: Math.min(i, 12) }}>
                           <div style={{ flex: '1 1 200px', minWidth: 0 }}>
-                            <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--ink)' }}>
+                            <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--ink)', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                               {e.customer_name || 'Customer'}
+                              {isTaggedNew(e, newIds) && <NewPill since={newSince} firstVisit={firstVisit} />}
                             </div>
                             <div style={{ fontSize: 12, color: 'var(--slate)' }}>{[e.phone, e.email].filter(Boolean).join(' · ')}</div>
                             {e.note && <div style={{ fontSize: 12, color: 'var(--slate)', marginTop: 2, fontStyle: 'italic' }}>“{e.note}”</div>}
@@ -437,6 +464,18 @@ export default function WaitlistsPage() {
 
       {showAdd && <WaitlistAddModal companyId={companyId} onClose={() => setShowAdd(false)} onAdded={async (dup) => { setShowAdd(false); flash(dup ? 'Already on that waitlist.' : 'Added to the waitlist.'); await load(companyId) }} />}
     </div>
+  )
+}
+
+// ── "New" tag ──────────────────────────────────────────────────────────────────
+const NEW_PILL = { bg: '#fff1ee', c: '#d6402c' }
+function NewPill({ since, firstVisit }: { since: string | null; firstVisit: boolean }) {
+  const title = firstVisit || !since ? 'Joined in the last 2 days' : `Joined since your last visit (${new Date(since).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })})`
+  return (
+    <span title={title} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 999, background: NEW_PILL.bg, color: NEW_PILL.c, whiteSpace: 'nowrap', flexShrink: 0 }}>
+      <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.4 7.6L22 12l-7.6 2.4L12 22l-2.4-7.6L2 12l7.6-2.4z" /></svg>
+      New
+    </span>
   )
 }
 
