@@ -7,10 +7,13 @@
 
 import Anthropic from '@anthropic-ai/sdk'
 import { modelFor, trackAi } from '@/lib/ai-models'
+import { countRules } from '@/lib/form-logic'
+import { isExclusiveChoice, otherChoiceLabel } from '@/lib/form-choice-options'
 
 
 // Question types the AI may use. Picture choice, payment, scheduler and
 // video/audio need uploads or setup a person has to do, so they're left out.
+// components/FormAiChat.tsx keeps a copy (AI_TYPES); change both together.
 export const AI_QUESTION_TYPES = [
   'contact_info', 'email', 'phone', 'address', 'website',
   'multiple_choice', 'dropdown', 'yes_no', 'legal', 'checkbox',
@@ -31,6 +34,8 @@ export type AiFormQuestion = {
   multi_select: boolean
   matrix_rows: string[]
   matrix_cols: string[]
+  other_option: boolean      // the question has an "Other" option with a text box
+  exclusive_options: string[] // multi-select options that can't be combined with others ("None of these")
 }
 
 export type AiFormDraft = {
@@ -68,8 +73,10 @@ const SCHEMA = {
           multi_select: { type: 'boolean' },
           matrix_rows: strArr,
           matrix_cols: strArr,
+          other_option: { type: 'boolean' },
+          exclusive_options: strArr,
         },
-        required: ['id', 'type', 'title', 'description', 'required', 'options', 'multi_select', 'matrix_rows', 'matrix_cols'],
+        required: ['id', 'type', 'title', 'description', 'required', 'options', 'multi_select', 'matrix_rows', 'matrix_cols', 'other_option', 'exclusive_options'],
         additionalProperties: false,
       },
     },
@@ -89,10 +96,14 @@ Writing the form:
 - Write for the business's customers: warm, plain, short. Australian/British spelling unless the business is clearly elsewhere.
 - Questions are short and specific. Use description only when it genuinely helps (a hint or an example); otherwise leave it empty.
 - Keep forms as short as the goal allows; 4 to 10 questions is typical. Mark only what's truly needed as required.
-- Pick the best type: contact_info (name, email and phone in one step), email, phone, address, website, multiple_choice (options; multi_select true to allow several), dropdown (long option lists), yes_no, checkbox (a single tick, e.g. opt in to updates), legal (accept terms; put the terms text in description), nps (0-10 likelihood to recommend), opinion_scale (1-10), rating (stars), ranking (options to order), matrix (matrix_rows and matrix_cols), short_text, long_text, statement (information only, no answer), number, date, signature, file_upload.
-- Fill options only for multiple_choice, dropdown and ranking; matrix_rows/matrix_cols only for matrix. Use empty arrays and multi_select false everywhere else.
+- Pick the best type: contact_info (name, email and phone in one step), email, phone, address, website, multiple_choice (options; multi_select true to allow several), dropdown (long option lists), yes_no, checkbox (tick boxes where several can be picked; put each tick box in options, e.g. a single option "Yes, keep me updated" for an opt-in), legal (accept terms; put the terms text in description), nps (0-10 likelihood to recommend), opinion_scale (1-10), rating (stars), ranking (options to order), matrix (matrix_rows and matrix_cols), short_text, long_text, statement (information only, no answer), number, date, signature, file_upload.
+- Fill options only for multiple_choice, dropdown, checkbox and ranking; matrix_rows/matrix_cols only for matrix. Use empty arrays and multi_select false everywhere else.
+- When a multiple_choice, dropdown or checkbox question needs a catch-all answer, make the last option exactly "Other" and set other_option true: Colvy shows a "Type your answer" box when it's picked, so don't add a separate question asking them to explain. Otherwise other_option is false.
+- On questions where several answers can be picked (multiple_choice with multi_select true, or checkbox), an answer such as "No", "None of these", "Nothing" or "Not sure" can't sensibly be ticked together with the others: list those exact option labels in exclusive_options, and Colvy clears the other ticks when one is picked. Otherwise exclusive_options is empty. Keep other_option and exclusive_options as they are on existing questions unless asked to change them.
 - Usually start with what the form is about and put contact details near the end, unless contact details are the point of the form.
 - Keep the id of every existing question you keep (even if you reword it). Use "" for new questions. Drop a question by leaving it out.
+- Some questions have logic the owner set up (has_logic true). Keep those questions, their ids, their order relative to each other and the exact wording of their options unless the person asks to change them, because the logic depends on them.
+- Questions of a type you can't create (picture_choice, payment, scheduler, video_audio) must be returned with their id and a type from your list; Colvy keeps their real type.
 - welcome_message is one short inviting sentence. thank_you_message is one or two short sentences that say what happens next.
 
 Your reply is shown in the chat: one to three short sentences, no lists and no markdown, saying what you did or answering the question. Never use emojis.`
@@ -119,6 +130,11 @@ export async function chatForm(opts: {
     questions: (opts.current.questions || []).slice(0, 60).map((q: any) => ({
       id: q.id, type: q.type, title: q.title, description: q.description || '', required: !!q.required,
       options: q.options || [], multi_select: !!q.multiSelect, matrix_rows: q.matrixRows || [], matrix_cols: q.matrixCols || [],
+      other_option: ['multiple_choice', 'dropdown', 'checkbox'].includes(q.type) && !!otherChoiceLabel(q),
+      exclusive_options: q.type === 'checkbox' || (q.type === 'multiple_choice' && q.multiSelect)
+        ? (Array.isArray(q.options) ? q.options : []).filter((o: any) => typeof o === 'string' && isExclusiveChoice(q, o))
+        : [],
+      has_logic: countRules(q) > 0,
     })),
   }
   const context = [

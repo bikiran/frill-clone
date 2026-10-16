@@ -3,6 +3,8 @@
 import { authFetch } from '@/lib/auth-fetch'
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import { readFormLogic, validateLogic } from '@/lib/form-logic'
+import { isExclusiveLabel, isOtherLabel } from '@/lib/form-choice-options'
 
 // Colvy AI chat for the form builder: describe a form, it builds it; keep
 // chatting to change it. Every change can be undone from the chat.
@@ -20,6 +22,123 @@ const NEW_FORM_IDEAS = ['Customer feedback survey', 'Booking enquiry form', 'Job
 const EDIT_IDEAS = ['Make it shorter', 'Add a star rating question', 'Make the tone friendlier', 'Ask for their phone number too']
 
 const uid = () => Math.random().toString(36).slice(2)
+const newQuestionId = () => (globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : `q_${Date.now()}_${uid().slice(0, 6)}`)
+
+// The question types Colvy AI can write. A copy of AI_QUESTION_TYPES in
+// lib/ai-form.ts (keep the two in sync); not imported, because that module pulls
+// the Anthropic SDK into this client component.
+const AI_TYPES = [
+  'contact_info', 'email', 'phone', 'address', 'website',
+  'multiple_choice', 'dropdown', 'yes_no', 'legal', 'checkbox',
+  'nps', 'opinion_scale', 'rating', 'ranking', 'matrix',
+  'long_text', 'short_text', 'statement',
+  'number', 'date', 'signature', 'file_upload',
+]
+// Types that keep a list of options.
+const LIST_TYPES = ['multiple_choice', 'dropdown', 'checkbox', 'picture_choice', 'ranking']
+// Types that can have the built-in "Other" text box.
+const OTHER_TYPES = ['multiple_choice', 'dropdown', 'checkbox']
+
+const strList = (v: unknown): string[] => (Array.isArray(v) ? v : []).filter((x): x is string => typeof x === 'string' && x.trim() !== '')
+const uniq = (a: string[]) => Array.from(new Set(a))
+
+/**
+ * Turn the AI's draft into builder questions. Everything the AI doesn't know
+ * about stays as it was on the existing question: logic (display rules, hidden
+ * choices, branching, calculations), media, picture choices, payment and
+ * scheduler setup, and the "Other" / exclusive option settings. The form's
+ * theme (welcome screen settings and logic variables) isn't part of the
+ * snapshot at all, so the AI can never touch it.
+ */
+export function aiDraftToSnapshot(d: AiDraft, base: FormSnapshot): FormSnapshot {
+  const byId = new Map<string, any>((base.questions || []).filter((q: any) => q && q.id).map((q: any) => [q.id, q]))
+  const used = new Set<string>()
+  const questions = (d.questions || []).map((q: any) => {
+    // An id the AI repeats is a new question the second time, never a copy of the first one's logic.
+    const prev = q.id && !used.has(q.id) ? byId.get(q.id) : null
+    const id = prev ? prev.id : newQuestionId()
+    used.add(id)
+    const title = String(q.title ?? '').trim() || String(prev?.title ?? '')
+    const description = typeof q.description === 'string' ? q.description : String(prev?.description ?? '')
+
+    // A type the AI can't write (picture choice, payment, scheduler, video/audio):
+    // keep the question exactly as it is apart from its wording.
+    if (prev && !AI_TYPES.includes(prev.type)) {
+      return { ...prev, title, description, required: !!q.required }
+    }
+
+    const type = q.type
+    const listy = LIST_TYPES.includes(type)
+    let options: string[] | undefined
+    if (listy) {
+      const fromAi = strList(q.options)
+      const fromPrev = prev && LIST_TYPES.includes(prev.type) ? strList(prev.options) : []
+      options = fromAi.length ? fromAi : fromPrev.length ? fromPrev : ['Option 1', 'Option 2']
+    }
+    const multiSelect = type === 'multiple_choice' ? !!q.multi_select : undefined
+    const out: any = {
+      ...(prev || {}),
+      id,
+      type,
+      title,
+      description,
+      required: !!q.required,
+      options,
+      multiSelect,
+      matrixRows: type === 'matrix' ? (strList(q.matrix_rows).length ? strList(q.matrix_rows) : prev?.matrixRows) : undefined,
+      matrixCols: type === 'matrix' ? (strList(q.matrix_cols).length ? strList(q.matrix_cols) : prev?.matrixCols) : undefined,
+    }
+
+    // Built-in "Other" text box (lib/form-choice-options): an option labelled
+    // Other turns it on; the AI can also ask for one with other_option.
+    if (options && OTHER_TYPES.includes(type)) {
+      if (q.other_option === true && !options.some(isOtherLabel)) options.push('Other')
+      const hasOther = options.some(isOtherLabel)
+      if (!hasOther) out.otherOption = undefined
+      else if (q.other_option !== true && prev?.otherOption === false) out.otherOption = false // the owner switched it off
+      else out.otherOption = true
+    } else if (prev && 'otherOption' in prev) {
+      out.otherOption = undefined
+    }
+
+    // Exclusive options ("No", "None of these"…) on a multi-select: picking one
+    // clears the rest. Labels the AI marks, labels the owner marked, and labels
+    // that read as exclusive, minus the ones the owner switched off.
+    const multi = type === 'checkbox' || (type === 'multiple_choice' && multiSelect)
+    if (options && multi) {
+      const fromAi = strList(q.exclusive_options).filter(l => options!.includes(l))
+      const switchedOff = strList(prev?.nonExclusiveChoices).filter(l => options!.includes(l) && !fromAi.includes(l))
+      const exclusive = uniq([
+        ...fromAi,
+        ...strList(prev?.exclusiveChoices).filter(l => options!.includes(l)),
+        ...options.filter(l => isExclusiveLabel(l)),
+      ]).filter(l => !switchedOff.includes(l))
+      out.exclusiveChoices = exclusive.length ? exclusive : undefined
+      out.nonExclusiveChoices = switchedOff.length ? switchedOff : undefined
+    }
+    return out
+  })
+  return { title: d.title, welcomeMessage: d.welcome_message, thankYouMessage: d.thank_you_message, questions }
+}
+
+/** How many logic errors the questions have (the chat has no variables; both sides of a comparison lack them equally). */
+export function logicErrorCount(questions: any[]): number {
+  try {
+    return validateLogic(readFormLogic({ questions })).filter(i => i.severity === 'error').length
+  } catch {
+    return 0
+  }
+}
+
+/**
+ * Esc closes Colvy AI, unless something above it already handled the key
+ * (a confirm dialog or the Logic window calls preventDefault).
+ */
+export function closesOnKey(e: { key: string; defaultPrevented: boolean }): boolean {
+  return e.key === 'Escape' && !e.defaultPrevented
+}
+
+export const LOGIC_ATTENTION_NOTE = 'Some logic rules need attention after this change. Open Logic to review them.'
 
 function Spark({ size = 16 }: { size?: number }) {
   return (
@@ -55,7 +174,7 @@ export default function FormAiChat({ open, onClose, formId, current, apply }: {
   useEffect(() => { if (open) setTimeout(() => inputRef.current?.focus(), 220) }, [open])
   useEffect(() => {
     if (!open) return
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    const onKey = (e: KeyboardEvent) => { if (closesOnKey(e)) onClose() }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [open, onClose])
@@ -70,27 +189,6 @@ export default function FormAiChat({ open, onClose, formId, current, apply }: {
     if (!el) return
     el.style.height = 'auto'
     el.style.height = Math.min(el.scrollHeight, 140) + 'px'
-  }
-
-  const toSnapshot = (d: AiDraft, base: FormSnapshot): FormSnapshot => {
-    const byId = new Map(base.questions.map((q: any) => [q.id, q]))
-    const questions = d.questions.map((q: any) => {
-      const prev = q.id ? byId.get(q.id) : null
-      const listy = ['multiple_choice', 'dropdown', 'ranking'].includes(q.type)
-      return {
-        ...(prev || {}),
-        id: prev ? prev.id : crypto.randomUUID(),
-        type: q.type,
-        title: q.title,
-        description: q.description || '',
-        required: !!q.required,
-        options: listy ? (q.options?.length ? q.options : ['Option 1', 'Option 2']) : undefined,
-        multiSelect: q.type === 'multiple_choice' ? !!q.multi_select : undefined,
-        matrixRows: q.type === 'matrix' ? q.matrix_rows : undefined,
-        matrixCols: q.type === 'matrix' ? q.matrix_cols : undefined,
-      }
-    })
-    return { title: d.title, welcomeMessage: d.welcome_message, thankYouMessage: d.thank_you_message, questions }
   }
 
   const send = async (raw?: string) => {
@@ -115,13 +213,15 @@ export default function FormAiChat({ open, onClose, formId, current, apply }: {
       const d = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(d.error || 'Colvy AI couldn’t reply. Please try again.')
       let change: Change | undefined
+      let reply = d.reply || 'Done.'
       if (d.form) {
         const before = currentRef.current
-        const after = toSnapshot(d.form, before)
+        const after = aiDraftToSnapshot(d.form, before)
         apply(after)
         change = { before, after, titles: after.questions.map((q: any) => q.title), undone: false }
+        if (logicErrorCount(after.questions) > logicErrorCount(before.questions)) reply += `\n\n${LOGIC_ATTENTION_NOTE}`
       }
-      setMsgs(m => [...m, { id: uid(), role: 'assistant', text: d.reply || 'Done.', change }])
+      setMsgs(m => [...m, { id: uid(), role: 'assistant', text: reply, change }])
     } catch (e: any) {
       setMsgs(m => [...m, { id: uid(), role: 'assistant', text: e?.message || 'Something went wrong. Please try again.', error: true }])
     } finally {

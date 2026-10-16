@@ -1,631 +1,399 @@
 'use client'
 
-import { authFetch } from '@/lib/auth-fetch'
-import VoicePlayer from '@/components/VoicePlayer'
-import { useState, useEffect } from 'react'
+// Form Results: full-width, Typeform-style Summary / Responses / Paths.
+// Data loading, state, filters and tabs live here; everything else is in
+// components/form-results (pure helpers in aggregate.ts, reads in data.ts).
+// All reads are members-only (RLS); deletes go through /api/forms/responses.
+
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams } from 'next/navigation'
-import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
-import * as XLSX from 'xlsx'
-import jsPDF from 'jspdf'
+import { supabase } from '@/lib/supabase'
+import { authFetch } from '@/lib/auth-fetch'
 import { confirmDialog } from '@/components/ConfirmDialog'
+import { readFormLogic, hasAnyLogic } from '@/lib/form-logic'
+import {
+  applyFilters, averageDuration, buildVerifyContext, completionRate, dateBounds, dateFilterOf, prep,
+  sideEffectIds, summariseRows, textOf, variableAverages, EMPTY_VERIFY, RESPONSE_CAP,
+  type ResultRow, type ResultsFilter, type StatsResult, type VerifyState,
+} from '@/components/form-results/aggregate'
+import { loadResponses, loadVerification, fetchStats, deleteInChunks } from '@/components/form-results/data'
+import { exportCsv, exportExcel, exportPdf } from '@/components/form-results/exporters'
+import { ResultsStyles } from '@/components/form-results/styles'
+import { ResultsHeader, type ResultsTab } from '@/components/form-results/ResultsHeader'
+import { KpiStrip } from '@/components/form-results/KpiStrip'
+import { FilterBar, type ExportFormat } from '@/components/form-results/FilterBar'
+import { QuestionCard } from '@/components/form-results/QuestionCard'
+import { ResponsesTable } from '@/components/form-results/ResponsesTable'
+import { ResponseDrawer } from '@/components/form-results/ResponseDrawer'
+import { PathsPanel } from '@/components/form-results/PathsPanel'
+import { Icon } from '@/components/form-results/icons'
+
+type LoadState = { state: 'loading' | 'more' | 'done' | 'error'; capped: boolean; total: number | null; error?: string; gen: number }
+
+const TABS: ResultsTab[] = ['summary', 'responses', 'paths']
+const isoRange = (f: { from?: string; to?: string } | null) => {
+  const b = dateBounds(f)
+  return {
+    ...(Number.isFinite(b.from) ? { from: new Date(b.from).toISOString() } : {}),
+    ...(Number.isFinite(b.to) ? { to: new Date(b.to).toISOString() } : {}),
+  }
+}
 
 export default function FormResults() {
   const params = useParams()
-  const formId = params.id as string
+  const formId = String(params.id || '')
 
   const [form, setForm] = useState<any>(null)
-  const [responses, setResponses] = useState<any[]>([])
-  const [company, setCompany] = useState<any>(null)
-  const [loading, setLoading] = useState(true)
-  const [view, setView] = useState<'summary' | 'individual'>('summary')
-  const [selectedResponse, setSelectedResponse] = useState<any>(null)
-  const [exporting, setExporting] = useState<'excel' | 'pdf' | null>(null)
-  const [selectedResponses, setSelectedResponses] = useState<Set<string>>(new Set())
-  const [bulkDeleting, setBulkDeleting] = useState(false)
-  const [filters, setFilters] = useState<Record<string, any>>({})
-  const [showFilterPanel, setShowFilterPanel] = useState(false)
+  const [formState, setFormState] = useState<'loading' | 'ready' | 'missing'>('loading')
+  const [accent, setAccent] = useState<string | null>(null)
+  const [rows, setRows] = useState<ResultRow[]>([])
+  const [load, setLoad] = useState<LoadState>({ state: 'loading', capped: false, total: null, gen: 0 })
+  const [cappedEver, setCappedEver] = useState(false)
+  const [serverRange, setServerRange] = useState<{ from?: string; to?: string }>({})
+  const [retry, setRetry] = useState(0)
+  const [filters, setFilters] = useState<ResultsFilter[]>([])
+  const [tab, setTab] = useState<ResultsTab>('summary')
+  const [selected, setSelected] = useState<Set<string>>(() => new Set())
+  const [openId, setOpenId] = useState<string | null>(null)
+  const [sortDesc, setSortDesc] = useState(true)
+  const [stats, setStats] = useState<StatsResult | null>(null)
+  const [verifyState, setVerifyState] = useState<VerifyState>(EMPTY_VERIFY)
+  const [verifyRetry, setVerifyRetry] = useState(0)
+  const [deleting, setDeleting] = useState<string | null>(null)
+  const [exportBusy, setExportBusy] = useState<ExportFormat | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
+  const [wide, setWide] = useState(false)
+  const rootRef = useRef<HTMLDivElement | null>(null)
+  const loadGen = useRef(0)
 
+  // ── Tab in ?tab= (no useSearchParams, so no Suspense boundary) ──
   useEffect(() => {
+    try {
+      const t = new URLSearchParams(window.location.search).get('tab') as ResultsTab | null
+      if (t && TABS.includes(t)) setTab(t)
+    } catch {}
+  }, [])
+  const changeTab = useCallback((t: ResultsTab) => {
+    setTab(t)
+    try {
+      const url = new URL(window.location.href)
+      if (t === 'summary') url.searchParams.delete('tab'); else url.searchParams.set('tab', t)
+      window.history.replaceState(window.history.state, '', url.toString())
+    } catch {}
+  }, [])
+
+  // ── Width: two-column Paths and double-width cards from 1100px of content ──
+  useEffect(() => {
+    const el = rootRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(entries => { for (const e of entries) setWide(e.contentRect.width >= 1100) })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [formState])
+
+  // ── Form (members-only read) and the company's accent for the PDF ──
+  useEffect(() => {
+    let live = true
     ;(async () => {
-      const [formRes, responsesRes, companyRes] = await Promise.all([
-        (supabase as any).from('forms').select('*').eq('id', formId).maybeSingle(),
-        (supabase as any).from('form_responses').select('*').eq('form_id', formId).order('created_at', { ascending: false }),
-        // Load company data for branding
-        (async () => {
-          const { data: { session } } = await supabase.auth.getSession()
-          if (!session?.user) return null
-          const { data } = await (supabase as any).from('companies').select('*').eq('owner_id', session.user.id).maybeSingle()
-          return data
-        })()
-      ])
-      setForm(formRes.data)
-      setResponses(responsesRes.data || [])
-      setCompany((await companyRes) || null)
-      setLoading(false)
-    })()
+      const { data } = await (supabase as any).from('forms').select('*').eq('id', formId).maybeSingle()
+      if (!live) return
+      if (!data) { setFormState('missing'); return }
+      setForm(data); setFormState('ready')
+      if (data.company_id) {
+        const { data: co } = await (supabase as any).from('companies').select('accent_color').eq('id', data.company_id).maybeSingle()
+        if (live && co?.accent_color) setAccent(co.accent_color)
+      }
+    })().catch(() => { if (live) setFormState('missing') })
+    return () => { live = false }
   }, [formId])
 
-  // Flatten any answer shape to a spreadsheet/PDF-safe string.
-  const answerToText = (a: any): string => {
-    if (a === undefined || a === null || a === '') return ''
-    if (Array.isArray(a)) return a.map((x, i) => `${i + 1}. ${typeof x === 'object' ? JSON.stringify(x) : x}`).join('; ')
-    if (typeof a === 'object') {
-      if (a.status === 'paid' && a.amount_cents != null) return `Paid ${fmtMoney(a.amount_cents, a.currency)}`
-      if (a.starts_at) return new Date(a.starts_at).toLocaleString()
-      if (a.url) return (a.name || a.url)
-      return Object.entries(a).map(([k, v]) => `${k}: ${v}`).join('; ')
-    }
-    if (typeof a === 'string' && a.startsWith('data:')) return '[signature]'
-    return String(a)
-  }
+  // ── Responses: paged, de-duplicated, capped; renders after the first page ──
+  useEffect(() => {
+    const gen = ++loadGen.current
+    setRows([]); setSelected(new Set()); setOpenId(null)
+    setLoad(l => ({ state: 'loading', capped: false, total: null, gen: l.gen }))
+    setVerifyState(EMPTY_VERIFY)
+    loadResponses(supabase as any, formId, {
+      ...serverRange,
+      isCancelled: () => gen !== loadGen.current,
+      onPage: (list, info) => {
+        if (gen !== loadGen.current) return
+        setRows(list)
+        if (!info.done) setLoad(l => ({ ...l, state: 'more' }))
+      },
+    }).then(res => {
+      if (gen !== loadGen.current) return
+      setRows(res.rows)
+      setLoad(l => ({ state: res.error ? 'error' : 'done', capped: res.capped, total: res.total, error: res.error, gen: l.gen + 1 }))
+      if (res.capped) setCappedEver(true)
+    }).catch((e: any) => {
+      if (gen !== loadGen.current) return
+      setLoad(l => ({ state: 'error', capped: false, total: null, error: e?.message || 'Could not load responses', gen: l.gen + 1 }))
+    })
+  }, [formId, serverRange, retry])
 
-  const exportToExcel = () => {
-    if (exporting) return
-    setExporting('excel')
+  const logic = useMemo(() => readFormLogic(form), [form])
+  const dateFilter = dateFilterOf(filters)
+  const dateKey = JSON.stringify(dateFilter ? isoRange(dateFilter) : {})
+
+  // Once the cap has been hit, the date filter narrows the query on the server so older responses stay reachable.
+  useEffect(() => {
+    const want = cappedEver ? JSON.parse(dateKey) : {}
+    setServerRange(prev => (JSON.stringify(prev) === JSON.stringify(want) ? prev : want))
+  }, [cappedEver, dateKey])
+
+  // ── Views / starts (V376). Never blocks: tiles appear when (and if) this answers. ──
+  useEffect(() => {
+    let live = true
+    const r = JSON.parse(dateKey) as { from?: string; to?: string }
+    let tz = 'UTC'
+    try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC' } catch {}
+    fetchStats(authFetch, { formId, ...r, tz }).then(s => { if (live) setStats(s) })
+    return () => { live = false }
+  }, [formId, dateKey])
+
+  // ── Payment / booking verification (section G): one batched members-only read per table ──
+  const loadDone = load.state === 'done' || load.state === 'error'
+  useEffect(() => {
+    if (!loadDone || !form) return
+    let live = true
+    const ids = sideEffectIds(rows, logic)
+    if (!ids.paymentIds.length && !ids.eventIds.length) { setVerifyState({ status: 'done', payments: {}, events: {}, claims: { payments: {}, events: {} } }); return }
+    setVerifyState(v => ({ ...v, status: 'loading' }))
+    loadVerification(supabase as any, form.company_id || null, ids, { fetcher: authFetch, formId }).then(v => { if (live) setVerifyState(v) })
+    return () => { live = false }
+    // Rows only shrink after loading (deletes), so re-checking on every delete isn't needed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadDone, load.gen, form, logic, verifyRetry])
+
+  // ── Derived data ──
+  const filtered = useMemo(() => applyFilters(rows, filters, logic), [rows, filters, logic])
+  const ordered = useMemo(() => (sortDesc ? filtered : [...filtered].reverse()), [filtered, sortDesc])
+  const dateRows = useMemo(() => applyFilters(rows, dateFilter ? [dateFilter] : [], logic), [rows, dateFilter, logic])
+  const verify = useMemo(() => buildVerifyContext(form, logic, verifyState), [form, logic, verifyState])
+  const hasLogic = useMemo(() => hasAnyLogic(logic), [logic])
+  const tracked = !!(stats && stats.tracked)
+  const showPaths = hasLogic || tracked
+  const activeTab: ResultsTab = tab === 'paths' && !showPaths ? 'summary' : tab
+  // "Seen by", branches and drop-off: only for the tabs that show them, and only
+  // once every page has arrived (older rows' estimated paths are cached per row).
+  const wantSummary = loadDone && (activeTab === 'summary' || activeTab === 'paths')
+  const summary = useMemo(() => (wantSummary ? summariseRows(logic, filtered) : null), [wantSummary, logic, filtered])
+  const answerFiltered = filters.some(f => f.kind !== 'date')
+  const totalKnown = Math.max(load.total ?? rows.length, rows.length)
+  const completion = useMemo(() => completionRate(stats, dateRows, load.capped), [stats, dateRows, load.capped])
+  const kpi = useMemo(() => ({
+    responses: filtered.length,
+    total: totalKnown,
+    filtered: filters.length > 0,
+    answerFiltered,
+    avgSeconds: averageDuration(filtered),
+    lastAt: filtered.length ? filtered.reduce((a, r) => (prep(r).time > prep(a).time ? r : a), filtered[0]).created_at : null,
+    stats,
+    completion,
+    variables: variableAverages(filtered, logic),
+  }), [filtered, totalKnown, filters.length, answerFiltered, stats, completion, logic])
+  const selectedVisible = useMemo(() => ordered.filter(r => selected.has(r.id)), [ordered, selected])
+  const themeColor = typeof form?.theme?.color === 'string' && /^#[0-9a-f]{6}$/i.test(form.theme.color) ? form.theme.color : '#ff7a6b'
+  const questions = useMemo(() => logic.questions.map((q, index) => ({ q, index })).filter(x => x.q.type !== 'statement'), [logic])
+
+  const hasSideEffects = useMemo(() => logic.questions.some(q => q.type === 'payment' || q.type === 'scheduler'), [logic])
+  const exportNote = !loadDone ? 'Still loading responses. Exports include everything once loading finishes.'
+    : hasSideEffects && (verifyState.status === 'loading' || verifyState.status === 'idle') ? 'Checking payments and bookings…' : null
+
+  // ── Actions ──
+  const removeRows = useCallback((ids: string[]) => {
+    const gone = new Set(ids)
+    setRows(prev => prev.filter(r => !gone.has(r.id)))
+    setSelected(prev => { const n = new Set(prev); ids.forEach(id => n.delete(id)); return n })
+    setLoad(l => (l.total === null ? l : { ...l, total: Math.max(0, l.total - ids.length) }))
+  }, [])
+
+  const doDelete = useCallback(async (ids: string[]) => {
+    if (!ids.length || !form?.company_id || deleting) return
+    const n = ids.length
+    const ok = await confirmDialog({
+      title: n === 1 ? 'Delete this response?' : `Delete ${n.toLocaleString('en-AU')} responses?`,
+      message: "This can't be undone.", confirmLabel: 'Delete', tone: 'danger',
+    })
+    if (!ok) return
+    // Where the drawer goes if its response is deleted: the next one in the current order.
+    const after = openId && ids.includes(openId) ? ordered.slice(ordered.findIndex(r => r.id === openId) + 1).find(r => !ids.includes(r.id))?.id ?? null : openId
+    let done = 0
+    setDeleting(n > 200 ? `Deleting 0 of ${n}…` : 'Deleting…')
+    // Rows leave the page once at the end (not per chunk), so a big delete
+    // doesn't rebuild every card and the summary 50 times.
+    const res = await deleteInChunks(authFetch, {
+      formId, companyId: form.company_id, ids,
+      onChunk: chunk => { done += chunk.length; if (n > 200) setDeleting(`Deleting ${done} of ${n}…`) },
+    })
+    if (res.deleted.length) removeRows(res.deleted)
+    setDeleting(null)
+    if (res.error) setNotice(`Deleted ${res.deleted.length.toLocaleString('en-AU')} of ${n.toLocaleString('en-AU')} responses, then stopped: ${res.error}`)
+    if (openId && res.deleted.includes(openId)) setOpenId(after)
+  }, [form, deleting, openId, ordered, formId, removeRows])
+
+  const doExport = useCallback(async (format: ExportFormat, selectedOnly: boolean) => {
+    const list = selectedOnly ? selectedVisible : ordered
+    if (!list.length || exportBusy) return
+    setExportBusy(format)
+    const args = { title: textOf(form?.title) || 'Form', rows: list, logic, verify, accent: accent || themeColor }
     try {
-      const questions = form.questions || []
-      const headers = ['Response ID', 'Submitted At', ...questions.map((q: any) => q.title)]
-      
-      const data = responses.map((r: any) => [
-        r.id.slice(0, 8),
-        new Date(r.created_at).toLocaleString(),
-        ...questions.map((q: any) => answerToText(r.answers?.[q.id]))
-      ])
-
-      const worksheet = XLSX.utils.aoa_to_sheet([headers, ...data])
-      worksheet['!cols'] = Array(headers.length).fill({ wch: 20 })
-      const workbook = XLSX.utils.book_new()
-      XLSX.utils.book_append_sheet(workbook, worksheet, 'Responses')
-      XLSX.writeFile(workbook, `${form.title}-responses.xlsx`)
-    } catch (error) {
-      console.error('Export failed:', error)
+      if (format === 'csv') exportCsv(args)
+      else if (format === 'excel') await exportExcel(args)
+      else await exportPdf(args)
+    } catch (e: any) {
+      setNotice(`Export failed: ${e?.message || 'unknown error'}`)
     } finally {
-      setExporting(null)
+      setExportBusy(null)
     }
-  }
+  }, [selectedVisible, ordered, exportBusy, form, logic, verify, accent, themeColor])
 
-  const exportToPDF = () => {
-    if (exporting) return
-    setExporting('pdf')
-    try {
-      const doc = new jsPDF()
-      const pageWidth = doc.internal.pageSize.getWidth()
-      const pageHeight = doc.internal.pageSize.getHeight()
-      const questions = form.questions || []
-      const accentColor = company?.accent_color || '#ff7a6b'
-      
-      // Convert hex to RGB for jsPDF
-      const hexToRgb = (hex: string): [number, number, number] => {
-        const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex)
-        return result ? [parseInt(result[1], 16), parseInt(result[2], 16), parseInt(result[3], 16)] : [255, 122, 107]
-      }
-      const rgb = hexToRgb(accentColor)
-      
-      let yPosition = 20
-      
-      // Header with accent color
-      doc.setTextColor(...rgb)
-      doc.setFontSize(16)
-      doc.setFont(undefined, 'bold')
-      doc.text(form.title, 20, yPosition)
-      yPosition += 10
-      
-      doc.setFontSize(11)
-      doc.setTextColor(120)
-      doc.setFont(undefined, 'normal')
-      doc.text(`Total responses: ${responses.length}`, 20, yPosition)
-      doc.text(`Generated: ${new Date().toLocaleDateString()}`, 20, yPosition + 7)
-      yPosition += 20
-      
-      // Responses
-      doc.setTextColor(0)
-      doc.setFontSize(10)
-      
-      responses.forEach((response, idx) => {
-        // Response header with accent color
-        doc.setFontSize(10)
-        doc.setFont(undefined, 'bold')
-        doc.setTextColor(...rgb)
-        doc.text(`Response ${idx + 1} - ${new Date(response.created_at).toLocaleString()}`, 20, yPosition)
-        yPosition += 7
-        
-        // Questions and answers
-        doc.setFont(undefined, 'normal')
-        doc.setTextColor(0)
-        doc.setFontSize(9)
-        questions.forEach((q: any) => {
-          const answer = response.answers?.[q.id]
-          const answerText = answerToText(answer) || '(No answer)'
-          
-          doc.text(`${q.title}:`, 20, yPosition)
-          yPosition += 5
-          
-          const lines = doc.splitTextToSize(`${answerText}`, pageWidth - 40)
-          lines.forEach((line: string) => {
-            doc.text(line, 25, yPosition)
-            yPosition += 5
-          })
-          yPosition += 2
-        })
-        
-        yPosition += 5
-        if (yPosition > pageHeight - 20) {
-          doc.addPage()
-          yPosition = 20
-        }
-      })
-      
-      doc.save(`${form.title}-responses.pdf`)
-    } catch (error) {
-      console.error('PDF export failed:', error)
-    } finally {
-      setExporting(null)
-    }
-  }
+  const addVariableFilter = useCallback((variableId: string, min?: number, max?: number) => {
+    setFilters(f => [...f.filter(x => !(x.kind === 'variable' && x.variableId === variableId)), { kind: 'variable', variableId, min, max }])
+  }, [])
 
-  const bulkDeleteResponses = async () => {
-    if (selectedResponses.size === 0) return
-    if (!await confirmDialog(`Delete ${selectedResponses.size} response(s)?`)) return
-    
-    setBulkDeleting(true)
-    try {
-      const ids = Array.from(selectedResponses)
-      // Delete server-side (service role) — a client-side delete is blocked by
-      // RLS and silently removes nothing, so they'd reappear on reload.
-      const res = await authFetch('/api/forms/responses', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'delete', formId, companyId: form?.company_id, ids }),
-      })
-      const d = await res.json()
-      if (!res.ok) throw new Error(d.error || 'Delete failed')
-      setResponses(prev => prev.filter(r => !selectedResponses.has(r.id)))
-      setSelectedResponses(new Set())
-    } catch (error: any) {
-      console.error('Bulk delete failed:', error)
-      alert(`Could not delete: ${error.message}`)
-    } finally {
-      setBulkDeleting(false)
-    }
-  }
+  // ── Drawer ──
+  const openIndex = openId ? ordered.findIndex(r => r.id === openId) : -1
+  const openRow = openIndex >= 0 ? ordered[openIndex] : openId ? rows.find(r => r.id === openId) || null : null
+  const closeDrawer = useCallback(() => setOpenId(null), [])
 
-  const toggleResponseSelection = (id: string) => {
-    const newSelected = new Set(selectedResponses)
-    if (newSelected.has(id)) {
-      newSelected.delete(id)
-    } else {
-      newSelected.add(id)
-    }
-    setSelectedResponses(newSelected)
-  }
-
-  const toggleSelectAll = () => {
-    if (selectedResponses.size === filteredResponses.length) {
-      setSelectedResponses(new Set())
-    } else {
-      setSelectedResponses(new Set(filteredResponses.map(r => r.id)))
-    }
-  }
-
-  // Filter responses based on filter criteria
-  const filteredResponses = responses.filter(r => {
-    for (const [questionId, filterValue] of Object.entries(filters)) {
-      if (filterValue === '' || filterValue === null) continue
-      const answer = r.answers?.[questionId]
-      if (Array.isArray(answer)) {
-        if (!answer.includes(filterValue)) return false
-      } else if (String(answer).toLowerCase() !== String(filterValue).toLowerCase()) {
-        return false
-      }
-    }
-    return true
-  })
-  if (!form) return <div className="p-8" style={{ color: 'var(--slate)' }}>Form not found</div>
-
-  const questions = form.questions || []
-  const themeColor = form.theme?.color || '#ff7a6b'
-  const completionRate = responses.length > 0 ? 100 : 0 // all stored responses are completed submissions
-
-  // Aggregate stats per question
-  const getQuestionStats = (q: any) => {
-    const answers = responses.map(r => r.answers?.[q.id]).filter(a => a !== undefined && a !== '' && !(Array.isArray(a) && a.length === 0))
-    if (['multiple_choice', 'yes_no', 'dropdown', 'picture_choice', 'checkbox'].includes(q.type)) {
-      const counts: Record<string, number> = {}
-      // Multi-select (checkbox, or multiple_choice with multiSelect on) stores an
-      // array — count each chosen option, not the array as a whole.
-      answers.forEach(a => {
-        if (Array.isArray(a)) a.forEach((v: any) => { counts[v] = (counts[v] || 0) + 1 })
-        else counts[a] = (counts[a] || 0) + 1
-      })
-      return { type: 'distribution', counts, total: answers.length }
-    }
-    if (q.type === 'rating') {
-      const nums = answers.map(a => Number(a)).filter(n => !isNaN(n))
-      const avg = nums.length ? (nums.reduce((s, n) => s + n, 0) / nums.length) : 0
-      return { type: 'average', avg, total: nums.length }
-    }
-    // Media-style answers: a bar chart / average makes no sense — just count them.
-    if (['signature', 'video_audio', 'file_upload'].includes(q.type)) {
-      return { type: 'count', total: answers.length }
-    }
-    if (q.type === 'ranking') {
-      const samples = answers.slice(0, 5).map((a: any) => Array.isArray(a) ? a.map((x, i) => `${i + 1}. ${x}`).join('   ') : String(a))
-      return { type: 'text', samples, total: answers.length }
-    }
-    if (q.type === 'matrix') {
-      const samples = answers.slice(0, 5).map((a: any) => (a && typeof a === 'object') ? Object.entries(a).map(([r, c]) => `${r}: ${c}`).join(' · ') : String(a))
-      return { type: 'text', samples, total: answers.length }
-    }
-    return { type: 'text', samples: answers.slice(0, 5).map((a: any) => typeof a === 'object' ? JSON.stringify(a) : String(a)), total: answers.length }
-  }
-
-  const fmtMoney = (cents: number, currency?: string) => {
-    try { return new Intl.NumberFormat(undefined, { style: 'currency', currency: (currency || 'aud').toUpperCase() }).format((cents || 0) / 100) }
-    catch { return `$${((cents || 0) / 100).toFixed(2)}` }
-  }
-
-  // A compact one-line preview of any answer shape (for the response cards).
-  const previewAnswer = (a: any): string => {
-    if (a === undefined || a === null || a === '') return '—'
-    if (Array.isArray(a)) return a.join(', ')
-    if (typeof a === 'object') {
-      if (a.status === 'paid' && a.amount_cents != null) return `Paid ${fmtMoney(a.amount_cents, a.currency)}`
-      if (a.starts_at) return new Date(a.starts_at).toLocaleString()
-      if (a.name) return a.name
-      if (a.url) return a.url.split('/').pop() || 'file'
-      return Object.entries(a).map(([k, v]) => `${k}: ${v}`).join(', ')
-    }
-    if (typeof a === 'string' && a.startsWith('data:')) return 'Signature'
-    return String(a)
-  }
-
-  // Full answer rendering in the response modal — handles text, media URLs,
-  // signatures (data URLs), uploads ({url,name}), ranking (arrays) and matrix
-  // (objects) without ever dumping "[object Object]" or a raw base64 string.
-  const renderAnswer = (answer: any, q?: any) => {
-    const P = ({ children }: { children: any }) => <p className="text-sm" style={{ color: 'var(--ink)' }}>{children}</p>
-    if (answer === undefined || answer === null || answer === '') return <p className="text-sm italic" style={{ color: '#c0c4cc' }}>No answer</p>
-
-    // Rating → stars + score; NPS / opinion scale → score out of max with a chip.
-    if (q?.type === 'rating') {
-      const n = Number(answer) || 0
-      return (
-        <div className="flex items-center gap-2">
-          <div className="flex gap-0.5">{[1, 2, 3, 4, 5].map(i => (
-            <svg key={i} width="16" height="16" viewBox="0 0 24 24" fill={i <= n ? themeColor : 'none'} stroke={themeColor} strokeWidth="1.5"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-          ))}</div>
-          <span className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>{n}/5</span>
+  // ── Render ──
+  if (formState === 'missing') {
+    return (
+      <div className="fr-root"><ResultsStyles />
+        <div className="fr-card" style={{ padding: 40, textAlign: 'center' }}>
+          <h1 style={{ fontSize: 18, fontWeight: 700, margin: '0 0 8px' }}>Form not found</h1>
+          <p className="fr-muted" style={{ margin: '0 0 16px' }}>It may have been deleted, or it belongs to another workspace.</p>
+          <Link href="/admin/forms" className="fr-btn">Back to forms</Link>
         </div>
-      )
-    }
-    if (q?.type === 'nps' || q?.type === 'opinion_scale') {
-      const max = q.type === 'nps' ? 10 : 7
-      const n = Number(answer) || 0
-      const tone = q.type === 'nps' ? (n >= 9 ? '#16a34a' : n >= 7 ? '#d97706' : '#dc2626') : themeColor
-      return <span className="inline-flex items-center justify-center text-sm font-bold px-2.5 py-1 rounded-lg" style={{ background: `${tone}18`, color: tone }}>{n} / {max}</span>
-    }
-
-    // Payment answer
-    if (typeof answer === 'object' && answer.status === 'paid' && answer.amount_cents != null) {
-      return <p className="text-sm font-semibold" style={{ color: '#047857' }}>✓ Paid — {fmtMoney(answer.amount_cents, answer.currency)}</p>
-    }
-    // Scheduler booking
-    if (typeof answer === 'object' && answer.starts_at) {
-      const s = new Date(answer.starts_at)
-      const e = answer.ends_at ? new Date(answer.ends_at) : null
-      return <p className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>📅 {s.toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}{e ? ` – ${e.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : ''}</p>
-    }
-    // Matrix (or any plain object without a url)
-    if (typeof answer === 'object' && !Array.isArray(answer) && !answer.url) {
-      const entries = Object.entries(answer)
-      if (entries.length === 0) return <P>—</P>
-      return <div className="space-y-1">{entries.map(([k, v]) => <p key={k} className="text-sm" style={{ color: 'var(--ink)' }}><span style={{ color: 'var(--slate)' }}>{k}:</span> {String(v)}</p>)}</div>
-    }
-    const url = (typeof answer === 'object' && answer.url) ? answer.url : (typeof answer === 'string' ? answer : null)
-    if (typeof url === 'string' && (url.startsWith('http') || url.startsWith('data:'))) {
-      if (/\.(jpg|jpeg|png|gif|webp)$/i.test(url) || url.startsWith('data:image')) return <img src={url} alt="answer" style={{ maxWidth: '100%', maxHeight: 220, borderRadius: 8, border: '1px solid var(--border)' }} />
-      if (/\.(mp4|webm|mov|m4v)$/i.test(url) || url.startsWith('data:video')) return <video src={url} controls style={{ maxWidth: '100%', maxHeight: 220, borderRadius: 8 }} />
-      if (/\.(mp3|wav|ogg|m4a|aac)$/i.test(url) || url.startsWith('data:audio')) return <VoicePlayer src={url} name="Voice answer" />
-      return <a href={url} target="_blank" rel="noopener" className="text-sm" style={{ color: 'var(--coral)', textDecoration: 'underline' }}>📎 {(typeof answer === 'object' && answer.name) || url.split('/').pop() || 'Download'}</a>
-    }
-    if (Array.isArray(answer)) {
-      // Ranking → numbered; plain multi-select → comma list.
-      return <div className="space-y-0.5">{answer.map((x: any, i: number) => <p key={i} className="text-sm" style={{ color: 'var(--ink)' }}>{i + 1}. {typeof x === 'object' ? JSON.stringify(x) : String(x)}</p>)}</div>
-    }
-    return <P>{String(answer)}</P>
+      </div>
+    )
   }
+
+  const firstPageLoading = formState === 'loading' || (load.state === 'loading' && rows.length === 0)
+  const noResponsesAtAll = !firstPageLoading && loadDone && rows.length === 0 && !load.error && Object.keys(serverRange).length === 0
 
   return (
-    <div className="min-h-screen">
-      <div className="max-w-5xl mx-auto px-4 md:px-6 py-8">
-        <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
-          <div>
-            <Link href="/admin/forms" className="text-sm font-medium hover:opacity-70 transition-smooth" style={{ color: 'var(--coral)' }}>
-              ← Back to forms
-            </Link>
-            <h1 className="text-2xl font-bold mt-2" style={{ color: 'var(--ink)' }}>{form.title}</h1>
-            <p className="text-sm mt-1" style={{ color: 'var(--slate)' }}>{filteredResponses.length} of {responses.length} response{responses.length !== 1 ? 's' : ''}{Object.keys(filters).length > 0 ? ' (filtered)' : ''}</p>
-          </div>
-          <Link href={`/admin/forms/${formId}`} className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold border cursor-pointer hover:bg-gray-50" style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4Z"/></svg>
-            Edit form
-          </Link>
+    <div className="fr-root" ref={rootRef} data-wide={wide ? '1' : undefined}>
+      <ResultsStyles />
+      {formState === 'loading' ? <HeaderSkeleton /> : (
+        <ResultsHeader formId={formId} title={textOf(form?.title)} isPublished={!!form?.is_published}
+          tab={activeTab} onTab={changeTab} responseCount={filtered.length} showPaths={showPaths} />
+      )}
+
+      {formState === 'ready' && !noResponsesAtAll && (
+        <FilterBar filters={filters} onChange={setFilters} logic={logic} shown={filtered.length} total={totalKnown}
+          loadingMore={load.state === 'more'} onExport={doExport} selectedCount={selectedVisible.length} exportBusy={exportBusy} exportNote={exportNote} />
+      )}
+      {formState === 'ready' && noResponsesAtAll && <div style={{ height: 18 }} />}
+
+      {load.capped && (
+        <div className="fr-banner" role="status"><Icon name="info" size={15} />
+          Showing the newest {RESPONSE_CAP.toLocaleString('en-AU')} responses{load.total ? ` of ${load.total.toLocaleString('en-AU')}` : ''}. Narrow the date range to see older ones.
         </div>
+      )}
+      {load.state === 'error' && (
+        <div className="fr-banner fr-banner-warn" role="alert"><Icon name="alert" size={15} />
+          <span style={{ flex: 1 }}>Couldn't load {rows.length ? 'all ' : ''}responses{rows.length ? ` (showing ${rows.length.toLocaleString('en-AU')})` : ''}. {load.error}</span>
+          <button type="button" className="fr-btn fr-btn-sm" onClick={() => setRetry(n => n + 1)}>Try again</button>
+        </div>
+      )}
+      {verifyState.status === 'error' && (
+        <div className="fr-banner fr-banner-warn" role="alert"><Icon name="alert" size={15} />
+          <span style={{ flex: 1 }}>Couldn't check payments and bookings just now, so they show as unverified.</span>
+          <button type="button" className="fr-btn fr-btn-sm" onClick={() => setVerifyRetry(n => n + 1)}>Check again</button>
+        </div>
+      )}
+      {notice && (
+        <div className="fr-banner fr-banner-warn" role="alert"><Icon name="alert" size={15} />
+          <span style={{ flex: 1 }}>{notice}</span>
+          <button type="button" className="fr-icon-btn" aria-label="Dismiss" onClick={() => setNotice(null)}><Icon name="x" size={14} /></button>
+        </div>
+      )}
 
-        {/* Toolbar */}
-        <div className="mb-6 space-y-2">
-          {/* Row 1: view segmented control + filter */}
-          <div className="flex items-center gap-2">
-            <div className="inline-flex p-1 rounded-xl" style={{ background: 'var(--canvas, #f3f4f6)', border: '1px solid var(--border)' }}>
-              {([['summary', 'Summary'], ['individual', 'Individual']] as const).map(([key, label]) => (
-                <button key={key} onClick={() => setView(key)}
-                  className="px-4 py-1.5 rounded-lg text-sm font-semibold cursor-pointer transition-all"
-                  style={{ background: view === key ? '#fff' : 'transparent', color: view === key ? 'var(--ink)' : 'var(--slate)', boxShadow: view === key ? '0 1px 3px rgba(0,0,0,0.10)' : 'none' }}>
-                  {label}
-                </button>
-              ))}
-            </div>
-            <button onClick={() => setShowFilterPanel(!showFilterPanel)}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-semibold cursor-pointer border"
-              style={{ marginLeft: 'auto', borderColor: Object.keys(filters).length > 0 ? themeColor : 'var(--border)', color: Object.keys(filters).length > 0 ? themeColor : 'var(--slate)', background: showFilterPanel ? 'var(--canvas)' : '#fff' }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
-              Filter{Object.keys(filters).length > 0 ? ` (${Object.keys(filters).length})` : ''}
-            </button>
-          </div>
+      {firstPageLoading ? <BodySkeleton /> : noResponsesAtAll ? (
+        <div className="fr-card" style={{ padding: '56px 24px', textAlign: 'center' }}>
+          <Icon name="users" size={40} stroke="var(--slate)" strokeWidth={1.5} style={{ marginBottom: 12 }} />
+          <h2 style={{ fontSize: 18, fontWeight: 700, margin: '0 0 6px' }}>No responses yet</h2>
+          <p className="fr-muted" style={{ margin: 0 }}>{form?.is_published ? 'Share your form to start collecting responses.' : 'Publish your form in the builder, then share it to start collecting responses.'}</p>
+        </div>
+      ) : (
+        <>
+          <KpiStrip data={kpi} color={themeColor} />
 
-          {/* Row 2 (individual only): select-all + delete */}
-          {view === 'individual' && responses.length > 0 && (
-            <div className="flex items-center gap-3">
-              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, cursor: 'pointer' }}>
-                <input type="checkbox" checked={selectedResponses.size === responses.length && responses.length > 0} onChange={toggleSelectAll} style={{ cursor: 'pointer', width: 16, height: 16 }} />
-                <span style={{ color: 'var(--slate)' }}>{selectedResponses.size > 0 ? `${selectedResponses.size} selected` : 'Select all'}</span>
-              </label>
-              {selectedResponses.size > 0 && (
-                <button onClick={bulkDeleteResponses} disabled={bulkDeleting}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-semibold cursor-pointer border transition-all"
-                  style={{ marginLeft: 'auto', borderColor: '#dc2626', color: '#dc2626', background: bulkDeleting ? 'var(--canvas)' : '#fff' }}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                  {bulkDeleting ? 'Deleting…' : 'Delete selected'}
-                </button>
+          {activeTab === 'summary' && (
+            <div role="tabpanel" id="fr-panel-summary" aria-labelledby="fr-tab-summary">
+              {summary && summary.legacy > 0 && hasLogic && (
+                <p className="fr-muted" style={{ fontSize: 12.5, margin: '-6px 0 14px', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Icon name="info" size={13} />{summary.legacy.toLocaleString('en-AU')} older {summary.legacy === 1 ? 'response was' : 'responses were'} submitted before paths were recorded; who saw each question is estimated for {summary.legacy === 1 ? 'it' : 'them'}.
+                </p>
+              )}
+              {questions.length === 0 ? (
+                <div className="fr-card" style={{ padding: 32, textAlign: 'center' }}><p className="fr-muted" style={{ margin: 0 }}>This form has no questions.</p></div>
+              ) : (
+                <div className="fr-grid">
+                  {questions.map(({ q, index }) => (
+                    <QuestionCard key={q.id} q={q} index={index} rows={filtered} summary={summary} verify={verify} color={themeColor} onOpenRow={setOpenId} />
+                  ))}
+                </div>
               )}
             </div>
           )}
 
-          {/* Row 3: exports — equal-width on mobile, right-aligned on desktop */}
-          <div className="flex gap-2 sm:justify-end">
-            <button onClick={exportToExcel} disabled={responses.length === 0 || exporting !== null}
-              className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-semibold cursor-pointer border transition-all"
-              style={{ borderColor: 'var(--border)', color: 'var(--ink)', background: exporting === 'excel' ? 'var(--canvas)' : '#fff', opacity: responses.length === 0 ? 0.5 : 1 }}>
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18"/></svg>
-              {exporting === 'excel' ? 'Exporting…' : 'Export to Excel'}
-            </button>
-            <button onClick={exportToPDF} disabled={responses.length === 0 || exporting !== null}
-              className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-semibold cursor-pointer border transition-all"
-              style={{ borderColor: 'var(--border)', color: 'var(--ink)', background: exporting === 'pdf' ? 'var(--canvas)' : '#fff', opacity: responses.length === 0 ? 0.5 : 1 }}>
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-              {exporting === 'pdf' ? 'Exporting…' : 'Export to PDF'}
-            </button>
-          </div>
-        </div>
+          {activeTab === 'responses' && (
+            <div role="tabpanel" id="fr-panel-responses" aria-labelledby="fr-tab-responses">
+              <ResponsesTable key={JSON.stringify(filters)} rows={ordered} logic={logic} verify={verify} selected={selected} onSelect={setSelected}
+                onOpen={setOpenId} openId={openId} sortDesc={sortDesc} onSort={() => setSortDesc(s => !s)} onDelete={doDelete} deleting={deleting} />
+            </div>
+          )}
 
-        {/* Filter Panel */}
-        {showFilterPanel && (
-          <div className="mb-6 bg-white rounded-2xl border p-6" style={{ borderColor: 'var(--border)' }}>
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold" style={{ color: 'var(--ink)' }}>Filter responses</h3>
-              {Object.keys(filters).length > 0 && (
-                <button onClick={() => setFilters({})} className="text-xs font-semibold" style={{ color: 'var(--coral)', cursor: 'pointer' }}>
-                  Clear all
-                </button>
+          {activeTab === 'paths' && (
+            <div role="tabpanel" id="fr-panel-paths" aria-labelledby="fr-tab-paths">
+              {summary ? (
+                <PathsPanel logic={logic} summary={summary} stats={stats} submittedSince={completion ? completion.submitted : null}
+                  color={themeColor} onVariableFilter={addVariableFilter} />
+              ) : (
+                <div className="fr-card" style={{ padding: 32, textAlign: 'center' }}><p className="fr-muted" style={{ margin: 0 }}>Counting paths once every response has loaded…</p></div>
               )}
             </div>
-            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {questions.map(q => (
-                <div key={q.id}>
-                  <label className="block text-sm font-medium mb-2" style={{ color: 'var(--ink)' }}>{q.title}</label>
-                  {(q.type === 'multiple_choice' || q.type === 'dropdown' || q.type === 'yes_no') ? (
-                    <select
-                      value={filters[q.id] || ''}
-                      onChange={e => {
-                        const newFilters = { ...filters }
-                        if (e.target.value) {
-                          newFilters[q.id] = e.target.value
-                        } else {
-                          delete newFilters[q.id]
-                        }
-                        setFilters(newFilters)
-                      }}
-                      className="w-full px-3 py-2 rounded-lg border text-sm"
-                      style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
-                      <option value="">All</option>
-                      {q.options?.map((opt: string) => (
-                        <option key={opt} value={opt}>{opt}</option>
-                      ))}
-                    </select>
-                  ) : (
-                    <input
-                      type="text"
-                      placeholder="Search..."
-                      value={filters[q.id] || ''}
-                      onChange={e => {
-                        const newFilters = { ...filters }
-                        if (e.target.value) {
-                          newFilters[q.id] = e.target.value
-                        } else {
-                          delete newFilters[q.id]
-                        }
-                        setFilters(newFilters)
-                      }}
-                      className="w-full px-3 py-2 rounded-lg border text-sm"
-                      style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}
-                    />
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {responses.length === 0 ? (
-          <div className="text-center py-20 rounded-2xl border" style={{ borderColor: 'var(--border)' }}>
-            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" strokeWidth="1.5" className="mx-auto mb-4"><rect x="3" y="3" width="18" height="18" rx="3"/><line x1="7" y1="8" x2="17" y2="8"/><line x1="7" y1="12" x2="13" y2="12"/></svg>
-            <h3 className="text-lg font-semibold mb-2" style={{ color: 'var(--ink)' }}>No responses yet</h3>
-            <p style={{ color: 'var(--slate)' }}>Share your form to start collecting responses.</p>
-          </div>
-        ) : view === 'summary' ? (
-          <div className="space-y-4">
-            {/* Top stats */}
-            <div className="grid grid-cols-3 gap-2 sm:gap-4 mb-6">
-              {[
-                { icon: <><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></>, value: <span className="text-xl sm:text-2xl font-black leading-tight">{responses.length}</span>, label: 'Total responses' },
-                { icon: <><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></>, value: <span className="text-xl sm:text-2xl font-black leading-tight">{questions.length}</span>, label: 'Questions' },
-                { icon: <><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></>, value: <span className="text-sm sm:text-xl font-black leading-tight whitespace-nowrap">{responses[0] ? new Date(responses[0].created_at).toLocaleDateString() : '—'}</span>, label: 'Last response' },
-              ].map((s, i) => (
-                <div key={i} className="bg-white rounded-2xl border p-3 sm:p-5 min-w-0" style={{ borderColor: 'var(--border)' }}>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={themeColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: 8, opacity: 0.9 }}>{s.icon}</svg>
-                  <div style={{ color: 'var(--ink)' }}>{s.value}</div>
-                  <p className="text-xs mt-0.5" style={{ color: 'var(--slate)' }}>{s.label}</p>
-                </div>
-              ))}
-            </div>
-
-            {/* Per-question breakdown */}
-            {questions.map((q: any, qi: number) => {
-              const stats = getQuestionStats(q)
-              return (
-                <div key={q.id} className="bg-white rounded-2xl border p-6" style={{ borderColor: 'var(--border)' }}>
-                  <p className="text-xs font-bold mb-1" style={{ color: themeColor }}>QUESTION {qi + 1}</p>
-                  <h3 className="text-base font-bold mb-4" style={{ color: 'var(--ink)' }}>{q.title}</h3>
-
-                  {stats.type === 'distribution' && (
-                    <div className="space-y-2">
-                      {Object.entries(stats.counts).sort((a, b) => (b[1] as number) - (a[1] as number)).map(([opt, count]) => {
-                        const pct = stats.total > 0 ? Math.round((count as number) / stats.total * 100) : 0
-                        return (
-                          <div key={opt}>
-                            <div className="flex justify-between mb-1">
-                              <span className="text-sm" style={{ color: 'var(--ink)' }}>{opt}</span>
-                              <span className="text-sm font-semibold" style={{ color: 'var(--slate)' }}>{count} ({pct}%)</span>
-                            </div>
-                            <div className="h-2 rounded-full" style={{ background: 'var(--border)' }}>
-                              <div className="h-full rounded-full" style={{ width: `${pct}%`, background: themeColor }} />
-                            </div>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )}
-
-                  {stats.type === 'average' && (
-                    <div className="flex items-center gap-3">
-                      <span className="text-3xl font-black" style={{ color: themeColor }}>{stats.avg.toFixed(1)}</span>
-                      <span className="text-sm" style={{ color: 'var(--slate)' }}>average out of 5 ({stats.total} ratings)</span>
-                    </div>
-                  )}
-
-                  {stats.type === 'count' && (
-                    <div className="flex items-center gap-3">
-                      <span className="text-3xl font-black" style={{ color: themeColor }}>{stats.total}</span>
-                      <span className="text-sm" style={{ color: 'var(--slate)' }}>response{stats.total === 1 ? '' : 's'} collected — open Individual responses to view each</span>
-                    </div>
-                  )}
-
-                  {stats.type === 'text' && (
-                    <div className="space-y-2">
-                      {stats.samples.length === 0 ? (
-                        <p className="text-sm" style={{ color: 'var(--slate)' }}>No answers yet</p>
-                      ) : stats.samples.map((s: any, si: number) => (
-                        <p key={si} className="text-sm p-3 rounded-lg" style={{ background: 'var(--canvas, #fafafa)', color: 'var(--ink)' }}>"{s}"</p>
-                      ))}
-                      {stats.total > 5 && <p className="text-xs" style={{ color: 'var(--slate)' }}>+{stats.total - 5} more responses</p>}
-                    </div>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        ) : (
-          <div className="grid md:grid-cols-2 gap-4">
-            {filteredResponses.map(r => (
-              <div key={r.id} style={{ position: 'relative' }}>
-                <input
-                  type="checkbox"
-                  checked={selectedResponses.has(r.id)}
-                  onChange={() => toggleResponseSelection(r.id)}
-                  style={{ position: 'absolute', top: 12, left: 12, width: 20, height: 20, cursor: 'pointer', zIndex: 10 }}
-                />
-                <button onClick={() => setSelectedResponse(r)}
-                  className="text-left bg-white rounded-2xl border p-5 hover:shadow-md transition-smooth cursor-pointer w-full" style={{ borderColor: selectedResponses.has(r.id) ? 'var(--coral)' : 'var(--border)', paddingLeft: 48 }}>
-                  <p className="text-xs mb-2" style={{ color: 'var(--slate)' }}>{new Date(r.created_at).toLocaleString()}</p>
-                  {questions.slice(0, 2).map((q: any) => (
-                    <p key={q.id} className="text-sm mb-1 truncate" style={{ color: 'var(--ink)' }}>
-                      <span style={{ color: 'var(--slate)' }}>{q.title}:</span> {previewAnswer(r.answers?.[q.id])}
-                    </p>
-                  ))}
-                  <p className="text-xs mt-2 font-semibold" style={{ color: themeColor }}>View full response →</p>
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Individual response modal */}
-      {selectedResponse && (
-        <>
-          <div className="fixed inset-0 z-50 backdrop-blur-sm" style={{ background: 'rgba(0,0,0,0.4)' }} onClick={() => setSelectedResponse(null)} />
-          <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 max-w-lg bg-white rounded-2xl shadow-2xl max-h-[85vh] overflow-y-auto" style={{ width: 'calc(100vw - 32px)' }}>
-            <div className="p-6 border-b flex items-center justify-between" style={{ borderColor: 'var(--border)' }}>
-              <div>
-                <h2 className="text-lg font-bold" style={{ color: 'var(--ink)' }}>Response</h2>
-                <p className="text-xs" style={{ color: 'var(--slate)' }}>{new Date(selectedResponse.created_at).toLocaleString()}</p>
-              </div>
-              <button onClick={() => setSelectedResponse(null)} className="text-2xl cursor-pointer" style={{ color: 'var(--slate)' }}>×</button>
-            </div>
-            <div className="p-6 space-y-4">
-              {/* Submission metadata */}
-              {(selectedResponse.response_time_seconds || selectedResponse.language || selectedResponse.screen_width || selectedResponse.referrer) && (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, padding: '10px 12px', background: 'var(--canvas)', borderRadius: 8, fontSize: 12, color: '#666' }}>
-                  {selectedResponse.response_time_seconds && (
-                    <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                      {selectedResponse.response_time_seconds}s
-                    </span>
-                  )}
-                  {selectedResponse.language && (
-                    <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
-                      {selectedResponse.language}
-                    </span>
-                  )}
-                  {selectedResponse.screen_width && (
-                    <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-                      {selectedResponse.screen_width}×{selectedResponse.screen_height}
-                    </span>
-                  )}
-                  {selectedResponse.referrer && (
-                    <span style={{ display: 'flex', alignItems: 'center', gap: 4, maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-                      {selectedResponse.referrer}
-                    </span>
-                  )}
-                </div>
-              )}
-              {questions.map((q: any, qi: number) => (
-                <div key={q.id}>
-                  <p className="text-xs font-semibold mb-1.5" style={{ color: 'var(--slate)' }}>
-                    <span style={{ color: themeColor }}>{qi + 1}.</span> {q.title}
-                  </p>
-                  <div className="rounded-xl px-3.5 py-2.5" style={{ background: 'var(--canvas, #fafafa)', border: '1px solid var(--border)' }}>
-                    {renderAnswer(selectedResponse.answers?.[q.id], q)}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+          )}
         </>
       )}
+
+      {openRow && (
+        <ResponseDrawer row={openRow} logic={logic} verify={verify} color={themeColor} onClose={closeDrawer}
+          onPrev={openIndex > 0 ? () => setOpenId(ordered[openIndex - 1].id) : null}
+          onNext={openIndex >= 0 && openIndex < ordered.length - 1 ? () => setOpenId(ordered[openIndex + 1].id) : null}
+          onDelete={id => doDelete([id])} deleting={!!deleting}
+          position={openIndex >= 0 ? { index: openIndex, total: ordered.length } : undefined} />
+      )}
+    </div>
+  )
+}
+
+function HeaderSkeleton() {
+  return (
+    <div aria-hidden>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div className="fr-skel" style={{ width: 32, height: 32 }} />
+        <div className="fr-skel" style={{ width: 'min(360px, 60%)', height: 26 }} />
+      </div>
+      <div className="fr-skel" style={{ width: 260, height: 18, margin: '22px 0 26px' }} />
+    </div>
+  )
+}
+
+function BodySkeleton() {
+  return (
+    <div aria-busy="true" aria-label="Loading responses">
+      <div className="fr-kpis">
+        {[0, 1, 2, 3].map(i => <div key={i} className="fr-card fr-kpi"><div className="fr-skel" style={{ width: 16, height: 16 }} /><div className="fr-skel" style={{ width: '60%', height: 24, marginTop: 10 }} /><div className="fr-skel" style={{ width: '40%', height: 12, marginTop: 8 }} /></div>)}
+      </div>
+      <div className="fr-grid">
+        {[0, 1].map(i => <div key={i} className="fr-card fr-qcard"><div className="fr-skel" style={{ width: '50%', height: 18 }} /><div className="fr-skel" style={{ width: '30%', height: 12, margin: '12px 0 20px' }} />{[0, 1, 2].map(j => <div key={j} className="fr-skel" style={{ height: 10, marginBottom: 16 }} />)}</div>)}
+      </div>
     </div>
   )
 }

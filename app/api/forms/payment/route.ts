@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { createChatCheckoutSession, chatStripe } from '@/lib/chat-checkout'
 import { confirmChatPayment } from '@/lib/chat-payment-confirm'
+import { insertFormPayment } from './insert'
 
 export const dynamic = 'force-dynamic'
 
@@ -45,10 +46,12 @@ export async function POST(req: NextRequest) {
 
       // The chat_payments row is the durable record the webhook + verify + admin
       // Payments page all key off. No conversation for a form payment.
-      const { data: pay, error: perr } = await db.from('chat_payments').insert({
+      // form_id / question_id (V380) let Results prove the payment belongs to
+      // this form's question; before V380 runs the insert is retried without them.
+      const { data: pay, error: perr } = await insertFormPayment(db, {
         company_id: form.company_id, conversation_id: null, message_id: null,
         amount_cents: cents, currency, description, status: 'pending',
-      }).select('id').maybeSingle()
+      }, { form_id: form.id, question_id: String(q.id) })
       if (perr || !pay?.id) return NextResponse.json({ error: 'Could not start the payment' }, { status: 500 })
 
       // Return the customer to the form itself so it can resume and record the
