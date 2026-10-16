@@ -2,9 +2,12 @@ import { NextRequest, NextResponse } from 'next/server'
 import { adminDb, superAdmin, safe, countRows, companyNames } from '../_lib/super-admin'
 import { collectIntegrations } from '../_lib/integrations'
 import { emailWebhookSigned } from '@/lib/email-webhook'
-import { signupPulse } from '@/lib/signup-attempts'
+import { signupPulse, signupSmsHealth } from '@/lib/signup-attempts'
+import { smsConfigured, voiceFallbackReady, smsConfigProblem, smsSender } from '@/lib/signup-sms'
 
 export const dynamic = 'force-dynamic'
+
+const senderLabel = (s: { kind: string; value: string } | null) => s ? (s.kind === 'service' ? `Messaging Service ${s.value}` : s.value) : null
 
 /**
  * GET /api/platform-admin/pulse — real platform health signals for the console
@@ -20,7 +23,7 @@ export async function GET(req: NextRequest) {
   const stuckBefore = new Date(Date.now() - 15 * 60_000).toISOString()
   const head = { count: 'exact' as const, head: true }
 
-  const [jobRuns, jobErrors, apiErrors, apiWarns, hooks, hookErrors, agentRuns, agentFailed, agentStuck, stripeEvents, audit, signups, integrations, apiErrorRows, hookErrorRows, jobErrorRows, signupLeads] = await Promise.all([
+  const [jobRuns, jobErrors, apiErrors, apiWarns, hooks, hookErrors, agentRuns, agentFailed, agentStuck, stripeEvents, audit, signups, integrations, apiErrorRows, hookErrorRows, jobErrorRows, signupLeads, signupSms] = await Promise.all([
     countRows(db.from('job_runs').select('id', head).gte('created_at', since)),
     countRows(db.from('job_runs').select('id', head).eq('status', 'error').gte('created_at', since)),
     countRows(db.from('api_logs').select('id', head).eq('level', 'error').gte('created_at', since)),
@@ -40,6 +43,8 @@ export async function GET(req: NextRequest) {
     safe<any[]>(db.from('job_runs').select('id, job, error, created_at').eq('status', 'error').gte('created_at', since).order('created_at', { ascending: false }).limit(5), []),
     // Sign-ups that stopped before an account was made (super admin → Signups).
     signupPulse(db),
+    // Sign-up code texts: sent vs delivered, 24h / 7 days, top error codes.
+    signupSmsHealth(db),
   ])
   const broken = integrations.rows.filter(r => r.active && r.note)
   const names = await companyNames(db, [...audit.data.map((a: any) => a.company_id), ...broken.map(b => b.company_id || ''), ...apiErrorRows.data.map((r: any) => r.company_id), ...hookErrorRows.data.map((r: any) => r.company_id)].filter(Boolean))
@@ -70,6 +75,7 @@ export async function GET(req: NextRequest) {
     auditMissing: audit.missing,
     signups: signups.data,
     signupLeads,
+    signupSms: { ...signupSms, configured: smsConfigured(), voiceFallback: voiceFallbackReady(), problem: smsConfigProblem(), sender: senderLabel(smsSender()) },
     recentErrors: {
       api: apiErrorRows.data.map((r: any) => ({ at: r.created_at, source: r.source || null, route: r.route || null, message: String(r.message || '').slice(0, 300), company: r.company_id ? names[r.company_id]?.name || null : null })),
       webhooks: hookErrorRows.data.map((r: any) => ({ at: r.created_at, source: r.source, event: r.event_type || null, status: r.status, error: String(r.error || '').slice(0, 300), company: r.company_id ? names[r.company_id]?.name || null : null })),

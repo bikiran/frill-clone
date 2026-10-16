@@ -1,16 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import crypto from 'crypto'
 import { recordSignupLater } from '@/lib/signup-attempts'
+import { checkCode } from '@/lib/signup-sms'
 
 export const dynamic = 'force-dynamic'
 
 // Verify one channel's 6-digit code for a signup in progress. Marks that channel
 // verified; the account is created later (complete-signup) once both are done.
+//
+// Each channel keeps its last few codes (lib/signup-sms), each valid for its
+// own 10 minutes, so a text that arrives after a resend or a call still works.
+// Typing the (already verified) email code into the mobile box is answered
+// plainly instead of "That code isn't right", and isn't counted as a guess.
 
 const MAX_ATTEMPTS = 6
-
-const sha = (s: string) => crypto.createHash('sha256').update(s).digest('hex')
 
 function admin() {
   return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
@@ -46,11 +49,22 @@ export async function POST(req: NextRequest) {
     const expected = channel === 'sms' ? row.sms_code : row.email_code
     if (!expected) return NextResponse.json({ error: 'No code was sent for this channel.' }, { status: 400 })
 
-    if (sha(code) !== expected) {
+    const result = checkCode(expected, code, row.expires_at)
+    if (result === 'expired') {
+      return NextResponse.json({ error: 'That code has expired. Use the newest code we sent, or ask for a new one.', code: 'expired' }, { status: 410 })
+    }
+    if (result === 'wrong') {
+      // The email code in the mobile box: only once email is verified, so this
+      // can't be used to test email codes without counting.
+      if (channel === 'sms' && row.email_verified && checkCode(row.email_code, code, row.expires_at, Number.MAX_SAFE_INTEGER) !== 'wrong') {
+        recordSignupLater(db, { type: 'wrong_code', email: row.email, channel, headers: req.headers, detail: 'Entered the email code in the mobile box' })
+        return NextResponse.json({ error: 'That’s the code from your email. Enter the code we texted (or read out) to your mobile.', code: 'email_code' }, { status: 400 })
+      }
       await db.from('signup_verifications').update({ attempts: (row.attempts || 0) + 1 }).eq('token', token)
       recordSignupLater(db, { type: 'wrong_code', email: row.email, channel, headers: req.headers })
       const left = Math.max(0, MAX_ATTEMPTS - (row.attempts || 0) - 1)
-      return NextResponse.json({ error: `That code isn't right.${left ? ` ${left} attempt${left === 1 ? '' : 's'} left.` : ' Request a new code.'}` }, { status: 400 })
+      const hint = channel === 'sms' ? ' Use the newest text or call.' : ''
+      return NextResponse.json({ error: `That code isn't right.${hint}${left ? ` ${left} attempt${left === 1 ? '' : 's'} left.` : ' Request a new code.'}` }, { status: 400 })
     }
 
     const patch: any = channel === 'sms' ? { sms_verified: true } : { email_verified: true }

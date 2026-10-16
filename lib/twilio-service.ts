@@ -49,7 +49,12 @@ export class TwilioService {
     const data = await res.json().catch(() => ({}))
     if (!res.ok) {
       const msg = data?.message || data?.detail || res.statusText
-      throw new Error(`Twilio: ${msg}`)
+      // Twilio's numeric error code (21211, 21610, …) travels on the error so
+      // callers can explain it; the message stays as it always was.
+      const err: any = new Error(`Twilio: ${msg}`)
+      if (data?.code != null) err.code = String(data.code)
+      err.status = res.status
+      throw err
     }
     return data
   }
@@ -98,6 +103,12 @@ export class TwilioService {
     return { sid: data?.sid || null, raw: data }
   }
 
+  // One message's current state (status, error_code), e.g. to check a test text.
+  async getMessage(sid: string): Promise<{ status: string | null; errorCode: string | null; errorMessage: string | null; to: string | null }> {
+    const data = await this.req(`/Messages/${encodeURIComponent(sid)}.json`, 'GET')
+    return { status: data?.status || null, errorCode: data?.error_code != null ? String(data.error_code) : null, errorMessage: data?.error_message || null, to: data?.to || null }
+  }
+
   // Inbound MMS media lives behind the account (Basic-auth protected). Fetch the
   // bytes server-side so we can re-host them somewhere public and show the photo
   // in the thread instead of a broken, auth-gated link.
@@ -133,11 +144,15 @@ export class TwilioService {
   }
 
   // Place a server-originated call (e.g. click-to-dial without the browser SDK).
-  async createCall(params: { to: string; from: string; url: string; statusCallback?: string }): Promise<{ sid: string | null; raw: any }> {
-    const form: Record<string, any> = { To: params.to, From: params.from, Url: params.url }
+  // Pass `url` (Twilio fetches TwiML from it) or `twiml` (inline, no webhook).
+  async createCall(params: { to: string; from: string; url?: string; twiml?: string; statusCallback?: string; statusEvents?: string[]; timeout?: number }): Promise<{ sid: string | null; raw: any }> {
+    const form: Record<string, any> = { To: params.to, From: params.from }
+    if (params.twiml) form.Twiml = params.twiml
+    else form.Url = params.url
+    if (params.timeout) form.Timeout = params.timeout
     if (params.statusCallback) {
       form.StatusCallback = params.statusCallback
-      form.StatusCallbackEvent = ['initiated', 'ringing', 'answered', 'completed']
+      form.StatusCallbackEvent = params.statusEvents || ['initiated', 'ringing', 'answered', 'completed']
     }
     const data = await this.req('/Calls.json', 'POST', form)
     return { sid: data?.sid || null, raw: data }

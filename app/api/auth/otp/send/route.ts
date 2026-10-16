@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import crypto from 'crypto'
-import { platformTwilio, TWILIO_MASTER } from '@/lib/twilio-platform'
 import { verifyTurnstile, requestIp, TURNSTILE_FAILED } from '@/lib/turnstile'
 import { claimOtpSend, recordSignupLater, cleanProfile, cleanAttribution, cleanEmail } from '@/lib/signup-attempts'
+import { normaliseSignupMobile } from '@/lib/signup-delivery'
+import {
+  CODE_TTL_MS, sha, sixDigits, pushCode, sendSignupSms, callSignupCode, signupStatusCallbackUrl,
+  voiceFallbackReady, smsProblemMessage, type SendResult,
+} from '@/lib/signup-sms'
 
 export const dynamic = 'force-dynamic'
 
@@ -17,12 +21,18 @@ export const dynamic = 'force-dynamic'
 // the wizard knew by then (name, business, where they came from), so a sign-up
 // that stops before the account exists still shows in super admin → Signups.
 // Sends are limited per email and per IP (on top of the per-token cooldown).
+//
+// channel 'voice' is "Didn't get it? Call me with the code": only for a
+// sign-up already under way (its token was issued after Turnstile), counted
+// against the same SMS allowance plus a few calls an hour (claimOtpSend). It
+// issues a new mobile code and reads it out; codes already texted keep
+// working (lib/signup-sms keeps the last few), so a late text isn't wasted.
+//
+// The mobile is normalised here too (lib/signup-delivery), not only in the
+// browser, and the text and call carry a status callback so super admin →
+// Signups shows whether they actually arrived.
 
-const CODE_TTL_MS = 10 * 60 * 1000      // codes valid for 10 minutes
 const RESEND_COOLDOWN_MS = 30 * 1000    // min gap between sends for one token
-
-const sha = (s: string) => crypto.createHash('sha256').update(s).digest('hex')
-const sixDigits = () => String(crypto.randomInt(0, 1_000_000)).padStart(6, '0')
 
 function admin() {
   return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
@@ -69,21 +79,6 @@ async function sendEmailCode(email: string, code: string): Promise<boolean> {
   return res.ok
 }
 
-async function sendSmsCode(phone: string, code: string): Promise<boolean> {
-  const tw = platformTwilio()
-  if (!tw || !TWILIO_MASTER.messagingServiceSid) return false
-  try {
-    const { sid } = await tw.sendMessage({
-      to: phone,
-      text: `${code} is your Colvy verification code. It expires in 10 minutes.`,
-      messagingServiceSid: TWILIO_MASTER.messagingServiceSid,
-    })
-    return !!sid
-  } catch {
-    return false
-  }
-}
-
 export async function POST(req: NextRequest) {
   try {
     if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
@@ -91,18 +86,31 @@ export async function POST(req: NextRequest) {
     }
     const body = await req.json()
     const email = String(body.email || '').trim().toLowerCase()
-    const phone = String(body.phone || '').trim()
     // 'both' (default) sends/refreshes both codes; a single channel is used for a
-    // targeted "resend" so the other channel's code isn't invalidated.
-    const channel: 'both' | 'email' | 'sms' = ['email', 'sms'].includes(body.channel) ? body.channel : 'both'
+    // targeted "resend" so the other channel's code isn't invalidated. 'voice'
+    // calls the mobile with a new mobile code.
+    const channel: 'both' | 'email' | 'sms' | 'voice' = ['email', 'sms', 'voice'].includes(body.channel) ? body.channel : 'both'
+    const mobileWanted = channel !== 'email'
     let token = String(body.token || '')
 
     // cleanEmail also refuses LIKE wildcards (%), which no real address needs.
     if (!email || !cleanEmail(email)) {
       return NextResponse.json({ error: 'A valid email is required' }, { status: 400 })
     }
-    if ((channel === 'both' || channel === 'sms') && !phone) {
-      return NextResponse.json({ error: 'A mobile number is required' }, { status: 400 })
+    // The same rules as the sign-up page: "0466 077 557", "+61 0466…" and
+    // "61466…" all become +61466077557; landlines are refused with a reason.
+    let phone = ''
+    const rawPhone = String(body.phone || '').trim()
+    if (rawPhone || mobileWanted) {
+      const m = normaliseSignupMobile(rawPhone)
+      if (!m.ok) {
+        if (mobileWanted) return NextResponse.json({ error: rawPhone ? m.error : 'A mobile number is required', code: 'bad_mobile' }, { status: 400 })
+      } else phone = m.e164
+    }
+    if (channel === 'voice') {
+      // Only for a sign-up under way: its token was issued after Turnstile.
+      if (!body.token) return NextResponse.json({ error: 'Ask for a text first.', code: 'restart' }, { status: 400 })
+      if (!voiceFallbackReady()) return NextResponse.json({ error: 'We can’t call right now. Try resending the text, or email support@colvy.com.', code: 'voice_unavailable' }, { status: 503 })
     }
 
     const db = admin()
@@ -154,44 +162,67 @@ export async function POST(req: NextRequest) {
 
     const emailCode = sixDigits()
     const smsCode = sixDigits()
-    const expiresAt = new Date(Date.now() + CODE_TTL_MS).toISOString()
+    const nowMs = Date.now()
+    const codeExpiry = nowMs + CODE_TTL_MS
 
     const row: any = {
       token, email, phone: phone || null,
-      last_sent_at: new Date().toISOString(),
-      expires_at: expiresAt,
+      last_sent_at: new Date(nowMs).toISOString(),
+      expires_at: new Date(codeExpiry).toISOString(),
       attempts: 0,
     }
+    // A different mobile number must be verified again, whatever was resent,
+    // and codes sent to the old number stop working.
+    const phoneChanged = !!existing && !!phone && (existing.phone || '') !== phone
     // Only (re)issue the code for the channel(s) being sent; keep the other.
-    if (channel === 'both' || channel === 'email') { row.email_code = sha(emailCode); row.email_verified = false }
-    if (channel === 'both' || channel === 'sms') { row.sms_code = sha(smsCode); row.sms_verified = false }
-    // A different mobile number must be verified again, whatever was resent.
-    const phoneChanged = !!existing && (existing.phone || '') !== (phone || existing.phone || '')
-    if (phoneChanged && !(channel === 'both' || channel === 'sms')) { row.sms_code = sha(smsCode); row.sms_verified = false }
-    if (!phone && existing?.phone) row.phone = existing.phone
+    // Earlier codes for the same channel stay valid for their own 10 minutes.
+    if (channel === 'both' || channel === 'email') { row.email_code = pushCode(existing?.email_code, sha(emailCode), codeExpiry, { fresh: !existing }); row.email_verified = false }
+    if (mobileWanted || phoneChanged) { row.sms_code = pushCode(existing?.sms_code, sha(smsCode), codeExpiry, { fresh: !existing || phoneChanged }); row.sms_verified = false }
+    if (!phone && existing?.phone) { row.phone = existing.phone; phone = existing.phone }
 
-    // Upsert on the unique token.
-    const { error: upErr } = await db.from('signup_verifications').upsert(row, { onConflict: 'token' })
+    // Upsert on the unique token. The row id goes in the status callback URL
+    // (never the token, which is the browser's secret).
+    const { data: saved, error: upErr } = await db.from('signup_verifications').upsert(row, { onConflict: 'token' }).select('id').maybeSingle()
     if (upErr) return NextResponse.json({ error: upErr.message }, { status: 500 })
+    const verificationId: string | null = saved?.id || existing?.id || null
 
     let emailSent = false
-    let smsSent = false
+    let mobile: SendResult | null = null
     if (channel === 'both' || channel === 'email') emailSent = await sendEmailCode(email, emailCode)
-    if (channel === 'both' || channel === 'sms') smsSent = phone ? await sendSmsCode(phone, smsCode) : false
+    if (channel === 'both' || channel === 'sms') mobile = await sendSignupSms(phone, smsCode, verificationId ? signupStatusCallbackUrl(verificationId, 'sms') : undefined)
+    if (channel === 'voice') mobile = await callSignupCode(phone, smsCode, verificationId ? signupStatusCallbackUrl(verificationId, 'voice') : undefined)
+    const smsSent = !!mobile?.ok
+    const voice = voiceFallbackReady()
 
     // Record the attempt (never the codes) once the response has gone. Profile
     // and attribution come with the first send; resends only add to the timeline.
     const wanted = channel === 'both' ? ['email', 'sms'] : [channel]
     const failed = wanted.filter(c => c === 'email' ? !emailSent : !smsSent)
+    const word = (c: string) => c === 'sms' ? 'SMS' : c === 'voice' ? 'call' : 'email'
     recordSignupLater(db, {
       type: failed.length === wanted.length ? 'send_failed' : 'code_sent',
       email, channel, phone: phone || existing?.phone || null, headers: req.headers,
       profile: body.token ? undefined : cleanProfile(body.profile),
       attribution: body.token ? undefined : cleanAttribution(body.attribution),
-      detail: [body.token ? 'Resend' : 'New sign-up', failed.length ? `${failed.map(c => c === 'sms' ? 'SMS' : 'email').join(' and ')} not delivered` : ''].filter(Boolean).join(' · '),
+      smsSid: channel !== 'voice' && mobile?.ok ? mobile.sid : null,
+      callSid: channel === 'voice' && mobile?.ok ? mobile.sid : null,
+      smsError: mobile && !mobile.ok ? mobile.code : null,
+      smsErrorMessage: mobile && !mobile.ok ? mobile.message : null,
+      detail: [
+        channel === 'voice' ? 'Call me with the code' : body.token ? 'Resend' : 'New sign-up',
+        phoneChanged ? 'New mobile number' : '',
+        // "SMS not sent: no sender configured" says it all for the mobile.
+        (() => { const f = mobile?.code === 'not_configured' ? failed.filter(c => c === 'email') : failed; return f.length ? `${f.map(word).join(' and ')} not sent` : '' })(),
+        mobile?.code === 'not_configured' ? `${channel === 'voice' ? 'Call' : 'SMS'} not sent: no sender configured` : '',
+      ].filter(Boolean).join(' · '),
     })
 
-    return NextResponse.json({ ok: true, token, emailSent, smsSent })
+    // What the page shows: a plain reason when the text or call didn't go
+    // (Twilio's own wording and codes stay in super admin).
+    const mobileProblem = mobile && !mobile.ok
+      ? (channel === 'voice' ? 'We couldn’t call that number. Check it’s right and try again, or email support@colvy.com.' : smsProblemMessage(mobile.code, voice))
+      : null
+    return NextResponse.json({ ok: true, token, emailSent, smsSent, phone, sentAt: row.last_sent_at, voiceAvailable: voice, ...(mobileProblem ? { mobileProblem } : {}) })
   } catch (err: any) {
     console.error('[otp/send]', err)
     return NextResponse.json({ error: err.message || 'Could not send codes' }, { status: 500 })

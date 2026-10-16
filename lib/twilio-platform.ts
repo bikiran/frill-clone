@@ -8,6 +8,12 @@ import { TwilioService } from './twilio-service'
 //   TWILIO_MASTER_TWIML_APP_SID                              (browser calling)
 //   TWILIO_MASTER_MESSAGING_SERVICE_SID                      (optional sender pool)
 //   TWILIO_MASTER_ADDRESS_SID                                (optional AU regulatory address)
+//   TWILIO_MASTER_FROM_NUMBER                                (optional: a number on the account,
+//                                                             e.g. +61485059215, that texts sign-up
+//                                                             codes when no Messaging Service is set,
+//                                                             and is the caller ID for code calls)
+//   TWILIO_MASTER_VOICE_FROM                                 (optional: a different caller ID for
+//                                                             "Call me with the code")
 export const TWILIO_MASTER = {
   accountSid: process.env.TWILIO_MASTER_ACCOUNT_SID || '',
   authToken: process.env.TWILIO_MASTER_AUTH_TOKEN || '',
@@ -20,6 +26,13 @@ export const TWILIO_MASTER = {
   // rule. If empty, the buy flow auto-creates one from the company's regulatory
   // bundle instead.
   addressSid: process.env.TWILIO_MASTER_ADDRESS_SID || '',
+  // E.164 number on the platform account that places sign-up code calls. A
+  // Messaging Service can't make calls, so this is separate.
+  voiceFrom: (process.env.TWILIO_MASTER_VOICE_FROM || '').trim(),
+  // E.164 number on the platform account for sign-up code texts when there's
+  // no Messaging Service (the Messaging Service wins when both are set), and
+  // the caller ID for code calls when TWILIO_MASTER_VOICE_FROM isn't set.
+  fromNumber: (process.env.TWILIO_MASTER_FROM_NUMBER || '').replace(/[\s()-]/g, ''),
 }
 
 export function platformTwilioConfigured(): boolean {

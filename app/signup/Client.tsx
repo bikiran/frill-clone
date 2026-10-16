@@ -10,6 +10,7 @@ import AddressAutocomplete, { AddressParts } from '@/components/AddressAutocompl
 import BusinessAutocomplete, { BusinessDetails, BusinessHours, DAYS, emptyHours } from '@/components/BusinessAutocomplete'
 import { INDUSTRIES } from '@/lib/industries'
 import Turnstile, { TurnstileHandle, TURNSTILE_SITE_KEY } from '@/components/Turnstile'
+import { normaliseSignupMobile } from '@/lib/signup-delivery'
 
 
 const CORAL = '#ff7a6b'
@@ -19,15 +20,23 @@ const DAY_LABEL: Record<string, string> = {
   friday: 'Friday', saturday: 'Saturday', sunday: 'Sunday',
 }
 
-// AU-friendly mobile normalisation: strip spaces, turn a leading 0 into +61 so
-// the OTP SMS has a dialable number. Anything already starting with + is kept.
+// AU-friendly mobile normalisation (lib/signup-delivery, the same rules the
+// server applies): "0466 077 557", "+61 0466 077 557" and "61466077557" all
+// become +61466077557. Falls back to what was typed while it isn't valid yet.
 function normalizeMobile(raw: string): string {
-  const t = (raw || '').replace(/[\s()-]/g, '')
-  if (!t) return ''
-  if (t.startsWith('+')) return t
-  if (t.startsWith('0')) return '+61' + t.slice(1)
-  return t
+  const m = normaliseSignupMobile(raw)
+  return m.ok ? m.e164 : (raw || '').replace(/[\s()-]/g, '')
 }
+
+// Small outlined actions under the code box ("Resend text", "Call me with the code").
+const smallBtn = (disabled?: boolean): React.CSSProperties => ({
+  display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 12px', borderRadius: 10, border: '1px solid #e5e5e5',
+  background: '#fff', color: disabled ? '#9ca3af' : '#0d0d0d', fontSize: 13, fontWeight: 600, cursor: disabled ? 'default' : 'pointer',
+})
+const SmsIcon = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
+const PhoneIcon = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z" /></svg>
+const EditIcon = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z" /></svg>
+const AlertIcon = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0, marginTop: 1 }}><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
 
 const inputStyle: React.CSSProperties = {
   width: '100%', padding: '12px 14px', borderRadius: 12, border: '1px solid #e5e5e5',
@@ -99,6 +108,18 @@ function SignUpForm() {
   const [smsVerified, setSmsVerified] = useState(false)
   const [emailResend, setEmailResend] = useState(0)
   const [smsResend, setSmsResend] = useState(0)
+  // Mobile code delivery: a plain reason when the text didn't go or didn't
+  // arrive (from the send, or Twilio's delivery report via /otp/delivery), and
+  // the "call me with the code" fallback when the server can place calls.
+  const [smsProblem, setSmsProblem] = useState('')
+  const [emailProblem, setEmailProblem] = useState('')
+  const [voiceAvailable, setVoiceAvailable] = useState(false)
+  const [called, setCalled] = useState(false)
+  const [mobileBusy, setMobileBusy] = useState<'' | 'sms' | 'voice' | 'change'>('')
+  const [changingNumber, setChangingNumber] = useState(false)
+  const [newMobile, setNewMobile] = useState('')
+  const [sentAt, setSentAt] = useState('')
+  const [pollKey, setPollKey] = useState(0)
 
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -205,8 +226,9 @@ function SignUpForm() {
   const sendCodes = async () => {
     setError('')
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { setError('Enter a valid email address'); return }
-    const phone = normalizeMobile(mobile)
-    if (!phone || phone.replace(/\D/g, '').length < 8) { setError('Enter a valid mobile number'); return }
+    const checked = normaliseSignupMobile(mobile)
+    if (!checked.ok) { setError(checked.error); return }
+    const phone = checked.e164
     setLoading(true)
     try {
       const res = await fetch('/api/auth/otp/send', {
@@ -232,6 +254,13 @@ function SignUpForm() {
       const data = await res.json()
       if (!res.ok) { humanRef.current?.reset(); throw new Error(data.error || 'Could not send codes') }
       setToken(data.token)
+      // Each Turnstile token works once; coming back to this step waits for a fresh one.
+      setHumanToken('')
+      if (data.phone) setMobile(data.phone)
+      setVoiceAvailable(!!data.voiceAvailable)
+      setSmsProblem(data.smsSent === false ? (data.mobileProblem || 'We couldn’t text that number. Check it and try again.') : '')
+      setEmailProblem(data.emailSent === false ? 'We couldn’t send the email code. Check the address, or tap Resend code.' : '')
+      setSentAt(data.sentAt || ''); setCalled(false); setPollKey(k => k + 1)
       setEmailResend(30); setSmsResend(30)
       track('signup_submitted', { via: 'email', joining: false })
       setStep(5)
@@ -239,18 +268,67 @@ function SignUpForm() {
     setLoading(false)
   }
 
-  const resend = async (channel: 'email' | 'sms') => {
+  // Resend a code, call the mobile with one ('voice'), or text a corrected
+  // number (`phone`). The sign-up keeps its token, so a verified email stays verified.
+  const resend = async (channel: 'email' | 'sms' | 'voice', phoneOverride?: string) => {
     setError('')
+    const phone = phoneOverride || normalizeMobile(mobile)
+    if (channel !== 'email') setMobileBusy(phoneOverride ? 'change' : channel)
     try {
       const res = await fetch('/api/auth/otp/send', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, email: email.trim(), phone: normalizeMobile(mobile), channel }),
+        body: JSON.stringify({ token, email: email.trim(), phone, channel }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Could not resend')
-      if (channel === 'email') setEmailResend(30); else setSmsResend(30)
+      if (data.voiceAvailable !== undefined) setVoiceAvailable(!!data.voiceAvailable)
+      if (channel === 'email') {
+        setEmailResend(30)
+        setEmailProblem(data.emailSent === false ? 'We couldn’t send the email code. Check the address, or try again in a moment.' : '')
+      } else {
+        setSmsResend(30)
+        if (data.phone) setMobile(data.phone)
+        setSmsProblem(data.smsSent === false ? (data.mobileProblem || 'We couldn’t reach that number. Check it and try again.') : '')
+        setCalled(channel === 'voice' && !!data.smsSent)
+        setSentAt(data.sentAt || ''); setPollKey(k => k + 1)
+        if (phoneOverride && data.smsSent) { setChangingNumber(false); setSmsCode('') }
+      }
     } catch (e: any) { setError(e.message) }
+    setMobileBusy('')
   }
+
+  const changeNumber = () => {
+    const m = normaliseSignupMobile(newMobile)
+    if (!m.ok) { setError(m.error); return }
+    resend('sms', m.e164)
+  }
+
+  // While on "Verify mobile": ask whether the text actually arrived (Twilio's
+  // delivery report), so a blocked text says so instead of leaving them waiting.
+  useEffect(() => {
+    if (step !== 6 || !token || smsVerified) return
+    let stop = false, n = 0
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const since = sentAt ? new Date(sentAt).getTime() - 5000 : 0
+    const tick = async () => {
+      if (stop) return
+      n++
+      let done = false
+      try {
+        const res = await fetch('/api/auth/otp/delivery', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token }) })
+        const d = await res.json().catch(() => ({}))
+        if (res.ok && !stop) {
+          if (d.voiceAvailable !== undefined) setVoiceAvailable(!!d.voiceAvailable)
+          const current = !since || !d.at || new Date(d.at).getTime() >= since
+          if (current && (d.state === 'not_delivered' || d.state === 'send_failed')) { setSmsProblem(d.message || 'We couldn’t text that number.'); done = true }
+          if (current && (d.state === 'delivered' || d.state === 'answered')) done = true
+        }
+      } catch {}
+      if (!stop && !done && n < 24) timer = setTimeout(tick, 5000)
+    }
+    timer = setTimeout(tick, 2000)
+    return () => { stop = true; if (timer) clearTimeout(timer) }
+  }, [step, token, smsVerified, pollKey, sentAt])
 
   const verify = async (channel: 'email' | 'sms') => {
     setError('')
@@ -597,6 +675,8 @@ function SignUpForm() {
           <div style={{ textAlign: 'center' }}>
             <h1 style={{ fontSize: 24, fontWeight: 800, color: '#0d0d0d', margin: '4px 0 6px' }}>Verify email</h1>
             <p style={{ fontSize: 14, color: '#6b6b70', marginBottom: 24 }}>Enter the 6-digit code we emailed to <strong>{email}</strong>.</p>
+            {smsProblem && <div role="alert" style={{ display: 'flex', gap: 10, alignItems: 'flex-start', textAlign: 'left', maxWidth: 460, margin: '0 auto 16px', padding: '10px 14px', borderRadius: 12, background: '#fef2f2', border: '1px solid #fca5a5', color: '#b91c1c', fontSize: 13 }}><AlertIcon /><span><strong>Your mobile:</strong> {smsProblem}</span></div>}
+            {emailProblem && <div role="alert" style={{ display: 'flex', gap: 10, alignItems: 'flex-start', textAlign: 'left', maxWidth: 460, margin: '0 auto 16px', padding: '10px 14px', borderRadius: 12, background: '#fffbeb', border: '1px solid #fcd34d', color: '#92400e', fontSize: 13 }}><AlertIcon />{emailProblem}</div>}
             <input value={emailCode} onChange={e => setEmailCode(e.target.value.replace(/\D/g, '').slice(0, 6))} autoFocus inputMode="numeric" placeholder="Enter code"
               onKeyDown={e => { if (e.key === 'Enter') verify('email') }}
               style={{ ...inputStyle, maxWidth: 320, margin: '0 auto', textAlign: 'center', letterSpacing: 6, fontSize: 20, fontWeight: 700 }} />
@@ -613,14 +693,44 @@ function SignUpForm() {
         {step === 6 && (
           <div style={{ textAlign: 'center' }}>
             <h1 style={{ fontSize: 24, fontWeight: 800, color: '#0d0d0d', margin: '4px 0 6px' }}>Verify mobile</h1>
-            <p style={{ fontSize: 14, color: '#6b6b70', marginBottom: 24 }}>Enter the 6-digit code we texted to <strong>{normalizeMobile(mobile)}</strong>.</p>
-            <input value={smsCode} onChange={e => setSmsCode(e.target.value.replace(/\D/g, '').slice(0, 6))} autoFocus inputMode="numeric" placeholder="Enter code"
+            <p style={{ fontSize: 14, color: '#6b6b70', marginBottom: 20 }}>Enter the 6-digit code we {called ? 'read out to' : 'texted to'} <strong>{normalizeMobile(mobile)}</strong>.</p>
+            {smsProblem && (
+              <div role="alert" style={{ display: 'flex', gap: 10, alignItems: 'flex-start', textAlign: 'left', maxWidth: 460, margin: '0 auto 16px', padding: '12px 14px', borderRadius: 12, background: '#fef2f2', border: '1px solid #fca5a5', color: '#b91c1c', fontSize: 13.5, lineHeight: 1.45 }}>
+                <AlertIcon /><span>{smsProblem}</span>
+              </div>
+            )}
+            {called && !smsProblem && (
+              <div role="status" style={{ display: 'flex', gap: 10, alignItems: 'flex-start', textAlign: 'left', maxWidth: 460, margin: '0 auto 16px', padding: '12px 14px', borderRadius: 12, background: '#f0fdf4', border: '1px solid #86efac', color: '#166534', fontSize: 13.5, lineHeight: 1.45 }}>
+                <PhoneIcon /><span>We&rsquo;re calling {normalizeMobile(mobile)} now. Answer and listen for the 6-digit code. It&rsquo;s read out twice.</span>
+              </div>
+            )}
+            <input value={smsCode} onChange={e => setSmsCode(e.target.value.replace(/\D/g, '').slice(0, 6))} autoFocus inputMode="numeric" autoComplete="one-time-code" placeholder="Enter code"
               onKeyDown={e => { if (e.key === 'Enter') verify('sms') }}
               style={{ ...inputStyle, maxWidth: 320, margin: '0 auto', textAlign: 'center', letterSpacing: 6, fontSize: 20, fontWeight: 700 }} />
-            <div style={{ marginTop: 12 }}>
-              <button type="button" onClick={() => resend('sms')} disabled={smsResend > 0} style={{ background: 'none', border: 'none', cursor: smsResend > 0 ? 'default' : 'pointer', color: smsResend > 0 ? '#9ca3af' : CORAL, fontSize: 13, fontWeight: 600 }}>
-                {smsResend > 0 ? `Resend code in ${smsResend}s` : 'Resend code'}
-              </button>
+            <div style={{ marginTop: 18 }}>
+              <p style={{ fontSize: 13, color: '#6b6b70', margin: '0 0 8px' }}>Didn&rsquo;t get it?{smsResend > 0 ? ` You can ask again in ${smsResend}s.` : ''}</p>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'center' }}>
+                <button type="button" onClick={() => resend('sms')} disabled={smsResend > 0 || !!mobileBusy} style={smallBtn(smsResend > 0 || !!mobileBusy)}>
+                  <SmsIcon />{mobileBusy === 'sms' ? 'Sending…' : 'Text me again'}
+                </button>
+                {voiceAvailable && (
+                  <button type="button" onClick={() => resend('voice')} disabled={smsResend > 0 || !!mobileBusy} style={smallBtn(smsResend > 0 || !!mobileBusy)}>
+                    <PhoneIcon />{mobileBusy === 'voice' ? 'Calling…' : 'Call me with the code'}
+                  </button>
+                )}
+                <button type="button" onClick={() => { setChangingNumber(c => !c); setNewMobile(mobile) }} disabled={!!mobileBusy} style={smallBtn(!!mobileBusy)}>
+                  <EditIcon />Change number
+                </button>
+              </div>
+              {changingNumber && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'center', maxWidth: 420, margin: '12px auto 0' }}>
+                  <input value={newMobile} onChange={e => setNewMobile(e.target.value)} placeholder="04xx xxx xxx" inputMode="tel" autoComplete="tel"
+                    onKeyDown={e => { if (e.key === 'Enter') changeNumber() }} style={{ ...inputStyle, flex: '1 1 200px', width: 'auto' }} />
+                  <button type="button" onClick={changeNumber} disabled={!!mobileBusy || smsResend > 0} style={{ ...primaryBtn(!!mobileBusy || smsResend > 0), padding: '10px 16px', fontSize: 14 }}>
+                    {mobileBusy === 'change' ? 'Sending…' : 'Text this number'}
+                  </button>
+                </div>
+              )}
             </div>
             {footer(true, <button type="button" onClick={() => verify('sms')} disabled={loading || smsCode.length !== 6} style={primaryBtn(loading || smsCode.length !== 6)}>Verify mobile →</button>)}
           </div>
@@ -641,7 +751,7 @@ function SignUpForm() {
                 <input type="checkbox" checked={showPassword} onChange={e => setShowPassword(e.target.checked)} /> Show password
               </label>
             </div>
-            {footer(true, <button type="button" onClick={finish} disabled={loading} style={primaryBtn(loading)}>{loading ? 'Creating your board…' : 'Create my board 🎉'}</button>)}
+            {footer(true, <button type="button" onClick={finish} disabled={loading} style={primaryBtn(loading)}>{loading ? 'Creating your board…' : 'Create my board'}</button>)}
           </div>
         )}
       </div>
