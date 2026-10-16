@@ -136,7 +136,7 @@ export async function openWaitlistConversation(db: any, companyId: string, entry
       await db.from('messages').insert({
         conversation_id: conversationId, company_id: companyId, sender_type: 'system', is_internal: true,
         content: `Waiting for ${row.item_name} — joined the back-in-stock waitlist${row.source === 'website' ? ' on your website' : ''} on ${when}.`,
-        metadata: { internal: true, waitlist: true, waitlist_id: row.id },
+        metadata: { internal: true, waitlist: true, waitlist_id: row.id, waitlist_href: `/admin/waitlists?entry=${row.id}`, item_name: row.item_name },
       })
     }
   } catch {}

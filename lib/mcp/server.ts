@@ -18,6 +18,7 @@ import {
 } from '@/lib/ai-assistant/tools'
 import type { McpAuth } from '@/lib/mcp/auth'
 import { canWrite } from '@/lib/mcp/auth'
+import { linkWaitlistRun } from '@/lib/waitlist-add'
 
 export const PROTOCOL_VERSIONS = ['2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05']
 export const SERVER_INFO = { name: 'colvy', title: 'Colvy', version: '1.0.0' }
@@ -126,15 +127,19 @@ export async function callTool(db: any, ctx: AssistantContext, auth: McpAuth, na
   }
 
   const r = await executeAction(db, ctx, name, args)
-  await recordAppAction(db, ctx, auth, name, args, r, false)
+  const recorded = await recordAppAction(db, ctx, auth, name, args, r, false)
+  // A waiting-list entry says which app added it, and links to this record.
+  if (name === 'add_to_waitlist' && r.ok && r.entityId) await linkWaitlistRun(db, ctx.companyId, r.entityId, recorded, `${appName(auth)} via Colvy AI (requested by ${ctx.userName || 'a team member'})`)
   return r.ok ? okResult({ status: 'done', ...(r.card ? { result: r.card } : {}), ...(r.entityId ? { id: r.entityId } : {}) }) : fail(r.error || 'Could not complete that.')
 }
 
+const appName = (auth: McpAuth) => auth.name || (auth.kind === 'oauth' ? 'A connected app' : 'An API key')
+
 /** Every change a connected app makes lands in the AI Agents activity, with who it acted as. */
 async function recordAppAction(db: any, ctx: AssistantContext, auth: McpAuth, name: string, args: any, r: any, confirmed: boolean) {
-  const app = auth.name || (auth.kind === 'oauth' ? 'A connected app' : 'An API key')
+  const app = appName(auth)
   const what = r?.card?.title || name.replace(/_/g, ' ')
-  await recordActivity(db, {
+  return recordActivity(db, {
     companyId: ctx.companyId, roleKey: 'connected_app', trigger: 'mcp',
     conversationId: args?.conversationId || null, contactId: args?.contactId || null,
     input: { app, tool: name, as: ctx.userName || null, kind: auth.kind },

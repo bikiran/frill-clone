@@ -25,6 +25,7 @@ export type Totals = {
   unanswered: number         // drafts nobody looked at before they expired
   escalated: number          // handed to the team
   tasks: number              // tasks created for the team
+  waitlisted: number         // customers put on a back-in-stock waiting list (on their own or approved)
   failed: number             // runs that went wrong
   failedDeliveries: number   // approved but didn't go out
   reviewsAnswered: number
@@ -43,7 +44,7 @@ export type Exception = { runId: string; role: string; summary: string; at: stri
 export type Results = { days: number; since: string; current: Totals; previous: Totals; roles: RoleRow[]; exceptions: Exception[] }
 
 const blank = (): Totals => ({
-  runs: 0, sentOnOwn: 0, otherDone: 0, approvedAsIs: 0, edited: 0, dismissed: 0, unanswered: 0, escalated: 0, tasks: 0, failed: 0, failedDeliveries: 0,
+  runs: 0, sentOnOwn: 0, otherDone: 0, approvedAsIs: 0, edited: 0, dismissed: 0, unanswered: 0, escalated: 0, tasks: 0, waitlisted: 0, failed: 0, failedDeliveries: 0,
   reviewsAnswered: 0, commentsAnswered: 0, ordersFlagged: 0, ordersCaught: 0, customersUpdated: 0,
   cartsWon: 0, cartsWonValue: 0, quotesPaid: 0, quotesPaidValue: 0, minutesSaved: 0, medianApprovalMinutes: null,
 })
@@ -76,7 +77,7 @@ export async function agentResults(db: any, companyId: string, days = 7, now = D
   const [runs, steps, approvals] = await Promise.all([
     pageAll(from => db.from('agent_runs').select('id, role_key, status, outcome, summary, input, created_at, mode')
       .eq('company_id', companyId).eq('mode', 'live').gte('created_at', before).order('created_at', { ascending: false }).range(from, from + 999)).catch(() => []),
-    pageAll(from => db.from('agent_steps').select('run_id, action_key, kind, decision, status, autonomy, created_at')
+    pageAll(from => db.from('agent_steps').select('run_id, action_key, kind, decision, status, autonomy, entity_id, created_at')
       .eq('company_id', companyId).gte('created_at', before).in('kind', ['action', 'approval']).range(from, from + 999)).catch(() => []),
     pageAll(from => db.from('agent_approvals').select('id, run_id, action_key, status, result, created_at, decided_at')
       .eq('company_id', companyId).gte('created_at', before).range(from, from + 999)).catch(() => []),
@@ -122,6 +123,9 @@ export async function agentResults(db: any, companyId: string, days = 7, now = D
       } else if (key === 'escalate_to_human') {
         t.escalated++
         if (inCur) { role(run.role_key).escalated++; exceptions.push({ runId: run.id, role: run.role_key, summary: run.summary || 'Handed to the team.', at: s.created_at, kind: 'escalated' }) }
+      } else if (key === 'add_to_waitlist') {
+        // Only real adds carry the entry (not "already waiting" or "it's in stock").
+        if (s.entity_id) t.waitlisted++
       } else if (key === 'create_task') {
         t.tasks++
         if (run.role_key === 'operations') (inCur ? caughtRuns.cur : caughtRuns.prev).add(run.id)
@@ -145,6 +149,7 @@ export async function agentResults(db: any, companyId: string, days = 7, now = D
     else if (a.status === 'expired' && !a.result?.superseded) t.unanswered++
     else if (a.status === 'failed') t.failedDeliveries++
     if (sent) {
+      if (a.action_key === 'add_to_waitlist' && a.result?.added) t.waitlisted++   // not "already waiting"
       if (a.action_key === 'reply_to_review') t.reviewsAnswered++
       if (a.action_key === 'reply_to_comment') t.commentsAnswered++
       if (a.action_key === 'send_order_update') { t.customersUpdated++; (inCur ? caughtRuns.cur : caughtRuns.prev).add(run.id) }

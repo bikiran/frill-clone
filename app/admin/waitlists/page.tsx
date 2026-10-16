@@ -12,6 +12,8 @@ import Pagination, { usePagination } from '@/components/Pagination'
 import { confirmDialog } from '@/components/ConfirmDialog'
 import { waitlistItemKey } from '@/lib/waitlist-keys'
 import { WAITLIST_SEEN_KEY, resolveNewSince, collectNewIds, isTaggedNew, countNew, sortNewFirst } from '@/lib/waitlist-new'
+import { isAiAdded, countAiAdded } from '@/lib/waitlist-ai'
+import { AiAddedPill, AiSpark, AI_VIOLET } from '@/components/AiAddedBadge'
 import { BellIcon, GearIcon, PlusIcon, ChatIcon, TagIcon, XIcon, EditIcon, ExternalIcon, ChevronDownIcon } from '@/components/booking/icons'
 
 // Back-in-stock waitlists. Customers who asked for something that's out of
@@ -42,6 +44,10 @@ const webUrl = (u?: string | null) => (u && /^https?:\/\//i.test(u) ? u : null)
 const fmtDate = (d: string) => new Date(d).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })
 const money = (n: number) => new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' }).format(n)
 const isWaiting = (e: any) => e.status === 'waiting' || e.status === 'queued'
+// In the tab being viewed, and matching the search (q: lower-cased, trimmed).
+const inView = (e: any, tab: string, newIds: ReadonlySet<string>, q: string) =>
+  (tab === 'all' || (tab === 'new' ? isTaggedNew(e, newIds) : tab === 'waiting' ? OPEN.includes(e.status) : e.status === 'notified'))
+  && (!q || [e.item_name, e.customer_name, e.phone, e.email].some(v => String(v || '').toLowerCase().includes(q)))
 
 export default function WaitlistsPage() {
   const router = useRouter()
@@ -80,6 +86,16 @@ export default function WaitlistsPage() {
   const [toast, setToast] = useState('')
   const [showAdd, setShowAdd] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
+  // "Added by AI" filter, and ?entry= (a link from an AI note or the agents' activity) to open one entry.
+  const [aiOnly, setAiOnly] = useState(false)
+  const [focusId, setFocusId] = useState<string | null>(null)
+  useEffect(() => {
+    try {
+      const q = new URLSearchParams(window.location.search)
+      if (q.get('filter') === 'ai') setAiOnly(true)
+      if (q.get('entry')) setFocusId(q.get('entry'))
+    } catch {}
+  }, [])
 
   const flash = (m: string) => { setToast(m); setTimeout(() => setToast(''), 5000) }
 
@@ -163,9 +179,8 @@ export default function WaitlistsPage() {
     const q = search.trim().toLowerCase()
     const map = new Map<string, any>()
     for (const e of entries) {
-      const inTab = tab === 'all' || (tab === 'new' ? isTaggedNew(e, newIds) : tab === 'waiting' ? OPEN.includes(e.status) : e.status === 'notified')
-      if (!inTab) continue
-      if (q && ![e.item_name, e.customer_name, e.phone, e.email].some(v => String(v || '').toLowerCase().includes(q))) continue
+      if (!inView(e, tab, newIds, q)) continue
+      if (aiOnly && !isAiAdded(e)) continue
       const k = groupKey(e)
       const g = map.get(k) || { key: k, name: e.item_name, image: e.item_image, url: e.item_url, productId: waitlistItemKey(e), entries: [] as any[] }
       g.image = g.image || e.item_image
@@ -178,6 +193,7 @@ export default function WaitlistsPage() {
     list.forEach(g => {
       g.waiting = g.entries.filter(isWaiting).length
       g.newCount = g.entries.filter((e: any) => isTaggedNew(e, newIds)).length
+      g.aiCount = g.entries.filter((e: any) => isAiAdded(e) && e.status !== 'cancelled').length
       // Current price from the store, and what the waitlist is worth if each
       // person waiting buys one once it's back.
       const p = g.productId ? stock[String(g.productId)] : null
@@ -188,7 +204,7 @@ export default function WaitlistsPage() {
     })
     // Items with new customers float to the top of the usual order.
     return sortNewFirst(list, (a, b) => b.waiting - a.waiting || b.entries.length - a.entries.length)
-  }, [entries, tab, search, stock, newIds])
+  }, [entries, tab, search, stock, newIds, aiOnly])
 
   const stats = useMemo(() => {
     const monthAgo = Date.now() - 30 * 86400000
@@ -207,14 +223,29 @@ export default function WaitlistsPage() {
       notified30: entries.filter(e => e.status === 'notified' && e.notified_at && new Date(e.notified_at).getTime() > monthAgo).length,
       newWaiting: waiting.filter(e => isTaggedNew(e, newIds)).length,
       newTotal: countNew(entries, newIds),
+      // The filter's count: AI-added customers in the tab (and search) you're looking at.
+      aiTotal: countAiAdded(entries.filter(e => inView(e, tab, newIds, search.trim().toLowerCase()))),
     }
-  }, [entries, stock, newIds])
+  }, [entries, stock, newIds, tab, search])
+
+  // Opened from a link to one entry: show it (whatever its status), open its item and bring it into view — once.
+  const focusDone = useRef(false)
+  useEffect(() => {
+    if (!focusId || !entries.length || focusDone.current) return
+    const e = entries.find(x => String(x.id) === focusId)
+    if (!e) return
+    focusDone.current = true
+    if (!OPEN.includes(e.status)) setTab('all')
+    setOpen(o => ({ ...o, [groupKey(e)]: true }))
+    const t = setTimeout(() => { try { document.getElementById(`wl-e-${e.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }) } catch {} }, 450)
+    return () => clearTimeout(t)
+  }, [focusId, entries])
 
   // The New filter only shows while there's something new in it.
   useEffect(() => { if (tab === 'new' && !stats.newTotal) setTab('waiting') }, [tab, stats.newTotal])
 
   // One card per item; page through them once the list gets long.
-  const pg = usePagination(groups, { key: 'waitlists', defaultSize: 25, resetOn: [tab, search] })
+  const pg = usePagination(groups, { key: 'waitlists', defaultSize: 25, resetOn: [tab, search, aiOnly] })
 
   const notifyGroup = async (g: any) => {
     const ids = g.entries.filter((e: any) => e.status === 'waiting' || e.status === 'queued').map((e: any) => e.id)
@@ -343,13 +374,19 @@ export default function WaitlistsPage() {
             <button key={t} onClick={() => setTab(t)} style={{ padding: '7px 14px', borderRadius: 8, border: 'none', background: tab === t ? '#fff' : 'transparent', boxShadow: tab === t ? '0 1px 3px rgba(0,0,0,0.08)' : 'none', color: tab === t ? 'var(--ink)' : t === 'new' ? NEW_PILL.c : 'var(--slate)', fontSize: 13, fontWeight: 700, cursor: 'pointer', textTransform: 'capitalize' }}>{t === 'new' ? `New (${stats.newTotal})` : t}</button>
           ))}
         </div>
+        {(stats.aiTotal > 0 || aiOnly) && (
+          <button type="button" onClick={() => setAiOnly(v => !v)} aria-pressed={aiOnly} title="Only customers an AI agent or Colvy AI added"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 12px', borderRadius: 10, border: `1px solid ${aiOnly ? AI_VIOLET.c : AI_VIOLET.border}`, background: aiOnly ? AI_VIOLET.c : AI_VIOLET.bg, color: aiOnly ? '#fff' : AI_VIOLET.c, fontSize: 13, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+            <AiSpark size={12} /> Added by AI ({stats.aiTotal})
+          </button>
+        )}
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search item or customer…" style={{ ...inp, maxWidth: 300 }} />
       </div>
 
       {groups.length === 0 ? (
         <div style={{ ...card, textAlign: 'center', padding: '48px 20px' }}>
           <div style={{ width: 54, height: 54, borderRadius: 17, background: 'var(--peach, #fff1ee)', color: 'var(--coral, #ff7a6b)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}><BellIcon size={26} /></div>
-          <p style={{ margin: '0 0 6px', fontWeight: 800, fontSize: 16, color: 'var(--ink)' }}>{tab === 'waiting' ? 'Nobody is waiting right now' : 'Nothing here yet'}</p>
+          <p style={{ margin: '0 0 6px', fontWeight: 800, fontSize: 16, color: 'var(--ink)' }}>{aiOnly ? 'No one added by AI here' : tab === 'waiting' ? 'Nobody is waiting right now' : 'Nothing here yet'}</p>
           <p style={{ margin: '0 auto 16px', fontSize: 13.5, color: 'var(--slate)', maxWidth: 440, lineHeight: 1.55 }}>
             When a customer asks for something that's out of stock, add them here (or with <b>Waitlist</b> on their conversation). The moment it's back, they get a text.
           </p>
@@ -379,7 +416,7 @@ export default function WaitlistsPage() {
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4, flexWrap: 'wrap' }}>
                         <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 999, background: badge.bg, color: badge.c }}>{badge.label}</span>
                         <span style={{ fontSize: 12.5, color: 'var(--slate)' }}>
-                          {g.waiting} waiting{g.newCount > 0 && <> · <span style={{ color: NEW_PILL.c, fontWeight: 700 }}>{g.newCount} new</span></>} · {g.entries.length} total
+                          {g.waiting} waiting{g.newCount > 0 && <> · <span style={{ color: NEW_PILL.c, fontWeight: 700 }}>{g.newCount} new</span></>}{g.aiCount > 0 && <> · <span className="wl-ai-count" title={`${g.aiCount} added by an AI agent or Colvy AI`} style={{ color: AI_VIOLET.c, fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 3 }}><AiSpark /> {g.aiCount} by AI</span></>} · {g.entries.length} total
                           {g.potential != null && g.waiting > 0 && <> · <span style={{ color: '#059669', fontWeight: 700 }}>{money(g.potential)} potential</span></>}
                         </span>
                       </div>
@@ -410,11 +447,12 @@ export default function WaitlistsPage() {
                           onSaved={async () => { setEditing(null); flash('Customer details saved.'); await load(companyId) }} />
                       )
                       return (
-                        <div key={e.id} className="wl-row" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', borderBottom: '1px solid var(--border)', flexWrap: 'wrap', ['--i' as any]: Math.min(i, 12) }}>
+                        <div key={e.id} id={`wl-e-${e.id}`} className="wl-row" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', borderBottom: '1px solid var(--border)', flexWrap: 'wrap', ['--i' as any]: Math.min(i, 12), ...(focusId === String(e.id) ? (isAiAdded(e) ? { background: AI_VIOLET.bg, boxShadow: `inset 3px 0 0 ${AI_VIOLET.c}` } : { background: 'var(--peach, #fff1ee)', boxShadow: 'inset 3px 0 0 var(--coral, #ff7a6b)' }) : {}) }}>
                           <div style={{ flex: '1 1 200px', minWidth: 0 }}>
                             <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--ink)', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                               {e.customer_name || 'Customer'}
                               {isTaggedNew(e, newIds) && <NewPill since={newSince} firstVisit={firstVisit} />}
+                              {isAiAdded(e) && <AiAddedPill entry={e} companyId={companyId} />}
                             </div>
                             <div style={{ fontSize: 12, color: 'var(--slate)' }}>{[e.phone, e.email].filter(Boolean).join(' · ')}</div>
                             {e.note && <div style={{ fontSize: 12, color: 'var(--slate)', marginTop: 2, fontStyle: 'italic' }}>“{e.note}”</div>}
@@ -424,7 +462,7 @@ export default function WaitlistsPage() {
                               the remove button used to wrap onto a line of its own. */}
                           <div className="wl-acts" style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto', minWidth: 0 }}>
                           <span className="wl-when" style={{ fontSize: 12, color: 'var(--slate)', whiteSpace: 'nowrap', minWidth: 0 }}>
-                            {e.status === 'notified' && e.notified_at ? `${e.notified_via === 'email' ? 'Emailed' : 'Texted'} ${fmtDate(e.notified_at)}` : `Added ${fmtDate(e.created_at)}`}{e.source === 'inbox' ? ' · from inbox' : e.source === 'website' ? ' · from website' : ''}
+                            {e.status === 'notified' && e.notified_at ? `${e.notified_via === 'email' ? 'Emailed' : 'Texted'} ${fmtDate(e.notified_at)}` : `Added ${fmtDate(e.created_at)}`}{e.source === 'inbox' ? ' · from inbox' : e.source === 'website' ? ' · from website' : e.source === 'ai_agent' ? ' · from AI agent' : e.source === 'colvy_ai' ? ' · via Colvy AI' : ''}
                           </span>
                           <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 999, background: pill.bg, color: pill.c, whiteSpace: 'nowrap', flexShrink: 0 }}>{pill.label}</span>
                           {e.conversation_id

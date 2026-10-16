@@ -38,11 +38,13 @@ function tenantPolicy(policies: PolicyRow[], role: RoleDef, action: ActionDef): 
 }
 
 // "Per day" is the last 24 hours — the server's midnight isn't the business's.
-async function countToday(db: any, companyId: string, actionKey: string): Promise<number> {
+async function countToday(db: any, companyId: string, action: ActionDef): Promise<number> {
   const since = new Date(Date.now() - 86_400_000)
   try {
-    const { count } = await db.from('agent_steps').select('id', { count: 'exact', head: true })
-      .eq('company_id', companyId).eq('action_key', actionKey).eq('decision', 'allowed').eq('kind', 'action').neq('autonomy', 'external').gte('created_at', since.toISOString())
+    let q = db.from('agent_steps').select('id', { count: 'exact', head: true })
+      .eq('company_id', companyId).eq('action_key', action.key).eq('decision', 'allowed').eq('kind', 'action').neq('autonomy', 'external').gte('created_at', since.toISOString())
+    if (action.limitCountsEntitiesOnly) q = q.not('entity_id', 'is', null)
+    const { count } = await q
     return count || 0
   } catch { return 0 }
 }
@@ -84,7 +86,7 @@ export async function decide(
       level = 'prepare'; reason = `Over the limit ($${(amount / 100).toFixed(2)} > $${(limits.max_amount_cents / 100).toFixed(2)}), so a person approves it.`
     } else if (limits.require_verified_customer && ctx.customerVerification !== 'verified') {
       level = 'prepare'; reason = 'The customer isn’t verified yet, so a person approves it.'
-    } else if (limits.max_per_day != null && (await countToday(ctx.db, ctx.companyId, action.key)) >= limits.max_per_day) {
+    } else if (limits.max_per_day != null && (await countToday(ctx.db, ctx.companyId, action)) >= limits.max_per_day) {
       level = 'prepare'; reason = `Daily limit of ${limits.max_per_day} reached, so a person approves it.`
     } else {
       const why = action.autoCheck ? await action.autoCheck(ctx, input, limits) : null

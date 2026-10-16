@@ -11,6 +11,8 @@ import { smartSearchKnowledge } from '@/lib/ai-knowledge'
 import { BUILDER_TOOLS, BUILDER_TOOL_NAMES, runBuilderAction, runBuilderRead } from '@/lib/ai-assistant/builders'
 import { proposeMemory } from '@/lib/agent/business-memory'
 import { STAFF_FILTER } from '@/lib/team-list'
+import { resolveWaitlistProduct, unresolvedText, addToWaitlist, isInStock, wooOptions } from '@/lib/waitlist-add'
+import { assistantAddedBy, waitlistEntryHref } from '@/lib/waitlist-ai'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Colvy AI assistant — controlled tool layer.
@@ -172,6 +174,24 @@ export const ASSISTANT_TOOLS: ToolDef[] = [
         linkConversationId: { type: 'string' },
       },
       required: ['title'],
+    },
+  },
+  {
+    name: 'add_to_waitlist', safety: 'immediate',
+    description: "Put a customer on the back-in-stock waiting list for a product, so they get one text (or email) when it's back — for 'add Thi to the waitlist for the red bristlenose'. Find the product with check_stock first and pass its productId — for a product with sizes/options, the option's productId (a name only works when it is exactly one product's name; otherwise you get the close matches or the options to ask about). Resolve a named customer with search_contacts and pass contactId; with neither, it's the open conversation's customer. Won't add someone for an item that's in stock, or who opted out of texts and has no email. Internal: just do it.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        productId: { type: 'string', description: 'productId from check_stock (or a close match this tool listed)' },
+        productName: { type: 'string', description: 'the product name, as check_stock shows it' },
+        variantId: { type: 'string', description: 'Shopify size/option id, optional' },
+        contactId: { type: 'string', description: 'the customer, from search_contacts; omit for the open conversation' },
+        phone: { type: 'string', description: 'only for someone who is not a saved contact' },
+        email: { type: 'string', description: 'only for someone who is not a saved contact' },
+        name: { type: 'string', description: "the customer's name as the user said it (checked against the open conversation), or the display name to go with phone/email" },
+        note: { type: 'string', description: "staff note, e.g. 'wants 2'" },
+      },
+      required: ['productName'],
     },
   },
   {
@@ -785,11 +805,18 @@ export async function runReadTool(db: SupabaseClient, ctx: AssistantContext, nam
     try {
       const woo = new WooCommerceService({ storeUrl: store.store_url, consumerKey: store.consumer_key, consumerSecret: store.consumer_secret, companyId: ctx.companyId })
       const products = await woo.searchProducts(q, 8)
+      // Sizes/options have their own stock (a parent is "in stock" if any one is): list them, live, for the first few.
+      const opts = await Promise.all(products.map((p: any, i: number) => (p.has_variations && i < 3 ? wooOptions(woo, Number(p.id)) : Promise.resolve(null))))
       return {
-        products: products.map((p: any) => ({
-          name: p.name, sku: p.sku || null,
+        products: products.map((p: any, i: number) => ({
+          // productId: what add_to_waitlist takes (the agents and Colvy AI).
+          productId: p.id != null ? String(p.id) : null, name: p.name, sku: p.sku || null,
           stockStatus: p.stock_status, stockQty: p.manage_stock ? p.stock_quantity : null,
           price: money(p.price), hasVariations: p.has_variations,
+          ...(p.has_variations ? {
+            note: 'Has sizes/options: stock is per option. Use the productId of the option the customer wants.',
+            ...(opts[i]?.length ? { options: opts[i]!.slice(0, 15).map(o => ({ productId: o.productId, option: o.name, stockStatus: o.inStock == null ? null : o.inStock ? 'instock' : 'outofstock', price: o.price != null ? money(o.price) : null })) } : {}),
+          } : {}),
         })),
       }
     } catch (e: any) { return { error: e?.message || 'Could not reach the store.' } }
@@ -926,6 +953,60 @@ export async function executeAction(db: SupabaseClient, ctx: AssistantContext, n
     }
     await logAiEvent(D, { companyId: ctx.companyId, userId: ctx.userId, action: 'Created task', tool: name, entityType: 'task', entityId: ins.id, input: row, result: { title } })
     return { ok: true, entityType: 'task', entityId: ins.id, card, undo: { entityType: 'task', entityId: ins.id } }
+  }
+
+  if (name === 'add_to_waitlist') {
+    const asked = String(args?.productName || '').trim()
+    const found = await resolveWaitlistProduct(D, ctx.companyId, { productId: args?.productId, variantId: args?.variantId, name: asked })
+    if ('matches' in found) {
+      const text = unresolvedText(found, asked, m => `${m.name} (${m.inStock == null ? 'stock unknown' : m.inStock ? 'in stock' : 'out of stock'}, productId ${m.productId})`)
+      return { ok: false, error: found.reason === 'needs_variation' ? text : `${text}${found.matches.length ? ' Ask which one they mean.' : ' Check the name with check_stock.'}` }
+    }
+    const product = found.product
+    if (isInStock(product)) return { ok: false, error: `${product.name} is in stock right now${product.price != null ? ` (${money(product.price)})` : ''}, so there’s nothing to wait for. If you still want them on the list, add them from the Waitlists page.` }
+    // Who: the contact named, a person who isn't saved yet, or the open conversation's customer.
+    let contactId: string | null = args?.contactId ? String(args.contactId) : null
+    if (contactId) {
+      const { data: c } = await D.from('contacts').select('id').eq('company_id', ctx.companyId).eq('id', contactId).maybeSingle()
+      if (!c) return { ok: false, error: 'I couldn’t find that customer — search for them first.' }
+    }
+    const typed = !contactId && (args?.phone || args?.email)
+    let conversationId: string | null = null
+    if (!contactId && !typed) {
+      contactId = ctx.contactId || null
+      if (!contactId && ctx.conversationId) {
+        const { data: cv } = await D.from('conversations').select('contact_id').eq('company_id', ctx.companyId).eq('id', ctx.conversationId).maybeSingle()
+        contactId = cv?.contact_id || null
+      }
+      conversationId = ctx.conversationId || null
+      if (!contactId && !conversationId) return { ok: false, error: 'Who should I add? Name the customer.' }
+      // A name was said: only the open conversation's customer if it's them.
+      const said = String(args?.name || '').trim().toLowerCase()
+      if (said) {
+        const { data: oc } = contactId ? await D.from('contacts').select('name').eq('company_id', ctx.companyId).eq('id', contactId).maybeSingle() : { data: null }
+        const theirs = String(oc?.name || '').toLowerCase().split(/\s+/).filter(Boolean)
+        if (!said.split(/\s+/).filter(Boolean).every(w => theirs.some(t => t.startsWith(w)))) {
+          return { ok: false, error: `The open conversation is with ${oc?.name || 'someone else'}, not “${args.name}”. Find them with search_contacts and pass their contactId.` }
+        }
+      }
+    } else if (contactId && contactId === ctx.contactId) conversationId = ctx.conversationId || null
+    const addedBy = assistantAddedBy(ctx.userName)
+    const r = await addToWaitlist(D, {
+      companyId: ctx.companyId, product, contactId, conversationId,
+      customerName: typed ? (String(args?.name || '').trim() || null) : null,
+      phone: typed ? args?.phone || null : null, email: typed ? args?.email || null : null,
+      note: args?.note || null, source: 'colvy_ai', addedBy, createdBy: ctx.userId || null, siteOrigin: ctx.siteOrigin,
+    })
+    if ('error' in r) return { ok: false, error: r.error }
+    const who = r.customerName || 'They'
+    const href = r.entry?.id ? waitlistEntryHref(r.entry.id) : '/admin/waitlists'
+    // Already waiting: nothing changed, so no entity (the record mustn't relabel someone else's entry).
+    if (!r.added) return { ok: true, card: { kind: 'waitlist', title: `${who} is already on the waiting list`, lines: [product.name], href }, undo: null }
+    await logAiEvent(D, { companyId: ctx.companyId, userId: ctx.userId, action: 'Added to waitlist', tool: name, entityType: 'waitlist', entityId: r.entry?.id, input: { productName: product.name, contactId }, result: { notifyBy: r.notifyBy } })
+    return {
+      ok: true, entityType: 'waitlist', entityId: r.entry?.id, undo: null,
+      card: { kind: 'waitlist', title: `Added ${who} to the waiting list`, lines: [product.name, `${r.notifyBy === 'sms' ? 'Texted' : 'Emailed'} when it’s back · ${addedBy.replace(/^Colvy AI/, 'Added by Colvy AI')}`], href },
+    }
   }
 
   if (name === 'create_reminder') {

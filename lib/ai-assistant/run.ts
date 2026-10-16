@@ -7,6 +7,7 @@ import {
 } from '@/lib/ai-assistant/tools'
 import { modelFor, trackAi } from '@/lib/ai-models'
 import { memoryForPrompt, memoryBlock, type PromptMemory } from '@/lib/agent/business-memory'
+import { linkWaitlistRun } from '@/lib/waitlist-add'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Colvy AI assistant — the tool-use loop.
@@ -97,6 +98,7 @@ WHAT YOU CAN DO
 - Tasks & reminders: create (with assignees, an outlet, a due date, a link to an order/conversation) and update them (done/reopen, priority, due date, reassign).
 - Calendar events; place a call from the softphone; record a sale.
 - Reports (sales, orders, fulfilment, top products) and stock (live stock and price, out-of-stock list) — never invent numbers.
+- Back-in-stock waiting lists: add a customer to the waiting list for a product (add_to_waitlist, e.g. "add Thi to the waitlist for the red bristlenose") — check_stock first and pass its productId; if it lists close matches instead, ask which one.
 - Messaging a customer (send_message), replying to a support ticket (reply_ticket), replying to a Google review (reply_review), replying to a Facebook/Instagram comment (reply_social_comment).
 - Sending a payment link for an amount (send_payment_link), asking a customer to upload photos/videos (request_media), sending an online booking link (send_booking_link).
 - Orders: assign to an outlet or clear it (assign_order_outlet, several at once is fine), change status, cancel, refund.
@@ -104,7 +106,7 @@ WHAT YOU CAN DO
 - Business Memory: suggest a rule or must-know fact every AI reply should follow (propose_memory, e.g. "remember we never ship live fish to WA", "never promise same-day delivery"). The owner keeps or dismisses it on the Business memory page; say it's waiting for them.
 
 SAFETY
-- Tasks, reminders, events, sales, facts, Business Memory suggestions and assigning orders to an outlet are internal — just do them.
+- Tasks, reminders, events, sales, facts, Business Memory suggestions, waiting-list adds and assigning orders to an outlet are internal — just do them.
 - These always go through the check-before-sending card and only happen when the user taps it: send_message, reply_ticket, reply_review, reply_social_comment, send_payment_link, request_media, send_booking_link, update_order_status, cancel_order, refund_order. Calling the tool only prepares it — never say it was sent or done until the user confirms.
 - A refund or payment link involves real money — only ever use the amount the user gave.
 - You cannot delete records or take a new payment. If asked, say it's not something you can do yet.`
@@ -246,7 +248,9 @@ export async function runAssistant(opts: {
 
         // 'immediate' — reversible internal write; do it now.
         const r = await executeAction(db, ctx, tu.name, tu.input)
-        await recordAssistantAction(db, ctx, tu.name, tu.input, r, false)
+        const recorded = await recordAssistantAction(db, ctx, tu.name, tu.input, r, false)
+        // A waiting-list entry points at this record, so "Why?" on Waitlists opens it.
+        if (tu.name === 'add_to_waitlist' && r.ok && r.entityId) await linkWaitlistRun(db, ctx.companyId, r.entityId, recorded)
         if (r.ok && r.card) cards.push({ ...r.card, undo: r.undo || null })
         if (r.ok && r.clientAction) clientActions.push(r.clientAction)
         toolResults.push({

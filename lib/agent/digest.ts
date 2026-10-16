@@ -57,6 +57,7 @@ export function buildDigest(opts: { companyName: string; base: string; results: 
   const extra = [
     c.reviewsAnswered + c.commentsAnswered ? `${c.reviewsAnswered} review${c.reviewsAnswered === 1 ? '' : 's'} and ${c.commentsAnswered} comment${c.commentsAnswered === 1 ? '' : 's'} answered` : '',
     c.ordersCaught ? `${c.ordersCaught} late or stuck order${c.ordersCaught === 1 ? '' : 's'} caught${c.customersUpdated ? `, ${c.customersUpdated} customer${c.customersUpdated === 1 ? '' : 's'} kept updated` : ''}` : '',
+    c.waitlisted ? `${c.waitlisted} customer${c.waitlisted === 1 ? '' : 's'} added to a back-in-stock waiting list` : '',
     `about ${hoursText(c.minutesSaved)} of your team’s time saved (an estimate)`,
   ].filter(Boolean)
 

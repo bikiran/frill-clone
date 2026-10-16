@@ -38,6 +38,7 @@ function approvalTitle(a: any): string {
   if (k === 'send_cart_followup') return 'Sales Agent wrote a cart follow-up'
   if (k === 'send_sales_followup') return 'Sales Agent wrote a follow-up'
   if (k === 'send_order_update') return 'Operations Agent wrote an order update'
+  if (k === 'add_to_waitlist') return `${who} wants to add ${a.conversation?.customer || 'a customer'} to a waiting list`
   if (k === 'reschedule_booking' || k === 'cancel_booking') return `Reception Agent wants to ${k === 'cancel_booking' ? 'cancel' : 'move'} a booking`
   if (String(k).startsWith('x_')) return `${who} wants to use an outside tool`
   return `${who} needs your approval`

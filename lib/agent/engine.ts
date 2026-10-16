@@ -251,6 +251,10 @@ export async function runAgent(db: any, runId: string, deadline: number, model: 
           continue
         }
 
+        // Every request counts, whatever happens to it — a reply may only claim it was done when it was (see waitlistReplyHold).
+        const asked = (actx.scratch.requested ||= {}) as Record<string, number>
+        asked[action.key] = (asked[action.key] || 0) + 1
+
         const bad = validateInput(action, input)
         if (bad) {
           await trail.add({ kind: 'action', action_key: action.key, input, reason, decision: 'denied', decision_reason: `Invalid input: ${bad}`, status: 'skipped' })

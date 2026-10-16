@@ -34,6 +34,8 @@ import { flagEnabled } from '@/lib/feature-flags'
 import RecordSaleModal from '@/components/RecordSaleModal'
 import Link from 'next/link'
 import AiCallNote from '@/components/AiCallNote'
+import { WaitlistNoteLine } from '@/components/AiAddedBadge'
+import { isWaitlistNote, waitlistPreview } from '@/lib/waitlist-ai'
 import CallCard from '@/components/CallCard'
 import LiveCallBanner from '@/components/LiveCallBanner'
 import DraftTasks from '@/components/DraftTasks'
@@ -8030,7 +8032,7 @@ export default function InboxPage() {
                 <button key={c.id} type="button" onClick={() => mergeConversation(c.id)}
                   style={{ display: 'block', width: '100%', textAlign: 'left', padding: '12px 18px', border: 'none', borderBottom: '1px solid var(--border)', background: '#fff', cursor: 'pointer' }}>
                   <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink)' }}>{(c as any).contacts?.name || dec(c.subject) || (c as any).sms_number || 'Visitor'}</div>
-                  <div style={{ fontSize: 12, color: 'var(--slate)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.last_message || 'No messages'}</div>
+                  <div style={{ fontSize: 12, color: 'var(--slate)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{waitlistPreview(c.last_message) || 'No messages'}</div>
                 </button>
               ))}
               {conversations.filter(c => c.id !== selected.id).length === 0 && (
@@ -8480,7 +8482,7 @@ export default function InboxPage() {
                 <p style={{ margin: 0, flex: 1, minWidth: 0, fontSize: 12, color: conv.is_unread ? 'var(--ink)' : '#6b7280', fontWeight: conv.is_unread ? 600 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 5 }}>
                   {(() => { const k = callGlyphKind(conv.last_message); return k ? <CallGlyph kind={k} /> : null })()}
                   <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    <Highlight text={(callGlyphKind(conv.last_message) ? stripCallEmoji(conv.last_message) : conv.last_message) || 'No messages yet'} q={searchTerm} accent={accent} />
+                    <Highlight text={(callGlyphKind(conv.last_message) ? stripCallEmoji(conv.last_message) : waitlistPreview(conv.last_message)) || 'No messages yet'} q={searchTerm} accent={accent} />
                   </span>
                 </p>
                 )}
@@ -9152,6 +9154,13 @@ export default function InboxPage() {
                   <div key={msg.id} id={`cmsg-${msg.id}`} data-cmsg="1">
                     {dateDivider}
                     <AiCallNote content={msg.content} metadata={(msg as any).metadata} createdAt={msg.created_at} highlight={(showMsgSearch && msgSearch.trim()) ? msgSearch : searchTerm} />
+                  </div>
+                )
+                // A waitlist note (a person's or an AI's add, old ones too): one quiet event line, not a note card.
+                if (isWaitlistNote(msg)) return (
+                  <div key={msg.id} id={`cmsg-${msg.id}`} data-cmsg="1">
+                    {dateDivider}
+                    <WaitlistNoteLine msg={msg} companyId={companyId} fmtTime={fmtTime} />
                   </div>
                 )
                 if (isInternal) {
