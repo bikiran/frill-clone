@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server'
 import { castVote } from '@/lib/engage-server'
-import { callerOf, engageDb, engageDeps, reply, unavailable } from '@/lib/engage-http'
+import { callerOf, crossSite, engageDb, engageDeps, reply, sameSite, unavailable } from '@/lib/engage-http'
 
 export const dynamic = 'force-dynamic'
 
@@ -11,13 +11,14 @@ export const dynamic = 'force-dynamic'
  */
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
+  if (!sameSite(req)) return crossSite()
   const db = engageDb()
   if (!db) return unavailable()
   let body: any = {}
   try { body = await req.json() } catch { body = {} }
   try {
     const out = await castVote(engageDeps(db), id, callerOf(req, 'poll', id, body?.clv), body || {})
-    return reply(out, 'poll', id)
+    return reply(out, 'poll', id, body?.embed === true)
   } catch {
     return reply({ status: 500, body: { error: 'Couldn’t save your vote just now. Please try again.' } }, 'poll', id)
   }

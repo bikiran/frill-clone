@@ -15,7 +15,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   if (!db) return unavailable()
   try {
     const out = await getPollView(engageDeps(db), id, callerOf(req, 'poll', id, req.nextUrl.searchParams.get('clv')))
-    return reply(out, 'poll', id)
+    return reply(out, 'poll', id, req.nextUrl.searchParams.get('embed') === '1')
   } catch {
     return reply({ status: 500, body: { poll: null, error: 'Couldn’t load this poll. Please try again.' } }, 'poll', id)
   }

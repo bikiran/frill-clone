@@ -11,11 +11,14 @@
 //   • the totals are only returned when the poll's "show results" allows it,
 //     and the rows themselves never are;
 //   • one person = the voter id kept in their browser (an HttpOnly cookie, or
-//     localStorage when cookies are blocked in an embed), or the customer a
-//     campaign link was sent to (?clv=), or the email / mobile they typed. A
-//     second vote is refused, or replaces the first when the poll allows
-//     changes;
-//   • one connection can only send so many per poll per day (a salted hash of
+//     localStorage when cookies are blocked in an embed). Only rows with the
+//     caller's own voter id are ever shown back to them, changed or replaced.
+//     An email / mobile someone else already answered with can only REFUSE a
+//     duplicate; it never reveals or replaces anything. A campaign link's
+//     customer (?clv=, a verified click of this business) is attached
+//     to the vote only while no other voter id has used it: the first browser
+//     to answer through it is bound to it, later ones get no identity from it;
+////   • one connection can only send so many per poll per day (a salted hash of
 //     the IP, never the IP itself), plus a per-minute burst limit.
 // Before V386 adds voter_key and friends, it falls back to a per-poll cookie
 // and saves the columns that exist.
@@ -83,7 +86,6 @@ export function ipHash(secret: string, kind: EngageKind, id: string, ip: string)
   return crypto.createHash('sha256').update(`${secret}|${kind}|${id}|${ip}`).digest('hex').slice(0, 32)
 }
 
-const pgQuote = (v: string) => `"${v.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
 
 /** The company's public face for the page header. */
 async function companyFace(db: EngageDb, companyId: unknown): Promise<{ name: string; logo_url: string | null; accent_color: string | null; slug: string | null } | null> {
@@ -160,32 +162,56 @@ async function allVotes(db: EngageDb, pollId: string): Promise<VoteRow[]> {
   return out
 }
 
-type Who = { voterKey: string | null; contactId: string | null; contact: string | null }
-
-/**
- * The rows this person already has on the poll/survey. `legacy` is true when
- * the table has no voter_key column yet (V386 not run): nothing can be matched.
- */
-async function existingRows(db: EngageDb, table: 'poll_votes' | 'survey_responses', col: 'poll_id' | 'survey_id', id: string, who: Who): Promise<{ rows: any[]; legacy: boolean }> {
-  const ors: string[] = []
-  if (who.voterKey) ors.push(`voter_key.eq.${pgQuote(who.voterKey)}`)
-  if (who.contactId) ors.push(`contact_id.eq.${who.contactId}`)
-  if (who.contact) ors.push(`respondent->>contact.eq.${pgQuote(who.contact)}`)
-  // Probe the column even with nothing to match, so callers know which mode they're in.
-  if (!ors.length) {
-    const { error } = await db.from(table).select('voter_key').eq(col, id).limit(1)
-    return { rows: [], legacy: isMissingColumn(error) }
-  }
-  const { data, error } = await db.from(table).select('*').eq(col, id).or(ors.join(',')).order('created_at', { ascending: true }).limit(500)
-  if (error) return { rows: [], legacy: isMissingColumn(error) }
-  return { rows: data || [], legacy: false }
+type Identity = {
+  /** The table has no voter_key column yet (V386 not run): nothing can be matched. */
+  legacy: boolean
+  /** Rows with the caller's own voter id: the only rows shown back, changed or replaced. */
+  own: any[]
+  /** The campaign customer, only if no other voter id has answered through them. */
+  contactId: string | null
+  /** Someone with another voter id already answered with the typed email / mobile. */
+  typedTaken: boolean
 }
 
-/** Different people this connection has answered as in the last day. */
-async function peopleFromIp(db: EngageDb, table: 'poll_votes' | 'survey_responses', col: 'poll_id' | 'survey_id', id: string, hash: string, since: string): Promise<number> {
+/**
+ * Who is answering. `counts` narrows which earlier rows still count (a survey
+ * that may be answered again after a day only counts the last day's).
+ */
+async function identify(db: EngageDb, table: 'poll_votes' | 'survey_responses', col: 'poll_id' | 'survey_id', id: string,
+  who: { voterKey: string | null; contactId: string | null; contact: string | null }, counts: (rows: any[]) => any[] = r => r): Promise<Identity> {
+  const out: Identity = { legacy: false, own: [], contactId: null, typedTaken: false }
+  if (who.voterKey) {
+    const { data, error } = await db.from(table).select('*').eq(col, id).eq('voter_key', who.voterKey).order('created_at', { ascending: true }).limit(500)
+    if (error) { out.legacy = isMissingColumn(error); return out }
+    out.own = data || []
+  } else {
+    const { error } = await db.from(table).select('voter_key').eq(col, id).limit(1)
+    if (error) { out.legacy = isMissingColumn(error); return out }
+  }
+  const others = (rows: any[]) => rows.filter(r => !who.voterKey || r.voter_key !== who.voterKey)
+  if (who.contactId) {
+    const { data, error } = await db.from(table).select('id, voter_key, created_at').eq(col, id).eq('contact_id', who.contactId).limit(50)
+    // Bound to another browser already (or unreadable): no identity from it.
+    out.contactId = !error && !others(data || []).length ? who.contactId : null
+  }
+  if (who.contact) {
+    const { data, error } = await db.from(table).select('id, voter_key, created_at').eq(col, id).eq('respondent->>contact', who.contact).limit(50)
+    out.typedTaken = !!error || counts(others(data || [])).length > 0
+  }
+  return out
+}
+
+/** Different voter ids this connection has answered as in the last day. */
+async function peopleFromIp(db: EngageDb, table: 'poll_votes' | 'survey_responses', col: 'poll_id' | 'survey_id', id: string, hash: string, since: string): Promise<Set<string>> {
   const { data, error } = await db.from(table).select('voter_key, id').eq(col, id).eq('ip_hash', hash).gte('created_at', since).limit(1000)
-  if (error || !data) return 0
-  return new Set(data.map((r: any) => r.voter_key || r.id)).size
+  if (error || !data) return new Set()
+  return new Set(data.map((r: any) => r.voter_key || r.id))
+}
+
+/** The connection has answered as too many different people today (the caller's own voter id doesn't count again). */
+async function overIpCap(db: EngageDb, table: 'poll_votes' | 'survey_responses', col: 'poll_id' | 'survey_id', id: string, hash: string, now: number, voterKey: string | null): Promise<boolean> {
+  const people = await peopleFromIp(db, table, col, id, hash, new Date(now - 86_400_000).toISOString())
+  return people.size >= IP_DAILY_CAP && !(voterKey && people.has(voterKey))
 }
 
 async function contactFor(deps: Deps, companyId: unknown, clickRef: unknown): Promise<string | null> {
@@ -217,9 +243,9 @@ export async function getPollView(deps: Deps, id: unknown, caller: Caller): Prom
   const company = await companyFace(deps.db, p.company_id)
   const poll = publicPoll(p, now, company)
 
-  const contactId = await contactFor(deps, p.company_id, caller.clickRef)
-  const mine = await existingRows(deps.db, 'poll_votes', 'poll_id', id, { voterKey: caller.voterKey, contactId, contact: null })
-  const myVote = mine.rows.length ? myVoteFrom(poll, mine.rows) : null
+  // Only the caller's own voter id says what they voted.
+  const mine = await identify(deps.db, 'poll_votes', 'poll_id', id, { voterKey: caller.voterKey, contactId: null, contact: null })
+  const myVote = mine.own.length ? myVoteFrom(poll, mine.own) : null
   const voted = !!myVote || !!caller.votedFlag
   const results = canSeeResults(poll.show_results, status, voted) ? tallyPoll(p, await allVotes(deps.db, id)) : null
   return { status: 200, body: { poll, results, myVote } }
@@ -257,35 +283,35 @@ export async function castVote(deps: Deps, id: unknown, caller: Caller, body: Vo
   if ('error' in who) return fail(400, who.error)
 
   const voterKey = caller.voterKey || newVoterKey()
-  const contactId = await contactFor(deps, p.company_id, caller.clickRef)
-  const contact = who.respondent?.contact || null
-  const mine = await existingRows(deps.db, 'poll_votes', 'poll_id', id, { voterKey: caller.voterKey, contactId, contact })
+  const mine = await identify(deps.db, 'poll_votes', 'poll_id', id, {
+    voterKey: caller.voterKey, contactId: await contactFor(deps, p.company_id, caller.clickRef), contact: who.respondent?.contact || null,
+  })
   const company = await companyFace(deps.db, p.company_id)
   const poll = publicPoll(p, now, company)
+  const setVoter = caller.voterKey ? undefined : voterKey
 
-  const already = mine.rows.length > 0 || (mine.legacy && !!caller.votedFlag)
-  if (already && !(settings.allow_change && !mine.legacy && mine.rows.length)) {
-    const myVote = mine.rows.length ? myVoteFrom(poll, mine.rows) : null
+  // Their own earlier vote: shown back to them; replaced only when changes are allowed.
+  if ((mine.own.length && !settings.allow_change) || (mine.legacy && caller.votedFlag)) {
+    const myVote = mine.own.length ? myVoteFrom(poll, mine.own) : null
     const results = canSeeResults(poll.show_results, status, true) ? tallyPoll(p, await allVotes(deps.db, id)) : null
-    return { status: 409, body: { poll, results, myVote, error: settings.allow_change ? 'You’ve already voted on this poll.' : 'You’ve already voted on this poll. Thanks for taking part.' }, setVoter: caller.voterKey ? undefined : voterKey }
+    return { status: 409, body: { poll, results, myVote, error: 'You’ve already voted on this poll. Thanks for taking part.' }, setVoter }
+  }
+  // Someone else's email / mobile: refused, and nothing of theirs is shown.
+  if (mine.typedTaken) return { status: 409, body: { poll, results: null, myVote: null, error: 'Someone has already voted with that email or mobile.' }, setVoter }
+
+  const hash = ipHash(deps.secret || 'colvy', 'poll', id, caller.ip)
+  if (!mine.legacy && await overIpCap(deps.db, 'poll_votes', 'poll_id', id, hash, now, caller.voterKey)) {
+    return fail(429, 'This poll has had a lot of votes from your connection today. Please try again tomorrow.')
   }
 
-  const secret = deps.secret || 'colvy'
-  const hash = ipHash(secret, 'poll', id, caller.ip)
-  if (!mine.legacy && !mine.rows.length) {
-    const since = new Date(now - 86_400_000).toISOString()
-    if (await peopleFromIp(deps.db, 'poll_votes', 'poll_id', id, hash, since) >= IP_DAILY_CAP) {
-      return fail(429, 'This poll has had a lot of votes from your connection today. Please try again tomorrow.')
-    }
-  }
-
-  // Changing a vote: the old ballot goes, the new one is saved under the same voter.
+  // Changing a vote: only the caller's own rows go, the new ballot keeps their voter id.
   let changed = false
-  const key = mine.rows.find(r => r.voter_key)?.voter_key || voterKey
-  if (mine.rows.length && settings.allow_change) {
-    const ids = mine.rows.map(r => r.id).filter(Boolean)
+  const key = voterKey
+  const contactId = mine.contactId || mine.own.find(r => r.contact_id)?.contact_id || null
+  if (mine.own.length && settings.allow_change) {
+    const ids = mine.own.map(r => r.id).filter(Boolean)
     if (ids.length) {
-      const { error } = await deps.db.from('poll_votes').delete().in('id', ids)
+      const { error } = await deps.db.from('poll_votes').delete().eq('poll_id', id).eq('voter_key', key).in('id', ids)
       if (error) return fail(500, 'Couldn’t change your vote just now. Please try again.')
       changed = true
     }
@@ -308,7 +334,7 @@ export async function castVote(deps: Deps, id: unknown, caller: Caller, body: Vo
     await deps.notify(p.company_id, `New vote${who2} on “${String(p.question || 'your poll').slice(0, 80)}”: ${myVote.join(', ').slice(0, 120)}`).catch(() => {})
   }
   const results = canSeeResults(poll.show_results, status, true) ? tallyPoll(p, await allVotes(deps.db, id)) : null
-  return { status: 200, body: { ok: true, changed, poll, results, myVote }, setVoter: voterKey === caller.voterKey ? undefined : voterKey, setFlag: true }
+  return { status: 200, body: { ok: true, changed, poll, results, myVote }, setVoter, setFlag: true }
 }
 
 // ── Surveys ─────────────────────────────────────────────────────────────────
@@ -330,7 +356,6 @@ export type PublicSurvey = {
   ask_name: EngageSettings['ask_name']
   ask_contact: EngageSettings['ask_contact']
   thank_you: string
-  allow_change: boolean
   company: Awaited<ReturnType<typeof companyFace>>
 }
 
@@ -353,7 +378,6 @@ function publicSurvey(s: any, now: number, company: PublicSurvey['company']): Pu
     ask_name: st.ask_name,
     ask_contact: st.ask_contact,
     thank_you: st.thank_you,
-    allow_change: st.allow_change,
     company,
   }
 }
@@ -377,16 +401,16 @@ export async function getSurveyView(deps: Deps, id: unknown, caller: Caller): Pr
   const s = await loadSurvey(deps.db, id)
   if (!s || statusOf(s, now) === 'draft') return { status: 404, body: { survey: null, answered: false, error: 'Survey not found' } }
   const company = await companyFace(deps.db, s.company_id)
-  const contactId = await contactFor(deps, s.company_id, caller.clickRef)
-  const mine = await existingRows(deps.db, 'survey_responses', 'survey_id', id, { voterKey: caller.voterKey, contactId, contact: null })
   const settings = settingsOf(s)
-  const answered = blocking(mine.rows, settings, now).length > 0 || (mine.legacy && !!caller.votedFlag && !settings.allow_repeat)
+  // Only the caller's own voter id says they've answered.
+  const mine = await identify(deps.db, 'survey_responses', 'survey_id', id, { voterKey: caller.voterKey, contactId: null, contact: null })
+  const answered = blocking(mine.own, settings, now).length > 0 || (mine.legacy && !!caller.votedFlag && !settings.allow_repeat)
   return { status: 200, body: { survey: publicSurvey(s, now, company), answered } }
 }
 
 export type RespondBody = { score?: unknown; comment?: unknown; answers?: unknown; name?: unknown; contact?: unknown }
 
-export async function submitSurvey(deps: Deps, id: unknown, caller: Caller, body: RespondBody): Promise<Out<{ ok?: boolean; changed?: boolean; error?: string }>> {
+export async function submitSurvey(deps: Deps, id: unknown, caller: Caller, body: RespondBody): Promise<Out<{ ok?: boolean; error?: string }>> {
   const fail = (status: number, error: string) => ({ status, body: { error } })
   if (!isUuid(id)) return fail(404, 'Survey not found')
   const limit = deps.limit || (() => true)
@@ -404,32 +428,25 @@ export async function submitSurvey(deps: Deps, id: unknown, caller: Caller, body
   const who = checkRespondent(settings, body)
   if ('error' in who) return fail(400, who.error)
 
+  // One response per person (or per person per day). A survey answer is never
+  // edited or replaced from the public page.
   const voterKey = caller.voterKey || newVoterKey()
-  const contactId = await contactFor(deps, s.company_id, caller.clickRef)
-  const contact = who.respondent?.contact || null
-  const mine = await existingRows(deps.db, 'survey_responses', 'survey_id', id, { voterKey: caller.voterKey, contactId, contact })
-  const live = blocking(mine.rows, settings, now)
-  const legacyBlocked = mine.legacy && !!caller.votedFlag && !settings.allow_repeat
-  if ((live.length && !settings.allow_change) || legacyBlocked) {
-    return { status: 409, body: { error: 'You’ve already answered this survey. Thanks for your feedback.' }, setVoter: caller.voterKey ? undefined : voterKey }
+  const setVoter = caller.voterKey ? undefined : voterKey
+  const mine = await identify(deps.db, 'survey_responses', 'survey_id', id, {
+    voterKey: caller.voterKey, contactId: await contactFor(deps, s.company_id, caller.clickRef), contact: who.respondent?.contact || null,
+  }, rows => blocking(rows, settings, now))
+  if (blocking(mine.own, settings, now).length || (mine.legacy && !!caller.votedFlag && !settings.allow_repeat)) {
+    return { status: 409, body: { error: 'You’ve already answered this survey. Thanks for your feedback.' }, setVoter }
   }
+  if (mine.typedTaken) return { status: 409, body: { error: 'Someone has already answered with that email or mobile.' }, setVoter }
 
   const hash = ipHash(deps.secret || 'colvy', 'survey', id, caller.ip)
-  if (!mine.legacy && !mine.rows.length) {
-    const since = new Date(now - 86_400_000).toISOString()
-    if (await peopleFromIp(deps.db, 'survey_responses', 'survey_id', id, hash, since) >= IP_DAILY_CAP) {
-      return fail(429, 'This survey has had a lot of answers from your connection today. Please try again tomorrow.')
-    }
+  if (!mine.legacy && await overIpCap(deps.db, 'survey_responses', 'survey_id', id, hash, now, caller.voterKey)) {
+    return fail(429, 'This survey has had a lot of answers from your connection today. Please try again tomorrow.')
   }
 
-  let changed = false
-  if (live.length && settings.allow_change) {
-    const { error } = await deps.db.from('survey_responses').delete().in('id', live.map(r => r.id).filter(Boolean))
-    if (error) return fail(500, 'Couldn’t update your answer just now. Please try again.')
-    changed = true
-  }
-
-  const key = mine.rows.find(r => r.voter_key)?.voter_key || voterKey
+  const key = voterKey
+  const contactId = mine.contactId || mine.own.find(r => r.contact_id)?.contact_id || null
   const row: Record<string, unknown> = {
     survey_id: id, answer: answer.answer, comment: answer.comment,
     answers: answer.answers, voter_key: key, contact_id: contactId, respondent: who.respondent, ip_hash: hash,
@@ -456,5 +473,5 @@ export async function submitSurvey(deps: Deps, id: unknown, caller: Caller, body
       await deps.notify(s.company_id, `${low ? 'Low score' : 'New response'}${from} on “${String(s.title || 'your survey').slice(0, 80)}”${scoreText}${said ? `: “${String(said).slice(0, 140)}”` : ''}`).catch(() => {})
     }
   }
-  return { status: 200, body: { ok: true, changed }, setVoter: voterKey === caller.voterKey ? undefined : voterKey, setFlag: true }
+  return { status: 200, body: { ok: true }, setVoter, setFlag: true }
 }

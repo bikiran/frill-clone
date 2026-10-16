@@ -31,6 +31,17 @@ const cacheHeaders = {
   'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=120',
 }
 
+// A company's live polls or surveys, newest first: filtered in the query
+// (active, not a draft or closed), then by close date with statusOf. If the
+// status column is missing (an old database), filter it all here instead.
+async function liveRows(db: any, table: 'polls' | 'surveys', companyId: string) {
+  let res = await db.from(table).select('*').eq('company_id', companyId)
+    .or('is_active.is.null,is_active.eq.true').or('status.is.null,status.not.in.(draft,closed)')
+    .order('created_at', { ascending: false }).limit(25)
+  if (res.error) res = await db.from(table).select('*').eq('company_id', companyId).order('created_at', { ascending: false }).limit(100)
+  return { data: (res.data || []).filter((r: any) => statusOf(r) === 'live'), error: res.error }
+}
+
 export async function GET(req: NextRequest) {
   let slug = req.nextUrl.searchParams.get('slug')
   // Custom help/board domains (e.g. help.roxyaquarium.com.au) have no colvy
@@ -90,12 +101,9 @@ export async function GET(req: NextRequest) {
         .order('is_pinned', { ascending: false }).order('created_at', { ascending: false }).limit(20),
       (supabase as any).from('forms').select('id,title,questions').eq('company_id', company.id)
         .eq('is_published', true).order('created_at', { ascending: false }).limit(5),
-      // Live ones only: drafts and closed polls / surveys aren't public
-      // (statusOf reads is_active, status and the close date).
-      (supabase as any).from('polls').select('*').eq('company_id', company.id)
-        .order('created_at', { ascending: false }).limit(25),
-      (supabase as any).from('surveys').select('*').eq('company_id', company.id)
-        .order('created_at', { ascending: false }).limit(25),
+      // Live ones only: drafts and closed polls / surveys aren't public.
+      liveRows(supabase, 'polls', company.id),
+      liveRows(supabase, 'surveys', company.id),
       (supabase as any).from('help_articles').select('id,title,content,category,status,created_at,location_ids').eq('company_id', company.id)
         .eq('status', 'published')
         .order('created_at', { ascending: false }).limit(10),
@@ -174,9 +182,9 @@ export async function GET(req: NextRequest) {
       ideas: (ideasRes.data || []).filter(visibleAt),
       announcements: (annRes.data || []).filter(visibleAt),
       forms: formsRes.data || [],
-      polls: (pollsRes.data || []).filter((p: any) => statusOf(p) === 'live').slice(0, 5)
+      polls: (pollsRes.data || []).slice(0, 5)
         .map((p: any) => ({ id: p.id, question: p.question, description: p.description ?? null, options: p.options })),
-      surveys: (surveysRes.data || []).filter((sv: any) => statusOf(sv) === 'live').slice(0, 5)
+      surveys: (surveysRes.data || []).slice(0, 5)
         .map((sv: any) => ({ id: sv.id, title: sv.title, questions: sv.questions ?? [] })),
       helpArticles: (helpRes.data || []).filter(visibleAt),
     }

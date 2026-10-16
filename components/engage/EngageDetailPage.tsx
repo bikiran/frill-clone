@@ -13,7 +13,7 @@ import { resolveCompanyUser } from '@/lib/client-cache'
 import { confirmDialog } from '@/components/ConfirmDialog'
 import { ResultsStyles } from '@/components/form-results/styles'
 import { Icon } from '@/components/form-results/icons'
-import { settingsWithoutClose, settingsOf, statusFields, statusOf, tallyPoll, closeNote, type EngageKind } from '@/lib/engage-core'
+import { reopenFields, settingsOf, statusFields, statusOf, tallyPoll, closeNote, type EngageKind } from '@/lib/engage-core'
 import { pollLines, surveyLines } from '@/lib/engage-table'
 import { EngageStyles } from './styles'
 import { EngageIcon } from './icons'
@@ -126,7 +126,10 @@ export default function EngageDetailPage({ kind }: { kind: EngageKind }) {
       const { data, error } = await q
       if (error || !data?.length) return
       latest.current = data[0].created_at
-      setAnswers(prev => { const seen = new Set(prev.map(r => r.id)); return [...data.filter((r: any) => !seen.has(r.id)), ...prev] })
+      // A changed vote arrives as new rows under the same voter id; their old rows are gone, so drop them here too.
+      const voters = new Set(data.map((r: any) => r.voter_key).filter(Boolean))
+      const fresh = new Set(data.map((r: any) => r.id))
+      setAnswers(prev => [...data, ...prev.filter(r => !fresh.has(r.id) && !(r.voter_key && voters.has(r.voter_key)))])
     }, LIVE_MS)
     return () => clearInterval(t)
   }, [status, tab, answersState, id, kind])
@@ -141,6 +144,8 @@ export default function EngageDetailPage({ kind }: { kind: EngageKind }) {
     if (!row || saving) return false
     const { fields, problems: p } = kind === 'poll' ? pollFields(pollDraft!) : surveyFields(surveyDraft!)
     if (opts.publish && p.length) { setProblems(p); changeTab('edit'); return false }
+    // Publishing or reopening with a close date that has passed: clear it, or it closes again straight away.
+    if (opts.publish && fields.settings?.closes_at && Date.parse(fields.settings.closes_at) <= Date.now()) delete fields.settings.closes_at
     setSaving(true); setProblems([])
     try {
       const { data, error, dropped } = await updateItem(db, kind, id, { ...fields, ...extra })
@@ -158,13 +163,8 @@ export default function EngageDetailPage({ kind }: { kind: EngageKind }) {
       const { problems: p } = kind === 'poll' ? pollFields(pollDraft!) : surveyFields(surveyDraft!)
       if (p.length) { setProblems(p); changeTab('edit'); return }
     }
-    // Reopening a poll whose close date has passed: clear the date, or it closes again straight away.
-    const extra: Record<string, any> = { ...statusFields(next) }
-    const st = settingsOf(row)
-    if (next === 'live' && 'settings' in row && st.closes_at && Date.parse(st.closes_at) <= Date.now()) {
-      extra.settings = settingsWithoutClose(row)
-    }
-    const { data, error } = await updateItem(db, kind, id, extra)
+    // reopenFields also clears a close date that has passed, or it would close again straight away.
+    const { data, error } = await updateItem(db, kind, id, next === 'live' ? reopenFields(row) : statusFields(next))
     if (error || !data) { setToast('Couldn’t change that. Please try again.'); return }
     setRow(data); resetDraft(data)
     setToast(next === 'live' ? (status === 'draft' ? 'Published. The link is live.' : 'Reopened') : 'Closed. No more answers will be taken.')

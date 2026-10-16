@@ -38,13 +38,36 @@ export function callerOf(req: NextRequest, kind: EngageKind, id: string, clickRe
 
 const YEAR = 365 * 86_400
 
-export function reply(out: { status: number; body: any; setVoter?: string; setFlag?: boolean }, kind: EngageKind, id: string): NextResponse {
+/**
+ * Votes and answers must come from our own page (the poll page or its embed
+ * iframe, both on this origin), not a form or script on another site. Browsers
+ * send Sec-Fetch-Site and Origin on a POST; either one saying "another site" is
+ * refused. (Scripts outside a browser can forge these; the per-connection cap
+ * is what limits them.)
+ */
+export function sameSite(req: NextRequest): boolean {
+  const site = req.headers.get('sec-fetch-site')
+  if (site && site !== 'same-origin' && site !== 'none') return false
+  const origin = req.headers.get('origin')
+  if (origin) {
+    const host = (req.headers.get('x-forwarded-host') || req.headers.get('host') || '').split(',')[0].trim()
+    try { if (!host || new URL(origin).host !== host) return false } catch { return false }
+  }
+  return true
+}
+
+export const crossSite = () => NextResponse.json({ error: 'Please vote from the poll page.' }, { status: 403, headers: { 'Cache-Control': 'no-store' } })
+
+/**
+ * `embedded`: the page is inside an iframe on the business's own site, where
+ * only a SameSite=None cookie is sent back; otherwise the cookie is Lax.
+ */
+export function reply(out: { status: number; body: any; setVoter?: string; setFlag?: boolean }, kind: EngageKind, id: string, embedded = false): NextResponse {
   // The voter id goes back in the body too, so a page in an embed (where the
   // cookie may be blocked) can keep it in localStorage and send it as a header.
   const body = out.setVoter ? { ...out.body, voter: out.setVoter } : out.body
   const res = NextResponse.json(body, { status: out.status, headers: { 'Cache-Control': 'no-store' } })
-  // SameSite=None so the cookie also works when the poll is embedded in an iframe.
-  const opts = { httpOnly: true, secure: true, sameSite: 'none' as const, path: '/', maxAge: YEAR }
+  const opts = { httpOnly: true, secure: true, sameSite: (embedded ? 'none' : 'lax') as 'none' | 'lax', path: '/', maxAge: YEAR }
   if (out.setVoter) res.cookies.set(VOTER_COOKIE, out.setVoter, opts)
   if (out.setFlag) res.cookies.set(votedCookie(kind, id), '1', { ...opts, path: `/api/${kind === 'poll' ? 'polls' : 'surveys'}/${id}` })
   return res

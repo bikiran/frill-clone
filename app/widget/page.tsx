@@ -2514,6 +2514,7 @@ function WidgetInteractive({ msg, companyId, conversationId, respondent, accentC
   const [sendError, setSendError] = React.useState('')
   const sendingRef = React.useRef(false)
   const [item, setItem] = React.useState<any>(null)
+  const [unavailable, setUnavailable] = React.useState<'' | 'closed' | 'gone'>('')
   const [answers, setAnswers] = React.useState<any>({})
   const payload = msg.message_payload || {}
   const kind = payload.kind
@@ -2532,7 +2533,22 @@ function WidgetInteractive({ msg, companyId, conversationId, respondent, accentC
           if (res.ok) data = (await res.json())?.form || null
         } catch {}
       }
-      if (!data) ({ data } = await (supabase as any).from(table).select('*').eq('id', payload.ref_id).maybeSingle())
+      // Polls and surveys come from their public routes (V386 closes drafts
+      // and closed ones to the public key): a closed one says so on the card.
+      if (kind === 'poll' || kind === 'survey') {
+        try {
+          const res = await fetch(`/api/${kind === 'poll' ? 'polls' : 'surveys'}/${encodeURIComponent(String(payload.ref_id))}`, { cache: 'no-store' })
+          const d = await res.json().catch(() => null)
+          const it = kind === 'poll' ? d?.poll : d?.survey
+          if (!res.ok || !it) { setUnavailable('gone'); return }
+          if (it.status === 'closed') { setUnavailable('closed'); return }
+          data = kind === 'poll'
+            ? { id: it.id, question: it.question, options: (it.options || []).map((o: any) => o.text) }
+            : { id: it.id, title: it.title, question: it.question, questions: (it.questions || []).map((q: any) => ({ ...q, required: !!q.isRequired })) }
+        } catch { setUnavailable('gone'); return }
+      }
+      if (!data && kind !== 'poll' && kind !== 'survey') ({ data } = await (supabase as any).from(table).select('*').eq('id', payload.ref_id).maybeSingle())
+      if (!data) { setUnavailable('gone'); return }
       setItem(data)
 
       // If this respondent already answered (in a prior session/reload), show the
@@ -2621,6 +2637,7 @@ function WidgetInteractive({ msg, companyId, conversationId, respondent, accentC
   }
 
   if (done) return <div style={{ marginTop: 6, padding: '10px 12px', borderRadius: 10, background: '#dcfce7', color: '#059669', fontSize: 12.5, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Submitted — thanks for your response!</div>
+  if (!item && unavailable) return <div style={{ marginTop: 6, fontSize: 12.5, color: '#6b7280' }}>{unavailable === 'closed' ? `This ${kind === 'poll' ? 'poll' : kind === 'survey' ? 'survey' : 'form'} has closed.` : `This ${kind === 'poll' ? 'poll' : kind === 'survey' ? 'survey' : 'form'} isn’t available any more.`}</div>
   if (!item) return <div style={{ marginTop: 6, fontSize: 12, color: '#9ca3af' }}>Loading…</div>
 
   const options = item.options || payload.options || []

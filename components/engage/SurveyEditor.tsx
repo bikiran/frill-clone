@@ -84,7 +84,7 @@ export function SurveyEditor({ draft, onChange, hasResponses, hasSettingsColumn,
     mode: draft.kind === 'questions' ? 'questions' : surveyModeOf(rowLike), type: draft.kind, range: scoreRange(rowLike),
     low_label: draft.settings.low_label, high_label: draft.settings.high_label, follow_up: draft.settings.follow_up,
     questions: surveyQuestions({ questions: draft.questions }), status: status === 'closed' ? 'closed' : 'live', closes_at: draft.settings.closes_at,
-    ask_name: draft.settings.ask_name, ask_contact: draft.settings.ask_contact, thank_you: draft.settings.thank_you, allow_change: draft.settings.allow_change, company,
+    ask_name: draft.settings.ask_name, ask_contact: draft.settings.ask_contact, thank_you: draft.settings.thank_you, company,
   }), [draft, rowLike, status, company])
 
   return (

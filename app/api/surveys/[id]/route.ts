@@ -15,7 +15,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   if (!db) return unavailable()
   try {
     const out = await getSurveyView(engageDeps(db), id, callerOf(req, 'survey', id, req.nextUrl.searchParams.get('clv')))
-    return reply(out, 'survey', id)
+    return reply(out, 'survey', id, req.nextUrl.searchParams.get('embed') === '1')
   } catch {
     return reply({ status: 500, body: { survey: null, error: 'Couldn’t load this survey. Please try again.' } }, 'survey', id)
   }

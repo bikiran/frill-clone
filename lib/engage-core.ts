@@ -137,6 +137,17 @@ export function statusFields(status: EngageStatus): { is_active: boolean; status
   return { is_active: true, status: 'active' }
 }
 
+/**
+ * The columns that publish or reopen a row. A close date that has already
+ * passed is cleared too, or the row would close again straight away.
+ */
+export function reopenFields(row: { settings?: unknown } & Record<string, unknown>, now = Date.now()): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...statusFields('live') }
+  const closes = settingsOf(row).closes_at
+  if ('settings' in row && closes && Date.parse(closes) <= now) out.settings = settingsWithoutClose(row)
+  return out
+}
+
 // ── Polls ───────────────────────────────────────────────────────────────────
 
 export function parsePollOptions(v: unknown): PollOption[] {

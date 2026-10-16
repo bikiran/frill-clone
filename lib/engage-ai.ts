@@ -66,7 +66,9 @@ Australian English, plain words, no markdown, no emojis.`
 
 export function buildFeedbackPrompt(opts: { business?: string | null; title: string; question: string; scoreLabel?: string | null; items: FeedbackItem[] }): string {
   const items = opts.items.slice(0, MAX_ITEMS)
-  const lines = items.map((it, i) => `${i + 1}.${it.score != null ? ` [score ${it.score}]` : ''} ${it.text.replace(/\s+/g, ' ').trim().slice(0, MAX_ITEM_CHARS)}`)
+  // An answer can't close the <answers> fence early or open another one.
+  const clean = (t: string) => t.replace(/<\s*\/?\s*answers\b[^>]*>/gi, ' ').replace(/\s+/g, ' ').trim().slice(0, MAX_ITEM_CHARS)
+  const lines = items.map((it, i) => `${i + 1}.${it.score != null ? ` [score ${it.score}]` : ''} ${clean(it.text)}`)
   return [
     `BUSINESS: ${opts.business || 'unknown'}`,
     `SURVEY: ${opts.title}`,

@@ -6,7 +6,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useParams } from 'next/navigation'
-import { captureClickRef } from '@/lib/click-ref-client'
+import { reportEmbedHeight, takeClickRef } from '@/components/engage/publicClient'
 import { PublicPollCard, PublicShell, accentFor } from '@/components/engage/PublicViews'
 import type { PollView } from '@/lib/engage-server'
 
@@ -22,6 +22,7 @@ export default function PollPage() {
   const [notice, setNotice] = useState<string | null>(null)
   const [embed, setEmbed] = useState(false)
   const clv = useRef<string | null>(null)
+  const embedRef = useRef(false)
 
   const headers = () => {
     const h: Record<string, string> = { 'Content-Type': 'application/json' }
@@ -32,7 +33,10 @@ export default function PollPage() {
 
   const load = useCallback(async (quiet = false) => {
     try {
-      const qs = clv.current ? `?clv=${encodeURIComponent(clv.current)}` : ''
+      const q = new URLSearchParams()
+      if (clv.current) q.set('clv', clv.current)
+      if (embedRef.current) q.set('embed', '1')
+      const qs = q.toString() ? `?${q}` : ''
       const res = await fetch(`/api/polls/${pollId}${qs}`, { headers: headers(), cache: 'no-store' })
       const d = await res.json().catch(() => ({}))
       keepVoter(d?.voter)
@@ -44,10 +48,12 @@ export default function PollPage() {
   }, [pollId])
 
   useEffect(() => {
-    try { setEmbed(new URLSearchParams(window.location.search).get('embed') === '1') } catch {}
-    clv.current = captureClickRef()
+    try { embedRef.current = new URLSearchParams(window.location.search).get('embed') === '1'; setEmbed(embedRef.current) } catch {}
+    clv.current = takeClickRef('poll', pollId)
     void load()
   }, [load])
+
+  useEffect(() => (embed ? reportEmbedHeight('poll', pollId) : undefined), [embed, pollId])
 
   useEffect(() => { if (view?.poll?.question) document.title = view.poll.question }, [view?.poll?.question])
 
@@ -60,7 +66,7 @@ export default function PollPage() {
 
   const vote = async (picks: string[], who: { name: string; contact: string }): Promise<string | null> => {
     try {
-      const res = await fetch(`/api/polls/${pollId}/vote`, { method: 'POST', headers: headers(), body: JSON.stringify({ picks, name: who.name, contact: who.contact, clv: clv.current }) })
+      const res = await fetch(`/api/polls/${pollId}/vote`, { method: 'POST', headers: headers(), body: JSON.stringify({ picks, name: who.name, contact: who.contact, clv: clv.current, embed: embedRef.current }) })
       const d = await res.json().catch(() => ({}))
       keepVoter(d?.voter)
       if (res.ok) { setNotice(null); setView({ poll: d.poll, results: d.results, myVote: d.myVote }); return null }

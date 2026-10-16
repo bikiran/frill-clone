@@ -11,7 +11,7 @@ import { resolveCompanyUser } from '@/lib/client-cache'
 import { useEntitlements } from '@/lib/entitlements-client'
 import ConfirmModal from '@/components/ConfirmModal'
 import { readView, type FormsView } from '@/lib/forms-list'
-import { statusFields, type EngageFilter, type EngageKind, type EngageListItem, type EngageSort } from '@/lib/engage-core'
+import { reopenFields, statusFields, type EngageFilter, type EngageKind, type EngageListItem, type EngageSort } from '@/lib/engage-core'
 import { POLL_TEMPLATES, SURVEY_TEMPLATES, pollFromTemplate, surveyFromTemplate } from '@/lib/engage-templates'
 import EngageListView, { type EngageAction } from './EngageListView'
 import { TemplatePicker } from './TemplatePicker'
@@ -135,7 +135,8 @@ export default function EngageListPage({ kind }: { kind: EngageKind }) {
   }
 
   const setStatusOf = (i: EngageListItem, next: 'live' | 'closed') => once(`st:${i.id}`, async () => {
-    const fields: Record<string, any> = statusFields(next)
+    // Reopening also clears a close date that has passed (same helper as the detail page).
+    const fields: Record<string, any> = next === 'live' ? reopenFields(i.row) : statusFields(next)
     const { data, error } = await updateItem(db, kind, i.id, fields)
     if (error || !data) { say('Couldn’t change that. Please try again.'); return }
     await fetchList()

@@ -8,6 +8,21 @@ import { useEffect, useState } from 'react'
 import type { EngageKind, EngageStatus } from '@/lib/engage-core'
 import { EngageIcon } from './icons'
 
+/**
+ * The iframe plus a few lines that size it to its content: the poll page
+ * posts its height, and the listener only believes messages from our own
+ * origin about this exact iframe. Without the script it still shows at a
+ * height that suits the type.
+ */
+export function embedCode(kind: EngageKind, url: string, title: string): string {
+  let origin = ''
+  try { origin = new URL(url).origin } catch { /* relative url */ }
+  const frameId = `colvy-${kind}-${url.split('/').pop() || 'embed'}`.replace(/[^a-z0-9-]/gi, '')
+  const safeTitle = title.replace(/[<>"&]/g, c => ({ '<': '&lt;', '>': '&gt;', '"': '&quot;', '&': '&amp;' } as Record<string, string>)[c])
+  return `<iframe id="${frameId}" src="${url}?embed=1" width="100%" height="${kind === 'poll' ? 560 : 680}" frameborder="0" style="border:0;border-radius:16px;max-width:640px" title="${safeTitle}"></iframe>
+<script>window.addEventListener("message",function(e){if(e.origin!=="${origin}"||!e.data||e.data.type!=="colvy-embed-height")return;var f=document.getElementById("${frameId}");if(f&&e.source===f.contentWindow){f.style.height=Math.min(3000,Math.max(200,+e.data.height||0))+"px"}});</script>`
+}
+
 export function SharePanel({ kind, url, title, status, onSms, smsBusy, compact }: {
   kind: EngageKind
   url: string
@@ -20,7 +35,7 @@ export function SharePanel({ kind, url, title, status, onSms, smsBusy, compact }
   const [copied, setCopied] = useState('')
   const [qr, setQr] = useState<string | null>(null)
   const noun = kind === 'poll' ? 'poll' : 'survey'
-  const embed = `<iframe src="${url}?embed=1" width="100%" height="${kind === 'poll' ? 480 : 580}" frameborder="0" style="border:0;border-radius:16px;max-width:640px" title="${title.replace(/"/g, '&quot;')}"></iframe>`
+  const embed = embedCode(kind, url, title)
 
   useEffect(() => {
     let live = true
@@ -92,7 +107,7 @@ export function SharePanel({ kind, url, title, status, onSms, smsBusy, compact }
 
       <section className="eg-share-sec">
         <h3 className="eg-h3">Embed on your website</h3>
-        <textarea readOnly value={embed} rows={3} onFocus={e => e.currentTarget.select()} className="eg-input eg-code" aria-label="Embed code" />
+        <textarea readOnly value={embed} rows={5} onFocus={e => e.currentTarget.select()} className="eg-input eg-code" aria-label="Embed code" />
         <div className="eg-row" style={{ marginTop: 8 }}>
           <button type="button" className="fr-btn" onClick={() => copy(embed, 'embed')}><EngageIcon name={copied === 'embed' ? 'check' : 'code'} size={15} />{copied === 'embed' ? 'Copied' : 'Copy embed code'}</button>
         </div>

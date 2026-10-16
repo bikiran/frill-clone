@@ -19,12 +19,11 @@
 --
 -- After this:
 --   polls / surveys
---     • SELECT — live ones for everyone (is_active not false and status not
---       'draft' / 'closed'): the chat widget's in-chat poll card reads them
---       with the public key. Every row of a workspace for its staff
+--     • SELECT — live ones for everyone (is_active not false, status not
+--       'draft' / 'closed', and settings.closes_at not passed). Every row of a workspace for its staff
 --       (is_company_member), and the platform admin.
---     • INSERT / UPDATE / DELETE — staff of the row's workspace only; an
---       update can't move a row to another workspace.
+--     • INSERT / UPDATE / DELETE — staff of the row's workspace (an update
+--       can't move a row to another workspace), and the platform admin.
 --   poll_votes / survey_responses
 --     • SELECT — staff of the poll's / survey's workspace, and the platform admin.
 --     • INSERT / UPDATE / DELETE — the server only. Votes and responses now go
@@ -186,16 +185,34 @@ BEGIN
   END IF;
 END $$;
 
+-- Has a poll / survey's close date (settings.closes_at) not passed yet? A
+-- missing or unreadable date counts as open (the server is what refuses
+-- answers; this keeps closed ones out of the public key's reads).
+CREATE OR REPLACE FUNCTION engage_not_closed(settings JSONB)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+STABLE
+SET search_path = public
+AS $$
+DECLARE c TIMESTAMPTZ;
+BEGIN
+  IF settings IS NULL OR nullif(btrim(settings ->> 'closes_at'), '') IS NULL THEN RETURN true; END IF;
+  BEGIN c := (settings ->> 'closes_at')::timestamptz; EXCEPTION WHEN others THEN RETURN true; END;
+  RETURN c > now();
+END $$;
+REVOKE ALL ON FUNCTION engage_not_closed(JSONB) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION engage_not_closed(JSONB) TO anon, authenticated, service_role;
+
 -- ── STEP 3: polls ───────────────────────────────────────────────────────────
 DO $$
 BEGIN
   IF NOT pg_temp.colvy_v386_reset('polls') THEN RETURN; END IF;
 
-  -- Live polls: the chat widget's in-chat poll card. Drafts and closed polls
-  -- reach the public only through /api/polls/<id>, which decides what to show.
+  -- Live polls only (the public poll page, the chat widget's card and the
+  -- board read through /api/polls/<id>, which decides what a closed one shows).
   CREATE POLICY polls_public_read ON public.polls
     FOR SELECT TO anon, authenticated
-    USING (is_active IS NOT FALSE AND COALESCE(status, 'active') NOT IN ('draft', 'closed'));
+    USING (is_active IS NOT FALSE AND COALESCE(status, 'active') NOT IN ('draft', 'closed') AND engage_not_closed(settings));
 
   CREATE POLICY polls_member_read ON public.polls
     FOR SELECT TO authenticated
@@ -214,6 +231,12 @@ BEGIN
     FOR DELETE TO authenticated
     USING (is_company_member(company_id));
 
+  -- The platform admin can fix any workspace's (including ones with no company).
+  CREATE POLICY polls_platform_write ON public.polls
+    FOR ALL TO authenticated
+    USING (is_platform_admin())
+    WITH CHECK (is_platform_admin());
+
   GRANT SELECT ON public.polls TO anon;
   GRANT SELECT, INSERT, UPDATE, DELETE ON public.polls TO authenticated;
 END $$;
@@ -225,7 +248,7 @@ BEGIN
 
   CREATE POLICY surveys_public_read ON public.surveys
     FOR SELECT TO anon, authenticated
-    USING (is_active IS NOT FALSE AND COALESCE(status, 'active') NOT IN ('draft', 'closed'));
+    USING (is_active IS NOT FALSE AND COALESCE(status, 'active') NOT IN ('draft', 'closed') AND engage_not_closed(settings));
 
   CREATE POLICY surveys_member_read ON public.surveys
     FOR SELECT TO authenticated
@@ -243,6 +266,12 @@ BEGIN
   CREATE POLICY surveys_member_delete ON public.surveys
     FOR DELETE TO authenticated
     USING (is_company_member(company_id));
+
+  -- The platform admin can fix any workspace's (including ones with no company).
+  CREATE POLICY surveys_platform_write ON public.surveys
+    FOR ALL TO authenticated
+    USING (is_platform_admin())
+    WITH CHECK (is_platform_admin());
 
   GRANT SELECT ON public.surveys TO anon;
   GRANT SELECT, INSERT, UPDATE, DELETE ON public.surveys TO authenticated;
@@ -280,8 +309,8 @@ END $$;
 NOTIFY pgrst, 'reload schema';
 
 -- ── STEP 7: confirm ─────────────────────────────────────────────────────────
--- Expect: polls / surveys — *_public_read (SELECT {anon,authenticated}) and
--- *_member_read / _insert / _update / _delete ({authenticated});
+-- Expect: polls / surveys — *_public_read (SELECT {anon,authenticated}),
+-- *_member_read / _insert / _update / _delete and *_platform_write ({authenticated});
 -- poll_votes_member_read and survey_responses_member_read (SELECT {authenticated}).
 SELECT tablename, policyname, cmd, roles, qual, with_check
   FROM pg_policies
@@ -322,6 +351,7 @@ ORDER BY created_at DESC;
 --   DROP POLICY IF EXISTS polls_member_insert ON public.polls;
 --   DROP POLICY IF EXISTS polls_member_update ON public.polls;
 --   DROP POLICY IF EXISTS polls_member_delete ON public.polls;
+--   DROP POLICY IF EXISTS polls_platform_write ON public.polls;
 --   CREATE POLICY "Polls are viewable by everyone" ON public.polls FOR SELECT USING (true);
 --   CREATE POLICY "Anyone can manage polls" ON public.polls FOR ALL USING (true);
 --   GRANT ALL ON public.polls TO anon, authenticated;
@@ -336,6 +366,7 @@ ORDER BY created_at DESC;
 --   DROP POLICY IF EXISTS surveys_member_insert ON public.surveys;
 --   DROP POLICY IF EXISTS surveys_member_update ON public.surveys;
 --   DROP POLICY IF EXISTS surveys_member_delete ON public.surveys;
+--   DROP POLICY IF EXISTS surveys_platform_write ON public.surveys;
 --   CREATE POLICY "Surveys are viewable by everyone" ON public.surveys FOR SELECT USING (true);
 --   CREATE POLICY "Anyone can manage surveys" ON public.surveys FOR ALL USING (true);
 --   GRANT ALL ON public.surveys TO anon, authenticated;
@@ -344,4 +375,5 @@ ORDER BY created_at DESC;
 --   CREATE POLICY "Survey responses are viewable by everyone" ON public.survey_responses FOR SELECT USING (true);
 --   CREATE POLICY "Anyone can submit responses" ON public.survey_responses FOR INSERT WITH CHECK (true);
 --   GRANT ALL ON public.survey_responses TO anon, authenticated;
+--   DROP FUNCTION IF EXISTS engage_not_closed(JSONB);
 --   NOTIFY pgrst, 'reload schema';

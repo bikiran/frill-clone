@@ -72,7 +72,7 @@ export function SettingsFields({ kind, value, onChange, hasSettingsColumn }: {
             <option value="optional">Yes, optional</option>
             <option value="required">Yes, required</option>
           </select>
-          <span className="eg-help" style={{ display: 'block', marginTop: 6 }}>Handy for following up. It also stops the same person {kind === 'poll' ? 'voting' : 'answering'} twice from another device.</span>
+          <span className="eg-help" style={{ display: 'block', marginTop: 6 }}>Handy for following up. A second {kind === 'poll' ? 'vote' : 'answer'} with the same email or mobile is turned away.</span>
         </label>
 
         <label className="eg-field">
@@ -86,10 +86,12 @@ export function SettingsFields({ kind, value, onChange, hasSettingsColumn }: {
 
         <div className="eg-field" style={{ display: 'grid', gap: 10 }}>
           <span className="eg-label" style={{ marginBottom: 0 }}>One {kind === 'poll' ? 'vote' : 'response'} per person</span>
-          <label className="eg-toggle">
-            <input type="checkbox" checked={value.allow_change} onChange={e => set('allow_change', e.target.checked)} />
-            <span>Let people change their {kind === 'poll' ? 'vote' : 'answer'}<small>Otherwise a second try shows what they already {kind === 'poll' ? 'voted' : 'said'}.</small></span>
-          </label>
+          {kind === 'poll' ? (
+            <label className="eg-toggle">
+              <input type="checkbox" checked={value.allow_change} onChange={e => set('allow_change', e.target.checked)} />
+              <span>Let people change their vote<small>From the same browser. Otherwise a second try shows what they already voted.</small></span>
+            </label>
+          ) : <span className="eg-help" style={{ margin: 0 }}>A second try from the same browser, email or mobile is turned away.</span>}
           {kind === 'survey' && (
             <label className="eg-toggle">
               <input type="checkbox" checked={value.allow_repeat} onChange={e => set('allow_repeat', e.target.checked)} />
