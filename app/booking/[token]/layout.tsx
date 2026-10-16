@@ -1,5 +1,5 @@
-import type { Metadata, Viewport } from 'next'
-import { tenantPageMetadata, tenantPageViewport } from '@/lib/tenant-brand'
+import type { Metadata } from 'next'
+import { tenantPageMetadata } from '@/lib/tenant-brand'
 
 // Manage a booking (/booking/<token>). On a company subdomain or custom domain
 // the tab shows the company's name and icon (lib/tenant-meta). The page is
@@ -17,10 +17,6 @@ export async function generateMetadata({ params }: { params: Promise<{ token: st
     twitter: { card: 'summary', title: 'Your booking', description: 'View, change or cancel your booking.', images: [] },
   }
   return { ...(md || plain), robots: { index: false, follow: false } }
-}
-
-export async function generateViewport(): Promise<Viewport> {
-  return tenantPageViewport()
 }
 
 export default function Layout({ children }: { children: React.ReactNode }) {

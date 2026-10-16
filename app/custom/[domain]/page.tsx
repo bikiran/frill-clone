@@ -1,8 +1,8 @@
-import type { Metadata, Viewport } from 'next'
+import type { Metadata } from 'next'
 import CustomDomainPage from './CustomDomainClient'
 import { getCustomDomainHelp } from '@/lib/help-public'
 import { brandForHostName, hostFromDomainParam } from '@/lib/tenant-brand'
-import { buildTenantMetadata, buildTenantViewport, customHostIsHelp } from '@/lib/tenant-meta'
+import { buildTenantMetadata, customHostIsHelp } from '@/lib/tenant-meta'
 
 // The tab belongs to the company: "<Company> Help Centre" on a help domain,
 // "<Company> Feedback" on a board domain, with its icon (lib/tenant-meta).
@@ -10,11 +10,6 @@ export async function generateMetadata({ params }: { params: Promise<{ domain: s
   const host = hostFromDomainParam((await params).domain)
   const brand = await brandForHostName(host.host)
   return buildTenantMetadata({ host, brand, page: customHostIsHelp(host, brand) ? 'help' : 'feedback', path: '/' })
-}
-
-export async function generateViewport({ params }: { params: Promise<{ domain: string }> }): Promise<Viewport> {
-  const host = hostFromDomainParam((await params).domain)
-  return buildTenantViewport(await brandForHostName(host.host))
 }
 
 // Custom-domain home (help.acme.com → /custom/help__acme__com via proxy.ts).

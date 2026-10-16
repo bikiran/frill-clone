@@ -12,10 +12,10 @@ import CustomDomainPage from '../CustomDomainClient'
 import BookingFlow from '@/components/booking/BookingFlow'
 import ManageBooking from '@/components/booking/ManageBooking'
 import CustomRedirect from './CustomRedirect'
-import type { Metadata, Viewport } from 'next'
+import type { Metadata } from 'next'
 import { getCustomDomainHelp, getPublishedHelpArticle } from '@/lib/help-public'
 import { brandForHostName, hostFromDomainParam } from '@/lib/tenant-brand'
-import { buildTenantMetadata, buildTenantViewport, customHostIsHelp, type TenantPage } from '@/lib/tenant-meta'
+import { buildTenantMetadata, customHostIsHelp, type TenantPage } from '@/lib/tenant-meta'
 
 type Params = { params: Promise<{ domain: string; path?: string[] }> }
 
@@ -43,11 +43,6 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
   // A manage-booking link is private to whoever holds it; a redirect has no content of its own.
   if (page === 'booking' || page === 'redirect') md.robots = { index: false, follow: page === 'redirect' }
   return md
-}
-
-export async function generateViewport({ params }: Params): Promise<Viewport> {
-  const host = hostFromDomainParam((await params).domain)
-  return buildTenantViewport(await brandForHostName(host.host))
 }
 
 export default async function CustomDomainSubPath({ params }: Params) {

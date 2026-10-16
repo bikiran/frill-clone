@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { RESERVED_SUBDOMAINS } from './lib/reserved-subdomains'
 
 export const config = {
   matcher: ['/((?!_next/static|_next/image|favicon\\.png|logo\\.png|.*\\..*).*)',],
@@ -61,8 +62,7 @@ export function proxy(req: NextRequest) {
     const parts = hostname.split('.')
     if (parts.length === 3) {
       const sub = parts[0]
-      const reserved = new Set(['www', 'api', 'mail', 'smtp', 'cdn', 'assets', 'static', 'admin'])
-      if (!reserved.has(sub)) {
+      if (!RESERVED_SUBDOMAINS.has(sub)) {
         const res = NextResponse.next()
         res.headers.set('x-subdomain', sub)
         return res

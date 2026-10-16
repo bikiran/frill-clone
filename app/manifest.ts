@@ -19,14 +19,16 @@ import { NEUTRAL_APPLE_ICON, NEUTRAL_ICON, customHostIsHelp } from '@/lib/tenant
 export default async function manifest(): Promise<MetadataRoute.Manifest> {
   const { host, brand } = await requestTenant()
   if (host.kind === 'custom') {
-    const name = brand?.name || 'Help Centre'
     const isHelp = customHostIsHelp(host, brand)
+    const name = brand?.name || (isHelp ? 'Help Centre' : 'Feedback')
     const icon = brand?.faviconUrl || brand?.logoUrl
     const accent = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(brand?.accentColor || '') ? brand!.accentColor! : '#ffffff'
     return {
-      name: isHelp ? `${name} Help Centre` : name,
+      name: isHelp && brand?.name ? `${name} Help Centre` : name,
       short_name: name.slice(0, 24),
-      description: isHelp ? `Answers, guides and help articles from ${name}.` : `${name} — ideas, updates and help.`,
+      description: brand?.name
+        ? (isHelp ? `Answers, guides and help articles from ${name}.` : `${name} — ideas, updates and help.`)
+        : 'Answers, guides and help articles.',
       start_url: '/',
       display: 'standalone',
       background_color: '#ffffff',

@@ -1,7 +1,7 @@
-import type { Metadata, Viewport } from 'next'
+import type { Metadata } from 'next'
 import HelpArticlePage from './ArticleClient'
 import { getPublishedHelpArticle } from '@/lib/help-public'
-import { brandById, requestTenant, tenantPageViewport } from '@/lib/tenant-brand'
+import { brandById, requestTenant } from '@/lib/tenant-brand'
 import { buildTenantMetadata, metaExcerpt } from '@/lib/tenant-meta'
 
 // "<Article> · <Company> Help" with the article's excerpt as the description.
@@ -18,13 +18,10 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
     // Colvy's own articles get "<title> · Colvy" from the root template.
     const brand = a?.company_id ? await brandById(a.company_id) : null
     if (brand) return buildTenantMetadata({ host, brand, page: 'help-article', path, title: a?.title, description: a?.content })
-    return a ? { title: a.title, description: metaExcerpt(a.content) || undefined, alternates: { canonical: path } } : {}
+    // An unknown, draft or locked article is kept out of search results.
+    return a ? { title: a.title, description: metaExcerpt(a.content) || undefined, alternates: { canonical: path } } : { robots: { index: false, follow: true } }
   }
   return buildTenantMetadata({ host, brand: hostBrand, page: 'help-article', path, title: a?.title, description: a?.content })
-}
-
-export async function generateViewport(): Promise<Viewport> {
-  return tenantPageViewport()
 }
 
 // Published articles are rendered on the server from a short-lived shared cache

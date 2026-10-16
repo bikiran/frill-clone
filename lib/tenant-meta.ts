@@ -10,8 +10,9 @@
 // Everything here is pure (no server or browser APIs) so it can be unit-tested.
 // lib/tenant-brand.ts does the cached company lookup and reads the request host.
 
-import type { Metadata, Viewport } from 'next'
+import type { Metadata } from 'next'
 import { termFor } from './terminology'
+import { RESERVED_SUBDOMAINS } from './reserved-subdomains'
 
 // Neutral icons for a company that hasn't set a logo or favicon. Deliberately
 // not Colvy's mark.
@@ -24,9 +25,6 @@ export type TenantHost =
   | { kind: 'colvy'; host: string }
   | { kind: 'subdomain'; host: string; slug: string }
   | { kind: 'custom'; host: string }
-
-// Same reserved labels as proxy.ts: these subdomains are Colvy's, not a company's.
-const RESERVED_SUBDOMAINS = new Set(['www', 'api', 'mail', 'smtp', 'cdn', 'assets', 'static', 'admin', 'app'])
 
 /** Normalise a Host header: lower case, no port, no trailing dot. '' if it looks unsafe. */
 export function normaliseHost(raw: string | null | undefined): string {
@@ -106,13 +104,18 @@ export type TenantPage =
   | 'help' | 'help-article' | 'help-ticket'
   | 'book' | 'booking'
   | 'poll' | 'survey' | 'form' | 'contact-form'
+  | 'profile' | 'note' | 'media'
   | 'redirect'
 
 export type TenantMetaInput = {
   /** Where the page is being served. */
   host: TenantHost
-  /** The company behind the page, or null when it couldn't be found. */
-  brand: TenantBrand | null
+  /**
+   * The company behind the page. null = looked up and there is none (the page
+   * is then kept out of search results); undefined = the lookup failed or timed
+   * out (neutral metadata, still indexable — a slow database mustn't de-index).
+   */
+  brand: TenantBrand | null | undefined
   page: TenantPage
   /** The page's path on that host, e.g. '/help/<id>'. */
   path: string
@@ -120,6 +123,8 @@ export type TenantMetaInput = {
   title?: string | null
   /** The record's own description or excerpt, when there is one. */
   description?: string | null
+  /** Keep this page out of search results (private links, missing records). */
+  noIndex?: boolean
 }
 
 /** Plain-text teaser from markdown or HTML, cut at a word near `max` characters. */
@@ -194,6 +199,9 @@ function titleFor(input: TenantMetaInput): { title: string; siteName: string } {
     case 'survey': return { title: join(rec || 'Survey', name), siteName: name || 'Survey' }
     case 'form':
     case 'contact-form': return { title: join(rec || 'Form', name), siteName: name || 'Form' }
+    case 'profile': return { title: join(rec || 'Profile', name), siteName: name || 'Profile' }
+    case 'note': return { title: join(rec || 'Shared note', name), siteName: name || 'Shared note' }
+    case 'media': return { title: join('Shared files', name), siteName: name || 'Shared files' }
     case 'redirect':
     default: return { title: name || 'Loading', siteName: name || 'Loading' }
   }
@@ -220,6 +228,9 @@ function descriptionFor(input: TenantMetaInput): string {
     case 'survey': return `Share your thoughts in this survey${of}.`
     case 'form':
     case 'contact-form': return name ? `Fill in this form from ${name}.` : 'Fill in this form.'
+    case 'profile': return name ? `Ideas, votes and comments on the ${name} board.` : 'Ideas, votes and comments.'
+    case 'note': return `A note shared${of}.`
+    case 'media': return `Files shared${of}.`
     default: return metaExcerpt(brand?.description) || name
   }
 }
@@ -270,18 +281,19 @@ export function buildTenantMetadata(input: TenantMetaInput): Metadata {
     appleWebApp: { title: brand?.name || siteName },
   }
   // Relative URLs (canonical, neutral icons) resolve against the host the page
-  // is actually on, not colvy.com.
-  if (host.kind !== 'colvy' && host.host) md.metadataBase = new URL(`https://${host.host}`)
+  // is actually on, not colvy.com. An odd Host must never turn into a 500.
+  if (host.kind !== 'colvy' && host.host) {
+    try { md.metadataBase = new URL(`https://${host.host}`) } catch {}
+  }
+  // Out of search results: private links, a company that doesn't exist on
+  // this host, or a help article that isn't (or is no longer) published.
+  const unknownCompany = host.kind !== 'colvy' && brand === null
+  const missingArticle = page === 'help-article' && !str(input.title)
+  if (input.noIndex || unknownCompany || missingArticle) md.robots = { index: false, follow: !input.noIndex && !unknownCompany }
   return md
 }
 
-/** Browser chrome colour: the company's accent, when it's a valid hex colour. */
-export function buildTenantViewport(brand: TenantBrand | null): Viewport {
-  const c = brand?.accentColor || ''
-  return /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(c) ? { themeColor: c } : {}
-}
-
 /** Whether a custom domain is the company's help domain (vs its board domain). */
-export function customHostIsHelp(host: TenantHost, brand: TenantBrand | null): boolean {
+export function customHostIsHelp(host: TenantHost, brand: TenantBrand | null | undefined): boolean {
   return isHelpHost({ host, brand, page: 'help', path: '/' })
 }

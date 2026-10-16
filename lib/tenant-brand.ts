@@ -1,26 +1,39 @@
 // Server-side company lookups for the metadata of public company pages
 // (see lib/tenant-meta.ts for what the metadata looks like).
 //
-// One cached lookup per page: the company row plus its site_settings
-// 'general' row are read together inside a single unstable_cache entry that
-// lives for HELP_REVALIDATE_SECONDS and is expired by /api/help/revalidate
-// (helpTags.companies). React's cache() also dedupes the lookup within one
-// request, so generateMetadata and generateViewport share it.
+// Speed first:
+//   • Two small cached steps: host → company id (a tiny lookup, cached by
+//     host), then company id → brand (company row + settings read in
+//     parallel, cached per company). Warm requests touch no database.
+//   • Every lookup is capped at LOOKUP_TIMEOUT_MS. A slow database never holds
+//     up the page; the metadata falls back to neutral (never Colvy's) copy.
+//   • React's cache() dedupes the lookup within one request.
+//   • Entries live for HELP_REVALIDATE_SECONDS. Brand entries carry a
+//     per-company tag (tenantTags.company), so one company's edit refreshes
+//     only that company; /api/help/revalidate expires it.
 //
 // Only the anon key is used, and only public company fields are returned.
-// Failures are never cached: they throw inside the cache scope and come back
-// as null, and the page then gets neutral (still not Colvy) metadata.
+// Results: a brand, null (looked up — no such company) or undefined (the
+// lookup failed or timed out). Failures are never cached.
 
 import { cache } from 'react'
 import { headers } from 'next/headers'
 import { unstable_cache } from 'next/cache'
 import { createClient } from '@supabase/supabase-js'
-import type { Metadata, Viewport } from 'next'
-import { HELP_REVALIDATE_SECONDS, helpTags } from './help-public'
+import type { Metadata } from 'next'
+import { HELP_REVALIDATE_SECONDS } from './help-public'
 import {
-  buildTenantMetadata, buildTenantViewport, classifyHost, normaliseHost, toTenantBrand,
+  buildTenantMetadata, classifyHost, normaliseHost, toTenantBrand,
   type TenantBrand, type TenantHost, type TenantPage,
 } from './tenant-meta'
+
+export const LOOKUP_TIMEOUT_MS = 1500
+
+export const tenantTags = {
+  hosts: 'tenant:hosts',
+  records: 'tenant:records',
+  company: (companyId: string) => `tenant:company:${companyId}`,
+}
 
 let anon: any = null
 function db(): any {
@@ -37,12 +50,18 @@ const SETTINGS_FIELDS = ['companyName', 'logoUrl', 'faviconUrl', 'ogImageUrl', '
 
 type Col = 'id' | 'slug' | 'help_domain' | 'board_domain'
 
-async function companiesWhere(col: Col, val: string): Promise<any | null> {
+async function companyIdWhere(col: Col, val: string): Promise<string | null> {
+  const { data, error } = await db().from('companies').select('id').eq(col, val).limit(1)
+  if (error) throw new Error(error.message || 'company lookup failed')
+  return data?.[0]?.id ? String(data[0].id) : null
+}
+
+async function companyRow(id: string): Promise<any | null> {
   const d = db()
-  let r = await d.from('companies').select(COMPANY_COLUMNS).eq(col, val).limit(1)
+  let r = await d.from('companies').select(COMPANY_COLUMNS).eq('id', id).limit(1)
   // An optional column (description, help_domain_verified…) missing on this
   // database: read the whole row instead; toTenantBrand keeps public fields only.
-  if (r.error) r = await d.from('companies').select('*').eq(col, val).limit(1)
+  if (r.error) r = await d.from('companies').select('*').eq('id', id).limit(1)
   if (r.error) throw new Error(r.error.message || 'company lookup failed')
   return r.data?.[0] || null
 }
@@ -58,59 +77,82 @@ async function settingsFor(companyId: string): Promise<Record<string, unknown>> 
   return out
 }
 
-async function withSettings(company: any): Promise<TenantBrand | null> {
-  if (!company) return null
-  return toTenantBrand(company, await settingsFor(company.id))
-}
-
-// Custom domain → company: help_domain, then board_domain, then the
-// second-level label as a slug — the same order the custom-domain renderer
-// (lib/help-public) uses, so the metadata matches the page.
-async function companyForCustomHost(host: string): Promise<any | null> {
-  const parts = host.split('.')
-  const slug = parts.length >= 2 ? parts[parts.length - 2] : ''
-  const [byHelp, byBoard, bySlug] = await Promise.all([
-    companiesWhere('help_domain', host),
-    companiesWhere('board_domain', host),
-    slug ? companiesWhere('slug', slug) : Promise.resolve(null),
-  ])
-  return byHelp || byBoard || bySlug
-}
-
-const cachedBrand = (kind: 'host' | 'slug' | 'id', key: string) => unstable_cache(
-  async (): Promise<TenantBrand | null> => {
-    if (kind === 'id') return withSettings(await companiesWhere('id', key))
-    if (kind === 'slug') return withSettings(await companiesWhere('slug', key))
-    return withSettings(await companyForCustomHost(key))
+// Step 1: host → company id. A subdomain is its slug. A custom domain is
+// help_domain, then board_domain, then the second-level label as a slug — the
+// same order the custom-domain renderer (lib/help-public) uses.
+const cachedHostCompanyId = (key: string) => unstable_cache(
+  async (): Promise<string | null> => {
+    const host = classifyHost(key)
+    if (host.kind === 'subdomain') return companyIdWhere('slug', host.slug)
+    if (host.kind !== 'custom') return null
+    const parts = host.host.split('.')
+    const slug = parts.length >= 2 ? parts[parts.length - 2] : ''
+    const [byHelp, byBoard, bySlug] = await Promise.all([
+      companyIdWhere('help_domain', host.host),
+      companyIdWhere('board_domain', host.host),
+      slug ? companyIdWhere('slug', slug) : Promise.resolve(null),
+    ])
+    return byHelp || byBoard || bySlug
   },
-  ['tenant-brand', kind, key],
-  { revalidate: HELP_REVALIDATE_SECONDS, tags: [helpTags.companies] },
+  ['tenant-host', key],
+  { revalidate: HELP_REVALIDATE_SECONDS, tags: [tenantTags.hosts] },
 )()
 
-async function safe<T>(fn: () => Promise<T>): Promise<T | null> {
-  if (!db()) return null
-  try { return await fn() } catch { return null }
+const cachedSlugCompanyId = (slug: string) => unstable_cache(
+  () => companyIdWhere('slug', slug),
+  ['tenant-slug', slug],
+  { revalidate: HELP_REVALIDATE_SECONDS, tags: [tenantTags.hosts] },
+)()
+
+// Step 2: company id → brand (company row and settings in parallel).
+const cachedBrand = (id: string) => unstable_cache(
+  async (): Promise<TenantBrand | null> => {
+    const [row, settings] = await Promise.all([companyRow(id), settingsFor(id)])
+    return row ? toTenantBrand(row, settings) : null
+  },
+  ['tenant-brand', id],
+  { revalidate: HELP_REVALIDATE_SECONDS, tags: [tenantTags.company(id)] },
+)()
+
+/** Run a lookup with a time cap. undefined on error, timeout or no database. */
+async function bounded<T>(fn: () => Promise<T>): Promise<T | undefined> {
+  if (!db()) return undefined
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      fn(),
+      new Promise<undefined>(resolve => { timer = setTimeout(() => resolve(undefined), LOOKUP_TIMEOUT_MS) }),
+    ])
+  } catch {
+    return undefined
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
 }
 
+const brandFromId = async (id: string | null): Promise<TenantBrand | null> => (id ? cachedBrand(id) : null)
+
 /**
- * The company behind a subdomain or custom domain (by host name, so React's
- * per-request cache can dedupe it); null on Colvy's own hosts.
+ * The company behind a subdomain or custom domain, by host name (a string, so
+ * React's per-request cache can dedupe it). null on Colvy's own hosts or when
+ * no company has this host; undefined if the lookup failed or timed out.
  */
-export const brandForHostName = cache(async (hostName: string): Promise<TenantBrand | null> => {
+export const brandForHostName = cache(async (hostName: string): Promise<TenantBrand | null | undefined> => {
   const host = classifyHost(hostName)
-  if (host.kind === 'subdomain') return safe(() => cachedBrand('slug', host.slug))
-  if (host.kind === 'custom' && host.host) return safe(() => cachedBrand('host', host.host))
-  return null
+  if (host.kind === 'colvy' || !host.host) return null
+  return bounded(async () => brandFromId(await cachedHostCompanyId(host.host)))
 })
 
-export const brandBySlug = cache(async (slug: string): Promise<TenantBrand | null> => {
+export const brandBySlug = cache(async (slug: string): Promise<TenantBrand | null | undefined> => {
   const s = String(slug || '').toLowerCase().trim()
-  return /^[a-z0-9-]{1,63}$/.test(s) ? safe(() => cachedBrand('slug', s)) : null
+  if (!/^[a-z0-9-]{1,63}$/.test(s)) return null
+  return bounded(async () => brandFromId(await cachedSlugCompanyId(s)))
 })
 
-export const brandById = cache(async (id: string): Promise<TenantBrand | null> => {
+export const brandById = cache(async (id: string): Promise<TenantBrand | null | undefined> => {
   const s = String(id || '').trim()
-  return /^[A-Za-z0-9-]{1,64}$/.test(s) ? safe(() => cachedBrand('id', s)) : null
+  if (!/^[A-Za-z0-9-]{1,64}$/.test(s)) return null
+  return bounded(() => cachedBrand(s))
 })
 
 /** The host this request was made to, classified. */
@@ -120,7 +162,7 @@ export async function requestHost(): Promise<TenantHost> {
 }
 
 /** Host + company for this request (cached; one lookup per request at most). */
-export async function requestTenant(): Promise<{ host: TenantHost; brand: TenantBrand | null }> {
+export async function requestTenant(): Promise<{ host: TenantHost; brand: TenantBrand | null | undefined }> {
   const host = await requestHost()
   return { host, brand: host.kind === 'colvy' ? null : await brandForHostName(host.host) }
 }
@@ -136,27 +178,26 @@ export function hostFromDomainParam(domain: string): TenantHost {
  * Colvy's own hosts (colvy.com, localhost, previews), so the caller keeps its
  * existing Colvy metadata there.
  */
-export async function tenantPageMetadata(page: TenantPage, path: string, extra?: { title?: string | null; description?: string | null }): Promise<Metadata | null> {
+export async function tenantPageMetadata(
+  page: TenantPage, path: string,
+  extra?: { title?: string | null; description?: string | null; noIndex?: boolean },
+): Promise<Metadata | null> {
   const { host, brand } = await requestTenant()
   if (host.kind === 'colvy') return null
   return buildTenantMetadata({ host, brand, page, path, ...extra })
-}
-
-/** theme-color for a company page on this request's host. */
-export async function tenantPageViewport(): Promise<Viewport> {
-  const { host, brand } = await requestTenant()
-  return host.kind === 'colvy' ? {} : buildTenantViewport(brand)
 }
 
 // ── Records shared by link (forms, polls, surveys) ──────────────────────────
 
 export type RecordTable = 'forms' | 'polls' | 'surveys' | 'contact_forms'
 
-const RECORD_COLUMNS: Record<RecordTable, { cols: string; title: string }> = {
-  forms: { cols: 'id, title, description, company_id, is_published', title: 'title' },
-  polls: { cols: 'id, question, description, company_id', title: 'question' },
-  surveys: { cols: 'id, title, description, company_id', title: 'title' },
-  contact_forms: { cols: 'id, name, description, company_id', title: 'name' },
+// `open` says whether the record is live: a closed or unpublished one shows
+// only a neutral title — its own title and description stay private.
+const RECORD_COLUMNS: Record<RecordTable, { cols: string; title: string; open: (row: any) => boolean }> = {
+  forms: { cols: 'id, title, description, company_id, is_published', title: 'title', open: r => r.is_published !== false },
+  polls: { cols: 'id, question, company_id, is_active', title: 'question', open: r => r.is_active !== false },
+  surveys: { cols: 'id, title, description, company_id, is_active', title: 'title', open: r => !!r.is_active },
+  contact_forms: { cols: 'id, name, description, company_id, is_active', title: 'name', open: r => r.is_active !== false },
 }
 
 export type PublicRecord = { title: string | null; description: string | null; companyId: string | null }
@@ -169,24 +210,25 @@ const cachedRecord = (table: RecordTable, id: string) => unstable_cache(
     if (r.error) r = await d.from(table).select('*').eq('id', id).limit(1)
     if (r.error) throw new Error(r.error.message || 'record lookup failed')
     const row = r.data?.[0]
-    // An unpublished form shows "not found" on the page; say nothing about it.
-    if (!row || (table === 'forms' && row.is_published === false)) return null
+    if (!row) return null
+    const companyId = row.company_id ? String(row.company_id) : null
+    if (!spec.open(row)) return { title: null, description: null, companyId }
     const t = row[spec.title]
     return {
       title: typeof t === 'string' ? t.slice(0, 200) : null,
       description: typeof row.description === 'string' ? row.description.slice(0, 600) : null,
-      companyId: row.company_id ? String(row.company_id) : null,
+      companyId,
     }
   },
   ['tenant-record', table, id],
-  { revalidate: HELP_REVALIDATE_SECONDS, tags: [helpTags.companies] },
+  { revalidate: HELP_REVALIDATE_SECONDS, tags: [tenantTags.records] },
 )()
 
-/** A public record by id (anon key, so RLS applies). null if missing or on error. */
-export const publicRecord = cache(async (table: RecordTable, id: string): Promise<PublicRecord | null> => {
+/** A public record by id (anon key, so RLS applies). null if missing; undefined on error/timeout. */
+export const publicRecord = cache(async (table: RecordTable, id: string): Promise<PublicRecord | null | undefined> => {
   const s = String(id || '').trim()
   if (!/^[A-Za-z0-9_-]{1,64}$/.test(s)) return null
-  return safe(() => cachedRecord(table, s))
+  return bounded(() => cachedRecord(table, s))
 })
 
 /**
@@ -196,7 +238,8 @@ export const publicRecord = cache(async (table: RecordTable, id: string): Promis
  */
 export async function recordPageMetadata(page: TenantPage, table: RecordTable, id: string, path: string): Promise<Metadata | null> {
   const [{ host, brand: hostBrand }, rec] = await Promise.all([requestTenant(), publicRecord(table, id)])
-  const brand = (rec?.companyId ? await brandById(rec.companyId) : null) || hostBrand
+  const brand = (rec?.companyId ? await brandById(rec.companyId) : undefined) || hostBrand
   if (host.kind === 'colvy' && !brand) return null
-  return buildTenantMetadata({ host, brand, page, path, title: rec?.title, description: rec?.description })
+  // A missing, closed or unpublished record has nothing worth indexing.
+  return buildTenantMetadata({ host, brand, page, path, title: rec?.title, description: rec?.description, noIndex: !rec?.title })
 }
