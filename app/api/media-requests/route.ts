@@ -22,7 +22,9 @@ function genToken() {
 // POST: create a media request and post the link into the conversation.
 export async function POST(req: NextRequest) {
   try {
-    const { companyId, conversationId, contactId, prompt, accept, maxFiles, expiryHours, createdBy, deliveryChannel } = await req.json()
+    // callerTexts: the caller (the inbox) texts the link itself when this route
+    // doesn't, so the card can say SMS.
+    const { companyId, conversationId, contactId, prompt, accept, maxFiles, expiryHours, createdBy, deliveryChannel, callerTexts } = await req.json()
     if (!companyId) return NextResponse.json({ error: 'Missing companyId' }, { status: 400 })
     const db = admin()
     // Workspace members only.
@@ -68,9 +70,11 @@ export async function POST(req: NextRequest) {
     // Why it wasn't texted, when it should have been — so the app can say so
     // instead of showing a link the customer never received.
     let smsError: string | null = null
-    // The thread's own number. The inbox texts the link itself only for a thread
-    // without one, so for a thread with one, not texted here means not texted.
-    let threadNumber: string | null = null
+    // The channel the caller asked for. An email, Messenger or Instagram link is
+    // sent by the caller on that channel, so it isn't texted here as well (the
+    // customer got it twice).
+    const asked = typeof deliveryChannel === 'string' ? deliveryChannel : ''
+    const byOtherChannel = ['email', 'instagram', 'facebook'].includes(asked)
 
     if (conversationId) {
       // Actually deliver the link to the customer over SMS. Previously we only
@@ -80,7 +84,6 @@ export async function POST(req: NextRequest) {
       try {
         const { data: conv } = await db.from('conversations')
           .select('sms_number, sms_enabled, contact_id').eq('id', conversationId).maybeSingle()
-        threadNumber = conv?.sms_number || null
         // Recipient: the conversation's SMS number if set, else fall back to the
         // linked contact's phone. Previously only sms_number was used, so a
         // request on a call/mixed thread (no sms_number) recorded the message
@@ -97,7 +100,7 @@ export async function POST(req: NextRequest) {
         // Per-company operational flag (default ON): skip texting the link when
         // media-link SMS is disabled for this company.
         const smsAllowed = await companyFlagEnabled(db, companyId, 'media_sms_fallback')
-        if (to && conv?.sms_enabled !== false && smsAllowed) {
+        if (to && conv?.sms_enabled !== false && smsAllowed && !byOtherChannel) {
           const sender = await resolveSmsSender(db, companyId)
           if (sender) { await sender.send({ to, text: smsText }); texted = true }
           else smsError = 'No SMS number is set up for this workspace.'
@@ -113,16 +116,14 @@ export async function POST(req: NextRequest) {
       // with the channel it really went out on. The client's guess said "chat"
       // whenever it couldn't see a mobile, even though we had just texted it —
       // so a texted link read "Live Chat". Email/Messenger/Instagram are sent
-      // by the client, so its value stands for those. An "SMS" asked for but not
-      // texted here stands only when the inbox is about to text it (a thread
-      // with no number of its own, and no failed send here); otherwise the card
-      // read "Delivered | SMS" for a link the customer never got.
-      const asked = typeof deliveryChannel === 'string' ? deliveryChannel : ''
-      const inboxWillText = !threadNumber && !smsError
-      const channel = ['email', 'instagram', 'facebook'].includes(asked) ? asked
-        : texted ? 'sms'
-        : asked === 'sms' && !inboxWillText ? 'chat'
-        : (asked || 'chat')
+      // by the client, so its value stands for those. SMS only when it was
+      // texted here, or the caller texts it itself (and nothing failed here);
+      // otherwise the card read "Delivered | SMS" for a link the customer
+      // never got.
+      const channel = byOtherChannel ? asked
+        : texted || (callerTexts === true && !smsError) ? 'sms'
+        : asked && asked !== 'sms' ? asked
+        : 'chat'
       await db.from('messages').insert({
         conversation_id: conversationId, company_id: companyId,
         sender_type: 'agent', sender_name: createdBy || 'Support',

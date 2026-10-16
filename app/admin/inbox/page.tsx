@@ -4923,6 +4923,11 @@ export default function InboxPage() {
     return 'chat'
   }
 
+  // Does the inbox text the link itself when the server doesn't? Only for a
+  // thread with no number of its own and a mobile to text. Told to the server
+  // up front (callerTexts), so the card is labelled SMS only then.
+  const inboxTextsUploadLink = () => mediaSmsEnabled && !(selected as any)?.sms_number && !!smsDestination()
+
   // Deliver a freshly-created upload link to the customer EXACTLY ONCE.
   //
   // The server (/api/media-requests) always posts the in-thread card and, when
@@ -4951,7 +4956,7 @@ export default function InboxPage() {
     if (smsError) throw new Error(smsError)
     // The server also texts the contact's phone when the thread has no
     // sms_number, so only send here when it says it didn't.
-    if (mediaSmsEnabled && !(selected as any)?.sms_number && smsDestination()) {
+    if (inboxTextsUploadLink()) {
       return deliverToCustomer({ subject, body, url: link, silent: true })
     }
     // Not texted. A web chat visitor sees the card in the chat; anyone else
@@ -4975,6 +4980,7 @@ export default function InboxPage() {
           accept: ['image', 'video'], maxFiles: 10, expiryHours: null,
           createdBy: myName,
           deliveryChannel: uploadChannel(),
+          callerTexts: !['email', 'instagram', 'facebook'].includes(activeChannel) && inboxTextsUploadLink(),
         }),
       })
       const data = await res.json()
@@ -5005,6 +5011,7 @@ export default function InboxPage() {
           expiryHours: mrExpiry ? parseInt(mrExpiry) : null,
           createdBy: myName,
           deliveryChannel: uploadChannel(),
+          callerTexts: !['email', 'instagram', 'facebook'].includes(activeChannel) && inboxTextsUploadLink(),
         }),
       })
       const data = await res.json()

@@ -15,23 +15,8 @@ import { after } from 'next/server'
 import { internalHeaders } from '@/lib/internal-call'
 
 import { mediaUploadReplySettings, wantsUploadReply, MEDIA_UPLOAD_REPLY_HOURS } from '@/lib/media-upload-reply-settings'
+import { textOptOut } from '@/lib/sms-consent'
 export * from '@/lib/media-upload-reply-settings'
-
-/**
- * May an automatic reply text this contact? 'opted_out' when they opted out of
- * texts or are blocked (a texting thread doesn't override that), 'unknown' when
- * the contact can't be read (don't send). Also used by the failed picture
- * message reply (lib/inbound-sms, the Telnyx webhook).
- */
-export async function contactOptOut(db: any, companyId: string, contactId: string | null | undefined): Promise<'ok' | 'opted_out' | 'unknown'> {
-  if (!contactId) return 'ok'
-  try {
-    const { data: ct, error } = await db.from('contacts').select('unsubscribed_at, is_blocked')
-      .eq('id', contactId).eq('company_id', companyId).maybeSingle()
-    if (error) return 'unknown'
-    return ct?.unsubscribed_at || ct?.is_blocked ? 'opted_out' : 'ok'
-  } catch { return 'unknown' }
-}
 
 /**
  * Send the upload link if the business wants it and it hasn't gone out lately.
@@ -39,6 +24,8 @@ export async function contactOptOut(db: any, companyId: string, contactId: strin
  */
 export async function sendMediaUploadReply(p: {
   db: any; companyId: string; conversationId: string; contactId?: string | null
+  /** The customer's number, so an opt-out on any contact with it counts. */
+  phone?: string | null
   media: { kind?: string }[]; origin: string
 }): Promise<'sent' | 'off' | 'not_needed' | 'opted_out' | 'recent' | 'failed'> {
   try {
@@ -47,11 +34,11 @@ export async function sendMediaUploadReply(p: {
     if (!s.enabled) return 'off'
     if (!wantsUploadReply(p.media, s)) return 'not_needed'
 
-    // Not to a customer who opted out of texts or is blocked, as with the other
-    // automatic replies.
-    const optOut = await contactOptOut(p.db, p.companyId, p.contactId)
-    if (optOut === 'unknown') return 'failed'
-    if (optOut === 'opted_out') return 'opted_out'
+    // Not to a customer who opted out of texts or is blocked (on any contact
+    // with their number), or whose last keyword was a STOP (lib/sms-consent).
+    const { state } = await textOptOut(p.db, p.companyId, p.phone, p.contactId)
+    if (state === 'unknown') return 'failed'
+    if (state === 'opted_out') return 'opted_out'
 
     const cutoff = new Date(Date.now() - MEDIA_UPLOAD_REPLY_HOURS * 3600_000).toISOString()
     // An upload link already went out recently (by hand, the phone agent, or

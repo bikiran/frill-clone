@@ -1,5 +1,6 @@
 import { telnyxSignatureOk } from '@/lib/telnyx-signature'
-import { queueMediaUploadReply, contactOptOut } from '@/lib/media-upload-reply'
+import { queueMediaUploadReply } from '@/lib/media-upload-reply'
+import { smsKeyword, STOP_WORDS, START_WORDS, recordSmsKeyword, textOptOut } from '@/lib/sms-consent'
 import { internalHeaders } from '@/lib/internal-call'
 import { NextRequest, NextResponse } from 'next/server'
 import { log } from '@/lib/log'
@@ -188,47 +189,13 @@ export async function POST(req: NextRequest) {
       // Honouring STOP is a legal requirement for marketing SMS, and it has to
       // work regardless of what else happens to the message. Handled here,
       // before any conversation routing, so a malformed thread can't swallow it.
-      const keyword = String(text).trim().toUpperCase().replace(/[^A-Z]/g, '')
-      const STOP_WORDS = ['STOP', 'STOPALL', 'UNSUBSCRIBE', 'CANCEL', 'END', 'QUIT', 'OPTOUT']
-      const START_WORDS = ['START', 'SUBSCRIBE', 'YES', 'OPTIN', 'UNSTOP']
-      if (fromDigits && (STOP_WORDS.includes(keyword) || START_WORDS.includes(keyword))) {
-        const optingOut = STOP_WORDS.includes(keyword)
-        try {
-          const { data: all } = await db.from('contacts')
-            .select('id, phone').eq('company_id', companyId).limit(2000)
-          const match = (all || []).find((c: any) => c.phone && digits(c.phone) === fromDigits)
-          if (match) {
-            await db.from('contacts').update(
-              optingOut
-                ? {
-                    subscribed_to_marketing: false,
-                    consent_basis: 'none',
-                    consent_source: `replied ${keyword} by SMS`,
-                    unsubscribed_at: new Date().toISOString(),
-                    unsubscribe_method: 'sms_keyword',
-                  }
-                : {
-                    subscribed_to_marketing: true,
-                    consent_basis: 'express',
-                    consent_source: `replied ${keyword} by SMS`,
-                    consent_recorded_at: new Date().toISOString(),
-                    unsubscribed_at: null,
-                    unsubscribe_method: null,
-                  }
-            ).eq('id', match.id)
-
-            await db.from('consent_events').insert({
-              company_id: companyId,
-              contact_id: match.id,
-              action: optingOut ? 'unsubscribed' : 'subscribed',
-              basis: optingOut ? 'none' : 'express',
-              source: `SMS keyword: ${keyword}`,
-              actor: 'customer',
-            })
-          }
-        } catch (e) {
-          console.error('[telnyx] consent keyword handling failed', e)
-        }
+      // Recorded on every contact with the number; a STOP from a new number
+      // saves it as a contact first, so the opt-out is remembered
+      // (lib/sms-consent).
+      const keyword = smsKeyword(text)
+      const optingOut = STOP_WORDS.includes(keyword)
+      if (fromDigits && (optingOut || START_WORDS.includes(keyword))) {
+        await recordSmsKeyword(db, companyId, from, keyword)
         // The message still falls through to be stored in the thread, so staff
         // can see the opt-out happened rather than it vanishing silently.
       }
@@ -373,8 +340,10 @@ export async function POST(req: NextRequest) {
           channel: 'sms',
           // And it continues by text: texting goes on (upload links and the like
           // are texted), replacing a "continue by text" box the customer left
-          // unticked in a web chat. Not for a STOP.
-          ...(STOP_WORDS.includes(keyword) ? {} : { sms_enabled: true }),
+          // unticked in a web chat. Not for a STOP, and only when the thread's
+          // number is the one texting in: a thread found through the contact
+          // can hold another number, which must not start getting texts.
+          ...(!optingOut && (!conv.sms_number || digits(conv.sms_number) === fromDigits) ? { sms_enabled: true } : {}),
           // An inbound message reopens a closed enquiry — the customer is back,
           // so they shouldn't stay buried in the Closed tab.
           status: 'open',
@@ -426,15 +395,17 @@ export async function POST(req: NextRequest) {
 
         // A video (or photo, if the business asked) came through squeezed by the
         // carrier: offer an upload link for the original (Automatic replies).
-        if (!mediaAttemptFailed && inboundMedia.length) {
-          queueMediaUploadReply({ db, companyId, conversationId: conv.id, contactId: conv.contact_id || matchedContactId || null, media: inboundMedia as any[], origin: process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com' })
+        // Never in answer to a STOP.
+        if (!optingOut && !mediaAttemptFailed && inboundMedia.length) {
+          queueMediaUploadReply({ db, companyId, conversationId: conv.id, contactId: conv.contact_id || matchedContactId || null, phone: from, media: inboundMedia as any[], origin: process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com' })
         }
 
         // Auto-reply to a failed media attempt: text the customer a secure upload
         // link so their photo isn't lost. Throttled to once per conversation per
         // 6h (checks recent media_request messages) so repeated failed MMS don't
-        // spam them. Never to a customer who opted out of texts or is blocked.
-        if (mediaAttemptFailed && (await contactOptOut(db, companyId, conv.contact_id || matchedContactId || null)) === 'ok') {
+        // spam them. Never in answer to a STOP, or to a customer who opted out
+        // or is blocked.
+        if (!optingOut && mediaAttemptFailed && (await textOptOut(db, companyId, from, conv.contact_id || matchedContactId || null)).state === 'ok') {
           try {
             const sixHoursAgo = new Date(Date.now() - 6 * 3600 * 1000).toISOString()
             const { data: recentReq } = await db.from('messages')

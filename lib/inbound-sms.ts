@@ -12,7 +12,8 @@ import { runKeywordReply } from './keyword-reply'
 import { resolveSmsSender } from './sms-provider'
 import { handleBookingSmsReply } from './booking-replies'
 import { emitInboundEvent } from '@/lib/integration-hooks'
-import { queueMediaUploadReply, contactOptOut } from '@/lib/media-upload-reply'
+import { queueMediaUploadReply } from '@/lib/media-upload-reply'
+import { smsKeyword, STOP_WORDS, START_WORDS, recordSmsKeyword, textOptOut } from '@/lib/sms-consent'
 
 export interface InboundAttachment {
   url: string
@@ -66,29 +67,10 @@ export async function ingestInboundSms(params: {
   const summary = text || mediaPreview || (mediaAttemptFailed ? '📷 Tried to send media' : '')
 
   // ── Opt-out / opt-in keywords ────────────────────────────────────────────
-  const keyword = String(text).trim().toUpperCase().replace(/[^A-Z]/g, '')
-  const STOP_WORDS = ['STOP', 'STOPALL', 'UNSUBSCRIBE', 'CANCEL', 'END', 'QUIT', 'OPTOUT']
-  const START_WORDS = ['START', 'SUBSCRIBE', 'YES', 'OPTIN', 'UNSTOP']
+  // Recorded on every contact with the number (lib/sms-consent).
+  const keyword = smsKeyword(text)
   const optingOut = STOP_WORDS.includes(keyword)
-  if (fromDigits && (optingOut || START_WORDS.includes(keyword))) {
-    try {
-      const { data: all } = await db.from('contacts').select('id, phone').eq('company_id', companyId).limit(2000)
-      const match = (all || []).find((c: any) => c.phone && digitsOf(c.phone) === fromDigits)
-      if (match) {
-        await db.from('contacts').update(
-          optingOut
-            ? { subscribed_to_marketing: false, consent_basis: 'none', consent_source: `replied ${keyword} by SMS`, unsubscribed_at: new Date().toISOString(), unsubscribe_method: 'sms_keyword' }
-            : { subscribed_to_marketing: true, consent_basis: 'express', consent_source: `replied ${keyword} by SMS`, consent_recorded_at: new Date().toISOString(), unsubscribed_at: null, unsubscribe_method: null }
-        ).eq('id', match.id)
-        await db.from('consent_events').insert({
-          company_id: companyId, contact_id: match.id,
-          action: optingOut ? 'unsubscribed' : 'subscribed',
-          basis: optingOut ? 'none' : 'express',
-          source: `SMS keyword: ${keyword}`, actor: 'customer',
-        })
-      }
-    } catch (e) { console.error('[inbound-sms] consent keyword handling failed', e) }
-  }
+  if (fromDigits && (optingOut || START_WORDS.includes(keyword))) await recordSmsKeyword(db, companyId, from, keyword)
 
   // ── Conversation routing ──────────────────────────────────────────────────
   // 1) Fast path: exact sms_number match.
@@ -156,11 +138,15 @@ export async function ingestInboundSms(params: {
   await emitInboundEvent(db, { companyId, conversationId: conv.id, text, channel: 'sms', phone: from, messageId: insertedMsg?.id || null })
   // The customer is texting in, so the thread continues by text: texting goes
   // on (upload links and the like are texted), replacing a "continue by text"
-  // box they left unticked in a web chat. Not for a STOP.
+  // box they left unticked in a web chat. Not for a STOP, and only when the
+  // thread's number is the one texting in: a thread found through the contact
+  // can hold another number (one typed into a web chat), which must not start
+  // getting texts.
+  const sameNumber = !conv.sms_number || digitsOf(conv.sms_number) === fromDigits
   await db.from('conversations').update({
     last_message: summary, last_message_at: new Date().toISOString(),
     is_unread: true, channel: 'sms', status: 'open',
-    ...(optingOut ? {} : { sms_enabled: true }),
+    ...(!optingOut && sameNumber ? { sms_enabled: true } : {}),
     unread_count: (conv.unread_count || 0) + 1, updated_at: new Date().toISOString(),
   }).eq('id', conv.id)
 
@@ -214,15 +200,16 @@ export async function ingestInboundSms(params: {
 
   // A video (or photo, if the business asked) came through squeezed by the
   // carrier: offer an upload link for the original. Runs after the webhook has
-  // answered, and only when switched on in Automatic replies.
-  if (!mediaAttemptFailed && media.length) {
-    queueMediaUploadReply({ db, companyId, conversationId: conv.id, contactId: conv.contact_id || matchedContactId || null, media, origin })
+  // answered, and only when switched on in Automatic replies. Never in answer
+  // to a STOP.
+  if (!optingOut && !mediaAttemptFailed && media.length) {
+    queueMediaUploadReply({ db, companyId, conversationId: conv.id, contactId: conv.contact_id || matchedContactId || null, phone: from, media, origin })
   }
 
   // Failed-media hint auto-reply (only fires when a media attempt truly failed;
   // on Twilio, MMS usually arrives, so this rarely triggers). Throttled 6h.
-  // Never to a customer who opted out of texts or is blocked.
-  if (mediaAttemptFailed && (await contactOptOut(db, companyId, conv.contact_id || matchedContactId || null)) === 'ok') {
+  // Never in answer to a STOP, or to a customer who opted out or is blocked.
+  if (!optingOut && mediaAttemptFailed && (await textOptOut(db, companyId, from, conv.contact_id || matchedContactId || null)).state === 'ok') {
     try {
       const sixHoursAgo = new Date(Date.now() - 6 * 3600 * 1000).toISOString()
       const { data: recentReq } = await db.from('messages')
