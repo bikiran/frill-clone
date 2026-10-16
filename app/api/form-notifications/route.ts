@@ -1,15 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
 import { checkBurst } from '@/lib/rate-limit'
+import { formsDb, isUuid, publishedForm } from '@/lib/forms-server'
 
 export const dynamic = 'force-dynamic'
-
-function getDb() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-  if (!url || !key) throw new Error('Supabase env vars missing')
-  return createClient(url, key)
-}
 
 const esc = (v: any) => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' } as any)[c])
 
@@ -81,19 +74,23 @@ async function sendEmailNotification(adminEmail: string, formTitle: string, resp
  * account, as often as they liked. Now the email always goes to the form's
  * owner (the company owner), only when the form really has a fresh response,
  * and at most a few times a minute per form. `userId` in the body is ignored.
+ *
+ * Reads the forms tables with the service role (V375 closes form_responses to
+ * the public key), and only for a published form — the only kind a stranger
+ * can file a response into.
  */
 export async function POST(req: NextRequest) {
   try {
-    const supabase = getDb()
-    const { formId } = await req.json()
+    const { formId } = await req.json().catch(() => ({}))
 
-    if (!formId || typeof formId !== 'string') {
+    if (!isUuid(formId)) {
       return NextResponse.json({ error: 'formId required' }, { status: 400 })
     }
     if (!checkBurst(`form-notify:${formId}`, 3)) return NextResponse.json({ ok: true, skipped: 'rate' })
+    const supabase = formsDb()
 
     // Get form details
-    const { data: form } = await (supabase as any).from('forms').select('*').eq('id', formId).maybeSingle()
+    const form = await publishedForm(supabase, formId, 'id, company_id, title, is_published')
     if (!form) return NextResponse.json({ error: 'Form not found' }, { status: 404 })
 
     // Get company info
@@ -103,7 +100,7 @@ export async function POST(req: NextRequest) {
     // Only for a response that just arrived — not on demand.
     const recent = new Date(Date.now() - 5 * 60 * 1000).toISOString()
     const { data: fresh } = await (supabase as any).from('form_responses').select('id')
-      .eq('form_id', formId).gte('created_at', recent).limit(1)
+      .eq('form_id', formId).gte('created_at', recent).lte('created_at', new Date(Date.now() + 60_000).toISOString()).limit(1)
     if (!fresh?.length) return NextResponse.json({ ok: true, skipped: 'no_new_response' })
 
     const userId = company.owner_id as string
@@ -111,7 +108,7 @@ export async function POST(req: NextRequest) {
     if (!user?.email) return NextResponse.json({ error: 'User email not found' }, { status: 404 })
 
     // Get response count
-    const { count } = await (supabase as any).from('form_responses').select('*', { count: 'exact' }).eq('form_id', formId)
+    const { count } = await (supabase as any).from('form_responses').select('id', { count: 'exact', head: true }).eq('form_id', formId)
 
     // Send notification
     await sendEmailNotification(user.email, form.title, count || 0, company.name)

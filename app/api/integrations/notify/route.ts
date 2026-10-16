@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { adminDb } from '@/lib/integration-access'
 import { requireCompanyAccess } from '@/lib/company-access'
 import { emitIntegrationEvent, type EventPayload } from '@/lib/integration-events'
+import { formsDb, publishedForm } from '@/lib/forms-server'
 
 export const dynamic = 'force-dynamic'
 
@@ -121,9 +122,14 @@ export async function POST(req: NextRequest) {
 
   if (event === 'form.submitted') {
     // Public: someone filled in a form. Use the newest response, if it's fresh.
-    const { data: form } = await db.from('forms').select('id, title, questions, company_id').eq('id', id).maybeSingle()
+    // Only a published form takes responses from the public, and the forms
+    // tables are read with the service role (V375 closes them to the anon key).
+    const fdb = formsDb()
+    const form = await publishedForm(fdb, id, 'id, title, questions, company_id, is_published')
     if (!form?.company_id) return ok
-    const { data: rs } = await db.from('form_responses').select('id, answers, created_at').eq('form_id', id).order('created_at', { ascending: false }).limit(1)
+    // Ignore rows dated in the future: they'd always look newest and fresh.
+    const { data: rs } = await fdb.from('form_responses').select('id, answers, created_at').eq('form_id', id)
+      .lte('created_at', new Date(Date.now() + 60_000).toISOString()).order('created_at', { ascending: false }).limit(1)
     const r = rs?.[0]
     if (!r || !recent(r.created_at)) return ok
     const qs: any[] = Array.isArray(form.questions) ? form.questions : []
