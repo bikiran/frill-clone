@@ -87,6 +87,44 @@ export function smsOptInFrom(o: { conv?: any; contact?: any; contactConvs?: any[
   return null
 }
 
+/**
+ * smsOptInFrom with the rows read: the conversation and contact (given, or
+ * read by id), and the contact's other threads only when the question
+ * arises. Those threads count for nothing when they can't be read (don't
+ * text when unsure). For a send to a number other than the chat's own, pass
+ * `phone`; null when there's no number to text.
+ */
+export async function readSmsOptIn(db: any, o: {
+  companyId: string; conversationId?: string | null; contactId?: string | null
+  conv?: any; contact?: any; phone?: string | null
+}): Promise<boolean | null> {
+  let conv = o.conv ?? null
+  if (!conv && o.conversationId) {
+    try {
+      const { data } = await db.from('conversations').select('*').eq('id', o.conversationId).eq('company_id', o.companyId).maybeSingle()
+      conv = data || null
+    } catch { conv = null }
+  }
+  const contactId = o.contactId || conv?.contact_id || null
+  let contact = o.contact ?? null
+  if (!contact && contactId) {
+    try {
+      const { data } = await db.from('contacts').select('*').eq('id', contactId).eq('company_id', o.companyId).maybeSingle()
+      contact = data || null
+    } catch { contact = null }
+  }
+  const phone = o.phone || conv?.sms_number || contact?.phone || null
+  if (!phone) return null
+  let contactConvs: any[] = []
+  if (contactId && ((isWidgetConversation(conv) && conv?.sms_enabled === false) || isWidgetOnlyContact(contact))) {
+    try {
+      const r = await db.from('conversations').select('*').eq('company_id', o.companyId).eq('contact_id', contactId).limit(50)
+      contactConvs = r?.error ? [] : r?.data || []
+    } catch { contactConvs = [] }
+  }
+  return smsOptInFrom({ conv, contact, contactConvs })
+}
+
 /** Every fact the rule needs, for a conversation and/or a contact. */
 export async function gatherChannelFacts(db: any, o: {
   companyId: string; conversationId?: string | null; contactId?: string | null
@@ -106,17 +144,11 @@ export async function gatherChannelFacts(db: any, o: {
   }
   const phone = o.phone || conv?.sms_number || contact?.phone || null
   const email = o.email || contact?.email || conv?.customer_email || null
-  // The contact's other threads, only when the opt-in question arises. When
-  // they can't be read, none count (don't text when unsure).
-  const needsThreads = !!phone && !!contactId && ((isWidgetConversation(conv) && conv?.sms_enabled === false) || isWidgetOnlyContact(contact))
-  const [last, hasSms, consent, contactConvs] = await Promise.all([
+  const [last, hasSms, consent, smsOptIn] = await Promise.all([
     lastCustomerChannel(db, { companyId: o.companyId, conversationId: o.conversationId || null, contactId }),
     phone ? businessHasSms(db, o.companyId) : Promise.resolve(false),
     phone ? smsConsentFor(db, o.companyId, phone, contactId) : Promise.resolve('unknown' as const),
-    needsThreads
-      ? Promise.resolve(db.from('conversations').select('*').eq('company_id', o.companyId).eq('contact_id', contactId).limit(50))
-          .then((r: any) => (r?.error ? [] : r?.data || []), () => [])
-      : Promise.resolve([]),
+    phone ? readSmsOptIn(db, { companyId: o.companyId, contactId, conv, contact, phone }) : Promise.resolve(null),
   ])
   return {
     contactId,
@@ -124,7 +156,7 @@ export async function gatherChannelFacts(db: any, o: {
     threadChannel: conv?.channel || null,
     phone, email,
     smsConsent: consent,
-    smsOptIn: phone ? smsOptInFrom({ conv, contact, contactConvs }) : null,
+    smsOptIn,
     liveOnPage: isLiveOnPage(conv?.page_seen_at),
     businessHasSms: hasSms,
     setting: o.setting || null,

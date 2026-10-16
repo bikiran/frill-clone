@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { internalHeaders } from '@/lib/internal-call'
+import { isLiveOnPage } from '@/lib/channel-choice'
 
 /**
  * Deciding HOW to deliver an automated message.
@@ -20,12 +21,10 @@ const admin = () => createClient(
   { auth: { autoRefreshToken: false, persistSession: false } }
 )
 
-/**
- * How recently the widget must have checked in for the customer to count as
- * "watching". The widget heartbeats while the page is open; 90 seconds allows
- * for a missed beat without treating a closed tab as present.
- */
-const PRESENCE_WINDOW_MS = 90 * 1000
+// How recently the widget must have checked in for the customer to count as
+// "watching": LIVE_ON_PAGE_MS (2 minutes), the same window the inbox and the
+// channel rule use. The widget heartbeats every 60s while the page is open,
+// so one missed beat doesn't make them look gone.
 
 /**
  * Is the customer live on the chat widget right now?
@@ -39,10 +38,7 @@ export async function isCustomerOnLiveChat(conversationId: string, db?: any): Pr
   try {
     const { data } = await client.from('conversations')
       .select('page_seen_at').eq('id', conversationId).maybeSingle()
-    if (!data?.page_seen_at) return false
-    const seen = new Date(String(data.page_seen_at).replace(' ', 'T')).getTime()
-    if (isNaN(seen)) return false
-    return Date.now() - seen < PRESENCE_WINDOW_MS
+    return isLiveOnPage(data?.page_seen_at)
   } catch {
     // If presence can't be determined, assume they're NOT watching. Sending a
     // duplicate SMS is a far smaller failure than an order confirmation nobody
@@ -111,6 +107,8 @@ export async function deliverAutomatedMessage(params: {
   // false when the shared rule says this customer can't be texted (landline,
   // opted out, no SMS number) — then no text is attempted at all.
   let smsAllowed = true
+  // An explicit channel was asked for, but they didn't opt in to texts.
+  let noOptIn = false
 
   const onLiveChat = await isCustomerOnLiveChat(conversationId, db)
 
@@ -128,6 +126,20 @@ export async function deliverAutomatedMessage(params: {
       smsAllowed = pick.canSms
       preferChannel = pick.channel === 'email' ? 'email' : 'sms'
     } catch { preferChannel = phone ? 'sms' : 'email' }
+  } else if (phone) {
+    // An explicit channel ('sms', 'email' with SMS as the backup, or the SMS
+    // default) still needs the SMS opt-in where the business records one: a
+    // website chat visitor who didn't tick "Continue this conversation by
+    // text" isn't texted (lib/channel-choice-server readSmsOptIn).
+    try {
+      const { readSmsOptIn } = await import('@/lib/channel-choice-server')
+      if ((await readSmsOptIn(db || admin(), { companyId, conversationId, phone })) === false) {
+        smsAllowed = false
+        noOptIn = true
+        reason = 'They didn’t opt in to texts on your website chat, so it wasn’t texted.'
+        if (email) { preferChannel = 'email'; reason = 'They didn’t opt in to texts on your website chat, so it went by email.' }
+      }
+    } catch { /* opt-in unknown: the STOP check in the SMS route still applies */ }
   }
 
   // Sending hours: no automated text at night.
@@ -210,7 +222,10 @@ export async function deliverAutomatedMessage(params: {
     onLiveChat,
     channel: 'none',
     sent: false,
-    error: smsError || 'No reachable channel — the contact has no mobile or email on file',
+    error: smsError
+      || (noOptIn ? `They didn’t opt in to texts on your website chat, so it wasn’t texted, and ${email ? 'the email didn’t send either' : 'there’s no email on file'}.` : null)
+      || 'No reachable channel — the contact has no mobile or email on file',
+    ...(noOptIn && reason ? { reason } : {}),
     ...(optedOut ? { optedOut: true } : {}),
   }
 }
