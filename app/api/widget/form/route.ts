@@ -17,8 +17,8 @@ export const dynamic = 'force-dynamic'
  *   • a published form is public anyway — returned to anyone;
  *   • an unpublished one only to the visitor of a chat it was sent into: the
  *     caller must be that chat's visitor (lib/widget-access.ts), the form must
- *     belong to the same business, and a staff / system message in that chat
- *     must carry it (visitors can't post message payloads).
+ *     belong to the same business, and a staff / system message of that
+ *     business in that chat must carry it (visitors can't post payloads).
  * Only what the card shows is returned: id, title, questions.
  */
 export async function GET(req: NextRequest) {
@@ -44,8 +44,11 @@ export async function GET(req: NextRequest) {
     if (!isUuid(companyId) || !isUuid(conversationId) || form.company_id !== companyId) return none(404)
     const conv = await visitorConversation(req, db, companyId, conversationId)
     if (!conv || conv.company_id !== form.company_id) return none(404)
+    // The message must be this business's own: another workspace's staff
+    // could otherwise file a message (with their own company_id) into this
+    // conversation and use it to unlock this business's drafts.
     const { data: sent } = await db.from('messages').select('id')
-      .eq('conversation_id', conv.id).eq('message_type', 'form')
+      .eq('conversation_id', conv.id).eq('company_id', conv.company_id).eq('message_type', 'form')
       .eq('message_payload->>ref_id', formId).neq('sender_type', 'visitor')
       .limit(1)
     if (!sent?.length) return none(404)

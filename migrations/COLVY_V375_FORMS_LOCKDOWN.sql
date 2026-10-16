@@ -26,7 +26,8 @@
 --     • INSERT / UPDATE / DELETE — staff of the form's workspace only. An
 --       update can't move a form to another workspace.
 --   form_responses
---     • INSERT — anyone, signed in or not, but only into a published form.
+--     • INSERT — anyone, signed in or not, but only into a published form
+--       whose schedule (if it has one) is open.
 --     • SELECT — staff of the form's workspace, and the platform admin.
 --     • UPDATE / DELETE — the server only (Results → delete goes through
 --       /api/forms/responses with the service role).
@@ -59,8 +60,9 @@
 -- after: the chat widget showed forms sent into a chat by reading the table
 -- with the public key, which fails for a form that isn't published. It now
 -- goes through /api/widget/form.
--- Needs is_company_member() from V209 (as changed by V337); it stops with an
--- error, changing nothing, if that function is missing.
+-- Needs is_company_member() from V209 as changed by V337; it stops with an
+-- error, changing nothing, if that function is missing or is still V209's
+-- original (which counted board visitors as members).
 -- The mobile app (colvy-mobile) doesn't read or write any of these tables, so
 -- it needs no change.
 -- DATABASE_SETUP.sql and V316 still create the old open policies by name (as
@@ -92,6 +94,12 @@ DO $$
 BEGIN
   IF to_regprocedure('public.is_company_member(uuid)') IS NULL THEN
     RAISE EXCEPTION 'is_company_member(uuid) is missing — run COLVY_V209_RLS_PHASE1_CREDENTIALS.sql and COLVY_V337_MEMBERSHIP_EXCLUDES_VIEWERS.sql first';
+  END IF;
+  -- V209's first version counted board visitors (role 'viewer') as members;
+  -- V337 fixed that. Every rule below leans on it, so refuse the old one
+  -- rather than hand a board visitor a business's drafts and responses.
+  IF pg_get_functiondef(to_regprocedure('public.is_company_member(uuid)')) NOT ILIKE '%''viewer''%' THEN
+    RAISE EXCEPTION 'is_company_member(uuid) still counts board visitors (role viewer) as members — run COLVY_V337_MEMBERSHIP_EXCLUDES_VIEWERS.sql first';
   END IF;
 END $$;
 
@@ -177,6 +185,44 @@ BEGIN
 END $$;
 
 -- ── STEP 3: form_responses ──────────────────────────────────────────────────
+-- Is a form's schedule open right now? Takes the columns as text, so it works
+-- whatever type they were made with by hand (timestamptz, timestamp, date or
+-- text):
+--   • a value with a time zone is exact;
+--   • one without (a plain timestamp, a date, a datetime-local string) is a
+--     wall-clock time in a zone we can't know — the public page reads it in
+--     the visitor's own zone — so it's only enforced once it's past in every
+--     zone (± 14 hours), never refusing a response the page allowed;
+--   • the end gets 30 minutes' grace, so someone who opened the form before
+--     it closed can still send it;
+--   • a value that doesn't parse doesn't block anything.
+CREATE OR REPLACE FUNCTION form_schedule_open(starts TEXT, ends TEXT)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+STABLE
+SET search_path = public
+AS $$
+DECLARE
+  -- A clock time followed by Z or an offset: '…09:00:00+10', '…T09:00Z'.
+  zoned CONSTANT TEXT := '[0-9]{2}:[0-9]{2}(:[0-9]{2}(\.[0-9]+)?)?\s*(z|[+-][0-9]{2}(:?[0-9]{2})?)$';
+  s TIMESTAMPTZ;
+  e TIMESTAMPTZ;
+BEGIN
+  IF nullif(btrim(starts), '') IS NOT NULL THEN
+    BEGIN s := btrim(starts)::timestamptz; EXCEPTION WHEN others THEN s := NULL; END;
+    IF s IS NOT NULL AND btrim(starts) !~* zoned THEN s := s - interval '14 hours'; END IF;
+    IF s IS NOT NULL AND now() < s THEN RETURN false; END IF;
+  END IF;
+  IF nullif(btrim(ends), '') IS NOT NULL THEN
+    BEGIN e := btrim(ends)::timestamptz; EXCEPTION WHEN others THEN e := NULL; END;
+    IF e IS NOT NULL AND btrim(ends) !~* zoned THEN e := e + interval '14 hours'; END IF;
+    IF e IS NOT NULL AND now() > e + interval '30 minutes' THEN RETURN false; END IF;
+  END IF;
+  RETURN true;
+END $$;
+REVOKE ALL ON FUNCTION form_schedule_open(TEXT, TEXT) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION form_schedule_open(TEXT, TEXT) TO anon, authenticated, service_role;
+
 DO $$
 BEGIN
   IF NOT pg_temp.colvy_v375_reset('form_responses') THEN RETURN; END IF;
@@ -187,14 +233,24 @@ BEGIN
   -- created_at must be real (the default, now): a response dated in the
   -- future — or with none — would sort as "newest" for good and swallow the
   -- notification / integration events of every real response after it.
-  CREATE POLICY form_responses_public_insert ON public.form_responses
-    FOR INSERT TO anon, authenticated
-    WITH CHECK (
-      form_id IS NOT NULL
-      AND created_at <= now() + interval '5 minutes'
-      AND EXISTS (SELECT 1 FROM public.forms f
-                   WHERE f.id = form_responses.form_id AND f.is_published IS TRUE)
-    );
+  -- The form's schedule (scheduled_start / scheduled_end, made by hand in
+  -- prod, so only used when the columns exist) is enforced too: see
+  -- form_schedule_open() above.
+  EXECUTE format($p$
+    CREATE POLICY form_responses_public_insert ON public.form_responses
+      FOR INSERT TO anon, authenticated
+      WITH CHECK (
+        form_id IS NOT NULL
+        AND created_at <= now() + interval '5 minutes'
+        AND EXISTS (SELECT 1 FROM public.forms f
+                     WHERE f.id = form_responses.form_id AND f.is_published IS TRUE
+                       AND public.form_schedule_open(%s, %s))
+      )
+  $p$,
+    CASE WHEN EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'forms' AND column_name = 'scheduled_start')
+         THEN 'f.scheduled_start::text' ELSE 'NULL::text' END,
+    CASE WHEN EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'forms' AND column_name = 'scheduled_end')
+         THEN 'f.scheduled_end::text' ELSE 'NULL::text' END);
 
   -- Results, the Forms list's counts: staff of the form's workspace, and the
   -- platform admin. Nothing else — not even the person who submitted.
@@ -356,6 +412,7 @@ SELECT id, title, is_published, created_at
 --   CREATE POLICY "Anyone can submit form responses" ON public.form_responses FOR INSERT WITH CHECK (true);
 --   CREATE POLICY "Form owners can read responses" ON public.form_responses FOR SELECT USING (true);
 --   GRANT ALL ON public.form_responses TO anon, authenticated;
+--   DROP FUNCTION IF EXISTS form_schedule_open(TEXT, TEXT);
 --
 --   -- form_versions / form_notifications, if they exist (they had no known policies):
 --   GRANT ALL ON public.form_versions TO anon, authenticated;
