@@ -110,7 +110,7 @@ const companyByHost = (host: string) => unstable_cache(
 
 // ── Per-company help data ───────────────────────────────────────────────────
 
-type SiteInfo = { terms: Record<string, string> | null; locked: boolean }
+type SiteInfo = { terms: Record<string, string> | null; locked: boolean; subtitle: string | null }
 
 const siteInfo = (companyId: string) => unstable_cache(
   async (): Promise<SiteInfo> => {
@@ -119,9 +119,13 @@ const siteInfo = (companyId: string) => unstable_cache(
       .order('updated_at', { ascending: false }).limit(1)
     if (error) throw new Error(error.message || 'settings lookup failed')
     const v = data?.[0]?.value || {}
-    return { terms: v.termValues && typeof v.termValues === 'object' ? v.termValues : null, locked: v.helpAccess === 'locked' }
+    return {
+      terms: v.termValues && typeof v.termValues === 'object' ? v.termValues : null,
+      locked: v.helpAccess === 'locked',
+      subtitle: typeof v.helpSubtitle === 'string' && v.helpSubtitle.trim() ? v.helpSubtitle.trim() : null,
+    }
   },
-  ['help-site-info', companyId],
+  ['help-site-info-v2', companyId],
   { revalidate: HELP_REVALIDATE_SECONDS, tags: [helpTags.company(companyId)] },
 )()
 
@@ -161,6 +165,8 @@ export type HelpIndexData = {
   helpCover: string
   // On a company subdomain whose company doesn't exist: show nothing (no demo).
   onSubdomain: boolean
+  // Help Centre settings → subtitle (null = use the neutral default).
+  helpSubtitle: string | null
   articles: HelpListItem[]
   catMap: HelpCatMap
 }
@@ -178,13 +184,13 @@ export async function getHelpIndexForHost(host: string): Promise<HelpIndexData |
     const slug = subdomainSlug(host)
     if (!slug) {
       const [articles, catMap] = await Promise.all([publishedList(null), catMapFor(null)])
-      return { companyId: null, companyName: '', helpCover: '', onSubdomain: false, articles, catMap }
+      return { companyId: null, companyName: '', helpCover: '', onSubdomain: false, helpSubtitle: null, articles, catMap }
     }
     const company = await companyBySlug(slug)
-    if (!company) return { companyId: null, companyName: '', helpCover: '', onSubdomain: true, articles: [], catMap: {} }
+    if (!company) return { companyId: null, companyName: '', helpCover: '', onSubdomain: true, helpSubtitle: null, articles: [], catMap: {} }
     const [info, articles, catMap] = await Promise.all([siteInfo(company.id), publishedList(company.id), catMapFor(company.id)])
     if (info.locked) return undefined
-    return { companyId: company.id, companyName: company.name || '', helpCover: company.help_cover_url || '', onSubdomain: true, articles, catMap }
+    return { companyId: company.id, companyName: company.name || '', helpCover: company.help_cover_url || '', onSubdomain: true, helpSubtitle: info.subtitle, articles, catMap }
   } catch { return undefined }
 }
 
@@ -193,6 +199,8 @@ export type CustomDomainHelpData = {
   isHelp: boolean
   articles: HelpListItem[]
   terms: Record<string, string> | null
+  // Help Centre settings → subtitle (null = use the neutral default).
+  helpSubtitle: string | null
 }
 
 /** Data for the custom-domain home (help.acme.com). `undefined` → client loads it. */
@@ -200,10 +208,10 @@ export async function getCustomDomainHelp(host: string): Promise<CustomDomainHel
   if (!db() || !host) return undefined
   try {
     const { company, isHelp } = await companyByHost(host.toLowerCase())
-    if (!company) return { company: null, isHelp: false, articles: [], terms: null }
+    if (!company) return { company: null, isHelp: false, articles: [], terms: null, helpSubtitle: null }
     const [info, articles] = await Promise.all([siteInfo(company.id), isHelp ? publishedList(company.id) : Promise.resolve([])])
     if (info.locked) return undefined
-    return { company, isHelp, articles, terms: info.terms }
+    return { company, isHelp, articles, terms: info.terms, helpSubtitle: info.subtitle }
   } catch { return undefined }
 }
 
@@ -231,7 +239,7 @@ const publishedArticle = (id: string) => unstable_cache(
     const [catMap, relRes, info] = await Promise.all([
       a.company_id ? catMapFor(a.company_id) : Promise.resolve({} as HelpCatMap),
       rel.limit(4),
-      a.company_id ? siteInfo(a.company_id) : Promise.resolve({ terms: null, locked: false }),
+      a.company_id ? siteInfo(a.company_id) : Promise.resolve({ terms: null, locked: false, subtitle: null }),
     ])
     return { article: a, catMap, related: relRes.data || [], locked: info.locked }
   },
