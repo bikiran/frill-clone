@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { ensureCallCard } from '@/lib/call-card'
 import { modelChain, trackAi } from '@/lib/ai-models'
+import { ACTION_ITEMS_GUIDE, loadOpenTasks, openTasksForSummaryPrompt, refineActionItemsDetailed, type OpenTask } from '@/lib/task-dedupe'
 
 export const maxDuration = 60
 
@@ -185,6 +186,14 @@ export async function POST(req: NextRequest) {
     let sentiment: string | null = null
     let summaryError = ''
     let extractedContact: any = null
+    let contactName: string | null = null
+    let alreadyTasks: { item: string; taskId: string; taskTitle: string }[] = []
+    // Open tasks for this customer: the model adds to them instead of
+    // proposing the same job again (lib/task-dedupe).
+    let openTasks: OpenTask[] = []
+    if (call.conversation_id || call.contact_id) {
+      openTasks = await loadOpenTasks(db, { companyId: call.company_id, conversationId: call.conversation_id || null, contactId: call.contact_id || null }).catch(() => [])
+    }
 
     if (ANTHROPIC_KEY) {
       // Model names get retired. Rather than fail silently on a stale one, try
@@ -198,7 +207,8 @@ export async function POST(req: NextRequest) {
       let relNoun = 'customer'
       if (call.contact_id) {
         try {
-          const { data: ct } = await db.from('contacts').select('relationship_type').eq('id', call.contact_id).maybeSingle()
+          const { data: ct } = await db.from('contacts').select('relationship_type, name').eq('id', call.contact_id).maybeSingle()
+          contactName = ct?.name || null
           const rel = String(ct?.relationship_type || '').toLowerCase()
           relNoun = rel === 'supplier' ? 'supplier'
             : rel === 'wholesaler' ? 'wholesaler'
@@ -222,6 +232,8 @@ export async function POST(req: NextRequest) {
 
 Respond ONLY with JSON, no preamble and no markdown fences:
 {"summary":"2-3 sentences, past tense, naming who called whom and what they wanted and how it was left","todos":["specific follow-up actions for the business, [] if none"],"sentiment":"positive|neutral|negative","contact":{"name":null,"email":null,"address":null,"city":null,"state":null,"postcode":null}}
+
+${ACTION_ITEMS_GUIDE}${openTasksForSummaryPrompt(openTasks)}
 
 For "contact", extract details that ${them} (NOT the staff member) explicitly stated about THEMSELVES during the call — their full name, email, and delivery/postal address (street line in "address", plus city/state/postcode separately). Use null for anything not clearly and unambiguously stated; never guess or infer.
 
@@ -249,7 +261,11 @@ ${summarySource.slice(0, 12000)}`
           const out = (data.content?.[0]?.text || '').replace(/```json|```/g, '').trim()
           const parsed = JSON.parse(out)
           summary = parsed.summary || ''
-          todos = Array.isArray(parsed.todos) ? parsed.todos : []
+          // One item per job (related steps grouped), minus jobs an open task already has.
+          const refined = refineActionItemsDetailed(Array.isArray(parsed.todos) ? parsed.todos : [], { contactName, openTasks })
+          todos = refined.items
+          alreadyTasks = refined.covered
+          if (alreadyTasks.length) console.info('[transcribe] already open tasks, not proposed again:', alreadyTasks.map(c => `${c.item} → ${c.taskTitle}`).join(' | '))
           // Normalise to one of the three known values; anything else (or a
           // missing field) becomes 'neutral'. The card only renders the badge
           // when sentiment is set, so a null here meant NO badge ever showed —
@@ -342,7 +358,7 @@ ${summarySource.slice(0, 12000)}`
       }
     } catch {}
 
-    return NextResponse.json({ ok: true, transcription: text, summary, todos, sentiment })
+    return NextResponse.json({ ok: true, transcription: text, summary, todos, sentiment, alreadyTasks })
   } catch (err: any) {
     console.error('[transcribe] failed', err)
     const msg = err?.name === 'AbortError'

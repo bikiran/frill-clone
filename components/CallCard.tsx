@@ -94,7 +94,7 @@ function HL({ text, q, accent = 'var(--coral)' }: { text: string; q?: string; ac
   )
 }
 
-export default function CallCard({ callId, meta, timestamp, highlight, accent = 'var(--coral)', actor, onTasksCreated, teamMembers, outlets, defaultLocationId }: { callId: string; meta?: any; timestamp?: string; highlight?: string; accent?: string; actor?: { id?: string | null; name?: string | null } | null; onTasksCreated?: () => void; teamMembers?: any[]; outlets?: any[]; defaultLocationId?: string | null }) {
+export default function CallCard({ callId, meta, timestamp, highlight, accent = 'var(--coral)', actor, onTasksCreated, teamMembers, outlets, defaultLocationId, collapseDrafts = false, contactName = null }: { callId: string; meta?: any; timestamp?: string; highlight?: string; accent?: string; actor?: { id?: string | null; name?: string | null } | null; onTasksCreated?: () => void; teamMembers?: any[]; outlets?: any[]; defaultLocationId?: string | null; collapseDrafts?: boolean; contactName?: string | null }) {
   const [call, setCall] = useState<any>(null)
   const [expanded, setExpanded] = useState(false)
   // The draft-tasks panel (shared component) remembers dismissal/creation per
@@ -286,6 +286,9 @@ export default function CallCard({ callId, meta, timestamp, highlight, accent = 
             conversationId={call?.conversation_id} companyId={call?.company_id}
             teamMembers={teamMembers} outlets={outlets} defaultLocationId={defaultLocationId}
             actor={actor} onCreated={onTasksCreated} onClosedChange={setDraftsClosed}
+            contactName={call?.contact_name || contactName}
+            // Unused and the chat has moved on below this call: one closed row.
+            collapsible={collapseDrafts}
           />
         </div>
       )}

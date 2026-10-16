@@ -47,6 +47,9 @@ function detailFor(action: string | null, input: any, output: any): string | nul
   if (!action) return null
   const o = output || {}
   if (o.error) return clip(o.error)
+  // A task it added to (an open one already covered the job) or skipped (daily cap): say so, not "Created".
+  if (action === 'create_task' && o.updated) return clip(`Added to the open task “${o.task}”${Array.isArray(o.addedSteps) && o.addedSteps.length ? `: ${o.addedSteps.join('; ')}` : ' — nothing new to add'}`, 260)
+  if (action === 'create_task' && o.skipped) return clip(`No task made: ${o.reason || 'skipped'}`, 220)
   switch (action) {
     case 'send_message': case 'auto_reply': case 'reply_to_review': case 'reply_to_comment': case 'send_cart_followup': case 'send_order_update': case 'send_sales_followup': return input?.text ? clip(input.text, 400) : null
     case 'get_cart': return o.summary ? clip(`${o.summary}${o.total ? ` · ${o.total}` : ''}${o.canMessage === false ? ` — not messaged: ${o.whyNot || 'not allowed'}` : ''}`, 220) : null
@@ -122,6 +125,7 @@ export async function explainRun(db: any, companyId: string, runId: string): Pro
       status: s.status || null,
       detail: detailFor(s.action_key, s.input, s.output),
     })
+    if (s.kind === 'action' && s.action_key === 'create_task' && (s.output?.updated || s.output?.skipped)) steps[steps.length - 1].label = s.output.updated ? 'Added to an open task' : 'Didn’t make a task'
   }
 
   return {

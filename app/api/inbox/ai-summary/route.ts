@@ -1,12 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { guardAiRequest } from '@/lib/rate-limit'
 import { modelFor, trackAi } from '@/lib/ai-models'
+import { createClient } from '@supabase/supabase-js'
+import { ACTION_ITEMS_GUIDE, loadOpenTasks, openTasksForSummaryPrompt, refineActionItemsDetailed, type OpenTask } from '@/lib/task-dedupe'
+
+// Open tasks for this conversation's customer (when the caller says which
+// conversation), so the summary adds to them instead of proposing them again.
+async function openTasksFor(companyId: string, conversationId: unknown): Promise<{ openTasks: OpenTask[]; contactName: string | null }> {
+  if (typeof conversationId !== 'string' || !conversationId || !process.env.NEXT_PUBLIC_SUPABASE_URL) return { openTasks: [], contactName: null }
+  try {
+    const db: any = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { auth: { autoRefreshToken: false, persistSession: false } })
+    const { data: conv } = await db.from('conversations').select('id, contact_id').eq('company_id', companyId).eq('id', conversationId).maybeSingle()
+    if (!conv) return { openTasks: [], contactName: null }
+    const [openTasks, ct] = await Promise.all([
+      loadOpenTasks(db, { companyId, conversationId, contactId: conv.contact_id || null }),
+      conv.contact_id ? db.from('contacts').select('name').eq('company_id', companyId).eq('id', conv.contact_id).maybeSingle() : Promise.resolve({ data: null }),
+    ])
+    return { openTasks, contactName: (ct as any)?.data?.name || null }
+  } catch { return { openTasks: [], contactName: null } }
+}
 
 // Generates a short summary + action items for a conversation using Claude.
 // Falls back gracefully if no API key is configured.
 export async function POST(req: NextRequest) {
   try {
-    const { companyId, messages } = await req.json()
+    const { companyId, messages, conversationId } = await req.json()
     if (!Array.isArray(messages) || messages.length === 0) {
       return NextResponse.json({ error: 'No messages to summarize' }, { status: 400 })
     }
@@ -28,6 +46,7 @@ export async function POST(req: NextRequest) {
       })
     }
 
+    const { openTasks, contactName } = await openTasksFor(companyId, conversationId)
     const transcript = capped.map((m: any) => `${m.role === 'agent' ? 'Agent' : 'Customer'}: ${m.content}`).join('\n')
 
     const res = await fetch('https://api.anthropic.com/v1/messages', {
@@ -39,7 +58,7 @@ export async function POST(req: NextRequest) {
       },
       body: JSON.stringify({
         model: await modelFor('conversation_summary'),
-        max_tokens: 400,
+        max_tokens: 600,
         messages: [{
           role: 'user',
           content: `You are assisting a customer-support agent.
@@ -51,7 +70,9 @@ export async function POST(req: NextRequest) {
    • order-related actions (place, change, refund, track, chase, confirm an order)
    • stock / availability checks with a supplier
    • sending a link, quote, invoice, or booking
-Write each action item as a short imperative task starting with a verb (e.g. "Send photos of the 4-5cm oranda", "Follow up with Cathy once stock arrives"). Only include real, outstanding actions — return an empty list if there are none. Do not invent tasks.
+Write each step as a short imperative starting with a verb (e.g. "Send photos of the 4-5cm oranda", "Follow up with Cathy once stock arrives").
+
+${ACTION_ITEMS_GUIDE}${openTasksForSummaryPrompt(openTasks)}
 
 Respond ONLY with JSON in this exact format: {"summary": "...", "todos": ["...", "..."]}
 
@@ -79,9 +100,15 @@ ${transcript}`,
     const clean = text.replace(/```json|```/g, '').trim()
     try {
       const parsed = JSON.parse(clean)
+      // One item per job (related steps grouped), minus jobs an open task already has every step of.
+      const refined = refineActionItemsDetailed(parsed.todos || [], { contactName, openTasks })
+      if (refined.covered.length) console.info('[ai-summary] already open tasks, not proposed again:', refined.covered.map(c => `${c.item} → ${c.taskTitle}`).join(' | '))
+      // `at`: when these were generated — the Draft tasks card's place in the thread.
+      const at = new Date().toISOString()
       return NextResponse.json({
         summary: parsed.summary || 'No summary available.',
-        todos: (parsed.todos || []).map((t: string) => ({ text: t, done: false })),
+        todos: refined.items.map((t: string) => ({ text: t, done: false, at })),
+        alreadyTasks: refined.covered,
       })
     } catch {
       return NextResponse.json({ summary: text.slice(0, 300), todos: [] })

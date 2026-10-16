@@ -804,21 +804,26 @@ async function takeMessage(db: any, actx: ActionContext, args: { companyId: stri
   const createTask = getAction('create_task')
   if (!createTask) return false
   let taskId: string | null = null
+  let addedToOpen = false
   try {
-    const out = await createTask.run(actx, {
+    // A caller asking for a call back is always worth a task (no daily cap);
+    // a repeat request goes onto the open call-back task (lib/task-dedupe).
+    const out = await createTask.run({ ...actx, scratch: { ...actx.scratch, taskCapExempt: true } }, {
       title: `Call back ${name} (${back})`,
       details: `${about || 'Asked for a call back.'}\n\nTaken by the AI phone agent.`,
       priority: input.urgent ? rules.urgentPriority : 'normal',
       ...(rules.dueHours ? { dueDate: new Date(Date.now() + rules.dueHours * 3600_000).toISOString() } : {}),
     })
-    if (!out.ok) return false
-    taskId = out.data?.taskId || null
+    if (!out.ok || !out.data?.taskId) return false
+    taskId = out.data.taskId
+    addedToOpen = !!out.data.updated
   } catch { return false }
   // The team's alerts (and the assignee) don't hold up the caller: the AI
   // confirms straight away and they go out alongside.
   const assigned = rules.assigneeId && rules.assigneeName ? ` (assigned to ${rules.assigneeName})` : ''
   inBackground(() => Promise.all([
-    taskId && rules.assigneeId ? assignTask(db, args.companyId, taskId, rules) : null,
+    // An existing task keeps whoever already has it.
+    taskId && rules.assigneeId && !addedToOpen ? assignTask(db, args.companyId, taskId, rules) : null,
     notifyCompany({ db, companyId: args.companyId, type: 'call', message: `Call-back requested by ${name}: ${about.slice(0, 120)}${assigned}`, actorName: name, conversationId: args.conversationId || undefined }),
     args.conversationId
       ? pushInboundMessage({ companyId: args.companyId, conversationId: args.conversationId, title: 'Call-back requested', body: `${name}: ${about.slice(0, 120)}`, route: `/conversation/${args.conversationId}` })

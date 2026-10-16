@@ -283,7 +283,7 @@ export default function ColvyAssistant({ companyId, userId, agentName }: { compa
   // permissive, so the client can do this directly and immediately.
   async function undo(card: Card) {
     if (!card.undo) return
-    const { entityType, entityId, restore, rows } = card.undo as any
+    const { entityType, entityId, restore, rows, taskAddition } = card.undo as any
     const table = entityType === 'calendar_event' ? 'calendar_events' : entityType === 'sale' ? 'conversation_sales' : entityType === 'order_outlet' ? 'orders'
       : entityType === 'form' ? 'forms' : entityType === 'poll' ? 'polls' : entityType === 'survey' ? 'surveys' : 'conversation_tasks'
     try {
@@ -297,6 +297,18 @@ export default function ColvyAssistant({ companyId, userId, agentName }: { compa
         if (entityType === 'order_outlet') {
           try { await (supabase as any).from('order_events').insert(rows.map((r: any) => ({ order_id: r.id, company_id: companyId, type: 'outlet', detail: 'Outlet change undone' }))) } catch {}
         }
+      }
+      // Steps Colvy AI added to an open task: take back just those, the note it
+      // appended, and any field it changed that nobody has touched since.
+      else if (taskAddition) {
+        const { data: row } = await (supabase as any).from('conversation_tasks').select('*').eq('id', entityId).maybeSingle()
+        if (!row) throw new Error('gone')
+        const patch: any = {}
+        const ids: string[] = taskAddition.removeChecklistIds || []
+        if (ids.length && Array.isArray(row.checklist)) patch.checklist = row.checklist.filter((i: any) => !ids.includes(i?.id))
+        if (taskAddition.appendedText && typeof row.text === 'string' && row.text.includes(taskAddition.appendedText)) patch.text = row.text.replace(taskAddition.appendedText, '')
+        for (const [k, v] of Object.entries(taskAddition.set || {})) if (row[k] === v) for (const rk of Object.keys(taskAddition.restore || {})) if (rk === k || (k === 'assigned_to' && rk.startsWith('assign'))) patch[rk] = taskAddition.restore[rk]
+        if (Object.keys(patch).length) { const { error } = await (supabase as any).from('conversation_tasks').update(patch).eq('id', entityId); if (error) throw error }
       }
       else if (restore) await (supabase as any).from(table).update(restore).eq('id', entityId)
       else await (supabase as any).from(table).delete().eq('id', entityId)

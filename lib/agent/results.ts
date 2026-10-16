@@ -127,7 +127,7 @@ export async function agentResults(db: any, companyId: string, days = 7, now = D
         // Only real adds carry the entry (not "already waiting" or "it's in stock").
         if (s.entity_id) t.waitlisted++
       } else if (key === 'create_task') {
-        t.tasks++
+        if (s.entity_id) t.tasks++   // made one (adding to an open task carries no entity)
         if (run.role_key === 'operations') (inCur ? caughtRuns.cur : caughtRuns.prev).add(run.id)
       } else if (key === 'booking_link' || (key.startsWith('x_') && s.autonomy === 'act_within_limits')) {
         // Outside tools: only what changes something (look-ups run 'autonomous').
