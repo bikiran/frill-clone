@@ -3,6 +3,7 @@
  */
 
 import { createClient } from '@supabase/supabase-js'
+import { readStoreJson } from '@/lib/store-response'
 
 export interface SyncResult {
   success: boolean
@@ -187,8 +188,8 @@ async function fetchWooCommerceCustomers(integration: any): Promise<any[]> {
         throw new Error(`WooCommerce API error: ${response.statusText}`)
       }
 
-      const customers = await response.json()
-      allCustomers.push(...customers)
+      const customers = await readStoreJson(response, { provider: 'woocommerce', store: integration.store_url })
+      allCustomers.push(...(Array.isArray(customers) ? customers : []))
 
       const totalPages = response.headers.get('x-wp-totalpages')
       if (totalPages && page < parseInt(totalPages)) {

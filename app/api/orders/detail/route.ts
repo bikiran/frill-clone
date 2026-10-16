@@ -2,6 +2,7 @@ import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { resolveShopifyOrderRef, shopifyOrderForUi, ShopifyActionError } from '@/lib/shopify-order-actions'
+import { readStoreJson } from '@/lib/store-response'
 
 export const dynamic = 'force-dynamic'
 
@@ -75,7 +76,8 @@ export async function GET(req: NextRequest) {
     const res = await fetch(`${integ.store_url}/wp-json/wc/v3/orders/${orderId}`, {
       headers: { 'Authorization': auth, 'Content-Type': 'application/json' },
     })
-    const order = await res.json().catch(() => null)
+    // A web page instead of data (security plugin, firewall…): show the stored copy.
+    const order = await readStoreJson(res, { provider: 'woocommerce', store: integ.store_url }).catch(() => null)
     if (!res.ok || !order) {
       return NextResponse.json({ order: stored || { order_id: orderId, line_items: [] } })
     }
@@ -98,7 +100,7 @@ export async function GET(req: NextRequest) {
         try {
           const pr = await fetch(`${integ.store_url}/wp-json/wc/v3/products/${pid}`, { headers: { Authorization: auth } })
           if (!pr.ok) return
-          const p = await pr.json()
+          const p = await readStoreJson(pr, { provider: 'woocommerce', store: integ.store_url })
           const src = p?.images?.[0]?.src || p?.image?.src || null
           if (src) imgById[String(pid)] = src
         } catch { /* skip this product */ }

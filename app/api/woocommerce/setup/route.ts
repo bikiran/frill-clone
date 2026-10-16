@@ -75,10 +75,12 @@ export async function POST(req: NextRequest) {
       companyId
     })
 
-    const isConnected = await woo.testConnection()
-    if (!isConnected) {
+    // Says why when it fails: a web page instead of data (security plugin,
+    // firewall, moved store), a refused key, or no API at that address.
+    const check = await woo.checkConnection()
+    if (!check.ok) {
       return NextResponse.json(
-        { error: 'Failed to connect with provided credentials. Check your store URL and API keys.' },
+        { error: check.error || 'Failed to connect with provided credentials. Check your store URL and API keys.' },
         { status: 401 }
       )
     }
@@ -175,6 +177,20 @@ export async function GET(req: NextRequest) {
 
     if (error) {
       return NextResponse.json({ data: null, stores: [] }, { status: 200 })
+    }
+
+    // ?check=1: ask each connected store now, so the Integrations page can warn
+    // when one answers with a web page (security plugin, firewall, moved store)
+    // or refuses the key. Nothing is stored; the keys never leave the server.
+    if (req.nextUrl.searchParams.get('check') === '1' && stores?.length) {
+      const { data: keys } = await supabase.from('woocommerce_integrations')
+        .select('id, store_url, consumer_key, consumer_secret, is_active').eq('company_id', companyId)
+      const health: Record<string, { ok: boolean; error?: string; status?: number }> = {}
+      await Promise.all((keys || []).filter((k: any) => k.is_active !== false && k.store_url).slice(0, 10).map(async (k: any) => {
+        const woo = new WooCommerceService({ storeUrl: k.store_url, consumerKey: k.consumer_key, consumerSecret: k.consumer_secret, companyId })
+        health[k.id] = await woo.checkConnection()
+      }))
+      return NextResponse.json({ data: stores?.[0] || null, stores: stores || [], health })
     }
 
     // `data` (singular) kept for backward compatibility with existing callers;

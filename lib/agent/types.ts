@@ -62,11 +62,13 @@ export type ActionResult = {
   summary?: string                    // one line for the audit trail
 }
 
-export type JsonSchema = { type: 'object'; properties: Record<string, any>; required?: string[]; additionalProperties?: boolean }
+export type JsonSchema = { type: 'object'; properties: Record<string, any>; required?: string[]; additionalProperties?: boolean; $defs?: Record<string, any>; definitions?: Record<string, any> }
 
 export interface ActionDef {
   key: string
   description: string                 // for the model
+  /** The name people know it by, when that isn't the key (outside tools). */
+  title?: string
   input: JsonSchema
   category: ActionCategory
   risk: 'low' | 'medium' | 'high'

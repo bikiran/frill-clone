@@ -2,6 +2,7 @@ import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { shopifyCreateDiscountCode, shopifyStoreFor, ShopifyCreateError } from '@/lib/shopify-create'
+import { readStoreJson } from '@/lib/store-response'
 
 export const dynamic = 'force-dynamic'
 
@@ -82,7 +83,7 @@ export async function POST(req: NextRequest) {
         `${integ.store_url}/wp-json/wc/v3/coupons?code=${encodeURIComponent(normalised)}`,
         { headers: { 'Authorization': auth, 'Content-Type': 'application/json' } }
       )
-      const found = await existing.json().catch(() => [])
+      const found = await readStoreJson(existing, { provider: 'woocommerce', store: integ.store_url }).catch(() => [])
       if (Array.isArray(found) && found.length > 0) {
         return NextResponse.json({ ok: true, coupon: found[0], existing: true })
       }
@@ -107,10 +108,11 @@ export async function POST(req: NextRequest) {
       headers: { 'Authorization': auth, 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     })
-    const data = await res.json().catch(() => ({}))
-    if (!res.ok) {
+    let readErr = ''
+    const data = await readStoreJson(res, { provider: 'woocommerce', store: integ.store_url }).catch((e: any) => { readErr = e?.message || ''; return {} })
+    if (!res.ok || readErr) {
       return NextResponse.json(
-        { error: data?.message || 'WooCommerce rejected the coupon' },
+        { error: (data as any)?.message || readErr || 'WooCommerce rejected the coupon' },
         { status: 400 }
       )
     }

@@ -11,6 +11,8 @@
 // agent_policies row (role "phone", action "catalog") so no lookup happens
 // while a caller waits. Refreshed when stale, during a call's greeting.
 
+import { readStoreJson } from '@/lib/store-response'
+
 const ROLE = 'phone'
 const ACTION = 'catalog'
 const MAX_NAMES = 1500
@@ -158,7 +160,7 @@ async function wooTitles(db: any, companyId: string): Promise<string[] | null> {
   const page = async (n: number) => {
     const res = await fetch(`${base}&page=${n}`, { headers: { Authorization: `Basic ${auth}` }, signal: AbortSignal.timeout(15000) })
     if (!res.ok) throw new Error(`WooCommerce ${res.status}`)
-    return { rows: (await res.json()) as any[], pages: Number(res.headers.get('x-wp-totalpages') || 1) }
+    return { rows: ((await readStoreJson(res, { provider: 'woocommerce', store: s.store_url })) || []) as any[], pages: Number(res.headers.get('x-wp-totalpages') || 1) }
   }
   const first = await page(1)
   const more = await Promise.all(Array.from({ length: Math.min(first.pages, 20) - 1 }, (_, i) => page(i + 2).then(p => p.rows, () => [])))

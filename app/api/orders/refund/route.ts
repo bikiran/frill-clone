@@ -4,6 +4,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { deliverAutomatedMessage } from '@/lib/channel-fallback'
 import { resolveShopifyOrderRef, shopifyRefund, ShopifyActionError } from '@/lib/shopify-order-actions'
+import { readStoreJson } from '@/lib/store-response'
+import { forgetWooOrders } from '@/lib/woocommerce-service'
 
 export const dynamic = 'force-dynamic'
 
@@ -113,9 +115,10 @@ export async function POST(req: NextRequest) {
         const oRes = await fetch(`${integ.store_url}/wp-json/wc/v3/orders/${orderId}`, {
           headers: { 'Authorization': auth, 'Content-Type': 'application/json' },
         })
-        const order = await oRes.json().catch(() => null)
+        let readErr = ''
+        const order = await readStoreJson(oRes, { provider: 'woocommerce', store: integ.store_url }).catch((e: any) => { readErr = e?.message || ''; return null })
         if (!oRes.ok || !order?.total) {
-          return NextResponse.json({ error: 'Could not read the order total' }, { status: 400 })
+          return NextResponse.json({ error: readErr || 'Could not read the order total' }, { status: 400 })
         }
         refundAmount = order.total
       }
@@ -142,7 +145,7 @@ export async function POST(req: NextRequest) {
       if (hasItems || shippingNum > 0) {
         try {
           const oRes = await fetch(`${integ.store_url}/wp-json/wc/v3/orders/${orderId}`, { headers: { 'Authorization': auth } })
-          const o = oRes.ok ? await oRes.json().catch(() => null) : null
+          const o = oRes.ok ? await readStoreJson(oRes, { provider: 'woocommerce', store: integ.store_url }).catch(() => null) : null
           for (const li of o?.line_items || []) if (li?.taxes?.[0]?.id != null) taxIdByLine.set(String(li.id), li.taxes[0].id)
           shippingLineId = o?.shipping_lines?.[0]?.id ?? null
         } catch {}
@@ -172,10 +175,13 @@ export async function POST(req: NextRequest) {
         headers: { 'Authorization': auth, 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       })
-      data = await res.json().catch(() => ({}))
-      if (!res.ok) {
+      // A web page back (security plugin, firewall…) isn't a refund we can confirm.
+      let refundReadErr = ''
+      data = await readStoreJson(res, { provider: 'woocommerce', store: integ.store_url }).catch((e: any) => { refundReadErr = e?.message || 'WooCommerce sent back something Colvy can’t read.'; return {} })
+      forgetWooOrders(integ.store_url)
+      if (!res.ok || refundReadErr) {
         return NextResponse.json(
-          { error: data?.message || 'WooCommerce rejected the refund' },
+          { error: data?.message || (refundReadErr ? `${refundReadErr} Check the order in WooCommerce before trying again — the refund may or may not have gone through.` : 'WooCommerce rejected the refund') },
           { status: 400 }
         )
       }
@@ -188,7 +194,7 @@ export async function POST(req: NextRequest) {
         const freshRes = await fetch(`${integ.store_url}/wp-json/wc/v3/orders/${orderId}`, {
           headers: { 'Authorization': auth, 'Content-Type': 'application/json' },
         })
-        const fresh = await freshRes.json().catch(() => null)
+        const fresh = await readStoreJson(freshRes, { provider: 'woocommerce', store: integ.store_url }).catch(() => null)
         if (fresh) {
           refreshedStatus = fresh.status || null
           const refundedTotal = (fresh.refunds || []).reduce((s: number, r: any) => s + Math.abs(parseFloat(r.total || 0)), 0)

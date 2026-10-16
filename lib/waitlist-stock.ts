@@ -11,6 +11,8 @@
 // `live: false` step 2 is skipped (cache hits still count), so a page can paint
 // from the database straight away and ask for live sizes in a second request.
 
+import { readStoreJson } from '@/lib/store-response'
+
 export type ItemStock = {
   stock_status: string | null
   stock_quantity: number | null
@@ -109,7 +111,7 @@ export async function variationStock(db: any, companyId: string, ids: number[], 
           const url = `${String(integ.store_url).replace(/\/$/, '')}/wp-json/wc/v3/products/${pid}/variations?include=${vids.join(',')}&per_page=100`
           const res = await doFetch(url, { headers: { Authorization: auth }, signal: AbortSignal.timeout(opts.timeoutMs ?? 5000) })
           if (!res.ok) return
-          const list = await res.json()
+          const list = await readStoreJson(res, { provider: 'woocommerce', store: integ.store_url })
           for (const v of Array.isArray(list) ? list : []) live.set(Number(v.id), v)
         } catch { /* this parent falls back below */ }
       }))

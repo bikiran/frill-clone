@@ -1,6 +1,7 @@
 import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { readStoreJson } from '@/lib/store-response'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -95,14 +96,14 @@ export async function GET(req: NextRequest) {
       if (!res1.ok) { store.httpStatus = res1.status; store.error = (await res1.text().catch(() => '')).slice(0, 300); debug.stores.push(store); continue }
       const totalPages = Math.min(maxPages, Number(res1.headers.get('x-wp-totalpages')) || 1)
       store.totalPages = totalPages
-      const first = await res1.json().catch(() => [])
+      const first = await readStoreJson(res1, { provider: 'woocommerce', store: integ.store_url }).catch((e: any) => { store.error = String(e?.message || e).slice(0, 300); return [] })
       if (Array.isArray(first)) { store.fetched += first.length; for (const o of first) orders.push(mapOrder(o)) }
 
       // Fetch the remaining pages concurrently instead of one-by-one.
       if (totalPages > 1) {
         const rest = await Promise.all(
           Array.from({ length: totalPages - 1 }, (_, i) =>
-            getPage(i + 2).then(r => (r && r.ok ? r.json() : [])).catch(() => []))
+            getPage(i + 2).then(r => (r && r.ok ? readStoreJson(r, { provider: 'woocommerce', store: integ.store_url }) : [])).catch(() => []))
         )
         for (const batch of rest) {
           if (!Array.isArray(batch)) continue

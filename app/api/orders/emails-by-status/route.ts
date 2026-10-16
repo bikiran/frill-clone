@@ -1,6 +1,7 @@
 import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { readStoreJson } from '@/lib/store-response'
 
 export const dynamic = 'force-dynamic'
 
@@ -60,7 +61,7 @@ export async function GET(req: NextRequest) {
             { headers: { Authorization: auth } }
           )
           if (!res.ok) break
-          const orders = await res.json()
+          const orders = await readStoreJson(res, { provider: 'woocommerce', store: integ.store_url })
           if (!Array.isArray(orders) || orders.length === 0) break
           for (const o of orders) { const e = String(o?.billing?.email || '').toLowerCase(); if (e) emails.add(e) }
           if (orders.length < 100) break

@@ -14,6 +14,7 @@
 
 import type { ActionContext, ActionDef, ActionResult, Autonomy, JsonSchema, PolicyLimits } from './types'
 import { callMcpTool, type McpServer, type McpTool } from './mcp-client'
+import { normaliseToolSchema } from './tool-schema'
 
 export type ToolMode = 'off' | 'auto' | 'ask'
 export type ConnTool = { key: string; name: string; title?: string; description: string; input_schema: any; read_only: boolean; mode: ToolMode }
@@ -68,11 +69,23 @@ export function mergeTools(connId: string, fresh: McpTool[], old: ConnTool[] = [
   })
 }
 
+// A tool's schema as the model will accept it (JSON Schema 2020-12, an object
+// at the top), with the reason it can't be used when it can't be repaired.
+// Keeps $defs: servers built on Pydantic/FastMCP put nested types there and
+// point at them with $ref, so dropping them left every $ref pointing at nothing
+// and the provider refused the whole request.
+export function toolSchema(s: any): { input: JsonSchema; problem: string | null; fixes: string[] } {
+  const r = normaliseToolSchema(s && typeof s === 'object' ? s : { type: 'object', properties: {} })
+  const out = r.schema as Record<string, any>
+  const props = out.properties && typeof out.properties === 'object' && !Array.isArray(out.properties) ? out.properties : {}
+  const required = Array.isArray(out.required) ? out.required.filter((k: any) => typeof k === 'string' && k in props) : []
+  const input: JsonSchema = { ...out, type: 'object', properties: props, required }
+  return { input, problem: r.lossy[0] || null, fixes: r.fixes }
+}
+
 // Only the parts of a tool's schema the agent loop understands.
 export function cleanSchema(s: any): JsonSchema {
-  const props = s && typeof s.properties === 'object' && !Array.isArray(s.properties) ? s.properties : {}
-  const required = Array.isArray(s?.required) ? s.required.filter((k: any) => typeof k === 'string' && k in props) : []
-  return { type: 'object', properties: props, required }
+  return toolSchema(s).input
 }
 
 const label = (t: ConnTool) => t.title || t.name.replace(/[_-]+/g, ' ')
@@ -83,13 +96,14 @@ function preview(args: Record<string, any>): string {
   return s.length > 220 ? `${s.slice(0, 220)}…` : s
 }
 
-function toAction(conn: Connection, tool: ConnTool): { action: ActionDef; autonomy: Autonomy; limits?: PolicyLimits } {
+function toAction(conn: Connection, tool: ConnTool, input: JsonSchema = cleanSchema(tool.input_schema)): { action: ActionDef; autonomy: Autonomy; limits?: PolicyLimits } {
   const lookup = tool.read_only && tool.mode === 'auto'
   const autonomy: Autonomy = tool.mode === 'ask' ? 'prepare' : lookup ? 'autonomous' : 'act_within_limits'
   const action: ActionDef = {
     key: tool.key,
     description: `${tool.description || label(tool)}`.slice(0, 900) + ` (Outside tool “${label(tool)}” from ${conn.name}.${tool.mode === 'ask' ? ' A person approves each use.' : ''})`,
-    input: cleanSchema(tool.input_schema),
+    title: `${label(tool)} (${conn.name})`,
+    input,
     category: lookup ? 'read' : 'external_write',
     risk: lookup ? 'low' : 'medium',
     maxAutonomy: autonomy,
@@ -109,9 +123,14 @@ function toAction(conn: Connection, tool: ConnTool): { action: ActionDef; autono
   return { action, autonomy, ...(autonomy === 'act_within_limits' ? { limits: { max_per_day: AUTO_CHANGES_PER_DAY } } : {}) }
 }
 
-/** The outside tools this agent may use, as actions plus their default autonomy. */
-export async function loadExternalActions(db: any, companyId: string, roleKey: string): Promise<{ actions: ActionDef[]; defaults: Record<string, { autonomy: Autonomy; limits?: PolicyLimits }> }> {
-  const out = { actions: [] as ActionDef[], defaults: {} as Record<string, { autonomy: Autonomy; limits?: PolicyLimits }> }
+// Logged once per tool every 10 minutes, not on every run.
+const skipLogged = new Map<string, number>()
+
+/** The outside tools this agent may use, as actions plus their default autonomy.
+ *  A tool whose input schema can't be used is left out (`skipped`, with why),
+ *  so one odd tool never stops the agent. */
+export async function loadExternalActions(db: any, companyId: string, roleKey: string): Promise<{ actions: ActionDef[]; defaults: Record<string, { autonomy: Autonomy; limits?: PolicyLimits }>; skipped: { key: string; name: string; reason: string }[] }> {
+  const out = { actions: [] as ActionDef[], defaults: {} as Record<string, { autonomy: Autonomy; limits?: PolicyLimits }>, skipped: [] as { key: string; name: string; reason: string }[] }
   try {
     const { data } = await db.from('agent_connections').select('*').eq('company_id', companyId).eq('enabled', true)
     for (const conn of (data || []) as Connection[]) {
@@ -119,7 +138,17 @@ export async function loadExternalActions(db: any, companyId: string, roleKey: s
       for (const tool of Array.isArray(conn.tools) ? conn.tools : []) {
         if (!tool?.key || tool.mode === 'off' || !isExternalKey(tool.key)) continue
         if (out.defaults[tool.key]) continue
-        const { action, autonomy, limits } = toAction(conn, tool)
+        const schema = toolSchema(tool.input_schema)
+        if (schema.problem) {
+          out.skipped.push({ key: tool.key, name: `${label(tool)} (${conn.name})`, reason: schema.problem })
+          const k = `${companyId}:${tool.key}`
+          if (Date.now() - (skipLogged.get(k) || 0) > 600_000) {
+            skipLogged.set(k, Date.now())
+            console.warn(`[agent tools] company ${companyId}: left out outside tool "${tool.name}" from ${conn.name} (${tool.key}) — its input schema is invalid: ${schema.problem}`)
+          }
+          continue
+        }
+        const { action, autonomy, limits } = toAction(conn, tool, schema.input)
         out.actions.push(action)
         out.defaults[tool.key] = limits ? { autonomy, limits } : { autonomy }
       }

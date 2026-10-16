@@ -14,6 +14,8 @@ import { findCustomerGoogleReview } from '@/lib/review-match'
 import { logEnquiryReopened } from '@/lib/conversation-timeline'
 import { notifyWaitlist, resolveWaitlistSettings } from '@/lib/waitlist'
 import { recoverAbandonedCarts } from '@/lib/abandoned-carts'
+import { readStoreJson } from '@/lib/store-response'
+import { forgetWooOrders } from '@/lib/woocommerce-service'
 
 // A product changed in WooCommerce. Keep the synced catalogue's stock current,
 // and when it's back IN stock, text everyone on its back-in-stock waitlist
@@ -96,7 +98,7 @@ async function fetchLiveWooStatus(db: any, companyId: string, orderId: any): Pro
       headers: { Authorization: `Basic ${auth}`, 'Content-Type': 'application/json' },
     })
     if (!res.ok) return null
-    const live = await res.json()
+    const live = await readStoreJson(res, { provider: 'woocommerce', store: wc.store_url })
     return String(live?.status || '').toLowerCase() || null
   } catch { return null }
 }
@@ -760,6 +762,9 @@ export async function POST(req: NextRequest) {
         if (!own || own.company_id !== companyId) return NextResponse.json({ error: 'Store does not belong to this business' }, { status: 400 })
       }
     }
+
+    // The store changed something: cached order look-ups for it are stale now.
+    if (topic.startsWith('order.')) forgetWooOrders(req.headers.get('x-wc-webhook-source'))
 
     // Record the event for the Super Admin webhook explorer (best-effort).
     logWebhookEvent({ source: 'woocommerce', eventType: topic || resource || 'order', companyId, payload: data })

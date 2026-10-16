@@ -1,7 +1,29 @@
 /**
  * WooCommerce REST API Integration Service
  * Handles 2-way sync between WooCommerce and Colvy
+ *
+ * Every answer is read with readStoreJson (lib/store-response.ts): a store that
+ * answers with a web page (security plugin, firewall, maintenance page, moved
+ * store) gives one clear StoreResponseError instead of a JSON SyntaxError, and
+ * look-ups pause briefly for that store instead of hammering it.
  */
+
+import { readStoreJson, storeBackoff, storeKey, isStoreResponseError } from '@/lib/store-response'
+
+// One order looked up several times a minute (the order drawer's details and
+// notes, packing slips, agents' tracking checks) is fetched once: the same
+// order number within 60 seconds shares one answer. Per server instance;
+// cleared for a store whenever Colvy changes one of its orders.
+const ORDER_TTL_MS = 60_000
+const orderCache = new Map<string, { at: number; p: Promise<any | null> }>()
+const hashKey = (s: string) => { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619) } return (h >>> 0).toString(36) }
+
+/** Forget cached order look-ups for a store (after Colvy changes an order there). */
+export function forgetWooOrders(storeUrl: string | null | undefined) {
+  if (!storeUrl) return
+  const prefix = `${storeKey(storeUrl)}|`
+  for (const k of Array.from(orderCache.keys())) if (k.startsWith(prefix)) orderCache.delete(k)
+}
 
 interface WooCommerceConfig {
   storeUrl: string
@@ -62,6 +84,15 @@ export class WooCommerceService {
     return { 'Authorization': `Basic ${this.basicAuth}`, 'Content-Type': 'application/json' }
   }
 
+  /** One REST call (path under /wp-json/wc/v3/). Reads JSON safely; GETs wait out a store's back-off. */
+  private async api(path: string, init: RequestInit = {}): Promise<{ res: Response; data: any }> {
+    const method = String(init.method || 'GET').toUpperCase()
+    if (method === 'GET') { const held = storeBackoff(this.config.storeUrl); if (held) throw held }
+    const res = await fetch(`${this.config.storeUrl}/wp-json/wc/v3/${path.replace(/^\//, '')}`, { ...init, headers: { ...this.wcHeaders(), ...((init.headers as any) || {}) } })
+    const data = await readStoreJson(res, { provider: 'woocommerce', store: this.config.storeUrl })
+    return { res, data }
+  }
+
   // ── Webhooks ────────────────────────────────────────────────────────────
   // Colvy needs WooCommerce to push order events to us so a new order can open
   // a chat. Previously this had to be added by hand in WooCommerce settings —
@@ -70,18 +101,16 @@ export class WooCommerceService {
 
   async listWebhooks(): Promise<any[]> {
     try {
-      const res = await fetch(`${this.config.storeUrl}/wp-json/wc/v3/webhooks?per_page=100`, { headers: this.wcHeaders() })
+      const { res, data } = await this.api('webhooks?per_page=100')
       if (!res.ok) return []
-      const data = await res.json()
       return Array.isArray(data) ? data : []
     } catch { return [] }
   }
 
   async createWebhook(topic: string, deliveryUrl: string, secret?: string): Promise<any | null> {
     try {
-      const res = await fetch(`${this.config.storeUrl}/wp-json/wc/v3/webhooks`, {
+      const { res, data } = await this.api('webhooks', {
         method: 'POST',
-        headers: this.wcHeaders(),
         body: JSON.stringify({
           name: `Colvy — ${topic}`,
           topic,                 // e.g. 'order.created', 'order.updated'
@@ -91,10 +120,9 @@ export class WooCommerceService {
         }),
       })
       if (!res.ok) {
-        const t = await res.text()
-        throw new Error(`WooCommerce rejected the webhook (${res.status}): ${t.slice(0, 200)}`)
+        throw new Error(`WooCommerce rejected the webhook (${res.status}): ${String(data?.message || JSON.stringify(data) || '').slice(0, 200)}`)
       }
-      return await res.json()
+      return data
     } catch (e) {
       throw e
     }
@@ -153,20 +181,37 @@ export class WooCommerceService {
   }
 
   // Look up a single order by its number/id. Returns the full order (line items,
-  // totals, billing/shipping) or null if not found.
-  async getOrderByNumber(orderNumber: string | number): Promise<any | null> {
+  // totals, billing/shipping) or null if not found. Throws StoreResponseError
+  // when the store answers with a web page (say why, not "not found"). The
+  // same order within 60 seconds shares one look-up (opts.fresh skips that).
+  async getOrderByNumber(orderNumber: string | number, opts: { fresh?: boolean } = {}): Promise<any | null> {
+    const key = `${storeKey(this.config.storeUrl)}|${hashKey(this.config.consumerKey || '')}|${String(orderNumber).trim()}`
+    const hit = orderCache.get(key)
+    if (hit && !opts.fresh && Date.now() - hit.at < ORDER_TTL_MS) return hit.p
+    const p = this.fetchOrderByNumber(orderNumber)
+    orderCache.set(key, { at: Date.now(), p })
+    if (orderCache.size > 2000) { const first = orderCache.keys().next().value; if (first) orderCache.delete(first) }
+    // Only a found order is kept: "not found" and failures are asked again (the
+    // back-off in lib/store-response.ts covers a store that's failing).
+    p.then(o => { if (!o && orderCache.get(key)?.p === p) orderCache.delete(key) }, () => { if (orderCache.get(key)?.p === p) orderCache.delete(key) })
+    return p
+  }
+
+  private async fetchOrderByNumber(orderNumber: string | number): Promise<any | null> {
     // Order number usually equals the order id in WooCommerce.
     try {
-      const res = await fetch(`${this.config.storeUrl}/wp-json/wc/v3/orders/${orderNumber}`, { headers: this.wcHeaders() })
-      if (res.ok) return await res.json()
+      const { res, data } = await this.api(`orders/${encodeURIComponent(String(orderNumber))}`)
+      if (res.ok) return data
       // Fall back to searching by the "number" field (some stores use sequential-order plugins)
-      const search = await fetch(`${this.config.storeUrl}/wp-json/wc/v3/orders?search=${encodeURIComponent(String(orderNumber))}&per_page=5`, { headers: this.wcHeaders() })
-      if (search.ok) {
-        const list = await search.json()
-        const match = (list || []).find((o: any) => String(o.number) === String(orderNumber) || String(o.id) === String(orderNumber))
-        return match || list?.[0] || null
+      const search = await this.api(`orders?search=${encodeURIComponent(String(orderNumber))}&per_page=5`)
+      if (search.res.ok) {
+        const list = Array.isArray(search.data) ? search.data : []
+        const match = list.find((o: any) => String(o.number) === String(orderNumber) || String(o.id) === String(orderNumber))
+        return match || list[0] || null
       }
     } catch (e) {
+      // A web page instead of data: the caller says why (logged once per store in readStoreJson).
+      if (isStoreResponseError(e)) throw e
       console.error('getOrderByNumber failed', e)
     }
     return null
@@ -184,10 +229,8 @@ export class WooCommerceService {
       if (params.lineItems && params.lineItems.length) body.line_items = params.lineItems
       if (params.shippingLines && params.shippingLines.length) body.shipping_lines = params.shippingLines
 
-      const res = await fetch(`${this.config.storeUrl}/wp-json/wc/v3/orders/${orderId}/refunds`, {
-        method: 'POST', headers: this.wcHeaders(), body: JSON.stringify(body),
-      })
-      const data = await res.json()
+      const { res, data } = await this.api(`orders/${orderId}/refunds`, { method: 'POST', body: JSON.stringify(body) })
+      forgetWooOrders(this.config.storeUrl)
       if (!res.ok) return { ok: false, error: data?.message || `Refund failed (${res.status})` }
       return { ok: true, refund: data }
     } catch (e: any) {
@@ -208,10 +251,7 @@ export class WooCommerceService {
         usage_limit_per_user: 1,
         description: params.description || 'DOA store credit',
       }
-      const res = await fetch(`${this.config.storeUrl}/wp-json/wc/v3/coupons`, {
-        method: 'POST', headers: this.wcHeaders(), body: JSON.stringify(body),
-      })
-      const data = await res.json()
+      const { res, data } = await this.api('coupons', { method: 'POST', body: JSON.stringify(body) })
       if (!res.ok) return { ok: false, error: data?.message || `Coupon creation failed (${res.status})` }
       return { ok: true, coupon: data }
     } catch (e: any) {
@@ -247,19 +287,18 @@ export class WooCommerceService {
     const h = this.wcHeaders()
 
     const call = async (url: string) => {
+      const held = storeBackoff(this.config.storeUrl); if (held) throw held
       const res = await fetch(url, { headers: h })
+      // A web page (security plugin, firewall…) throws a clear StoreResponseError here.
+      const body = await readStoreJson(res, { provider: 'woocommerce', store: this.config.storeUrl })
       if (!res.ok) {
-        let detail = ''
-        try {
-          const body = await res.json()
-          detail = body?.message || ''
-        } catch {}
+        const detail = body?.message || ''
         if (res.status === 401 || res.status === 403) {
           throw new Error(`WooCommerce rejected the request (${res.status}). Check the API key has Read access. ${detail}`.trim())
         }
         throw new Error(`WooCommerce error ${res.status}${detail ? `: ${detail}` : ''}`)
       }
-      return res.json()
+      return body
     }
 
     // Only the fields we actually use. WooCommerce returns the ENTIRE product
@@ -339,9 +378,8 @@ export class WooCommerceService {
   // Fetch the variations of a variable product (exact variation IDs + attributes).
   async getProductVariations(productId: number): Promise<any[]> {
     try {
-      const res = await fetch(`${this.config.storeUrl}/wp-json/wc/v3/products/${productId}/variations?per_page=50`, { headers: this.wcHeaders() })
+      const { res, data: vars } = await this.api(`products/${productId}/variations?per_page=50`)
       if (!res.ok) return []
-      const vars = await res.json()
       return (vars || []).map((v: any) => ({
         id: v.id, sku: v.sku, price: v.price, regular_price: v.regular_price,
         stock_status: v.stock_status, stock_quantity: v.stock_quantity, manage_stock: v.manage_stock,
@@ -363,9 +401,10 @@ export class WooCommerceService {
     const uniq = Array.from(new Set(skus.filter(Boolean))).slice(0, 60)
     await Promise.all(uniq.map(async (sku) => {
       try {
+        if (storeBackoff(this.config.storeUrl)) return
         const res = await fetch(`${base}?sku=${encodeURIComponent(sku)}&per_page=1&status=publish`, { headers: h })
+        const arr = await readStoreJson(res, { provider: 'woocommerce', store: this.config.storeUrl })
         if (!res.ok) return
-        const arr = await res.json()
         const img = arr?.[0]?.images?.[0]?.src
         if (img) out[sku] = img
       } catch { /* skip this sku */ }
@@ -377,12 +416,8 @@ export class WooCommerceService {
   // submitting (another sale may have happened while the panel was open).
   async getProductOrVariation(productId: number, variationId?: number): Promise<any | null> {
     try {
-      const url = variationId
-        ? `${this.config.storeUrl}/wp-json/wc/v3/products/${productId}/variations/${variationId}`
-        : `${this.config.storeUrl}/wp-json/wc/v3/products/${productId}`
-      const res = await fetch(url, { headers: this.wcHeaders() })
-      if (!res.ok) return null
-      const p = await res.json()
+      const { res, data: p } = await this.api(variationId ? `products/${productId}/variations/${variationId}` : `products/${productId}`)
+      if (!res.ok || !p) return null
       return { id: p.id, price: p.price, stock_status: p.stock_status, stock_quantity: p.stock_quantity, manage_stock: p.manage_stock, name: p.name }
     } catch { return null }
   }
@@ -391,9 +426,8 @@ export class WooCommerceService {
   // panel needs: existence, expiry, minimum spend, usage limit, product scope.
   async validateCoupon(code: string, opts: { subtotal?: number; email?: string; productIds?: number[] } = {}): Promise<{ ok: boolean; error?: string; coupon?: any }> {
     try {
-      const res = await fetch(`${this.config.storeUrl}/wp-json/wc/v3/coupons?code=${encodeURIComponent(code)}`, { headers: this.wcHeaders() })
+      const { res, data: list } = await this.api(`coupons?code=${encodeURIComponent(code)}`)
       if (!res.ok) return { ok: false, error: `Coupon lookup failed (${res.status})` }
-      const list = await res.json()
       const c = (list || [])[0]
       if (!c) return { ok: false, error: 'Coupon code does not exist.' }
 
@@ -439,20 +473,18 @@ export class WooCommerceService {
   // Find an existing customer by email (WooCommerce customer id).
   async findCustomerByEmail(email: string): Promise<any | null> {
     try {
-      const res = await fetch(`${this.config.storeUrl}/wp-json/wc/v3/customers?email=${encodeURIComponent(email)}`, { headers: this.wcHeaders() })
+      const { res, data: list } = await this.api(`customers?email=${encodeURIComponent(email)}`)
       if (!res.ok) return null
-      const list = await res.json()
       return (list || [])[0] || null
     } catch { return null }
   }
 
   async createCustomer(params: { email: string; first_name?: string; last_name?: string; phone?: string; billing?: any; shipping?: any }): Promise<{ ok: boolean; customer?: any; error?: string }> {
     try {
-      const res = await fetch(`${this.config.storeUrl}/wp-json/wc/v3/customers`, {
-        method: 'POST', headers: this.wcHeaders(),
+      const { res, data } = await this.api('customers', {
+        method: 'POST',
         body: JSON.stringify({ email: params.email, first_name: params.first_name, last_name: params.last_name, billing: params.billing, shipping: params.shipping }),
       })
-      const data = await res.json()
       if (!res.ok) return { ok: false, error: data?.message || `Customer creation failed (${res.status})` }
       return { ok: true, customer: data }
     } catch (e: any) { return { ok: false, error: e.message } }
@@ -462,10 +494,7 @@ export class WooCommerceService {
   // fee_lines, coupon_lines, billing/shipping, status and set_paid.
   async createOrder(payload: any): Promise<{ ok: boolean; order?: any; error?: string }> {
     try {
-      const res = await fetch(`${this.config.storeUrl}/wp-json/wc/v3/orders`, {
-        method: 'POST', headers: this.wcHeaders(), body: JSON.stringify(payload),
-      })
-      const data = await res.json()
+      const { res, data } = await this.api('orders', { method: 'POST', body: JSON.stringify(payload) })
       if (!res.ok) return { ok: false, error: data?.message || `Order creation failed (${res.status})` }
       return { ok: true, order: data }
     } catch (e: any) { return { ok: false, error: e.message } }
@@ -474,9 +503,7 @@ export class WooCommerceService {
   // Add an internal (or customer) note to an order after creation.
   async addOrderNote(orderId: number, note: string, customerNote = false): Promise<boolean> {
     try {
-      const res = await fetch(`${this.config.storeUrl}/wp-json/wc/v3/orders/${orderId}/notes`, {
-        method: 'POST', headers: this.wcHeaders(), body: JSON.stringify({ note, customer_note: customerNote }),
-      })
+      const { res } = await this.api(`orders/${orderId}/notes`, { method: 'POST', body: JSON.stringify({ note, customer_note: customerNote }) })
       return res.ok
     } catch { return false }
   }
@@ -485,9 +512,8 @@ export class WooCommerceService {
   // system notes, staff private notes, and notes-to-customer).
   async getOrderNotes(orderId: number): Promise<any[]> {
     try {
-      const res = await fetch(`${this.config.storeUrl}/wp-json/wc/v3/orders/${orderId}/notes?per_page=50`, { headers: this.wcHeaders() })
+      const { res, data: notes } = await this.api(`orders/${orderId}/notes?per_page=50`)
       if (!res.ok) return []
-      const notes = await res.json()
       return (notes || []).map((n: any) => ({
         id: n.id, note: n.note, author: n.author || 'WooCommerce',
         date: n.date_created_gmt ? `${n.date_created_gmt}Z` : n.date_created,
@@ -500,9 +526,8 @@ export class WooCommerceService {
   // may not have synced into our local table yet). Returns live from WooCommerce.
   async getOrdersByEmail(email: string, limit = 25): Promise<any[]> {
     try {
-      const res = await fetch(`${this.config.storeUrl}/wp-json/wc/v3/orders?search=${encodeURIComponent(email)}&per_page=${limit}&orderby=date&order=desc`, { headers: this.wcHeaders() })
+      const { res, data: orders } = await this.api(`orders?search=${encodeURIComponent(email)}&per_page=${limit}&orderby=date&order=desc`)
       if (!res.ok) return []
-      const orders = await res.json()
       // WooCommerce `search` matches broadly; keep only orders whose billing email matches.
       return (orders || [])
         .filter((o: any) => (o.billing?.email || '').toLowerCase() === email.toLowerCase())
@@ -528,18 +553,15 @@ export class WooCommerceService {
   // pick a real method rather than a hardcoded list.
   async getShippingMethods(): Promise<Array<{ zone: string; method_id: string; title: string; cost?: string }>> {
     try {
-      const h = this.wcHeaders()
-      const zonesRes = await fetch(`${this.config.storeUrl}/wp-json/wc/v3/shipping/zones`, { headers: h })
+      const { res: zonesRes, data: zones } = await this.api('shipping/zones')
       if (!zonesRes.ok) return []
-      const zones = await zonesRes.json()
       // Include zone 0 ("Rest of the world") which the zones list may omit.
       const zoneList = [...(zones || [])]
       const out: Array<{ zone: string; method_id: string; title: string; cost?: string }> = []
       for (const z of zoneList) {
         try {
-          const mRes = await fetch(`${this.config.storeUrl}/wp-json/wc/v3/shipping/zones/${z.id}/methods`, { headers: h })
+          const { res: mRes, data: methods } = await this.api(`shipping/zones/${z.id}/methods`)
           if (!mRes.ok) continue
-          const methods = await mRes.json()
           for (const m of (methods || [])) {
             if (m.enabled === false) continue
             out.push({
@@ -563,22 +585,12 @@ export class WooCommerceService {
       const perPage = 100
 
       while (hasMore) {
-        const response = await fetch(
-          `${this.config.storeUrl}/wp-json/wc/v3/customers?per_page=${perPage}&page=${page}`,
-          {
-            method: 'GET',
-            headers: {
-              'Authorization': `Basic ${this.basicAuth}`,
-              'Content-Type': 'application/json'
-            }
-          }
-        )
+        const { res: response, data: customers } = await this.api(`customers?per_page=${perPage}&page=${page}`)
 
         if (!response.ok) {
           throw new Error(`WooCommerce API error: ${response.statusText}`)
         }
 
-        const customers = await response.json()
         allCustomers.push(...customers)
 
         // Check if there are more pages
@@ -592,7 +604,7 @@ export class WooCommerceService {
 
       return allCustomers
     } catch (error) {
-      console.error('Failed to fetch WooCommerce customers:', error)
+      if (!isStoreResponseError(error)) console.error('Failed to fetch WooCommerce customers:', error)   // a web page: logged once per store already
       throw error
     }
   }
@@ -602,23 +614,13 @@ export class WooCommerceService {
    */
   async getCustomerByEmail(email: string): Promise<WooCommerceCustomer | null> {
     try {
-      const response = await fetch(
-        `${this.config.storeUrl}/wp-json/wc/v3/customers?search=${encodeURIComponent(email)}&per_page=1`,
-        {
-          method: 'GET',
-          headers: {
-            'Authorization': `Basic ${this.basicAuth}`,
-            'Content-Type': 'application/json'
-          }
-        }
-      )
+      const { res: response, data: customers } = await this.api(`customers?search=${encodeURIComponent(email)}&per_page=1`)
 
       if (!response.ok) return null
 
-      const customers = await response.json()
-      return customers.length > 0 ? customers[0] : null
+      return Array.isArray(customers) && customers.length > 0 ? customers[0] : null
     } catch (error) {
-      console.error('Failed to fetch customer by email:', error)
+      if (!isStoreResponseError(error)) console.error('Failed to fetch customer by email:', error)   // a web page: logged once per store already
       return null
     }
   }
@@ -634,22 +636,12 @@ export class WooCommerceService {
       const perPage = 100
 
       while (hasMore) {
-        const response = await fetch(
-          `${this.config.storeUrl}/wp-json/wc/v3/orders?customer=${customerId}&per_page=${perPage}&page=${page}`,
-          {
-            method: 'GET',
-            headers: {
-              'Authorization': `Basic ${this.basicAuth}`,
-              'Content-Type': 'application/json'
-            }
-          }
-        )
+        const { res: response, data: orders } = await this.api(`orders?customer=${customerId}&per_page=${perPage}&page=${page}`)
 
         if (!response.ok) {
           throw new Error(`WooCommerce API error: ${response.statusText}`)
         }
 
-        const orders = await response.json()
         allOrders.push(...orders)
 
         // Check if there are more pages
@@ -663,7 +655,7 @@ export class WooCommerceService {
 
       return allOrders
     } catch (error) {
-      console.error('Failed to fetch customer orders:', error)
+      if (!isStoreResponseError(error)) console.error('Failed to fetch customer orders:', error)   // a web page: logged once per store already
       throw error
     }
   }
@@ -710,7 +702,7 @@ export class WooCommerceService {
 
       return stats
     } catch (error) {
-      console.error('Failed to calculate customer stats:', error)
+      if (!isStoreResponseError(error)) console.error('Failed to calculate customer stats:', error)   // a web page: logged once per store already
       throw error
     }
   }
@@ -722,38 +714,35 @@ export class WooCommerceService {
   // → settings.title, or we fall back to the WordPress site name).
   async getStoreInfo(): Promise<{ name?: string } | null> {
     try {
-      const res = await fetch(`${this.config.storeUrl}/wp-json/wc/v3/system_status`, {
-        method: 'GET',
-        headers: { 'Authorization': `Basic ${this.basicAuth}`, 'Content-Type': 'application/json' },
-      })
+      const { res, data } = await this.api('system_status')
       if (res.ok) {
-        const data = await res.json()
         const name = data?.settings?.title || data?.environment?.site_title
         if (name) return { name }
       }
       // Fall back to the WP root endpoint which returns the site name
       const wp = await fetch(`${this.config.storeUrl}/wp-json`)
-      if (wp.ok) { const d = await wp.json(); if (d?.name) return { name: d.name } }
+      if (wp.ok) { const d = await readStoreJson(wp, { provider: 'woocommerce', store: this.config.storeUrl }); if (d?.name) return { name: d.name } }
     } catch {}
     return null
   }
 
   async testConnection(): Promise<boolean> {
+    return (await this.checkConnection()).ok
+  }
+
+  /** Test the store and key, with a reason people can act on when it fails. Never waits on the back-off. */
+  async checkConnection(): Promise<{ ok: boolean; error?: string; status?: number }> {
     try {
-      const response = await fetch(
-        `${this.config.storeUrl}/wp-json/wc/v3/system_status`,
-        {
-          method: 'GET',
-          headers: {
-            'Authorization': `Basic ${this.basicAuth}`,
-            'Content-Type': 'application/json'
-          }
-        }
-      )
-      return response.ok
-    } catch (error) {
+      const response = await fetch(`${this.config.storeUrl}/wp-json/wc/v3/system_status`, { method: 'GET', headers: this.wcHeaders(), signal: AbortSignal.timeout(12_000) })
+      const data = await readStoreJson(response, { provider: 'woocommerce', store: this.config.storeUrl })
+      if (response.ok) return { ok: true, status: response.status }
+      if (response.status === 401 || response.status === 403) return { ok: false, status: response.status, error: `WooCommerce refused the API key (${response.status}). Check the consumer key and secret, and that the key has Read/Write access.${data?.message ? ` ${String(data.message).slice(0, 160)}` : ''}` }
+      if (response.status === 404) return { ok: false, status: 404, error: 'WooCommerce’s API wasn’t found at this address. Check the store URL, that WooCommerce is active, and that Settings → Permalinks isn’t set to “Plain”.' }
+      return { ok: false, status: response.status, error: `WooCommerce answered ${response.status}${data?.message ? `: ${String(data.message).slice(0, 160)}` : ''}` }
+    } catch (error: any) {
+      if (isStoreResponseError(error)) return { ok: false, status: error.status, error: error.message }
       console.error('WooCommerce connection test failed:', error)
-      return false
+      return { ok: false, error: error?.name === 'TimeoutError' ? 'The store took too long to answer.' : `Couldn’t reach the store: ${String(error?.message || error).slice(0, 160)}` }
     }
   }
 }

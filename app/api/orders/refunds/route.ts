@@ -4,6 +4,7 @@ import { createClient } from '@supabase/supabase-js'
 import { resolveShopifyOrderRef, ShopifyActionError } from '@/lib/shopify-order-actions'
 import { serviceFor } from '@/lib/shopify-sync'
 import { loadShopifyRefunds, wooRefunds } from '@/lib/order-refunds'
+import { readStoreJson } from '@/lib/store-response'
 
 export const dynamic = 'force-dynamic'
 
@@ -52,7 +53,9 @@ export async function GET(req: NextRequest) {
     const auth = `Basic ${Buffer.from(`${integ.consumer_key}:${integ.consumer_secret}`).toString('base64')}`
     const res = await fetch(`${integ.store_url}/wp-json/wc/v3/orders/${encodeURIComponent(orderId)}/refunds?per_page=100`, { headers: { Authorization: auth } })
     if (res.status === 404) return NextResponse.json({ refunds: [] })
-    const list = await res.json().catch(() => null)
+    let readErr = ''
+    const list = await readStoreJson(res, { provider: 'woocommerce', store: integ.store_url }).catch((e: any) => { readErr = e?.message || ''; return null })
+    if (readErr) return NextResponse.json({ error: readErr }, { status: 502 })
     if (!res.ok) return NextResponse.json({ error: list?.message || 'Couldn’t read the refunds from WooCommerce' }, { status: 502 })
     return NextResponse.json({ refunds: wooRefunds(list) })
   } catch (e: any) {

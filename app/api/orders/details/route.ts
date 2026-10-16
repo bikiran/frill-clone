@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { resolveShopifyOrderRef, shopifyOrderForUi, ShopifyActionError } from '@/lib/shopify-order-actions'
 import { WooCommerceService } from '@/lib/woocommerce-service'
+import { isStoreResponseError } from '@/lib/store-response'
 
 function admin() {
   return createClient(
@@ -47,7 +48,8 @@ export async function GET(req: NextRequest) {
       if (!integ?.store_url) return NextResponse.json({ error: 'No WooCommerce store connected' }, { status: 404 })
 
       const woo = new WooCommerceService({ storeUrl: integ.store_url, consumerKey: integ.consumer_key, consumerSecret: integ.consumer_secret })
-      order = await woo.getOrderByNumber(orderId)
+      try { order = await woo.getOrderByNumber(orderId) }
+      catch (e: any) { if (isStoreResponseError(e)) return NextResponse.json({ error: e.message, storeProblem: true }, { status: 502 }); throw e }
     }
     if (!order) return NextResponse.json({ error: 'Order not found' }, { status: 404 })
 

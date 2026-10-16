@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { ingestAbandonedCart, normalizeCart } from '@/lib/abandoned-carts'
 import { pluginKeyFor, keyMatches } from '@/lib/company-secrets'
+import { readStoreJson } from '@/lib/store-response'
 
 function admin() {
   return createClient(
@@ -37,7 +38,7 @@ async function enrichItemImages(db: any, companyId: string, items: any[]) {
       try {
         const pr = await fetch(`${integ.store_url}/wp-json/wc/v3/products/${pid}`, { headers: { Authorization: auth } })
         if (!pr.ok) return
-        const p = await pr.json()
+        const p = await readStoreJson(pr, { provider: 'woocommerce', store: integ.store_url })
         const src = p?.images?.[0]?.src || p?.image?.src || null
         if (src) imgById[String(pid)] = src
       } catch { /* skip this product */ }
@@ -48,7 +49,7 @@ async function enrichItemImages(db: any, companyId: string, items: any[]) {
       try {
         const vr = await fetch(`${integ.store_url}/wp-json/wc/v3/products/${it.product_id}/variations/${it.variation_id}`, { headers: { Authorization: auth } })
         if (!vr.ok) return
-        const v = await vr.json()
+        const v = await readStoreJson(vr, { provider: 'woocommerce', store: integ.store_url })
         const src = v?.image?.src || null
         if (src) it.image = { src }
       } catch { /* skip this variation */ }

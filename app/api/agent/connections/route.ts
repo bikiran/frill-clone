@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { agentAccess } from '@/lib/agent/access'
 import { ROLES } from '@/lib/agent/roles'
 import { listMcpTools } from '@/lib/agent/mcp-client'
-import { mergeTools, serverOf, MAX_CONNECTIONS, type ConnTool, type Connection, type ToolMode } from '@/lib/agent/external-tools'
+import { mergeTools, serverOf, MAX_CONNECTIONS, toolSchema, type ConnTool, type Connection, type ToolMode } from '@/lib/agent/external-tools'
 import { checkPublicUrl } from '@/lib/integration-events'
 
 export const dynamic = 'force-dynamic'
@@ -18,7 +18,7 @@ function publicView(c: any) {
   return {
     ...rest,
     has_secret: !!secret,
-    tools: (Array.isArray(c.tools) ? c.tools : []).map((t: ConnTool) => ({ key: t.key, name: t.name, title: t.title || null, description: String(t.description || '').slice(0, 300), read_only: !!t.read_only, mode: t.mode })),
+    tools: (Array.isArray(c.tools) ? c.tools : []).map((t: ConnTool) => ({ key: t.key, name: t.name, title: t.title || null, description: String(t.description || '').slice(0, 300), read_only: !!t.read_only, mode: t.mode, problem: toolSchema(t.input_schema).problem })),
   }
 }
 

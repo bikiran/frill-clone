@@ -4,6 +4,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { resolveShopifyOrderRef, shopifyChangeStatus, ShopifyActionError } from '@/lib/shopify-order-actions'
 import { shopifyDraftAction, shopifyStoreFor, ShopifyCreateError } from '@/lib/shopify-create'
+import { readStoreJson } from '@/lib/store-response'
+import { forgetWooOrders } from '@/lib/woocommerce-service'
 
 function admin() {
   return createClient(
@@ -99,7 +101,8 @@ export async function POST(req: NextRequest) {
         headers: { 'Authorization': `Basic ${Buffer.from(`${integ.consumer_key}:${integ.consumer_secret}`).toString('base64')}`, 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       })
-      const data = await res.json()
+      const data = await readStoreJson(res, { provider: 'woocommerce', store: integ.store_url })
+      forgetWooOrders(integ.store_url)
       result = res.ok ? { ok: true, order: data } : { ok: false, error: data?.message || `Update failed (${res.status})` }
     } catch (e: any) { result = { ok: false, error: e.message } }
 

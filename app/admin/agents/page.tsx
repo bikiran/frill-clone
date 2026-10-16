@@ -11,6 +11,7 @@ import { ResultsStrip } from '@/components/AgentResults'
 import { NeedsYouCard } from '@/components/NeedsYou'
 import ConversationPicker, { cleanPreview, type PickConv } from '@/components/ConversationPicker'
 import { waitlistEntryHref, waitlistPreview } from '@/lib/waitlist-ai'
+import { friendlyRunError } from '@/lib/agent/tool-schema'
 
 // AI Agents (Phase 1 of the Agent Engine). Every agent run is recorded — what
 // it knew, every action it asked for, the permission decision and why, and the
@@ -889,7 +890,8 @@ function RunDetail({ run, steps, approvals, companyId, onDecided }: { run: Run; 
         {steps.filter(s => s.kind !== 'context').map(s => <StepRow key={s.id} s={s} />)}
         {isActive(run) && <li className="ag-step"><span className="ag-step-ic live"><span className="ag-spin dark" /></span><span className="ag-step-t">Working…</span></li>}
       </ol>
-      {run.error && <div className="ag-note err" style={{ marginTop: 12 }}>{I.alert}<span>{run.error}</span></div>}
+      {/* Older runs kept the provider's raw error (JSON and all): show it in words. */}
+      {run.error && <div className="ag-note err" style={{ marginTop: 12 }}>{I.alert}<span>{friendlyRunError(run.error)}</span></div>}
     </div>
   )
 }
@@ -904,6 +906,8 @@ function StepRow({ s }: { s: Step }) {
     if (s.kind === 'finish') return `Finished${s.input?.outcome ? ` — ${OUTCOME[s.input.outcome] || s.input.outcome}` : ''}`
     if (s.kind === 'error') return 'Stopped'
     if (s.kind === 'approval') return s.decision === 'denied' ? 'Team dismissed the suggestion' : ['reply_to_review', 'reply_to_comment'].includes(s.action_key || '') ? 'Team approved and posted it' : s.action_key === 'reschedule_booking' || s.action_key === 'cancel_booking' ? 'Team approved the booking change' : s.action_key === 'add_to_waitlist' ? 'Team approved the waiting-list add' : 'Team approved and sent it'
+    // Outside tools (x_…) have no label of their own; one left out says so.
+    if (String(s.action_key || '').startsWith('x_') && !ACTION_LABEL[s.action_key || '']) return s.status === 'skipped' && /^Left out /.test(s.decision_reason || '') ? 'Outside tool left out' : 'Outside tool'
     return ACTION_LABEL[s.action_key || ''] || s.action_key || s.kind
   }, [s])
   const text = s.kind === 'model' ? String(s.output?.text || '') : ''
@@ -920,6 +924,7 @@ function StepRow({ s }: { s: Step }) {
         </button>
         {s.reason && <p className="ag-step-why">Why: {s.reason}</p>}
         {s.decision_reason && s.kind === 'action' && <p className="ag-step-dec">{s.decision_reason}</p>}
+        {s.kind === 'error' && (s.output?.error || s.decision_reason) && <p className="ag-step-dec">{friendlyRunError(String(s.output?.error || s.decision_reason))}</p>}
         {s.kind === 'action' && SENT_ACTIONS.includes(s.action_key || '') && s.input?.text && <p className="ag-bubble">{String(s.input.text)}</p>}
         {s.action_key === 'add_to_waitlist' && s.entity_type === 'waitlist' && s.entity_id && <p className="ag-step-dec"><a href={waitlistEntryHref(s.entity_id)}>See it on Waitlists</a></p>}
         {open && (

@@ -5,6 +5,7 @@ import { WooCommerceService } from '@/lib/woocommerce-service'
 import { isExternalSendBlocked, DEMO_BLOCK_MESSAGE, logBlockedSend } from '@/lib/demo-guard'
 import { internalHeaders } from '@/lib/internal-call'
 import { shopifyCreateDiscountCode, shopifyStoreFor, ShopifyCreateError } from '@/lib/shopify-create'
+import { readStoreJson } from '@/lib/store-response'
 
 function admin() {
   return createClient(
@@ -96,7 +97,7 @@ export async function POST(req: NextRequest) {
           headers: { 'Authorization': `Basic ${Buffer.from(`${integ.consumer_key}:${integ.consumer_secret}`).toString('base64')}`, 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
         })
-        const data = await res.json()
+        const data = await readStoreJson(res, { provider: 'woocommerce', store: integ.store_url })
         if (!res.ok) return NextResponse.json({ error: data?.message || `Coupon creation failed (${res.status})` }, { status: 502 })
         coupon = data
       } catch (e: any) { return NextResponse.json({ error: e.message }, { status: 500 }) }
