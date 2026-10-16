@@ -72,7 +72,7 @@ export default function OAuthAuthorize() {
     setError(data.error || 'Something went wrong.'); setBusy('')
   }
 
-  const signOut = async () => { await supabase.auth.signOut(); window.location.reload() }
+  const signOut = async () => { await supabase.auth.signOut({ scope: 'local' }); window.location.reload() }
 
   return (
     <main style={{ minHeight: '100vh', background: '#f6f6f8', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '32px 16px', fontFamily: 'inherit' }}>
