@@ -227,6 +227,16 @@ export default function FormBuilder() {
 
       setLoading(false)
 
+      // "Build with Colvy AI" on the Forms list opens the builder with ?ai=1.
+      try {
+        const url = new URL(window.location.href)
+        if (url.searchParams.get('ai') === '1') {
+          url.searchParams.delete('ai')
+          window.history.replaceState(window.history.state, '', url.toString())
+          setAiOpen(true)
+        }
+      } catch {}
+
       // No colour set: take one from the company logo, in the background.
       if (!theme.color) {
         try {
