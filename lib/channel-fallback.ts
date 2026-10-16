@@ -56,6 +56,10 @@ export interface FallbackResult {
   channel: 'live_chat' | 'sms' | 'email' | 'none'
   sent: boolean
   error?: string
+  /** Why this channel was tried first, in plain English (the 'auto' rule). */
+  reason?: string
+  /** The text was queued for the start of sending hours. */
+  deferredUntil?: string
   /** The text was refused because the customer opted out (lib/sms-consent). */
   optedOut?: boolean
 }
@@ -82,10 +86,31 @@ export async function deliverAutomatedMessage(params: {
   // thread — e.g. an order/website/email enquiry — so an order confirmation goes
   // out on the channel the customer is actually known on, not to a billing phone
   // that was never captured on their contact.
-  preferChannel?: 'sms' | 'email'
+  //
+  // 'auto' applies the shared rule (lib/channel-choice): the channel the
+  // customer last used to contact the business; else SMS when they have a
+  // mobile, haven't opted out and the business can text; else email.
+  // `channelSetting` is an automation's own choice ('auto' | 'sms' | 'email').
+  preferChannel?: 'sms' | 'email' | 'auto'
+  channelSetting?: 'auto' | 'sms' | 'email' | null
+  // The thread row the caller already wrote for this message. An email send
+  // stamps it with its subject and Message-ID (so a reply threads back to it).
+  threadMessageId?: string | null
+  // 'auto' only: the first channel for a customer who has never messaged us.
+  // Order messages pass 'email'.
+  newCustomerDefault?: 'sms' | 'email'
+  // Keep automated texts to sending hours (9am–8pm in the business's time zone).
+  // Outside them the message goes by email when there's an address, otherwise
+  // the text is queued for the morning (scheduled_messages, channel 'sms_auto').
+  sendingHours?: boolean
   db?: any
 }): Promise<FallbackResult> {
-  const { companyId, conversationId, text, phone, email, senderName, subject, origin, force, preferChannel, db } = params
+  const { companyId, conversationId, text, phone, email, senderName, subject, origin, force, channelSetting, threadMessageId, newCustomerDefault, sendingHours, db } = params
+  let preferChannel = params.preferChannel
+  let reason: string | undefined
+  // false when the shared rule says this customer can't be texted (landline,
+  // opted out, no SMS number) — then no text is attempted at all.
+  let smsAllowed = true
 
   const onLiveChat = await isCustomerOnLiveChat(conversationId, db)
 
@@ -93,6 +118,39 @@ export async function deliverAutomatedMessage(params: {
   // message they can already see is enough.
   if (onLiveChat && !force) {
     return { onLiveChat: true, channel: 'live_chat', sent: true }
+  }
+
+  if (preferChannel === 'auto' || (channelSetting && channelSetting !== 'auto')) {
+    try {
+      const { resolveChannel } = await import('@/lib/channel-choice-server')
+      const pick = await resolveChannel(db || admin(), { companyId, conversationId, phone, email, setting: channelSetting || null, newCustomerDefault: newCustomerDefault || null }, { reachOnly: true })
+      reason = pick.reason
+      smsAllowed = pick.canSms
+      preferChannel = pick.channel === 'email' ? 'email' : 'sms'
+    } catch { preferChannel = phone ? 'sms' : 'email' }
+  }
+
+  // Sending hours: no automated text at night.
+  let outsideHours = false
+  if (sendingHours && phone && smsAllowed) {
+    try {
+      const { isWithinSendingHours } = await import('@/lib/campaign-sender')
+      const { businessTimezone } = await import('@/lib/agent/ops-actions')
+      const tz = await businessTimezone(db || admin(), companyId)
+      outsideHours = !isWithinSendingHours(new Date(), tz)
+      if (outsideHours) {
+        if (email) { preferChannel = 'email'; reason = 'Outside sending hours (9am–8pm), so it went by email.' }
+        else {
+          const at = nextSendingTime(new Date(), tz, isWithinSendingHours)
+          const { error } = await (db || admin()).from('scheduled_messages').insert({
+            company_id: companyId, conversation_id: conversationId, message: text,
+            scheduled_for: at.toISOString(), channel: 'sms_auto', status: 'pending', type: 'message',
+          })
+          if (!error) return { onLiveChat, channel: 'sms', sent: false, reason: `Outside sending hours: the text is queued for ${at.toISOString()}.`, deferredUntil: at.toISOString() }
+          return { onLiveChat, channel: 'none', sent: false, error: 'Outside sending hours (9am–8pm) and the text couldn’t be queued.' }
+        }
+      }
+    } catch { /* hours unknown: carry on */ }
   }
 
   const sendEmail = async (): Promise<FallbackResult | null> => {
@@ -106,9 +164,10 @@ export async function deliverAutomatedMessage(params: {
           conversationId, to: email, agentName: senderName || undefined,
           subject: subject || 'Update on your order',
           content: text, skipChatMessage: true,
+          ...(threadMessageId ? { threadMessageId } : {}),
         }),
       })
-      if (res.ok) return { onLiveChat, channel: 'email', sent: true }
+      if (res.ok) return { onLiveChat, channel: 'email', sent: true, ...(reason ? { reason } : {}) }
     } catch { /* fall through */ }
     return null
   }
@@ -125,7 +184,7 @@ export async function deliverAutomatedMessage(params: {
   // (an opt-out, a carrier error) is kept for the caller if email can't stand in.
   let smsError: string | null = null
   let optedOut = false
-  if (phone) {
+  if (phone && smsAllowed && !outsideHours) {
     try {
       const res = await fetch(`${origin}/api/telnyx/sms/send`, {
         method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
@@ -137,7 +196,7 @@ export async function deliverAutomatedMessage(params: {
           skipChatMessage: true,
         }),
       })
-      if (res.ok) return { onLiveChat, channel: 'sms', sent: true }
+      if (res.ok) return { onLiveChat, channel: 'sms', sent: true, ...(reason ? { reason } : {}) }
       const d = await res.json().catch(() => ({}))
       optedOut = !!d?.optedOut
       smsError = d?.error || `The text didn’t send (${res.status}).`
@@ -154,4 +213,14 @@ export async function deliverAutomatedMessage(params: {
     error: smsError || 'No reachable channel — the contact has no mobile or email on file',
     ...(optedOut ? { optedOut: true } : {}),
   }
+}
+
+/** The next moment inside sending hours (checked in 10-minute steps, up to a day ahead). */
+export function nextSendingTime(from: Date, tz: string, within: (d: Date, tz: string) => boolean): Date {
+  const t = new Date(Math.ceil(from.getTime() / 600_000) * 600_000)
+  for (let i = 0; i < 24 * 6 + 1; i++) {
+    if (within(t, tz)) return t
+    t.setTime(t.getTime() + 600_000)
+  }
+  return new Date(from.getTime() + 12 * 3600_000)
 }

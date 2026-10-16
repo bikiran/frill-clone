@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { adminDb, superAdmin, safe, countRows, companyNames } from '../_lib/super-admin'
 import { collectIntegrations } from '../_lib/integrations'
+import { emailWebhookSigned } from '@/lib/email-webhook'
 
 export const dynamic = 'force-dynamic'
 
@@ -47,12 +48,17 @@ export async function GET(req: NextRequest) {
   if (agentFailed) issues.push(`${agentFailed} failed agent run${agentFailed === 1 ? '' : 's'}`)
   if (agentStuck) issues.push(`${agentStuck} stuck agent run${agentStuck === 1 ? '' : 's'}`)
   if (broken.length) issues.push(`${broken.length} connection${broken.length === 1 ? '' : 's'} need attention`)
+  // Inbound email still works unsigned (each email is re-fetched from Resend
+  // and the payload ignored), but the secret should be set.
+  const emailSigned = emailWebhookSigned()
+  if (!emailSigned) issues.push('Inbound email webhook isn’t signed: set RESEND_WEBHOOK_SECRET (emails are being re-fetched from Resend instead)')
 
   return NextResponse.json({
     window: '24h',
     jobs: { runs: jobRuns, errors: jobErrors },
     api: { errors: apiErrors, warnings: apiWarns },
     webhooks: { total: hooks, errors: hookErrors },
+    emailWebhook: { signed: emailSigned },
     agents: { runs: agentRuns, failed: agentFailed, stuck: agentStuck, platformPaused: process.env.AGENTS_DISABLED === '1' },
     stripe: { events: stripeEvents },
     connections: { total: integrations.rows.filter(r => r.active).length, broken: broken.length, sample: broken.slice(0, 6).map(b => ({ type: b.type, note: b.note, detail: b.detail, company: b.company_id ? names[b.company_id]?.name || null : null })) },

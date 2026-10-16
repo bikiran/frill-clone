@@ -19,6 +19,7 @@ interface Props {
   toEmail: string
   defaultSubject: string
   fromLabel?: string           // "Roxy Aquarium <aquarium.roxy@gmail.com>"
+  replyTo?: string | null      // where the customer's reply goes (shown as a hint)
   signature?: string | null    // the mailbox's own signature (fallback default)
   agentName?: string
   onSent: () => void
@@ -32,7 +33,7 @@ interface Props {
 }
 
 export default function EmailComposer({
-  conversationId, companyId, toEmail, defaultSubject, fromLabel, signature, agentName, onSent, onAiAssist, keyterms, extraTools, header, bodyHeight,
+  conversationId, companyId, toEmail, defaultSubject, fromLabel, replyTo, signature, agentName, onSent, onAiAssist, keyterms, extraTools, header, bodyHeight,
 }: Props) {
   const [to, setTo] = useState(toEmail)
   const [cc, setCc] = useState('')
@@ -40,6 +41,12 @@ export default function EmailComposer({
   const [bcc, setBcc] = useState('')
   const [showBcc, setShowBcc] = useState(false)
   const [subject, setSubject] = useState(defaultSubject)
+  // Once someone edits the subject (or a saved draft restores one), a new
+  // suggested subject — the thread's latest email changes as messages arrive —
+  // no longer replaces it. Reset per conversation.
+  const subjectEdited = useRef(false)
+  // Declared before the draft restore below, which may mark it edited again.
+  useEffect(() => { subjectEdited.current = false }, [conversationId])
   const [sending, setSending] = useState(false)
   const [err, setErr] = useState('')
 
@@ -93,7 +100,7 @@ export default function EmailComposer({
     let saved: any = null
     try { saved = JSON.parse(localStorage.getItem(draftKey) || 'null') } catch {}
     if (saved) {
-      if (typeof saved.subject === 'string') setSubject(saved.subject)
+      if (typeof saved.subject === 'string') { setSubject(saved.subject); subjectEdited.current = saved.subject !== defaultSubject }
       if (saved.cc) { setCc(saved.cc); setShowCc(true) }
       if (saved.bcc) { setBcc(saved.bcc); setShowBcc(true) }
       if (editorRef.current) editorRef.current.innerHTML = saved.bodyHtml || ''
@@ -217,7 +224,7 @@ export default function EmailComposer({
   const [savingSig, setSavingSig] = useState(false)
 
   useEffect(() => { setTo(toEmail) }, [toEmail])
-  useEffect(() => { setSubject(defaultSubject) }, [defaultSubject])
+  useEffect(() => { if (!subjectEdited.current) setSubject(defaultSubject) }, [defaultSubject])
 
   const loadSigs = async () => {
     if (!companyId) return
@@ -295,9 +302,15 @@ export default function EmailComposer({
   return (
     <div className={header ? 'cmp-card' : undefined} style={header ? { overflow: 'hidden' } : { border: '1px solid var(--border)', borderRadius: 12, background: '#fff', overflow: 'hidden' }}>
       {header}
-      <div style={{ ...row, background: header ? 'transparent' : 'var(--canvas)' }}>
+      <div style={{ ...row, flexWrap: 'wrap', rowGap: 2, background: header ? 'transparent' : 'var(--canvas)' }}>
         <span style={rowLabel}>From</span>
-        <span style={{ ...field, color: 'var(--slate)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fromLabel || 'Your mailbox'}</span>
+        <span style={{ ...field, minWidth: 180, color: 'var(--slate)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fromLabel || 'Your mailbox'}</span>
+        {/* "Where would I get the reply?" — right here. */}
+        <span title={replyTo ? `The customer's reply goes to ${replyTo} and lands in this conversation.` : 'The customer\'s reply lands in this conversation.'}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11.5, color: 'var(--slate)', whiteSpace: 'nowrap', flexShrink: 0, marginLeft: 'auto' }}>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/></svg>
+          Replies come back to this inbox
+        </span>
       </div>
       <div style={row}>
         <span style={rowLabel}>To</span>
@@ -333,7 +346,7 @@ export default function EmailComposer({
       )}
       <div style={row}>
         <span style={rowLabel}>Subject</span>
-        <input value={subject} onChange={e => setSubject(e.target.value)} style={field} placeholder="Subject" />
+        <input value={subject} onChange={e => { subjectEdited.current = true; setSubject(e.target.value) }} style={field} placeholder="Subject" />
       </div>
 
       {/* Signature selector + inline add (Coax-style). */}

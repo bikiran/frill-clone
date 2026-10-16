@@ -6,6 +6,7 @@ import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { SegmentationService } from '@/lib/segmentation-service'
+import { contactMessageHref } from '@/lib/channel-choice'
 import { notifyIntegrations } from '@/lib/integrations-notify'
 import CustomerTimeline from '@/components/CustomerTimeline'
 
@@ -588,7 +589,12 @@ export default function CustomerProfilePage() {
               )}
               {(conversationId || contactId) && (
                 <button type="button" style={ghostBtn}
-                  onClick={() => router.push(conversationId ? `/admin/inbox?conversation=${conversationId}` : `/admin/inbox?contact=${contactId}&channel=sms`)}>
+                  // Opens their conversation on SMS when their mobile may be
+                  // texted, else email (lib/channel-choice) — not whichever
+                  // channel Colvy's last automated message happened to use.
+                  onClick={() => router.push(contactId
+                    ? contactMessageHref({ id: contactId, phone: customer.phone, email: customer.email, unsubscribed_at: (customer as any).unsubscribed_at, is_blocked: (customer as any).is_blocked }, null, conversationId)
+                    : `/admin/inbox?conversation=${conversationId}`)}>
                   <svg width="15" height="15" viewBox="0 0 24 24" {...I}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
                   Message
                 </button>

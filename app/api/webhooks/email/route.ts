@@ -1,4 +1,4 @@
-import { emailWebhookOk } from '@/lib/email-webhook'
+import { emailWebhookTrust } from '@/lib/email-webhook'
 import { NextRequest, NextResponse, after } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { notifyCompany, pushInboundMessage } from '@/lib/notify'
@@ -7,7 +7,7 @@ import { passesRules, sanitizeEmailHtml } from '@/lib/gmail'
 import { logWebhookEvent } from '@/lib/webhook-log'
 import { logEnquiryReopened } from '@/lib/conversation-timeline'
 import { parseInboundAlias } from '@/lib/inbound-alias'
-import { uploadToR2, r2Configured } from '@/lib/r2'
+import { fetchResendReceivedEmail, readReceived, hostResendAttachments as hostResendFiles, findEmailThread, splitQuoted, htmlToPlain, emailPreview, parseMessageIds, idVariants } from '@/lib/inbound-email'
 import { emitInboundEvent } from '@/lib/integration-hooks'
 
 export const dynamic = 'force-dynamic'
@@ -53,78 +53,107 @@ function parseAddress(raw: any): { name: string | null; email: string | null } {
   return { name: null, email: s.trim().toLowerCase() }
 }
 
-// Strip quoted history so the conversation shows just the new reply.
-function stripQuoted(text: string): string {
-  if (!text) return ''
-  const lines = text.split(/\r?\n/)
-  const out: string[] = []
-  for (const line of lines) {
-    if (/^\s*(On .+ wrote:|-{2,}\s*Original Message|_{5,}|From:\s)/i.test(line)) break
-    if (/^\s*>/.test(line)) continue
-    out.push(line)
-  }
-  return out.join('\n').trim() || text.trim()
-}
-
-// Resend inbound webhooks carry only attachment METADATA, not content. To keep a
-// customer's files on the ticket we call Resend's Attachments API for the
-// received email, download each file, and store it on our own R2 → [{url,name,type}].
+// Resend inbound webhooks carry only attachment METADATA, not content; the
+// files are downloaded from the Attachments API and kept on our own R2.
 async function hostResendAttachments(evt: any, companyId: string): Promise<any[]> {
-  try {
-    if (!process.env.RESEND_API_KEY || !r2Configured()) return []
-    const emailId = pick(evt, 'id', 'email_id', 'emailId')
-    if (!emailId) return []
-    // Skip the extra API call when the payload's metadata says there are none.
-    const meta = evt.attachments || evt.Attachments
-    if (Array.isArray(meta) && meta.length === 0) return []
-    const res = await fetch(`https://api.resend.com/emails/receiving/${emailId}/attachments`, {
-      headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}` },
-    })
-    if (!res.ok) return []
-    const j = await res.json().catch(() => ({}))
-    const list = j.data || j.attachments || []
-    const out: any[] = []
-    for (const a of list) {
-      try {
-        if (!a.download_url) continue
-        const dl = await fetch(a.download_url)
-        if (!dl.ok) continue
-        const bytes = Buffer.from(await dl.arrayBuffer())
-        if (!bytes.length || bytes.length > 20 * 1024 * 1024) continue
-        const name = a.filename || 'file'
-        const type = a.content_type || 'application/octet-stream'
-        const safe = String(name).replace(/[^\w.\-]/g, '_')
-        const key = `ticket-attachments/${companyId}/${emailId}-${safe}`
-        const url = await uploadToR2(key, bytes, type)
-        out.push({ url, name, type })
-      } catch { /* skip one bad attachment */ }
-    }
-    return out
-  } catch { return [] }
+  return hostResendFiles(pick(evt, 'email_id', 'id', 'emailId'), companyId, evt?.attachments || evt?.Attachments || null)
 }
 
 export async function POST(req: NextRequest) {
   try {
     const raw = await req.text()
-    // Only the mail provider (see lib/email-webhook.ts).
-    if (!emailWebhookOk(req, raw)) return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
+    // Only the mail provider (see lib/email-webhook.ts). With a secret set the
+    // signature must match; with none set the payload is untrusted (below).
+    const trust = emailWebhookTrust(req, raw)
+    if (trust === 'refused') return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
     let body: any = {}
     try { body = JSON.parse(raw || '{}') } catch { body = {} }
     const db = admin()
 
     // Resend inbound (email.received) nests the message under `data`; other
     // providers post it at the top level. Unwrap so the picks below work for all.
-    const evt = (body?.data && typeof body.data === 'object' && /email|inbound|received/i.test(String(body?.type || ''))) ? body.data : body
+    let evt: any = (body?.data && typeof body.data === 'object' && /email|inbound|received/i.test(String(body?.type || ''))) ? body.data : body
+
+    // ── Unverified payload: trust nothing in it but the email id ─────────────
+    // Anyone can post here when no signing secret is configured. So only the
+    // email_id is taken from the payload; who it's from and to, the subject,
+    // Message-ID, body and files all come from Resend's own copy of the email,
+    // which only exists if Resend really received it. No id, or Resend doesn't
+    // have it → dropped. Other providers' unsigned payloads are refused in
+    // production (they can set EMAIL_WEBHOOK_TOKEN).
+    let prefetched: any = null
+    if (trust === 'unverified') {
+      const claimedId = pick(evt, 'email_id', 'emailId') || (/email\.received/i.test(String(body?.type || '')) ? pick(evt, 'id') : null)
+      const prod = process.env.NODE_ENV === 'production' || process.env.VERCEL_ENV === 'production'
+      if (!claimedId) {
+        if (prod) {
+          logWebhookEvent({ source: 'email', eventType: 'inbound', status: 'rejected', error: 'Unsigned payload without a Resend email id' })
+          return NextResponse.json({ error: 'Unsigned inbound email refused: set EMAIL_WEBHOOK_TOKEN for this provider' }, { status: 401 })
+        }
+      } else {
+        prefetched = await fetchResendReceivedEmail(String(claimedId))
+        if (!prefetched) {
+          logWebhookEvent({ source: 'email', eventType: 'inbound', status: 'rejected', error: 'Unverified payload: email not found on Resend' })
+          return NextResponse.json({ ok: false, reason: 'Unverified webhook and Resend has no such email' })
+        }
+        evt = {
+          email_id: String(prefetched.id || claimedId), from: prefetched.from, to: prefetched.to, cc: prefetched.cc,
+          subject: prefetched.subject, message_id: prefetched.message_id, created_at: prefetched.created_at,
+          attachments: Array.isArray(prefetched.attachments) ? prefetched.attachments : [],
+        }
+        body = { type: 'email.received' }   // the rest of the payload is discarded
+      }
+    }
 
     // ── Extract the essentials across provider shapes ────────────────────────
     const toRaw = pick(evt, 'to', 'To', 'recipient', 'ToFull', 'envelope.to')
     const ccRaw = pick(evt, 'cc', 'Cc', 'CcFull')
     const fromRaw = pick(evt, 'from', 'From', 'sender', 'FromFull', 'envelope.from')
     const subject = pick(evt, 'subject', 'Subject') || '(no subject)'
-    const textBody = pick(evt, 'text', 'TextBody', 'body-plain', 'plain', 'stripped-text') || ''
-    const htmlBody = pick(evt, 'html', 'HtmlBody', 'body-html') || ''
-    const messageId = pick(evt, 'message_id', 'MessageID', 'Message-Id', 'messageId', 'headers.message-id')
-    const inReplyTo = pick(evt, 'in_reply_to', 'In-Reply-To', 'headers.in-reply-to', 'InReplyTo')
+    let textBody = pick(evt, 'text', 'TextBody', 'body-plain', 'plain', 'stripped-text') || ''
+    let htmlBody = pick(evt, 'html', 'HtmlBody', 'body-html') || ''
+    let messageId = pick(evt, 'message_id', 'MessageID', 'Message-Id', 'messageId', 'headers.message-id')
+    let inReplyTo = pick(evt, 'in_reply_to', 'In-Reply-To', 'headers.in-reply-to', 'InReplyTo')
+    let threadIds: string[] = parseMessageIds(inReplyTo, pick(evt, 'references', 'References', 'headers.references'))
+    // When OUR provider received it (Resend's created_at). A sender-written
+    // Date header can say anything, so it isn't used.
+    const serverTime = (v: any) => { const t = v ? Date.parse(String(v)) : NaN; return Number.isFinite(t) && t > Date.parse('2000-01-01') ? new Date(t).toISOString() : null }
+    let receivedAt: string | null = serverTime(pick(evt, 'created_at')) || serverTime(pick(body, 'created_at'))
+
+    // Resend's email.received webhook is METADATA ONLY: no body, no
+    // In-Reply-To/References, no attachment files. Fetch the received email
+    // from the Receiving API (with retries) so the reply isn't stored empty and
+    // can be threaded onto the conversation we sent the original from.
+    const resendEmailId: string | null = pick(evt, 'email_id', 'emailId') || (/email\.received/i.test(String(body?.type || '')) ? pick(evt, 'id') : null)
+    let bodyFetch: 'payload' | 'fetched' | 'unavailable' = (textBody || htmlBody) ? 'payload' : 'unavailable'
+    // DKIM / DMARC result for the sender: only a verified sender may be threaded
+    // onto an existing conversation by subject alone.
+    let auth: 'pass' | 'fail' | 'unknown' = 'unknown'
+
+    // A webhook Resend delivers again (retries, replays) is answered before
+    // anything is fetched. (V389 adds a unique index on this id as a backstop.)
+    if (resendEmailId) {
+      const { data: seen } = await db.from('messages').select('id, conversation_id, content, email_html')
+        .eq('metadata->inbound_email->>resend_email_id', String(resendEmailId)).limit(1)
+      const s0 = seen?.[0]
+      if (s0 && (String(s0.content || '').trim() || s0.email_html)) return NextResponse.json({ ok: true, duplicate: true, conversationId: s0.conversation_id })
+    }
+
+    if (resendEmailId && (prefetched || (!textBody && !htmlBody))) {
+      const full = readReceived(prefetched || await fetchResendReceivedEmail(String(resendEmailId)))
+      if (full) {
+        auth = full.auth
+        textBody = full.text || ''
+        htmlBody = full.html || ''
+        messageId = messageId || full.messageId
+        inReplyTo = inReplyTo || full.inReplyTo
+        threadIds = Array.from(new Set([...threadIds, ...full.threadIds]))
+        receivedAt = receivedAt || serverTime(full.receivedAt)
+        if (!Array.isArray(evt.attachments)) evt.attachments = full.attachments
+        bodyFetch = 'fetched'
+      }
+    }
+    if (inReplyTo && !threadIds.length) threadIds = parseMessageIds(inReplyTo)
 
     const to = parseAddress(Array.isArray(toRaw) ? toRaw[0] : toRaw)
     const from = parseAddress(fromRaw)
@@ -134,7 +163,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, reason: 'Missing from address' })
     }
 
-    const content = stripQuoted(String(textBody)) || String(htmlBody).replace(/<[^>]+>/g, ' ').trim()
+    // What the customer wrote, without the history their mail app quoted below it.
+    const plain = String(textBody || '') || htmlToPlain(String(htmlBody || ''))
+    const split = splitQuoted(plain)
+    const content = split.reply
+    const emailQuoted = split.quoted
 
     // ── Colvy inbound-alias routing (reply.colvy.com) ────────────────────────
     // Check every recipient (To + Cc — a forwarded mail can carry several) for a
@@ -170,6 +203,11 @@ export async function POST(req: NextRequest) {
 
     // Ticket alias → append the customer's reply straight onto the ticket thread.
     if (ticket) {
+      // The same reply delivered twice lands once.
+      const { data: again } = await db.from('ticket_messages').select('id')
+        .eq('ticket_id', ticket.id).eq('direction', 'in').eq('body', content)
+        .gte('created_at', new Date(Date.now() - 24 * 3600_000).toISOString()).limit(1)
+      if (content && again?.length) return NextResponse.json({ ok: true, duplicate: true, routed: 'ticket', ticketId: ticket.id })
       const ticketAtts = await hostResendAttachments(evt, ticket.company_id)
       await db.from('ticket_messages').insert({
         ticket_id: ticket.id, company_id: ticket.company_id, kind: 'reply', direction: 'in',
@@ -189,8 +227,9 @@ export async function POST(req: NextRequest) {
             delivery_channel: 'email', email_from: from.name ? `${from.name} <${from.email}>` : from.email, email_subject: subject,
             email_html: htmlBody ? sanitizeEmailHtml(String(htmlBody)) || null : null,
             email_attachments: ticketAtts.map((a: any) => ({ name: a.name, mime: a.type, url: a.url })),
+            ...(resendEmailId ? { metadata: { inbound_email: { provider: 'resend', resend_email_id: String(resendEmailId), body: bodyFetch, auth } } } : {}),
           })
-          await db.from('conversations').update({ last_message: (content || (ticketAtts.length ? 'Sent an attachment' : '')).slice(0, 200), last_message_at: new Date().toISOString(), is_unread: true, status: 'open' }).eq('id', ticket.conversation_id)
+          await db.from('conversations').update({ last_message: emailPreview(content, ticketAtts.length, subject), last_message_at: new Date().toISOString(), is_unread: true, status: 'open' }).eq('id', ticket.conversation_id)
         } catch {}
       }
       try { await notifyCompany({ db, companyId: ticket.company_id, type: 'ticket', message: `Reply on ${ticket.ticket_number} from ${from.name || from.email}`, actorName: from.name || from.email }) } catch {}
@@ -230,7 +269,8 @@ export async function POST(req: NextRequest) {
     const isForm = channel.provider === 'webform'
     const emailAtts = await hostResendAttachments(evt, companyId as string)
     const emailHtml = htmlBody ? sanitizeEmailHtml(String(htmlBody)) : ''
-    const preview = (content || (emailAtts.length === 1 ? 'Sent an attachment' : emailAtts.length > 1 ? `Sent ${emailAtts.length} attachments` : '')).slice(0, 200)
+    // Never blank: a blank last_message reads "No messages yet" in the list.
+    const preview = emailPreview(content, emailAtts.length, subject)
 
     // ── Find-or-create the contact ───────────────────────────────────────────
     let contact: any = null
@@ -244,14 +284,34 @@ export async function POST(req: NextRequest) {
       contact = created
     }
 
-    // ── Thread into an existing conversation, else create one ────────────────
-    let conv: any = null
-    if (inReplyTo) {
-      const { data: threaded } = await db.from('conversations').select('*')
-        .eq('company_id', companyId).eq('email_message_id', inReplyTo).limit(1)
-      conv = threaded?.[0] || null
+    // ── Already have this email? (provider retries, a re-sent webhook) ───────
+    if (messageId) {
+      const { data: dup } = await db.from('messages').select('id, conversation_id, content, email_html')
+        .eq('company_id', companyId).in('email_message_id', idVariants([String(messageId)])).eq('sender_type', 'visitor').limit(1)
+      const d = dup?.[0]
+      if (d) {
+        // Fill in a body an earlier delivery stored empty; never insert twice.
+        if (!String(d.content || '').trim() && !d.email_html && (content || htmlBody)) {
+          await db.from('messages').update({ content, email_html: emailHtml || null, email_quoted: emailQuoted || null }).eq('id', d.id)
+          await db.from('conversations').update({ last_message: preview }).eq('id', d.conversation_id)
+        }
+        return NextResponse.json({ ok: true, duplicate: true, conversationId: d.conversation_id })
+      }
     }
-    if (!conv && contact?.id) {
+
+    // ── Thread into an existing conversation, else create one ────────────────
+    // In-Reply-To/References → the message we sent (or received) with that id;
+    // else the same subject (ignoring "Re:") on one of this customer's recent
+    // conversations — a reply to an automated "Update on your order #…" lands
+    // on that order's conversation instead of starting an empty new one.
+    let conv: any = null
+    let threadedVia: string | null = null
+    // By Message-ID: only onto this sender's own conversation. By subject: only
+    // when DKIM/DMARC say the sender is who they claim to be.
+    const found = await findEmailThread(db, { companyId: companyId as string, contactId: contact?.id || null, ids: threadIds, subject: auth === 'pass' && /^\s*re\s*:/i.test(subject) ? subject : null })
+    if (found?.conv) { conv = found.conv; threadedVia = found.via }
+    // A sender that failed DKIM and DMARC gets its own conversation, marked unverified.
+    if (!conv && contact?.id && auth !== 'fail') {
       // Fall back to the contact's most recent open email conversation.
       const { data: recent } = await db.from('conversations').select('*')
         .eq('company_id', companyId).eq('contact_id', contact.id).eq('channel', 'email')
@@ -281,7 +341,7 @@ export async function POST(req: NextRequest) {
     await logEnquiryReopened(db, { conversationId: conv.id, companyId, prevStatus: conv.status, actorName: from?.name || from?.email || null, via: 'email' })
 
     // ── Store the message ────────────────────────────────────────────────────
-    await db.from('messages').insert({
+    const msgRow: any = {
       conversation_id: conv.id, company_id: companyId,
       sender_type: 'visitor',
       sender_name: from.name || from.email,
@@ -299,17 +359,34 @@ export async function POST(req: NextRequest) {
         email_to: recipientEmails.join(', ') || to.email || null,
         email_subject: subject,
         email_html: emailHtml || null,
-        email_attachments: emailAtts.map(a => ({ name: a.name, mime: a.type, url: a.url })),
+        email_quoted: emailQuoted || null,
+        email_attachments: emailAtts.map(a => ({ name: a.name, mime: a.type, url: a.url, ...(a.size ? { size: a.size } : {}) })),
       }),
-    })
+      // The Resend id lets the body backfill re-fetch this email later.
+      metadata: { inbound_email: { provider: resendEmailId ? 'resend' : 'webhook', ...(resendEmailId ? { resend_email_id: String(resendEmailId) } : {}), body: bodyFetch, auth, ...(auth === 'fail' ? { unverified: true } : {}), ...(receivedAt ? { received_at: receivedAt } : {}), ...(threadedVia ? { threaded_via: threadedVia } : {}) } },
+    }
+    {
+      const { error: insErr } = await db.from('messages').insert(msgRow)
+      // Stored already (two deliveries at once; V389's unique index caught it).
+      if (insErr && String(insErr.code) === '23505') return NextResponse.json({ ok: true, duplicate: true, conversationId: conv.id })
+      // A database without email_quoted / metadata must still get the email.
+      if (insErr) {
+        console.warn('[email webhook] message insert retry without optional columns', insErr.message)
+        delete msgRow.metadata; delete msgRow.email_quoted
+        await db.from('messages').insert(msgRow)
+      }
+    }
     await emitInboundEvent(db, { companyId, conversationId: conv.id, text: content || preview, channel: 'email', name: from.name || null, email: from.email || null })
 
     // The Support / Reception Agent, if switched on for email — queued for the
     // agent worker. Ticket replies stay with the ticket.
-    if (!/\[TICK-\d+\]/i.test(subject || '')) {
+    // It answers by EMAIL whatever the conversation's own channel (an email can
+    // thread onto an order or SMS conversation), under the email agent settings.
+    // Not for a sender that failed DKIM/DMARC.
+    if (!/\[TICK-\d+\]/i.test(subject || '') && auth !== 'fail') {
       const convId = conv.id
       after(async () => {
-        try { const { startSupportAgentForConversation } = await import('@/lib/agent/inbound'); await startSupportAgentForConversation(db, convId, { debounceMs: 0, run: false }) } catch (e) { console.warn('[agent] email inbound', e) }
+        try { const { startSupportAgentForConversation } = await import('@/lib/agent/inbound'); await startSupportAgentForConversation(db, convId, { debounceMs: 0, run: false, channel: 'email' }) } catch (e) { console.warn('[agent] email inbound', e) }
       })
     }
 

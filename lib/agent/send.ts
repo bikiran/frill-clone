@@ -23,6 +23,8 @@ export async function sendAgentMessage(db: any, opts: {
   approvedBy?: { id: string | null; name: string | null } | null
   edited?: boolean
   agentName?: string | null
+  /** Reply on this channel instead of the conversation's (default: the run's input.channel). */
+  channel?: string | null
 }): Promise<{ ok: boolean; error?: string; channel?: string }> {
   const raw = String(opts.text || '').trim()
   if (!raw) return { ok: false, error: 'Nothing to send.' }
@@ -32,7 +34,16 @@ export async function sendAgentMessage(db: any, opts: {
   ])
   if (!conv) return { ok: false, error: 'Conversation not found.' }
   const meta = { agent_run_id: opts.runId, agent_name: opts.agentName || 'Support Agent', approved_by: opts.approvedBy?.name || null, approved_by_id: opts.approvedBy?.id || null, edited: !!opts.edited }
-  const channel = String(conv.channel || 'chat')
+  // The channel the customer wrote on, recorded on the run: an email threaded
+  // onto an order (chat) conversation is answered by email.
+  let runChannel: string | null = null
+  if (!opts.channel && opts.runId) {
+    try {
+      const { data: run } = await db.from('agent_runs').select('input').eq('id', opts.runId).eq('company_id', opts.companyId).maybeSingle()
+      runChannel = run?.input?.channel ? String(run.input.channel) : null
+    } catch { /* fall back to the conversation's channel */ }
+  }
+  const channel = String((opts.channel || runChannel) === 'email' ? 'email' : (conv.channel || 'chat'))
   const businessName = co?.name || 'Us'
   const text = raw.slice(0, channel === 'email' ? 4000 : 1600)   // an email can say a little more
 
@@ -60,7 +71,7 @@ export async function sendAgentMessage(db: any, opts: {
     conversation_id: conv.id, company_id: opts.companyId, sender_type: 'agent', sender_name: businessName,
     content: text, is_ai: true, is_read: true, delivery_channel: channel, metadata: meta,
     ...(isEmail
-      ? (out.via === 'gmail' ? { gmail_message_id: out.id || null } : { email_message_id: out.id || null })
+      ? { ...(out.via === 'gmail' ? { gmail_message_id: out.id || null, email_message_id: out.messageId || null } : { email_message_id: out.id || null }), email_subject: out.subject || null }
       : { meta_message_id: out.id || null }),
   })
   await db.from('conversations').update({ last_message: text.slice(0, 200), last_message_at: new Date().toISOString() }).eq('id', conv.id)

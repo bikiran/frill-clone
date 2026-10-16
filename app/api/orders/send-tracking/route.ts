@@ -69,7 +69,9 @@ export async function POST(req: NextRequest) {
       senderName: body.senderName || 'Team',
       subject: `Tracking for order ${order.order_number}`,
       origin: req.nextUrl.origin,
-      preferChannel: phone ? 'sms' : 'email',
+      // The shared rule (lib/channel-choice): their last channel; a customer
+      // who hasn't messaged gets order updates by email, else SMS. No texts at night.
+      preferChannel: 'auto', newCustomerDefault: 'email', sendingHours: true,
       db,
     })
 

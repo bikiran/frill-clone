@@ -13,6 +13,7 @@ import { findMatchingContacts, applyRelationship } from '@/lib/contact-matching'
 import { SegmentationService } from '@/lib/segmentation-service'
 import AddressAutocomplete from '@/components/AddressAutocomplete'
 import { confirmDialog } from '@/components/ConfirmDialog'
+import { contactMessageHref } from '@/lib/channel-choice'
 import CustomerTimeline from '@/components/CustomerTimeline'
 
 type Contact = { id: string; name: string | null; email: string | null; phone: string | null; address: string | null; city: string | null; country: string | null; source: string; tags: string[]; subscribed_to_marketing: boolean; created_at: string; total_spend?: number; total_orders?: number; last_order_date?: string | null; rfm_category?: string; __aov?: number; relationship_type?: string; company_name?: string | null; notes?: string | null }
@@ -527,7 +528,8 @@ export default function ContactsPage() {
                         )}
                         {c.phone && (
                           <button type="button" title={`Message ${c.phone} in Colvy`} aria-label="Message"
-                            onClick={() => router.push(`/admin/inbox?contact=${c.id}&channel=sms`)}
+                            // SMS when their mobile may be texted, else email (lib/channel-choice).
+                            onClick={() => router.push(contactMessageHref(c, 'sms'))}
                             style={{ width: 28, height: 28, borderRadius: 7, border: '1px solid var(--border)', background: '#fff', color: 'var(--slate)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
                             onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--coral)' }}
                             onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'var(--slate)' }}>
