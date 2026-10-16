@@ -115,6 +115,17 @@ export default function HomePage() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [showModal, setShowModal] = useState(false)
+  // "Submit an idea" from elsewhere (the profile page) links to ?new=1: open
+  // the new-idea form straight away, then tidy the address bar.
+  useEffect(() => {
+    try {
+      const u = new URL(window.location.href)
+      if (u.searchParams.get('new') !== '1') return
+      setShowModal(true)
+      u.searchParams.delete('new')
+      window.history.replaceState(null, '', u.pathname + (u.search || '') + u.hash)
+    } catch {}
+  }, [])
   const [selectedIdea, setSelectedIdea] = useState<any>(null)
   const [showDetailModal, setShowDetailModal] = useState(false)
   const [topicFilter, setTopicFilter] = useState<string | null>(null)

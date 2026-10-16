@@ -744,7 +744,7 @@ export default function CalendarPage() {
         <div onClick={() => setShowReminders(false)}
           style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 340, padding: 20 }}>
           <div onClick={e => e.stopPropagation()}
-            style={{ width: 460, maxWidth: '95vw', background: '#fff', borderRadius: 18, padding: 24 }}>
+            style={{ width: 460, maxWidth: '95vw', maxHeight: '90dvh', overflowY: 'auto', background: '#fff', borderRadius: 18, padding: '24px 24px 0' }}>
             <h2 style={{ margin: '0 0 4px', fontSize: 18, fontWeight: 800, color: 'var(--ink)' }}>Reminders</h2>
             <p style={{ margin: '0 0 18px', fontSize: 13, color: 'var(--slate)', lineHeight: 1.5 }}>
               Tell the team about events that are due or coming up. Each event is announced once — never repeatedly.
@@ -786,7 +786,7 @@ export default function CalendarPage() {
               </>
             )}
 
-            <div style={{ display: 'flex', gap: 8 }}>
+            <div className="modal-sticky-foot">
               <button onClick={saveReminders} disabled={savingRem}
                 style={{ padding: '10px 20px', borderRadius: 9, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
                 {savingRem ? 'Saving…' : 'Save'}
@@ -803,7 +803,7 @@ export default function CalendarPage() {
         <div onClick={() => setShowTypes(false)}
           style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 340, padding: 20 }}>
           <div onClick={e => e.stopPropagation()}
-            style={{ width: 480, maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto', background: '#fff', borderRadius: 18, padding: 24 }}>
+            style={{ width: 480, maxWidth: '95vw', maxHeight: '90dvh', overflowY: 'auto', background: '#fff', borderRadius: 18, padding: '24px 24px 0' }}>
             <h2 style={{ margin: '0 0 4px', fontSize: 18, fontWeight: 800, color: 'var(--ink)' }}>Event types</h2>
             <p style={{ margin: '0 0 18px', fontSize: 13, color: 'var(--slate)', lineHeight: 1.5 }}>
               Rename the types your team uses, and turn off the ones you don&rsquo;t. Existing events keep their type.
@@ -833,7 +833,7 @@ export default function CalendarPage() {
                 )
               })}
             </div>
-            <div style={{ display: 'flex', gap: 8, marginTop: 20 }}>
+            <div className="modal-sticky-foot">
               <button onClick={saveTypes} disabled={savingTypes}
                 style={{ padding: '10px 20px', borderRadius: 9, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
                 {savingTypes ? 'Saving…' : 'Save'}
@@ -891,7 +891,7 @@ export default function CalendarPage() {
         <div onClick={() => setEditing(null)}
           style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 320, padding: 20 }}>
           <div onClick={e => e.stopPropagation()}
-            style={{ width: 480, maxWidth: '95vw', maxHeight: '88vh', overflowY: 'auto', background: '#fff', borderRadius: 18, padding: 24 }}>
+            style={{ width: 480, maxWidth: '95vw', maxHeight: '90dvh', overflowY: 'auto', background: '#fff', borderRadius: 18, padding: '24px 24px 0' }}>
             {!(editing.event_type === 'task' && !editing.id) && (
               <h2 style={{ margin: '0 0 16px', fontSize: 18, fontWeight: 800, color: 'var(--ink)' }}>
                 {editing.id ? 'Edit event' : 'New event'}
@@ -1076,7 +1076,7 @@ export default function CalendarPage() {
             <textarea style={{ ...I, minHeight: 70, resize: 'vertical', fontFamily: 'inherit' }} value={editing.notes || ''}
               onChange={e => setEditing({ ...editing, notes: e.target.value })} />
 
-            <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
+            <div className="modal-sticky-foot" style={{ marginTop: 6 }}>
               <button onClick={save}
                 style={{ padding: '10px 20px', borderRadius: 9, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>Save</button>
               <button onClick={() => setEditing(null)}

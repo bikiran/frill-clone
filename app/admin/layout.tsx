@@ -16,6 +16,7 @@ import { getActiveCall, subscribeActiveCall } from '@/lib/active-call'
 import AdminBanner from '@/components/AdminBanner'
 import TrialBanner from '@/components/TrialBanner'
 import SetupReturnBar from '@/components/SetupReturnBar'
+import OverlayWatch from '@/components/OverlayWatch'
 import ImpersonationBanner from '@/components/ImpersonationBanner'
 import BackendStatusBanner from '@/components/BackendStatusBanner'
 import { isBackendDown } from '@/lib/net-timeout'
@@ -295,6 +296,19 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [authError, setAuthError] = useState(false)
   // Mirror of `authed` for the backstop timeout to read the latest value.
   const authedRef = useRef<boolean | null>(null)
+  // Keep --admin-banners-h in step with the trial / setup banners above the
+  // page (they come and go, and wrap on phones).
+  // (A callback ref: the layout shows a loading screen before the banners exist.)
+  const [bannersEl, setBannersEl] = useState<HTMLDivElement | null>(null)
+  useEffect(() => {
+    const el = bannersEl
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const root = document.documentElement
+    const set = () => root.style.setProperty('--admin-banners-h', `${Math.round(el.getBoundingClientRect().height)}px`)
+    const ro = new ResizeObserver(set)
+    ro.observe(el); set()
+    return () => { ro.disconnect(); root.style.removeProperty('--admin-banners-h') }
+  }, [bannersEl])
   useEffect(() => { authedRef.current = authed }, [authed])
 
   // Just installed Colvy in Shopify and signed in: take them to the Shopify
@@ -1209,17 +1223,24 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
       {/* Main content — offset by sidebar width on desktop, full width on mobile */}
       <div className="admin-main" style={{ marginLeft: adminCollapsed ? 60 : 220, flex: 1, overflowY: 'auto', minHeight: 'calc(100vh - 56px)', transition: 'margin-left 0.2s ease' }}>
+        {/* The banners' total height is published as --admin-banners-h so
+            full-height screens (the inbox) can fit below them instead of
+            running under the phone's bottom nav. */}
+        <div ref={setBannersEl} className="admin-banners">
         <AdminBanner />
         <TrialBanner company={company} />
         {/* "Back to setup" while someone is part-way through the dashboard's
             setup checklist (it reads the query string, hence Suspense). */}
         <React.Suspense fallback={null}><SetupReturnBar key={pathname} /></React.Suspense>
+        </div>
         <div className="colvy-mobile-pad">
           {children}
         </div>
       </div>
 
       <MobileNav />
+      {/* Hides the bottom nav, AI orb and Feedback tab while a modal or sheet is open. */}
+      <OverlayWatch />
       <FeedbackButton companyId={company?.id} />
       {/* Floating Colvy AI command bar — natural-language actions on any admin
           page. Reads the current page's context (open conversation/contact/

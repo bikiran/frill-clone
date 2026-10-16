@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { authFetch } from '@/lib/auth-fetch'
 import { S, useCompanyUser } from '../../_shared'
@@ -100,8 +99,7 @@ export default function WebFormChannel() {
 
   return (
     <div>
-      <Link href="/admin/crm-settings/channels" style={{ fontSize: 13, color: 'var(--slate)', textDecoration: 'none' }}>← Back to channels</Link>
-      <h1 style={{ ...S.h1, marginTop: 12 }}>Web Form</h1>
+      <h1 style={S.h1}>Web Form</h1>
       <p style={S.sub}>Give any website form a Colvy address. Point your form's notification email here and every submission lands in your inbox for that location. There's nothing else to set up.</p>
 
       {status && status.ready !== null && (

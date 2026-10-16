@@ -479,9 +479,9 @@ export default function TeamPage() {
   const viewersLoaded = members.filter(isViewerRow).length
 
   const memberRow = (m: any) => (
-    <div key={m.id} className="grid grid-cols-12 px-5 py-4 border-b last:border-b-0 items-center" style={{ borderColor: 'var(--border)' }}>
-      <div className="col-span-4 flex items-center gap-3">
-        <div className="w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-bold overflow-hidden" style={{ background: '#6b7280' }}>
+    <div key={m.id} className="tm-row grid grid-cols-12 px-5 py-4 border-b last:border-b-0 items-center" style={{ borderColor: 'var(--border)' }}>
+      <div className="tm-user col-span-4 flex items-center gap-3 min-w-0">
+        <div className="w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-bold overflow-hidden shrink-0" style={{ background: '#6b7280' }}>
           {m.avatar_url ? <img src={m.avatar_url} alt="" className="w-full h-full object-cover" /> : (m.display_name || m.email || '?')[0].toUpperCase()}
         </div>
         <div className="min-w-0">
@@ -503,17 +503,19 @@ export default function TeamPage() {
       </div>
       {/* Mobile — SMS reminders for assigned events go to this number.
           Saved on blur so it doesn't write on every keystroke. */}
-      <div className="col-span-2 pr-3">
+      <div className="tm-phone col-span-2 pr-3">
+        <span className="tm-mlabel">Mobile for SMS</span>
         <input
           defaultValue={m.phone || ''}
           placeholder="+61…"
+          aria-label="Mobile for SMS"
           onBlur={e => updatePhone(m.id, e.target.value)}
           disabled={viewOnly}
           className="text-xs px-2 py-1 rounded border focus:outline-none w-full bg-white"
           style={{ borderColor: 'var(--border)', color: 'var(--ink)' }} />
       </div>
-      <div className="col-span-2">
-        <select value={m.role} onChange={e => updateRole(m.id, e.target.value)} disabled={viewOnly}
+      <div className="tm-role col-span-2">
+        <select value={m.role} aria-label="Role" onChange={e => updateRole(m.id, e.target.value)} disabled={viewOnly}
           className="text-xs px-2 py-1 rounded border focus:outline-none cursor-pointer bg-white"
           style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
           {/* A co-owner shows as Owner; ownership isn't handed out from here. */}
@@ -523,13 +525,13 @@ export default function TeamPage() {
           <option value="viewer">Viewer</option>
         </select>
       </div>
-      <div className="col-span-1">
-        <span className="text-xs px-2 py-1 rounded-full"
+      <div className="tm-status col-span-1">
+        <span className="text-xs px-2 py-1 rounded-full whitespace-nowrap"
           style={{ background: m.status === 'active' ? '#d1fae5' : '#fef3c7', color: m.status === 'active' ? '#059669' : '#ca8a04' }}>
           {m.status === 'active' ? 'Active' : 'Invited'}
         </span>
       </div>
-      <div className="col-span-3 text-right flex items-center justify-end gap-2.5 whitespace-nowrap">
+      <div className={`tm-actions col-span-3 text-right flex items-center justify-end gap-2.5 whitespace-nowrap${viewOnly ? ' tm-actions-none' : ''}`}>
         {viewOnly ? <span className="text-xs" style={{ color: 'var(--slate)' }}>—</span> : <>
         <button onClick={() => openEdit(m)} className="text-xs font-medium cursor-pointer hover:underline" style={{ color: 'var(--slate)' }}>
           Edit
@@ -553,7 +555,30 @@ export default function TeamPage() {
   )
 
   return (
-    <div className="max-w-4xl mx-auto px-6 py-8">
+    <div className="team-page px-6 py-8">
+      <style>{`
+        .tm-mlabel { display: none; }
+        @media (max-width: 767px) {
+          .team-page { padding: 24px 16px !important; }
+          .team-page > .ph-root { margin: -24px -16px 16px !important; }
+          /* Phones: each member is a small card instead of a 760px-wide table row. */
+          .tm-scroll { overflow-x: visible !important; }
+          .tm-card { min-width: 0 !important; }
+          .tm-head { display: none !important; }
+          .tm-row { display: grid !important; grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px 8px; padding: 14px 16px !important; align-items: end !important; }
+          .tm-user { grid-column: 1 / -1; }
+          .tm-phone { padding-right: 0 !important; min-width: 0; }
+          .tm-phone:empty { display: none; }
+          .tm-phone input { font-size: 14px !important; padding: 6px 8px !important; }
+          .tm-mlabel { display: block; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--slate); margin-bottom: 3px; }
+          .tm-role select { font-size: 13px !important; padding: 6px 8px !important; }
+          .tm-status { padding-bottom: 5px; }
+          .tm-actions { grid-column: 1 / -1; justify-content: flex-start !important; gap: 18px !important; padding-top: 2px; }
+          .tm-actions button { font-size: 13px !important; padding: 4px 0; }
+          .tm-actions-none { display: none !important; }
+          .tm-viewers-note { display: block; margin: 2px 0 0 !important; }
+        }
+      `}</style>
       <PageHeader
         title="Team Members"
         subtitle="Manage who can access your workspace"
@@ -626,10 +651,10 @@ export default function TeamPage() {
           squeezing it into a phone width made the header labels and the
           role/status/actions cells overlap. A min width keeps the columns intact
           and lets the card scroll sideways instead. */}
-      <div className="overflow-x-auto">
-      <div className="bg-white rounded-2xl border overflow-hidden min-w-[760px]" style={{ borderColor: 'var(--border)' }}>
+      <div className="tm-scroll overflow-x-auto">
+      <div className="tm-card bg-white rounded-2xl border overflow-hidden min-w-[760px]" style={{ borderColor: 'var(--border)' }}>
         {/* Header */}
-        <div className="grid grid-cols-12 px-5 py-3 border-b text-xs font-semibold uppercase tracking-wider" style={{ borderColor: 'var(--border)', color: 'var(--slate)' }}>
+        <div className="tm-head grid grid-cols-12 px-5 py-3 border-b text-xs font-semibold uppercase tracking-wider" style={{ borderColor: 'var(--border)', color: 'var(--slate)' }}>
           <div className="col-span-4">User</div>
           <div className="col-span-2">Mobile (for SMS)</div>
           <div className="col-span-2">Role</div>
@@ -639,8 +664,8 @@ export default function TeamPage() {
 
         {/* Current admin — column spans mirror the header (4/3/2/1/2) so the
             Owner and Active pills line up under Role and Status. */}
-        <div className="grid grid-cols-12 px-5 py-4 border-b items-center" style={{ borderColor: 'var(--border)' }}>
-          <div className="col-span-4 flex items-center gap-3">
+        <div className="tm-row grid grid-cols-12 px-5 py-4 border-b items-center" style={{ borderColor: 'var(--border)' }}>
+          <div className="tm-user col-span-4 flex items-center gap-3 min-w-0">
             <div className="w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-bold shrink-0" style={{ background: 'var(--coral)' }}>
               {user.email?.[0].toUpperCase()}
             </div>
@@ -649,27 +674,28 @@ export default function TeamPage() {
               <p className="text-xs" style={{ color: 'var(--slate)' }}>You ({myRoleLabel})</p>
             </div>
           </div>
-          <div className="col-span-2" />
-          <div className="col-span-2">
+          <div className="tm-phone col-span-2" />
+          <div className="tm-role col-span-2">
             <span className="text-xs px-2 py-1 rounded-full font-semibold" style={{ background: 'var(--peach)', color: 'var(--coral)' }}>{myRoleLabel}</span>
           </div>
-          <div className="col-span-1">
+          <div className="tm-status col-span-1">
             <span className="text-xs px-2 py-1 rounded-full" style={{ background: '#d1fae5', color: '#059669' }}>Active</span>
           </div>
-          <div className="col-span-3 text-right text-xs" style={{ color: 'var(--slate)' }}>—</div>
+          <div className="tm-actions tm-actions-none col-span-3 text-right text-xs" style={{ color: 'var(--slate)' }}>—</div>
         </div>
 
         {loading ? (
           <SkeletonList rows={5} />
         ) : visibleMembers.length === 0 ? (
-          <div className="p-10 text-center">
-            <div className="text-4xl mb-3">👥</div>
-            <p className="text-sm mb-2 font-medium" style={{ color: 'var(--ink)' }}>No team members yet</p>
-            <p className="text-xs mb-4" style={{ color: 'var(--slate)' }}>Invite colleagues or create users on-the-fly</p>
-            {!viewOnly && <div className="flex gap-2 justify-center">
-              <button onClick={() => setShowCreate(true)} className="text-sm font-medium cursor-pointer hover:opacity-70" style={{ color: 'var(--coral)' }}>+ Create User</button>
-              <span style={{ color: 'var(--slate)' }}>·</span>
-              <button onClick={() => setShowInvite(true)} className="text-sm font-medium cursor-pointer hover:opacity-70" style={{ color: 'var(--coral)' }}>+ Invite Member</button>
+          <div className="px-6 py-10 flex flex-col items-center text-center">
+            <div className="w-12 h-12 rounded-2xl flex items-center justify-center mb-3" style={{ background: 'var(--peach)', color: 'var(--coral)' }}>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            </div>
+            <p className="text-sm mb-1 font-semibold" style={{ color: 'var(--ink)' }}>No team members yet</p>
+            <p className="text-xs mb-4 max-w-xs" style={{ color: 'var(--slate)' }}>Invite colleagues by email, or create a login for them yourself.</p>
+            {!viewOnly && <div className="flex flex-wrap gap-2 justify-center">
+              <button onClick={() => setShowInvite(true)} className="px-4 py-2 rounded-xl text-sm font-semibold text-white cursor-pointer" style={{ background: 'var(--coral)' }}>Invite member</button>
+              <button onClick={() => setShowCreate(true)} className="px-4 py-2 rounded-xl border text-sm font-medium cursor-pointer hover:bg-gray-50" style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>Create user</button>
             </div>}
           </div>
         ) : (
@@ -679,7 +705,7 @@ export default function TeamPage() {
               <>
                 <div className="px-5 py-2.5 border-b text-xs" style={{ borderColor: 'var(--border)', background: '#f8fafc', color: 'var(--slate)' }}>
                   <span className="font-semibold uppercase tracking-wider">Viewers · {viewerTotal.toLocaleString()}</span>
-                  <span className="ml-2">Board visitors and anyone given the Viewer role, newest first</span>
+                  <span className="tm-viewers-note ml-2">Board visitors and anyone given the Viewer role, newest first</span>
                 </div>
                 {listedViewers.map(memberRow)}
                 {viewersLoaded < viewerTotal && (

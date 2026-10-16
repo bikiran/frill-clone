@@ -2,11 +2,9 @@
 
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import { useRouter } from 'next/navigation'
 import { useCompanyUser, S } from '../../_shared'
 
 export default function RealEstateChannelPage() {
-  const router = useRouter()
   const { companyId, loading } = useCompanyUser()
   const [platformReady, setPlatformReady] = useState(true)
   const [authorized, setAuthorized] = useState(false)
@@ -87,7 +85,6 @@ export default function RealEstateChannelPage() {
 
   return (
     <div style={{ maxWidth: 640 }}>
-      <button onClick={() => router.push('/admin/crm-settings/channels')} style={{ ...S.btnGhost, padding: '6px 12px', fontSize: 13, marginBottom: 16 }}>← Channels</button>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
         <div style={{ width: 40, height: 40, borderRadius: 10, background: '#E4002B', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800 }}>RE</div>
