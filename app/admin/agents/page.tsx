@@ -10,6 +10,7 @@ import AgentConnections from '@/components/AgentConnections'
 import { ResultsStrip } from '@/components/AgentResults'
 import { NeedsYouCard } from '@/components/NeedsYou'
 import ConversationPicker, { cleanPreview, type PickConv } from '@/components/ConversationPicker'
+import { waitlistEntryHref } from '@/lib/waitlist-ai'
 
 // AI Agents (Phase 1 of the Agent Engine). Every agent run is recorded — what
 // it knew, every action it asked for, the permission decision and why, and the
@@ -54,13 +55,13 @@ const TRY_ROLES: { key: RoleKey; label: string; sample: string }[] = [
   { key: 'operations', label: 'Operations', sample: '' },
 ]
 // What agents prepare for a person (the waiting list), and what counts as "sent on its own".
-const WAITING_ACTIONS = ['send_message', 'reply_to_review', 'reply_to_comment', 'reschedule_booking', 'cancel_booking', 'send_cart_followup', 'send_order_update', 'send_sales_followup']
+const WAITING_ACTIONS = ['send_message', 'reply_to_review', 'reply_to_comment', 'reschedule_booking', 'cancel_booking', 'add_to_waitlist', 'send_cart_followup', 'send_order_update', 'send_sales_followup']
 const SENT_ACTIONS = ['send_message', 'auto_reply', 'reply_to_review', 'reply_to_comment', 'send_cart_followup', 'send_order_update', 'send_sales_followup']
 
 const ACTION_LABEL: Record<string, string> = {
   get_conversation: 'Read the conversation', get_contact: 'Looked up the customer', ask_knowledge: 'Searched your knowledge',
   check_stock: 'Checked stock', search_orders: 'Searched orders', get_order: 'Looked up an order', search_contacts: 'Searched customers',
-  search_conversations: 'Searched conversations', search_tasks: 'Searched tasks', create_task: 'Create a task',
+  search_conversations: 'Searched conversations', search_tasks: 'Searched tasks', create_task: 'Create a task', add_to_waitlist: 'Add to the waiting list',
   send_message: 'Reply to the customer', escalate_to_human: 'Hand to the team', finish: 'Finished',
   get_business_hours: 'Checked opening hours', find_customer_orders: 'Found the customer’s orders', check_order_status: 'Checked order tracking',
   get_review: 'Read the review', reply_to_review: 'Replied to the review',
@@ -902,7 +903,7 @@ function StepRow({ s }: { s: Step }) {
     if (s.kind === 'model') return 'Thought it through'
     if (s.kind === 'finish') return `Finished${s.input?.outcome ? ` — ${OUTCOME[s.input.outcome] || s.input.outcome}` : ''}`
     if (s.kind === 'error') return 'Stopped'
-    if (s.kind === 'approval') return s.decision === 'denied' ? 'Team dismissed the suggestion' : ['reply_to_review', 'reply_to_comment'].includes(s.action_key || '') ? 'Team approved and posted it' : s.action_key === 'reschedule_booking' || s.action_key === 'cancel_booking' ? 'Team approved the booking change' : 'Team approved and sent it'
+    if (s.kind === 'approval') return s.decision === 'denied' ? 'Team dismissed the suggestion' : ['reply_to_review', 'reply_to_comment'].includes(s.action_key || '') ? 'Team approved and posted it' : s.action_key === 'reschedule_booking' || s.action_key === 'cancel_booking' ? 'Team approved the booking change' : s.action_key === 'add_to_waitlist' ? 'Team approved the waiting-list add' : 'Team approved and sent it'
     return ACTION_LABEL[s.action_key || ''] || s.action_key || s.kind
   }, [s])
   const text = s.kind === 'model' ? String(s.output?.text || '') : ''
@@ -920,6 +921,7 @@ function StepRow({ s }: { s: Step }) {
         {s.reason && <p className="ag-step-why">Why: {s.reason}</p>}
         {s.decision_reason && s.kind === 'action' && <p className="ag-step-dec">{s.decision_reason}</p>}
         {s.kind === 'action' && SENT_ACTIONS.includes(s.action_key || '') && s.input?.text && <p className="ag-bubble">{String(s.input.text)}</p>}
+        {s.action_key === 'add_to_waitlist' && s.entity_type === 'waitlist' && s.entity_id && <p className="ag-step-dec"><a href={waitlistEntryHref(s.entity_id)}>See it on Waitlists</a></p>}
         {open && (
           <div className="ag-more">
             {s.kind === 'model' && text && <p style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{text}</p>}

@@ -16,6 +16,7 @@ const SUPPORT: RoleDef = {
     'Never guess or invent anything — order details, prices, stock, policies, dates. If you can’t confirm it with an action, say you’ll check with the team and escalate.',
     'Only discuss an order with the customer it belongs to. Use find_customer_orders, then check_order_status — never guess an order.',
     'For “where is my order?”: give the status in plain words, the tracking link if there is one, and the delivery estimate if known. Follow the guidance check_order_status gives: if it says escalate or the team should check, do that.',
+    'Back-in-stock requests (“let me know when X is back / comes in”): check_stock first. In stock now: tell them, with the price. Out of stock and one product clearly is what they want (or they picked one of the options you gave them): add_to_waitlist with its productId, then reply that they’re on the waiting list and will get a text the moment it’s back (an email if add_to_waitlist says so) — no task needed. Nothing clearly matches: don’t guess — ask which of the closest products they mean, or create_task for the team with what they asked for and the close matches.',
     'For opening hours, use get_business_hours — it is live from Google Business Profile. Take “today” and “tomorrow” from its dates, never your own reckoning, and follow its guidance (public holidays, several stores).',
     'Escalate when the customer is upset, something looks wrong (late, lost, damaged, refused payment), it needs a decision or money, or you are not sure.',
     'Keep replies short and plain — no markdown, no emojis. Sound the way the business asks below; if it hasn’t said, be warm, like a helpful person at the counter.',
@@ -24,9 +25,10 @@ const SUPPORT: RoleDef = {
     'End every run with finish.',
   ].join('\n'),
   customerFacing: true,
-  actions: ['get_conversation', 'get_contact', 'find_customer_orders', 'check_order_status', 'get_business_hours', 'ask_knowledge', 'check_stock', 'create_task', 'send_message', 'escalate_to_human', 'finish'],
+  actions: ['get_conversation', 'get_contact', 'find_customer_orders', 'check_order_status', 'get_business_hours', 'ask_knowledge', 'check_stock', 'add_to_waitlist', 'create_task', 'send_message', 'escalate_to_human', 'finish'],
   defaultAutonomy: {
     send_message: { autonomy: 'prepare' },                  // the business can let it reply on its own (pilot.ts)
+    add_to_waitlist: { autonomy: 'act_within_limits', limits: { max_per_day: 30 } },   // inside Colvy; the text only goes when it's back
     create_task: { autonomy: 'act_within_limits', limits: { max_per_day: 50 } },
     escalate_to_human: { autonomy: 'autonomous' },
   },
@@ -102,7 +104,7 @@ const SALES: RoleDef = {
   instructions: [
     'You follow up a customer who went quiet. For a cart, start with get_cart. For a quote, payment request or product enquiry, start with get_opportunity, and if it isn’t open any more or they can’t be messaged, don’t send anything — just finish.',
     'Quote or payment request: one short, friendly nudge — what it was for, that it’s still there if they want it, {link} for the pay link if there is one, and an offer to answer questions. Send it with send_sales_followup.',
-    'Product enquiry (lead): check what they asked about in recentConversation. If it helps, check_stock (only mention stock if it confirms it) or ask_knowledge. Then one short, helpful line — e.g. it’s in stock, or the answer to what they wanted to know, or if neither confirms it, an offer to find out — and an easy way to order or ask more. Send it with send_sales_followup.',
+    'Product enquiry (lead): check what they asked about in recentConversation. If it helps, check_stock (only mention stock if it confirms it) or ask_knowledge. Then one short, helpful line — e.g. it’s in stock, or the answer to what they wanted to know, or if neither confirms it, an offer to find out — and an easy way to order or ask more. Send it with send_sales_followup. If they asked to be told when something is back in stock and check_stock shows exactly that product still out of stock, add_to_waitlist with its productId instead, and say in the follow-up that they’re on the waiting list and will get a text when it’s back.',
     'If the cart was bought, dismissed, or they can’t be messaged, don’t send anything — just finish.',
     'Write ONE short message (1–3 sentences): their first name if you have it, what they left in plain words, one helpful line, and {link} for their checkout. The helpful line comes from facts: check_stock if an item might be running low (only say “only a few left” if check_stock shows it), or ask_knowledge for shipping, pickup or guarantees worth knowing.',
     'Never invent urgency, stock or deadlines. Never offer a discount, coupon or free shipping unless the business’s rules below say you may.',
@@ -110,10 +112,11 @@ const SALES: RoleDef = {
     'Sound the way the business asks below. No emojis, no markdown.',
   ].join('\n'),
   customerFacing: true,
-  actions: ['get_cart', 'get_opportunity', 'check_stock', 'ask_knowledge', 'get_conversation', 'send_cart_followup', 'send_sales_followup', 'create_task', 'escalate_to_human', 'finish'],
+  actions: ['get_cart', 'get_opportunity', 'check_stock', 'ask_knowledge', 'get_conversation', 'send_cart_followup', 'send_sales_followup', 'add_to_waitlist', 'create_task', 'escalate_to_human', 'finish'],
   defaultAutonomy: {
     send_cart_followup: { autonomy: 'prepare' },              // the business can let it send on its own
     send_sales_followup: { autonomy: 'prepare' },             // …and quote / lead follow-ups
+    add_to_waitlist: { autonomy: 'act_within_limits', limits: { max_per_day: 20 } },
     create_task: { autonomy: 'act_within_limits', limits: { max_per_day: 20 } },
     escalate_to_human: { autonomy: 'autonomous' },
   },

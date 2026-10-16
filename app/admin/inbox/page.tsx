@@ -34,6 +34,7 @@ import { flagEnabled } from '@/lib/feature-flags'
 import RecordSaleModal from '@/components/RecordSaleModal'
 import Link from 'next/link'
 import AiCallNote from '@/components/AiCallNote'
+import { AiWaitlistNote } from '@/components/AiAddedBadge'
 import CallCard from '@/components/CallCard'
 import LiveCallBanner from '@/components/LiveCallBanner'
 import DraftTasks from '@/components/DraftTasks'
@@ -9141,6 +9142,13 @@ export default function InboxPage() {
                   <div key={msg.id} id={`cmsg-${msg.id}`} data-cmsg="1">
                     {dateDivider}
                     <AiCallNote content={msg.content} metadata={(msg as any).metadata} createdAt={msg.created_at} highlight={(showMsgSearch && msgSearch.trim()) ? msgSearch : searchTerm} />
+                  </div>
+                )
+                // An AI agent or Colvy AI put the customer on a waiting list: say so unmistakably.
+                if (isInternal && (msg as any).metadata?.waitlist_ai) return (
+                  <div key={msg.id} id={`cmsg-${msg.id}`} data-cmsg="1">
+                    {dateDivider}
+                    <AiWaitlistNote content={msg.content} metadata={(msg as any).metadata} createdAt={msg.created_at} companyId={companyId} />
                   </div>
                 )
                 if (isInternal) {

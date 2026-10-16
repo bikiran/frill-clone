@@ -10,6 +10,7 @@ import { sendApprovedCartFollowup } from './sales-actions'
 import { sendApprovedOrderUpdate } from './ops-actions'
 import { sendApprovedSalesFollowup } from './followup-actions'
 import { isExternalKey, runApprovedExternalAction } from './external-tools'
+import { runApprovedWaitlistAction } from './waitlist-actions'
 
 // Suggested replies in a conversation. Only one should ever be waiting: a new
 // customer message makes earlier ones out of date, and so does a reply from the
@@ -155,6 +156,23 @@ export async function decideApproval(db: any, opts: {
       decision_reason: r.ok ? `${who} approved it — ${_preview || ap.action_key.replace(/_/g, ' ')} (${r.detail}).` : `${who} approved it, but it didn’t go through: ${r.error}`,
       status: r.ok ? 'ok' : 'error', input: args, output: r.ok ? { done: r.detail } : { error: r.error },
       entity_type: 'booking', entity_id: args.bookingId || null,
+    })
+    await settleRun(db, run)
+    return r.ok ? { ok: true, status: 'executed' } : { ok: false, error: r.error }
+  }
+
+  // A waiting-list add an agent prepared: approve runs exactly what was asked, re-checked now
+  // (still out of stock, not already waiting, not opted out).
+  if (ap.action_key === 'add_to_waitlist') {
+    const { _preview, ...args } = ap.args || {}
+    const r = await runApprovedWaitlistAction(db, opts.companyId, run, args, opts.user)
+    const detail = r.ok ? (r.summary || 'Added to the waiting list') : ''
+    await db.from('agent_approvals').update({ status: r.ok ? 'executed' : 'failed', result: r.ok ? { done: detail } : { error: r.error } }).eq('id', ap.id)
+    await logStep(db, run, {
+      kind: 'approval', action_key: ap.action_key, decision: 'allowed',
+      decision_reason: r.ok ? `${who} approved it — ${detail}.` : `${who} approved it, but it didn’t go through: ${r.error}`,
+      status: r.ok ? 'ok' : 'error', input: args, output: r.ok ? (r.data ?? { done: detail }) : { error: r.error },
+      entity_type: r.entityType || null, entity_id: r.entityId || null,
     })
     await settleRun(db, run)
     return r.ok ? { ok: true, status: 'executed' } : { ok: false, error: r.error }

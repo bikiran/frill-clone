@@ -11,7 +11,7 @@ import { activityName } from './record'
 const LABEL: Record<string, string> = {
   get_conversation: 'Read the conversation', get_contact: 'Looked up the customer', ask_knowledge: 'Searched your knowledge',
   check_stock: 'Checked stock', find_customer_orders: 'Found the customer’s orders', check_order_status: 'Checked order tracking',
-  get_business_hours: 'Checked opening hours', create_task: 'Created a task', send_message: 'Replied to the customer',
+  get_business_hours: 'Checked opening hours', create_task: 'Created a task', add_to_waitlist: 'Added to the waiting list', send_message: 'Replied to the customer',
   escalate_to_human: 'Handed it to the team', search_orders: 'Searched orders', get_order: 'Looked up an order',
   get_review: 'Read the review', reply_to_review: 'Replied to the review',
   get_comment: 'Read the comment', reply_to_comment: 'Replied to the comment',
@@ -60,6 +60,13 @@ function detailFor(action: string | null, input: any, output: any): string | nul
     case 'get_review': return o.stars != null || o.wrote ? clip(`${o.stars ?? '?'}★ from ${o.reviewer || 'a customer'}: “${o.wrote || ''}”`, 260) : null
     case 'escalate_to_human': return input?.message_for_team ? clip(input.message_for_team) : null
     case 'create_task': return input?.title ? clip(input.title) : null
+    case 'add_to_waitlist':
+      if (o.preview) return clip(o.preview, 220)
+      return o.added ? clip(`${o.item}: they’ll get ${o.notifyBy === 'email' ? 'an email' : 'a text'} when it’s back in stock`, 220)
+        : o.alreadyWaiting ? clip(`Already on the waiting list for ${o.item}`, 220)
+          : o.inStock ? clip(`${o.product?.name || 'It'} is in stock now — not added`, 220)
+            : o.title ? clip([o.title, ...(o.lines || [])].join(' · '), 220)   // Colvy AI's card
+              : input?.product_name || input?.productName ? clip(input.product_name || input.productName) : null
     case 'check_order_status': case 'check_order_tracking': {
       const v = o.assessment?.verdict
       const verdict = v === 'normal' ? 'looks normal' : v === 'needs_attention' ? 'needs a look' : v === 'escalate' ? 'needs a person' : null
@@ -107,7 +114,7 @@ export async function explainRun(db: any, companyId: string, runId: string): Pro
       kind: s.kind,
       action: s.action_key || null,
       label: s.kind === 'approval'
-        ? (s.decision === 'denied' ? 'Dismissed by the team' : String(s.decision_reason || '').includes('edited') ? `Edited and ${['reply_to_review', 'reply_to_comment'].includes(s.action_key) ? 'posted' : 'sent'} by the team` : `Approved and ${['reply_to_review', 'reply_to_comment'].includes(s.action_key) ? 'posted' : 'sent'} by the team`)
+        ? (s.decision === 'denied' ? 'Dismissed by the team' : s.action_key === 'add_to_waitlist' ? 'Approved by the team' : String(s.decision_reason || '').includes('edited') ? `Edited and ${['reply_to_review', 'reply_to_comment'].includes(s.action_key) ? 'posted' : 'sent'} by the team` : `Approved and ${['reply_to_review', 'reply_to_comment'].includes(s.action_key) ? 'posted' : 'sent'} by the team`)
         : s.kind === 'error' ? 'Stopped' : (LABEL[s.action_key] || String(s.action_key || s.kind).replace(/_/g, ' ')),
       decision: sentAlone ? 'sent_alone' : s.decision || null,
       decisionReason: s.decision_reason || null,

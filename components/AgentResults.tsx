@@ -13,7 +13,7 @@ import { GoalsPanel } from '@/components/AgentGoals'
 const EASE = 'cubic-bezier(.22,1,.36,1)'
 type Totals = {
   runs: number; sentOnOwn: number; otherDone: number; approvedAsIs: number; edited: number; dismissed: number; unanswered: number
-  escalated: number; tasks: number; failed: number; failedDeliveries: number; reviewsAnswered: number; commentsAnswered: number
+  escalated: number; tasks: number; waitlisted?: number; failed: number; failedDeliveries: number; reviewsAnswered: number; commentsAnswered: number
   ordersFlagged: number; ordersCaught: number; customersUpdated: number; cartsWon: number; cartsWonValue: number; quotesPaid: number; quotesPaidValue: number
   minutesSaved: number; medianApprovalMinutes: number | null
 }
@@ -266,6 +266,7 @@ export function ResultsView({ companyId }: { companyId: string | null }) {
                 <li><b>{waitText(c.medianApprovalMinutes)}</b> — typical wait for your team to approve a draft</li>
                 <li><b>{c.unanswered}</b> draft{c.unanswered === 1 ? '' : 's'} expired before anyone looked at {c.unanswered === 1 ? 'it' : 'them'}</li>
                 <li><b>{c.failedDeliveries}</b> approved message{c.failedDeliveries === 1 ? '' : 's'} didn’t go out · <b>{c.failed}</b> run{c.failed === 1 ? '' : 's'} went wrong</li>
+                {(c.waitlisted || 0) > 0 && <li><b>{c.waitlisted}</b> customer{c.waitlisted === 1 ? '' : 's'} added to a back-in-stock waiting list (<a className="ar-link" href="/admin/waitlists?filter=ai">see them</a>)</li>}
                 {c.otherDone > 0 && <li><b>{c.otherDone}</b> other change{c.otherDone === 1 ? '' : 's'} made on their own (booking links, outside tools)</li>}
               </ul>
               <p className="ar-foot">Time saved is an estimate: 3 minutes for each reply sent on its own, 2 for each draft you sent as written, 1 for each you edited.</p>

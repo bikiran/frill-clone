@@ -30,7 +30,9 @@ export function SuggestionCard({ s, companyId, onDone, compact }: { s: Suggestio
   const isFollowup = s.action_key === 'send_sales_followup'
   // An outside tool the business connected (MCP): approve or dismiss (nothing to edit).
   const isOutside = s.action_key.startsWith('x_')
-  const fixed = isBooking || isOutside
+  // A customer an agent wants to put on a back-in-stock waiting list: approve or dismiss.
+  const isWaitlist = s.action_key === 'add_to_waitlist'
+  const fixed = isBooking || isOutside || isWaitlist
   const agentName = ({ support: 'Support Agent', reception: 'Reception Agent', reputation: 'Reputation Agent', sales: 'Sales Agent', operations: 'Operations Agent' } as Record<string, string>)[String(s.run?.role_key || '')] || 'An agent'
   const [error, setError] = useState('')
   // The edit box grows with the text (up to most of the screen), so editing
@@ -58,13 +60,15 @@ export function SuggestionCard({ s, companyId, onDone, compact }: { s: Suggestio
       <div className="agsg-head">
         <span className="agsg-orb"><Spark /></span>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <p className="agsg-t">{isOutside ? `${agentName} wants to use an outside tool` : isBooking ? `Reception Agent wants to ${s.action_key === 'cancel_booking' ? 'cancel a booking' : 'move a booking'}` : isComment ? `Reputation Agent drafted ${s.run?.input?.platform === 'instagram' ? 'an Instagram' : 'a Facebook'} reply` : isReview ? 'Reputation Agent drafted a reply' : isCart ? 'Sales Agent wrote a cart follow-up' : isOrder ? 'Operations Agent wrote an order update' : isFollowup ? `Sales Agent wrote a ${s.run?.input?.kind === 'lead' ? 'follow-up to an enquiry' : 'quote follow-up'}` : s.run?.role_key === 'reception' ? 'Reception Agent suggests a reply' : 'Support Agent suggests a reply'}</p>
+          <p className="agsg-t">{isOutside ? `${agentName} wants to use an outside tool` : isWaitlist ? `${agentName} wants to add them to a waiting list` : isBooking ? `Reception Agent wants to ${s.action_key === 'cancel_booking' ? 'cancel a booking' : 'move a booking'}` : isComment ? `Reputation Agent drafted ${s.run?.input?.platform === 'instagram' ? 'an Instagram' : 'a Facebook'} reply` : isReview ? 'Reputation Agent drafted a reply' : isCart ? 'Sales Agent wrote a cart follow-up' : isOrder ? 'Operations Agent wrote an order update' : isFollowup ? `Sales Agent wrote a ${s.run?.input?.kind === 'lead' ? 'follow-up to an enquiry' : 'quote follow-up'}` : s.run?.role_key === 'reception' ? 'Reception Agent suggests a reply' : 'Support Agent suggests a reply'}</p>
           {!compact && s.run?.summary && <p className="agsg-s">{s.run.summary}</p>}
         </div>
         <WhyLink companyId={companyId} runId={s.run_id} className="agsg-why" style={{ textDecoration: 'none' }} />
       </div>
       {isOutside
         ? <p className="agsg-text">{String(s.args?._preview || 'Use an outside tool')}. It runs once, with exactly these details.</p>
+        : isWaitlist
+        ? <p className="agsg-text">{String(s.args?._preview || `Add them to the waiting list for ${s.args?.product_name || 'this product'}`)}. They get one text (or email) when it’s back in stock, and it shows on Waitlists as added by AI.</p>
         : isBooking
         ? <p className="agsg-text">{String(s.args?._preview || (s.action_key === 'cancel_booking' ? 'Cancel this booking' : 'Move this booking'))}. The customer gets the usual booking message{s.action_key === 'cancel_booking' ? ', and your cancellation policy decides any refund' : ''}.</p>
         : editing
@@ -75,7 +79,7 @@ export function SuggestionCard({ s, companyId, onDone, compact }: { s: Suggestio
       {isOrder && <p className="agsg-note">Goes to the customer by SMS, else email, and shows in their conversation.</p>}
       {error && <p className="agsg-err" role="alert">{error}</p>}
       <div className="agsg-actions">
-        <button type="button" className="agsg-send" onClick={() => decide('approve')} disabled={!!busy || (!fixed && !text.trim())}>{busy === 'send' ? (fixed ? 'Approving…' : isReview ? 'Posting…' : 'Sending…') : isOutside ? 'Approve' : isBooking ? (s.action_key === 'cancel_booking' ? 'Approve cancellation' : 'Approve move') : editing ? (isReview ? 'Post edited' : 'Send edited') : (isReview ? 'Post reply' : 'Send')}</button>
+        <button type="button" className="agsg-send" onClick={() => decide('approve')} disabled={!!busy || (!fixed && !text.trim())}>{busy === 'send' ? (fixed ? 'Approving…' : isReview ? 'Posting…' : 'Sending…') : isOutside ? 'Approve' : isWaitlist ? 'Add to waiting list' : isBooking ? (s.action_key === 'cancel_booking' ? 'Approve cancellation' : 'Approve move') : editing ? (isReview ? 'Post edited' : 'Send edited') : (isReview ? 'Post reply' : 'Send')}</button>
         {!editing && !fixed && <button type="button" className="agsg-btn" onClick={() => setEditing(true)} disabled={!!busy}>Edit</button>}
         <button type="button" className="agsg-btn" onClick={() => decide('reject')} disabled={!!busy}>{busy === 'dismiss' ? 'Dismissing…' : 'Dismiss'}</button>
       </div>
@@ -104,7 +108,7 @@ export default function AgentSuggestion({ companyId, conversationId, onChange }:
       if (convRef.current !== conversationId) return
       // At most one suggested reply (the newest — the list is newest first); other kinds as they are.
       let replyShown = false
-      const next: Suggestion[] = (d.approvals || []).filter((a: Suggestion) => ['send_message', 'reschedule_booking', 'cancel_booking', 'send_cart_followup', 'send_order_update', 'send_sales_followup'].includes(a.action_key) || a.action_key.startsWith('x_'))
+      const next: Suggestion[] = (d.approvals || []).filter((a: Suggestion) => ['send_message', 'reschedule_booking', 'cancel_booking', 'add_to_waitlist', 'send_cart_followup', 'send_order_update', 'send_sales_followup'].includes(a.action_key) || a.action_key.startsWith('x_'))
         .filter((a: Suggestion) => !['send_message', 'send_sales_followup'].includes(a.action_key) || (!replyShown && (replyShown = true)))
       const ids = next.map(a => a.id).join(',')
       if (ids === shownRef.current) return   // nothing new: leave the card alone
