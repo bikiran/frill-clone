@@ -9,6 +9,7 @@
 
 import { sanitizeEmailHtml } from '@/lib/gmail'
 import { companyAlias } from '@/lib/inbound-alias'
+import { scheduleMessageThumbs } from '@/lib/image-thumb'
 import { fetchResendReceivedEmail, readReceived, hostResendAttachments, findEmailThread, splitQuoted, htmlToPlain, emailPreview, idVariants, type ReceivedEmail } from '@/lib/inbound-email'
 
 export type BackfillResult = {
@@ -158,10 +159,11 @@ export async function backfillEmptyEmailBodies(db: any, o: {
       const hasFiles = Array.isArray(m.email_attachments) && m.email_attachments.length
       if (!hasFiles && full.attachments.length) {
         const files = await hostResendAttachments(emailId, m.company_id, full.attachments, f)
-        if (files.length) patch.email_attachments = files.map(a => ({ name: a.name, mime: a.type, url: a.url, ...(a.size ? { size: a.size } : {}), ...(a.thumbUrl ? { thumbUrl: a.thumbUrl } : {}) }))
+        if (files.length) patch.email_attachments = files.map(a => ({ name: a.name, mime: a.type, url: a.url, ...(a.size ? { size: a.size } : {}) }))
       }
       const { error: upErr } = await db.from('messages').update(patch).eq('id', m.id)
       if (upErr) { delete patch.email_quoted; delete patch.metadata; await db.from('messages').update(patch).eq('id', m.id) }
+      if (patch.email_attachments) scheduleMessageThumbs(db, m.id, patch.email_attachments, { field: 'email_attachments', prefixes: [`/ticket-attachments/${m.company_id}/`] })
       const preview = emailPreview(split.reply, (patch.email_attachments || m.email_attachments || []).length, m.email_subject)
 
       // Optionally put it with the conversation it replies to (e.g. the order

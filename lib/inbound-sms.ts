@@ -137,7 +137,8 @@ export async function ingestInboundSms(params: {
     telnyx_message_id: params.providerMessageId || null,
   }).select('id').maybeSingle()
   // Small copies of any photos, for the inbox tiles (after the response).
-  scheduleMessageThumbs(db, insertedMsg?.id, media)
+  // Media was re-hosted into this company's chat folder; nothing else is fetched.
+  scheduleMessageThumbs(db, insertedMsg?.id, media, { prefixes: [`/chat-attachments/${companyId}/`] })
   await emitInboundEvent(db, { companyId, conversationId: conv.id, text, channel: 'sms', phone: from, messageId: insertedMsg?.id || null })
   // The customer is texting in, so the thread continues by text: texting goes
   // on (upload links and the like are texted), replacing a "continue by text"

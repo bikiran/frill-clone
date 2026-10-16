@@ -67,21 +67,28 @@ export async function POST(req: NextRequest) {
     if (!access.ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
 
     const atts: any[] = Array.isArray(msg.attachments) ? msg.attachments : []
-    let changed = false
-    const next: any[] = []
+    // Converted copies, keyed by the original URL.
+    const converted = new Map<string, { url: string; type: string; original_url: string }>()
     for (const a of atts) {
-      if (!isOldPhoneVideo({ ...a, kind: a?.kind || 'video' }) || !a?.url) { next.push(a); continue }
+      if (!isOldPhoneVideo({ ...a, kind: a?.kind || 'video' }) || !a?.url || converted.has(String(a.url))) continue
       const src = await readStored(db, String(a.url))
-      if (!src || src.length > MAX_BYTES) { next.push(a); continue }
+      if (!src || src.length > MAX_BYTES) continue
       const mp4 = await toWebMp4(src, 40_000)
-      if (!mp4) { next.push(a); continue }
+      if (!mp4) continue
       const base = (String(a.url).split(/[?#]/)[0].split('/').pop() || messageId).replace(/\.[^.]+$/, '')
       const url = await storeMp4(db, `${companyId}/mms/${base}.mp4`, mp4)
-      if (!url) { next.push(a); continue }
-      next.push({ ...a, url, type: 'video/mp4', original_url: a.url })
-      changed = true
+      if (!url) continue
+      converted.set(String(a.url), { url, type: 'video/mp4', original_url: String(a.url) })
     }
-    if (!changed) return NextResponse.json({ attachments: atts, converted: false })
+    if (!converted.size) return NextResponse.json({ attachments: atts, converted: false })
+    // Conversion takes a while: re-read the row and merge into what's there now,
+    // so anything written meanwhile (a photo's thumbUrl, another edit) is kept.
+    const { data: fresh } = await db.from('messages').select('attachments').eq('id', messageId).maybeSingle()
+    const cur: any[] = Array.isArray(fresh?.attachments) ? fresh.attachments : atts
+    const next = cur.map(a => {
+      const c = a?.url ? converted.get(String(a.url)) : undefined
+      return c ? { ...a, ...c } : a
+    })
     await db.from('messages').update({ attachments: next }).eq('id', messageId)
     return NextResponse.json({ attachments: next, converted: true })
   } catch (e: any) {

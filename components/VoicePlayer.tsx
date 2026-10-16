@@ -24,11 +24,13 @@ function resample(fine: number[], n: number): number[] {
 }
 const fmt = (s: number) => { if (!isFinite(s) || s < 0) s = 0; const m = Math.floor(s / 60), x = Math.floor(s % 60); return `${m}:${String(x).padStart(2, '0')}` }
 
-export default function VoicePlayer({ src, name, durationSec, bare, onPlayStart, style }: {
+export default function VoicePlayer({ src, name, durationSec, lazy, bare, onPlayStart, style }: {
   src: string
   name?: string
-  /** Known length, shown before the file's metadata loads. */
+  /** The recording's own length, if known — shown before anything loads. */
   durationSec?: number
+  /** Read nothing until Play (no metadata request up front). */
+  lazy?: boolean
   /** No box of its own — for use inside a card that already has one. */
   bare?: boolean
   onPlayStart?: () => void
@@ -60,15 +62,17 @@ export default function VoicePlayer({ src, name, durationSec, bare, onPlayStart,
   // recording at once the moment it opened.
   useEffect(() => {
     let live = true
+    // Unmounting (or a new src) cancels this player's queued waveform work.
+    const gone = new AbortController()
     setFine(fallbackPeaks(src, FINE))
-    const load = () => { loadPeaks(src, FINE).then(p => { if (live) setFine(p) }) }
+    const load = () => { loadPeaks(src, FINE, gone.signal).then(p => { if (live) setFine(p) }) }
     const el = waveRef.current
-    if (!el || typeof IntersectionObserver === 'undefined') { load(); return () => { live = false } }
+    if (!el || typeof IntersectionObserver === 'undefined') { load(); return () => { live = false; gone.abort() } }
     const io = new IntersectionObserver(entries => {
       if (entries.some(e => e.isIntersecting)) { io.disconnect(); load() }
     }, { rootMargin: '300px 0px' })
     io.observe(el)
-    return () => { live = false; io.disconnect() }
+    return () => { live = false; io.disconnect(); gone.abort() }
   }, [src])
 
   useEffect(() => {
@@ -94,7 +98,10 @@ export default function VoicePlayer({ src, name, durationSec, bare, onPlayStart,
   const seekAt = (clientX: number) => {
     const a = ref.current, box = waveRef.current?.getBoundingClientRect()
     if (!a || !box || !dur) return
-    const t = Math.min(1, Math.max(0, (clientX - box.left) / box.width)) * dur
+    // Never past the end of what's actually loaded (a stored length can be a
+    // little longer than the file).
+    const real = isFinite(a.duration) && a.duration > 0 ? a.duration : dur
+    const t = Math.min(1, Math.max(0, (clientX - box.left) / box.width)) * Math.min(dur, real)
     a.currentTime = t; setCur(t)
     if (!started) setStarted(true)
   }
@@ -104,7 +111,7 @@ export default function VoicePlayer({ src, name, durationSec, bare, onPlayStart,
   }
   const onKey = (e: React.KeyboardEvent) => {
     const a = ref.current; if (!a || !dur) return
-    if (e.key === 'ArrowRight') { e.preventDefault(); a.currentTime = Math.min(dur, a.currentTime + 5) }
+    if (e.key === 'ArrowRight') { e.preventDefault(); a.currentTime = Math.min(isFinite(a.duration) && a.duration > 0 ? a.duration : dur, a.currentTime + 5) }
     else if (e.key === 'ArrowLeft') { e.preventDefault(); a.currentTime = Math.max(0, a.currentTime - 5) }
   }
 
@@ -112,8 +119,8 @@ export default function VoicePlayer({ src, name, durationSec, bare, onPlayStart,
   const peaks = resample(fine, bars)
   return (
     <div className={`vp${bare ? ' vp-bare' : ''}`} style={style}>
-      {/* With a known length there's nothing to read up front: load on Play. */}
-      <audio ref={ref} src={src} preload={durationSec ? 'none' : 'metadata'} data-inline="" data-name={name || undefined}
+      {/* Lazy players (or ones whose length we already know) read nothing until Play. */}
+      <audio ref={ref} src={src} preload={lazy || durationSec ? 'none' : 'metadata'} data-inline="" data-name={name || undefined}
         onLoadedMetadata={e => { if (isFinite(e.currentTarget.duration)) setDur(e.currentTarget.duration) }}
         onDurationChange={e => { if (isFinite(e.currentTarget.duration)) setDur(e.currentTarget.duration) }}
         onTimeUpdate={e => { setCur(e.currentTarget.currentTime) }}
@@ -147,7 +154,7 @@ export default function VoicePlayer({ src, name, durationSec, bare, onPlayStart,
       {started && !failed && (
         <button type="button" className="vp-rate" onClick={cycleRate} title="Playback speed" aria-label={`Playback speed ${rate}×`}>{rate}×</button>
       )}
-      {!failed && <span className="vp-time">{started ? `${fmt(cur)} / ${fmt(dur)}` : fmt(dur)}</span>}
+      {!failed && (started || dur > 0) && <span className="vp-time">{started ? `${fmt(cur)} / ${fmt(dur)}` : fmt(dur)}</span>}
       <style>{CSS}</style>
     </div>
   )

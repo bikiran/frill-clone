@@ -91,7 +91,7 @@ export async function POST(req: NextRequest) {
         attachments: uploadAtts,
       }).select('id').maybeSingle()
       // A small copy of a photo for the inbox tiles (after the response).
-      scheduleMessageThumbs(db, uploadMsg?.id, uploadAtts)
+      scheduleMessageThumbs(db, uploadMsg?.id, uploadAtts, { prefixes: [`/media-requests/${token}/`, `/media-requests/${request.company_id}/${token}/`] })
       await db.from('conversations').update({ last_message: 'Customer uploaded a file', last_message_at: new Date().toISOString(), is_unread: true }).eq('id', request.conversation_id)
     }
     // Mark fulfilled

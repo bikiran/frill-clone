@@ -93,6 +93,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true })
     }
 
+    // The recording's own length (V170 column), so players can show it before
+    // loading the file. Its own write: a missing column must never cost the URL.
+    const recDur = parseInt(get('RecordingDuration') || '0', 10)
+    if (recDur > 0) { try { await db.from('calls').update({ recording_duration: recDur }).eq('id', rowId) } catch {} }
+
     if (kind === 'voicemail') {
       await db.from('calls').update({ recording_url: publicUrl, status: 'voicemail', is_voicemail: true, ended_at: new Date().toISOString() }).eq('id', rowId)
       try { await setCallPreview(db as any, conversationId, '📞 Voicemail') } catch {}

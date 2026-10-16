@@ -59,7 +59,15 @@ export function withPublicUrls<T extends { url?: string; thumbUrl?: string }>(a:
 // an inbox left open all day climbed past a gigabyte. Tiles ask Next's image
 // optimiser (next.config `images.remotePatterns`) for a copy at the size shown;
 // the lightbox and downloads keep the original.
-const SIZED_HOSTS = [/\.supabase\.co$/i, /\.colvy\.com$/i]   // keep in step with next.config images.remotePatterns
+// Our own storage only — keep in step with next.config images.remotePatterns.
+const hostOf = (url: string | undefined, fallback: string) => { try { return new URL(url || '').hostname } catch { return fallback } }
+function sizedSources(): { host: string; storagePath: boolean }[] {
+  return [
+    { host: hostOf(process.env.NEXT_PUBLIC_SUPABASE_URL, 'mtfhctgdayeqrguodksv.supabase.co'), storagePath: true },
+    { host: storageHost() || 'api.colvy.com', storagePath: true },
+    { host: hostOf(process.env.NEXT_PUBLIC_R2_PUBLIC_URL, 'media.colvy.com'), storagePath: false },
+  ]
+}
 const SIZED_WIDTHS = [64, 96, 128, 256, 384, 640, 750, 828, 1080]  // default imageSizes + deviceSizes
 
 /**
@@ -73,7 +81,10 @@ export function sizedImageUrl(url: string | null | undefined, width: number): st
   if (!full) return full
   try {
     const u = new URL(full)
-    if (u.protocol !== 'https:' || !SIZED_HOSTS.some(re => re.test(u.hostname))) return full
+    const host = u.hostname.toLowerCase()
+    const src = sizedSources().find(x => x.host.toLowerCase() === host)
+    if (u.protocol !== 'https:' || (u.port && u.port !== '443') || !src) return full
+    if (src.storagePath && !u.pathname.startsWith('/storage/v1/object/public/')) return full
     if (/\.(svg|gif)$/i.test(u.pathname)) return full
     const want = Math.ceil(width * 2)
     const w = SIZED_WIDTHS.find(x => x >= want) || SIZED_WIDTHS[SIZED_WIDTHS.length - 1]

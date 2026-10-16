@@ -106,7 +106,7 @@ export async function POST(req: NextRequest) {
     }
     // Small copies of uploaded photos for the inbox tiles (after the response).
     // Visitor-supplied URLs, so only files on our own storage are fetched.
-    scheduleMessageThumbs(db, message?.id, attachments)
+    scheduleMessageThumbs(db, message?.id, attachments, { prefixes: [`/chat-attachments/${companyId}/${conversationId}/`] })
 
     await db.from('conversations').update({
       last_message: (content || '📎 Attachment').slice(0, 200),
