@@ -41,7 +41,26 @@ export type FormListItem = {
   [key: string]: unknown
 }
 
-const time = (v: unknown) => (typeof v === 'string' && v ? Date.parse(v) : NaN)
+/**
+ * A database timestamp as epoch ms. forms.created_at / updated_at are
+ * TIMESTAMP (no time zone) columns, so they come back without an offset
+ * ("2026-10-16 01:00:00"); those are UTC, not the viewer's local time (same rule
+ * as lib/time-utils.ts). Short "+00" / "+1000" offsets are accepted too.
+ */
+export function parseDbTime(v: unknown): number {
+  if (typeof v !== 'string' || !v.trim()) return NaN
+  let s = v.trim()
+  const m = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?)(.*)$/.exec(s)
+  if (m) {
+    let tz = m[3].trim()
+    if (!tz) tz = 'Z'
+    else if (/^[+-]\d{2}$/.test(tz)) tz += ':00'
+    else if (/^[+-]\d{4}$/.test(tz)) tz = `${tz.slice(0, 3)}:${tz.slice(3)}`
+    s = `${m[1]}T${m[2]}${tz}`
+  }
+  return Date.parse(s)
+}
+const time = parseDbTime
 
 export function questionsOf(f: { questions?: unknown } | null | undefined): any[] {
   return f && Array.isArray(f.questions) ? f.questions : []
@@ -61,9 +80,45 @@ export function displayTitle(f: { title?: unknown }): string {
   return isUntitled(f) ? 'Untitled form' : String(f.title).trim()
 }
 
-/** A draft nobody has started on: not live, no questions, and known to have no responses. */
+// What a new form gets (createForm here, column defaults, the builder's first save).
+export const DEFAULT_WELCOME = 'Welcome! This will only take a minute.'
+export const DEFAULT_THANK_YOU = 'Thanks for completing this form!'
+const DEFAULT_THEME_KEYS = new Set(['color', 'background'])
+
+/** Anything set up beyond a brand-new form's defaults: messages, end actions, theme. */
+export function hasSetup(f: Record<string, unknown>): boolean {
+  const text = (v: unknown, def: string) => typeof v === 'string' && v.trim() !== '' && v.trim() !== def
+  if (text(f.welcome_message, DEFAULT_WELCOME) || text(f.thank_you_message, DEFAULT_THANK_YOU)) return true
+  if (Array.isArray(f.end_actions) && f.end_actions.length) return true
+  const t = f.theme
+  if (t && typeof t === 'object' && !Array.isArray(t)) {
+    const theme = t as Record<string, unknown>
+    if (typeof theme.color === 'string' && theme.color.toLowerCase() !== DEFAULT_THEME_COLOR) return true
+    if (typeof theme.background === 'string' && theme.background.toLowerCase() !== '#ffffff') return true
+    // welcome settings, Logic variables, list mode or anything else stored there
+    for (const k of Object.keys(theme)) if (!DEFAULT_THEME_KEYS.has(k) && theme[k] !== undefined && theme[k] !== null) return true
+  }
+  return false
+}
+
+/**
+ * A draft nobody has started on: untitled, not live, no questions, nothing set
+ * up beyond the defaults, and known to have no responses. Only these are
+ * offered for clean-up, so a named or set-up draft is never swept away.
+ */
 export function isEmptyDraft(f: FormListItem): boolean {
-  return !f.is_published && questionCount(f) === 0 && f.response_count === 0
+  return !f.is_published && isUntitled(f) && questionCount(f) === 0 && f.response_count === 0 && !hasSetup(f)
+}
+
+/** The clean-up confirm's list: up to `max` drafts by age, then "and N more". */
+export function cleanupList(forms: FormListItem[], now = Date.now(), max = 5): string {
+  const empty = sortForms(forms.filter(isEmptyDraft), 'created')
+  const lines = empty.slice(0, max).map(f => {
+    const when = relativeTime(f.created_at, now)
+    return `• ${displayTitle(f)}${when ? `, created ${when}` : ''}`
+  })
+  if (empty.length > max) lines.push(`and ${empty.length - max} more`)
+  return lines.join('\n')
 }
 
 export function emptyDraftIds(forms: FormListItem[]): string[] {
@@ -179,8 +234,21 @@ export function readView(get: () => string | null): FormsView {
 
 /** The moment "new" is judged from: the stored last visit, or null on a first visit (nothing is new). */
 export function resolveSeenAt(stored: string | null | undefined): string | null {
-  const t = time(stored)
+  const t = typeof stored === 'string' && stored ? Date.parse(stored) : NaN
   return Number.isFinite(t) ? new Date(t).toISOString() : null
+}
+
+/**
+ * Which "last visit" this page view judges "new" from. The first view in a
+ * browser session takes the stored last visit (localStorage) and pins it in
+ * sessionStorage, so going into a form and back keeps the same badges for the
+ * rest of the session. `pin` is what to put in sessionStorage ('' = first
+ * visit, nothing new), or null when it is already pinned.
+ */
+export function pickSeenAt(session: string | null, stored: string | null): { since: string | null; pin: string | null } {
+  if (session !== null) return { since: resolveSeenAt(session), pin: null }
+  const since = resolveSeenAt(stored)
+  return { since, pin: since ?? '' }
 }
 
 /** Response rows ({ form_id }) since the last visit, counted per form. */

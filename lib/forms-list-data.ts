@@ -3,7 +3,7 @@
 // fake. Everything goes through RLS as the signed-in member: forms and
 // form_responses are readable by the workspace's own team only.
 
-import { countByForm, embeddedCount, mapLimit, questionCount, type FormListItem } from './forms-list'
+import { countByForm, embeddedCount, isEmptyDraft, mapLimit, type FormListItem } from './forms-list'
 
 export type DbLike = { from(table: string): any }
 
@@ -34,54 +34,69 @@ export async function loadForms(db: DbLike, companyId: string): Promise<FormList
   const { data, error } = await db.from('forms').select('*').eq('company_id', companyId).order('created_at', { ascending: false })
   if (error) throw new Error(error.message || 'Could not load forms')
   const list: any[] = Array.isArray(data) ? data : []
-  const counts = await mapLimit(list, 6, async f => {
-    try {
-      const { count, error: e } = await db.from('form_responses').select('id', { count: 'exact', head: true }).eq('form_id', f.id)
-      return e || typeof count !== 'number' ? null : count
-    } catch { return null }
-  })
+  const counts = await mapLimit(list, 6, f => exactCount(db, f.id))
   return list.map((f, i) => ({ ...f, response_count: counts[i] }))
 }
 
 /**
  * Responses created after `since`, counted per form. At most 1000 rows per
  * request; a form whose count may have been cut short is listed in `more`.
+ * `ok` is false if any request failed (the page then keeps the old last visit).
  */
-export async function countNewSince(db: DbLike, formIds: string[], since: string): Promise<{ counts: Record<string, number>; more: Set<string> }> {
+export async function countNewSince(db: DbLike, formIds: string[], since: string): Promise<{ counts: Record<string, number>; more: Set<string>; ok: boolean }> {
   const counts: Record<string, number> = {}
   const more = new Set<string>()
+  let ok = true
   await Promise.all(chunks(formIds, ID_CHUNK).map(async ids => {
     try {
       const { data, error } = await db.from('form_responses').select('form_id').in('form_id', ids).gt('created_at', since).limit(NEW_LIMIT)
-      if (error || !Array.isArray(data)) return
+      if (error || !Array.isArray(data)) { ok = false; return }
       const c = countByForm(data)
       Object.assign(counts, c)
       if (data.length >= NEW_LIMIT) for (const id of Object.keys(c)) more.add(id)
-    } catch { /* "new" is a nicety; leave it out */ }
+    } catch { ok = false /* "new" is a nicety; leave it out */ }
   }))
-  return { counts, more }
+  return { counts, more, ok }
 }
+
+/** Exact response count for one form, or null when it can't be counted. */
+async function exactCount(db: DbLike, formId: string): Promise<number | null> {
+  try {
+    const { count, error } = await db.from('form_responses').select('id', { count: 'exact', head: true }).eq('form_id', formId)
+    return error || typeof count !== 'number' ? null : count
+  } catch { return null }
+}
+
+export const RECHECK_COLUMNS = 'id, title, questions, is_published, theme, welcome_message, thank_you_message, end_actions, updated_at'
 
 /**
  * Deletes the given drafts, but only those that are still empty when checked
- * again here: not live, no questions, no responses. Returns the ids actually
- * deleted (from the delete itself, so a row RLS kept is never reported gone).
+ * again here (isEmptyDraft on a fresh read plus an exact response count). Each
+ * delete also requires the row to be unchanged since that read: still a draft,
+ * still no questions, same updated_at (every builder save and rename bumps it).
+ * Returns the ids actually deleted, taken from the delete itself, so a row RLS
+ * kept, or one edited meanwhile, is never reported gone.
  */
 export async function deleteEmptyDrafts(db: DbLike, ids: string[]): Promise<{ deleted: string[]; error?: string }> {
   if (!ids.length) return { deleted: [] }
   const deleted: string[] = []
   for (const part of chunks(ids, ID_CHUNK)) {
-    const [forms, resp] = await Promise.all([
-      db.from('forms').select('id, questions, is_published').in('id', part),
-      db.from('form_responses').select('form_id').in('form_id', part).limit(NEW_LIMIT),
-    ])
-    if (forms.error || resp.error) return { deleted, error: (forms.error || resp.error).message || 'Could not check the drafts' }
-    const answered = new Set(Object.keys(countByForm(resp.data)))
-    const safe = (forms.data || []).filter((f: any) => !f.is_published && questionCount(f) === 0 && !answered.has(f.id)).map((f: any) => f.id)
-    if (!safe.length) continue
-    const del = await db.from('forms').delete().in('id', safe).eq('is_published', false).select('id')
-    if (del.error) return { deleted, error: del.error.message || 'Could not delete the drafts' }
-    for (const r of del.data || []) if (r?.id) deleted.push(r.id)
+    const fresh = await db.from('forms').select(RECHECK_COLUMNS).in('id', part)
+    if (fresh.error) return { deleted, error: fresh.error.message || 'Could not check the drafts' }
+    const rows: any[] = Array.isArray(fresh.data) ? fresh.data : []
+    const counts = await mapLimit(rows, 6, r => exactCount(db, r.id))
+    const safe = rows.filter((r, i) => counts[i] === 0 && isEmptyDraft({ ...r, response_count: counts[i] }))
+    let failed: string | undefined
+    await mapLimit(safe, 4, async r => {
+      try {
+        let q = db.from('forms').delete().eq('id', r.id).eq('is_published', false).eq('questions', '[]')
+        q = r.updated_at ? q.eq('updated_at', r.updated_at) : q.is('updated_at', null)
+        const del = await q.select('id')
+        if (del.error) { failed = del.error.message || 'Could not delete the drafts'; return }
+        for (const d of del.data || []) if (d?.id) deleted.push(d.id)
+      } catch (e: any) { failed = e?.message || 'Could not delete the drafts' }
+    })
+    if (failed) return { deleted, error: failed }
   }
   return { deleted }
 }
