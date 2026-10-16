@@ -74,7 +74,7 @@ export const getException: ActionDef = {
     }
     const [{ data: items }, { data: tasks }, msg, reach, progress] = await Promise.all([
       ctx.db.from('order_items').select('product_name, sku, quantity').eq('order_id', order.id).limit(20),
-      ctx.db.from('conversation_tasks').select('title, status, created_at').eq('company_id', ctx.companyId).eq('order_id', order.id).eq('done', false).limit(5),
+      ctx.db.from('conversation_tasks').select('id, title, status, created_at').eq('company_id', ctx.companyId).eq('order_id', order.id).eq('done', false).limit(5),
       order.conversation_id
         ? ctx.db.from('messages').select('content, created_at').eq('conversation_id', order.conversation_id).eq('sender_type', 'visitor').order('created_at', { ascending: false }).limit(1)
         : Promise.resolve({ data: [] }),
@@ -101,7 +101,7 @@ export const getException: ActionDef = {
           ...(progress ? { progress: progress.summary, ...(progress.outlet ? { outlet: progress.outlet } : {}), ...(progress.waitingOnStock.length ? { waitingOnStock: progress.waitingOnStock } : {}) } : {}),
         },
         ...(alert ? { outOfStock: { product: alert.product_name, sku: alert.sku || null, qty: alert.quantity || 1, flagged: (alert.created_at || '').slice(0, 10), stillPending: alert.status === 'pending', note: alert.note || null } } : {}),
-        openTasks: (tasks || []).map((t: any) => ({ title: t.title, created: (t.created_at || '').slice(0, 10) })),
+        openTasks: (tasks || []).map((t: any) => ({ id: t.id, title: t.title, created: (t.created_at || '').slice(0, 10) })),
         customer: { canMessage: reach.ok, ...(reach.ok ? {} : { whyNot: reach.why }), lastMessage: last ? { text: String(last.content || '').slice(0, 300), at: (last.created_at || '').slice(0, 10) } : null },
       },
       entityType: 'order', entityId: order.id,

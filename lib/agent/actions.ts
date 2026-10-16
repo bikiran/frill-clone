@@ -23,6 +23,7 @@ import { getOpportunity, sendSalesFollowup } from './followup-actions'
 import { listServices, checkAvailability, findMyBookings, bookingLink, rescheduleBookingAction, cancelBookingAction } from './booking-actions'
 import { sendAgentMessage } from './send'
 import { logUnanswered, isRealQuestion } from '@/lib/ai-unanswered'
+import { upsertTask, AI_TASK_CAPS } from '@/lib/task-dedupe'
 
 const obj = (properties: Record<string, any>, required: string[] = []): JsonSchema => ({ type: 'object', properties, required, additionalProperties: false })
 
@@ -160,10 +161,12 @@ const READS: ActionDef[] = [
 
 const createTask: ActionDef = {
   key: 'create_task',
-  description: 'Create a task for the team (e.g. a follow-up or something that needs a person). Linked to this conversation automatically.',
+  description: 'Create a task for the team: a real to-do a person must do later (call back, order stock, arrange payment, chase a supplier, fix an order). Not for anything already done in this conversation, a reply you sent, information only, a back-in-stock request (that goes on the product’s waiting list), or “wait for the customer” with nothing for staff to do (make that a step of the related task). One job is one task: put its steps in steps. If an open task already covers the job, pass its id as existingTaskId and the steps are added to its checklist. Similar open tasks are found and added to automatically, so the result may say it updated a task instead. Linked to this conversation automatically.',
   input: obj({
-    title: { type: 'string', description: 'What needs doing, in one line.' },
+    title: { type: 'string', description: 'The job, in one short line (e.g. “Texas Holy Rock order for Shery”).' },
     details: { type: 'string', description: 'Context a team member needs.' },
+    steps: { type: 'array', items: { type: 'string' }, description: 'The steps of this one job, as checklist items (optional).' },
+    existingTaskId: { type: 'string', description: 'An open task (OPEN TASKS, or openTasks from get_exception) that already covers this job: the steps are added to it instead of a new task.' },
     priority: { type: 'string', enum: ['low', 'normal', 'high'] },
     dueDate: { type: 'string', description: 'YYYY-MM-DD (optional).' },
     orderId: { type: 'string', description: 'Related order id (optional).' },
@@ -184,23 +187,28 @@ const createTask: ActionDef = {
       const { data: o } = await ctx.db.from('orders').select('store_location_id').eq('company_id', ctx.companyId).eq('id', ctx.scratch.opsOrder.id).maybeSingle()
       locationId = o?.store_location_id || null
     }
-    const row: any = {
-      company_id: ctx.companyId, title, text: details ? `${title}\n\n${details}` : title, done: false, status: 'todo',
-      priority: ['low', 'high'].includes(args?.priority) ? args.priority : 'normal',
-      due_date: args?.dueDate || null, assignees: [], mentions: [],
+    // New, or onto the open task it duplicates (lib/task-dedupe), within the
+    // daily caps for tasks an agent makes on its own.
+    const r = await upsertTask(ctx.db, {
+      companyId: ctx.companyId, conversationId: ctx.conversationId, contactId: ctx.contactId,
       // The Operations Agent's tasks link to the order it's looking at.
-      order_id: ctx.scratch.opsOrder?.id || (/^[0-9a-f-]{36}$/i.test(String(args?.orderId || '')) ? args.orderId : null), conversation_id: ctx.conversationId,
-      created_by: ctx.roleName, source: 'agent',
-      ...(locationId ? { location_id: locationId, location_ids: [locationId] } : {}),
+      orderId: ctx.scratch.opsOrder?.id || (/^[0-9a-f-]{36}$/i.test(String(args?.orderId || '')) ? args.orderId : null),
+      title, details, steps: Array.isArray(args?.steps) ? args.steps.map((x: any) => String(x || '')).slice(0, 12) : [],
+      existingTaskId: typeof args?.existingTaskId === 'string' ? args.existingTaskId : null,
+      priority: ['low', 'high'].includes(args?.priority) ? args.priority : 'normal', dueDate: args?.dueDate || null,
+      locationId, createdBy: ctx.roleName, source: 'agent', actorName: ctx.roleName, sourceLabel: 'AI agent',
+      caps: ctx.scratch.taskCapExempt ? null : AI_TASK_CAPS,
+    })
+    if (!r.ok) return { ok: false, error: r.error || 'Could not create the task.' }
+    if (r.action === 'skipped') return { ok: true, data: { created: false, skipped: true, reason: r.reason, note: `${r.reason} No task was made — don’t tell anyone one was.` }, summary: r.summary }
+    if (r.action === 'updated') {
+      return {
+        ok: true,
+        data: { created: false, updated: true, taskId: r.taskId, task: r.title, addedSteps: r.added, reason: r.reason, note: r.added.length ? `Added to the open task “${r.title}” instead of making a new one.` : `The open task “${r.title}” already covers this — nothing added.` },
+        entityType: 'task', entityId: r.taskId, summary: r.summary,
+      }
     }
-    let { data, error } = await ctx.db.from('conversation_tasks').insert(row).select('id').single()
-    // An older database without the outlet columns: still create the task.
-    if (error && locationId && /location/i.test(error.message || '')) {
-      const { location_id, location_ids, ...rest } = row
-      ;({ data, error } = await ctx.db.from('conversation_tasks').insert(rest).select('id').single())
-    }
-    if (error) return { ok: false, error: error.message }
-    return { ok: true, data: { taskId: data.id, ...(locationId ? { outletId: locationId } : {}) }, entityType: 'task', entityId: data.id, summary: `Created task “${title}”` }
+    return { ok: true, data: { created: true, taskId: r.taskId, ...(r.added.length ? { steps: r.added } : {}), ...(locationId ? { outletId: locationId } : {}) }, entityType: 'task', entityId: r.taskId, summary: r.summary }
   },
 }
 
@@ -332,6 +340,7 @@ export function validateInput(action: ActionDef, input: any): string | null {
     if (!spec) continue
     if (spec.type === 'string' && typeof v !== 'string') return `“${k}” must be text.`
     if (spec.type === 'integer' && !Number.isInteger(v)) return `“${k}” must be a whole number.`
+    if (spec.type === 'array' && !Array.isArray(v)) return `“${k}” must be a list.`
     if (spec.enum && !spec.enum.includes(v)) return `“${k}” must be one of ${spec.enum.join(', ')}.`
   }
   return null

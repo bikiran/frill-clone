@@ -8,6 +8,7 @@ import { WooCommerceService } from '@/lib/woocommerce-service'
 import { replyToReview } from '@/lib/google-business'
 import { loadCompanyPublic, createInvite, bookingPageUrl } from '@/lib/booking'
 import { smartSearchKnowledge } from '@/lib/ai-knowledge'
+import { upsertTask } from '@/lib/task-dedupe'
 import { BUILDER_TOOLS, BUILDER_TOOL_NAMES, runBuilderAction, runBuilderRead } from '@/lib/ai-assistant/builders'
 import { proposeMemory } from '@/lib/agent/business-memory'
 import { STAFF_FILTER } from '@/lib/team-list'
@@ -159,11 +160,13 @@ export const ASSISTANT_TOOLS: ToolDef[] = [
   },
   {
     name: 'create_task', safety: 'immediate',
-    description: 'Create a task. Reversible. Optionally due-dated, assigned to specific team members and/or an outlet, and linked to an order or conversation.',
+    description: 'Create a task. Reversible. Optionally due-dated, assigned to specific team members and/or an outlet, and linked to an order or conversation. One job is one task: put its steps in steps (a checklist). If a similar task is already open for the same customer or order, the steps are added to it instead and the result says so — tell the user which task; pass createAnyway only if they then ask for a separate task.',
     input_schema: {
       type: 'object',
       properties: {
         title: { type: 'string' },
+        steps: { type: 'array', items: { type: 'string' }, description: 'checklist items for this job' },
+        createAnyway: { type: 'boolean', description: 'make a new task even if a similar one is open' },
         dueDate: { type: 'string', description: 'ISO 8601 date/time, or omit' },
         assigneeUserIds: { type: 'array', items: { type: 'string' }, description: 'team member user ids' },
         outletId: { type: 'string', description: 'link to an outlet' },
@@ -917,7 +920,21 @@ export async function executeAction(db: SupabaseClient, ctx: AssistantContext, n
       conversation_id: args?.linkConversationId || ctx.conversationId || null,
       created_by: ctx.userName, created_by_id: ctx.userId, source: 'colvy_ai',
     }
-    const ins = await insertResilient(D, 'conversation_tasks', row, ['title', 'status', 'priority', 'assignees', 'location_ids', 'source', 'created_by_id', 'created_by', 'order_id', 'conversation_id'])
+    // New, or onto the open task it duplicates (lib/task-dedupe). A person
+    // asked for it, so no daily cap; createAnyway skips the matching.
+    const up = await upsertTask(D, {
+      companyId: ctx.companyId, conversationId: row.conversation_id, contactId: row.conversation_id === ctx.conversationId ? ctx.contactId || null : null,
+      orderId: row.order_id, title, steps: Array.isArray(args?.steps) ? args.steps.map((x: any) => String(x || '')).slice(0, 20) : [],
+      priority: row.priority, dueDate: row.due_date, locationId: row.location_id, assignees,
+      createdBy: ctx.userName, createdById: ctx.userId || null, source: 'colvy_ai', mode: args?.createAnyway ? 'create' : 'auto',
+      actorName: `${ctx.userName || 'Someone'} via Colvy AI`, actorId: ctx.userId || null, sourceLabel: 'Colvy AI',
+    })
+    if (up.ok && up.action === 'updated' && up.taskId) {
+      const card = { kind: 'task', title: up.title, lines: [up.added.length ? `Added to this open task: ${up.added.join('; ')}` : 'Already an open task — nothing new to add'], href: '/admin/tasks' }
+      await logAiEvent(D, { companyId: ctx.companyId, userId: ctx.userId, action: 'Updated task', tool: name, entityType: 'task', entityId: up.taskId, input: { title, steps: args?.steps || [] }, result: { summary: up.summary, added: up.added } })
+      return { ok: true, entityType: 'task', entityId: up.taskId, card, undo: up.restore && Object.keys(up.restore).length ? { entityType: 'task_update', entityId: up.taskId, restore: up.restore } : null }
+    }
+    const ins = up.ok && up.taskId ? { id: up.taskId } : { id: undefined, error: up.error }
     if (!ins.id) return { ok: false, error: ins.error || 'Could not create the task.' }
     const card = {
       kind: 'task', title,

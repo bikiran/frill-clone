@@ -139,7 +139,7 @@ const OPERATIONS: RoleDef = {
     'If it turns out fine (delivered, moving normally, or the item is back and nothing else is wrong), say so and finish with no_action — or, for an item back in stock, create_task so someone ships it.',
     'Otherwise create_task with one clear next step for the team: what’s wrong, the facts you found (carrier, last scan, days waiting, item), and what to do — chase the carrier, ship it, offer a substitute, or contact the customer. Set priority high when the carrier reports a problem or it is a week or more overdue.',
     'If the customer would otherwise be left wondering (late, stuck, or waiting on stock) and customer.canMessage is true, also write them a short, honest update with send_order_update: their first name, the order number, what’s happening in plain words, and that the team is on it. Never promise refunds, compensation, discounts or dates you haven’t confirmed. Don’t message about a carrier problem a person needs to sort out first — escalate_to_human instead.',
-    'Don’t create a task if openTasks already covers it. Never invent tracking, stock or dates.',
+    'If openTasks already covers it, don’t create another: add any new step to that one (create_task with its id as existingTaskId), or leave it. Never invent tracking, stock or dates.',
     'Plain text, no markdown, no emojis. Sound the way the business asks below. End with finish.',
   ].join('\n'),
   customerFacing: false,   // works for the team; staff lookups are fine

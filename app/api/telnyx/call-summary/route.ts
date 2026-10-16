@@ -2,6 +2,7 @@ import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { modelFor, trackAi } from '@/lib/ai-models'
+import { ACTION_ITEMS_GUIDE, loadOpenTasks, openTasksForSummaryPrompt, refineActionItems } from '@/lib/task-dedupe'
 
 function admin() {
   return createClient(
@@ -19,7 +20,7 @@ export async function POST(req: NextRequest) {
     const db = admin()
     if (!callId) return NextResponse.json({ error: 'callId required' }, { status: 400 })
     // Members of the workspace the call belongs to (this was an open AI proxy).
-    const { data: call } = await db.from('calls').select('company_id, transcription').eq('id', callId).maybeSingle()
+    const { data: call } = await db.from('calls').select('*').eq('id', callId).maybeSingle()
     if (!call || !(await requireCompanyAccess(req, db, call.company_id)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
 
     let text = transcription || call.transcription
@@ -30,15 +31,20 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ summary: text.slice(0, 200) })
     }
 
+    // Open tasks for this customer, so the same job isn't proposed twice.
+    const openTasks = call.conversation_id || call.contact_id
+      ? await loadOpenTasks(db, { companyId: call.company_id, conversationId: call.conversation_id || null, contactId: call.contact_id || null }).catch(() => [])
+      : []
+
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
       body: JSON.stringify({
         model: await modelFor('call_summary'),
-        max_tokens: 350,
+        max_tokens: 500,
         messages: [{
           role: 'user',
-          content: `Summarize this phone call between a support agent and a customer in 1-2 sentences, then list any follow-up action items. Respond ONLY with JSON: {"summary":"...","todos":["..."]}\n\nTranscript:\n${text}`,
+          content: `Summarize this phone call between a support agent and a customer in 1-2 sentences, then list any follow-up action items. Respond ONLY with JSON: {"summary":"...","todos":["..."]}\n\n${ACTION_ITEMS_GUIDE}${openTasksForSummaryPrompt(openTasks)}\n\nTranscript:\n${text}`,
         }],
       }),
     })
@@ -48,6 +54,8 @@ export async function POST(req: NextRequest) {
     const out = (data.content?.[0]?.text || '').replace(/```json|```/g, '').trim()
     try {
       const parsed = JSON.parse(out)
+      // One item per job (related steps grouped), minus jobs an open task already has.
+      parsed.todos = refineActionItems(Array.isArray(parsed.todos) ? parsed.todos : [], { contactName: call.contact_name || null, openTasks })
       if (callId) {
         // Persist todos and sentiment too — both are shown on the call detail
         // screen, and previously only the summary was stored.

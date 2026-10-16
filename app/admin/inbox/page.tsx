@@ -37,6 +37,7 @@ import AiCallNote from '@/components/AiCallNote'
 import CallCard from '@/components/CallCard'
 import LiveCallBanner from '@/components/LiveCallBanner'
 import DraftTasks from '@/components/DraftTasks'
+import { latestChatMs, draftsCollapsed } from '@/lib/task-dedupe'
 import Dialer from '@/components/Dialer'
 import ResilientImage from '@/components/ResilientImage'
 import ComposeMessage from '@/components/ComposeMessage'
@@ -4328,6 +4329,10 @@ export default function InboxPage() {
       if (data.summary) {
         setAiSummary(data.summary)
         setAiTodos(data.todos || [])
+        // Freshly asked for: the draft card starts open (it folds once the chat moves on).
+        const now = Date.now()
+        setChatDraftAnchor(now)
+        try { window.localStorage.setItem(`colvy-draft-anchor-${selected.id}`, String(now)) } catch {}
         await (supabase as any).from('conversations').update({ ai_summary: data.summary, ai_todos: data.todos || [] }).eq('id', selected.id)
       } else if (data.error) {
         setAiSummary('AI summary unavailable: ' + data.error)
@@ -4342,6 +4347,23 @@ export default function InboxPage() {
   // dismissal; we mirror its closed state so the plain to-do checklist only
   // shows once the panel is gone.
   const [chatDraftsClosed, setChatDraftsClosed] = useState(false)
+  // Draft-task cards fold to one row once the chat has moved on past them
+  // unused (newer customer/staff messages below), like the mobile app. The
+  // chat-summary card's place in the thread is when it first appeared,
+  // remembered per conversation.
+  const latestChat = useMemo(() => latestChatMs(messages as any[]), [messages])
+  const [chatDraftAnchor, setChatDraftAnchor] = useState<number | null>(null)
+  const hasAiTodos = aiTodos.length > 0
+  useEffect(() => {
+    if (!selected?.id || !hasAiTodos) { setChatDraftAnchor(null); return }
+    const key = `colvy-draft-anchor-${selected.id}`
+    let stored: number | null = null
+    try { stored = Number(window.localStorage.getItem(key)) || null } catch {}
+    if (stored) { setChatDraftAnchor(stored); return }
+    const now = Date.now()
+    setChatDraftAnchor(now)
+    try { window.localStorage.setItem(key, String(now)) } catch {}
+  }, [selected?.id, hasAiTodos])
 
   // Re-scan messages for AI-detectable contact info whenever they change
   // (so a phone/address sent mid-conversation is picked up, not just on open)
@@ -8933,6 +8955,8 @@ export default function InboxPage() {
                     actor={{ id: user?.id, name: myName }}
                     onCreated={() => { if (selected) loadConversationExtras(selected.id) }}
                     onClosedChange={setChatDraftsClosed}
+                    contactName={contact?.name || null}
+                    collapsible={chatDraftAnchor != null && draftsCollapsed(chatDraftAnchor, latestChat)}
                     bare
                   />
                 </div>
@@ -9030,7 +9054,7 @@ export default function InboxPage() {
                           <span style={{ fontSize: 11, fontWeight: 600, color: '#9ca3af', background: '#eef0f2', padding: '3px 12px', borderRadius: 20 }}>{thisDay}</span>
                         </div>
                       ) : null}
-                      <CallCard callId={item.id} meta={{ direction: item.direction, duration_seconds: item.duration_seconds, agent_name: item.agent_name }} timestamp={item.created_at} highlight={(showMsgSearch && msgSearch.trim()) ? msgSearch : searchTerm} accent={companyInfo?.accent_color || 'var(--coral)'} actor={{ id: user?.id, name: myName }} teamMembers={teamMembers} outlets={outlets} defaultLocationId={(selected as any)?.assigned_location_id || (selected as any)?.location_id || null} onTasksCreated={onAiTasksCreated} />
+                      <CallCard callId={item.id} meta={{ direction: item.direction, duration_seconds: item.duration_seconds, agent_name: item.agent_name }} timestamp={item.created_at} collapseDrafts={draftsCollapsed(item.created_at, latestChat)} contactName={contact?.name || null} highlight={(showMsgSearch && msgSearch.trim()) ? msgSearch : searchTerm} accent={companyInfo?.accent_color || 'var(--coral)'} actor={{ id: user?.id, name: myName }} teamMembers={teamMembers} outlets={outlets} defaultLocationId={(selected as any)?.assigned_location_id || (selected as any)?.location_id || null} onTasksCreated={onAiTasksCreated} />
                     </div>
                   )
                 }
@@ -9182,7 +9206,7 @@ export default function InboxPage() {
                 if (isSystem && (msg as any).metadata?.call_event && (msg as any).metadata?.call_id) return (
                   <div key={msg.id} id={`cmsg-${msg.id}`} data-cmsg="1">
                     {dateDivider}
-                    <CallCard callId={(msg as any).metadata.call_id} meta={(msg as any).metadata} timestamp={msg.created_at} highlight={(showMsgSearch && msgSearch.trim()) ? msgSearch : searchTerm} accent={companyInfo?.accent_color || 'var(--coral)'} actor={{ id: user?.id, name: myName }} teamMembers={teamMembers} outlets={outlets} defaultLocationId={(selected as any)?.assigned_location_id || (selected as any)?.location_id || null} onTasksCreated={onAiTasksCreated} />
+                    <CallCard callId={(msg as any).metadata.call_id} meta={(msg as any).metadata} timestamp={msg.created_at} collapseDrafts={draftsCollapsed(msg.created_at, latestChat)} contactName={contact?.name || null} highlight={(showMsgSearch && msgSearch.trim()) ? msgSearch : searchTerm} accent={companyInfo?.accent_color || 'var(--coral)'} actor={{ id: user?.id, name: myName }} teamMembers={teamMembers} outlets={outlets} defaultLocationId={(selected as any)?.assigned_location_id || (selected as any)?.location_id || null} onTasksCreated={onAiTasksCreated} />
                   </div>
                 )
                 if (isSystem) {
