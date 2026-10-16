@@ -230,11 +230,12 @@ export default function OnboardingPage() {
   }
 
   // Where the checklist should land them, with the channels they don't use skipped.
-  const skipped = SKIPPABLE_STEPS.filter(k => !picks.has(k) && !isDone(k))
+  const skipped = SKIPPABLE_STEPS.filter(k => !picks.has(k) && !isDone(k) && !needsFix(k))
   const checklistPath = addQuery(SETUP_HOME, skipped.length ? `skip=${skipped.join(',')}` : '')
 
   const metas = setupSteps(status)
-  const plan = metas.filter(m => !(SKIPPABLE_STEPS as readonly string[]).includes(m.key) || picks.has(m.key as Pick))
+  // Unticked steps drop out, except one that needs attention (it was paid for).
+  const plan = metas.filter(m => !(SKIPPABLE_STEPS as readonly string[]).includes(m.key) || picks.has(m.key as Pick) || needsFix(m.key))
   const todo = plan.filter(m => stateOf(m.key) === 'todo')
   // Something that needs attention comes first.
   const first = todo.find(m => needsFix(m.key)) || todo[0]

@@ -14,6 +14,8 @@
 //   active        the number is live (`phone_number`)
 //   failed        buying it didn't work; the payment is safe, and the next
 //                 try claims it again
+//   cancelled     its subscription was cancelled (a refund) before a number
+//                 was bought: nothing more is bought for it
 //
 // A claim whose holder died (a function killed mid-purchase) is taken over
 // once it's CLAIM_STALE_MS old: longer than any function runs, so a holder
@@ -33,6 +35,7 @@ export type NumberClaim =
   | { state: 'claimed'; token: string }            // this call buys the number
   | { state: 'busy' }                              // another call is buying it right now
   | { state: 'done'; phoneNumber: string | null }  // already bought
+  | { state: 'cancelled' }                         // refunded: nothing is bought for it
   | { state: 'unavailable' }                       // no table yet (before COLVY_V373)
   | { state: 'error' }                             // the database didn't answer: don't buy
 
@@ -67,7 +70,8 @@ export async function claimNumberOrder(db: any, o: NumberOrder, now: Date = new 
     }
     const { data: cur, error: readErr } = await db.from('number_orders').select('status, phone_number').eq('stripe_session_id', o.sessionId).maybeSingle()
     if (readErr) return { state: 'error' }
-    return cur?.status === 'active' ? { state: 'done', phoneNumber: cur.phone_number ? String(cur.phone_number) : null } : { state: 'busy' }
+    if (cur?.status === 'active') return { state: 'done', phoneNumber: cur.phone_number ? String(cur.phone_number) : null }
+    return cur?.status === 'cancelled' ? { state: 'cancelled' } : { state: 'busy' }
   } catch { return { state: 'error' } }
 }
 
@@ -94,17 +98,38 @@ export async function finishNumberOrder(db: any, held: HeldOrder, outcome: { pho
  * couldn't reach the route, or the route turned it away): recorded as failed,
  * so setup asks for it to be finished and the next try claims it. Only ever an
  * insert, which the primary key refuses when anything already holds or
- * finished the checkout.
+ * finished the checkout. Says whether the checkout is now on record:
+ * 'recorded', 'exists' (it already was), 'unavailable' (no table yet), or
+ * 'error' (the database didn't answer: nothing anywhere says it was paid).
  */
-export async function recordUnclaimedFailure(db: any, o: NumberOrder, error?: string | null): Promise<void> {
-  if (!o.sessionId || !o.companyId) return
+export async function recordUnclaimedFailure(db: any, o: NumberOrder, error?: string | null): Promise<'recorded' | 'exists' | 'unavailable' | 'error'> {
+  if (!o.sessionId || !o.companyId) return 'error'
   try {
-    await db.from('number_orders').insert({
+    const { error: insErr } = await db.from('number_orders').insert({
       stripe_session_id: o.sessionId, company_id: o.companyId, provider: o.provider, status: 'failed', claimed_by: null,
       error: String(error || 'The number could not be set up.').slice(0, 500), updated_at: new Date().toISOString(),
     })
-  } catch { /* table not there yet */ }
+    if (!insErr) return 'recorded'
+    if (String(insErr.code) === '23505') return 'exists'
+    return missingTable(insErr) ? 'unavailable' : 'error'
+  } catch { return 'error' }
 }
+
+/**
+ * The checkout's subscription was cancelled (support refunded it) before a
+ * number was bought: no number is bought for it, and setup stops asking for
+ * it to be finished. Only the holder can.
+ */
+export async function cancelNumberOrder(db: any, held: HeldOrder, reason: string): Promise<void> {
+  try {
+    await db.from('number_orders').update({ status: 'cancelled', error: reason.slice(0, 500), updated_at: new Date().toISOString() })
+      .eq('stripe_session_id', held.sessionId).eq('claimed_by', held.token).eq('status', 'provisioning')
+  } catch { /* recorded best-effort */ }
+}
+
+/** A number checkout's Stripe subscription is still being paid for. */
+export const LIVE_SUBSCRIPTION = ['active', 'trialing']
+export const CANCELLED_CHECKOUT = 'This number’s subscription has been cancelled, so it can’t be set up. Contact support if that’s a mistake.'
 
 /** finishNumberOrder from a provisioning route's own response: a number → live; anything else → failed. */
 export async function finishNumberOrderFrom(db: any, held: HeldOrder, res: Response): Promise<void> {
@@ -128,6 +153,7 @@ export type PurchaseStart = { held: HeldOrder | null; answer: { status: number; 
 export async function startNumberPurchase(db: any, o: NumberOrder, subscriptionId?: string | null): Promise<PurchaseStart> {
   const claim = await claimNumberOrder(db, o)
   if (claim.state === 'busy') return { held: null, answer: { status: 202, body: { pending: true, error: 'Your number is being set up. This can take up to a minute.' } } }
+  if (claim.state === 'cancelled') return { held: null, answer: { status: 409, body: { error: CANCELLED_CHECKOUT, cancelled: true } } }
   if (claim.state === 'error') return { held: null, answer: { status: 503, body: { error: 'Couldn’t start setting up your number just now. Your payment is safe — try again in a moment.' } } }
   const held = claim.state === 'claimed' ? { ...o, token: claim.token } : null
   // Already bought: the claim's record says so, or (before COLVY_V373, or for

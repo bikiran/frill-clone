@@ -257,6 +257,7 @@ export async function POST(req: NextRequest) {
           // take the same shape; the customer never learns which one ran.
           const prov = meta.provider === 'telnyx' ? 'telnyx' : 'twilio'
           const order: NumberOrder = { sessionId: String(session.id || ''), companyId: String(meta.companyId), provider: prov }
+          let unrecorded = false
           try {
             const origin = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
             const res = await fetch(`${origin}/api/${prov}/number`, {
@@ -275,11 +276,18 @@ export async function POST(req: NextRequest) {
             // Once claimed, the route records how it went; turned away before
             // that, the paid checkout is recorded as failed so setup asks for it
             // to be finished (lib/number-orders).
-            if (!res.ok) await recordUnclaimedFailure(supabase, order, `HTTP ${res.status}`)
+            if (!res.ok) unrecorded = res.status >= 500 && await recordUnclaimedFailure(supabase, order, `HTTP ${res.status}`) === 'error'
           } catch (e: any) {
             console.error('Post-payment number provisioning failed:', e)
-            await recordUnclaimedFailure(supabase, order, e?.message)
+            unrecorded = await recordUnclaimedFailure(supabase, order, e?.message) === 'error'
           }
+          // The number route failed and not even the failure could be written
+          // down (the database is out): nothing would show this checkout was
+          // paid. Ask Stripe to send the event again. Safe to repeat: every
+          // purchase claims the checkout first, nothing above this in the
+          // branch runs for a number purchase, and the event log below is
+          // written on the retry instead.
+          if (unrecorded) return NextResponse.json({ error: 'Number provisioning unavailable; retry' }, { status: 503 })
         }
         break
       }

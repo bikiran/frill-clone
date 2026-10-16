@@ -114,8 +114,11 @@ export function setupWorthLoading(companyId: string, last: Pick<SetupStatus, 'ag
   // The checklist's own "complete": every step done, or skipped. `completed`
   // alone isn't enough — it never resets, while a step can be added back or
   // come undone (a store uninstalled) and the checklist shows again.
-  const finished = () => !!last && setupSteps().every(m =>
-    p.skipped.includes(m.key) || last.steps.some(st => st.key === m.key && st.state === 'done'))
+  // A skipped step that needs attention (a paid number that didn't set up) isn't finished.
+  const finished = () => !!last && setupSteps().every(m => {
+    const st = last.steps.find(x => x.key === m.key)
+    return st?.state === 'done' || (p.skipped.includes(m.key) && !st?.attention)
+  })
   if (!p.hidden && !(p.completed && finished())) return true
   return !(last && last.ageDays != null && last.ageDays > TRACK_MAX_AGE_DAYS)
 }
@@ -155,8 +158,9 @@ export function settleProgress(prev: Prefs, status: SetupStatus, o: { fresh: boo
     }
     if (p.seen === null) changed = true
     p.seen = Array.from(seen)
-    // Done, or skipped and never started. A step waiting on approval isn't done.
-    const allDone = status.steps.length > 0 && status.steps.every(st => st.state === 'done' || (st.state === 'todo' && p.skipped.includes(st.key)))
+    // Done, or skipped and never started. A step waiting on approval isn't done,
+    // nor is a paid number that needs attention, skipped or not.
+    const allDone = status.steps.length > 0 && status.steps.every(st => st.state === 'done' || (st.state === 'todo' && !st.attention && p.skipped.includes(st.key)))
     if (allDone && !p.completed) {
       p.completed = true; changed = true
       if (young) events.push(['setup_completed', { minutes_since_signup: mins, skipped: p.skipped.join(',') }])
@@ -215,8 +219,9 @@ export default function SetupChecklist({ companyId, status, fresh, prominent, li
   // A to-do that needs attention (a paid number that didn't set up): its
   // button fixes that rather than starting the step again.
   const needsFix = (k: SetupStepKey) => stateOf(k) === 'todo' && !!byKey.get(k)?.attention
-  // A step that's done counts as done even if it was skipped.
-  const counted = metas.filter(m => !skipped.has(m.key) || stateOf(m.key) === 'done')
+  // A step that's done counts as done even if it was skipped, and one that
+  // needs attention shows even if it was skipped (it was paid for).
+  const counted = metas.filter(m => !skipped.has(m.key) || stateOf(m.key) === 'done' || needsFix(m.key))
   const doneKeys = metas.filter(m => stateOf(m.key) === 'done').map(m => m.key)
   const done = counted.filter(m => stateOf(m.key) === 'done').length
   const total = counted.length
@@ -265,7 +270,7 @@ export default function SetupChecklist({ companyId, status, fresh, prominent, li
   const fromPct = total ? Math.round((prevDone / total) * 100) : 0
   const R = 20, C = 2 * Math.PI * R
   const newTitle = newly.length === 1 ? (metas.find(m => m.key === newly[0])?.doneTitle || 'Step done') : `${newly.length} steps ticked off`
-  const skippedList = metas.filter(m => skipped.has(m.key) && stateOf(m.key) !== 'done')
+  const skippedList = metas.filter(m => skipped.has(m.key) && stateOf(m.key) !== 'done' && !needsFix(m.key))
 
   return (
     <section className={`sc ${prominent ? 'sc-top' : ''}`} aria-label="Setup checklist">

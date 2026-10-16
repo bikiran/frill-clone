@@ -170,7 +170,8 @@ export async function computeSetupStatus(db: SetupDb, companyId: string, now: Da
   const byo = [twilio?.phone_number, telnyx?.phone_number].map(v => str(v).trim()).find(Boolean) || ''
   const bundleStatus = str(bundle?.status).toLowerCase()
   // A paid checkout with no live number: still being bought, or it didn't work
-  // (failed, or "being set up" for far too long).
+  // (failed, or "being set up" for far too long). One whose subscription was
+  // cancelled (refunded) is neither: the step is an ordinary to-do again.
   const orderStatus = str(order?.status).toLowerCase()
   const orderAt = Date.parse(str(order?.updated_at || order?.created_at))
   const orderAge = isFinite(orderAt) ? now.getTime() - orderAt : Infinity

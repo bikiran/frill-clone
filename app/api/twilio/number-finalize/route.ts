@@ -4,7 +4,7 @@ import Stripe from 'stripe'
 import { createClient } from '@supabase/supabase-js'
 import { platformTwilio, platformTwilioConfigured, TWILIO_MASTER, colvyBaseUrl } from '@/lib/twilio-platform'
 import { consumeFreeCredit, refundFreeCredit } from '@/lib/free-number-credits'
-import { startNumberPurchase, finishNumberOrderFrom, type HeldOrder } from '@/lib/number-orders'
+import { startNumberPurchase, finishNumberOrderFrom, cancelNumberOrder, LIVE_SUBSCRIPTION, CANCELLED_CHECKOUT, type HeldOrder } from '@/lib/number-orders'
 
 function admin() {
   return createClient(
@@ -81,6 +81,17 @@ async function finalize(req: NextRequest, track: { held: HeldOrder | null }) {
         const start = await startNumberPurchase(db, { sessionId, companyId, provider: 'twilio' }, subscriptionId)
         track.held = start.held
         if (start.answer) return NextResponse.json(start.answer.body, { status: start.answer.status })
+        // A checkout support has since refunded still reads as paid; its
+        // subscription says otherwise. Nothing is bought for it, and setup
+        // stops asking for it to be finished.
+        if (subscriptionId) {
+          const sub = await stripe.subscriptions.retrieve(subscriptionId)
+          if (!LIVE_SUBSCRIPTION.includes(String(sub?.status))) {
+            if (track.held) await cancelNumberOrder(db, track.held, `Subscription ${sub?.status || 'gone'}`)
+            track.held = null
+            return NextResponse.json({ error: CANCELLED_CHECKOUT, cancelled: true }, { status: 409 })
+          }
+        }
       } else {
         return NextResponse.json({ error: 'Payments are not configured on the server.' }, { status: 500 })
       }

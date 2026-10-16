@@ -19,6 +19,8 @@
 --   active        the number is live
 --   failed        buying it didn't work (the payment is safe; the next try
 --                 claims it again)
+--   cancelled     its subscription was cancelled (refunded) before a number
+--                 was bought; nothing more is bought for it
 -- A claim still "provisioning" after 15 minutes is taken over: its holder died.
 --
 -- Until this runs, nothing is recorded, there's no lock (the routes check
@@ -32,7 +34,7 @@ CREATE TABLE IF NOT EXISTS number_orders (
   stripe_session_id TEXT PRIMARY KEY,           -- the paid Checkout Session (cs_…)
   company_id UUID NOT NULL,
   provider TEXT NOT NULL DEFAULT 'twilio',      -- twilio | telnyx
-  status TEXT NOT NULL DEFAULT 'provisioning',  -- provisioning | active | failed
+  status TEXT NOT NULL DEFAULT 'provisioning',  -- provisioning | active | failed | cancelled
   claimed_by TEXT,                              -- the call that holds the claim
   phone_number TEXT,                            -- once it's live
   error TEXT,                                   -- why it failed, when it did
