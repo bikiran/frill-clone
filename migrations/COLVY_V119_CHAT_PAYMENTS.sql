@@ -9,6 +9,11 @@
 -- wait for success, then run the next. Each sets a short lock_timeout
 -- so if a lock is briefly held it fails fast — just re-run that step.
 -- All steps are idempotent (safe to re-run).
+--
+-- STEP 4's "Anyone can manage chat_interactions" policy is skipped once
+-- COLVY_V381_CHAT_INTERACTIONS_LOCKDOWN.sql has run, so re-running this file
+-- can't reopen chat_interactions. (A fresh install still gets it; run V381
+-- after this file.)
 -- ============================================================
 
 
@@ -55,8 +60,21 @@ CREATE TABLE IF NOT EXISTS chat_interactions (
 );
 CREATE INDEX IF NOT EXISTS idx_chat_interactions ON chat_interactions(conversation_id);
 ALTER TABLE chat_interactions ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Anyone can manage chat_interactions" ON chat_interactions;
-CREATE POLICY "Anyone can manage chat_interactions" ON chat_interactions FOR ALL USING (true);
+-- The open policy is only for a fresh install that hasn't run V381 yet. Once
+-- V381 has locked the table (its table comment starts "COLVY V381", or a
+-- chat_interactions_member_read policy from an earlier draft exists), this
+-- leaves the table alone, so re-running this step can't reopen it.
+DO $$
+BEGIN
+  IF coalesce(obj_description('public.chat_interactions'::regclass, 'pg_class'), '') LIKE 'COLVY V381%'
+     OR EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'chat_interactions'
+                 AND policyname = 'chat_interactions_member_read') THEN
+    RAISE NOTICE 'chat_interactions is locked down by V381 — open policy not recreated';
+    RETURN;
+  END IF;
+  DROP POLICY IF EXISTS "Anyone can manage chat_interactions" ON chat_interactions;
+  CREATE POLICY "Anyone can manage chat_interactions" ON chat_interactions FOR ALL USING (true);
+END $$;
 
 
 -- ─────────────────────────────────────────────────────────────
