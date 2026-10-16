@@ -57,3 +57,10 @@ export function parseInboundAlias(address: string | null | undefined): InboundTa
   // Anything else on the inbound domain is treated as a company slug.
   return { kind: 'company', ref: local }
 }
+
+// Where a customer's reply to an inbox email goes: the company alias on the
+// inbound domain once it's live (it comes back into this Colvy inbox), else
+// the mailbox's own address.
+export function inboxReplyTo(company: { slug?: string | null } | null | undefined, channel: { inbound_address?: string | null; from_address?: string | null } | null | undefined): string {
+  return (INBOUND_ENABLED && company?.slug) ? companyAlias(company.slug) : (channel?.inbound_address || channel?.from_address || '')
+}

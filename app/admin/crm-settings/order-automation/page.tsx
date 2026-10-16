@@ -46,6 +46,7 @@ export default function OrderAutomationSettings() {
   const [reviewUrl, setReviewUrl] = useState('')
   const [alsoSms, setAlsoSms] = useState(false)
   const [alsoEmail, setAlsoEmail] = useState(false)
+  const [sendBy, setSendBy] = useState<'auto' | 'sms' | 'email'>('auto')
   const [webhookUrl, setWebhookUrl] = useState('')
   const [cart, setCart] = useState<CartRecoverySettings>(() => resolveCartRecovery(null))
   const loadedCfg = useRef<any>({})
@@ -72,6 +73,7 @@ export default function OrderAutomationSettings() {
       setReviewUrl(cfg.review_url || '')
       setAlsoSms(!!cfg.also_sms)
       setAlsoEmail(!!cfg.also_email)
+      setSendBy(cfg.channel === 'sms' || cfg.channel === 'email' ? cfg.channel : 'auto')
     })()
     if (typeof window !== 'undefined') {
       const origin = window.location.origin.replace(/[^.]+\.colvy/, 'colvy')
@@ -90,7 +92,7 @@ export default function OrderAutomationSettings() {
     const toSave = { ...messages }
     if (toSave.completed !== undefined) for (const k of ['completed_no_tracking', 'completed_pickup']) toSave[k] ??= DEFAULT_ORDER_MESSAGES[k]
     await (supabase as any).from('companies').update({
-      order_chat_automation: { ...loadedCfg.current, enabled, review_url: reviewUrl, messages: toSave, also_sms: alsoSms, also_email: alsoEmail, doa, cart_recovery },
+      order_chat_automation: { ...loadedCfg.current, enabled, review_url: reviewUrl, messages: toSave, also_sms: alsoSms, also_email: alsoEmail, channel: sendBy, doa, cart_recovery },
     }).eq('id', companyId)
     loadedCfg.current = { ...loadedCfg.current, cart_recovery }
     setCart(cart_recovery)
@@ -141,8 +143,14 @@ export default function OrderAutomationSettings() {
           </div>
 
           <div style={S.card}>
+            <h2 style={S.h2}>How order messages are sent</h2>
+            <p style={{ ...S.hint, marginBottom: 12 }}>The message always posts into the customer's conversation. If they aren't on live chat right now, it's also sent to them so they actually see it.</p>
+            <ChannelPicker value={sendBy} onChange={setSendBy} />
+          </div>
+
+          <div style={S.card}>
             <h2 style={S.h2}>Also notify the customer directly</h2>
-            <p style={{ ...S.hint, marginBottom: 12 }}>The message always posts into the chat. If the customer isn't active on live chat, it's automatically sent by SMS so they're notified — the options below force a copy even when they are on live chat.</p>
+            <p style={{ ...S.hint, marginBottom: 12 }}>These send a copy even when the customer is on live chat.</p>
             <ToggleRow title="Also send as SMS" desc="Requires a Colvy number and the customer's mobile. Standard SMS rates apply." checked={alsoSms} onChange={setAlsoSms} />
             <div style={{ height: 10 }} />
             <ToggleRow title="Also send as email" desc="Sent from your verified Colvy email domain to the order's email address." checked={alsoEmail} onChange={setAlsoEmail} />
@@ -159,9 +167,12 @@ export default function OrderAutomationSettings() {
       <div style={S.card}>
         <h2 style={{ ...S.h2, marginBottom: 4 }}>Automatic abandoned-cart message</h2>
         <p style={{ ...S.hint, margin: '0 0 4px' }}>Off by default. When on, a shopper who leaves checkout gets one message, so you don't have to follow up by hand. Each message uses SMS credits.</p>
-        <ToggleRow title="Message shoppers who leave checkout" desc="One SMS (or email if there's no mobile) per cart, posted into their conversation so replies come to your inbox." checked={cart.enabled} onChange={v => setCart(c => ({ ...c, enabled: v }))} />
+        <ToggleRow title="Message shoppers who leave checkout" desc="One message per cart, posted into their conversation so replies come to your inbox." checked={cart.enabled} onChange={v => setCart(c => ({ ...c, enabled: v }))} />
         {cart.enabled && (
           <div style={{ marginTop: 14 }}>
+            <label style={S.label}>How it's sent</label>
+            <ChannelPicker value={cart.channel} onChange={v => setCart(c => ({ ...c, channel: v }))} />
+            <div style={{ height: 14 }} />
             <label style={S.label}>Send after</label>
             <select value={cart.delay_minutes} onChange={e => setCart(c => ({ ...c, delay_minutes: Number(e.target.value) }))} style={{ ...S.input, maxWidth: 260, fontSize: 16 }}>
               {CART_DELAYS.map(m => <option key={m} value={m}>{m < 60 ? `${m} minutes` : `${m / 60} hour${m === 60 ? '' : 's'}`} after they leave</option>)}
@@ -245,6 +256,36 @@ export default function OrderAutomationSettings() {
           Expected fields (all optional, but include email or phone): <code>name</code>, <code>email</code>, <code>phone</code>, <code>billing</code> (address), <code>items</code> (or <code>line_items</code>), <code>coupon</code>, <code>shipping</code>, <code>notes</code>, <code>total</code>, <code>cart_url</code>, <code>external_id</code>.
         </p>
       </div>
+    </div>
+  )
+}
+
+// "How it's sent" for an automation. Automatic follows the shared rule in
+// lib/channel-choice.ts, spelled out here so the business knows what happens.
+const CHANNEL_OPTIONS: { key: 'auto' | 'sms' | 'email'; title: string; desc: string }[] = [
+  { key: 'auto', title: 'Automatic (recommended)', desc: 'The channel the customer last used to contact you. If they haven’t messaged you yet: SMS when they have a mobile and haven’t opted out of texts, otherwise email.' },
+  { key: 'sms', title: 'SMS', desc: 'Always text when they have a mobile and haven’t opted out. Falls back to email if they can’t be texted.' },
+  { key: 'email', title: 'Email', desc: 'Always email when you have their address. Falls back to SMS if there’s no email.' },
+]
+
+function ChannelPicker({ value, onChange }: { value: 'auto' | 'sms' | 'email'; onChange: (v: 'auto' | 'sms' | 'email') => void }) {
+  return (
+    <div role="radiogroup" aria-label="How it's sent" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10 }}>
+      {CHANNEL_OPTIONS.map(o => {
+        const on = value === o.key
+        return (
+          <button key={o.key} type="button" role="radio" aria-checked={on} onClick={() => onChange(o.key)}
+            style={{ textAlign: 'left', padding: '12px 14px', borderRadius: 12, border: `1px solid ${on ? 'var(--coral)' : 'var(--border)'}`, background: on ? 'color-mix(in srgb, var(--coral) 7%, #fff)' : '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13.5, fontWeight: 700, color: 'var(--ink)' }}>
+              <span aria-hidden style={{ width: 14, height: 14, borderRadius: '50%', border: `2px solid ${on ? 'var(--coral)' : 'var(--border)'}`, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                {on && <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--coral)' }} />}
+              </span>
+              {o.title}
+            </span>
+            <span style={{ display: 'block', marginTop: 4, fontSize: 12.5, lineHeight: 1.5, color: 'var(--slate)' }}>{o.desc}</span>
+          </button>
+        )
+      })}
     </div>
   )
 }

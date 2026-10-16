@@ -75,7 +75,7 @@ export async function runCartRecovery(db: any, opts: { origin: string; now?: Dat
         const link = await cartLink(cart, co.id, pre.conv.id)
         const total = cart.total != null && !isNaN(Number(cart.total)) ? `$${Number(cart.total).toFixed(2)}` : ''
         const text = fillCartMessage(s.message, { name: firstName(cart.name || pre.contact?.name), items: cartItemsText(cart.items), total, business, link })
-        const delivery = await deliverCartMessage(db, { companyId: co.id, business, cart, conv: pre.conv, contact: pre.contact, text, origin: opts.origin, now })
+        const delivery = await deliverCartMessage(db, { companyId: co.id, business, cart, conv: pre.conv, contact: pre.contact, text, origin: opts.origin, now, channel: s.channel })
         await mark(delivery.sent ? { recovery_channel: delivery.channel, recovery_error: null } : { recovery_channel: 'none', recovery_error: delivery.error || 'Not delivered' })
         if (delivery.sent) out.sent++; else out.failed++
       } catch (e: any) {
@@ -140,7 +140,7 @@ export async function cartLink(cart: any, companyId: string, conversationId: str
 }
 
 /** Post the message into their conversation and deliver it (SMS first, else email). */
-export async function deliverCartMessage(db: any, o: { companyId: string; business: string; cart: any; conv: any; contact: any; text: string; origin: string; now?: Date; meta?: Record<string, any> }): Promise<{ sent: boolean; channel?: string; error?: string }> {
+export async function deliverCartMessage(db: any, o: { companyId: string; business: string; cart: any; conv: any; contact: any; text: string; origin: string; now?: Date; meta?: Record<string, any>; channel?: 'auto' | 'sms' | 'email' | null }): Promise<{ sent: boolean; channel?: string; error?: string }> {
   const now = o.now || new Date()
   const { data: msg } = await db.from('messages').insert({
     conversation_id: o.conv.id, company_id: o.companyId, sender_type: 'agent', sender_name: o.business,
@@ -152,7 +152,10 @@ export async function deliverCartMessage(db: any, o: { companyId: string; busine
     companyId: o.companyId, conversationId: o.conv.id, text: o.text,
     phone: o.cart.phone || o.contact?.phone || null,
     email: o.cart.email || o.contact?.email || null,
-    preferChannel: o.cart.phone || o.contact?.phone ? 'sms' : 'email',
+    // The shared rule (lib/channel-choice), or the cart message's own setting.
+    preferChannel: 'auto',
+    channelSetting: o.channel === 'sms' || o.channel === 'email' ? o.channel : 'auto',
+    threadMessageId: msg?.id || null,
     senderName: o.business, subject: `You left something in your cart at ${o.business}`,
     origin: o.origin, db,
   })

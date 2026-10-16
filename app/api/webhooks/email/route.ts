@@ -7,7 +7,7 @@ import { passesRules, sanitizeEmailHtml } from '@/lib/gmail'
 import { logWebhookEvent } from '@/lib/webhook-log'
 import { logEnquiryReopened } from '@/lib/conversation-timeline'
 import { parseInboundAlias } from '@/lib/inbound-alias'
-import { uploadToR2, r2Configured } from '@/lib/r2'
+import { fetchResendReceivedEmail, readReceived, hostResendAttachments as hostResendFiles, findEmailThread, splitQuoted, htmlToPlain, emailPreview, parseMessageIds, idVariants } from '@/lib/inbound-email'
 import { emitInboundEvent } from '@/lib/integration-hooks'
 
 export const dynamic = 'force-dynamic'
@@ -53,54 +53,10 @@ function parseAddress(raw: any): { name: string | null; email: string | null } {
   return { name: null, email: s.trim().toLowerCase() }
 }
 
-// Strip quoted history so the conversation shows just the new reply.
-function stripQuoted(text: string): string {
-  if (!text) return ''
-  const lines = text.split(/\r?\n/)
-  const out: string[] = []
-  for (const line of lines) {
-    if (/^\s*(On .+ wrote:|-{2,}\s*Original Message|_{5,}|From:\s)/i.test(line)) break
-    if (/^\s*>/.test(line)) continue
-    out.push(line)
-  }
-  return out.join('\n').trim() || text.trim()
-}
-
-// Resend inbound webhooks carry only attachment METADATA, not content. To keep a
-// customer's files on the ticket we call Resend's Attachments API for the
-// received email, download each file, and store it on our own R2 → [{url,name,type}].
+// Resend inbound webhooks carry only attachment METADATA, not content; the
+// files are downloaded from the Attachments API and kept on our own R2.
 async function hostResendAttachments(evt: any, companyId: string): Promise<any[]> {
-  try {
-    if (!process.env.RESEND_API_KEY || !r2Configured()) return []
-    const emailId = pick(evt, 'id', 'email_id', 'emailId')
-    if (!emailId) return []
-    // Skip the extra API call when the payload's metadata says there are none.
-    const meta = evt.attachments || evt.Attachments
-    if (Array.isArray(meta) && meta.length === 0) return []
-    const res = await fetch(`https://api.resend.com/emails/receiving/${emailId}/attachments`, {
-      headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}` },
-    })
-    if (!res.ok) return []
-    const j = await res.json().catch(() => ({}))
-    const list = j.data || j.attachments || []
-    const out: any[] = []
-    for (const a of list) {
-      try {
-        if (!a.download_url) continue
-        const dl = await fetch(a.download_url)
-        if (!dl.ok) continue
-        const bytes = Buffer.from(await dl.arrayBuffer())
-        if (!bytes.length || bytes.length > 20 * 1024 * 1024) continue
-        const name = a.filename || 'file'
-        const type = a.content_type || 'application/octet-stream'
-        const safe = String(name).replace(/[^\w.\-]/g, '_')
-        const key = `ticket-attachments/${companyId}/${emailId}-${safe}`
-        const url = await uploadToR2(key, bytes, type)
-        out.push({ url, name, type })
-      } catch { /* skip one bad attachment */ }
-    }
-    return out
-  } catch { return [] }
+  return hostResendFiles(pick(evt, 'email_id', 'id', 'emailId'), companyId, evt?.attachments || evt?.Attachments || null)
 }
 
 export async function POST(req: NextRequest) {
@@ -121,10 +77,33 @@ export async function POST(req: NextRequest) {
     const ccRaw = pick(evt, 'cc', 'Cc', 'CcFull')
     const fromRaw = pick(evt, 'from', 'From', 'sender', 'FromFull', 'envelope.from')
     const subject = pick(evt, 'subject', 'Subject') || '(no subject)'
-    const textBody = pick(evt, 'text', 'TextBody', 'body-plain', 'plain', 'stripped-text') || ''
-    const htmlBody = pick(evt, 'html', 'HtmlBody', 'body-html') || ''
-    const messageId = pick(evt, 'message_id', 'MessageID', 'Message-Id', 'messageId', 'headers.message-id')
-    const inReplyTo = pick(evt, 'in_reply_to', 'In-Reply-To', 'headers.in-reply-to', 'InReplyTo')
+    let textBody = pick(evt, 'text', 'TextBody', 'body-plain', 'plain', 'stripped-text') || ''
+    let htmlBody = pick(evt, 'html', 'HtmlBody', 'body-html') || ''
+    let messageId = pick(evt, 'message_id', 'MessageID', 'Message-Id', 'messageId', 'headers.message-id')
+    let inReplyTo = pick(evt, 'in_reply_to', 'In-Reply-To', 'headers.in-reply-to', 'InReplyTo')
+    let threadIds: string[] = parseMessageIds(inReplyTo, pick(evt, 'references', 'References', 'headers.references'))
+    let receivedAt: string | null = pick(evt, 'created_at', 'Date', 'date') ? String(pick(evt, 'created_at', 'Date', 'date')) : null
+
+    // Resend's email.received webhook is METADATA ONLY: no body, no
+    // In-Reply-To/References, no attachment files. Fetch the received email
+    // from the Receiving API (with retries) so the reply isn't stored empty and
+    // can be threaded onto the conversation we sent the original from.
+    const resendEmailId: string | null = pick(evt, 'email_id', 'emailId') || (/email\.received/i.test(String(body?.type || '')) ? pick(evt, 'id') : null)
+    let bodyFetch: 'payload' | 'fetched' | 'unavailable' = (textBody || htmlBody) ? 'payload' : 'unavailable'
+    if (!textBody && !htmlBody && resendEmailId) {
+      const full = readReceived(await fetchResendReceivedEmail(String(resendEmailId)))
+      if (full) {
+        textBody = full.text || ''
+        htmlBody = full.html || ''
+        messageId = messageId || full.messageId
+        inReplyTo = inReplyTo || full.inReplyTo
+        threadIds = Array.from(new Set([...threadIds, ...full.threadIds]))
+        receivedAt = receivedAt || full.receivedAt
+        if (!Array.isArray(evt.attachments)) evt.attachments = full.attachments
+        bodyFetch = 'fetched'
+      }
+    }
+    if (inReplyTo && !threadIds.length) threadIds = parseMessageIds(inReplyTo)
 
     const to = parseAddress(Array.isArray(toRaw) ? toRaw[0] : toRaw)
     const from = parseAddress(fromRaw)
@@ -134,7 +113,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, reason: 'Missing from address' })
     }
 
-    const content = stripQuoted(String(textBody)) || String(htmlBody).replace(/<[^>]+>/g, ' ').trim()
+    // What the customer wrote, without the history their mail app quoted below it.
+    const plain = String(textBody || '') || htmlToPlain(String(htmlBody || ''))
+    const split = splitQuoted(plain)
+    const content = split.reply
+    const emailQuoted = split.quoted
 
     // ── Colvy inbound-alias routing (reply.colvy.com) ────────────────────────
     // Check every recipient (To + Cc — a forwarded mail can carry several) for a
@@ -190,7 +173,7 @@ export async function POST(req: NextRequest) {
             email_html: htmlBody ? sanitizeEmailHtml(String(htmlBody)) || null : null,
             email_attachments: ticketAtts.map((a: any) => ({ name: a.name, mime: a.type, url: a.url })),
           })
-          await db.from('conversations').update({ last_message: (content || (ticketAtts.length ? 'Sent an attachment' : '')).slice(0, 200), last_message_at: new Date().toISOString(), is_unread: true, status: 'open' }).eq('id', ticket.conversation_id)
+          await db.from('conversations').update({ last_message: emailPreview(content, ticketAtts.length, subject), last_message_at: new Date().toISOString(), is_unread: true, status: 'open' }).eq('id', ticket.conversation_id)
         } catch {}
       }
       try { await notifyCompany({ db, companyId: ticket.company_id, type: 'ticket', message: `Reply on ${ticket.ticket_number} from ${from.name || from.email}`, actorName: from.name || from.email }) } catch {}
@@ -230,7 +213,8 @@ export async function POST(req: NextRequest) {
     const isForm = channel.provider === 'webform'
     const emailAtts = await hostResendAttachments(evt, companyId as string)
     const emailHtml = htmlBody ? sanitizeEmailHtml(String(htmlBody)) : ''
-    const preview = (content || (emailAtts.length === 1 ? 'Sent an attachment' : emailAtts.length > 1 ? `Sent ${emailAtts.length} attachments` : '')).slice(0, 200)
+    // Never blank: a blank last_message reads "No messages yet" in the list.
+    const preview = emailPreview(content, emailAtts.length, subject)
 
     // ── Find-or-create the contact ───────────────────────────────────────────
     let contact: any = null
@@ -244,13 +228,30 @@ export async function POST(req: NextRequest) {
       contact = created
     }
 
-    // ── Thread into an existing conversation, else create one ────────────────
-    let conv: any = null
-    if (inReplyTo) {
-      const { data: threaded } = await db.from('conversations').select('*')
-        .eq('company_id', companyId).eq('email_message_id', inReplyTo).limit(1)
-      conv = threaded?.[0] || null
+    // ── Already have this email? (provider retries, a re-sent webhook) ───────
+    if (messageId) {
+      const { data: dup } = await db.from('messages').select('id, conversation_id, content, email_html')
+        .eq('company_id', companyId).in('email_message_id', idVariants([String(messageId)])).eq('sender_type', 'visitor').limit(1)
+      const d = dup?.[0]
+      if (d) {
+        // Fill in a body an earlier delivery stored empty; never insert twice.
+        if (!String(d.content || '').trim() && !d.email_html && (content || htmlBody)) {
+          await db.from('messages').update({ content, email_html: emailHtml || null, email_quoted: emailQuoted || null }).eq('id', d.id)
+          await db.from('conversations').update({ last_message: preview }).eq('id', d.conversation_id)
+        }
+        return NextResponse.json({ ok: true, duplicate: true, conversationId: d.conversation_id })
+      }
     }
+
+    // ── Thread into an existing conversation, else create one ────────────────
+    // In-Reply-To/References → the message we sent (or received) with that id;
+    // else the same subject (ignoring "Re:") on one of this customer's recent
+    // conversations — a reply to an automated "Update on your order #…" lands
+    // on that order's conversation instead of starting an empty new one.
+    let conv: any = null
+    let threadedVia: string | null = null
+    const found = await findEmailThread(db, { companyId: companyId as string, contactId: contact?.id || null, ids: threadIds, subject: /^\s*re\s*:/i.test(subject) ? subject : null })
+    if (found?.conv) { conv = found.conv; threadedVia = found.via }
     if (!conv && contact?.id) {
       // Fall back to the contact's most recent open email conversation.
       const { data: recent } = await db.from('conversations').select('*')
@@ -281,7 +282,7 @@ export async function POST(req: NextRequest) {
     await logEnquiryReopened(db, { conversationId: conv.id, companyId, prevStatus: conv.status, actorName: from?.name || from?.email || null, via: 'email' })
 
     // ── Store the message ────────────────────────────────────────────────────
-    await db.from('messages').insert({
+    const msgRow: any = {
       conversation_id: conv.id, company_id: companyId,
       sender_type: 'visitor',
       sender_name: from.name || from.email,
@@ -299,9 +300,21 @@ export async function POST(req: NextRequest) {
         email_to: recipientEmails.join(', ') || to.email || null,
         email_subject: subject,
         email_html: emailHtml || null,
-        email_attachments: emailAtts.map(a => ({ name: a.name, mime: a.type, url: a.url })),
+        email_quoted: emailQuoted || null,
+        email_attachments: emailAtts.map(a => ({ name: a.name, mime: a.type, url: a.url, ...(a.size ? { size: a.size } : {}) })),
       }),
-    })
+      // The Resend id lets the body backfill re-fetch this email later.
+      metadata: { inbound_email: { provider: resendEmailId ? 'resend' : 'webhook', ...(resendEmailId ? { resend_email_id: String(resendEmailId) } : {}), body: bodyFetch, ...(receivedAt ? { received_at: receivedAt } : {}), ...(threadedVia ? { threaded_via: threadedVia } : {}) } },
+    }
+    {
+      const { error: insErr } = await db.from('messages').insert(msgRow)
+      // A database without email_quoted / metadata must still get the email.
+      if (insErr) {
+        console.warn('[email webhook] message insert retry without optional columns', insErr.message)
+        delete msgRow.metadata; delete msgRow.email_quoted
+        await db.from('messages').insert(msgRow)
+      }
+    }
     await emitInboundEvent(db, { companyId, conversationId: conv.id, text: content || preview, channel: 'email', name: from.name || null, email: from.email || null })
 
     // The Support / Reception Agent, if switched on for email — queued for the

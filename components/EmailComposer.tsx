@@ -19,6 +19,7 @@ interface Props {
   toEmail: string
   defaultSubject: string
   fromLabel?: string           // "Roxy Aquarium <aquarium.roxy@gmail.com>"
+  replyTo?: string | null      // where the customer's reply goes (shown as a hint)
   signature?: string | null    // the mailbox's own signature (fallback default)
   agentName?: string
   onSent: () => void
@@ -32,7 +33,7 @@ interface Props {
 }
 
 export default function EmailComposer({
-  conversationId, companyId, toEmail, defaultSubject, fromLabel, signature, agentName, onSent, onAiAssist, keyterms, extraTools, header, bodyHeight,
+  conversationId, companyId, toEmail, defaultSubject, fromLabel, replyTo, signature, agentName, onSent, onAiAssist, keyterms, extraTools, header, bodyHeight,
 }: Props) {
   const [to, setTo] = useState(toEmail)
   const [cc, setCc] = useState('')
@@ -295,9 +296,15 @@ export default function EmailComposer({
   return (
     <div className={header ? 'cmp-card' : undefined} style={header ? { overflow: 'hidden' } : { border: '1px solid var(--border)', borderRadius: 12, background: '#fff', overflow: 'hidden' }}>
       {header}
-      <div style={{ ...row, background: header ? 'transparent' : 'var(--canvas)' }}>
+      <div style={{ ...row, flexWrap: 'wrap', rowGap: 2, background: header ? 'transparent' : 'var(--canvas)' }}>
         <span style={rowLabel}>From</span>
-        <span style={{ ...field, color: 'var(--slate)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fromLabel || 'Your mailbox'}</span>
+        <span style={{ ...field, minWidth: 180, color: 'var(--slate)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fromLabel || 'Your mailbox'}</span>
+        {/* "Where would I get the reply?" — right here. */}
+        <span title={replyTo ? `The customer's reply goes to ${replyTo} and lands in this conversation.` : 'The customer\'s reply lands in this conversation.'}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11.5, color: 'var(--slate)', whiteSpace: 'nowrap', flexShrink: 0, marginLeft: 'auto' }}>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/></svg>
+          Replies come back to this inbox
+        </span>
       </div>
       <div style={row}>
         <span style={rowLabel}>To</span>

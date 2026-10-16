@@ -17,7 +17,7 @@ const admin = () => createClient(
 // message so it lands in the same email conversation on their side.
 export async function POST(req: NextRequest) {
   try {
-    const { conversationId, content, html: htmlOverride, agentName, to, cc, bcc, subject: subjectOverride, signature: sigOverride, attachments, metadata, skipChatMessage } = await req.json()
+    const { conversationId, content, html: htmlOverride, agentName, to, cc, bcc, subject: subjectOverride, signature: sigOverride, attachments, metadata, skipChatMessage, threadMessageId } = await req.json()
     // Normalise attachments to {url,name,type} + a display kind for the thread.
     const atts = (Array.isArray(attachments) ? attachments : [])
       .filter((a: any) => a && a.url)
@@ -119,8 +119,21 @@ export async function POST(req: NextRequest) {
     // back onto THIS conversation, regardless of where their mailbox lives.
     // Reply-To on Colvy's inbound domain (the company alias). The customer's reply
     // comes back to Colvy and threads onto this conversation via In-Reply-To.
-    const { companyAlias, INBOUND_ENABLED } = await import('@/lib/inbound-alias')
-    const convReplyTo = (INBOUND_ENABLED && company?.slug) ? companyAlias(company.slug) : (channel.inbound_address || channel.from_address || '')
+    const { inboxReplyTo } = await import('@/lib/inbound-alias')
+    const convReplyTo = inboxReplyTo(company, channel)
+
+    // An automated send records its own thread row (skipChatMessage) and names
+    // it here, so that row is stamped as the email that went out: its subject,
+    // addresses and Message-ID. The customer's reply then threads back onto it,
+    // and the composer's subject follows it instead of a stale one.
+    const stampThreadRow = async (fields: Record<string, any>) => {
+      if (!skipChatMessage || !threadMessageId) return
+      try {
+        await db.from('messages').update({
+          delivery_channel: 'email', email_subject: subject, email_to: toEmail, email_in_reply_to: inReplyTo, ...fields,
+        }).eq('id', String(threadMessageId)).eq('conversation_id', conversationId)
+      } catch { /* the send already happened */ }
+    }
 
     if (channel.provider === 'gmail') {
       const out = await sendGmail(channel, {
@@ -142,6 +155,7 @@ export async function POST(req: NextRequest) {
           content: fullText,
           delivery_channel: 'email',
           gmail_message_id: out.id || null,
+          email_message_id: out.messageId || null,
           email_in_reply_to: inReplyTo,
           email_from: fromLabel,
           email_to: toEmail,
@@ -156,7 +170,8 @@ export async function POST(req: NextRequest) {
         }).eq('id', conversationId)
       }
 
-      return NextResponse.json({ ok: true, id: out.id, via: 'gmail' })
+      await stampThreadRow({ gmail_message_id: out.id || null, email_message_id: out.messageId || null, email_from: fromLabel })
+      return NextResponse.json({ ok: true, id: out.id, messageId: out.messageId || null, subject, replyTo: convReplyTo || null, via: 'gmail' })
     }
 
     // ── Webhook (domain) account: send via Resend.
@@ -224,7 +239,8 @@ export async function POST(req: NextRequest) {
       }).eq('id', conversationId)
     }
 
-    return NextResponse.json({ ok: true, id: out?.id, via: 'resend' })
+    await stampThreadRow({ email_message_id: out?.id || null, email_from: `${fromName} <${fromAddress}>` })
+    return NextResponse.json({ ok: true, id: out?.id, subject, replyTo: convReplyTo || null, via: 'resend' })
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 })
   }

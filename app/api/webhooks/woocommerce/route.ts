@@ -560,11 +560,13 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
       // phone is blank, so an SMS-only customer still gets reached.
       phone: phone || contact?.phone || null,
       email,
-      // Prefer the channel the customer is actually known on. An order/website
-      // thread (channel 'chat') goes by EMAIL — sending an SMS to a billing phone
-      // we never captured on their contact is what surprised the customer.
-      // Genuine SMS threads (or contacts with no email) still go by SMS.
-      preferChannel: (!email || conv?.channel === 'sms') ? 'sms' : 'email',
+      // One rule for every automated message (lib/channel-choice): the channel
+      // the customer last used; else SMS when they have a mobile, haven't
+      // opted out and the business can text; else email. The Order Automation
+      // page can pin it to SMS or email (cfg.channel).
+      preferChannel: 'auto',
+      channelSetting: cfg.channel === 'sms' || cfg.channel === 'email' ? cfg.channel : 'auto',
+      threadMessageId: autoMsg?.id || null,
       senderName: businessName,
       subject: `Update on your order #${order.number || order.id}`,
       origin,

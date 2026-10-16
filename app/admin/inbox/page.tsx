@@ -64,6 +64,7 @@ import RefundOrderModal from '@/components/RefundOrderModal'
 import PrextyMark, { PREXTY } from '@/components/PrextyMark'
 import { notifyIntegrations } from '@/lib/integrations-notify'
 import { isOldPhoneVideo } from '@/lib/web-video'
+import { composerSubject } from '@/lib/email-subject'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Conversation = {
@@ -1702,6 +1703,11 @@ export default function InboxPage() {
   const [showTimeline, setShowTimeline] = useState(false)
   const [emailSignature, setEmailSignature] = useState<string | null>(null)
 
+  // The shared channel rule's answer for this thread (/api/inbox/channel-choice,
+  // lib/channel-choice): used when the customer hasn't messaged on it yet, and
+  // for where an email reply comes back to.
+  const [channelPick, setChannelPick] = useState<{ convId: string; channel: string; reason?: string; replyTo?: string | null } | null>(null)
+
   // Where is this customer ACTUALLY talking, right now? The conversation's
   // stored channel goes stale the moment someone moves from the web widget to
   // SMS, which is why threads kept insisting they were "live chat" (and kept
@@ -1722,13 +1728,19 @@ export default function InboxPage() {
       const dc = String(m.delivery_channel || '').toLowerCase()
       if (dc && dc !== 'chat') return dc
     }
+    // The customer hasn't messaged on this thread (an order or cart thread of
+    // Colvy's own messages): the shared rule decides — their last channel
+    // elsewhere, else SMS when they may be texted, else email. Our own last
+    // outbound channel is not evidence (an order email made every reply email).
+    const customerSpoke = messages.some((m: any) => m && m.sender_type !== 'agent' && m.sender_type !== 'system' && !m.is_internal)
+    if (!customerSpoke && channelPick && channelPick.convId === selected?.id && channelPick.channel && channelPick.channel !== 'none') return channelPick.channel
     // Nothing inbound carried one — fall back to any message, then the row.
     for (let i = messages.length - 1; i >= 0; i--) {
       const dc = String((messages[i] as any).delivery_channel || '').toLowerCase()
       if (dc && dc !== 'chat') return dc
     }
     return String((selected as any)?.channel || 'widget').toLowerCase()
-  }, [messages, selected?.id, (selected as any)?.channel])
+  }, [messages, selected?.id, (selected as any)?.channel, channelPick])
 
   const isWebChat = ['widget', 'chat'].includes(activeChannel)
   // Where a reply or an action (payment link, coupon, form…) actually goes. A
@@ -1761,6 +1773,16 @@ export default function InboxPage() {
       .catch(() => {})
     return () => { cancelled = true }
   }, [selected?.id, outboundChannel, lastInboundId])
+  useEffect(() => {
+    if (!selected?.id) return
+    let cancelled = false
+    const convId = selected.id
+    authFetch(`/api/inbox/channel-choice?conversationId=${encodeURIComponent(convId)}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (!cancelled && d?.channel) setChannelPick({ convId, channel: d.channel, reason: d.reason, replyTo: d.replyTo || null }) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [selected?.id, lastInboundId])
 
   // The name shown in the conversation header. On SMS/phone the "subject" is
   // often a stale auto-detected name (e.g. from an AI guess), so clearing the
@@ -1822,7 +1844,9 @@ export default function InboxPage() {
   // For an email thread, load the sending mailbox so the composer can show the
   // real "From" and append the right signature.
   useEffect(() => {
-    if (!selected || String((selected as any).channel || '').toLowerCase() !== 'email') {
+    // Any thread can be replied to by email (an order thread, or "Use email"),
+    // so the mailbox is loaded for every conversation, not just email ones.
+    if (!selected) {
       setEmailFromLabel(''); setEmailSignature(null); return
     }
     let cancelled = false
@@ -2465,6 +2489,8 @@ export default function InboxPage() {
   // the device's own apps. Find the contact's most recent conversation, or create
   // an empty one, then open it with the compose channel pre-selected.
   const deepContactRef = useRef<string | null>(null)
+  // The channel a deep link asked for, applied once its conversation is open.
+  const pendingSendChannelRef = useRef<string | null>(null)
   // Find-or-create this contact's conversation and open it. Shared by the
   // on-mount ?contact= deep link AND the live "open this contact" event below.
   const openContactDeepLink = useCallback(async (contactId: string, wantCh: string | null) => {
@@ -2491,6 +2517,7 @@ export default function InboxPage() {
       if (!conv) { deepContactRef.current = null; return }
       conv.contacts = ct
       setConversations(prev => prev.some(c => c.id === conv.id) ? prev : [conv, ...prev])
+      pendingSendChannelRef.current = (wantCh === 'sms' || wantCh === 'email' || wantCh === 'chat') ? wantCh : null
       selectConversation(conv)
       if (wantCh === 'sms' || wantCh === 'email' || wantCh === 'chat') setSendChannel(wantCh)
       // Strip the params so a refresh doesn't re-open / re-create anything.
@@ -4733,6 +4760,17 @@ export default function InboxPage() {
                   </div>
                   <span className="cmp-via">
                     {internalMode ? 'Only your team sees this' : <>Sending by <b>{({ sms: 'SMS', email: 'email', chat: 'live chat', instagram: 'Instagram', messenger: 'Messenger', whatsapp: 'WhatsApp', call: 'SMS' } as Record<string, string>)[sendChannel !== 'auto' ? sendChannel : outboundChannel] || 'chat'}</b> {sendChannelGlyph(sendChannel !== 'auto' ? sendChannel : outboundChannel, 13)}</>}
+                    {/* Both a mobile and an email: one tap to the other. */}
+                    {!internalMode && (() => {
+                      const cur = sendChannel !== 'auto' ? sendChannel : outboundChannel
+                      const other = cur === 'email' && ((selected as any)?.sms_number || contact?.phone) ? 'sms' : cur === 'sms' && contact?.email ? 'email' : null
+                      return other ? (
+                        <button type="button" onClick={() => setSendChannel(other)} title={channelPick?.reason || undefined}
+                          style={{ marginLeft: 8, background: 'none', border: 'none', padding: 0, color: 'var(--coral)', fontWeight: 700, fontSize: 'inherit', cursor: 'pointer', fontFamily: 'inherit' }}>
+                          Use {other === 'sms' ? 'SMS' : 'email'}
+                        </button>
+                      ) : null
+                    })()}
                   </span>
                 </div>
   )
@@ -5356,6 +5394,14 @@ export default function InboxPage() {
   // from the Send dropdown.
   const [sendChannel, setSendChannel] = useState<'auto' | 'chat' | 'sms' | 'email'>('auto')
   const [showChannelMenu, setShowChannelMenu] = useState(false)
+  // A channel picked for one conversation must not carry over to the next
+  // (it stayed set, so a later email thread could open on SMS). A deep link's
+  // ?channel= is applied to the conversation it opened.
+  useEffect(() => {
+    const want = pendingSendChannelRef.current
+    pendingSendChannelRef.current = null
+    setSendChannel(want === 'sms' || want === 'email' || want === 'chat' ? want : 'auto')
+  }, [selected?.id])
 
   // Right-click context menu on the conversation list.
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; conv: any } | null>(null)
@@ -9020,7 +9066,9 @@ export default function InboxPage() {
                   <div key="enquiry-header" style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '4px 0 14px' }}>
                     <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
                     <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--slate)', whiteSpace: 'nowrap' }}>
-                      New {enquiryKind} from {enquiryName}
+                      {enquiryKind === 'Email Enquiry'
+                        ? (first?.sender_type === 'agent' ? `Email conversation with ${enquiryName}` : `Email received from ${enquiryName}`)
+                        : `New ${enquiryKind} from ${enquiryName}`}
                     </span>
                     <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
                   </div>
@@ -9309,10 +9357,8 @@ export default function InboxPage() {
                   return (
                     <div key={msg.id} id={`cmsg-${msg.id}`} data-cmsg="1">
                       {dateDivider}
-                      <EmailMessage msg={msg} agentColor={companyInfo?.accent_color} onOpenMedia={(i) => openEmailMedia(msg.id, i)} />
-                      <p style={{ textAlign: isAgent ? 'right' : 'left', fontSize: 10.5, color: '#9ca3af', margin: '2px 12px 0' }}>
-                        {fmtReceipt(msg.created_at, isAgent, 'email')}
-                      </p>
+                      {/* The card shows when it was received / sent itself. */}
+                      <EmailMessage msg={msg} agentColor={companyInfo?.accent_color} businessName={companyInfo?.name} onOpenMedia={(i) => openEmailMedia(msg.id, i)} />
                     </div>
                   )
                 }
@@ -9991,17 +10037,16 @@ export default function InboxPage() {
               </div>
               {/* Email threads get a proper email composer (To/Cc/Subject +
                   signature) instead of the plain chat box. */}
-              {activeChannel === 'email' && !internalMode ? (
+              {(sendChannel === 'email' || (activeChannel === 'email' && sendChannel === 'auto')) && !internalMode ? (
                 <EmailComposer
                   header={renderModeHead()}
                   bodyHeight={composerH + 44}
                   conversationId={selected.id}
                   companyId={companyId}
                   toEmail={contact?.email || ''}
-                  defaultSubject={(selected as any).email_subject
-                    ? (/^re:/i.test((selected as any).email_subject) ? (selected as any).email_subject : `Re: ${(selected as any).email_subject}`)
-                    : `Re: ${selected.subject || 'your message'}`}
+                  defaultSubject={composerSubject(messages, selected as any, { businessName: companyInfo?.name, contactName: contact?.name, contactPhone: contact?.phone, contactEmail: contact?.email })}
                   fromLabel={emailFromLabel}
+                  replyTo={channelPick?.convId === selected.id ? channelPick.replyTo || null : null}
                   signature={emailSignature}
                   agentName={myName}
                   keyterms={[contact?.name, (contact as any)?.company_name].filter(Boolean) as string[]}

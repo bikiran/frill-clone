@@ -56,6 +56,8 @@ export interface FallbackResult {
   channel: 'live_chat' | 'sms' | 'email' | 'none'
   sent: boolean
   error?: string
+  /** Why this channel was tried first, in plain English (the 'auto' rule). */
+  reason?: string
   /** The text was refused because the customer opted out (lib/sms-consent). */
   optedOut?: boolean
 }
@@ -82,10 +84,21 @@ export async function deliverAutomatedMessage(params: {
   // thread — e.g. an order/website/email enquiry — so an order confirmation goes
   // out on the channel the customer is actually known on, not to a billing phone
   // that was never captured on their contact.
-  preferChannel?: 'sms' | 'email'
+  //
+  // 'auto' applies the shared rule (lib/channel-choice): the channel the
+  // customer last used to contact the business; else SMS when they have a
+  // mobile, haven't opted out and the business can text; else email.
+  // `channelSetting` is an automation's own choice ('auto' | 'sms' | 'email').
+  preferChannel?: 'sms' | 'email' | 'auto'
+  channelSetting?: 'auto' | 'sms' | 'email' | null
+  // The thread row the caller already wrote for this message. An email send
+  // stamps it with its subject and Message-ID (so a reply threads back to it).
+  threadMessageId?: string | null
   db?: any
 }): Promise<FallbackResult> {
-  const { companyId, conversationId, text, phone, email, senderName, subject, origin, force, preferChannel, db } = params
+  const { companyId, conversationId, text, phone, email, senderName, subject, origin, force, channelSetting, threadMessageId, db } = params
+  let preferChannel = params.preferChannel
+  let reason: string | undefined
 
   const onLiveChat = await isCustomerOnLiveChat(conversationId, db)
 
@@ -93,6 +106,15 @@ export async function deliverAutomatedMessage(params: {
   // message they can already see is enough.
   if (onLiveChat && !force) {
     return { onLiveChat: true, channel: 'live_chat', sent: true }
+  }
+
+  if (preferChannel === 'auto' || (channelSetting && channelSetting !== 'auto')) {
+    try {
+      const { resolveChannel } = await import('@/lib/channel-choice-server')
+      const pick = await resolveChannel(db || admin(), { companyId, conversationId, phone, email, setting: channelSetting || null }, { reachOnly: true })
+      reason = pick.reason
+      preferChannel = pick.channel === 'email' ? 'email' : 'sms'
+    } catch { preferChannel = phone ? 'sms' : 'email' }
   }
 
   const sendEmail = async (): Promise<FallbackResult | null> => {
@@ -106,9 +128,10 @@ export async function deliverAutomatedMessage(params: {
           conversationId, to: email, agentName: senderName || undefined,
           subject: subject || 'Update on your order',
           content: text, skipChatMessage: true,
+          ...(threadMessageId ? { threadMessageId } : {}),
         }),
       })
-      if (res.ok) return { onLiveChat, channel: 'email', sent: true }
+      if (res.ok) return { onLiveChat, channel: 'email', sent: true, ...(reason ? { reason } : {}) }
     } catch { /* fall through */ }
     return null
   }
@@ -137,7 +160,7 @@ export async function deliverAutomatedMessage(params: {
           skipChatMessage: true,
         }),
       })
-      if (res.ok) return { onLiveChat, channel: 'sms', sent: true }
+      if (res.ok) return { onLiveChat, channel: 'sms', sent: true, ...(reason ? { reason } : {}) }
       const d = await res.json().catch(() => ({}))
       optedOut = !!d?.optedOut
       smsError = d?.error || `The text didn’t send (${res.status}).`

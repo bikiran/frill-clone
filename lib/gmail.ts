@@ -546,6 +546,20 @@ export async function syncGmailChannel(
         .eq('company_id', companyId).eq('email_message_id', full.threadId).limit(1)
       conv = byThread?.[0] || null
     }
+    if (!conv) {
+      // A reply to an email we sent from another conversation (an automated
+      // order update goes out from the order's conversation): its In-Reply-To /
+      // References name our sent message, or its subject matches it.
+      try {
+        const { findEmailThread, parseMessageIds } = await import('@/lib/inbound-email')
+        const found = await findEmailThread(db, {
+          companyId, contactId: contact?.id || null,
+          ids: parseMessageIds(inReplyTo, header(headers, 'References') || null),
+          subject: /^\s*re\s*:/i.test(subject) ? subject : null,
+        })
+        if (found?.conv) conv = found.conv
+      } catch { /* fall through */ }
+    }
     if (!conv && contact?.id) {
       // Same SENDER does not mean same thread. Automated senders — invoice
       // reminders, booking platforms, ticketing systems — mail about completely
@@ -699,7 +713,7 @@ export async function sendGmail(channel: any, opts: {
   threadId?: string | null
   replyTo?: string | null
   attachments?: { url: string; name?: string; type?: string }[]
-}): Promise<{ id?: string; error?: string }> {
+}): Promise<{ id?: string; threadId?: string; messageId?: string | null; error?: string }> {
   const token = await getGmailToken(channel)
   if (!token) return { error: 'Google connection expired — reconnect the account.' }
 
@@ -771,5 +785,19 @@ export async function sendGmail(channel: any, opts: {
   })
   const data = await res.json()
   if (!res.ok) return { error: data?.error?.message || 'Gmail send failed' }
-  return { id: data.id }
+  // Gmail writes its own Message-ID. Read it back so the customer's reply (its
+  // In-Reply-To names this id) threads onto the right conversation. Best-effort.
+  let messageId: string | null = null
+  try {
+    if (data.id) {
+      const meta = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${data.id}?format=metadata&metadataHeaders=Message-ID`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (meta.ok) {
+        const m = await meta.json()
+        messageId = header(m?.payload?.headers || [], 'Message-ID') || null
+      }
+    }
+  } catch { /* threading falls back to the subject */ }
+  return { id: data.id, threadId: data.threadId, messageId }
 }
