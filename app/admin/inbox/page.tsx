@@ -18,7 +18,7 @@ import SendTrackingModal from '@/components/SendTrackingModal'
 import VoiceDictationButton from '@/components/VoiceDictationButton'
 import { useDraft } from '@/lib/drafts'
 import { uploadQueue } from '@/lib/upload-queue'
-import { toPublicUrl } from '@/lib/storage-url'
+import { toPublicUrl, sizedImageUrl, sizedImageFallback } from '@/lib/storage-url'
 
 // A video attachment's still frame, when it has a real image thumbnail (some
 // carry the video URL itself as the "thumbnail", which can't be shown as one).
@@ -9513,7 +9513,8 @@ export default function InboxPage() {
                                                a fraction of the bytes at this size.
                                                Falls back to the full image for older
                                                attachments that have no preview. */
-                                            src={toPublicUrl(a.thumbUrl || a.url)}
+                                            src={a.thumbUrl ? toPublicUrl(a.thumbUrl) : sizedImageUrl(a.url, 320)}
+                                            onError={a.thumbUrl ? undefined : sizedImageFallback(a.url)}
                                             alt={a.name}
                                             loading="lazy"
                                             decoding="async"
@@ -11367,7 +11368,7 @@ export default function InboxPage() {
                             <div onClick={() => setGalleryIndex(i)} style={{ position: 'absolute', inset: 0 }}>
                               {(a.kind === 'video' || String(a.type).startsWith('video'))
                                 ? <video src={a.url} preload="metadata" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                : <img src={a.url} alt="" loading="lazy" decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
+                                : <img src={sizedImageUrl(a.thumbUrl || a.url, 120)} onError={sizedImageFallback(a.thumbUrl || a.url)} alt="" loading="lazy" decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
                             </div>
                             {/* Forward it to another customer */}
                             <button type="button"
@@ -11383,7 +11384,7 @@ export default function InboxPage() {
                             onClick={(a.isImage || a.isVideo) ? (e => { e.preventDefault(); openEmailMedia(a.messageId, a.index) }) : undefined}
                             style={{ position: 'relative', paddingTop: '100%', borderRadius: 8, overflow: 'hidden', background: 'var(--canvas)', display: 'block', textDecoration: 'none', cursor: (a.isImage || a.isVideo) ? 'zoom-in' : 'pointer' }}>
                             {a.isImage ? (
-                              <img src={a.url} alt={a.name} loading="lazy" decoding="async" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+                              <img src={sizedImageUrl(a.url, 120)} onError={sizedImageFallback(a.url)} alt={a.name} loading="lazy" decoding="async" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
                             ) : a.isVideo ? (
                               <video src={a.url} preload="metadata" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
                             ) : (

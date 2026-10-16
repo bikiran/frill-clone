@@ -30,8 +30,11 @@ type Call = {
 }
 
 // Call recordings use the shared inline player (same as the mobile app).
-function CallPlayer({ url }: { url: string }) {
-  return <VoicePlayer src={url} name="Call recording" />
+// Passing the known length lets the player skip reading each file's metadata
+// up front, so a caller with dozens of recordings doesn't open dozens of media
+// players at once.
+function CallPlayer({ url, durationSec }: { url: string; durationSec?: number | null }) {
+  return <VoicePlayer src={url} name="Call recording" durationSec={durationSec || undefined} />
 }
 
 export default function CallsPage() {
@@ -425,7 +428,7 @@ export default function CallsPage() {
 
                       {c.recording_url ? (
                         <>
-                          <CallPlayer url={c.recording_url} />
+                          <CallPlayer url={c.recording_url} durationSec={c.duration_seconds} />
                           <div style={{ marginTop: 8 }}>
                             <a href={c.recording_url} download style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--coral)', textDecoration: 'none' }}>⬇ Download recording</a>
                           </div>

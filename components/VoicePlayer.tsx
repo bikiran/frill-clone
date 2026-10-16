@@ -54,11 +54,21 @@ export default function VoicePlayer({ src, name, durationSec, bare, onPlayStart,
     if (a && a.readyState >= 1 && isFinite(a.duration) && a.duration > 0) setDur(a.duration)
   }, [src])
 
+  // The real waveform means downloading and decoding the whole recording, so
+  // only do it once the player is on (or about to come on) screen. A long
+  // thread or a frequent caller's timeline used to fetch and decode every
+  // recording at once the moment it opened.
   useEffect(() => {
     let live = true
     setFine(fallbackPeaks(src, FINE))
-    loadPeaks(src, FINE).then(p => { if (live) setFine(p) })
-    return () => { live = false }
+    const load = () => { loadPeaks(src, FINE).then(p => { if (live) setFine(p) }) }
+    const el = waveRef.current
+    if (!el || typeof IntersectionObserver === 'undefined') { load(); return () => { live = false } }
+    const io = new IntersectionObserver(entries => {
+      if (entries.some(e => e.isIntersecting)) { io.disconnect(); load() }
+    }, { rootMargin: '300px 0px' })
+    io.observe(el)
+    return () => { live = false; io.disconnect() }
   }, [src])
 
   useEffect(() => {
@@ -102,7 +112,8 @@ export default function VoicePlayer({ src, name, durationSec, bare, onPlayStart,
   const peaks = resample(fine, bars)
   return (
     <div className={`vp${bare ? ' vp-bare' : ''}`} style={style}>
-      <audio ref={ref} src={src} preload="metadata" data-inline="" data-name={name || undefined}
+      {/* With a known length there's nothing to read up front: load on Play. */}
+      <audio ref={ref} src={src} preload={durationSec ? 'none' : 'metadata'} data-inline="" data-name={name || undefined}
         onLoadedMetadata={e => { if (isFinite(e.currentTarget.duration)) setDur(e.currentTarget.duration) }}
         onDurationChange={e => { if (isFinite(e.currentTarget.duration)) setDur(e.currentTarget.duration) }}
         onTimeUpdate={e => { setCur(e.currentTarget.currentTime) }}

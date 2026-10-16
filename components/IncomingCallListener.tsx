@@ -279,6 +279,9 @@ export default function IncomingCallListener({ companyId, agentName, showStatusP
           const tData = await tRes.json()
           if (!tRes.ok || cancelled || !tData?.token) { if (!cancelled) setConnErr(tData?.error || 'Twilio token error'); return }
           const { Device } = await import('@twilio/voice-sdk')
+          // Torn down (reconnect, company switch) while the SDK loaded: a device
+          // made now would never be destroyed and would stay registered.
+          if (cancelled) return
           const device = new Device(tData.token, { codecPreferences: ['opus', 'pcmu'] as any })
           clientRef.current = device
           // Silence the SDK's OWN incoming ringtone — we play our branded
@@ -348,6 +351,7 @@ export default function IncomingCallListener({ companyId, agentName, showStatusP
         if (!res.ok || cancelled) return
         if (!(data?.sipUser && data?.sipPassword) && !data?.token) return
         const { TelnyxRTC } = await import('@telnyx/webrtc')
+        if (cancelled) return   // torn down meanwhile: don't leave an orphan client connected
         // Register with the connection's SIP username/password when available.
         // Telnyx's Authentication tab is explicit: a Credential SIP Connection
         // requires devices to REGISTER with its username/password to receive
