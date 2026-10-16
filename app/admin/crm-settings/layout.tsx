@@ -117,7 +117,7 @@ export default function CrmSettingsLayout({ children }: { children: React.ReactN
           @media (max-width: 767px) {
             .crm-settings-crumbs { display: none; }
             .crm-settings-crumbs.is-channel { display: flex; padding: 10px 16px; }
-            .crm-settings-crumbs .crm-settings-root, .crm-settings-crumbs .crm-settings-back { display: none; }
+            .crm-settings-crumbs .crm-settings-root, .crm-settings-crumbs .crm-settings-back { display: none !important; }
             .crm-settings-up { color: var(--coral) !important; font-weight: 600; gap: 2px; margin-left: -4px; }
             .crm-settings-up-ic { display: block; }
             .crm-settings-body { flex-direction: column !important; }

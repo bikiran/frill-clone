@@ -77,7 +77,10 @@ export default function OverlayWatch() {
            button on a page can always be scrolled clear of both. Full-height
            app screens (the inbox) size themselves and are left alone. */
         .colvy-mobile-pad { padding-bottom: calc(58px + 76px + env(safe-area-inset-bottom)) !important; }
-        .colvy-mobile-pad:has(.inbox-root) { padding-bottom: calc(58px + env(safe-area-inset-bottom)) !important; }
+        .colvy-mobile-pad:has(.inbox-root, .colvy-fullh) { padding-bottom: calc(58px + env(safe-area-inset-bottom)) !important; }
+        /* A full-height screen (mark it .colvy-fullh) fits between the header,
+           any banners and the bottom nav, so its own scroll area ends above the nav. */
+        .colvy-fullh { height: calc(100dvh - 56px - 58px - env(safe-area-inset-bottom) - var(--admin-banners-h, 0px)) !important; }
       }
     `}</style>
   )

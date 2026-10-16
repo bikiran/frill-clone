@@ -79,7 +79,7 @@ function ShopifyBilling({ info }: { info: any }) {
     : sub.cancel_at_end ? `Ends on ${fmtDate(sub.period_end)}.`
     : `${price ? `${price}. ` : ''}${sub.period_end ? `Renews ${fmtDate(sub.period_end)}.` : ''}`
   return (
-    <div className="max-w-4xl mx-auto px-4 md:px-6 py-8">
+    <div className="w-full px-4 md:px-8 py-8">
       <div className="mb-6">
         <h1 className="text-2xl font-bold" style={{ color: 'var(--ink)' }}>Billing</h1>
         <p className="text-sm mt-1" style={{ color: 'var(--slate)' }}>
@@ -352,7 +352,7 @@ export default function BillingPage() {
   const brandingIncluded = ['feedback', 'omnichannel', 'everything', 'business', 'growth', 'enterprise', 'pro'].includes(currentPlanId)
 
   return (
-    <div className="max-w-4xl mx-auto px-4 md:px-6 py-8">
+    <div className="w-full px-4 md:px-8 py-8">
       {/* Header */}
       <div className="flex items-center justify-between gap-3 flex-wrap mb-8">
         <div>

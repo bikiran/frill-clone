@@ -6724,7 +6724,7 @@ export default function InboxPage() {
   const themeSolid = igThemeActive ? '#C13584' : msgrThemeActive ? '#006AFF' : 'var(--coral)'
 
   return (
-    <div className={`inbox-root inbox-pane-${mobilePane}${tabletContact ? ' tablet-contact-open' : ''}`} style={{ display: 'flex', height: '100vh', maxHeight: 'calc(100vh - 56px)', overflow: 'hidden', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
+    <div className={`inbox-root inbox-pane-${mobilePane}${tabletContact ? ' tablet-contact-open' : ''}`} style={{ display: 'flex', height: '100vh', maxHeight: 'calc(100vh - 56px - var(--admin-banners-h, 0px))', overflow: 'hidden', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
       <style>{`
         .sched-btn { display: inline-flex; align-items: center; gap: 5px; height: 30px; padding: 0 11px; border-radius: 8px; border: 1px solid var(--border); background: #fff; color: var(--ink); font-size: 12.5px; font-weight: 700; cursor: pointer; white-space: nowrap; transition: background .15s ease, border-color .15s ease, color .15s ease; }
         .sched-btn:hover:not(:disabled) { background: var(--canvas, #fafafa); }
@@ -6749,8 +6749,8 @@ export default function InboxPage() {
              row (and the mobile back button's pane) sat behind the bottom nav.
              dvh tracks the mobile browser chrome so the top isn't pushed off. */
           .inbox-root {
-            height: calc(100dvh - 56px - 58px - env(safe-area-inset-bottom, 0px)) !important;
-            max-height: calc(100dvh - 56px - 58px - env(safe-area-inset-bottom, 0px)) !important;
+            height: calc(100dvh - 56px - 58px - env(safe-area-inset-bottom, 0px) - var(--admin-banners-h, 0px)) !important;
+            max-height: calc(100dvh - 56px - 58px - env(safe-area-inset-bottom, 0px) - var(--admin-banners-h, 0px)) !important;
           }
           /* One pane at a time on phones */
           .inbox-root .inbox-col-list,
@@ -6889,8 +6889,8 @@ export default function InboxPage() {
              screen; a bare 100dvh ran ~115px under the tab bar, so the reply
              box hid behind it until you scrolled. */
           .inbox-root {
-            height: calc(100dvh - 56px - 58px - env(safe-area-inset-bottom, 0px)) !important;
-            max-height: calc(100dvh - 56px - 58px - env(safe-area-inset-bottom, 0px)) !important;
+            height: calc(100dvh - 56px - 58px - env(safe-area-inset-bottom, 0px) - var(--admin-banners-h, 0px)) !important;
+            max-height: calc(100dvh - 56px - 58px - env(safe-area-inset-bottom, 0px) - var(--admin-banners-h, 0px)) !important;
             overflow: hidden;
           }
 
@@ -7059,8 +7059,8 @@ export default function InboxPage() {
         @media (min-width: 768px) and (max-width: 860px) {
           /* the bottom tab bar is still showing at this width — leave room for it */
           .inbox-root {
-            height: calc(100dvh - 56px - 58px - env(safe-area-inset-bottom, 0px)) !important;
-            max-height: calc(100dvh - 56px - 58px - env(safe-area-inset-bottom, 0px)) !important;
+            height: calc(100dvh - 56px - 58px - env(safe-area-inset-bottom, 0px) - var(--admin-banners-h, 0px)) !important;
+            max-height: calc(100dvh - 56px - 58px - env(safe-area-inset-bottom, 0px) - var(--admin-banners-h, 0px)) !important;
           }
           .inbox-root .inbox-col-contact { bottom: calc(58px + env(safe-area-inset-bottom, 0px)); }
           .inbox-root.tablet-contact-open .inbox-tablet-scrim { bottom: calc(58px + env(safe-area-inset-bottom, 0px)); }
