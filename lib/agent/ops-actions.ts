@@ -82,6 +82,8 @@ export const getException: ActionDef = {
       orderProgress(ctx.db, ctx.companyId, order).catch(() => null),
     ])
     const last = (msg as any)?.data?.[0]
+    // The open tasks it was shown are ones it may add to (create_task existingTaskId).
+    ctx.scratch.offeredTaskIds = Array.from(new Set([...(ctx.scratch.offeredTaskIds || []), ...(tasks || []).map((t: any) => t.id)]))
     const issue = input.kind === 'stock'
       ? `${alert?.product_name || input.product || 'An item'} on this order is out of stock${alert?.status === 'resolved' ? ' (since marked resolved)' : ''}.`
       : (Array.isArray(input.reasons) && input.reasons.length ? input.reasons.join(' ') : 'Check whether this order needs a person.')

@@ -38,6 +38,8 @@ export type OpenTask = {
   orderId: string | null
   source: string | null
   createdAt: string | null
+  /** Who has it (null when the database has no assignee columns). */
+  assignees?: { id: string | null; name: string }[] | null
 }
 
 export type ActionGroup = { title: string; steps: string[] }
@@ -49,13 +51,19 @@ const STOP = new Set(('a an the and or but of to for from with without in on at 
   'do does did done have has had not no yes re into onto over under up down out off any all some each per via about again still yet now soon asap please pls ' +
   'what which who whom whose when where why how one two three').split(/\s+/))
 
-// Words that say what kind of to-do it is, not what it's about. They still
-// count, but much less than a product, a supplier or an order number.
-const GENERIC_WORDS = ('call back ring phone order customer client follow followup send check confirm arrange wait await ensure make get need let know contact reply respond ' +
-  'message email text team staff task next once before after sure give ask tell request item stock delivery deliver supplier week day today tomorrow monday tuesday ' +
-  'wednesday thursday friday saturday sunday payment pay update quantity amount add extra new price quote details info information see look find put take keep ' +
-  'help sort organise organize schedule book booking reminder remind note able want look review google facebook instagram star rating comment post ' +
-  'reply replied left leave').split(/\s+/)
+// Words that say what kind of to-do it is or who's involved, not what it's
+// about ("call", "customer", "next", "Thursday"). They count for little and
+// never tell two steps apart.
+const FILLER_WORDS = ('call back ring phone customer client follow followup send check confirm arrange wait await ensure make get need let know contact reply respond ' +
+  'message email text team staff task next once before after sure give ask tell request item week day today tomorrow monday tuesday ' +
+  'wednesday thursday friday saturday sunday update add extra new more see look find put take keep ' +
+  'help sort organise organize schedule reminder remind note able want review google facebook instagram star rating comment post ' +
+  'replied left leave them chase sorted asap urgent').split(/\s+/)
+
+// What a step is about when it isn't a product: a different one of these is
+// a different step ("check the price" ≠ "check the stock").
+const TOPIC_WORDS = ('order stock delivery deliver supplier payment pay price quote quantity amount booking book invoice refund ' +
+  'details info information time date address photo photos video size colour color fitting install installation service warranty').split(/\s+/)
 
 export function stem(word: string): string {
   let w = word.toLowerCase().replace(/[’']s$/, '').replace(/[’']/g, '')
@@ -68,7 +76,10 @@ export function stem(word: string): string {
   return w
 }
 
-const GENERIC = new Set(GENERIC_WORDS.map(stem))
+const FILLER = new Set(FILLER_WORDS.map(stem))
+const TOPIC = new Set(TOPIC_WORDS.map(stem))
+/** Low-weight words (filler and topics) for job-level similarity. */
+const GENERIC = new Set([...FILLER, ...TOPIC])
 
 /** Lower-case, punctuation-free, single-spaced. */
 export const normText = (s: unknown) => String(s ?? '').toLowerCase().replace(/[’']/g, '').replace(/[^a-z0-9#]+/g, ' ').trim()
@@ -87,32 +98,84 @@ export function tokensOf(s: unknown, ignore?: Set<string>): string[] {
   return Array.from(out)
 }
 
+/** Tokens that tell two steps apart: everything but filler (topics and content words). */
+const distinguishing = (s: unknown, ignore?: Set<string>) => tokensOf(s, ignore).filter(t => !FILLER.has(t))
+/** Content words: what it's about beyond topics (product words, "sofa", "tank"). */
+const contentOf = (s: unknown, ignore?: Set<string>) => tokensOf(s, ignore).filter(t => !GENERIC.has(t) && !/^#?\d+$/.test(t))
+
 /** Tokens to ignore for a person's name ("Shery Smith" → shery, smith). */
 export const nameTokens = (name?: string | null) => new Set(tokensOf(name || ''))
 
-const weight = (t: string) => (GENERIC.has(t) ? 0.4 : 1)
+const weight = (t: string) => (FILLER.has(t) ? 0.4 : TOPIC.has(t) ? 0.7 : 1)
+
+const keepWord = (w: string, ignore?: Set<string>) => { const t = stem(w.toLowerCase().replace(/[’']s$/, '')); return !(GENERIC.has(t) || INTENT_OF.has(t) || STOP.has(w.toLowerCase()) || ignore?.has(t)) }
+
+/**
+ * People named in a text: a capitalised name of one or two words right after
+ * "for / to / from / with / by / about" or a contact verb ("Call (back) John
+ * Smith", "Pay Mark"). Lower-cased keys, minus `ignore` (the customer).
+ * A run of three or more capitalised words is a product, not a person.
+ */
+export function personNamesOf(s: unknown, ignore?: Set<string>): string[] {
+  const text = String(s ?? '')
+  const out = new Set<string>()
+  const re = /\b(?:[Ff]or|[Tt]o|[Ff]rom|[Ww]ith|[Bb]y|[Aa]bout|[Cc]all(?:\s+[Bb]ack)?|[Rr]ing(?:\s+[Bb]ack)?|[Pp]hone|[Tt]ext|[Ee]mail|[Mm]essage|[Cc]ontact|[Pp]ay|[Ii]nvoice|[Rr]efund|[Rr]emind|[Aa]sk|[Tt]ell|[Tt]hank|[Vv]isit|[Mm]eet|[Bb]ook|[Cc]hase)\s+([A-Z][a-z’'-]+(?:\s+[A-Z][a-z’'-]+){0,2})/g
+  let m: RegExpExecArray | null
+  while ((m = re.exec(text))) {
+    const words = m[1].replace(/[’']s\b/g, '').split(/\s+/)
+    if (words.length > 2) continue
+    if (!words.every(w => keepWord(w))) continue
+    const key = words.map(w => stem(w)).filter(t => !ignore?.has(t)).join(' ')
+    if (key) out.add(key)
+  }
+  return Array.from(out)
+}
 
 /**
  * What a text is about: product-like proper names ("Texas Holy Rock") and
- * order numbers ("#1234"). Lower-cased keys.
+ * order numbers ("#1234"). A person's name isn't a subject. Lower-cased keys.
  */
 export function subjectsOf(s: unknown, ignore?: Set<string>): string[] {
   const text = String(s ?? '')
   const out = new Set<string>()
+  const people = new Set(personNamesOf(text).flatMap(n => n.split(' ')))
   const re = /\b([A-Z][A-Za-z0-9’'&-]*(?:\s+(?:[A-Z][A-Za-z0-9’'&-]*|&|of|and|de))*\s+[A-Z][A-Za-z0-9’'&-]*)\b/g
   let m: RegExpExecArray | null
   while ((m = re.exec(text))) {
     // Drop leading/trailing words that aren't part of a name (sentence-initial
     // verbs, weekdays, the customer's name).
     const words = m[1].split(/\s+/)
-    const keep = (w: string) => { const t = stem(w.toLowerCase().replace(/[’']s$/, '')); return !(GENERIC.has(t) || STOP.has(w.toLowerCase()) || ignore?.has(t)) }
-    while (words.length && !keep(words[0])) words.shift()
-    while (words.length && !keep(words[words.length - 1])) words.pop()
-    if (words.length >= 2) out.add(words.join(' ').toLowerCase().replace(/[’']s\b/g, ''))
+    while (words.length && !keepWord(words[0], ignore)) words.shift()
+    while (words.length && !keepWord(words[words.length - 1], ignore)) words.pop()
+    if (words.length < 2) continue
+    if (words.every(w => people.has(stem(w.replace(/[’']s$/, ''))))) continue
+    out.add(words.join(' ').toLowerCase().replace(/[’']s\b/g, ''))
   }
   for (const n of text.match(/#\s?\d{3,}/g) || []) out.add(`#${n.replace(/\D/g, '')}`)
   return Array.from(out)
 }
+
+/**
+ * What kind of job it is, from the first word that says so. Most kinds sit
+ * fine together (a call-back about an order is part of the order); a refund
+ * or a cancellation is never the same job as an order, a payment, a booking
+ * or a delivery.
+ */
+const INTENTS: [string, string[]][] = [
+  ['refund', ['refund', 'return', 'credit', 'replace', 'replacement', 'exchange', 'damaged', 'faulty', 'broken', 'dead']],
+  ['cancel', ['cancel', 'cancellation']],
+  ['order', ['order', 'reorder', 'restock', 'buy', 'purchase', 'add']],
+  ['pay', ['pay', 'payment', 'invoice', 'bill', 'charge', 'deposit']],
+  ['book', ['book', 'booking', 'reschedule', 'appointment', 'fitting']],
+  ['ship', ['ship', 'deliver', 'delivery', 'dispatch', 'post', 'courier', 'collect', 'pickup']],
+]
+const INTENT_OF = new Map(INTENTS.flatMap(([k, ws]) => ws.map(w => [stem(w), k] as [string, string])))
+export function intentOf(s: unknown): string | null {
+  for (const raw of normText(s).split(' ')) { const k = INTENT_OF.get(stem(raw)); if (k) return k }
+  return null
+}
+const CLASH: Record<string, string[]> = { refund: ['order', 'pay', 'book', 'ship', 'cancel'], cancel: ['order', 'pay', 'book', 'ship', 'refund'] }
+export const intentsClash = (a: string | null, b: string | null) => !!(a && b && a !== b && (CLASH[a]?.includes(b) || CLASH[b]?.includes(a)))
 
 export type Comparison = { score: number; sharedStrong: number; sharedWeak: number; sharedSubject: boolean }
 
@@ -128,42 +191,57 @@ export function compareTexts(a: unknown, b: unknown, ignore?: Set<string>): Comp
   return { score: min > 0 ? sw / min : 0, sharedStrong: strong, sharedWeak: weak, sharedSubject: sa.some(s => sb.has(s)) }
 }
 
-/** The same job? (Used to match a new task to an open one.) */
+/**
+ * Two jobs that can't be the same: different people, a refund vs an order,
+ * or each about something the other isn't ("sofa" vs "table").
+ */
+export function jobsConflict(a: string, b: string, ignore?: Set<string>, strictNames = false): boolean {
+  const pa = personNamesOf(a, ignore), pb = personNamesOf(b, ignore)
+  if ((pa.length || pb.length) && (strictNames || (pa.length && pb.length)) && !pa.some(x => pb.includes(x))) return true
+  if (intentsClash(intentOf(a), intentOf(b))) return true
+  const ca = contentOf(a, ignore), cb = contentOf(b, ignore)
+  if (ca.length && cb.length && ca.some(t => !cb.includes(t)) && cb.some(t => !ca.includes(t))) {
+    // …unless they name the same product.
+    const sa = subjectsOf(a, ignore), sb = subjectsOf(b, ignore)
+    if (!sa.some(x => sb.includes(x))) return true
+  }
+  return false
+}
+
+/** The same job? (Used to group action items and to match a new task to an open one.) */
 export function sameJob(a: unknown, b: unknown, ignore?: Set<string>): boolean {
+  if (jobsConflict(String(a ?? ''), String(b ?? ''), ignore)) return false
   const c = compareTexts(a, b, ignore)
   return c.sharedSubject || (c.sharedStrong >= 1 && c.score >= 0.5)
 }
 
-function overlap(a: unknown, b: unknown, ignore?: Set<string>): { min: number; dice: number; shared: number } {
-  const A = new Set(tokensOf(a, ignore)), B = new Set(tokensOf(b, ignore))
-  let wA = 0, wB = 0, sw = 0, shared = 0
-  for (const t of A) wA += weight(t)
-  for (const t of B) wB += weight(t)
-  for (const t of A) if (B.has(t)) { sw += weight(t); shared++ }
-  return { min: Math.min(wA, wB) > 0 ? sw / Math.min(wA, wB) : 0, dice: wA + wB > 0 ? (2 * sw) / (wA + wB) : 0, shared }
-}
-
 /**
- * Is this step already on the list — exactly, or near enough (one may say
- * more than the other: "Confirm the quantity when she calls back" is
- * "Wait for her to call back with the quantity…")?
+ * Is this step already on the list? Only when it's near-identical, or every
+ * word that tells steps apart (not "call", "customer", "confirm"…) is in the
+ * existing one: "check the price" isn't "check the stock", and "confirm the
+ * delivery day" isn't "confirm the quantity". A step of filler words only is
+ * covered by one containing all of them.
  */
 export function stepCovered(step: string, existing: string[], ignore?: Set<string>): boolean {
   const n = normText(step)
   if (!n) return true
+  const all = tokensOf(step, ignore)
+  const dist = distinguishing(step, ignore)
   return existing.some(e => {
     const en = normText(e)
     if (!en) return false
     if (en === n) return true
-    const o = overlap(step, e, ignore)
-    return o.min >= 0.74 && o.dice >= 0.45 && o.shared >= 2
+    const have = new Set(tokensOf(e, ignore))
+    if (all.length && all.every(t => have.has(t))) return true
+    return dist.length > 0 && dist.every(t => have.has(t)) && all.filter(t => have.has(t)).length / all.length >= 0.5
   })
 }
 
 /** Is the step just the task's title again? (A step that merely mentions the job's subject isn't.) */
 export function titleCovers(step: string, title: string, ignore?: Set<string>): boolean {
   if (normText(step) === normText(title)) return true
-  return overlap(step, title, ignore).dice >= 0.85
+  const a = new Set(tokensOf(step, ignore)), b = new Set(tokensOf(title, ignore))
+  return a.size > 0 && a.size === b.size && Array.from(a).every(t => b.has(t))
 }
 
 const newId = () => (globalThis.crypto && typeof (globalThis.crypto as any).randomUUID === 'function'
@@ -172,12 +250,13 @@ const newId = () => (globalThis.crypto && typeof (globalThis.crypto as any).rand
 
 /**
  * New checklist items for the steps that aren't there yet. `titles`: the
- * task's title (a step that repeats it is covered; its words are context, not
- * evidence, when comparing steps). `ignore`: e.g. the customer's name.
+ * task's title (a step that repeats it is covered). `ignore`: e.g. the
+ * customer's name.
  */
-export function mergeChecklist(existing: ChecklistItem[] | null | undefined, steps: string[], opts: { titles?: string[]; ignore?: Set<string> } = {}): { checklist: ChecklistItem[]; added: string[] } {
+export function mergeChecklist(existing: ChecklistItem[] | null | undefined, steps: string[], opts: { titles?: string[]; ignore?: Set<string> } = {}): { checklist: ChecklistItem[]; added: string[]; addedItems: ChecklistItem[] } {
   const list: ChecklistItem[] = Array.isArray(existing) ? existing.filter(i => i && typeof i.text === 'string') : []
   const titles = (opts.titles || []).filter(Boolean)
+  // The job's own words (its product, the customer) are context in every step, not a difference.
   const context = new Set([...(opts.ignore || []), ...titles.flatMap(t => tokensOf(t))])
   const seen = list.map(i => i.text)
   const added: string[] = []
@@ -186,7 +265,8 @@ export function mergeChecklist(existing: ChecklistItem[] | null | undefined, ste
     if (!s || titles.some(t => titleCovers(s, t, opts.ignore)) || stepCovered(s, seen, context)) continue
     seen.push(s); added.push(s)
   }
-  return { checklist: [...list, ...added.map(text => ({ id: newId(), text, done: false }))], added }
+  const addedItems = added.map(text => ({ id: newId(), text, done: false }))
+  return { checklist: [...list, ...addedItems], added, addedItems }
 }
 
 /** The steps an open task doesn't have yet (on its checklist, or in its text without one). */
@@ -195,7 +275,8 @@ export function newStepsFor(task: OpenTask, steps: string[], ignore?: Set<string
   return mergeChecklist(existing, steps, { titles: [task.title], ignore }).added
 }
 
-const cleanStep = (s: unknown) => String(s ?? '').replace(/\s+/g, ' ').replace(/^[-•*\d.)\s]+/, '').trim().slice(0, 300)
+/** Trim a step; drops list bullets ("- ", "• ", "1. ", "2) ") but never a time or number ("10:30", "3 bags"). */
+const cleanStep = (s: unknown) => String(s ?? '').replace(/\s+/g, ' ').trim().replace(/^(?:[-•*]\s*|\d{1,2}[.)]\s+)+/, '').trim().slice(0, 300)
 
 // ── Action items → one task per job ─────────────────────────────────────────
 
@@ -204,10 +285,13 @@ const cleanStep = (s: unknown) => String(s ?? '').replace(/\s+/g, ' ').replace(/
  * conversations.ai_todos), which the mobile app also reads. One job with
  * several steps is written "Title: step one; step two; step three".
  */
+const LABELS = /^(note|notes|nb|fyi|customer|client|caller|contact|name|phone|email|address|time|date|when|where|re|subject|summary|update|info|details|important|reminder|action|actions|action items?|todo|to do|task|tasks|follow[ -]?up|next steps?|issue|problem|request|order|product|item|items|status|price|total|payment|delivery|pickup|notes? for staff)$/i
+
 export function parseActionItem(s: unknown): ActionGroup {
   const text = String(s ?? '').replace(/\s+/g, ' ').trim()
   const m = /^([^:;]{3,100}?):\s+(.+)$/.exec(text)
-  if (m) {
+  // "Note: …", "Customer: …", "Time: 10:30; …" are labels, not job titles.
+  if (m && !LABELS.test(m[1].trim()) && m[1].trim().split(/\s+/).length >= 2) {
     const steps = m[2].split(/\s*;\s+/).map(cleanStep).filter(Boolean)
     if (steps.length >= 2) return { title: m[1].trim(), steps }
   }
@@ -304,46 +388,70 @@ export function groupActionItems(items: string[], opts: { contactName?: string |
 }
 
 /**
- * The summary generators' last step: group related items, and drop a job whose
- * steps an open task already has (it's on the list — nothing new to propose).
- * Returns strings in the stored format.
+ * The summary generators' last step: group related items, and leave out a
+ * job only when an open task already has EVERY one of its steps (it's on the
+ * list — nothing new to propose). `covered` says which jobs were left out and
+ * why, so nothing disappears without a trace.
  */
-export function refineActionItems(items: unknown, opts: { contactName?: string | null; openTasks?: OpenTask[] } = {}): string[] {
+export function refineActionItemsDetailed(items: unknown, opts: { contactName?: string | null; openTasks?: OpenTask[] } = {}): { items: string[]; covered: { item: string; taskId: string; taskTitle: string }[] } {
   const list = (Array.isArray(items) ? items : []).map(x => (typeof x === 'string' ? x : String((x as any)?.text || ''))).map(s => s.trim()).filter(Boolean)
-  if (!list.length) return []
+  if (!list.length) return { items: [], covered: [] }
   const groups = groupActionItems(list, opts)
   const out: string[] = []
+  const covered: { item: string; taskId: string; taskTitle: string }[] = []
   for (const g of groups) {
     if (opts.openTasks?.length) {
       const m = findMatch(opts.openTasks, { title: g.title, steps: g.steps }, opts.contactName)
-      if (m && !newStepsFor(m, g.steps.length ? g.steps : [g.title], nameTokens(opts.contactName)).length) continue
+      if (m && !newStepsFor(m, g.steps.length ? g.steps : [g.title], nameTokens(opts.contactName)).length) {
+        covered.push({ item: formatActionItem(g), taskId: m.id, taskTitle: m.title })
+        continue
+      }
     }
     out.push(formatActionItem(g))
   }
-  return out.slice(0, 6)
+  return { items: out.slice(0, MAX_ACTION_ITEMS), covered }
 }
 
-/** The open task this new one belongs to, if any. */
+/** At most this many jobs per summary (a call or chat rarely has more; the rest would be noise). */
+export const MAX_ACTION_ITEMS = 12
+
+/** refineActionItemsDetailed, items only. */
+export function refineActionItems(items: unknown, opts: { contactName?: string | null; openTasks?: OpenTask[] } = {}): string[] {
+  return refineActionItemsDetailed(items, opts).items
+}
+
+/**
+ * The open task this new one belongs to, if any. Never across different
+ * people, never a refund onto an order (or the like), never two different
+ * things. `strict` (not tied to a customer or an order): only the same named
+ * product or order number counts, and the same people.
+ */
 export function findMatch(open: OpenTask[], cand: { title: string; details?: string | null; steps?: string[] }, contactName?: string | null, opts: { strict?: boolean } = {}): OpenTask | null {
   const ignore = nameTokens(contactName)
   const candText = [cand.title, cand.details || '', ...(cand.steps || [])].join('. ')
   const candSubjects = subjectsOf(candText, ignore)
+  const candIntent = intentOf(cand.title) ?? intentOf(candText)
+  const candPeople = personNamesOf(candText, ignore)
   let best: { t: OpenTask; s: number } | null = null
   for (const t of open) {
     const taskText = [t.title, t.text && t.text !== t.title ? t.text : '', ...(t.checklist || []).map(i => i.text)].join('. ')
-    // Both name something (a product, a person, an order) and it isn't the same thing: different jobs.
+    // Both name something (a product, an order) and it isn't the same thing: different jobs.
     const taskSubjects = subjectsOf(taskText, ignore)
     if (candSubjects.length && taskSubjects.length && !candSubjects.some(x => taskSubjects.includes(x))) continue
+    // Different people (anywhere in the task), a refund vs an order, different things in the titles.
+    const taskPeople = personNamesOf(taskText, ignore)
+    if ((candPeople.length || taskPeople.length) && (opts.strict || (candPeople.length && taskPeople.length)) && !candPeople.some(x => taskPeople.includes(x))) continue
+    if (intentsClash(candIntent, intentOf(t.title) ?? intentOf(taskText))) continue
+    if (jobsConflict(t.title, cand.title, ignore, opts.strict)) continue
     // Title against title first (a precise signal), then everything against everything.
     const c1 = compareTexts(t.title, cand.title, ignore)
     const c2 = compareTexts(taskText, candText, ignore)
     const subject = c1.sharedSubject || c2.sharedSubject
-    // Not tied to a customer or order (back-office work): only the same named thing counts.
     // …or the new one is already a step of it.
     const isStep = () => [cand.title, ...(cand.steps || [])].some(x => stepCovered(x, (t.checklist || []).map(i => i.text), ignore))
     const hit = opts.strict ? subject : subject || (c1.sharedStrong >= 1 && c1.score >= 0.5) || (c2.sharedStrong >= 2 && c2.score >= 0.5) || isStep()
     if (!hit) continue
-    const s = Math.max(c1.score, c2.score) + (c1.sharedSubject || c2.sharedSubject ? 1 : 0)
+    const s = Math.max(c1.score, c2.score) + (subject ? 1 : 0)
     if (!best || s > best.s) best = { t, s }
   }
   return best?.t || null
@@ -366,14 +474,30 @@ export function openTasksPromptBlock(open: OpenTask[], max = 8): string {
  * the card shows as one closed row ("Draft tasks · 3 to review") that opens on
  * click. Same rule as the mobile app (conversation/[id].tsx `olderThanChat`).
  */
-export function latestChatMs(messages: { created_at?: string | null; is_internal?: boolean | null; sender_type?: string | null }[]): number {
+export function latestChatMs(messages: { created_at?: string | null; is_internal?: boolean | null; sender_type?: string | null; is_ai?: boolean | null; metadata?: any }[]): number {
   let t = 0
   for (const m of messages || []) {
     if (!m || m.is_internal || (m.sender_type !== 'agent' && m.sender_type !== 'visitor')) continue
+    // Only real customer and staff messages: not automatic texts (missed-call
+    // text back, keyword auto-replies, the AI phone agent) or AI replies.
+    if (m.sender_type === 'agent' && (m.is_ai || isAutomated(m.metadata))) continue
     const v = new Date(m.created_at || 0).getTime() || 0
     if (v > t) t = v
   }
   return t
+}
+
+const isAutomated = (md: any) => !!(md && (md.missed_call_text || md.phone_agent || md.auto || md.keyword_reply || md.ai || md.automated))
+
+/**
+ * When a conversation's action items were generated (the chat-summary card's
+ * place in the thread): the newest `at` on its ai_todos ([{ text, done, at }]),
+ * or null for items saved before `at` existed.
+ */
+export function todosGeneratedAt(todos: unknown): number | null {
+  let t = 0
+  for (const x of Array.isArray(todos) ? todos : []) { const v = new Date((x as any)?.at || 0).getTime() || 0; if (v > t) t = v }
+  return t || null
 }
 
 export const draftsCollapsed = (cardAt: string | number | null | undefined, latestChat: number) => {
@@ -388,8 +512,10 @@ const PRI_RANK: Record<string, number> = { low: 0, normal: 1, medium: 1, high: 2
 
 /** Sources of tasks AI made on its own (the daily caps count these). */
 export const AI_TASK_SOURCES = ['agent']
+/** created_by of the AI phone agent's take-a-message tasks: a caller asked, so they don't count towards caps. */
+export const PHONE_AGENT_CREATOR = 'Phone agent'
 
-/** Daily caps for tasks an AI agent makes on its own. */
+/** Daily caps for open tasks an AI agent made on its own. */
 export const AI_TASK_CAPS = { perConversation: 2, perCompany: 25 }
 
 const missingColumn = (msg: string): string | null => {
@@ -401,7 +527,7 @@ const missingColumn = (msg: string): string | null => {
 /** Select, dropping columns an older database doesn't have yet. */
 async function selectResilient(cols: string[], run: (cols: string) => PromiseLike<{ data: any; error: any }>): Promise<{ data: any[]; cols: string[] }> {
   let cur = [...cols]
-  for (let i = 0; i < 10; i++) {
+  for (let i = 0; i < 12; i++) {
     let res: any
     try { res = await run(cur.join(', ')) } catch (e: any) { res = { data: null, error: e } }
     if (!res?.error) return { data: Array.isArray(res?.data) ? res.data : res?.data ? [res.data] : [], cols: cur }
@@ -412,15 +538,17 @@ async function selectResilient(cols: string[], run: (cols: string) => PromiseLik
   return { data: [], cols: cur }
 }
 
-const TASK_COLS = ['id', 'title', 'text', 'description', 'checklist', 'status', 'done', 'priority', 'due_date', 'conversation_id', 'order_id', 'source', 'created_at']
+const TASK_COLS = ['id', 'title', 'text', 'description', 'checklist', 'status', 'done', 'priority', 'due_date', 'conversation_id', 'order_id', 'source', 'created_at', 'assignees', 'assigned_to', 'assigned_to_id']
 
 function toOpenTask(r: any, cols: string[]): OpenTask {
   const title = String(r.title || String(r.text || '').split('\n')[0] || 'Task').trim()
+  const assignees = Array.isArray(r.assignees) && r.assignees.length ? r.assignees : r.assigned_to ? [{ id: r.assigned_to_id || null, name: r.assigned_to }] : []
   return {
     id: r.id, title, text: String(r.text || ''), description: r.description ?? null,
     checklist: cols.includes('checklist') ? (Array.isArray(r.checklist) ? r.checklist : []) : null,
     priority: r.priority ?? null, dueDate: r.due_date ?? null,
     conversationId: r.conversation_id ?? null, orderId: r.order_id ?? null, source: r.source ?? null, createdAt: r.created_at ?? null,
+    assignees: cols.includes('assignees') || cols.includes('assigned_to') ? assignees : null,
   }
 }
 
@@ -430,9 +558,10 @@ const isOpen = (r: any) => !r.done && !['done', 'cancelled', 'canceled', 'archiv
  * Open tasks for the same customer (this conversation and the contact's other
  * conversations) and/or the same order, from the last `days` days. With
  * neither, the business's open tasks that aren't on a conversation (stock,
- * supplier and other back-office jobs).
+ * supplier and other back-office jobs) — unless `scopedOnly`, which returns
+ * none (what an agent's prompt calls "this customer's open tasks").
  */
-export async function loadOpenTasks(db: any, opts: { companyId: string; conversationId?: string | null; contactId?: string | null; orderId?: string | null; days?: number; limit?: number; now?: number }): Promise<OpenTask[]> {
+export async function loadOpenTasks(db: any, opts: { companyId: string; conversationId?: string | null; contactId?: string | null; orderId?: string | null; days?: number; limit?: number; now?: number; scopedOnly?: boolean }): Promise<OpenTask[]> {
   const since = new Date((opts.now ?? Date.now()) - (opts.days ?? 30) * DAY).toISOString()
   const limit = opts.limit ?? 40
   const convIds: string[] = opts.conversationId ? [opts.conversationId] : []
@@ -445,7 +574,10 @@ export async function loadOpenTasks(db: any, opts: { companyId: string; conversa
   const scopes: ((q: any) => any)[] = []
   if (convIds.length) scopes.push(q => q.in('conversation_id', convIds))
   if (opts.orderId) scopes.push(q => q.eq('order_id', opts.orderId))
-  if (!scopes.length) scopes.push(q => q.is('conversation_id', null))
+  if (!scopes.length) {
+    if (opts.scopedOnly) return []
+    scopes.push(q => q.is('conversation_id', null))
+  }
   const byId = new Map<string, OpenTask>()
   for (const scope of scopes) {
     const { data, cols } = await selectResilient(TASK_COLS, c => scope(db.from('conversation_tasks').select(c).eq('company_id', opts.companyId).eq('done', false).gte('created_at', since)).order('created_at', { ascending: false }).limit(limit))
@@ -454,16 +586,18 @@ export async function loadOpenTasks(db: any, opts: { companyId: string; conversa
   return Array.from(byId.values()).sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
 }
 
-async function loadTask(db: any, companyId: string, id: string): Promise<OpenTask | null> {
+async function loadTask(db: any, companyId: string, id: string, openOnly = true): Promise<OpenTask | null> {
   if (!/^[0-9a-f-]{8,}$/i.test(String(id || ''))) return null
   const { data, cols } = await selectResilient(TASK_COLS, c => db.from('conversation_tasks').select(c).eq('company_id', companyId).eq('id', id).limit(1))
   const r = data[0]
-  return r && isOpen(r) ? toOpenTask(r, cols) : null
+  return r && (!openOnly || isOpen(r)) ? toOpenTask(r, cols) : null
 }
 
+/** Open tasks an agent made on its own in the window (not the phone agent's take-a-message ones, not finished ones). */
 async function countAiTasks(db: any, companyId: string, since: string, conversationId?: string | null): Promise<number> {
   try {
-    let q = db.from('conversation_tasks').select('id', { count: 'exact', head: true }).eq('company_id', companyId).in('source', AI_TASK_SOURCES).gte('created_at', since)
+    let q = db.from('conversation_tasks').select('id', { count: 'exact', head: true }).eq('company_id', companyId).in('source', AI_TASK_SOURCES)
+      .eq('done', false).neq('created_by', PHONE_AGENT_CREATOR).gte('created_at', since)
     if (conversationId) q = q.eq('conversation_id', conversationId)
     const { count, error } = await q
     return error ? 0 : count || 0
@@ -526,6 +660,8 @@ export type UpsertTaskInput = {
   source: string
   /** A task the model or the person picked to add to. */
   existingTaskId?: string | null
+  /** When set, existingTaskId must be one of these (the open tasks the run was shown). */
+  allowedTaskIds?: string[] | null
   /** auto: dedupe (default) · create: always a new task · add: add to existingTaskId. */
   mode?: 'auto' | 'create' | 'add'
   /** Daily caps (AI acting on its own). Omit or null for a person's request. */
@@ -540,9 +676,13 @@ export type UpsertTaskInput = {
   now?: number
 }
 
+/** How to undo an update: remove exactly what was added, and put back fields only if nobody changed them since. */
+export type TaskUndo = { removeChecklistIds: string[]; appendedText: string | null; restore: Record<string, any>; set: Record<string, any> }
+
 export type UpsertTaskResult = {
   ok: boolean
-  action: 'created' | 'updated' | 'skipped'
+  /** held: over the daily cap and not part of an open task — NOT created; a person decides. */
+  action: 'created' | 'updated' | 'skipped' | 'held'
   taskId?: string
   title: string
   /** Checklist steps added (or saved on the new task). */
@@ -552,29 +692,35 @@ export type UpsertTaskResult = {
   /** One line for the run trail / activity: "Updated task “X”: added 2 checklist steps". */
   summary: string
   error?: string
-  /** The updated task's previous values (for an undo). */
-  restore?: Record<string, any>
+  /** For an update: what to reverse. */
+  undo?: TaskUndo
   checklistSaved?: boolean
+  /** Adding to a task that already had someone: they keep it (their name). */
+  keptAssignee?: string | null
+  /** Adding to an unassigned task with an assignee asked for: now theirs. */
+  assigned?: string | null
 }
 
 const fmtDay = (ms: number) => new Date(ms).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', timeZone: 'Australia/Melbourne' })
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`
 
-/** Add steps (and a dated details line) to an open task. */
-export async function addToTask(db: any, task: OpenTask, input: Pick<UpsertTaskInput, 'companyId' | 'title' | 'details' | 'steps' | 'priority' | 'dueDate' | 'actorName' | 'actorId' | 'sourceLabel' | 'now' | 'contactName'>, why = ''): Promise<UpsertTaskResult> {
+type AddInput = Pick<UpsertTaskInput, 'companyId' | 'title' | 'details' | 'steps' | 'priority' | 'dueDate' | 'actorName' | 'actorId' | 'sourceLabel' | 'now' | 'contactName' | 'assignees'>
+
+/** What adding to this task would change (pure), against its current state. */
+function planAdd(task: OpenTask, input: AddInput) {
   const now = input.now ?? Date.now()
   const title = String(input.title || '').trim()
   const steps = (input.steps || []).map(cleanStep).filter(Boolean)
   const candidates = steps.length ? steps : (title ? [title] : [])
   const ignore = nameTokens(input.contactName)
   const patch: Record<string, any> = {}
-  const restore: Record<string, any> = {}
+  const undo: TaskUndo = { removeChecklistIds: [], appendedText: null, restore: {}, set: {} }
   let added: string[] = []
 
   if (task.checklist) {
     const merged = mergeChecklist(task.checklist, candidates, { titles: [task.title], ignore })
     added = merged.added
-    if (added.length) { patch.checklist = merged.checklist; restore.checklist = task.checklist }
+    if (added.length) { patch.checklist = merged.checklist; undo.removeChecklistIds = merged.addedItems.map(i => i.id) }
   } else {
     // No checklist column: new steps go in the details text.
     added = newStepsFor(task, candidates, ignore)
@@ -585,23 +731,57 @@ export async function addToTask(db: any, task: OpenTask, input: Pick<UpsertTaskI
   if (details && !String(task.text || '').includes(details.slice(0, 300))) lines.push(details.slice(0, 300))
   if (!task.checklist && added.length) lines.push(`Also: ${added.join('; ')}`)
   if (lines.length) {
-    const line = `${fmtDay(now)}${input.sourceLabel ? ` (${input.sourceLabel})` : ''}: ${lines.join(' — ')}`
-    patch.text = `${task.text || task.title}\n\n${line}`.slice(0, 8000)
-    restore.text = task.text
+    const line = `\n\n${fmtDay(now)}${input.sourceLabel ? ` (${input.sourceLabel})` : ''}: ${lines.join(' — ')}`
+    patch.text = `${task.text || task.title}${line}`.slice(0, 8000)
+    undo.appendedText = line
   }
 
   const curRank = PRI_RANK[String(task.priority || 'normal')] ?? 1
   const newRank = PRI_RANK[String(input.priority || '')] ?? -1
-  if (newRank > curRank) { patch.priority = input.priority; restore.priority = task.priority }
-  if (input.dueDate && (!task.dueDate || new Date(input.dueDate).getTime() < new Date(task.dueDate).getTime())) { patch.due_date = input.dueDate; restore.due_date = task.dueDate }
+  if (newRank > curRank) { patch.priority = input.priority; undo.restore.priority = task.priority; undo.set.priority = input.priority }
+  if (input.dueDate && (!task.dueDate || new Date(input.dueDate).getTime() < new Date(task.dueDate).getTime())) { patch.due_date = input.dueDate; undo.restore.due_date = task.dueDate; undo.set.due_date = input.dueDate }
 
-  if (!Object.keys(patch).length) {
-    return { ok: true, action: 'updated', taskId: task.id, title: task.title, added: [], reason: why || 'An open task already covers this.', summary: `Already a task: “${task.title}” — nothing new to add` }
+  // Someone asked for an assignee: an unassigned task becomes theirs; an assigned one keeps its person.
+  const want = (input.assignees || []).filter(a => a && a.name)
+  let keptAssignee: string | null = null, assigned: string | null = null
+  if (want.length && task.assignees) {
+    if (!task.assignees.length) {
+      patch.assignees = want; patch.assigned_to_id = want[0].id || null; patch.assigned_to = want[0].name
+      undo.restore.assignees = []; undo.restore.assigned_to_id = null; undo.restore.assigned_to = null
+      undo.set.assigned_to = want[0].name
+      assigned = want[0].name
+    } else if (!task.assignees.some(a => want.some(w => (w.id && w.id === a.id) || w.name === a.name))) {
+      keptAssignee = task.assignees.map(a => a.name).join(', ')
+    }
   }
-  const upd = await updateTask(db, input.companyId, task.id, patch)
-  if (!upd.ok) return { ok: false, action: 'skipped', taskId: task.id, title: task.title, added: [], error: upd.error, summary: `Couldn’t update “${task.title}”: ${upd.error}` }
+  return { patch, undo, added, keptAssignee, assigned }
+}
 
-  const what = added.length ? `added ${plural(added.length, 'checklist step')}` : patch.text ? 'added a note' : patch.priority ? `raised priority to ${patch.priority}` : 'moved the due date'
+/**
+ * Add steps (and a dated details line) to an open task. Reads the task fresh
+ * and plans against that; if a concurrent edit replaced the checklist and our
+ * steps didn't land, plans again on the newest and writes once more.
+ */
+export async function addToTask(db: any, task: OpenTask, input: AddInput, why = ''): Promise<UpsertTaskResult> {
+  let current = (await loadTask(db, input.companyId, task.id, false)) || task
+  let plan = planAdd(current, input)
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (!Object.keys(plan.patch).length) break
+    const upd = await updateTask(db, input.companyId, task.id, plan.patch)
+    if (!upd.ok) return { ok: false, action: 'skipped', taskId: task.id, title: current.title, added: [], error: upd.error, summary: `Couldn’t update “${current.title}”: ${upd.error}` }
+    if (!plan.undo.removeChecklistIds.length) break
+    const after = await loadTask(db, input.companyId, task.id, false)
+    if (!after?.checklist || plan.undo.removeChecklistIds.every(id => after.checklist!.some(i => i.id === id))) break
+    // Someone saved the checklist at the same moment and ours was lost: merge onto theirs.
+    current = after
+    plan = planAdd(current, input)
+  }
+  const { patch, undo, added, keptAssignee, assigned } = plan
+  if (!Object.keys(patch).length) {
+    return { ok: true, action: 'updated', taskId: task.id, title: current.title, added: [], reason: why || 'An open task already covers this.', summary: `Already a task: “${current.title}” — nothing new to add`, keptAssignee }
+  }
+
+  const what = added.length ? `added ${plural(added.length, 'checklist step')}` : patch.text ? 'added a note' : patch.priority ? `raised priority to ${patch.priority}` : patch.assigned_to ? `assigned it to ${patch.assigned_to}` : 'moved the due date'
   // The task card's own history, so Activity says what AI changed.
   try {
     await db.from('task_activity').insert({
@@ -609,7 +789,50 @@ export async function addToTask(db: any, task: OpenTask, input: Pick<UpsertTaskI
       kind: added.length ? 'checklist' : 'edit', detail: `${what}${input.sourceLabel ? ` (from the ${input.sourceLabel})` : ''}${added.length ? `: ${added.join('; ')}` : ''}`.slice(0, 500),
     }).then(() => {}, () => {})
   } catch { /* table may not be migrated */ }
-  return { ok: true, action: 'updated', taskId: task.id, title: task.title, added, reason: why || 'An open task already covers this job.', summary: `Updated task “${task.title}”: ${what}`, restore, checklistSaved: !!task.checklist }
+  return { ok: true, action: 'updated', taskId: task.id, title: current.title, added, reason: why || 'An open task already covers this job.', summary: `Updated task “${current.title}”: ${what}`, undo, checklistSaved: !!current.checklist, keptAssignee, assigned }
+}
+
+async function resolveContact(db: any, input: UpsertTaskInput): Promise<{ contactId: string | null; contactName: string | null }> {
+  let contactId = input.contactId ?? null
+  let contactName = input.contactName ?? null
+  if (input.conversationId && (!contactId || !contactName)) {
+    try {
+      const { data: conv } = await db.from('conversations').select('contact_id').eq('company_id', input.companyId).eq('id', input.conversationId).maybeSingle()
+      contactId = contactId || conv?.contact_id || null
+      if (contactId && !contactName) {
+        const { data: ct } = await db.from('contacts').select('name').eq('company_id', input.companyId).eq('id', contactId).maybeSingle()
+        contactName = ct?.name || null
+      }
+    } catch { /* match on this conversation alone */ }
+  }
+  return { contactId, contactName }
+}
+
+const pickedTask = async (db: any, input: UpsertTaskInput) => {
+  if (!input.existingTaskId) return null
+  if (input.allowedTaskIds && !input.allowedTaskIds.includes(input.existingTaskId)) return null
+  return loadTask(db, input.companyId, input.existingTaskId)
+}
+
+/**
+ * Over the daily cap, and not part of an open task? Then the reason, else
+ * null. The engine asks this before an agent's create_task runs, so an
+ * over-cap task waits for a person (Needs You) instead of being made.
+ */
+export async function capHold(db: any, input: UpsertTaskInput): Promise<string | null> {
+  if (!input.caps) return null
+  const now = input.now ?? Date.now()
+  const since = new Date(now - DAY).toISOString()
+  const overConv = !!input.conversationId && (await countAiTasks(db, input.companyId, since, input.conversationId)) >= input.caps.perConversation
+  const overCo = !overConv && (await countAiTasks(db, input.companyId, since)) >= input.caps.perCompany
+  if (!overConv && !overCo) return null
+  if (await pickedTask(db, input)) return null
+  const { contactId, contactName } = await resolveContact(db, input)
+  const open = await loadOpenTasks(db, { companyId: input.companyId, conversationId: input.conversationId, contactId, orderId: input.orderId, now })
+  if (findMatch(open, { title: input.title, details: input.details, steps: input.steps }, contactName, { strict: !input.conversationId && !contactId && !input.orderId })) return null
+  return overConv
+    ? `Already ${plural(input.caps.perConversation, 'open task')} made by AI on this conversation today, so a person decides on a new one.`
+    : `Already ${plural(input.caps.perCompany, 'open task')} made by AI for the business today, so a person decides on a new one.`
 }
 
 /**
@@ -623,46 +846,23 @@ export async function upsertTask(db: any, input: UpsertTaskInput): Promise<Upser
   const steps: string[] = []
   for (const s of (input.steps || []).map(cleanStep)) if (s && !stepCovered(s, steps) && normText(s) !== normText(title)) steps.push(s)
   const mode = input.mode || 'auto'
-  let contactId = input.contactId ?? null
-  let contactName = input.contactName ?? null
   const base = { ...input, title, steps, now }
-  const named = (t: OpenTask, why: string, over: Partial<UpsertTaskInput> = {}) => addToTask(db, t, { ...base, contactName, ...over }, why)
 
-  // The task someone (or the model) chose to add to.
-  if ((mode === 'add' || mode === 'auto') && input.existingTaskId) {
-    const t = await loadTask(db, input.companyId, input.existingTaskId)
+  // The task someone (or the model) chose to add to — one it was shown.
+  if (mode === 'add' || mode === 'auto') {
+    const t = await pickedTask(db, input)
     if (t) return addToTask(db, t, base, 'Added to the task it picked.')
-  }
-  if (mode !== 'create' && input.conversationId && (!contactId || !contactName)) {
-    try {
-      const { data: conv } = await db.from('conversations').select('contact_id').eq('company_id', input.companyId).eq('id', input.conversationId).maybeSingle()
-      contactId = contactId || conv?.contact_id || null
-      if (contactId && !contactName) {
-        const { data: ct } = await db.from('contacts').select('name').eq('company_id', input.companyId).eq('id', contactId).maybeSingle()
-        contactName = ct?.name || null
-      }
-    } catch { /* match on this conversation alone */ }
   }
 
   if (mode === 'auto') {
+    const { contactId, contactName } = await resolveContact(db, input)
     const open = await loadOpenTasks(db, { companyId: input.companyId, conversationId: input.conversationId, contactId, orderId: input.orderId, now })
     const match = findMatch(open, { title, details: input.details, steps }, contactName, { strict: !input.conversationId && !contactId && !input.orderId })
-    if (match) return named(match, `“${match.title}” is already open for this.`)
+    if (match) return addToTask(db, match, { ...base, contactName }, `“${match.title}” is already open for this.`)
 
-    if (input.caps) {
-      const since = new Date(now - DAY).toISOString()
-      if (input.conversationId && (await countAiTasks(db, input.companyId, since, input.conversationId)) >= input.caps.perConversation) {
-        // Enough new tasks on this conversation today: it goes on the newest open one.
-        const target = open.find(t => t.conversationId === input.conversationId)
-        const why = `Daily limit of ${plural(input.caps.perConversation, 'AI task')} for this conversation reached`
-        if (target) return named(target, `${why}, so it was added to “${target.title}”.`, { steps: steps.length ? [title, ...steps] : [title] })
-        return { ok: true, action: 'skipped', title, added: [], reason: `${why}.`, summary: `Skipped task “${title}”: ${why.toLowerCase()}` }
-      }
-      if ((await countAiTasks(db, input.companyId, since)) >= input.caps.perCompany) {
-        const why = `Daily limit of ${plural(input.caps.perCompany, 'AI task')} for the business reached`
-        return { ok: true, action: 'skipped', title, added: [], reason: `${why}.`, summary: `Skipped task “${title}”: ${why.toLowerCase()}` }
-      }
-    }
+    // Over the cap and not part of an open job: not made. Never glued onto an unrelated task.
+    const held = await capHold(db, { ...base, contactId, contactName })
+    if (held) return { ok: true, action: 'held', title, added: [], reason: held, summary: `Held back task “${title}”: ${held}` }
   }
 
   const details = String(input.details || '').trim().slice(0, 2000)
@@ -691,7 +891,8 @@ export async function upsertTask(db: any, input: UpsertTaskInput): Promise<Upser
 /** What the call / chat summary prompts ask for in "todos" (shared, so both read the same). */
 export const ACTION_ITEMS_GUIDE = [
   'Action items ("todos") are only real to-dos a staff member still has to do later: call back, order stock, arrange payment, chase a supplier, fix an order, send something promised.',
-  'Not action items: anything already done in the conversation, information or a summary point, a reply that was already sent, a back-in-stock request (that goes on the product’s waiting list), or “wait for the customer” with nothing for staff to do (make it a step of the related job instead).',
+  'Not action items: anything already done in the conversation, information or a summary point, a reply that was already sent, or “wait for the customer” with nothing for staff to do (make it a step of the related job instead).',
+  'A back-in-stock request is an action item written as "Add <customer> to the waitlist for <product>" (one item per product).',
   'One job is ONE item. When a job has several steps, write it as "Short job title: step one; step two; step three" — e.g. "Texas Holy Rock order for Shery: Confirm the quantity when she calls back (before next Thursday’s delivery); Add the extra Texas Holy Rock to the next supplier order; Arrange payment when she confirms". A job with one step is just that step.',
   'Return [] when there is nothing for staff to do. Never invent tasks.',
 ].join('\n')

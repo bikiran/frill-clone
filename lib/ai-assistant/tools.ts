@@ -930,9 +930,18 @@ export async function executeAction(db: SupabaseClient, ctx: AssistantContext, n
       actorName: `${ctx.userName || 'Someone'} via Colvy AI`, actorId: ctx.userId || null, sourceLabel: 'Colvy AI',
     })
     if (up.ok && up.action === 'updated' && up.taskId) {
-      const card = { kind: 'task', title: up.title, lines: [up.added.length ? `Added to this open task: ${up.added.join('; ')}` : 'Already an open task — nothing new to add'], href: '/admin/tasks' }
-      await logAiEvent(D, { companyId: ctx.companyId, userId: ctx.userId, action: 'Updated task', tool: name, entityType: 'task', entityId: up.taskId, input: { title, steps: args?.steps || [] }, result: { summary: up.summary, added: up.added } })
-      return { ok: true, entityType: 'task', entityId: up.taskId, card, undo: up.restore && Object.keys(up.restore).length ? { entityType: 'task_update', entityId: up.taskId, restore: up.restore } : null }
+      const card = {
+        kind: 'task', title: up.title,
+        lines: [
+          up.added.length ? `Added to this open task: ${up.added.join('; ')}` : 'Already an open task — nothing new to add',
+          up.keptAssignee ? `Kept with ${up.keptAssignee}, who already has it` : up.assigned ? `Assigned to ${up.assigned}` : null,
+        ].filter(Boolean),
+        href: '/admin/tasks',
+      }
+      await logAiEvent(D, { companyId: ctx.companyId, userId: ctx.userId, action: 'Updated task', tool: name, entityType: 'task', entityId: up.taskId, input: { title, steps: args?.steps || [] }, result: { summary: up.summary, added: up.added, keptAssignee: up.keptAssignee || null } })
+      // Undo takes back only what this added (the steps, the note, a field nobody has changed since).
+      const u = up.undo
+      return { ok: true, entityType: 'task', entityId: up.taskId, card, undo: u && (u.removeChecklistIds.length || u.appendedText || Object.keys(u.restore).length) ? { entityType: 'task_update', entityId: up.taskId, taskAddition: u } as any : null }
     }
     const ins = up.ok && up.taskId ? { id: up.taskId } : { id: undefined, error: up.error }
     if (!ins.id) return { ok: false, error: ins.error || 'Could not create the task.' }

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { guardAiRequest } from '@/lib/rate-limit'
 import { modelFor, trackAi } from '@/lib/ai-models'
 import { createClient } from '@supabase/supabase-js'
-import { ACTION_ITEMS_GUIDE, loadOpenTasks, openTasksForSummaryPrompt, refineActionItems, type OpenTask } from '@/lib/task-dedupe'
+import { ACTION_ITEMS_GUIDE, loadOpenTasks, openTasksForSummaryPrompt, refineActionItemsDetailed, type OpenTask } from '@/lib/task-dedupe'
 
 // Open tasks for this conversation's customer (when the caller says which
 // conversation), so the summary adds to them instead of proposing them again.
@@ -100,10 +100,15 @@ ${transcript}`,
     const clean = text.replace(/```json|```/g, '').trim()
     try {
       const parsed = JSON.parse(clean)
+      // One item per job (related steps grouped), minus jobs an open task already has every step of.
+      const refined = refineActionItemsDetailed(parsed.todos || [], { contactName, openTasks })
+      if (refined.covered.length) console.info('[ai-summary] already open tasks, not proposed again:', refined.covered.map(c => `${c.item} → ${c.taskTitle}`).join(' | '))
+      // `at`: when these were generated — the Draft tasks card's place in the thread.
+      const at = new Date().toISOString()
       return NextResponse.json({
         summary: parsed.summary || 'No summary available.',
-        // One item per job (related steps grouped), minus jobs an open task already has.
-        todos: refineActionItems(parsed.todos || [], { contactName, openTasks }).map((t: string) => ({ text: t, done: false })),
+        todos: refined.items.map((t: string) => ({ text: t, done: false, at })),
+        alreadyTasks: refined.covered,
       })
     } catch {
       return NextResponse.json({ summary: text.slice(0, 300), todos: [] })

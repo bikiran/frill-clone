@@ -2,7 +2,7 @@ import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { modelFor, trackAi } from '@/lib/ai-models'
-import { ACTION_ITEMS_GUIDE, loadOpenTasks, openTasksForSummaryPrompt, refineActionItems } from '@/lib/task-dedupe'
+import { ACTION_ITEMS_GUIDE, loadOpenTasks, openTasksForSummaryPrompt, refineActionItemsDetailed } from '@/lib/task-dedupe'
 
 function admin() {
   return createClient(
@@ -55,7 +55,9 @@ export async function POST(req: NextRequest) {
     try {
       const parsed = JSON.parse(out)
       // One item per job (related steps grouped), minus jobs an open task already has.
-      parsed.todos = refineActionItems(Array.isArray(parsed.todos) ? parsed.todos : [], { contactName: call.contact_name || null, openTasks })
+      const refined = refineActionItemsDetailed(Array.isArray(parsed.todos) ? parsed.todos : [], { contactName: call.contact_name || null, openTasks })
+      parsed.todos = refined.items
+      if (refined.covered.length) console.info('[call-summary] already open tasks, not proposed again:', refined.covered.map(c => `${c.item} → ${c.taskTitle}`).join(' | '))
       if (callId) {
         // Persist todos and sentiment too — both are shown on the call detail
         // screen, and previously only the summary was stored.
@@ -73,6 +75,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({
         summary: parsed.summary,
         todos: parsed.todos || [],
+        alreadyTasks: refined.covered,
         sentiment: parsed.sentiment || null,
       })
     } catch {

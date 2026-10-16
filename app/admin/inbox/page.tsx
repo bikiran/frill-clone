@@ -37,7 +37,7 @@ import AiCallNote from '@/components/AiCallNote'
 import CallCard from '@/components/CallCard'
 import LiveCallBanner from '@/components/LiveCallBanner'
 import DraftTasks from '@/components/DraftTasks'
-import { latestChatMs, draftsCollapsed } from '@/lib/task-dedupe'
+import { latestChatMs, draftsCollapsed, todosGeneratedAt } from '@/lib/task-dedupe'
 import Dialer from '@/components/Dialer'
 import ResilientImage from '@/components/ResilientImage'
 import ComposeMessage from '@/components/ComposeMessage'
@@ -2871,6 +2871,7 @@ export default function InboxPage() {
     if (recording) { recCancelRef.current = true; if (recTimerRef.current) clearInterval(recTimerRef.current); try { mediaRecRef.current?.stop() } catch {}; setRecording(false) }
     setAiSummary((conv as any).ai_summary || '')
     setAiTodos((conv as any).ai_todos || [])
+    setChatDraftAnchor(draftAnchorFor(conv.id, (conv as any).ai_todos || []))
     // Load messages (the newest page — older pages load on scroll-up)
     let msgs: any[] = []
     try {
@@ -4329,10 +4330,8 @@ export default function InboxPage() {
       if (data.summary) {
         setAiSummary(data.summary)
         setAiTodos(data.todos || [])
-        // Freshly asked for: the draft card starts open (it folds once the chat moves on).
-        const now = Date.now()
-        setChatDraftAnchor(now)
-        try { window.localStorage.setItem(`colvy-draft-anchor-${selected.id}`, String(now)) } catch {}
+        // Freshly made: the draft card sits at this moment (it folds once the chat moves on).
+        setChatDraftAnchor(todosGeneratedAt(data.todos) || Date.now())
         await (supabase as any).from('conversations').update({ ai_summary: data.summary, ai_todos: data.todos || [] }).eq('id', selected.id)
       } else if (data.error) {
         setAiSummary('AI summary unavailable: ' + data.error)
@@ -4352,18 +4351,19 @@ export default function InboxPage() {
   // chat-summary card's place in the thread is when it first appeared,
   // remembered per conversation.
   const latestChat = useMemo(() => latestChatMs(messages as any[]), [messages])
+  // When the conversation's action items were generated (their `at`); items
+  // saved before that existed fall back to when this browser first showed them.
   const [chatDraftAnchor, setChatDraftAnchor] = useState<number | null>(null)
-  const hasAiTodos = aiTodos.length > 0
-  useEffect(() => {
-    if (!selected?.id || !hasAiTodos) { setChatDraftAnchor(null); return }
-    const key = `colvy-draft-anchor-${selected.id}`
-    let stored: number | null = null
-    try { stored = Number(window.localStorage.getItem(key)) || null } catch {}
-    if (stored) { setChatDraftAnchor(stored); return }
+  const draftAnchorFor = (convId: string, todos: any[]): number | null => {
+    if (!todos?.length) return null
+    const at = todosGeneratedAt(todos)
+    if (at) return at
+    const key = `colvy-draft-anchor-${convId}`
+    try { const v = Number(window.localStorage.getItem(key)); if (v) return v } catch {}
     const now = Date.now()
-    setChatDraftAnchor(now)
     try { window.localStorage.setItem(key, String(now)) } catch {}
-  }, [selected?.id, hasAiTodos])
+    return now
+  }
 
   // Re-scan messages for AI-detectable contact info whenever they change
   // (so a phone/address sent mid-conversation is picked up, not just on open)

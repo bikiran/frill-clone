@@ -24,7 +24,7 @@ type Outlet = { id: string; label?: string | null; suburb?: string | null }
 type Step = { text: string; include: boolean }
 type Match = { taskId: string; title: string; checklistCount: number; newSteps: number }
 type Draft = {
-  title: string; items: Step[]; priority: 'low' | 'normal' | 'high'; include: boolean
+  id: string; title: string; items: Step[]; priority: 'low' | 'normal' | 'high'; include: boolean
   assigneeId: string; locationId: string; remindAt: string
   match: Match | null; mode: 'add' | 'create'
 }
@@ -64,8 +64,9 @@ const fmtWhen = (iso: string) => {
   } catch { return 'reminder' }
 }
 
+let draftSeq = 0
 const blankDraft = (title: string, steps: string[], locationId: string): Draft => ({
-  title, items: steps.map(text => ({ text, include: true })), priority: 'normal', include: true,
+  id: `d${++draftSeq}`, title, items: steps.map(text => ({ text, include: true })), priority: 'normal', include: true,
   assigneeId: '', locationId, remindAt: '', match: null, mode: 'create',
 })
 
@@ -97,7 +98,7 @@ export default function DraftTasks({
   const [drafts, setDrafts] = useState<Draft[]>([])
   const [closed, setClosed] = useState(false)
   const [creating, setCreating] = useState(false)
-  const [remindOpen, setRemindOpen] = useState<Set<number>>(new Set())
+  const [remindOpen, setRemindOpen] = useState<Set<string>>(new Set())
   // Combine mode: merge the checked drafts into ONE task instead of one each
   // (their steps become the task's checklist).
   const [combine, setCombine] = useState(false)
@@ -120,24 +121,32 @@ export default function DraftTasks({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storageKey, JSON.stringify(todos), defaultLocationId, contactName])
 
-  // Which drafts an open task already covers.
-  const draftKey = drafts.map(d => d.title).join('|')
+  // Which drafts an open task already covers — asked once the title stops
+  // changing (not on every keystroke).
+  const draftKey = drafts.map(d => `${d.id}:${d.title}`).join('|')
   useEffect(() => {
     if (!drafts.length || !conversationId || !companyId) return
     let cancelled = false
-    ;(async () => {
+    const snapshot = drafts.map(d => ({ id: d.id, title: d.title, steps: d.items.map(i => i.text) }))
+    const timer = setTimeout(async () => {
       try {
         const res = await authFetch('/api/tasks/ai-drafts', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'match', companyId, conversationId, drafts: drafts.map(d => ({ title: d.title, steps: d.items.map(i => i.text) })) }),
+          body: JSON.stringify({ action: 'match', companyId, conversationId, drafts: snapshot.map(({ title, steps }) => ({ title, steps })) }),
         })
         if (!res.ok || cancelled) return
         const { matches } = await res.json()
         if (cancelled || !Array.isArray(matches)) return
-        setDrafts(prev => prev.map((d, i) => matches[i] && !d.match ? { ...d, match: matches[i], mode: 'add' } : d))
+        const byId = new Map(snapshot.map((d, i) => [d.id, matches[i] || null]))
+        setDrafts(prev => prev.map(d => {
+          if (!byId.has(d.id)) return d
+          const m = byId.get(d.id)
+          if (!m) return d.match ? { ...d, match: null, mode: 'create' } : d
+          return d.match?.taskId === m.taskId ? { ...d, match: m } : { ...d, match: m, mode: 'add' }
+        }))
       } catch { /* no match info: they're created as new tasks */ }
-    })()
-    return () => { cancelled = true }
+    }, 600)
+    return () => { cancelled = true; clearTimeout(timer) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draftKey, conversationId, companyId])
 
@@ -148,7 +157,7 @@ export default function DraftTasks({
   }
   const patch = (i: number, p: Partial<Draft>) => setDrafts(prev => prev.map((d, di) => di === i ? { ...d, ...p } : d))
   const patchStep = (i: number, j: number, p: Partial<Step>) => setDrafts(prev => prev.map((d, di) => di === i ? { ...d, items: d.items.map((s, sj) => sj === j ? { ...s, ...p } : s) } : d))
-  const toggleRemind = (i: number) => setRemindOpen(prev => { const n = new Set(prev); n.has(i) ? n.delete(i) : n.add(i); return n })
+  const toggleRemind = (id: string) => setRemindOpen(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n })
   // One draft per step, for when the grouping got it wrong.
   const split = (i: number) => setDrafts(prev => prev.flatMap((d, di) => di !== i ? [d] : d.items.filter(s => s.text.trim()).map(s => ({ ...blankDraft(s.text, [], d.locationId), priority: d.priority, assigneeId: d.assigneeId, include: s.include }))))
 
@@ -170,9 +179,12 @@ export default function DraftTasks({
   const createTasks = async () => {
     let chosen = drafts.filter(d => d.include && (d.title.trim() || stepsOf(d).length))
     if (!chosen.length || !conversationId || !companyId) return
+    // Which drafts each saved task stands for (several when combined).
+    let covers: string[][] = chosen.map(d => [d.id])
     // Combine into a single task: every checked draft's steps on one checklist.
     if (combine && chosen.length > 1) {
       const steps = chosen.flatMap(d => (d.items.length ? stepsOf(d) : [d.title.trim()]))
+      covers = [chosen.map(d => d.id)]
       chosen = [{ ...chosen[0], items: steps.map(text => ({ text, include: true })) }]
     }
     setCreating(true); setError('')
@@ -192,9 +204,23 @@ export default function DraftTasks({
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'apply', companyId, conversationId, source, actorName: actor?.name || null, drafts: payload }),
         })
-      } catch { res = null }   // unreachable: the legacy insert below
-      if (res && !res.ok && res.status !== 404) { const j = await res.json().catch(() => ({})); throw new Error(j?.error || 'Could not save the tasks') }
-      if (!res || !res.ok) {
+      } catch { res = null }   // couldn't reach the server at all: the legacy insert below
+      if (res) {
+        // Any answer from the server is final (no direct insert behind its back,
+        // e.g. after "Conversation not found"). Drafts that didn't save stay.
+        const j = await res.json().catch(() => ({}))
+        const results: any[] = Array.isArray(j?.results) ? j.results : []
+        if (!res.ok && !results.length) throw new Error(j?.error || 'Could not save the tasks')
+        const failed = results.map((r, i) => ({ r, i })).filter(({ r }) => r?.error || r?.action === 'skipped' || r?.action === 'held')
+        const savedIds = new Set(covers.filter((_, i) => !failed.some(f => f.i === i)).flat())
+        if (failed.length < results.length) { notifyIntegrations('task.created', { companyId }); onCreated?.() }
+        if (!failed.length) { close(); return }
+        setDrafts(prev => prev.filter(d => !savedIds.has(d.id)))
+        setCombine(false)
+        setError(`Couldn’t save ${failed.length === 1 ? `“${failed[0].r?.title || payload[failed[0].i]?.title}”` : `${failed.length} of these`}: ${failed[0].r?.error || failed[0].r?.reason || 'try again'}`)
+        return
+      }
+      {
         await insertWithFallback(payload.map(p => ({
           conversation_id: conversationId, company_id: companyId,
           text: p.title, title: p.title, done: false, priority: p.priority,
@@ -250,7 +276,7 @@ export default function DraftTasks({
         {drafts.map((d, i) => {
           const adding = !!d.match && d.mode === 'add'
           return (
-          <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 9, padding: '9px 11px', borderRadius: 10, background: '#faf5ff', border: '1px solid #ede9fe' }}>
+          <div key={d.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 9, padding: '9px 11px', borderRadius: 10, background: '#faf5ff', border: '1px solid #ede9fe' }}>
             <input type="checkbox" checked={d.include} onChange={() => patch(i, { include: !d.include })} aria-label="Include" style={{ marginTop: 3, cursor: 'pointer', accentColor: '#7c3aed', flexShrink: 0 }} />
             <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 7, opacity: d.include ? 1 : 0.5 }}>
               {d.items.length ? (
@@ -322,16 +348,16 @@ export default function DraftTasks({
                 {d.remindAt ? (
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 8px', borderRadius: 7, background: '#ede9fe', color: '#7c3aed', fontSize: 11, fontWeight: 700 }}>
                     <ClockIcon /> {fmtWhen(d.remindAt)}
-                    <button type="button" onClick={() => { patch(i, { remindAt: '' }); setRemindOpen(prev => { const n = new Set(prev); n.delete(i); return n }) }}
+                    <button type="button" onClick={() => { patch(i, { remindAt: '' }); setRemindOpen(prev => { const n = new Set(prev); n.delete(d.id); return n }) }}
                       title="Clear reminder" style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: '#7c3aed', display: 'inline-flex', fontWeight: 800, fontSize: 13, lineHeight: 1 }}>×</button>
                   </span>
-                ) : remindOpen.has(i) ? (
+                ) : remindOpen.has(d.id) ? (
                   <input type="datetime-local" autoFocus value={d.remindAt}
                     onChange={e => patch(i, { remindAt: e.target.value })}
-                    onBlur={() => { if (!d.remindAt) toggleRemind(i) }}
+                    onBlur={() => { if (!d.remindAt) toggleRemind(d.id) }}
                     style={{ fontSize: 11, fontWeight: 600, padding: '2px 6px', borderRadius: 7, border: '1px solid #d8b4fe', background: '#fff', color: 'var(--ink)' }} />
                 ) : (
-                  <button type="button" onClick={() => toggleRemind(i)} title="Set a reminder"
+                  <button type="button" onClick={() => toggleRemind(d.id)} title="Set a reminder"
                     style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 8px', borderRadius: 7, border: '1px dashed #d8b4fe', background: '#fff', color: '#7c3aed', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
                     <ClockIcon /> Remind
                   </button>

@@ -174,6 +174,32 @@ export async function decideApproval(db: any, opts: {
     return r.ok ? { ok: true, status: 'executed' } : { ok: false, error: r.error }
   }
 
+  // A task an agent held back (over the daily cap for AI-made tasks): approving
+  // makes it now, still adding to an open task if one has since appeared.
+  if (ap.action_key === 'create_task') {
+    const { _preview, ...args } = ap.args || {}
+    const { getAction } = await import('./actions')
+    const { ROLES } = await import('./roles')
+    const action = getAction('create_task')
+    const ctx: any = {
+      db, companyId: opts.companyId, companyName: '', siteOrigin: process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com',
+      runId: run.id, roleKey: run.role_key, roleName: ROLES[run.role_key]?.name || 'Colvy AI agent', mode: 'live',
+      conversationId: run.conversation_id || null, contactId: run.contact_id || null,
+      scratch: { taskCapExempt: true, offeredTaskIds: [], ...(run.input?.orderId ? { opsOrder: { id: run.input.orderId } } : {}) },
+    }
+    let r: any
+    try { r = await action!.run(ctx, { ...args, existingTaskId: undefined }) } catch (e: any) { r = { ok: false, error: e?.message || 'Failed' } }
+    await db.from('agent_approvals').update({ status: r.ok ? 'executed' : 'failed', result: r.ok ? { done: r.summary } : { error: r.error } }).eq('id', ap.id)
+    await logStep(db, run, {
+      kind: 'approval', action_key: ap.action_key, decision: 'allowed',
+      decision_reason: r.ok ? `${who} approved it — ${r.summary}.` : `${who} approved it, but it didn’t go through: ${r.error}`,
+      status: r.ok ? 'ok' : 'error', input: args, output: r.ok ? (r.data ?? { done: r.summary }) : { error: r.error },
+      entity_type: r.entityType || null, entity_id: r.entityId || null,
+    })
+    await settleRun(db, run)
+    return r.ok ? { ok: true, status: 'executed' } : { ok: false, error: r.error }
+  }
+
   if (!['send_message', 'reply_to_review', 'reply_to_comment', 'send_cart_followup', 'send_order_update', 'send_sales_followup'].includes(ap.action_key)) {
     await db.from('agent_approvals').update({ status: 'failed', result: { error: 'Not supported yet' } }).eq('id', ap.id)
     return { ok: false, error: 'Approving this kind of action isn’t supported yet.' }

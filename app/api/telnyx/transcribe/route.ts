@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { ensureCallCard } from '@/lib/call-card'
 import { modelChain, trackAi } from '@/lib/ai-models'
-import { ACTION_ITEMS_GUIDE, loadOpenTasks, openTasksForSummaryPrompt, refineActionItems, type OpenTask } from '@/lib/task-dedupe'
+import { ACTION_ITEMS_GUIDE, loadOpenTasks, openTasksForSummaryPrompt, refineActionItemsDetailed, type OpenTask } from '@/lib/task-dedupe'
 
 export const maxDuration = 60
 
@@ -187,6 +187,7 @@ export async function POST(req: NextRequest) {
     let summaryError = ''
     let extractedContact: any = null
     let contactName: string | null = null
+    let alreadyTasks: { item: string; taskId: string; taskTitle: string }[] = []
     // Open tasks for this customer: the model adds to them instead of
     // proposing the same job again (lib/task-dedupe).
     let openTasks: OpenTask[] = []
@@ -261,7 +262,10 @@ ${summarySource.slice(0, 12000)}`
           const parsed = JSON.parse(out)
           summary = parsed.summary || ''
           // One item per job (related steps grouped), minus jobs an open task already has.
-          todos = refineActionItems(Array.isArray(parsed.todos) ? parsed.todos : [], { contactName, openTasks })
+          const refined = refineActionItemsDetailed(Array.isArray(parsed.todos) ? parsed.todos : [], { contactName, openTasks })
+          todos = refined.items
+          alreadyTasks = refined.covered
+          if (alreadyTasks.length) console.info('[transcribe] already open tasks, not proposed again:', alreadyTasks.map(c => `${c.item} → ${c.taskTitle}`).join(' | '))
           // Normalise to one of the three known values; anything else (or a
           // missing field) becomes 'neutral'. The card only renders the badge
           // when sentiment is set, so a null here meant NO badge ever showed —
@@ -354,7 +358,7 @@ ${summarySource.slice(0, 12000)}`
       }
     } catch {}
 
-    return NextResponse.json({ ok: true, transcription: text, summary, todos, sentiment })
+    return NextResponse.json({ ok: true, transcription: text, summary, todos, sentiment, alreadyTasks })
   } catch (err: any) {
     console.error('[transcribe] failed', err)
     const msg = err?.name === 'AbortError'

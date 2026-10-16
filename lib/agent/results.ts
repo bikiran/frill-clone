@@ -76,7 +76,7 @@ export async function agentResults(db: any, companyId: string, days = 7, now = D
   const [runs, steps, approvals] = await Promise.all([
     pageAll(from => db.from('agent_runs').select('id, role_key, status, outcome, summary, input, created_at, mode')
       .eq('company_id', companyId).eq('mode', 'live').gte('created_at', before).order('created_at', { ascending: false }).range(from, from + 999)).catch(() => []),
-    pageAll(from => db.from('agent_steps').select('run_id, action_key, kind, decision, status, autonomy, created_at')
+    pageAll(from => db.from('agent_steps').select('run_id, action_key, kind, decision, status, autonomy, entity_id, created_at')
       .eq('company_id', companyId).gte('created_at', before).in('kind', ['action', 'approval']).range(from, from + 999)).catch(() => []),
     pageAll(from => db.from('agent_approvals').select('id, run_id, action_key, status, result, created_at, decided_at')
       .eq('company_id', companyId).gte('created_at', before).range(from, from + 999)).catch(() => []),
@@ -123,7 +123,7 @@ export async function agentResults(db: any, companyId: string, days = 7, now = D
         t.escalated++
         if (inCur) { role(run.role_key).escalated++; exceptions.push({ runId: run.id, role: run.role_key, summary: run.summary || 'Handed to the team.', at: s.created_at, kind: 'escalated' }) }
       } else if (key === 'create_task') {
-        t.tasks++
+        if (s.entity_id) t.tasks++   // made one (adding to an open task carries no entity)
         if (run.role_key === 'operations') (inCur ? caughtRuns.cur : caughtRuns.prev).add(run.id)
       } else if (key === 'booking_link' || (key.startsWith('x_') && s.autonomy === 'act_within_limits')) {
         // Outside tools: only what changes something (look-ups run 'autonomous').

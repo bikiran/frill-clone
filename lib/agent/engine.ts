@@ -205,9 +205,13 @@ export async function runAgent(db: any, runId: string, deadline: number, model: 
     const actions = role.actions.map(findAction).filter(Boolean) as ActionDef[]
     if (!actions.find(a => a.key === 'finish')) actions.push(FINISH_ACTION)
     const tools = actions.map(toolSpec)
-    const openTasks = actions.some(a => a.key === 'create_task')
-      ? openTasksPromptBlock(await loadOpenTasks(db, { companyId: run.company_id, conversationId: run.conversation_id, contactId: actx.contactId, orderId: run.input?.orderId || null }).catch(() => []))
-      : null
+    // Only tasks tied to this conversation, customer or order — never the business's other work.
+    let openTasks: string | null = null
+    if (actions.some(a => a.key === 'create_task')) {
+      const open = await loadOpenTasks(db, { companyId: run.company_id, conversationId: run.conversation_id, contactId: actx.contactId, orderId: run.input?.orderId || null, scopedOnly: true }).catch(() => [])
+      actx.scratch.offeredTaskIds = open.slice(0, 8).map(t => t.id)   // existingTaskId must be one of these
+      openTasks = openTasksPromptBlock(open)
+    }
     const system = systemPrompt(role, actx.companyName, pack.businessText, pack.customerText, pack.timezone, pack.toneText, outside.actions.length > 0, asksForKnowledgeGaps(actions, run.input), openTasks)
     const messages: NeutralMessage[] = [{ role: 'user', content: [{ type: 'text', text: firstMessage(run, pack.timezone, role) }] }]
 

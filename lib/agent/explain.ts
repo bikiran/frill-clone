@@ -118,7 +118,7 @@ export async function explainRun(db: any, companyId: string, runId: string): Pro
       status: s.status || null,
       detail: detailFor(s.action_key, s.input, s.output),
     })
-    if (s.action_key === 'create_task' && (s.output?.updated || s.output?.skipped)) steps[steps.length - 1].label = s.output.updated ? 'Added to an open task' : 'Didn’t make a task'
+    if (s.kind === 'action' && s.action_key === 'create_task' && (s.output?.updated || s.output?.skipped)) steps[steps.length - 1].label = s.output.updated ? 'Added to an open task' : 'Didn’t make a task'
   }
 
   return {
