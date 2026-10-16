@@ -25,6 +25,10 @@ const admin = () => createClient(
 //   • a workspace member, for their own workspace: Authorization: Bearer <session token>, body.companyId
 //   • the scheduler / an operator for every workspace: Authorization: Bearer $CRON_SECRET
 //     (refused when CRON_SECRET isn't set — no open all-tenant mode).
+//   • the platform super admin: super admin → Overview → "Recover empty email
+//     replies" (/api/platform-admin/email-backfill), no secret needed.
+// A key that isn't the CRON_SECRET with no companyId is told so (401), rather
+// than "companyId required", which read as if the secret had worked.
 //
 // Examples:
 //   curl -X POST https://colvy.com/api/email/backfill-bodies -H "Authorization: Bearer $CRON_SECRET" \
@@ -46,7 +50,18 @@ export async function POST(req: NextRequest) {
     const db = admin()
     const companyId: string | null = body?.companyId ? String(body.companyId) : null
     if (!isCronSecret(req)) {
-      if (!companyId) return NextResponse.json({ error: 'companyId required' }, { status: 400 })
+      if (!companyId) {
+        const auth = req.headers.get('authorization')
+        if (auth !== null) {
+          // e.g. `-H "Authorization: Bearer $CRON_SECRET"` in a shell where it isn't set.
+          const empty = !auth.replace(/^\s*Bearer\b/i, '').trim()
+          return NextResponse.json({
+            error: "That key isn't the CRON_SECRET — pass companyId to run it for one workspace, or use the super admin button",
+            ...(empty ? { hint: 'The key was empty: is $CRON_SECRET set in this shell?' } : {}),
+          }, { status: 401 })
+        }
+        return NextResponse.json({ error: 'companyId required (or Authorization: Bearer $CRON_SECRET for every workspace)' }, { status: 400 })
+      }
       if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     }
     if (!process.env.RESEND_API_KEY) return NextResponse.json({ error: 'RESEND_API_KEY is not set, so received emails can’t be fetched.' }, { status: 400 })

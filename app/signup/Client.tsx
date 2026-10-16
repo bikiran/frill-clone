@@ -131,7 +131,16 @@ function SignUpForm() {
     // Persist a referral code so it survives the multi-step flow (and any OAuth
     // round-trip), the same way the pending plan is stashed.
     if (refParam) { try { localStorage.setItem('pending_ref', refParam) } catch {} }
-  }, [planParam, billingParam, refParam])
+    // Where they came from (UTM tags, referring page, landing page), kept for
+    // this tab so it rides along with the first code request.
+    try {
+      if (!sessionStorage.getItem('colvy_signup_attr')) {
+        const utm: Record<string, string> = {}
+        for (const k of ['source', 'medium', 'campaign', 'term', 'content']) { const v = searchParams.get(`utm_${k}`); if (v) utm[k] = v }
+        sessionStorage.setItem('colvy_signup_attr', JSON.stringify({ utm, referrer: document.referrer || '', landing: window.location.pathname + window.location.search }))
+      }
+    } catch {}
+  }, [planParam, billingParam, refParam, searchParams])
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }: any) => {
@@ -202,7 +211,23 @@ function SignUpForm() {
     try {
       const res = await fetch('/api/auth/otp/send', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim(), phone, turnstileToken: humanToken }),
+        body: JSON.stringify({
+          email: email.trim(), phone, turnstileToken: humanToken,
+          // Recorded with the attempt (super admin → Signups), so a sign-up that
+          // stops before the account exists can still be followed up.
+          profile: {
+            fullName: fullName.trim(), businessName: companyName.trim(), businessSlug: slug.toLowerCase(), industry,
+            website: website.trim(), businessPhone: businessPhone.trim(),
+            businessCity: addrParts.city || '', businessState: addrParts.state || '', businessCountry: addrParts.country || '',
+          },
+          attribution: (() => {
+            let a: any = {}
+            try { a = JSON.parse(sessionStorage.getItem('colvy_signup_attr') || '{}') } catch {}
+            let ref: string | null = refParam
+            if (!ref) { try { ref = localStorage.getItem('pending_ref') } catch {} }
+            return { ...a, plan: planParam || '', ref: ref || '' }
+          })(),
+        }),
       })
       const data = await res.json()
       if (!res.ok) { humanRef.current?.reset(); throw new Error(data.error || 'Could not send codes') }
