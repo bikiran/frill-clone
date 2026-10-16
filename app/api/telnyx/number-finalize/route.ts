@@ -4,6 +4,7 @@ import Stripe from 'stripe'
 import { createClient } from '@supabase/supabase-js'
 import { TelnyxService } from '@/lib/telnyx-service'
 import { consumeFreeCredit, refundFreeCredit } from '@/lib/free-number-credits'
+import { startNumberPurchase, finishNumberOrderFrom, cancelNumberOrder, LIVE_SUBSCRIPTION, CANCELLED_CHECKOUT, type HeldOrder } from '@/lib/number-orders'
 
 function admin() {
   return createClient(
@@ -20,7 +21,19 @@ const PLATFORM_CONNECTION = process.env.TELNYX_CONNECTION_ID
 // Called by the Telnyx settings page after returning from Stripe checkout.
 // Verifies the checkout session is paid, then provisions the number DIRECTLY
 // (does not depend on the Stripe webhook being configured). Idempotent.
+//
+// A paid checkout is claimed (lib/number-orders) before anything is bought, so
+// this call and the Stripe webhook never both buy a number for it; how the
+// purchase ended is recorded against the claim. That record is also what the
+// setup checklist reads for "setting up your number" / "needs attention".
 export async function POST(req: NextRequest) {
+  const track: { held: HeldOrder | null } = { held: null }
+  const res = await finalize(req, track)
+  if (track.held) await finishNumberOrderFrom(admin(), track.held, res)
+  return res
+}
+
+async function finalize(req: NextRequest, track: { held: HeldOrder | null }) {
   let freeConsumed = false
   let freeCompanyId: string | undefined
   try {
@@ -76,10 +89,21 @@ export async function POST(req: NextRequest) {
         if (session.metadata?.kind !== 'phone_number' || session.metadata?.companyId !== companyId) {
           return NextResponse.json({ error: 'This payment is for a different purchase.' }, { status: 403 })
         }
-        // …and each paid checkout buys one number, once.
+        // …and each paid checkout buys one number, once — even with the Stripe
+        // webhook provisioning it at the same moment.
+        const start = await startNumberPurchase(db, { sessionId, companyId, provider: 'telnyx' }, subscriptionId)
+        track.held = start.held
+        if (start.answer) return NextResponse.json(start.answer.body, { status: start.answer.status })
+        // A checkout support has since refunded still reads as paid; its
+        // subscription says otherwise. Nothing is bought for it, and setup
+        // stops asking for it to be finished.
         if (subscriptionId) {
-          const { data: used } = await db.from('phone_numbers').select('phone_number').eq('stripe_subscription_id', subscriptionId).maybeSingle()
-          if (used) return NextResponse.json({ ok: true, phoneNumber: used.phone_number, alreadyDone: true })
+          const sub = await stripe.subscriptions.retrieve(subscriptionId)
+          if (!LIVE_SUBSCRIPTION.includes(String(sub?.status))) {
+            if (track.held) await cancelNumberOrder(db, track.held, `Subscription ${sub?.status || 'gone'}`)
+            track.held = null
+            return NextResponse.json({ error: CANCELLED_CHECKOUT, cancelled: true }, { status: 409 })
+          }
         }
       } else {
         return NextResponse.json({ error: 'Payments are not configured on the server.' }, { status: 500 })
@@ -93,8 +117,10 @@ export async function POST(req: NextRequest) {
     }
 
     // Idempotency: if we already provisioned the requested number, return it.
+    // This workspace's own only: another workspace holding it isn't this purchase
+    // done (buying it fails, and an equivalent number is bought instead).
     if (phoneNumberWanted) {
-      const { data: dupe } = await db.from('phone_numbers').select('id, phone_number').eq('phone_number', phoneNumberWanted).maybeSingle()
+      const { data: dupe } = await db.from('phone_numbers').select('id, phone_number').eq('company_id', companyId).eq('phone_number', phoneNumberWanted).maybeSingle()
       if (dupe) {
         if (freeConsumed) { await refundFreeCredit(db, companyId); freeConsumed = false } // nothing was provisioned
         return NextResponse.json({ ok: true, phoneNumber: dupe.phone_number, alreadyDone: true })
