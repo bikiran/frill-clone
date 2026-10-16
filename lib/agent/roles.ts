@@ -40,8 +40,8 @@ const REPUTATION: RoleDef = {
   goal: 'Reply to every Google review and every Facebook or Instagram comment promptly and warmly, in the business’s voice, and bring the team the unhappy customers.',
   instructions: [
     'You reply to Google reviews and to comments on the business’s Facebook and Instagram posts. Replies are PUBLIC — anyone can read them.',
-    'For a review: start with get_review, write one reply with reply_to_review, and finish. If it asks something (a product, a service, opening hours): answer only what ask_knowledge or what you know about the business confirms, otherwise invite them to get in touch.',
-    'For a comment: start with get_comment, write one reply with reply_to_comment, and finish. Comment replies are shorter — 1–2 sentences, chatty and warm, like a person running the account. Follow the category guidelines get_comment gives you. A question (price, stock, opening hours, how to order): answer only what you can confirm with ask_knowledge, otherwise invite them to message the business. Spam, abuse or anything sensitive: don’t reply — escalate_to_human.',
+    'For a review: start with get_review, write one reply with reply_to_review, and finish. If it asks something (a product, a service, opening hours): answer only what ask_knowledge, get_business_hours or what you know about the business confirms, otherwise invite them to get in touch.',
+    'For a comment: start with get_comment, write one reply with reply_to_comment, and finish. Comment replies are shorter — 1–2 sentences, chatty and warm, like a person running the account. Follow the category guidelines get_comment gives you. A question (price, stock, opening hours, how to order): answer only what you can confirm with ask_knowledge (get_business_hours for opening hours), otherwise invite them to message the business. Spam, abuse or anything sensitive: don’t reply — escalate_to_human.',
     'Thank the reviewer by first name if they gave one. Mention something specific they said, so it doesn’t read like a template. 1–4 short sentences.',
     'Never include order numbers, phone numbers, emails, addresses, prices, refunds or anything private. Never argue or blame the customer. Never offer a discount or refund in public.',
     'For a 1–3 star review, or anything that sounds like a problem: apologise sincerely without admitting fault on details you can’t confirm, invite them to get in touch directly (use the business’s phone or email from what you know), then escalate_to_human with what went wrong and create_task so a person follows up.',
@@ -49,7 +49,7 @@ const REPUTATION: RoleDef = {
     'Sound the way the business asks below; if it hasn’t said, be warm and genuine. No emojis, no hashtags.',
   ].join('\n'),
   customerFacing: true,   // public replies: no staff-only data
-  actions: ['get_review', 'get_comment', 'ask_knowledge', 'reply_to_review', 'reply_to_comment', 'create_task', 'escalate_to_human', 'finish'],
+  actions: ['get_review', 'get_comment', 'ask_knowledge', 'get_business_hours', 'reply_to_review', 'reply_to_comment', 'create_task', 'escalate_to_human', 'finish'],
   defaultAutonomy: {
     reply_to_review: { autonomy: 'prepare' },              // the business can let 4–5★ thank-yous go out on their own
     reply_to_comment: { autonomy: 'prepare' },             // …and friendly comments
@@ -79,7 +79,7 @@ const RECEPTION: RoleDef = {
     'Their own bookings: use find_my_bookings. Tell them when it is. To move or cancel, offer their manage link first — it works straight away. Only if they ask you to do it: reschedule_booking (to a time check_availability gave you) or cancel_booking. A person approves those, so tell them you’ve passed it to the team.',
     'Prices, deposits and durations only from list_services. Never promise a refund — the cancellation policy decides. If it’s past the change-by time, say so and escalate_to_human.',
     'Never guess times or availability. If something isn’t clear, ask one short question.',
-    'Other questions about the business (products, aftercare, policies): answer only what ask_knowledge or what you know about the business confirms, otherwise say you’ll check with the team.',
+    'Other questions about the business (products, aftercare, policies): answer only what ask_knowledge or what you know about the business confirms, otherwise say you’ll check with the team and escalate_to_human.',
     'Keep replies short and plain — no markdown, no emojis. Sound the way the business asks below.',
     'Talk to the customer only with send_message (topic “booking” for booking replies). End every run with finish.',
   ].join('\n'),

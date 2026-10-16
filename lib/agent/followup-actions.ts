@@ -117,6 +117,8 @@ async function followupOnItsOwn(ctx: ActionContext, args: any, _limits: PolicyLi
   if (!ctx.scratch.oppOk) return 'It isn’t open any more or the customer can’t be messaged — a person decides.'
   if (ctx.scratch.escalated) return 'It also handed this to the team, so a person approves the message.'
   if (DEAL.test(String(args?.text || ''))) return 'The message offers a discount or deal, so a person approves it.'
+  // An offer to find something out is a promise: the person who approves it is the one who gets back to them.
+  if (args?.knowledge_gap === true) return 'It offers to find out something the business’s knowledge doesn’t cover, so a person approves it and follows up.'
   if (!isWithinSendingHours(new Date(), await businessTimezone(ctx.db, ctx.companyId))) return 'It’s outside sending hours, so a person sends it later.'
   return null
 }
