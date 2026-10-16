@@ -12,6 +12,8 @@ import { supabase } from '@/lib/supabase'
 import { widgetChannelName } from '@/lib/chat-broadcast'
 import ImageViewer from '@/components/ImageViewer'
 import { getRelativeTime } from '@/lib/time-utils'
+import WidgetBoost, { trackAnnouncementView } from '@/components/announcements/WidgetBoost'
+import { categoryOf } from '@/lib/announcements'
 
 // Proof that this browser started the chat (lib/widget-access.ts): the key
 // /api/widget/start returned, and — for chats saved before keys existed — this
@@ -103,6 +105,8 @@ function WidgetContent() {
   const [chatCreating, setChatCreating] = useState(false)
   const [chatCreateError, setChatCreateError] = useState('')
   const [selectedItem, setSelectedItem] = useState<{ type: 'idea' | 'announcement' | 'help'; id: string } | null>(null)
+  // One view per announcement per browser (components/announcements/WidgetBoost).
+  useEffect(() => { if (selectedItem?.type === 'announcement') trackAnnouncementView(selectedItem.id) }, [selectedItem?.type, selectedItem?.id])
   const [company, setCompany] = useState<any>(null)
   // The company id as of now, for the page-update listener below: it's set up
   // once per chat, usually before /api/widget-data has returned the company.
@@ -1035,69 +1039,27 @@ function WidgetContent() {
                   </div>
                   <h2 style={{ fontSize: 18, fontWeight: 800, color: 'var(--ink)', margin: '0 0 14px', lineHeight: 1.3 }}>{item.title}</h2>
 
-                  {/* Body — rendered with the same lightweight markdown as help
-                      articles (headings, bold, lists, paragraphs, line breaks)
-                      so it reads as formatted prose, not a wall of text. Image
-                      URLs are stripped from the text and shown as images below. */}
-                  <div style={{ color: 'var(--ink)', lineHeight: 1.65, fontSize: 13.5 }}>
-                    {(() => {
-                      const raw = item.description || ''
-                      // The body often begins with the title repeated as a
-                      // markdown "# " heading (or just as the first line). We
-                      // already render the title in the header, so drop that
-                      // leading duplicate to avoid showing it twice.
-                      const norm = (s: string) => s.replace(/[#*`_>]/g, '').replace(/\s+/g, ' ').trim().toLowerCase()
-                      const titleNorm = norm(item.title || '')
-                      let body = raw
-                      const firstLineEnd = body.indexOf('\n')
-                      const firstLine = (firstLineEnd === -1 ? body : body.slice(0, firstLineEnd))
-                      if (titleNorm && norm(firstLine) === titleNorm) {
-                        body = firstLineEnd === -1 ? '' : body.slice(firstLineEnd + 1)
-                        body = body.replace(/^\s*\n/, '') // drop a leading blank line
-                      }
-                      // Remove bare image URLs from the prose (shown as images).
-                      const prose = body.replace(/https?:\/\/\S+\.(?:jpg|jpeg|png|gif|webp)(?:\?\S*)?/gi, '').trim()
-                      const lines = prose.split('\n')
-                      const out: any[] = []
-                      const inline = (t: string) => {
-                        const parts = t.split(/(\*\*[^*]+\*\*|`[^`]+`|https?:\/\/[^\s]+)/g)
-                        return parts.map((p, pi) => {
-                          if (p.startsWith('**') && p.endsWith('**')) return <strong key={pi}>{p.slice(2, -2)}</strong>
-                          if (p.startsWith('`') && p.endsWith('`')) return <code key={pi} style={{ background: 'var(--canvas)', padding: '1px 5px', borderRadius: 4, fontSize: 12, fontFamily: 'ui-monospace, monospace' }}>{p.slice(1, -1)}</code>
-                          if (/^https?:\/\//.test(p)) return <a key={pi} href={p} target="_blank" rel="noopener noreferrer" style={{ color: accentColor, wordBreak: 'break-all' }}>{p}</a>
-                          return p
-                        })
-                      }
-                      lines.forEach((line: string, i: number) => {
-                        const t = line.trim()
-                        if (!t) { out.push(<div key={`sp${i}`} style={{ height: 8 }} />); return }
-                        if (t.startsWith('### ')) out.push(<h4 key={i} style={{ fontSize: 14, fontWeight: 700, margin: '14px 0 6px' }}>{inline(t.slice(4))}</h4>)
-                        else if (t.startsWith('## ')) out.push(<h3 key={i} style={{ fontSize: 15, fontWeight: 700, margin: '16px 0 8px' }}>{inline(t.slice(3))}</h3>)
-                        else if (t.startsWith('# ')) out.push(<h2 key={i} style={{ fontSize: 16, fontWeight: 800, margin: '16px 0 10px' }}>{inline(t.slice(2))}</h2>)
-                        else if (/^[-*] /.test(t)) out.push(<div key={i} style={{ display: 'flex', gap: 8, margin: '0 0 5px' }}><span style={{ color: accentColor }}>•</span><span style={{ flex: 1 }}>{inline(t.slice(2))}</span></div>)
-                        else if (/^\d+\. /.test(t)) out.push(<div key={i} style={{ display: 'flex', gap: 8, margin: '0 0 5px' }}><span style={{ color: accentColor, fontWeight: 700 }}>{t.match(/^\d+/)?.[0]}.</span><span style={{ flex: 1 }}>{inline(t.replace(/^\d+\. /, ''))}</span></div>)
-                        else if (t === '---') out.push(<div key={i} style={{ height: 1, background: 'var(--border)', margin: '12px 0' }} />)
-                        else out.push(<p key={i} style={{ margin: '0 0 10px', wordBreak: 'break-word' }}>{inline(t)}</p>)
-                      })
-                      return out
-                    })()}
-
-                    {/* Images */}
-                    {item.description && item.description.includes('http') && (
-                      <div style={{ marginTop: 14, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                        {item.description.split(/\s/).map((part: string, i: number) => {
-                          if (part.startsWith('http') && /\.(jpg|jpeg|png|gif|webp)(\?\S*)?$/i.test(part)) {
-                            return (
-                              <img key={i} src={part} alt="Announcement"
-                                onClick={() => { setViewerImage(part); setShowImageViewer(true) }}
-                                style={{ maxWidth: '100%', maxHeight: 220, borderRadius: 10, cursor: 'pointer', border: '1px solid var(--border)' }} />
-                            )
-                          }
-                          return null
-                        })}
-                      </div>
-                    )}
-                  </div>
+                  {/* Cover, body (cleaned to safe HTML on the server: lib/safe-html.ts),
+                      video and the post's button. */}
+                  {item.cover_image && (
+                    <img src={item.cover_image} alt="" onClick={() => { setViewerImage(item.cover_image); setShowImageViewer(true) }}
+                      style={{ display: 'block', width: '100%', maxHeight: 220, objectFit: 'cover', borderRadius: 12, margin: '0 0 14px', cursor: 'zoom-in', border: '1px solid var(--border)' }} />
+                  )}
+                  <div className="w-ann-body" style={{ color: 'var(--ink)', lineHeight: 1.65, fontSize: 13.5, wordBreak: 'break-word' }}
+                    dangerouslySetInnerHTML={{ __html: typeof item.html === 'string' ? item.html : '' }} />
+                  {item.video && (
+                    <div style={{ marginTop: 14, borderRadius: 12, overflow: 'hidden', border: '1px solid var(--border)', background: '#000', aspectRatio: '16 / 9' }}>
+                      {item.video.kind === 'embed'
+                        ? <iframe src={item.video.src} title="Video" allow="encrypted-media; picture-in-picture; fullscreen" style={{ width: '100%', height: '100%', border: 0 }} />
+                        : <video src={item.video.src} controls playsInline style={{ width: '100%', height: '100%' }} />}
+                    </div>
+                  )}
+                  {item.cta_url && (
+                    <a href={item.cta_url} target="_blank" rel="noopener noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 16, height: 38, padding: '0 16px', borderRadius: 10, background: accentColor, color: '#fff', fontSize: 13, fontWeight: 700, textDecoration: 'none' }}>
+                      {item.cta_label || 'Learn more'}
+                    </a>
+                  )}
+                  <style>{`.w-ann-body p{margin:0 0 10px}.w-ann-body h2,.w-ann-body h3,.w-ann-body h4{font-weight:700;margin:14px 0 6px;font-size:14.5px}.w-ann-body ul,.w-ann-body ol{margin:0 0 10px;padding-left:20px}.w-ann-body li{margin:0 0 4px}.w-ann-body a{color:${accentColor}}.w-ann-body img{max-width:100%;height:auto;border-radius:10px}.w-ann-body blockquote{margin:0 0 10px;padding-left:12px;border-left:3px solid var(--border);color:var(--slate)}`}</style>
                 </>
               )}
               {selectedItem.type === 'help' && (
@@ -1504,6 +1466,10 @@ function WidgetContent() {
 
       {/* Scrollable content */}
       <div style={{ flex: 1, overflowY: 'auto', padding: 'clamp(8px, 3vw, 14px)', paddingBottom: 'env(safe-area-inset-bottom, 0px)', width: '100%', boxSizing: 'border-box', WebkitOverflowScrolling: 'touch' }}>
+        {/* A boosted announcement: banner here, or a card beside the bubble while closed. */}
+        <WidgetBoost announcements={announcements} accent={accentColor} widgetOpen={widgetIsOpen}
+          showBanner={!selectedItem && (tab !== 'chat' || chatStep === 'form')}
+          onOpen={(id) => { setTab('updates'); setSelectedItem({ type: 'announcement', id }) }} />
 
         {tab === 'feedback' && (
           <div style={{ animation: 'fadeIn 0.2s ease both' }}>
@@ -1757,18 +1723,9 @@ function WidgetContent() {
                 if (!!a.is_pinned !== !!b.is_pinned) return a.is_pinned ? -1 : 1
                 return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
               }).map(ann => {
-              // Tag color mapping matching main page
-              const TAG_COLORS: Record<string, { bg: string; color: string }> = {
-                'new_feature': { bg: '#dbeafe', color: '#0284c7' },
-                'improvement': { bg: '#fef3c7', color: '#ca8a04' },
-                'bug_fix': { bg: '#fee2e2', color: '#dc2626' },
-                'announcement': { bg: '#f3e8ff', color: '#7c3aed' },
-                'feature': { bg: '#dbeafe', color: '#0284c7' },
-                'update': { bg: '#fef3c7', color: '#ca8a04' },
-              }
-              
-              const tagKey = (ann.tag || '').toLowerCase().replace(/ /g, '_')
-              const tagColor = TAG_COLORS[tagKey] || { bg: accentColor + '15', color: accentColor }
+              // Category colours shared with the updates page (lib/announcements.ts).
+              const cat = categoryOf(ann.category || ann.tag)
+              const tagColor = { bg: cat.bg, color: cat.color }
               
               return (
               <div key={ann.id} onClick={() => setSelectedItem({ type: 'announcement', id: ann.id })} className="item-row" style={{ display: 'block', marginBottom: 10, cursor: 'pointer', padding: '10px 12px', borderRadius: 12, background: ann.is_pinned ? 'var(--peach)' : 'transparent' }}>

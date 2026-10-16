@@ -83,7 +83,7 @@ export async function seedCompanyData(companyId: string, companyName: string) {
       },
       {
         company_id: companyId,
-        title: `Hello World! We're Using ${n} 🚀`,
+        title: `Hello World! We're Using ${n}`,
         description: `Welcome to our feedback board!\n\nThis is where you can:\n• Submit ideas and feature requests\n• Vote on what matters most\n• Track our roadmap\n• Stay updated with announcements\n\nWe read every submission. Your feedback shapes what we build next.`,
         tag: 'new_feature', status: 'published', views: 120, impressions: 890, likes: 5, is_pinned: true,
       },

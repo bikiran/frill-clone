@@ -5,6 +5,14 @@ import { createClient } from '@supabase/supabase-js'
 import { statusOf } from '@/lib/engage-core'
 import { effectivePlan, companyHasFeature } from '@/lib/plan'
 import { emitIntegrationEvent } from '@/lib/integration-events'
+import { isPublicNow, sortForPublic, toPublicAnnouncement } from '@/lib/announcements'
+
+// A live announcement as the widget gets it: the public fields, plus the
+// names the widget already reads (description, tag, created_at).
+function widgetAnnouncement(a: any) {
+  const p = toPublicAnnouncement(a)
+  return { ...p, description: p.excerpt, tag: p.category_label, created_at: p.date }
+}
 
 export const dynamic = 'force-dynamic'
 
@@ -95,10 +103,13 @@ export async function GET(req: NextRequest) {
     const [ideasRes, annRes, formsRes, pollsRes, surveysRes, helpRes] = await Promise.all([
       (supabase as any).from('ideas').select('id,title,votes,status,created_at,description,is_private,attachments,created_by_name,location_ids').eq('company_id', company.id)
         .neq('is_private', true).order('votes', { ascending: false }).limit(20),
-      (supabase as any).from('announcements').select('id,title,description,tag,status,created_at,is_pinned,boost_enabled,boost_type,boost_button_label,boost_title,boost_blurb,boost_image,views,impressions,location_ids')
+      // select('*'): the columns V387 adds may not exist yet. Only live posts
+      // (published, or scheduled and due, not past their end date), and only
+      // their public fields, leave here (widgetAnnouncement below).
+      (supabase as any).from('announcements').select('*')
         .eq('company_id', company.id)
-        .eq('status', 'published')
-        .order('is_pinned', { ascending: false }).order('created_at', { ascending: false }).limit(20),
+        .in('status', ['published', 'scheduled'])
+        .order('is_pinned', { ascending: false }).order('created_at', { ascending: false }).limit(40),
       (supabase as any).from('forms').select('id,title,questions').eq('company_id', company.id)
         .eq('is_published', true).order('created_at', { ascending: false }).limit(5),
       // Live ones only: drafts and closed polls / surveys aren't public.
@@ -112,7 +123,7 @@ export async function GET(req: NextRequest) {
     log.info('[WIDGET API] Query results:', {
       company_id: company.id,
       ideas: { count: ideasRes.data?.length || 0, error: ideasRes.error?.message },
-      announcements: { count: annRes.data?.length || 0, error: annRes.error?.message, data: annRes.data },
+      announcements: { count: annRes.data?.length || 0, error: annRes.error?.message },
       forms: { count: formsRes.data?.length || 0, error: formsRes.error?.message },
       polls: { count: pollsRes.data?.length || 0, error: pollsRes.error?.message },
       surveys: { count: surveysRes.data?.length || 0, error: surveysRes.error?.message },
@@ -180,7 +191,9 @@ export async function GET(req: NextRequest) {
       widgetTabs,
       terms,
       ideas: (ideasRes.data || []).filter(visibleAt),
-      announcements: (annRes.data || []).filter(visibleAt),
+      // A private board's updates are for its signed-in members only (the
+      // widget is anonymous), so none here.
+      announcements: company.is_private ? [] : sortForPublic((annRes.data || []).filter((a: any) => isPublicNow(a)).filter(visibleAt).map(widgetAnnouncement)).slice(0, 20),
       forms: formsRes.data || [],
       polls: (pollsRes.data || []).slice(0, 5)
         .map((p: any) => ({ id: p.id, question: p.question, description: p.description ?? null, options: p.options })),

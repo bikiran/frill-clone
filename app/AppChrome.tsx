@@ -22,7 +22,7 @@ export function notificationPath(n: any): string {
   switch (n?.type) {
     case 'idea': return n.idea_id ? `/?idea=${n.idea_id}` : '/'
     case 'roadmap': return '/roadmap'
-    case 'announcement': return n.announcement_id ? `/announcements?id=${n.announcement_id}` : '/announcements'
+    case 'announcement': return n.announcement_id ? `/announcements?id=${n.announcement_id}` : (typeof n.link === 'string' && n.link.startsWith('/announcements') ? n.link : '/announcements')
     case 'help': return n.article_id ? `/help/${n.article_id}` : '/help'
     case 'form': return n.form_id ? `/forms/${n.form_id}` : '/admin/forms'
     case 'settings': return '/admin/settings'
@@ -772,9 +772,10 @@ export default function AppChrome({
     } else if (notification.type === 'roadmap') {
       setShowNotifications(false)
       router.push('/roadmap')
-    } else if (notification.type === 'announcement' && notification.announcement_id) {
+    } else if (notification.type === 'announcement') {
+      // Board bell notifications from "Publish & notify" carry a link to the post.
       setShowNotifications(false)
-      router.push(`/announcements?id=${notification.announcement_id}`)
+      router.push(notificationPath(notification))
     } else if (notification.type === 'help' && notification.article_id) {
       setShowNotifications(false)
       router.push(`/help/${notification.article_id}`)
