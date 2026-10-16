@@ -676,7 +676,12 @@ export async function phoneTurn(db: any, args: {
     }
     messages.push({ role: 'user', content: results })
   }
-  // Out of time or rounds: never leave the caller hanging.
+  // Out of time or rounds: never leave the caller hanging. With a message
+  // already taken on this call (perhaps a moment ago), the team is calling
+  // back anyway, so the AI doesn't offer to take one.
+  if (args.state.messageTaken) {
+    return result(false, `Sorry, I’m having trouble checking that right now, but you can ask the team when they call you back.${/anything else/i.test(spoken.join(' ')) ? '' : ' Is there anything else I can help with?'}`)
+  }
   return result(false, setup.skills.message
     ? 'Sorry, I’m having trouble checking that right now. Can I take a message so someone calls you back?'
     : 'Sorry, I’m having trouble checking that right now. Could you ask me again in a moment?')
@@ -1116,8 +1121,15 @@ export async function answerWithAgent(db: Db, p: {
 // number, not once per call; one Twilio couldn't do is tried again a day on.
 const STATUS_CALLBACK_ACTION = 'status_callback'
 const STATUS_CALLBACK_RETRY_MS = 24 * 3600_000
-// Numbers this server has checked, or is checking: not even the database is asked again.
-const statusCallbackChecked = new Set<string>()
+// What this server already knows, so a warm server doesn't even ask the
+// database: numbers done, numbers being checked right now (two calls at once
+// ask Twilio once), and when Twilio last failed for a number (tried again a
+// day on, as the database says).
+const statusCallbackDone = new Set<string>()
+const statusCallbackBusy = new Set<string>()
+const statusCallbackFailedAt = new Map<string, number>()
+// (No time, or an unreadable one, is never recent.)
+const failedRecently = (at: number | undefined) => at !== undefined && Date.now() - at < STATUS_CALLBACK_RETRY_MS
 
 /** Can the AI answer callers other than the test numbers? Only their calls need a number's status callback. */
 export function answersRealCallers(s: Pick<PhoneAgentSettings, 'enabled' | 'mode'>): boolean {
@@ -1139,31 +1151,45 @@ export async function ensureStatusCallbacks(db: Db, companyId: string, numbers?:
         .eq('company_id', companyId).eq('provider', 'twilio').eq('provisioned_by_colvy', true).neq('status', 'released').limit(20)
       list = (data || []).map((r: { phone_number: string | null }) => r.phone_number || '')
     }
-    const todo = Array.from(new Set(list.filter(Boolean))).filter(n => !statusCallbackChecked.has(n))
+    const todo = Array.from(new Set(list.filter(Boolean)))
+      .filter(n => !statusCallbackDone.has(n) && !statusCallbackBusy.has(n) && !failedRecently(statusCallbackFailedAt.get(n)))
     if (!todo.length) return
-    todo.forEach(n => statusCallbackChecked.add(n))
-    const { data, error } = await db.from('agent_policies').select('id, limits')
-      .eq('company_id', companyId).eq('role_key', 'phone').eq('action_key', STATUS_CALLBACK_ACTION).limit(1)
-    if (error) throw new Error(error.message)
-    const row = data?.[0]
-    const done: Record<string, string> = { ...(row?.limits?.numbers || {}) }
-    const failed: Record<string, string> = { ...(row?.limits?.failed || {}) }
-    const due = todo.filter(n => !done[n] && !(Date.now() - Date.parse(failed[n] || '') < STATUS_CALLBACK_RETRY_MS))
-    if (!due.length) return
-    for (const n of due) {
-      const at = new Date().toISOString()
-      try {
-        const pn = await svc.getIncomingNumber(n)
-        if (pn?.sid && !pn.status_callback) await svc.configureNumberWebhooks({ phoneNumberSid: pn.sid, statusCallback: numberStatusCallbackUrl() })
-        done[n] = at
-        delete failed[n]
-      } catch (e) {
-        failed[n] = at
-        console.error('[phone agent] status callback not set', n, e instanceof Error ? e.message : e)
+    todo.forEach(n => statusCallbackBusy.add(n))
+    try {
+      // Can't read what's done (a database error): nothing is asked of Twilio, and the next call tries again.
+      const { data, error } = await db.from('agent_policies').select('id, limits')
+        .eq('company_id', companyId).eq('role_key', 'phone').eq('action_key', STATUS_CALLBACK_ACTION).limit(1)
+      if (error) throw new Error(error.message)
+      const row = data?.[0]
+      const done: Record<string, string> = { ...(row?.limits?.numbers || {}) }
+      const failed: Record<string, string> = { ...(row?.limits?.failed || {}) }
+      let tried = false
+      for (const n of todo) {
+        if (done[n]) { statusCallbackDone.add(n); continue }
+        const failedAt = Date.parse(failed[n] || '')
+        if (failedRecently(failedAt)) { statusCallbackFailedAt.set(n, failedAt); continue }
+        tried = true
+        const now = Date.now()
+        const at = new Date(now).toISOString()
+        try {
+          const pn = await svc.getIncomingNumber(n)
+          if (pn?.sid && !pn.status_callback) await svc.configureNumberWebhooks({ phoneNumberSid: pn.sid, statusCallback: numberStatusCallbackUrl() })
+          done[n] = at
+          delete failed[n]
+          statusCallbackDone.add(n)
+          statusCallbackFailedAt.delete(n)
+        } catch (e) {
+          failed[n] = at
+          statusCallbackFailedAt.set(n, now)
+          console.error('[phone agent] status callback not set', n, e instanceof Error ? e.message : e)
+        }
       }
+      if (!tried) return
+      const fields = { autonomy: 'off', limits: { numbers: done, failed }, updated_at: new Date().toISOString() }
+      if (row) await db.from('agent_policies').update(fields).eq('id', row.id)
+      else await db.from('agent_policies').insert({ company_id: companyId, role_key: 'phone', action_key: STATUS_CALLBACK_ACTION, ...fields })
+    } finally {
+      todo.forEach(n => statusCallbackBusy.delete(n))
     }
-    const fields = { autonomy: 'off', limits: { numbers: done, failed }, updated_at: new Date().toISOString() }
-    if (row) await db.from('agent_policies').update(fields).eq('id', row.id)
-    else await db.from('agent_policies').insert({ company_id: companyId, role_key: 'phone', action_key: STATUS_CALLBACK_ACTION, ...fields })
   } catch (e) { console.error('[phone agent] status callbacks not checked', e instanceof Error ? e.message : e) }
 }
