@@ -6,33 +6,26 @@
 -- load: short_links where company_id = … and channel in ('instagram_reel',
 -- 'qr', …). short_links also holds one row per SMS / campaign recipient, so a
 -- business that sends campaigns has thousands of links and only a handful of
--- public ones — and with no index on channel, that lookup read every one of
--- the business's links to find them. This index lets the database go straight
--- to them.
+-- public ones. Until this index exists, that lookup reads every one of the
+-- business's links on every Link Reports load — fine for a small account, slow
+-- for a big one. Run it before big accounts use Link Reports much.
 --
--- The page works without it (just more slowly), so it can be run at any time.
--- Only adds an index: no data changes. Building it briefly holds up new links
--- (campaign sends, the inbox) on a big table, so run it at a quiet time.
---
--- Run in the Supabase SQL editor. Safe to re-run.
+-- HOW TO RUN
+-- CREATE INDEX CONCURRENTLY builds without blocking writes. A plain CREATE
+-- INDEX would hold up every update to short_links while it builds — including
+-- the click counter each tracked-link redirect bumps, so every /l/ link for
+-- every business would hang. CONCURRENTLY cannot run inside a transaction
+-- block, so in the Supabase SQL editor run the statement ON ITS OWN
+-- (highlight it, Run). Needs short_links.channel (V189). Safe to re-run.
 -- ============================================================
 
-DO $$
-BEGIN
-  IF EXISTS (
-    SELECT 1 FROM information_schema.columns
-     WHERE table_schema = 'public' AND table_name = 'short_links' AND column_name = 'channel'
-  ) THEN
-    CREATE INDEX IF NOT EXISTS idx_short_links_company_channel ON public.short_links (company_id, channel);
-    ANALYZE public.short_links;
-  ELSE
-    RAISE NOTICE 'Skipped idx_short_links_company_channel: short_links.channel is not in this database (run V189 first)';
-  END IF;
-END $$;
+create index concurrently if not exists idx_short_links_company_channel
+  on public.short_links (company_id, channel);
 
--- ── Check ───────────────────────────────────────────────────────────────────
--- Expect one row.
-SELECT tablename, indexname
-  FROM pg_indexes
- WHERE schemaname = 'public'
-   AND indexname = 'idx_short_links_company_channel';
+-- Confirm (one row, indisvalid = true):
+--   select c.relname, i.indisvalid
+--     from pg_index i join pg_class c on c.oid = i.indexrelid
+--    where c.relname = 'idx_short_links_company_channel';
+-- If it shows indisvalid = false (a concurrent build was interrupted), drop it
+-- with DROP INDEX CONCURRENTLY idx_short_links_company_channel; and run the
+-- CREATE again.
