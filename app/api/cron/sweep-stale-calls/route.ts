@@ -17,6 +17,16 @@ function admin() {
 // the Command Centre's client-side display cap so the board and the data agree.
 const STALE_MS = 2 * 60 * 60 * 1000 // 2 hours
 
+const LIVE_STATES = ['ringing', 'initiated', 'in_progress', 'ringing_agents', 'dialing_agent', 'dialing_customer', 'voicemail_greeting', 'recording_voicemail']
+
+/** How a call stuck in a live state ends up. Someone (or the AI receptionist) picking up wins over the voicemail state. */
+function staleCallFinal(c: any): { status: string; is_voicemail?: boolean } {
+  const pickedUp = !!c.answered_at || (String(c.direction || '').toLowerCase() !== 'outbound' && !!c.answered_by_user_id)
+  if (pickedUp) return c.is_voicemail && !c.recording_url ? { status: 'completed', is_voicemail: false } : { status: c.is_voicemail ? 'voicemail' : 'completed' }
+  if (c.is_voicemail) return c.recording_url ? { status: 'voicemail' } : { status: 'missed', is_voicemail: false }
+  return { status: (Number(c.duration_seconds) || 0) > 0 ? 'completed' : 'missed' }
+}
+
 /**
  * GET /api/cron/sweep-stale-calls
  *
@@ -27,6 +37,15 @@ const STALE_MS = 2 * 60 * 60 * 1000 // 2 hours
  * finds any such call older than STALE_MS and finalises it:
  *   • answered (has a duration or an answered_at) → status 'completed'
  *   • never connected                            → status 'missed'
+ *   • went to voicemail with a recording         → status 'voicemail'
+ *   • picked up (answered_at), even if it then went to voicemail and nothing
+ *     was left (the AI receptionist took the call) → 'completed'
+ *   • went to voicemail with no recording        → status 'missed' (the caller
+ *     hung up during the greeting: Twilio sends nothing more then, so the row
+ *     sat at "voicemail_greeting" and counted as a voicemail with nothing to
+ *     play. Telnyx's hangup webhook already does the same.)
+ * Every live state is covered, including ringing the team (ringing_agents),
+ * dialling (dialing_agent / dialing_customer) and the voicemail greeting.
  * It stamps ended_at = now so the row is no longer "live". duration_seconds is
  * left as-is — we never fabricate a length from the stale start time.
  *
@@ -49,17 +68,15 @@ export async function GET(req: NextRequest) {
   let swept = 0
   try {
     const { data: stuck, error } = await db.from('calls')
-      .select('id, duration_seconds, answered_at, is_voicemail')
-      .in('status', ['ringing', 'initiated', 'in_progress'])
+      .select('id, direction, duration_seconds, answered_at, answered_by_user_id, is_voicemail, recording_url')
+      .in('status', LIVE_STATES)
       .is('ended_at', null)
       .lt('created_at', cutoff)
       .limit(500)
     if (error) throw error
 
     for (const c of (stuck || [])) {
-      const answered = (Number((c as any).duration_seconds) || 0) > 0 || !!(c as any).answered_at
-      const status = (c as any).is_voicemail ? 'voicemail' : answered ? 'completed' : 'missed'
-      await db.from('calls').update({ status, ended_at: nowIso }).eq('id', (c as any).id)
+      await db.from('calls').update({ ...staleCallFinal(c), ended_at: nowIso }).eq('id', (c as any).id)
       swept++
     }
   } catch (e: any) {

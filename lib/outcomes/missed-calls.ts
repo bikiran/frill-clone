@@ -138,7 +138,7 @@ export async function missedCallOutcome(db: any, companyId: string, opts: { sinc
   const sinceIso = new Date(since).toISOString()
 
   const calls = await pages(() => db.from('calls')
-    .select('id, direction, status, is_voicemail, duration_seconds, from_number, to_number, caller_name, contact_name, contact_id, conversation_id, created_at, ended_at')
+    .select('id, direction, status, is_voicemail, duration_seconds, from_number, to_number, caller_name, contact_name, contact_id, conversation_id, created_at, ended_at, recording_url, answered_at, answered_by_user_id')
     .eq('company_id', companyId).gte('created_at', sinceIso).order('created_at', { ascending: true }))
   const missed = calls.filter(c => isMissedInbound(c, now))
   if (!missed.length) return NO_MISSED_CALLS
