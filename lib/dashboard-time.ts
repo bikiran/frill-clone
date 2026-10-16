@@ -1,5 +1,7 @@
 // Small date/call helpers for the admin dashboard summary (server + tests).
 
+import { outcomeOf, normaliseCall } from '@/lib/command-centre'
+
 /** YYYY-MM-DD of an instant, in the business's timezone. */
 export function dayKey(d: Date, tz: string): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(d)
@@ -14,11 +16,17 @@ export function startOfDay(now: Date, tz: string): Date {
   return new Date(Date.UTC(+p.year, +p.month - 1, +p.day) - offset)
 }
 
-/** Same rules as the Command Centre: answered, voicemail, still live, or missed. */
+/**
+ * Same rules as the Command Centre (lib/command-centre outcomeOf): answered,
+ * voicemail, still live, or missed. A missed status wins over talk time (a
+ * caller leg answered only to play the voicemail greeting has a duration), and
+ * a caller who hung up during the greeting left no message, so it's missed.
+ */
 export function callOutcome(c: any): 'answered' | 'voicemail' | 'live' | 'missed' {
-  const s = String(c.status || '').toLowerCase()
-  if (c.is_voicemail || s === 'voicemail') return 'voicemail'
-  if (s === 'answered' || s === 'completed' || Number(c.duration_seconds) > 0) return 'answered'
-  if (['initiated', 'ringing', 'in_progress'].includes(s)) return 'live'
-  return 'missed'
+  // A row read without created_at: a ringing call is taken as recent (live),
+  // but a voicemail-state row never is, so a Twilio caller who hung up at the
+  // greeting reads as missed rather than live for ever.
+  const st = String(c?.status || '').toLowerCase()
+  const vmish = !!c?.is_voicemail || st.startsWith('voicemail') || st === 'recording_voicemail'
+  return outcomeOf(normaliseCall({ ...c, created_at: c?.created_at || (vmish ? new Date(0).toISOString() : new Date().toISOString()) }))
 }

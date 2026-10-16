@@ -174,7 +174,7 @@ export default function BookingsPage() {
           {tab === 'today' && <TodayTab companyId={companyId} onOpenBookings={() => switchTab('bookings')} />}
           {tab === 'bookings' && <BookingsList companyId={companyId} bookings={bookings} timezone={settings?.timezone || 'Australia/Melbourne'} scope={scope} setScope={setScope} reload={() => loadBookings(companyId, scope)} flash={flash} />}
           {tab === 'services' && meta && <ServicesTab companyId={companyId} services={services} settings={settings} onGoAvailability={() => switchTab('availability')} reload={() => loadServices(companyId)} staff={meta.staff || []} locations={meta.locations || []} stripeReady={!!meta.stripeReady} bookingUrl={meta.bookingUrl} flash={flash} />}
-          {tab === 'availability' && settings && <AvailabilityTab settings={settings} setSettings={setSettings} staff={meta?.staff || []} />}
+          {tab === 'availability' && settings && <AvailabilityTab settings={settings} setSettings={setSettings} staff={meta?.staff || []} locations={meta?.locations || []} />}
           {tab === 'settings' && settings && <BookingSettingsTab settings={settings} setSettings={setSettings} />}
         </>
       )}

@@ -20,7 +20,8 @@ function hints(path: string): { priority: number; changeFrequency: MetadataRoute
 // The source file whose mtime best represents when a route's content last
 // changed. Dynamic landing pages share one Client.tsx per segment.
 function sourceFile(path: string): string {
-  if (path === '') return 'app/page.tsx'
+  // colvy.com/ is served by the landing page (proxy.ts rewrites "/" there).
+  if (path === '') return 'app/landing/page.tsx'
   if (path.startsWith('product/')) return 'app/product/[feature]/Client.tsx'
   if (path.startsWith('channels/')) return 'app/channels/[slug]/Client.tsx'
   if (path.startsWith('solutions/')) return 'app/solutions/[slug]/Client.tsx'

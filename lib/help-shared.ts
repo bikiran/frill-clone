@@ -26,6 +26,14 @@ export type HelpCatMap = Record<string, { name: string; icon: string }>
 // `media` JSON (inline base64 uploads) that `select('*')` used to drag along.
 export const HELP_LIST_COLUMNS = 'id, title, category, status, featured, views, likes, created_at'
 
+// The line under the help centre's heading: the subtitle saved in Help Centre
+// settings (site_settings 'general'.helpSubtitle), else a neutral line that
+// suits any business. The page metadata uses the same setting (lib/tenant-meta).
+export const DEFAULT_HELP_SUBTITLE = 'Find answers, guides and resources.'
+export function helpSubtitleOf(saved: unknown): string {
+  return typeof saved === 'string' && saved.trim() ? saved.trim() : DEFAULT_HELP_SUBTITLE
+}
+
 // The plain-text teaser shown on featured cards (same rules the pages used).
 export function helpExcerpt(content: string | null | undefined): string {
   return (content || '').replace(/#{1,6} /g, '').replace(/```[\s\S]*?```/g, '').replace(/[*_>#`]/g, '').slice(0, 110)

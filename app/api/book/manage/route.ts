@@ -72,7 +72,7 @@ export async function GET(req: NextRequest) {
       if (to < from) return NextResponse.json({ timezone: tz, slots: [] })
       const staff = await loadStaff(db, company)
       const staffFilter = b.staff_choice === 'specific' && b.staff_id ? b.staff_id : 'any'
-      const { slots } = await availability(db, { company, settings, service, staff, staffFilter, fromDate: from, toDate: to, excludeBookingId: b.id })
+      const { slots } = await availability(db, { company, settings, service, staff, staffFilter, fromDate: from, toDate: to, excludeBookingId: b.id, locationId: b.location_id })
       return NextResponse.json({ timezone: tz, slots: slots.map(s => ({ start: new Date(s.start).toISOString() })) }, { headers: { 'Cache-Control': 'no-store' } })
     }
 

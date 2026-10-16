@@ -2,11 +2,19 @@ import type { Metadata } from 'next'
 import { headers } from 'next/headers'
 import Client from './Client'
 import { getHelpIndexForHost } from '@/lib/help-public'
+import { tenantPageMetadata } from '@/lib/tenant-brand'
 
-export const metadata: Metadata = {
+// Colvy's own help centre (colvy.com/help).
+const COLVY_METADATA: Metadata = {
   title: "Help Center",
   description: "Guides and answers for getting the most out of Colvy.",
   alternates: { canonical: "/help" },
+}
+
+// On a company subdomain the tab reads "<Company> Help Centre" with the
+// company's icon and help-centre subtitle instead (lib/tenant-meta).
+export async function generateMetadata(): Promise<Metadata> {
+  return (await tenantPageMetadata('help', '/help')) || COLVY_METADATA
 }
 
 // The help centre is rendered on the server with this host's published

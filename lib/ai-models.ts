@@ -19,7 +19,7 @@ export type AiJob =
   | 'knowledge_search' | 'knowledge_answer' | 'unanswered_scan' | 'help_import' | 'form_builder'
   | 'review_reply' | 'review_sentiment' | 'social_reply' | 'social_classify'
   | 'conversation_summary' | 'call_summary' | 'call_transcript' | 'dictation' | 'translate' | 'contact_capture' | 'card_scan'
-  | 'phone_agent'
+  | 'phone_agent' | 'feedback_summary' | 'announcement_writer'
 
 // modern: the feature sends newer request options (effort, structured output,
 // fallbacks), so only Claude 5-generation models are offered for it.
@@ -35,6 +35,7 @@ export const AI_JOBS: Record<AiJob, { label: string; group: string; about: strin
   unanswered_scan: { group: 'Knowledge', label: 'Unanswered questions', about: 'Finding questions your knowledge doesn’t cover yet.', default: 'claude-opus-5-5', modern: true },
   help_import: { group: 'Knowledge', label: 'Help centre import', about: 'Turning a website into help articles.', default: 'claude-opus-5-5', modern: true },
   form_builder: { group: 'Team tools', label: 'Form builder', about: 'Building forms, polls and surveys from a description.', default: 'claude-opus-5-5', modern: true },
+  announcement_writer: { group: 'Team tools', label: 'Announcement writer', about: '“Write with Colvy AI” on announcements, and turning a post into an SMS or social post.', default: 'claude-sonnet-5', modern: true },
   review_reply: { group: 'Reviews and social', label: 'Review reply drafts', about: '“Generate AI reply” on Google reviews.', default: 'claude-sonnet-4-6' },
   review_sentiment: { group: 'Reviews and social', label: 'Review sentiment', about: 'Reading how happy a review is.', default: 'claude-haiku-4-5' },
   social_reply: { group: 'Reviews and social', label: 'Comment reply drafts', about: '“Generate AI reply” on Facebook and Instagram comments.', default: 'claude-sonnet-4-6' },
@@ -47,7 +48,10 @@ export const AI_JOBS: Record<AiJob, { label: string; group: string; about: strin
   translate: { group: 'Team tools', label: 'Translation', about: 'Translating customer messages.', default: 'claude-haiku-4-5' },
   contact_capture: { group: 'Team tools', label: 'Contact details from messages', about: 'Picking names, emails and phones out of messages.', default: 'claude-sonnet-5' },
   card_scan: { group: 'Team tools', label: 'Business card scan', about: 'Reading business cards and contact photos.', default: 'claude-sonnet-5' },
+  // Default set just below: the same model as the unanswered-questions scan, the closest existing job.
+  feedback_summary: { group: 'Team tools', label: 'Survey summaries', about: '“Summarise responses” on survey results: themes, sentiment and what to do next.', default: '', modern: true },
 }
+AI_JOBS.feedback_summary.default = AI_JOBS.unanswered_scan.default
 
 // Models the super admin can pick from. Prices are USD per million tokens
 // (input / output) where documented; the rest are filled in on the page.
