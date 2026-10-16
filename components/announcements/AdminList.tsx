@@ -12,6 +12,7 @@ import {
   type AdminFilter, type CategoryKey,
 } from '@/lib/announcements'
 import { excerpt } from '@/lib/safe-html'
+import { parseDbTime } from '@/lib/db-time'
 import { AnnIcon } from './icons'
 import { ADMIN_CSS } from './styles'
 
@@ -267,7 +268,7 @@ export default function AdminList({ items, loading, error, onRetry, now, schemaR
               <div className="an-cell" role="cell"><span className="an-num">{(Number(a.views) || 0).toLocaleString('en-AU')}</span></div>
               <div className="an-cell" role="cell"><span className="an-num">{totalReactions(a.reactions).toLocaleString('en-AU')}</span></div>
               <div className="an-cell" role="cell">
-                {s === 'published' && !(doneChannels(a).board && doneChannels(a).email) && !a.notified_at && Date.now() - new Date(a.publish_at || a.created_at).getTime() < 7 * 86400_000
+                {s === 'published' && !(doneChannels(a).board && doneChannels(a).email) && !a.notified_at && Date.now() - parseDbTime(a.publish_at || a.created_at) < 7 * 86400_000
                   ? <button type="button" className="an-btn an-btn-sm an-send-btn" onClick={() => onAction('notify', a)}><AnnIcon name="send" size={13} />Tell people</button>
                   : <Sent a={a} />}
               </div>

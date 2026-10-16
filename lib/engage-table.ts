@@ -4,6 +4,7 @@ import {
   groupVoters, pollChoices, pollTypeOf, respondentOf, responseAnswers, responseComment, responseScore, scoreRange,
   surveyModeOf, surveyQuestions, voteOption, type ResponseRow, type VoteRow,
 } from '@/lib/engage-core'
+import { dbTimeOr0, newestDbTime } from '@/lib/db-time'
 
 export type AnswerLine = {
   /** Stable id for selection: the voter (poll) or the response id (survey). */
@@ -18,6 +19,7 @@ export type AnswerLine = {
 }
 
 const textAt = (v: unknown) => (typeof v === 'string' ? v : '')
+const newestFirst = (a: AnswerLine, b: AnswerLine) => dbTimeOr0(b.at) - dbTimeOr0(a.at)
 
 /** One line per person's ballot, newest first. */
 export function pollLines(poll: { poll_type?: unknown; options?: unknown; settings?: unknown }, votes: VoteRow[]): { header: string[]; lines: AnswerLine[] } {
@@ -27,7 +29,7 @@ export function pollLines(poll: { poll_type?: unknown; options?: unknown; settin
   for (const g of groupVoters(votes)) {
     const sorted = type === 'ranking' ? g.slice().sort((a, b) => (Number(a.rank) || 99) - (Number(b.rank) || 99)) : g
     const picks = Array.from(new Set(sorted.map(v => voteOption(v, choices)).filter((o): o is string => !!o)))
-    const at = g.map(v => textAt(v.created_at)).sort().pop() || ''
+    const at = newestDbTime(g, v => v.created_at).at || ''
     const who = respondentOf(g.find(v => v.respondent) || {})
     lines.push({
       key: textAt(g[0].voter_key) || textAt(g[0].id),
@@ -39,7 +41,7 @@ export function pollLines(poll: { poll_type?: unknown; options?: unknown; settin
       fromCampaign: g.some(v => !!v.contact_id),
     })
   }
-  lines.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0))
+  lines.sort(newestFirst)
   return { header: [type === 'ranking' ? 'Ranking' : type === 'rating' ? 'Rating' : type === 'multiple_choice' ? 'Answers' : 'Answer'], lines }
 }
 
@@ -66,7 +68,7 @@ export function surveyLines(survey: { type?: unknown; questions?: unknown; setti
     }
     return { key: textAt(r.id), ids: [textAt(r.id)].filter(Boolean), at: textAt(r.created_at), cells, name: who.name, contact: who.contact, fromCampaign: !!r.contact_id }
   })
-  lines.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0))
+  lines.sort(newestFirst)
   return { header, lines }
 }
 

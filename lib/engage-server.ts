@@ -26,6 +26,7 @@
 // Handlers take their database and limiter as arguments so tests can use a fake.
 
 import crypto from 'crypto'
+import { dbTimeOr0 } from './db-time'
 import {
   canSeeResults, checkBallot, checkRespondent, checkSurveyAnswer, isLowScore, parsePollOptions, pollTypeOf, ratingTop,
   responseScore, scoreRange, settingsOf, statusOf, surveyModeOf, surveyQuestions, tallyPoll,
@@ -253,7 +254,7 @@ export async function getPollView(deps: Deps, id: unknown, caller: Caller): Prom
 
 function myVoteFrom(poll: PublicPoll, rows: any[]): string[] {
   // The latest ballot: rows sharing the newest voter_key / created_at batch.
-  const sorted = rows.slice().sort((a, b) => String(a.created_at || '').localeCompare(String(b.created_at || '')))
+  const sorted = rows.slice().sort((a, b) => dbTimeOr0(a.created_at) - dbTimeOr0(b.created_at))
   const lastKey = sorted[sorted.length - 1]?.voter_key
   const ballot = lastKey ? sorted.filter(r => r.voter_key === lastKey) : sorted.slice(-1)
   if (poll.type === 'ranking') ballot.sort((a, b) => (Number(a.rank) || 99) - (Number(b.rank) || 99))
@@ -392,7 +393,7 @@ async function loadSurvey(db: EngageDb, id: string): Promise<any | null> {
 /** A previous answer that still counts against this person (all of them, unless repeats are allowed after a day). */
 function blocking(rows: any[], settings: EngageSettings, now: number): any[] {
   if (!settings.allow_repeat) return rows
-  return rows.filter(r => now - Date.parse(String(r.created_at || '')) < 86_400_000)
+  return rows.filter(r => now - dbTimeOr0(r.created_at) < 86_400_000)
 }
 
 export async function getSurveyView(deps: Deps, id: unknown, caller: Caller): Promise<Out<SurveyView>> {

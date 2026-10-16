@@ -1,17 +1,13 @@
+import { dbDate } from './db-time'
+
 /**
  * Format timestamp as relative time (e.g., "just now", "2 hours ago")
  */
 export function getRelativeTime(dateString: string | Date): string {
   // DB TIMESTAMP columns come back WITHOUT timezone info (e.g. "2026-07-08 08:00:00").
   // new Date() parses those as LOCAL time, which made a just-posted idea show
-  // "10 hours ago" for users in UTC+10. Treat naive timestamps as UTC.
-  let date: Date
-  if (typeof dateString === 'string') {
-    const hasTz = /Z$|[+-]\d{2}:?\d{2}$/.test(dateString)
-    date = new Date(hasTz ? dateString : dateString.replace(' ', 'T') + 'Z')
-  } else {
-    date = dateString
-  }
+  // "10 hours ago" for users in UTC+10. lib/db-time.ts treats them as UTC.
+  const date = dbDate(dateString) || new Date(NaN)
   const now = new Date()
   const diff = Math.max(0, now.getTime() - date.getTime())
   
