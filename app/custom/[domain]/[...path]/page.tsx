@@ -12,9 +12,45 @@ import CustomDomainPage from '../CustomDomainClient'
 import BookingFlow from '@/components/booking/BookingFlow'
 import ManageBooking from '@/components/booking/ManageBooking'
 import CustomRedirect from './CustomRedirect'
+import type { Metadata, Viewport } from 'next'
 import { getCustomDomainHelp, getPublishedHelpArticle } from '@/lib/help-public'
+import { brandForHostName, hostFromDomainParam } from '@/lib/tenant-brand'
+import { buildTenantMetadata, buildTenantViewport, customHostIsHelp, type TenantPage } from '@/lib/tenant-meta'
 
-export default async function CustomDomainSubPath({ params }: { params: Promise<{ domain: string; path?: string[] }> }) {
+type Params = { params: Promise<{ domain: string; path?: string[] }> }
+
+// Every page on a custom domain is the company's: its name, icon and
+// description in the tab and in link previews, never Colvy's (lib/tenant-meta).
+export async function generateMetadata({ params }: Params): Promise<Metadata> {
+  const { domain, path: rawPath } = await params
+  const path = rawPath || []
+  const host = hostFromDomainParam(domain)
+  const brand = await brandForHostName(host.host)
+  const subPath = '/' + path.map(encodeURIComponent).join('/')
+  let page: TenantPage = 'redirect'
+  let title: string | null = null
+  let description: string | null = null
+  if (path[0] === 'help' && path[1] === 'ticket') page = 'help-ticket'
+  else if (path[0] === 'help' && path[1]) {
+    page = 'help-article'
+    const a = (await getPublishedHelpArticle(path[1]))?.article
+    title = a?.title || null
+    description = a?.content || null
+  } else if (path[0] === 'help') page = customHostIsHelp(host, brand) ? 'help' : 'feedback'
+  else if (path[0] === 'book') page = 'book'
+  else if (path[0] === 'booking' && path[1]) page = 'booking'
+  const md = buildTenantMetadata({ host, brand, page, path: subPath, title, description })
+  // A manage-booking link is private to whoever holds it; a redirect has no content of its own.
+  if (page === 'booking' || page === 'redirect') md.robots = { index: false, follow: page === 'redirect' }
+  return md
+}
+
+export async function generateViewport({ params }: Params): Promise<Viewport> {
+  const host = hostFromDomainParam((await params).domain)
+  return buildTenantViewport(await brandForHostName(host.host))
+}
+
+export default async function CustomDomainSubPath({ params }: Params) {
   const { domain, path: rawPath } = await params
   const path = rawPath || []
   const hostname = (domain || '').replace(/__/g, '.')
