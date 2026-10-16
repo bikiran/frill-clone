@@ -1,50 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { adminDb, superAdmin } from '../_lib/super-admin'
+import { formsDomainHealth, addFormsDomainToResend, verifyFormsDomain, sendFormsTest, checkFormsTest, clearFormsHealthCache, FORMS_DOMAIN, FORMS_DOMAIN_IS_DEFAULT } from '@/lib/forms-mail'
+import { logSuperAdminAudit } from '@/lib/super-admin-audit'
 
 export const dynamic = 'force-dynamic'
 
-const SUPER_ADMIN = 'bishalstha76@gmail.com'
-const FORMS_DOMAIN = process.env.NEXT_PUBLIC_FORMS_DOMAIN || 'forms.colvy.com'
-
-function admin() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    { auth: { autoRefreshToken: false, persistSession: false } }
-  )
-}
-async function isSuper(req: NextRequest, db: any): Promise<boolean> {
-  try {
-    const token = (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '')
-    if (!token) return false
-    const { data } = await db.auth.getUser(token)
-    return data?.user?.email === SUPER_ADMIN
-  } catch { return false }
-}
-
-// GET — readiness of the shared forms domain (its MX records, via DNS-over-HTTPS)
+// GET — is the shared forms domain really receiving mail (its real MX records,
+// Resend's view of the domain, and exactly which DNS records are missing),
 // plus every web-form address provisioned across all companies. Super-admin only.
 export async function GET(req: NextRequest) {
   try {
-    const db = admin()
-    if (!(await isSuper(req, db))) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+    const db = adminDb()
+    if (!(await superAdmin(req, db))) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
 
-    // DNS check: does the forms domain have MX records? (Points at the inbound
-    // email provider once configured.)
-    let mxRecords: string[] = []
-    let mxOk = false
-    try {
-      const r = await fetch(`https://dns.google/resolve?name=${encodeURIComponent(FORMS_DOMAIN)}&type=MX`, { headers: { accept: 'application/dns-json' } })
-      const d = await r.json()
-      mxRecords = (d?.Answer || []).map((a: any) => String(a.data || '').trim()).filter(Boolean)
-      mxOk = mxRecords.length > 0
-    } catch {}
-
-    // All web-form channels, with their company + location names.
-    const { data: chans } = await db.from('email_channels')
-      .select('id, company_id, location_id, inbound_address, label, is_active, created_at')
-      .eq('provider', 'webform').order('created_at', { ascending: false }).limit(1000)
-    const rows = chans || []
+    const [health, chansRes] = await Promise.all([
+      formsDomainHealth(),
+      db.from('email_channels')
+        .select('id, company_id, location_id, inbound_address, label, is_active, created_at')
+        .eq('provider', 'webform').order('created_at', { ascending: false }).limit(1000),
+    ])
+    const rows = chansRes.data || []
     const companyIds = Array.from(new Set(rows.map((r: any) => r.company_id).filter(Boolean)))
     const locIds = Array.from(new Set(rows.map((r: any) => r.location_id).filter(Boolean)))
     const [{ data: cos }, { data: locs }] = await Promise.all([
@@ -59,17 +34,60 @@ export async function GET(req: NextRequest) {
       company: (coMap.get(r.company_id) as any)?.name || '—',
       slug: (coMap.get(r.company_id) as any)?.slug || null,
       location: r.location_id ? ((locMap.get(r.location_id) as any)?.label || (locMap.get(r.location_id) as any)?.suburb || 'Location') : 'All',
+      // An address on another domain (made before the forms domain changed) needs its own MX.
+      onFormsDomain: String(r.inbound_address || '').toLowerCase().endsWith('@' + FORMS_DOMAIN),
     }))
 
     return NextResponse.json({
       formsDomain: FORMS_DOMAIN,
-      domainConfigured: !!process.env.NEXT_PUBLIC_FORMS_DOMAIN,
+      usingDefault: FORMS_DOMAIN_IS_DEFAULT,
       webhookUrl: 'https://colvy.com/api/webhooks/email',
-      mxOk, mxRecords,
+      resendKey: !!process.env.RESEND_API_KEY,
+      health,
       total: addresses.length,
       companies: companyIds.length,
       addresses,
-    })
+    }, { headers: { 'Cache-Control': 'no-store' } })
+  } catch (e: any) {
+    return NextResponse.json({ error: e?.message || 'Failed' }, { status: 500 })
+  }
+}
+
+// POST — { action: 'add-to-resend' }            add the forms domain to Resend (receiving only)
+//        { action: 'verify', id }                 ask Resend to check the domain's DNS again
+//        { action: 'test', channelId }            email that web-form address through Resend
+//        { action: 'check', channelId, token, emailId }  did the test arrive?
+export async function POST(req: NextRequest) {
+  try {
+    const db = adminDb()
+    const who = await superAdmin(req, db)
+    if (!who) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+    const body = await req.json().catch(() => ({}))
+    const action = String(body?.action || '')
+
+    if (action === 'add-to-resend') {
+      const r = await addFormsDomainToResend()
+      clearFormsHealthCache()
+      if (r.ok) await logSuperAdminAudit(db, { adminId: who.id, adminEmail: who.email, action: 'forms_domain_added_to_resend', summary: `Added ${FORMS_DOMAIN} to Resend for receiving`, detail: { id: r.id } })
+      return NextResponse.json(r, { status: r.ok ? 200 : 400 })
+    }
+    if (action === 'verify') {
+      if (!body?.id) return NextResponse.json({ error: 'Missing domain id' }, { status: 400 })
+      const r = await verifyFormsDomain(String(body.id))
+      clearFormsHealthCache()
+      return NextResponse.json(r, { status: r.ok ? 200 : 400 })
+    }
+    if (action === 'test' || action === 'check') {
+      const { data: chan } = await db.from('email_channels').select('id, inbound_address, company_id').eq('id', String(body?.channelId || '')).eq('provider', 'webform').maybeSingle()
+      if (!chan) return NextResponse.json({ error: 'Unknown web-form address' }, { status: 404 })
+      if (action === 'test') {
+        const r = await sendFormsTest(String(chan.inbound_address))
+        return NextResponse.json(r, { status: r.ok ? 200 : 400 })
+      }
+      const r = await checkFormsTest(db, { token: String(body?.token || ''), channelId: chan.id, emailId: body?.emailId ? String(body.emailId) : null })
+      return NextResponse.json(r, { headers: { 'Cache-Control': 'no-store' } })
+    }
+    return NextResponse.json({ error: 'Unknown action' }, { status: 400 })
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || 'Failed' }, { status: 500 })
   }

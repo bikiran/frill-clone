@@ -1,6 +1,7 @@
-import { isStaffMember } from '@/lib/company-access'
+import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { sendFormsTest, checkFormsTest } from '@/lib/forms-mail'
 
 export const dynamic = 'force-dynamic'
 
@@ -10,52 +11,48 @@ const admin = () => createClient(
   { auth: { autoRefreshToken: false, persistSession: false } }
 )
 
-// POST { address } — a self-test for a web-form inbound address. Confirms the
-// address is wired to a company and drops a sample submission into the inbox so
-// the business can see the end-to-end routing works (this exercises everything
-// except the external MX delivery). Auth: the caller must own the company.
+// A real end-to-end test of a web-form address: Colvy emails it through
+// Resend, exactly as a website form would, and the page then polls GET until
+// the conversation shows up (it's filed closed and read, so nobody is
+// notified). It used to write a sample conversation straight into the
+// database, which said "working" even when no email could ever arrive.
+// Auth: staff of the address's company.
+
+async function channelFor(db: any, q: { address?: string | null; channelId?: string | null }) {
+  let query = db.from('email_channels').select('id, company_id, inbound_address').eq('provider', 'webform')
+  query = q.channelId ? query.eq('id', String(q.channelId)) : query.ilike('inbound_address', String(q.address || ''))
+  const { data } = await query.maybeSingle()
+  return data || null
+}
+
+// POST { address } → { ok, token, emailId, channelId }
 export async function POST(req: NextRequest) {
   try {
     const db = admin()
-    const token = (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '')
-    if (!token) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
-    const { data: auth } = await db.auth.getUser(token)
-    const uid = auth?.user?.id
-    if (!uid) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
-
     const { address } = await req.json().catch(() => ({}))
     if (!address) return NextResponse.json({ error: 'Missing address' }, { status: 400 })
-
-    const { data: chan } = await db.from('email_channels').select('*')
-      .ilike('inbound_address', String(address)).eq('provider', 'webform').maybeSingle()
+    const chan = await channelFor(db, { address })
     if (!chan) return NextResponse.json({ error: 'Unknown web-form address' }, { status: 404 })
+    const access = await requireCompanyAccess(req, db, chan.company_id)
+    if (!access.ok) return NextResponse.json({ error: access.unavailable ? 'Can’t check access right now' : 'Not authorized for this address' }, { status: access.unavailable ? 503 : 403 })
+    const r = await sendFormsTest(String(chan.inbound_address))
+    return NextResponse.json({ ...r, channelId: chan.id }, { status: r.ok ? 200 : 400 })
+  } catch (e: any) {
+    return NextResponse.json({ error: e?.message || 'Failed' }, { status: 500 })
+  }
+}
 
-    // The caller must own (or belong to) this channel's company.
-    const { data: company } = await db.from('companies').select('id, owner_id').eq('id', chan.company_id).maybeSingle()
-    let allowed = company?.owner_id === uid
-    if (!allowed) {
-      const tm = (await isStaffMember(db, chan.company_id, uid)) ? [{ id: true }] : []
-      allowed = !!(tm && tm.length)
-    }
-    if (!allowed) return NextResponse.json({ error: 'Not authorized for this address' }, { status: 403 })
-
-    const content = `This is a test submission from Colvy to confirm your Web Form address is receiving.\n\nName: Colvy Test\nEmail: test@colvy.com\nMessage: If you can see this in your inbox, your web form is wired up correctly.`
-    const subject = 'Web Form test submission'
-
-    const { data: conv } = await db.from('conversations').insert({
-      company_id: chan.company_id, channel: 'form', subject,
-      email_channel_id: chan.id, assigned_location_id: chan.location_id || null,
-      status: 'open', is_unread: true, unread_count: 1,
-      last_message: content.slice(0, 200), last_message_at: new Date().toISOString(),
-    }).select('id').maybeSingle()
-    if (conv?.id) {
-      await db.from('messages').insert({
-        conversation_id: conv.id, company_id: chan.company_id,
-        sender_type: 'visitor', sender_name: 'Colvy Test', sender_email: 'test@colvy.com', content,
-      })
-    }
-
-    return NextResponse.json({ ok: true, conversationId: conv?.id || null })
+// GET ?channelId&token&emailId → { arrived, conversationId, delivery }
+export async function GET(req: NextRequest) {
+  try {
+    const db = admin()
+    const sp = req.nextUrl.searchParams
+    const chan = await channelFor(db, { channelId: sp.get('channelId') })
+    if (!chan) return NextResponse.json({ error: 'Unknown web-form address' }, { status: 404 })
+    const access = await requireCompanyAccess(req, db, chan.company_id)
+    if (!access.ok) return NextResponse.json({ error: 'Not authorized for this address' }, { status: access.unavailable ? 503 : 403 })
+    const r = await checkFormsTest(db, { token: String(sp.get('token') || ''), channelId: chan.id, emailId: sp.get('emailId') })
+    return NextResponse.json(r, { headers: { 'Cache-Control': 'no-store' } })
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || 'Failed' }, { status: 500 })
   }
