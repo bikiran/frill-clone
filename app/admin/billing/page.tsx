@@ -6,6 +6,8 @@ import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { track } from '@/lib/analytics'
+import { alertDialog } from '@/components/ConfirmDialog'
+import { showBillingUnavailable } from '@/components/BillingUnavailable'
 
 // Currency rates relative to USD
 const CURRENCY_RATES: Record<string, { rate: number; symbol: string; label: string }> = {
@@ -297,12 +299,19 @@ export default function BillingPage() {
       })
       const data = await res.json()
       if (data.setup) {
-        alert('Stripe is not configured. Add STRIPE_SECRET_KEY and price IDs to your Vercel environment variables.')
+        // Billing isn't set up on Colvy's side: a plain message (the server has
+        // already told the Colvy team), never env var names.
+        setLoading(null)
+        const plan = PLANS.find(p => p.id === planId)
+        await showBillingUnavailable({
+          what: planId === 'branding_removal' ? 'the Remove “Powered by Colvy” add-on' : `the ${plan?.name || planId} plan (${billing})`,
+          workspace: company?.name || null,
+        })
         return
       }
-      if (data.url) window.location.href = data.url
-      else alert(data.error || 'Checkout failed')
-    } catch (err: any) { alert(err.message) }
+      if (data.url) { window.location.href = data.url; return }
+      await alertDialog({ title: 'Couldn’t start the checkout', message: data.error || 'Please try again in a minute.' })
+    } catch (err: any) { await alertDialog({ title: 'Couldn’t start the checkout', message: err?.message || 'Please try again in a minute.' }) }
     setLoading(null)
   }
 
@@ -317,7 +326,8 @@ export default function BillingPage() {
       })
       const data = await res.json()
       if (data.url) window.location.href = data.url
-    } catch (err: any) { alert(err.message) }
+      else await alertDialog({ title: 'Couldn’t open billing', message: data.error || 'Please try again in a minute.' })
+    } catch (err: any) { await alertDialog({ title: 'Couldn’t open billing', message: err?.message || 'Please try again in a minute.' }) }
     setPortalLoading(false)
   }
 

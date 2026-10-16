@@ -2,51 +2,44 @@ import { callerUser, requireCompanyAccess } from '@/lib/company-access'
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 import { BRANDING_ADDON } from '@/lib/branding-addon'
+import { billingUnavailableCopy, checkoutBlockers, isKnownTier, priceIdFor } from '@/lib/billing-config'
+import { alertBillingNotConfigured } from '@/lib/billing-alert'
+import { COLVY_CONTACT } from '@/lib/colvy-contact'
 
-const STRIPE_SECRET = process.env.STRIPE_SECRET_KEY || ''
+// The secret key and price IDs come from the environment (lib/billing-config
+// lists them; super admin → Billing shows which are missing). When they're
+// not set the customer gets a plain message with Colvy's contact details,
+// never env var names, and the Colvy team is alerted once a day.
 
-const PRICE_IDS: Record<string, Record<string, string>> = {
-  // Modular, product-based plans (see /pricing). One Stripe price per plan ×
-  // billing period. Add these to the Vercel env in every environment.
-  feedback: {
-    monthly: process.env.STRIPE_FEEDBACK_MONTHLY_PRICE_ID || '',
-    annual:  process.env.STRIPE_FEEDBACK_ANNUAL_PRICE_ID  || '',
-  },
-  omnichannel: {
-    monthly: process.env.STRIPE_OMNICHANNEL_MONTHLY_PRICE_ID || '',
-    annual:  process.env.STRIPE_OMNICHANNEL_ANNUAL_PRICE_ID  || '',
-  },
-  everything: {
-    monthly: process.env.STRIPE_EVERYTHING_MONTHLY_PRICE_ID || '',
-    annual:  process.env.STRIPE_EVERYTHING_ANNUAL_PRICE_ID  || '',
-  },
-  startup: {
-    monthly: process.env.STRIPE_STARTUP_MONTHLY_PRICE_ID || '',
-    annual:  process.env.STRIPE_STARTUP_ANNUAL_PRICE_ID  || '',
-  },
-  business: {
-    monthly: process.env.STRIPE_BUSINESS_MONTHLY_PRICE_ID || '',
-    annual:  process.env.STRIPE_BUSINESS_ANNUAL_PRICE_ID  || '',
-  },
-  growth: {
-    monthly: process.env.STRIPE_GROWTH_MONTHLY_PRICE_ID || '',
-    annual:  process.env.STRIPE_GROWTH_ANNUAL_PRICE_ID  || '',
-  },
-  branding_removal: {
-    monthly: process.env.STRIPE_BRANDING_REMOVAL_PRICE_ID || '',
-    annual:  process.env.STRIPE_BRANDING_REMOVAL_PRICE_ID || '',
-  },
-  // Legacy aliases
-  pro: {
-    monthly: process.env.STRIPE_PRO_MONTHLY_PRICE_ID || process.env.STRIPE_GROWTH_MONTHLY_PRICE_ID || '',
-    annual:  process.env.STRIPE_PRO_ANNUAL_PRICE_ID  || process.env.STRIPE_GROWTH_ANNUAL_PRICE_ID  || '',
-  },
+/** The response when billing isn't set up: friendly copy, plus `setup` so the page knows. */
+function unavailable() {
+  const copy = billingUnavailableCopy()
+  return NextResponse.json({ setup: true, title: copy.title, error: copy.message }, { status: 200 })
+}
+
+async function companyName(db: any, companyId: string | null, userId: string): Promise<{ id: string | null; name: string | null }> {
+  try {
+    const q = db.from('companies').select('id, name').limit(1)
+    const { data } = await (companyId ? q.eq('id', companyId) : q.eq('owner_id', userId))
+    return { id: data?.[0]?.id || companyId, name: data?.[0]?.name || null }
+  } catch { return { id: companyId, name: null } }
+}
+
+// A Stripe error that means Colvy's setup is wrong (bad key, a price ID that
+// doesn't exist in this Stripe account or mode), not something the customer did.
+function isSetupError(err: any): boolean {
+  const t = String(err?.type || err?.rawType || '')
+  if (t === 'StripeAuthenticationError' || t === 'authentication_error' || t === 'StripePermissionError') return true
+  if ((t === 'StripeInvalidRequestError' || t === 'invalid_request_error') && (err?.code === 'resource_missing' || /price|product/i.test(String(err?.param || '')))) return true
+  return false
 }
 
 export async function POST(req: NextRequest) {
+  let tierOf = '', billingOf = 'monthly'
   try {
     const body = await req.json()
     const { tier, billing = 'monthly', trial = false } = body
+    tierOf = String(tier || ''); billingOf = String(billing || 'monthly')
     // Who is subscribing comes from the sign-in, not the request: a body userId
     // let anyone attach a checkout to someone else's subscription row.
     const db = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, { auth: { autoRefreshToken: false, persistSession: false } })
@@ -57,8 +50,8 @@ export async function POST(req: NextRequest) {
     let companyId: string | null = body.companyId || null
     if (companyId && !(await requireCompanyAccess(req, db, companyId)).ok) companyId = null
 
-    if (!tier) {
-      return NextResponse.json({ error: 'Missing tier' }, { status: 400 })
+    if (!tier || !isKnownTier(tier)) {
+      return NextResponse.json({ error: 'That plan isn’t available. Refresh the page and try again.' }, { status: 400 })
     }
 
     // A workspace using Colvy through the Shopify app pays through Shopify
@@ -69,21 +62,15 @@ export async function POST(req: NextRequest) {
       if (viaShopify?.length) return NextResponse.json({ error: 'Your Colvy plan is billed through Shopify. Change it from Billing → Choose plan in Shopify.', shopify: true }, { status: 409 })
     }
 
-    const stripeKey = (STRIPE_SECRET || '').trim()
-    if (!stripeKey || (!stripeKey.startsWith('sk_live_') && !stripeKey.startsWith('sk_test_'))) {
-      return NextResponse.json({
-        error: `Stripe key missing or invalid. Got: "${stripeKey ? stripeKey.slice(0,8) + '...' : 'empty'}". Add STRIPE_SECRET_KEY (must start with sk_live_ or sk_test_) to ALL Vercel environments, then redeploy.`,
-        setup: true
-      }, { status: 200 })
+    const blockers = checkoutBlockers(tier, billing, process.env)
+    if (blockers.length) {
+      console.error(`[stripe/create-checkout] billing not set up for ${tier} (${billing}): missing or wrong ${blockers.join(', ')}`)
+      const co = await companyName(db, companyId, userId)
+      await alertBillingNotConfigured(db, { companyId: co.id, companyName: co.name, tier, billing, missing: blockers })
+      return unavailable()
     }
-
-    const priceId = PRICE_IDS[tier]?.[billing]
-    if (!priceId) {
-      return NextResponse.json({
-        error: `No price ID configured for plan "${tier}" (${billing}). Add STRIPE_${tier.toUpperCase()}_${billing.toUpperCase()}_PRICE_ID to Vercel env vars.`,
-        setup: true
-      }, { status: 200 })
-    }
+    const stripeKey = String(process.env.STRIPE_SECRET_KEY || '').trim()
+    const priceId = priceIdFor(tier, billing, process.env)
 
     const Stripe = (await import('stripe')).default
     const stripe = new Stripe(stripeKey, { apiVersion: '2024-06-20' as any })
@@ -135,6 +122,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ url: session.url, sessionId: session.id })
   } catch (err: any) {
     console.error('Stripe checkout error:', err)
-    return NextResponse.json({ error: err.message }, { status: 500 })
+    if (isSetupError(err)) {
+      try {
+        const db = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, { auth: { autoRefreshToken: false, persistSession: false } })
+        await alertBillingNotConfigured(db, { tier: String(tierOf || ''), billing: billingOf, missing: [], detail: `Stripe said: ${String(err?.message || '').slice(0, 200)}` })
+      } catch {}
+      return unavailable()
+    }
+    return NextResponse.json({ error: `We couldn’t start the checkout. Please try again in a minute, or contact us at ${COLVY_CONTACT.email} or ${COLVY_CONTACT.phoneDisplay}.` }, { status: 500 })
   }
 }

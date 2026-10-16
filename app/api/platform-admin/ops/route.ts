@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { billingConfigStatus } from '@/lib/billing-config'
+import { BILLING_ALERT_SETTING } from '@/lib/billing-alert'
 
 const SUPER_ADMIN = 'bishalstha76@gmail.com'
 
@@ -69,7 +71,15 @@ export async function GET(req: NextRequest) {
         description: p.description, status: p.status, created_at: p.created_at,
         receipt_url: p.receipt_url, company: cos[p.company_id] || null,
       }))
-      return NextResponse.json({ payments: rows, paid: paidCents / 100, pending: pendingCents / 100, total: rows.length })
+      // Is Colvy's own Stripe billing set up? (env var names are fine here:
+      // super admin only), and when a customer was last turned away.
+      const config = billingConfigStatus(process.env)
+      let lastAlert: any = null
+      try {
+        const { data } = await db.from('platform_settings').select('value').eq('key', BILLING_ALERT_SETTING).maybeSingle()
+        lastAlert = data?.value || null
+      } catch {}
+      return NextResponse.json({ payments: rows, paid: paidCents / 100, pending: pendingCents / 100, total: rows.length, config, lastAlert })
     }
 
     return NextResponse.json({ error: 'Unknown view' }, { status: 400 })
