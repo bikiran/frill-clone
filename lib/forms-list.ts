@@ -3,6 +3,8 @@
 // last visit" bookkeeping and the completion rate from V376 stats. No React,
 // no Supabase, so it is safe on the client and in tests.
 
+import { parseDbTime } from './db-time'
+
 export type FormSort = 'updated' | 'created' | 'name' | 'responses'
 export type FormFilter = 'all' | 'live' | 'draft'
 export type FormsView = 'list' | 'grid'
@@ -41,25 +43,9 @@ export type FormListItem = {
   [key: string]: unknown
 }
 
-/**
- * A database timestamp as epoch ms. forms.created_at / updated_at are
- * TIMESTAMP (no time zone) columns, so they come back without an offset
- * ("2026-10-16 01:00:00"); those are UTC, not the viewer's local time (same rule
- * as lib/time-utils.ts). Short "+00" / "+1000" offsets are accepted too.
- */
-export function parseDbTime(v: unknown): number {
-  if (typeof v !== 'string' || !v.trim()) return NaN
-  let s = v.trim()
-  const m = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?)(.*)$/.exec(s)
-  if (m) {
-    let tz = m[3].trim()
-    if (!tz) tz = 'Z'
-    else if (/^[+-]\d{2}$/.test(tz)) tz += ':00'
-    else if (/^[+-]\d{4}$/.test(tz)) tz = `${tz.slice(0, 3)}:${tz.slice(3)}`
-    s = `${m[1]}T${m[2]}${tz}`
-  }
-  return Date.parse(s)
-}
+// forms.created_at / updated_at are TIMESTAMP (no time zone) columns: read
+// them as UTC with the shared parser (lib/db-time.ts).
+export { parseDbTime }
 const time = parseDbTime
 
 export function questionsOf(f: { questions?: unknown } | null | undefined): any[] {

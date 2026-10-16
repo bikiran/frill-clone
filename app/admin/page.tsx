@@ -5,6 +5,7 @@ import LinkClicksCard from '@/components/LinkClicksCard'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { authFetch } from '@/lib/auth-fetch'
+import { parseDbTime } from '@/lib/db-time'
 import Link from 'next/link'
 
 import { LightbulbIcon, MegaphoneIcon, SurveyIcon, PollIcon, StarIcon, TicketIcon, CheckIcon } from '@/components/Icons'
@@ -71,7 +72,7 @@ const money = (n: number, cents = false) => new Intl.NumberFormat('en-AU', { sty
 const plural = (n: number, one: string, many = one + 's') => `${n} ${n === 1 ? one : many}`
 
 function ago(iso: string) {
-  const ms = Date.now() - Date.parse(iso)
+  const ms = Date.now() - parseDbTime(iso)
   if (!isFinite(ms)) return ''
   const m = Math.round(ms / 60000)
   if (m < 1) return 'just now'
@@ -80,7 +81,7 @@ function ago(iso: string) {
   if (h < 24) return `${h}h ago`
   const d = Math.round(h / 24)
   if (d < 7) return `${d}d ago`
-  return new Date(iso).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })
+  return new Date(parseDbTime(iso)).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })
 }
 
 // ── Icons (stroke, 24 grid — same style as components/Icons) ─────────────────

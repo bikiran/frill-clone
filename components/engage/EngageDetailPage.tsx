@@ -13,7 +13,7 @@ import { resolveCompanyUser } from '@/lib/client-cache'
 import { confirmDialog } from '@/components/ConfirmDialog'
 import { ResultsStyles } from '@/components/form-results/styles'
 import { Icon } from '@/components/form-results/icons'
-import { reopenFields, settingsOf, statusFields, statusOf, tallyPoll, closeNote, type EngageKind } from '@/lib/engage-core'
+import { reopenFields, settingsOf, statusFields, statusOf, tallyPoll, closeNote, latestAnswerAt, mergeLiveAnswers, type EngageKind } from '@/lib/engage-core'
 import { pollLines, surveyLines } from '@/lib/engage-table'
 import { EngageStyles } from './styles'
 import { EngageIcon } from './icons'
@@ -109,7 +109,8 @@ export default function EngageDetailPage({ kind }: { kind: EngageKind }) {
     setAnswersState('loading')
     const res = await loadAnswers(db, kind, id)
     setAnswers(res.rows); setCapped(res.capped)
-    latest.current = res.rows[0]?.created_at || null
+    latest.current = latestAnswerAt(res.rows)
+    setNow(Date.now())
     setAnswersState(res.error ? 'error' : 'ready')
   }, [id, kind])
   useEffect(() => { void loadAll() }, [loadAll])
@@ -125,11 +126,11 @@ export default function EngageDetailPage({ kind }: { kind: EngageKind }) {
       if (latest.current) q = q.gt('created_at', latest.current)
       const { data, error } = await q
       if (error || !data?.length) return
-      latest.current = data[0].created_at
-      // A changed vote arrives as new rows under the same voter id; their old rows are gone, so drop them here too.
-      const voters = new Set(data.map((r: any) => r.voter_key).filter(Boolean))
-      const fresh = new Set(data.map((r: any) => r.id))
-      setAnswers(prev => [...data, ...prev.filter(r => !fresh.has(r.id) && !(r.voter_key && voters.has(r.voter_key)))])
+      latest.current = latestAnswerAt(data) || latest.current
+      // A changed vote arrives as new rows under the same voter id; their old rows are gone, so drop them too.
+      setAnswers(prev => mergeLiveAnswers(prev, data))
+      // Re-read the clock with the new rows, so "Last response" reads "just now" straight away.
+      setNow(Date.now())
     }, LIVE_MS)
     return () => clearInterval(t)
   }, [status, tab, answersState, id, kind])

@@ -11,6 +11,12 @@
 //   survey_responses  answer + comment (current), or score + response_text (oldest)
 // New settings live in one JSONB column (settings, V386); without it every
 // setting reads as its default, which is exactly how polls behaved before.
+//
+// created_at on polls, surveys, poll_votes and survey_responses is TIMESTAMP
+// without time zone (UTC, sent with no offset): always read it with
+// lib/db-time.ts, never Date.parse, or Melbourne sees answers 11 hours late.
+
+import { dbTimeOr0, newestDbTime } from './db-time'
 
 export type EngageKind = 'poll' | 'survey'
 export type EngageStatus = 'live' | 'closed' | 'draft'
@@ -204,6 +210,28 @@ export function voteOption(v: VoteRow, choices: string[]): string | null {
   const i = Number(v.option_index)
   if (v.option_index != null && Number.isInteger(i) && i >= 0 && i < choices.length) return choices[i]
   return null
+}
+
+/**
+ * The newest answer's created_at (the "Last vote" / "Last response" KPI),
+ * compared as instants over every row, so it never depends on the rows'
+ * order or on how the timestamp text is written.
+ */
+export function latestAnswerAt(rows: readonly { created_at?: unknown }[]): string | null {
+  return newestDbTime(rows, r => r.created_at).at
+}
+
+/**
+ * The live refresh on the results page: newer rows go in front; a row already
+ * shown is replaced, and a voter who changed their vote loses their old rows
+ * (the server deleted them). Newest first, like loadAnswers.
+ */
+export function mergeLiveAnswers<T extends { id?: unknown; voter_key?: unknown; created_at?: unknown }>(prev: readonly T[], fresh: readonly T[]): T[] {
+  if (!fresh.length) return prev.slice()
+  const voters = new Set(fresh.map(r => r.voter_key).filter(Boolean))
+  const ids = new Set(fresh.map(r => r.id))
+  const kept = prev.filter(r => !ids.has(r.id) && !(r.voter_key && voters.has(r.voter_key)))
+  return [...fresh, ...kept].sort((a, b) => dbTimeOr0(b.created_at) - dbTimeOr0(a.created_at))
 }
 
 /** Votes grouped by voter: rows sharing a voter_key are one person; older rows without one each count once. */
@@ -518,17 +546,15 @@ export function summariseSurvey(s: { type?: unknown; questions?: unknown; settin
   const range = scoreRange(s)
   const scores: number[] = []
   const comments: SurveySummary['comments'] = []
-  let lastAt: string | null = null
   for (const r of rows) {
     const at = typeof r.created_at === 'string' ? r.created_at : ''
-    if (at && (!lastAt || at > lastAt)) lastAt = at
     const sc = responseScore(r)
     const inRange = sc != null && (!range || (sc >= range.min && sc <= range.max))
     if (inRange && range) scores.push(sc as number)
     const text = responseComment(r)
     if (text) comments.push({ id: r.id, text, score: inRange ? sc : null, at, name: respondentOf(r).name })
   }
-  comments.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0))
+  comments.sort((a, b) => dbTimeOr0(b.at) - dbTimeOr0(a.at))
   const bands = { promoter: 0, passive: 0, detractor: 0 }
   if (mode === 'nps') for (const n of scores) bands[npsBand(n)]++
   const scored = scores.length
@@ -546,7 +572,7 @@ export function summariseSurvey(s: { type?: unknown; questions?: unknown; settin
     distribution,
     comments,
     questions: mode === 'questions' ? summariseQuestions(surveyQuestions(s), rows) : [],
-    lastAt,
+    lastAt: latestAnswerAt(rows),
   }
 }
 
@@ -570,7 +596,7 @@ function summariseQuestions(questions: SurveyQuestion[], rows: ResponseRow[]): Q
       const pcts = largestRemainder(raw)
       out.rows = Array.from({ length: max - min + 1 }, (_, i) => ({ label: String(min + i), count: nums.filter(n => n === min + i).length, pct: pcts[i] }))
     } else {
-      out.texts = values.map(x => ({ text: String(x.v).slice(0, 2000), at: x.at, id: x.id })).sort((a, b) => (a.at < b.at ? 1 : -1))
+      out.texts = values.map(x => ({ text: String(x.v).slice(0, 2000), at: x.at, id: x.id })).sort((a, b) => dbTimeOr0(b.at) - dbTimeOr0(a.at))
     }
     return out
   })
@@ -702,7 +728,7 @@ export function surveyListItem(s: Record<string, any>, count: number | null, now
   }
 }
 
-const timeOf = (v: string | null) => { const t = v ? Date.parse(v) : NaN; return Number.isFinite(t) ? t : 0 }
+const timeOf = dbTimeOr0
 
 export function filterEngage(items: EngageListItem[], opts: { query?: string; status?: EngageFilter }): EngageListItem[] {
   const q = (opts.query || '').trim().toLowerCase()
