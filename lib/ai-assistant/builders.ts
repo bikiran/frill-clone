@@ -8,8 +8,14 @@ import type { AssistantContext } from '@/lib/ai-assistant/tools'
 import { logAiEvent } from '@/lib/ai-assistant/audit'
 import { AI_QUESTION_TYPES } from '@/lib/ai-form'
 import { companyLimit } from '@/lib/plan'
+import { answerToPlainText, formatVariable, readFormLogic, readResponseLogic, stripReservedAnswers } from '@/lib/form-logic'
+import { choiceAnswerText, isExclusiveLabel, isOtherLabel, otherChoiceLabel, otherTextOf } from '@/lib/form-choice-options'
 
-const CHOICE_TYPES = ['multiple_choice', 'dropdown', 'ranking']
+// Question types that keep a list of options. (lib/form-logic exports its own
+// CHOICE_TYPES, which also counts picture_choice; the AI can't create those.)
+const CHOICE_TYPES = ['multiple_choice', 'dropdown', 'checkbox', 'ranking']
+// Types that can have the built-in "Other" text box.
+const OTHER_TYPES = ['multiple_choice', 'dropdown', 'checkbox']
 const SURVEY_TYPES = ['nps', 'csat', 'open_feedback'] as const
 
 export const BUILDER_TOOLS = [
@@ -31,8 +37,10 @@ export const BUILDER_TOOLS = [
               title: { type: 'string' },
               description: { type: 'string' },
               required: { type: 'boolean' },
-              options: { type: 'array', items: { type: 'string' }, description: 'for multiple_choice, dropdown, ranking' },
+              options: { type: 'array', items: { type: 'string' }, description: 'for multiple_choice, dropdown, checkbox (tick boxes), ranking' },
               multiSelect: { type: 'boolean', description: 'multiple_choice: allow several answers' },
+              otherOption: { type: 'boolean', description: 'multiple_choice, dropdown, checkbox: the last option is "Other" and picking it shows a "Type your answer" box (adds the option if missing)' },
+              exclusiveOptions: { type: 'array', items: { type: 'string' }, description: 'multi-select only: option labels like "None of these" or "No" that clear the other ticks when picked' },
               rows: { type: 'array', items: { type: 'string' }, description: 'matrix rows' },
               columns: { type: 'array', items: { type: 'string' }, description: 'matrix columns' },
             },
@@ -101,9 +109,20 @@ export function toFormQuestions(input: any[]): { questions: any[]; error?: strin
     if (!title) return { questions: [], error: 'Every question needs a title.' }
     const row: any = { id: newId(), type, title, description: clean(q?.description, 500), required: type === 'statement' ? false : q?.required === true }
     if (CHOICE_TYPES.includes(type)) {
-      const options = list(q?.options, 30)
-      row.options = options.length >= 2 ? options : ['Option 1', 'Option 2']
+      const given = Array.from(new Set(list(q?.options, 30)))
+      // A checkbox can be a single tick box (an opt-in); other choice types need two options.
+      const options = given.length >= (type === 'checkbox' ? 1 : 2) ? given : ['Option 1', 'Option 2']
       if (type === 'multiple_choice') row.multiSelect = q?.multiSelect === true
+      if (OTHER_TYPES.includes(type)) {
+        if (q?.otherOption === true && !options.some(isOtherLabel)) options.push('Other')
+        if (options.some(isOtherLabel)) row.otherOption = true
+      }
+      if (type === 'checkbox' || row.multiSelect) {
+        const marked = list(q?.exclusiveOptions, 30).filter(l => options.includes(l))
+        const exclusive = Array.from(new Set([...marked, ...options.filter(l => isExclusiveLabel(l))]))
+        if (exclusive.length) row.exclusiveChoices = exclusive
+      }
+      row.options = options
     }
     if (type === 'matrix') {
       const rows = list(q?.rows, 20), cols = list(q?.columns, 10)
@@ -272,22 +291,36 @@ export async function runBuilderRead(db: any, ctx: AssistantContext, name: strin
       return { title: s.title, type: s.type, question: s.question, responses: (rows || []).length, average_score: avg, ...(nps !== null ? { nps } : {}), latest_comments: comments, link: `${base(ctx)}/surveys/${id}` }
     }
 
-    const { data: f } = await db.from('forms').select('id, title, questions, is_published').eq('company_id', ctx.companyId).eq('id', id).maybeSingle()
+    const { data: f } = await db.from('forms').select('id, title, questions, theme, is_published').eq('company_id', ctx.companyId).eq('id', id).maybeSingle()
     if (!f) return { error: 'Form not found.' }
-    const qs: any[] = Array.isArray(f.questions) ? f.questions : []
-    const titles: Record<string, string> = Object.fromEntries(qs.map(q => [q.id, q.title]))
+    const qs: any[] = (Array.isArray(f.questions) ? f.questions : []).filter((q: any) => q && typeof q === 'object')
+    const byId: Record<string, any> = Object.fromEntries(qs.map(q => [q.id, q]))
+    const varLabels: Record<string, string> = Object.fromEntries(readFormLogic(f).variables.map(v => [v.id, v.label || v.id]))
     const limit = Math.min(Math.max(Number(args?.limit) || 20, 1), 100)
     const [{ data: rows }, total] = await Promise.all([
       db.from('form_responses').select('answers, created_at').eq('form_id', id).order('created_at', { ascending: false }).limit(limit),
       count(db, 'form_responses', 'form_id', id),
     ])
-    const show = (v: any): any => v == null ? null : typeof v === 'object' ? (Array.isArray(v) ? v.map(show).join(', ') : JSON.stringify(v).slice(0, 500)) : String(v).slice(0, 1000)
+    // Plain text, never JSON or a data: URL. Reserved keys (__logic, __other)
+    // are not answers; the typed "Other" text is folded into its answer.
+    const show = (raw: any, k: string, v: any): string => {
+      const q = byId[k]
+      const plain = typeof v === 'string' || (Array.isArray(v) && v.every(x => typeof x === 'string'))
+      const text = q && plain && otherChoiceLabel(q) ? choiceAnswerText(q, v, otherTextOf(raw, k)) : answerToPlainText(v, q)
+      return (text || (q?.type === 'signature' && v ? 'Signed' : '')).slice(0, 1000)
+    }
     return {
       title: f.title, live: !!f.is_published, total_responses: total, link: `${base(ctx)}/forms/${id}`,
-      responses: (rows || []).map((r: any) => ({
-        at: r.created_at,
-        answers: Object.fromEntries(Object.entries(r.answers || {}).map(([k, v]) => [titles[k] || k, show(v)])),
-      })),
+      responses: (rows || []).map((r: any) => {
+        const answers: Record<string, string> = {}
+        for (const [k, v] of Object.entries(stripReservedAnswers(r.answers))) {
+          const text = show(r.answers, k, v)
+          if (text) answers[byId[k]?.title || k] = text
+        }
+        const vars = readResponseLogic(r.answers)?.variables || {}
+        const variables = Object.fromEntries(Object.entries(vars).map(([k, n]) => [varLabels[k] || k, formatVariable(n)]))
+        return { at: r.created_at, answers, ...(Object.keys(variables).length ? { variables } : {}) }
+      }),
     }
   }
 

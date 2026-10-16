@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { adminDb } from '@/lib/integration-access'
 import { requireCompanyAccess } from '@/lib/company-access'
 import { emitIntegrationEvent, type EventPayload } from '@/lib/integration-events'
+import { answerToPlainText, formatVariable, readFormLogic, readResponseLogic, stripReservedAnswers, variablesInUse } from '@/lib/form-logic'
+import { choiceAnswerText, otherChoiceLabel, otherTextOf } from '@/lib/form-choice-options'
 
 export const dynamic = 'force-dynamic'
 
@@ -126,21 +128,42 @@ export async function POST(req: NextRequest) {
     const { data: rs } = await db.from('form_responses').select('id, answers, created_at').eq('form_id', id).order('created_at', { ascending: false }).limit(1)
     const r = rs?.[0]
     if (!r || !recent(r.created_at)) return ok
-    const qs: any[] = Array.isArray(form.questions) ? form.questions : []
-    const answers = r.answers || {}
-    const show = (v: any) => Array.isArray(v) ? v.join(', ') : v && typeof v === 'object' ? JSON.stringify(v) : String(v ?? '')
+    const qs: any[] = (Array.isArray(form.questions) ? form.questions : []).filter((q: any) => q && typeof q === 'object')
+    // Reserved keys (__logic: path and scores, __other: typed "Other" text) are
+    // never answers; they're passed on below in their own readable fields.
+    const answers: Record<string, any> = stripReservedAnswers(r.answers)
+    const lg = readResponseLogic(r.answers)
+    const otherText: Record<string, string> = {}
+    for (const q of qs) { const t = typeof q.id === 'string' ? otherTextOf(r.answers, q.id).trim() : ''; if (t) otherText[q.id] = clip(t, 1000) }
+    // Plain text: files print their name, signatures (data URLs) print nothing, "Other" shows what they typed.
+    const show = (q: any, v: any) => {
+      const plain = typeof v === 'string' || (Array.isArray(v) && v.every(x => typeof x === 'string'))
+      return plain && otherChoiceLabel(q) ? choiceAnswerText(q, v, otherText[q.id] || '') : answerToPlainText(v, q)
+    }
     const fields: Record<string, string | null> = {}
     for (const q of qs.slice(0, 15)) {
       const v = answers[q.id] ?? answers[q.key]
-      if (v !== undefined && v !== null && show(v).trim()) fields[clip(q.title || q.label || q.question || 'Answer', 80)] = clip(show(v), 300)
+      const text = v === undefined || v === null ? '' : show(q, v).trim()
+      if (text) fields[clip(q.title || q.label || q.question || 'Answer', 80)] = clip(text, 300)
     }
-    const find = (re: RegExp) => { const q = qs.find(x => re.test(String(x.type || '')) || re.test(String(x.title || x.label || ''))); const v = q ? answers[q.id] : null; return v ? String(v) : null }
+    if (lg && Object.keys(lg.variables).length) {
+      // Variable labels live in the theme; read it on its own so the form select above stays as it is.
+      const { data: tf } = await db.from('forms').select('theme').eq('id', id).maybeSingle()
+      for (const v of variablesInUse(readFormLogic({ questions: qs, theme: tf?.theme })).filter(v => lg.variables[v.id] !== undefined).slice(0, 5)) {
+        const label = clip(v.label || v.id, 80)
+        fields[label in fields ? `${label} (calculated)` : label] = formatVariable(lg.variables[v.id])
+      }
+    }
+    const find = (re: RegExp) => { const q = qs.find(x => re.test(String(x.type || '')) || re.test(String(x.title || x.label || ''))); const v = q ? answers[q.id] : null; return v ? answerToPlainText(v, q) || null : null }
     emitIntegrationEvent(form.company_id, event, {
       title: `New response to “${clip(form.title, 120)}”`,
       path: `/admin/forms/${form.id}/results`,
       customer: { name: find(/name/i), email: find(/email/i), phone: find(/phone|mobile/i) },
       fields,
-      data: { form: { id: form.id, title: form.title, kind: 'form' }, response: { id: r.id, answers } },
+      data: {
+        form: { id: form.id, title: form.title, kind: 'form' },
+        response: { id: r.id, answers, other_text: otherText, variables: lg?.variables ?? {}, path: lg?.path ?? null },
+      },
       dedupeKey: `form:${r.id}`,
     }, { db })
     return ok

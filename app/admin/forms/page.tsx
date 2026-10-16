@@ -75,7 +75,15 @@ export default function FormsAdmin() {
   }
 
   const duplicateForm = async (f: any) => {
+    // questions carry the logic and theme carries the welcome settings and
+    // variables; question ids are kept, so every rule still points at the right
+    // question. Copy the other settings too, but only columns this database has.
+    const settings: Record<string, unknown> = {}
+    for (const k of ['welcome_message', 'thank_you_message', 'end_actions', 'show_confetti', 'display_style', 'enable_piping']) {
+      if (f && k in f) settings[k] = f[k]
+    }
     const { data, error } = await (supabase as any).from('forms').insert({
+      ...settings,
       title: f.title + ' (Copy)',
       company_id: f.company_id,
       questions: f.questions,

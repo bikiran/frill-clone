@@ -1,47 +1,37 @@
 'use client'
 
 
-import { useState, useEffect, useRef } from 'react'
+import { Fragment, useState, useEffect, useLayoutEffect, useRef, useMemo } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { extractDominantColor } from '@/lib/extract-color'
 import Link from 'next/link'
 import FormAiChat, { FormSnapshot, AiSpark } from '@/components/FormAiChat'
+import FormLogicModal from '@/components/FormLogicModal'
+import { confirmDialog } from '@/components/ConfirmDialog'
+import {
+  readFormLogic, resolveWelcome, estimateMinutes, validateLogic, countRules, countAllRules, findReferences,
+  type FormQuestion, type FormVariable, type WelcomeSettings,
+} from '@/lib/form-logic'
+import { otherChoiceLabel } from '@/lib/form-choice-options'
+import {
+  LEFT_COLLAPSED_KEY, RIGHT_COLLAPSED_KEY, readCollapsed, writeCollapsed, gridColumns,
+  initialWelcome, patchWelcome, buildSavedTheme, errorCounts, hasDisplayRules, rulesSetText,
+  isMultiSelect, isExclusiveChoice, removeOption, renameOption, changeType, OTHER_OPTION_TYPES,
+} from '@/components/form-builder/helpers'
+import { Toggle, BranchIcon, PanelIcon, WelcomeSettingsPanel, WelcomePreview, LogicRow, ChoiceOptionSettings } from '@/components/form-builder/parts'
 
-type Question = {
-  id: string
-  type: string
-  title: string
-  description: string
-  required: boolean
-  options?: string[]
-  multiSelect?: boolean           // multiple_choice: allow selecting more than one
-  optionImages?: string[]        // picture_choice: image per option (parallel to options)
-  matrixRows?: string[]          // matrix: row labels
-  matrixCols?: string[]          // matrix: column labels
-  amountCents?: number           // payment: amount to charge, in cents
-  currency?: string              // payment: ISO currency (default aud)
-  schedule?: {                   // scheduler: availability config
-    days?: number[]              // 0=Sun … 6=Sat
-    start?: string               // 'HH:MM'
-    end?: string                 // 'HH:MM'
-    slotMins?: number            // gap between slot start times
-    durationMins?: number        // length of each booking
-    daysAhead?: number           // how far ahead people can book
-    locationId?: string | null
-  }
-  mediaUrl?: string
-  mediaType?: 'image' | 'video'
-  fileAccept?: string
-  conditional_logic?: {
-    condition: 'show' | 'hide'
-    rules: Array<{
-      questionId: string
-      operator: 'equals' | 'contains' | 'is_empty'
-      value: string
-    }>
-    logic: 'all' | 'any'
-  }
+// Questions are the engine's FormQuestion: unknown keys (logic, Other/exclusive
+// settings…) ride along untouched.
+type Question = FormQuestion
+type ScheduleConfig = {          // scheduler: availability config
+  days?: number[]                // 0=Sun … 6=Sat
+  start?: string                 // 'HH:MM'
+  end?: string                   // 'HH:MM'
+  slotMins?: number              // gap between slot start times
+  durationMins?: number          // length of each booking
+  daysAhead?: number             // how far ahead people can book
+  locationId?: string | null
 }
 
 const QUESTION_CATEGORIES = [
@@ -156,14 +146,11 @@ export default function FormBuilder() {
   const router = useRouter()
   const formId = params.id as string
 
-  const [form, setForm] = useState<any>(null)
   const [title, setTitle] = useState('Untitled Form')
   const [welcomeMessage, setWelcomeMessage] = useState('Welcome! This will only take a minute.')
   const [thankYouMessage, setThankYouMessage] = useState('Thanks for completing this form!')
   const [endActions, setEndActions] = useState<{ type: string; label: string; url: string }[]>([])
   const [showConfetti, setShowConfetti] = useState(true)
-  const [scheduledStart, setScheduledStart] = useState<string>('')
-  const [scheduledEnd, setScheduledEnd] = useState<string>('')
   const [mediaUploading, setMediaUploading] = useState<string>('')
   const [questions, setQuestions] = useState<Question[]>([])
   const [selectedQ, setSelectedQ] = useState<string | null>(null)
@@ -178,20 +165,38 @@ export default function FormBuilder() {
   const [justAdded, setJustAdded] = useState<string | null>(null)   // plays the row's slide-in, focuses its title
   const [dragOver, setDragOver] = useState<number | null>(null)
   const [aiOpen, setAiOpen] = useState(false)
+  // Welcome screen options, Logic variables and list view live in forms.theme.
+  const [welcome, setWelcome] = useState<WelcomeSettings>({})
+  const [variables, setVariables] = useState<FormVariable[]>([])
+  const [listMode, setListMode] = useState(false)
+  const [responseCount, setResponseCount] = useState<number | null>(null)
+  // false = Logic closed; null = open on the first question; id = open on that question.
+  const [logicFor, setLogicFor] = useState<string | null | false>(false)
+  // Full-screen work: collapse the question list and/or the settings (desktop only).
+  // Read once from localStorage (try/catch inside; false on the server). Safe for
+  // hydration: the grid only renders after the form loads, never on the server.
+  const [leftCollapsed, setLeftCollapsed] = useState(() => readCollapsed(LEFT_COLLAPSED_KEY))
+  const [rightCollapsed, setRightCollapsed] = useState(() => readCollapsed(RIGHT_COLLAPSED_KEY))
   // Mobile responsiveness
   const [isMobile, setIsMobile] = useState(false)
   const [isWide, setIsWide] = useState(false)   // room to dock Colvy AI beside the preview
+  const [isRoomy, setIsRoomy] = useState(true)  // room for the Logic / Colvy AI text labels in the top bar
   const [mobilePanel, setMobilePanel] = useState<'steps' | 'preview' | 'settings'>('preview')
   useEffect(() => {
-    const check = () => { setIsMobile(window.innerWidth < 768); setIsWide(window.innerWidth >= 1100) }
+    const check = () => { setIsMobile(window.innerWidth < 768); setIsWide(window.innerWidth >= 1100); setIsRoomy(window.innerWidth >= 1360) }
     check()
     window.addEventListener('resize', check)
     return () => window.removeEventListener('resize', check)
   }, [])
+  const toggleLeft = () => setLeftCollapsed(c => { writeCollapsed(LEFT_COLLAPSED_KEY, !c); return !c })
+  const toggleRight = () => setRightCollapsed(c => { writeCollapsed(RIGHT_COLLAPSED_KEY, !c); return !c })
   const autoSaveTimer = useRef<NodeJS.Timeout | null>(null)
-  const isFirstLoad = useRef(true)
+  // The render that puts the loaded form into state is not an edit, so it must not auto-save.
+  const skipLoadChange = useRef(false)
   // A colour taken from the logo is only shown, not saved (as before).
   const brandColorPending = useRef(false)
+  // Theme as stored: handleSave merges into it so background and unknown keys survive.
+  const themeBase = useRef<Record<string, unknown>>({})
 
   useEffect(() => {
     const init = async () => {
@@ -204,24 +209,36 @@ export default function FormBuilder() {
       }).catch(() => null)
       const { data, error } = await (supabase as any).from('forms').select('*').eq('id', formId).maybeSingle()
       if (error || !data) { router.push('/admin/forms'); return }
-      setForm(data)
+      const theme = data.theme && typeof data.theme === 'object' && !Array.isArray(data.theme) ? data.theme : {}
+      themeBase.current = { ...theme }
+      skipLoadChange.current = true
       setTitle(data.title || 'Untitled Form')
-      setQuestions(data.questions || [])
+      setQuestions(Array.isArray(data.questions) ? data.questions : [])
       setIsPublished(data.is_published || false)
-      if (data.theme?.color) setThemeColor(data.theme.color)
+      if (theme.color) setThemeColor(theme.color)
+      setWelcome(initialWelcome(theme))
+      setVariables(readFormLogic(data).variables)
+      setListMode(theme.listMode === true)
       if (data.welcome_message) setWelcomeMessage(data.welcome_message)
       if (data.thank_you_message) setThankYouMessage(data.thank_you_message)
       if (data.end_actions) setEndActions(data.end_actions)
       if (data.show_confetti !== undefined) setShowConfetti(data.show_confetti)
-      
+
       setLoading(false)
 
       // No colour set: take one from the company logo, in the background.
-      if (!data.theme?.color) {
+      if (!theme.color) {
         try {
           const co = await brandP
           const color = co?.logo_url ? await extractDominantColor(co.logo_url) : co?.accent_color
-          if (color) { brandColorPending.current = true; setThemeColor(color) }
+          // Only while the default colour is still showing: never over a colour
+          // the owner picked meanwhile, and never a no-op (the pending flag would
+          // then swallow the owner's next real edit).
+          if (color) setThemeColor(prev => {
+            if (prev !== '#ff7a6b' || prev === color) return prev
+            brandColorPending.current = true
+            return color
+          })
         } catch (e) {
           console.error('[FORM BUILDER] Error extracting logo color:', e)
         }
@@ -230,37 +247,94 @@ export default function FormBuilder() {
     init()
   }, [formId])
 
+  // What a save writes is read from here, so a save always sends the newest
+  // state, never the values a timer closed over.
+  const latest = useRef({ title, questions, themeColor, welcomeMessage, thankYouMessage, endActions, showConfetti, welcome, variables, listMode })
+  useLayoutEffect(() => {
+    latest.current = { title, questions, themeColor, welcomeMessage, thankYouMessage, endActions, showConfetti, welcome, variables, listMode }
+  })
+  const editRev = useRef(0)                                  // bumped on every edit
+  const saveRun = useRef({ busy: false, again: false })      // one save in flight at a time
+  const savePending = useRef(false)                          // an auto-save is scheduled
+
   // Track unsaved changes + auto-save
   useEffect(() => {
-    if (isFirstLoad.current) { isFirstLoad.current = false; return }
     if (loading) return
-    if (brandColorPending.current) { brandColorPending.current = false; return }
+    // Both flags are consumed together: the logo colour can land in the same
+    // render as the load, and a flag left behind would swallow a real edit.
+    const notAnEdit = skipLoadChange.current || brandColorPending.current
+    skipLoadChange.current = false
+    brandColorPending.current = false
+    if (notAnEdit) return
+    editRev.current++
     setIsDirty(true)
+    savePending.current = true
     if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
     autoSaveTimer.current = setTimeout(() => handleSave(), 1000)
     return () => { if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current) }
-  }, [title, questions, themeColor, welcomeMessage, thankYouMessage, endActions, showConfetti])
+  }, [title, questions, themeColor, welcomeMessage, thankYouMessage, endActions, showConfetti, welcome, variables, listMode])
 
+  // Saves are serialised: an edit made while a save is in flight is sent by a
+  // follow-up save once it returns, so an older write can never land last.
   const handleSave = async () => {
+    savePending.current = false
+    if (autoSaveTimer.current) { clearTimeout(autoSaveTimer.current); autoSaveTimer.current = null }
+    if (saveRun.current.busy) { saveRun.current.again = true; return }
+    saveRun.current.busy = true
     setSaving(true)
-    await (supabase as any).from('forms').update({
-      title, questions, theme: { color: themeColor },
-      welcome_message: welcomeMessage, thank_you_message: thankYouMessage, end_actions: endActions,
-      show_confetti: showConfetti,
-      scheduled_start: scheduledStart || null,
-      scheduled_end: scheduledEnd || null,
-      updated_at: new Date().toISOString(),
-    }).eq('id', formId)
-    setSaving(false)
-    setIsDirty(false)
+    try {
+      do {
+        saveRun.current.again = false
+        const s = latest.current
+        const rev = editRev.current
+        const theme = buildSavedTheme(themeBase.current, { color: s.themeColor, welcome: s.welcome, variables: s.variables, listMode: s.listMode })
+        const { error } = await (supabase as any).from('forms').update({
+          title: s.title, questions: s.questions, theme,
+          welcome_message: s.welcomeMessage, thank_you_message: s.thankYouMessage, end_actions: s.endActions,
+          show_confetti: s.showConfetti,
+          updated_at: new Date().toISOString(),
+        }).eq('id', formId)
+        if (error) { console.error('[FORM BUILDER] Save failed:', error); break }   // stays "Unsaved changes"
+        themeBase.current = theme
+        if (editRev.current === rev && !saveRun.current.again) setIsDirty(false)
+      } while (saveRun.current.again)
+    } finally {
+      saveRun.current.busy = false
+      setSaving(false)
+    }
   }
+  const saveRef = useRef(handleSave)
+  useLayoutEffect(() => { saveRef.current = handleSave })
+  // Leaving within a second of an edit (Results, View, back) still saves it.
+  useEffect(() => () => { if (savePending.current) void saveRef.current() }, [])
 
   // Display style is saved on its own — handleSave() takes no arguments, so the
-  // style buttons previously passed { display_style } into the void.
+  // style buttons previously passed { display_style } into the void. What the
+  // public form renders is theme.listMode (display_style defaults to 'list' in
+  // the database, so it can't be trusted), which auto-saves with the theme.
   const saveDisplayStyle = async (display_style: 'list' | 'typeform') => {
-    setForm((f: any) => ({ ...(f || {}), display_style }))
+    setListMode(display_style === 'list')
     await (supabase as any).from('forms').update({ display_style }).eq('id', formId)
   }
+
+  // Number of submissions, for the welcome preview: one head count, only once
+  // the toggle is on (members-only page; RLS scopes it to the company).
+  const countAsked = useRef(false)
+  useEffect(() => {
+    if (loading || welcome.showResponseCount !== true || countAsked.current) return
+    countAsked.current = true
+    ;(supabase as any).from('form_responses').select('id', { count: 'exact', head: true }).eq('form_id', formId)
+      .then(({ count, error }: any) => { if (!error) setResponseCount(typeof count === 'number' ? count : 0) })
+      .catch(() => {})
+  }, [loading, welcome.showResponseCount, formId])
+
+  // Logic: one engine view of the builder's questions and variables.
+  const logicForm = useMemo(() => readFormLogic({ questions, theme: { variables } }), [questions, variables])
+  const logicIssues = useMemo(() => validateLogic(logicForm), [logicForm])
+  const logicErrors = useMemo(() => errorCounts(logicIssues), [logicIssues])
+  const totalRules = useMemo(() => countAllRules(logicForm), [logicForm])
+  const welcomeMinutes = useMemo(() => estimateMinutes(logicForm), [logicForm])
+  const hasLogicErrors = Object.keys(logicErrors).length > 0
 
   const togglePublish = async () => {
     const next = !isPublished
@@ -310,21 +384,31 @@ export default function FormBuilder() {
     setQuestions(prev => prev.map(q => q.id === id ? { ...q, ...patch } : q))
   }
 
-  const uploadQuestionMedia = async (file: File, questionId: string) => {
-    setMediaUploading(questionId)
+  // One upload helper for question media and the welcome screen (key = question id or 'welcome').
+  const uploadMedia = async (file: File, key: string): Promise<{ url: string; mediaType: 'image' | 'video' } | null> => {
+    setMediaUploading(key)
     try {
       const ext = file.name.split('.').pop()
       const fileName = `forms/${formId}/${Date.now()}.${ext}`
-      let uploadBucket = 'idea-images'
+      const uploadBucket = 'idea-images'
       const { data, error } = await supabase.storage.from(uploadBucket).upload(fileName, file, { upsert: true })
       if (error) throw error
       const { data: { publicUrl } } = supabase.storage.from(uploadBucket).getPublicUrl(data.path)
-      const mediaType = file.type.startsWith('video') ? 'video' : 'image'
-      updateQuestion(questionId, { mediaUrl: publicUrl, mediaType })
+      return { url: publicUrl, mediaType: file.type.startsWith('video') ? 'video' : 'image' }
     } catch (e: any) {
       alert('Media upload failed: ' + e.message)
+      return null
+    } finally {
+      setMediaUploading(k => (k === key ? '' : k))
     }
-    setMediaUploading('')
+  }
+  const uploadQuestionMedia = async (file: File, questionId: string) => {
+    const r = await uploadMedia(file, questionId)
+    if (r) updateQuestion(questionId, { mediaUrl: r.url, mediaType: r.mediaType })
+  }
+  const uploadWelcomeMedia = async (file: File) => {
+    const r = await uploadMedia(file, 'welcome')
+    if (r) setWelcome(w => patchWelcome(w, { mediaUrl: r.url, mediaType: r.mediaType }))
   }
 
   // Picture Choice: upload an image for a single option (parallel optionImages array).
@@ -349,10 +433,21 @@ export default function FormBuilder() {
     setMediaUploading('')
   }
 
-  const deleteQuestion = (id: string) => {
+  const deleteQuestion = async (id: string) => {
+    const refs = findReferences(logicForm, id).length
+    if (refs > 0 && !(await confirmDialog({
+      title: 'Delete question?',
+      message: `${refs} logic rule${refs === 1 ? ' uses' : 's use'} this question. ${refs === 1 ? 'It' : 'They'} will stop working until you fix ${refs === 1 ? 'it' : 'them'}.`,
+      confirmLabel: 'Delete',
+      tone: 'danger',
+    }))) return
     setQuestions(prev => prev.filter(q => q.id !== id))
-    if (selectedQ === id) setSelectedQ(null)
+    setSelectedQ(s => (s === id ? null : s))
   }
+
+  // Renaming an option keeps the logic rules (and exclusive settings) that use it.
+  const renameQuestionOption = (qid: string, index: number, label: string) =>
+    setQuestions(prev => renameOption(prev, qid, index, label))
 
   const reorder = (fromIdx: number, toIdx: number) => {
     const next = [...questions]
@@ -366,6 +461,12 @@ export default function FormBuilder() {
   const selected = questions.find(q => q.id === selectedQ)
   // On wide screens Colvy AI takes the settings column, so the preview stays in view.
   const aiDocked = aiOpen && isWide
+  // Collapse is desktop only; a docked Colvy AI keeps its column while open.
+  const leftHidden = !isMobile && leftCollapsed
+  const rightHidden = !isMobile && rightCollapsed && !aiDocked
+  const pvQ = questions[previewStep] as Question | undefined
+  const pvOther = pvQ && OTHER_OPTION_TYPES.includes(pvQ.type) ? otherChoiceLabel(pvQ) : null
+  const pvMulti = isMultiSelect(pvQ)
 
   return (
     <div style={{ ['--ff' as any]: themeColor, display: 'flex', flexDirection: 'column', height: 'calc(100vh - 56px)' }}>
@@ -419,49 +520,88 @@ export default function FormBuilder() {
         .fb-pv-choice:hover .fb-pv-x { opacity: 1; }
         .fb-pv-x:hover { color: #dc2626; }
         @media (hover: none) { .fb-pv-x { opacity: 1; } }
+        .fb-icon-btn:focus-visible, .fb-tip:focus-visible, .fb-toggle:focus-visible { outline: 2px solid var(--ff); outline-offset: 2px; }
+        .fb-toggle { position: relative; width: 38px; height: 21px; border-radius: 999px; border: none; cursor: pointer; flex-shrink: 0; padding: 0; transition: background .15s; }
+        .fb-toggle span { position: absolute; top: 3px; width: 15px; height: 15px; border-radius: 50%; background: #fff; transition: left .15s; }
+        .fb-set-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+        .fb-tip { position: relative; width: 16px; height: 16px; border-radius: 50%; border: 1px solid var(--border); background: #fff; color: var(--slate); font-size: 10.5px; font-weight: 700; line-height: 1; padding: 0; cursor: help; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+        .fb-tip[data-tip]::after { content: attr(data-tip); position: absolute; z-index: 30; left: 50%; top: calc(100% + 8px); transform: translateX(-50%) translateY(-4px); width: 220px; padding: 8px 10px; border-radius: 8px; background: #18181b; color: #fff; font-size: 11.5px; font-weight: 500; line-height: 1.45; text-align: left; white-space: normal; pointer-events: none; opacity: 0; visibility: hidden; transition: opacity .12s, transform .12s; }
+        .fb-tip[data-tip]:hover::after, .fb-tip[data-tip]:focus-visible::after { opacity: 1; visibility: visible; transform: translateX(-50%); }
+        .fb-count { min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: #f1f1f3; color: var(--ink); font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
+        .fb-dot { position: absolute; top: -3px; right: -3px; width: 7px; height: 7px; border-radius: 50%; background: #dc2626; box-shadow: 0 0 0 2px #fff; }
+        .fb-pv-pill { display: inline-flex; align-items: center; gap: 5px; margin-bottom: 10px; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--border); background: #f8f8f9; color: var(--slate); font-size: 11.5px; font-weight: 600; cursor: pointer; }
+        .fb-pv-pill:hover { background: #f1f1f3; color: var(--ink); }
+        .fb-pv-tag { flex-shrink: 0; font-size: 10.5px; font-weight: 700; padding: 2px 7px; border-radius: 999px; color: var(--ff); background: color-mix(in srgb, var(--ff) 12%, #fff); white-space: nowrap; }
+        .fb-pv-other { max-width: 380px; margin: -2px 0 2px 32px; font-size: 14px; padding-bottom: 6px; }
+        .fb-pv-meta { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: #6b6b70; margin: 0; }
         @media (prefers-reduced-motion: reduce) { .fb-row-new, .fb-modal, .fb-modal-bg, .fb-pv-in { animation: none !important; } }
       `}</style>
       {/* Top bar */}
       <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 8 : 12, padding: isMobile ? '8px 12px' : '10px 20px', borderBottom: '1px solid var(--border)', background: '#fff', flexShrink: 0, flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
-        <Link href="/admin/forms" style={{ color: 'var(--slate)', display: 'flex' }}>
+        <Link href="/admin/forms" aria-label="Back to forms" style={{ color: 'var(--slate)', display: 'flex', flexShrink: 0 }}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
         </Link>
+        {!isMobile && (
+          <button type="button" className="fb-icon-btn" onClick={toggleLeft} style={{ flexShrink: 0 }}
+            aria-label={leftCollapsed ? 'Show question list' : 'Hide question list'} title={leftCollapsed ? 'Show question list' : 'Hide question list'}
+            aria-expanded={!leftCollapsed} aria-controls="fb-left">
+            <PanelIcon side="left" />
+          </button>
+        )}
         <input
           value={title}
           onChange={e => setTitle(e.target.value)}
-          style={{ fontSize: isMobile ? 14 : 15, fontWeight: 700, color: 'var(--ink)', border: 'none', outline: 'none', background: 'transparent', minWidth: 0, flex: isMobile ? 1 : 'none', width: isMobile ? undefined : undefined }}
+          aria-label="Form title"
+          // Desktop: sized to the title but allowed to shrink, so the top bar stays on one line.
+          style={{ fontSize: isMobile ? 14 : 15, fontWeight: 700, color: 'var(--ink)', border: 'none', outline: 'none', background: 'transparent', minWidth: isMobile ? 0 : 80, flex: isMobile ? 1 : '0 1 auto', width: isMobile ? undefined : `${Math.min(Math.max(title.length, 8), 40) + 1}ch`, textOverflow: 'ellipsis' }}
         />
         <span style={{ fontSize: 11, color: saving ? '#f59e0b' : isDirty ? '#6b6b70' : '#16a34a', display: 'flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap' }}>
           {saving ? 'Saving...' : isDirty ? (isMobile ? '●' : 'Unsaved changes') : (isMobile ? '✓' : '✓ Saved')}
         </span>
         <button onClick={handleSave} disabled={saving || !isDirty}
-          style={{ padding: '6px 14px', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: (saving || !isDirty) ? 'default' : 'pointer', border: 'none', background: isDirty ? 'var(--coral)' : '#f3f4f6', color: isDirty ? '#fff' : '#9ca3af', opacity: saving ? 0.7 : 1 }}>
+          style={{ padding: '6px 14px', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: (saving || !isDirty) ? 'default' : 'pointer', border: 'none', background: isDirty ? 'var(--coral)' : '#f3f4f6', color: isDirty ? '#fff' : '#9ca3af', opacity: saving ? 0.7 : 1, whiteSpace: 'nowrap', flexShrink: 0 }}>
           {saving ? 'Saving...' : 'Save'}
         </button>
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: isMobile ? 6 : 10, flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
-          <button onClick={() => setAiOpen(true)} aria-label="Open Colvy AI" className="fb-ai-btn"
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: isMobile ? '6px 10px' : '8px 14px', borderRadius: 10, fontSize: isMobile ? 12 : 13, fontWeight: 700, cursor: 'pointer', border: '1px solid #ffd6cc', background: 'linear-gradient(135deg, #fff5f2, #fff0e8)', color: '#e2553f' }}>
-            <AiSpark size={15} />{isMobile ? 'AI' : 'Colvy AI'}
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: isMobile ? 6 : 10, flexWrap: isMobile ? 'wrap' : 'nowrap', flexShrink: 0 }}>
+          <button type="button" className="fb-ghost" onClick={() => setLogicFor(selectedQ ?? null)} disabled={questions.length === 0}
+            aria-label={questions.length === 0 ? 'Logic (add a question first)' : `Logic${totalRules ? `, ${rulesSetText(totalRules)}` : ''}${hasLogicErrors ? ', needs attention' : ''}`}
+            title={questions.length === 0 ? 'Add a question first' : 'Logic: show, hide, skip or score questions'}
+            style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', gap: 6, padding: isMobile ? '6px 10px' : !isRoomy ? '8px 10px' : '8px 14px', borderRadius: 10, fontSize: isMobile ? 12 : 13, fontWeight: 700, cursor: questions.length === 0 ? 'not-allowed' : 'pointer', opacity: questions.length === 0 ? 0.5 : 1, whiteSpace: 'nowrap' }}>
+            <BranchIcon size={15} />
+            {(isMobile || isRoomy) && 'Logic'}
+            {totalRules > 0 && <span className="fb-count">{totalRules}</span>}
+            {hasLogicErrors && <span className="fb-dot" role="img" aria-label="Logic needs attention" />}
+          </button>
+          <button onClick={() => setAiOpen(true)} aria-label="Open Colvy AI" title="Colvy AI" className="fb-ai-btn"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: isMobile ? '6px 10px' : !isRoomy ? '8px 10px' : '8px 14px', borderRadius: 10, fontSize: isMobile ? 12 : 13, fontWeight: 700, cursor: 'pointer', border: '1px solid #ffd6cc', background: 'linear-gradient(135deg, #fff5f2, #fff0e8)', color: '#e2553f', whiteSpace: 'nowrap' }}>
+            <AiSpark size={15} />{isMobile ? 'AI' : isRoomy ? 'Colvy AI' : null}
           </button>
           {!isMobile && (
-            <span style={{ fontSize: 12, padding: '3px 10px', borderRadius: 999, background: isPublished ? '#dcfce7' : '#f3f4f6', color: isPublished ? '#16a34a' : '#6b7280', fontWeight: 600 }}>
+            <span style={{ fontSize: 12, padding: '3px 10px', borderRadius: 999, background: isPublished ? '#dcfce7' : '#f3f4f6', color: isPublished ? '#16a34a' : '#6b7280', fontWeight: 600, whiteSpace: 'nowrap' }}>
               {isPublished ? 'Live' : 'Draft'}
             </span>
           )}
           <button onClick={togglePublish}
-            style={{ padding: isMobile ? '6px 12px' : '8px 16px', borderRadius: 10, fontSize: isMobile ? 12 : 13, fontWeight: 700, cursor: 'pointer', border: 'none', background: isPublished ? '#f3f4f6' : 'var(--coral)', color: isPublished ? '#374151' : '#fff' }}>
+            style={{ padding: isMobile ? '6px 12px' : '8px 16px', borderRadius: 10, fontSize: isMobile ? 12 : 13, fontWeight: 700, cursor: 'pointer', border: 'none', background: isPublished ? '#f3f4f6' : 'var(--coral)', color: isPublished ? '#374151' : '#fff', whiteSpace: 'nowrap' }}>
             {isPublished ? 'Unpublish' : 'Publish'}
           </button>
           {isPublished && (
             <Link href={`/forms/${formId}`} target="_blank"
-              style={{ padding: isMobile ? '6px 12px' : '8px 16px', borderRadius: 10, fontSize: isMobile ? 12 : 13, fontWeight: 600, border: '1px solid var(--border)', color: 'var(--ink)', textDecoration: 'none' }}>
+              style={{ padding: isMobile ? '6px 12px' : '8px 16px', borderRadius: 10, fontSize: isMobile ? 12 : 13, fontWeight: 600, border: '1px solid var(--border)', color: 'var(--ink)', textDecoration: 'none', whiteSpace: 'nowrap' }}>
               View
             </Link>
           )}
           <Link href={`/admin/forms/${formId}/results`}
-            style={{ padding: isMobile ? '6px 12px' : '8px 16px', borderRadius: 10, fontSize: isMobile ? 12 : 13, fontWeight: 600, border: '1px solid var(--border)', color: 'var(--ink)', textDecoration: 'none' }}>
+            style={{ padding: isMobile ? '6px 12px' : '8px 16px', borderRadius: 10, fontSize: isMobile ? 12 : 13, fontWeight: 600, border: '1px solid var(--border)', color: 'var(--ink)', textDecoration: 'none', whiteSpace: 'nowrap' }}>
             Results
           </Link>
+          {!isMobile && (
+            <button type="button" className="fb-icon-btn" onClick={toggleRight} style={{ flexShrink: 0 }}
+              aria-label={rightCollapsed ? 'Show settings' : 'Hide settings'} title={rightCollapsed ? 'Show settings' : 'Hide settings'}
+              aria-expanded={!rightCollapsed} aria-controls="fb-right">
+              <PanelIcon side="right" />
+            </button>
+          )}
         </div>
       </div>
 
@@ -489,9 +629,10 @@ export default function FormBuilder() {
         </div>
       )}
 
-      <div style={{ flex: 1, display: 'grid', gridTemplateColumns: isMobile ? '1fr' : aiDocked ? '280px 1fr 452px' : '280px 1fr 320px', transition: 'grid-template-columns .32s cubic-bezier(.22,1,.36,1)', overflow: 'hidden' }}>
+      <div style={{ flex: 1, display: 'grid', gridTemplateColumns: gridColumns({ isMobile, leftCollapsed: leftHidden, rightCollapsed: rightHidden, aiDocked }), transition: 'grid-template-columns .32s cubic-bezier(.22,1,.36,1)', overflow: 'hidden' }}>
         {/* LEFT: Question list */}
-        <div style={{ borderRight: isMobile ? 'none' : '1px solid var(--border)', overflowY: 'auto', padding: 14, background: '#fff', display: isMobile && mobilePanel !== 'steps' ? 'none' : 'block' }}>
+        <div id="fb-left" inert={leftHidden} aria-hidden={leftHidden || undefined}
+          style={{ borderRight: isMobile || leftHidden ? 'none' : '1px solid var(--border)', overflowY: leftHidden ? 'hidden' : 'auto', overflowX: 'hidden', minWidth: 0, padding: leftHidden ? 0 : 14, opacity: leftHidden ? 0 : 1, transition: 'opacity .15s', background: '#fff', display: isMobile && mobilePanel !== 'steps' ? 'none' : 'block' }}>
           <button type="button" className="fb-add" onClick={() => { setAddQuery(''); setShowAddMenu(true) }}>
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             Add content
@@ -524,6 +665,13 @@ export default function FormBuilder() {
                   <b>{i + 1}</b>
                 </span>
                 <span className="fb-row-title" style={q.title ? undefined : { color: '#a1a1aa' }}>{q.title || 'Untitled question'}</span>
+                {(() => {
+                  const n = countRules(q)
+                  const bad = logicErrors[q.id] > 0
+                  if (!n && !bad) return null
+                  const tip = bad ? 'Logic needs attention' : rulesSetText(n)
+                  return <span role="img" aria-label={tip} title={tip} style={{ display: 'inline-flex', flexShrink: 0, color: bad ? '#dc2626' : 'var(--slate)' }}><BranchIcon size={12} /></span>
+                })()}
                 {q.required && <span aria-label="Required" title="Required" style={{ color: tint.fg, fontWeight: 800, fontSize: 13, flexShrink: 0 }}>*</span>}
                 <button type="button" className="fb-row-x" aria-label="Delete question" title="Delete"
                   onClick={e => { e.stopPropagation(); deleteQuestion(q.id) }}>
@@ -613,19 +761,8 @@ export default function FormBuilder() {
         <div style={{ overflowY: 'auto', background: '#f4f4f5', display: isMobile && mobilePanel !== 'preview' ? 'none' : 'flex', alignItems: isMobile ? 'flex-start' : 'center', justifyContent: 'center', padding: isMobile ? 12 : 32 }}>
           <div style={{ width: '100%', maxWidth: 560, background: '#fff', borderRadius: isMobile ? 14 : 20, boxShadow: '0 8px 32px rgba(0,0,0,0.08)', padding: isMobile ? 20 : 48, minHeight: isMobile ? 280 : 360, display: 'flex', flexDirection: 'column', justifyContent: 'center', marginTop: isMobile ? 8 : 0 }}>
             {previewStep === -1 ? (
-              <div key="pv-welcome" className="fb-pv-in" style={{ textAlign: 'center' }}>
-                <h1 style={{ fontSize: 28, fontWeight: 600, color: '#0d0d0d', marginBottom: 10, lineHeight: 1.25, letterSpacing: '-0.015em' }}>{title}</h1>
-                <textarea className="fb-bare" value={welcomeMessage} onChange={e => setWelcomeMessage(e.target.value)} placeholder="Add a welcome message (optional)"
-                  style={{ fontSize: 16, color: '#4b5563', lineHeight: 1.55, marginBottom: 24, border: 'none', outline: 'none', resize: 'none', width: '100%', background: 'transparent', textAlign: 'center' }} rows={2} />
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
-                  <span className="fb-pv-ok" style={{ fontSize: 17, padding: '10px 22px' }}>Start</span>
-                  <span style={{ fontSize: 12, color: '#6b6b70' }}>press <b style={{ color: '#3f3f46' }}>Enter ↵</b></span>
-                </div>
-                <p style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: '#6b6b70', marginTop: 14 }}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg>
-                  Takes {Math.max(1, Math.round((questions.length * 12) / 60))} minute{Math.max(1, Math.round((questions.length * 12) / 60)) === 1 ? '' : 's'}
-                </p>
-              </div>
+              <WelcomePreview key="pv-welcome" title={title} welcomeMessage={welcomeMessage} onWelcomeMessage={setWelcomeMessage}
+                welcome={welcome} buttonText={resolveWelcome({ welcome }).buttonText} minutes={welcomeMinutes} responseCount={responseCount} />
             ) : previewStep === questions.length ? (
               <div key="pv-thanks" className="fb-pv-in" style={{ textAlign: 'center' }}>
                 <div style={{ width: 56, height: 56, borderRadius: '50%', background: '#dcfce7', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
@@ -651,6 +788,11 @@ export default function FormBuilder() {
                   ) : (
                     <img src={questions[previewStep].mediaUrl} alt="" style={{ width: '100%', borderRadius: 14, marginBottom: 16, maxHeight: 220, objectFit: 'cover' }} />
                   )
+                )}
+                {hasDisplayRules(questions[previewStep]) && (
+                  <button type="button" className="fb-pv-pill" onClick={() => setLogicFor(questions[previewStep].id)} title="Open Logic">
+                    <BranchIcon size={11} />Shown only when its conditions match
+                  </button>
                 )}
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 6 }}>
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 14, fontWeight: 600, color: themeColor, flexShrink: 0 }}>
@@ -709,7 +851,8 @@ export default function FormBuilder() {
                       const isPic = questions[previewStep].type === 'picture_choice'
                       const img = (questions[previewStep].optionImages || [])[oi]
                       return (
-                      <div key={oi} className="fb-pv-choice" style={{ maxWidth: 380 }}>
+                      <Fragment key={oi}>
+                      <div className="fb-pv-choice" style={{ maxWidth: 380 }}>
                         {isPic ? (
                           <label style={{ width: 40, height: 40, borderRadius: 8, flexShrink: 0, cursor: 'pointer', overflow: 'hidden', border: '1px solid #e5e5e5', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f3f4f6', color: '#9ca3af' }}>
                             {img ? <img src={img} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
@@ -721,21 +864,29 @@ export default function FormBuilder() {
                             {questions[previewStep].type === 'ranking' ? oi + 1 : String.fromCharCode(65 + oi)}
                           </span>
                         )}
-                        <input className="fb-bare" value={opt} onChange={e => {
-                          const opts = [...(questions[previewStep].options || [])]
-                          opts[oi] = e.target.value
-                          updateQuestion(questions[previewStep].id, { options: opts })
-                        }} style={{ flex: 1, minWidth: 0, border: 'none', outline: 'none', fontSize: 15, background: 'transparent', color: '#0d0d0d' }} />
+                        <input className="fb-bare" value={opt} aria-label={`Option ${oi + 1}`}
+                          onChange={e => renameQuestionOption(questions[previewStep].id, oi, e.target.value)}
+                          style={{ flex: 1, minWidth: 0, border: 'none', outline: 'none', fontSize: 15, background: 'transparent', color: '#0d0d0d' }} />
+                        {pvMulti && opt && isExclusiveChoice(questions[previewStep], opt) && (
+                          <span className="fb-pv-tag" title="Picking this clears the other answers">Clears others</span>
+                        )}
                         <button onClick={() => {
-                          const opts = (questions[previewStep].options || []).filter((_, idx) => idx !== oi)
-                          const imgs = (questions[previewStep].optionImages || []).filter((_, idx) => idx !== oi)
-                          updateQuestion(questions[previewStep].id, { options: opts, optionImages: imgs })
+                          const qid = questions[previewStep].id
+                          setQuestions(prev => prev.map(x => (x.id === qid ? removeOption(x, oi) : x)))
                         }} className="fb-pv-x" aria-label="Remove option">×</button>
                       </div>
+                      {pvOther !== null && opt === pvOther && (questions[previewStep].options || []).indexOf(opt) === oi && (
+                        <div className="fb-pv-line fb-pv-other" aria-hidden="true">Type your answer</div>
+                      )}
+                      </Fragment>
                       )
                     })}
                     <button onClick={() => {
-                      const opts = [...(questions[previewStep].options || []), `Option ${(questions[previewStep].options || []).length + 1}`]
+                      const cur = questions[previewStep].options || []
+                      const opts = [...cur]
+                      // Keep "Other" last: new options go in above it.
+                      const at = pvOther !== null && cur[cur.length - 1] === pvOther ? cur.length - 1 : cur.length
+                      opts.splice(at, 0, `Option ${cur.length + 1}`)
                       updateQuestion(questions[previewStep].id, { options: opts })
                     }} style={{ fontSize: 13, color: themeColor, background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', fontWeight: 600, padding: '4px 2px', width: 'fit-content' }}>+ Add option</button>
                     {questions[previewStep].type === 'picture_choice' && <p style={{ fontSize: 11.5, color: '#9ca3af' }}>Tap the square to add an image to each option.</p>}
@@ -805,13 +956,14 @@ export default function FormBuilder() {
         </div>
 
         {/* RIGHT: Settings panel */}
-        <div style={{ borderLeft: isMobile ? 'none' : '1px solid var(--border)', overflowY: 'auto', padding: isMobile ? 16 : 20, display: (isMobile && mobilePanel !== 'settings') || aiDocked ? 'none' : 'block' }}>
+        <div id="fb-right" inert={rightHidden} aria-hidden={rightHidden || undefined}
+          style={{ borderLeft: isMobile || rightHidden ? 'none' : '1px solid var(--border)', overflowY: rightHidden ? 'hidden' : 'auto', overflowX: 'hidden', minWidth: 0, padding: rightHidden ? 0 : isMobile ? 16 : 20, opacity: rightHidden ? 0 : 1, transition: 'opacity .15s', display: (isMobile && mobilePanel !== 'settings') || aiDocked ? 'none' : 'block' }}>
           {selected ? (
             <>
               <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)', marginBottom: 16 }}>Question Settings</h3>
               <div style={{ marginBottom: 16 }}>
                 <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--slate)', display: 'block', marginBottom: 6 }}>Type</label>
-                <select value={selected.type} onChange={e => updateQuestion(selected.id, { type: e.target.value as Question['type'], options: e.target.value === 'multiple_choice' ? (selected.options || ['Option 1', 'Option 2']) : undefined })}
+                <select value={selected.type} onChange={e => updateQuestion(selected.id, changeType(selected, e.target.value, WITH_OPTIONS))}
                   style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 13, cursor: 'pointer' }}>
                   {QUESTION_CATEGORIES.map(cat => (
                     <optgroup key={cat.label} label={cat.label}>
@@ -823,10 +975,7 @@ export default function FormBuilder() {
               {selected.type !== 'statement' && (
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
                   <label style={{ fontSize: 13, color: 'var(--ink)', fontWeight: 600 }}>Required</label>
-                  <button onClick={() => updateQuestion(selected.id, { required: !selected.required })}
-                    style={{ width: 38, height: 21, borderRadius: 999, background: selected.required ? themeColor : '#d1d5db', border: 'none', cursor: 'pointer', position: 'relative' }}>
-                    <span style={{ width: 15, height: 15, borderRadius: '50%', background: '#fff', position: 'absolute', top: 3, left: selected.required ? 20 : 3, transition: 'left 0.15s' }} />
-                  </button>
+                  <Toggle on={!!selected.required} onChange={v => updateQuestion(selected.id, { required: v })} label="Required" color={themeColor} />
                 </div>
               )}
               {selected.type === 'multiple_choice' && (
@@ -835,12 +984,11 @@ export default function FormBuilder() {
                     <label style={{ fontSize: 13, color: 'var(--ink)', fontWeight: 600, display: 'block' }}>Multiple selection</label>
                     <span style={{ fontSize: 11.5, color: 'var(--slate)' }}>Let people pick more than one option</span>
                   </div>
-                  <button onClick={() => updateQuestion(selected.id, { multiSelect: !selected.multiSelect })}
-                    style={{ width: 38, height: 21, borderRadius: 999, background: selected.multiSelect ? themeColor : '#d1d5db', border: 'none', cursor: 'pointer', position: 'relative', flexShrink: 0 }}>
-                    <span style={{ width: 15, height: 15, borderRadius: '50%', background: '#fff', position: 'absolute', top: 3, left: selected.multiSelect ? 20 : 3, transition: 'left 0.15s' }} />
-                  </button>
+                  <Toggle on={!!selected.multiSelect} onChange={v => updateQuestion(selected.id, { multiSelect: v })} label="Multiple selection" color={themeColor} />
                 </div>
               )}
+              <ChoiceOptionSettings q={selected} themeColor={themeColor}
+                onChange={next => setQuestions(prev => prev.map(x => (x.id === next.id ? next : x)))} />
 
               <div style={{ marginBottom: 16 }}>
                 <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--slate)', display: 'block', marginBottom: 8 }}>Image or video</label>
@@ -904,7 +1052,7 @@ export default function FormBuilder() {
               )}
 
               {selected.type === 'scheduler' && (() => {
-                const sc = selected.schedule || {}
+                const sc = (selected.schedule || {}) as ScheduleConfig
                 const setSc = (patch: any) => updateQuestion(selected.id, { schedule: { ...sc, ...patch } })
                 const days = sc.days || [1, 2, 3, 4, 5]
                 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
@@ -972,105 +1120,8 @@ export default function FormBuilder() {
                 </div>
               )}
 
-              {/* Conditional Logic */}
-              <div style={{ marginBottom: 16, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
-                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--slate)', display: 'block', marginBottom: 6 }}>Conditional Logic</label>
-                <p style={{ fontSize: 11, color: 'var(--slate)', marginBottom: 10 }}>Show or hide this question based on previous answers</p>
-                {selected.conditional_logic ? (
-                  <div style={{ padding: 12, background: 'var(--canvas)', borderRadius: 8, marginBottom: 10 }}>
-                    <div style={{ marginBottom: 12 }}>
-                      <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--slate)', display: 'block', marginBottom: 6 }}>CONDITION</label>
-                      <select value={selected.conditional_logic.condition} onChange={e => updateQuestion(selected.id, { conditional_logic: { ...selected.conditional_logic, condition: e.target.value as 'show' | 'hide' } })}
-                        style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border)', fontSize: 12, cursor: 'pointer' }}>
-                        <option value="show">Show this question if</option>
-                        <option value="hide">Hide this question if</option>
-                      </select>
-                    </div>
-                    
-                    <div style={{ marginBottom: 12, padding: '10px', background: '#fff', borderRadius: 6, border: '1px solid var(--border)' }}>
-                      <label style={{ fontSize: 10, fontWeight: 700, color: 'var(--slate)', display: 'block', marginBottom: 6 }}>Logic</label>
-                      <div style={{ display: 'flex', gap: 8 }}>
-                        <button onClick={() => updateQuestion(selected.id, { conditional_logic: { ...selected.conditional_logic, logic: 'all' } })}
-                          style={{ flex: 1, padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border)', background: selected.conditional_logic.logic === 'all' ? themeColor : '#fff', color: selected.conditional_logic.logic === 'all' ? '#fff' : 'var(--ink)', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
-                          Match all
-                        </button>
-                        <button onClick={() => updateQuestion(selected.id, { conditional_logic: { ...selected.conditional_logic, logic: 'any' } })}
-                          style={{ flex: 1, padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border)', background: selected.conditional_logic.logic === 'any' ? themeColor : '#fff', color: selected.conditional_logic.logic === 'any' ? '#fff' : 'var(--ink)', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
-                          Match any
-                        </button>
-                      </div>
-                    </div>
-
-                    {selected.conditional_logic.rules.map((rule, ruleIdx) => (
-                      <div key={ruleIdx} style={{ padding: 10, background: '#fff', borderRadius: 6, marginBottom: 8, border: '1px solid var(--border)' }}>
-                        <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
-                          <select value={rule.questionId} onChange={e => {
-                            const newRules = [...selected.conditional_logic!.rules]
-                            newRules[ruleIdx] = { ...rule, questionId: e.target.value }
-                            updateQuestion(selected.id, { conditional_logic: { ...selected.conditional_logic!, rules: newRules } })
-                          }}
-                            style={{ flex: 1, fontSize: 11, padding: '4px 6px', borderRadius: 4, border: '1px solid var(--border)', cursor: 'pointer' }}>
-                            <option value="">Select question...</option>
-                            {questions.map(q => q.id !== selected.id && <option key={q.id} value={q.id}>{q.title || 'Untitled'}</option>)}
-                          </select>
-                          <button onClick={() => {
-                            const newRules = selected.conditional_logic!.rules.filter((_, i) => i !== ruleIdx)
-                            updateQuestion(selected.id, { conditional_logic: { ...selected.conditional_logic!, rules: newRules } })
-                          }}
-                            style={{ padding: '4px 8px', borderRadius: 4, border: '1px solid #fee2e2', background: '#fff', cursor: 'pointer', color: '#dc2626' }}>
-                            ×
-                          </button>
-                        </div>
-                        {rule.questionId && (
-                          <div style={{ display: 'flex', gap: 6 }}>
-                            <select value={rule.operator} onChange={e => {
-                              const newRules = [...selected.conditional_logic!.rules]
-                              newRules[ruleIdx] = { ...rule, operator: e.target.value as 'equals' | 'contains' | 'is_empty' }
-                              updateQuestion(selected.id, { conditional_logic: { ...selected.conditional_logic!, rules: newRules } })
-                            }}
-                              style={{ flex: 1, fontSize: 11, padding: '4px 6px', borderRadius: 4, border: '1px solid var(--border)', cursor: 'pointer' }}>
-                              <option value="equals">equals</option>
-                              <option value="contains">contains</option>
-                              <option value="is_empty">is empty</option>
-                            </select>
-                            {rule.operator !== 'is_empty' && (
-                              <input value={rule.value} onChange={e => {
-                                const newRules = [...selected.conditional_logic!.rules]
-                                newRules[ruleIdx] = { ...rule, value: e.target.value }
-                                updateQuestion(selected.id, { conditional_logic: { ...selected.conditional_logic!, rules: newRules } })
-                              }}
-                                placeholder="value"
-                                style={{ flex: 1, fontSize: 11, padding: '4px 6px', borderRadius: 4, border: '1px solid var(--border)' }} />
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                    
-                    <button onClick={() => {
-                      updateQuestion(selected.id, { 
-                        conditional_logic: { 
-                          ...selected.conditional_logic!, 
-                          rules: [...selected.conditional_logic!.rules, { questionId: '', operator: 'equals', value: '' }] 
-                        } 
-                      })
-                    }}
-                      className="fb-ghost" style={{ width: '100%', padding: '6px 10px', borderRadius: 6, fontSize: 11, cursor: 'pointer', marginBottom: 10, fontWeight: 600 }}>
-                      + Add rule
-                    </button>
-
-                    <button onClick={() => updateQuestion(selected.id, { conditional_logic: undefined })}
-                      style={{ width: '100%', padding: '6px 12px', borderRadius: 6, background: '#fef2f2', border: '1px solid #fee2e2', fontSize: 11, color: '#dc2626', cursor: 'pointer', fontWeight: 500 }}>
-                      Remove all conditions
-                    </button>
-                  </div>
-                ) : (
-                  <button onClick={() => updateQuestion(selected.id, { conditional_logic: { condition: 'show', rules: [], logic: 'all' } })}
-                    className="fb-ghost" style={{ width: '100%', padding: '8px 12px', borderRadius: 8, fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>
-                    + Add condition
-                  </button>
-                )}
-              </div>
+              {/* Logic: edited in the Logic window (components/FormLogicModal) */}
+              <LogicRow count={countRules(selected)} errors={logicErrors[selected.id] || 0} onOpen={() => setLogicFor(selected.id)} />
             </>
           ) : previewStep === questions.length ? (
             <>
@@ -1128,33 +1179,41 @@ export default function FormBuilder() {
             </>
           ) : (
             <>
+              {previewStep === -1 && (
+                <>
+                  <WelcomeSettingsPanel welcome={welcome} themeColor={themeColor}
+                    onPatch={patch => setWelcome(w => patchWelcome(w, patch))}
+                    uploading={mediaUploading === 'welcome'} onUpload={uploadWelcomeMedia} />
+                  <div style={{ borderTop: '1px solid var(--border)', margin: '4px 0 18px' }} />
+                </>
+              )}
               <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)', marginBottom: 16 }}>Form Design</h3>
-              
+
               <div style={{ marginBottom: 16 }}>
                 <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--slate)', display: 'block', marginBottom: 8 }}>Display style</label>
                 <div style={{ display: 'flex', gap: 8 }}>
-                  <button onClick={() => saveDisplayStyle('list')}
+                  <button type="button" aria-pressed={listMode} onClick={() => saveDisplayStyle('list')}
                     style={{
                       flex: 1,
                       padding: '8px 12px',
                       borderRadius: 8,
-                      border: form?.display_style === 'list' ? `2px solid ${themeColor}` : '1px solid var(--border)',
-                      background: form?.display_style === 'list' ? `${themeColor}11` : '#fff',
-                      color: form?.display_style === 'list' ? themeColor : 'var(--ink)',
+                      border: listMode ? `2px solid ${themeColor}` : '1px solid var(--border)',
+                      background: listMode ? `${themeColor}11` : '#fff',
+                      color: listMode ? themeColor : 'var(--ink)',
                       fontSize: 12,
                       fontWeight: 600,
                       cursor: 'pointer',
                     }}>
                     List view
                   </button>
-                  <button onClick={() => saveDisplayStyle('typeform')}
+                  <button type="button" aria-pressed={!listMode} onClick={() => saveDisplayStyle('typeform')}
                     style={{
                       flex: 1,
                       padding: '8px 12px',
                       borderRadius: 8,
-                      border: form?.display_style === 'typeform' ? `2px solid ${themeColor}` : '1px solid var(--border)',
-                      background: form?.display_style === 'typeform' ? `${themeColor}11` : '#fff',
-                      color: form?.display_style === 'typeform' ? themeColor : 'var(--ink)',
+                      border: !listMode ? `2px solid ${themeColor}` : '1px solid var(--border)',
+                      background: !listMode ? `${themeColor}11` : '#fff',
+                      color: !listMode ? themeColor : 'var(--ink)',
                       fontSize: 12,
                       fontWeight: 600,
                       cursor: 'pointer',
@@ -1178,10 +1237,7 @@ export default function FormBuilder() {
                   <label style={{ fontSize: 13, color: 'var(--ink)', fontWeight: 600, display: 'block' }}>Confetti on submit</label>
                   <span style={{ fontSize: 11, color: 'var(--slate)' }}>Celebrate when someone finishes the form</span>
                 </div>
-                <button onClick={() => setShowConfetti(!showConfetti)}
-                  style={{ width: 38, height: 21, borderRadius: 999, background: showConfetti ? themeColor : '#d1d5db', border: 'none', cursor: 'pointer', position: 'relative', flexShrink: 0, marginLeft: 12 }}>
-                  <span style={{ width: 15, height: 15, borderRadius: '50%', background: '#fff', position: 'absolute', top: 3, left: showConfetti ? 20 : 3, transition: 'left 0.15s' }} />
-                </button>
+                <span style={{ marginLeft: 12, display: 'flex' }}><Toggle on={showConfetti} onChange={setShowConfetti} label="Confetti on submit" color={themeColor} /></span>
               </div>
               <div style={{ padding: 14, borderRadius: 12, background: '#fafafa', fontSize: 12, color: 'var(--slate)', lineHeight: 1.6 }}>
                 Select a question on the left to edit its settings, or click "Welcome screen" / "Thank you screen" to edit those messages.
@@ -1197,6 +1253,23 @@ export default function FormBuilder() {
         formId={formId}
         current={{ title, welcomeMessage, thankYouMessage, questions }}
         apply={applySnapshot}
+      />
+
+      <FormLogicModal
+        open={logicFor !== false}
+        questions={questions}
+        variables={variables}
+        initialQuestionId={logicFor || null}
+        themeColor={themeColor}
+        renderTypeBadge={(q, n) => (
+          <span className="fb-badge" style={{ background: tintOf(q.type).bg, color: tintOf(q.type).fg }}>
+            <TypeIcon type={QUESTION_TYPES.find(t => t.type === q.type)?.icon || 'text'} size={13} /><b>{n}</b>
+          </span>
+        )}
+        typeLabel={t => QUESTION_TYPES.find(x => x.type === t)?.label || t}
+        typeTint={tintOf}
+        onClose={() => setLogicFor(false)}
+        onSave={({ questions: qs, variables: vs }) => { setQuestions(qs); setVariables(vs); setLogicFor(false) }}
       />
     </div>
   )

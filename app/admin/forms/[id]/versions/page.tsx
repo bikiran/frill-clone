@@ -6,6 +6,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
 import { confirmDialog } from '@/components/ConfirmDialog'
+import { countAllRules, readFormLogic } from '@/lib/form-logic'
 
 export default function FormVersionsPage() {
   const params = useParams()
@@ -49,21 +50,27 @@ export default function FormVersionsPage() {
   }
 
   const handleRollback = async (versionId: string, versionNumber: number) => {
-    if (!await confirmDialog(`Rollback to version ${versionNumber}? Current form will be replaced.`)) return
+    if (!await confirmDialog(`Roll back to version ${versionNumber}? The current form will be replaced.`)) return
 
     setRolling(true)
     try {
       const version = versions.find(v => v.id === versionId)
       if (!version) throw new Error('Version not found')
+      // The snapshot's theme carries the welcome settings and logic variables,
+      // so restore it exactly. An old snapshot without a theme (or questions)
+      // keeps the current one instead of wiping the colour and every question.
+      const theme = version.theme && typeof version.theme === 'object' ? version.theme : form.theme
+      const questions = Array.isArray(version.questions) ? version.questions : form.questions
 
       // Update form with version data
       const { error } = await (supabase as any)
         .from('forms')
         .update({
           title: version.title,
-          description: version.description,
-          questions: version.questions,
-          theme: version.theme,
+          // forms has no description column on every database; only send it where it exists.
+          ...('description' in (form || {}) ? { description: version.description } : {}),
+          questions,
+          theme,
           updated_at: new Date().toISOString(),
         })
         .eq('id', formId)
@@ -78,14 +85,14 @@ export default function FormVersionsPage() {
           formId,
           title: version.title,
           description: version.description,
-          questions: version.questions,
-          theme: version.theme,
+          questions,
+          theme,
         }),
       })
 
       // Reload data
       await loadData()
-      alert(`✅ Rolled back to version ${versionNumber}`)
+      alert(`Rolled back to version ${versionNumber}`)
     } catch (error: any) {
       alert('Rollback failed: ' + error.message)
     } finally {
@@ -134,6 +141,14 @@ export default function FormVersionsPage() {
                     <p className="text-sm" style={{ color: 'var(--slate)' }}>
                       {new Date(version.created_at).toLocaleString()} • {version.questions?.length || 0} questions
                     </p>
+                    {(() => {
+                      const rules = countAllRules(readFormLogic(version))
+                      return rules > 0 ? (
+                        <p className="text-xs mt-1" style={{ color: 'var(--slate)', opacity: 0.8 }}>
+                          {rules} logic rule{rules === 1 ? '' : 's'}
+                        </p>
+                      ) : null
+                    })()}
                   </div>
                   {idx > 0 && (
                     <button
@@ -146,7 +161,7 @@ export default function FormVersionsPage() {
                         background: rolling ? 'var(--canvas)' : '#fff',
                         opacity: rolling ? 0.6 : 1,
                       }}>
-                      {rolling ? '⏳ Rolling back...' : '↩️ Rollback'}
+                      {rolling ? 'Rolling back…' : 'Roll back'}
                     </button>
                   )}
                 </div>
