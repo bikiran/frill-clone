@@ -2,7 +2,7 @@ import { isInternalCall } from '@/lib/internal-call'
 import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { resolveSmsSender } from '@/lib/sms-provider'
+import { resolveAutomatedSmsSender } from '@/lib/sms-consent'
 import { companyFlagEnabled } from '@/lib/feature-flags'
 import { shortenUrl } from '@/lib/short-link'
 import { recordLinkClick } from '@/lib/link-click'
@@ -70,6 +70,8 @@ export async function POST(req: NextRequest) {
     // Why it wasn't texted, when it should have been — so the app can say so
     // instead of showing a link the customer never received.
     let smsError: string | null = null
+    // Not texted because the number being texted (or the contact) opted out.
+    let optedOut = false
     // The channel the caller asked for. An email, Messenger or Instagram link is
     // sent by the caller on that channel, so it isn't texted here as well (the
     // customer got it twice).
@@ -101,14 +103,17 @@ export async function POST(req: NextRequest) {
         // media-link SMS is disabled for this company.
         const smsAllowed = await companyFlagEnabled(db, companyId, 'media_sms_fallback')
         if (to && conv?.sms_enabled !== false && smsAllowed && !byOtherChannel) {
-          const sender = await resolveSmsSender(db, companyId)
+          // The opt-out guard checks the number actually texted — the thread's
+          // number can be someone else's than the sender's — and the contact.
+          const sender = await resolveAutomatedSmsSender(db, companyId, { contactId: contactId || conv?.contact_id || null })
           if (sender) { await sender.send({ to, text: smsText }); texted = true }
           else smsError = 'No SMS number is set up for this workspace.'
         } else if (!to) {
           console.warn('[media-requests] no SMS recipient resolved for conversation', conversationId)
         }
       } catch (e: any) {
-        console.error('[media-requests] sms send failed', e?.message || e)
+        if (e?.name === 'SmsOptOutError') optedOut = true
+        else console.error('[media-requests] sms send failed', e?.message || e)
         smsError = e?.message || 'The text didn’t send.'
       }
 
@@ -135,7 +140,7 @@ export async function POST(req: NextRequest) {
       await db.from('conversations').update({ last_message: 'Requested media upload', last_message_at: new Date().toISOString() }).eq('id', conversationId)
     }
 
-    return NextResponse.json({ ok: true, token, link, texted, smsError })
+    return NextResponse.json({ ok: true, token, link, texted, smsError, optedOut })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }

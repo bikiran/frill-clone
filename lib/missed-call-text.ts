@@ -23,11 +23,11 @@ import { after } from 'next/server'
 import { callOutcome } from '@/lib/dashboard-time'
 import { phoneKey, toE164 } from '@/lib/phone'
 import { businessNumbers } from '@/lib/business-numbers'
-import { resolveSmsSender, isLandlineRejection } from '@/lib/sms-provider'
+import { isLandlineRejection } from '@/lib/sms-provider'
 import { isExternalSendBlocked } from '@/lib/demo-guard'
 import { loadBusinessHours, hoursOutlook } from '@/lib/business-hours'
 import { log } from '@/lib/log'
-import { textOptOut, smsKeywordTimes, isTextedOptIn } from '@/lib/sms-consent'
+import { textOptOut, smsKeywordTimes, isTextedOptIn, resolveAutomatedSmsSender } from '@/lib/sms-consent'
 import {
   missedCallTextSettings, renderMissedCallText, textableCaller, canTextFrom,
   MISSED_CALL_TEXT_HOURS, type CallerSkip,
@@ -231,7 +231,8 @@ export async function sendMissedCallText(p: { db: any; companyId: string; callId
     if (claim === 'error') return 'failed'
     const claimed = claim === 'claimed'
 
-    const sender = await resolveSmsSender(db, companyId)
+    // Every send checks the number it goes to against opt-outs (lib/sms-consent).
+    const sender = await resolveAutomatedSmsSender(db, companyId, { contactId: call.contact_id || null })
     if (!sender) { if (claimed) await releaseClaim(db, companyId, to, callId); return 'no_sms' }
 
     const text = renderMissedCallText(settings.message, co?.name || '')

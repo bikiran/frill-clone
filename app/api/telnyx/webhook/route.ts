@@ -1,6 +1,6 @@
 import { telnyxSignatureOk } from '@/lib/telnyx-signature'
 import { queueMediaUploadReply } from '@/lib/media-upload-reply'
-import { smsKeyword, STOP_WORDS, START_WORDS, recordSmsKeyword, textOptOut } from '@/lib/sms-consent'
+import { smsKeyword, STOP_WORDS, START_WORDS, recordSmsKeyword, textOptOut, assertMayText } from '@/lib/sms-consent'
 import { internalHeaders } from '@/lib/internal-call'
 import { NextRequest, NextResponse } from 'next/server'
 import { log } from '@/lib/log'
@@ -229,11 +229,12 @@ export async function POST(req: NextRequest) {
           if (contactConv) {
             conv = contactConv
             // Stamp the number on the thread so the fast path catches the next
-            // reply without needing this lookup at all.
+            // reply without needing this lookup at all. A STOP doesn't switch
+            // texting on, here or below.
             if (!contactConv.sms_number) {
               try {
                 await db.from('conversations')
-                  .update({ sms_number: from, sms_enabled: true, channel_number: to })
+                  .update({ sms_number: from, ...(optingOut ? {} : { sms_enabled: true }), channel_number: to })
                   .eq('id', contactConv.id)
               } catch { /* not fatal */ }
             }
@@ -256,7 +257,7 @@ export async function POST(req: NextRequest) {
           // Show who it is when we recognise the number, rather than a bare "+61…".
           subject: matchedContactName || from,
           sms_number: from,
-          sms_enabled: true,
+          sms_enabled: !optingOut,
           channel_number: to,
           contact_id: matchedContactId,
           status: 'open',
@@ -266,8 +267,8 @@ export async function POST(req: NextRequest) {
           last_message_at: new Date().toISOString(),
         }).select().maybeSingle()
         conv = newConv
-        // Auto-reply for brand-new SMS conversations
-        if (newConv) {
+        // Auto-reply for brand-new SMS conversations (not one that opened with a STOP)
+        if (newConv && !optingOut) {
           try {
             const origin = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
             fetch(`${origin}/api/inbox/auto-reply`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ conversationId: newConv.id }) })
@@ -278,7 +279,7 @@ export async function POST(req: NextRequest) {
         // number (so future replies fast-path match) and the contact link.
         await db.from('conversations').update({
           sms_number: conv.sms_number || from,
-          sms_enabled: true,
+          ...(optingOut ? {} : { sms_enabled: true }),
           channel_number: conv.channel_number || to,
           ...(matchedContactId && !conv.contact_id ? { contact_id: matchedContactId } : {}),
         }).eq('id', conv.id)
@@ -366,8 +367,9 @@ export async function POST(req: NextRequest) {
 
         // Answer common questions automatically — and TEXT the answer back, so
         // an SMS customer actually receives it (not just the chat thread).
+        // Never in answer to a STOP, and only to a number that may be texted.
         let keywordAnswered = false
-        if (!bookingHandled) try {
+        if (!bookingHandled && !optingOut) try {
           const { data: integ } = await db.from('telnyx_integrations')
             .select('api_key, phone_number, messaging_profile_id')
             .eq('company_id', companyId).maybeSingle()
@@ -376,6 +378,7 @@ export async function POST(req: NextRequest) {
             conversationId: conv.id, text, companyId, channel: 'sms',
             deliver: async (reply) => {
               if (!integ?.api_key || !integ.phone_number) return
+              await assertMayText(db, companyId, from, conv.contact_id || matchedContactId || null)
               const svc = new TelnyxService(integ.api_key)
               await svc.sendSMS({
                 from: integ.phone_number,
@@ -389,7 +392,8 @@ export async function POST(req: NextRequest) {
 
         // Nothing canned answered it → Colvy AI (only if switched on for SMS;
         // the agent checks). It shows live in the inbox with a countdown.
-        if (!bookingHandled && !keywordAnswered && text) {
+        // Not for a STOP.
+        if (!bookingHandled && !keywordAnswered && !optingOut && text) {
           try { fetch(`${req.nextUrl.origin}/api/ai/reply`, { method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ conversationId: conv.id, companyId }) }) } catch {}
         }
 
@@ -423,11 +427,12 @@ export async function POST(req: NextRequest) {
               })
               const mrData = await mr.json().catch(() => ({}))
               // The request route already texts the link when it can; don't send it twice.
-              if (mr.ok && mrData.link && !mrData.texted) {
+              if (mr.ok && mrData.link && !mrData.texted && !mrData.optedOut) {
                 const { data: integ2 } = await db.from('telnyx_integrations')
                   .select('api_key, phone_number, messaging_profile_id')
                   .eq('company_id', companyId).maybeSingle()
                 if (integ2?.api_key && integ2.phone_number) {
+                  await assertMayText(db, companyId, from, conv.contact_id || matchedContactId || null)
                   const svc = new TelnyxService(integ2.api_key)
                   await svc.sendSMS({
                     from: integ2.phone_number, to: from,

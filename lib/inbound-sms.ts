@@ -3,17 +3,18 @@
 // The Telnyx webhook has always done conversation routing, opt-out handling,
 // keyword auto-replies and the failed-media hint inline. The Twilio webhook
 // needs the exact same behaviour, so it lives here once. Replies go out through
-// resolveSmsSender, so whichever provider owns the company answers on its own
-// carrier — a Twilio company never tries to reply with a Telnyx key.
+// resolveAutomatedSmsSender (resolveSmsSender plus the opt-out guard), so
+// whichever provider owns the company answers on its own carrier — a Twilio
+// company never tries to reply with a Telnyx key. A STOP gets no reply at all.
 
 import { internalHeaders } from '@/lib/internal-call'
 import { notifyCompany } from './notify'
 import { runKeywordReply } from './keyword-reply'
-import { resolveSmsSender } from './sms-provider'
 import { handleBookingSmsReply } from './booking-replies'
 import { emitInboundEvent } from '@/lib/integration-hooks'
 import { queueMediaUploadReply } from '@/lib/media-upload-reply'
-import { smsKeyword, STOP_WORDS, START_WORDS, recordSmsKeyword, textOptOut } from '@/lib/sms-consent'
+import { smsKeyword, STOP_WORDS, START_WORDS, recordSmsKeyword, textOptOut, resolveAutomatedSmsSender } from '@/lib/sms-consent'
+import { findContactByPhone } from '@/lib/contact-capture'
 
 export interface InboundAttachment {
   url: string
@@ -82,10 +83,8 @@ export async function ingestInboundSms(params: {
   let matchedContactId: string | null = conv?.contact_id || null
   let matchedContactName: string | null = null
   if (!conv && fromDigits && fromDigits.length >= 8) {
-    const tail = fromDigits.slice(-9)
-    const { data: contacts } = await db.from('contacts')
-      .select('id, phone, name').eq('company_id', companyId).ilike('phone', `%${tail}%`).limit(10)
-    const contact = (contacts || []).find((c: any) => c.phone && digitsOf(c.phone).endsWith(tail))
+    // However the number was saved ("0412 345 678" too), as the Telnyx webhook does.
+    const contact = await findContactByPhone(db, companyId, from)
     if (contact) {
       matchedContactId = contact.id
       matchedContactName = contact.name || null
@@ -94,8 +93,9 @@ export async function ingestInboundSms(params: {
         .order('last_message_at', { ascending: false }).limit(1).maybeSingle()
       if (contactConv) {
         conv = contactConv
+        // A STOP doesn't switch texting on, here or below.
         if (!contactConv.sms_number) {
-          try { await db.from('conversations').update({ sms_number: from, sms_enabled: true, channel_number: to }).eq('id', contactConv.id) } catch {}
+          try { await db.from('conversations').update({ sms_number: from, ...(optingOut ? {} : { sms_enabled: true }), channel_number: to }).eq('id', contactConv.id) } catch {}
         }
       }
     }
@@ -105,13 +105,13 @@ export async function ingestInboundSms(params: {
     const { data: newConv } = await db.from('conversations').insert({
       company_id: companyId, channel: 'sms',
       subject: matchedContactName || from,
-      sms_number: from, sms_enabled: true, channel_number: to,
+      sms_number: from, sms_enabled: !optingOut, channel_number: to,
       contact_id: matchedContactId, status: 'open',
       is_unread: true, unread_count: 1,
       last_message: summary, last_message_at: new Date().toISOString(),
     }).select().maybeSingle()
     conv = newConv
-    if (newConv) {
+    if (newConv && !optingOut) {
       try {
         fetch(`${origin}/api/inbox/auto-reply`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ conversationId: newConv.id }) })
       } catch {}
@@ -119,7 +119,7 @@ export async function ingestInboundSms(params: {
   } else if (!conv.sms_number || conv.contact_id !== matchedContactId) {
     await db.from('conversations').update({
       sms_number: conv.sms_number || from,
-      sms_enabled: true,
+      ...(optingOut ? {} : { sms_enabled: true }),
       channel_number: conv.channel_number || to,
       ...(matchedContactId && !conv.contact_id ? { contact_id: matchedContactId } : {}),
     }).eq('id', conv.id)
@@ -181,12 +181,13 @@ export async function ingestInboundSms(params: {
   try { bookingHandled = await handleBookingSmsReply({ db, companyId, conversationId: conv.id, from, text, origin }) } catch {}
 
   // Keyword auto-reply — texted back over whichever provider owns this company.
+  // Never in answer to a STOP.
   let keywordAnswered = false
-  if (!bookingHandled) try {
+  if (!bookingHandled && !optingOut) try {
     keywordAnswered = !!(await runKeywordReply({
       conversationId: conv.id, text, companyId, channel: 'sms',
       deliver: async (reply) => {
-        const sender = await resolveSmsSender(db, companyId)
+        const sender = await resolveAutomatedSmsSender(db, companyId, { contactId: conv.contact_id || matchedContactId || null })
         if (sender) await sender.send({ to: from, text: reply })
       },
     }))?.matched
@@ -194,7 +195,8 @@ export async function ingestInboundSms(params: {
 
   // Nothing canned answered it → Colvy AI (only if the business switched AI on
   // for SMS; the agent checks). It shows live in the inbox with a countdown.
-  if (!bookingHandled && !keywordAnswered && text) {
+  // Not for a STOP.
+  if (!bookingHandled && !keywordAnswered && !optingOut && text) {
     try { fetch(`${origin}/api/ai/reply`, { method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ conversationId: conv.id, companyId }) }) } catch {}
   }
 
@@ -226,8 +228,8 @@ export async function ingestInboundSms(params: {
         })
         const mrData = await mr.json().catch(() => ({}))
         // The request route already texts the link when it can; don't send it twice.
-        if (mr.ok && mrData.link && !mrData.texted) {
-          const sender = await resolveSmsSender(db, companyId)
+        if (mr.ok && mrData.link && !mrData.texted && !mrData.optedOut) {
+          const sender = await resolveAutomatedSmsSender(db, companyId, { contactId: conv.contact_id || matchedContactId || null })
           if (sender) await sender.send({ to: from, text: `It looks like you tried to send a photo — please upload it here: ${mrData.link}` })
         }
       }
