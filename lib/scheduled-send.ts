@@ -25,6 +25,22 @@ export async function deliverScheduled(db: any, base: string, sm: any): Promise<
   const channel = String(conv.channel || sm.channel || '').toLowerCase()
   const agentName = sm.sender_name || 'Scheduled'
   try {
+    // An automated text held back overnight (lib/channel-fallback, sending
+    // hours). Its message is already on the thread, so only the text goes out;
+    // the SMS route still checks the customer hasn't opted out since.
+    if (String(sm.channel || '') === 'sms_auto') {
+      let to: string | null = conv.sms_number || null
+      if (conv.contact_id) {
+        const { data: ct } = await db.from('contacts').select('phone').eq('id', conv.contact_id).maybeSingle()
+        to = to || ct?.phone || null
+      }
+      if (!to) return { ok: false, error: 'no phone number on this conversation' }
+      const r = await fetch(`${base}/api/telnyx/sms/send`, {
+        method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ companyId: conv.company_id, conversationId: conv.id, to, text: content, skipChatMessage: true }),
+      })
+      return r.ok ? { ok: true } : { ok: false, error: (await r.json().catch(() => ({})))?.error || `sms ${r.status}` }
+    }
     if (channel === 'instagram' || channel === 'facebook') {
       const r = await fetch(`${base}/api/meta/send`, {
         method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),

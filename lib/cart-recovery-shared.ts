@@ -10,6 +10,8 @@ export type CartRecoverySettings = {
   message: string
   timezone: string
   enabled_at: string | null
+  /** How it's sent: 'auto' follows the shared rule (lib/channel-choice). */
+  channel: 'auto' | 'sms' | 'email'
 }
 
 export function resolveCartRecovery(raw: any): CartRecoverySettings {
@@ -21,6 +23,7 @@ export function resolveCartRecovery(raw: any): CartRecoverySettings {
     message: typeof r.message === 'string' && r.message.trim() ? r.message : DEFAULT_CART_MESSAGE,
     timezone: typeof r.timezone === 'string' && r.timezone ? r.timezone : 'Australia/Melbourne',
     enabled_at: typeof r.enabled_at === 'string' ? r.enabled_at : null,
+    channel: r.channel === 'sms' || r.channel === 'email' ? r.channel : 'auto',
   }
 }
 

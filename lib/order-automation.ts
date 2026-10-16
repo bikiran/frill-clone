@@ -314,7 +314,11 @@ export async function runOrderAutomation(db: any, companyId: string, o: NormalOr
       const delivery = await deliverAutomatedMessage({
         companyId, conversationId: conv.id, text: body,
         phone: phone || contact?.phone || null, email,
-        preferChannel: (!email || conv?.channel === 'sms') ? 'sms' : 'email',
+        // The shared rule (lib/channel-choice), or the page's SMS/email setting.
+        preferChannel: 'auto',
+        channelSetting: cfg.channel === 'sms' || cfg.channel === 'email' ? cfg.channel : 'auto',
+        threadMessageId: autoMsg?.id || null,
+        newCustomerDefault: 'email', sendingHours: true,
         senderName: businessName, subject: `Update on your order #${o.number}`,
         origin: process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com',
         force: !!(cfg.also_sms || cfg.also_email), db,

@@ -65,7 +65,11 @@ export default function SlotPicker({ accent = '#ff7a6b', businessTz, fetchSlots,
     const from = ymd(new Date(first.getTime() - 86400000))
     const to = ymd(new Date(last.getTime() + 86400000))
     setLoading(true); setError('')
-    fetchSlots(from < today ? today : from, to)
+    // `today` is the visitor's date; the server reads dates in the business's
+    // timezone and drops what's already past. A visitor ahead of the business
+    // (NZ looking at Perth, say) would otherwise lose the rest of its today.
+    const floor = ymd(new Date(Date.parse(`${today}T00:00:00Z`) - 86400000))
+    fetchSlots(from < floor ? floor : from, to)
       .then(r => {
         if (!live) return
         const list = r.slots || []
@@ -160,7 +164,8 @@ export default function SlotPicker({ accent = '#ff7a6b', businessTz, fetchSlots,
             if (!c) return <div key={`e${i}`} />
             const on = byDay.has(c)
             return (
-              <button key={c} type="button" disabled={!on} onClick={() => pickDay(c)}
+              <button key={c} type="button" disabled={!on} onClick={() => pickDay(c)} aria-pressed={c === day}
+                aria-label={`${new Date(`${c}T12:00:00Z`).toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' })}${on ? `, ${byDay.get(c)!.length} time${byDay.get(c)!.length === 1 ? '' : 's'} free` : ', no times'}`}
                 className={`bk-day${on ? ' on' : ''}${c === day ? ' sel' : ''}${c === today ? ' today' : ''}`}>
                 {Number(c.slice(8))}
               </button>
@@ -172,7 +177,7 @@ export default function SlotPicker({ accent = '#ff7a6b', businessTz, fetchSlots,
           {mine === businessTz
             ? <span>Times in {tzShort(businessTz, zoneAt)}</span>
             : (
-              <select value={tz} onChange={e => setTz(e.target.value)} style={{ border: 'none', background: 'transparent', color: '#374151', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', padding: 0 }}>
+              <select value={tz} onChange={e => setTz(e.target.value)} aria-label="Show times in" style={{ border: 'none', background: 'transparent', color: '#374151', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', padding: 0 }}>
                 <option value={mine}>Your time ({tzShort(mine, zoneAt)})</option>
                 <option value={businessTz}>Business time ({tzShort(businessTz, zoneAt)})</option>
               </select>
@@ -193,7 +198,7 @@ export default function SlotPicker({ accent = '#ff7a6b', businessTz, fetchSlots,
                     <div style={{ fontSize: 11, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 6 }}>{label}</div>
                     <div style={{ display: 'grid', gridTemplateColumns: compact ? 'repeat(auto-fill,minmax(92px,1fr))' : '1fr 1fr', gap: 6 }}>
                       {list.map((s, i) => (
-                        <button key={s.start} type="button" onClick={() => onSelect(s.start)} className={`bk-time bk-tin${selected === s.start ? ' sel' : ''}`} style={{ animationDelay: `${Math.min(14, gi * 3 + i) * 28}ms` }}>
+                        <button key={s.start} type="button" onClick={() => onSelect(s.start)} aria-pressed={selected === s.start} className={`bk-time bk-tin${selected === s.start ? ' sel' : ''}`} style={{ animationDelay: `${Math.min(14, gi * 3 + i) * 28}ms` }}>
                           {timeLabel(Date.parse(s.start), tz)}
                           {s.seatsLeft != null && <span style={{ display: 'block', fontSize: 10.5, fontWeight: 600, opacity: 0.75 }}>{s.seatsLeft} left</span>}
                         </button>

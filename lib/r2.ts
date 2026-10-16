@@ -44,13 +44,14 @@ export function isR2PublicUrl(url: string | null | undefined): boolean {
 }
 
 /** Upload bytes to R2 and return the public URL on the media domain. */
-export async function uploadToR2(key: string, body: Uint8Array | Buffer, contentType: string): Promise<string> {
+export async function uploadToR2(key: string, body: Uint8Array | Buffer, contentType: string, opts: { contentDisposition?: string } = {}): Promise<string> {
   const cleanKey = key.replace(/^\/+/, '')
   await client().send(new PutObjectCommand({
     Bucket: R2_BUCKET(),
     Key: cleanKey,
     Body: body,
     ContentType: contentType || 'application/octet-stream',
+    ...(opts.contentDisposition ? { ContentDisposition: opts.contentDisposition } : {}),
     CacheControl: 'public, max-age=31536000, immutable',
   }))
   return `${R2_DOMAIN()}/${cleanKey}`

@@ -15,24 +15,30 @@ export type InviteEvent = {
 }
 
 const stamp = (ms: number) => new Date(ms).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '')
-const esc = (s: string) => s.replace(/\\/g, '\\\\').replace(/\n/g, '\\n').replace(/([,;])/g, '\\$1')
+const esc = (s: string) => s.replace(/\\/g, '\\\\').replace(/\r\n?|\n/g, '\\n').replace(/([,;])/g, '\\$1')
 
-// RFC 5545 lines must be folded at 75 octets.
-function fold(line: string) {
+// RFC 5545 lines must be folded at 75 octets — octets, not characters: every
+// title has an em dash (3 bytes), and names can have more. A fold never splits
+// a character; each continuation line starts with a space.
+const enc = new TextEncoder()
+export function fold(line: string) {
   const out: string[] = []
-  let rest = line
-  while (rest.length > 74) { out.push(rest.slice(0, 74)); rest = ' ' + rest.slice(74) }
-  out.push(rest)
+  let cur = '', bytes = 0
+  for (const ch of line) {
+    const n = enc.encode(ch).length
+    if (bytes + n > 75) { out.push(cur); cur = ' '; bytes = 1 }
+    cur += ch; bytes += n
+  }
+  out.push(cur)
   return out.join('\r\n')
 }
 
 export function buildIcs(e: InviteEvent): string {
-  const lines = [
-    'BEGIN:VCALENDAR',
-    'VERSION:2.0',
-    'PRODID:-//Colvy//Bookings//EN',
-    'CALSCALE:GREGORIAN',
-    `METHOD:${e.cancelled ? 'CANCEL' : 'PUBLISH'}`,
+  return buildIcsMany([e], !!e.cancelled)
+}
+
+function vevent(e: InviteEvent, cancelled: boolean): string[] {
+  return [
     'BEGIN:VEVENT',
     `UID:${e.uid}@colvy.com`,
     `SEQUENCE:${e.sequence || 0}`,
@@ -43,9 +49,21 @@ export function buildIcs(e: InviteEvent): string {
     e.location ? `LOCATION:${esc(e.location)}` : '',
     e.description ? `DESCRIPTION:${esc(e.description)}` : '',
     e.url ? `URL:${e.url}` : '',
-    `STATUS:${e.cancelled ? 'CANCELLED' : 'CONFIRMED'}`,
-    e.cancelled ? '' : 'BEGIN:VALARM\r\nTRIGGER:-PT1H\r\nACTION:DISPLAY\r\nDESCRIPTION:Reminder\r\nEND:VALARM',
+    `STATUS:${cancelled ? 'CANCELLED' : 'CONFIRMED'}`,
+    cancelled ? '' : 'BEGIN:VALARM\r\nTRIGGER:-PT1H\r\nACTION:DISPLAY\r\nDESCRIPTION:Reminder\r\nEND:VALARM',
     'END:VEVENT',
+  ]
+}
+
+/** Several events in one file: a regular booking's visits, or their cancellation. */
+export function buildIcsMany(events: InviteEvent[], cancelled = false): string {
+  const lines = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//Colvy//Bookings//EN',
+    'CALSCALE:GREGORIAN',
+    `METHOD:${cancelled ? 'CANCEL' : 'PUBLISH'}`,
+    ...events.flatMap(e => vevent(e, cancelled || !!e.cancelled)),
     'END:VCALENDAR',
   ].filter(Boolean)
   return lines.map(l => l.includes('\r\n') ? l : fold(l)).join('\r\n') + '\r\n'

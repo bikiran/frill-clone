@@ -1,121 +1,89 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { StatusMark } from '@/components/StatusMark'
+// The public survey page (/surveys/<id>, and ?embed=1 inside an iframe).
+// Reads and answers through /api/surveys/<id> (lib/engage-server.ts), never
+// the tables directly.
+
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useParams } from 'next/navigation'
-import { supabase } from '@/lib/supabase'
+import { reportEmbedHeight, takeClickRef } from '@/components/engage/publicClient'
+import { PublicShell, PublicSurveyCard, accentFor } from '@/components/engage/PublicViews'
+import type { SurveyView } from '@/lib/engage-server'
+
+const VOTER_KEY = 'colvy_voter'
+const readVoter = () => { try { return localStorage.getItem(VOTER_KEY) || '' } catch { return '' } }
+const keepVoter = (v: unknown) => { if (typeof v === 'string' && v) try { localStorage.setItem(VOTER_KEY, v) } catch {} }
 
 export default function PublicSurveyPage() {
   const params = useParams()
-  const surveyId = params?.id as string
-  const [survey, setSurvey] = useState<any>(null)
-  const [score, setScore] = useState<number | null>(null)
-  const [comment, setComment] = useState('')
-  const [submitted, setSubmitted] = useState(false)
-  const [loading, setLoading] = useState(true)
-  const [submitting, setSubmitting] = useState(false)
+  const surveyId = String(params?.id || '')
+  const [view, setView] = useState<SurveyView | null>(null)
+  const [state, setState] = useState<'loading' | 'ready' | 'missing' | 'error'>('loading')
+  const [embed, setEmbed] = useState(false)
+  const clv = useRef<string | null>(null)
+  const embedRef = useRef(false)
 
-  useEffect(() => {
-    fetchSurvey()
+  const headers = () => {
+    const h: Record<string, string> = { 'Content-Type': 'application/json' }
+    const v = readVoter()
+    if (v) h['x-colvy-voter'] = v
+    return h
+  }
+
+  const load = useCallback(async () => {
+    try {
+      const q = new URLSearchParams()
+      if (clv.current) q.set('clv', clv.current)
+      if (embedRef.current) q.set('embed', '1')
+      const qs = q.toString() ? `?${q}` : ''
+      const res = await fetch(`/api/surveys/${surveyId}${qs}`, { headers: headers(), cache: 'no-store' })
+      const d = await res.json().catch(() => ({}))
+      keepVoter(d?.voter)
+      if (res.status === 404) { setState('missing'); return }
+      if (!res.ok || !d?.survey) { setState('error'); return }
+      setView(d)
+      setState('ready')
+    } catch { setState('error') }
   }, [surveyId])
 
-  const fetchSurvey = async () => {
-    const { data } = await supabase.from('surveys').select('*').eq('id', surveyId).maybeSingle()
-    setSurvey(data)
-    setLoading(false)
-  }
+  useEffect(() => {
+    try { embedRef.current = new URLSearchParams(window.location.search).get('embed') === '1'; setEmbed(embedRef.current) } catch {}
+    clv.current = takeClickRef('survey', surveyId)
+    void load()
+  }, [load])
 
-  const submit = async () => {
-    if (score === null) return
-    setSubmitting(true)
-    const { error } = await supabase.from('survey_responses').insert({
-      survey_id: surveyId,
-      answer: score.toString(),
-      comment: comment.trim() || null,
-    })
-    if (error) {
-      alert('Failed to submit: ' + error.message)
-      setSubmitting(false)
-      return
+  useEffect(() => (embed ? reportEmbedHeight('survey', surveyId) : undefined), [embed, surveyId])
+
+  useEffect(() => { if (view?.survey?.title) document.title = view.survey.title }, [view?.survey?.title])
+
+  const submit = async (body: { score?: number; comment?: string; answers?: Record<string, unknown>; name: string; contact: string }): Promise<string | null> => {
+    try {
+      const res = await fetch(`/api/surveys/${surveyId}/respond`, { method: 'POST', headers: headers(), body: JSON.stringify({ ...body, clv: clv.current, embed: embedRef.current }) })
+      const d = await res.json().catch(() => ({}))
+      keepVoter(d?.voter)
+      if (res.ok) return null
+      if (res.status === 409) { setView(v => (v ? { ...v, answered: true } : v)); return null }
+      return d?.error || 'Couldn’t send your answer. Please try again.'
+    } catch {
+      return 'Couldn’t reach us. Check your connection and try again.'
     }
-    setSubmitted(true)
   }
 
-  if (loading) return <div className="p-8 text-center" style={{ color: 'var(--slate)' }}>Loading survey...</div>
-  if (!survey) return <div className="p-8 text-center">Survey not found.</div>
-  if (!survey.is_active) {
+  if (state === 'loading') return <PublicShell company={null} embed={embed} accent="#ff7a6b"><div className="pv-card"><div className="pv-body"><p className="pv-hint" style={{ margin: 0 }}>Loading survey…</p></div></div></PublicShell>
+  if (state !== 'ready' || !view?.survey) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4">
-        <div className="text-center">
-          <h2 className="text-xl font-bold mb-2" style={{ color: 'var(--ink)' }}>Survey is closed</h2>
-          <p style={{ color: 'var(--slate)' }}>This survey is no longer accepting responses.</p>
-        </div>
-      </div>
+      <PublicShell company={null} embed={embed} accent="#ff7a6b">
+        <div className="pv-card pv-center"><div className="pv-body">
+          <h1 className="pv-q" style={{ textAlign: 'center' }}>{state === 'missing' ? 'Survey not found' : 'Couldn’t load this survey'}</h1>
+          <p className="pv-desc" style={{ textAlign: 'center' }}>{state === 'missing' ? 'It may have been removed, or the link is incomplete.' : 'Please check your connection and try again.'}</p>
+          {state === 'error' && <div className="pv-actions" style={{ justifyContent: 'center' }}><button type="button" className="pv-btn" onClick={() => { setState('loading'); void load() }}>Try again</button></div>}
+        </div></div>
+      </PublicShell>
     )
   }
-  if (submitted) {
-    return (
-      <div className="min-h-screen flex items-center justify-center p-4">
-        <div className="text-center max-w-md">
-          <div className="mb-4"><StatusMark kind="success" size={88} celebrate /></div>
-          <h2 className="text-2xl font-bold mb-2" style={{ color: 'var(--ink)' }}>Thank you!</h2>
-          <p style={{ color: 'var(--slate)' }}>Your feedback has been recorded. We appreciate your time.</p>
-        </div>
-      </div>
-    )
-  }
-
   return (
-    <div className="min-h-screen flex items-center justify-center p-4" style={{ background: 'var(--peach)' }}>
-      <div className="w-full max-w-2xl">
-        <div className="bg-white rounded-2xl shadow-xl p-6 md:p-10">
-          <h1 className="text-xl md:text-2xl font-bold mb-2" style={{ color: 'var(--ink)' }}>{survey.title}</h1>
-          <h2 className="text-base mb-6" style={{ color: 'var(--slate)' }}>{survey.question}</h2>
-
-          {(survey.type === 'nps' || survey.type === 'csat') && (
-            <>
-              <div className="grid grid-cols-11 gap-1 md:gap-2 mb-3">
-                {[0,1,2,3,4,5,6,7,8,9,10].map(n => (
-                  <button
-                    key={n}
-                    onClick={() => setScore(n)}
-                    className="aspect-square rounded-lg border-2 text-sm md:text-base font-bold transition-smooth press-effect cursor-pointer"
-                    style={{
-                      background: score === n ? 'var(--coral)' : 'white',
-                      borderColor: score === n ? 'var(--coral)' : 'var(--border)',
-                      color: score === n ? 'white' : 'var(--ink)',
-                    }}>
-                    {n}
-                  </button>
-                ))}
-              </div>
-              <div className="flex justify-between text-xs mb-6" style={{ color: 'var(--slate)' }}>
-                <span>Least likely</span>
-                <span>Most likely</span>
-              </div>
-            </>
-          )}
-
-          <textarea
-            value={comment}
-            onChange={(e) => setComment(e.target.value)}
-            placeholder="Tell us more (optional)..."
-            rows={4}
-            className="w-full px-4 py-3 rounded-lg border focus:outline-none transition-smooth resize-none mb-4"
-            style={{ borderColor: 'var(--border)', fontSize: '16px' }}
-          />
-
-          <button
-            onClick={submit}
-            disabled={score === null || submitting}
-            className="w-full py-3 rounded-xl font-semibold text-white text-sm transition-smooth press-effect disabled:opacity-50 cursor-pointer"
-            style={{ background: 'var(--coral)' }}>
-            {submitting ? 'Submitting...' : 'Submit Response'}
-          </button>
-
-          <p className="text-xs text-center mt-4" style={{ color: 'var(--slate)' }}>Powered by YourApp</p>
-        </div>
-      </div>
-    </div>
+    <PublicShell company={view.survey.company} embed={embed} accent={accentFor(view.survey.company)}>
+      <PublicSurveyCard key={String(view.answered)} survey={view.survey} answered={view.answered} onSubmit={submit} />
+    </PublicShell>
   )
 }

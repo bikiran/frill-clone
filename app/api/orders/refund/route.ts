@@ -243,12 +243,12 @@ export async function POST(req: NextRequest) {
           .replace(/\{total\}/g, amountStr)
 
         // Post the customer-facing line into the thread (NOT internal).
-        await db.from('messages').insert({
+        const { data: refundMsg } = await db.from('messages').insert({
           conversation_id: conversationId, company_id: companyId,
           sender_type: 'agent', sender_name: businessName, content: body,
           message_type: 'text', is_read: true,
           metadata: { auto: true, order_automation: 'refunded', order_id: shop ? shop.externalId : orderId, agent_refund: true },
-        })
+        }).select('id').maybeSingle()
         await db.from('conversations')
           .update({ last_message: body, last_message_at: new Date().toISOString() })
           .eq('id', conversationId)
@@ -262,6 +262,7 @@ export async function POST(req: NextRequest) {
           email: contact?.email || null,
           senderName: businessName,
           subject: `Update on your order #${orderLabel}`,
+          preferChannel: 'auto', threadMessageId: refundMsg?.id || null, newCustomerDefault: 'email', sendingHours: true,
           origin, db,
         })
 

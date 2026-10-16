@@ -64,6 +64,11 @@ import RefundOrderModal from '@/components/RefundOrderModal'
 import PrextyMark, { PREXTY } from '@/components/PrextyMark'
 import { notifyIntegrations } from '@/lib/integrations-notify'
 import { isOldPhoneVideo } from '@/lib/web-video'
+import { composerSubject } from '@/lib/email-subject'
+import Popover, { useOneOpen } from '@/components/composer/Popover'
+import ReviewRequestButton from '@/components/composer/ReviewRequestButton'
+import { pickReviewChannel, REVIEW_REQUEST_SUBJECT, type ReviewChannel } from '@/lib/review-request'
+import { fillTemplateVars, type TemplateVars } from '@/lib/composer-templates'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Conversation = {
@@ -1542,7 +1547,7 @@ export default function InboxPage() {
     // Replace the trailing "/shortcut" with the saved body.
     setReply(prev => prev.replace(/(?:^|\s)\/[\w-]*$/, (match) => {
       const lead = match.startsWith(' ') ? ' ' : ''
-      return lead + (r.body || '')
+      return lead + fillTemplateVars(r.body || '', templateVars)
     }))
     setShowQuickMenu(false)
   }
@@ -1638,6 +1643,8 @@ export default function InboxPage() {
   // Sends the customer a secure Stripe page to store their card.
   const saveCard = async () => {
     if (!selected || !companyId) return
+    // It messages the customer, so confirm first (no toolbar item sends on one click).
+    if (!await confirmDialog({ title: 'Send a card-save link?', message: 'The customer gets a secure Stripe link to save their card.', confirmLabel: 'Send link', tone: 'primary' })) return
     try {
       const isWidgetActive = outboundChannel === 'widget' || outboundChannel === 'chat'
       const d = await cardsApi({ action: 'save_card', channel: isWidgetActive ? 'chat' : outboundChannel })
@@ -1702,6 +1709,13 @@ export default function InboxPage() {
   const [showTimeline, setShowTimeline] = useState(false)
   const [emailSignature, setEmailSignature] = useState<string | null>(null)
 
+  // The shared channel rule's answer for this thread (/api/inbox/channel-choice,
+  // lib/channel-choice): used when the customer hasn't messaged on it yet, and
+  // for where an email reply comes back to.
+  const [channelPick, setChannelPick] = useState<{ convId: string; channel: string; reason?: string; replyTo?: string | null } | null>(null)
+  // Has the customer written on this thread at all (any channel)?
+  const customerSpoke = useMemo(() => messages.some((m: any) => m && m.sender_type !== 'agent' && m.sender_type !== 'system' && !m.is_internal), [messages])
+
   // Where is this customer ACTUALLY talking, right now? The conversation's
   // stored channel goes stale the moment someone moves from the web widget to
   // SMS, which is why threads kept insisting they were "live chat" (and kept
@@ -1722,13 +1736,18 @@ export default function InboxPage() {
       const dc = String(m.delivery_channel || '').toLowerCase()
       if (dc && dc !== 'chat') return dc
     }
+    // The customer hasn't messaged on this thread (an order or cart thread of
+    // Colvy's own messages): the shared rule decides — their last channel
+    // elsewhere, else SMS when they may be texted, else email. Our own last
+    // outbound channel is not evidence (an order email made every reply email).
+    if (!customerSpoke && channelPick && channelPick.convId === selected?.id && channelPick.channel && channelPick.channel !== 'none') return channelPick.channel
     // Nothing inbound carried one — fall back to any message, then the row.
     for (let i = messages.length - 1; i >= 0; i--) {
       const dc = String((messages[i] as any).delivery_channel || '').toLowerCase()
       if (dc && dc !== 'chat') return dc
     }
     return String((selected as any)?.channel || 'widget').toLowerCase()
-  }, [messages, selected?.id, (selected as any)?.channel])
+  }, [messages, selected?.id, (selected as any)?.channel, channelPick, customerSpoke])
 
   const isWebChat = ['widget', 'chat'].includes(activeChannel)
   // Where a reply or an action (payment link, coupon, form…) actually goes. A
@@ -1753,14 +1772,29 @@ export default function InboxPage() {
   }, [messages])
   useEffect(() => {
     setSmsOptOut(null)
-    if (!selected?.id || outboundChannel !== 'sms') return
+    // Also asked whenever there's a mobile on file (not only on SMS threads),
+    // so the review request names the right channel.
+    const hasMobile = !!((selected as any)?.sms_number || (selected as any)?.phone || contact?.phone)
+    if (!selected?.id || (outboundChannel !== 'sms' && !hasMobile)) return
     let cancelled = false
     authFetch(`/api/inbox/text-optout?conversationId=${encodeURIComponent(selected.id)}`)
       .then(r => r.ok ? r.json() : null)
       .then(d => { if (!cancelled) setSmsOptOut(d?.state || null) })
       .catch(() => {})
     return () => { cancelled = true }
-  }, [selected?.id, outboundChannel, lastInboundId])
+  }, [selected?.id, outboundChannel, lastInboundId, contact?.phone])
+  useEffect(() => {
+    if (!selected?.id) return
+    let cancelled = false
+    const convId = selected.id
+    authFetch(`/api/inbox/channel-choice?conversationId=${encodeURIComponent(convId)}`)
+      .then(r => r.ok ? r.json() : null)
+      // A failed lookup still counts as answered (channel ''), so the composer
+      // falls back to the thread's own channel instead of waiting.
+      .then(d => { if (!cancelled) setChannelPick({ convId, channel: d?.channel || '', reason: d?.reason, replyTo: d?.replyTo || null }) })
+      .catch(() => { if (!cancelled) setChannelPick({ convId, channel: '' }) })
+    return () => { cancelled = true }
+  }, [selected?.id, lastInboundId])
 
   // The name shown in the conversation header. On SMS/phone the "subject" is
   // often a stale auto-detected name (e.g. from an AI guess), so clearing the
@@ -1822,7 +1856,9 @@ export default function InboxPage() {
   // For an email thread, load the sending mailbox so the composer can show the
   // real "From" and append the right signature.
   useEffect(() => {
-    if (!selected || String((selected as any).channel || '').toLowerCase() !== 'email') {
+    // Any thread can be replied to by email (an order thread, or "Use email"),
+    // so the mailbox is loaded for every conversation, not just email ones.
+    if (!selected) {
       setEmailFromLabel(''); setEmailSignature(null); return
     }
     let cancelled = false
@@ -2437,11 +2473,16 @@ export default function InboxPage() {
   // fetch it directly and open it rather than silently doing nothing (which left
   // the top thread showing, i.e. the wrong conversation).
   const deepLinkedRef = useRef<string | null>(null)
+  // The channel a deep link asked for (?channel=sms|email|chat), applied once
+  // its conversation is open (see the reset effect by sendChannel).
+  const pendingSendChannelRef = useRef<string | null>(null)
   useEffect(() => {
     if (selected) return
     if (typeof window === 'undefined') return
     const convId = new URLSearchParams(window.location.search).get('conversation')
     if (!convId || deepLinkedRef.current === convId) return
+    const wantCh = new URLSearchParams(window.location.search).get('channel')
+    pendingSendChannelRef.current = (wantCh === 'sms' || wantCh === 'email' || wantCh === 'chat') ? wantCh : null
     const found = conversations.find(c => c.id === convId)
     if (found) { deepLinkedRef.current = convId; selectConversation(found); return }
     // Not in the current folder — load it on its own and open it.
@@ -2491,6 +2532,10 @@ export default function InboxPage() {
       if (!conv) { deepContactRef.current = null; return }
       conv.contacts = ct
       setConversations(prev => prev.some(c => c.id === conv.id) ? prev : [conv, ...prev])
+      // Applied by the per-conversation reset once this one opens; when it's
+      // already open that effect won't run, so it's set directly and cleared.
+      const already = selectedRef.current?.id === conv.id
+      pendingSendChannelRef.current = !already && (wantCh === 'sms' || wantCh === 'email' || wantCh === 'chat') ? wantCh : null
       selectConversation(conv)
       if (wantCh === 'sms' || wantCh === 'email' || wantCh === 'chat') setSendChannel(wantCh)
       // Strip the params so a refresh doesn't re-open / re-create anything.
@@ -4222,99 +4267,112 @@ export default function InboxPage() {
   }
 
   // ── Review request ─────────────────────────────────────────────────────────
-  const [reviewSending, setReviewSending] = useState(false)
-  const sendReviewRequest = async () => {
-    if (!selected || !companyId || reviewSending) return
-    // They've already left a Google review — check before asking again.
-    if (contactReviews.count > 0 && contactReviews.latest) {
-      const r = contactReviews.latest
-      const when = r.createdAt ? new Date(r.createdAt).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' }) : ''
-      const ok = await confirmDialog({
-        title: 'They’ve already reviewed you',
-        message: `${contact?.name || 'This customer'} left a ${r.rating ? `${r.rating}-star ` : ''}Google review${when ? ` on ${when}` : ''}. Send another review request anyway?`,
-        confirmLabel: 'Send anyway', tone: 'primary',
+  // The star opens "Ask for a review" (components/composer/ReviewRequestButton):
+  // the message to check and edit, the channel it goes by, and an explicit Send
+  // or Insert into reply. It used to send the moment the star was clicked.
+  // Which channel: the conversation's current send channel; a text needs a
+  // mobile and consent (STOP → email instead).
+  // (Functions, read when the toolbar renders: sendChannel is declared further down.)
+  const reviewChannel = (): ReviewChannel => {
+    const c = contact as any
+    const textStop = !!c?.unsubscribed_at && c?.unsubscribe_method === 'sms_keyword'
+    return pickReviewChannel({
+      current: sendChannel !== 'auto' ? sendChannel : outboundChannel,
+      forced: sendChannel !== 'auto',
+      mobile: smsDestination(),
+      email: c?.email || (selected as any)?.customer_email || null,
+      smsOptedOut: smsOptOut === 'opted_out' || textStop,   // STOP: texts only, email is still fine
+      blocked: !!c?.is_blocked,
+      unsubscribed: !!c?.unsubscribed_at && !textStop,      // any other unsubscribe: nothing
+    })
+  }
+  const reviewAlready = (): string | null => {
+    if (!(contactReviews.count > 0 && contactReviews.latest)) return null
+    const r = contactReviews.latest
+    const when = r.createdAt ? new Date(r.createdAt).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' }) : ''
+    return `${contact?.name || 'This customer'} already left a ${r.rating ? `${r.rating}-star ` : ''}Google review${when ? ` on ${when}` : ''}.`
+  }
+  // A branded short link to the business's Google review page, so the
+  // customer gets company.colvy.com/m/xxxx (trustworthy in an SMS) that
+  // redirects to Google. Made only when Send / Insert is clicked.
+  const createReviewLink = async (): Promise<string | null> => {
+    if (!selected || !companyId) return null
+    const res = await authFetch('/api/short-links/create', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ companyId, kind: 'review', conversationId: selected.id }),
+    })
+    const d = await res.json().catch(() => ({}))
+    if (res.ok && d.url) return d.url
+    // 404 = no Google review link set up (say so); anything else is a retry.
+    if (res.status === 404) return null
+    throw new Error(d.error || 'Could not make the review link')
+  }
+  // Delivers the checked message over the chosen channel. Throws on failure so
+  // the popover stays open and shows why.
+  const sendReviewRequest = async (body: string, ch: ReviewChannel) => {
+    if (!selected || !companyId) return
+    const me = myName
+    let delivered = 'chat'
+    if (ch.kind === 'none') throw new Error(ch.note || 'No way to reach this customer')
+    if (ch.kind === 'email') {
+      // The email route inserts the thread message itself — pass the metadata
+      // so it still renders as the review card. Don't also insert below.
+      const r = await authFetch('/api/email/reply', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ conversationId: selected.id, to: ch.to || undefined, content: body, agentName: me, subject: REVIEW_REQUEST_SUBJECT, metadata: { review_request: true } }),
       })
-      if (!ok) return
+      if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(`Not emailed: ${d.error || 'failed'}`) }
+      delivered = 'email'
+    } else if (ch.kind === 'instagram' || ch.kind === 'facebook') {
+      const r = await authFetch('/api/meta/send', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ conversationId: selected.id, content: body, agentName: me, skipChatMessage: true }),
+      })
+      if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(`Not sent: ${d.error || 'failed'}`) }
+      delivered = ch.kind
+    } else if (ch.kind === 'sms') {
+      // checkOptOut: the server refuses a number that replied STOP.
+      const r = await authFetch('/api/telnyx/sms/send', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId, conversationId: selected.id, to: ch.to || smsDestination(), text: body, senderName: me, skipChatMessage: true, checkOptOut: true }),
+      })
+      if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(`The text wasn't sent: ${d.error || 'unknown error'}`) }
+      delivered = 'sms'
     }
-    setReviewSending(true)
+    // else: live-chat widget only — the thread message below IS the delivery.
+
+    // It has gone out. Nothing below may throw: an error here must not read as
+    // a failed send (the agent would send it again).
+    const convId = selected.id
     try {
-      const me = myName
-
-      // Build a branded short link to the business's Google review page, so the
-      // customer gets company.colvy.com/m/xxxx (trustworthy in an SMS) that
-      // redirects to Google. Falls back to a plain message if no review link is
-      // configured yet.
-      let reviewShortLink = ''
-      try {
-        const res = await authFetch('/api/short-links/create', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ companyId, kind: 'review', conversationId: selected.id }),
-        })
-        const d = await res.json()
-        if (res.ok && d.url) reviewShortLink = d.url
-      } catch {}
-
-      const body = reviewShortLink
-        ? `We'd love your feedback! Could you take a moment to leave us a review? ⭐\n${reviewShortLink}`
-        : "We'd love your feedback! Could you take a moment to leave us a review? ⭐"
-
-      // Actually DELIVER it over the channel that reaches the customer — the
-      // same routing the composer uses. The old version only inserted a chat
-      // row (no delivery, no delivery_channel), so on an SMS/email customer it
-      // sent nothing and showed as "Live Chat".
-      const smsNumber = smsDestination()
-      const metaCh = activeChannel
-      let delivered = 'chat'
-
-      if (metaCh === 'email') {
-        // The email route inserts the thread message itself — pass the metadata
-        // so it still renders as the review card. Don't also insert below.
-        const r = await authFetch('/api/email/reply', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ conversationId: selected.id, content: body, agentName: me, subject: "We'd love your feedback ⭐", metadata: { review_request: true } }),
-        })
-        if (!r.ok) { const d = await r.json().catch(() => ({})); showToast(`Review request NOT emailed — ${d.error || 'failed'}`) }
-        delivered = 'email'
-      } else if (metaCh === 'instagram' || metaCh === 'facebook') {
-        try {
-          const r = await authFetch('/api/meta/send', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ conversationId: selected.id, content: body, agentName: me, skipChatMessage: true }),
-          })
-          if (!r.ok) { const d = await r.json().catch(() => ({})); showToast(`Review request NOT sent — ${d.error || 'failed'}`) }
-        } catch { showToast('Review request failed to send.') }
-        delivered = metaCh
-      } else if (smsNumber) {
-        try {
-          const r = await authFetch('/api/telnyx/sms/send', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ companyId, conversationId: selected.id, to: smsNumber, text: body, senderName: me, skipChatMessage: true, checkOptOut: true }),
-          })
-          // Labelled SMS only when it was texted (not after an opt-out or failure).
-          if (!r.ok) { const d = await r.json().catch(() => ({})); showToast(`Review request saved, but the SMS failed: ${d.error || 'unknown error'}`) }
-          else delivered = 'sms'
-        } catch { showToast('Review request saved, but the SMS failed to send.') }
-      }
-      // else: live-chat widget only — the thread message below IS the delivery.
-
       // For every channel except email (which already inserted its own row),
       // record the thread message with the review-card metadata + real channel.
-      if (metaCh !== 'email') {
-        await (supabase as any).from('messages').insert({
-          conversation_id: selected.id, company_id: companyId, sender_type: 'agent',
+      if (ch.kind !== 'email') {
+        const { error } = await (supabase as any).from('messages').insert({
+          conversation_id: convId, company_id: companyId, sender_type: 'agent',
           sender_id: user.id, sender_name: me,
           content: body,
           metadata: { review_request: true },
           delivery_channel: delivered,
         })
+        if (error && ch.kind === 'chat') throw error   // on live chat this row IS the delivery
       }
-      await (supabase as any).from('conversations').update({ review_requested: true, last_message_at: new Date().toISOString() }).eq('id', selected.id)
+      await (supabase as any).from('conversations').update({ review_requested: true, last_message_at: new Date().toISOString() }).eq('id', convId)
       logEvent('review_request', 'Review request sent')
-      await reloadThread(selected.id)
-      scrollBottom()
-    } finally {
-      setReviewSending(false)
+    } catch (e: any) {
+      if (ch.kind === 'chat') throw new Error(e?.message || 'Could not post the review request')
     }
+    showToast(`Review request sent by ${ch.label}`)
+    try { await reloadThread(convId); scrollBottom() } catch {}
+  }
+
+  // Chat composer emoji picker, anchored to its button (shared Popover).
+  const emojiBtnRef = useRef<HTMLButtonElement>(null)
+  const shortenerAnchorRef = useRef<HTMLDivElement>(null)
+  // Merge fields for saved replies: "Hi {first_name}" → "Hi Debra".
+  const templateVars: TemplateVars = {
+    name: contact?.name || null, email: contact?.email || null, phone: contact?.phone || null,
+    company: companyInfo?.name || null, agent_name: myName || null,
   }
 
   // ── AI summary & todos ─────────────────────────────────────────────────────
@@ -4442,11 +4500,12 @@ export default function InboxPage() {
     setPickerItems([])
     if (kind === 'payment') return
     const table = kind === 'poll' ? 'polls' : kind === 'survey' ? 'surveys' : 'forms'
-    let q = (supabase as any).from(table).select('*').order('created_at', { ascending: false }).limit(30)
-    // forms/surveys are company-scoped; polls are global in this schema
-    if (kind !== 'poll' && companyId) q = q.eq('company_id', companyId)
-    const { data } = await q
-    setPickerItems(data || [])
+    // Only this workspace's (polls used to be read across every workspace here).
+    if (!companyId) return
+    const { data } = await (supabase as any).from(table).select('*').eq('company_id', companyId).order('created_at', { ascending: false }).limit(60)
+    // Only live polls and surveys: a draft or closed one can't be answered in the chat.
+    const { statusOf } = await import('@/lib/engage-core')
+    setPickerItems(kind === 'form' ? (data || []).slice(0, 30) : (data || []).filter((r: any) => statusOf(r) === 'live').slice(0, 30))
   }
 
   const generateInvoice = async (payload: any) => {
@@ -4732,7 +4791,18 @@ export default function InboxPage() {
                     </button>
                   </div>
                   <span className="cmp-via">
-                    {internalMode ? 'Only your team sees this' : <>Sending by <b>{({ sms: 'SMS', email: 'email', chat: 'live chat', instagram: 'Instagram', messenger: 'Messenger', whatsapp: 'WhatsApp', call: 'SMS' } as Record<string, string>)[sendChannel !== 'auto' ? sendChannel : outboundChannel] || 'chat'}</b> {sendChannelGlyph(sendChannel !== 'auto' ? sendChannel : outboundChannel, 13)}</>}
+                    {internalMode ? 'Only your team sees this' : channelResolving ? 'Choosing a channel…' : <>Sending by <b>{({ sms: 'SMS', email: 'email', chat: 'live chat', instagram: 'Instagram', messenger: 'Messenger', whatsapp: 'WhatsApp', call: 'SMS' } as Record<string, string>)[sendChannel !== 'auto' ? sendChannel : outboundChannel] || 'chat'}</b> {sendChannelGlyph(sendChannel !== 'auto' ? sendChannel : outboundChannel, 13)}</>}
+                    {/* Both a mobile and an email: one tap to the other. */}
+                    {!internalMode && !channelResolving && (() => {
+                      const cur = sendChannel !== 'auto' ? sendChannel : outboundChannel
+                      const other = cur === 'email' && ((selected as any)?.sms_number || contact?.phone) ? 'sms' : cur === 'sms' && contact?.email ? 'email' : null
+                      return other ? (
+                        <button type="button" onClick={() => setSendChannel(other)} title={channelPick?.reason || undefined}
+                          style={{ marginLeft: 8, background: 'none', border: 'none', padding: 0, color: 'var(--coral)', fontWeight: 700, fontSize: 'inherit', cursor: 'pointer', fontFamily: 'inherit' }}>
+                          Use {other === 'sms' ? 'SMS' : 'email'}
+                        </button>
+                      ) : null
+                    })()}
                   </span>
                 </div>
   )
@@ -4740,39 +4810,39 @@ export default function InboxPage() {
     <>
                   {/* Send poll/survey/form/payment */}
                   <div ref={sendMenuRef} style={{ position: 'relative' }}>
-                    <button type="button" className="cmp-tool" onClick={() => { if (!showSendMenu) loadSavedCards(); setShowSendMenu(v => !v) }} title="Send a payment link, form, poll or request media" aria-label="More actions"
+                    <button type="button" className="cmp-tool" onClick={() => { if (!showSendMenu) loadSavedCards(); setShowSendMenu(v => !v) }} title="Send a payment link, form, poll or request media" aria-label="More actions" aria-haspopup="menu" aria-expanded={showSendMenu}
                       style={toolBtn(showSendMenu)}>
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                     </button>
-                    {showSendMenu && (
-                      <div style={{ position: 'absolute', bottom: '120%', left: 0, width: 200, background: '#fff', borderRadius: 12, border: '1px solid var(--border)', boxShadow: '0 12px 32px rgba(0,0,0,0.12)', zIndex: 50, overflow: 'hidden' }}>
+                    <Popover open={showSendMenu} onClose={() => setShowSendMenu(false)} anchorRef={sendMenuRef} width={220} prefer="top" label="More actions" role="menu" padding={0}>
+                      <div className="cmp-send-menu" style={{ padding: '4px 0' }}>
                         {[['poll', Icon.poll(), 'Send Poll'], ['survey', Icon.survey(), 'Send Survey'], ['form', Icon.form(), 'Send Form']].map(([k, icon, label]: any) => (
-                          <button key={k} type="button" onClick={() => openPicker(k as any)}
+                          <button key={k} type="button" role="menuitem" data-pop-item onClick={() => openPicker(k as any)}
                             style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}><span style={{ color: 'var(--slate)', display: 'inline-flex' }}>{icon}</span>{label}</button>
                         ))}
 
                         <div style={{ borderTop: '1px solid var(--border)' }} />
 
-                        <button type="button" onClick={() => openPicker('payment' as any)}
+                        <button type="button" role="menuitem" data-pop-item onClick={() => openPicker('payment' as any)}
                           style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}>
                           <span style={{ color: 'var(--slate)', display: 'inline-flex' }}>{Icon.payment()}</span>Send Payment Link
                         </button>
 
-                        <button type="button" onClick={() => { setShowSendMenu(false); setShowChargeCard(true); if (!cardsByConv.current.has(selected?.id || '')) loadSavedCards() }}
+                        <button type="button" role="menuitem" data-pop-item onClick={() => { setShowSendMenu(false); setShowChargeCard(true); if (!cardsByConv.current.has(selected?.id || '')) loadSavedCards() }}
                           style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}>
                           <span style={{ color: 'var(--slate)', display: 'inline-flex' }}>
                             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
                           </span>Charge Card
                         </button>
 
-                        <button type="button" onClick={() => { setShowSendMenu(false); openSchedule() }}
+                        <button type="button" role="menuitem" data-pop-item onClick={() => { setShowSendMenu(false); openSchedule() }}
                           style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}>
                           <span style={{ color: 'var(--slate)', display: 'inline-flex' }}>
                             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="3" width="15" height="13" rx="2"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
                           </span>Schedule delivery
                         </button>
 
-                        <button type="button" onClick={() => { setShowSendMenu(false); saveCard() }}
+                        <button type="button" role="menuitem" data-pop-item onClick={() => { setShowSendMenu(false); saveCard() }}
                           style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}>
                           <span style={{ color: 'var(--slate)', display: 'inline-flex' }}>
                             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/><path d="M16 15h3"/></svg>
@@ -4782,47 +4852,46 @@ export default function InboxPage() {
                         <div style={{ borderTop: '1px solid var(--border)' }} />
 
                         {!forEmail && (<>
-                        <button type="button" onClick={() => { setShowSendMenu(false); if (!voiceUploading) startVoiceNote() }} disabled={voiceUploading || recording}
+                        <button type="button" role="menuitem" data-pop-item onClick={() => { setShowSendMenu(false); if (!voiceUploading) startVoiceNote() }} disabled={voiceUploading || recording}
                           style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}>
                           <span style={{ color: 'var(--slate)', display: 'inline-flex' }}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3.5" fill="currentColor"/></svg></span>Record voice note
                         </button>
-                        <button type="button" onClick={() => { setShowSendMenu(false); setShowInboxQR(true) }}
+                        <button type="button" role="menuitem" data-pop-item onClick={() => { setShowSendMenu(false); setShowInboxQR(true) }}
                           style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}>
                           <span style={{ color: 'var(--slate)', display: 'inline-flex' }}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M11 18h2"/></svg></span>Upload from your phone
                         </button>
                         </>)}
-                        <button type="button" onClick={() => { setShowSendMenu(false); setShowMediaRequest(true) }}
+                        <button type="button" role="menuitem" data-pop-item onClick={() => { setShowSendMenu(false); setShowMediaRequest(true) }}
                           style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}>
                           <span style={{ color: 'var(--slate)', display: 'inline-flex' }}>{Icon.media(15)}</span>Request Media
                         </button>
                       </div>
-                    )}
+                    </Popover>
                   </div>
     </>
   )
   const renderLinkTools = (forEmail = false, insert?: (t: string) => void) => (
     <>
-                  {/* Review request */}
-                  <button type="button" className="cmp-tool" onClick={sendReviewRequest} title="Send a review request" aria-label="Send a review request"
-                    style={toolBtn()}>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-                  </button>
+                  {/* Review request — opens a preview; nothing sends until Send is clicked */}
+                  <ReviewRequestButton key={`rv-${selected?.id || ''}`} buttonClassName="cmp-tool" buttonStyle={toolBtn()}
+                    channel={reviewChannel()} alreadyReviewed={reviewAlready()}
+                    getLink={createReviewLink} onSend={sendReviewRequest} onError={showToast}
+                    onInsert={t => insert ? insert(t) : setReply(r => (r.trim() ? r.trimEnd() + '\n' : '') + t)} />
                   {/* Shorten a URL straight into the reply */}
-                  <div style={{ position: 'relative' }}>
+                  <div ref={shortenerAnchorRef} style={{ position: 'relative' }}>
                     <button type="button" className="cmp-tool" onClick={() => setShowShortener(v => !v)}
-                      title="Create a short, trackable link" aria-label="Create a short link"
+                      title="Create a short, trackable link" aria-label="Create a short link" aria-haspopup="dialog" aria-expanded={showShortener}
                       style={toolBtn(showShortener)}>
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
                     </button>
-                    {showShortener && (
-                      <div style={{ position: 'absolute', bottom: '120%', left: 0, zIndex: 90, width: 320, maxWidth: '80vw', background: '#fff', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 12px 32px rgba(0,0,0,0.16)', padding: 12 }}>
+                    <Popover open={showShortener} onClose={() => { setShowShortener(false); setShortenError('') }} anchorRef={shortenerAnchorRef} width={320} prefer="top" label="Create short URL" padding={12}>
                         <p style={{ margin: '0 0 8px', fontSize: 12.5, fontWeight: 700, color: 'var(--ink)' }}>Create short URL</p>
                         <p style={{ margin: '0 0 8px', fontSize: 11.5, color: 'var(--slate)', lineHeight: 1.4 }}>
                           Paste a long URL — it becomes a short link on your own domain and records clicks.
                         </p>
                         <input value={shortenInput} onChange={e => setShortenInput(e.target.value)}
                           onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); shortenIntoReply(insert) } }}
-                          placeholder="https://roxyaquarium.com.au/..." autoFocus
+                          placeholder="https://roxyaquarium.com.au/..." data-autofocus
                           style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 12.5, boxSizing: 'border-box' }} />
                         {shortenError && <p style={{ margin: '6px 0 0', fontSize: 11.5, color: '#dc2626' }}>{shortenError}</p>}
                         <div style={{ display: 'flex', gap: 6, marginTop: 9 }}>
@@ -4835,8 +4904,7 @@ export default function InboxPage() {
                             Cancel
                           </button>
                         </div>
-                      </div>
-                    )}
+                    </Popover>
                   </div>
                   {!internalMode && <BookingLinkButton iconOnly height={34} companyId={companyId} conversationId={selected?.id || null} contactId={selected?.contact_id || null} onInsert={t => insert ? insert(t) : setReply(r => (r.trim() ? r.trimEnd() + '\n' : '') + t)} />}
     </>
@@ -5356,6 +5424,21 @@ export default function InboxPage() {
   // from the Send dropdown.
   const [sendChannel, setSendChannel] = useState<'auto' | 'chat' | 'sms' | 'email'>('auto')
   const [showChannelMenu, setShowChannelMenu] = useState(false)
+  // A channel picked for one conversation must not carry over to the next
+  // (it stayed set, so a later email thread could open on SMS). A deep link's
+  // ?channel= is applied to the conversation it opened.
+  useEffect(() => {
+    const want = pendingSendChannelRef.current
+    pendingSendChannelRef.current = null
+    setSendChannel(want === 'sms' || want === 'email' || want === 'chat' ? want : 'auto')
+  }, [selected?.id])
+  // THE switch between the email composer and the chat / SMS box. Anything
+  // that needs to know "is this reply an email?" (the composer, review links,
+  // inserts) reads this one boolean.
+  const showEmailComposer = sendChannel === 'email' || (activeChannel === 'email' && sendChannel === 'auto')
+  // The customer hasn't written here and the shared rule hasn't answered yet:
+  // show a neutral placeholder rather than one composer that flips to the other.
+  const channelResolving = !customerSpoke && sendChannel === 'auto' && !!selected?.id && channelPick?.convId !== selected?.id
 
   // Right-click context menu on the conversation list.
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; conv: any } | null>(null)
@@ -5457,7 +5540,12 @@ export default function InboxPage() {
   const channelMenuRef = useRef<HTMLDivElement>(null)
   const moveMenuRef = useRef<HTMLDivElement>(null)
   const quickMenuRef = useRef<HTMLDivElement>(null)
-  useClickOutside(showSendMenu, () => setShowSendMenu(false), [sendMenuRef])
+  // (The + menu closes itself: it's a shared composer Popover.) The older
+  // menus join its one-open-at-a-time rule.
+  useOneOpen(showChannelMenu, () => setShowChannelMenu(false))
+  useOneOpen(showMoveMenu, () => setShowMoveMenu(false))
+  useOneOpen(showQuickMenu, () => setShowQuickMenu(false))
+  useOneOpen(mentionQuery !== null, () => setMentionQuery(null))
   useClickOutside(showChannelMenu, () => setShowChannelMenu(false), [channelMenuRef])
   useClickOutside(showMoveMenu, () => setShowMoveMenu(false), [moveMenuRef])
   useClickOutside(showQuickMenu, () => setShowQuickMenu(false), [quickMenuRef])
@@ -9020,7 +9108,9 @@ export default function InboxPage() {
                   <div key="enquiry-header" style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '4px 0 14px' }}>
                     <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
                     <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--slate)', whiteSpace: 'nowrap' }}>
-                      New {enquiryKind} from {enquiryName}
+                      {enquiryKind === 'Email Enquiry'
+                        ? (first?.sender_type === 'agent' ? `Email conversation with ${enquiryName}` : `Email received from ${enquiryName}`)
+                        : `New ${enquiryKind} from ${enquiryName}`}
                     </span>
                     <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
                   </div>
@@ -9309,10 +9399,8 @@ export default function InboxPage() {
                   return (
                     <div key={msg.id} id={`cmsg-${msg.id}`} data-cmsg="1">
                       {dateDivider}
-                      <EmailMessage msg={msg} agentColor={companyInfo?.accent_color} onOpenMedia={(i) => openEmailMedia(msg.id, i)} />
-                      <p style={{ textAlign: isAgent ? 'right' : 'left', fontSize: 10.5, color: '#9ca3af', margin: '2px 12px 0' }}>
-                        {fmtReceipt(msg.created_at, isAgent, 'email')}
-                      </p>
+                      {/* The card shows when it was received / sent itself. */}
+                      <EmailMessage msg={msg} agentColor={companyInfo?.accent_color} businessName={companyInfo?.name} onOpenMedia={(i) => openEmailMedia(msg.id, i)} />
                     </div>
                   )
                 }
@@ -9992,20 +10080,25 @@ export default function InboxPage() {
               </div>
               {/* Email threads get a proper email composer (To/Cc/Subject +
                   signature) instead of the plain chat box. */}
-              {activeChannel === 'email' && !internalMode ? (
+              {channelResolving && !internalMode ? (
+                <div className="cmp-card" aria-busy="true" style={{ overflow: 'hidden' }}>
+                  {renderModeHead()}
+                  <div style={{ height: composerH, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--slate)', fontSize: 12.5 }}>Choosing how to reach this customer…</div>
+                </div>
+              ) : showEmailComposer && !internalMode ? (
                 <EmailComposer
                   header={renderModeHead()}
                   bodyHeight={composerH + 44}
                   conversationId={selected.id}
                   companyId={companyId}
                   toEmail={contact?.email || ''}
-                  defaultSubject={(selected as any).email_subject
-                    ? (/^re:/i.test((selected as any).email_subject) ? (selected as any).email_subject : `Re: ${(selected as any).email_subject}`)
-                    : `Re: ${selected.subject || 'your message'}`}
+                  defaultSubject={composerSubject(messages, selected as any, { businessName: companyInfo?.name, contactName: contact?.name, contactPhone: contact?.phone, contactEmail: contact?.email })}
                   fromLabel={emailFromLabel}
+                  replyTo={channelPick?.convId === selected.id ? channelPick.replyTo || null : null}
                   signature={emailSignature}
                   agentName={myName}
                   keyterms={[contact?.name, (contact as any)?.company_name].filter(Boolean) as string[]}
+                  templateVars={templateVars}
                   extraTools={(insert) => <>{renderSendMenu(true)}{renderLinkTools(true, insert)}</>}
                   onAiAssist={() => logAiUpdate('Reply drafted with Colvy AI')}
                   onSent={async () => {
@@ -10044,16 +10137,14 @@ export default function InboxPage() {
               })()}
 
               {/* Emoji picker */}
-              {showEmoji && (
-                <div style={{ position: 'absolute', bottom: '100%', left: 14, marginBottom: 8, display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 4, background: '#fff', borderRadius: 12, boxShadow: '0 4px 20px rgba(0,0,0,0.15)', padding: 10, zIndex: 30 }}>
+              <Popover open={showEmoji} onClose={() => setShowEmoji(false)} anchorRef={emojiBtnRef} width={252} prefer="top" label="Emoji" padding={8}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 4 }}>
                   {EMOJIS.map(e => (
-                    <button key={e} type="button" onClick={() => { setReply(r => r + e); setShowEmoji(false) }}
-                      style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 20, padding: 4, borderRadius: 6 }}
-                      onMouseEnter={(ev: any) => ev.currentTarget.style.background = 'var(--canvas)'}
-                      onMouseLeave={(ev: any) => ev.currentTarget.style.background = 'none'}>{e}</button>
+                    <button key={e} type="button" data-pop-item className="cpop-item" aria-label={`Insert ${e}`} onClick={() => { setReply(r => r + e); setShowEmoji(false) }}
+                      style={{ width: 34, height: 34, padding: 0, justifyContent: 'center', fontSize: 20, borderRadius: 6 }}>{e}</button>
                   ))}
                 </div>
-              )}
+              </Popover>
 
               {/* Quick responses — type "/" to pick a saved reply */}
               {showQuickMenu && (
@@ -10493,7 +10584,7 @@ export default function InboxPage() {
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
                   </button>
                   {/* Emoji */}
-                  <button type="button" className="cmp-tool" onClick={() => setShowEmoji(v => !v)} title="Emoji" aria-label="Emoji"
+                  <button type="button" ref={emojiBtnRef} className="cmp-tool" onClick={() => setShowEmoji(v => !v)} title="Emoji" aria-label="Emoji" aria-haspopup="dialog" aria-expanded={showEmoji}
                     style={toolBtn(showEmoji)}>{Icon.smile(17)}</button>
                   {renderLinkTools(false)}
                 </div>
@@ -11452,7 +11543,10 @@ export default function InboxPage() {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 0, marginBottom: 18, position: 'relative' }}>
                   {/* Quick actions */}
                   <div style={{ display: 'flex', gap: 6, marginBottom: 12, marginTop: 6, flexWrap: 'wrap' }}>
-                    <button type="button" onClick={sendReviewRequest} style={{ fontSize: 11, padding: '5px 10px', borderRadius: 7, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', color: 'var(--slate)', fontWeight: 600 }}>Send review request</button>
+                    <ReviewRequestButton buttonLabel="Send review request" key={`rvp-${selected?.id || ''}`}
+                      buttonStyle={{ fontSize: 11, padding: '5px 10px', borderRadius: 7, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', color: 'var(--slate)', fontWeight: 600 }}
+                      channel={reviewChannel()} alreadyReviewed={reviewAlready()} getLink={createReviewLink} onSend={sendReviewRequest} onError={showToast}
+                      onInsert={showEmailComposer && !internalMode ? undefined : (t => setReply(r => (r.trim() ? r.trimEnd() + '\n' : '') + t))} />
                   </div>
                   {events.length === 0 ? (
                     <p style={{ fontSize: 12, color: '#9ca3af', margin: 0 }}>No timeline events yet.</p>

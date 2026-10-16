@@ -12,10 +12,10 @@
 //     the calendar updates and the cancellation policy (refunds) applies.
 
 import {
-  loadCompanyPublic, resolveBookingSettings, loadStaff, availability, policyFor, manageUrl, bookingPageUrl, createInvite,
-  cancelBooking, rescheduleBooking,
+  loadCompanyPublic, resolveBookingSettings, loadStaff, loadLocations, availability, policyFor, manageUrl, bookingPageUrl, createInvite,
+  cancelBooking, rescheduleBooking, findCustomerBookings, sendManageLink,
 } from '@/lib/booking'
-import { addDays, dateInTz, fmtDateTime } from '@/lib/booking-time'
+import { addDays, dateInTz, fmtDateTime, zonedParts } from '@/lib/booking-time'
 import type { ActionContext, ActionDef, JsonSchema } from './types'
 
 const obj = (properties: Record<string, any>, required: string[] = []): JsonSchema => ({ type: 'object', properties, required, additionalProperties: false })
@@ -59,44 +59,83 @@ export const listServices: ActionDef = {
 
 export const checkAvailability: ActionDef = {
   key: 'check_availability',
-  description: 'Free times for a service, in the business’s local time. Give the service name; optionally a date (YYYY-MM-DD) and how many days to look (1–7). If nothing is free it looks further ahead.',
+  description: 'Free times for a service, in the business’s local time. Give the service name; optionally a date (YYYY-MM-DD) and how many days to look (1–7). If nothing is free it looks further ahead. To move one of the customer’s bookings, pass its bookingId (from find_my_bookings): the times then suit that booking — the same person if they chose one, the same outlet — and its current time counts as free. If they want a particular time of day, pass near (HH:MM, 24-hour): the closest free times come first and nearest is the single closest one.',
   input: obj({
     service: { type: 'string', description: 'The service name (from list_services).' },
     date: { type: 'string', description: 'First day to look, YYYY-MM-DD. Default: today.' },
     days: { type: 'integer', description: 'How many days to look (1–7). Default 3.' },
+    bookingId: { type: 'string', description: 'Only when moving one of the customer’s bookings: its bookingId from find_my_bookings.' },
+    near: { type: 'string', description: 'Optional preferred time of day, HH:MM in 24-hour time, e.g. 15:00.' },
+    location: { type: 'string', description: 'Optional outlet name, if the customer asked for one.' },
   }, ['service']),
   category: 'read', risk: 'low', maxAutonomy: 'autonomous', customerSafe: true,
   async run(ctx, args) {
     const bc = await bookingCtx(ctx)
     if (!bc) return { ok: false, error: 'Business not found.' }
-    const service = await findService(ctx, args?.service)
+    // Moving a booking: only one this customer was shown to own.
+    let moving: any = null
+    if (args?.bookingId) {
+      if (!proven(ctx).has(String(args.bookingId))) return { ok: true, data: { slots: [], note: 'That booking isn’t linked to this customer. Use find_my_bookings first.' } }
+      const { data } = await ctx.db.from('bookings').select('id, service_id, staff_id, staff_choice, location_id, starts_at').eq('company_id', ctx.companyId).eq('id', String(args.bookingId)).maybeSingle()
+      moving = data || null
+    }
+    let service: any = null
+    if (moving?.service_id) {
+      const { data } = await ctx.db.from('booking_services').select('*').eq('company_id', ctx.companyId).eq('id', moving.service_id).maybeSingle()
+      service = data || null
+    }
+    if (!service) service = await findService(ctx, args?.service)
     if (!service) return { ok: true, data: { slots: [], note: 'No service by that name. Use list_services.' } }
     const tz = bc.settings.timezone
     const today = dateInTz(Date.now(), tz)
     const from = /^\d{4}-\d{2}-\d{2}$/.test(String(args?.date || '')) && String(args.date) >= today ? String(args.date) : today
     const days = Math.min(7, Math.max(1, Number(args?.days) || 3))
     const staff = await loadStaff(ctx.db, bc.company)
-    let { slots } = await availability(ctx.db, { company: bc.company, settings: bc.settings, service, staff, staffFilter: 'any', fromDate: from, toDate: addDays(from, days - 1) })
+    let locationId: string | null = moving?.location_id || null
+    if (!locationId && args?.location && service.location_mode === 'outlet') {
+      const locs = await loadLocations(ctx.db, ctx.companyId)
+      const q = lc(args.location)
+      locationId = (locs.find((l: any) => lc(l.label) === q) || locs.find((l: any) => lc(l.label).includes(q) || lc(l.address).includes(q)))?.id || null
+    }
+    const opts = {
+      company: bc.company, settings: bc.settings, service, staff, locationId,
+      staffFilter: (moving?.staff_choice === 'specific' && moving.staff_id ? moving.staff_id : 'any') as string,
+      excludeBookingId: moving?.id || null,
+    }
+    let { slots } = await availability(ctx.db, { ...opts, fromDate: from, toDate: addDays(from, days - 1) })
     let widened = false
     if (!slots.length) {
-      ;({ slots } = await availability(ctx.db, { company: bc.company, settings: bc.settings, service, staff, staffFilter: 'any', fromDate: addDays(from, days), toDate: addDays(from, days + 13) }))
+      ;({ slots } = await availability(ctx.db, { ...opts, fromDate: addDays(from, days), toDate: addDays(from, days + 13) }))
       widened = true
     }
+    // A preferred time of day: closest first within each day, plus the single
+    // nearest free time to offer straight away.
+    const near = /^([01]?\d|2[0-3]):([0-5]\d)$/.exec(String(args?.near || '').trim())
+    const wantMin = near ? Number(near[1]) * 60 + Number(near[2]) : null
+    const minsOf = (ms: number) => { const z = zonedParts(ms, tz); return z.h * 60 + z.mi }
+    const gap = (ms: number) => wantMin == null ? 0 : Math.abs(minsOf(ms) - wantMin)
+    const ordered = wantMin == null ? slots : [...slots].sort((a, b) => dateInTz(a.start, tz).localeCompare(dateInTz(b.start, tz)) || gap(a.start) - gap(b.start) || a.start - b.start)
     const byDay: Record<string, string[]> = {}
-    for (const s of slots.slice(0, 60)) {
+    for (const s of ordered.slice(0, 120)) {
       const txt = fmtDateTime(s.start, tz)                      // "Sat, 18 Oct, 10:00am" (or "Sat 18 Oct, 10:00am")
       const cut = txt.lastIndexOf(', ')
       const day = txt.slice(0, cut).replace(/,/g, ''), time = txt.slice(cut + 2)
       if ((byDay[day] ||= []).length < 8) byDay[day].push(time)
     }
-    ctx.scratch.slots = slots.slice(0, 200).map(s => s.start)
+    // The nearest: soonest day first, then closest to the time asked for.
+    // Soonest day first, then closest to the time asked for — and always one
+    // of the times kept for reschedule_booking.
+    ctx.scratch.slots = ordered.slice(0, 200).map(s => s.start)
+    const nearest = wantMin != null && ordered.length ? ordered[0] : null
     return {
       ok: true,
       data: {
         service: service.name, minutes: service.duration_mins, timezone: tz,
+        ...(moving ? { moving: { bookingId: moving.id, now: fmtDateTime(Date.parse(moving.starts_at), tz) } } : {}),
         free: Object.entries(byDay).slice(0, 7).map(([day, times]) => ({ day, times })),
+        ...(nearest ? { nearest: { when: fmtDateTime(nearest.start, tz), start: new Date(nearest.start).toISOString() } } : {}),
         ...(widened ? { note: slots.length ? 'Nothing in the days asked about — these are the next free times.' : 'Nothing free in the next three weeks.' } : {}),
-        slotIds: slots.slice(0, 40).map(s => ({ when: fmtDateTime(s.start, tz), start: new Date(s.start).toISOString() })),
+        slotIds: ordered.slice(0, 40).map(s => ({ when: fmtDateTime(s.start, tz), start: new Date(s.start).toISOString() })),
       },
       summary: `${slots.length} free time${slots.length === 1 ? '' : 's'} for ${service.name}`,
     }
@@ -105,45 +144,102 @@ export const checkAvailability: ActionDef = {
 
 function proven(ctx: ActionContext): Set<string> { return (ctx.scratch.provenBookings ||= new Set<string>()) }
 
+// Whose bookings may be shown, decided from what we KNOW about the person —
+// never from an email or number they type, which anyone could give:
+//   • verified (texting from the number on file) or the phone line's caller
+//     ID: their bookings in full, with the manage link;
+//   • probably them (a chat linked to a contact, not proven): their on-file
+//     bookings, but only service, day and time — the link goes to the phone
+//     or email on the booking;
+//   • unknown: the email or phone they booked with AND the booking's date,
+//     both matching; again only service, day and time, link sent to what's on
+//     the booking. Not "theirs" for moving or cancelling in chat.
 export const findMyBookings: ActionDef = {
   key: 'find_my_bookings',
-  description: 'The customer’s own upcoming bookings, with whether they can still move or cancel them and their manage link. If the customer isn’t identified, pass the email or phone they booked with.',
+  description: 'The customer’s own upcoming bookings and whether they can still move or cancel them. An identified customer needs no input. Someone not identified must give BOTH the email or mobile they booked with AND the booking’s date (YYYY-MM-DD); you then only learn the service, day and time, and their manage link is sent to the phone or email on that booking — never paste links or addresses for them.',
   input: obj({
-    email: { type: 'string', description: 'Only if the customer isn’t identified.' },
-    phone: { type: 'string', description: 'Only if the customer isn’t identified.' },
+    email: { type: 'string', description: 'Only if the customer isn’t identified: the email they booked with.' },
+    phone: { type: 'string', description: 'Only if the customer isn’t identified: the mobile they booked with.' },
+    date: { type: 'string', description: 'Only if the customer isn’t identified: the date of the booking, YYYY-MM-DD.' },
   }),
   category: 'read', risk: 'low', maxAutonomy: 'autonomous', customerSafe: true,
   async run(ctx, args) {
     const bc = await bookingCtx(ctx)
     if (!bc) return { ok: false, error: 'Business not found.' }
+    const tz = bc.settings.timezone
     let contact: any = null
     if (ctx.contactId && ctx.customerVerification !== 'unknown') {
       const { data } = await ctx.db.from('contacts').select('id, email, phone').eq('company_id', ctx.companyId).eq('id', ctx.contactId).maybeSingle()
       contact = data
     }
-    const email = lc(contact?.email || args?.email), phone = tail9(contact?.phone || args?.phone)
-    if (!contact && !email && phone.length < 8) return { ok: true, data: { bookings: [], needs: 'Ask for the email or phone number they booked with.' } }
-    const { data } = await ctx.db.from('bookings').select('id, service_name, starts_at, status, payment_status, location_label, address, staff_name, contact_id, customer_email, customer_phone, manage_token, timezone')
-      .eq('company_id', ctx.companyId).in('status', ['confirmed', 'pending']).gte('starts_at', new Date(Date.now() - 3600_000).toISOString()).order('starts_at', { ascending: true }).limit(40)
-    const mine = (data || []).filter((b: any) => (contact && b.contact_id === contact.id) || (email && lc(b.customer_email) === email) || (phone.length >= 8 && tail9(b.customer_phone) === phone)).slice(0, 5)
-    mine.forEach((b: any) => proven(ctx).add(b.id))
-    if (!mine.length) return { ok: true, data: { bookings: [], note: contact ? 'No upcoming bookings for this customer.' : 'No upcoming bookings match those details.' } }
+    // The phone line sets this from caller ID (server code, not the model).
+    const callerPhone = tail9(ctx.scratch.callerPhone)
+    const fromIso = new Date(Date.now() - 3600_000).toISOString()
+    const cols = 'id, service_name, starts_at, ends_at, status, payment_status, location_label, address, staff_name, contact_id, customer_name, customer_email, customer_phone, conversation_id, manage_token, timezone'
+    let rows: any[] = []
+    let full = false
+    if (contact || callerPhone.length >= 8) {
+      full = (!!contact && ctx.customerVerification === 'verified') || callerPhone.length >= 8
+      const lists = await Promise.all([
+        contact ? findCustomerBookings(ctx.db, ctx.companyId, { contactId: contact.id, email: contact.email, phone: contact.phone }, { fromIso, cols, limit: 20 }) : Promise.resolve([]),
+        callerPhone.length >= 8 ? findCustomerBookings(ctx.db, ctx.companyId, { phone: String(ctx.scratch.callerPhone) }, { fromIso, cols, limit: 20 }) : Promise.resolve([]),
+      ])
+      const seen = new Map<string, any>()
+      for (const r of lists.flat()) seen.set(r.id, r)
+      rows = [...seen.values()].sort((x, y) => Date.parse(x.starts_at) - Date.parse(y.starts_at))
+    } else {
+      const email = lc(args?.email), phone = String(args?.phone || '')
+      const date = /^\d{4}-\d{2}-\d{2}$/.test(String(args?.date || '')) ? String(args.date) : ''
+      if ((!email && tail9(phone).length < 8) || !date) return { ok: true, data: { bookings: [], needs: 'Ask for the email or mobile number they booked with AND the date of the booking.' } }
+      const found = await findCustomerBookings(ctx.db, ctx.companyId, { email: email || null, phone: tail9(phone).length >= 8 ? phone : null }, { fromIso, cols, limit: 20 })
+      rows = found.filter(b => dateInTz(Date.parse(b.starts_at), b.timezone || tz) === date)
+    }
+    const mine = rows.slice(0, 5)
+    if (!mine.length) return { ok: true, data: { bookings: [], note: contact || callerPhone.length >= 8 ? 'No upcoming bookings for this customer.' : 'No upcoming booking matches those details and that date.' } }
+
+    if (full) {
+      mine.forEach((b: any) => proven(ctx).add(b.id))
+      return {
+        ok: true,
+        data: {
+          bookings: mine.map((b: any) => {
+            const p = policyFor(b, bc.settings)
+            return {
+              bookingId: b.id, service: b.service_name, when: fmtDateTime(Date.parse(b.starts_at), b.timezone || tz), status: b.status,
+              where: b.location_label || b.address || null, with: b.staff_name || null,
+              canMove: p.canReschedule, canCancel: p.canCancel, refundIfCancelled: p.refundOnCancel,
+              changeBy: p.cutoffMs ? fmtDateTime(p.cutoffMs, tz) : null,
+              manageLink: b.manage_token ? manageUrl(bc.company, b.manage_token) : null,
+            }
+          }),
+          guidance: 'The manage link lets them move or cancel it themselves straight away — offer that first. Only use reschedule_booking / cancel_booking if they ask you to do it; a person approves those.',
+        },
+        summary: `${mine.length} upcoming booking${mine.length === 1 ? '' : 's'}`,
+      }
+    }
+
+    // Not proven to be them: service, day and time only; the manage link goes
+    // to the phone or email on each booking (once per booking per run).
+    const sent: Record<string, string | null> = (ctx.scratch.linkSent ||= {})
+    const out = []
+    for (const b of mine) {
+      let via: string | null = sent[b.id] ?? null
+      if (!(b.id in sent)) {
+        via = ctx.mode === 'live' ? await sendManageLink(ctx.db, bc.company, b, ctx.siteOrigin) : (b.customer_phone ? 'sms' : b.customer_email ? 'email' : null)
+        sent[b.id] = via
+      }
+      out.push({
+        service: b.service_name, when: fmtDateTime(Date.parse(b.starts_at), b.timezone || tz), status: b.status,
+        linkSentTo: via === 'sms' ? 'the mobile number on the booking' : via === 'email' ? 'the email address on the booking' : null,
+      })
+    }
     return {
       ok: true,
       data: {
-        bookings: mine.map((b: any) => {
-          const p = policyFor(b, bc.settings)
-          return {
-            bookingId: b.id, service: b.service_name, when: fmtDateTime(Date.parse(b.starts_at), b.timezone || bc.settings.timezone), status: b.status,
-            where: b.location_label || b.address || null, with: b.staff_name || null,
-            canMove: p.canReschedule, canCancel: p.canCancel, refundIfCancelled: p.refundOnCancel,
-            changeBy: p.cutoffMs ? fmtDateTime(p.cutoffMs, bc.settings.timezone) : null,
-            manageLink: b.manage_token ? manageUrl(bc.company, b.manage_token) : null,
-          }
-        }),
-        guidance: 'The manage link lets them move or cancel it themselves straight away — offer that first. Only use reschedule_booking / cancel_booking if they ask you to do it; a person approves those.',
+        bookings: out,
+        guidance: 'This person isn’t proven to be the customer. Tell them only the service, day and time, and that their link to view, move or cancel it has been sent to the number or email on the booking. Don’t give any other booking details, and don’t move or cancel it from here — if the link wasn’t sent, escalate_to_human.',
       },
-      summary: `${mine.length} upcoming booking${mine.length === 1 ? '' : 's'}`,
+      summary: `${out.length} upcoming booking${out.length === 1 ? '' : 's'} (link sent to the details on file)`,
     }
   },
 }
@@ -173,7 +269,7 @@ async function provenBooking(ctx: ActionContext, id: string) {
 
 export const rescheduleBookingAction: ActionDef = {
   key: 'reschedule_booking',
-  description: 'Ask the team to move one of the customer’s bookings to a new free time (a start from check_availability). A person approves it; tell the customer you’ve asked the team.',
+  description: 'Ask the team to move one of the customer’s bookings to a new free time (a start from check_availability called with this bookingId). A person approves it; tell the customer you’ve asked the team.',
   input: obj({ bookingId: { type: 'string' }, newStart: { type: 'string', description: 'ISO start time from check_availability.' } }, ['bookingId', 'newStart']),
   category: 'external_write', risk: 'high', maxAutonomy: 'prepare', customerSafe: true,
   async validate(ctx, args) {

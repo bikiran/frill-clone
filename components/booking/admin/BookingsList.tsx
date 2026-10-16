@@ -22,6 +22,7 @@ const PAY: Record<string, string> = { paid: 'Paid', refunded: 'Refunded', partia
 const RANGES: [string, string][] = [['all', 'All dates'], ['today', 'Today'], ['tomorrow', 'Tomorrow'], ['7d', 'Next 7 days'], ['week', 'This week'], ['month', 'This month']]
 const SORTS: [string, string][] = [['start', 'Start time (earliest)'], ['start_desc', 'Start time (latest)'], ['booked', 'Recently booked']]
 const SOURCE: Record<string, string> = { widget: 'Chat widget', embed: 'Website', invite: 'Personal link', link: 'Shared link' }
+const RepeatIcon = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 2l4 4-4 4" /><path d="M3 11v-1a4 4 0 0 1 4-4h14" /><path d="M7 22l-4-4 4-4" /><path d="M21 13v1a4 4 0 0 1-4 4H3" /></svg>
 
 const PhoneIcon = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z" /></svg>
 const MailIcon = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2.5" y="4.5" width="19" height="15" rx="2" /><path d="m3 6 9 7 9-7" /></svg>
@@ -40,10 +41,13 @@ export default function BookingsList({ companyId, bookings, timezone, scope, set
   const [cancelling, setCancelling] = useState<any | null>(null)
   const [moving, setMoving] = useState<any | null>(null)
   const [noShow, setNoShow] = useState<any | null>(null)
+  const [repeating, setRepeating] = useState<any | null>(null)
 
   const dayOf = (iso: string | number) => new Date(iso).toLocaleDateString('en-CA', { timeZone: timezone })
   const today = dayOf(Date.now())
-  const tomorrow = dayOf(Date.now() + 86400000)
+  // From today's date, not now + 24h: on the day daylight saving ends a day
+  // is 25 hours long, and late that evening +24h is still "today".
+  const tomorrow = new Date(Date.parse(`${today}T12:00:00Z`) + 86400000).toISOString().slice(0, 10)
 
   const rows = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -64,6 +68,14 @@ export default function BookingsList({ companyId, bookings, timezone, scope, set
     return list
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bookings, search, range, sort, timezone])
+
+  // A visit that has later live visits in its regular booking can't be
+  // repeated on its own (that would double up); the last one can extend it.
+  const hasLater = useMemo(() => {
+    const out = new Set<string>()
+    for (const b of bookings) if (b.series_id && bookings.some(x => x.series_id === b.series_id && x.id !== b.id && ['confirmed', 'pending'].includes(x.status) && x.starts_at > b.starts_at)) out.add(b.id)
+    return out
+  }, [bookings])
 
   const groups = useMemo(() => {
     if (sort === 'booked') return [['__booked', rows]] as [string, any[]][]
@@ -121,23 +133,24 @@ export default function BookingsList({ companyId, bookings, timezone, scope, set
                 )}
               </div>
               <div style={{ display: 'grid', gap: 10 }}>
-                {list.map((b, i) => <Row key={b.id} b={b} i={i} t={t} dayChip={dayChip} onAct={act} onMove={setMoving} onCancel={setCancelling} onNoShow={setNoShow} flash={flash} />)}
+                {list.map((b, i) => <Row key={b.id} b={b} i={i} t={t} dayChip={dayChip} onAct={act} onMove={setMoving} onCancel={setCancelling} onNoShow={setNoShow} onRepeat={setRepeating} canRepeat={!hasLater.has(b.id)} flash={flash} />)}
               </div>
             </section>
           ))}
         </div>
       )}
 
-      {cancelling && <CancelDialog companyId={companyId} b={cancelling} onClose={() => setCancelling(null)} onDone={m => { setCancelling(null); flash(m); reload() }} />}
+      {cancelling && <CancelDialog companyId={companyId} b={cancelling} laterInSeries={cancelling.series_id ? bookings.filter(x => x.series_id === cancelling.series_id && x.id !== cancelling.id && ['confirmed', 'pending'].includes(x.status) && x.starts_at > cancelling.starts_at).length : 0} onClose={() => setCancelling(null)} onDone={m => { setCancelling(null); flash(m); reload() }} />}
+      {repeating && <RepeatDialog companyId={companyId} b={repeating} timezone={timezone} onClose={() => setRepeating(null)} onDone={m => { setRepeating(null); flash(m); reload() }} />}
       {noShow && <NoShowDialog companyId={companyId} b={noShow} onClose={() => setNoShow(null)} onDone={m => { setNoShow(null); flash(m); reload() }} />}
       {moving && <MoveDialog companyId={companyId} b={moving} timezone={timezone} onClose={() => setMoving(null)} onDone={m => { setMoving(null); flash(m); reload() }} />}
     </div>
   )
 }
 
-function Row({ b, i, t, dayChip, onAct, onMove, onCancel, onNoShow, flash }: {
+function Row({ b, i, t, dayChip, onAct, onMove, onCancel, onNoShow, onRepeat, canRepeat, flash }: {
   b: any; i: number; t: (iso: string) => string; dayChip: (iso: string) => string[]
-  onAct: (b: any, a: string) => void; onMove: (b: any) => void; onCancel: (b: any) => void; onNoShow: (b: any) => void; flash: (m: string) => void
+  onAct: (b: any, a: string) => void; onMove: (b: any) => void; onCancel: (b: any) => void; onNoShow: (b: any) => void; onRepeat: (b: any) => void; canRepeat: boolean; flash: (m: string) => void
 }) {
   const st = STATUS[b.status] || STATUS.confirmed
   const past = Date.parse(b.ends_at) < Date.now()
@@ -187,6 +200,7 @@ function Row({ b, i, t, dayChip, onAct, onMove, onCancel, onNoShow, flash }: {
               {menu && (
                 <div className="bl-menu" role="menu">
                   {b.manage_url && <button onClick={() => { navigator.clipboard?.writeText(b.manage_url).then(() => flash('Customer’s booking link copied')); setMenu(false) }}><LinkIcon size={14} /> Copy customer’s link</button>}
+                  {(b.status === 'confirmed' || b.status === 'completed') && b.service_id && canRepeat && <button onClick={() => { setMenu(false); onRepeat(b) }}><RepeatIcon /> {b.series_id ? 'Extend regular booking' : 'Repeat every few weeks'}</button>}
                   {b.status === 'confirmed' && past && <button onClick={() => { setMenu(false); onNoShow(b) }}><XIcon size={13} /> Mark no-show</button>}
                   {b.status === 'confirmed' && !past && <button onClick={() => { setMenu(false); onAct(b, 'complete') }}><CheckIcon size={14} /> Mark done</button>}
                   {(b.status === 'completed' || b.status === 'no_show') && <button onClick={() => { setMenu(false); onAct(b, 'confirm') }}>Undo {b.status === 'completed' ? 'done' : 'no-show'}</button>}
@@ -207,6 +221,7 @@ function Row({ b, i, t, dayChip, onAct, onMove, onCancel, onNoShow, flash }: {
             <span className="bl-chip" style={{ background: b.payment_status === 'paid' ? '#eef2ff' : undefined, color: b.payment_status === 'paid' ? '#4338ca' : undefined }}>{PAY[b.payment_status]} {money(b.payment_status === 'refunded' || b.payment_status === 'partially_refunded' ? b.refunded_cents : b.amount_due_cents, b.currency)}</span>
           )}
           {b.price_cents > b.amount_due_cents && b.status !== 'cancelled' && <span className="bl-chip">{money(b.price_cents - (b.payment_status === 'paid' ? b.amount_due_cents : 0), b.currency)} due on the day</span>}
+          {b.series_id && <span className="bl-chip" title="Part of a regular booking (repeats every few weeks)"><RepeatIcon /> Regular</span>}
           {SOURCE[b.source] && <span className="bl-chip">{SOURCE[b.source]}</span>}
         </div>
       </div>
@@ -285,18 +300,20 @@ const CSS = `
 @media (prefers-reduced-motion: reduce){.bl-card,.bl-menu{animation:none}}
 `
 
-function CancelDialog({ companyId, b, onClose, onDone }: { companyId: string; b: any; onClose: () => void; onDone: (m: string) => void }) {
+function CancelDialog({ companyId, b, laterInSeries, onClose, onDone }: { companyId: string; b: any; laterInSeries: number; onClose: () => void; onDone: (m: string) => void }) {
   const paid = b.payment_status === 'paid'
   const [refund, setRefund] = useState(paid)
   const [notify, setNotify] = useState(true)
+  const [series, setSeries] = useState(false)
   const [reason, setReason] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const go = async () => {
     setBusy(true); setError('')
     try {
-      const d = await api('/api/bookings', { method: 'PATCH', json: { companyId, id: b.id, action: 'cancel', refund, notify, reason } })
-      onDone(d.refundError ? `Cancelled — refund failed: ${d.refundError}` : d.refunded ? `Cancelled and refunded ${money(d.refunded, b.currency)}` : 'Booking cancelled')
+      const d = await api('/api/bookings', { method: 'PATCH', json: { companyId, id: b.id, action: 'cancel', refund, notify, reason, series } })
+      const also = d.alsoCancelled ? ` (and ${d.alsoCancelled} later visit${d.alsoCancelled === 1 ? '' : 's'})` : ''
+      onDone(d.refundError ? `Cancelled${also} — refund failed: ${d.refundError}` : d.refunded ? `Cancelled${also} and refunded ${money(d.refunded, b.currency)}` : `Booking cancelled${also}`)
     } catch (e: any) { setError(e.message); setBusy(false) }
   }
   return (
@@ -310,6 +327,7 @@ function CancelDialog({ companyId, b, onClose, onDone }: { companyId: string; b:
           <label style={row}><Toggle on={refund} onChange={setRefund} /> Refund {money(b.amount_due_cents - (b.refunded_cents || 0), b.currency)} to their card</label>
         )}
         <label style={row}><Toggle on={notify} onChange={setNotify} /> Let the customer know (SMS / email)</label>
+        {laterInSeries > 0 && <label style={row}><Toggle on={series} onChange={setSeries} /> Also cancel the {laterInSeries} later visit{laterInSeries === 1 ? '' : 's'} in this regular booking</label>}
         <textarea value={reason} onChange={e => setReason(e.target.value)} rows={2} placeholder="Reason (optional, included in the note on the conversation)" style={input} />
         {error && <div style={{ color: '#b91c1c', fontSize: 13 }}>{error}</div>}
       </div>
@@ -361,6 +379,77 @@ function MoveDialog({ companyId, b, timezone, onClose, onDone }: { companyId: st
     </Modal>
   )
 }
+
+// Repeat a booking every N weeks (fortnightly tank maintenance…): pick how
+// often and how many, see which dates are free, then book them all at once.
+const EVERY: [number, string][] = [[1, 'Every week'], [2, 'Every 2 weeks'], [3, 'Every 3 weeks'], [4, 'Every 4 weeks'], [6, 'Every 6 weeks'], [8, 'Every 8 weeks'], [12, 'Every 12 weeks']]
+
+function RepeatDialog({ companyId, b, timezone, onClose, onDone }: { companyId: string; b: any; timezone: string; onClose: () => void; onDone: (m: string) => void }) {
+  const [every, setEvery] = useState(2)
+  const [count, setCount] = useState(6)
+  const [notify, setNotify] = useState(true)
+  const [plan, setPlan] = useState<{ start: string; ok: boolean; reason?: string; staff_name?: string | null }[] | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    let live = true
+    const tm = setTimeout(() => {
+      api('/api/bookings', { method: 'PATCH', json: { companyId, id: b.id, action: 'repeat', everyWeeks: every, count, dryRun: true } })
+        .then(d => { if (live) { setPlan(d.plan || []); setError('') } })
+        .catch(e => { if (live) setError(e.message) })
+        .finally(() => { if (live) setLoading(false) })
+    }, 200)
+    return () => { live = false; clearTimeout(tm) }
+  }, [companyId, b.id, every, count])
+
+  const free = (plan || []).filter(p => p.ok).length
+  const go = async () => {
+    setBusy(true); setError('')
+    try {
+      const d = await api('/api/bookings', { method: 'PATCH', json: { companyId, id: b.id, action: 'repeat', everyWeeks: every, count, notify } })
+      const skipped = (d.plan || []).filter((p: any) => !p.created).length
+      onDone(`${d.created} visit${d.created === 1 ? '' : 's'} booked${skipped ? `, ${skipped} skipped` : ''}`)
+    } catch (e: any) { setError(e.message); setBusy(false) }
+  }
+  const day = (iso: string) => new Date(iso).toLocaleDateString('en-AU', { timeZone: timezone, weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
+  const time = (iso: string) => new Date(iso).toLocaleTimeString('en-AU', { timeZone: timezone, hour: 'numeric', minute: '2-digit' }).replace(' ', '').toLowerCase()
+
+  return (
+    <Modal title={`${b.series_id ? 'Extend' : 'Repeat'} ${b.service_name || 'booking'}`} onClose={onClose} width={560} footer={<>
+      <label style={{ ...row, marginRight: 'auto' }}><Toggle on={notify} onChange={setNotify} /> Tell the customer</label>
+      <button onClick={onClose} style={btnGhost}>Cancel</button>
+      <button onClick={go} disabled={busy || loading || !free} style={btn}>{busy ? 'Booking…' : `Book ${free} visit${free === 1 ? '' : 's'}`}</button>
+    </>}>
+      <div style={{ fontSize: 14, marginBottom: 14, color: 'var(--slate,#4b5563)', lineHeight: 1.5 }}>
+        <b style={{ color: 'var(--ink,#111)' }}>{b.customer_name || 'Customer'}</b> · same time ({time(b.starts_at)}){b.staff_name ? `, with ${b.staff_name}` : ''}{b.address || b.location_label ? `, ${b.address || b.location_label}` : ''}. Each visit gets its own reminder and link to move or cancel it.
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(160px,1fr))', gap: 10, marginBottom: 14 }}>
+        <label><span style={fieldLabel}>How often</span>
+          <select value={every} onChange={e => { setLoading(true); setEvery(Number(e.target.value)) }} style={input}>{EVERY.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
+        </label>
+        <label><span style={fieldLabel}>How many more visits</span>
+          <select value={count} onChange={e => { setLoading(true); setCount(Number(e.target.value)) }} style={input}>{[2, 3, 4, 5, 6, 8, 10, 12, 16, 20, 26].map(n => <option key={n} value={n}>{n}</option>)}</select>
+        </label>
+      </div>
+      <div className="bl-plan" aria-live="polite" style={{ border: '1px solid var(--border,#ececec)', borderRadius: 12, maxHeight: 300, overflowY: 'auto', opacity: loading ? 0.55 : 1, transition: 'opacity .2s' }}>
+        {!plan && loading ? <div style={{ padding: 14, fontSize: 13.5, color: 'var(--slate,#6b7280)' }}>Checking the dates…</div>
+          : (plan || []).map((p, i) => (
+            <div key={p.start} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderTop: i ? '1px solid #f3f4f6' : 'none', fontSize: 13.5 }}>
+              <span style={{ width: 22, height: 22, borderRadius: '50%', flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: p.ok ? '#ecfdf5' : '#f3f4f6', color: p.ok ? '#047857' : '#9ca3af' }}>{p.ok ? <CheckIcon size={12} strokeWidth={3} /> : <XIcon size={11} />}</span>
+              <span style={{ fontWeight: 700, color: p.ok ? 'var(--ink,#111)' : '#9ca3af', minWidth: 0, flex: 1 }}>{day(p.start)} <span style={{ fontWeight: 500, color: 'var(--slate,#6b7280)' }}>{time(p.start)}</span></span>
+              <span style={{ fontSize: 12.5, color: p.ok ? 'var(--slate,#6b7280)' : '#b45309', textAlign: 'right' }}>{p.ok ? (p.staff_name && p.staff_name !== b.staff_name ? `With ${p.staff_name}` : 'Free') : p.reason}</span>
+            </div>
+          ))}
+      </div>
+      {plan && !loading && free < plan.length && <div style={{ fontSize: 12.5, color: 'var(--slate,#6b7280)', marginTop: 8 }}>Dates that aren’t free are skipped. You can book those by hand later.</div>}
+      {error && <div style={{ color: '#b91c1c', fontSize: 13, marginTop: 10 }}>{error}</div>}
+    </Modal>
+  )
+}
+
+const fieldLabel: React.CSSProperties = { display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--slate, #4b5563)', marginBottom: 5 }
 
 const pill: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', fontSize: 11.5, fontWeight: 700, padding: '3px 8px', borderRadius: 999, whiteSpace: 'nowrap' }
 const row: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 10, fontSize: 13.5, cursor: 'pointer' }

@@ -1,195 +1,97 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { StatusMark } from '@/components/StatusMark'
-import { useParams, useRouter } from 'next/navigation'
-import Link from 'next/link'
-import { createClient } from '@/lib/supabase'
+// The public poll page (/polls/<id>, and ?embed=1 inside an iframe). Reads
+// and votes through /api/polls/<id> (lib/engage-server.ts decides what a
+// visitor may see and whether a vote counts); never the tables directly.
+
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { useParams } from 'next/navigation'
+import { reportEmbedHeight, takeClickRef } from '@/components/engage/publicClient'
+import { PublicPollCard, PublicShell, accentFor } from '@/components/engage/PublicViews'
+import type { PollView } from '@/lib/engage-server'
+
+const VOTER_KEY = 'colvy_voter'
+const readVoter = () => { try { return localStorage.getItem(VOTER_KEY) || '' } catch { return '' } }
+const keepVoter = (v: unknown) => { if (typeof v === 'string' && v) try { localStorage.setItem(VOTER_KEY, v) } catch {} }
 
 export default function PollPage() {
   const params = useParams()
-  const router = useRouter()
-  const supabase = createClient()
-  const pollId = params.id as string
+  const pollId = String(params?.id || '')
+  const [view, setView] = useState<PollView | null>(null)
+  const [state, setState] = useState<'loading' | 'ready' | 'missing' | 'error'>('loading')
+  const [notice, setNotice] = useState<string | null>(null)
+  const [embed, setEmbed] = useState(false)
+  const clv = useRef<string | null>(null)
+  const embedRef = useRef(false)
 
-  const [poll, setPoll] = useState<any>(null)
-  const [loading, setLoading] = useState(true)
-  const [selectedOption, setSelectedOption] = useState<string | null>(null)
-  const [submitted, setSubmitted] = useState(false)
-  const [userVote, setUserVote] = useState<string | null>(null)
-  const [votes, setVotes] = useState<Record<string, number>>({})
+  const headers = () => {
+    const h: Record<string, string> = { 'Content-Type': 'application/json' }
+    const v = readVoter()
+    if (v) h['x-colvy-voter'] = v
+    return h
+  }
 
-  useEffect(() => {
-    fetchPoll()
+  const load = useCallback(async (quiet = false) => {
+    try {
+      const q = new URLSearchParams()
+      if (clv.current) q.set('clv', clv.current)
+      if (embedRef.current) q.set('embed', '1')
+      const qs = q.toString() ? `?${q}` : ''
+      const res = await fetch(`/api/polls/${pollId}${qs}`, { headers: headers(), cache: 'no-store' })
+      const d = await res.json().catch(() => ({}))
+      keepVoter(d?.voter)
+      if (res.status === 404) { if (!quiet) setState('missing'); return }
+      if (!res.ok || !d?.poll) { if (!quiet) setState('error'); return }
+      setView(d)
+      setState('ready')
+    } catch { if (!quiet) setState('error') }
   }, [pollId])
 
-  const fetchPoll = async () => {
-    try {
-      const { data, error } = await supabase.from('polls').select('*').eq("id", pollId).maybeSingle()
-      if (error) {
-        console.error('Poll fetch error:', error)
-        setLoading(false)
-        return
-      }
-      if (data) {
-        // Parse options if it's a string (sometimes happens with JSONB)
-        let parsedOptions = data.options
-        if (typeof parsedOptions === 'string') {
-          try { parsedOptions = JSON.parse(parsedOptions) } catch {}
-        }
-        if (!Array.isArray(parsedOptions)) parsedOptions = []
-        // The admin page saves options as { text, image, description }; votes are keyed by the text.
-        parsedOptions = parsedOptions.map((o: any) => typeof o === 'string' ? o : String(o?.text || '')).filter(Boolean)
-        
-        setPoll({ ...data, options: parsedOptions })
-        
-        // Fetch vote counts
-        const { data: voteData } = await supabase.from('poll_votes').select('*').eq('poll_id', pollId)
-        if (voteData) {
-          const counts: Record<string, number> = {}
-          voteData.forEach(v => {
-            counts[v.option] = (counts[v.option] || 0) + 1
-          })
-          setVotes(counts)
-        }
+  useEffect(() => {
+    try { embedRef.current = new URLSearchParams(window.location.search).get('embed') === '1'; setEmbed(embedRef.current) } catch {}
+    clv.current = takeClickRef('poll', pollId)
+    void load()
+  }, [load])
 
-        // Check if user already voted
-        if (typeof window !== 'undefined') {
-          const voted = localStorage.getItem(`poll_${pollId}`)
-          if (voted) {
-            setUserVote(voted)
-            setSubmitted(true)
-          }
-        }
-      }
-    } catch (error) {
-      console.error('Failed to fetch poll:', error)
-    } finally {
-      setLoading(false)
+  useEffect(() => (embed ? reportEmbedHeight('poll', pollId) : undefined), [embed, pollId])
+
+  useEffect(() => { if (view?.poll?.question) document.title = view.poll.question }, [view?.poll?.question])
+
+  // Live results while the page is open and visible.
+  useEffect(() => {
+    if (!view?.results || view.poll?.status !== 'live') return
+    const t = setInterval(() => { if (document.visibilityState === 'visible') void load(true) }, 20_000)
+    return () => clearInterval(t)
+  }, [view?.results, view?.poll?.status, load])
+
+  const vote = async (picks: string[], who: { name: string; contact: string }): Promise<string | null> => {
+    try {
+      const res = await fetch(`/api/polls/${pollId}/vote`, { method: 'POST', headers: headers(), body: JSON.stringify({ picks, name: who.name, contact: who.contact, clv: clv.current, embed: embedRef.current }) })
+      const d = await res.json().catch(() => ({}))
+      keepVoter(d?.voter)
+      if (res.ok) { setNotice(null); setView({ poll: d.poll, results: d.results, myVote: d.myVote }); return null }
+      if (res.status === 409 && d?.poll) { setView({ poll: d.poll, results: d.results, myVote: d.myVote }); setNotice(d.error || null); return null }
+      return d?.error || 'Couldn’t save your vote. Please try again.'
+    } catch {
+      return 'Couldn’t reach us. Check your connection and try again.'
     }
   }
 
-  const handleVote = async () => {
-    if (!selectedOption) return
-    
-    try {
-      await supabase.from('poll_votes').insert({
-        poll_id: pollId,
-        option: selectedOption,
-      })
-      
-      localStorage.setItem(`poll_${pollId}`, selectedOption)
-      setUserVote(selectedOption)
-      setSubmitted(true)
-      
-      // Update counts
-      setVotes(v => ({
-        ...v,
-        [selectedOption]: (v[selectedOption] || 0) + 1,
-      }))
-    } catch (error) {
-      console.error('Failed to vote:', error)
-    }
+  if (state === 'loading') return <PublicShell company={null} embed={embed} accent="#ff7a6b"><div className="pv-card"><div className="pv-body"><p className="pv-hint" style={{ margin: 0 }}>Loading poll…</p></div></div></PublicShell>
+  if (state !== 'ready' || !view?.poll) {
+    return (
+      <PublicShell company={null} embed={embed} accent="#ff7a6b">
+        <div className="pv-card pv-center"><div className="pv-body">
+          <h1 className="pv-q" style={{ textAlign: 'center' }}>{state === 'missing' ? 'Poll not found' : 'Couldn’t load this poll'}</h1>
+          <p className="pv-desc" style={{ textAlign: 'center' }}>{state === 'missing' ? 'It may have been removed, or the link is incomplete.' : 'Please check your connection and try again.'}</p>
+          {state === 'error' && <div className="pv-actions" style={{ justifyContent: 'center' }}><button type="button" className="pv-btn" onClick={() => { setState('loading'); void load() }}>Try again</button></div>}
+        </div></div>
+      </PublicShell>
+    )
   }
-
-  if (loading) return <div className="flex items-center justify-center h-screen">Loading...</div>
-  if (!poll) return <div className="flex items-center justify-center h-screen">Poll not found</div>
-
-  const totalVotes = Object.values(votes).reduce((a, b) => a + b, 0)
-
   return (
-    <div className="min-h-screen" style={{ background: 'var(--canvas)' }}>
-      <div className="max-w-2xl mx-auto p-6">
-        <Link href="/" className="text-sm text-blue-600 hover:underline mb-6 inline-block">
-          ← Back to Ideas
-        </Link>
-
-        <div className="bg-white rounded-2xl border p-8" style={{ borderColor: 'var(--border)' }}>
-          <h1 className="text-3xl font-bold mb-2" style={{ color: 'var(--ink)' }}>
-            {poll.question}
-          </h1>
-          <p className="text-sm mb-8" style={{ color: 'var(--slate)' }}>
-            {totalVotes} vote{totalVotes !== 1 ? 's' : ''}
-          </p>
-
-          <div className="space-y-3">
-            {!poll.options || poll.options.length === 0 ? (
-              <div className="p-6 rounded-lg border text-center" style={{ borderColor: '#fca5a5', background: '#fef2f2' }}>
-                <p className="text-sm font-medium mb-2" style={{ color: '#dc2626' }}>⚠️ No options configured</p>
-                <p className="text-xs" style={{ color: 'var(--slate)' }}>
-                  This poll has no answer options yet. An admin needs to edit the poll and add options.
-                </p>
-              </div>
-            ) : poll.options.map((option: string) => {
-              const count = votes[option] || 0
-              const percentage = totalVotes > 0 ? (count / totalVotes) * 100 : 0
-              const isSelected = selectedOption === option
-              const hasVoted = submitted
-              const isUserChoice = userVote === option
-
-              return (
-                <button
-                  key={option}
-                  onClick={() => !hasVoted && setSelectedOption(option)}
-                  disabled={hasVoted}
-                  className={`w-full p-4 rounded-lg border text-left transition-all ${!hasVoted ? 'cursor-pointer hover:shadow-md hover:scale-[1.01]' : 'cursor-default'}`}
-                  style={{
-                    borderColor: isSelected || isUserChoice ? 'var(--coral)' : 'var(--border)',
-                    background: isSelected || isUserChoice ? 'var(--peach)' : 'white',
-                    borderWidth: isSelected || isUserChoice ? '2px' : '1px',
-                  }}>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="font-medium flex items-center gap-2" style={{ color: 'var(--ink)' }}>
-                      {!hasVoted && (
-                        <span className="w-5 h-5 rounded-full border-2 flex items-center justify-center"
-                          style={{ borderColor: isSelected ? 'var(--coral)' : 'var(--border)' }}>
-                          {isSelected && <span className="w-2.5 h-2.5 rounded-full" style={{ background: 'var(--coral)' }} />}
-                        </span>
-                      )}
-                      {isUserChoice && '✓ '}
-                      {option}
-                    </span>
-                    {hasVoted && (
-                      <span className="text-sm font-bold" style={{ color: 'var(--coral)' }}>
-                        {percentage.toFixed(0)}% ({count})
-                      </span>
-                    )}
-                  </div>
-                  {hasVoted && (
-                    <div className="h-2 rounded-full" style={{ background: 'var(--border)' }}>
-                      <div
-                        className="h-2 rounded-full transition-all"
-                        style={{
-                          background: isUserChoice ? 'var(--coral)' : '#cbd5e1',
-                          width: `${percentage}%`,
-                        }}
-                      />
-                    </div>
-                  )}
-                </button>
-              )
-            })}
-          </div>
-
-          {!submitted && (
-            <button
-              onClick={handleVote}
-              disabled={!selectedOption}
-              className="w-full mt-8 px-6 py-3 rounded-lg text-white font-semibold transition-all disabled:opacity-50 cursor-pointer hover:shadow-lg disabled:cursor-not-allowed"
-              style={{ background: 'var(--coral)' }}>
-              Submit Vote
-            </button>
-          )}
-
-          {submitted && (
-            <div className="mt-8 p-4 rounded-lg border text-center" style={{ borderColor: 'var(--border)', background: 'var(--peach)' }}>
-              <p style={{ color: 'var(--coral)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, margin: 0 }}>
-                <StatusMark kind="success" size={24} /> <span>Your vote for <strong>{userVote}</strong> has been recorded</span>
-              </p>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
+    <PublicShell company={view.poll.company} embed={embed} accent={accentFor(view.poll.company)}>
+      <PublicPollCard key={(view.myVote || []).join('|')} poll={view.poll} results={view.results} myVote={view.myVote} onVote={vote} notice={notice} />
+    </PublicShell>
   )
 }

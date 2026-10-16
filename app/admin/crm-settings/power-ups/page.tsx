@@ -21,6 +21,13 @@ export default function PowerUpsSettings() {
   const [editing, setEditing] = useState<any>(null)
 
   useEffect(() => { if (companyId) { loadResponses(); loadCategories() } }, [companyId])
+  // Deep link from the composer's "Manage templates": ?tool=quick-response
+  useEffect(() => {
+    try {
+      const t = new URLSearchParams(window.location.search).get('tool')
+      if (t === 'quick-response' || t === 'category') setView(t)
+    } catch {}
+  }, [])
   const loadResponses = async () => { const { data } = await (supabase as any).from('quick_responses').select('*').eq('company_id', companyId).order('created_at'); setResponses(data || []) }
   const loadCategories = async () => { const { data } = await (supabase as any).from('conversation_categories').select('*').eq('company_id', companyId).order('created_at'); setCategories(data || []) }
 

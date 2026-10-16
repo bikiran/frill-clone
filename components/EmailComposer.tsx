@@ -4,8 +4,10 @@ import { authFetch } from '@/lib/auth-fetch'
 import { useState, useEffect, useRef } from 'react'
 import { useAiDraft, AiDraftButton, AiDraftInfo } from '@/components/AiDraft'
 import { uploadDirect } from '@/lib/upload-attachment'
-import { supabase } from '@/lib/supabase'
 import VoiceDictationButton from '@/components/VoiceDictationButton'
+import Popover, { usePopover } from '@/components/composer/Popover'
+import TemplatesButton from '@/components/composer/TemplatesButton'
+import type { TemplateVars } from '@/lib/composer-templates'
 
 // Coax-style email composer: From (the mailbox) · To · Cc · Subject · Signature
 // · body. The signature is chosen from the company's saved library (or "None"),
@@ -19,6 +21,7 @@ interface Props {
   toEmail: string
   defaultSubject: string
   fromLabel?: string           // "Roxy Aquarium <aquarium.roxy@gmail.com>"
+  replyTo?: string | null      // where the customer's reply goes (shown as a hint)
   signature?: string | null    // the mailbox's own signature (fallback default)
   agentName?: string
   onSent: () => void
@@ -29,10 +32,11 @@ interface Props {
   extraTools?: (insert: (text: string) => void) => React.ReactNode
   header?: React.ReactNode       // the inbox's Reply / Note switch, shown on top
   bodyHeight?: number            // set by the inbox's drag-to-resize grip
+  templateVars?: TemplateVars    // fills {first_name} etc. in saved templates
 }
 
 export default function EmailComposer({
-  conversationId, companyId, toEmail, defaultSubject, fromLabel, signature, agentName, onSent, onAiAssist, keyterms, extraTools, header, bodyHeight,
+  conversationId, companyId, toEmail, defaultSubject, fromLabel, replyTo, signature, agentName, onSent, onAiAssist, keyterms, extraTools, header, bodyHeight, templateVars,
 }: Props) {
   const [to, setTo] = useState(toEmail)
   const [cc, setCc] = useState('')
@@ -40,6 +44,12 @@ export default function EmailComposer({
   const [bcc, setBcc] = useState('')
   const [showBcc, setShowBcc] = useState(false)
   const [subject, setSubject] = useState(defaultSubject)
+  // Once someone edits the subject (or a saved draft restores one), a new
+  // suggested subject — the thread's latest email changes as messages arrive —
+  // no longer replaces it. Reset per conversation.
+  const subjectEdited = useRef(false)
+  // Declared before the draft restore below, which may mark it edited again.
+  useEffect(() => { subjectEdited.current = false }, [conversationId])
   const [sending, setSending] = useState(false)
   const [err, setErr] = useState('')
 
@@ -48,11 +58,10 @@ export default function EmailComposer({
   // send so formatting is preserved.
   const editorRef = useRef<HTMLDivElement>(null)
   const [bodyHtml, setBodyHtml] = useState('')
-  const [showEmoji, setShowEmoji] = useState(false)
+  const emojiPop = usePopover()
   const syncBody = () => setBodyHtml(editorRef.current?.innerHTML || '')
   const bodyText = () => (editorRef.current?.innerText || '').trim()
   const exec = (cmd: string, val?: string) => { editorRef.current?.focus(); document.execCommand(cmd, false, val); syncBody() }
-  const insertAtCursor = (text: string) => { editorRef.current?.focus(); document.execCommand('insertText', false, text); syncBody() }
 
   // Voice typing is asynchronous (record → stop → transcribe), and clicking the
   // mic takes focus out of the body. Remember where the caret was in the body
@@ -62,20 +71,32 @@ export default function EmailComposer({
     const sel = typeof window !== 'undefined' ? window.getSelection() : null
     if (sel && sel.rangeCount && editorRef.current?.contains(sel.anchorNode)) lastRangeRef.current = sel.getRangeAt(0).cloneRange()
   }
-  const insertDictation = (text: string) => {
+  // Put the caret back where it was in the body (a toolbar popover took focus);
+  // with no caret yet, at the end — never the very start of the email.
+  const restoreCaret = () => {
     const el = editorRef.current
-    if (!el || !text.trim()) return
+    if (!el) return null
     el.focus()
     const sel = window.getSelection()
     const r = lastRangeRef.current
     if (sel && r && el.contains(r.startContainer)) { sel.removeAllRanges(); sel.addRange(r) }
     else if (sel) { const end = document.createRange(); end.selectNodeContents(el); end.collapse(false); sel.removeAllRanges(); sel.addRange(end) }
+    return sel
+  }
+  const insertAtCursor = (text: string) => { if (!restoreCaret()) return; document.execCommand('insertText', false, text); syncBody(); rememberCaret() }
+  const insertDictation = (text: string) => {
+    const el = editorRef.current
+    if (!el || !text.trim()) return
+    const sel = restoreCaret()
     // A space between the existing text and the new words, unless at a line start.
     const before = (() => {
       try { const rr = sel?.getRangeAt(0); if (!rr) return ''; const pre = rr.cloneRange(); pre.selectNodeContents(el); pre.setEnd(rr.startContainer, rr.startOffset); return pre.toString() } catch { return '' }
     })()
     const needsSpace = before.length > 0 && !/\s$/.test(before)
-    document.execCommand('insertText', false, (needsSpace ? ' ' : '') + text.trim())
+    const t = (needsSpace ? ' ' : '') + text.trim()
+    // Several lines (a review request with its link) keep their line breaks.
+    if (t.includes('\n')) document.execCommand('insertHTML', false, t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>'))
+    else document.execCommand('insertText', false, t)
     syncBody(); rememberCaret()
   }
   const EMOJIS = ['😀', '😊', '🙏', '👍', '🎉', '✅', '❤️', '🐟', '📦', '⭐', '😅', '🙌']
@@ -93,7 +114,7 @@ export default function EmailComposer({
     let saved: any = null
     try { saved = JSON.parse(localStorage.getItem(draftKey) || 'null') } catch {}
     if (saved) {
-      if (typeof saved.subject === 'string') setSubject(saved.subject)
+      if (typeof saved.subject === 'string') { setSubject(saved.subject); subjectEdited.current = saved.subject !== defaultSubject }
       if (saved.cc) { setCc(saved.cc); setShowCc(true) }
       if (saved.bcc) { setBcc(saved.bcc); setShowBcc(true) }
       if (editorRef.current) editorRef.current.innerHTML = saved.bodyHtml || ''
@@ -135,24 +156,15 @@ export default function EmailComposer({
     finally { setImgBusy(false); if (imgInputRef.current) imgInputRef.current.value = '' }
   }
 
-  // Templates (saved quick responses) — insert a canned reply into the body.
-  const [templates, setTemplates] = useState<{ id: string; title: string; body: string; shortcut?: string }[]>([])
-  const [showTemplates, setShowTemplates] = useState(false)
-  useEffect(() => {
-    if (!companyId) return
-    ;(async () => {
-      try {
-        const { data } = await (supabase as any).from('quick_responses').select('*').eq('company_id', companyId).order('created_at', { ascending: true })
-        setTemplates(data || [])
-      } catch {}
-    })()
-  }, [companyId])
-  const insertTemplate = (t: { body?: string }) => {
-    const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    editorRef.current?.focus()
-    document.execCommand('insertHTML', false, esc(t.body || '').replace(/\n/g, '<br>') + '<br>')
-    syncBody(); setShowTemplates(false)
+  // Templates (saved quick responses): inserted at the caret, with the
+  // customer's details filled in — added to what's written, never replacing it.
+  const insertTemplate = (text: string) => {
+    const esc = (x: string) => x.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    if (!restoreCaret()) return
+    document.execCommand('insertHTML', false, esc(text).replace(/\n/g, '<br>'))
+    syncBody(); rememberCaret()
   }
+  const tplVars: TemplateVars = { ...templateVars, agent_name: templateVars?.agent_name ?? agentName ?? null }
 
   // File attachments (sent as real email attachments).
   const attInputRef = useRef<HTMLInputElement>(null)
@@ -217,7 +229,7 @@ export default function EmailComposer({
   const [savingSig, setSavingSig] = useState(false)
 
   useEffect(() => { setTo(toEmail) }, [toEmail])
-  useEffect(() => { setSubject(defaultSubject) }, [defaultSubject])
+  useEffect(() => { if (!subjectEdited.current) setSubject(defaultSubject) }, [defaultSubject])
 
   const loadSigs = async () => {
     if (!companyId) return
@@ -295,9 +307,15 @@ export default function EmailComposer({
   return (
     <div className={header ? 'cmp-card' : undefined} style={header ? { overflow: 'hidden' } : { border: '1px solid var(--border)', borderRadius: 12, background: '#fff', overflow: 'hidden' }}>
       {header}
-      <div style={{ ...row, background: header ? 'transparent' : 'var(--canvas)' }}>
+      <div style={{ ...row, flexWrap: 'wrap', rowGap: 2, background: header ? 'transparent' : 'var(--canvas)' }}>
         <span style={rowLabel}>From</span>
-        <span style={{ ...field, color: 'var(--slate)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fromLabel || 'Your mailbox'}</span>
+        <span style={{ ...field, minWidth: 180, color: 'var(--slate)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fromLabel || 'Your mailbox'}</span>
+        {/* "Where would I get the reply?" — right here. */}
+        <span title={replyTo ? `The customer's reply goes to ${replyTo} and lands in this conversation.` : 'The customer\'s reply lands in this conversation.'}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11.5, color: 'var(--slate)', whiteSpace: 'nowrap', flexShrink: 0, marginLeft: 'auto' }}>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/></svg>
+          Replies come back to this inbox
+        </span>
       </div>
       <div style={row}>
         <span style={rowLabel}>To</span>
@@ -333,7 +351,7 @@ export default function EmailComposer({
       )}
       <div style={row}>
         <span style={rowLabel}>Subject</span>
-        <input value={subject} onChange={e => setSubject(e.target.value)} style={field} placeholder="Subject" />
+        <input value={subject} onChange={e => { subjectEdited.current = true; setSubject(e.target.value) }} style={field} placeholder="Subject" />
       </div>
 
       {/* Signature selector + inline add (Coax-style). */}
@@ -374,34 +392,34 @@ export default function EmailComposer({
         <VoiceDictationButton size={28} soft title="Voice type" keyterms={keyterms} onText={insertDictation} />
         <span style={{ width: 1, height: 18, background: 'var(--border)', margin: '0 4px' }} />
         {([
-          ['bold', 'B', { fontWeight: 800 }],
-          ['italic', 'i', { fontStyle: 'italic', fontFamily: 'Georgia, serif' }],
-          ['underline', 'U', { textDecoration: 'underline' }],
-          ['strikeThrough', 'S', { textDecoration: 'line-through' }],
-        ] as const).map(([cmd, label, st]) => (
-          <button key={cmd} type="button" title={cmd} onMouseDown={e => { e.preventDefault(); exec(cmd) }}
+          ['bold', 'B', { fontWeight: 800 }, 'Bold'],
+          ['italic', 'i', { fontStyle: 'italic', fontFamily: 'Georgia, serif' }, 'Italic'],
+          ['underline', 'U', { textDecoration: 'underline' }, 'Underline'],
+          ['strikeThrough', 'S', { textDecoration: 'line-through' }, 'Strikethrough'],
+        ] as const).map(([cmd, label, st, tip]) => (
+          <button key={cmd} type="button" title={tip} aria-label={tip} onMouseDown={e => { e.preventDefault(); exec(cmd) }}
             style={{ width: 28, height: 28, borderRadius: 6, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--ink)', fontSize: 14, ...st }}>{label}</button>
         ))}
         <span style={{ width: 1, height: 18, background: 'var(--border)', margin: '0 4px' }} />
-        <button type="button" title="Bullet list" onMouseDown={e => { e.preventDefault(); exec('insertUnorderedList') }}
+        <button type="button" title="Bullet list" aria-label="Bullet list" onMouseDown={e => { e.preventDefault(); exec('insertUnorderedList') }}
           style={{ width: 28, height: 28, borderRadius: 6, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--slate)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
         </button>
-        <button type="button" title="Numbered list" onMouseDown={e => { e.preventDefault(); exec('insertOrderedList') }}
+        <button type="button" title="Numbered list" aria-label="Numbered list" onMouseDown={e => { e.preventDefault(); exec('insertOrderedList') }}
           style={{ width: 28, height: 28, borderRadius: 6, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--slate)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="10" y1="6" x2="21" y2="6"/><line x1="10" y1="12" x2="21" y2="12"/><line x1="10" y1="18" x2="21" y2="18"/><path d="M4 6h1v4"/><path d="M4 10h2"/><path d="M6 18H4c0-1 2-2 2-3s-1-1.5-2-1"/></svg>
         </button>
         <span style={{ width: 1, height: 18, background: 'var(--border)', margin: '0 4px' }} />
-        <button type="button" title="Emoji" onMouseDown={e => { e.preventDefault(); setShowEmoji(v => !v) }}
-          style={{ width: 28, height: 28, borderRadius: 6, border: 'none', background: showEmoji ? 'var(--peach)' : 'transparent', cursor: 'pointer', color: 'var(--slate)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+        <button type="button" ref={emojiPop.anchorRef} title="Emoji" aria-label="Emoji" aria-haspopup="dialog" aria-expanded={emojiPop.open} onMouseDown={e => e.preventDefault()} onClick={emojiPop.toggle}
+          style={{ width: 28, height: 28, borderRadius: 6, border: 'none', background: emojiPop.open ? 'var(--peach)' : 'transparent', cursor: 'pointer', color: 'var(--slate)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
         </button>
-        <button type="button" title="Insert image" disabled={imgBusy} onMouseDown={e => { e.preventDefault(); imgInputRef.current?.click() }}
+        <button type="button" title="Insert image" aria-label="Insert image" disabled={imgBusy} onMouseDown={e => { e.preventDefault(); imgInputRef.current?.click() }}
           style={{ width: 28, height: 28, borderRadius: 6, border: 'none', background: 'transparent', cursor: imgBusy ? 'wait' : 'pointer', color: 'var(--slate)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
         </button>
         <input ref={imgInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={e => onPickImage(e.target.files?.[0] || null)} />
-        <button type="button" title="Attach file" disabled={attBusy} onMouseDown={e => { e.preventDefault(); attInputRef.current?.click() }}
+        <button type="button" title="Attach file" aria-label="Attach file" disabled={attBusy} onMouseDown={e => { e.preventDefault(); attInputRef.current?.click() }}
           style={{ width: 28, height: 28, borderRadius: 6, border: 'none', background: 'transparent', cursor: attBusy ? 'wait' : 'pointer', color: 'var(--slate)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
         </button>
@@ -412,32 +430,16 @@ export default function EmailComposer({
             <div className="email-extra-tools" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>{extraTools(insertDictation)}</div>
           </>
         )}
-        {templates.length > 0 && (
-          <button type="button" title="Insert a saved template" onMouseDown={e => { e.preventDefault(); setShowTemplates(v => !v) }}
-            style={{ width: 28, height: 28, borderRadius: 6, border: 'none', background: showTemplates ? 'var(--peach)' : 'transparent', cursor: 'pointer', color: 'var(--slate)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-          </button>
-        )}
-        {showTemplates && templates.length > 0 && (
-          <div style={{ position: 'absolute', top: '100%', left: 8, zIndex: 20, background: '#fff', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 10px 30px rgba(0,0,0,0.12)', padding: 6, width: 260, maxHeight: 260, overflowY: 'auto' }}>
-            <p style={{ margin: '2px 8px 6px', fontSize: 11, fontWeight: 800, color: 'var(--slate)', textTransform: 'uppercase' }}>Templates</p>
-            {templates.map(t => (
-              <button key={t.id} type="button" onMouseDown={e => { e.preventDefault(); insertTemplate(t) }}
-                style={{ display: 'block', width: '100%', textAlign: 'left', border: 'none', background: 'transparent', cursor: 'pointer', padding: '7px 8px', borderRadius: 8 }}>
-                <span style={{ display: 'block', fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>{t.title || t.shortcut || 'Template'}</span>
-                <span style={{ display: 'block', fontSize: 11.5, color: 'var(--slate)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{(t.body || '').slice(0, 60)}</span>
-              </button>
-            ))}
-          </div>
-        )}
-        {showEmoji && (
-          <div style={{ position: 'absolute', top: '100%', left: 8, zIndex: 20, background: '#fff', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 10px 30px rgba(0,0,0,0.12)', padding: 8, display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 2 }}>
+        <TemplatesButton companyId={companyId} vars={tplVars} onInsert={insertTemplate}
+          buttonStyle={open => ({ width: 28, height: 28, borderRadius: 6, border: 'none', background: open ? 'var(--peach)' : 'transparent', cursor: 'pointer', color: 'var(--slate)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' })} />
+        <Popover open={emojiPop.open} onClose={emojiPop.close} anchorRef={emojiPop.anchorRef} width={232} label="Emoji" padding={8}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 2 }}>
             {EMOJIS.map(em => (
-              <button key={em} type="button" onMouseDown={e => { e.preventDefault(); insertAtCursor(em); setShowEmoji(false) }}
-                style={{ width: 30, height: 30, border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 18, borderRadius: 6 }}>{em}</button>
+              <button key={em} type="button" data-pop-item className="cpop-item" aria-label={`Insert ${em}`} onMouseDown={e => e.preventDefault()} onClick={() => { emojiPop.close(); insertAtCursor(em) }}
+                style={{ width: 34, height: 34, padding: 0, justifyContent: 'center', fontSize: 18, borderRadius: 6 }}>{em}</button>
             ))}
           </div>
-        )}
+        </Popover>
       </div>
       <div ref={editorRef} contentEditable suppressContentEditableWarning onInput={() => { syncBody(); rememberCaret() }}
         onKeyUp={rememberCaret} onMouseUp={rememberCaret} onBlur={rememberCaret}

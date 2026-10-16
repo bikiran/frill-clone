@@ -86,6 +86,21 @@ export function isOwnSurface(target: string, co: CompanySurfaces): boolean {
   return sites.some(d => host === d || host.endsWith(`.${d}`))
 }
 
+/**
+ * A Colvy poll or survey page (/polls/<id>, /surveys/<id>) on the business's
+ * subdomain or on Colvy itself. Links sent to one customer (a campaign) get
+ * ?clv= here too, so their vote is matched to them and counted once. The
+ * vote route still checks the click belongs to the poll's own business.
+ */
+export function isEngagePage(target: string, co: CompanySurfaces): boolean {
+  let u: URL
+  try { u = new URL(target) } catch { return false }
+  if (!/^\/(polls|surveys)\/[0-9a-f-]{36}\/?$/i.test(u.pathname)) return false
+  const host = bareHost(u.hostname)
+  const slug = String(co.slug || '').trim().toLowerCase()
+  return (!!slug && host === `${slug}.colvy.com`) || colvyHosts().includes(host)
+}
+
 /** The target with ?clv=<click id> added (its own query string and #hash kept). */
 export function withClickRef(target: string, clickId: string): string {
   try {

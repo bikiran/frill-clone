@@ -8,40 +8,42 @@
 // Victoria). A business can extend/override it via review_request_settings by
 // passing extra "YYYY-MM-DD" dates — see holidaySet().
 
-// VIC public holidays (YYYY-MM-DD). Update yearly. Dates that fall on a weekend
+// VIC public holidays (YYYY-MM-DD) with their names (Bookings → Availability
+// offers them as closed dates). Update yearly. Dates that fall on a weekend
 // and get a substitute day are listed on the observed day too.
-const VIC_PUBLIC_HOLIDAYS_2026_2027: string[] = [
+export const VIC_PUBLIC_HOLIDAYS: { date: string; label: string }[] = [
   // 2026
-  '2026-01-01', // New Year's Day
-  '2026-01-26', // Australia Day
-  '2026-03-09', // Labour Day (VIC)
-  '2026-04-03', // Good Friday
-  '2026-04-04', // Saturday before Easter Sunday
-  '2026-04-05', // Easter Sunday
-  '2026-04-06', // Easter Monday
-  '2026-04-25', // Anzac Day
-  '2026-06-08', // King's Birthday (VIC)
-  '2026-11-03', // Melbourne Cup Day (VIC)
-  '2026-12-25', // Christmas Day
-  '2026-12-26', // Boxing Day
-  '2026-12-28', // Boxing Day (observed — 26th is a Saturday)
+  { date: '2026-01-01', label: 'New Year’s Day' },
+  { date: '2026-01-26', label: 'Australia Day' },
+  { date: '2026-03-09', label: 'Labour Day' },
+  { date: '2026-04-03', label: 'Good Friday' },
+  { date: '2026-04-04', label: 'Saturday before Easter Sunday' },
+  { date: '2026-04-05', label: 'Easter Sunday' },
+  { date: '2026-04-06', label: 'Easter Monday' },
+  { date: '2026-04-25', label: 'Anzac Day' },
+  { date: '2026-06-08', label: 'King’s Birthday' },
+  { date: '2026-11-03', label: 'Melbourne Cup Day' },
+  { date: '2026-12-25', label: 'Christmas Day' },
+  { date: '2026-12-26', label: 'Boxing Day' },
+  { date: '2026-12-28', label: 'Boxing Day (observed)' },
   // 2027
-  '2027-01-01', // New Year's Day
-  '2027-01-26', // Australia Day
-  '2027-03-08', // Labour Day (VIC)
-  '2027-03-26', // Good Friday
-  '2027-03-27', // Saturday before Easter Sunday
-  '2027-03-28', // Easter Sunday
-  '2027-03-29', // Easter Monday
-  '2027-04-25', // Anzac Day
-  '2027-04-26', // Anzac Day (observed — 25th is a Sunday)
-  '2027-06-14', // King's Birthday (VIC)
-  '2027-11-02', // Melbourne Cup Day (VIC)
-  '2027-12-25', // Christmas Day
-  '2027-12-27', // Christmas Day (observed — 25th is a Saturday)
-  '2027-12-26', // Boxing Day
-  '2027-12-28', // Boxing Day (observed — 26th is a Sunday)
+  { date: '2027-01-01', label: 'New Year’s Day' },
+  { date: '2027-01-26', label: 'Australia Day' },
+  { date: '2027-03-08', label: 'Labour Day' },
+  { date: '2027-03-26', label: 'Good Friday' },
+  { date: '2027-03-27', label: 'Saturday before Easter Sunday' },
+  { date: '2027-03-28', label: 'Easter Sunday' },
+  { date: '2027-03-29', label: 'Easter Monday' },
+  { date: '2027-04-25', label: 'Anzac Day' },
+  { date: '2027-04-26', label: 'Anzac Day (observed)' },
+  { date: '2027-06-14', label: 'King’s Birthday' },
+  { date: '2027-11-02', label: 'Melbourne Cup Day' },
+  { date: '2027-12-25', label: 'Christmas Day' },
+  { date: '2027-12-27', label: 'Christmas Day (observed)' },
+  { date: '2027-12-26', label: 'Boxing Day' },
+  { date: '2027-12-28', label: 'Boxing Day (observed)' },
 ]
+const VIC_PUBLIC_HOLIDAYS_2026_2027: string[] = VIC_PUBLIC_HOLIDAYS.map(h => h.date)
 
 // The set of holiday dates, optionally extended by business-supplied extras.
 export function holidaySet(extra?: string[] | null): Set<string> {

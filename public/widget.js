@@ -141,6 +141,15 @@
     '#colvy-popup.expanded{width:440px;height:660px}',
     '#colvy-popup.fullscreen{width:100vw!important;height:100vh!important;top:0!important;left:0!important;right:auto!important;bottom:auto!important;border-radius:0;transform:none!important}',
     '@media(max-width:480px){#colvy-popup{width:calc(100vw - 24px);height:70vh;bottom:84px;right:12px;left:12px}#colvy-btn{bottom:16px;right:16px}}',
+    // A boosted announcement beside the bubble while the widget is closed.
+    '#colvy-teaser{position:fixed;z-index:999997;width:280px;max-width:calc(100vw - 32px);background:#fff;color:#111;border-radius:16px;box-shadow:0 12px 40px rgba(0,0,0,0.18),0 0 0 1px rgba(0,0,0,0.06);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;cursor:pointer;overflow:hidden;animation:colvyTeaser .25s ease both}',
+    '#colvy-teaser img{display:block;width:100%;height:120px;object-fit:cover}',
+    '#colvy-teaser .ct-b{padding:12px 34px 14px 14px}',
+    '#colvy-teaser .ct-t{font-size:14px;font-weight:700;line-height:1.3;margin:0}',
+    '#colvy-teaser .ct-p{font-size:12.5px;line-height:1.45;color:#6b7280;margin:4px 0 0}',
+    '#colvy-teaser .ct-a{display:inline-block;margin-top:8px;font-size:12.5px;font-weight:700}',
+    '#colvy-teaser .ct-x{position:absolute;top:6px;right:6px;width:26px;height:26px;border:none;border-radius:999px;background:rgba(255,255,255,0.92);color:#6b7280;cursor:pointer;font-size:0;display:flex;align-items:center;justify-content:center}',
+    '@keyframes colvyTeaser{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}',
   ].join('')
   document.head.appendChild(style)
 
@@ -165,11 +174,14 @@
   popup.src = WIDGET_URL
   popup.allow = 'clipboard-write'
   popup.setAttribute('loading', 'lazy')
+  // Tell the widget whether it starts open, so it knows when it may show a
+  // boosted announcement beside the bubble.
+  popup.addEventListener('load', function () { notifyOpen(open) })
 
   var open = false
   function toggle() {
     open = !open
-    if (open) { popup.classList.add('open'); renderBtn(true); clearBadge(); notifyOpen(true) }
+    if (open) { popup.classList.add('open'); renderBtn(true); clearBadge(); hideTeaser(); notifyOpen(true) }
     else { popup.classList.remove('open'); popup.classList.remove('fullscreen', 'expanded', 'compact'); btn.style.display = ''; applyPosition(); renderBtn(false); notifyOpen(false) }
   }
 
@@ -276,6 +288,51 @@
   function notifyOpen(isOpen) {
     try { if (popup.contentWindow) popup.contentWindow.postMessage({ colvy: true, type: 'widget_open', open: isOpen }, BASE) } catch (e) {}
   }
+
+  // ── Boosted announcement card ("popup" in the admin) ──────────────────────
+  // The widget (inside the iframe) sends the card while it's closed; text goes
+  // in with textContent and the image must be https, so nothing in it can run.
+  var teaser = null, teaserId = null
+  var TEASER_KEY = 'colvy_teaser_closed'
+  function teaserClosed(id) { try { return (localStorage.getItem(TEASER_KEY) || '').split(',').indexOf(id) !== -1 } catch (e) { return false } }
+  function rememberTeaser(id) { try { var v = (localStorage.getItem(TEASER_KEY) || '').split(',').filter(Boolean).slice(-30); v.push(id); localStorage.setItem(TEASER_KEY, v.join(',')) } catch (e) {} }
+  function hideTeaser() { if (teaser && teaser.parentNode) teaser.parentNode.removeChild(teaser); teaser = null; teaserId = null }
+  function toFrame(msg) { try { if (popup.contentWindow) popup.contentWindow.postMessage(msg, BASE) } catch (e) {} }
+  function showTeaser(d) {
+    var id = String(d.id || '')
+    if (open || !id || teaserClosed(id) || teaserId === id) return
+    hideTeaser()
+    teaserId = id
+    var accent = /^#[0-9a-f]{6}$/i.test(d.accent || '') ? d.accent : cfg.color
+    teaser = document.createElement('div')
+    teaser.id = 'colvy-teaser'
+    teaser.setAttribute('role', 'dialog')
+    teaser.setAttribute('aria-label', 'Announcement')
+    if (typeof d.image === 'string' && /^https:\/\//i.test(d.image)) { var im = document.createElement('img'); im.src = d.image; im.alt = ''; teaser.appendChild(im) }
+    var body = document.createElement('div'); body.className = 'ct-b'
+    var t = document.createElement('p'); t.className = 'ct-t'; t.textContent = String(d.title || '').slice(0, 120); body.appendChild(t)
+    if (d.blurb) { var p = document.createElement('p'); p.className = 'ct-p'; p.textContent = String(d.blurb).slice(0, 200); body.appendChild(p) }
+    var a = document.createElement('span'); a.className = 'ct-a'; a.style.color = accent; a.textContent = String(d.button || 'Read more').slice(0, 30); body.appendChild(a)
+    teaser.appendChild(body)
+    var x = document.createElement('button'); x.className = 'ct-x'; x.type = 'button'; x.setAttribute('aria-label', 'Close')
+    x.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>'
+    x.addEventListener('click', function (ev) { ev.stopPropagation(); rememberTeaser(id); toFrame({ colvy: true, type: 'teaser_dismiss', id: id }); hideTeaser() })
+    teaser.appendChild(x)
+    teaser.addEventListener('click', function () { rememberTeaser(id); if (!open) toggle(); toFrame({ colvy: true, type: 'teaser_open', id: id }); hideTeaser() })
+    // Beside the bubble: above it at the bottom of the screen, below it at the top.
+    var r = btn.getBoundingClientRect()
+    var left = r.left + r.width / 2 < window.innerWidth / 2
+    teaser.style[left ? 'left' : 'right'] = Math.max(12, left ? r.left : window.innerWidth - r.right) + 'px'
+    if (r.top > window.innerHeight / 2) teaser.style.bottom = (window.innerHeight - r.top + 12) + 'px'
+    else teaser.style.top = (r.bottom + 12) + 'px'
+    document.body.appendChild(teaser)
+  }
+  window.addEventListener('message', function (e) {
+    var d = e.data
+    if (!d || !d.colvy || e.source !== popup.contentWindow || e.origin !== BASE) return
+    if (d.type === 'teaser') showTeaser(d)
+    else if (d.type === 'teaser_hide') hideTeaser()
+  })
 
   // Listen for signals from the widget iframe (new agent messages, etc).
   window.addEventListener('message', function (e) {

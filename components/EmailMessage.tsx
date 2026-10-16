@@ -1,19 +1,24 @@
 'use client'
 
 import { useAttachmentToken } from '@/lib/useAttachmentToken'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { quotedDateOf, emailFrameDoc, estimateEmailHeight } from '@/lib/email-text'
 
-// Coax-style email card. Emails used to render as one flattened blob of
-// stripped text (with CSS leaking in). This shows the real thing: From/To/Cc,
-// subject, the formatted body, quoted history collapsed behind "View full
-// message", and attachments: photos and videos open in the inbox's viewer,
-// other files download.
+// Email card. A customer's email reads as a RECEIVED message: on the left,
+// with their name, the time it arrived, the body, the history their mail app
+// quoted collapsed behind "Replying to your email from 8 Oct", the formatted
+// version behind "View full message", and attachments (photos and videos open
+// in the inbox's viewer, other files download). An email the business sent
+// sits on the right and says where it went from and where replies come back.
 
 const ico = (path: React.ReactNode, size = 14) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>{path}</svg>
 )
-const ArrowIn = () => ico(<><line x1="7" y1="17" x2="17" y2="7"/><polyline points="7 7 17 7 17 17"/></>, 13)
-const ArrowOut = () => ico(<><line x1="17" y1="7" x2="7" y2="17"/><polyline points="17 17 17 7 7 7"/></>, 13)
+// Received: an arrow down into a tray. Sent: a paper plane. (The old "in"
+// icon was an up-right arrow, which reads as outgoing.)
+const InboxIn = () => ico(<><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></>, 13)
+const SentPlane = () => ico(<><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4z"/></>, 13)
+const Chevron = ({ open }: { open: boolean }) => ico(<polyline points={open ? '18 15 12 9 6 15' : '6 9 12 15 18 9'} />, 13)
 const Paperclip = () => ico(<path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>, 13)
 const Download = () => ico(<><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></>, 13)
 
@@ -63,17 +68,41 @@ export function emailAttachmentUrl(msg: any, a: any, attToken?: string | null): 
     : null)
 }
 
-export default function EmailMessage({ msg, agentColor, onOpenMedia }: {
+// "16 Oct, 10:07 pm"
+function fmtWhen(raw?: string | null): string {
+  if (!raw) return ''
+  const d = new Date(String(raw).replace(' ', 'T'))
+  if (isNaN(d.getTime())) return ''
+  const date = d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })
+  const time = d.toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit', hour12: true }).replace(/\s?([ap])\.?m\.?/i, ' $1m').toLowerCase()
+  return `${date}, ${time}`
+}
+
+export default function EmailMessage({ msg, agentColor, onOpenMedia, businessName }: {
   msg: any
   agentColor?: string
   // Open a photo/video attachment (by its index on this email) in the viewer.
   onOpenMedia?: (attachmentIndex: number) => void
+  // The business's name, for "Sent from Roxy Aquarium <…>".
+  businessName?: string | null
 }) {
   const attToken = useAttachmentToken(msg?.gmail_message_id ? msg?.conversation_id : null)
   const [showFull, setShowFull] = useState(false)
+  const [showQuoted, setShowQuoted] = useState(false)
+  // The frame's width (our own element, measured from outside the sandbox) for
+  // its starting height: a narrow phone needs a taller frame.
+  const bodyRef = useRef<HTMLDivElement | null>(null)
+  const [bodyW, setBodyW] = useState(640)
+  useEffect(() => {
+    const el = bodyRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(() => setBodyW(Math.max(200, Math.round(el.clientWidth))))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
   const isAgent = msg.sender_type === 'agent'
 
-  const from = firstAddress(msg.email_from) || { name: msg.sender_name || '', email: msg.sender_email || '' }
+  const from = firstAddress(msg.email_from)
   const fromEmail = from.email || msg.sender_email || ''
   const fromName = from.name || msg.sender_name || fromEmail
   const to = msg.email_to || ''
@@ -82,57 +111,73 @@ export default function EmailMessage({ msg, agentColor, onOpenMedia }: {
   const html = msg.email_html || ''
   const quoted = msg.email_quoted || ''
   const attachments: any[] = Array.isArray(msg.email_attachments) ? msg.email_attachments : []
+  const text = cleanPreview(msg.content)
+  const when = fmtWhen(msg.metadata?.inbound_email?.received_at || msg.created_at)
+  const quotedOn = quotedDateOf(quoted)
+  const isAuto = isAgent && !!msg.metadata?.auto
+  const accent = agentColor || '#2563eb'
 
   const fmtBytes = (n: number) => n > 1048576 ? `${(n / 1048576).toFixed(1)} MB` : n > 1024 ? `${Math.round(n / 1024)} KB` : `${n} B`
+  const initial = (fromName || '?').trim().charAt(0).toUpperCase()
 
   return (
-    <div style={{ maxWidth: 640, margin: '8px auto', width: '100%' }}>
-      <div style={{ border: '1px solid #e3e9f2', borderRadius: 14, overflow: 'hidden', background: '#fff' }}>
-        {/* Address bar */}
-        <div style={{ padding: '12px 16px', borderBottom: '1px solid #eef2f7', background: '#f9fbfd' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: to ? 5 : 0 }}>
-            <span style={{ color: isAgent ? (agentColor || '#2563eb') : '#15803d', display: 'flex' }}>
-              {isAgent ? <ArrowOut /> : <ArrowIn />}
+    <div className="em-row" style={{ display: 'flex', justifyContent: isAgent ? 'flex-end' : 'flex-start', gap: 8, alignItems: 'flex-start', margin: '8px 0', width: '100%' }}>
+      <style>{`.em-row .em-card{max-width:min(680px,100%)}@media (max-width:640px){.em-row .em-av{display:none !important}.em-row .em-card{max-width:100%}}`}</style>
+      {!isAgent && (
+        <div className="em-av" aria-hidden style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--peach)', border: '2px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: 'var(--coral)', flexShrink: 0, marginTop: 2 }}>
+          {initial}
+        </div>
+      )}
+      <div className="em-card" style={{ flex: '1 1 auto', minWidth: 0, border: `1px solid ${isAgent ? `color-mix(in srgb, ${accent} 28%, var(--border))` : 'var(--border)'}`, borderRadius: 14, overflow: 'hidden', background: '#fff' }}>
+        {/* Who, when, and which way it went */}
+        <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', background: isAgent ? `color-mix(in srgb, ${accent} 6%, #fff)` : 'var(--canvas)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 700, color: isAgent ? accent : '#15803d', background: isAgent ? `color-mix(in srgb, ${accent} 12%, #fff)` : '#ecfdf3', borderRadius: 20, padding: '2px 8px', flexShrink: 0 }}>
+              {isAgent ? <SentPlane /> : <InboxIn />}
+              {isAgent ? (isAuto ? 'Email sent automatically' : 'Email sent') : 'Email received'}
             </span>
-            <span style={{ fontSize: 12.5, color: 'var(--slate)' }}>From</span>
-            <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {fromName}{fromName !== fromEmail && fromEmail ? ` <${fromEmail}>` : ''}
-            </span>
+            {when && <span style={{ marginLeft: 'auto', fontSize: 11.5, color: 'var(--slate)', whiteSpace: 'nowrap' }} title={isAgent ? 'Sent' : 'Received'}>{when}</span>}
           </div>
-          {to && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ width: 13 }} />
-              <span style={{ fontSize: 12.5, color: 'var(--slate)' }}>To</span>
-              <span style={{ fontSize: 12.5, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{to}</span>
+          {isAgent ? (
+            <p style={{ margin: '6px 0 0', fontSize: 12.5, color: 'var(--slate)', lineHeight: 1.45, overflowWrap: 'anywhere' }}>
+              Sent from <b style={{ color: 'var(--ink)', fontWeight: 600 }}>{businessName || fromName}</b>{fromEmail ? ` <${fromEmail}>` : ''}
+              {to ? <> to <span style={{ color: 'var(--ink)' }}>{to}</span></> : null}
+              <span> · replies come back to this inbox</span>
+            </p>
+          ) : (
+            <div style={{ marginTop: 6, minWidth: 0 }}>
+              <p style={{ margin: 0, fontSize: 13.5, fontWeight: 700, color: 'var(--ink)', overflowWrap: 'anywhere' }}>
+                {fromName}{fromEmail && fromName !== fromEmail ? <span style={{ fontWeight: 400, color: 'var(--slate)', fontSize: 12.5 }}>{` <${fromEmail}>`}</span> : null}
+              </p>
+              {to && <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--slate)', overflowWrap: 'anywhere' }}>to {to}</p>}
             </div>
           )}
-          {cc && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 3 }}>
-              <span style={{ width: 13 }} />
-              <span style={{ fontSize: 12.5, color: 'var(--slate)' }}>Cc</span>
-              <span style={{ fontSize: 12.5, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cc}</span>
-            </div>
-          )}
+          {cc && <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--slate)', overflowWrap: 'anywhere' }}>Cc {cc}</p>}
         </div>
 
         {/* Subject */}
         {subject && (
-          <div style={{ padding: '10px 16px 0' }}>
-            <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: 'var(--ink)' }}>{subject}</p>
+          <div style={{ padding: '10px 14px 0' }}>
+            <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: 'var(--ink)', overflowWrap: 'anywhere' }}>{subject}</p>
           </div>
         )}
 
         {/* Body */}
-        <div style={{ padding: '10px 16px 14px' }}>
+        <div ref={bodyRef} style={{ padding: '8px 14px 14px' }}>
           {showFull && html ? (
-            // Full formatted email (sanitised server-side).
-            <div style={{ fontSize: 13.5, lineHeight: 1.55, color: 'var(--ink)', overflowX: 'auto' }}
-              dangerouslySetInnerHTML={{ __html: html }} />
-          ) : (
-            <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.55, color: 'var(--ink)', whiteSpace: 'pre-wrap' }}>
-              {cleanPreview(msg.content)}
-            </p>
-          )}
+            // The full formatted email, in a sandboxed frame: no scripts and
+            // not same-origin, so nothing in a customer's email can touch the
+            // inbox even if it got past the sanitiser (which runs again here,
+            // for rows stored before it). Drag the corner to make it taller.
+            <div style={{ resize: 'vertical', overflow: 'hidden', height: estimateEmailHeight(html, bodyW - 28), minHeight: 120, maxHeight: '85vh', border: '1px solid var(--border)', borderRadius: 10, background: '#fff' }}>
+              <iframe title={`Email: ${subject || 'message'}`} sandbox="allow-popups allow-popups-to-escape-sandbox" referrerPolicy="no-referrer"
+                srcDoc={emailFrameDoc(html)} style={{ width: '100%', height: '100%', border: 'none', display: 'block' }} />
+            </div>
+          ) : text ? (
+            <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.55, color: 'var(--ink)', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{text}</p>
+          ) : !attachments.length && !html ? (
+            <p style={{ margin: 0, fontSize: 13, color: 'var(--slate)', fontStyle: 'italic' }}>This email has no message text.</p>
+          ) : null}
 
           {/* Attachments */}
           {attachments.length > 0 && (
@@ -144,7 +189,7 @@ export default function EmailMessage({ msg, agentColor, onOpenMedia }: {
                 if (dl && kind && onOpenMedia) {
                   return (
                     <button key={i} type="button" className="em-media" onClick={() => onOpenMedia(i)} title={`View ${a.name || 'attachment'}`}
-                      style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '5px 11px 5px 5px', borderRadius: 9, border: '1px solid #e3e9f2', background: '#f9fbfd', color: 'var(--ink)', fontSize: 12.5, maxWidth: 240, cursor: 'zoom-in', font: 'inherit' }}>
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '5px 11px 5px 5px', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--canvas)', color: 'var(--ink)', fontSize: 12.5, maxWidth: 240, cursor: 'zoom-in', font: 'inherit' }}>
                       <span style={{ position: 'relative', width: 32, height: 32, borderRadius: 6, overflow: 'hidden', background: '#e8edf4', flexShrink: 0 }}>
                         {kind === 'image'
                           ? <img src={dl} alt="" loading="lazy" decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
@@ -161,7 +206,7 @@ export default function EmailMessage({ msg, agentColor, onOpenMedia }: {
                   )
                 }
                 const chip = (
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '7px 11px', borderRadius: 9, border: '1px solid #e3e9f2', background: '#f9fbfd', color: 'var(--ink)', fontSize: 12.5, maxWidth: 240 }}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '7px 11px', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--canvas)', color: 'var(--ink)', fontSize: 12.5, maxWidth: 240 }}>
                     <Paperclip />
                     <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.name}</span>
                     {a.size ? <span style={{ color: 'var(--slate)', fontSize: 11 }}>{fmtBytes(a.size)}</span> : null}
@@ -175,19 +220,28 @@ export default function EmailMessage({ msg, agentColor, onOpenMedia }: {
             </div>
           )}
 
-          {/* Expand / collapse */}
-          {(html || quoted) && (
-            <button type="button" onClick={() => setShowFull(v => !v)}
-              style={{ marginTop: 12, background: '#eef4ff', border: 'none', borderRadius: 8, padding: '7px 12px', color: '#2563eb', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
-              {showFull ? 'Show less' : 'View full message'}
-            </button>
+          {/* The older email this one replies to, collapsed */}
+          {quoted && !showFull && (
+            <div style={{ marginTop: 12 }}>
+              <button type="button" onClick={() => setShowQuoted(v => !v)} aria-expanded={showQuoted}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'none', border: '1px solid var(--border)', borderRadius: 8, padding: '5px 10px', color: 'var(--slate)', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+                <Chevron open={showQuoted} />
+                {isAgent ? 'Earlier messages' : quotedOn ? `Replying to your email from ${quotedOn}` : 'Replying to your earlier email'}
+              </button>
+              {showQuoted && (
+                <div style={{ marginTop: 8, paddingLeft: 12, borderLeft: '3px solid var(--border)' }}>
+                  <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.5, color: 'var(--slate)', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{quoted}</p>
+                </div>
+              )}
+            </div>
           )}
 
-          {/* Quoted history (plain-text fallback when there's no HTML) */}
-          {showFull && !html && quoted && (
-            <div style={{ marginTop: 10, paddingLeft: 12, borderLeft: '3px solid #e3e9f2' }}>
-              <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.5, color: 'var(--slate)', whiteSpace: 'pre-wrap' }}>{quoted}</p>
-            </div>
+          {/* Formatted version */}
+          {html && (
+            <button type="button" onClick={() => setShowFull(v => !v)}
+              style={{ marginTop: 12, marginLeft: quoted && !showFull ? 0 : undefined, display: 'block', background: '#eef4ff', border: 'none', borderRadius: 8, padding: '7px 12px', color: '#2563eb', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+              {showFull ? 'Show less' : 'View full message'}
+            </button>
           )}
         </div>
       </div>

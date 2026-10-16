@@ -87,7 +87,7 @@ export default function ManageBooking({ token }: { token: string }) {
 
   const heroRef = useHeroParallax(!!b)
 
-  useEffect(() => { if (b?.company?.name) try { document.title = `Your booking — ${b.company.name}` } catch {} }, [b?.company?.name])
+  useEffect(() => { if (b?.company?.name) try { document.title = `Your booking · ${b.company.name}` } catch {} }, [b?.company?.name])
 
   const fetchSlots = useCallback(async (from: string, to: string) => {
     const r = await fetch(`/api/book/manage?token=${encodeURIComponent(token)}&op=slots&from=${from}&to=${to}`)
