@@ -158,7 +158,7 @@ export async function backfillEmptyEmailBodies(db: any, o: {
       const hasFiles = Array.isArray(m.email_attachments) && m.email_attachments.length
       if (!hasFiles && full.attachments.length) {
         const files = await hostResendAttachments(emailId, m.company_id, full.attachments, f)
-        if (files.length) patch.email_attachments = files.map(a => ({ name: a.name, mime: a.type, url: a.url, ...(a.size ? { size: a.size } : {}) }))
+        if (files.length) patch.email_attachments = files.map(a => ({ name: a.name, mime: a.type, url: a.url, ...(a.size ? { size: a.size } : {}), ...(a.thumbUrl ? { thumbUrl: a.thumbUrl } : {}) }))
       }
       const { error: upErr } = await db.from('messages').update(patch).eq('id', m.id)
       if (upErr) { delete patch.email_quoted; delete patch.metadata; await db.from('messages').update(patch).eq('id', m.id) }

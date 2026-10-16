@@ -11445,7 +11445,7 @@ export default function InboxPage() {
                     const url = emailAttachmentUrl(m, a, attToken)
                     if (!url) return
                     const kind = emailAttachmentKind(a)
-                    emailAtts.push({ url, name: a.name || 'file', isImage: kind === 'image', isVideo: kind === 'video', messageId: m.id, index: ai })
+                    emailAtts.push({ url, thumbUrl: a.thumbUrl || null, name: a.name || 'file', isImage: kind === 'image', isVideo: kind === 'video', messageId: m.id, index: ai })
                   }))
                   const total = media.length + emailAtts.length
                   if (total === 0) return null
@@ -11458,8 +11458,12 @@ export default function InboxPage() {
                             style={{ position: 'relative', paddingTop: '100%', borderRadius: 8, overflow: 'hidden', cursor: 'pointer', background: 'var(--canvas)' }}>
                             <div onClick={() => setGalleryIndex(i)} style={{ position: 'absolute', inset: 0 }}>
                               {(a.kind === 'video' || String(a.type).startsWith('video'))
-                                ? <video src={a.url} preload="metadata" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                : <img src={sizedImageUrl(a.thumbUrl || a.url, 120)} onError={sizedImageFallback(a.thumbUrl || a.url)} alt="" loading="lazy" decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
+                                // Nothing loads for a video tile until it's opened: its
+                                // still (when it has one) stands in.
+                                ? <video src={toPublicUrl(a.url)} poster={videoPoster(a)} preload="none" muted playsInline style={{ width: '100%', height: '100%', objectFit: 'cover', background: '#000' }} />
+                                // The stored thumbnail first; older photos without one get
+                                // a resized copy (or, failing that, the original).
+                                : <img src={a.thumbUrl ? toPublicUrl(a.thumbUrl) : sizedImageUrl(a.url, 120)} onError={sizedImageFallback(a.url)} alt="" loading="lazy" decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
                             </div>
                             {/* Forward it to another customer */}
                             <button type="button"
@@ -11475,9 +11479,9 @@ export default function InboxPage() {
                             onClick={(a.isImage || a.isVideo) ? (e => { e.preventDefault(); openEmailMedia(a.messageId, a.index) }) : undefined}
                             style={{ position: 'relative', paddingTop: '100%', borderRadius: 8, overflow: 'hidden', background: 'var(--canvas)', display: 'block', textDecoration: 'none', cursor: (a.isImage || a.isVideo) ? 'zoom-in' : 'pointer' }}>
                             {a.isImage ? (
-                              <img src={sizedImageUrl(a.url, 120)} onError={sizedImageFallback(a.url)} alt={a.name} loading="lazy" decoding="async" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+                              <img src={a.thumbUrl ? toPublicUrl(a.thumbUrl) : sizedImageUrl(a.url, 120)} onError={sizedImageFallback(a.url)} alt={a.name} loading="lazy" decoding="async" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
                             ) : a.isVideo ? (
-                              <video src={a.url} preload="metadata" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+                              <video src={a.url} preload="none" muted playsInline style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', background: '#000' }} />
                             ) : (
                               <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, padding: 4, color: '#64748b' }}>
                                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>

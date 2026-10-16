@@ -9,6 +9,7 @@
 // replies with an empty body in a brand-new conversation.
 
 import { uploadToR2, r2Configured } from '@/lib/r2'
+import { isThumbableImage, thumbFromBytes, THUMB_WIDTH } from '@/lib/image-thumb'
 import { headerValue, parseMessageIds, idVariants, normSubject, authVerdict } from '@/lib/email-text'
 
 export * from '@/lib/email-text'
@@ -146,7 +147,7 @@ export function safeAttachmentType(type: string | null | undefined): { type: str
  * Attachments API and keep it on our own R2 → [{url,name,type,size}].
  * At most 10 files and 25MB in all; unsafe types are stored as downloads.
  */
-export async function hostResendAttachments(emailId: string | null | undefined, companyId: string, meta?: any[] | null, fetchImpl: typeof fetch = fetch): Promise<{ url: string; name: string; type: string; size?: number }[]> {
+export async function hostResendAttachments(emailId: string | null | undefined, companyId: string, meta?: any[] | null, fetchImpl: typeof fetch = fetch): Promise<{ url: string; name: string; type: string; size?: number; thumbUrl?: string }[]> {
   try {
     if (!process.env.RESEND_API_KEY || !r2Configured() || !emailId) return []
     // Skip the extra API call when the payload's metadata says there are none.
@@ -157,8 +158,11 @@ export async function hostResendAttachments(emailId: string | null | undefined, 
     if (!res.ok) return []
     const j: any = await res.json().catch(() => ({}))
     const list = (j.data || j.attachments || []) as any[]
-    const out: { url: string; name: string; type: string; size?: number }[] = []
+    const out: { url: string; name: string; type: string; size?: number; thumbUrl?: string }[] = []
     let total = 0
+    // Photos also get a small WebP for the inbox tiles, made from the bytes we
+    // already have. Best-effort and time-boxed: never holds up or loses a file.
+    const thumbDeadline = Date.now() + 6_000
     for (let i = 0; i < list.length && out.length < MAX_EMAIL_FILES; i++) {
       const a = list[i]
       try {
@@ -175,7 +179,14 @@ export async function hostResendAttachments(emailId: string | null | undefined, 
         const uniq = String(a.id || i).replace(/[^\w-]/g, '').slice(0, 40) || String(i)
         const key = `ticket-attachments/${companyId}/${emailId}-${uniq}-${safe}`
         const url = await uploadToR2(key, bytes, type, inline ? {} : { contentDisposition: `attachment; filename="${safe}"` })
-        out.push({ url, name, type, size: bytes.length })
+        let thumbUrl: string | undefined
+        if (inline && Date.now() < thumbDeadline && isThumbableImage({ url, type })) {
+          try {
+            const thumb = await thumbFromBytes(bytes, Math.max(500, thumbDeadline - Date.now()))
+            if (thumb) thumbUrl = await uploadToR2(`ticket-attachments/${companyId}/thumbs/${emailId}-${uniq}-${THUMB_WIDTH}.webp`, thumb, 'image/webp')
+          } catch { /* the original still shows */ }
+        }
+        out.push({ url, name, type, size: bytes.length, ...(thumbUrl ? { thumbUrl } : {}) })
       } catch { /* skip one bad attachment */ }
     }
     return out

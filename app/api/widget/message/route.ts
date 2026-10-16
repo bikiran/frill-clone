@@ -6,6 +6,7 @@ import { checkBurst, callerKey } from '@/lib/rate-limit'
 import { notifyCompany, pushInboundMessage } from '@/lib/notify'
 import { logEnquiryReopened } from '@/lib/conversation-timeline'
 import { emitInboundEvent } from '@/lib/integration-hooks'
+import { scheduleMessageThumbs } from '@/lib/image-thumb'
 
 export const dynamic = 'force-dynamic'
 
@@ -103,6 +104,9 @@ export async function POST(req: NextRequest) {
       console.error('[widget message] insert failed', error)
       return NextResponse.json({ error: 'Message could not be sent' }, { status: 500 })
     }
+    // Small copies of uploaded photos for the inbox tiles (after the response).
+    // Visitor-supplied URLs, so only files on our own storage are fetched.
+    scheduleMessageThumbs(db, message?.id, attachments)
 
     await db.from('conversations').update({
       last_message: (content || '📎 Attachment').slice(0, 200),

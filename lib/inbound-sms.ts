@@ -15,6 +15,7 @@ import { emitInboundEvent } from '@/lib/integration-hooks'
 import { queueMediaUploadReply } from '@/lib/media-upload-reply'
 import { smsKeyword, STOP_WORDS, START_WORDS, recordSmsKeyword, textOptOut, resolveAutomatedSmsSender } from '@/lib/sms-consent'
 import { findContactByPhone } from '@/lib/contact-capture'
+import { scheduleMessageThumbs } from '@/lib/image-thumb'
 
 export interface InboundAttachment {
   url: string
@@ -135,6 +136,8 @@ export async function ingestInboundSms(params: {
     delivery_channel: 'sms',
     telnyx_message_id: params.providerMessageId || null,
   }).select('id').maybeSingle()
+  // Small copies of any photos, for the inbox tiles (after the response).
+  scheduleMessageThumbs(db, insertedMsg?.id, media)
   await emitInboundEvent(db, { companyId, conversationId: conv.id, text, channel: 'sms', phone: from, messageId: insertedMsg?.id || null })
   // The customer is texting in, so the thread continues by text: texting goes
   // on (upload links and the like are texted), replacing a "continue by text"

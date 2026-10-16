@@ -1,4 +1,5 @@
 import { telnyxSignatureOk } from '@/lib/telnyx-signature'
+import { scheduleMessageThumbs } from '@/lib/image-thumb'
 import { queueMediaUploadReply } from '@/lib/media-upload-reply'
 import { smsKeyword, STOP_WORDS, START_WORDS, recordSmsKeyword, textOptOut, assertMayText } from '@/lib/sms-consent'
 import { internalHeaders } from '@/lib/internal-call'
@@ -321,7 +322,7 @@ export async function POST(req: NextRequest) {
 
         // Customer texted a closed enquiry — log the reopen before we flip it.
         await logEnquiryReopened(db, { conversationId: conv.id, companyId, prevStatus: conv.status, actorName: matchedContactName || null, via: 'SMS' })
-        await db.from('messages').insert({
+        const { data: insertedSms } = await db.from('messages').insert({
           conversation_id: conv.id,
           company_id: companyId,
           sender_type: 'visitor',
@@ -331,7 +332,10 @@ export async function POST(req: NextRequest) {
           ...(mediaAttemptFailed ? { metadata: { media_attempt: true } } : {}),
           delivery_channel: 'sms',
           telnyx_message_id: payload?.id || null,
-        })
+        }).select('id').maybeSingle()
+        // Small copies of any photos for the inbox tiles, after we've answered
+        // Telnyx. The payload is signed, so its media URLs may be fetched.
+        scheduleMessageThumbs(db, insertedSms?.id, inboundMedia, { trusted: true })
         await emitInboundEvent(db, { companyId, conversationId: conv.id, text, channel: 'sms', phone: from })
         await db.from('conversations').update({
           last_message: summary,

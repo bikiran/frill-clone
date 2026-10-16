@@ -226,7 +226,7 @@ export async function POST(req: NextRequest) {
             conversation_id: ticket.conversation_id, company_id: ticket.company_id, sender_type: 'visitor', sender_name: from.name || from.email, sender_email: from.email, content, email_message_id: messageId || null, email_in_reply_to: inReplyTo || null,
             delivery_channel: 'email', email_from: from.name ? `${from.name} <${from.email}>` : from.email, email_subject: subject,
             email_html: htmlBody ? sanitizeEmailHtml(String(htmlBody)) || null : null,
-            email_attachments: ticketAtts.map((a: any) => ({ name: a.name, mime: a.type, url: a.url })),
+            email_attachments: ticketAtts.map((a: any) => ({ name: a.name, mime: a.type, url: a.url, ...(a.thumbUrl ? { thumbUrl: a.thumbUrl } : {}) })),
             ...(resendEmailId ? { metadata: { inbound_email: { provider: 'resend', resend_email_id: String(resendEmailId), body: bodyFetch, auth } } } : {}),
           })
           await db.from('conversations').update({ last_message: emailPreview(content, ticketAtts.length, subject), last_message_at: new Date().toISOString(), is_unread: true, status: 'open' }).eq('id', ticket.conversation_id)
@@ -360,7 +360,7 @@ export async function POST(req: NextRequest) {
         email_subject: subject,
         email_html: emailHtml || null,
         email_quoted: emailQuoted || null,
-        email_attachments: emailAtts.map(a => ({ name: a.name, mime: a.type, url: a.url, ...(a.size ? { size: a.size } : {}) })),
+        email_attachments: emailAtts.map(a => ({ name: a.name, mime: a.type, url: a.url, ...(a.size ? { size: a.size } : {}), ...(a.thumbUrl ? { thumbUrl: a.thumbUrl } : {}) })),
       }),
       // The Resend id lets the body backfill re-fetch this email later.
       metadata: { inbound_email: { provider: resendEmailId ? 'resend' : 'webhook', ...(resendEmailId ? { resend_email_id: String(resendEmailId) } : {}), body: bodyFetch, auth, ...(auth === 'fail' ? { unverified: true } : {}), ...(receivedAt ? { received_at: receivedAt } : {}), ...(threadedVia ? { threaded_via: threadedVia } : {}) } },

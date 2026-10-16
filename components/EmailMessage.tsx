@@ -3,6 +3,7 @@
 import { useAttachmentToken } from '@/lib/useAttachmentToken'
 import { useEffect, useRef, useState } from 'react'
 import { quotedDateOf, emailFrameDoc, estimateEmailHeight } from '@/lib/email-text'
+import { toPublicUrl, sizedImageUrl, sizedImageFallback } from '@/lib/storage-url'
 
 // Email card. A customer's email reads as a RECEIVED message: on the left,
 // with their name, the time it arrived, the body, the history their mail app
@@ -192,7 +193,7 @@ export default function EmailMessage({ msg, agentColor, onOpenMedia, businessNam
                       style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '5px 11px 5px 5px', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--canvas)', color: 'var(--ink)', fontSize: 12.5, maxWidth: 240, cursor: 'zoom-in', font: 'inherit' }}>
                       <span style={{ position: 'relative', width: 32, height: 32, borderRadius: 6, overflow: 'hidden', background: '#e8edf4', flexShrink: 0 }}>
                         {kind === 'image'
-                          ? <img src={dl} alt="" loading="lazy" decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                          ? <img src={a.thumbUrl ? toPublicUrl(a.thumbUrl) : sizedImageUrl(dl, 32)} onError={sizedImageFallback(dl)} alt="" loading="lazy" decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
                           : <>
                               <video src={dl} preload="metadata" muted style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
                               <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', background: 'rgba(0,0,0,0.25)' }}>
