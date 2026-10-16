@@ -4,7 +4,7 @@
 // step is done comes from the server (lib/setup-status).
 
 import type { ReactNode } from 'react'
-import type { SetupStatus, SetupStepKey } from '@/lib/setup-status'
+import type { SetupStatus, SetupStep, SetupStepKey } from '@/lib/setup-status'
 
 const Svg = ({ size = 20, color = 'currentColor', children }: { size?: number; color?: string; children: ReactNode }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{children}</svg>
@@ -20,6 +20,7 @@ export const InviteIcon = (p: IconProps) => <Svg {...p}><path d="M16 21v-2a4 4 0
 export const BoltIcon = (p: IconProps) => <Svg {...p}><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" /></Svg>
 export const CheckMark = (p: IconProps) => <Svg {...p}><polyline points="20 6 9 17 4 12" /></Svg>
 export const HourglassIcon = (p: IconProps) => <Svg {...p}><path d="M5 22h14" /><path d="M5 2h14" /><path d="M17 22v-4.17a2 2 0 0 0-.59-1.42L12 12l-4.41 4.41A2 2 0 0 0 7 17.83V22" /><path d="M7 2v4.17a2 2 0 0 0 .59 1.42L12 12l4.41-4.41A2 2 0 0 0 17 6.17V2" /></Svg>
+export const AlertIcon = (p: IconProps) => <Svg {...p}><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></Svg>
 export const ArrowRight = (p: IconProps) => <Svg {...p}><line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" /></Svg>
 
 export type StepMeta = {
@@ -33,6 +34,14 @@ export type StepMeta = {
   alt?: { label: string; href: string }
   minutes: number
   Icon: (p: IconProps) => ReactNode
+}
+
+/**
+ * The button for a step that isn't done: its usual page, or — for a to-do
+ * that needs attention (a paid number that didn't set up) — what fixes it.
+ */
+export function stepAction(m: StepMeta, st?: SetupStep | null): { label: string; href: string } {
+  return (st?.state === 'todo' && st.attention) || { label: m.cta, href: m.href }
 }
 
 /** Step wording and links. A few depend on what's already connected. */

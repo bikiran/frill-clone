@@ -40,6 +40,10 @@ function WidgetContent() {
   // credited to that link. clvSent: only tell an ongoing chat about it once.
   const clickRef = useRef<string>(params.get('clv') || '')
   const clvSent = useRef<string>('')
+  // The page the visitor is on, when widget.js reported it before the company
+  // had loaded (a restored chat hears from it straight away, and widget.js
+  // stops retrying after ~2s). Sent to that chat once the company is known.
+  const pendingPage = useRef<{ convId: string; fields: Record<string, unknown> } | null>(null)
 
   const [tab, setTab] = useState<'feedback' | 'roadmap' | 'updates' | 'help' | 'chat' | 'book'>('feedback')
   const [chatConvId, setChatConvId] = useState<string | null>(null)
@@ -100,6 +104,10 @@ function WidgetContent() {
   const [chatCreateError, setChatCreateError] = useState('')
   const [selectedItem, setSelectedItem] = useState<{ type: 'idea' | 'announcement' | 'help'; id: string } | null>(null)
   const [company, setCompany] = useState<any>(null)
+  // The company id as of now, for the page-update listener below: it's set up
+  // once per chat, usually before /api/widget-data has returned the company.
+  const companyIdRef = useRef<string>('')
+  useEffect(() => { companyIdRef.current = company?.id || '' }, [company?.id])
   const [widgetTabs, setWidgetTabs] = useState<any>(null)
   const [terms, setTerms] = useState<Record<string, string>>({})
   // Online booking services (the Book tab shows only when there are some).
@@ -203,12 +211,25 @@ function WidgetContent() {
       if (!d || !d.colvy || d.type !== 'page' || !d.url) return
       setParentPage({ url: d.url, title: d.title || null })
       if (typeof d.clv === 'string' && d.clv) clickRef.current = d.clv
+      // Read now, not when this listener was set up: a restored chat sets it up
+      // before the company has loaded. Until it has, nothing is sent — the
+      // server turns away an update without a companyId — so the click isn't
+      // marked as sent, and the page is kept in pendingPage: the effect below
+      // sends both once the company arrives.
+      const companyId = companyIdRef.current
       // The tracked click, the first time an ongoing chat hears about it.
       const clvOnce = () => {
         const c = clickRef.current
         if (!c || clvSent.current === c) return undefined
         clvSent.current = c
         return c
+      }
+      const sendPage = (history: unknown[]) => {
+        if (!chatConvId) return
+        const fields = { page_url: d.url, page_title: d.title || null, page_history: history }
+        if (!companyId) { pendingPage.current = { convId: chatConvId, fields }; return }
+        pendingPage.current = null
+        fetch('/api/widget/update', { method: 'POST', headers: { 'Content-Type': 'application/json', ...chatHeaders() }, body: JSON.stringify({ companyId, conversationId: chatConvId, clv: clvOnce(), fields: { ...fields, page_seen_at: new Date().toISOString() } }) }).catch(() => {})
       }
       // The embedding script keeps the authoritative history (it runs on the
       // real site and can see every page). Prefer it wholesale.
@@ -220,7 +241,7 @@ function WidgetContent() {
           if (chatConvId && prevLast && prevLast !== d.url) {
             ;(supabase as any).from('conversation_events').insert({
               conversation_id: chatConvId,
-              company_id: company?.id,
+              company_id: companyId || undefined,
               event_type: 'page_view',
               actor_name: chatName || 'Visitor',
               detail: `Viewing: ${d.title || d.url}`,
@@ -228,17 +249,13 @@ function WidgetContent() {
           }
           return d.history
         })
-        if (chatConvId) {
-          fetch('/api/widget/update', { method: 'POST', headers: { 'Content-Type': 'application/json', ...chatHeaders() }, body: JSON.stringify({ companyId: company?.id, conversationId: chatConvId, clv: clvOnce(), fields: { page_url: d.url, page_title: d.title || null, page_history: d.history, page_seen_at: new Date().toISOString() } }) }).catch(() => {})
-        }
+        sendPage(d.history)
         return
       }
       setParentPageHistory(prev => {
         if (prev.length && prev[prev.length - 1].url === d.url) return prev
         const next = [...prev, { url: d.url, title: d.title || null, ts: new Date().toISOString() }]
-        if (chatConvId) {
-          fetch('/api/widget/update', { method: 'POST', headers: { 'Content-Type': 'application/json', ...chatHeaders() }, body: JSON.stringify({ companyId: company?.id, conversationId: chatConvId, clv: clvOnce(), fields: { page_url: d.url, page_title: d.title || null, page_history: next, page_seen_at: new Date().toISOString() } }) }).catch(() => {})
-        }
+        sendPage(next)
         return next
       })
     }
@@ -311,16 +328,22 @@ function WidgetContent() {
     } catch {}
   }, [slug])
 
-  // Smart links: a returning visitor whose saved chat was restored above, now
-  // arriving through a Reel / QR link (?clv= on this frame, e.g. from the board
-  // chat), never calls /api/widget/start. Tell the ongoing chat about the click
-  // once the company is known. widget.js sites may also send it with a page
-  // update; clvSent makes sure only one of them does.
+  // A restored chat, once the company is known. A returning visitor arriving
+  // through a Reel / QR link (?clv= on this frame, e.g. from the board chat)
+  // never calls /api/widget/start, so tell the ongoing chat about the click;
+  // and send the page widget.js reported before the company had loaded. One
+  // request for both, and none when there's neither. widget.js sites may also
+  // send the click with a later page update; clvSent makes sure only one of
+  // them does.
   useEffect(() => {
+    if (!chatConvId || !company?.id) return
+    const page = pendingPage.current?.convId === chatConvId ? pendingPage.current.fields : null
+    pendingPage.current = null
     const c = clickRef.current
-    if (!chatConvId || !company?.id || !c || clvSent.current === c) return
-    clvSent.current = c
-    fetch('/api/widget/update', { method: 'POST', headers: { 'Content-Type': 'application/json', ...chatHeaders() }, body: JSON.stringify({ companyId: company.id, conversationId: chatConvId, clv: c }) }).catch(() => {})
+    const clv = c && clvSent.current !== c ? c : undefined
+    if (!clv && !page) return
+    if (clv) clvSent.current = clv
+    fetch('/api/widget/update', { method: 'POST', headers: { 'Content-Type': 'application/json', ...chatHeaders() }, body: JSON.stringify({ companyId: company.id, conversationId: chatConvId, clv, ...(page ? { fields: { ...page, page_seen_at: new Date().toISOString() } } : {}) }) }).catch(() => {})
   }, [chatConvId, company?.id])
 
   // Subscribe to agent replies on the active chat conversation

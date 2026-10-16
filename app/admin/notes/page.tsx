@@ -17,6 +17,7 @@ import NoteComments from '@/components/NoteComments'
 import ChecklistProductPicker, { type PickerProduct } from '@/components/ChecklistProductPicker'
 import { notebookOf, visibleTags, withNotebook, listNotebooks } from '@/lib/notebooks'
 import { confirmDialog } from '@/components/ConfirmDialog'
+import { loadStaffRows } from '@/lib/team-list'
 
 type Note = {
   id: string; title: string; body: string; checklist: ChecklistItem[]; attachments: any[]
@@ -113,7 +114,8 @@ export default function NotesPage() {
         const members: { id: string; name: string }[] = []
         const { data: co } = await (supabase as any).from('companies').select('owner_id, name').eq('id', companyId).maybeSingle()
         if (co?.owner_id) members.push({ id: co.owner_id, name: co.name || 'Owner' })
-        const { data: tm } = await (supabase as any).from('team_members').select('*').eq('company_id', companyId)
+        // Staff only: board visitors can't be shared with or mentioned.
+        const tm = await loadStaffRows(supabase, companyId).catch(() => [])
         for (const m of (tm || [])) { const nm = m.name || m.display_name || (m.email ? m.email.split('@')[0] : 'Team member'); if (!members.some(x => x.name === nm)) members.push({ id: m.id, name: nm }) }
         setTeam(members)
       } catch {}

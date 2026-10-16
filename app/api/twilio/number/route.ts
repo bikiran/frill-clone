@@ -1,8 +1,9 @@
 import { callerUser } from '@/lib/company-access'
 import { isInternalCall } from '@/lib/internal-call'
 import { NextRequest, NextResponse } from 'next/server'
+import { startNumberPurchase, finishNumberOrderFrom, numberBoughtFor, type HeldOrder } from '@/lib/number-orders'
 import { createClient } from '@supabase/supabase-js'
-import { platformTwilio, platformTwilioConfigured, TWILIO_MASTER, colvyBaseUrl } from '@/lib/twilio-platform'
+import { platformTwilio, platformTwilioConfigured, TWILIO_MASTER, colvyBaseUrl, numberStatusCallbackUrl } from '@/lib/twilio-platform'
 
 function admin() {
   return createClient(
@@ -75,16 +76,37 @@ export async function GET(req: NextRequest) {
 // POST: buy a number on the platform account and assign it to the company. The
 // customer never touches Twilio — Colvy owns the account. Idempotent-ish: a
 // company can own several numbers (tracked in phone_numbers).
+//
+// The webhook passes the checkout session, which is claimed first (lib/number-
+// orders) so this and the calls page's finalize never both buy for one
+// checkout; how it ended is recorded against the claim.
 export async function POST(req: NextRequest) {
+  const track: { held: HeldOrder | null } = { held: null }
+  const res = await provision(req, track)
+  if (track.held) await finishNumberOrderFrom(admin(), track.held, res)
+  return res
+}
+
+async function provision(req: NextRequest, track: { held: HeldOrder | null }) {
   try {
     if (!platformTwilioConfigured()) return NextResponse.json({ error: NOT_CONFIGURED }, { status: 503 })
     // Buys a number on Colvy's own account with no payment check of its own:
     // only the Stripe webhook (after a verified payment) may call it.
     if (!isInternalCall(req)) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
-    const { companyId, phoneNumber, numberType, locationId, stripeSubscriptionId } = await req.json()
+    const { companyId, phoneNumber, numberType, locationId, stripeSubscriptionId, sessionId } = await req.json()
     if (!companyId) return NextResponse.json({ error: 'Missing companyId' }, { status: 400 })
 
     const db = admin()
+    // One number per paid checkout: bought here only if this call holds the
+    // claim (or, without a session, nothing shows it bought already).
+    if (sessionId) {
+      const start = await startNumberPurchase(db, { sessionId: String(sessionId), companyId, provider: 'twilio' }, stripeSubscriptionId)
+      track.held = start.held
+      if (start.answer) return NextResponse.json(start.answer.body, { status: start.answer.status })
+    } else {
+      const bought = await numberBoughtFor(db, { companyId, provider: 'twilio', subscriptionId: stripeSubscriptionId })
+      if (bought) return NextResponse.json({ ok: true, phoneNumber: bought, alreadyDone: true })
+    }
     const svc = platformTwilio()!
     const base = colvyBaseUrl()
 
@@ -115,7 +137,7 @@ export async function POST(req: NextRequest) {
         friendlyName: `Colvy ${String(companyId).slice(0, 8)}`,
         smsUrl: `${base}/api/twilio/webhook`,
         voiceUrl: `${base}/api/twilio/voice/inbound`,
-        statusCallback: `${base}/api/twilio/voice/status`,
+        statusCallback: numberStatusCallbackUrl(),
         bundleSid,
       })
     } catch (e: any) {

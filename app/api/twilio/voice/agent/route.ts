@@ -85,7 +85,6 @@ export async function POST(req: NextRequest) {
     })
     state.turns.push({ who: 'caller', text: said })
     state.turns.push({ who: 'agent', text: r.say, ms: r.ms })
-    if (r.tookMessage) state.messageTaken = true
     await spoke
     await save(r.end)
     return r.end ? twiml(phoneGoodbyeTwiml(voice, r.say)) : listen(r.say)

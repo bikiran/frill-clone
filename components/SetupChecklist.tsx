@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { track, type ColvyEvent } from '@/lib/analytics'
 import type { SetupStatus, SetupStepKey } from '@/lib/setup-status'
 import { SETUP_HOME, SKIPPABLE_STEPS, withReturnTo } from '@/lib/setup-return'
-import { setupSteps, CheckMark, HourglassIcon, ArrowRight } from '@/components/setup-steps'
+import { setupSteps, stepAction, CheckMark, HourglassIcon, AlertIcon, ArrowRight } from '@/components/setup-steps'
 
 // ── Setup checklist (dashboard) ───────────────────────────────────────────────
 // The seven things that make Colvy useful, each ticked from what's really
@@ -114,8 +114,11 @@ export function setupWorthLoading(companyId: string, last: Pick<SetupStatus, 'ag
   // The checklist's own "complete": every step done, or skipped. `completed`
   // alone isn't enough — it never resets, while a step can be added back or
   // come undone (a store uninstalled) and the checklist shows again.
-  const finished = () => !!last && setupSteps().every(m =>
-    p.skipped.includes(m.key) || last.steps.some(st => st.key === m.key && st.state === 'done'))
+  // A skipped step that needs attention (a paid number that didn't set up) isn't finished.
+  const finished = () => !!last && setupSteps().every(m => {
+    const st = last.steps.find(x => x.key === m.key)
+    return st?.state === 'done' || (p.skipped.includes(m.key) && !st?.attention)
+  })
   if (!p.hidden && !(p.completed && finished())) return true
   return !(last && last.ageDays != null && last.ageDays > TRACK_MAX_AGE_DAYS)
 }
@@ -155,8 +158,9 @@ export function settleProgress(prev: Prefs, status: SetupStatus, o: { fresh: boo
     }
     if (p.seen === null) changed = true
     p.seen = Array.from(seen)
-    // Done, or skipped and never started. A step waiting on approval isn't done.
-    const allDone = status.steps.length > 0 && status.steps.every(st => st.state === 'done' || (st.state === 'todo' && p.skipped.includes(st.key)))
+    // Done, or skipped and never started. A step waiting on approval isn't done,
+    // nor is a paid number that needs attention, skipped or not.
+    const allDone = status.steps.length > 0 && status.steps.every(st => st.state === 'done' || (st.state === 'todo' && !st.attention && p.skipped.includes(st.key)))
     if (allDone && !p.completed) {
       p.completed = true; changed = true
       if (young) events.push(['setup_completed', { minutes_since_signup: mins, skipped: p.skipped.join(',') }])
@@ -164,6 +168,25 @@ export function settleProgress(prev: Prefs, status: SetupStatus, o: { fresh: boo
   }
   return { prefs: p, events, changed }
 }
+
+/**
+ * Record fresh numbers fetched somewhere other than the dashboard (the
+ * /onboarding launcher on the workspace's own subdomain) as seen, with the
+ * analytics events the checklist would have sent for them.
+ *
+ * Restart setup is how a hidden or finished checklist comes back, and the
+ * dashboard stops fetching numbers for those on an established workspace
+ * (setupWorthLoading), so `seen` stops moving. Without this, the ?setup=1
+ * visit at the end of the trip would cheer every step done since as new.
+ */
+export function noteSetupSeen(companyId: string, status: SetupStatus) {
+  const { prefs, events, changed } = settleProgress(readPrefs(companyId), status, { fresh: true, applyLink: false, linkSkip: [] })
+  if (changed) writePrefs(companyId, prefs)
+  for (const [ev, props] of events) track(ev, props)
+}
+
+// For a paid number that didn't set up: the way to reach a person.
+const SUPPORT_HREF = `mailto:support@colvy.com?subject=${encodeURIComponent('My business number didn’t finish setting up')}`
 
 export default function SetupChecklist({ companyId, status, fresh, prominent, link }: {
   companyId: string
@@ -193,8 +216,12 @@ export default function SetupChecklist({ companyId, status, fresh, prominent, li
   const byKey = new Map(status.steps.map(s => [s.key, s]))
   const skipped = new Set<SetupStepKey>([...prefs.skipped, ...linkSkip])
   const stateOf = (k: SetupStepKey) => byKey.get(k)?.state || 'todo'
-  // A step that's done counts as done even if it was skipped.
-  const counted = metas.filter(m => !skipped.has(m.key) || stateOf(m.key) === 'done')
+  // A to-do that needs attention (a paid number that didn't set up): its
+  // button fixes that rather than starting the step again.
+  const needsFix = (k: SetupStepKey) => stateOf(k) === 'todo' && !!byKey.get(k)?.attention
+  // A step that's done counts as done even if it was skipped, and one that
+  // needs attention shows even if it was skipped (it was paid for).
+  const counted = metas.filter(m => !skipped.has(m.key) || stateOf(m.key) === 'done' || needsFix(m.key))
   const doneKeys = metas.filter(m => stateOf(m.key) === 'done').map(m => m.key)
   const done = counted.filter(m => stateOf(m.key) === 'done').length
   const total = counted.length
@@ -203,9 +230,12 @@ export default function SetupChecklist({ companyId, status, fresh, prominent, li
   // Where the progress bar and ring animate from: the ticks seen last time
   // (so a new tick visibly fills in), or empty on the very first look.
   const prevDone = baseline ? counted.filter(m => baseline.includes(m.key) && stateOf(m.key) === 'done').length : 0
-  const nextUp = counted.find(m => stateOf(m.key) === 'todo')
-  const minutesLeft = counted.filter(m => stateOf(m.key) === 'todo').reduce((a, m) => a + m.minutes, 0)
-  const waiting = counted.some(m => stateOf(m.key) === 'waiting')
+  // Something that needs attention comes first, then the next thing to do.
+  const nextUp = counted.find(m => needsFix(m.key)) || counted.find(m => stateOf(m.key) === 'todo')
+  const nextAction = nextUp ? stepAction(nextUp, byKey.get(nextUp.key)) : null
+  const minutesLeft = counted.filter(m => stateOf(m.key) === 'todo' && !needsFix(m.key)).reduce((a, m) => a + m.minutes, 0)
+  const waiting = counted.map(m => byKey.get(m.key)).find(st => st?.state === 'waiting')
+  const fixes = counted.filter(m => needsFix(m.key)).length
 
   // Save what came in from the URL (once), record the ticks seen, and fire
   // each step's analytics event once. Side effects only — the screen is
@@ -240,7 +270,7 @@ export default function SetupChecklist({ companyId, status, fresh, prominent, li
   const fromPct = total ? Math.round((prevDone / total) * 100) : 0
   const R = 20, C = 2 * Math.PI * R
   const newTitle = newly.length === 1 ? (metas.find(m => m.key === newly[0])?.doneTitle || 'Step done') : `${newly.length} steps ticked off`
-  const skippedList = metas.filter(m => skipped.has(m.key) && stateOf(m.key) !== 'done')
+  const skippedList = metas.filter(m => skipped.has(m.key) && stateOf(m.key) !== 'done' && !needsFix(m.key))
 
   return (
     <section className={`sc ${prominent ? 'sc-top' : ''}`} aria-label="Setup checklist">
@@ -285,10 +315,12 @@ export default function SetupChecklist({ companyId, status, fresh, prominent, li
         .sc-dot.is-done { background: #10b981; color: #fff; }
         .sc-row.is-new .sc-dot.is-done { animation: sc-pop .5s cubic-bezier(.3,1.6,.5,1) both; }
         .sc-dot.is-waiting { background: #fffbeb; color: #b45309; }
+        .sc-dot.is-attention, .sc-row.is-next .sc-dot.is-attention { background: #fef2f2; color: #b91c1c; }
         .sc-step { margin: 0; font-size: 14px; font-weight: 700; color: var(--ink); line-height: 1.3; }
         .sc-row.is-done .sc-step { color: var(--slate); font-weight: 600; }
         .sc-desc { margin: 2px 0 0; font-size: 12.5px; color: var(--slate); line-height: 1.45; }
         .sc-badge { display: inline-flex; align-items: center; gap: 5px; margin-top: 5px; font-size: 11.5px; font-weight: 700; color: #b45309; background: #fffbeb; border: 1px solid #fde68a; border-radius: 99px; padding: 2px 9px; }
+        .sc-badge.is-attention { color: #b91c1c; background: #fef2f2; border-color: #fecaca; }
         .sc-actions { display: flex; align-items: center; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
         .sc-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 8px 14px; border-radius: 10px; font-size: 13px; font-weight: 700; text-decoration: none; white-space: nowrap; border: 1px solid var(--border); color: var(--ink); background: var(--card, #fff); }
         .sc-btn:hover { background: var(--canvas); }
@@ -329,7 +361,7 @@ export default function SetupChecklist({ companyId, status, fresh, prominent, li
             <span className="sc-title">{complete ? 'You’re all set up' : 'Get Colvy set up'}</span>
             <span className="sc-sub">
               {complete ? 'Everything’s connected. Customers can reach you everywhere, in one inbox.'
-                : `${done} of ${total} done${minutesLeft ? ` · about ${minutesLeft} minute${minutesLeft === 1 ? '' : 's'} to go` : ''}${waiting ? ' · waiting on an approval' : ''}`}
+                : `${done} of ${total} done${minutesLeft ? ` · about ${minutesLeft} minute${minutesLeft === 1 ? '' : 's'} to go` : ''}${waiting ? ` · ${(waiting.detail || 'Waiting for approval').toLowerCase()}` : ''}${fixes ? ` · ${fixes} need${fixes === 1 ? 's' : ''} attention` : ''}`}
             </span>
             <span className="sc-bar" aria-hidden="true">
               <span className="sc-fill" style={{ width: `${pct}%`, ['--from' as string]: `${fromPct}%` }} />
@@ -337,9 +369,9 @@ export default function SetupChecklist({ companyId, status, fresh, prominent, li
           </span>
           <svg className={`sc-chev ${open ? 'is-open' : ''}`} width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6" /></svg>
         </button>
-        {!open && nextUp && (
-          <Link href={withReturnTo(nextUp.href, SETUP_HOME)} className="sc-continue">
-            {nextUp.cta} <ArrowRight size={14} />
+        {!open && nextAction && (
+          <Link href={withReturnTo(nextAction.href, SETUP_HOME)} className="sc-continue">
+            {nextAction.label} <ArrowRight size={14} />
           </Link>
         )}
         <button type="button" className="sc-hide" onClick={() => update({ hidden: true })}>{complete ? 'Done' : 'Hide'}</button>
@@ -374,22 +406,30 @@ export default function SetupChecklist({ companyId, status, fresh, prominent, li
               const isDone = state === 'done'
               const isNext = nextUp?.key === m.key
               const isNew = newly.includes(m.key)
-              const canSkip = state === 'todo' && (SKIPPABLE_STEPS as readonly string[]).includes(m.key)
+              const fix = needsFix(m.key)
+              // A paid number that didn't set up isn't something to skip past.
+              const canSkip = state === 'todo' && !fix && (SKIPPABLE_STEPS as readonly string[]).includes(m.key)
+              const action = state === 'waiting' ? { label: 'Check progress', href: m.href } : stepAction(m, st)
               return (
                 <li key={m.key} className={`sc-row ${isDone ? 'is-done' : ''} ${isNext ? 'is-next' : ''} ${isNew ? 'is-new' : ''}`}>
-                  <span className={`sc-dot ${isDone ? 'is-done' : state === 'waiting' ? 'is-waiting' : ''}`} aria-hidden="true">
-                    {isDone ? <CheckMark size={17} /> : state === 'waiting' ? <HourglassIcon size={17} /> : <m.Icon size={17} />}
+                  <span className={`sc-dot ${isDone ? 'is-done' : state === 'waiting' ? 'is-waiting' : fix ? 'is-attention' : ''}`} aria-hidden="true">
+                    {isDone ? <CheckMark size={17} /> : state === 'waiting' ? <HourglassIcon size={17} /> : fix ? <AlertIcon size={17} /> : <m.Icon size={17} />}
                   </span>
                   <div style={{ minWidth: 0 }}>
                     <p className="sc-step">
                       {isDone ? m.doneTitle : m.title}
-                      <span className="sr-only">{isDone ? ' (done)' : state === 'waiting' ? ' (waiting)' : ''}</span>
+                      <span className="sr-only">{isDone ? ' (done)' : state === 'waiting' ? ' (waiting)' : fix ? ' (needs attention)' : ''}</span>
                     </p>
                     {isDone
                       ? (st?.detail && <p className="sc-desc">{st.detail}</p>)
                       : state === 'waiting'
                         ? <span className="sc-badge"><HourglassIcon size={12} /> {st?.detail || 'Waiting for approval'}</span>
-                        : <p className="sc-desc">{st?.detail ? `${st.detail}. ` : ''}{m.desc}</p>}
+                        : fix
+                          ? <>
+                              <span className="sc-badge is-attention"><AlertIcon size={12} /> Needs attention</span>
+                              {st?.detail && <p className="sc-desc">{st.detail}.</p>}
+                            </>
+                          : <p className="sc-desc">{st?.detail ? `${st.detail}. ` : ''}{m.desc}</p>}
                   </div>
                   <div className="sc-actions">
                     {isDone ? (
@@ -397,9 +437,10 @@ export default function SetupChecklist({ companyId, status, fresh, prominent, li
                     ) : (
                       <>
                         {canSkip && <button type="button" className="sc-skip" onClick={() => skip(m.key)}>Skip</button>}
-                        {m.alt && state === 'todo' && <Link href={withReturnTo(m.alt.href, SETUP_HOME)} className="sc-link">{m.alt.label}</Link>}
-                        <Link href={withReturnTo(m.href, SETUP_HOME)} className={`sc-btn ${isNext ? 'is-primary' : ''}`}>
-                          {state === 'waiting' ? 'Check progress' : m.cta}
+                        {fix && <a href={SUPPORT_HREF} className="sc-link">Email support</a>}
+                        {m.alt && state === 'todo' && !fix && <Link href={withReturnTo(m.alt.href, SETUP_HOME)} className="sc-link">{m.alt.label}</Link>}
+                        <Link href={withReturnTo(action.href, SETUP_HOME)} className={`sc-btn ${isNext ? 'is-primary' : ''}`}>
+                          {action.label}
                           {isNext && <ArrowRight size={14} />}
                         </Link>
                       </>

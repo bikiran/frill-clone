@@ -1,6 +1,7 @@
 'use client'
 
 import { enrichNames } from '@/lib/team-names'
+import { loadStaffRows } from '@/lib/team-list'
 import AssigneePicker from '@/components/AssigneePicker'
 import CustomerPicker from '@/components/CustomerPicker'
 import AttachmentUploader from '@/components/AttachmentUploader'
@@ -224,13 +225,11 @@ export default function CalendarPage() {
     if (!companyId) return
     ;(async () => {
       const members: any[] = []
-      // Owner and team side by side.
-      // Read the team the way the Team page does — no company_id filter, since
-      // invited members can have a null company_id and RLS already scopes the
-      // rows. Filtering by company_id was hiding everyone except the owner.
-      const [{ data: co }, { data: tm }] = await Promise.all([
+      // Owner and staff side by side. Board visitors can't be assigned, and on
+      // a busy board they'd crowd staff out of one read.
+      const [{ data: co }, tm] = await Promise.all([
         (supabase as any).from('companies').select('owner_id, name').eq('id', companyId).maybeSingle(),
-        (supabase as any).from('team_members').select('*'),
+        loadStaffRows(supabase, companyId).catch(() => []),
       ])
       if (co?.owner_id) {
         members.push({ id: co.owner_id, user_id: co.owner_id, name: co.name ? `${co.name} (Owner)` : 'Owner' })

@@ -6,6 +6,7 @@ import { confirmChatPayment } from '@/lib/chat-payment-confirm'
 import { internalPlanForTier } from '@/lib/plan'
 import { BRANDING_ADDON, setBrandingAddon } from '@/lib/branding-addon'
 import { stripeSecretFor } from '@/lib/company-secrets'
+import { recordUnclaimedFailure, type NumberOrder } from '@/lib/number-orders'
 
 const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || ''
 
@@ -252,12 +253,14 @@ export async function POST(req: NextRequest) {
         }
         // Phone number purchase — provision the number now that payment is set up
         if (meta.kind === 'phone_number' && meta.companyId) {
+          // Provision on whichever carrier this purchase was for. Both endpoints
+          // take the same shape; the customer never learns which one ran.
+          const prov = meta.provider === 'telnyx' ? 'telnyx' : 'twilio'
+          const order: NumberOrder = { sessionId: String(session.id || ''), companyId: String(meta.companyId), provider: prov }
+          let unrecorded = false
           try {
             const origin = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
-            // Provision on whichever carrier this purchase was for. Both endpoints
-            // take the same shape; the customer never learns which one ran.
-            const prov = meta.provider === 'telnyx' ? 'telnyx' : 'twilio'
-            await fetch(`${origin}/api/${prov}/number`, {
+            const res = await fetch(`${origin}/api/${prov}/number`, {
               method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
               body: JSON.stringify({
                 companyId: meta.companyId,
@@ -265,11 +268,26 @@ export async function POST(req: NextRequest) {
                 numberType: meta.numberType || undefined,
                 locationId: meta.locationId || undefined,
                 stripeSubscriptionId: session.subscription,
+                // The route claims this checkout before buying, so it and the
+                // calls page's finalize never both buy a number for it.
+                sessionId: session.id,
               }),
             })
-          } catch (e) {
+            // Once claimed, the route records how it went; turned away before
+            // that, the paid checkout is recorded as failed so setup asks for it
+            // to be finished (lib/number-orders).
+            if (!res.ok) unrecorded = res.status >= 500 && await recordUnclaimedFailure(supabase, order, `HTTP ${res.status}`) === 'error'
+          } catch (e: any) {
             console.error('Post-payment number provisioning failed:', e)
+            unrecorded = await recordUnclaimedFailure(supabase, order, e?.message) === 'error'
           }
+          // The number route failed and not even the failure could be written
+          // down (the database is out): nothing would show this checkout was
+          // paid. Ask Stripe to send the event again. Safe to repeat: every
+          // purchase claims the checkout first, nothing above this in the
+          // branch runs for a number purchase, and the event log below is
+          // written on the retry instead.
+          if (unrecorded) return NextResponse.json({ error: 'Number provisioning unavailable; retry' }, { status: 503 })
         }
         break
       }

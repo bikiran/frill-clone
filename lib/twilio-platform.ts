@@ -36,3 +36,10 @@ export function platformTwilio(): TwilioService | null {
 export function colvyBaseUrl(): string {
   return (process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com').replace(/\/$/, '')
 }
+
+// A Colvy number's status callback: Twilio tells us there when a call to the
+// number ends. It's how a turn-by-turn AI call learns the caller hung up on
+// the greeting (see app/api/twilio/voice/status).
+export function numberStatusCallbackUrl(): string {
+  return `${colvyBaseUrl()}/api/twilio/voice/status`
+}
