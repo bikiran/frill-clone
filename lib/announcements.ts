@@ -2,6 +2,7 @@
 // admin, the public updates page, the chat widget, the API routes and tests.
 
 import { bodyToSafeHtml, excerpt, htmlToText, safeUrl } from '@/lib/safe-html'
+import { parseDbTime } from '@/lib/db-time'
 
 // ── Categories ───────────────────────────────────────────────────────────────
 // Stored in the existing `tag` column. Older posts used other words (Feature,
@@ -37,9 +38,11 @@ export function categoryOf(tag: string | null | undefined): (typeof CATEGORIES)[
 export type AnnStatus = 'draft' | 'scheduled' | 'published' | 'expired'
 export const STATUS_LABEL: Record<AnnStatus, string> = { draft: 'Draft', scheduled: 'Scheduled', published: 'Published', expired: 'Ended' }
 
+// publish_at / expires_at are TIMESTAMPTZ, but created_at / updated_at are
+// TIMESTAMP without time zone (UTC with no offset): lib/db-time.ts reads both.
 const ts = (v: any): number | null => {
   if (!v) return null
-  const n = new Date(v).getTime()
+  const n = parseDbTime(v)
   return Number.isFinite(n) ? n : null
 }
 
@@ -62,9 +65,14 @@ export function isPublicNow(a: any, now = Date.now()): boolean {
   return statusOf(a, now) === 'published'
 }
 
-/** The date a post shows: when it went (or goes) live, else when it was made. */
+/**
+ * The date a post shows: when it went (or goes) live, else when it was made.
+ * Always an ISO instant with its offset, so pages and widgets that read it with
+ * new Date() get the right day (created_at itself has no offset).
+ */
 export function shownDate(a: any): string {
-  return a?.publish_at || a?.created_at || new Date(0).toISOString()
+  const t = ts(a?.publish_at) ?? ts(a?.created_at)
+  return new Date(t ?? 0).toISOString()
 }
 
 // ── Audience ─────────────────────────────────────────────────────────────────

@@ -6,6 +6,7 @@
 import type { ReactNode } from 'react'
 import { Icon, type IconName } from '@/components/form-results/icons'
 import type { TallyRow } from '@/lib/engage-core'
+import { parseDbTime } from '@/lib/db-time'
 
 export function Kpi({ icon, value, label, sub, color = 'var(--coral)', title }: { icon: IconName; value: ReactNode; label: string; sub?: string; color?: string; title?: string }) {
   return (
@@ -62,7 +63,7 @@ export function Columns({ items, colorOf, height = 110 }: { items: { x: string; 
   )
 }
 
-/** Answers per day for the last `days` days (local time), oldest first. */
+/** Answers per day for the last `days` days (local time), oldest first. created_at is UTC without an offset (lib/db-time.ts). */
 export function perDay(times: string[], days = 14, now = Date.now()): { x: string; n: number; title: string }[] {
   const start = new Date(now); start.setHours(0, 0, 0, 0)
   const out = Array.from({ length: days }, (_, i) => {
@@ -70,7 +71,7 @@ export function perDay(times: string[], days = 14, now = Date.now()): { x: strin
     return { d, n: 0 }
   })
   for (const t of times) {
-    const ms = Date.parse(t)
+    const ms = parseDbTime(t)
     if (!Number.isFinite(ms)) continue
     const day = new Date(ms); day.setHours(0, 0, 0, 0)
     const idx = out.findIndex(o => o.d.getTime() === day.getTime())

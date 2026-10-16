@@ -5,6 +5,7 @@ import { computeSla, resolveSla } from '@/lib/ticket-sla'
 import { dayKey, startOfDay, callOutcome } from '@/lib/dashboard-time'
 import { ALL_FEATURE_KEYS, canUseFeature, hasFullAccess } from '@/lib/permissions'
 import { missedCallOutcome, type MissedCallOutcome } from '@/lib/outcomes/missed-calls'
+import { dbTimeOr0 } from '@/lib/db-time'
 
 // GET /api/dashboard/summary?companyId=&tz=
 //
@@ -195,7 +196,10 @@ export async function GET(req: NextRequest) {
   if (can('waitlists')) for (const w of recentWaitlist) activity.push({ kind: 'waitlist', at: w.created_at, title: 'Joined a waitlist', detail: [w.customer_name, w.item_name].filter(Boolean).join(' · '), href: '/admin/waitlists' })
   if (can('bookings')) for (const b of recentBookings) activity.push({ kind: 'booking', at: b.created_at, title: 'New booking', detail: [b.customer_name, b.service_name].filter(Boolean).join(' · '), href: '/admin/bookings' })
   if (can('ideas')) for (const i of recentIdeas) activity.push({ kind: 'idea', at: i.created_at, title: 'New idea', detail: [i.created_by_name, i.title].filter(Boolean).join(' · '), href: '/' })
-  activity.sort((a, b) => Date.parse(b.at || 0) - Date.parse(a.at || 0))
+  // ideas.created_at is TIMESTAMP without time zone (UTC, no offset): sort as
+  // instants and send every time with its offset, so no client reads it as local.
+  activity.sort((a, b) => dbTimeOr0(b.at) - dbTimeOr0(a.at))
+  for (const it of activity) { const t = dbTimeOr0(it.at); if (t) it.at = new Date(t).toISOString() }
 
   // Numbers for areas this member can't open are never sent, not just hidden.
   const z = (k: string, v: any, off: any = 0) => (can(k) ? v : off)

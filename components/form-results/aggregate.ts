@@ -9,6 +9,7 @@ import {
   type FormQuestion, type LogicForm, type LogicSummary, type ResponseLogic, type ResponseRow,
 } from '@/lib/form-logic'
 import { choiceAnswerText, otherChoiceLabel, otherTextOf } from '@/lib/form-choice-options'
+import { dbDate, dbTimeOr0 } from '@/lib/db-time'
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -102,10 +103,11 @@ export function formatMoney(cents: number, currency?: unknown): string {
   catch { return `${((cents || 0) / 100).toFixed(2)} ${cur}` }
 }
 
+// created_at on form_responses, survey_responses and poll_votes is TIMESTAMP
+// without time zone: lib/db-time.ts reads those as UTC, not as local time.
 function validDate(iso: unknown): Date | null {
   if (typeof iso !== 'string' && typeof iso !== 'number') return null
-  const d = new Date(iso as any)
-  return isNaN(d.getTime()) ? null : d
+  return dbDate(iso)
 }
 
 export function formatDateTime(iso: unknown): string {
@@ -196,12 +198,11 @@ export function prep(row: ResultRow): Prepared {
   const hit = prepCache.get(row)
   if (hit) return hit
   const logic = readResponseLogic(row.answers)
-  const t = Date.parse(row.created_at)
   const out: Prepared = {
     answers: stripReservedAnswers(row.answers),
     logic,
     seen: logic ? new Set([...logic.path, ...(logic.offPath || [])]) : null,
-    time: Number.isFinite(t) ? t : 0,
+    time: dbTimeOr0(row.created_at),
   }
   prepCache.set(row, out)
   return out

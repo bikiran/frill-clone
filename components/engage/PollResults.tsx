@@ -5,7 +5,7 @@
 // passes new votes in).
 
 import { useMemo } from 'react'
-import { closeNote, settingsOf, statusOf, tallyPoll, type VoteRow } from '@/lib/engage-core'
+import { closeNote, latestAnswerAt, settingsOf, statusOf, tallyPoll, type VoteRow } from '@/lib/engage-core'
 import { relativeTime, formatDateTime } from '@/components/form-results/aggregate'
 import { Bars, Card, Columns, Kpi, perDay } from './ResultParts'
 
@@ -13,7 +13,7 @@ export function PollResults({ poll, votes, now }: { poll: any; votes: VoteRow[];
   const tally = useMemo(() => tallyPoll(poll, votes), [poll, votes])
   const days = useMemo(() => perDay(votes.map(v => String(v.created_at || '')), 14, now), [votes, now])
   const status = statusOf(poll, now)
-  const last = votes.reduce<string | null>((a, v) => (typeof v.created_at === 'string' && (!a || v.created_at > a) ? v.created_at : a), null)
+  const last = useMemo(() => latestAnswerAt(votes), [votes])
   const closes = closeNote(settingsOf(poll).closes_at, now)
   const lead = tally.type === 'rating'
     ? (tally.average != null ? `${tally.average} / ${tally.rows.length}` : '—')
