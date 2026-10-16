@@ -8,8 +8,9 @@ import type { NextRequest } from 'next/server'
  * secret). Other providers can instead add ?token=<EMAIL_WEBHOOK_TOKEN> to the URL.
  *
  * With neither RESEND_WEBHOOK_SECRET nor EMAIL_WEBHOOK_TOKEN set the check can't
- * run: production refuses the mail, development lets it through with a warning.
- * EMAIL_WEBHOOK_VERIFY=log (or off) turns enforcement off as an emergency switch.
+ * run, so the payload is treated as untrusted (see emailWebhookTrust) rather
+ * than refused. EMAIL_WEBHOOK_VERIFY=log (or off) is the emergency switch for a
+ * failing check: the payload is then handled as untrusted too.
  */
 const MAX_AGE_SEC = 5 * 60
 
@@ -18,17 +19,35 @@ function same(a: string, b: string): boolean {
   return x.length === y.length && timingSafeEqual(x, y)
 }
 
-export function emailWebhookOk(req: NextRequest, raw: string): boolean {
+export type EmailWebhookTrust = 'verified' | 'unverified' | 'refused'
+
+/** Is the inbound webhook set up to be verified (a signing secret or token)? */
+export function emailWebhookSigned(): boolean {
+  return !!((process.env.RESEND_WEBHOOK_SECRET || '').trim() || (process.env.EMAIL_WEBHOOK_TOKEN || '').trim())
+}
+
+let warnedUnverified = false
+
+/**
+ * How far to trust an inbound email webhook:
+ *   verified   — the Resend (Svix) signature or ?token= matched.
+ *   unverified — nothing is configured to check it with. Not refused (that
+ *                would silently stop all inbound email if the secret isn't
+ *                set), but the payload is UNTRUSTED: the route uses only its
+ *                email_id and takes everything else from Resend's own copy
+ *                of the email (app/api/webhooks/email).
+ *   refused    — a secret/token IS configured and this request doesn't match.
+ * EMAIL_WEBHOOK_VERIFY=log|off downgrades a failed check to 'unverified'.
+ */
+export function emailWebhookTrust(req: NextRequest, raw: string): EmailWebhookTrust {
   const secret = (process.env.RESEND_WEBHOOK_SECRET || '').trim()
   const token = (process.env.EMAIL_WEBHOOK_TOKEN || '').trim()
   if (!secret && !token) {
-    // In production an unverified endpoint would let anyone post "customer
-    // emails" into any workspace, so it fails closed. EMAIL_WEBHOOK_VERIFY=off
-    // is the explicit emergency switch; development stays open.
-    const prod = process.env.NODE_ENV === 'production' || process.env.VERCEL_ENV === 'production'
-    const off = ['log', 'off'].includes((process.env.EMAIL_WEBHOOK_VERIFY || '').toLowerCase())
-    console.warn(`[email webhook] RESEND_WEBHOOK_SECRET / EMAIL_WEBHOOK_TOKEN not set; ${prod && !off ? 'refusing inbound mail' : 'inbound mail is not being verified'}`)
-    return !prod || off
+    if (!warnedUnverified) {
+      warnedUnverified = true
+      console.warn('[email webhook] RESEND_WEBHOOK_SECRET / EMAIL_WEBHOOK_TOKEN not set: payloads are unverified, so only their email_id is used and the email is re-fetched from Resend')
+    }
+    return 'unverified'
   }
   let ok = false
   const given = req.nextUrl.searchParams.get('token') || ''
@@ -46,6 +65,12 @@ export function emailWebhookOk(req: NextRequest, raw: string): boolean {
       }
     } catch { ok = false }
   }
-  if (!ok) console.warn('[email webhook] signature check failed')
-  return ok || ['log', 'off'].includes((process.env.EMAIL_WEBHOOK_VERIFY || '').toLowerCase())
+  if (ok) return 'verified'
+  console.warn('[email webhook] signature check failed')
+  return ['log', 'off'].includes((process.env.EMAIL_WEBHOOK_VERIFY || '').toLowerCase()) ? 'unverified' : 'refused'
+}
+
+/** Back-compat: anything but a refusal. */
+export function emailWebhookOk(req: NextRequest, raw: string): boolean {
+  return emailWebhookTrust(req, raw) !== 'refused'
 }

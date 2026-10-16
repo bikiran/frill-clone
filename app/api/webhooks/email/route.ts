@@ -1,4 +1,4 @@
-import { emailWebhookOk } from '@/lib/email-webhook'
+import { emailWebhookTrust } from '@/lib/email-webhook'
 import { NextRequest, NextResponse, after } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { notifyCompany, pushInboundMessage } from '@/lib/notify'
@@ -62,15 +62,48 @@ async function hostResendAttachments(evt: any, companyId: string): Promise<any[]
 export async function POST(req: NextRequest) {
   try {
     const raw = await req.text()
-    // Only the mail provider (see lib/email-webhook.ts).
-    if (!emailWebhookOk(req, raw)) return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
+    // Only the mail provider (see lib/email-webhook.ts). With a secret set the
+    // signature must match; with none set the payload is untrusted (below).
+    const trust = emailWebhookTrust(req, raw)
+    if (trust === 'refused') return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
     let body: any = {}
     try { body = JSON.parse(raw || '{}') } catch { body = {} }
     const db = admin()
 
     // Resend inbound (email.received) nests the message under `data`; other
     // providers post it at the top level. Unwrap so the picks below work for all.
-    const evt = (body?.data && typeof body.data === 'object' && /email|inbound|received/i.test(String(body?.type || ''))) ? body.data : body
+    let evt: any = (body?.data && typeof body.data === 'object' && /email|inbound|received/i.test(String(body?.type || ''))) ? body.data : body
+
+    // ── Unverified payload: trust nothing in it but the email id ─────────────
+    // Anyone can post here when no signing secret is configured. So only the
+    // email_id is taken from the payload; who it's from and to, the subject,
+    // Message-ID, body and files all come from Resend's own copy of the email,
+    // which only exists if Resend really received it. No id, or Resend doesn't
+    // have it → dropped. Other providers' unsigned payloads are refused in
+    // production (they can set EMAIL_WEBHOOK_TOKEN).
+    let prefetched: any = null
+    if (trust === 'unverified') {
+      const claimedId = pick(evt, 'email_id', 'emailId') || (/email\.received/i.test(String(body?.type || '')) ? pick(evt, 'id') : null)
+      const prod = process.env.NODE_ENV === 'production' || process.env.VERCEL_ENV === 'production'
+      if (!claimedId) {
+        if (prod) {
+          logWebhookEvent({ source: 'email', eventType: 'inbound', status: 'rejected', error: 'Unsigned payload without a Resend email id' })
+          return NextResponse.json({ error: 'Unsigned inbound email refused: set EMAIL_WEBHOOK_TOKEN for this provider' }, { status: 401 })
+        }
+      } else {
+        prefetched = await fetchResendReceivedEmail(String(claimedId))
+        if (!prefetched) {
+          logWebhookEvent({ source: 'email', eventType: 'inbound', status: 'rejected', error: 'Unverified payload: email not found on Resend' })
+          return NextResponse.json({ ok: false, reason: 'Unverified webhook and Resend has no such email' })
+        }
+        evt = {
+          email_id: String(prefetched.id || claimedId), from: prefetched.from, to: prefetched.to, cc: prefetched.cc,
+          subject: prefetched.subject, message_id: prefetched.message_id, created_at: prefetched.created_at,
+          attachments: Array.isArray(prefetched.attachments) ? prefetched.attachments : [],
+        }
+        body = { type: 'email.received' }   // the rest of the payload is discarded
+      }
+    }
 
     // ── Extract the essentials across provider shapes ────────────────────────
     const toRaw = pick(evt, 'to', 'To', 'recipient', 'ToFull', 'envelope.to')
@@ -106,8 +139,8 @@ export async function POST(req: NextRequest) {
       if (s0 && (String(s0.content || '').trim() || s0.email_html)) return NextResponse.json({ ok: true, duplicate: true, conversationId: s0.conversation_id })
     }
 
-    if (!textBody && !htmlBody && resendEmailId) {
-      const full = readReceived(await fetchResendReceivedEmail(String(resendEmailId)))
+    if (resendEmailId && (prefetched || (!textBody && !htmlBody))) {
+      const full = readReceived(prefetched || await fetchResendReceivedEmail(String(resendEmailId)))
       if (full) {
         auth = full.auth
         textBody = full.text || ''
