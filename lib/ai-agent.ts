@@ -3,6 +3,7 @@ import { smartSearchKnowledge } from '@/lib/ai-knowledge'
 import { logUnanswered } from '@/lib/ai-unanswered'
 import { findProducts } from '@/lib/product-search'
 import { agentsPaused } from '@/lib/agent/pilot'
+import { textOptOut } from '@/lib/sms-consent'
 import { startActivity, finishActivity, type ActivityStep } from '@/lib/agent/record'
 import { markThinking, clearThinking, queueDraft, claimDraft, answeredSince, sendAiReply, sleep, replyInFlight, DEFAULT_SEND_DELAY_S } from '@/lib/ai-live-reply'
 import { WooCommerceService } from '@/lib/woocommerce-service'
@@ -428,6 +429,13 @@ export async function runAiAgent(opts: {
   // SMS replies are a separate switch — a text costs money and lands on a phone.
   if (String(conv.channel || '') === 'sms' && !cfg.auto_reply_sms) {
     return { replied: false, reason: 'AI auto-reply is off for SMS' }
+  }
+  // Never run for an SMS customer who opted out (or can't be checked): the reply
+  // would be refused, and tools like coupons or claims would already have run.
+  if (String(conv.channel || '') === 'sms') {
+    const { state } = await textOptOut(db, companyId, conv.sms_number || null, conv.contact_id || null)
+    if (state === 'opted_out') return { replied: false, reason: 'The customer opted out of texts, so Colvy AI doesn’t answer by SMS' }
+    if (state !== 'ok') return { replied: false, reason: 'Couldn’t check whether the customer opted out of texts' }
   }
   // One reply in flight per conversation (a second message mid-countdown waits its turn).
   if (replyInFlight(conv)) {

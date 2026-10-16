@@ -196,7 +196,9 @@ export async function ingestInboundSms(params: {
   // Nothing canned answered it → Colvy AI (only if the business switched AI on
   // for SMS; the agent checks). It shows live in the inbox with a countdown.
   // Not for a STOP.
-  if (!bookingHandled && !keywordAnswered && !optingOut && text) {
+  // Not for a customer who opted out (or can't be checked): no AI run at all.
+  if (!bookingHandled && !keywordAnswered && !optingOut && text
+    && (await textOptOut(db, companyId, from, conv.contact_id || matchedContactId || null)).state === 'ok') {
     try { fetch(`${origin}/api/ai/reply`, { method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ conversationId: conv.id, companyId }) }) } catch {}
   }
 

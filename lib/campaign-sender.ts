@@ -279,6 +279,13 @@ export async function processCampaignBatch(campaignId: string, batchSize = 60) {
           sent_at: new Date().toISOString(),
         }).eq('id', r.id)
         sent++
+      } else if (data?.optedOut && data?.reason !== 'unknown') {
+        // The opt-out guard found a STOP the audience didn't know about: a
+        // skip, not a failure, so the report counts it as unsubscribed.
+        await db.from('campaign_recipients').update({ status: 'skipped', skip_reason: 'unsubscribed' }).eq('id', r.id)
+      } else if (data?.optedOut) {
+        // Couldn't check the opt-out just now: back to pending, a later batch retries.
+        await db.from('campaign_recipients').update({ status: 'pending' }).eq('id', r.id)
       } else {
         await db.from('campaign_recipients').update({
           status: 'failed',

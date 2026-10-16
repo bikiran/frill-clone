@@ -56,6 +56,8 @@ export interface FallbackResult {
   channel: 'live_chat' | 'sms' | 'email' | 'none'
   sent: boolean
   error?: string
+  /** The text was refused because the customer opted out (lib/sms-consent). */
+  optedOut?: boolean
 }
 
 /**
@@ -119,7 +121,10 @@ export async function deliverAutomatedMessage(params: {
     // fall through to SMS as a backup
   }
 
-  // SMS first: highest chance of being read.
+  // SMS first: highest chance of being read. When it's refused, the reason
+  // (an opt-out, a carrier error) is kept for the caller if email can't stand in.
+  let smsError: string | null = null
+  let optedOut = false
   if (phone) {
     try {
       const res = await fetch(`${origin}/api/telnyx/sms/send`, {
@@ -133,7 +138,10 @@ export async function deliverAutomatedMessage(params: {
         }),
       })
       if (res.ok) return { onLiveChat, channel: 'sms', sent: true }
-    } catch { /* fall through to email */ }
+      const d = await res.json().catch(() => ({}))
+      optedOut = !!d?.optedOut
+      smsError = d?.error || `The text didn’t send (${res.status}).`
+    } catch (e: any) { smsError = e?.message || 'The text didn’t send.' }
   }
 
   const viaEmail = await sendEmail()
@@ -143,6 +151,7 @@ export async function deliverAutomatedMessage(params: {
     onLiveChat,
     channel: 'none',
     sent: false,
-    error: 'No reachable channel — the contact has no mobile or email on file',
+    error: smsError || 'No reachable channel — the contact has no mobile or email on file',
+    ...(optedOut ? { optedOut: true } : {}),
   }
 }

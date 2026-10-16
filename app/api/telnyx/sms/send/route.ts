@@ -79,7 +79,8 @@ export async function POST(req: NextRequest) {
       try { await assertMayText(db, companyId, e164, threadContactId) }
       catch (e: any) {
         if (e?.name !== 'SmsOptOutError') throw e
-        return NextResponse.json({ error: e.message, optedOut: true }, { status: 409 })
+        // reason: 'opted_out', or 'unknown' when it couldn't be checked (worth a retry later).
+        return NextResponse.json({ error: e.message, optedOut: true, reason: e.reason }, { status: 409 })
       }
     }
 

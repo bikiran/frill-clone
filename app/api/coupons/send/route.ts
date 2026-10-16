@@ -138,24 +138,47 @@ export async function POST(req: NextRequest) {
     // (and any caller) opts in with `deliver: true` so we handle it here without
     // double-sending on the web. Best-effort: a delivery failure never undoes the
     // coupon that was already created.
+    // A text that doesn't go (the customer opted out, or the send failed) is
+    // emailed when there's an address; otherwise the caller is told it wasn't
+    // delivered (`delivered: false` + `deliveryError`), never that it was texted.
+    let delivered: string | false | null = null
+    let deliveryError: string | null = null
+    let optedOut = false
     if (deliver) {
       try {
         const base = String(process.env.NEXT_PUBLIC_SITE_URL || '').replace(/\/$/, '')
-        if (base && deliverVia === 'sms') {
-          await fetch(`${base}/api/telnyx/sms/send`, {
-            method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
-            body: JSON.stringify({ companyId, conversationId, to: conv?.sms_number, text: content, senderName: createdByName || 'Support', skipChatMessage: true }),
-          })
-        } else if (base && deliverVia === 'email') {
-          await fetch(`${base}/api/email/reply`, {
+        const sendEmail = async () => {
+          const r = await fetch(`${base}/api/email/reply`, {
             method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({ conversationId, content, to: email, subject: 'Your coupon', agentName: createdByName || 'Support' }),
           })
+          return r.ok
         }
-      } catch { /* delivery is best-effort; the coupon is already created */ }
+        if (base && deliverVia === 'sms') {
+          const res = await fetch(`${base}/api/telnyx/sms/send`, {
+            method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({ companyId, conversationId, to: conv?.sms_number, text: content, senderName: createdByName || 'Support', skipChatMessage: true }),
+          })
+          if (res.ok) delivered = 'sms'
+          else {
+            const d = await res.json().catch(() => ({}))
+            optedOut = !!d?.optedOut
+            deliveryError = d?.error || 'The coupon text didn’t send.'
+            delivered = optedOut && email && await sendEmail() ? 'email' : false
+            if (delivered) deliveryError = null
+          }
+        } else if (base && deliverVia === 'email') {
+          delivered = (await sendEmail()) ? 'email' : false
+          if (!delivered) deliveryError = 'The coupon email didn’t send.'
+        }
+      } catch (e: any) { delivered = false; deliveryError = e?.message || 'The coupon couldn’t be delivered.' }
+      // The card says how it really went.
+      if (delivered !== null && delivered !== via) {
+        try { await db.from('messages').update({ delivery_channel: delivered || 'chat' }).eq('conversation_id', conversationId).eq('message_type', 'coupon').eq('message_payload->>code', finalCode) } catch {}
+      }
     }
 
-    return NextResponse.json({ ok: true, code: finalCode, coupon: { id: coupon.id, amount, discount_type: dt } })
+    return NextResponse.json({ ok: true, code: finalCode, coupon: { id: coupon.id, amount, discount_type: dt }, ...(deliver ? { delivered, deliveryError, optedOut } : {}) })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
