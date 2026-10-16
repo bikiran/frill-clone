@@ -1,608 +1,333 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
-import { supabase } from '@/lib/supabase'
-import Link from 'next/link'
-import { BellIcon, HeartIcon } from '@/components/Icons'
-import { confirmDialog } from '@/components/ConfirmDialog'
+// The business's public updates page (<slug>.colvy.com/announcements, or its
+// own board domain): a clean timeline of live announcements with cover
+// pictures, categories, reactions and a link to the roadmap idea a post
+// delivers. Everything comes from /api/announcements/public, which only
+// returns live posts with their bodies cleaned to safe HTML; this page never
+// reads or writes the announcements table itself.
 
-const TAG_COLORS: Record<string, { bg: string; color: string; label: string }> = {
-  new_feature: { bg: '#dbeafe', color: '#0284c7', label: 'New Feature' },
-  improvement: { bg: '#fef3c7', color: '#ca8a04', label: 'Improvement' },
-  bug_fix: { bg: '#fee2e2', color: '#dc2626', label: 'Bug Fix' },
-  announcement: { bg: '#f3e8ff', color: '#7c3aed', label: 'Announcement' },
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
+import Link from 'next/link'
+import { authFetch } from '@/lib/auth-fetch'
+import { supabase } from '@/lib/supabase'
+import { CATEGORIES, formatDate, type CategoryKey, type PublicAnnouncement } from '@/lib/announcements'
+import { PublicPost, POST_CSS } from '@/components/announcements/PublicPost'
+import { AnnIcon } from '@/components/announcements/icons'
+import { trackAnnouncementView } from '@/components/announcements/WidgetBoost'
+
+type Data = { company: { name: string; slug: string; logo_url?: string | null; accent_color?: string | null } | null; announcements: PublicAnnouncement[]; ideas: Record<string, string>; private?: boolean }
+
+const MINE_KEY = 'colvy_ann_reactions'
+function readMine(): Record<string, string[]> {
+  try { const v = JSON.parse(localStorage.getItem(MINE_KEY) || '{}'); return v && typeof v === 'object' ? v : {} } catch { return {} }
+}
+function writeMine(v: Record<string, string[]>) { try { localStorage.setItem(MINE_KEY, JSON.stringify(v)) } catch {} }
+
+/** Which board this is: its host, or (on colvy.com / a preview) ?slug= or your own workspace. */
+async function boardQuery(slugParam: string | null): Promise<string> {
+  const h = window.location.hostname.toLowerCase()
+  const main = h === 'colvy.com' || h === 'www.colvy.com' || h === 'localhost' || h.endsWith('.vercel.app') || /^[\d.]+$/.test(h)
+  if (!main) return `host=${encodeURIComponent(h)}`
+  if (slugParam) return `slug=${encodeURIComponent(slugParam)}`
+  try {
+    const { resolveCompanyUser } = await import('@/lib/client-cache')
+    const { companyId } = await resolveCompanyUser()
+    if (companyId) return `companyId=${encodeURIComponent(companyId)}`
+  } catch {}
+  return ''
 }
 
-export default function AnnouncementsPage() {
-  const [announcements, setAnnouncements] = useState<any[]>([])
-  const [loading, setLoading] = useState(true)
-  const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [search, setSearch] = useState('')
-  const [user, setUser] = useState<any>(null)
-  const [isCompanyAdmin, setIsCompanyAdmin] = useState(false)
-  const [likedIds, setLikedIds] = useState<Set<string>>(new Set())
-  const [subscribedIds, setSubscribedIds] = useState<Set<string>>(new Set())
-  const [openMenuId, setOpenMenuId] = useState<string | null>(null)
-  const [localReactions, setLocalReactions] = useState<Record<string, Record<string, number>>>({})
-  const articleRefs = useRef<Record<string, HTMLElement>>({})
-  const sidebarRefs = useRef<Record<string, HTMLElement>>({})
-  const sidebarScrollRef = useRef<HTMLDivElement | null>(null)
-  const isProgrammaticScroll = useRef(false)
+function UpdatesPage() {
+  const params = useSearchParams()
+  const focusId = params?.get('id') || null
+  const [data, setData] = useState<Data | null>(null)
+  const [error, setError] = useState(false)
+  const [query, setQuery] = useState('')
+  const [cat, setCat] = useState<CategoryKey | 'all'>('all')
+  const [mine, setMine] = useState<Record<string, string[]>>({})
+  const [copied, setCopied] = useState<string | null>(null)
+  const [isStaff, setIsStaff] = useState(false)
+  const scrolled = useRef(false)
+
+  const load = useCallback(async () => {
+    setError(false)
+    try {
+      const q = await boardQuery(params?.get('slug') || null)
+      if (!q) { setData({ company: null, announcements: [], ideas: {} }); return }
+      const res = await authFetch(`/api/announcements/public?${q}`)
+      if (!res.ok) throw new Error('load')
+      setData(await res.json())
+    } catch { setError(true) }
+  }, [params])
 
   useEffect(() => {
-    supabase.auth.onAuthStateChange((_e, s) => setUser(s?.user ?? null))
-    supabase.auth.getSession().then(({ data }) => {
-      const u = data.session?.user ?? null
-      setUser(u)
-      if (u) {
-        import('@/lib/board').then(({ isCompanyAdminUser }) => {
-          isCompanyAdminUser(u).then(setIsCompanyAdmin)
-        })
-      }
+    setMine(readMine())
+    load()
+    supabase.auth.getSession().then(({ data: s }) => {
+      const u = s?.session?.user
+      if (u) import('@/lib/board').then(({ isCompanyAdminUser }) => isCompanyAdminUser(u).then(setIsStaff)).catch(() => {})
     })
-    fetchAnnouncements()
-  }, [])
+  }, [load])
 
-  const isOnCompanySubdomain = () => {
-    if (typeof window === 'undefined') return false
-    const h = window.location.hostname
-    return h.endsWith('.colvy.com') && h !== 'colvy.com' && h !== 'www.colvy.com'
-  }
-  const getCompanyId = async () => {
-    if (typeof window === 'undefined') return null
-    const h = window.location.hostname
-    if (h.endsWith('.colvy.com') && h !== 'colvy.com' && h !== 'www.colvy.com') {
-      const slug = h.replace('.colvy.com', '')
-      const { data } = await (supabase as any).from('companies').select('id').eq('slug', slug).maybeSingle()
-      return data?.id || null
+  const posts = data?.announcements || []
+  const shown = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    return posts.filter(p => (cat === 'all' || p.category === cat) && (!q || `${p.title} ${p.excerpt}`.toLowerCase().includes(q)))
+  }, [posts, cat, query])
+  const usedCats = useMemo(() => CATEGORIES.filter(c => posts.some(p => p.category === c.key)), [posts])
+  const onNow = useMemo(() => posts.filter(p => p.expires_at && new Date(p.expires_at).getTime() > Date.now())
+    .sort((a, b) => new Date(a.expires_at!).getTime() - new Date(b.expires_at!).getTime()).slice(0, 4), [posts])
+  const months = useMemo(() => {
+    const m = new Map<string, { label: string; first: string; n: number }>()
+    for (const p of posts.filter(x => !x.is_pinned)) {
+      const d = new Date(p.date)
+      const key = `${d.getFullYear()}-${d.getMonth()}`
+      const e = m.get(key)
+      if (e) e.n++
+      else m.set(key, { label: d.toLocaleDateString('en-AU', { month: 'long', year: 'numeric' }), first: p.id, n: 1 })
     }
-    return null
-  }
+    return [...m.values()].slice(0, 12)
+  }, [posts])
 
-  const fetchAnnouncements = async () => {
+  // Open on ?id=: scroll to it once it's on the page.
+  useEffect(() => {
+    if (!focusId || scrolled.current || !posts.length) return
+    const el = document.getElementById(`post-${focusId}`)
+    if (el) { scrolled.current = true; setTimeout(() => el.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80) }
+  }, [focusId, posts.length])
+
+  // A view is a post someone actually had on screen for a moment (once per browser).
+  useEffect(() => {
+    if (!shown.length || typeof IntersectionObserver === 'undefined') return
+    const timers = new Map<string, any>()
+    const io = new IntersectionObserver(entries => {
+      for (const e of entries) {
+        const id = (e.target as HTMLElement).dataset.annId
+        if (!id) continue
+        if (e.isIntersecting) { if (!timers.has(id)) timers.set(id, setTimeout(() => trackAnnouncementView(id), 1200)) }
+        else { clearTimeout(timers.get(id)); timers.delete(id) }
+      }
+    }, { threshold: 0.4 })
+    document.querySelectorAll('[data-ann-id]').forEach(el => io.observe(el))
+    return () => { io.disconnect(); timers.forEach(t => clearTimeout(t)) }
+  }, [shown])
+
+  const react = async (id: string, key: string) => {
+    const had = (mine[id] || []).includes(key)
+    const next = { ...mine, [id]: had ? (mine[id] || []).filter(k => k !== key) : [...(mine[id] || []), key] }
+    setMine(next); writeMine(next)
+    setData(d => d && ({ ...d, announcements: d.announcements.map(p => p.id === id ? { ...p, reactions: { ...p.reactions, [key]: Math.max(0, (p.reactions as any)[key] + (had ? -1 : 1)) } } : p) }))
     try {
-      const companyId = await getCompanyId()
-      let q = (supabase as any).from('announcements').select('*')
-      if (companyId) q = q.eq('company_id', companyId)
-      else if (isOnCompanySubdomain()) { setLoading(false); return }
-      const { data } = await q.order('created_at', { ascending: false })
-
-      // Only company admins may see drafts; the public sees published only
-      const { isCompanyAdminUser } = await import('@/lib/board')
-      const { data: { session } } = await supabase.auth.getSession()
-      const admin = session?.user ? await isCompanyAdminUser(session.user) : false
-      const visible = (data || []).filter((a: any) => admin || a.status === 'published')
-
-      setAnnouncements(visible)
-      if (visible?.[0] && !selectedId) setSelectedId(visible[0].id)
-    } catch (err) {
-      console.error(err)
-    }
-
-    // Set page title with company name
-    if (typeof document !== 'undefined') {
-      const h = window.location.hostname
-      const slug = h.endsWith('.colvy.com') ? h.replace('.colvy.com','') : null
-      if (slug) {
-        const coName = document.querySelector('meta[name="company-name"]')?.getAttribute('content') || slug
-        // Tab title is set centrally by app/layout.tsx
-      }
-    }
-    setLoading(false)
-      // Set page title from company name
-      if (typeof document !== 'undefined' && typeof window !== 'undefined') {
-        const h = window.location.hostname
-        if (h.endsWith('.colvy.com') && h !== 'colvy.com') {
-          const slug = h.replace('.colvy.com', '')
-          const cached = localStorage.getItem(`company_${slug}`)
-          const co = cached ? JSON.parse(cached) : null
-          const name = co?.name || slug.charAt(0).toUpperCase() + slug.slice(1)
-          // Tab title is set centrally by app/layout.tsx
-        }
-      }
+      const res = await fetch('/api/announcements/public', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, action: had ? 'unreact' : 'react', reaction: key }) })
+      const j = await res.json().catch(() => ({}))
+      if (res.ok && j.reactions) setData(d => d && ({ ...d, announcements: d.announcements.map(p => p.id === id ? { ...p, reactions: j.reactions } : p) }))
+    } catch {}
   }
-
-  const handleSelect = async (ann: any) => {
-    setSelectedId(ann.id)
-    // Scroll to article
-    isProgrammaticScroll.current = true
-    setTimeout(() => {
-      articleRefs.current[ann.id]?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-      setTimeout(() => { isProgrammaticScroll.current = false }, 700)
-    }, 50)
-    // Track view + impression
-    await (supabase as any).from('announcements').update({
-      impressions: (ann.impressions || 0) + 1,
-      views: (ann.views || 0) + 1,
-    }).eq('id', ann.id)
-    // Update local state
-    setAnnouncements((prev: any[]) => prev.map((a: any) => a.id === ann.id ? { ...a, views: (a.views || 0) + 1, impressions: (a.impressions || 0) + 1 } : a))
-  }
-
-  const toggleLike = async (id: string) => {
-    const userId = user?.id || ('guest_' + (localStorage.getItem('guest_id') || Math.random().toString(36).slice(2)))
-    if (!localStorage.getItem('guest_id') && !user?.id) localStorage.setItem('guest_id', userId.replace('guest_', ''))
-    const isLiked = likedIds.has(id)
-    setLikedIds(prev => {
-      const next = new Set(prev)
-      isLiked ? next.delete(id) : next.add(id)
-      return next
-    })
-    try {
-      if (isLiked) {
-        await (supabase as any).from('announcement_likes').delete().eq('announcement_id', id).eq('user_id', userId)
-      } else {
-        await (supabase as any).from('announcement_likes').insert({ announcement_id: id, user_id: userId })
-      }
-    } catch (err) { console.log('Like persist error:', err) }
-  }
-
-  const toggleSubscribe = async (id: string) => {
-    const userId = user?.id || ('guest_' + (localStorage.getItem('guest_id') || Math.random().toString(36).slice(2)))
-    if (!localStorage.getItem('guest_id') && !user?.id) localStorage.setItem('guest_id', userId.replace('guest_', ''))
-    const isSub = subscribedIds.has(id)
-    setSubscribedIds(prev => {
-      const next = new Set(prev)
-      isSub ? next.delete(id) : next.add(id)
-      return next
-    })
-    try {
-      if (isSub) {
-        await (supabase as any).from('announcement_subscribers').delete().eq('announcement_id', id).eq('user_id', userId)
-      } else {
-        await (supabase as any).from('announcement_subscribers').insert({ announcement_id: id, user_id: userId })
-      }
-    } catch (err) { console.log('Subscribe persist error:', err) }
-  }
-
   const copyLink = (id: string) => {
-    navigator.clipboard.writeText(`${window.location.origin}/announcements?id=${id}`)
-    alert('Link copied!')
+    const url = `${window.location.origin}/announcements?id=${id}`
+    navigator.clipboard?.writeText(url).then(() => { setCopied(id); setTimeout(() => setCopied(c => (c === id ? null : c)), 1800) }).catch(() => {})
   }
+  const jump = (id: string) => document.getElementById(`post-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 
-  const addReaction = async (ann: any, emoji: string) => {
-    const current = (ann.reactions as Record<string, number>) || {}
-    const updated = { ...current, [emoji]: (current[emoji] || 0) + 1 }
-    // Optimistic local update
-    setLocalReactions(prev => ({ ...prev, [ann.id]: updated }))
-    await supabase.from('announcements').update({ reactions: updated }).eq('id', ann.id)
-  }
+  const company = data?.company
+  const pinned = shown.filter(p => p.is_pinned)
+  const rest = shown.filter(p => !p.is_pinned)
 
-  const filtered = announcements.filter(a =>
-    !search || a.title.toLowerCase().includes(search.toLowerCase())
-  )
-
-  // As the reader scrolls the articles, highlight the matching sidebar item and
-  // gently scroll the sidebar to keep it aligned with the article in view.
-  useEffect(() => {
-    const ids = filtered.map(a => a.id)
-    if (ids.length === 0) return
-    const observer = new IntersectionObserver((entries) => {
-      if (isProgrammaticScroll.current) return
-      // Pick the entry nearest the top that is intersecting.
-      const visible = entries.filter(e => e.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)
-      const top = visible[0]
-      if (!top) return
-      const id = (top.target as HTMLElement).dataset.annId
-      if (!id) return
-      setSelectedId(id)
-      // Scroll the matching sidebar item into view within the sidebar only.
-      const el = sidebarRefs.current[id]
-      const container = sidebarScrollRef.current
-      if (el && container) {
-        const elRect = el.getBoundingClientRect()
-        const cRect = container.getBoundingClientRect()
-        const offsetWithin = (elRect.top - cRect.top) + container.scrollTop
-        const target = offsetWithin - container.clientHeight / 2 + el.clientHeight / 2
-        container.scrollTo({ top: Math.max(0, target), behavior: 'smooth' })
-      }
-    }, { rootMargin: '-10% 0px -70% 0px', threshold: 0 })
-
-    ids.forEach(id => { const el = articleRefs.current[id]; if (el) observer.observe(el) })
-    return () => observer.disconnect()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filtered.length, loading])
-
-  // Pinned items get their own section at the top (still newest-pinned-first among themselves).
-  // Everything else stays strictly chronological so month groups never appear out of order.
-  const pinnedItems = filtered.filter(a => a.is_pinned)
-  const chronologicalItems = filtered.filter(a => !a.is_pinned)
-
-  // Group sidebar items by month — built only from strictly date-sorted items,
-  // so a pinned older post can never push an older month group above a newer one.
-  const grouped: Record<string, any[]> = {}
-  chronologicalItems.forEach(ann => {
-    const key = new Date(ann.created_at).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
-    if (!grouped[key]) grouped[key] = []
-    grouped[key].push(ann)
-  })
-
-  // Main feed order: pinned first (as a distinct, clearly-labeled block), then strict newest-first.
-  const feedItems = [...pinnedItems, ...chronologicalItems]
-
-  const isAdmin = isCompanyAdmin
-
+  // The business's own colour, even where the board chrome hasn't set it yet.
+  const accent = /^#[0-9a-f]{6}$/i.test(company?.accent_color || '') ? company!.accent_color! : null
   return (
-    <div className="flex h-[calc(100vh-56px)] overflow-hidden" style={{ background: 'var(--canvas)' }}>
-      {/* ─── LEFT SIDEBAR ─── */}
-      <aside className="hidden lg:flex flex-col w-72 xl:w-80 shrink-0 bg-white border-r" style={{ borderColor: 'var(--border)' }}>
-        {/* Search */}
-        <div className="p-4 border-b" style={{ borderColor: 'var(--border)' }}>
-          <div className="relative">
-            <svg className="absolute left-3 top-1/2 -translate-y-1/2" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--slate)' }}><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-            <input
-              type="text"
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="Search updates…"
-              className="w-full pl-9 pr-3 py-2 rounded-lg border text-sm focus:outline-none transition-smooth"
-              style={{ borderColor: 'var(--border)', fontSize: '16px', background: 'var(--canvas)' }}
-            />
-          </div>
+    <div className="ap-root" style={accent ? ({ '--coral': accent } as React.CSSProperties) : undefined}>
+      <style>{POST_CSS + PAGE_CSS}</style>
+      <header className="ap-hero">
+        <div className="ap-hero-text">
+          <p className="ap-kicker">{company?.name || 'Updates'}</p>
+          <h1 className="ap-h1">What’s new</h1>
+          <p className="ap-lede">News, new arrivals, events and offers{company?.name ? ` from ${company.name}` : ''}.</p>
         </div>
-
-        {isAdmin && (
-          <div className="px-4 py-3 border-b" style={{ borderColor: 'var(--border)' }}>
-            <Link
-              href="/admin/announcements/new"
-              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white transition-smooth press-effect"
-              style={{ background: 'linear-gradient(135deg, var(--coral), #ff8f7f)' }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-              New Announcement
-            </Link>
-          </div>
-        )}
-
-        {/* Timeline list */}
-        <div className="flex-1 overflow-y-auto" ref={sidebarScrollRef}>
-          {loading ? (
-            <div className="p-4 space-y-3">
-              {[1, 2, 3, 4].map(i => <div key={i} className="skeleton h-16 rounded-lg" />)}
-            </div>
-          ) : filtered.length === 0 ? (
-            <div className="p-8 text-center">
-              <p className="text-sm" style={{ color: 'var(--slate)' }}>No announcements yet</p>
-            </div>
-          ) : (
-            <div className="relative py-2">
-              {/* Vertical timeline line */}
-              <div className="absolute left-[22px] top-0 bottom-0 w-px" style={{ background: 'var(--border)' }} />
-
-              {pinnedItems.length > 0 && (
-                <div>
-                  <div className="pl-12 pr-4 py-1.5 sticky top-0 z-10 bg-white">
-                    <p className="text-[11px] font-bold uppercase tracking-widest" style={{ color: 'var(--coral)' }}>Pinned</p>
-                  </div>
-                  {pinnedItems.map(ann => {
-                    const isActive = selectedId === ann.id
-                    const tagCfg = TAG_COLORS[ann.tag] || TAG_COLORS.announcement
-                    return (
-                      <button
-                        key={ann.id}
-                        onClick={() => handleSelect(ann)}
-                        ref={el => { if (el) sidebarRefs.current[ann.id] = el }}
-                        className="w-full text-left flex items-start gap-3 px-4 py-3 transition-smooth hover:bg-gray-50 relative"
-                        style={{ background: isActive ? 'var(--peach)' : 'transparent' }}>
-                        <div className="relative shrink-0 mt-1 z-10">
-                          <div
-                            className="w-4 h-4 rounded-full border-2 border-white flex items-center justify-center transition-all"
-                            style={{
-                              background: isActive ? 'var(--coral)' : 'var(--border)',
-                              boxShadow: isActive ? '0 0 0 3px var(--peach), 0 0 0 5px var(--coral)' : 'none',
-                              transform: isActive ? 'scale(1.2)' : 'scale(1)',
-                            }}
-                          />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-1.5 mb-1.5 px-2 py-1 rounded-md" style={{ background: 'var(--peach)' }}>
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style={{ color: 'var(--coral)' }}><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 9.5c0 .83-.67 1.5-1.5 1.5S11 13.33 11 12.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5z"/></svg>
-                            <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--coral)' }}>Pinned</p>
-                          </div>
-                          <p className="text-sm font-semibold line-clamp-2 leading-snug" style={{ color: isActive ? 'var(--coral)' : 'var(--ink)' }}>
-                            {ann.title}
-                          </p>
-                          <div className="flex items-center gap-2 mt-1">
-                            <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium" style={{ background: tagCfg.bg, color: tagCfg.color }}>
-                              {tagCfg.label}
-                            </span>
-                            <span className="text-[11px]" style={{ color: 'var(--slate)' }}>
-                              {new Date(ann.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                            </span>
-                          </div>
-                        </div>
-                      </button>
-                    )
-                  })}
-                </div>
-              )}
-
-              {Object.entries(grouped).map(([month, items]) => (
-                <div key={month}>
-                  {/* Month label */}
-                  <div className="pl-12 pr-4 py-1.5 sticky top-0 z-10 bg-white">
-                    <p className="text-[11px] font-bold uppercase tracking-widest" style={{ color: 'var(--slate)' }}>{month}</p>
-                  </div>
-
-                  {items.map(ann => {
-                    const isActive = selectedId === ann.id
-                    const tagCfg = TAG_COLORS[ann.tag] || TAG_COLORS.announcement
-                    return (
-                      <button
-                        key={ann.id}
-                        onClick={() => handleSelect(ann)}
-                        ref={el => { if (el) sidebarRefs.current[ann.id] = el }}
-                        className="w-full text-left flex items-start gap-3 px-4 py-3 transition-smooth hover:bg-gray-50 relative"
-                        style={{ background: isActive ? 'var(--peach)' : 'transparent' }}>
-                        {/* Timeline dot */}
-                        <div className="relative shrink-0 mt-1 z-10">
-                          <div
-                            className="w-4 h-4 rounded-full border-2 border-white flex items-center justify-center transition-all"
-                            style={{
-                              background: isActive ? 'var(--coral)' : 'var(--border)',
-                              boxShadow: isActive ? '0 0 0 3px var(--peach), 0 0 0 5px var(--coral)' : 'none',
-                              transform: isActive ? 'scale(1.2)' : 'scale(1)',
-                            }}
-                          />
-                        </div>
-
-                        {/* Content */}
-                        <div className="flex-1 min-w-0">
-                          {ann.is_pinned && (
-                            <div className="flex items-center gap-1.5 mb-1.5 px-2 py-1 rounded-md" style={{ background: 'var(--peach)' }}>
-                              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style={{ color: 'var(--coral)' }}><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 9.5c0 .83-.67 1.5-1.5 1.5S11 13.33 11 12.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5z"/></svg>
-                              <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--coral)' }}>
-                                Pinned
-                              </p>
-                            </div>
-                          )}
-                          <p
-                            className="text-sm font-semibold line-clamp-2 leading-snug"
-                            style={{ color: isActive ? 'var(--coral)' : 'var(--ink)' }}>
-                            {ann.title}
-                          </p>
-                          <div className="flex items-center gap-2 mt-1">
-                            <span
-                              className="text-[10px] px-1.5 py-0.5 rounded-full font-medium"
-                              style={{ background: tagCfg.bg, color: tagCfg.color }}>
-                              {tagCfg.label}
-                            </span>
-                            <span className="text-[11px]" style={{ color: 'var(--slate)' }}>
-                              {new Date(ann.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                            </span>
-                          </div>
-                        </div>
-                      </button>
-                    )
-                  })}
-                </div>
-              ))}
-            </div>
+        <div className="ap-hero-tools">
+          <label className="ap-search">
+            <AnnIcon name="search" size={16} />
+            <span className="ap-sr">Search updates</span>
+            <input type="search" value={query} onChange={e => setQuery(e.target.value)} placeholder="Search updates" />
+          </label>
+          {isStaff && (
+            <Link href="/admin/announcements/new" className="ap-new"><AnnIcon name="plus" size={16} /> New</Link>
           )}
         </div>
-      </aside>
+      </header>
 
-      {/* ─── MAIN FEED ─── */}
-      <main className="flex-1 overflow-y-auto bg-white">
-        {loading ? (
-          <div className="max-w-3xl mx-auto px-6 py-12 space-y-8">
-            {[1, 2].map(i => <div key={i} className="space-y-3"><div className="skeleton h-8 w-2/3 rounded" /><div className="skeleton h-4 rounded" /><div className="skeleton h-4 w-4/5 rounded" /></div>)}
-          </div>
-        ) : filtered.length === 0 ? (
-          <div className="flex items-center justify-center h-full">
-            <div className="text-center">
-              <div className="mb-4 flex justify-center" style={{ color: "var(--slate)", opacity: 0.4 }}><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M22 2L11 13"/><path d="M22 2L15 22 11 13 2 9l20-7z"/></svg></div>
-              <h3 className="text-xl font-semibold mb-2" style={{ color: 'var(--ink)' }}>No announcements yet</h3>
-              <p className="mb-6" style={{ color: 'var(--slate)' }}>Check back soon for updates!</p>
-              {isAdmin && (
-                <Link href="/admin/announcements/new"
-                  className="inline-block px-6 py-3 rounded-xl font-semibold text-white"
-                  style={{ background: 'var(--coral)' }}>
-                  Create First Announcement
-                </Link>
-              )}
+      {usedCats.length > 1 && (
+        <nav className="ap-cats" aria-label="Categories">
+          <button type="button" className={`ap-catbtn${cat === 'all' ? ' on' : ''}`} onClick={() => setCat('all')}>All</button>
+          {usedCats.map(c => (
+            <button key={c.key} type="button" className={`ap-catbtn${cat === c.key ? ' on' : ''}`} onClick={() => setCat(c.key)}>
+              <span className="ap-dot" style={{ background: c.color }} />{c.label}
+            </button>
+          ))}
+        </nav>
+      )}
+
+      <div className="ap-layout">
+        <main className="ap-main">
+          {!data && !error && (
+            <div className="ap-skel-list">{[0, 1, 2].map(i => <div key={i} className="ap-skel" />)}</div>
+          )}
+          {error && (
+            <div className="ap-empty-state">
+              <p className="ap-empty-title">Updates didn’t load</p>
+              <p className="ap-empty-text">Check your connection and try again.</p>
+              <button type="button" className="ap-btn" onClick={load}>Try again</button>
             </div>
-          </div>
-        ) : (
-          <div className="max-w-3xl mx-auto px-6 md:px-12 py-8 md:py-12">
-            {feedItems.map((ann, idx) => {
-              const tagCfg = TAG_COLORS[ann.tag] || TAG_COLORS.announcement
-              const liked = likedIds.has(ann.id)
-              const subscribed = subscribedIds.has(ann.id)
-              return (
-                <article
-                  key={ann.id}
-                  id={`ann-${ann.id}`}
-                  ref={el => { if (el) articleRefs.current[ann.id] = el }}
-                  data-ann-id={ann.id}
-                  className="mb-12 pb-12 scroll-mt-6 transition-all"
-                  style={{ borderBottom: '1px solid #e5e7eb', marginBottom: '3rem', paddingBottom: '3rem' }}>
-
-                  {/* Meta row */}
-                  <div className="flex items-center gap-2 mb-4 flex-wrap">
-                    <span className="text-xs px-2.5 py-1 rounded-full font-semibold" style={{ background: tagCfg.bg, color: tagCfg.color }}>
-                      {tagCfg.label}
-                    </span>
-                    {ann.is_pinned && (
-                      <span className="text-xs px-2.5 py-1 rounded-full font-semibold flex items-center gap-1" style={{ background: 'var(--peach)', color: 'var(--coral)' }}>
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 9.5c0 .83-.67 1.5-1.5 1.5S11 13.33 11 12.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5z"/></svg>
-                        Pinned
-                      </span>
-                    )}
-                    <span className="text-xs" style={{ color: 'var(--slate)' }}>
-                      {new Date(ann.created_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
-                    </span>
+          )}
+          {data?.private && (
+            <div className="ap-empty-state">
+              <p className="ap-empty-title">This board is private</p>
+              <p className="ap-empty-text">Sign in to see its updates.</p>
+            </div>
+          )}
+          {data && !data.private && !error && shown.length === 0 && (
+            <div className="ap-empty-state">
+              <span className="ap-empty-art"><AnnIcon name="megaphone" size={28} /></span>
+              <p className="ap-empty-title">{posts.length ? 'Nothing matches that' : 'No updates yet'}</p>
+              <p className="ap-empty-text">{posts.length ? 'Try another word or category.' : 'News and offers will show here.'}</p>
+            </div>
+          )}
+          {pinned.length > 0 && (
+            <section aria-label="Pinned" className="ap-section">
+              {pinned.map(p => (
+                <div key={p.id} className="ap-item">
+                  <div className="ap-when"><time dateTime={p.date}><span className="ap-when-label">Pinned</span><span className="ap-when-year">{new Date(p.date).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}</span></time></div>
+                  <div className="ap-rail"><span className="ap-node is-pin"><AnnIcon name="pin" size={12} /></span></div>
+                  <PublicPost post={p} ideaTitle={data?.ideas?.[p.idea_id || '']} mine={mine[p.id]} onReact={k => react(p.id, k)} onCopy={() => copyLink(p.id)} copied={copied === p.id} highlight={focusId === p.id} />
+                </div>
+              ))}
+            </section>
+          )}
+          {rest.length > 0 && (
+            <section aria-label="Timeline" className="ap-section">
+              {rest.map(p => (
+                <div key={p.id} className="ap-item">
+                  <div className="ap-when">
+                    <time dateTime={p.date}>
+                      <span className="ap-when-day">{new Date(p.date).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}</span>
+                      <span className="ap-when-year">{new Date(p.date).getFullYear()}</span>
+                    </time>
                   </div>
+                  <div className="ap-rail"><span className="ap-node" /></div>
+                  <PublicPost post={p} ideaTitle={data?.ideas?.[p.idea_id || '']} mine={mine[p.id]} onReact={k => react(p.id, k)} onCopy={() => copyLink(p.id)} copied={copied === p.id} highlight={focusId === p.id} />
+                </div>
+              ))}
+            </section>
+          )}
+        </main>
 
-                  {/* Title */}
-                  <h1 className="text-3xl md:text-4xl font-extrabold mb-5 leading-tight" style={{ color: 'var(--ink)', letterSpacing: '-0.025em' }}>
-                    {ann.title}
-                  </h1>
-
-                  {/* Action bar */}
-                  <div className="flex items-center gap-2 mb-8 flex-wrap">
-                    <button
-                      onClick={() => toggleSubscribe(ann.id)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-medium transition-smooth cursor-pointer hover:bg-gray-50"
-                      style={{
-                        borderColor: subscribed ? 'var(--coral)' : 'var(--border)',
-                        color: subscribed ? 'var(--coral)' : 'var(--ink)',
-                        background: subscribed ? 'var(--peach)' : 'white',
-                      }}>
-                      <BellIcon size={13} color={subscribed ? 'var(--coral)' : 'var(--slate)'} />
-                      {subscribed ? 'Subscribed' : 'Subscribe'}
-                    </button>
-                    <button
-                      onClick={() => toggleLike(ann.id)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-medium transition-smooth cursor-pointer hover:bg-gray-50"
-                      style={{
-                        borderColor: liked ? 'var(--coral)' : 'var(--border)',
-                        color: liked ? 'var(--coral)' : 'var(--ink)',
-                        background: liked ? 'var(--peach)' : 'white',
-                      }}>
-                      <HeartIcon size={13} color={liked ? 'var(--coral)' : 'var(--slate)'} />
-                      {liked ? 'Liked' : 'Like'}
-                    </button>
-
-                    {/* Quick emoji reactions */}
-                    <div className="flex items-center gap-0.5 px-1 py-0.5 rounded-xl border"
-                      style={{ borderColor: 'var(--border)', background: 'var(--canvas)' }}>
-                      {['👍', '❤️', '😂', '🔥'].map(emoji => {
-                        const count = (localReactions[ann.id] || ann.reactions || {})[emoji] || 0
-                        return (
-                          <button
-                            key={emoji}
-                            onClick={() => addReaction(ann, emoji)}
-                            className="flex items-center gap-0.5 w-8 h-7 rounded-lg justify-center hover:bg-white hover:shadow-sm transition-all hover:scale-125 cursor-pointer text-sm"
-                            title={`React with ${emoji}`}>
-                            {emoji}
-                            {count > 0 && (
-                              <span className="text-[10px] font-bold leading-none" style={{ color: 'var(--coral)' }}>{count}</span>
-                            )}
-                          </button>
-                        )
-                      })}
-                    </div>
-
-                    {/* 3-dot menu — copy link for all, edit/delete for admin */}
-                    <div className="relative ml-auto">
-                      <button
-                        onClick={() => setOpenMenuId(openMenuId === ann.id ? null : ann.id)}
-                        className="w-8 h-8 rounded-lg flex items-center justify-center border cursor-pointer transition-smooth hover:bg-gray-50"
-                        style={{ borderColor: 'var(--border)', color: 'var(--slate)' }}>
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                          <circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/>
-                        </svg>
-                      </button>
-                      {openMenuId === ann.id && (
-                        <>
-                          <div className="fixed inset-0 z-30" onClick={() => setOpenMenuId(null)} />
-                          <div className="absolute right-0 top-full mt-1 w-44 bg-white rounded-xl shadow-xl border z-40 overflow-hidden animate-fade-in-up"
-                            style={{ borderColor: 'var(--border)' }}>
-                            {isAdmin && (
-                              <Link
-                                href={`/admin/announcements/new?edit=${ann.id}`}
-                                onClick={() => setOpenMenuId(null)}
-                                className="flex items-center gap-2.5 px-4 py-2.5 text-sm hover:bg-gray-50 transition-smooth"
-                                style={{ color: 'var(--ink)' }}>
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                                Edit
-                              </Link>
-                            )}
-                            <button
-                              onClick={() => { copyLink(ann.id); setOpenMenuId(null) }}
-                              className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm hover:bg-gray-50 transition-smooth text-left cursor-pointer"
-                              style={{ color: 'var(--ink)' }}>
-                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-                              Copy link
-                            </button>
-                            {isAdmin && (
-                              <>
-                                <div className="border-t" style={{ borderColor: 'var(--border)' }} />
-                                <button
-                                  onClick={async () => {
-                                    if (!await confirmDialog('Delete this announcement?')) return
-                                    await (supabase as any).from('announcements').delete().eq('id', ann.id)
-                                    setOpenMenuId(null)
-                                    fetchAnnouncements()
-                                  }}
-                                  className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm hover:bg-red-50 transition-smooth text-left cursor-pointer"
-                                style={{ color: '#dc2626' }}>
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                                Delete
-                              </button>
-                              </>
-                            )}
-                            </div>
-                          </>
-                        )}
-                      </div>
-                  </div>
-
-                  {/* Stats */}
-                  <div className="flex gap-6 mb-8 pb-6 border-b" style={{ borderColor: 'var(--border)' }}>
-                    <div>
-                      <p className="text-[11px] font-bold uppercase tracking-widest mb-1" style={{ color: 'var(--slate)' }}>Views</p>
-                      <p className="text-xl font-bold" style={{ color: 'var(--coral)' }}>{ann.views || 0}</p>
-                    </div>
-                    <div>
-                      <p className="text-[11px] font-bold uppercase tracking-widest mb-1" style={{ color: 'var(--slate)' }}>Impressions</p>
-                      <p className="text-xl font-bold" style={{ color: 'var(--coral)' }}>{ann.impressions || 0}</p>
-                    </div>
-                  </div>
-
-                  {/* Body */}
-                  <div className="prose prose-base max-w-none mb-8"
-                    style={{ color: 'var(--ink)', lineHeight: '1.8' }}>
-                    {ann.description?.includes('<') ? (
-                      <div dangerouslySetInnerHTML={{ __html: ann.description }} />
-                    ) : (
-                      <p className="whitespace-pre-wrap">{ann.description}</p>
-                    )}
-                  </div>
-
-                  {/* Quick reactions */}
-                  {ann.reactions && Object.keys(ann.reactions).length > 0 && (
-                    <div className="flex items-center gap-2 mb-4 flex-wrap">
-                      {Object.entries(ann.reactions as Record<string, number>).map(([emoji, count]) =>
-                        count > 0 ? (
-                          <span key={emoji} className="flex items-center gap-1 text-sm px-3 py-1 rounded-full" style={{ background: 'var(--peach)', color: 'var(--coral)' }}>
-                            {emoji} <span className="font-semibold">{count}</span>
-                          </span>
-                        ) : null
-                      )}
-                    </div>
-                  )}
-
-                  {/* Attached Poll/Survey */}
-                  {(ann.poll_id || ann.survey_id) && (
-                    <div className="p-4 rounded-xl border" style={{ borderColor: 'var(--border)', background: 'var(--canvas)' }}>
-                      <p className="text-xs font-bold uppercase tracking-wider mb-3" style={{ color: 'var(--slate)' }}>Attached</p>
-                      <div className="flex gap-2 flex-wrap">
-                        {ann.poll_id && (
-                          <a href={`/polls/${ann.poll_id}`}
-                            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-smooth hover:shadow-md"
-                            style={{ background: '#dbeafe', color: '#0369a1' }}>
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 12h2v5H7z"/><path d="M11 8h2v9h-2z"/></svg>
-                            Vote in Poll
-                          </a>
-                        )}
-                        {ann.survey_id && (
-                          <a href={`/surveys/${ann.survey_id}`}
-                            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-smooth hover:shadow-md"
-                            style={{ background: '#dcfce7', color: '#16a34a' }}>
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-                            Take Survey
-                          </a>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </article>
-              )
-            })}
-          </div>
+        {posts.length > 0 && (
+          <aside className="ap-aside" aria-label="More">
+            {onNow.length > 0 && (
+              <div className="ap-panel">
+                <p className="ap-panel-title"><AnnIcon name="hourglass" size={15} /> On now</p>
+                {onNow.map(p => (
+                  <button key={p.id} type="button" className="ap-panel-row" onClick={() => jump(p.id)}>
+                    {p.cover_image ? <img src={p.cover_image} alt="" /> : <span className="ap-panel-ph"><AnnIcon name="calendar" size={16} /></span>}
+                    <span className="ap-panel-text"><strong>{p.title}</strong><span>Ends {formatDate(p.expires_at)}</span></span>
+                  </button>
+                ))}
+              </div>
+            )}
+            {months.length > 1 && (
+              <div className="ap-panel">
+                <p className="ap-panel-title"><AnnIcon name="calendar" size={15} /> Browse</p>
+                {months.map(m => (
+                  <button key={m.first} type="button" className="ap-month" onClick={() => jump(m.first)}>
+                    <span>{m.label}</span><span className="ap-month-n">{m.n}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="ap-panel ap-panel-soft">
+              <p className="ap-panel-title"><AnnIcon name="idea" size={15} /> Got an idea?</p>
+              <p className="ap-panel-copy">Tell {company?.name || 'us'} what you’d like to see next.</p>
+              <Link href="/" className="ap-btn">Share an idea</Link>
+            </div>
+          </aside>
         )}
-      </main>
+      </div>
     </div>
   )
 }
+
+export default function AnnouncementsPage() {
+  return <Suspense fallback={null}><UpdatesPage /></Suspense>
+}
+
+const PAGE_CSS = `
+.ap-root { --ap-card: var(--card, #fff); width: 100%; min-width: 0; box-sizing: border-box; padding: 22px 16px 64px; background: var(--canvas, #fafafa); min-height: calc(100vh - 56px); color: var(--ink); }
+.ap-root *, .ap-root *::before, .ap-root *::after { box-sizing: border-box; }
+@media (min-width: 768px) { .ap-root { padding: 36px 32px 80px; } }
+@media (min-width: 1280px) { .ap-root { padding: 44px 48px 96px; } }
+.ap-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.ap-hero { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; flex-wrap: wrap; margin-bottom: 22px; }
+.ap-hero-text { min-width: 0; }
+.ap-kicker { margin: 0 0 6px; font-size: 14px; font-weight: 600; color: var(--coral); }
+.ap-h1 { margin: 0; font-size: 34px; line-height: 1.08; font-weight: 800; letter-spacing: -0.03em; color: var(--ink); }
+@media (min-width: 768px) { .ap-h1 { font-size: 48px; } }
+.ap-lede { margin: 10px 0 0; font-size: 17px; color: var(--slate); line-height: 1.5; }
+.ap-hero-tools { display: flex; gap: 10px; align-items: center; flex: 0 1 420px; min-width: 0; }
+.ap-search { flex: 1; display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 14px; border-radius: 12px; border: 1px solid var(--border); background: var(--ap-card); color: var(--slate); min-width: 0; }
+.ap-search:focus-within { border-color: var(--coral); }
+.ap-search input { flex: 1; min-width: 0; border: none; outline: none; background: transparent; font-size: 16px; color: var(--ink); }
+.ap-new { display: inline-flex; align-items: center; gap: 6px; height: 44px; padding: 0 16px; border-radius: 12px; background: var(--coral); color: #fff; font-size: 14px; font-weight: 600; text-decoration: none; white-space: nowrap; }
+.ap-cats { display: flex; gap: 8px; overflow-x: auto; padding: 2px 0 6px; margin: 0 0 22px; scrollbar-width: none; }
+.ap-cats::-webkit-scrollbar { display: none; }
+.ap-catbtn { display: inline-flex; align-items: center; gap: 7px; flex-shrink: 0; height: 36px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--border); background: var(--ap-card); color: var(--ink); font-size: 14px; font-weight: 600; cursor: pointer; }
+.ap-catbtn:hover { border-color: #d4d4d8; }
+.ap-catbtn.on { background: var(--ink); border-color: var(--ink); color: var(--ap-card); }
+.ap-dot { width: 8px; height: 8px; border-radius: 50%; }
+.ap-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 28px; }
+@media (min-width: 1100px) { .ap-layout { grid-template-columns: minmax(0, 1fr) clamp(280px, 24vw, 420px); gap: 36px; } }
+.ap-main { min-width: 0; }
+.ap-section + .ap-section { margin-top: 8px; }
+.ap-item { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; padding-bottom: 22px; position: relative; }
+.ap-when, .ap-rail { display: none; }
+@media (min-width: 900px) {
+  .ap-item { grid-template-columns: 96px 36px minmax(0, 1fr); padding-bottom: 32px; }
+  .ap-when { display: block; text-align: right; padding-top: 22px; }
+  .ap-when time { display: flex; flex-direction: column; }
+  .ap-when-day { font-size: 15px; font-weight: 700; color: var(--ink); }
+  .ap-when-year { font-size: 13px; color: var(--slate); margin-top: 2px; }
+  .ap-when-label { font-size: 13px; font-weight: 700; color: var(--coral); }
+  .ap-rail { display: flex; justify-content: center; position: relative; }
+  .ap-rail::before { content: ''; position: absolute; top: 0; bottom: -32px; width: 2px; background: var(--border); }
+  .ap-item:last-child .ap-rail::before { bottom: 0; }
+  .ap-node { position: relative; margin-top: 26px; width: 12px; height: 12px; border-radius: 50%; background: var(--ap-card); border: 2.5px solid var(--coral); }
+  .ap-node.is-pin { width: 24px; height: 24px; margin-top: 20px; border: none; background: var(--coral); color: #fff; display: inline-flex; align-items: center; justify-content: center; }
+  .ap-item .ap-date { display: none; }
+}
+.ap-aside { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+@media (min-width: 1100px) { .ap-aside { position: sticky; top: 80px; align-self: start; } }
+.ap-panel { background: var(--ap-card); border: 1px solid var(--border); border-radius: 18px; padding: 16px; }
+.ap-panel-soft { background: color-mix(in srgb, var(--coral) 6%, var(--ap-card)); border-color: color-mix(in srgb, var(--coral) 20%, var(--border)); }
+.ap-panel-title { display: flex; align-items: center; gap: 7px; margin: 0 0 10px; font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--slate); }
+.ap-panel-copy { margin: 0 0 12px; font-size: 14.5px; color: var(--ink); line-height: 1.5; }
+.ap-panel-row { display: flex; align-items: center; gap: 12px; width: 100%; padding: 8px; margin: 0 -8px; border: none; border-radius: 12px; background: none; text-align: left; cursor: pointer; width: calc(100% + 16px); }
+.ap-panel-row:hover { background: var(--canvas); }
+.ap-panel-row img, .ap-panel-ph { width: 48px; height: 48px; border-radius: 10px; object-fit: cover; flex-shrink: 0; }
+.ap-panel-ph { display: inline-flex; align-items: center; justify-content: center; background: var(--canvas); color: var(--slate); }
+.ap-panel-text { display: flex; flex-direction: column; min-width: 0; font-size: 13px; color: var(--slate); }
+.ap-panel-text strong { font-size: 14px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ap-month { display: flex; justify-content: space-between; width: 100%; padding: 8px 10px; margin: 0 -10px; width: calc(100% + 20px); border: none; border-radius: 10px; background: none; font-size: 14.5px; color: var(--ink); cursor: pointer; }
+.ap-month:hover { background: var(--canvas); }
+.ap-month-n { color: var(--slate); font-variant-numeric: tabular-nums; }
+.ap-btn { display: inline-flex; align-items: center; justify-content: center; height: 40px; padding: 0 16px; border-radius: 11px; border: 1px solid var(--border); background: var(--ap-card); color: var(--ink); font-size: 14px; font-weight: 600; text-decoration: none; cursor: pointer; }
+.ap-btn:hover { border-color: #d4d4d8; }
+.ap-empty-state { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 6px; padding: 64px 20px; border: 1px dashed var(--border); border-radius: 22px; background: var(--ap-card); }
+.ap-empty-art { display: inline-flex; align-items: center; justify-content: center; width: 60px; height: 60px; border-radius: 18px; background: color-mix(in srgb, var(--coral) 10%, transparent); color: var(--coral); margin-bottom: 8px; }
+.ap-empty-title { margin: 0; font-size: 18px; font-weight: 700; color: var(--ink); }
+.ap-empty-text { margin: 0 0 10px; font-size: 14.5px; color: var(--slate); }
+.ap-skel-list { display: flex; flex-direction: column; gap: 20px; }
+.ap-skel { height: 320px; border-radius: 22px; background: var(--ap-card); border: 1px solid var(--border); animation: apPulse 1.2s ease-in-out infinite; }
+@keyframes apPulse { 50% { opacity: .55; } }
+@media (prefers-reduced-motion: reduce) { .ap-skel { animation: none; } }
+`

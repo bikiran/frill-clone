@@ -135,7 +135,7 @@ export async function POST(req: NextRequest) {
       },
       {
         company_id: companyId, status: 'published', likes: 5, views: 120, impressions: 890, is_pinned: true,
-        title: `Hello World! We're Using ${n} 🚀`, tag: 'new_feature',
+        title: `Hello World! We're Using ${n}`, tag: 'new_feature',
         description: `Welcome to our feedback board!\n\nThis is where you can:\n• Submit ideas and feature requests\n• Vote on what matters most\n• Track our roadmap\n• Stay updated with announcements`,
       },
     ])

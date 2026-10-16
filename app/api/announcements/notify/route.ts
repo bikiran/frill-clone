@@ -1,116 +1,74 @@
-import { memberOr403 } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { requireCompanyAccess } from '@/lib/company-access'
+import { checkBurst } from '@/lib/rate-limit'
+import { adminDb, loadOwned } from '@/lib/announcements-server'
+import { isPublicNow } from '@/lib/announcements'
+import { claimNotify, notifyAnnouncement, NOTIFY_PER_HOUR, recentNotifyCount } from '@/lib/announcement-notify'
 
-// Notifies subscribers about a newly published announcement:
-// 1. In-app notification row for any subscriber who is also a registered user
-// 2. Email via Resend to every subscribed contact with an email address
+export const dynamic = 'force-dynamic'
+export const maxDuration = 60
+
+// POST { announcementId, companyId, board?: boolean, email?: boolean }
+// "Publish & notify": board bell notifications and opted-in customer emails for
+// one LIVE post (lib/announcement-notify.ts).
+//
+// Staff of the post's workspace only. Once per post (notified_at is claimed
+// atomically, so a double click or the scheduler can't send twice), at most
+// NOTIFY_PER_HOUR posts per workspace an hour, and a short burst limit per
+// person. Drafts, scheduled and expired posts are refused.
 export async function POST(req: NextRequest) {
   try {
-    const { announcementId, companyId } = await req.json()
-    if (!announcementId || !companyId) {
-      return NextResponse.json({ error: 'Missing announcementId or companyId' }, { status: 400 })
+    const db = adminDb()
+    const b = await req.json().catch(() => ({}))
+    const companyId = String(b.companyId || '')
+    const id = String(b.announcementId || '')
+    if (!companyId || !id) return NextResponse.json({ error: 'Missing announcementId or companyId' }, { status: 400 })
+    const access = await requireCompanyAccess(req, db, companyId)
+    if (!access.ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+
+    const a = await loadOwned(db, companyId, id)
+    if (!a) return NextResponse.json({ error: 'Announcement not found' }, { status: 404 })
+    if (!isPublicNow(a)) return NextResponse.json({ error: 'Only a published announcement can be sent. Publish it first.' }, { status: 409 })
+    if (a.notified_at) return NextResponse.json({ error: 'People were already notified about this announcement.' }, { status: 409 })
+
+    const board = b.board !== false
+    const email = b.email !== false
+    if (!board && !email) return NextResponse.json({ error: 'Pick at least one way to notify' }, { status: 400 })
+
+    if (!checkBurst(`ann-notify:${access.userId}`, 5)) return NextResponse.json({ error: 'Too many requests. Please wait a minute.' }, { status: 429, headers: { 'Retry-After': '60' } })
+    if (await recentNotifyCount(db, companyId) >= NOTIFY_PER_HOUR) {
+      return NextResponse.json({ error: `You can notify about ${NOTIFY_PER_HOUR} announcements an hour. Try again a bit later.` }, { status: 429, headers: { 'Retry-After': '900' } })
     }
-    // Workspace members only, and only for this workspace's own announcement.
-    { const deny = await memberOr403(req, companyId); if (deny) return deny }
+    if (!(await claimNotify(db, a.id))) return NextResponse.json({ error: 'People were already notified about this announcement.' }, { status: 409 })
 
-    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    const admin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceKey, {
-      auth: { autoRefreshToken: false, persistSession: false },
-    })
-
-    const { data: announcement } = await admin.from('announcements').select('*').eq('id', announcementId).maybeSingle()
-    if (!announcement || announcement.company_id !== companyId) return NextResponse.json({ error: 'Announcement not found' }, { status: 404 })
-
-    const { data: company } = await admin.from('companies').select('name, slug, logo_url, accent_color').eq('id', companyId).maybeSingle()
-    const companyName = company?.name || 'Colvy'
-    const boardUrl = company?.slug ? `https://${company.slug}.colvy.com` : 'https://colvy.com'
-    const accent = company?.accent_color || '#ff7a6b'
-
-    // Subscribers: contacts with marketing opt-in + an email address
-    const { data: contacts } = await admin
-      .from('contacts')
-      .select('id, name, email')
-      .eq('company_id', companyId)
-      .eq('subscribed_to_marketing', true)
-      .not('email', 'is', null)
-      .limit(2000)
-
-    const subscribers = (contacts || []).filter(c => c.email)
-
-    // 1. In-app notifications for subscribers who are also registered auth users
-    //    (matched by email against team_members, since contacts aren't auth users)
-    let inAppCount = 0
-    try {
-      const emails = subscribers.map(s => s.email)
-      if (emails.length > 0) {
-        const { data: members } = await admin.from('team_members').select('user_id, email').in('email', emails)
-        for (const m of members || []) {
-          if (!m.user_id) continue
-          await admin.from('notifications').insert({
-            user_id: m.user_id,
-            type: 'announcement',
-            related_idea_id: null,
-            message: `New update: "${announcement.title}"`,
-            actor_name: companyName,
-            is_read: false,
-          })
-          inAppCount++
-        }
-      }
-    } catch (e) {
-      console.warn('In-app notification insert failed (non-blocking):', e)
+    const siteBase = (process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com').replace(/\/$/, '')
+    const r = await notifyAnnouncement(db, a, { board, email, siteBase })
+    // Nothing went out and something failed: free the post to try again.
+    if (r.board === 0 && r.email === 0 && r.errors.length) {
+      await db.from('announcements').update({ notified_at: null }).eq('id', a.id)
     }
-
-    // 2. Email every subscribed contact via Resend
-    let emailCount = 0
-    const RESEND_KEY = process.env.RESEND_API_KEY
-    if (RESEND_KEY && subscribers.length > 0) {
-      const plainDescription = (announcement.description || '').replace(/<[^>]+>/g, '').slice(0, 300)
-      // Resend batch endpoint sends up to 100 per call — chunk if needed
-      const chunks: typeof subscribers[] = []
-      for (let i = 0; i < subscribers.length; i += 90) chunks.push(subscribers.slice(i, i + 90))
-
-      for (const chunk of chunks) {
-        const emails = chunk.map(c => ({
-          from: `${companyName} <noreply@updates.colvy.com>`,
-          to: [c.email],
-          subject: `${companyName}: ${announcement.title}`,
-          html: `
-            <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:560px;margin:0 auto;padding:40px 24px">
-              <p style="font-size:13px;font-weight:700;color:${accent};text-transform:uppercase;letter-spacing:1px;margin:0 0 8px">${announcement.tag || 'Update'}</p>
-              <h1 style="font-size:26px;font-weight:800;color:#0d0d0d;margin:0 0 16px">${announcement.title}</h1>
-              <p style="font-size:15px;color:#4b5563;line-height:1.6;margin:0 0 28px">${plainDescription}${plainDescription.length >= 300 ? '…' : ''}</p>
-              <a href="${boardUrl}/announcements" style="display:inline-block;background:${accent};color:#fff;padding:13px 28px;border-radius:12px;font-weight:700;font-size:14px;text-decoration:none">
-                Read full update →
-              </a>
-              <hr style="border:none;border-top:1px solid #f0f0f0;margin:36px 0 16px">
-              <p style="font-size:12px;color:#9ca3af;margin:0">
-                You're receiving this because you subscribed to updates from ${companyName}.
-              </p>
-            </div>
-          `,
-        }))
-
-        try {
-          const res = await fetch('https://api.resend.com/emails/batch', {
-            method: 'POST',
-            headers: { 'Authorization': `Bearer ${RESEND_KEY}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify(emails),
-          })
-          if (res.ok) emailCount += chunk.length
-          else console.error('Resend batch error:', await res.text())
-        } catch (e) {
-          console.error('Resend batch send failed:', e)
-        }
-      }
-    }
-
-    await admin.from('announcements').update({ notified_at: new Date().toISOString() }).eq('id', announcementId)
-
-    return NextResponse.json({ ok: true, inAppCount, emailCount, totalSubscribers: subscribers.length })
+    return NextResponse.json({ ok: true, inAppCount: r.board, emailCount: r.email, emailSkipped: r.emailSkipped, emailMatched: r.emailMatched, errors: r.errors })
   } catch (err: any) {
-    console.error('announcement notify error:', err)
-    return NextResponse.json({ error: err.message }, { status: 500 })
+    console.error('announcement notify error:', err?.message)
+    return NextResponse.json({ error: 'Couldn’t send notifications' }, { status: 500 })
+  }
+}
+
+// GET ?companyId&announcementId → how many would get it (for the confirm step).
+export async function GET(req: NextRequest) {
+  try {
+    const db = adminDb()
+    const companyId = req.nextUrl.searchParams.get('companyId') || ''
+    const id = req.nextUrl.searchParams.get('announcementId') || ''
+    const access = await requireCompanyAccess(req, db, companyId)
+    if (!access.ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+    const a = await loadOwned(db, companyId, id)
+    if (!a) return NextResponse.json({ error: 'Announcement not found' }, { status: 404 })
+    if (!checkBurst(`ann-notify-count:${access.userId}`, 20)) return NextResponse.json({ error: 'Too many requests' }, { status: 429 })
+    const { boardRecipients, emailRecipients } = await import('@/lib/announcement-notify')
+    const [boardIds, em] = await Promise.all([boardRecipients(db, companyId, a.idea_id), emailRecipients(companyId, a)])
+    return NextResponse.json({ board: boardIds.length, email: em.recipients.length, emailSkipped: em.skipped, emailReady: !!process.env.RESEND_API_KEY, notifiedAt: a.notified_at || null })
+  } catch (e: any) {
+    return NextResponse.json({ error: 'Couldn’t count' }, { status: 500 })
   }
 }

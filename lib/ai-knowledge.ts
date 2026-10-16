@@ -14,6 +14,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { modelFor, trackAi } from '@/lib/ai-models'
 import { memoryForPrompt, memoryBlock, followedMemory, memoryAnswers } from '@/lib/agent/business-memory'
+import { isPublicNow } from '@/lib/announcements'
 
 export type KnowledgeSource = 'fact' | 'help' | 'file' | 'website' | 'announcement' | 'roadmap' | 'idea' | 'chat'
 export type KnowledgeHit = { id?: string; source: string; source_id?: string; title: string | null; content: string; url: string | null; rank?: number }
@@ -334,7 +335,7 @@ export async function rebuildKnowledge(db: any, companyId: string): Promise<{ co
 
   // Announcements (published)
   const anns = want.announcements ? ((await db.from('announcements').select('*').eq('company_id', companyId).limit(500)).data || [])
-    .filter((a: any) => (a.status || 'published') === 'published') : []
+    .filter((a: any) => isPublicNow(a)) : []   // live only: not drafts, not scheduled, not ended
   await replaceSource(db, companyId, 'announcement', anns.map((a: any) => ({ source_id: String(a.id), title: a.title, content: `${a.title}\n${strip(a.description || a.content || '')}`.slice(0, 12000) })), runStart)
   counts.announcements = anns.length
 
