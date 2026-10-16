@@ -44,7 +44,8 @@ const ts = (v: any): number | null => {
 }
 
 export function statusOf(a: any, now = Date.now()): AnnStatus {
-  const raw = String(a?.status || 'published').toLowerCase()
+  // Exactly announcement_is_live() in V387: case-sensitive, empty = published.
+  const raw = a?.status == null ? 'published' : String(a.status)
   const pub = ts(a?.publish_at)
   const exp = ts(a?.expires_at)
   if (raw === 'draft' || raw === 'archived') return 'draft'
@@ -243,4 +244,18 @@ export function smsFrom(title: string, body: string, link: string, max = 300): s
   const room = Math.max(40, max - link.length - 1)
   const text = base.length > room ? base.slice(0, room - 1).replace(/\s+\S*$/, '') + '…' : base
   return `${text} ${link}`.trim()
+}
+
+// ── Telling people ───────────────────────────────────────────────────────────
+export type Channels = { board?: boolean; email?: boolean }
+
+/**
+ * Which ways of telling people are finished for this post. Each one is sent
+ * once; the other can still be sent later. A post told before this was
+ * tracked per channel (notified_at set, no record) counts as both done.
+ */
+export function doneChannels(a: any): Channels {
+  const d = a?.notify_stats && typeof a.notify_stats === 'object' ? a.notify_stats.done : null
+  if (d && typeof d === 'object') return { board: !!d.board, email: !!d.email }
+  return a?.notified_at ? { board: true, email: true } : {}
 }

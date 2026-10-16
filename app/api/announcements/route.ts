@@ -52,7 +52,7 @@ export async function GET(req: NextRequest) {
       db.from('announcements').select('*').eq('company_id', companyId).order('created_at', { ascending: false }).limit(500),
       db.from('companies').select('id, name, slug, logo_url, accent_color, industry').eq('id', companyId).maybeSingle(),
       db.from('company_locations').select('id, label, suburb, is_primary').eq('company_id', companyId).order('is_primary', { ascending: false }),
-      db.from('ideas').select('id, title, status, votes').eq('company_id', companyId).neq('is_private', true).order('votes', { ascending: false }).limit(200),
+      db.from('ideas').select('id, title, status, votes').eq('company_id', companyId).or('is_private.is.null,is_private.eq.false').order('votes', { ascending: false }).limit(200),
       schemaReady(db),
     ])
     if (anns.error) return NextResponse.json({ error: 'Couldn’t load announcements' }, { status: 500 })
@@ -112,9 +112,13 @@ export async function POST(req: NextRequest) {
     if (!prev) return NextResponse.json({ error: 'Announcement not found' }, { status: 404 })
 
     if (action === 'publish') {
+      const st = statusOf(prev, now)
+      // Already live: nothing to do (and its date stays when it first went live).
+      if (st === 'published') return NextResponse.json({ announcement: prev })
+      if (st === 'expired') return NextResponse.json({ error: 'This has ended. Change or clear its end date to put it back up.' }, { status: 409 })
       const w = await writeAnnouncement(db, { update: { status: 'published', publish_at: new Date(now).toISOString(), updated_at: new Date(now).toISOString() }, id: prev.id, companyId })
       if (w.error) return NextResponse.json({ error: 'Couldn’t publish' }, { status: 500 })
-      if (statusOf(prev, now) !== 'published') emitPublished(db, w.data)
+      emitPublished(db, w.data)
       return NextResponse.json({ announcement: w.data })
     }
     if (action === 'unpublish') {

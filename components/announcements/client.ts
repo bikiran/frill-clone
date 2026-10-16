@@ -31,11 +31,11 @@ export async function annAction(companyId: string, action: string, id?: string |
   }))
 }
 
-export async function notifyCounts(companyId: string, id: string): Promise<{ board: number; email: number; emailSkipped: number; emailReady: boolean; notifiedAt: string | null }> {
+export async function notifyCounts(companyId: string, id: string): Promise<{ board: number; email: number; emailSkipped: number; emailReady: boolean; notifiedAt: string | null; done?: { board?: boolean; email?: boolean } }> {
   return json(await authFetch(`/api/announcements/notify?companyId=${encodeURIComponent(companyId)}&announcementId=${encodeURIComponent(id)}`))
 }
 
-export async function sendNotify(companyId: string, id: string, opts: { board: boolean; email: boolean }): Promise<{ inAppCount: number; emailCount: number; emailSkipped: number; errors: string[] }> {
+export async function sendNotify(companyId: string, id: string, opts: { board: boolean; email: boolean }): Promise<{ inAppCount: number; emailCount: number; emailFailed?: number; emailSkipped: number; errors: string[]; done?: { board?: boolean; email?: boolean } }> {
   return json(await authFetch('/api/announcements/notify', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ companyId, announcementId: id, ...opts }),

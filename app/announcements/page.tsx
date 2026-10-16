@@ -24,6 +24,14 @@ function readMine(): Record<string, string[]> {
   try { const v = JSON.parse(localStorage.getItem(MINE_KEY) || '{}'); return v && typeof v === 'object' ? v : {} } catch { return {} }
 }
 function writeMine(v: Record<string, string[]>) { try { localStorage.setItem(MINE_KEY, JSON.stringify(v)) } catch {} }
+// The server's receipt for each reaction, needed to take it back.
+const TOKENS_KEY = 'colvy_ann_reaction_tokens'
+function readTokens(): Record<string, string> {
+  try { const v = JSON.parse(localStorage.getItem(TOKENS_KEY) || '{}'); return v && typeof v === 'object' ? v : {} } catch { return {} }
+}
+function writeToken(k: string, t: string | null) {
+  try { const v = readTokens(); if (t) v[k] = t; else delete v[k]; localStorage.setItem(TOKENS_KEY, JSON.stringify(v)) } catch {}
+}
 
 /** Which board this is: its host, or (on colvy.com / a preview) ?slug= or your own workspace. */
 async function boardQuery(slugParam: string | null): Promise<string> {
@@ -119,9 +127,13 @@ function UpdatesPage() {
     const next = { ...mine, [id]: had ? (mine[id] || []).filter(k => k !== key) : [...(mine[id] || []), key] }
     setMine(next); writeMine(next)
     setData(d => d && ({ ...d, announcements: d.announcements.map(p => p.id === id ? { ...p, reactions: { ...p.reactions, [key]: Math.max(0, (p.reactions as any)[key] + (had ? -1 : 1)) } } : p) }))
+    const tk = `${id}:${key}`
+    // A reaction made before receipts existed can't be taken back on the server.
+    if (had && !readTokens()[tk]) return
     try {
-      const res = await fetch('/api/announcements/public', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, action: had ? 'unreact' : 'react', reaction: key }) })
+      const res = await fetch('/api/announcements/public', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, action: had ? 'unreact' : 'react', reaction: key, token: had ? readTokens()[tk] : undefined }) })
       const j = await res.json().catch(() => ({}))
+      writeToken(tk, had ? null : (j.token || null))
       if (res.ok && j.reactions) setData(d => d && ({ ...d, announcements: d.announcements.map(p => p.id === id ? { ...p, reactions: j.reactions } : p) }))
     } catch {}
   }

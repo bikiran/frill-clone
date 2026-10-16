@@ -18,10 +18,14 @@
 --     views by writing the row from the browser).
 --
 -- After this:
---   • SELECT — anyone: posts that are live now (published, or scheduled and
---     due, and not past their end date). Staff of the post's workspace
---     (is_company_member, which leaves board visitors out since V337): all
---     their posts. The platform admin: everything.
+--   • SELECT — staff of the post's workspace (is_company_member, which leaves
+--     board visitors out since V337): all their posts. The platform admin:
+--     everything. Nobody else reads the table directly: the updates page,
+--     the chat widget and the email links read through the server
+--     (/api/announcements/public, /api/widget-data), which return only live
+--     posts of boards that aren't private, and only their public fields. So
+--     the public key can't see drafts, private boards' posts, or internal
+--     columns (audience, notify results, SMS campaign, who edited it).
 --   • INSERT / UPDATE / DELETE — staff of the post's workspace (and the
 --     platform admin). An update can't move a post to another workspace.
 --     The admin now saves through /api/announcements with the service role,
@@ -45,15 +49,15 @@
 -- Needs is_company_member() from V209 as changed by V337; stops with an error,
 -- changing nothing, if that's missing or still the original.
 -- The mobile app (colvy-mobile app/announcements.tsx) only reads; it keeps
--- working (it sees its own workspace's posts plus other live posts — it should
--- filter by company, see the branch notes).
+-- working: as signed-in staff it now sees only its own workspace's posts
+-- (before, every business's).
 -- DATABASE_SETUP.sql still creates the old open policies by name; if it is
 -- ever re-run, run this file again.
 --
 -- ── VERIFY AFTERWARDS ───────────────────────────────────────────────────────
---   1. Step 7 lists the policies (five, none USING (true)).
+--   1. Step 7 lists the policies (four, none USING (true)).
 --   2. Signed out (anon key):
---        select count(*) from announcements where status = 'draft';   → 0
+--        select * from announcements;                                  → permission denied
 --        update announcements set views = 999;                         → permission denied
 --        insert into announcements (title) values ('x');               → permission denied
 --   3. As an agent (not the owner): Announcements lists drafts, scheduled and
@@ -161,11 +165,8 @@ BEGIN
   REVOKE ALL ON public.announcements FROM anon, authenticated;
   GRANT ALL ON public.announcements TO service_role;
 
-  -- The updates page, the widget, the mobile app: live posts only.
-  CREATE POLICY announcements_public_read ON public.announcements
-    FOR SELECT TO anon, authenticated
-    USING (announcement_is_live(status, publish_at, expires_at));
-
+  -- No read policy for the public: see the header. (The mobile app reads as
+  -- signed-in staff, below.)
   CREATE POLICY announcements_member_read ON public.announcements
     FOR SELECT TO authenticated
     USING (is_company_member(company_id) OR is_platform_admin());
@@ -183,7 +184,6 @@ BEGIN
     FOR DELETE TO authenticated
     USING (is_company_member(company_id) OR is_platform_admin());
 
-  GRANT SELECT ON public.announcements TO anon;
   GRANT SELECT, INSERT, UPDATE, DELETE ON public.announcements TO authenticated;
 END $$;
 

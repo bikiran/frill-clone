@@ -29,7 +29,9 @@ export const MAX_EMAILS = 5000            // per post
 export const MAX_BOARD = 3000             // bell notifications per post
 const FALLBACK_FROM = 'notifications@updates.colvy.com'
 
-export type NotifyResult = { board: number; email: number; emailSkipped: number; emailMatched: number; errors: string[] }
+export type NotifyResult = { board: number; email: number; emailFailed: number; emailSkipped: number; emailMatched: number; errors: string[]; done: { board?: boolean; email?: boolean } }
+export { doneChannels, type Channels } from '@/lib/announcements'
+import { doneChannels } from '@/lib/announcements'
 
 export function boardUrl(company: any): string {
   return company?.slug ? `https://${company.slug}.colvy.com` : 'https://colvy.com'
@@ -44,12 +46,14 @@ export function unsubscribeToken(companyId: string, contactId: string): string {
 }
 
 /**
- * Claim the right to notify for this post: sets notified_at only if it's
- * still empty, so two clicks (or the cron and a click) can't both send.
+ * Claim the right to send for this post: moves notified_at on only if it
+ * still has the value this request read, so two clicks (or the cron and a
+ * click) can't both send. The caller puts it back if nothing went out.
  */
-export async function claimNotify(db: any, id: string): Promise<boolean> {
-  const { data, error } = await db.from('announcements').update({ notified_at: new Date().toISOString() })
-    .eq('id', id).is('notified_at', null).select('id')
+export async function claimNotify(db: any, id: string, prev: string | null = null): Promise<boolean> {
+  let q = db.from('announcements').update({ notified_at: new Date().toISOString() }).eq('id', id)
+  q = prev ? q.eq('notified_at', prev) : q.is('notified_at', null)
+  const { data, error } = await q.select('id')
   if (error) return false
   return (data || []).length > 0
 }
@@ -141,9 +145,31 @@ export function emailHtml(company: any, a: any, unsubUrl: string): string {
 </div></body></html>`
 }
 
-async function sendEmails(db: any, company: any, a: any, recipients: ResolvedRecipient[], siteBase: string): Promise<{ sent: number; errors: string[] }> {
+const wait = (ms: number) => new Promise(r => setTimeout(r, ms))
+
+/** One Resend batch, retried on 429 and server errors with a short backoff. */
+async function postBatch(key: string, batch: any[], tries = 3): Promise<{ ok: boolean; status: number }> {
+  let status = 0
+  for (let i = 0; i < tries; i++) {
+    try {
+      const res = await fetch('https://api.resend.com/emails/batch', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(batch),
+      })
+      if (res.ok) return { ok: true, status: res.status }
+      status = res.status
+      if (status !== 429 && status < 500) return { ok: false, status }
+      const after = Number(res.headers.get('retry-after'))
+      await wait(Math.min(5000, Number.isFinite(after) && after > 0 ? after * 1000 : 800 * 2 ** i))
+    } catch { status = 0; await wait(800 * 2 ** i) }
+  }
+  return { ok: false, status }
+}
+
+async function sendEmails(db: any, company: any, a: any, recipients: ResolvedRecipient[], siteBase: string): Promise<{ sent: number; failed: number; errors: string[] }> {
   const key = process.env.RESEND_API_KEY
-  if (!key || !recipients.length) return { sent: 0, errors: key ? [] : ['Email isn’t set up on this server'] }
+  if (!key || !recipients.length) return { sent: 0, failed: 0, errors: key ? [] : ['Email isn’t set up on this server'] }
   const from = FALLBACK_FROM
   let fromName = company?.name || 'Colvy', replyTo: string | undefined
   try {
@@ -154,7 +180,7 @@ async function sendEmails(db: any, company: any, a: any, recipients: ResolvedRec
   const safeName = String(fromName).replace(/[<>"\r\n]/g, '').slice(0, 80)
   const subject = `${String(company?.name || '').replace(/[\r\n]/g, '')}: ${String(a.title || '').replace(/[\r\n]/g, ' ')}`.slice(0, 200)
   const p = toPublicAnnouncement(a)
-  let sent = 0
+  let sent = 0, failed = 0
   const errors: string[] = []
   for (let i = 0; i < recipients.length; i += 90) {
     const chunk = recipients.slice(i, i + 90)
@@ -170,17 +196,11 @@ async function sendEmails(db: any, company: any, a: any, recipients: ResolvedRec
         ...(replyTo ? { reply_to: replyTo } : {}),
       }
     })
-    try {
-      const res = await fetch('https://api.resend.com/emails/batch', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify(batch),
-      })
-      if (res.ok) sent += chunk.length
-      else errors.push(`Email batch failed (${res.status})`)
-    } catch (e: any) { errors.push('Email batch failed') }
+    const r = await postBatch(key, batch)
+    if (r.ok) sent += chunk.length
+    else { failed += chunk.length; errors.push(`${chunk.length} email${chunk.length === 1 ? '' : 's'} couldn’t be sent (${r.status || 'no answer'})`) }
   }
-  return { sent, errors }
+  return { sent, failed, errors }
 }
 
 /**
@@ -188,7 +208,7 @@ async function sendEmails(db: any, company: any, a: any, recipients: ResolvedRec
  * cron), that the post is live, and claimed it with claimNotify().
  */
 export async function notifyAnnouncement(db: any, a: any, opts: { board: boolean; email: boolean; siteBase: string }): Promise<NotifyResult> {
-  const result: NotifyResult = { board: 0, email: 0, emailSkipped: 0, emailMatched: 0, errors: [] }
+  const result: NotifyResult = { board: 0, email: 0, emailFailed: 0, emailSkipped: 0, emailMatched: 0, errors: [], done: { ...doneChannels(a) } }
   const { data: company } = await db.from('companies').select('id, name, slug, accent_color, logo_url').eq('id', a.company_id).maybeSingle()
   if (!company) { result.errors.push('Company not found'); return result }
 
@@ -201,6 +221,9 @@ export async function notifyAnnouncement(db: any, a: any, opts: { board: boolean
         message: `New update from ${company.name || 'the team'}: “${String(a.title || '').slice(0, 140)}”`,
         actor_name: company.name || null, link, related_idea_id: null, is_read: false,
       })))
+      // Done once everyone there now has it (nobody yet counts as done too).
+      if (result.board === users.length) result.done.board = true
+      else result.errors.push('Some board notifications didn’t save')
     } catch (e: any) { result.errors.push('Board notifications failed') }
   }
 
@@ -209,13 +232,53 @@ export async function notifyAnnouncement(db: any, a: any, opts: { board: boolean
       const { recipients, matched, skipped } = await emailRecipients(company.id, a)
       result.emailMatched = matched; result.emailSkipped = skipped
       const r = await sendEmails(db, company, a, recipients, opts.siteBase)
-      result.email = r.sent; result.errors.push(...r.errors)
+      result.email = r.sent; result.emailFailed = r.failed; result.errors.push(...r.errors)
+      // Done once anything went out: a retry would email those people twice.
+      // Failed batches are counted so the team can see the gap.
+      if (r.sent > 0) result.done.email = true
     } catch (e: any) { result.errors.push('Email failed') }
   }
 
   // Remember what happened (V387 column; quietly skipped before it runs).
   try {
-    await db.from('announcements').update({ notify_stats: { ...(a.notify_stats && typeof a.notify_stats === 'object' ? a.notify_stats : {}), board: result.board, email: result.email, skipped: result.emailSkipped, at: new Date().toISOString() } }).eq('id', a.id)
+    const prev = a.notify_stats && typeof a.notify_stats === 'object' ? a.notify_stats : {}
+    await db.from('announcements').update({ notify_stats: {
+      ...prev, done: result.done,
+      board: (opts.board ? result.board : 0) + (Number(prev.board) || 0),
+      email: (opts.email ? result.email : 0) + (Number(prev.email) || 0),
+      ...(opts.email ? { email_failed: result.emailFailed, skipped: result.emailSkipped } : {}),
+      at: new Date().toISOString(),
+    } }).eq('id', a.id)
   } catch {}
   return result
+}
+
+/**
+ * Unsubscribe this person from the business's marketing: the contact the link
+ * names and every other contact of that business with the same email (any
+ * case), so a duplicate record can't keep emailing them. Logged in
+ * consent_events like a STOP text (lib/sms-consent.ts).
+ */
+export async function unsubscribeContact(db: any, companyId: string, contact: { id: string; email?: string | null }): Promise<number> {
+  const ids = new Set<string>([contact.id])
+  const email = String(contact.email || '').trim()
+  if (email) {
+    const pattern = email.replace(/[\\%_]/g, m => '\\' + m)
+    const { data } = await db.from('contacts').select('id').eq('company_id', companyId).ilike('email', pattern).limit(50)
+    for (const c of data || []) ids.add(c.id)
+  }
+  const now = new Date().toISOString()
+  let n = 0
+  for (const id of ids) {
+    const { data: c } = await db.from('contacts').select('id, unsubscribed_at').eq('id', id).eq('company_id', companyId).maybeSingle()
+    if (!c || c.unsubscribed_at) continue
+    const full = { subscribed_to_marketing: false, consent_basis: 'none', consent_source: 'unsubscribe link in an announcement email', unsubscribed_at: now, unsubscribe_method: 'email_link' }
+    const { error } = await db.from('contacts').update(full).eq('id', id).eq('company_id', companyId)
+    if (error) await db.from('contacts').update({ subscribed_to_marketing: false, unsubscribed_at: now }).eq('id', id).eq('company_id', companyId)
+    try {
+      await db.from('consent_events').insert({ company_id: companyId, contact_id: id, action: 'unsubscribed', basis: 'none', source: 'Announcement email: unsubscribe link', actor: 'customer' })
+    } catch {}
+    n++
+  }
+  return n
 }

@@ -15,9 +15,10 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import RichTextEditor from '@/components/RichTextEditor'
 import { WhyLink } from '@/components/WhyAgent'
-import { CATEGORIES, categoryOf, SEGMENTS, statusOf, STATUS_LABEL, toPublicAnnouncement, videoOf, type CategoryKey } from '@/lib/announcements'
-import { htmlToText } from '@/lib/safe-html'
+import { CATEGORIES, categoryOf, doneChannels, SEGMENTS, statusOf, STATUS_LABEL, toPublicAnnouncement, videoOf, type CategoryKey } from '@/lib/announcements'
+import { htmlToText, looksLikeHtml } from '@/lib/safe-html'
 import { PublicPost, POST_CSS } from './PublicPost'
+import NotifyDialog from './NotifyDialog'
 import { AnnIcon } from './icons'
 import { ADMIN_CSS } from './styles'
 import { annAction, askAi, boardBase, sendNotify, uploadMedia, type AdminData } from './client'
@@ -108,6 +109,7 @@ export default function Editor({ companyId, data, initial, startWithAi, onSaved 
   const [share, setShare] = useState<{ sms?: string; facebook?: string; instagram?: string; runId?: string } | null>(null)
   const [uploading, setUploading] = useState<string | null>(null)
   const [copied, setCopied] = useState<string | null>(null)
+  const [notifyOpen, setNotifyOpen] = useState(false)
   const coverInput = useRef<HTMLInputElement>(null)
   const videoInput = useRef<HTMLInputElement>(null)
   const imageInput = useRef<HTMLInputElement>(null)
@@ -153,6 +155,8 @@ export default function Editor({ companyId, data, initial, startWithAi, onSaved 
     if (problem) { setMsg({ tone: 'err', text: problem }); return }
     const status = mode === 'draft' ? 'draft' : d.when === 'schedule' ? 'scheduled' : d.when === 'draft' ? 'draft' : 'published'
     setSaving(mode); setMsg(null)
+    // Only going live tells people. Editing a post that's already live never does.
+    const wasLive = !!row && ['published', 'expired'].includes(statusOf(row, Date.now()))
     try {
       const r = await annAction(companyId, 'save', row?.id, toPayload(d, status as any))
       const saved = r.announcement
@@ -161,20 +165,30 @@ export default function Editor({ companyId, data, initial, startWithAi, onSaved 
       if (!row?.id) router.replace(`/admin/announcements/new?edit=${saved.id}`)
       const warnings: string[] = r.warnings || []
       const links: { href: string; label: string; ext?: boolean }[] = []
-      let text = status === 'draft' ? 'Saved as a draft. Only your team can see it.' : status === 'scheduled' ? `Scheduled. It goes live ${new Date(saved.publish_at).toLocaleString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}.` : (live === 'published' ? 'Updated.' : 'Published. It’s on your updates page now.')
-      const nowLive = statusOf(saved, Date.now()) === 'published'
+      const effective = statusOf(saved, Date.now())
+      const nowLive = effective === 'published'
+      // A schedule time that had already passed is saved as published now.
+      const wentLive = nowLive && !wasLive
+      let text = effective === 'draft' ? 'Saved as a draft. Only your team can see it.'
+        : effective === 'scheduled' ? `Scheduled. It goes live ${new Date(saved.publish_at).toLocaleString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}.`
+        : effective === 'expired' ? 'Saved. Its end date has passed, so it isn’t showing.'
+        : !wentLive ? 'Updated.'
+        : status === 'scheduled' ? 'That time had already passed, so it’s published now.' : 'Published. It’s on your updates page now.'
       if (nowLive && board) links.push({ href: `${board}/announcements?id=${saved.id}`, label: 'View it', ext: true })
-      // Publish & notify.
-      if (nowLive && status === 'published' && !saved.notified_at && (d.tell_board || d.tell_email)) {
+      // Publish & notify: only on the way to live.
+      const done = doneChannels(saved)
+      const tellBoard = d.tell_board && !done.board, tellEmail = d.tell_email && !done.email
+      if (wentLive && (tellBoard || tellEmail)) {
         try {
-          const n = await sendNotify(companyId, saved.id, { board: d.tell_board, email: d.tell_email })
-          const told = [d.tell_board ? `${n.inAppCount} on your board` : '', d.tell_email ? `${n.emailCount} by email` : ''].filter(Boolean).join(' and ')
+          const n = await sendNotify(companyId, saved.id, { board: tellBoard, email: tellEmail })
+          const told = [tellBoard ? `${n.inAppCount} on your board` : '', tellEmail ? `${n.emailCount} by email` : ''].filter(Boolean).join(' and ')
           text += ` Told ${told || 'nobody yet'}.`
           if (n.errors?.length) warnings.push(n.errors[0])
-          setRow({ ...saved, notified_at: new Date().toISOString() })
+          const fresh = { ...saved, notified_at: (n as any).done?.board || (n as any).done?.email ? new Date().toISOString() : saved.notified_at, notify_stats: { ...(saved.notify_stats || {}), done: (n as any).done } }
+          setRow(fresh); onSaved?.(fresh)
         } catch (e: any) { warnings.push(e.message) }
       }
-      if (nowLive && status === 'published' && d.tell_sms && !saved.sms_campaign_id) {
+      if (wentLive && d.tell_sms && !saved.sms_campaign_id) {
         try {
           const s = await annAction(companyId, 'sms_draft', saved.id)
           links.push({ href: `/admin/campaigns/${s.campaignId}`, label: 'Review the SMS and send' })
@@ -216,7 +230,7 @@ export default function Editor({ companyId, data, initial, startWithAi, onSaved 
 
   const copy = (key: string, text: string) => navigator.clipboard?.writeText(text).then(() => { setCopied(key); setTimeout(() => setCopied(null), 1600) }).catch(() => {})
 
-  const primaryLabel = d.when === 'schedule' ? 'Schedule' : d.when === 'draft' ? 'Save draft' : live === 'published' ? 'Update' : (d.tell_board || d.tell_email || d.tell_sms) && !row?.notified_at ? 'Publish & notify' : 'Publish'
+  const primaryLabel = d.when === 'schedule' ? 'Schedule' : d.when === 'draft' ? 'Save draft' : live === 'published' || live === 'expired' ? 'Update' : (d.tell_board || d.tell_email || d.tell_sms) ? 'Publish & notify' : 'Publish'
   const outlets = data.outlets || []
   const words = htmlToText(d.description).split(/\s+/).filter(Boolean).length
 
@@ -344,7 +358,7 @@ export default function Editor({ companyId, data, initial, startWithAi, onSaved 
               </div>
             )}
             <div className="ae-body">
-              <RichTextEditor key={`${row?.id || 'new'}-${bodyKey}`} value={d.description} onChange={html => set('description', html)}
+              <RichTextEditor key={`${row?.id || 'new'}-${bodyKey}`} value={d.description} onChange={html => set('description', looksLikeHtml(html) || !html.trim() ? html : `<p>${html}</p>`)}
                 onEditing={() => setDirty(true)} placeholder="Tell your customers what’s new…" minHeight={260} maxHeight="none" bordered={false} big companyId={companyId} />
             </div>
           </div>
@@ -402,8 +416,16 @@ export default function Editor({ companyId, data, initial, startWithAi, onSaved 
 
           <div className="ae-card">
             <p className="ae-card-title"><AnnIcon name="bell" size={15} />Tell people</p>
-            {row?.notified_at ? (
-              <p className="ae-hint" style={{ margin: 0 }}>Your board and customers were told on {new Date(row.notified_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'long' })}. Each post is sent once.</p>
+            {row?.id && (live === 'published' || live === 'expired') ? (
+              <>
+                <p className="ae-hint" style={{ margin: '0 0 10px' }}>
+                  {(() => { const dn = doneChannels(row); return dn.board && dn.email ? `Already live, and your board and customers were told${row.notified_at ? ` on ${new Date(row.notified_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'long' })}` : ''}. Each way is sent once.`
+                    : dn.board || dn.email ? `Already live. ${dn.board ? 'Your board' : 'Customers by email'} heard about it; you can still tell ${dn.board ? 'customers by email' : 'your board'}. Saving changes doesn’t send anything.`
+                    : 'Already live. Saving changes doesn’t send anything: use Tell people to let your board and customers know.' })()}
+                </p>
+                {live === 'published' && <button type="button" className="an-btn an-btn-sm" onClick={() => setNotifyOpen(true)} disabled={dirty}><AnnIcon name={doneChannels(row).board && doneChannels(row).email ? 'sms' : 'send'} size={13} />{doneChannels(row).board && doneChannels(row).email ? 'Text customers' : 'Tell people'}</button>}
+                {dirty && live === 'published' && <p className="ae-hint">Save your changes first.</p>}
+              </>
             ) : (
               <>
                 <p className="ae-hint" style={{ margin: '0 0 8px' }}>{d.when === 'schedule' ? 'When it goes live, tell:' : d.when === 'draft' ? 'When you publish, you can tell:' : 'When you publish, tell:'}</p>
@@ -488,6 +510,10 @@ export default function Editor({ companyId, data, initial, startWithAi, onSaved 
         </aside>
       </div>
 
+      {notifyOpen && row?.id && (
+        <NotifyDialog companyId={companyId} post={row} onClose={() => setNotifyOpen(false)}
+          onDone={(_m, done) => { const fresh = { ...row, notified_at: new Date().toISOString(), notify_stats: { ...(row.notify_stats || {}), done } }; setRow(fresh); onSaved?.(fresh) }} />
+      )}
       {showPreview && (
         <div className="an-overlay" role="presentation" onMouseDown={e => { if (e.target === e.currentTarget) setShowPreview(false) }}>
           <div className="an-dialog ae-preview-dialog" role="dialog" aria-modal="true" aria-label="Preview">

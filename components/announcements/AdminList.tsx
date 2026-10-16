@@ -8,7 +8,7 @@
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import {
-  CATEGORIES, categoryOf, filterAnnouncements, formatDate, relative, statusCounts, statusOf, STATUS_LABEL, totalReactions,
+  CATEGORIES, categoryOf, doneChannels, filterAnnouncements, formatDate, relative, statusCounts, statusOf, STATUS_LABEL, totalReactions,
   type AdminFilter, type CategoryKey,
 } from '@/lib/announcements'
 import { excerpt } from '@/lib/safe-html'
@@ -96,7 +96,7 @@ function RowMenu({ a, now, open, onToggle, onClose, onAction }: { a: any; now: n
           {s === 'published' && <button role="menuitem" type="button" className="an-menu-item" onClick={act('view')}><AnnIcon name="external" size={15} />View on updates page</button>}
           {(s === 'draft' || s === 'scheduled') && <button role="menuitem" type="button" className="an-menu-item" onClick={act('publish')}><AnnIcon name="send" size={15} />Publish now</button>}
           {(s === 'published' || s === 'scheduled' || s === 'expired') && <button role="menuitem" type="button" className="an-menu-item" onClick={act('unpublish')}><AnnIcon name="archive" size={15} />Move to drafts</button>}
-          {s === 'published' && <button role="menuitem" type="button" className="an-menu-item" onClick={act('notify')}><AnnIcon name="bell" size={15} />{a.notified_at ? 'Text customers' : 'Tell people'}</button>}
+          {s === 'published' && <button role="menuitem" type="button" className="an-menu-item" onClick={act('notify')}><AnnIcon name="bell" size={15} />{doneChannels(a).board && doneChannels(a).email ? 'Text customers' : 'Tell people'}</button>}
           <button role="menuitem" type="button" className="an-menu-item" onClick={act('pin')}><AnnIcon name="pin" size={15} />{a.is_pinned ? 'Unpin' : 'Pin to top'}</button>
           <div className="an-menu-sep" />
           <button role="menuitem" type="button" className="an-menu-item" onClick={act('duplicate')}><AnnIcon name="copy" size={15} />Duplicate</button>
@@ -267,7 +267,7 @@ export default function AdminList({ items, loading, error, onRetry, now, schemaR
               <div className="an-cell" role="cell"><span className="an-num">{(Number(a.views) || 0).toLocaleString('en-AU')}</span></div>
               <div className="an-cell" role="cell"><span className="an-num">{totalReactions(a.reactions).toLocaleString('en-AU')}</span></div>
               <div className="an-cell" role="cell">
-                {s === 'published' && !a.notified_at && Date.now() - new Date(a.publish_at || a.created_at).getTime() < 7 * 86400_000
+                {s === 'published' && !(doneChannels(a).board && doneChannels(a).email) && !a.notified_at && Date.now() - new Date(a.publish_at || a.created_at).getTime() < 7 * 86400_000
                   ? <button type="button" className="an-btn an-btn-sm an-send-btn" onClick={() => onAction('notify', a)}><AnnIcon name="send" size={13} />Tell people</button>
                   : <Sent a={a} />}
               </div>

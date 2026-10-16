@@ -180,7 +180,9 @@ export async function GET(req: NextRequest) {
       widgetTabs,
       terms,
       ideas: (ideasRes.data || []).filter(visibleAt),
-      announcements: sortForPublic((annRes.data || []).filter((a: any) => isPublicNow(a)).filter(visibleAt).map(widgetAnnouncement)).slice(0, 20),
+      // A private board's updates are for its signed-in members only (the
+      // widget is anonymous), so none here.
+      announcements: company.is_private ? [] : sortForPublic((annRes.data || []).filter((a: any) => isPublicNow(a)).filter(visibleAt).map(widgetAnnouncement)).slice(0, 20),
       forms: formsRes.data || [],
       polls: pollsRes.data || [],
       surveys: surveysRes.data || [],

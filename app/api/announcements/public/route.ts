@@ -3,6 +3,12 @@ import { adminDb, bump, companyForBoard, publicRows } from '@/lib/announcements-
 import { isPublicNow, REACTIONS, sortForPublic, toPublicAnnouncement, visibleAtLocation } from '@/lib/announcements'
 import { callerKey, checkBurst } from '@/lib/rate-limit'
 import { callerUser } from '@/lib/company-access'
+import { readValue, signValue } from '@/lib/oauth-state'
+import { randomUUID } from 'crypto'
+
+// Reaction tokens already used to take a reaction back (per server; the
+// burst limit covers the rest).
+const usedTokens = new Set<string>()
 
 export const dynamic = 'force-dynamic'
 
@@ -17,7 +23,9 @@ export const dynamic = 'force-dynamic'
 // POST { id, action: 'view' | 'react' | 'unreact', reaction? }
 //   Honest, cheap counters: the browser sends one view per post per visitor
 //   (it remembers what it counted) and one of each reaction; the server only
-//   counts live posts and limits each address.
+//   counts live posts and limits each address. A react answers with a signed
+//   token; taking it back needs that token (once), so a stranger can't wipe
+//   out other people's reactions.
 
 export async function GET(req: NextRequest) {
   try {
@@ -79,9 +87,18 @@ export async function POST(req: NextRequest) {
       await bump(db, id, 'views', 1)
       return NextResponse.json({ ok: true })
     }
+    let token: string | undefined
+    if (action === 'unreact') {
+      const t = readValue(String(b.token || ''), 'ann-react')
+      if (!t || t.id !== id || t.r !== reaction || usedTokens.has(t.n)) return NextResponse.json({ error: 'Nothing to take back' }, { status: 409 })
+      if (usedTokens.size > 50_000) usedTokens.clear()
+      usedTokens.add(t.n)
+    } else {
+      token = signValue({ kind: 'ann-react', id, r: reaction, n: randomUUID() }, 400 * 86400_000)
+    }
     await bump(db, id, 'reaction', action === 'react' ? 1 : -1, reaction!)
     const { data: fresh } = await db.from('announcements').select('reactions').eq('id', id).maybeSingle()
-    return NextResponse.json({ ok: true, reactions: toPublicAnnouncement({ ...a, reactions: fresh?.reactions ?? a.reactions }).reactions })
+    return NextResponse.json({ ok: true, token, reactions: toPublicAnnouncement({ ...a, reactions: fresh?.reactions ?? a.reactions }).reactions })
   } catch (e: any) {
     return NextResponse.json({ error: 'Failed' }, { status: 500 })
   }

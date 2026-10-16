@@ -47,7 +47,8 @@ export async function GET(req: NextRequest) {
       const plan = live.notify_stats?.plan
       if (live.notify_subscribers && plan && (plan.board || plan.email) && !live.notified_at && await claimNotify(db, live.id)) {
         const r = await notifyAnnouncement(db, live, { board: !!plan.board, email: !!plan.email, siteBase })
-        if (r.board || r.email) notified++
+        if (r.done.board || r.done.email) notified++
+        else await db.from('announcements').update({ notified_at: null }).eq('id', live.id)
       }
     }
 

@@ -51,7 +51,8 @@ export function safeUrl(raw: string | null | undefined, kind: 'link' | 'media' =
   if (!v) return null
   if (/^https?:\/\//i.test(v)) return v
   if (kind === 'link' && /^(mailto|tel):/i.test(v)) return v
-  if (/^\/(?!\/)/.test(v) || (kind === 'link' && v.startsWith('#'))) return v
+  // A path on this site; never "//host" or "/\host", which browsers treat as another site.
+  if (/^\/(?![\/\\])/.test(v) || (kind === 'link' && v.startsWith('#'))) return v
   return null
 }
 
@@ -65,9 +66,30 @@ function cleanStyle(raw: string): string {
     if (!STYLE_OK.has(prop) || !val || val.length > 80) continue
     // Colours, lengths, keywords. Nothing that can load or run anything.
     if (/[^#a-z0-9.,%()\s-]/i.test(val) || /url|expression|javascript|import|var\(/i.test(val)) continue
+    if (!sizeOk(prop, val)) continue
     out.push(`${prop}: ${val}`)
   }
   return out.join('; ')
+}
+
+// Sizes stay within what a post needs: no 9999px text or page-wide boxes.
+const SIZE_LIMIT: Record<string, { px: number; pct: number; em: number }> = {
+  'font-size': { px: 48, pct: 300, em: 3 },
+  width: { px: 1200, pct: 100, em: 60 }, 'min-width': { px: 400, pct: 100, em: 25 },
+  padding: { px: 40, pct: 10, em: 3 }, border: { px: 4, pct: 0, em: 0.3 },
+}
+function sizeOk(prop: string, val: string): boolean {
+  const lim = SIZE_LIMIT[prop]
+  if (!lim) return true
+  const re = /(-?\d*\.?\d+)\s*(px|%|r?em|pt|vw|vh|vmin|vmax|ch|ex|cm|mm|in)?/gi
+  let m: RegExpExecArray | null
+  while ((m = re.exec(val))) {
+    const n = Math.abs(parseFloat(m[1])), u = (m[2] || '').toLowerCase()
+    if (/^(vw|vh|vmin|vmax|cm|mm|in)$/.test(u)) return false
+    const max = u === '%' ? lim.pct : u === 'em' || u === 'rem' || u === 'ch' || u === 'ex' ? lim.em : lim.px
+    if (n > max) return false
+  }
+  return true
 }
 
 function cleanAttrs(tag: string, raw: string): string {
@@ -120,11 +142,15 @@ export function sanitizeHtml(input: string | null | undefined): string {
   if (!input) return ''
   let t = String(input).slice(0, 400_000)
   t = t.replace(/<!--[\s\S]*?(-->|$)/g, '').replace(/<!\[CDATA\[[\s\S]*?(\]\]>|$)/gi, '').replace(/<![^>]*>/g, '').replace(/<\?[\s\S]*?(\?>|$)/g, '')
+  // Closed ones go with their content; an unclosed one loses only its tag, not
+  // the rest of the post. (Safety doesn't rest on this: only ALLOWED tags
+  // are ever written out below.)
   for (const tag of DROP_WITH_CONTENT) {
-    t = t.replace(new RegExp(`<${tag}\\b[\\s\\S]*?(<\\/${tag}\\s*>|$)`, 'gi'), '')
+    t = t.replace(new RegExp(`<${tag}\\b[\\s\\S]*?<\\/${tag}\\s*>`, 'gi'), '')
     t = t.replace(new RegExp(`<\\/?${tag}\\b[^>]*>`, 'gi'), '')
   }
   const out: string[] = []
+  const open: string[] = []   // tags written and not yet closed, so the output is balanced
   const re = /<(\/?)([a-zA-Z][a-zA-Z0-9]*)\b([^>]*)>/g
   let last = 0
   let m: RegExpExecArray | null
@@ -135,13 +161,21 @@ export function sanitizeHtml(input: string | null | undefined): string {
     let tag = m[2].toLowerCase()
     if (!ALLOWED.has(tag)) continue
     if (tag === 'font') tag = 'span'
-    if (closing) { if (!VOID.has(tag)) out.push(`</${tag}>`); continue }
+    if (closing) {
+      if (VOID.has(tag)) continue
+      const at = open.lastIndexOf(tag)
+      if (at < 0) continue                         // a close with no open: ignored
+      while (open.length > at) out.push(`</${open.pop()}>`)
+      continue
+    }
     const attrs = m[2].toLowerCase() === 'font' ? fontAttrs(m[3]) : cleanAttrs(tag, m[3])
     // A picture or video file with no safe source is just dropped.
     if ((tag === 'img' || tag === 'source') && !/ src="/.test(attrs)) continue
     out.push(`<${tag}${attrs}>`)
+    if (!VOID.has(tag)) open.push(tag)
   }
   out.push(escapeText(t.slice(last)))
+  while (open.length) out.push(`</${open.pop()}>`)
   return out.join('')
 }
 
@@ -168,11 +202,13 @@ export function looksLikeHtml(s: string | null | undefined): boolean {
  * **bold** and bare links.
  */
 export function textToHtml(text: string | null | undefined): string {
-  const src = String(text || '').replace(/\r\n?/g, '\n').trim()
+  // Decode first, then escape once: "Fish &amp; chips" shows as "Fish & chips",
+  // never "Fish &amp;amp; chips".
+  const src = decodeEntities(String(text || '')).replace(/\u00a0/g, ' ').replace(/\r\n?/g, '\n').trim()
   if (!src) return ''
   const inline = (s: string) => escapeHtml(s)
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-    .replace(/(^|[\s(])(https?:\/\/[^\s<)]+)/g, (_m, pre, url) => `${pre}<a href="${url}" target="_blank" rel="noopener noreferrer nofollow">${url}</a>`)
+    .replace(/(^|[\s(])(https?:\/\/(?:(?!&quot;|&lt;|&gt;|&#39;|&amp;)[^\s<)]|&amp;)+)/g, (_m, pre, url) => `${pre}<a href="${url}" target="_blank" rel="noopener noreferrer nofollow">${url}</a>`)
   const blocks = src.split(/\n{2,}/)
   const html: string[] = []
   for (const block of blocks) {

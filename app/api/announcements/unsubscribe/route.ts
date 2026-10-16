@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { readValue } from '@/lib/oauth-state'
 import { adminDb } from '@/lib/announcements-server'
 import { escapeHtml } from '@/lib/safe-html'
+import { unsubscribeContact } from '@/lib/announcement-notify'
 
 export const dynamic = 'force-dynamic'
 
@@ -22,7 +23,7 @@ async function load(t: string | null) {
   if (!v?.co || !v?.c) return null
   const db = adminDb()
   const [{ data: contact }, { data: company }] = await Promise.all([
-    db.from('contacts').select('id, company_id, unsubscribed_at').eq('id', v.c).eq('company_id', v.co).maybeSingle(),
+    db.from('contacts').select('id, company_id, email, unsubscribed_at').eq('id', v.c).eq('company_id', v.co).maybeSingle(),
     db.from('companies').select('id, name').eq('id', v.co).maybeSingle(),
   ])
   return contact && company ? { db, contact, company } : null
@@ -46,8 +47,6 @@ export async function POST(req: NextRequest) {
   } catch {}
   const r = await load(t).catch(() => null)
   if (!r) return page('This link has expired', 'Reply to any email from the business and ask them to stop sending you updates.')
-  if (!r.contact.unsubscribed_at) {
-    await r.db.from('contacts').update({ subscribed_to_marketing: false, unsubscribed_at: new Date().toISOString() }).eq('id', r.contact.id).eq('company_id', r.company.id)
-  }
+  await unsubscribeContact(r.db, r.company.id, r.contact)
   return page('You’re unsubscribed', `You won’t get updates or offers from ${escapeHtml(r.company.name || 'this business')} any more.`)
 }

@@ -41,6 +41,8 @@ export default function WidgetBoost({ announcements, accent, widgetOpen, onOpen,
   // The embed script reports taps on its card.
   useEffect(() => {
     const onMsg = (e: MessageEvent) => {
+      // Only the page that embeds the widget (public/widget.js) may say a card was tapped.
+      if (e.source !== window.parent || window.parent === window) return
       const d: any = e.data
       if (!d || !d.colvy || typeof d.id !== 'string') return
       if (d.type === 'teaser_open') { dismiss(d.id); onOpen(d.id) }
