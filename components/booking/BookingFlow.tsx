@@ -95,7 +95,7 @@ export default function BookingFlow({ slug, domain, initialService }: { slug?: s
       if (!ok || !d?.company || !d.page || !Array.isArray(d.services)) { setLoadError(d?.error || 'This booking page isn’t available.'); return }
       d = { ...d, staff: d.staff || [], locations: d.locations || [] }
       setData(d)
-      try { document.title = `Book — ${d.company.name}` } catch {}
+      try { document.title = `Book online · ${d.company.name}` } catch {}
       const prefill = inv?.prefill
       if (prefill) setForm(f => ({ ...f, name: prefill.name || f.name, email: prefill.email || f.email, phone: prefill.phone || f.phone }))
       const want = initialService || prefill?.serviceId
