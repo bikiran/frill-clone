@@ -1,22 +1,20 @@
 import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { formsDb, isUuid } from '@/lib/forms-server'
 
 export const dynamic = 'force-dynamic'
 
-function getDb() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-  if (!url || !key) throw new Error('Supabase env vars missing')
-  return createClient(url, key)
-}
+// Version snapshots of a form, for its workspace's staff. Service role: V375
+// leaves form_versions readable by members only and writable by the server
+// only, and a draft form is invisible to the anon key.
+const getDb = formsDb
 
 export async function POST(req: NextRequest) {
   try {
     const supabase = getDb()
     const { formId, questions, title, description, theme } = await req.json()
 
-    if (!formId) return NextResponse.json({ error: 'formId required' }, { status: 400 })
+    if (!isUuid(formId)) return NextResponse.json({ error: 'formId required' }, { status: 400 })
     // Members of the form's workspace only.
     {
       const { data: f } = await (supabase as any).from('forms').select('company_id').eq('id', formId).maybeSingle()
@@ -56,7 +54,7 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url)
     const formId = searchParams.get('formId')
 
-    if (!formId) return NextResponse.json({ error: 'formId required' }, { status: 400 })
+    if (!isUuid(formId)) return NextResponse.json({ error: 'formId required' }, { status: 400 })
     // Members of the form's workspace only.
     {
       const { data: f } = await (supabase as any).from('forms').select('company_id').eq('id', formId).maybeSingle()

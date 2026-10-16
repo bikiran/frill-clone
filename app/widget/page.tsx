@@ -2495,7 +2495,17 @@ function WidgetInteractive({ msg, companyId, conversationId, respondent, accentC
     ;(async () => {
       if (!payload.ref_id) return
       const table = kind === 'poll' ? 'polls' : kind === 'survey' ? 'surveys' : 'forms'
-      const { data } = await (supabase as any).from(table).select('*').eq('id', payload.ref_id).maybeSingle()
+      let data: typeof item = null
+      // A form sent into the chat may be a draft, which the public key can't
+      // read (V375), so the server hands it to this chat's visitor.
+      if (kind === 'form') {
+        try {
+          const qs = new URLSearchParams({ formId: String(payload.ref_id), companyId: companyId || '', conversationId: conversationId || '' })
+          const res = await fetch(`/api/widget/form?${qs}`, { headers: chatHeaders() })
+          if (res.ok) data = (await res.json())?.form || null
+        } catch {}
+      }
+      if (!data) ({ data } = await (supabase as any).from(table).select('*').eq('id', payload.ref_id).maybeSingle())
       setItem(data)
 
       // If this respondent already answered (in a prior session/reload), show the
