@@ -1,69 +1,39 @@
 /**
- * Conditional Logic Evaluator
- * Evaluates whether questions should be shown/hidden based on previous answers
+ * Conditional Logic Evaluator (compatibility layer)
+ *
+ * Kept so existing imports keep working. Everything delegates to the forms
+ * logic engine in lib/form-logic.ts, which also handles hidden choices,
+ * branching and calculations. New code should import the engine directly.
  */
 
-export type Condition = {
-  condition: 'show' | 'hide'
-  rules: Array<{
-    questionId: string
-    operator: 'equals' | 'contains' | 'is_empty'
-    value: string
-  }>
-  logic: 'all' | 'any'
-}
+import { computePath, isDisplayed, readFormLogic, type DisplayLogic } from './form-logic'
 
+/** The stored `questions[].conditional_logic` shape (operator set widened; old values still valid). */
+export type Condition = DisplayLogic
+
+/**
+ * Whether a question shows for these answers. Evaluates against exactly the
+ * answers passed in (legacy callers pass every answer).
+ */
 export function shouldShowQuestion(
   questionId: string,
   answers: Record<string, any>,
   questions: any[],
   conditionalLogic?: Condition
 ): boolean {
-  if (!conditionalLogic || !conditionalLogic.rules || conditionalLogic.rules.length === 0) {
-    return true
-  }
-
-  const { condition, rules, logic } = conditionalLogic
-
-  // Evaluate all rules
-  const ruleResults = rules.map(rule => evaluateRule(rule, answers))
-
-  // Combine results based on logic (all/any)
-  const conditionMet = logic === 'all' 
-    ? ruleResults.every(r => r)
-    : ruleResults.some(r => r)
-
-  // Apply show/hide logic
-  return condition === 'show' ? conditionMet : !conditionMet
+  const form = readFormLogic({ questions })
+  const q = form.questions[form.indexOf[questionId]] ?? { id: questionId }
+  return isDisplayed({ ...q, conditional_logic: conditionalLogic } as any, { form, answers: answers || {}, variables: {} })
 }
 
-function evaluateRule(
-  rule: { questionId: string; operator: string; value: string },
-  answers: Record<string, any>
-): boolean {
-  const answer = answers[rule.questionId]
-
-  switch (rule.operator) {
-    case 'equals':
-      return String(answer) === String(rule.value)
-    
-    case 'contains':
-      if (Array.isArray(answer)) {
-        return answer.some(a => String(a).includes(rule.value))
-      }
-      return String(answer).includes(rule.value)
-    
-    case 'is_empty':
-      return !answer || (Array.isArray(answer) && answer.length === 0) || String(answer).trim() === ''
-    
-    default:
-      return true
-  }
-}
-
+/**
+ * The questions a person sees, in order. Now the engine's path: display rules,
+ * hidden-all-choices and branching (variable conditions see no variables).
+ */
 export function getVisibleQuestions(
   questions: any[],
   answers: Record<string, any>
 ): any[] {
-  return questions.filter(q => shouldShowQuestion(q.id, answers, questions, q.conditional_logic))
+  const f = readFormLogic({ questions })
+  return computePath(f, answers || {}).path.map(id => f.questions[f.indexOf[id]])
 }
