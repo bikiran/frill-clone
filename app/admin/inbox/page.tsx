@@ -64,7 +64,7 @@ import RefundOrderModal from '@/components/RefundOrderModal'
 import PrextyMark, { PREXTY } from '@/components/PrextyMark'
 import { notifyIntegrations } from '@/lib/integrations-notify'
 import { isOldPhoneVideo } from '@/lib/web-video'
-import Popover from '@/components/composer/Popover'
+import Popover, { useOneOpen } from '@/components/composer/Popover'
 import ReviewRequestButton from '@/components/composer/ReviewRequestButton'
 import { pickReviewChannel, REVIEW_REQUEST_SUBJECT, type ReviewChannel } from '@/lib/review-request'
 import { fillTemplateVars, type TemplateVars } from '@/lib/composer-templates'
@@ -1759,14 +1759,17 @@ export default function InboxPage() {
   }, [messages])
   useEffect(() => {
     setSmsOptOut(null)
-    if (!selected?.id || outboundChannel !== 'sms') return
+    // Also asked whenever there's a mobile on file (not only on SMS threads),
+    // so the review request names the right channel.
+    const hasMobile = !!((selected as any)?.sms_number || (selected as any)?.phone || contact?.phone)
+    if (!selected?.id || (outboundChannel !== 'sms' && !hasMobile)) return
     let cancelled = false
     authFetch(`/api/inbox/text-optout?conversationId=${encodeURIComponent(selected.id)}`)
       .then(r => r.ok ? r.json() : null)
       .then(d => { if (!cancelled) setSmsOptOut(d?.state || null) })
       .catch(() => {})
     return () => { cancelled = true }
-  }, [selected?.id, outboundChannel, lastInboundId])
+  }, [selected?.id, outboundChannel, lastInboundId, contact?.phone])
 
   // The name shown in the conversation header. On SMS/phone the "subject" is
   // often a stale auto-detected name (e.g. from an AI guess), so clearing the
@@ -4234,12 +4237,19 @@ export default function InboxPage() {
   // Which channel: the conversation's current send channel; a text needs a
   // mobile and consent (STOP → email instead).
   // (Functions, read when the toolbar renders: sendChannel is declared further down.)
-  const reviewChannel = (): ReviewChannel => pickReviewChannel({
-    current: sendChannel !== 'auto' ? sendChannel : outboundChannel,
-    mobile: smsDestination(),
-    email: contact?.email || (selected as any)?.customer_email || null,
-    smsOptedOut: smsOptOut === 'opted_out' || !!(contact as any)?.unsubscribed_at || !!(contact as any)?.is_blocked,
-  })
+  const reviewChannel = (): ReviewChannel => {
+    const c = contact as any
+    const textStop = !!c?.unsubscribed_at && c?.unsubscribe_method === 'sms_keyword'
+    return pickReviewChannel({
+      current: sendChannel !== 'auto' ? sendChannel : outboundChannel,
+      forced: sendChannel !== 'auto',
+      mobile: smsDestination(),
+      email: c?.email || (selected as any)?.customer_email || null,
+      smsOptedOut: smsOptOut === 'opted_out' || textStop,   // STOP: texts only, email is still fine
+      blocked: !!c?.is_blocked,
+      unsubscribed: !!c?.unsubscribed_at && !textStop,      // any other unsubscribe: nothing
+    })
+  }
   const reviewAlready = (): string | null => {
     if (!(contactReviews.count > 0 && contactReviews.latest)) return null
     const r = contactReviews.latest
@@ -4256,7 +4266,10 @@ export default function InboxPage() {
       body: JSON.stringify({ companyId, kind: 'review', conversationId: selected.id }),
     })
     const d = await res.json().catch(() => ({}))
-    return res.ok && d.url ? d.url : null
+    if (res.ok && d.url) return d.url
+    // 404 = no Google review link set up (say so); anything else is a retry.
+    if (res.status === 404) return null
+    throw new Error(d.error || 'Could not make the review link')
   }
   // Delivers the checked message over the chosen channel. Throws on failure so
   // the popover stays open and shows why.
@@ -4292,22 +4305,29 @@ export default function InboxPage() {
     }
     // else: live-chat widget only — the thread message below IS the delivery.
 
-    // For every channel except email (which already inserted its own row),
-    // record the thread message with the review-card metadata + real channel.
-    if (ch.kind !== 'email') {
-      await (supabase as any).from('messages').insert({
-        conversation_id: selected.id, company_id: companyId, sender_type: 'agent',
-        sender_id: user.id, sender_name: me,
-        content: body,
-        metadata: { review_request: true },
-        delivery_channel: delivered,
-      })
+    // It has gone out. Nothing below may throw: an error here must not read as
+    // a failed send (the agent would send it again).
+    const convId = selected.id
+    try {
+      // For every channel except email (which already inserted its own row),
+      // record the thread message with the review-card metadata + real channel.
+      if (ch.kind !== 'email') {
+        const { error } = await (supabase as any).from('messages').insert({
+          conversation_id: convId, company_id: companyId, sender_type: 'agent',
+          sender_id: user.id, sender_name: me,
+          content: body,
+          metadata: { review_request: true },
+          delivery_channel: delivered,
+        })
+        if (error && ch.kind === 'chat') throw error   // on live chat this row IS the delivery
+      }
+      await (supabase as any).from('conversations').update({ review_requested: true, last_message_at: new Date().toISOString() }).eq('id', convId)
+      logEvent('review_request', 'Review request sent')
+    } catch (e: any) {
+      if (ch.kind === 'chat') throw new Error(e?.message || 'Could not post the review request')
     }
-    await (supabase as any).from('conversations').update({ review_requested: true, last_message_at: new Date().toISOString() }).eq('id', selected.id)
-    logEvent('review_request', 'Review request sent')
     showToast(`Review request sent by ${ch.label}`)
-    await reloadThread(selected.id)
-    scrollBottom()
+    try { await reloadThread(convId); scrollBottom() } catch {}
   }
 
   // Chat composer emoji picker, anchored to its button (shared Popover).
@@ -4807,7 +4827,7 @@ export default function InboxPage() {
                   {/* Review request — opens a preview; nothing sends until Send is clicked */}
                   <ReviewRequestButton key={`rv-${selected?.id || ''}`} buttonClassName="cmp-tool" buttonStyle={toolBtn()}
                     channel={reviewChannel()} alreadyReviewed={reviewAlready()}
-                    getLink={createReviewLink} onSend={sendReviewRequest}
+                    getLink={createReviewLink} onSend={sendReviewRequest} onError={showToast}
                     onInsert={t => insert ? insert(t) : setReply(r => (r.trim() ? r.trimEnd() + '\n' : '') + t)} />
                   {/* Shorten a URL straight into the reply */}
                   <div ref={shortenerAnchorRef} style={{ position: 'relative' }}>
@@ -5457,7 +5477,12 @@ export default function InboxPage() {
   const channelMenuRef = useRef<HTMLDivElement>(null)
   const moveMenuRef = useRef<HTMLDivElement>(null)
   const quickMenuRef = useRef<HTMLDivElement>(null)
-  // (The + menu closes itself: it's a shared composer Popover.)
+  // (The + menu closes itself: it's a shared composer Popover.) The older
+  // menus join its one-open-at-a-time rule.
+  useOneOpen(showChannelMenu, () => setShowChannelMenu(false))
+  useOneOpen(showMoveMenu, () => setShowMoveMenu(false))
+  useOneOpen(showQuickMenu, () => setShowQuickMenu(false))
+  useOneOpen(mentionQuery !== null, () => setMentionQuery(null))
   useClickOutside(showChannelMenu, () => setShowChannelMenu(false), [channelMenuRef])
   useClickOutside(showMoveMenu, () => setShowMoveMenu(false), [moveMenuRef])
   useClickOutside(showQuickMenu, () => setShowQuickMenu(false), [quickMenuRef])
@@ -11452,7 +11477,7 @@ export default function InboxPage() {
                   <div style={{ display: 'flex', gap: 6, marginBottom: 12, marginTop: 6, flexWrap: 'wrap' }}>
                     <ReviewRequestButton buttonLabel="Send review request" key={`rvp-${selected?.id || ''}`}
                       buttonStyle={{ fontSize: 11, padding: '5px 10px', borderRadius: 7, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', color: 'var(--slate)', fontWeight: 600 }}
-                      channel={reviewChannel()} alreadyReviewed={reviewAlready()} getLink={createReviewLink} onSend={sendReviewRequest}
+                      channel={reviewChannel()} alreadyReviewed={reviewAlready()} getLink={createReviewLink} onSend={sendReviewRequest} onError={showToast}
                       onInsert={activeChannel === 'email' && !internalMode ? undefined : (t => setReply(r => (r.trim() ? r.trimEnd() + '\n' : '') + t))} />
                   </div>
                   {events.length === 0 ? (

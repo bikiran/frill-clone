@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Popover, { usePopover } from './Popover'
 import { REVIEW_REQUEST_MESSAGE, runReviewAction, type ReviewChannel } from '@/lib/review-request'
 
@@ -29,6 +29,7 @@ export interface ReviewRequestProps {
   getLink: () => Promise<string | null> // makes the branded short link to the review page
   onSend: (text: string, channel: ReviewChannel) => Promise<void>  // throws on failure
   onInsert?: (text: string) => void    // omitted where there's no reply box to insert into
+  onError?: (message: string) => void  // a failure after the popover was closed (e.g. a toast)
   buttonClassName?: string
   buttonLabel?: React.ReactNode         // a text button instead of the star icon
   buttonStyle?: React.CSSProperties
@@ -36,11 +37,16 @@ export interface ReviewRequestProps {
   defaultOpen?: boolean                 // tests / screenshots
 }
 
-export default function ReviewRequestButton({ channel, alreadyReviewed, getLink, onSend, onInsert, buttonClassName, buttonLabel, buttonStyle, reviewSettingsHref = '/admin/crm-settings/channels/google-reviews', defaultOpen = false }: ReviewRequestProps) {
+export default function ReviewRequestButton({ channel, alreadyReviewed, getLink, onSend, onInsert, onError, buttonClassName, buttonLabel, buttonStyle, reviewSettingsHref = '/admin/crm-settings/channels/google-reviews', defaultOpen = false }: ReviewRequestProps) {
   const pop = usePopover()
   const [openState, setOpenState] = useState(defaultOpen)
   const open = pop.open || openState
   const close = () => { pop.close(); setOpenState(false); setNoLink(false); setError('') }
+  // A send keeps going if the popover is closed meanwhile; then a failure is
+  // reported through onError instead of the (gone) popover.
+  const openRef = useRef(open)
+  useEffect(() => { openRef.current = open })
+  const fail = (msg: string) => { if (openRef.current) setError(msg); else onError?.(msg) }
   const [message, setMessage] = useState(REVIEW_REQUEST_MESSAGE)
   const [busy, setBusy] = useState<'' | 'send' | 'insert'>('')
   const [noLink, setNoLink] = useState(false)
@@ -60,9 +66,10 @@ export default function ReviewRequestButton({ channel, alreadyReviewed, getLink,
       })
       if (r === 'empty') setError('Write a message first')
       else if (r === 'needs-confirm') setNoLink(true)
+      else if (r === 'link-error') fail('Couldn’t make the review link just now. Nothing was sent; try again.')
       else { setMessage(REVIEW_REQUEST_MESSAGE); close() }
     } catch (e: any) {
-      setError(e?.message || 'Could not send the review request')
+      fail(e?.message || 'Could not send the review request')
     } finally { setBusy('') }
   }
 

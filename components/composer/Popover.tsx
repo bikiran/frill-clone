@@ -16,6 +16,29 @@ import { computePopoverPosition, isOutsideClick, popoverKeyAction, popoverRegist
 
 const useIsoLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect
 
+/**
+ * Join the one-open-at-a-time rule from a menu that isn't a Popover (the
+ * inbox's "/" quick replies, channel and move menus, @mentions): while `open`,
+ * opening any other composer popover calls `close`, and opening this closes it.
+ */
+export function useOneOpen(open: boolean, close: () => void) {
+  const id = useId()
+  const closeRef = useRef(close)
+  useIsoLayoutEffect(() => { closeRef.current = close })
+  useEffect(() => {
+    if (!open) return
+    popoverRegistry.open(id, () => closeRef.current())
+    return () => popoverRegistry.release(id)
+  }, [open, id])
+}
+
+/** The element to give focus back to: the anchor if it's a control, else the button inside it. */
+function focusTarget(a: HTMLElement | null): HTMLElement | null {
+  if (!a) return null
+  if (a.matches('button, a[href], input, select, textarea, [tabindex]')) return a
+  return a.querySelector<HTMLElement>('button, a[href], [tabindex]')
+}
+
 export function usePopover() {
   const [open, setOpen] = useState(false)
   const anchorRef = useRef<HTMLButtonElement | null>(null)
@@ -50,7 +73,6 @@ export const POPOVER_CSS = `
 `
 
 export default function Popover({ open, onClose, anchorRef, children, width = 280, prefer = 'bottom', align = 'start', label, role = 'dialog', padding = 6, autoFocus = true }: Props) {
-  const id = useId()
   const panelRef = useRef<HTMLDivElement>(null)
   const innerRef = useRef<HTMLDivElement>(null)
   const [pos, setPos] = useState<Position | null>(null)
@@ -58,11 +80,7 @@ export default function Popover({ open, onClose, anchorRef, children, width = 28
   useIsoLayoutEffect(() => { onCloseRef.current = onClose })
 
   // One open at a time: opening this one closes whichever was open.
-  useEffect(() => {
-    if (!open) return
-    popoverRegistry.open(id, () => onCloseRef.current())
-    return () => popoverRegistry.release(id)
-  }, [open, id])
+  useOneOpen(open, onClose)
 
   // Once open, keep to the side it opened on while it still fits, so it
   // doesn't jump above/below as a search narrows the list.
@@ -107,7 +125,7 @@ export default function Popover({ open, onClose, anchorRef, children, width = 28
       if (e.key !== 'Escape') return
       e.stopPropagation()
       onCloseRef.current()
-      try { anchorRef.current?.focus({ preventScroll: true }) } catch {}
+      try { focusTarget(anchorRef.current)?.focus({ preventScroll: true }) } catch {}
     }
     document.addEventListener('pointerdown', onDown, true)
     document.addEventListener('keydown', onKey, true)
@@ -150,7 +168,7 @@ export default function Popover({ open, onClose, anchorRef, children, width = 28
   if (!open) return null
 
   const panel = (
-    <div ref={panelRef} id={`pop-${id.replace(/:/g, '')}`} role={role} aria-label={label} onKeyDown={onKeyDown}
+    <div ref={panelRef} role={role} aria-label={label} onKeyDown={onKeyDown}
       className="cpop" data-placement={pos?.placement}
       style={{
         position: 'fixed', zIndex: 10000,

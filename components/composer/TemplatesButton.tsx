@@ -13,6 +13,26 @@ export const MANAGE_TEMPLATES_HREF = '/admin/crm-settings/power-ups?tool=quick-r
 
 // Last list per company, so reopening shows it straight away while it refreshes.
 const cache = new Map<string, ReplyTemplate[]>()
+const names = new Map<string, string>()
+
+/** The business name, for {company} when the caller didn't pass one. */
+function useCompanyName(companyId: string | null, known: string | null | undefined) {
+  const [name, setName] = useState<string>(() => (companyId && names.get(companyId)) || '')
+  useEffect(() => {
+    if (known || !companyId) return
+    if (names.has(companyId)) { setName(names.get(companyId) || ''); return }
+    let cancelled = false
+    ;(async () => {
+      try {
+        const { data } = await (supabase as any).from('companies').select('name').eq('id', companyId).maybeSingle()
+        if (data?.name) names.set(companyId, data.name)
+        if (!cancelled) setName(data?.name || '')
+      } catch {}
+    })()
+    return () => { cancelled = true }
+  }, [companyId, known])
+  return known || name
+}
 
 export function useReplyTemplates(companyId: string | null, refreshKey: unknown) {
   const [list, setList] = useState<ReplyTemplate[] | null>(() => (companyId && cache.get(companyId)) || null)
@@ -88,7 +108,7 @@ export function TemplatesPanel({ templates, vars, query, onQuery, onPick }: Temp
         })}
       </div>
       <div style={{ borderTop: '1px solid var(--border)', margin: '6px -6px 0', padding: '6px 6px 0' }}>
-        <a href={MANAGE_TEMPLATES_HREF} data-pop-item className="cpop-item" style={{ textDecoration: 'none', color: 'var(--slate)', fontSize: 12.5, fontWeight: 700 }}>
+        <a href={MANAGE_TEMPLATES_HREF} target="_blank" rel="noopener noreferrer" title="Opens in a new tab, so this reply stays as it is" data-pop-item className="cpop-item" style={{ textDecoration: 'none', color: 'var(--slate)', fontSize: 12.5, fontWeight: 700 }}>
           <GearIcon /> Manage templates
         </a>
       </div>
@@ -106,6 +126,8 @@ export default function TemplatesButton({ companyId, vars, onInsert, buttonStyle
   const [query, setQuery] = useState('')
   const [opens, setOpens] = useState(0)          // refetch each time it opens (never stale)
   const templates = useReplyTemplates(companyId, opens)
+  const company = useCompanyName(companyId, vars.company)
+  const filledVars: TemplateVars = { ...vars, company }
   const close = () => { pop.close(); setQuery('') }
   if (!companyId) return null
   return (
@@ -118,7 +140,7 @@ export default function TemplatesButton({ companyId, vars, onInsert, buttonStyle
       </button>
       <Popover open={pop.open} onClose={close} anchorRef={pop.anchorRef} width={340} label="Templates" role="dialog">
         <p className="cpop-head">Templates</p>
-        <TemplatesPanel templates={templates} vars={vars} query={query} onQuery={setQuery} onPick={t => { close(); onInsert(t) }} />
+        <TemplatesPanel templates={templates} vars={filledVars} query={query} onQuery={setQuery} onPick={t => { close(); onInsert(t) }} />
       </Popover>
     </>
   )

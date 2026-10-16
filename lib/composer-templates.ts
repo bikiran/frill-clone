@@ -45,8 +45,9 @@ export function fillTemplateVars(body: string | null | undefined, vars: Template
   if (!v.last_name && v.name) v.last_name = splitName(v.name).last
   // A placeholder name ("Visitor", a phone number) isn't a name to greet.
   if (v.first_name && (/^(visitor|customer|unknown|guest)$/i.test(v.first_name) || /^[+\d\s()-]+$/.test(v.first_name))) v.first_name = ''
-  return String(body || '').replace(/\{\{?\s*([a-zA-Z_]+)\s*\}?\}/g, (whole, raw: string) => {
-    const key = ALIASES[raw.toLowerCase()]
+  // Balanced only: {x} or {{x}} — never "{x}}" or "{{x}".
+  return String(body || '').replace(/\{\{\s*([a-zA-Z_]+)\s*\}\}|(?<!\{)\{\s*([a-zA-Z_]+)\s*\}(?!\})/g, (whole, a: string, b: string) => {
+    const key = ALIASES[String(a || b).toLowerCase()]
     if (!key) return whole
     const val = String(v[key] ?? '').trim()
     return val || FALLBACK[key] || ''
