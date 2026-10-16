@@ -8,6 +8,12 @@ import { WarnIcon, ArrowRightIcon, CheckIcon } from '@/components/booking/icons'
 // Today at a glance: headline numbers, then today's bookings in a column per
 // person (one column when the business takes bookings as a whole).
 
+type Insights = {
+  days: number; visits: number; byDow: number[]; byHour: Record<string, number>
+  topServices: { name: string; count: number; revenueCents: number }[]
+  repeatRate: number | null; noShowRate: number | null; regulars: number
+}
+
 type Stats = {
   today: number; next7: number; newThisWeek: number
   confirmedRate: number | null; remindedCount: number
@@ -16,7 +22,7 @@ type Stats = {
 }
 
 export default function TodayTab({ companyId, onOpenBookings, reloadKey }: { companyId: string; onOpenBookings: () => void; reloadKey?: any }) {
-  const [data, setData] = useState<{ timezone: string; today: any[]; stats: Stats | null; hint?: string } | null>(null)
+  const [data, setData] = useState<{ timezone: string; today: any[]; stats: Stats | null; hint?: string; insights?: Insights | null } | null>(null)
   const [error, setError] = useState('')
   const [now, setNow] = useState(Date.now())
 
@@ -55,6 +61,20 @@ export default function TodayTab({ companyId, onOpenBookings, reloadKey }: { com
         .td-col{scroll-snap-align:start}
         .td-card{display:block;padding:11px 12px;border-radius:12px;border:1px solid var(--border,#ececec);background:#fff;text-decoration:none;color:inherit;transition:transform .2s cubic-bezier(.22,1,.36,1),box-shadow .2s}
         .td-card:hover{transform:translate3d(0,-1px,0);box-shadow:0 8px 20px -14px rgba(0,0,0,.35)}
+        .td-ins{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}
+        .td-bars{display:flex;align-items:flex-end;gap:6px;height:120px;margin-top:14px}
+        .td-bar{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;gap:4px}
+        .td-bar i{display:block;width:100%;max-width:34px;border-radius:4px 4px 0 0;background:var(--coral,#ff7a6b);opacity:.35;transition:opacity .2s}
+        .td-bar.top i{opacity:1}
+        .td-bar:hover i{opacity:.8}
+        .td-bar b{font-size:11.5px;font-weight:700;color:var(--ink,#111);font-variant-numeric:tabular-nums}
+        .td-bar span{font-size:11px;color:var(--slate,#6b7280);white-space:nowrap}
+        .td-svc{display:grid;gap:10px;margin-top:12px}
+        .td-svc-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 10px;font-size:13px}
+        .td-svc-row .n{font-weight:600;color:var(--ink,#111);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+        .td-svc-row .c{color:var(--slate,#6b7280);font-variant-numeric:tabular-nums;white-space:nowrap}
+        .td-svc-row .t{grid-column:1/-1;height:6px;border-radius:999px;background:#f1f1f3;overflow:hidden}
+        .td-svc-row .t i{display:block;height:100%;border-radius:999px;background:var(--coral,#ff7a6b)}
         @media (prefers-reduced-motion: reduce){.td-tile{animation:none}}
       `}</style>
 
@@ -104,9 +124,84 @@ export default function TodayTab({ companyId, onOpenBookings, reloadKey }: { com
           ))}
         </div>
       )}
+
+      {data.insights && data.insights.visits > 0 && <InsightsPanel ins={data.insights} currency={s.currency} />}
     </div>
   )
 }
+
+// Last 90 days at a glance: when people come in, what they book, who comes back.
+const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+const hourLabel = (h: number) => `${h % 12 || 12}${h < 12 ? 'am' : 'pm'}`
+
+function InsightsPanel({ ins, currency }: { ins: Insights; currency: string }) {
+  const hours = Object.keys(ins.byHour).map(Number).sort((a, b) => a - b)
+  const hourRange = hours.length ? Array.from({ length: hours[hours.length - 1] - hours[0] + 1 }, (_, i) => hours[0] + i) : []
+  const maxDow = Math.max(...ins.byDow), maxHour = Math.max(0, ...hourRange.map(h => ins.byHour[h] || 0))
+  const topSvc = ins.topServices[0]?.count || 1
+  const busiestDay = maxDow ? DOW[ins.byDow.indexOf(maxDow)] : null
+  const busiestHour = maxHour ? hourRange.find(h => (ins.byHour[h] || 0) === maxHour)! : null
+  const facts = [
+    `${ins.visits} visit${ins.visits === 1 ? '' : 's'}`,
+    ins.repeatRate != null ? `${ins.repeatRate}% of customers came back` : '',
+    ins.regulars ? `${ins.regulars} regular booking${ins.regulars === 1 ? '' : 's'}` : '',
+  ].filter(Boolean).join(' · ')
+  return (
+    <section style={{ marginTop: 26 }} aria-label={`Last ${ins.days} days`}>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
+        <div style={{ fontWeight: 800, fontSize: 15 }}>Last {ins.days} days</div>
+        <div style={{ fontSize: 12.5, color: 'var(--slate,#6b7280)' }}>{facts}</div>
+      </div>
+      <div className="td-ins">
+        <div style={card}>
+          <div style={insTitle}>Busiest days</div>
+          <div style={insSub}>{busiestDay ? `${busiestDay} is your busiest day` : 'Not enough visits yet'}</div>
+          <div className="td-bars" role="list">
+            {ins.byDow.map((n, i) => (
+              <div key={i} role="listitem" className={`td-bar${n && n === maxDow ? ' top' : ''}`} title={`${DOW[i]}: ${n} visit${n === 1 ? '' : 's'}`} aria-label={`${DOW[i]}: ${n} visit${n === 1 ? '' : 's'}`}>
+                <b>{n || ''}</b>
+                <i style={{ height: maxDow ? `${Math.max(n ? 6 : 2, Math.round((n / maxDow) * 84))}px` : 2 }} />
+                <span>{DOW[i]}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div style={card}>
+          <div style={insTitle}>Busiest times</div>
+          <div style={insSub}>{busiestHour != null ? `Most visits start around ${hourLabel(busiestHour)}` : 'Not enough visits yet'}</div>
+          <div className="td-bars" role="list" style={{ gap: hourRange.length > 10 ? 3 : 6 }}>
+            {hourRange.map(h => {
+              const n = ins.byHour[h] || 0
+              return (
+                <div key={h} role="listitem" className={`td-bar${n && n === maxHour ? ' top' : ''}`} title={`${hourLabel(h)}: ${n} visit${n === 1 ? '' : 's'}`} aria-label={`${hourLabel(h)}: ${n} visit${n === 1 ? '' : 's'}`}>
+                  <b>{n || ''}</b>
+                  <i style={{ height: maxHour ? `${Math.max(n ? 6 : 2, Math.round((n / maxHour) * 84))}px` : 2 }} />
+                  <span>{hourRange.length > 9 && h % 2 ? '' : hourLabel(h)}</span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+        <div style={card}>
+          <div style={insTitle}>Top services</div>
+          <div style={insSub}>Visits and booked value{ins.noShowRate != null ? ` · ${ins.noShowRate}% no-shows` : ''}</div>
+          <div className="td-svc">
+            {ins.topServices.map(sv => (
+              <div key={sv.name} className="td-svc-row">
+                <span className="n" title={sv.name}>{sv.name}</span>
+                <span className="c">{sv.count} · {money(sv.revenueCents, currency)}</span>
+                <span className="t" aria-hidden><i style={{ width: `${Math.max(4, Math.round((sv.count / topSvc) * 100))}%` }} /></span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+const insTitle: React.CSSProperties = { fontWeight: 800, fontSize: 14, color: 'var(--ink,#111)' }
+const insSub: React.CSSProperties = { fontSize: 12.5, color: 'var(--slate,#6b7280)', marginTop: 2 }
 
 function Tile({ label, value, sub, i }: { label: string; value: string; sub: string; i: number }) {
   return (

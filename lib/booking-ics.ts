@@ -15,14 +15,21 @@ export type InviteEvent = {
 }
 
 const stamp = (ms: number) => new Date(ms).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '')
-const esc = (s: string) => s.replace(/\\/g, '\\\\').replace(/\n/g, '\\n').replace(/([,;])/g, '\\$1')
+const esc = (s: string) => s.replace(/\\/g, '\\\\').replace(/\r\n?|\n/g, '\\n').replace(/([,;])/g, '\\$1')
 
-// RFC 5545 lines must be folded at 75 octets.
-function fold(line: string) {
+// RFC 5545 lines must be folded at 75 octets — octets, not characters: every
+// title has an em dash (3 bytes), and names can have more. A fold never splits
+// a character; each continuation line starts with a space.
+const enc = new TextEncoder()
+export function fold(line: string) {
   const out: string[] = []
-  let rest = line
-  while (rest.length > 74) { out.push(rest.slice(0, 74)); rest = ' ' + rest.slice(74) }
-  out.push(rest)
+  let cur = '', bytes = 0
+  for (const ch of line) {
+    const n = enc.encode(ch).length
+    if (bytes + n > 75) { out.push(cur); cur = ' '; bytes = 1 }
+    cur += ch; bytes += n
+  }
+  out.push(cur)
   return out.join('\r\n')
 }
 

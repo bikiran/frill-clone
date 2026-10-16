@@ -23,7 +23,7 @@ type PageData = {
   page: { title: string; intro: string; require_phone: boolean; require_email: boolean; cancel_hours: number; refund_on_cancel: boolean; late_cancel: string; allow_reschedule: boolean }
   timezone: string
   services: Service[]
-  staff: { id: string; name: string; avatar_url: string | null }[]
+  staff: { id: string; name: string; avatar_url: string | null; locations?: string[] }[]
   locations: { id: string; label: string; address: string; is_primary: boolean }[]
 }
 
@@ -112,23 +112,26 @@ export default function BookingFlow({ slug, domain, initialService }: { slug?: s
   const accent = data?.company.accent_color && /^#[0-9a-f]{6}$/i.test(data.company.accent_color) ? data.company.accent_color : '#ff7a6b'
   const tz = data?.timezone || 'Australia/Melbourne'
 
-  const serviceStaff = useMemo(() => {
-    if (!data || !service) return []
-    return service.staff_ids.length ? data.staff.filter(s => service.staff_ids.includes(s.id)) : data.staff
-  }, [data, service])
   const serviceLocations = useMemo(() => {
     if (!data || !service || service.location_mode !== 'outlet') return []
     return service.location_ids.length ? data.locations.filter(l => service.location_ids.includes(l.id)) : data.locations.filter(l => l.is_primary)
   }, [data, service])
+  // With an outlet picked, only the people who work there.
+  const serviceStaff = useMemo(() => {
+    if (!data || !service) return []
+    const all = service.staff_ids.length ? data.staff.filter(s => service.staff_ids.includes(s.id)) : data.staff
+    return serviceLocations.length && locationId ? all.filter(s => !s.locations?.length || s.locations.includes(locationId)) : all
+  }, [data, service, serviceLocations, locationId])
 
   useEffect(() => { setStaff('any'); setSlot(null); setLocationId(serviceLocations.length === 1 ? serviceLocations[0].id : '') }, [service?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const fetchSlots = useCallback(async (from: string, to: string) => {
-    const r = await fetch(`/api/book?op=slots&${query}&service=${service?.id}&staff=${staff}&from=${from}&to=${to}`)
+    // The outlet matters: only people who work there are offered.
+    const r = await fetch(`/api/book?op=slots&${query}&service=${service?.id}&staff=${staff}${locationId ? `&location=${locationId}` : ''}&from=${from}&to=${to}`)
     const d = await r.json()
     if (!r.ok) throw new Error(d.error || 'Couldn’t load times')
     return d
-  }, [query, service?.id, staff])
+  }, [query, service?.id, staff, locationId])
 
   const due = service ? (service.payment_mode === 'full' ? service.price_cents : service.payment_mode === 'deposit' ? service.deposit_cents : 0) : 0
   const staffName = staff !== 'any' ? data?.staff.find(s => s.id === staff)?.name : null
@@ -178,7 +181,10 @@ export default function BookingFlow({ slug, domain, initialService }: { slug?: s
     </Shell>
   )
 
-  const slotLabel = slot ? new Date(slot).toLocaleString('en-AU', { timeZone: viewerTz(), weekday: 'long', day: 'numeric', month: 'long', hour: 'numeric', minute: '2-digit' }).replace(' am', 'am').replace(' pm', 'pm') : ''
+  // An interstate customer (Brisbane has no daylight saving) sees which clock
+  // the time is on.
+  const slotLabel = slot ? new Date(slot).toLocaleString('en-AU', { timeZone: viewerTz(), weekday: 'long', day: 'numeric', month: 'long', hour: 'numeric', minute: '2-digit' }).replace(' am', 'am').replace(' pm', 'pm')
+    + (viewerTz() !== tz && tzShort(viewerTz(), Date.parse(slot)) !== tzShort(tz, Date.parse(slot)) ? ` ${tzShort(viewerTz(), Date.parse(slot))}` : '') : ''
 
   // ── Left summary panel ──
   const summary = (
@@ -256,7 +262,13 @@ export default function BookingFlow({ slug, domain, initialService }: { slug?: s
                   <div style={label}>Location</div>
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                     {serviceLocations.map(l => (
-                      <button key={l.id} type="button" onClick={() => setLocationId(l.id)} className={`bk-chip${locationId === l.id ? ' sel' : ''}`} title={l.address}>{l.label}</button>
+                      <button key={l.id} type="button" aria-pressed={locationId === l.id} onClick={() => {
+                        if (l.id === locationId) return
+                        setLocationId(l.id); setSlot(null)
+                        // The person they picked doesn't work at this outlet → anyone there.
+                        const p = data.staff.find(x => x.id === staff)
+                        if (p?.locations?.length && !p.locations.includes(l.id)) setStaff('any')
+                      }} className={`bk-chip${locationId === l.id ? ' sel' : ''}`} title={l.address}>{l.label}</button>
                     ))}
                   </div>
                 </div>
@@ -265,9 +277,9 @@ export default function BookingFlow({ slug, domain, initialService }: { slug?: s
                 <div style={{ marginBottom: 18 }}>
                   <div style={label}>With</div>
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                    <button type="button" onClick={() => { setStaff('any'); setSlot(null) }} className={`bk-chip${staff === 'any' ? ' sel' : ''}`}>Anyone available</button>
+                    <button type="button" aria-pressed={staff === 'any'} onClick={() => { setStaff('any'); setSlot(null) }} className={`bk-chip${staff === 'any' ? ' sel' : ''}`}>Anyone available</button>
                     {serviceStaff.map(s => (
-                      <button key={s.id} type="button" onClick={() => { setStaff(s.id); setSlot(null) }} className={`bk-chip${staff === s.id ? ' sel' : ''}`}>
+                      <button key={s.id} type="button" aria-pressed={staff === s.id} onClick={() => { setStaff(s.id); setSlot(null) }} className={`bk-chip${staff === s.id ? ' sel' : ''}`}>
                         <Avatar name={s.name} url={s.avatar_url} size={22} accent={accent} /> {s.name}
                       </button>
                     ))}
@@ -275,7 +287,7 @@ export default function BookingFlow({ slug, domain, initialService }: { slug?: s
                 </div>
               )}
               <h2 style={h2}>Pick a time</h2>
-              <SlotPicker accent={accent} businessTz={tz} fetchSlots={fetchSlots} selected={slot} reloadKey={`${service.id}:${staff}`}
+              <SlotPicker accent={accent} businessTz={tz} fetchSlots={fetchSlots} selected={slot} reloadKey={`${service.id}:${staff}:${locationId}`}
                 onSelect={iso => { setSlot(iso); setError('') }} />
               {error && <div style={errBox}>{error}</div>}
               <div className={`bk-cta${slot ? ' on' : ''}`}>

@@ -20,7 +20,7 @@ const admin = () => createClient(
 // Public booking page API (no sign-in).
 //
 // GET ?op=page&slug=|domain=                          → business, services, staff, locations
-// GET ?op=slots&slug=&service=&staff=any|id&from=&to= → bookable start times (ISO)
+// GET ?op=slots&slug=&service=&staff=any|id&location=&from=&to= → bookable start times (ISO)
 // GET ?op=invite&slug=&token=                        → details to pre-fill (personal link)
 // POST { slug|domain, serviceId, staff, startsAt, name, email, phone, timezone,
 //        answers, locationId, address, notes }        → { token, checkoutUrl? }
@@ -57,7 +57,8 @@ export async function GET(req: NextRequest) {
         timezone: settings.timezone,
         // A paid service can't be booked until the business connects Stripe.
         services: (services || []).filter((s: any) => payReady || amountDue(s) === 0).map(publicService),
-        staff: bookable.map(s => ({ id: s.id, name: s.name, avatar_url: s.avatar_url })),
+        // `locations`: the outlets each person takes bookings at (empty = any).
+        staff: bookable.map(s => ({ id: s.id, name: s.name, avatar_url: s.avatar_url, locations: settings.staff[s.id]?.locations || [] })),
         locations: await loadLocations(db, company.id),
       }, { headers: { 'Cache-Control': 'no-store' } })
     }
@@ -83,7 +84,9 @@ export async function GET(req: NextRequest) {
       if (to < from) return NextResponse.json({ timezone: tz, slots: [] })
       const staff = await loadStaff(db, company)
       const staffFilter = sp.get('staff') && sp.get('staff') !== 'any' ? sp.get('staff')! : 'any'
-      const { slots } = await availability(db, { company, settings, service, staff, staffFilter, fromDate: from, toDate: to })
+      const location = sp.get('location')
+      const locationId = location && /^[0-9a-f-]{36}$/i.test(location) ? location : null
+      const { slots } = await availability(db, { company, settings, service, staff, staffFilter, fromDate: from, toDate: to, locationId })
       return NextResponse.json({
         timezone: tz,
         slots: slots.map(s => ({ start: new Date(s.start).toISOString(), staff: s.resources.filter(Boolean), ...(s.seatsLeft != null ? { seatsLeft: s.seatsLeft } : {}) })),

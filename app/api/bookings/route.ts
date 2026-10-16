@@ -4,8 +4,9 @@ import { requireCompanyAccess } from '@/lib/company-access'
 import { addDays, dateInTz, isDate, zonedToUtc } from '@/lib/booking-time'
 import {
   loadCompanyPublic, resolveBookingSettings, loadStaff, availability, cancelBooking, rescheduleBooking,
-  isMissingBookingSchema, MIGRATION_HINT, manageUrl, customerMessage,
+  isMissingBookingSchema, MIGRATION_HINT, manageUrl, customerMessage, repeatBooking,
 } from '@/lib/booking'
+import { computeInsights } from '@/lib/booking-insights'
 
 export const dynamic = 'force-dynamic'
 
@@ -20,7 +21,8 @@ const admin = () => createClient(
 // GET   ?companyId=&op=slots&id=&from=&to=          → times a booking can move to
 // GET   ?companyId=&op=today                          → today's schedule + headline stats
 // PATCH { companyId, id, action: 'cancel' | 'reschedule' | 'complete' | 'no_show' | 'confirm',
-//         refund?, notify?, reason?, startsAt? }
+//         refund?, notify?, reason?, startsAt?, series? }
+// PATCH { companyId, id, action: 'repeat', everyWeeks, count, dryRun?, notify? } → { plan, created }
 export async function GET(req: NextRequest) {
   try {
     const db = admin()
@@ -42,7 +44,7 @@ export async function GET(req: NextRequest) {
       if (to > addDays(from, 45)) to = addDays(from, 45)
       // The team can move a booking past the customer-facing notice window.
       const staff = await loadStaff(db, company)
-      const { slots } = await availability(db, { company, settings, service: { ...service, min_notice_mins: 0, max_days_ahead: 365 }, staff, staffFilter: b.staff_choice === 'specific' && b.staff_id ? b.staff_id : 'any', fromDate: from, toDate: to, excludeBookingId: b.id })
+      const { slots } = await availability(db, { company, settings, service: { ...service, min_notice_mins: 0, max_days_ahead: 365 }, staff, staffFilter: b.staff_choice === 'specific' && b.staff_id ? b.staff_id : 'any', fromDate: from, toDate: to, excludeBookingId: b.id, locationId: b.location_id })
       return NextResponse.json({ timezone: settings.timezone, slots: slots.map(s => ({ start: new Date(s.start).toISOString() })) })
     }
 
@@ -80,8 +82,21 @@ export async function GET(req: NextRequest) {
       const noShows = past30.filter(b => b.status === 'no_show').length
       const paid = all.filter(b => Date.parse(b.created_at) > now - 30 * DAY && (b.payment_status === 'paid' || b.payment_status === 'partially_refunded'))
         .reduce((sum, b) => sum + (b.amount_due_cents || 0) - (b.refunded_cents || 0), 0)
+      // Last 90 days: busiest days and times, top services, repeat customers.
+      // series_id comes with V388 — read without it until then.
+      let insights = null
+      try {
+        const cols = 'status, service_name, starts_at, ends_at, price_cents, refunded_cents, contact_id, customer_phone, customer_email'
+        const read = (c: string) => db.from('bookings').select(c).eq('company_id', companyId)
+          .gte('starts_at', new Date(now - 90 * DAY).toISOString()).lt('starts_at', new Date(now + 120 * DAY).toISOString())
+          .in('status', ['confirmed', 'completed', 'no_show']).limit(5000)
+        let r: any = await read(`${cols}, series_id`)
+        if (r.error) r = await read(cols)
+        if (!r.error) insights = computeInsights(r.data || [], tz, now)
+      } catch {}
       return NextResponse.json({
         timezone: tz,
+        insights,
         today: todays,
         stats: {
           today: todays.length,
@@ -140,9 +155,26 @@ export async function PATCH(req: NextRequest) {
     const origin = req.nextUrl.origin
 
     if (body.action === 'cancel') {
-      const r = await cancelBooking(db, b.id, { by: 'business', reason: body.reason || null, refund: !!body.refund, notifyCustomer: body.notify !== false, origin })
+      // "Also cancel the later visits" of a regular booking: quietly, then the
+      // customer's one message for this visit says how many went with it.
+      if (!['confirmed', 'pending'].includes(b.status)) return NextResponse.json({ error: 'This booking is already cancelled or finished.' }, { status: 400 })
+      let also = 0
+      if (body.series && b.series_id) {
+        const { data: later } = await db.from('bookings').select('id').eq('company_id', companyId).eq('series_id', b.series_id)
+          .in('status', ['confirmed', 'pending']).gt('starts_at', b.starts_at).neq('id', b.id).limit(100)
+        for (const l of later || []) {
+          const r = await cancelBooking(db, l.id, { by: 'business', reason: body.reason || null, refund: !!body.refund, notifyCustomer: false, origin })
+          if (r.ok) also++
+        }
+      }
+      const r = await cancelBooking(db, b.id, { by: 'business', reason: body.reason || null, refund: !!body.refund, notifyCustomer: body.notify !== false, origin, alsoCancelled: also })
       if (!r.ok) return NextResponse.json({ error: r.error }, { status: 400 })
-      return NextResponse.json({ ok: true, refunded: r.refunded || 0, refundError: r.refundError || null })
+      return NextResponse.json({ ok: true, refunded: r.refunded || 0, refundError: r.refundError || null, alsoCancelled: also })
+    }
+    if (body.action === 'repeat') {
+      const r = await repeatBooking(db, b.id, { everyWeeks: Number(body.everyWeeks), count: Number(body.count), dryRun: !!body.dryRun, notifyCustomer: body.notify !== false, origin })
+      if (!r.ok) return NextResponse.json({ error: r.error }, { status: 400 })
+      return NextResponse.json({ ok: true, plan: r.plan, created: r.created, linked: !!r.seriesId || !!body.dryRun })
     }
     if (body.action === 'reschedule') {
       const startMs = Date.parse(String(body.startsAt || ''))
