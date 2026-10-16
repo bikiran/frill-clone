@@ -2509,6 +2509,10 @@ function WidgetContent() {
 }
 function WidgetInteractive({ msg, companyId, conversationId, respondent, accentColor }: any) {
   const [done, setDone] = React.useState(false)
+  // Shown under the card when an answer couldn't be saved, so a refused or
+  // failed tap doesn't just do nothing.
+  const [sendError, setSendError] = React.useState('')
+  const sendingRef = React.useRef(false)
   const [item, setItem] = React.useState<any>(null)
   const [answers, setAnswers] = React.useState<any>({})
   const payload = msg.message_payload || {}
@@ -2532,12 +2536,15 @@ function WidgetInteractive({ msg, companyId, conversationId, respondent, accentC
       setItem(data)
 
       // If this respondent already answered (in a prior session/reload), show the
-      // submitted state instead of a fillable form again.
+      // submitted state instead of a fillable form again. Asked of the server,
+      // which checks this is our chat: chat_interactions is closed to the
+      // public key (V381).
       try {
-        let q = (supabase as any).from('chat_interactions').select('id').eq('message_id', msg.id).limit(1)
-        if (conversationId) q = q.eq('conversation_id', conversationId)
-        const { data: prior } = await q
-        if (prior && prior.length) { setDone(true); return }
+        if (companyId && conversationId && msg.id) {
+          const qs = new URLSearchParams({ companyId, conversationId, messageId: String(msg.id) })
+          const res = await fetch(`/api/widget/interaction?${qs}`, { headers: chatHeaders() })
+          if (res.ok && (await res.json())?.answered) { setDone(true); return }
+        }
       } catch {}
 
       // Pre-fill fields when the smart trigger supplied known customer details.
@@ -2560,11 +2567,35 @@ function WidgetInteractive({ msg, companyId, conversationId, respondent, accentC
   }, [payload.ref_id])
 
   const submit = async (response: any) => {
+    if (sendingRef.current) return
+    sendingRef.current = true
+    setSendError('')
     try {
-      await (supabase as any).from('chat_interactions').insert({
-        company_id: companyId, conversation_id: conversationId, message_id: msg.id,
-        kind, ref_id: payload.ref_id, respondent, response,
+      // Saved by the server, which checks the chat key and that this card is
+      // one the business sent into this chat (V381 closes the table to the
+      // public key).
+      const saved = await fetch('/api/widget/interaction', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', ...chatHeaders() },
+        body: JSON.stringify({ companyId, conversationId, messageId: msg.id, respondent, response }),
       })
+      const result = await saved.json().catch(() => null)
+      // Not saved (too fast, too long, not this chat's card, a server fault):
+      // say so on the card and let the visitor try again.
+      if (!saved.ok) {
+        console.error('Could not save response', result?.error || saved.status)
+        if (saved.status === 429) {
+          const wait = parseInt(saved.headers.get('Retry-After') || '', 10)
+          setSendError(`Too many tries — please wait ${wait > 0 ? `${wait} seconds` : 'a moment'} and try again.`)
+        } else if ((saved.status === 400 || saved.status === 413) && /^Response is /.test(result?.error || '')) {
+          // "Response is empty" / "Response is too long" — the visitor can fix those.
+          setSendError(`${result.error} — please check and try again.`)
+        } else {
+          setSendError("Couldn't send — try again.")
+        }
+        return
+      }
+      // Answered already (another tab, a double tap): don't post it twice.
+      if (result?.already) { setDone(true); return }
       // Also post the answer as a visitor message so the agent sees it
       // Build a human-readable summary instead of dumping JSON into the chat.
       let summary: string
@@ -2581,7 +2612,12 @@ function WidgetInteractive({ msg, companyId, conversationId, respondent, accentC
         }),
       })
       setDone(true)
-    } catch (e) { console.error(e) }
+    } catch (e) {
+      console.error(e)
+      setSendError("Couldn't send — check your connection and try again.")
+    } finally {
+      sendingRef.current = false
+    }
   }
 
   if (done) return <div style={{ marginTop: 6, padding: '10px 12px', borderRadius: 10, background: '#dcfce7', color: '#059669', fontSize: 12.5, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Submitted — thanks for your response!</div>
@@ -2669,6 +2705,9 @@ function WidgetInteractive({ msg, companyId, conversationId, respondent, accentC
             submit({ answers: readable })
           }} style={{ width: '100%', padding: '10px 0', borderRadius: 8, background: accentColor, color: '#fff', border: 'none', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', marginTop: 4 }}>Submit</button>
         </div>
+      )}
+      {sendError && (
+        <p role="alert" style={{ margin: '8px 0 0', fontSize: 12, fontWeight: 600, color: '#dc2626' }}>{sendError}</p>
       )}
     </div>
   )
