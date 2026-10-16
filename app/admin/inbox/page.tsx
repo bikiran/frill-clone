@@ -1709,10 +1709,29 @@ export default function InboxPage() {
   const [showTimeline, setShowTimeline] = useState(false)
   const [emailSignature, setEmailSignature] = useState<string | null>(null)
 
+  // Is the visitor on the page RIGHT NOW? The widget heartbeats page_seen_at
+  // every 60s while their tab is open. Fresh (< 2 min) ⇒ show the live banner;
+  // stale ⇒ they've left, so the page belongs in history, not in a banner
+  // claiming they're "currently on" it. Re-checked every 20s so a banner for
+  // someone who just left disappears on its own. (The same 2 minutes as
+  // LIVE_ON_PAGE_MS in lib/channel-choice.)
+  const [nowTick, setNowTick] = useState(0)
+  useEffect(() => {
+    const iv = setInterval(() => setNowTick(t => t + 1), 20000)
+    return () => clearInterval(iv)
+  }, [])
+  const isOnPageNow = useMemo(() => {
+    const seen = (selected as any)?.page_seen_at
+    if (!seen) return false
+    const p = parseTs(seen)
+    return p ? (Date.now() - p.getTime()) < 120000 : false
+  }, [selected?.id, (selected as any)?.page_seen_at, nowTick])
+
   // The shared channel rule's answer for this thread (/api/inbox/channel-choice,
   // lib/channel-choice): used when the customer hasn't messaged on it yet, and
-  // for where an email reply comes back to.
-  const [channelPick, setChannelPick] = useState<{ convId: string; channel: string; reason?: string; replyTo?: string | null } | null>(null)
+  // for where an email reply comes back to. smsOptIn false: a website chat
+  // visitor who didn't tick "Continue this conversation by text".
+  const [channelPick, setChannelPick] = useState<{ convId: string; channel: string; reason?: string; replyTo?: string | null; smsOptIn?: boolean | null } | null>(null)
   // Has the customer written on this thread at all (any channel)?
   const customerSpoke = useMemo(() => messages.some((m: any) => m && m.sender_type !== 'agent' && m.sender_type !== 'system' && !m.is_internal), [messages])
 
@@ -1791,10 +1810,11 @@ export default function InboxPage() {
       .then(r => r.ok ? r.json() : null)
       // A failed lookup still counts as answered (channel ''), so the composer
       // falls back to the thread's own channel instead of waiting.
-      .then(d => { if (!cancelled) setChannelPick({ convId, channel: d?.channel || '', reason: d?.reason, replyTo: d?.replyTo || null }) })
+      .then(d => { if (!cancelled) setChannelPick({ convId, channel: d?.channel || '', reason: d?.reason, replyTo: d?.replyTo || null, smsOptIn: typeof d?.smsOptIn === 'boolean' ? d.smsOptIn : null }) })
       .catch(() => { if (!cancelled) setChannelPick({ convId, channel: '' }) })
     return () => { cancelled = true }
-  }, [selected?.id, lastInboundId])
+    // Asked again when a website chat visitor arrives or leaves (live chat while they're there).
+  }, [selected?.id, lastInboundId, isOnPageNow])
 
   // The name shown in the conversation header. On SMS/phone the "subject" is
   // often a stale auto-detected name (e.g. from an AI guess), so clearing the
@@ -1882,22 +1902,6 @@ export default function InboxPage() {
     return () => { cancelled = true }
   }, [selected?.id, (selected as any)?.channel, (selected as any)?.email_channel_id, companyId])
 
-  // Is the visitor on the page RIGHT NOW? The widget heartbeats page_seen_at
-  // every 60s while their tab is open. Fresh (< 2 min) ⇒ show the live banner;
-  // stale ⇒ they've left, so the page belongs in history, not in a banner
-  // claiming they're "currently on" it. Re-checked every 20s so a banner for
-  // someone who just left disappears on its own.
-  const [nowTick, setNowTick] = useState(0)
-  useEffect(() => {
-    const iv = setInterval(() => setNowTick(t => t + 1), 20000)
-    return () => clearInterval(iv)
-  }, [])
-  const isOnPageNow = useMemo(() => {
-    const seen = (selected as any)?.page_seen_at
-    if (!seen) return false
-    const p = parseTs(seen)
-    return p ? (Date.now() - p.getTime()) < 120000 : false
-  }, [selected?.id, (selected as any)?.page_seen_at, nowTick])
   const [showPod, setShowPod] = useState(false)
   const [podNote, setPodNote] = useState('')
   const [podFiles, setPodFiles] = useState<File[]>([])
@@ -5882,12 +5886,16 @@ export default function InboxPage() {
     const hasWidgetHistory = !!(selected as any)?.page_seen_at
     const visitorOnLiveChat = isOnPageNow || (hasWidgetHistory && lastInRecent && lastInIsChat)
 
+    // A website chat visitor who didn't tick "Continue this conversation by
+    // text" isn't texted automatically (lib/channel-choice); choosing SMS
+    // in the composer still can.
+    const noSmsOptIn = channelPick?.convId === selected.id && channelPick.smsOptIn === false
     const shouldSms = sendChannel === 'sms'
       ? !!smsNumber
       : sendChannel === 'chat'
         ? false
         // Auto: SMS only when the customer is NOT currently on live chat.
-        : (!!smsNumber && !visitorOnLiveChat)
+        : (!!smsNumber && !visitorOnLiveChat && !noSmsOptIn)
 
     // If we can't use SMS and the visitor isn't on live chat, fall back to email
     // rather than dropping the reply into a chat nobody is watching.

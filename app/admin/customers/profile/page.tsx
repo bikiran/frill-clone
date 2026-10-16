@@ -593,7 +593,7 @@ export default function CustomerProfilePage() {
                   // texted, else email (lib/channel-choice) — not whichever
                   // channel Colvy's last automated message happened to use.
                   onClick={() => router.push(contactId
-                    ? contactMessageHref({ id: contactId, phone: customer.phone, email: customer.email, unsubscribed_at: (customer as any).unsubscribed_at, is_blocked: (customer as any).is_blocked }, null, conversationId)
+                    ? contactMessageHref({ id: contactId, phone: customer.phone, email: customer.email, unsubscribed_at: (customer as any).unsubscribed_at, is_blocked: (customer as any).is_blocked, source: contactRow?.source, consent_basis: contactRow?.consent_basis }, null, conversationId)
                     : `/admin/inbox?conversation=${conversationId}`)}>
                   <svg width="15" height="15" viewBox="0 0 24 24" {...I}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
                   Message

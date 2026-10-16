@@ -2,7 +2,7 @@
 // channel, their mobile and text consent, their email, whether the business
 // can text. Server-only (service-role db).
 
-import { chooseChannel, normaliseChannel, type ChannelChoice, type ChannelFacts, type ChannelSetting } from '@/lib/channel-choice'
+import { chooseChannel, normaliseChannel, isLiveOnPage, isWidgetOnlyContact, type ChannelChoice, type ChannelFacts, type ChannelSetting } from '@/lib/channel-choice'
 
 const MESSAGING = ['sms', 'email', 'whatsapp', 'instagram', 'facebook', 'messenger']
 
@@ -54,6 +54,39 @@ export async function smsConsentFor(db: any, companyId: string, phone: string | 
   } catch { return 'unknown' }
 }
 
+/** A conversation the website chat started (app/api/widget/start): only the widget sets visitor_id. */
+const isWidgetConversation = (c: any) => !!c && (!!c.visitor_id || String(c.channel || '').toLowerCase() === 'widget')
+
+/**
+ * Did they opt in to texts, where the business records it? The website chat's
+ * pre-chat form asks ("Continue this conversation by text"), and
+ * app/api/widget/start keeps the answer on the conversation (sms_enabled), not
+ * on the contact. false when:
+ *   - this is a website chat conversation where they gave a mobile and left
+ *     the box unticked, or
+ *   - the contact came only from the website chat form (source 'widget', no
+ *     consent recorded) and none of their chats has the box ticked;
+ * unless something else lets the business text them: consent recorded on the
+ * contact (express or inferred), an SMS conversation, or another thread set up
+ * for texts (an order or a booking, sms_enabled). true when the box was
+ * ticked; null when nothing asks (the STOP check alone applies).
+ */
+export function smsOptInFrom(o: { conv?: any; contact?: any; contactConvs?: any[] | null }): boolean | null {
+  const conv = o.conv || null
+  const contact = o.contact || null
+  const convs = [...(o.contactConvs || []), ...(conv ? [conv] : [])]
+  const otherBasis = ['express', 'inferred'].includes(String(contact?.consent_basis || ''))
+    || convs.some(c => !isWidgetConversation(c) && (normaliseChannel(c.channel) === 'sms' || c.sms_enabled === true))
+  if (isWidgetConversation(conv) && conv.sms_number) {
+    if (conv.sms_enabled === true) return true
+    if (conv.sms_enabled === false) return otherBasis ? true : false
+  }
+  if (isWidgetOnlyContact(contact)) {
+    return otherBasis || convs.some(c => isWidgetConversation(c) && c.sms_enabled === true && !!c.sms_number) ? true : false
+  }
+  return null
+}
+
 /** Every fact the rule needs, for a conversation and/or a contact. */
 export async function gatherChannelFacts(db: any, o: {
   companyId: string; conversationId?: string | null; contactId?: string | null
@@ -73,10 +106,17 @@ export async function gatherChannelFacts(db: any, o: {
   }
   const phone = o.phone || conv?.sms_number || contact?.phone || null
   const email = o.email || contact?.email || conv?.customer_email || null
-  const [last, hasSms, consent] = await Promise.all([
+  // The contact's other threads, only when the opt-in question arises. When
+  // they can't be read, none count (don't text when unsure).
+  const needsThreads = !!phone && !!contactId && ((isWidgetConversation(conv) && conv?.sms_enabled === false) || isWidgetOnlyContact(contact))
+  const [last, hasSms, consent, contactConvs] = await Promise.all([
     lastCustomerChannel(db, { companyId: o.companyId, conversationId: o.conversationId || null, contactId }),
     phone ? businessHasSms(db, o.companyId) : Promise.resolve(false),
     phone ? smsConsentFor(db, o.companyId, phone, contactId) : Promise.resolve('unknown' as const),
+    needsThreads
+      ? Promise.resolve(db.from('conversations').select('*').eq('company_id', o.companyId).eq('contact_id', contactId).limit(50))
+          .then((r: any) => (r?.error ? [] : r?.data || []), () => [])
+      : Promise.resolve([]),
   ])
   return {
     contactId,
@@ -84,6 +124,8 @@ export async function gatherChannelFacts(db: any, o: {
     threadChannel: conv?.channel || null,
     phone, email,
     smsConsent: consent,
+    smsOptIn: phone ? smsOptInFrom({ conv, contact, contactConvs }) : null,
+    liveOnPage: isLiveOnPage(conv?.page_seen_at),
     businessHasSms: hasSms,
     setting: o.setting || null,
     newCustomerDefault: o.newCustomerDefault || null,
