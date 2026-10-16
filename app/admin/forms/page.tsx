@@ -1,62 +1,148 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+// Forms list: a Typeform-style workspace view across the full width of the
+// admin. Data and actions live here; the view is components/forms-list, the
+// pure helpers lib/forms-list.ts and the reads/writes lib/forms-list-data.ts.
+
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { resolveCompanyUser } from '@/lib/client-cache'
-import { useRouter } from 'next/navigation'
-import Link from 'next/link'
+import { authFetch } from '@/lib/auth-fetch'
 import ConfirmModal from '@/components/ConfirmModal'
+import { confirmDialog } from '@/components/ConfirmDialog'
+import { fetchStats } from '@/components/form-results/data'
+import FormsListView, { Icon, type FormAction } from '@/components/forms-list/FormsListView'
+import {
+  FORMS_VIEW_KEY, completionFromStats, displayTitle, emptyDraftIds, formsSeenKey, mapLimit, readView, resolveSeenAt, sortForms,
+  type FormFilter, type FormListItem, type FormSort, type FormsView,
+} from '@/lib/forms-list'
+import { countNewSince, deleteEmptyDrafts, loadForms } from '@/lib/forms-list-data'
 
-const FormIcon = ({ size = 20, color = 'currentColor' }: { size?: number; color?: string }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-    <rect x="3" y="3" width="18" height="18" rx="3"/><line x1="7" y1="8" x2="17" y2="8"/><line x1="7" y1="12" x2="13" y2="12"/><line x1="7" y1="16" x2="11" y2="16"/>
-  </svg>
-)
+const db = supabase as any
+// Completion needs one stats request per form, so only for live forms (the
+// only ones people can open and start) and only so many, four at a time.
+const STATS_MAX = 24
 
 export default function FormsAdmin() {
   const router = useRouter()
-  const [user, setUser] = useState<any>(null)
-  const [forms, setForms] = useState<any[]>([])
+  const [forms, setForms] = useState<FormListItem[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState(false)
+  const [now, setNow] = useState(() => Date.now())
+  // List or grid, remembered on this device. Read once (try/catch inside; list
+  // on the server). Safe for hydration: the toggle only renders after loading.
+  const [view, setView] = useState<FormsView>(() => (typeof window === 'undefined' ? 'list' : readView(() => window.localStorage.getItem(FORMS_VIEW_KEY))))
+  const [query, setQuery] = useState('')
+  const [sort, setSort] = useState<FormSort>('updated')
+  const [status, setStatus] = useState<FormFilter>('all')
+  const [creating, setCreating] = useState(false)
+  const [cleaning, setCleaning] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState<{ id: string; title: string } | null>(null)
-  const [shareModal, setShareModal] = useState<any>(null)
+  const [shareModal, setShareModal] = useState<FormListItem | null>(null)
+  const [renaming, setRenaming] = useState<{ id: string; title: string } | null>(null)
   const [copiedField, setCopiedField] = useState('')
+  const [toast, setToast] = useState('')
+  const started = useRef(false)
 
+  // A short message at the bottom; a new one restarts the timer.
+  const [toastId, setToastId] = useState(0)
+  const say = useCallback((msg: string) => { setToast(msg); setToastId(n => n + 1) }, [])
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }: any) => setUser(data.session?.user))
-    fetchForms()
+    if (!toast) return
+    const t = setTimeout(() => setToast(''), 2400)
+    return () => clearTimeout(t)
+  }, [toast, toastId])
+  const changeView = (v: FormsView) => {
+    setView(v)
+    try { window.localStorage.setItem(FORMS_VIEW_KEY, v) } catch {}
+  }
+
+  // Keep "2 min ago" current while the page is open.
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 60_000)
+    return () => clearInterval(t)
   }, [])
 
+  const patch = (id: string, fields: Partial<FormListItem>) => setForms(prev => prev.map(f => (f.id === id ? { ...f, ...fields } : f)))
+
   const fetchForms = async () => {
+    setLoadError(false)
     try {
       // The workspace the admin is open on (the layout works it out, staff
       // included — not just the owner). Without one, show nothing rather than
       // every form the database lets this account see.
       const { companyId } = await resolveCompanyUser()
       if (!companyId) { setForms([]); setLoading(false); return }
-      const { data } = await (supabase as any).from('forms').select('*').eq('company_id', companyId).order('created_at', { ascending: false })
-      const formsWithCounts = await Promise.all((data || []).map(async (f: any) => {
-        const { count } = await (supabase as any).from('form_responses').select('*', { count: 'exact', head: true }).eq('form_id', f.id)
-        return { ...f, response_count: count || 0 }
-      }))
-      setForms(formsWithCounts)
-    } catch {}
-    setLoading(false)
+      const list = await loadForms(db, companyId)
+      setForms(list)
+      setNow(Date.now())
+      setLoading(false)
+
+      // "N new" since the last visit to this workspace's forms on this device.
+      // Read the previous visit, then record this one; nothing is new on a first visit.
+      let since: string | null = null
+      try {
+        const key = formsSeenKey(companyId)
+        since = resolveSeenAt(window.localStorage.getItem(key))
+        window.localStorage.setItem(key, new Date().toISOString())
+      } catch {}
+      const answered = list.filter(f => f.response_count !== 0).map(f => f.id)
+      if (since && answered.length) {
+        countNewSince(db, answered, since).then(({ counts, more }) => {
+          if (!Object.keys(counts).length) return
+          setForms(prev => prev.map(f => (counts[f.id] ? { ...f, new_count: counts[f.id], new_more: more.has(f.id) } : f)))
+        })
+      }
+
+      // Completion rate from the V376 stats, only where they answer. Never
+      // blocks the list. The most recently updated live forms are asked first;
+      // if none of those is tracked (V376 not run, or nobody has opened them),
+      // the rest aren't asked.
+      const live = sortForms(list.filter(f => f.is_published), 'updated').slice(0, STATS_MAX)
+      const ask = async (f: FormListItem) => {
+        const c = completionFromStats(await fetchStats(authFetch, { formId: f.id }))
+        if (c !== null) patch(f.id, { completion: c })
+        return c !== null
+      }
+      void (async () => {
+        const first = await mapLimit(live.slice(0, 4), 4, ask)
+        if (first.some(Boolean)) await mapLimit(live.slice(4), 4, ask)
+      })()
+    } catch {
+      setLoadError(true)
+      setLoading(false)
+    }
   }
 
-  const createForm = async () => {
-    // Forms belong to the workspace; only its staff may create one (V375).
-    const { companyId } = await resolveCompanyUser()
-    if (!companyId) { alert('Failed to create form: no workspace found for this account.'); return }
-    const { data, error } = await (supabase as any).from('forms').insert({
-      title: 'Untitled Form',
-      company_id: companyId,
-      questions: [],
-      theme: { color: '#ff7a6b', background: '#ffffff' },
-      is_published: false,
-    }).select().single()
-    if (error) { alert('Failed to create form: ' + error.message); return }
-    router.push(`/admin/forms/${data.id}`)
+  useEffect(() => {
+    // Once per mount (React's dev double-run would otherwise record the visit twice).
+    if (started.current) return
+    started.current = true
+    fetchForms()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const createForm = async (withAi = false) => {
+    if (creating) return
+    setCreating(true)
+    try {
+      // Forms belong to the workspace; only its staff may create one (V375).
+      const { companyId } = await resolveCompanyUser()
+      if (!companyId) { alert('Failed to create form: no workspace found for this account.'); return }
+      const { data, error } = await db.from('forms').insert({
+        title: 'Untitled Form',
+        company_id: companyId,
+        questions: [],
+        theme: { color: '#ff7a6b', background: '#ffffff' },
+        is_published: false,
+      }).select().single()
+      if (error) { alert('Failed to create form: ' + error.message); return }
+      // The builder opens Colvy AI straight away for ?ai=1.
+      router.push(`/admin/forms/${data.id}${withAi ? '?ai=1' : ''}`)
+    } finally {
+      setCreating(false)
+    }
   }
 
   const duplicateForm = async (f: any) => {
@@ -67,7 +153,7 @@ export default function FormsAdmin() {
     for (const k of ['welcome_message', 'thank_you_message', 'end_actions', 'show_confetti', 'display_style', 'enable_piping']) {
       if (f && k in f) settings[k] = f[k]
     }
-    const { data, error } = await (supabase as any).from('forms').insert({
+    const { data, error } = await db.from('forms').insert({
       ...settings,
       title: f.title + ' (Copy)',
       company_id: f.company_id,
@@ -76,120 +162,125 @@ export default function FormsAdmin() {
       is_published: false,
     }).select().single()
     if (!error && data) router.push(`/admin/forms/${data.id}`)
+    else say("Couldn't duplicate that form. Please try again.")
   }
 
   const deleteForm = async (id: string) => {
-    await (supabase as any).from('forms').delete().eq('id', id)
-    fetchForms()
     setConfirmDelete(null)
+    const { data, error } = await db.from('forms').delete().eq('id', id).select('id')
+    if (error || !Array.isArray(data) || !data.length) { say("Couldn't delete that form. Please try again."); return }
+    setForms(prev => prev.filter(f => f.id !== id))
+    say('Form deleted')
   }
 
-  if (loading || !user) return <div className="p-8" style={{ color: 'var(--slate)' }}>Loading...</div>
+  const renameForm = async (id: string, title: string) => {
+    const clean = title.trim().slice(0, 200)
+    if (!clean) return
+    const updated_at = new Date().toISOString()
+    const { error } = await db.from('forms').update({ title: clean, updated_at }).eq('id', id)
+    if (error) { say("Couldn't rename that form. Please try again."); return }
+    patch(id, { title: clean, updated_at })
+    setRenaming(null)
+  }
+
+  const formUrl = (id: string) => (typeof window !== 'undefined' ? `${window.location.origin}/forms/${id}` : '')
+
+  const copyText = async (text: string) => {
+    try { await navigator.clipboard.writeText(text); return true } catch { return false }
+  }
+
+  const cleanUp = async () => {
+    const ids = emptyDraftIds(forms)
+    if (!ids.length || cleaning) return
+    const n = ids.length
+    const ok = await confirmDialog({
+      title: `Delete ${n} empty draft${n === 1 ? '' : 's'}?`,
+      message: `${n === 1 ? 'This draft has' : 'These drafts have'} no questions and no responses. Forms with questions or responses are not touched. This can't be undone.`,
+      confirmLabel: 'Delete',
+      tone: 'danger',
+    })
+    if (!ok) return
+    setCleaning(true)
+    try {
+      const { deleted, error } = await deleteEmptyDrafts(db, ids)
+      const gone = new Set(deleted)
+      if (gone.size) setForms(prev => prev.filter(f => !gone.has(f.id)))
+      if (error) say(`Something went wrong${gone.size ? ` after deleting ${gone.size}` : ''}. Please try again.`)
+      else say(gone.size ? `Deleted ${gone.size} empty draft${gone.size === 1 ? '' : 's'}` : 'Nothing to clean up')
+    } finally {
+      setCleaning(false)
+    }
+  }
+
+  const onAction = (action: FormAction, f: FormListItem) => {
+    if (action === 'share') setShareModal(f)
+    else if (action === 'copy') {
+      void copyText(formUrl(f.id)).then(ok => say(ok ? (f.is_published ? 'Link copied' : 'Link copied. Publish the form before sharing it.') : "Couldn't copy the link"))
+    }
+    else if (action === 'duplicate') void duplicateForm(f)
+    else if (action === 'rename') setRenaming({ id: f.id, title: displayTitle(f) })
+    else if (action === 'delete') setConfirmDelete({ id: f.id, title: displayTitle(f) })
+  }
 
   return (
     <div className="min-h-screen">
-      <div className="max-w-6xl mx-auto px-4 md:px-6 py-8">
-        <div className="flex items-center justify-between mb-8 flex-wrap gap-3">
-          <div>
-            <Link href="/admin" className="text-sm font-medium hover:opacity-70 transition-smooth" style={{ color: 'var(--coral)' }}>
-              ← Back to admin
-            </Link>
-            <h1 className="text-3xl font-bold mt-3" style={{ color: 'var(--ink)' }}>Forms</h1>
-            <p className="mt-1" style={{ color: 'var(--slate)' }}>Build beautiful, conversational forms for feedback and signups.</p>
-          </div>
-          <button
-            onClick={createForm}
-            className="px-5 py-2.5 rounded-xl font-semibold text-white text-sm transition-smooth press-effect cursor-pointer flex items-center gap-2"
-            style={{ background: 'var(--coral)' }}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            New Form
-          </button>
-        </div>
-
-        {forms.length === 0 ? (
-          <div className="text-center py-20 rounded-2xl border" style={{ borderColor: 'var(--border)' }}>
-            <div className="inline-block mb-4"><FormIcon size={48} color="var(--slate)" /></div>
-            <h3 className="text-lg font-semibold mb-2" style={{ color: 'var(--ink)' }}>No forms yet</h3>
-            <p className="mb-6" style={{ color: 'var(--slate)' }}>Create your first form to collect responses beautifully.</p>
-            <button onClick={createForm} className="px-5 py-2.5 rounded-xl font-semibold text-white text-sm cursor-pointer" style={{ background: 'var(--coral)' }}>
-              Create your first form
-            </button>
-          </div>
-        ) : (
-          <div className="grid md:grid-cols-3 gap-4">
-            {forms.map(f => (
-              <div key={f.id} className="bg-white rounded-2xl border overflow-hidden hover:shadow-md transition-smooth" style={{ borderColor: 'var(--border)' }}>
-                <div style={{ height: 80, background: f.theme?.color ? `linear-gradient(135deg, ${f.theme.color}, ${f.theme.color}cc)` : 'linear-gradient(135deg, #ff7a6b, #ff7a6bcc)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <FormIcon size={28} color="#fff" />
-                </div>
-                <div className="p-5">
-                  <div className="flex items-center gap-2 mb-2">
-                    <h3 className="text-base font-bold flex-1 truncate" style={{ color: 'var(--ink)' }}>{f.title}</h3>
-                    <span className="text-xs px-2 py-0.5 rounded-full font-semibold shrink-0" style={{ background: f.is_published ? '#dcfce7' : '#f3f4f6', color: f.is_published ? '#16a34a' : '#6b7280' }}>
-                      {f.is_published ? 'Live' : 'Draft'}
-                    </span>
-                  </div>
-                  <p className="text-xs mb-4" style={{ color: 'var(--slate)' }}>{(f.questions || []).length} question{(f.questions || []).length !== 1 ? 's' : ''} · {f.response_count || 0} response{f.response_count !== 1 ? 's' : ''}</p>
-                  <div className="flex gap-2">
-                    <Link href={`/admin/forms/${f.id}`} className="flex-1 py-2 rounded-lg text-xs font-medium border text-center transition-smooth hover:bg-gray-50 cursor-pointer" style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
-                      Edit
-                    </Link>
-                    <Link href={`/admin/forms/${f.id}/results`} className="px-3 py-2 rounded-lg text-xs border transition-smooth hover:bg-gray-50 cursor-pointer" style={{ borderColor: 'var(--border)', color: 'var(--ink)' }} title="Results">
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
-                    </Link>
-                    <button onClick={() => setShareModal(f)} className="px-3 py-2 rounded-lg text-xs border transition-smooth hover:bg-gray-50 cursor-pointer" style={{ borderColor: 'var(--border)', color: 'var(--ink)' }} title="Share or embed">
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
-                    </button>
-                    <button onClick={() => duplicateForm(f)} className="px-3 py-2 rounded-lg text-xs border transition-smooth hover:bg-gray-50 cursor-pointer" style={{ borderColor: 'var(--border)', color: 'var(--ink)' }} title="Duplicate">
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-                    </button>
-                    <button onClick={() => setConfirmDelete({ id: f.id, title: f.title })} className="px-3 py-2 rounded-lg text-xs border transition-smooth text-red-600 hover:bg-red-50 cursor-pointer" style={{ borderColor: '#fca5a5' }}>
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+      <FormsListView
+        forms={forms}
+        loading={loading}
+        error={loadError}
+        onRetry={() => { setLoading(true); void fetchForms() }}
+        now={now}
+        view={view}
+        onView={changeView}
+        query={query}
+        onQuery={setQuery}
+        sort={sort}
+        onSort={setSort}
+        status={status}
+        onStatus={setStatus}
+        creating={creating}
+        onCreate={withAi => { void createForm(withAi) }}
+        onAction={onAction}
+        cleaning={cleaning}
+        onCleanup={() => { void cleanUp() }}
+      />
 
       {shareModal && (() => {
-        const formUrl = typeof window !== 'undefined' ? `${window.location.origin}/forms/${shareModal.id}` : ''
-        const embedCode = `<iframe src="${formUrl}?embed=1" width="100%" height="600" frameborder="0" style="border-radius:16px;"></iframe>`
-        const copy = (text: string, field: string) => {
-          navigator.clipboard.writeText(text)
+        const link = formUrl(shareModal.id)
+        const embedCode = `<iframe src="${link}?embed=1" width="100%" height="600" frameborder="0" style="border-radius:16px;"></iframe>`
+        const copy = async (text: string, field: string) => {
+          if (!(await copyText(text))) { say("Couldn't copy. Select the text and copy it instead."); return }
           setCopiedField(field)
           setTimeout(() => setCopiedField(''), 2000)
         }
         return (
           <>
             <div className="fixed inset-0 z-50 backdrop-blur-sm animate-backdrop" style={{ background: 'rgba(0,0,0,0.4)' }} onClick={() => setShareModal(null)} />
-            <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-lg bg-white rounded-2xl shadow-2xl animate-modal mx-4 max-h-[90vh] overflow-y-auto">
-              <div className="p-6 border-b flex items-center justify-between" style={{ borderColor: 'var(--border)' }}>
-                <h2 className="text-xl font-bold" style={{ color: 'var(--ink)' }}>Share Form</h2>
-                <button onClick={() => setShareModal(null)} className="text-2xl cursor-pointer" style={{ color: 'var(--slate)' }}>×</button>
+            <div role="dialog" aria-modal="true" aria-label="Share form" className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-[calc(100%-32px)] max-w-lg rounded-2xl shadow-2xl animate-modal max-h-[90vh] overflow-y-auto" style={{ background: 'var(--card, #fff)', border: '1px solid var(--border)' }}>
+              <div className="p-6 border-b flex items-center justify-between gap-3" style={{ borderColor: 'var(--border)' }}>
+                <h2 className="text-xl font-bold truncate" style={{ color: 'var(--ink)' }}>Share {displayTitle(shareModal)}</h2>
+                <button onClick={() => setShareModal(null)} aria-label="Close" className="cursor-pointer p-1 rounded-lg" style={{ color: 'var(--slate)' }}><Icon name="x" size={18} /></button>
               </div>
               <div className="p-6 space-y-5">
                 {!shareModal.is_published && (
-                  <div className="p-3 rounded-lg text-sm" style={{ background: '#fef3c7', color: '#92400e' }}>
-                    ⚠️ This form is still a draft. Publish it from the editor before sharing.
+                  <div className="p-3 rounded-lg text-sm" style={{ background: '#fef3c7', color: '#92400e', border: '1px solid #fde68a' }}>
+                    This form is still a draft. Publish it from the editor before sharing.
                   </div>
                 )}
                 <div>
                   <label className="block text-sm font-bold mb-2" style={{ color: 'var(--ink)' }}>Direct link</label>
                   <div className="flex gap-2">
-                    <input readOnly value={formUrl} className="flex-1 px-3 py-2.5 rounded-lg border text-sm bg-gray-50" style={{ borderColor: 'var(--border)' }} />
-                    <button onClick={() => copy(formUrl, 'link')} className="px-4 py-2.5 rounded-lg text-sm font-semibold text-white cursor-pointer" style={{ background: 'var(--coral)' }}>
-                      {copiedField === 'link' ? '✓ Copied' : 'Copy'}
+                    <input readOnly value={link} onFocus={e => e.currentTarget.select()} className="flex-1 min-w-0 px-3 py-2.5 rounded-lg border text-sm" style={{ borderColor: 'var(--border)', background: 'var(--canvas)', color: 'var(--ink)' }} />
+                    <button onClick={() => copy(link, 'link')} className="px-4 py-2.5 rounded-lg text-sm font-semibold text-white cursor-pointer shrink-0" style={{ background: 'var(--coral)' }}>
+                      {copiedField === 'link' ? 'Copied' : 'Copy'}
                     </button>
                   </div>
                 </div>
                 <div>
                   <label className="block text-sm font-bold mb-2" style={{ color: 'var(--ink)' }}>Embed on your website</label>
-                  <textarea readOnly value={embedCode} rows={3} className="w-full px-3 py-2.5 rounded-lg border text-xs font-mono bg-gray-50 resize-none" style={{ borderColor: 'var(--border)' }} />
+                  <textarea readOnly value={embedCode} rows={3} onFocus={e => e.currentTarget.select()} className="w-full px-3 py-2.5 rounded-lg border text-xs font-mono resize-none" style={{ borderColor: 'var(--border)', background: 'var(--canvas)', color: 'var(--ink)' }} />
                   <button onClick={() => copy(embedCode, 'embed')} className="mt-2 px-4 py-2 rounded-lg text-sm font-semibold text-white cursor-pointer" style={{ background: 'var(--coral)' }}>
-                    {copiedField === 'embed' ? '✓ Copied' : 'Copy embed code'}
+                    {copiedField === 'embed' ? 'Copied' : 'Copy embed code'}
                   </button>
                 </div>
               </div>
@@ -197,6 +288,8 @@ export default function FormsAdmin() {
           </>
         )
       })()}
+
+      {renaming && <RenameDialog initial={renaming.title} onCancel={() => setRenaming(null)} onSave={t => renameForm(renaming.id, t)} />}
 
       {confirmDelete && (
         <ConfirmModal
@@ -208,6 +301,42 @@ export default function FormsAdmin() {
           onCancel={() => setConfirmDelete(null)}
         />
       )}
+
+      {toast && (
+        <div role="status" aria-live="polite" className="fixed z-[60] left-1/2 -translate-x-1/2 px-4 py-3 rounded-xl text-sm font-medium" style={{ bottom: 20, maxWidth: 'calc(100% - 32px)', background: '#111827', color: '#fff', boxShadow: '0 10px 30px rgba(0,0,0,0.3)' }}>
+          {toast}
+        </div>
+      )}
     </div>
+  )
+}
+
+function RenameDialog({ initial, onCancel, onSave }: { initial: string; onCancel: () => void; onSave: (title: string) => Promise<void> | void }) {
+  const [value, setValue] = useState(initial === 'Untitled form' ? '' : initial)
+  const [saving, setSaving] = useState(false)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onCancel() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onCancel])
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!value.trim() || saving) return
+    setSaving(true)
+    try { await onSave(value) } finally { setSaving(false) }
+  }
+  return (
+    <>
+      <div className="fixed inset-0 z-50 backdrop-blur-sm animate-backdrop" style={{ background: 'rgba(0,0,0,0.4)' }} onClick={onCancel} />
+      <form onSubmit={submit} role="dialog" aria-modal="true" aria-label="Rename form" className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-[calc(100%-32px)] max-w-md rounded-2xl shadow-2xl animate-modal p-6" style={{ background: 'var(--card, #fff)', border: '1px solid var(--border)' }}>
+        <h2 className="text-lg font-bold mb-3" style={{ color: 'var(--ink)' }}>Rename form</h2>
+        <input autoFocus value={value} onChange={e => setValue(e.target.value)} maxLength={200} placeholder="Form name" aria-label="Form name"
+          className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none" style={{ borderColor: 'var(--border)', background: 'var(--canvas)', color: 'var(--ink)' }} />
+        <div className="flex justify-end gap-2 mt-5">
+          <button type="button" onClick={onCancel} className="px-4 py-2 rounded-lg text-sm font-semibold border cursor-pointer" style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>Cancel</button>
+          <button type="submit" disabled={!value.trim() || saving} className="px-4 py-2 rounded-lg text-sm font-semibold text-white cursor-pointer disabled:opacity-60" style={{ background: 'var(--coral)' }}>{saving ? 'Saving…' : 'Save'}</button>
+        </div>
+      </form>
+    </>
   )
 }
