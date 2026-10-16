@@ -1319,16 +1319,32 @@ export async function executeAction(db: SupabaseClient, ctx: AssistantContext, n
 
     if (name === 'request_media') {
       const text = String(args?.text || '').trim() || 'Could you send us a few photos?'
-      let link = '', texted = false
+      let link = '', texted = false, token = ''
       try {
         const res = await fetch(`${siteBase(ctx)}/api/media-requests`, { method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ companyId: ctx.companyId, conversationId, contactId: r.contact?.id || null, prompt: text, accept: args?.photosOnly ? ['image'] : ['image', 'video'], maxFiles: 10, expiryHours: null, createdBy: ctx.userName, deliveryChannel: channel }) })
         const d = await res.json().catch(() => ({}))
         if (!res.ok || !d?.link) return { ok: false, error: d?.error || 'Could not create the upload link.' }
-        link = d.link; texted = !!d.texted
+        link = d.link; texted = !!d.texted; token = d.token || ''
       } catch (e: any) { return { ok: false, error: e?.message || 'Could not create the upload link.' } }
-      // The request route texts the link itself when it can; email it otherwise.
+      // The request route texts the link itself when it can (and the customer
+      // may be texted); otherwise it's emailed, never texted from here (the
+      // route already decided against texting it, e.g. after an opt-out).
       let via = texted ? 'SMS' : 'not delivered'
-      if (!texted && email) { const sent = await deliver(`${text}\nUpload here (private, full quality): ${link}`, `${ctx.companyName}: could you send us some photos?`); via = sent.sent ? 'Email' : 'not delivered' }
+      if (!texted && email) {
+        const sent = await deliverAutomatedMessage({
+          companyId: ctx.companyId, conversationId, text: `${text}\nUpload here (private, full quality): ${link}`,
+          subject: `${ctx.companyName}: could you send us some photos?`, phone: undefined, email,
+          senderName: ctx.companyName, origin: ctx.siteOrigin, preferChannel: 'email', force: true, db: D,
+        })
+        via = sent.sent && sent.channel === 'email' ? 'Email' : 'not delivered'
+      }
+      // The thread card says how it really went.
+      if (!texted && token) {
+        try {
+          await D.from('messages').update({ delivery_channel: via === 'Email' ? 'email' : 'chat' })
+            .eq('conversation_id', conversationId).eq('message_type', 'media_request').eq('message_payload->>token', token)
+        } catch {}
+      }
       await logAiEvent(D, { companyId: ctx.companyId, userId: ctx.userId, action: 'Requested media', tool: name, entityType: 'conversation', entityId: conversationId, input: { text, contactId: r.contact?.id || null }, result: { link, via } })
       return { ok: true, entityType: 'conversation', entityId: conversationId, card: { kind: 'media_request', title: via === 'not delivered' ? `Upload link created for ${r.name}` : `Upload link sent to ${r.name}`, lines: [`${via} · ${text.slice(0, 100)}`, link], href }, undo: null }
     }

@@ -7,6 +7,7 @@ import { isExternalSendBlocked, DEMO_BLOCK_MESSAGE, logBlockedSend } from '@/lib
 import { SmsQuotaError } from '@/lib/sms-quota'
 import { requireCompanyAccess } from '@/lib/company-access'
 import { isInternalCall } from '@/lib/internal-call'
+import { assertMayText } from '@/lib/sms-consent'
 
 // Twilio's limits for one picture message (MMS): 10 media, 5 MB in total.
 // A little under 5 MB, for headers and carriers that count slightly differently.
@@ -32,7 +33,9 @@ export async function POST(req: NextRequest) {
     // when the chat already shows a richer version (e.g. a payment card), so the
     // customer doesn't see the same thing twice with a long raw link.
     const body0 = await req.json()
-    const { companyId, to, text, senderName, attachments, skipChatMessage } = body0
+    // checkOptOut: a staff action that sends something on its own (an upload
+    // link) asks for the opt-out check that every automated text gets.
+    const { companyId, to, text, senderName, attachments, skipChatMessage, checkOptOut } = body0
     conversationId = body0.conversationId
     if (!companyId) return NextResponse.json({ error: 'Missing companyId' }, { status: 400 })
 
@@ -43,9 +46,11 @@ export async function POST(req: NextRequest) {
     if (!isInternalCall(req) && !(await requireCompanyAccess(req, db, companyId)).ok) {
       return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     }
+    let threadContactId: string | null = null
     if (conversationId) {
-      const { data: owner } = await db.from('conversations').select('company_id').eq('id', conversationId).maybeSingle()
+      const { data: owner } = await db.from('conversations').select('company_id, contact_id').eq('id', conversationId).maybeSingle()
       if (owner && owner.company_id !== companyId) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+      threadContactId = owner?.contact_id || null
     }
     if (await isExternalSendBlocked(companyId, db)) { logBlockedSend(companyId, 'sms', db); return NextResponse.json({ error: DEMO_BLOCK_MESSAGE }, { status: 403 }) }
 
@@ -65,6 +70,19 @@ export async function POST(req: NextRequest) {
     }
     const e164 = toE164(dest || '')
     if (!e164) return NextResponse.json({ error: 'No valid destination mobile number' }, { status: 400 })
+
+    // The opt-out guard (lib/sms-consent) for every automated or system text:
+    // our own server routes (AI replies, auto-replies, reminders, order
+    // updates, campaigns…) and staff actions that ask for it. A message staff
+    // type themselves goes as typed; the inbox warns them about an opt-out.
+    if (isInternalCall(req) || checkOptOut === true) {
+      try { await assertMayText(db, companyId, e164, threadContactId) }
+      catch (e: any) {
+        if (e?.name !== 'SmsOptOutError') throw e
+        // reason: 'opted_out', or 'unknown' when it couldn't be checked (worth a retry later).
+        return NextResponse.json({ error: e.message, optedOut: true, reason: e.reason }, { status: 409 })
+      }
+    }
 
     // Build the message body — append short links for any attachments.
     // Media goes to /m/<code> (a friendly viewer that renders the image/video on

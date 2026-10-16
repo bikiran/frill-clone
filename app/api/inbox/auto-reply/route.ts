@@ -82,24 +82,16 @@ export async function POST(req: NextRequest) {
     // SMS conversation → actually TEXT the thank-you (it used to be written to
     // the thread only, so the customer never got it and it read "Live Chat").
     // Not when Colvy AI's SMS auto-reply is on (it answers the text itself — two
-    // texts would be noise), and never to someone who opted out or whose first
-    // message was STOP.
+    // texts would be noise). Never to someone who opted out: the internal SMS
+    // send runs the opt-out guard (lib/sms-consent), which knows a STOP as soon
+    // as it arrives (it's recorded before this thread was even made), and a
+    // refused text stays in the thread only.
     let smsThanks = false
     const thanks = messagesToSend.find(m => !m.metadata?.contact_request)
     if (thanks && conv.channel === 'sms' && conv.sms_number) {
       const ai = company?.ai_settings || {}
       const aiAnswersSms = !!(ai.enabled && ai.auto_reply && ai.auto_reply_sms)
-      let optedOut = false
-      try {
-        if (conv.contact_id) {
-          const { data: c } = await db.from('contacts').select('unsubscribed_at, is_blocked').eq('id', conv.contact_id).maybeSingle()
-          optedOut = !!(c?.unsubscribed_at || c?.is_blocked)
-        }
-        const { data: first } = await db.from('messages').select('content').eq('conversation_id', conversationId)
-          .eq('sender_type', 'visitor').order('created_at', { ascending: true }).limit(1).maybeSingle()
-        if (/^\s*(stop|stopall|unsubscribe|cancel|end|quit|opt[\s-]?out)\b/i.test(String(first?.content || ''))) optedOut = true
-      } catch {}
-      if (!aiAnswersSms && !optedOut) {
+      if (!aiAnswersSms) {
         try {
           const origin = process.env.NEXT_PUBLIC_SITE_URL || req.nextUrl.origin
           const r = await fetch(`${origin}/api/telnyx/sms/send`, {

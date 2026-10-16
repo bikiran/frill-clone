@@ -131,7 +131,7 @@ function JoinTeamContent() {
         throw new Error('Enter a password (at least 6 characters) to join.')
       }
       if (session?.user && session.user.email !== email) {
-        await supabase.auth.signOut()
+        await supabase.auth.signOut({ scope: 'local' })
       }
 
       const res = await fetch('/api/team/accept-invite', {

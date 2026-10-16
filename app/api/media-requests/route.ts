@@ -2,7 +2,7 @@ import { isInternalCall } from '@/lib/internal-call'
 import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { resolveSmsSender } from '@/lib/sms-provider'
+import { resolveAutomatedSmsSender } from '@/lib/sms-consent'
 import { companyFlagEnabled } from '@/lib/feature-flags'
 import { shortenUrl } from '@/lib/short-link'
 import { recordLinkClick } from '@/lib/link-click'
@@ -22,7 +22,9 @@ function genToken() {
 // POST: create a media request and post the link into the conversation.
 export async function POST(req: NextRequest) {
   try {
-    const { companyId, conversationId, contactId, prompt, accept, maxFiles, expiryHours, createdBy, deliveryChannel } = await req.json()
+    // callerTexts: the caller (the inbox) texts the link itself when this route
+    // doesn't, so the card can say SMS.
+    const { companyId, conversationId, contactId, prompt, accept, maxFiles, expiryHours, createdBy, deliveryChannel, callerTexts } = await req.json()
     if (!companyId) return NextResponse.json({ error: 'Missing companyId' }, { status: 400 })
     const db = admin()
     // Workspace members only.
@@ -68,6 +70,13 @@ export async function POST(req: NextRequest) {
     // Why it wasn't texted, when it should have been — so the app can say so
     // instead of showing a link the customer never received.
     let smsError: string | null = null
+    // Not texted because the number being texted (or the contact) opted out.
+    let optedOut = false
+    // The channel the caller asked for. An email, Messenger or Instagram link is
+    // sent by the caller on that channel, so it isn't texted here as well (the
+    // customer got it twice).
+    const asked = typeof deliveryChannel === 'string' ? deliveryChannel : ''
+    const byOtherChannel = ['email', 'instagram', 'facebook'].includes(asked)
 
     if (conversationId) {
       // Actually deliver the link to the customer over SMS. Previously we only
@@ -93,15 +102,18 @@ export async function POST(req: NextRequest) {
         // Per-company operational flag (default ON): skip texting the link when
         // media-link SMS is disabled for this company.
         const smsAllowed = await companyFlagEnabled(db, companyId, 'media_sms_fallback')
-        if (to && conv?.sms_enabled !== false && smsAllowed) {
-          const sender = await resolveSmsSender(db, companyId)
+        if (to && conv?.sms_enabled !== false && smsAllowed && !byOtherChannel) {
+          // The opt-out guard checks the number actually texted — the thread's
+          // number can be someone else's than the sender's — and the contact.
+          const sender = await resolveAutomatedSmsSender(db, companyId, { contactId: contactId || conv?.contact_id || null })
           if (sender) { await sender.send({ to, text: smsText }); texted = true }
           else smsError = 'No SMS number is set up for this workspace.'
         } else if (!to) {
           console.warn('[media-requests] no SMS recipient resolved for conversation', conversationId)
         }
       } catch (e: any) {
-        console.error('[media-requests] sms send failed', e?.message || e)
+        if (e?.name === 'SmsOptOutError') optedOut = true
+        else console.error('[media-requests] sms send failed', e?.message || e)
         smsError = e?.message || 'The text didn’t send.'
       }
 
@@ -109,9 +121,14 @@ export async function POST(req: NextRequest) {
       // with the channel it really went out on. The client's guess said "chat"
       // whenever it couldn't see a mobile, even though we had just texted it —
       // so a texted link read "Live Chat". Email/Messenger/Instagram are sent
-      // by the client, so its value stands for those.
-      const asked = typeof deliveryChannel === 'string' ? deliveryChannel : ''
-      const channel = ['email', 'instagram', 'facebook'].includes(asked) ? asked : texted ? 'sms' : (asked || 'chat')
+      // by the client, so its value stands for those. SMS only when it was
+      // texted here, or the caller texts it itself (and nothing failed here);
+      // otherwise the card read "Delivered | SMS" for a link the customer
+      // never got.
+      const channel = byOtherChannel ? asked
+        : texted || (callerTexts === true && !smsError) ? 'sms'
+        : asked && asked !== 'sms' ? asked
+        : 'chat'
       await db.from('messages').insert({
         conversation_id: conversationId, company_id: companyId,
         sender_type: 'agent', sender_name: createdBy || 'Support',
@@ -123,7 +140,7 @@ export async function POST(req: NextRequest) {
       await db.from('conversations').update({ last_message: 'Requested media upload', last_message_at: new Date().toISOString() }).eq('id', conversationId)
     }
 
-    return NextResponse.json({ ok: true, token, link, texted, smsError })
+    return NextResponse.json({ ok: true, token, link, texted, smsError, optedOut })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }

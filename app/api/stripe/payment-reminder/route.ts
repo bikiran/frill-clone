@@ -72,11 +72,26 @@ export async function POST(req: NextRequest) {
         })
         sent = channel
       } else if (phone) {
-        await fetch(`${base}/api/telnyx/sms/send`, {
+        const res = await fetch(`${base}/api/telnyx/sms/send`, {
           method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({ companyId, conversationId: pay.conversation_id, to: phone, text, senderName }),
         })
-        sent = 'sms'
+        if (res.ok) sent = 'sms'
+        else {
+          // Not texted (the customer opted out, or the send failed): email it
+          // when there's an address, otherwise say so — never report SMS as sent.
+          const d = await res.json().catch(() => ({}))
+          if (d?.optedOut && email) {
+            const er = await fetch(`${base}/api/email/reply`, {
+              method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
+              body: JSON.stringify({ conversationId: pay.conversation_id, to: email, subject: conv?.subject || 'Payment reminder', content: text, agentName: senderName }),
+            })
+            if (!er.ok) return NextResponse.json({ error: `${d.error} The email didn’t send either.`, optedOut: true }, { status: 409 })
+            sent = 'email'
+          } else {
+            return NextResponse.json({ error: d?.error || 'The reminder text didn’t send.', ...(d?.optedOut ? { optedOut: true } : {}) }, { status: d?.optedOut ? 409 : 502 })
+          }
+        }
       } else {
         return NextResponse.json({ error: 'No phone or email to send the reminder to' }, { status: 400 })
       }

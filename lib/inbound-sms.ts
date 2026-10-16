@@ -3,16 +3,18 @@
 // The Telnyx webhook has always done conversation routing, opt-out handling,
 // keyword auto-replies and the failed-media hint inline. The Twilio webhook
 // needs the exact same behaviour, so it lives here once. Replies go out through
-// resolveSmsSender, so whichever provider owns the company answers on its own
-// carrier — a Twilio company never tries to reply with a Telnyx key.
+// resolveAutomatedSmsSender (resolveSmsSender plus the opt-out guard), so
+// whichever provider owns the company answers on its own carrier — a Twilio
+// company never tries to reply with a Telnyx key. A STOP gets no reply at all.
 
 import { internalHeaders } from '@/lib/internal-call'
 import { notifyCompany } from './notify'
 import { runKeywordReply } from './keyword-reply'
-import { resolveSmsSender } from './sms-provider'
 import { handleBookingSmsReply } from './booking-replies'
 import { emitInboundEvent } from '@/lib/integration-hooks'
 import { queueMediaUploadReply } from '@/lib/media-upload-reply'
+import { smsKeyword, STOP_WORDS, START_WORDS, recordSmsKeyword, textOptOut, resolveAutomatedSmsSender } from '@/lib/sms-consent'
+import { findContactByPhone } from '@/lib/contact-capture'
 
 export interface InboundAttachment {
   url: string
@@ -66,29 +68,10 @@ export async function ingestInboundSms(params: {
   const summary = text || mediaPreview || (mediaAttemptFailed ? '📷 Tried to send media' : '')
 
   // ── Opt-out / opt-in keywords ────────────────────────────────────────────
-  const keyword = String(text).trim().toUpperCase().replace(/[^A-Z]/g, '')
-  const STOP_WORDS = ['STOP', 'STOPALL', 'UNSUBSCRIBE', 'CANCEL', 'END', 'QUIT', 'OPTOUT']
-  const START_WORDS = ['START', 'SUBSCRIBE', 'YES', 'OPTIN', 'UNSTOP']
-  if (fromDigits && (STOP_WORDS.includes(keyword) || START_WORDS.includes(keyword))) {
-    const optingOut = STOP_WORDS.includes(keyword)
-    try {
-      const { data: all } = await db.from('contacts').select('id, phone').eq('company_id', companyId).limit(2000)
-      const match = (all || []).find((c: any) => c.phone && digitsOf(c.phone) === fromDigits)
-      if (match) {
-        await db.from('contacts').update(
-          optingOut
-            ? { subscribed_to_marketing: false, consent_basis: 'none', consent_source: `replied ${keyword} by SMS`, unsubscribed_at: new Date().toISOString(), unsubscribe_method: 'sms_keyword' }
-            : { subscribed_to_marketing: true, consent_basis: 'express', consent_source: `replied ${keyword} by SMS`, consent_recorded_at: new Date().toISOString(), unsubscribed_at: null, unsubscribe_method: null }
-        ).eq('id', match.id)
-        await db.from('consent_events').insert({
-          company_id: companyId, contact_id: match.id,
-          action: optingOut ? 'unsubscribed' : 'subscribed',
-          basis: optingOut ? 'none' : 'express',
-          source: `SMS keyword: ${keyword}`, actor: 'customer',
-        })
-      }
-    } catch (e) { console.error('[inbound-sms] consent keyword handling failed', e) }
-  }
+  // Recorded on every contact with the number (lib/sms-consent).
+  const keyword = smsKeyword(text)
+  const optingOut = STOP_WORDS.includes(keyword)
+  if (fromDigits && (optingOut || START_WORDS.includes(keyword))) await recordSmsKeyword(db, companyId, from, keyword)
 
   // ── Conversation routing ──────────────────────────────────────────────────
   // 1) Fast path: exact sms_number match.
@@ -100,10 +83,8 @@ export async function ingestInboundSms(params: {
   let matchedContactId: string | null = conv?.contact_id || null
   let matchedContactName: string | null = null
   if (!conv && fromDigits && fromDigits.length >= 8) {
-    const tail = fromDigits.slice(-9)
-    const { data: contacts } = await db.from('contacts')
-      .select('id, phone, name').eq('company_id', companyId).ilike('phone', `%${tail}%`).limit(10)
-    const contact = (contacts || []).find((c: any) => c.phone && digitsOf(c.phone).endsWith(tail))
+    // However the number was saved ("0412 345 678" too), as the Telnyx webhook does.
+    const contact = await findContactByPhone(db, companyId, from)
     if (contact) {
       matchedContactId = contact.id
       matchedContactName = contact.name || null
@@ -112,8 +93,9 @@ export async function ingestInboundSms(params: {
         .order('last_message_at', { ascending: false }).limit(1).maybeSingle()
       if (contactConv) {
         conv = contactConv
+        // A STOP doesn't switch texting on, here or below.
         if (!contactConv.sms_number) {
-          try { await db.from('conversations').update({ sms_number: from, sms_enabled: true, channel_number: to }).eq('id', contactConv.id) } catch {}
+          try { await db.from('conversations').update({ sms_number: from, ...(optingOut ? {} : { sms_enabled: true }), channel_number: to }).eq('id', contactConv.id) } catch {}
         }
       }
     }
@@ -123,13 +105,13 @@ export async function ingestInboundSms(params: {
     const { data: newConv } = await db.from('conversations').insert({
       company_id: companyId, channel: 'sms',
       subject: matchedContactName || from,
-      sms_number: from, sms_enabled: true, channel_number: to,
+      sms_number: from, sms_enabled: !optingOut, channel_number: to,
       contact_id: matchedContactId, status: 'open',
       is_unread: true, unread_count: 1,
       last_message: summary, last_message_at: new Date().toISOString(),
     }).select().maybeSingle()
     conv = newConv
-    if (newConv) {
+    if (newConv && !optingOut) {
       try {
         fetch(`${origin}/api/inbox/auto-reply`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ conversationId: newConv.id }) })
       } catch {}
@@ -137,7 +119,7 @@ export async function ingestInboundSms(params: {
   } else if (!conv.sms_number || conv.contact_id !== matchedContactId) {
     await db.from('conversations').update({
       sms_number: conv.sms_number || from,
-      sms_enabled: true,
+      ...(optingOut ? {} : { sms_enabled: true }),
       channel_number: conv.channel_number || to,
       ...(matchedContactId && !conv.contact_id ? { contact_id: matchedContactId } : {}),
     }).eq('id', conv.id)
@@ -154,9 +136,17 @@ export async function ingestInboundSms(params: {
     telnyx_message_id: params.providerMessageId || null,
   }).select('id').maybeSingle()
   await emitInboundEvent(db, { companyId, conversationId: conv.id, text, channel: 'sms', phone: from, messageId: insertedMsg?.id || null })
+  // The customer is texting in, so the thread continues by text: texting goes
+  // on (upload links and the like are texted), replacing a "continue by text"
+  // box they left unticked in a web chat. Not for a STOP, and only when the
+  // thread's number is the one texting in: a thread found through the contact
+  // can hold another number (one typed into a web chat), which must not start
+  // getting texts.
+  const sameNumber = !conv.sms_number || digitsOf(conv.sms_number) === fromDigits
   await db.from('conversations').update({
     last_message: summary, last_message_at: new Date().toISOString(),
     is_unread: true, channel: 'sms', status: 'open',
+    ...(!optingOut && sameNumber ? { sms_enabled: true } : {}),
     unread_count: (conv.unread_count || 0) + 1, updated_at: new Date().toISOString(),
   }).eq('id', conv.id)
 
@@ -191,12 +181,13 @@ export async function ingestInboundSms(params: {
   try { bookingHandled = await handleBookingSmsReply({ db, companyId, conversationId: conv.id, from, text, origin }) } catch {}
 
   // Keyword auto-reply — texted back over whichever provider owns this company.
+  // Never in answer to a STOP.
   let keywordAnswered = false
-  if (!bookingHandled) try {
+  if (!bookingHandled && !optingOut) try {
     keywordAnswered = !!(await runKeywordReply({
       conversationId: conv.id, text, companyId, channel: 'sms',
       deliver: async (reply) => {
-        const sender = await resolveSmsSender(db, companyId)
+        const sender = await resolveAutomatedSmsSender(db, companyId, { contactId: conv.contact_id || matchedContactId || null })
         if (sender) await sender.send({ to: from, text: reply })
       },
     }))?.matched
@@ -204,20 +195,25 @@ export async function ingestInboundSms(params: {
 
   // Nothing canned answered it → Colvy AI (only if the business switched AI on
   // for SMS; the agent checks). It shows live in the inbox with a countdown.
-  if (!bookingHandled && !keywordAnswered && text) {
+  // Not for a STOP.
+  // Not for a customer who opted out (or can't be checked): no AI run at all.
+  if (!bookingHandled && !keywordAnswered && !optingOut && text
+    && (await textOptOut(db, companyId, from, conv.contact_id || matchedContactId || null)).state === 'ok') {
     try { fetch(`${origin}/api/ai/reply`, { method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ conversationId: conv.id, companyId }) }) } catch {}
   }
 
   // A video (or photo, if the business asked) came through squeezed by the
   // carrier: offer an upload link for the original. Runs after the webhook has
-  // answered, and only when switched on in Automatic replies.
-  if (!mediaAttemptFailed && media.length) {
-    queueMediaUploadReply({ db, companyId, conversationId: conv.id, contactId: conv.contact_id || matchedContactId || null, media, origin })
+  // answered, and only when switched on in Automatic replies. Never in answer
+  // to a STOP.
+  if (!optingOut && !mediaAttemptFailed && media.length) {
+    queueMediaUploadReply({ db, companyId, conversationId: conv.id, contactId: conv.contact_id || matchedContactId || null, phone: from, media, origin })
   }
 
   // Failed-media hint auto-reply (only fires when a media attempt truly failed;
   // on Twilio, MMS usually arrives, so this rarely triggers). Throttled 6h.
-  if (mediaAttemptFailed) {
+  // Never in answer to a STOP, or to a customer who opted out or is blocked.
+  if (!optingOut && mediaAttemptFailed && (await textOptOut(db, companyId, from, conv.contact_id || matchedContactId || null)).state === 'ok') {
     try {
       const sixHoursAgo = new Date(Date.now() - 6 * 3600 * 1000).toISOString()
       const { data: recentReq } = await db.from('messages')
@@ -234,8 +230,8 @@ export async function ingestInboundSms(params: {
         })
         const mrData = await mr.json().catch(() => ({}))
         // The request route already texts the link when it can; don't send it twice.
-        if (mr.ok && mrData.link && !mrData.texted) {
-          const sender = await resolveSmsSender(db, companyId)
+        if (mr.ok && mrData.link && !mrData.texted && !mrData.optedOut) {
+          const sender = await resolveAutomatedSmsSender(db, companyId, { contactId: conv.contact_id || matchedContactId || null })
           if (sender) await sender.send({ to: from, text: `It looks like you tried to send a photo — please upload it here: ${mrData.link}` })
         }
       }

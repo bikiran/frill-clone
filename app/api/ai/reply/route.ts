@@ -5,6 +5,7 @@ import { runAiAgent } from '@/lib/ai-agent'
 import { startSupportAgentForConversation, AGENT_CHANNELS } from '@/lib/agent/inbound'
 import { supportAutoSends, getAgentChannels, channelKey } from '@/lib/agent/pilot'
 import { createClient } from '@supabase/supabase-js'
+import { textOptOut } from '@/lib/sms-consent'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
@@ -28,8 +29,22 @@ export async function POST(req: NextRequest) {
     if (!isInternalCall(req)) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     const { conversationId } = await req.json()
     if (!conversationId) return NextResponse.json({ error: 'conversationId required' }, { status: 400 })
-    const { data: owner } = await admin().from('conversations').select('company_id, channel').eq('id', conversationId).maybeSingle()
+    const { data: owner } = await admin().from('conversations').select('company_id, channel, sms_number, contact_id').eq('id', conversationId).maybeSingle()
     if (!owner?.company_id) return NextResponse.json({ error: 'Conversation not found' }, { status: 404 })
+
+    // An SMS customer who opted out (or can't be checked) gets no AI run at all:
+    // the reply would be refused anyway, and the AI could already have issued a
+    // coupon or started a claim on the way.
+    if (String(owner.channel || '') === 'sms') {
+      const { state } = await textOptOut(admin(), owner.company_id, owner.sms_number || null, owner.contact_id || null)
+      if (state !== 'ok') {
+        const reason = state === 'opted_out'
+          ? 'The customer opted out of texts, so the AI doesn’t answer by SMS.'
+          : 'Couldn’t check whether the customer opted out of texts, so the AI didn’t answer.'
+        try { await admin().from('ai_actions').insert({ company_id: owner.company_id, conversation_id: conversationId, action: 'skipped', allowed: false, blocked_reason: reason }) } catch {}
+        return NextResponse.json({ ok: true, replied: false, reason })
+      }
+    }
 
     // The Support Agent (Agent Engine) — only if the business switched it on.
     // By default it only suggests a reply for the team, alongside the auto-reply

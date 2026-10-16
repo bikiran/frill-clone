@@ -9,12 +9,13 @@
 // Stored in companies.inbox_settings.media_upload_reply. Off unless switched on.
 // At most once per conversation every few hours, and never when an upload link
 // went out recently anyway (sent by hand, by the phone agent, or by the
-// failed-media reply).
+// failed-media reply). Never to a customer who opted out of texts.
 
 import { after } from 'next/server'
 import { internalHeaders } from '@/lib/internal-call'
 
 import { mediaUploadReplySettings, wantsUploadReply, MEDIA_UPLOAD_REPLY_HOURS } from '@/lib/media-upload-reply-settings'
+import { textOptOut } from '@/lib/sms-consent'
 export * from '@/lib/media-upload-reply-settings'
 
 /**
@@ -23,13 +24,21 @@ export * from '@/lib/media-upload-reply-settings'
  */
 export async function sendMediaUploadReply(p: {
   db: any; companyId: string; conversationId: string; contactId?: string | null
+  /** The customer's number, so an opt-out on any contact with it counts. */
+  phone?: string | null
   media: { kind?: string }[]; origin: string
-}): Promise<'sent' | 'off' | 'not_needed' | 'recent' | 'failed'> {
+}): Promise<'sent' | 'off' | 'not_needed' | 'opted_out' | 'recent' | 'failed'> {
   try {
     const { data: co } = await p.db.from('companies').select('inbox_settings').eq('id', p.companyId).maybeSingle()
     const s = mediaUploadReplySettings(co?.inbox_settings)
     if (!s.enabled) return 'off'
     if (!wantsUploadReply(p.media, s)) return 'not_needed'
+
+    // Not to a customer who opted out of texts or is blocked (on any contact
+    // with their number), or whose last keyword was a STOP (lib/sms-consent).
+    const { state } = await textOptOut(p.db, p.companyId, p.phone, p.contactId)
+    if (state === 'unknown') return 'failed'
+    if (state === 'opted_out') return 'opted_out'
 
     const cutoff = new Date(Date.now() - MEDIA_UPLOAD_REPLY_HOURS * 3600_000).toISOString()
     // An upload link already went out recently (by hand, the phone agent, or
