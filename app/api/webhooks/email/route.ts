@@ -10,6 +10,7 @@ import { parseInboundAlias } from '@/lib/inbound-alias'
 import { fetchResendReceivedEmail, readReceived, hostResendAttachments as hostResendFiles, findEmailThread, splitQuoted, htmlToPlain, emailPreview, parseMessageIds, idVariants } from '@/lib/inbound-email'
 import { emitInboundEvent } from '@/lib/integration-hooks'
 import { scheduleMessageThumbs } from '@/lib/image-thumb'
+import { isFormsTestEmail } from '@/lib/forms-mail'
 
 export const dynamic = 'force-dynamic'
 
@@ -270,6 +271,10 @@ export async function POST(req: NextRequest) {
     // video has no text at all) and its formatted body. Without these a
     // photo-only reply landed as an empty "Live Chat" bubble.
     const isForm = channel.provider === 'webform'
+    // Colvy's own "Send a test email" (super admin → Web Forms, or the Web
+    // Form channel page): filed closed and read, with no contact, agent,
+    // auto-reply or notification. Only our verified sending address counts.
+    const isTest = isForm && isFormsTestEmail(from.email, subject, auth)
     const emailAtts = await hostResendAttachments(evt, companyId as string)
     const emailHtml = htmlBody ? sanitizeEmailHtml(String(htmlBody)) : ''
     // Never blank: a blank last_message reads "No messages yet" in the list.
@@ -277,10 +282,10 @@ export async function POST(req: NextRequest) {
 
     // ── Find-or-create the contact ───────────────────────────────────────────
     let contact: any = null
-    const { data: existingContacts } = await db.from('contacts').select('*')
+    const { data: existingContacts } = isTest ? { data: [] as any[] } : await db.from('contacts').select('*')
       .eq('company_id', companyId).ilike('email', from.email).limit(1)
     contact = existingContacts?.[0] || null
-    if (!contact) {
+    if (!contact && !isTest) {
       const { data: created } = await db.from('contacts').insert({
         company_id: companyId, name: from.name || from.email, email: from.email,
       }).select().maybeSingle()
@@ -332,8 +337,8 @@ export async function POST(req: NextRequest) {
         // replies go back out from the right address.
         email_channel_id: channel.id,
         assigned_location_id: channel.location_id || null,
-        contact_id: contact?.id || null, status: 'open',
-        is_unread: true, unread_count: 1,
+        contact_id: contact?.id || null, status: isTest ? 'closed' : 'open',
+        is_unread: !isTest, unread_count: isTest ? 0 : 1,
         last_message: preview, last_message_at: new Date().toISOString(),
       }).select().maybeSingle()
       conv = newConv
@@ -341,7 +346,7 @@ export async function POST(req: NextRequest) {
     if (!conv) return NextResponse.json({ ok: false, reason: 'Could not create conversation' })
 
     // Customer replied to a closed enquiry — log the reopen before we flip it.
-    await logEnquiryReopened(db, { conversationId: conv.id, companyId, prevStatus: conv.status, actorName: from?.name || from?.email || null, via: 'email' })
+    if (!isTest) await logEnquiryReopened(db, { conversationId: conv.id, companyId, prevStatus: conv.status, actorName: from?.name || from?.email || null, via: 'email' })
 
     // ── Store the message ────────────────────────────────────────────────────
     const msgRow: any = {
@@ -383,6 +388,10 @@ export async function POST(req: NextRequest) {
       // Small copies of photos for the inbox tiles — made after the response,
       // from the files we just stored in this company's folder.
       scheduleMessageThumbs(db, storedId, msgRow.email_attachments, { field: 'email_attachments', prefixes: [`/ticket-attachments/${companyId}/`] })
+    }
+    if (isTest) {
+      logWebhookEvent({ source: 'email', eventType: 'inbound-form-test', companyId, status: 'processed', payload: { to: to.email, subject } })
+      return NextResponse.json({ ok: true, test: true, conversationId: conv.id })
     }
     await emitInboundEvent(db, { companyId, conversationId: conv.id, text: content || preview, channel: 'email', name: from.name || null, email: from.email || null })
 

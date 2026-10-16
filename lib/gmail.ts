@@ -305,7 +305,7 @@ export async function backfillInlineImages(
 // Prefers text/plain ANYWHERE in the tree before falling back to HTML — the old
 // code walked parts in order and could grab an HTML part even when a clean
 // plain-text alternative existed further along.
-function findPart(payload: any, mime: string): string {
+export function findPart(payload: any, mime: string): string {
   if (!payload) return ''
   if (payload.mimeType === mime && payload.body?.data) return decodeB64(payload.body.data)
   for (const p of payload.parts || []) {
@@ -315,7 +315,7 @@ function findPart(payload: any, mime: string): string {
   return ''
 }
 
-function extractBody(payload: any): string {
+export function extractBody(payload: any): string {
   const plain = findPart(payload, 'text/plain')
   if (plain.trim()) return plain
   const html = findPart(payload, 'text/html')
@@ -335,7 +335,7 @@ function parseAddress(raw: string): { name: string | null; email: string } {
 }
 
 // Strip quoted history so the thread shows only what's new.
-function stripQuoted(text: string): string {
+export function stripQuoted(text: string): string {
   if (!text) return ''
   const out: string[] = []
   for (const line of text.split(/\r?\n/)) {
