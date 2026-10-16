@@ -7,6 +7,7 @@
 
 import Anthropic from '@anthropic-ai/sdk'
 import { modelFor, trackAi, type AiJob } from '@/lib/ai-models'
+import { guardTools } from './tool-schema'
 
 export type NeutralBlock =
   | { type: 'text'; text: string }
@@ -99,7 +100,10 @@ export class AnthropicModel implements ModelClient {
         { type: 'text', text: req.system, cache_control: { type: 'ephemeral' } },
         ...(req.systemLive ? [{ type: 'text', text: req.systemLive }] : []),
       ],
-      ...(req.tools?.length ? { tools: req.tools } : {}),
+      // Last check on every schema (engine, phone agent, learning…): one the
+      // provider would refuse fails the whole request. Outside tools (x_…) that
+      // can't be repaired are left out; Colvy's own are repaired.
+      ...(req.tools?.length ? { tools: guardTools(req.tools, { isOutside: n => n.startsWith('x_') }).tools } : {}),
       messages: toAnthropic(req.messages),
     }
   }

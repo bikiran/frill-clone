@@ -11,6 +11,7 @@ import { shopifyCreateDiscountCode, shopifyCreateOrder, shopifyStoreFor } from '
 import { trackLinksInText } from '@/lib/link-tracking'
 import { modelFor, trackAi } from '@/lib/ai-models'
 import { memoryForPrompt, memoryBlock } from '@/lib/agent/business-memory'
+import { readStoreJson } from '@/lib/store-response'
 
 const admin = () => createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -152,7 +153,7 @@ async function issueCoupon(db: any, ctx: any, req: { discount_type: string; amou
         description: `Issued by Colvy AI — ${req.reason || 'customer enquiry'}`,
       }),
     })
-    const woo = await res.json()
+    const woo = await readStoreJson(res, { provider: 'woocommerce', store: store.store_url })
     if (!res.ok) {
       await log(db, { ...base, allowed: false, blocked_reason: woo?.message || 'WooCommerce rejected the coupon' })
       return { ok: false, message: null }
@@ -336,7 +337,8 @@ async function createDraftOrder(db: any, ctx: any, req: any) {
         headers: { Authorization: `Basic ${auth}` },
       })
       if (!pRes.ok) continue
-      const p = await pRes.json()
+      const p = await readStoreJson(pRes, { provider: 'woocommerce', store: store.store_url })
+      if (!p) continue
       const price = parseFloat(p.price || p.regular_price || '0')
       totalCents += Math.round(price * 100) * qty
       lineItems.push({ product_id: pid, quantity: qty })
@@ -378,7 +380,7 @@ async function createDraftOrder(db: any, ctx: any, req: any) {
         customer_note: 'Draft prepared by Colvy AI from a chat — please review before sending payment.',
       }),
     })
-    const order = await res.json()
+    const order = await readStoreJson(res, { provider: 'woocommerce', store: store.store_url })
     if (!res.ok) {
       await log(db, { ...base, allowed: false, blocked_reason: order?.message || 'WooCommerce rejected the order' })
       return { ok: false, message: null }

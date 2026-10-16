@@ -2,6 +2,7 @@ import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { WooCommerceService } from '@/lib/woocommerce-service'
+import { isStoreResponseError } from '@/lib/store-response'
 import { resolveShopifyOrderRef, shopifyOrderForUi } from '@/lib/shopify-order-actions'
 
 function admin() {
@@ -71,7 +72,9 @@ export async function GET(req: NextRequest) {
     const woo = new WooCommerceService({
       storeUrl: integ.store_url, consumerKey: integ.consumer_key, consumerSecret: integ.consumer_secret,
     })
-    const order = await woo.getOrderByNumber(orderNumber)
+    let order: any = null
+    try { order = await woo.getOrderByNumber(orderNumber) }
+    catch (e: any) { if (isStoreResponseError(e)) return NextResponse.json({ error: e.message }, { status: 502 }); throw e }
     if (!order) return NextResponse.json({ error: `Order #${orderNumber} not found` }, { status: 404 })
 
     return NextResponse.json({ order: summarise(order) })

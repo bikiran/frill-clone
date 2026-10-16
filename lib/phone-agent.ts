@@ -498,6 +498,15 @@ export function compactLookup(tool: string, data: any): any {
 // ms: how long until the caller heard the first words of the reply.
 export type TurnResult = { say: string; end: boolean; tookMessage: boolean; ms: number; tools: string[] }
 
+/** The tools a call with these skills gets (lookups first, then the phone's own). */
+export function phoneToolSpecs(setup: PhoneCallSetup): { allowed: string[]; tools: ToolSpec[] } {
+  const allowed = phoneToolNames(setup)
+  const lookups = allowed.filter(k => LOOKUPS.includes(k))
+  const actions = lookups.map(k => getAction(k)).filter(Boolean) as ActionDef[]
+  const own: Record<string, ToolSpec> = { take_message: TAKE_MESSAGE, text_caller: TEXT_CALLER, text_upload_link: TEXT_UPLOAD_LINK, text_booking_link: TEXT_BOOKING_LINK, end_call: END_CALL }
+  return { allowed, tools: [...actions.map(a => a.key === 'find_my_bookings' ? FIND_MY_BOOKINGS : toolSpec(a)), ...allowed.filter(k => own[k]).map(k => own[k])] }
+}
+
 /**
  * Work out the agent's reply to what the caller just said. Runs the lookups
  * the model asks for (a few rounds at most) inside `deadlineMs`, so Twilio —
@@ -534,11 +543,8 @@ export async function phoneTurn(db: any, args: {
   // Only the tools this call's skills allow; anything else the model asks for
   // is refused below, not just left out of the list.
   const setup = setupOf(args.state)
-  const allowed = phoneToolNames(setup)
+  const { allowed, tools } = phoneToolSpecs(setup)
   const lookups = allowed.filter(k => LOOKUPS.includes(k))
-  const actions = lookups.map(k => getAction(k)).filter(Boolean) as ActionDef[]
-  const own: Record<string, ToolSpec> = { take_message: TAKE_MESSAGE, text_caller: TEXT_CALLER, text_upload_link: TEXT_UPLOAD_LINK, text_booking_link: TEXT_BOOKING_LINK, end_call: END_CALL }
-  const tools = [...actions.map(a => a.key === 'find_my_bookings' ? FIND_MY_BOOKINGS : toolSpec(a)), ...allowed.filter(k => own[k]).map(k => own[k])]
   const actx: ActionContext = {
     db, companyId: args.companyId, companyName: args.companyName, siteOrigin: args.siteOrigin,
     runId: '', roleKey: 'support', roleName: 'Phone agent', mode: 'live',

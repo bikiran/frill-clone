@@ -7,6 +7,7 @@
 // stays on the AI Agents page.
 
 import { activityName } from './record'
+import { friendlyRunError } from './tool-schema'
 
 const LABEL: Record<string, string> = {
   get_conversation: 'Read the conversation', get_contact: 'Looked up the customer', ask_knowledge: 'Searched your knowledge',
@@ -46,7 +47,7 @@ const clip = (s: any, n = 160) => { const t = String(s ?? '').replace(/\s+/g, ' 
 function detailFor(action: string | null, input: any, output: any): string | null {
   if (!action) return null
   const o = output || {}
-  if (o.error) return clip(o.error)
+  if (o.error) return clip(friendlyRunError(String(o.error)))
   // A task it added to (an open one already covered the job) or skipped (daily cap): say so, not "Created".
   if (action === 'create_task' && o.updated) return clip(`Added to the open task “${o.task}”${Array.isArray(o.addedSteps) && o.addedSteps.length ? `: ${o.addedSteps.join('; ')}` : ' — nothing new to add'}`, 260)
   if (action === 'create_task' && o.skipped) return clip(`No task made: ${o.reason || 'skipped'}`, 220)

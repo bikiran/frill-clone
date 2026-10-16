@@ -8,6 +8,7 @@ import {
 import { modelFor, trackAi } from '@/lib/ai-models'
 import { memoryForPrompt, memoryBlock, type PromptMemory } from '@/lib/agent/business-memory'
 import { linkWaitlistRun } from '@/lib/waitlist-add'
+import { guardTools } from '@/lib/agent/tool-schema'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Colvy AI assistant — the tool-use loop.
@@ -27,7 +28,9 @@ import { linkWaitlistRun } from '@/lib/waitlist-add'
 //                 user approves. Nothing external happens without that.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const TOOLS_FOR_MODEL = ASSISTANT_TOOLS.map(({ safety, ...t }) => t)
+// Checked once against JSON Schema 2020-12 (lib/agent/tool-schema.ts): a bad
+// schema would fail every request, so it's repaired and logged instead.
+const TOOLS_FOR_MODEL = guardTools(ASSISTANT_TOOLS.map(({ safety, ...t }) => t), { where: 'Colvy AI assistant' }).tools
 const MAX_STEPS = 8
 
 export type AssistantTurn = { role: 'user' | 'assistant'; text: string }

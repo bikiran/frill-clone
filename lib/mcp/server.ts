@@ -19,6 +19,7 @@ import {
 import type { McpAuth } from '@/lib/mcp/auth'
 import { canWrite } from '@/lib/mcp/auth'
 import { linkWaitlistRun } from '@/lib/waitlist-add'
+import { normaliseToolSchema } from '@/lib/agent/tool-schema'
 
 export const PROTOCOL_VERSIONS = ['2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05']
 export const SERVER_INFO = { name: 'colvy', title: 'Colvy', version: '1.0.0' }
@@ -84,7 +85,11 @@ export function listTools(auth: McpAuth, role: string | null): Tool[] {
         : { readOnlyHint: false, destructiveHint: ['cancel_order', 'refund_order'].includes(t.name) || money, openWorldHint: safety === 'confirm' },
     })
   }
-  return [...EXTRA.map(t => ({ ...t, title: titleOf(t.name) })), ...tools]
+  // Outside assistants check these schemas too (JSON Schema 2020-12).
+  return [...EXTRA.map(t => ({ ...t, title: titleOf(t.name) })), ...tools].map(t => {
+    const r = normaliseToolSchema(t.inputSchema)
+    return r.schema === t.inputSchema ? t : { ...t, inputSchema: r.schema }
+  })
 }
 
 const text = (v: any) => ({ type: 'text', text: typeof v === 'string' ? v : JSON.stringify(v, null, 2) })

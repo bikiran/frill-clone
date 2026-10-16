@@ -6,6 +6,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { WooCommerceService } from './woocommerce-service'
 import { wooDateToISO } from './orders'
+import { readStoreJson } from '@/lib/store-response'
 
 interface WebhookPayload {
   event: string
@@ -129,7 +130,8 @@ export class WebhookService {
 
       if (!response.ok) return
 
-      const customer = await response.json()
+      const customer = await readStoreJson(response, { provider: 'woocommerce', store: integration.store_url })
+      if (!customer?.id) return
       const stats = await woo.getCustomerStats(customer.id)
 
       // Upsert customer
@@ -186,7 +188,7 @@ export class WebhookService {
           { headers: { 'Authorization': `Basic ${basicAuth}` } }
         )
         if (!response.ok) return
-        order = await response.json()
+        order = await readStoreJson(response, { provider: 'woocommerce', store: integration.store_url })
       }
 
       // Upsert the order using the ACTUAL columns the Order History panel reads

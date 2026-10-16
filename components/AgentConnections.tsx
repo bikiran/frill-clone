@@ -11,7 +11,7 @@ import { confirmDialog } from '@/components/ConfirmDialog'
 // on its own. Look-ups default to on their own; anything that changes
 // something defaults to asking first.
 
-type Tool = { key: string; name: string; title: string | null; description: string; read_only: boolean; mode: 'off' | 'auto' | 'ask' }
+type Tool = { key: string; name: string; title: string | null; description: string; read_only: boolean; mode: 'off' | 'auto' | 'ask'; problem?: string | null }
 type Conn = { id: string; name: string; url: string; auth_type: 'none' | 'bearer' | 'header'; auth_header: string | null; has_secret: boolean; roles: string[]; tools: Tool[]; enabled: boolean; status: string; last_error: string | null; server_name: string | null; synced_at: string | null }
 type Role = { key: string; name: string }
 
@@ -138,6 +138,7 @@ export default function AgentConnections({ companyId }: { companyId: string }) {
                             <div style={{ minWidth: 0, flex: 1 }}>
                               <p className="agx-tool">{t.title || t.name}{t.read_only && <span className="agx-tag">Look-up</span>}</p>
                               {t.description && <p className="agx-desc">{t.description}</p>}
+                              {t.problem && t.mode !== 'off' && <p className="agx-err">The agents can’t use this tool: its settings from {c.server_name || c.name} are invalid ({t.problem}). They carry on without it. Ask whoever runs that server to fix the tool, then press Reload tools.</p>}
                             </div>
                             <div className="agx-seg" role="radiogroup" aria-label={`What ${t.title || t.name} may do`}>
                               {(['off', 'ask', 'auto'] as const).map(m => (

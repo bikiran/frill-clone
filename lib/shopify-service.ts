@@ -11,6 +11,8 @@
 // `errors` entry but HTTP 200. gql() therefore returns data AND errors, and
 // callers treat a null field as "not shared", never as a failure.
 
+import { readStoreJson, looksLikeHtml, pageSnippet, storeHtmlMessage } from '@/lib/store-response'
+
 export const SHOPIFY_API_VERSION = process.env.SHOPIFY_API_VERSION || '2026-10'
 
 export interface ShopifyConfig {
@@ -127,9 +129,13 @@ export class ShopifyService {
       }
       if (!res.ok) {
         const txt = await res.text().catch(() => '')
+        // A web page (store paused, address changed): say so, not a page of HTML.
+        if (looksLikeHtml(res.headers.get('content-type'), txt)) throw new ShopifyApiError(`${storeHtmlMessage('shopify')} (HTTP ${res.status}${pageSnippet(txt) ? `: “${pageSnippet(txt)}”` : ''})`, res.status)
         throw new ShopifyApiError(`Shopify ${res.status}${txt ? `: ${txt.slice(0, 200)}` : ''}`, res.status)
       }
-      const body: any = await res.json()
+      let body: any
+      try { body = await readStoreJson(res, { provider: 'shopify', store: this.domain }) }
+      catch (e: any) { throw new ShopifyApiError(e?.message || 'Shopify sent back something Colvy can’t read.', res.status) }
       const errors: any[] = Array.isArray(body?.errors) ? body.errors : body?.errors ? [body.errors] : []
       // Query-cost throttling comes back as 200 + THROTTLED: wait for the bucket.
       if (errors.some(e => e?.extensions?.code === 'THROTTLED') && attempt < 5) {

@@ -3,6 +3,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { resolveShopifyOrderRef, shopifyEditItems, shopifyChangeStatus, shopifyAppendNote, ShopifyActionError } from '@/lib/shopify-order-actions'
 import { statusWord } from '@/lib/shopify-automation'
+import { readStoreJson } from '@/lib/store-response'
+import { forgetWooOrders } from '@/lib/woocommerce-service'
 
 function admin() {
   return createClient(
@@ -91,7 +93,8 @@ export async function POST(req: NextRequest) {
     const res = await fetch(`${integ.store_url}/wp-json/wc/v3/orders/${orderId}`, {
       method: 'PUT', headers: { 'Authorization': auth, 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
     })
-    const data = await res.json()
+    const data = await readStoreJson(res, { provider: 'woocommerce', store: integ.store_url })
+    forgetWooOrders(integ.store_url)
     if (!res.ok) return NextResponse.json({ error: data?.message || `Update failed (${res.status})` }, { status: 502 })
 
     if (conversationId) {

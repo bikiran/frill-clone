@@ -58,6 +58,8 @@ export default function WooCommerceIntegration() {
   // Integration status
   const [integration, setIntegration] = useState<any>(null)
   const [stores, setStores] = useState<any[]>([])
+  // Each store asked live when the page opens: a warning if it answers with a web page or refuses the key.
+  const [health, setHealth] = useState<Record<string, { ok: boolean; error?: string }>>({})
   const [addingStore, setAddingStore] = useState(false)
   const [editing, setEditing] = useState(false)
 
@@ -93,6 +95,9 @@ export default function WooCommerceIntegration() {
       const result = await res.json()
       setStores(result.stores || [])
       setActive('woocommerce', (result.stores || []).some((x: any) => x.is_active !== false))
+      if ((result.stores || []).length) {
+        authFetch(`/api/woocommerce/setup?companyId=${cid}&check=1`).then(r => r.json()).then(d => d?.health && setHealth(d.health)).catch(() => {})
+      }
       if (result.data) {
         setIntegration(result.data)
         // Pre-populate form fields for editing
@@ -333,7 +338,8 @@ export default function WooCommerceIntegration() {
             right={<button type="button" onClick={() => { setAddingStore(true); setStoreUrl(''); setEditing(false) }} {...btn('secondary', 'sm')}><Icon name="plus" size={14} /> Add store</button>}>
             <div className="space-y-2.5">
               {stores.map((st: any) => (
-                <div key={st.id} className="flex items-center gap-3 p-3 rounded-xl border flex-wrap sm:flex-nowrap" style={{ borderColor: 'var(--border)' }}>
+                <div key={st.id} className="p-3 rounded-xl border" style={{ borderColor: 'var(--border)' }}>
+                <div className="flex items-center gap-3 flex-wrap sm:flex-nowrap">
                   <img src="/logos/woocommerce.svg" alt="" width={36} height={36} style={{ width: 36, height: 36 }} className="shrink-0" />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-bold truncate" style={{ color: 'var(--ink)', margin: 0 }}>{storeName(st)}</p>
@@ -344,6 +350,13 @@ export default function WooCommerceIntegration() {
                     <button onClick={() => handleSync(false, st.id)} disabled={syncing} {...btn('secondary', 'sm')}><Icon name="sync" size={13} /> Sync</button>
                     <button onClick={() => disconnectStore(st.id)} {...btn('danger', 'sm')} aria-label={`Remove ${storeName(st)}`} title="Remove store"><Icon name="trash" size={14} /></button>
                   </div>
+                </div>
+                {health[st.id] && !health[st.id].ok && (
+                  <div role="alert" className="flex gap-2 items-start text-xs mt-3 p-3 rounded-lg border" style={{ color: '#b42318', background: '#fef3f2', borderColor: '#fecdca', lineHeight: 1.5 }}>
+                    <span className="shrink-0 mt-px"><Icon name="alert" size={14} /></span>
+                    <span style={{ minWidth: 0, overflowWrap: 'anywhere' }}><strong>Connection problem.</strong> {health[st.id].error || 'Colvy couldn’t read this store.'}</span>
+                  </div>
+                )}
                 </div>
               ))}
             </div>

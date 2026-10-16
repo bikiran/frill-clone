@@ -12,7 +12,8 @@
 import { createHash } from 'crypto'
 import { getModelClient, type ModelClient, type NeutralBlock, type NeutralMessage, type ToolSpec } from './model'
 import { getAction, validateInput, FINISH_ACTION, flushKnowledgeGaps, noteReply, asksForKnowledgeGaps } from './actions'
-import { loadExternalActions } from './external-tools'
+import { loadExternalActions, isExternalKey } from './external-tools'
+import { guardTools, friendlyRunError, toolIndexFromError } from './tool-schema'
 import { retireStaleSuggestions } from './approvals'
 import { decide, loadPolicies } from './policy'
 import { agentsPaused, pauseFrom } from './pilot'
@@ -96,7 +97,9 @@ export function toolSpec(a: ActionDef): ToolSpec {
     props.reason = { type: 'string', description: 'Why you are doing this, in one short sentence. Shown to the business owner.' }
     required.add('reason')
   }
-  return { name: a.key, description: a.description, input_schema: { type: 'object', properties: props, required: Array.from(required), additionalProperties: false } }
+  // $defs (outside tools built on Pydantic/FastMCP) stay at the top so their $refs resolve.
+  const { $defs, definitions } = a.input
+  return { name: a.key, description: a.description, input_schema: { type: 'object', properties: props, required: Array.from(required), additionalProperties: false, ...($defs ? { $defs } : {}), ...(definitions ? { definitions } : {}) } }
 }
 
 // When a role can make tasks: what counts as one, and the open tasks it could
@@ -169,6 +172,9 @@ export async function runAgent(db: any, runId: string, deadline: number, model: 
     return { status: patch.status, outcome: patch.outcome || null, summary: patch.summary || null }
   }
 
+  // The tools sent to the model, so a provider error naming "tools.9" can say which.
+  let sentTools: ToolSpec[] = []
+  let sentActions: ActionDef[] = []
   try {
     const baseRole = await loadRole(db, run.company_id, run.role_key)
     if (!baseRole) return finishRun({ status: 'failed', error: `Unknown role ${run.role_key}`, summary: 'No such agent role.' })
@@ -186,6 +192,10 @@ export async function runAgent(db: any, runId: string, deadline: number, model: 
     if (!run.started_at) {
       await db.from('agent_runs').update({ started_at: nowIso(), context_refs: pack.refs, contact_id: run.contact_id || pack.contactId }).eq('id', run.id)
       await trail.add({ kind: 'context', status: 'ok', output: { refs: pack.refs, verification: pack.verification } })
+      // Outside tools left out because their settings can't be used — shown in the run, not a failed run.
+      for (const sk of outside.skipped) {
+        await trail.add({ kind: 'action', action_key: sk.key, decision: 'denied', status: 'skipped', decision_reason: `Left out ${sk.name}: its settings are invalid (${sk.reason}). The agent carried on without it.` })
+      }
     }
 
     const { data: co } = await db.from('companies').select('name').eq('id', run.company_id).maybeSingle()
@@ -202,9 +212,18 @@ export async function runAgent(db: any, runId: string, deadline: number, model: 
     const pausedNow = async () => run.mode === 'live' && (await agentsPaused(db, run.company_id)).paused
     const stopPaused = () => finishRun({ status: 'cancelled', summary: 'Stopped — agents are paused for this business.', tokens_in: Number(run.tokens_in) || 0, tokens_out: Number(run.tokens_out) || 0 })
     if (run.mode === 'live' && pauseFrom(policies).paused) return stopPaused()
-    const actions = role.actions.map(findAction).filter(Boolean) as ActionDef[]
+    let actions = role.actions.map(findAction).filter(Boolean) as ActionDef[]
     if (!actions.find(a => a.key === 'finish')) actions.push(FINISH_ACTION)
-    const tools = actions.map(toolSpec)
+    // Every schema checked before the request: an outside tool the provider would
+    // refuse is left out (logged) instead of failing the whole run.
+    const guarded = guardTools(actions.map(toolSpec), { isOutside: isExternalKey, where: `${role.key} agent, company ${run.company_id}` })
+    if (guarded.dropped.length) {
+      const gone = new Set(guarded.dropped.map(d => d.name))
+      actions = actions.filter(a => !gone.has(a.key))
+      for (const k of gone) extByKey.delete(k)
+    }
+    const tools = guarded.tools
+    sentTools = tools; sentActions = actions
     // Only tasks tied to this conversation, customer or order — never the business's other work.
     let openTasks: string | null = null
     if (actions.some(a => a.key === 'create_task')) {
@@ -347,7 +366,17 @@ export async function runAgent(db: any, runId: string, deadline: number, model: 
     const status = escalated || outcome === 'escalated' ? 'escalated' : approvals ? 'awaiting_approval' : 'completed'
     return finishRun({ ...totals, status, outcome, intent: finished.intent ? String(finished.intent).slice(0, 60) : null, summary: String(finished.summary || '').slice(0, 2000) || null })
   } catch (e: any) {
-    await trail.add({ kind: 'error', status: 'error', output: { error: String(e?.message || e).slice(0, 1000) } }).catch(() => null)
-    return finishRun({ status: 'failed', error: String(e?.message || e).slice(0, 1000), summary: 'Something went wrong while working on this.' })
+    const raw = String(e?.message || e)
+    // "tools.9.custom.input_schema: JSON schema is invalid" → which tool, in words.
+    const nameOf = (i: number) => {
+      const t = sentTools[i]
+      if (!t) return null
+      const a = sentActions.find(x => x.key === t.name)
+      return a?.title || t.name.replace(/_/g, ' ')
+    }
+    const friendly = friendlyRunError(raw, nameOf)
+    const badTool = toolIndexFromError(raw)
+    await trail.add({ kind: 'error', status: 'error', ...(badTool != null && sentTools[badTool] ? { action_key: sentTools[badTool].name } : {}), output: { error: friendly.slice(0, 1000), ...(friendly !== raw ? { detail: raw.slice(0, 1000) } : {}) } }).catch(() => null)
+    return finishRun({ status: 'failed', error: friendly.slice(0, 1000), summary: badTool != null ? friendly.slice(0, 300) : 'Something went wrong while working on this.' })
   }
 }

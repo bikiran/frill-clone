@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { WooCommerceService } from '@/lib/woocommerce-service'
 import { wooDateToISO } from '@/lib/orders'
+import { readStoreJson } from '@/lib/store-response'
 
 // Runs a Supabase upsert with a few retries when Postgres reports a transient
 // "deadlock detected" (code 40P01), which can happen when two syncs — or a sync
@@ -87,9 +88,9 @@ export async function syncPage(body: any): Promise<{ status: number; body: any }
     })
 
     // Test connection
-    const isConnected = await woo.testConnection()
-    if (!isConnected) {
-      return { status: 503, body: { error: 'Failed to connect to WooCommerce store' } }
+    const check = await woo.checkConnection()
+    if (!check.ok) {
+      return { status: 503, body: { error: check.error || 'Failed to connect to WooCommerce store' } }
     }
 
     // ============================================================
@@ -120,7 +121,7 @@ export async function syncPage(body: any): Promise<{ status: number; body: any }
       if (!res.ok) throw new Error(`WooCommerce API error: ${res.statusText}`)
       const totalPages = parseInt(res.headers.get('x-wp-totalpages') || '1') || 1
       const total = parseInt(res.headers.get('x-wp-total') || '0') || 0
-      return { data: await res.json(), totalPages, total }
+      return { data: await readStoreJson(res, { provider: 'woocommerce', store: integration.store_url }), totalPages, total }
     }
 
     if (mode === 'customers') {
