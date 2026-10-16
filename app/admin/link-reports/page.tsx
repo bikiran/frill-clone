@@ -66,7 +66,7 @@ const CHANNEL_LABEL: Record<string, string> = {
 const TYPE_LABEL: Record<string, string> = {
   product: 'Product', image: 'Image', help: 'Help article', form: 'Form',
   checkout: 'Checkout', external: 'External website', booking: 'Booking page',
-  payment: 'Payment link',
+  payment: 'Payment link', poll: 'Poll', survey: 'Survey',
 }
 
 export default function LinkReportsPage() {

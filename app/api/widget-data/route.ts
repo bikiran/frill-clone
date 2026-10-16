@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { cleanTerms } from '@/lib/terminology'
 import { log } from '@/lib/log'
 import { createClient } from '@supabase/supabase-js'
+import { statusOf } from '@/lib/engage-core'
 import { effectivePlan, companyHasFeature } from '@/lib/plan'
 import { emitIntegrationEvent } from '@/lib/integration-events'
 
@@ -89,10 +90,12 @@ export async function GET(req: NextRequest) {
         .order('is_pinned', { ascending: false }).order('created_at', { ascending: false }).limit(20),
       (supabase as any).from('forms').select('id,title,questions').eq('company_id', company.id)
         .eq('is_published', true).order('created_at', { ascending: false }).limit(5),
-      (supabase as any).from('polls').select('id,question,description,options').eq('company_id', company.id)
-        .order('created_at', { ascending: false }).limit(5),
-      (supabase as any).from('surveys').select('id,title,questions').eq('company_id', company.id)
-        .order('created_at', { ascending: false }).limit(5),
+      // Live ones only: drafts and closed polls / surveys aren't public
+      // (statusOf reads is_active, status and the close date).
+      (supabase as any).from('polls').select('*').eq('company_id', company.id)
+        .order('created_at', { ascending: false }).limit(25),
+      (supabase as any).from('surveys').select('*').eq('company_id', company.id)
+        .order('created_at', { ascending: false }).limit(25),
       (supabase as any).from('help_articles').select('id,title,content,category,status,created_at,location_ids').eq('company_id', company.id)
         .eq('status', 'published')
         .order('created_at', { ascending: false }).limit(10),
@@ -171,8 +174,10 @@ export async function GET(req: NextRequest) {
       ideas: (ideasRes.data || []).filter(visibleAt),
       announcements: (annRes.data || []).filter(visibleAt),
       forms: formsRes.data || [],
-      polls: pollsRes.data || [],
-      surveys: surveysRes.data || [],
+      polls: (pollsRes.data || []).filter((p: any) => statusOf(p) === 'live').slice(0, 5)
+        .map((p: any) => ({ id: p.id, question: p.question, description: p.description ?? null, options: p.options })),
+      surveys: (surveysRes.data || []).filter((sv: any) => statusOf(sv) === 'live').slice(0, 5)
+        .map((sv: any) => ({ id: sv.id, title: sv.title, questions: sv.questions ?? [] })),
       helpArticles: (helpRes.data || []).filter(visibleAt),
     }
 

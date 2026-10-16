@@ -19,7 +19,7 @@ export type AiJob =
   | 'knowledge_search' | 'knowledge_answer' | 'unanswered_scan' | 'help_import' | 'form_builder'
   | 'review_reply' | 'review_sentiment' | 'social_reply' | 'social_classify'
   | 'conversation_summary' | 'call_summary' | 'call_transcript' | 'dictation' | 'translate' | 'contact_capture' | 'card_scan'
-  | 'phone_agent'
+  | 'phone_agent' | 'feedback_summary'
 
 // modern: the feature sends newer request options (effort, structured output,
 // fallbacks), so only Claude 5-generation models are offered for it.
@@ -47,7 +47,10 @@ export const AI_JOBS: Record<AiJob, { label: string; group: string; about: strin
   translate: { group: 'Team tools', label: 'Translation', about: 'Translating customer messages.', default: 'claude-haiku-4-5' },
   contact_capture: { group: 'Team tools', label: 'Contact details from messages', about: 'Picking names, emails and phones out of messages.', default: 'claude-sonnet-5' },
   card_scan: { group: 'Team tools', label: 'Business card scan', about: 'Reading business cards and contact photos.', default: 'claude-sonnet-5' },
+  // Default set just below: the same model as the unanswered-questions scan, the closest existing job.
+  feedback_summary: { group: 'Team tools', label: 'Survey summaries', about: '“Summarise responses” on survey results: themes, sentiment and what to do next.', default: '', modern: true },
 }
+AI_JOBS.feedback_summary.default = AI_JOBS.unanswered_scan.default
 
 // Models the super admin can pick from. Prices are USD per million tokens
 // (input / output) where documented; the rest are filled in on the page.

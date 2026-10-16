@@ -4442,11 +4442,12 @@ export default function InboxPage() {
     setPickerItems([])
     if (kind === 'payment') return
     const table = kind === 'poll' ? 'polls' : kind === 'survey' ? 'surveys' : 'forms'
-    let q = (supabase as any).from(table).select('*').order('created_at', { ascending: false }).limit(30)
-    // forms/surveys are company-scoped; polls are global in this schema
-    if (kind !== 'poll' && companyId) q = q.eq('company_id', companyId)
-    const { data } = await q
-    setPickerItems(data || [])
+    // Only this workspace's (polls used to be read across every workspace here).
+    if (!companyId) return
+    const { data } = await (supabase as any).from(table).select('*').eq('company_id', companyId).order('created_at', { ascending: false }).limit(60)
+    // Only live polls and surveys: a draft or closed one can't be answered in the chat.
+    const { statusOf } = await import('@/lib/engage-core')
+    setPickerItems(kind === 'form' ? (data || []).slice(0, 30) : (data || []).filter((r: any) => statusOf(r) === 'live').slice(0, 30))
   }
 
   const generateInvoice = async (payload: any) => {
