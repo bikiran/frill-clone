@@ -14,6 +14,7 @@ import { confirmDialog } from '@/components/ConfirmDialog'
 import SignupsPage from '@/components/platform-admin/SignupsPage'
 import EmailHealthCard from '@/components/platform-admin/EmailHealthCard'
 import WebFormsPage from '@/components/platform-admin/WebFormsPage'
+import { COLVY_CONTACT, isColvyNumber } from '@/lib/colvy-contact'
 
 const SUPER_ADMIN = 'bishalstha76@gmail.com'
 
@@ -97,6 +98,7 @@ const I = {
   external:   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>,
   copy:       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>,
   refresh:    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>,
+  seed:       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>,
   alert:      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>,
 }
 
@@ -614,6 +616,7 @@ function BusinessDetail({ co, onClose, onAction }: { co: any; onClose: () => voi
         <div style={{ display: 'flex', gap: 8, padding: '12px 20px', borderBottom: '1px solid var(--sa-border)', flexWrap: 'wrap' }}>
           <button onClick={() => onAction('impersonate', co)} style={paBtn('#ff7a6b', true)}>Enter workspace</button>
           <a href={`https://${co.slug}.colvy.com`} target="_blank" rel="noopener" style={{ ...paBtn(), textDecoration: 'none' }}>View public</a>
+          <button onClick={() => onAction('provision', co)} title={`Add ${co.slug}.colvy.com to Vercel and Cloudflare, then check it`} style={paBtn()}>Set up board address</button>
           {plan === 'suspended'
             ? <button onClick={() => onAction('reactivate', co)} style={paBtn()}>Reactivate…</button>
             : <button onClick={() => onAction('suspend', co)} style={paBtn('#ef4444')}>Suspend…</button>}
@@ -3124,8 +3127,19 @@ function CompaniesPage() {
     } catch {}
   }, [loading])
 
+  // "Set up board address": what Vercel said about <slug>.colvy.com.
+  const [prov, setProv] = useState<{ co: any; busy: boolean; ok?: boolean; summary?: string; steps?: string[]; url?: string; raw?: any } | null>(null)
+
   const action = async (type: string, co: any) => {
     setMsg('')
+    if (type === 'provision') {
+      setDetailCo(null)
+      setProv({ co, busy: true })
+      const r = await paJson('/api/platform-admin/provision-domain', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId: co.id }) })
+      if (!r.ok) { setProv({ co, busy: false, ok: false, summary: r.data.error || `Request failed (${r.status || 'network'})`, steps: [] }); return }
+      setProv({ co, busy: false, ok: !!r.data.ok, summary: r.data.summary, steps: r.data.steps || [], url: r.data.url, raw: { vercel: r.data.vercel, cloudflare: r.data.cloudflare, check: r.data.check } })
+      return
+    }
     // Safe impersonation: capture a reason + mode, record an audit session,
     // then open the workspace with the session id so it shows the banner.
     if (type === 'impersonate') { setImp({ co }); return }
@@ -3167,6 +3181,37 @@ function CompaniesPage() {
         </div>}
       />
       {msg && <div style={{ padding: '10px 16px', borderRadius: 10, background: '#d1fae5', color: '#065f46', fontSize: 13, marginBottom: 16, fontWeight: 500 }}>{msg}</div>}
+
+      {prov && (
+        <div role="status" aria-live="polite" style={{ padding: '14px 16px', borderRadius: 12, marginBottom: 16, border: `1px solid ${prov.busy ? 'var(--sa-border)' : prov.ok ? '#10b981' : '#f59e0b'}`, background: 'var(--sa-card)', color: 'var(--sa-text)', fontSize: 13 }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+            <span style={{ color: prov.busy ? 'var(--sa-muted)' : prov.ok ? '#10b981' : '#f59e0b', marginTop: 1, flexShrink: 0 }}>{prov.busy ? I.refresh : prov.ok ? I.check : I.alert}</span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <p style={{ margin: 0, fontWeight: 700 }}>
+                {prov.busy ? `Setting up ${prov.co.slug}.colvy.com…` : prov.summary}
+              </p>
+              {!prov.busy && !!prov.steps?.length && (
+                <ol style={{ margin: '8px 0 0', paddingLeft: 18, color: 'var(--sa-text)', lineHeight: 1.55 }}>
+                  {prov.steps.map((st, i) => <li key={i}>{st}</li>)}
+                </ol>
+              )}
+              {!prov.busy && prov.raw && (
+                <details style={{ marginTop: 8 }}>
+                  <summary style={{ cursor: 'pointer', color: 'var(--sa-muted)', fontSize: 12 }}>What Vercel and Cloudflare said</summary>
+                  <pre style={{ margin: '6px 0 0', padding: 10, borderRadius: 8, background: 'var(--sa-hover)', color: 'var(--sa-muted)', fontSize: 11.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{JSON.stringify(prov.raw, null, 2)}</pre>
+                </details>
+              )}
+            </div>
+            {!prov.busy && (
+              <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                {prov.url && <a href={prov.url} target="_blank" rel="noopener" style={{ ...paBtn(), textDecoration: 'none' }}>Open</a>}
+                <button onClick={() => action('provision', prov.co)} style={paBtn()}>Check again</button>
+                <button onClick={() => setProv(null)} aria-label="Dismiss" style={{ ...paBtn(), padding: '6px 8px' }}>{I.x}</button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Safe impersonation modal */}
       {imp && <ImpersonateModal co={imp.co} onClose={() => setImp(null)} />}
@@ -3228,7 +3273,8 @@ function CompaniesPage() {
                     <button onClick={() => openEdit(co)} title="Edit company" style={{ padding: '5px 9px', borderRadius: 7, border: '1px solid var(--sa-border)', background: 'transparent', color: '#ff7a6b', cursor: 'pointer', fontSize: 11, fontWeight: 600 }}>Edit</button>
                     <button onClick={() => action('view', co)} title="View board" style={{ padding: '5px 9px', borderRadius: 7, border: '1px solid var(--sa-border)', background: 'transparent', color: 'var(--sa-muted)', cursor: 'pointer', fontSize: 12 }}>{I.external}</button>
                     <button onClick={() => action('impersonate', co)} title="Impersonate admin" style={{ padding: '5px 9px', borderRadius: 7, border: '1px solid var(--sa-border)', background: 'transparent', color: 'var(--sa-muted)', cursor: 'pointer', fontSize: 12 }}>{I.users}</button>
-                    <button onClick={() => action('seed', co)} title="Seed sample data" style={{ padding: '5px 9px', borderRadius: 7, border: '1px solid var(--sa-border)', background: 'transparent', color: '#6366f1', cursor: 'pointer', fontSize: 12 }}>{I.refresh}</button>
+                    <button onClick={() => action('provision', co)} disabled={prov?.busy} title={`Set up board address: add ${co.slug}.colvy.com to Vercel and Cloudflare, then check it`} aria-label={`Set up ${co.slug}.colvy.com`} style={{ padding: '5px 9px', borderRadius: 7, border: '1px solid var(--sa-border)', background: 'transparent', color: '#6366f1', cursor: prov?.busy ? 'wait' : 'pointer', fontSize: 12 }}>{I.refresh}</button>
+                    <button onClick={() => action('seed', co)} title="Delete content and seed sample data (test workspaces only)" aria-label={`Seed sample data for ${co.name}`} style={{ padding: '5px 9px', borderRadius: 7, border: '1px solid var(--sa-border)', background: 'transparent', color: 'var(--sa-muted)', cursor: 'pointer', fontSize: 12 }}>{I.seed}</button>
                     {co.plan === 'suspended'
                       ? <button onClick={() => action('reactivate', co)} style={{ padding: '5px 9px', borderRadius: 7, border: '1px solid #10b981', background: '#d1fae5', color: '#065f46', cursor: 'pointer', fontSize: 11, fontWeight: 600 }}>Restore</button>
                       : <button onClick={() => action('suspend', co)} style={{ padding: '5px 9px', borderRadius: 7, border: '1px solid #fca5a5', background: '#fee2e2', color: '#dc2626', cursor: 'pointer', fontSize: 11, fontWeight: 600 }}>Suspend</button>
@@ -3314,6 +3360,14 @@ function CompaniesPage() {
               <p style={{ fontSize: 11.5, margin: '6px 0 4px', color: assignMsg.startsWith('✕') ? '#dc2626' : assignMsg.startsWith('✓') ? '#059669' : 'var(--sa-muted)' }}>
                 {assignMsg || 'The number must already exist in Colvy’s platform Twilio account. It becomes this company’s primary number and routes calls + SMS to them.'}
               </p>
+              {/* Colvy's own workspace: its public number (lib/colvy-contact.ts)
+                  reaches the Colvy inbox once it's assigned here. */}
+              {editCo.slug === (process.env.NEXT_PUBLIC_COLVY_SUPPORT_SLUG || 'colvy') && !coNumbers.some((n: any) => isColvyNumber(n.phone_number)) && (
+                <button type="button" onClick={() => setAssignNum(COLVY_CONTACT.phoneE164)}
+                  style={{ margin: '0 0 8px', padding: '6px 10px', borderRadius: 8, border: '1px solid var(--sa-border)', background: 'transparent', color: 'var(--sa-text)', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                  Use Colvy’s public number ({COLVY_CONTACT.phoneDisplay})
+                </button>
+              )}
 
               {/* Grant this business one or more free numbers. While the balance
                   is > 0, the "Get a business number" flow skips payment and

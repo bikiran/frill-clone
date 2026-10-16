@@ -7,7 +7,14 @@
   var slug = script ? script.getAttribute('data-slug') : null
   if (!slug) { console.warn('[Colvy] data-slug attribute missing'); return }
 
+  // Where the widget page lives. Always colvy.com on a real site; a copy served
+  // from a local dev server or a Colvy preview deployment talks to that server
+  // instead, so the widget can be tried end to end before it ships.
   var BASE = 'https://colvy.com'
+  try {
+    var so = new URL(script.src, window.location.href)
+    if (/^(localhost|127\.0\.0\.1)$/.test(so.hostname) || /\.vercel\.app$/.test(so.hostname)) BASE = so.origin
+  } catch (e) {}
   // The widget runs in an iframe, so it can't see the host page's URL by itself.
   // Pass the REAL parent page URL + title (this script runs on the business site).
   function parentInfo() {
@@ -137,10 +144,12 @@
     '#colvy-popup{position:fixed;z-index:999999;width:360px;height:540px;border-radius:20px;box-shadow:0 20px 60px rgba(0,0,0,0.2),0 0 0 1px rgba(0,0,0,0.06);overflow:hidden;border:none;transform-origin:bottom right;transition:transform 0.25s cubic-bezier(0.16,1,0.3,1),opacity 0.2s,width 0.22s ease,height 0.22s ease;opacity:0;transform:scale(0.85) translateY(12px);pointer-events:none}',
     '#colvy-popup.open{opacity:1;transform:scale(1) translateY(0);pointer-events:all}',
     // Size modes driven by the widget header buttons.
+    // (protocol: lib/widget-frame.ts). Never taller than the window.
+    '#colvy-popup{max-height:calc(100vh - 116px)}',
     '#colvy-popup.compact{width:320px;height:440px}',
-    '#colvy-popup.expanded{width:440px;height:660px}',
-    '#colvy-popup.fullscreen{width:100vw!important;height:100vh!important;top:0!important;left:0!important;right:auto!important;bottom:auto!important;border-radius:0;transform:none!important}',
-    '@media(max-width:480px){#colvy-popup{width:calc(100vw - 24px);height:70vh;bottom:84px;right:12px;left:12px}#colvy-btn{bottom:16px;right:16px}}',
+    '#colvy-popup.expanded{width:min(520px,calc(100vw - 48px));height:min(760px,calc(100vh - 116px))}',
+    '#colvy-popup.fullscreen{width:100vw!important;height:100vh!important;max-height:none;top:0!important;left:0!important;right:auto!important;bottom:auto!important;border-radius:0;transform:none!important}',
+    '@media(max-width:480px){#colvy-popup{width:calc(100vw - 24px)!important;left:12px!important;right:auto!important;height:70vh}#colvy-popup.compact{height:55vh}#colvy-popup.expanded{height:calc(100vh - 116px)}#colvy-btn{bottom:16px;right:16px}}',
     // A boosted announcement beside the bubble while the widget is closed.
     '#colvy-teaser{position:fixed;z-index:999997;width:280px;max-width:calc(100vw - 32px);background:#fff;color:#111;border-radius:16px;box-shadow:0 12px 40px rgba(0,0,0,0.18),0 0 0 1px rgba(0,0,0,0.06);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;cursor:pointer;overflow:hidden;animation:colvyTeaser .25s ease both}',
     '#colvy-teaser img{display:block;width:100%;height:120px;object-fit:cover}',
@@ -182,7 +191,7 @@
   function toggle() {
     open = !open
     if (open) { popup.classList.add('open'); renderBtn(true); clearBadge(); hideTeaser(); notifyOpen(true) }
-    else { popup.classList.remove('open'); popup.classList.remove('fullscreen', 'expanded', 'compact'); btn.style.display = ''; applyPosition(); renderBtn(false); notifyOpen(false) }
+    else { popup.classList.remove('open'); popup.classList.remove('fullscreen', 'expanded', 'compact'); sizeMode = 'normal'; btn.style.display = ''; applyPosition(); renderBtn(false); notifyOpen(false) }
   }
 
   // ── Drag the bubble to any of 6 zones ─────────────────────────────────────
@@ -338,12 +347,15 @@
   window.addEventListener('message', function (e) {
     var d = e.data
     if (!d || !d.colvy) return
+    // An embedded Colvy booking page / form asking for the tracked click.
+    if (d.type === 'clv_request') { answerClickRef(e); return }
+    // Everything else must come from our own widget iframe: no other frame on
+    // this page may resize, open or close it.
+    if (e.source !== popup.contentWindow || e.origin !== BASE) return
     // The iframe can ask for the current parent page (fallback if purl wasn't
     // in the initial src, e.g. cached old iframe). Reply with the real URL.
     if (d.type === 'request_parent_page') { sendPage(); return }
-    // An embedded Colvy booking page / form asking for the tracked click.
-    if (d.type === 'clv_request') { answerClickRef(e); return }
-    if (d.type === 'size') { setSize(d.mode); return }
+    if (d.type === 'size') { if (!open && d.mode !== 'normal') toggle(); setSize(d.mode); return }
     if (d.type === 'close') { if (open) toggle(); setSize('normal'); return }
     if (d.type === 'new_message' && !open) {
       // Agent replied while the widget is closed: badge it and gently bounce.
@@ -390,11 +402,12 @@
 
   // Size modes: normal | compact | expanded | fullscreen (driven from the
   // widget's own header buttons inside the iframe).
+  var sizeMode = 'normal'
   function setSize(mode) {
+    if (mode !== 'compact' && mode !== 'expanded' && mode !== 'fullscreen') mode = 'normal'
+    sizeMode = mode
     popup.classList.remove('compact', 'expanded', 'fullscreen')
-    if (mode === 'compact' || mode === 'expanded' || mode === 'fullscreen') {
-      popup.classList.add(mode)
-    }
+    if (mode !== 'normal') popup.classList.add(mode)
     if (mode === 'fullscreen') {
       // Hide the launcher so it doesn't float over the full-screen panel.
       btn.style.display = 'none'
@@ -402,7 +415,13 @@
       btn.style.display = ''
       applyPosition()
     }
+    // Tell the widget what's on screen, so its buttons match.
+    toFrame({ colvy: true, type: 'size_state', mode: mode })
   }
+  // Esc on this page leaves full screen (inside the widget, it handles Esc).
+  document.addEventListener('keydown', function (e) {
+    if ((e.key === 'Escape' || e.key === 'Esc') && sizeMode === 'fullscreen') setSize('normal')
+  })
 
   // ── Page history ─────────────────────────────────────────────────────────
   // This script runs on the BUSINESS site, so it can see the real URLs (the

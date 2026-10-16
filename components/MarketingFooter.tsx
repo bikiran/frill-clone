@@ -1,5 +1,7 @@
 'use client'
 
+import { COLVY_CONTACT } from '@/lib/colvy-contact'
+
 // Shared marketing footer — big and bold (ManyChat-style): tall dark band, many
 // link columns (two-up even on mobile, never one long list), a giant Colvy
 // wordmark in a grid, social links and a legal bar. Always dark for a strong
@@ -54,6 +56,23 @@ export default function MarketingFooter({ dark = false }: { dark?: boolean }) {
               <span style={{ fontWeight: 900, fontSize: 22, letterSpacing: '-0.02em' }}>Colvy</span>
             </div>
             <p style={{ fontSize: 14.5, color: muted, lineHeight: 1.6, maxWidth: 340, margin: '0 0 18px' }}>One place to talk to customers across every channel — and sell more.</p>
+            {/* Talk to Colvy: phone, text and email (lib/colvy-contact.ts) */}
+            <ul aria-label="Contact Colvy" className="cvf-contact" style={{ listStyle: 'none', padding: 0, margin: '0 0 22px', display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {[
+                { h: COLVY_CONTACT.telHref, l: COLVY_CONTACT.phoneDisplay, a: `Call Colvy on ${COLVY_CONTACT.phoneDisplay}`, d: 'M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z' },
+                { h: COLVY_CONTACT.smsHref, l: 'Text us', a: `Text Colvy on ${COLVY_CONTACT.phoneDisplay}`, d: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z' },
+                { h: COLVY_CONTACT.mailHref, l: COLVY_CONTACT.email, a: `Email Colvy at ${COLVY_CONTACT.email}`, d: 'M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zm18 2-10 7L2 6' },
+              ].map(c => (
+                <li key={c.h}>
+                  <a href={c.h} aria-label={c.a} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderRadius: 10, border: `1px solid ${line}`, color: text, textDecoration: 'none', fontSize: 14, fontWeight: 700, transition: 'border-color 0.2s, background 0.2s' }}
+                    onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.35)'; e.currentTarget.style.background = 'rgba(255,255,255,0.04)' }}
+                    onMouseLeave={e => { e.currentTarget.style.borderColor = line; e.currentTarget.style.background = 'transparent' }}>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={CORAL} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={c.d} /></svg>
+                    {c.l}
+                  </a>
+                </li>
+              ))}
+            </ul>
             {/* Get the app — App Store + Google Play */}
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', margin: '0 0 30px' }}>
               <a href="https://apps.apple.com/us/app/colvy/id6803380512" target="_blank" rel="noopener noreferrer" aria-label="Download on the App Store"

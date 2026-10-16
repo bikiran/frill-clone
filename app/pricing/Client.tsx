@@ -8,6 +8,7 @@ import MarketingFooter from '@/components/MarketingFooter'
 import MarketingNav from '@/components/MarketingNav'
 import ContactSalesModal from '@/components/ContactSalesModal'
 import { PRICING_FAQS } from '@/lib/pricing-faqs'
+import { COLVY_CONTACT } from '@/lib/colvy-contact'
 
 const CORAL = '#ff6a4d'
 const PINK = '#ff4d8d'
@@ -255,7 +256,7 @@ export default function PricingPage() {
                   <h2 style={{ fontSize: 18, fontWeight: 900, letterSpacing: '-0.01em', color: text, margin: 0 }}>Enterprise</h2>
                   <span style={{ fontSize: 11, fontWeight: 700, color: muted, border: `1px solid ${cardBorder}`, borderRadius: 999, padding: '2px 10px' }}>Contact sales</span>
                 </div>
-                <p style={{ fontSize: 14, color: muted, margin: '6px 0 0', maxWidth: 520, lineHeight: 1.55 }}>For teams that need compliance, control and scale beyond the plans above.</p>
+                <p style={{ fontSize: 14, color: muted, margin: '6px 0 0', maxWidth: 520, lineHeight: 1.55 }}>For teams that need compliance, control and scale beyond the plans above. Or call us on <a href={COLVY_CONTACT.telHref} style={{ color: text, fontWeight: 700, textDecoration: 'none', whiteSpace: 'nowrap' }}>{COLVY_CONTACT.phoneDisplay}</a>.</p>
               </div>
               <button onClick={() => setContactPlan('Enterprise')} className="pr-btn" style={{ padding: '11px 24px', borderRadius: 999, background: 'transparent', color: text, fontWeight: 800, fontSize: 14, border: `1.5px solid ${cardBorder}`, flexShrink: 0, cursor: 'pointer', fontFamily: 'inherit' }}>Contact sales →</button>
             </div>

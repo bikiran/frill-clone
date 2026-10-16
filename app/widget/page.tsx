@@ -14,6 +14,8 @@ import ImageViewer from '@/components/ImageViewer'
 import { getRelativeTime } from '@/lib/time-utils'
 import WidgetBoost, { trackAnnouncementView } from '@/components/announcements/WidgetBoost'
 import { categoryOf } from '@/lib/announcements'
+import { type WidgetSize, isWidgetSize, postToHost, boardLinkFor } from '@/lib/widget-frame'
+import { publicBoardUrl } from '@/lib/board-url'
 
 // Proof that this browser started the chat (lib/widget-access.ts): the key
 // /api/widget/start returned, and — for chats saved before keys existed — this
@@ -141,13 +143,46 @@ function WidgetContent() {
   const [outletInfo, setOutletInfo] = useState<{ isVic: boolean; nearest: any; outlets: any[] } | null>(null)
   const [assignedOutlet, setAssignedOutlet] = useState<any>(null)
   const [showOutletPicker, setShowOutletPicker] = useState(false)
-  const [sizeMode, setSizeMode] = useState<'normal' | 'compact' | 'expanded' | 'fullscreen'>('normal')
+  const [sizeMode, setSizeMode] = useState<WidgetSize>('normal')
+  // Only an embedded widget (widget.js on a business site, or the Colvy chat
+  // bubble on colvy.com) has a panel to resize. Opened in its own tab, the
+  // window controls would do nothing, so they're hidden.
+  const [embedded, setEmbedded] = useState(false)
+  useEffect(() => { try { setEmbedded(window.parent !== window) } catch { setEmbedded(true) } }, [])
 
-  // Tell the embedding script to resize the iframe panel.
-  const setSize = (mode: 'normal' | 'compact' | 'expanded' | 'fullscreen') => {
+  // Ask the page that embeds us (public/widget.js, or components/LiveChat.tsx
+  // on colvy.com) to resize the panel. See lib/widget-frame.ts for the protocol.
+  const setSize = (mode: WidgetSize) => {
     setSizeMode(mode)
-    try { window.parent?.postMessage({ colvy: true, type: 'size', mode }, '*') } catch {}
+    postToHost({ colvy: true, type: 'size', mode })
   }
+  // Minimise: fold the panel back into the chat bubble. The chat stays as it is.
+  const minimise = () => {
+    setSizeMode('normal')
+    postToHost({ colvy: true, type: 'size', mode: 'normal' })
+    postToHost({ colvy: true, type: 'close', reason: 'minimise' })
+  }
+
+  // The host can change the size too (Escape on its page, or closing the
+  // panel), so keep the buttons showing what's really on screen. Esc here
+  // leaves full screen.
+  useEffect(() => {
+    const onHost = (e: MessageEvent) => {
+      if (e.source !== window.parent) return
+      const d: any = e.data
+      if (!d || !d.colvy) return
+      if (d.type === 'size_state' && isWidgetSize(d.mode)) setSizeMode(d.mode)
+      else if (d.type === 'widget_open' && !d.open) setSizeMode('normal')
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && sizeModeRef.current === 'fullscreen') setSize('normal')
+    }
+    window.addEventListener('message', onHost)
+    window.addEventListener('keydown', onKey)
+    return () => { window.removeEventListener('message', onHost); window.removeEventListener('keydown', onKey) }
+  }, [])
+  const sizeModeRef = useRef<WidgetSize>('normal')
+  useEffect(() => { sizeModeRef.current = sizeMode }, [sizeMode])
 
   // Keep the chat pinned to the latest message: when the Chat tab is (re)opened,
   // when the chat view is shown, or when new messages arrive, scroll to bottom.
@@ -749,7 +784,9 @@ function WidgetContent() {
   const inProgress = ideas.filter(i => i.status === 'in_progress').slice(0, 3)
   const allIdeas = ideas.slice(0, 50)  // Show all ideas up to 50
 
-  const boardUrl = `https://${slug}.colvy.com`
+  // The server picks the address (lib/board-url.ts): a verified board domain,
+  // else <slug>.colvy.com.
+  const boardUrl: string = (company as any)?.board_url || publicBoardUrl({ slug })
 
   // Computed help article variables
   const allHelpCategories = Array.from(new Set(helpArticles.map(a => a.category).filter(Boolean)))
@@ -1395,6 +1432,9 @@ function WidgetContent() {
         @keyframes colvyWave { 0%,60%,100% { transform: rotate(0deg); } 70% { transform: rotate(14deg); } 80% { transform: rotate(-8deg); } 90% { transform: rotate(10deg); } }
         .item-row { cursor: pointer; border-radius: 10px; padding: 10px 12px; display: flex; align-items: center; gap: 10px; transition: background 0.15s; width: 100%; box-sizing: border-box; }
         .item-row:hover, .item-row:active { background: #f5f5f5; }
+        .cw-winbtn { width: 28px; height: 28px; border-radius: 7px; border: none; background: none; cursor: pointer; display: flex; align-items: center; justify-content: center; color: #6b7280; padding: 0; transition: background 0.15s, color 0.15s; }
+        .cw-winbtn:hover, .cw-winbtn[data-on] { background: #f3f4f6; color: #111827; }
+        .cw-winbtn:focus-visible, .cw-board:focus-visible { outline: 2px solid ${accentColor}; outline-offset: 1px; }
         .vote-pill { display: flex; align-items: center; gap: 4px; min-width: 32px; flex-shrink: 0; }
         input[type="text"], input[type="email"], input[type="number"], textarea, select { 
           width: 100%; 
@@ -1425,40 +1465,51 @@ function WidgetContent() {
           )}
           <span style={{ fontSize: 14, fontWeight: 700, color: '#0d0d0d', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{company?.name || slug}</span>
 
-          {/* Size controls — shrink / expand / full screen */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 2, flexShrink: 0 }}>
-            <button type="button" title={sizeMode === 'compact' ? 'Normal size' : 'Shrink'}
-              onClick={() => setSize(sizeMode === 'compact' ? 'normal' : 'compact')}
-              style={{ width: 26, height: 26, borderRadius: 6, border: 'none', background: sizeMode === 'compact' ? '#f3f4f6' : 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9ca3af' }}>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/></svg>
-            </button>
-            <button type="button" title={sizeMode === 'expanded' ? 'Normal size' : 'Expand'}
-              onClick={() => setSize(sizeMode === 'expanded' ? 'normal' : 'expanded')}
-              style={{ width: 26, height: 26, borderRadius: 6, border: 'none', background: sizeMode === 'expanded' ? '#f3f4f6' : 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9ca3af' }}>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 21 3 21 3 15"/><polyline points="15 3 21 3 21 9"/></svg>
-            </button>
-            <button type="button" title={sizeMode === 'fullscreen' ? 'Exit full screen' : 'Full screen'}
-              onClick={() => setSize(sizeMode === 'fullscreen' ? 'normal' : 'fullscreen')}
-              style={{ width: 26, height: 26, borderRadius: 6, border: 'none', background: sizeMode === 'fullscreen' ? '#f3f4f6' : 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9ca3af' }}>
-              {sizeMode === 'fullscreen' ? (
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
-              ) : (
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
-              )}
-            </button>
-            {sizeMode === 'fullscreen' && (
-              <button type="button" title="Close"
-                onClick={() => { setSize('normal'); try { window.parent?.postMessage({ colvy: true, type: 'close' }, '*') } catch {} }}
-                style={{ width: 26, height: 26, borderRadius: 6, border: 'none', background: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9ca3af' }}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          {/* Window controls: minimise / expand / full screen. They ask the
+              host page to resize this iframe (lib/widget-frame.ts). */}
+          {embedded && (
+            <div className="cw-win" role="group" aria-label="Chat window size" style={{ display: 'flex', alignItems: 'center', gap: 2, flexShrink: 0 }}>
+              <button type="button" className="cw-winbtn" onClick={minimise}
+                aria-label="Minimise chat" title="Minimise">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/></svg>
               </button>
-            )}
-          </div>
+              {sizeMode !== 'fullscreen' && (
+                <button type="button" className="cw-winbtn" data-on={sizeMode === 'expanded' ? '1' : undefined}
+                  onClick={() => setSize(sizeMode === 'expanded' ? 'normal' : 'expanded')}
+                  aria-label={sizeMode === 'expanded' ? 'Back to normal size' : 'Expand chat'} aria-pressed={sizeMode === 'expanded'}
+                  title={sizeMode === 'expanded' ? 'Normal size' : 'Expand'}>
+                  {sizeMode === 'expanded' ? (
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/></svg>
+                  ) : (
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+                  )}
+                </button>
+              )}
+              <button type="button" className="cw-winbtn" data-on={sizeMode === 'fullscreen' ? '1' : undefined}
+                onClick={() => setSize(sizeMode === 'fullscreen' ? 'normal' : 'fullscreen')}
+                aria-label={sizeMode === 'fullscreen' ? 'Exit full screen' : 'Full screen'} aria-pressed={sizeMode === 'fullscreen'}
+                title={sizeMode === 'fullscreen' ? 'Exit full screen (Esc)' : 'Full screen'}>
+                {sizeMode === 'fullscreen' ? (
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"/></svg>
+                ) : (
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
+                )}
+              </button>
+              {sizeMode === 'fullscreen' && (
+                <button type="button" className="cw-winbtn" aria-label="Close chat" title="Close"
+                  onClick={minimise}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+              )}
+            </div>
+          )}
           <a
-            href={`${boardUrl}?utm_source=widget&utm_medium=colvy_widget&utm_campaign=${encodeURIComponent(slug)}`}
+            href={boardLinkFor(boardUrl, slug)}
             target="_blank" rel="noopener"
-            style={{ fontSize: 11, color: '#9ca3af', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 3, flexShrink: 0, padding: '4px 8px', borderRadius: 6, border: '1px solid #e5e5e5' }}>
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+            aria-label={`Open the ${company?.name || slug} board in a new tab`}
+            className="cw-board"
+            style={{ fontSize: 11, color: '#6b7280', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 3, flexShrink: 0, padding: '4px 8px', borderRadius: 6, border: '1px solid #e5e5e5' }}>
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
             Board
           </a>
         </div>

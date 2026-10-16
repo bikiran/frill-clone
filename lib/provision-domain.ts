@@ -58,9 +58,13 @@ export async function provisionSubdomain(domain: string): Promise<ProvisionResul
     try {
       const r = await vercelReq('POST', `/v10/projects/${VERCEL_PROJECT_ID}/domains`, { name: domain })
       if (r?.error) {
-        // Already attached to this project → treat as success (idempotent).
-        const alreadyHere = /already.*in use|already exists|domain_already/i.test(r.error.code || r.error.message || '')
-        result.vercel = alreadyHere ? { success: true, already: true } : { error: r.error.message, code: r.error.code }
+        // An error can still mean "it's already on this project" (idempotent).
+        // But "already in use" can also mean ANOTHER project or team holds it,
+        // which used to be counted as success and left the host dead. Ask
+        // Vercel whether this project really has it.
+        const here = await vercelReq('GET', `/v9/projects/${VERCEL_PROJECT_ID}/domains/${domain}`).catch(() => null)
+        const attached = !!(here && !here.error && here.name)
+        result.vercel = attached ? { success: true, already: true } : { error: r.error.message || 'Vercel refused the domain', code: r.error.code }
       } else {
         result.vercel = { success: true }
       }
@@ -170,4 +174,90 @@ export async function provisionCustomDomain(domain: string): Promise<CustomDomai
 
   out.records = [brandedRecord]
   return out
+}
+
+// ── Status + plain-English report (super admin → Companies → "Set up board address") ──
+
+export interface SubdomainCheck {
+  domain: string
+  configured: boolean            // the server has a Vercel token + project id
+  attached: boolean              // Vercel lists it on this project
+  verified: boolean              // Vercel says the project owns it
+  misconfigured: boolean | null  // DNS doesn't reach Vercel yet (null = unknown)
+  verification: { type: string; domain: string; value: string }[]  // records Vercel still wants
+  error?: string
+}
+
+/** Ask Vercel how a *.colvy.com host stands right now. Never throws. */
+export async function checkSubdomain(domain: string): Promise<SubdomainCheck> {
+  const out: SubdomainCheck = { domain, configured: !!(VERCEL_TOKEN && VERCEL_PROJECT_ID), attached: false, verified: false, misconfigured: null, verification: [] }
+  if (!out.configured) return out
+  try {
+    const info = await vercelReq('GET', `/v9/projects/${VERCEL_PROJECT_ID}/domains/${domain}`)
+    if (info && !info.error && info.name) {
+      out.attached = true
+      out.verified = info.verified !== false
+      out.verification = Array.isArray(info.verification)
+        ? info.verification.map((v: any) => ({ type: String(v.type || ''), domain: String(v.domain || ''), value: String(v.value || '') })).filter((v: any) => v.type && v.value)
+        : []
+    } else if (info?.error && info.error.code !== 'not_found') {
+      out.error = info.error.message || 'Vercel lookup failed'
+    }
+  } catch (e: any) { out.error = e?.message || 'Vercel lookup failed' }
+  try {
+    const cfg = await vercelReq('GET', `/v6/domains/${domain}/config`)
+    if (cfg && typeof cfg.misconfigured === 'boolean') out.misconfigured = cfg.misconfigured
+  } catch {}
+  return out
+}
+
+export interface ProvisionReport {
+  ok: boolean          // nothing left for anyone to do
+  summary: string
+  steps: string[]      // what the owner does next, in order (empty when ok)
+}
+
+/** Turn a provision attempt and a fresh check into what to tell the owner. */
+export function describeProvision(p: ProvisionResult, c: SubdomainCheck): ProvisionReport {
+  const d = p.domain
+  const sub = d.replace(/\.colvy\.com$/, '')
+  const addInVercel = `In Vercel, open the project that serves colvy.com → Settings → Domains → Add, enter ${d} and save.`
+  const steps: string[] = []
+
+  if (!c.configured || p.vercel.skipped) {
+    steps.push(addInVercel)
+    steps.push('Or let Colvy do it: in Vercel → Settings → Environment Variables set VERCEL_TOKEN, VERCEL_PROJECT_ID and VERCEL_TEAM_ID, redeploy, then press this button again.')
+    if (p.cloudflare.skipped) steps.push(`If ${d} doesn't resolve, add a DNS record in Cloudflare for colvy.com: CNAME ${sub} → ${CNAME_TARGET}, proxy off (grey cloud).`)
+    return { ok: false, summary: `Colvy can't reach Vercel from here, so ${d} wasn't added.`, steps }
+  }
+
+  if (!c.attached) {
+    const inUse = /in.use|taken|another|owned/i.test(`${p.vercel.code || ''} ${p.vercel.error || ''}`)
+    if (inUse) {
+      steps.push(`${d} is attached to a different Vercel project or team. Remove it there (that project → Settings → Domains → ${d} → Remove).`)
+      steps.push('Then press this button again.')
+    } else {
+      steps.push(addInVercel)
+    }
+    return { ok: false, summary: `Vercel didn't add ${d}${p.vercel.error ? `: ${p.vercel.error}` : '.'}`, steps }
+  }
+
+  if (!c.verified && c.verification.length) {
+    for (const v of c.verification) steps.push(`In Cloudflare DNS for colvy.com add a ${v.type} record: name ${v.domain}, value ${v.value}.`)
+    steps.push('Vercel checks again within a few minutes. Press this button to see the result.')
+    return { ok: false, summary: `${d} is on the Vercel project but Vercel wants proof Colvy owns it.`, steps }
+  }
+
+  if (c.misconfigured === true) {
+    steps.push(`In Cloudflare DNS for colvy.com, make sure there's a CNAME ${sub} → ${CNAME_TARGET} with the proxy off (grey cloud).`)
+    if (p.cloudflare.error && !p.cloudflare.skipped) steps.push(`Colvy's own attempt said: ${p.cloudflare.error}`)
+    steps.push('Vercel issues the certificate once the record is live. Press this button to check.')
+    return { ok: false, summary: `${d} is on the Vercel project but its DNS doesn't point at Vercel yet.`, steps }
+  }
+
+  return {
+    ok: true,
+    summary: `${d} is on the Vercel project${p.vercel.already ? ' (it already was)' : ''} and its DNS points at Vercel. The certificate is issued within a few minutes, then https://${d} opens.`,
+    steps,
+  }
 }

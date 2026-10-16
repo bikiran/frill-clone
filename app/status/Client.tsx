@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase'
 import MarketingNav from '@/components/MarketingNav'
 import MarketingFooter from '@/components/MarketingFooter'
 import FeatureIcon from '@/components/FeatureIcon'
+import { COLVY_CONTACT } from '@/lib/colvy-contact'
 
 // System status page. Shows current component states (operational by default) and
 // a recent history. It deliberately does NOT invent uptime percentages or a fake
@@ -111,7 +112,7 @@ export default function StatusPage() {
             {days.length === 0 && <div style={{ padding: '16px 20px', fontSize: 14, color: muted }}>Loading…</div>}
           </div>
           <p style={{ fontSize: 13, color: muted, margin: '16px 2px 0', lineHeight: 1.6 }}>
-            Component states reflect current monitoring. For help with something that isn’t working, reach us at <a href="mailto:support@colvy.com" style={{ color: CORAL, fontWeight: 700, textDecoration: 'none' }}>support@colvy.com</a>.
+            Component states reflect current monitoring. For help with something that isn’t working, reach us at <a href={COLVY_CONTACT.mailHref} style={{ color: CORAL, fontWeight: 700, textDecoration: 'none' }}>{COLVY_CONTACT.email}</a> or call or text <a href={COLVY_CONTACT.telHref} style={{ color: CORAL, fontWeight: 700, textDecoration: 'none', whiteSpace: 'nowrap' }}>{COLVY_CONTACT.phoneDisplay}</a>.
           </p>
         </Reveal>
       </section>
