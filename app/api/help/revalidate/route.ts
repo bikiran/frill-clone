@@ -3,6 +3,7 @@ import { revalidateTag } from 'next/cache'
 import { createClient } from '@supabase/supabase-js'
 import { requireCompanyAccess } from '@/lib/company-access'
 import { helpTags } from '@/lib/help-public'
+import { tenantTags } from '@/lib/tenant-brand'
 
 export const dynamic = 'force-dynamic'
 
@@ -34,6 +35,8 @@ export async function POST(req: NextRequest) {
     revalidateTag(helpTags.company(companyId), now)
     revalidateTag(helpTags.all, now)
     revalidateTag(helpTags.companies, now)
+    // This company's page branding (tab title, icon, description) only.
+    revalidateTag(tenantTags.company(companyId), now)
     for (const id of ids) revalidateTag(helpTags.article(id.toLowerCase()), now)
     return NextResponse.json({ ok: true })
   } catch {

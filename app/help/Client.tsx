@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
 import { useTerminology } from '@/lib/terminologyContext'
-import { HELP_LIST_COLUMNS, helpExcerpt, toCatMap } from '@/lib/help-shared'
+import { HELP_LIST_COLUMNS, helpExcerpt, helpSubtitleOf, toCatMap } from '@/lib/help-shared'
 import type { HelpIndexData } from '@/lib/help-public'
 
 const ADMIN_EMAIL = 'bishalstha76@gmail.com'
@@ -62,6 +62,7 @@ export default function HelpCentrePage({ initial }: { initial?: HelpIndexData } 
   const [cid, setCid] = useState<string | null>(initial?.companyId ?? null)
   const [companyName, setCompanyName] = useState(initial?.companyName ?? '')
   const [helpCover, setHelpCover] = useState(initial?.helpCover ?? '')
+  const [subtitle, setSubtitle] = useState<string | null>(initial?.helpSubtitle ?? null)
   const searchRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -85,6 +86,7 @@ export default function HelpCentrePage({ initial }: { initial?: HelpIndexData } 
       const { data: rows } = await (supabase as any).from('site_settings').select('value')
         .eq('key', 'general').eq('company_id', companyId)
         .order('updated_at', { ascending: false }).limit(1)
+      setSubtitle(typeof rows?.[0]?.value?.helpSubtitle === 'string' ? rows[0].value.helpSubtitle : null)
       if (rows?.[0]?.value?.helpAccess === 'locked') {
         const { data: { session } } = await supabase.auth.getSession()
         if (!session?.user) setAccessLocked(true)
@@ -263,7 +265,7 @@ export default function HelpCentrePage({ initial }: { initial?: HelpIndexData } 
         : `linear-gradient(135deg, var(--peach) 0%, #ffffff 100%)` }}>
         <div className="mb-3 flex justify-center" style={{ color: onCover ? '#fff' : "var(--coral)" }}><svg width="46" height="46" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg></div>
         <h1 className="font-black mb-3" style={{ fontSize: 'clamp(30px,4.5vw,46px)', letterSpacing: '-0.02em', color: onCover ? '#fff' : 'var(--ink)', textShadow: onCover ? '0 1px 12px rgba(0,0,0,0.25)' : 'none' }}>{heroTitle}</h1>
-        <p className="mb-8 text-lg" style={{ color: onCover ? 'rgba(255,255,255,0.9)' : 'var(--slate)', textShadow: onCover ? '0 1px 8px rgba(0,0,0,0.25)' : 'none' }}>Find answers, guides, and resources</p>
+        <p className="mb-8 text-lg" style={{ color: onCover ? 'rgba(255,255,255,0.9)' : 'var(--slate)', textShadow: onCover ? '0 1px 8px rgba(0,0,0,0.25)' : 'none' }}>{helpSubtitleOf(subtitle)}</p>
 
         {/* Live search */}
         <div className="max-w-2xl mx-auto relative" ref={searchRef}>

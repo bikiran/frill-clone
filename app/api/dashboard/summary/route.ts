@@ -99,7 +99,7 @@ export async function GET(req: NextRequest) {
   const dataP = Promise.all([
     count(conv().eq('is_unread', true).not('status', 'in', notClosed).or(notSpam)),
     count(conv().is('assigned_to', null).not('status', 'in', notClosed).or(notSpam).gte('last_message_at', d7)),
-    rows(db.from('calls').select('direction, status, duration_seconds, is_voicemail').eq('company_id', companyId).gte('created_at', today0.toISOString()).limit(1000)),
+    rows(db.from('calls').select('direction, status, duration_seconds, is_voicemail, created_at, ended_at, recording_url, answered_at, answered_by_user_id').eq('company_id', companyId).gte('created_at', today0.toISOString()).limit(1000)),
     count(db.from('orders').select('id', { count: 'exact', head: true }).eq('company_id', companyId).in('status', OPEN_ORDER)),
     rows(db.from('orders').select('order_date, created_at').eq('company_id', companyId).in('status', OPEN_ORDER).order('order_date', { ascending: true, nullsFirst: false }).limit(1)),
     rows(db.from('conversation_tasks').select('id, text, due_date, status, done, assigned_to, conversation_id').eq('company_id', companyId).lt('due_date', tomorrow0.toISOString()).order('due_date', { ascending: true }).limit(2000)),

@@ -11,6 +11,7 @@ import { ToastProvider } from '@/components/ToastProvider'
 import LiveChat from '@/components/LiveChat'
 import UpdateNotification from '@/components/UpdateNotification'
 import Analytics from '@/components/Analytics'
+import { NEUTRAL_ICON } from '@/lib/tenant-meta'
 
 // Where a notification should take you when clicked. Shared by the in-app
 // notifications menu AND the bottom-right OS notification, so both route the
@@ -235,7 +236,10 @@ export default function AppChrome({
           // Dynamic favicon per company: explicit faviconUrl first, else the
           // company's own logo, and only then Colvy's default — so a board that
           // set a logo but no separate favicon keeps its own icon in the tab.
-          const favicon = s.faviconUrl || companyLogo || '/favicon.png'
+          // A company's site never falls back to Colvy's mark — the neutral icon
+          // (lib/tenant-meta) instead.
+          const onCompanyHost = (() => { const c = companyHost(window.location.hostname); return !!(c.slug || c.customHost) })()
+          const favicon = s.faviconUrl || companyLogo || (onCompanyHost ? NEUTRAL_ICON : '/favicon.png')
           let link = document.querySelector("link[rel~='icon']") as HTMLLinkElement
           if (!link) { link = document.createElement('link'); link.rel = 'icon'; document.head.appendChild(link) }
           link.href = favicon
@@ -359,8 +363,11 @@ export default function AppChrome({
     return () => { window.removeEventListener('colvy-nav-update', handleNavUpdate); window.removeEventListener('colvy-terminology-update', handleTermsUpdate) }
   }, [pathname])
 
-  // Browser tab title: "<Company>'s <Page Name>" on company boards
-  // e.g. "nePlay's Idea Board", "nePlay's Help Center", "nePlay's Roadmap"
+  // Browser tab title on a company subdomain's signed-in pages:
+  // "<Company>'s Admin", "<Company>'s Settings"… Public pages (board, roadmap,
+  // announcements, help, polls, surveys, forms, booking) get their title from
+  // the server (lib/tenant-meta) — overwriting it here replaced an article's
+  // own title with "<Company>'s Help Center".
   useEffect(() => {
     if (typeof window === 'undefined' || typeof document === 'undefined') return
     const h = window.location.hostname
@@ -370,19 +377,14 @@ export default function AppChrome({
 
     const pageName = (() => {
       const p = pathname || '/'
-      if (p.startsWith('/roadmap')) return 'Roadmap'
-      if (p.startsWith('/announcements')) return 'Announcements'
-      if (p.startsWith('/help')) return 'Help Center'
       if (p.startsWith('/admin/settings')) return 'Settings'
       if (p.startsWith('/admin')) return 'Admin'
-      if (p.startsWith('/polls')) return 'Polls'
-      if (p.startsWith('/surveys')) return 'Surveys'
-      if (p.startsWith('/forms')) return 'Forms'
       if (p.startsWith('/profile')) return 'Profile'
       if (p.startsWith('/signin')) return 'Sign In'
       if (p.startsWith('/signup')) return 'Sign Up'
-      return 'Idea Board'
+      return null
     })()
+    if (!pageName) return
 
     const applyTitle = (name: string) => { document.title = `${name}'s ${pageName}` }
 

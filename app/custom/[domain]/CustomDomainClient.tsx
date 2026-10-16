@@ -5,7 +5,7 @@ import { useParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { useShowPoweredBy } from '@/lib/use-powered-by'
 import { termFor } from '@/lib/terminology'
-import { HELP_LIST_COLUMNS, helpExcerpt } from '@/lib/help-shared'
+import { HELP_LIST_COLUMNS, helpExcerpt, helpSubtitleOf } from '@/lib/help-shared'
 import type { CustomDomainHelpData } from '@/lib/help-public'
 
 function CategorySVG({ cat, size = 15 }: { cat: string; size?: number }) {
@@ -37,6 +37,7 @@ export default function CustomDomainPage({ initial, domain }: { initial?: Custom
   const showPoweredBy = useShowPoweredBy(company?.id)
   // The workspace's wording (Settings → Terminology).
   const [terms, setTerms] = useState<Record<string, string>>(initial?.terms ?? {})
+  const [subtitle, setSubtitle] = useState<string | null>(initial?.helpSubtitle ?? null)
   const T = (k: string) => termFor(terms, k)
   // Where we are, read after mount so the server render and the first client
   // render agree. Until then links are relative, which go to the same place.
@@ -92,7 +93,11 @@ export default function CustomDomainPage({ initial, domain }: { initial?: Custom
       setIsHelp(help)
       ;(supabase as any).from('site_settings').select('value').eq('key', 'general').eq('company_id', co.id)
         .order('updated_at', { ascending: false }).limit(1)
-        .then(({ data }: any) => { const tv = data?.[0]?.value?.termValues; if (tv && typeof tv === 'object') setTerms(tv) }, () => {})
+        .then(({ data }: any) => {
+          const v = data?.[0]?.value || {}
+          if (v.termValues && typeof v.termValues === 'object') setTerms(v.termValues)
+          setSubtitle(typeof v.helpSubtitle === 'string' ? v.helpSubtitle : null)
+        }, () => {})
 
       if (help) {
         // Published articles only (drafts aren't viewable here anyway), and
@@ -205,7 +210,7 @@ export default function CustomDomainPage({ initial, domain }: { initial?: Custom
           <svg width="46" height="46" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
         </div>
         <h1 style={{ fontSize: 'clamp(30px,4.5vw,46px)', fontWeight: 900, letterSpacing: '-0.02em', margin: '0 0 10px', color: ink, textShadow: onCover ? '0 1px 12px rgba(0,0,0,0.25)' : 'none' }}>{company.name} Help Centre</h1>
-        <p style={{ color: sub, margin: '0 auto 28px', fontSize: 18, maxWidth: 560, textShadow: onCover ? '0 1px 8px rgba(0,0,0,0.25)' : 'none' }}>Find answers, guides, and resources to keep your aquarium thriving</p>
+        <p style={{ color: sub, margin: '0 auto 28px', fontSize: 18, maxWidth: 560, textShadow: onCover ? '0 1px 8px rgba(0,0,0,0.25)' : 'none' }}>{helpSubtitleOf(subtitle)}</p>
         <div style={{ maxWidth: 640, margin: '0 auto', position: 'relative' }}>
           <svg style={{ position: 'absolute', left: 20, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af' }} width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder={T('help_search')}
