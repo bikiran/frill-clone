@@ -6,7 +6,7 @@ import { confirmChatPayment } from '@/lib/chat-payment-confirm'
 import { internalPlanForTier } from '@/lib/plan'
 import { BRANDING_ADDON, setBrandingAddon } from '@/lib/branding-addon'
 import { stripeSecretFor } from '@/lib/company-secrets'
-import { noteNumberOrder, noteNumberOrderResult, type NumberOrder } from '@/lib/number-orders'
+import { recordUnclaimedFailure, type NumberOrder } from '@/lib/number-orders'
 
 const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || ''
 
@@ -256,9 +256,7 @@ export async function POST(req: NextRequest) {
           // Provision on whichever carrier this purchase was for. Both endpoints
           // take the same shape; the customer never learns which one ran.
           const prov = meta.provider === 'telnyx' ? 'telnyx' : 'twilio'
-          // Recorded as paid and being set up, then how it went (lib/number-orders).
           const order: NumberOrder = { sessionId: String(session.id || ''), companyId: String(meta.companyId), provider: prov }
-          await noteNumberOrder(supabase, order, 'provisioning')
           try {
             const origin = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
             const res = await fetch(`${origin}/api/${prov}/number`, {
@@ -269,12 +267,18 @@ export async function POST(req: NextRequest) {
                 numberType: meta.numberType || undefined,
                 locationId: meta.locationId || undefined,
                 stripeSubscriptionId: session.subscription,
+                // The route claims this checkout before buying, so it and the
+                // calls page's finalize never both buy a number for it.
+                sessionId: session.id,
               }),
             })
-            await noteNumberOrderResult(supabase, order, res)
+            // Once claimed, the route records how it went; turned away before
+            // that, the paid checkout is recorded as failed so setup asks for it
+            // to be finished (lib/number-orders).
+            if (!res.ok) await recordUnclaimedFailure(supabase, order, `HTTP ${res.status}`)
           } catch (e: any) {
             console.error('Post-payment number provisioning failed:', e)
-            await noteNumberOrder(supabase, order, 'failed', { error: e?.message })
+            await recordUnclaimedFailure(supabase, order, e?.message)
           }
         }
         break

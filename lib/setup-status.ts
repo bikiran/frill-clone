@@ -22,6 +22,8 @@
 // Every read is best-effort: a table or column a workspace doesn't have (a
 // migration that hasn't run) counts as "not done" instead of failing.
 
+import { CLAIM_STALE_MS } from '@/lib/number-orders'
+
 export type SetupStepKey = 'email' | 'meta' | 'store' | 'phone' | 'customers' | 'team' | 'automation'
 export type SetupState = 'done' | 'waiting' | 'todo'
 
@@ -57,9 +59,10 @@ const DAY = 864e5
 // moves a bundle on from there (the number is bought straight after checkout),
 // so without a number it's a purchase that wasn't finished, not a wait.
 const BUNDLE_SENT = ['submitted', 'validating', 'pending', 'in_review', 'in-review', 'pending_review', 'pending-review']
-// A paid number is bought within a minute or so (the calls page keeps trying
-// for about that long). Still "being set up" after this, it's stuck.
-const PROVISIONING_MAX_MS = 10 * 60_000
+// A paid number is bought within a minute or so. Still "being set up" once
+// its claim can be taken over (lib/number-orders), it's stuck — and "Finish
+// setting up" can then take it over.
+const PROVISIONING_MAX_MS = CLAIM_STALE_MS
 // The calls page tries a failed set-up a few more times, seconds apart, so a
 // failure this fresh may still come good.
 const RETRY_GRACE_MS = 60_000
