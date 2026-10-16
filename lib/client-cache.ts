@@ -133,14 +133,28 @@ if (typeof window !== 'undefined') {
 // Keyed by an arbitrary string. Values live for the lifetime of the SPA session
 // (until a full reload), which is exactly the window over which tab-switching
 // should feel instant.
+//
+// Bounded (least recently used goes first): some keys are per record (an agent
+// run, a search, a filter), so in a tab left open all day the map otherwise
+// kept every list ever loaded.
+const DATA_CACHE_MAX = 60
 const dataCache = new Map<string, unknown>()
 
 export function readCache<T>(key: string): T | undefined {
-  return dataCache.get(key) as T | undefined
+  if (!dataCache.has(key)) return undefined
+  const v = dataCache.get(key)
+  dataCache.delete(key); dataCache.set(key, v)
+  return v as T
 }
 
 export function writeCache<T>(key: string, value: T): void {
+  dataCache.delete(key)
   dataCache.set(key, value)
+  while (dataCache.size > DATA_CACHE_MAX) {
+    const oldest = dataCache.keys().next().value
+    if (oldest === undefined) break
+    dataCache.delete(oldest)
+  }
 }
 
 export function hasCache(key: string): boolean {

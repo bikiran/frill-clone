@@ -516,7 +516,7 @@ export default function AppChrome({
       setUser(u)
       checkOwner(u)
     })
-    return () => subscription.unsubscribe()
+    return () => { subscription.unsubscribe(); document.removeEventListener('mousedown', closeMenuOnOutsideClick) }
   }, [])
 
   const handleLogout = async () => {

@@ -9,6 +9,7 @@ import { logEnquiryReopened } from '@/lib/conversation-timeline'
 import { parseInboundAlias } from '@/lib/inbound-alias'
 import { fetchResendReceivedEmail, readReceived, hostResendAttachments as hostResendFiles, findEmailThread, splitQuoted, htmlToPlain, emailPreview, parseMessageIds, idVariants } from '@/lib/inbound-email'
 import { emitInboundEvent } from '@/lib/integration-hooks'
+import { scheduleMessageThumbs } from '@/lib/image-thumb'
 
 export const dynamic = 'force-dynamic'
 
@@ -222,13 +223,15 @@ export async function POST(req: NextRequest) {
       // Mirror into the linked inbox conversation too, if the ticket has one.
       if (ticket.conversation_id) {
         try {
-          await db.from('messages').insert({
+          const { data: ticketMsg } = await db.from('messages').insert({
             conversation_id: ticket.conversation_id, company_id: ticket.company_id, sender_type: 'visitor', sender_name: from.name || from.email, sender_email: from.email, content, email_message_id: messageId || null, email_in_reply_to: inReplyTo || null,
             delivery_channel: 'email', email_from: from.name ? `${from.name} <${from.email}>` : from.email, email_subject: subject,
             email_html: htmlBody ? sanitizeEmailHtml(String(htmlBody)) || null : null,
             email_attachments: ticketAtts.map((a: any) => ({ name: a.name, mime: a.type, url: a.url })),
             ...(resendEmailId ? { metadata: { inbound_email: { provider: 'resend', resend_email_id: String(resendEmailId), body: bodyFetch, auth } } } : {}),
-          })
+          }).select('id').maybeSingle()
+          // Small copies of photos for the inbox tiles, after the response.
+          scheduleMessageThumbs(db, ticketMsg?.id, ticketAtts.map((a: any) => ({ mime: a.type, url: a.url })), { field: 'email_attachments', prefixes: [`/ticket-attachments/${ticket.company_id}/`] })
           await db.from('conversations').update({ last_message: emailPreview(content, ticketAtts.length, subject), last_message_at: new Date().toISOString(), is_unread: true, status: 'open' }).eq('id', ticket.conversation_id)
         } catch {}
       }
@@ -366,15 +369,20 @@ export async function POST(req: NextRequest) {
       metadata: { inbound_email: { provider: resendEmailId ? 'resend' : 'webhook', ...(resendEmailId ? { resend_email_id: String(resendEmailId) } : {}), body: bodyFetch, auth, ...(auth === 'fail' ? { unverified: true } : {}), ...(receivedAt ? { received_at: receivedAt } : {}), ...(threadedVia ? { threaded_via: threadedVia } : {}) } },
     }
     {
-      const { error: insErr } = await db.from('messages').insert(msgRow)
+      const { data: inserted, error: insErr } = await db.from('messages').insert(msgRow).select('id').maybeSingle()
       // Stored already (two deliveries at once; V389's unique index caught it).
       if (insErr && String(insErr.code) === '23505') return NextResponse.json({ ok: true, duplicate: true, conversationId: conv.id })
+      let storedId: string | null = inserted?.id || null
       // A database without email_quoted / metadata must still get the email.
       if (insErr) {
         console.warn('[email webhook] message insert retry without optional columns', insErr.message)
         delete msgRow.metadata; delete msgRow.email_quoted
-        await db.from('messages').insert(msgRow)
+        const { data: retried } = await db.from('messages').insert(msgRow).select('id').maybeSingle()
+        storedId = retried?.id || null
       }
+      // Small copies of photos for the inbox tiles — made after the response,
+      // from the files we just stored in this company's folder.
+      scheduleMessageThumbs(db, storedId, msgRow.email_attachments, { field: 'email_attachments', prefixes: [`/ticket-attachments/${companyId}/`] })
     }
     await emitInboundEvent(db, { companyId, conversationId: conv.id, text: content || preview, channel: 'email', name: from.name || null, email: from.email || null })
 

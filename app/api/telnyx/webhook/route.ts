@@ -1,4 +1,5 @@
-import { telnyxSignatureOk } from '@/lib/telnyx-signature'
+import { telnyxSignatureOk, telnyxSignatureVerified } from '@/lib/telnyx-signature'
+import { scheduleMessageThumbs } from '@/lib/image-thumb'
 import { queueMediaUploadReply } from '@/lib/media-upload-reply'
 import { smsKeyword, STOP_WORDS, START_WORDS, recordSmsKeyword, textOptOut, assertMayText } from '@/lib/sms-consent'
 import { internalHeaders } from '@/lib/internal-call'
@@ -65,6 +66,9 @@ export async function POST(req: NextRequest) {
     const rawBody = await req.text()
     // Only Telnyx (Ed25519-signed; see lib/telnyx-signature.ts).
     if (!telnyxSignatureOk(req, rawBody)) return NextResponse.json({ error: 'Invalid signature' }, { status: 403 })
+    // Payload URLs are only fetched server-side when the signature really
+    // checked out (not when verification is switched to log/off).
+    const sigVerified = telnyxSignatureVerified(req, rawBody)
     const body = JSON.parse(rawBody || '{}')
     const event = body?.data
     const eventType: string = event?.event_type || ''
@@ -321,7 +325,7 @@ export async function POST(req: NextRequest) {
 
         // Customer texted a closed enquiry — log the reopen before we flip it.
         await logEnquiryReopened(db, { conversationId: conv.id, companyId, prevStatus: conv.status, actorName: matchedContactName || null, via: 'SMS' })
-        await db.from('messages').insert({
+        const { data: insertedSms } = await db.from('messages').insert({
           conversation_id: conv.id,
           company_id: companyId,
           sender_type: 'visitor',
@@ -331,7 +335,10 @@ export async function POST(req: NextRequest) {
           ...(mediaAttemptFailed ? { metadata: { media_attempt: true } } : {}),
           delivery_channel: 'sms',
           telnyx_message_id: payload?.id || null,
-        })
+        }).select('id').maybeSingle()
+        // Small copies of any photos for the inbox tiles, after we've answered
+        // Telnyx. Its media URLs are fetched only from a verified payload.
+        scheduleMessageThumbs(db, insertedSms?.id, inboundMedia, { trusted: sigVerified })
         await emitInboundEvent(db, { companyId, conversationId: conv.id, text, channel: 'sms', phone: from })
         await db.from('conversations').update({
           last_message: summary,

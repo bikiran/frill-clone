@@ -327,13 +327,15 @@ export default function CallCard({ callId, meta, timestamp, highlight, accent = 
           <p style={{ margin: '0 0 7px', fontSize: 12.5, fontWeight: 700, color: '#2563eb', display: 'flex', alignItems: 'center', gap: 6 }}>
             <MicIcon /> {isVoicemail ? 'Voicemail' : 'Call Recording'}
           </p>
-          {call?.recording_url && <VoicePlayer src={call.recording_url} name={isVoicemail ? 'Voicemail' : 'Call recording'} durationSec={duration || undefined} />}
+          {/* The call's length isn't the recording's (ringing, hold), so only the
+              recording's own length is shown before Play. */}
+          {call?.recording_url && <VoicePlayer src={call.recording_url} name={isVoicemail ? 'Voicemail' : 'Call recording'} lazy durationSec={call.recording_duration || undefined} />}
           {/* A handed-over call (device switch / warm transfer) has a second
               recording for the part after the handoff — play it too. */}
           {(call as any)?.conference_recording_url && (
             <>
               {call?.recording_url && <p style={{ margin: '9px 0 5px', fontSize: 11, fontWeight: 600, color: 'var(--slate)' }}>After device switch / transfer</p>}
-              <VoicePlayer src={(call as any).conference_recording_url} name="Call recording (after transfer)" />
+              <VoicePlayer src={(call as any).conference_recording_url} name="Call recording (after transfer)" lazy durationSec={(call as any).conference_recording_duration || undefined} />
             </>
           )}
           <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>

@@ -1,3 +1,10 @@
+// Hosts the image optimiser may fetch from: only our own storage. Keep in step
+// with sizedImageUrl in lib/storage-url.ts.
+const hostOf = (url, fallback) => { try { return new URL(url).hostname } catch { return fallback } }
+const SUPABASE_HOST = hostOf(process.env.NEXT_PUBLIC_SUPABASE_URL, 'mtfhctgdayeqrguodksv.supabase.co')
+const STORAGE_HOST = (process.env.NEXT_PUBLIC_STORAGE_DOMAIN || 'api.colvy.com').replace(/^https?:\/\//, '').replace(/\/.*$/, '')
+const MEDIA_HOST = hostOf(process.env.NEXT_PUBLIC_R2_PUBLIC_URL || process.env.R2_PUBLIC_DOMAIN || 'https://media.colvy.com', 'media.colvy.com')
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   typescript: {
@@ -15,11 +22,13 @@ const nextConfig = {
     '/api/twilio/webhook': ['./node_modules/ffmpeg-static/**'],
     '/api/media/web-mp4': ['./node_modules/ffmpeg-static/**'],
   },
-  // Allow images from any subdomain
+  // The image optimiser only resizes files from our own storage (photo tiles
+  // in the inbox fall back to it for attachments without a stored thumbnail).
   images: {
     remotePatterns: [
-      { protocol: 'https', hostname: '**.colvy.com' },
-      { protocol: 'https', hostname: '**.supabase.co' },
+      { protocol: 'https', hostname: SUPABASE_HOST, pathname: '/storage/v1/object/public/**' },
+      { protocol: 'https', hostname: STORAGE_HOST, pathname: '/storage/v1/object/public/**' },
+      { protocol: 'https', hostname: MEDIA_HOST, pathname: '/**' },
     ],
   },
   // The marketing feature pages moved from /features/* to /product/* so the

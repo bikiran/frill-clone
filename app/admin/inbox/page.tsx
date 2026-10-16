@@ -18,12 +18,20 @@ import SendTrackingModal from '@/components/SendTrackingModal'
 import VoiceDictationButton from '@/components/VoiceDictationButton'
 import { useDraft } from '@/lib/drafts'
 import { uploadQueue } from '@/lib/upload-queue'
-import { toPublicUrl } from '@/lib/storage-url'
+import { toPublicUrl, sizedImageUrl, sizedImageFallback } from '@/lib/storage-url'
 
 // A video attachment's still frame, when it has a real image thumbnail (some
 // carry the video URL itself as the "thumbnail", which can't be shown as one).
 const videoPoster = (a: any): string | undefined =>
   a?.thumbUrl && a.thumbUrl !== a.url && !/\.(mp4|mov|webm|m4v)(\?|$)/i.test(a.thumbUrl) ? toPublicUrl(a.thumbUrl) : undefined
+// Play mark over a video tile that loads nothing until opened.
+const VideoTileMark = () => (
+  <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
+    <span style={{ width: 26, height: 26, borderRadius: '50%', background: 'rgba(15,17,25,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="#fff" aria-hidden="true"><polygon points="7 4 20 12 7 20 7 4"/></svg>
+    </span>
+  </span>
+)
 import { broadcastMessage } from '@/lib/chat-broadcast'
 import FilePickerButton from '@/components/FilePickerButton'
 import PhoneUploadQR from '@/components/PhoneUploadQR'
@@ -9609,7 +9617,8 @@ export default function InboxPage() {
                                                a fraction of the bytes at this size.
                                                Falls back to the full image for older
                                                attachments that have no preview. */
-                                            src={toPublicUrl(a.thumbUrl || a.url)}
+                                            src={a.thumbUrl ? toPublicUrl(a.thumbUrl) : sizedImageUrl(a.url, 320)}
+                                            onError={a.thumbUrl ? undefined : sizedImageFallback(a.url)}
                                             alt={a.name}
                                             loading="lazy"
                                             decoding="async"
@@ -11452,7 +11461,7 @@ export default function InboxPage() {
                     const url = emailAttachmentUrl(m, a, attToken)
                     if (!url) return
                     const kind = emailAttachmentKind(a)
-                    emailAtts.push({ url, name: a.name || 'file', isImage: kind === 'image', isVideo: kind === 'video', messageId: m.id, index: ai })
+                    emailAtts.push({ url, thumbUrl: a.thumbUrl || null, name: a.name || 'file', isImage: kind === 'image', isVideo: kind === 'video', messageId: m.id, index: ai })
                   }))
                   const total = media.length + emailAtts.length
                   if (total === 0) return null
@@ -11465,8 +11474,15 @@ export default function InboxPage() {
                             style={{ position: 'relative', paddingTop: '100%', borderRadius: 8, overflow: 'hidden', cursor: 'pointer', background: 'var(--canvas)' }}>
                             <div onClick={() => setGalleryIndex(i)} style={{ position: 'absolute', inset: 0 }}>
                               {(a.kind === 'video' || String(a.type).startsWith('video'))
-                                ? <video src={a.url} preload="metadata" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                : <img src={a.url} alt="" loading="lazy" decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
+                                // Nothing loads for a video tile until it's opened: its
+                                // still stands in, or a play mark on a plain tile.
+                                ? <>
+                                    <video src={toPublicUrl(a.url)} poster={videoPoster(a)} preload="none" muted playsInline style={{ width: '100%', height: '100%', objectFit: 'cover', background: videoPoster(a) ? '#000' : 'var(--canvas)' }} />
+                                    <VideoTileMark />
+                                  </>
+                                // The stored thumbnail first; older photos without one get
+                                // a resized copy (or, failing that, the original).
+                                : <img src={a.thumbUrl ? toPublicUrl(a.thumbUrl) : sizedImageUrl(a.url, 120)} onError={sizedImageFallback(a.url)} alt="" loading="lazy" decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
                             </div>
                             {/* Forward it to another customer */}
                             <button type="button"
@@ -11482,9 +11498,12 @@ export default function InboxPage() {
                             onClick={(a.isImage || a.isVideo) ? (e => { e.preventDefault(); openEmailMedia(a.messageId, a.index) }) : undefined}
                             style={{ position: 'relative', paddingTop: '100%', borderRadius: 8, overflow: 'hidden', background: 'var(--canvas)', display: 'block', textDecoration: 'none', cursor: (a.isImage || a.isVideo) ? 'zoom-in' : 'pointer' }}>
                             {a.isImage ? (
-                              <img src={a.url} alt={a.name} loading="lazy" decoding="async" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+                              <img src={a.thumbUrl ? toPublicUrl(a.thumbUrl) : sizedImageUrl(a.url, 120)} onError={sizedImageFallback(a.url)} alt={a.name} loading="lazy" decoding="async" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
                             ) : a.isVideo ? (
-                              <video src={a.url} preload="metadata" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+                              <>
+                                <video src={a.url} preload="none" muted playsInline style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', background: 'var(--canvas)' }} />
+                                <VideoTileMark />
+                              </>
                             ) : (
                               <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, padding: 4, color: '#64748b' }}>
                                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>

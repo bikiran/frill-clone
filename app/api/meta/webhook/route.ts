@@ -6,6 +6,7 @@ import { META_VERIFY_TOKEN, META_APP_SECRET, fetchMetaProfile, fetchPageComment 
 import { isIgLoginChannel, fetchInstagramUserProfile, fetchInstagramComment, INSTAGRAM_APP_SECRET } from '@/lib/instagram-login'
 import { linkContactIdentity } from '@/lib/identity'
 import { rehostRemoteMedia } from '@/lib/media-rehost'
+import { scheduleMessageThumbs } from '@/lib/image-thumb'
 import { detectContactInfo, emailKey, phoneKey } from '@/lib/phone'
 import { logWebhookEvent } from '@/lib/webhook-log'
 import { notifyCompany, pushInboundMessage } from '@/lib/notify'
@@ -249,6 +250,9 @@ export async function POST(req: NextRequest) {
           attachments: attachments.length ? attachments : [],
           metadata: storyReply ? { story_reply: storyReply } : {},
         }).select('id').maybeSingle()
+        // Small copies of any photos for the inbox tiles (after the response;
+        // the payload is signed, and Meta's links expire, so do it now).
+        scheduleMessageThumbs(db, insertedMsg?.id, attachments, { trusted: true })
         await emitInboundEvent(db, { companyId, conversationId: conv.id, text, channel: platform, name: contact?.name || null, messageId: insertedMsg?.id || null })
 
         // The Support / Reception Agent, if the business switched it on for this

@@ -13,6 +13,26 @@ import type { NextRequest } from 'next/server'
  */
 const MAX_AGE_SEC = 5 * 60
 
+/**
+ * True only when the request really carries a valid, fresh Telnyx signature —
+ * unlike telnyxSignatureOk, the TELNYX_WEBHOOK_VERIFY=log/off switch doesn't
+ * count. Use it to decide whether to trust URLs in the payload.
+ */
+export function telnyxSignatureVerified(req: NextRequest, rawBody: string): boolean {
+  const key = (process.env.TELNYX_PUBLIC_KEY || '').trim()
+  if (!key) return false
+  try {
+    const sig = req.headers.get('telnyx-signature-ed25519') || ''
+    const ts = req.headers.get('telnyx-timestamp') || ''
+    const fresh = Math.abs(Date.now() / 1000 - Number(ts)) <= MAX_AGE_SEC
+    if (!sig || !ts || !fresh) return false
+    const raw = Buffer.from(key, 'base64')
+    const der = raw.length === 32 ? Buffer.concat([Buffer.from('302a300506032b6570032100', 'hex'), raw]) : raw
+    const pub = createPublicKey({ key: der, format: 'der', type: 'spki' })
+    return verify(null, Buffer.from(`${ts}|${rawBody}`, 'utf-8'), pub, Buffer.from(sig, 'base64'))
+  } catch { return false }
+}
+
 export function telnyxSignatureOk(req: NextRequest, rawBody: string): boolean {
   const key = (process.env.TELNYX_PUBLIC_KEY || '').trim()
   const mode = (process.env.TELNYX_WEBHOOK_VERIFY || 'enforce').toLowerCase()

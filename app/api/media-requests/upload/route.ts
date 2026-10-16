@@ -1,4 +1,5 @@
 import { r2PublicBase } from '@/lib/r2'
+import { scheduleMessageThumbs } from '@/lib/image-thumb'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
@@ -83,11 +84,14 @@ export async function POST(req: NextRequest) {
 
     // Drop the uploaded file into the conversation as a customer attachment.
     if (request.conversation_id) {
-      await db.from('messages').insert({
+      const uploadAtts = [{ url: publicUrl, name: fileName, type: fileType, kind, from_request: true }]
+      const { data: uploadMsg } = await db.from('messages').insert({
         conversation_id: request.conversation_id, company_id: request.company_id,
         sender_type: 'visitor', content: '',
-        attachments: [{ url: publicUrl, name: fileName, type: fileType, kind, from_request: true }],
-      })
+        attachments: uploadAtts,
+      }).select('id').maybeSingle()
+      // A small copy of a photo for the inbox tiles (after the response).
+      scheduleMessageThumbs(db, uploadMsg?.id, uploadAtts, { prefixes: [`/media-requests/${token}/`, `/media-requests/${request.company_id}/${token}/`] })
       await db.from('conversations').update({ last_message: 'Customer uploaded a file', last_message_at: new Date().toISOString(), is_unread: true }).eq('id', request.conversation_id)
     }
     // Mark fulfilled
