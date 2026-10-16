@@ -1,4 +1,5 @@
-import { readValue, safeReturn } from '@/lib/oauth-state'
+import { readValue, safeReturn, signValue } from '@/lib/oauth-state'
+import { checkGmailScopes, gmailAuthUrl, gmailPermissionsPage } from '@/lib/gmail-oauth'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
@@ -18,10 +19,10 @@ export async function GET(req: NextRequest) {
   const err = req.nextUrl.searchParams.get('error')
   const base = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
 
-  let companyId = '', locationId = '', returnTo = ''
+  let companyId = '', locationId = '', returnTo = '', userId = ''
   // Only a state this server signed for a member (lib/oauth-state).
   const s = readValue(stateRaw, 'state')
-  if (s && s.purpose === 'gmail') { companyId = s.companyId; locationId = s.locationId || ''; returnTo = safeReturn(s.returnTo) }
+  if (s && s.purpose === 'gmail') { companyId = s.companyId; locationId = s.locationId || ''; returnTo = safeReturn(s.returnTo); userId = s.userId || '' }
 
   const back = (q: string) => {
     const dest = returnTo
@@ -50,6 +51,22 @@ export async function GET(req: NextRequest) {
     const tok = await tokenRes.json()
     if (!tokenRes.ok || !tok.access_token) {
       return back(`gmail=error&reason=${encodeURIComponent(tok.error_description || 'token_exchange_failed')}`)
+    }
+
+    // Google lists each permission with its own (unticked) checkbox. Without
+    // both, the mailbox can't sync or can't send, so save nothing and explain.
+    const scopes = checkGmailScopes(tok.scope)
+    if (!scopes.ok) {
+      // Try again goes straight back to Google: a fresh state for the same
+      // member, workspace and return page as the one just verified.
+      const state = signValue({ kind: 'state', purpose: 'gmail', companyId, userId, locationId, returnTo }, 30 * 60 * 1000)
+      const retryUrl = gmailAuthUrl({ clientId, redirectUri: `${base}/api/gmail/callback`, state })
+      const dest = returnTo || `${base}/admin/crm-settings/channels/email`
+      const backUrl = `${dest}${dest.includes('?') ? '&' : '?'}gmail=error&reason=permissions`
+      return new NextResponse(gmailPermissionsPage({ missing: scopes.missing, retryUrl, backUrl }), {
+        status: 200,
+        headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' },
+      })
     }
 
     // Which address did they connect?

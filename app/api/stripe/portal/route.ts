@@ -1,6 +1,7 @@
 import { callerStripeCustomer } from '@/lib/company-access'
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
+import { COLVY_CONTACT } from '@/lib/colvy-contact'
 
 export async function POST(req: NextRequest) {
   try {
@@ -8,7 +9,10 @@ export async function POST(req: NextRequest) {
     const customerId = await callerStripeCustomer(req, createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, { auth: { autoRefreshToken: false, persistSession: false } }))
     if (!customerId) return NextResponse.json({ error: 'No billing account found for you.' }, { status: 404 })
     const secret = process.env.STRIPE_SECRET_KEY || ''
-    if (!secret.startsWith('sk_')) return NextResponse.json({ error: 'Stripe not configured' }, { status: 400 })
+    if (!secret.startsWith('sk_')) {
+      console.error('[stripe/portal] STRIPE_SECRET_KEY is missing or invalid')
+      return NextResponse.json({ error: `Managing billing online isn’t available just yet. Contact us at ${COLVY_CONTACT.email} or ${COLVY_CONTACT.phoneDisplay} and we’ll help.` }, { status: 503 })
+    }
 
     const Stripe = (await import('stripe')).default
     const stripe = new Stripe(secret, { apiVersion: '2024-06-20' as any })

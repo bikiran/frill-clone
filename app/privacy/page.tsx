@@ -1,7 +1,12 @@
 import LegalPage from '@/components/LegalPage'
+import GoogleUserData from './GoogleUserData'
 
 export const metadata = { title: 'Privacy Policy', alternates: { canonical: '/privacy' } }
 
 export default function Privacy() {
-  return <LegalPage slug="privacy" />
+  return (
+    <LegalPage slug="privacy">
+      <GoogleUserData />
+    </LegalPage>
+  )
 }

@@ -4,9 +4,12 @@ import { authFetch } from '@/lib/auth-fetch'
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
+import { alertDialog } from '@/components/ConfirmDialog'
+import { showBillingUnavailable } from '@/components/BillingUnavailable'
+import { billingUnavailableCopy } from '@/lib/billing-config'
 
 // Mirrors the modular plans on the public /pricing page. Each paid plan's id is a
-// Stripe checkout tier (see app/api/stripe/create-checkout/route.ts PRICE_IDS).
+// Stripe checkout tier (price IDs: lib/billing-config.ts).
 const TIERS = [
   {
     id: 'free',
@@ -118,14 +121,17 @@ export default function UpgradePage() {
       const data = await res.json()
 
       if (data.setup) {
+        // Billing isn't set up on Colvy's side (the server has told the Colvy
+        // team). Plain words for the customer, never env var names.
         setSetupNeeded(true)
         setLoading(null)
+        await showBillingUnavailable({ what: `the ${tier.name} plan (${billing})` })
         return
       }
       if (data.error) throw new Error(data.error)
       if (data.url) { try { localStorage.removeItem('pending_plan') } catch {}; window.location.href = data.url }
     } catch (err: any) {
-      alert('Error: ' + err.message)
+      await alertDialog({ title: 'Couldn’t start the checkout', message: err?.message || 'Please try again in a minute.' })
     }
     setLoading(null)
   }
@@ -140,21 +146,14 @@ export default function UpgradePage() {
           <h1 className="text-4xl font-black mb-3" style={{ color: 'var(--ink)' }}>Simple, transparent pricing</h1>
           <p className="text-lg mb-6" style={{ color: 'var(--slate)' }}>Start free. Upgrade when you grow.</p>
 
-          {/* Stripe setup notice */}
+          {/* Billing isn't set up yet: what the customer can do instead. */}
           {setupNeeded && (
-            <div className="max-w-2xl mx-auto mb-6 p-4 rounded-xl border text-sm text-left" style={{ background: '#fff7ed', borderColor: '#fed7aa', color: '#9a3412' }}>
-              <p className="font-bold mb-1">⚙️ Stripe Not Configured Yet</p>
-              <p>To enable payments, add these to your Vercel environment variables:</p>
-              <pre className="mt-2 text-xs p-3 rounded-lg overflow-x-auto" style={{ background: '#1e1e2e', color: '#cdd6f4' }}>
-{`STRIPE_SECRET_KEY=sk_live_...
-STRIPE_FEEDBACK_MONTHLY_PRICE_ID=price_...
-STRIPE_FEEDBACK_ANNUAL_PRICE_ID=price_...
-STRIPE_OMNICHANNEL_MONTHLY_PRICE_ID=price_...
-STRIPE_OMNICHANNEL_ANNUAL_PRICE_ID=price_...
-STRIPE_EVERYTHING_MONTHLY_PRICE_ID=price_...
-STRIPE_EVERYTHING_ANNUAL_PRICE_ID=price_...`}
-              </pre>
-              <p className="mt-2">Create products and prices at <a href="https://dashboard.stripe.com/products" target="_blank" className="underline font-semibold">dashboard.stripe.com</a></p>
+            <div role="status" className="max-w-2xl mx-auto mb-6 p-4 rounded-xl border text-sm text-left flex gap-3" style={{ background: '#fff', borderColor: 'var(--border)', color: 'var(--ink)' }}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--coral)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 1 }} aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 11v5M12 8h.01" /></svg>
+              <div>
+                <p className="font-bold mb-1">{billingUnavailableCopy().title}</p>
+                <p style={{ color: 'var(--slate)' }}>{billingUnavailableCopy().message}</p>
+              </div>
             </div>
           )}
 

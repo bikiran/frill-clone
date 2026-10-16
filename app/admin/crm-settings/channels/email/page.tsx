@@ -6,10 +6,14 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { confirmDialog } from '@/components/ConfirmDialog'
 import { currentSetupReturn } from '@/lib/setup-return'
+import { gmailErrorMessage } from '@/lib/gmail-oauth'
+import GmailConnectExplainer from '@/components/GmailConnectExplainer'
 
-// Multi-account email. Two kinds of mailbox:
-//   Gmail   — sign in with Google. The ONLY way to use an @gmail.com address.
-//   Domain  — mail for an address you own is routed to Colvy by a webhook.
+// Multi-account email. Ways in:
+//   Gmail      — sign in with Google (read + send from the Gmail address).
+//   Domain     — mail for an address you own is routed to Colvy by a webhook.
+//   Forwarding — any mailbox (Gmail included) forwards to the Colvy address;
+//                no Google sign-in, replies go out on Colvy's mail service.
 // Each mailbox can belong to an outlet, so every shop has its own inbox.
 export default function EmailPage() {
   const [companyId, setCompanyId] = useState<string | null>(null)
@@ -23,6 +27,10 @@ export default function EmailPage() {
   const [busy, setBusy] = useState('')
 
   const [addingDomain, setAddingDomain] = useState<any>(null)
+  // "Connect a Gmail account" first explains Google's screens (unverified-app
+  // warning, two unticked boxes); this holds the outlet it's for.
+  const [gmailIntro, setGmailIntro] = useState<{ locationId?: string } | null>(null)
+  const [gmailBusy, setGmailBusy] = useState(false)
   const [rulesFor, setRulesFor] = useState<any>(null)
   const [newRule, setNewRule] = useState({ rule_type: 'allow', pattern: '' })
   const [sigEditing, setSigEditing] = useState<any>(null)
@@ -46,7 +54,7 @@ export default function EmailPage() {
 
       const p = new URLSearchParams(window.location.search)
       if (p.get('gmail') === 'connected') setMsg(`Connected ${p.get('address') || 'your Gmail account'}.`)
-      if (p.get('gmail') === 'error') setMsg('Google connection failed: ' + (p.get('reason') || 'unknown'))
+      if (p.get('gmail') === 'error') setMsg(gmailErrorMessage(p.get('reason')))
     })()
   }, [])
 
@@ -72,12 +80,13 @@ export default function EmailPage() {
 
   const connectGmail = async (locationId?: string) => {
     if (!companyId) return
+    setGmailBusy(true)
     // From the setup checklist: Google sends them straight back to it.
     const setupBack = currentSetupReturn()
     const returnTo = setupBack ? `${window.location.origin}${setupBack}` : window.location.href.split('?')[0]
     try {
       window.location.href = await withConnectTicket(`https://colvy.com/api/gmail/start?companyId=${companyId}&locationId=${locationId || ''}&returnTo=${encodeURIComponent(returnTo)}`, companyId, 'gmail')
-    } catch (e: any) { alert(e.message) }
+    } catch (e: any) { setGmailBusy(false); setGmailIntro(null); setMsg(e.message) }
   }
 
   const saveDomain = async () => {
@@ -142,7 +151,7 @@ export default function EmailPage() {
   const webhookUrl = 'https://colvy.com/api/webhooks/email'
 
   return (
-    <div className="w-full max-w-[1200px] mx-auto px-4 md:px-8 py-6 md:py-8">
+    <div className="w-full px-4 md:px-8 py-6 md:py-8">
       <h1 style={{ fontSize: 24, fontWeight: 800, color: 'var(--ink)', margin: '0 0 4px' }}>Email</h1>
       <p style={{ fontSize: 14, color: 'var(--slate)', margin: '0 0 20px' }}>
         Connect as many mailboxes as you need — one per outlet if you like. Everything lands in your inbox, and replies go back out from the right address.
@@ -152,7 +161,7 @@ export default function EmailPage() {
 
       {/* Add a mailbox */}
       <div style={{ display: 'flex', gap: 10, marginBottom: 20, flexWrap: 'wrap' }}>
-        <button onClick={() => connectGmail()}
+        <button onClick={() => setGmailIntro({})}
           style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 18px', borderRadius: 10, background: '#fff', color: 'var(--ink)', border: '1px solid var(--border)', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
           <svg width="16" height="16" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.76h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.76c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84A11 11 0 0 0 12 23z"/><path fill="#FBBC05" d="M5.84 14.11a6.6 6.6 0 0 1 0-4.22V7.05H2.18a11 11 0 0 0 0 9.9l3.66-2.84z"/><path fill="#EA4335" d="M12 4.75c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 1.46 14.97.5 12 .5A11 11 0 0 0 2.18 7.05l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
           Connect a Gmail account
@@ -161,14 +170,33 @@ export default function EmailPage() {
           style={{ padding: '10px 18px', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
           + Add a domain mailbox
         </button>
+        <button onClick={() => document.getElementById('email-forwarding')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 18px', borderRadius: 10, background: '#fff', color: 'var(--ink)', border: '1px solid var(--border)', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--coral)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 17l5-5-5-5" /><path d="M4 18v-2a4 4 0 0 1 4-4h12" /></svg>
+          Forward email instead
+        </button>
       </div>
+      <p style={{ fontSize: 12.5, color: 'var(--slate)', margin: '-8px 0 20px', lineHeight: 1.55 }}>
+        Gmail sign-in reads and sends from your Gmail address. A domain mailbox or forwarding works with any email host and needs no Google sign-in.
+      </p>
+
+      {gmailIntro && (
+        <GmailConnectExplainer
+          busy={gmailBusy}
+          forwardingAlias={forwardingAlias}
+          onContinue={() => connectGmail(gmailIntro.locationId)}
+          onCancel={() => { setGmailIntro(null); setGmailBusy(false) }}
+          onAddDomain={() => { setGmailIntro(null); setAddingDomain({ ...blankDomain }) }}
+          onCopyAlias={() => { navigator.clipboard?.writeText(forwardingAlias); setMsg('Forwarding address copied.') }}
+        />
+      )}
 
       {/* Add/edit a domain mailbox */}
       {addingDomain && (
         <div style={{ border: '1px solid var(--border)', borderRadius: 14, padding: 20, background: '#fff', marginBottom: 20 }}>
           <p style={{ margin: '0 0 4px', fontSize: 15, fontWeight: 700, color: 'var(--ink)' }}>Domain mailbox</p>
           <p style={{ margin: '0 0 16px', fontSize: 12.5, color: 'var(--slate)', lineHeight: 1.5 }}>
-            For an address on a domain you control (e.g. <code>info@roxyaquarium.com.au</code>). Your email provider routes the mail to Colvy. For an <strong>@gmail.com</strong> address, use &ldquo;Connect a Gmail account&rdquo; instead — a webhook can&rsquo;t receive Gmail.
+            For an address on a domain you control (e.g. <code>info@roxyaquarium.com.au</code>). Your email provider routes the mail to Colvy. For an <strong>@gmail.com</strong> address, use &ldquo;Connect a Gmail account&rdquo;, or forward it to your Colvy address (below).
           </p>
 
           <label style={L}>Inbound address</label>
@@ -264,7 +292,7 @@ export default function EmailPage() {
 
               {a.sync_error && (
                 <p style={{ margin: '0 0 10px', fontSize: 12.5, color: '#b45309', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, padding: '7px 10px' }}>
-                  {a.sync_error} {isGmail && <button onClick={() => connectGmail(a.location_id)} style={{ background: 'none', border: 'none', color: '#b45309', fontWeight: 800, textDecoration: 'underline', cursor: 'pointer', padding: 0 }}>Reconnect</button>}
+                  {a.sync_error} {isGmail && <button onClick={() => setGmailIntro({ locationId: a.location_id || undefined })} style={{ background: 'none', border: 'none', color: '#b45309', fontWeight: 800, textDecoration: 'underline', cursor: 'pointer', padding: 0 }}>Reconnect</button>}
                 </p>
               )}
 
@@ -467,8 +495,8 @@ export default function EmailPage() {
       </div>
 
       {/* Domain mailbox setup — concierge first, technical detail tucked away */}
-      <div style={{ marginTop: 26, border: '1px solid var(--border)', borderRadius: 14, padding: 20, background: 'var(--canvas)' }}>
-        <p style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink)', margin: '0 0 8px' }}>Getting your inbound email into Colvy</p>
+      <div id="email-forwarding" style={{ marginTop: 26, border: '1px solid var(--border)', borderRadius: 14, padding: 20, background: 'var(--canvas)', scrollMarginTop: 80 }}>
+        <p style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink)', margin: '0 0 8px' }}>Forward your email to Colvy (no Google sign-in)</p>
         <p style={{ fontSize: 13, color: 'var(--slate)', margin: '0 0 14px', lineHeight: 1.6 }}>
           Keep your existing mailbox exactly as it is. To bring incoming email into Colvy, add <strong>one forwarding rule</strong> at your email host so a copy of mail to your support address is forwarded to your Colvy address below. No MX or DNS changes, and nothing to verify — sending is handled on Colvy&rsquo;s own secure mail service.
         </p>
@@ -480,6 +508,9 @@ export default function EmailPage() {
               <button onClick={() => { navigator.clipboard?.writeText(forwardingAlias); setMsg('Forwarding address copied.') }}
                 style={{ padding: '9px 14px', borderRadius: 8, border: '1px solid var(--border)', background: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', color: 'var(--ink)' }}>Copy</button>
             </div>
+            <p style={{ fontSize: 12, color: 'var(--slate)', margin: '8px 0 0', lineHeight: 1.6 }}>
+              <strong>Gmail:</strong> Settings, See all settings, Forwarding and POP/IMAP, Add a forwarding address, paste this address. Google emails a confirmation code to it, which shows up in your Colvy inbox; enter the code in Gmail and choose &ldquo;Forward a copy&rdquo;. <strong>Outlook / Microsoft 365:</strong> Settings, Mail, Forwarding.
+            </p>
             <p style={{ fontSize: 12, color: 'var(--slate)', margin: '8px 0 0', lineHeight: 1.6 }}>
               Set your support address (e.g. <code>info@roxyaquarium.com.au</code>) to forward to this. Replies from customers already come straight back to the right ticket automatically — this is only for brand-new emails they send to your address.
             </p>

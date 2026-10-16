@@ -5,7 +5,9 @@ import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { COLVY_CONTACT } from '@/lib/colvy-contact'
 
-export default function LegalPage({ slug }: { slug: 'privacy' | 'terms' }) {
+// `children` render after the editable sections, whatever the database holds
+// (and while it loads), for text that must always be on the page.
+export default function LegalPage({ slug, children }: { slug: 'privacy' | 'terms'; children?: React.ReactNode }) {
   const [page, setPage] = useState<any>(null)
   const [loading, setLoading] = useState(true)
 
@@ -56,6 +58,7 @@ export default function LegalPage({ slug }: { slug: 'privacy' | 'terms' }) {
             </section>
           ))
         )}
+        {children}
       </div>
 
       <footer style={{ borderTop: '1px solid #f0f0f0', padding: '28px 24px', textAlign: 'center', fontSize: 13, color: '#9ca3af' }}>
