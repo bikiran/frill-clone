@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import crypto from 'crypto'
-import { recordSignupEvent } from '@/lib/signup-attempts'
+import { recordSignupLater } from '@/lib/signup-attempts'
 
 export const dynamic = 'force-dynamic'
 
@@ -48,14 +48,14 @@ export async function POST(req: NextRequest) {
 
     if (sha(code) !== expected) {
       await db.from('signup_verifications').update({ attempts: (row.attempts || 0) + 1 }).eq('token', token)
-      await recordSignupEvent(db, { type: 'wrong_code', email: row.email, channel, headers: req.headers })
+      recordSignupLater(db, { type: 'wrong_code', email: row.email, channel, headers: req.headers })
       const left = Math.max(0, MAX_ATTEMPTS - (row.attempts || 0) - 1)
       return NextResponse.json({ error: `That code isn't right.${left ? ` ${left} attempt${left === 1 ? '' : 's'} left.` : ' Request a new code.'}` }, { status: 400 })
     }
 
     const patch: any = channel === 'sms' ? { sms_verified: true } : { email_verified: true }
     await db.from('signup_verifications').update(patch).eq('token', token)
-    await recordSignupEvent(db, { type: channel === 'sms' ? 'mobile_verified' : 'email_verified', email: row.email, channel, headers: req.headers })
+    recordSignupLater(db, { type: channel === 'sms' ? 'mobile_verified' : 'email_verified', email: row.email, channel, headers: req.headers })
 
     const emailVerified = channel === 'email' ? true : !!row.email_verified
     const smsVerified = channel === 'sms' ? true : !!row.sms_verified

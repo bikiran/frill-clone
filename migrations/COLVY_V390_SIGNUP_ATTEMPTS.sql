@@ -16,10 +16,12 @@
 --   • SELECT — the platform admin only (is_platform_admin()). Nobody else.
 --   • INSERT / UPDATE / DELETE — no policy and the privileges are revoked
 --     from anon and authenticated: only the server (service role) writes.
+--   • signup_rate_windows / signup_rate_claim(): the service role only.
 --
 -- Retention: /api/cron/signup-retention (daily) deletes abandoned rows that
--- weren't suspicious or marked spam after 180 days quiet, and
--- signup_verifications rows older than 180 days.
+-- weren't suspicious or marked spam after 180 days quiet,
+-- signup_verifications rows older than 180 days, and rate counters older
+-- than two days.
 --
 -- It also copies earlier sign-ups from signup_verifications (V309) so the
 -- Signups page starts with history: one row per email, with the mobile, the
@@ -29,7 +31,8 @@
 -- ── WHEN TO RUN ─────────────────────────────────────────────────────────────
 -- Any time, before or after deploying branch claude/signup-leads. Before it
 -- runs, sign-up works exactly as before (recording is skipped), the hourly
--- per-email limit counts signup_verifications instead, and the Signups page
+-- limits are kept per server instance (plus fresh sign-ups per email from
+-- signup_verifications) instead of by signup_rate_claim(), and the Signups page
 -- shows the earlier sign-ups from signup_verifications with a notice.
 -- Needs signup_verifications (V309) only for the history copy; skipped if
 -- it's missing.
@@ -131,6 +134,58 @@ REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON signup_attempts 
 GRANT SELECT ON signup_attempts TO authenticated;
 GRANT ALL ON signup_attempts TO service_role;
 
+-- ── STEP 2b: code-send limits ───────────────────────────────────────────────
+-- Hourly counters for /api/auth/otp/send, one row per key:
+--   e:<email>:email, e:<email>:sms (codes per channel), ip:<address> (requests).
+-- signup_rate_claim() locks the keys, resets any whose hour is up, and either
+-- refuses (returning the first key over its limit) or adds one to every key,
+-- all in one call, so parallel requests can't slip past the limit.
+CREATE TABLE IF NOT EXISTS signup_rate_windows (
+  key           TEXT PRIMARY KEY,
+  window_start  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  hits          INT NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_signup_rate_windows_start ON signup_rate_windows (window_start);
+ALTER TABLE signup_rate_windows ENABLE ROW LEVEL SECURITY;
+DO $$
+DECLARE r RECORD;
+BEGIN
+  FOR r IN SELECT policyname FROM pg_policies WHERE schemaname = 'public' AND tablename = 'signup_rate_windows' LOOP
+    EXECUTE format('DROP POLICY IF EXISTS %I ON signup_rate_windows', r.policyname);
+  END LOOP;
+END $$;
+REVOKE ALL ON signup_rate_windows FROM anon, authenticated;
+GRANT ALL ON signup_rate_windows TO service_role;
+
+CREATE OR REPLACE FUNCTION signup_rate_claim(p_keys TEXT[], p_limits INT[], p_window_secs INT DEFAULT 3600)
+RETURNS TEXT
+LANGUAGE plpgsql
+SET search_path = public
+AS $$
+DECLARE
+  i INT;
+  n INT := COALESCE(array_length(p_keys, 1), 0);
+  cur INT;
+  cutoff TIMESTAMPTZ := now() - make_interval(secs => p_window_secs);
+BEGIN
+  IF n = 0 THEN RETURN NULL; END IF;
+  INSERT INTO signup_rate_windows (key, window_start, hits)
+    SELECT DISTINCT k, now(), 0 FROM unnest(p_keys) AS k
+    ON CONFLICT (key) DO NOTHING;
+  -- Lock in a fixed order so two requests sharing keys can't deadlock.
+  PERFORM 1 FROM signup_rate_windows WHERE key = ANY(p_keys) ORDER BY key FOR UPDATE;
+  UPDATE signup_rate_windows SET window_start = now(), hits = 0 WHERE key = ANY(p_keys) AND window_start < cutoff;
+  FOR i IN 1..n LOOP
+    SELECT hits INTO cur FROM signup_rate_windows WHERE key = p_keys[i];
+    IF cur + 1 > p_limits[i] THEN RETURN p_keys[i]; END IF;
+  END LOOP;
+  UPDATE signup_rate_windows SET hits = hits + 1 WHERE key = ANY(p_keys);
+  RETURN NULL;
+END $$;
+REVOKE ALL ON FUNCTION signup_rate_claim(TEXT[], INT[], INT) FROM PUBLIC;
+REVOKE ALL ON FUNCTION signup_rate_claim(TEXT[], INT[], INT) FROM anon, authenticated;
+GRANT EXECUTE ON FUNCTION signup_rate_claim(TEXT[], INT[], INT) TO service_role;
+
 -- ── STEP 3: history from signup_verifications ───────────────────────────────
 DO $$
 BEGIN
@@ -175,6 +230,8 @@ END $$;
 NOTIFY pgrst, 'reload schema';
 
 -- ── ROLLBACK ────────────────────────────────────────────────────────────────
+--   DROP FUNCTION IF EXISTS signup_rate_claim(TEXT[], INT[], INT);
+--   DROP TABLE IF EXISTS signup_rate_windows;
 --   DROP TABLE IF EXISTS signup_attempts;
 -- (The code carries on without it: recording is skipped and the Signups page
 --  falls back to signup_verifications.)

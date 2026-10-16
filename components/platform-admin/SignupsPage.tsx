@@ -296,7 +296,7 @@ export function SignupDrawer({ row: r, workspace, onClose, act }: { row: any; wo
     await run('spam', () => act(r, on ? 'spam' : 'unspam'), on ? 'Marked as spam.' : 'No longer marked as spam.')
   }
   const del = async () => {
-    if (!(await confirmDialog({ title: `Delete the sign-up record for ${r.email}?`, message: 'Removes the attempt and its timeline. A contact it added to Colvy’s CRM goes too, unless someone has talked to them. This can’t be undone.', confirmLabel: 'Delete', tone: 'danger' }))) return
+    if (!(await confirmDialog({ title: `Delete the sign-up record for ${r.email}?`, message: 'Removes the attempt and its timeline. A contact it added to Colvy’s CRM goes too, unless they finished signing up, another sign-up uses it, or it has conversations, orders or bookings. This can’t be undone.', confirmLabel: 'Delete', tone: 'danger' }))) return
     await run('delete', () => act(r, 'delete'))
   }
   const events: any[] = Array.isArray(r.events) ? r.events.slice().reverse() : []

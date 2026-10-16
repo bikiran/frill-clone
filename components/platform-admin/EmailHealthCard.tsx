@@ -31,14 +31,37 @@ async function call(body: any): Promise<any> {
 export default function EmailHealthCard() {
   const [days, setDays] = useState(30)
   const [busy, setBusy] = useState<'' | 'dry' | 'run'>('')
+  const [checking, setChecking] = useState({ done: 0, total: 0 })
   const [err, setErr] = useState('')
   const [dry, setDry] = useState<{ workspaces: Ws[]; candidates: number; filled: number; notFound: number; stillEmpty: number } | null>(null)
   const [results, setResults] = useState<Record<string, Result>>({})
   const [current, setCurrent] = useState(0)
 
+  // Find the workspaces with empty replies (database only), then dry-run them
+  // one at a time, so no single request has to check every workspace.
   const dryRun = async () => {
-    setBusy('dry'); setErr(''); setResults({}); setDry(null)
-    try { setDry(await call({ dryRun: true, days })) } catch (e: any) { setErr(e.message) } finally { setBusy('') }
+    setBusy('dry'); setErr(''); setResults({}); setDry(null); setChecking({ done: 0, total: 0 })
+    try {
+      const scan = await call({ scan: true, days })
+      const list: any[] = scan.workspaces || []
+      const acc = { workspaces: [] as Ws[], candidates: 0, filled: 0, notFound: 0, stillEmpty: 0 }
+      setChecking({ done: 0, total: list.length })
+      setDry({ ...acc })
+      for (let i = 0; i < list.length; i++) {
+        const w = list[i]
+        try {
+          const d = await call({ dryRun: true, days, companyId: w.companyId })
+          const one = (d.workspaces || [])[0] || { companyId: w.companyId, candidates: d.candidates, filled: d.filled, rethreaded: 0, notFound: d.notFound, stillEmpty: d.stillEmpty }
+          acc.workspaces.push({ ...one, companyId: w.companyId, name: w.name, slug: w.slug })
+          acc.candidates += d.candidates || 0; acc.filled += d.filled || 0; acc.notFound += d.notFound || 0; acc.stillEmpty += d.stillEmpty || 0
+        } catch (e: any) {
+          acc.workspaces.push({ companyId: w.companyId, name: w.name, slug: w.slug, candidates: w.empty, filled: 0, rethreaded: 0, notFound: 0, stillEmpty: 0 })
+          setResults(r => ({ ...r, [w.companyId]: { status: 'error', error: e.message } }))
+        }
+        setChecking({ done: i + 1, total: list.length })
+        setDry({ ...acc, workspaces: acc.workspaces.slice() })
+      }
+    } catch (e: any) { setErr(e.message) } finally { setBusy('') }
   }
   const runAll = async () => {
     const todo = (dry?.workspaces || []).filter(w => w.companyId !== 'unknown' && w.filled > 0)
@@ -71,14 +94,14 @@ export default function EmailHealthCard() {
         <div style={{ minWidth: 0, flex: '1 1 260px' }}>
           <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)', margin: 0 }}>Email health</p>
           <p style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--sa-text)', margin: '10px 0 2px' }}>Recover empty email replies</p>
-          <p style={{ fontSize: 11.5, color: 'var(--sa-muted)', margin: 0 }}>Customer replies that arrived through Resend before bodies were fetched were saved blank. A dry run counts them; nothing changes until you run it.</p>
+          <p style={{ fontSize: 11.5, color: 'var(--sa-muted)', margin: 0 }}>Customer replies that arrived through Resend before bodies were fetched were saved blank. A dry run counts them, workspace by workspace; nothing changes until you run it. The real run fills each reply in and moves it into the conversation it answers (unless staff already replied where it is).</p>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <select value={days} onChange={e => setDays(Number(e.target.value))} disabled={!!busy} style={{ padding: '7px 9px', borderRadius: 9, border: '1px solid var(--sa-border)', background: 'var(--sa-bg)', color: 'var(--sa-text)', fontSize: 12.5 }}>
             {[7, 30, 60, 90].map(d => <option key={d} value={d}>Last {d} days</option>)}
           </select>
-          <button onClick={dryRun} disabled={!!busy} style={{ ...btn('var(--sa-text)'), opacity: busy ? 0.6 : 1 }}>{busy === 'dry' ? 'Checking…' : 'Dry run'}</button>
-          {dry && runnable.length > 0 && <button onClick={runAll} disabled={!!busy} style={{ ...btn('#ff7a6b', true), opacity: busy ? 0.6 : 1 }}>{busy === 'run' ? `Running ${current} of ${total}…` : 'Run (re-thread)'}</button>}
+          <button onClick={dryRun} disabled={!!busy} style={{ ...btn('var(--sa-text)'), opacity: busy ? 0.6 : 1 }}>{busy === 'dry' ? (checking.total ? `Checking ${Math.min(checking.done + 1, checking.total)} of ${checking.total}…` : 'Finding…') : 'Dry run'}</button>
+          {dry && busy !== 'dry' && runnable.length > 0 && <button onClick={runAll} disabled={!!busy} style={{ ...btn('#ff7a6b', true), opacity: busy ? 0.6 : 1 }}>{busy === 'run' ? `Running ${current} of ${total}…` : 'Run (re-thread)'}</button>}
         </div>
       </div>
 
@@ -87,7 +110,8 @@ export default function EmailHealthCard() {
       {dry && (
         <div style={{ marginTop: 14 }}>
           <p style={{ fontSize: 12.5, color: 'var(--sa-text)', margin: '0 0 8px' }}>
-            {dry.candidates === 0 ? 'No empty email replies in this period. Nothing to recover.'
+            {busy === 'dry' && dry.candidates === 0 ? 'Checking each workspace…'
+              : dry.candidates === 0 ? 'No empty email replies in this period. Nothing to recover.'
               : <><b>{dry.candidates}</b> empty repl{dry.candidates === 1 ? 'y' : 'ies'} found: <b>{dry.filled}</b> can be recovered, {dry.notFound} couldn’t be found on Resend, {dry.stillEmpty} really were empty.</>}
           </p>
           {total > 0 && (

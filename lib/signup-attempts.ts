@@ -15,10 +15,12 @@
 // Everything is best-effort: before V390 runs (or if a write fails) sign-up
 // carries on exactly as before.
 
+import { after } from 'next/server'
 import { checkBurst } from '@/lib/rate-limit'
 import { parseUserAgent } from '@/lib/link-tracking'
-import { findContactByPhone, ensureContactByPhone } from '@/lib/contact-capture'
+import { findContactByPhone } from '@/lib/contact-capture'
 import { emailDomain, isDisposableEmail } from '@/lib/disposable-email'
+import { SUPER_ADMIN } from '@/app/api/platform-admin/_lib/super-admin'
 
 export const TABLE = 'signup_attempts'
 /** No activity for this long and no account: abandoned. Codes expire after 10 minutes. */
@@ -27,7 +29,8 @@ export const ABANDONED_AFTER_MS = 30 * 60_000
 export const RETENTION_DAYS = 180
 /** Risk score at or above this reads "Suspicious". */
 export const SUSPICIOUS_SCORE = 3
-export const OTP_LIMITS = { perEmailHour: 5, perIpHour: 12, emailsPerIpHour: 5, perEmailMinute: 3, perIpMinute: 6 }
+/** perEmailHour is per channel (email codes and SMS codes counted separately). */
+export const OTP_LIMITS = { perEmailHour: 8, perIpHour: 15, emailsPerIpHour: 5, perEmailMinute: 3, perIpMinute: 6 }
 const MAX_EVENTS = 100
 
 export type SignupEventType =
@@ -142,7 +145,6 @@ export function assessRisk(row: any): { score: number; level: 'none' | 'low' | '
   const pc = phoneCountry(row.phone)
   if (row.ip_country && pc && !sameRegion(row.ip_country, pc)) { score += 2; reasons.push(`Connecting from ${row.ip_country} with a ${pc} mobile number`) }
   if ((row.wrong_codes || 0) >= 3) { score += 1; reasons.push(`${row.wrong_codes} wrong codes entered`) }
-  if ((Array.isArray(row.events) ? row.events : []).some((e: any) => e?.type === 'rate_limited')) { score += 1; reasons.push('Hit the code request limit') }
   return { score, level: score >= SUSPICIOUS_SCORE ? 'high' : score > 0 ? 'low' : 'none', reasons }
 }
 
@@ -168,52 +170,83 @@ const stageOf = (row: any) => row.account_created_at ? 'account_created' : row.m
 
 // ── Rate limits ────────────────────────────────────────────────────────────
 
+const RATE_WINDOW_SECS = 3600
+const hourly = new Map<string, { start: number; hits: number }>()
+const tooManyEmail = { ok: false, reason: 'email' as const, message: 'Too many codes have been sent to this email. Please wait an hour and try again, or email support@colvy.com.' }
+const tooManyIp = { ok: false, reason: 'ip' as const, message: 'Too many sign-up codes have been requested from this network. Please try again in an hour.' }
+const waitAMinute = (reason: 'email' | 'ip') => ({ ok: false, reason, message: 'Please wait a minute before asking for another code.' })
+
+/** Per-instance stand-in for signup_rate_claim() before V390: same keys and limits, not shared between servers. */
+function claimInMemory(keys: string[], limits: number[], now: number): string | null {
+  for (let i = 0; i < keys.length; i++) {
+    const w = hourly.get(keys[i])
+    if (w && now - w.start < RATE_WINDOW_SECS * 1000 && w.hits + 1 > limits[i]) return keys[i]
+  }
+  for (const k of keys) {
+    const w = hourly.get(k)
+    if (!w || now - w.start >= RATE_WINDOW_SECS * 1000) hourly.set(k, { start: now, hits: 1 })
+    else w.hits++
+  }
+  return null
+}
+
 /**
- * May this email / IP have another code? An in-memory first line (per server
- * instance, per minute), then hourly limits from the recorded attempts. Before
- * V390 the per-email hourly limit counts fresh sign-ups in signup_verifications.
+ * Claim one code send for this email (per channel) and IP, or say why not.
+ * Call it only once the request has passed Cloudflare Turnstile (fresh sign-ups)
+ * or the token checks (resends), and the email isn't already registered, so
+ * refused bots and existing accounts don't use up a real person's budget.
+ *
+ *   • per minute, in memory: 3 per email, 6 per IP;
+ *   • per hour: 8 email codes and 8 SMS codes per email, 15 requests per IP,
+ *     counted atomically by signup_rate_claim() (V390), which locks and bumps
+ *     its counters in one statement, so neither a burst of parallel requests
+ *     nor a long timeline can get round it. Before V390: the same limits per
+ *     server instance, plus fresh sign-ups per email from signup_verifications;
+ *   • 5 different emails per IP an hour, from the recorded attempts.
  */
-export async function checkOtpRate(db: any, o: { email: string; ip?: string | null; now?: number }): Promise<{ ok: boolean; reason?: 'email' | 'ip'; message?: string }> {
+export async function claimOtpSend(db: any, o: { email: string; ip?: string | null; channel?: 'both' | 'email' | 'sms'; now?: number }): Promise<{ ok: boolean; reason?: 'email' | 'ip'; message?: string }> {
   const now = o.now ?? Date.now()
   const email = String(o.email || '').toLowerCase()
   const ip = o.ip || null
-  const tooManyEmail = { ok: false as const, reason: 'email' as const, message: 'Too many codes have been sent to this email. Please wait an hour and try again, or email support@colvy.com.' }
-  const tooManyIp = { ok: false as const, reason: 'ip' as const, message: 'Too many sign-up codes have been requested from this network. Please try again in an hour.' }
-  if (!checkBurst(`otp:e:${email}`, OTP_LIMITS.perEmailMinute)) return tooManyEmail
-  if (ip && !checkBurst(`otp:ip:${ip}`, OTP_LIMITS.perIpMinute)) return tooManyIp
-  const hourAgo = now - 3_600_000
-  const sentInHour = (evs: any) => (Array.isArray(evs) ? evs : []).filter((e: any) => e?.type === 'code_sent' && ms(e.at) >= hourAgo)
+  const channel = o.channel || 'both'
+  if (!checkBurst(`otp:e:${email}`, OTP_LIMITS.perEmailMinute)) return waitAMinute('email')
+  if (ip && !checkBurst(`otp:ip:${ip}`, OTP_LIMITS.perIpMinute)) return waitAMinute('ip')
+  const hourAgo = iso(now - RATE_WINDOW_SECS * 1000)
 
-  try {
-    const { data: mine, error } = await db.from(TABLE).select('email, events').eq('email', email).maybeSingle()
-    if (error) throw error
-    if (sentInHour(mine?.events).length >= OTP_LIMITS.perEmailHour) return tooManyEmail
-    if (ip) {
-      const { data: fromIp, error: e2 } = await db.from(TABLE).select('email, events').eq('ip', ip).gte('last_activity_at', iso(hourAgo)).limit(100)
-      if (e2) throw e2
-      let sends = 0
-      const emails = new Set<string>()
-      for (const r of fromIp || []) {
-        const n = sentInHour(r.events).filter((e: any) => !e.ip || e.ip === ip).length
-        sends += n
-        if (n && r.email !== email) emails.add(r.email)
-      }
-      if (sends >= OTP_LIMITS.perIpHour || emails.size >= OTP_LIMITS.emailsPerIpHour) return tooManyIp
-    }
-    return { ok: true }
-  } catch (e: any) {
-    if (!missingTable(e)) return { ok: true }     // can't tell: don't block a real person
+  if (ip) {
+    try {
+      const { data, error } = await db.from(TABLE).select('email').eq('ip', ip).gte('last_code_at', hourAgo).limit(50)
+      if (!error && new Set((data || []).map((r: any) => r.email).filter((e: string) => e !== email)).size >= OTP_LIMITS.emailsPerIpHour) return tooManyIp
+    } catch {}
   }
-  // Before V390: fresh sign-ups for this email in the last hour.
+
+  const keys: string[] = [], limits: number[] = []
+  if (channel !== 'sms') { keys.push(`e:${email}:email`); limits.push(OTP_LIMITS.perEmailHour) }
+  if (channel !== 'email') { keys.push(`e:${email}:sms`); limits.push(OTP_LIMITS.perEmailHour) }
+  if (ip) { keys.push(`ip:${ip}`); limits.push(OTP_LIMITS.perIpHour) }
+  let over: string | null = null
+  let claimed = false
   try {
-    const { count } = await db.from('signup_verifications').select('id', { count: 'exact', head: true }).eq('email', email).gte('created_at', iso(hourAgo))
-    if ((count || 0) >= OTP_LIMITS.perEmailHour) return tooManyEmail
+    const { data, error } = await db.rpc('signup_rate_claim', { p_keys: keys, p_limits: limits, p_window_secs: RATE_WINDOW_SECS })
+    if (!error) { claimed = true; over = data || null }
+    else if (!missingTable(error) && !/function|signup_rate_claim/i.test(String(error.message || ''))) claimed = true   // can't tell: don't block a real person
   } catch {}
+  if (!claimed) {
+    over = claimInMemory(keys, limits, now)
+    if (!over) {
+      try {
+        const { count } = await db.from('signup_verifications').select('id', { count: 'exact', head: true }).eq('email', email).gte('created_at', hourAgo)
+        if ((count || 0) >= OTP_LIMITS.perEmailHour) over = `e:${email}:email`
+      } catch {}
+    }
+  }
+  if (over) return over.startsWith('ip:') ? tooManyIp : tooManyEmail
   return { ok: true }
 }
 
 // ── Recording ──────────────────────────────────────────────────────────────
 
+export type RequestMeta = ReturnType<typeof requestMeta>
 export type SignupEvent = {
   type: SignupEventType
   email: string
@@ -223,6 +256,8 @@ export type SignupEvent = {
   profile?: SignupProfile
   attribution?: SignupAttribution
   headers?: HeaderBag | null
+  /** requestMeta() taken while the request was live (for recording after the response). */
+  meta?: RequestMeta | null
   userId?: string | null
   companyId?: string | null
   companySlug?: string | null
@@ -230,23 +265,73 @@ export type SignupEvent = {
   now?: number
 }
 
+/** A valid address we're willing to look up (no LIKE wildcards). */
+export function cleanEmail(raw: any): string | null {
+  const email = String(raw || '').trim().toLowerCase()
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) || /[%*\\,()]/.test(email) || email.length > 254) return null
+  return email
+}
+
+// Keep the timeline to MAX_EVENTS, dropping the oldest non-send entries first
+// so code sends (what the risk check reads) are the last to go.
+function capEvents(events: any[]): any[] {
+  const out = events.slice()
+  while (out.length > MAX_EVENTS) {
+    const i = out.findIndex(e => e?.type !== 'code_sent')
+    out.splice(i >= 0 ? i : 0, 1)
+  }
+  return out
+}
+
+// Near-duplicate addresses (a typo then the right one) aren't different people.
+function nearSame(a: string, b: string): boolean {
+  const [la, da] = a.split('@'), [lb, db] = b.split('@')
+  if (la === lb) return true
+  if (da !== db) return false
+  if (Math.abs(la.length - lb.length) > 2) return false
+  const prev = Array.from({ length: lb.length + 1 }, (_, j) => j)
+  for (let i = 1; i <= la.length; i++) {
+    let diag = prev[0]; prev[0] = i
+    for (let j = 1; j <= lb.length; j++) {
+      const tmp = prev[j]
+      prev[j] = Math.min(prev[j] + 1, prev[j - 1] + 1, diag + (la[i - 1] === lb[j - 1] ? 0 : 1))
+      diag = tmp
+    }
+  }
+  return prev[lb.length] <= 2
+}
+const phoneTail = (p: any) => String(p || '').replace(/\D/g, '').slice(-9)
+
 /**
  * Record one step of a sign-up onto its row (one per email), recomputing the
  * stage, step reached and risk. Returns the saved row, or null when there's
  * nothing to record or the table isn't there yet. Never throws.
+ *
+ * A refused request (rate_limited) only adds one note per hour to an existing
+ * timeline: it never changes the IP, location, device, profile, activity time
+ * or risk, so someone else can't rewrite a real person's record by asking for
+ * codes in their name.
  */
 export async function recordSignupEvent(db: any, ev: SignupEvent): Promise<any | null> {
   try {
-    const email = String(ev.email || '').trim().toLowerCase()
-    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return null
+    const email = cleanEmail(ev.email)
+    if (!email) return null
     const now = ev.now ?? Date.now()
     const at = iso(now)
     const { data: existing, error } = await db.from(TABLE).select('*').eq('email', email).maybeSingle()
     if (error) { if (missingTable(error)) warnMissing(); return null }
-    // A refused send doesn't start a record (bots); it's noted on a real one.
-    if (!existing && ev.type === 'rate_limited') return null
 
-    const meta = ev.headers ? requestMeta(ev.headers) : null
+    if (ev.type === 'rate_limited') {
+      if (!existing) return null
+      const evs = Array.isArray(existing.events) ? existing.events : []
+      if (evs.some((e: any) => e?.type === 'rate_limited' && now - ms(e.at) < RATE_WINDOW_SECS * 1000)) return existing
+      const events = capEvents([...evs, { at, type: 'rate_limited', ...(ev.channel ? { channel: ev.channel } : {}), ...(ev.detail ? { detail: String(ev.detail).slice(0, 300) } : {}) }])
+      await db.from(TABLE).update({ events, updated_at: at }).eq('id', existing.id)
+      return { ...existing, events }
+    }
+
+    const admin = ['marked_spam', 'unmarked_spam', 'emailed'].includes(ev.type)
+    const meta = admin ? null : ev.meta || (ev.headers ? requestMeta(ev.headers) : null)
     const row: any = existing ? { ...existing } : { email, email_domain: emailDomain(email), first_seen_at: at, codes_sent: 0, wrong_codes: 0, events: [], source: 'web' }
     row.email_domain = row.email_domain || emailDomain(email)
 
@@ -255,7 +340,7 @@ export async function recordSignupEvent(db: any, ev: SignupEvent): Promise<any |
     set('name', p.fullName); set('business_name', p.businessName); set('business_slug', p.businessSlug); set('industry', p.industry)
     set('website', p.website); set('business_phone', p.businessPhone); set('business_city', p.businessCity)
     set('business_state', p.businessState); set('business_country', p.businessCountry)
-    if (ev.phone) { row.phone = String(ev.phone).slice(0, 40); row.phone_country = phoneCountry(ev.phone) || null }
+    if (ev.phone && !admin) { row.phone = String(ev.phone).slice(0, 40); row.phone_country = phoneCountry(ev.phone) || null }
 
     // First touch wins for where they came from; plan and referral code follow the latest.
     const a = ev.attribution || {}
@@ -273,7 +358,7 @@ export async function recordSignupEvent(db: any, ev: SignupEvent): Promise<any |
     if (meta?.ip && ev.type === 'code_sent') event.ip = meta.ip
     if (ev.detail) event.detail = String(ev.detail).slice(0, 300)
     if (ev.by) event.by = ev.by
-    row.events = [...(Array.isArray(row.events) ? row.events : []), event].slice(-MAX_EVENTS)
+    row.events = capEvents([...(Array.isArray(row.events) ? row.events : []), event])
 
     switch (ev.type) {
       case 'code_sent':
@@ -292,18 +377,27 @@ export async function recordSignupEvent(db: any, ev: SignupEvent): Promise<any |
     row.stage = stageOf(row)
     row.step_reached = stepReached(row).step
 
-    // How many different emails this IP signed up in the last day (this one included).
+    // How many unrelated emails this IP signed up in the last day (this one
+    // included). A typo then the right address, or the same mobile, is one person.
     if (row.ip && ev.type === 'code_sent') {
       try {
-        const { data: same } = await db.from(TABLE).select('email').eq('ip', row.ip).gte('last_activity_at', iso(now - 86_400_000)).limit(200)
-        row.ip_email_count = new Set([email, ...(same || []).map((r: any) => r.email)]).size
+        const { data: same } = await db.from(TABLE).select('email, phone').eq('ip', row.ip).gte('last_activity_at', iso(now - 86_400_000)).limit(200)
+        const people = [{ email, phone: phoneTail(row.phone) }, ...(same || []).filter((r: any) => r?.email && r.email !== email).map((r: any) => ({ email: r.email, phone: phoneTail(r.phone) }))]
+        // Group related addresses (union-find), then count the groups.
+        const parent = people.map((_, i) => i)
+        const find = (i: number): number => parent[i] === i ? i : (parent[i] = find(parent[i]))
+        for (let i = 0; i < people.length; i++) for (let j = i + 1; j < people.length; j++) {
+          const x = people[i], y = people[j]
+          if ((x.phone.length >= 8 && x.phone === y.phone) || nearSame(x.email, y.email)) parent[find(i)] = find(j)
+        }
+        row.ip_email_count = new Set(people.map((_, i) => find(i))).size
       } catch {}
     }
     const risk = assessRisk(row)
     row.risk_score = risk.score
     row.risk_reasons = risk.reasons
     // Admin actions (spam, email) aren't the person's activity.
-    if (!['marked_spam', 'unmarked_spam', 'emailed'].includes(ev.type)) row.last_activity_at = at
+    if (!admin) row.last_activity_at = at
     row.last_activity_at = row.last_activity_at || at
     row.updated_at = at
     delete row.id
@@ -319,8 +413,9 @@ export async function recordSignupEvent(db: any, ev: SignupEvent): Promise<any |
     }
     const out = saved.data || { ...row, id: existing?.id }
 
-    // Into Colvy's own CRM: when they first get a code, and when they finish.
-    if ((ev.type === 'code_sent' && !out.contact_id) || ev.type === 'account_created') {
+    // Into Colvy's own CRM: when they first get a code, as each channel is
+    // verified, and when they finish.
+    if ((ev.type === 'code_sent' && !out.contact_id) || ['email_verified', 'mobile_verified', 'account_created'].includes(ev.type)) {
       const contactId = await syncSignupContact(db, out)
       if (contactId && contactId !== out.contact_id) {
         await db.from(TABLE).update({ contact_id: contactId, contact_synced_at: at }).eq('id', out.id)
@@ -332,6 +427,24 @@ export async function recordSignupEvent(db: any, ev: SignupEvent): Promise<any |
     console.warn('[signup-attempts] record failed:', e?.message || e)
     return null
   }
+}
+
+const RECORD_TIMEOUT_MS = 8000
+/**
+ * Record after the response has gone (Next's after()), with a time limit, so a
+ * slow or failing write never holds up or breaks a sign-up. The request's IP,
+ * location and device are read now, while the request is live.
+ */
+export function recordSignupLater(db: any, ev: SignupEvent): void {
+  const job: SignupEvent = { ...ev, meta: ev.meta || (ev.headers ? requestMeta(ev.headers) : null), headers: null, now: ev.now ?? Date.now() }
+  const run = () => {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    return Promise.race([
+      recordSignupEvent(db, job),
+      new Promise(resolve => { timer = setTimeout(() => { console.warn('[signup-attempts] record timed out'); resolve(null) }, RECORD_TIMEOUT_MS) }),
+    ]).catch(() => null).finally(() => clearTimeout(timer))
+  }
+  try { after(run) } catch { void run() }
 }
 
 /** The email a sign-up token belongs to (verify / complete only carry the token). */
@@ -348,95 +461,135 @@ export async function emailForToken(db: any, token: string): Promise<{ email: st
 const SIGNUP_TAGS = ['signup-abandoned', 'signup-completed', 'signup-spam']
 let workspaceCache: { at: number; co: any } | null = null
 
-/** Colvy's own workspace (super admin → Companies, slug 'colvy'). */
+/**
+ * Colvy's own workspace. Pinned by COLVY_WORKSPACE_ID when set; otherwise the
+ * company with slug 'colvy' (super admin → Companies), and only when its owner
+ * is the platform admin, so a business that somehow took the slug never
+ * receives sign-ups.
+ */
 export async function colvyWorkspace(db: any): Promise<{ id: string; name: string; slug: string } | null> {
   if (workspaceCache && Date.now() - workspaceCache.at < 10 * 60_000) return workspaceCache.co
-  const slug = process.env.COLVY_WORKSPACE_SLUG || 'colvy'
+  let co: any = null
   try {
-    const { data } = await db.from('companies').select('id, name, slug').eq('slug', slug).maybeSingle()
-    workspaceCache = { at: Date.now(), co: data || null }
-    return data || null
-  } catch { return null }
+    const pinned = process.env.COLVY_WORKSPACE_ID
+    if (pinned) {
+      const { data } = await db.from('companies').select('id, name, slug, owner_id').eq('id', pinned).maybeSingle()
+      co = data || null
+    } else {
+      const { data } = await db.from('companies').select('id, name, slug, owner_id').eq('slug', process.env.COLVY_WORKSPACE_SLUG || 'colvy').maybeSingle()
+      if (data?.owner_id) {
+        const { data: u } = await db.auth.admin.getUserById(data.owner_id)
+        if (String(u?.user?.email || '').toLowerCase() === SUPER_ADMIN) co = data
+        else console.warn('[signup-attempts] the colvy workspace isn’t owned by the platform admin: set COLVY_WORKSPACE_ID')
+      }
+    }
+  } catch { co = null }
+  workspaceCache = { at: Date.now(), co: co ? { id: co.id, name: co.name, slug: co.slug } : null }
+  return workspaceCache.co
 }
 export function resetColvyWorkspaceCache() { workspaceCache = null }
 
 const statusTag = (row: any) => row.spam_at ? 'signup-spam' : row.account_created_at ? 'signup-completed' : 'signup-abandoned'
+const likeExact = (s: string) => s.replace(/[\\%_]/g, c => '\\' + c)
 
 /**
  * Add (or update) the person as a contact in Colvy's workspace, tagged with
  * how their sign-up went, so the owner can follow up from the normal inbox.
- * Uses the shared phone-based contact helper; fills empty fields only.
- * Suspicious attempts stay out until an admin looks at them. No marketing
- * consent is recorded: a sign-up is a transactional relationship only.
+ *
+ * Nothing they typed is trusted until it's verified: before the email code is
+ * entered only a contact this sign-up flow made can be matched by email (an
+ * existing customer's contact is left alone), and the mobile is only used to
+ * match or fill once it's verified. Fills empty fields only. Suspicious
+ * attempts stay out until an admin looks. No marketing consent is recorded.
  */
 export async function syncSignupContact(db: any, row: any): Promise<string | null> {
   try {
-    if (!row?.email && !row?.phone) return null
+    const email = cleanEmail(row?.email)
+    if (!email) return null
     if ((row.risk_score || 0) >= SUSPICIOUS_SCORE && !row.account_created_at && !row.contact_id) return null
     const co = await colvyWorkspace(db)
     if (!co) return null
-    let contactId: string | null = null
-    if (row.contact_id) {
-      const { data } = await db.from('contacts').select('id').eq('id', row.contact_id).eq('company_id', co.id).maybeSingle()
-      contactId = data?.id || null
-    }
-    if (!contactId && row.email) {
-      const { data } = await db.from('contacts').select('id').eq('company_id', co.id).ilike('email', row.email).limit(1)
-      contactId = data?.[0]?.id || null
-    }
-    let created = false
-    if (!contactId && row.phone) {
-      const hit = await findContactByPhone(db, co.id, row.phone)
-      contactId = hit?.id || await ensureContactByPhone(db, co.id, row.phone, { name: row.name || null, source: 'signup', known: true })
-      created = !hit && !!contactId
-    }
-    if (!contactId && row.email) {
-      const { data } = await db.from('contacts').insert({ company_id: co.id, name: row.name || null, email: row.email, source: 'signup' }).select('id').maybeSingle()
-      contactId = data?.id || null
-      created = !!contactId
-    }
-    if (!contactId) return null
+    const emailOk = !!(row.email_verified_at || row.account_created_at)
+    const mobileOk = !!(row.mobile_verified_at || row.account_created_at) && !!row.phone
+    const cols = 'id, name, email, phone, tags, source, company_name, city, notes'
 
-    const { data: c } = await db.from('contacts').select('*').eq('id', contactId).maybeSingle()
-    const tags = (Array.isArray(c?.tags) ? c.tags : []).filter((t: string) => !SIGNUP_TAGS.includes(t))
+    let c: any = null
+    if (row.contact_id) {
+      const { data } = await db.from('contacts').select(cols).eq('id', row.contact_id).eq('company_id', co.id).maybeSingle()
+      c = data || null
+    }
+    if (!c) {
+      const { data } = await db.from('contacts').select(cols).eq('company_id', co.id).ilike('email', likeExact(email)).limit(5)
+      const hits = (data || []).filter((x: any) => String(x.email || '').toLowerCase() === email)
+      c = hits.find((x: any) => x.source === 'signup') || (emailOk ? hits[0] : null) || null
+      if (!c && hits.length) return null            // a customer already has this email: wait until it's verified
+    }
+    if (!c && mobileOk) {
+      const hit = await findContactByPhone(db, co.id, row.phone)
+      if (hit) { const { data } = await db.from('contacts').select(cols).eq('id', hit.id).maybeSingle(); c = data || null }
+    }
+    if (!c) {
+      const base = { company_id: co.id, name: row.name || null, email, phone: mobileOk ? row.phone : null, source: 'signup', tags: ['signup', statusTag(row)] }
+      let ins = await db.from('contacts').insert({ ...base, subscribed_to_marketing: false }).select(cols).maybeSingle()
+      if (ins.error) ins = await db.from('contacts').insert(base).select(cols).maybeSingle()
+      c = ins.data || null
+      if (!c) return null
+    }
+
+    const tags = (Array.isArray(c.tags) ? c.tags : []).filter((t: string) => !SIGNUP_TAGS.includes(t))
     const patch: any = { tags: Array.from(new Set([...tags, 'signup', statusTag(row)])) }
-    if (!c?.name && row.name) patch.name = row.name
-    if (!c?.email && row.email) patch.email = row.email
-    if (!c?.phone && row.phone) patch.phone = row.phone
-    if (created) patch.subscribed_to_marketing = false
+    if (!c.name && row.name) patch.name = row.name
+    if (!c.email) patch.email = email
+    if (!c.phone && mobileOk) patch.phone = row.phone
     const extra: any = {}
-    if (!c?.company_name && row.business_name) extra.company_name = row.business_name
-    if (!c?.city && (row.business_city || row.ip_city)) extra.city = row.business_city || row.ip_city
-    if (!c?.notes) extra.notes = `Started a Colvy sign-up${row.business_name ? ` for ${row.business_name}` : ''}. Transactional follow-up only: no marketing consent given.`
-    const { error } = await db.from('contacts').update({ ...patch, ...extra }).eq('id', contactId)
-    if (error) await db.from('contacts').update(patch).eq('id', contactId)
-    return contactId
+    if (!c.company_name && row.business_name) extra.company_name = row.business_name
+    if (!c.city && (row.business_city || row.ip_city)) extra.city = row.business_city || row.ip_city
+    if (!c.notes && c.source === 'signup') extra.notes = `Started a Colvy sign-up${row.business_name ? ` for ${row.business_name}` : ''}. Transactional follow-up only: no marketing consent given.`
+    const { error } = await db.from('contacts').update({ ...patch, ...extra }).eq('id', c.id)
+    if (error) await db.from('contacts').update(patch).eq('id', c.id)
+    return c.id
   } catch (e: any) {
     console.warn('[signup-attempts] contact sync failed:', e?.message || e)
     return null
   }
 }
 
+// Anything that hangs off a contact: if one of these has it, it's a customer
+// record now, not just a sign-up lead.
+const CONTACT_LINKS = ['conversations', 'orders', 'bookings', 'support_tickets', 'stock_waitlist', 'calls', 'scheduled_messages', 'review_requests', 'conversation_sales', 'customer_memory', 'calendar_events', 'short_links']
+
+async function contactInUse(db: any, companyId: string, contactId: string): Promise<boolean> {
+  for (const table of CONTACT_LINKS) {
+    try {
+      const { data, error } = await db.from(table).select('id').eq('contact_id', contactId).limit(1)
+      if (error) { if (missingTable(error)) continue; return true }   // can't tell: keep it
+      if ((data || []).length) return true
+    } catch { return true }
+  }
+  return false
+}
+
 /**
- * Take a deleted sign-up out of the CRM: the contact goes if the sign-up made
- * it and nobody has talked to them; otherwise only the sign-up tags come off.
+ * Take a deleted sign-up out of the CRM. The contact is deleted only when this
+ * sign-up made it (source 'signup'), no other sign-up uses it, it isn't a
+ * finished sign-up, and nothing links to it (conversations, orders, bookings…).
+ * Otherwise only the sign-up tags come off, and only if no other sign-up uses it.
  */
-export async function removeSignupContact(db: any, row: any): Promise<'deleted' | 'untagged' | 'none'> {
+export async function removeSignupContact(db: any, row: any): Promise<'deleted' | 'untagged' | 'kept' | 'none'> {
   try {
     if (!row?.contact_id) return 'none'
     const co = await colvyWorkspace(db)
     if (!co) return 'none'
     const { data: c } = await db.from('contacts').select('id, source, tags').eq('id', row.contact_id).eq('company_id', co.id).maybeSingle()
     if (!c) return 'none'
-    if (c.source === 'signup') {
-      const { data: convs } = await db.from('conversations').select('id').eq('company_id', co.id).eq('contact_id', c.id).limit(1)
-      if (!(convs || []).length) {
-        const { error } = await db.from('contacts').delete().eq('id', c.id).eq('company_id', co.id)
-        if (!error) return 'deleted'
-      }
+    const { data: others, error: oErr } = await db.from(TABLE).select('id').eq('contact_id', c.id).neq('id', row.id).limit(1)
+    if (oErr || (others || []).length) return 'kept'
+    const tags: string[] = Array.isArray(c.tags) ? c.tags : []
+    if (c.source === 'signup' && !tags.includes('signup-completed') && !(await contactInUse(db, co.id, c.id))) {
+      const { error } = await db.from('contacts').delete().eq('id', c.id).eq('company_id', co.id)
+      if (!error) return 'deleted'
     }
-    const tags = (Array.isArray(c.tags) ? c.tags : []).filter((t: string) => t !== 'signup' && !SIGNUP_TAGS.includes(t))
-    await db.from('contacts').update({ tags }).eq('id', c.id)
+    await db.from('contacts').update({ tags: tags.filter(t => t !== 'signup' && !SIGNUP_TAGS.includes(t)) }).eq('id', c.id)
     return 'untagged'
   } catch { return 'none' }
 }
@@ -553,8 +706,9 @@ export async function signupPulse(db: any, now = Date.now()): Promise<{ abandone
 
 /**
  * Delete abandoned sign-ups that weren't suspicious or marked spam once
- * they've been quiet for RETENTION_DAYS (and their sign-up-made contacts that
- * nobody talked to), plus sign-up verification rows that old.
+ * they've been quiet for RETENTION_DAYS (and the contacts only they made, if
+ * nothing links to them: see removeSignupContact), plus sign-up verification
+ * rows that old and expired rate-limit counters.
  */
 export async function pruneSignupAttempts(db: any, now = Date.now()): Promise<{ deleted: number; contacts: number; verifications: number; missing: boolean }> {
   const cutoff = iso(now - RETENTION_DAYS * 864e5)
@@ -572,5 +726,7 @@ export async function pruneSignupAttempts(db: any, now = Date.now()): Promise<{ 
     const { data: gone } = await db.from('signup_verifications').delete().lt('created_at', cutoff).select('id')
     out.verifications = (gone || []).length
   } catch {}
+  // Rate-limit counters only matter for their hour.
+  try { await db.from('signup_rate_windows').delete().lt('window_start', iso(now - 2 * 864e5)) } catch {}
   return out
 }

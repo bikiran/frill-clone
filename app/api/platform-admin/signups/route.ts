@@ -3,7 +3,7 @@ import { adminDb, superAdmin } from '../_lib/super-admin'
 import { logSuperAdminAudit } from '@/lib/super-admin-audit'
 import { sendCustomerEmail } from '@/lib/customer-email'
 import {
-  TABLE, listSignups, presentSignup, recordSignupEvent, syncSignupContact, removeSignupContact, colvyWorkspace,
+  TABLE, listSignups, presentSignup, recordSignupEvent, syncSignupContact, removeSignupContact, colvyWorkspace, cleanEmail,
   type ListFilter, type ListRange,
 } from '@/lib/signup-attempts'
 
@@ -47,24 +47,29 @@ export async function POST(req: NextRequest) {
   const id = String(body?.id || '')
   if (!id) return NextResponse.json({ error: 'Which sign-up?' }, { status: 400 })
 
-  // Rows shown from signup_verifications before V390 ran.
+  // Rows shown from signup_verifications before V390 ran ("legacy:<email>").
+  let row: any = null
   if (id.startsWith('legacy:')) {
-    const email = id.slice('legacy:'.length).toLowerCase()
+    const email = cleanEmail(id.slice('legacy:'.length))
+    if (!email) return NextResponse.json({ error: 'That sign-up no longer exists.' }, { status: 404 })
     if (action !== 'delete' && action !== 'email') return NextResponse.json({ error: 'Run COLVY_V390_SIGNUP_ATTEMPTS.sql to mark sign-ups as spam.' }, { status: 409 })
+    const { data: ver } = await db.from('signup_verifications').select('email, expires_at, consumed_at').eq('email', email).limit(50)
+    if (!(ver || []).length) return NextResponse.json({ error: 'That sign-up no longer exists.' }, { status: 404 })
     if (action === 'delete') {
-      await db.from('signup_verifications').delete().eq('email', email)
-      await logSuperAdminAudit(db, { adminId: who.id, adminEmail: who.email, action: 'signup_deleted', summary: `Deleted the sign-up attempt for ${email}`, detail: { email, legacy: true } })
+      // Only finished or expired verification rows: one still in progress is
+      // someone signing up right now.
+      const now = new Date().toISOString()
+      const { data: done } = await db.from('signup_verifications').delete().eq('email', email).not('consumed_at', 'is', null).select('id')
+      const { data: expired } = await db.from('signup_verifications').delete().eq('email', email).lt('expires_at', now).select('id')
+      await logSuperAdminAudit(db, { adminId: who.id, adminEmail: who.email, action: 'signup_deleted', summary: `Deleted the sign-up attempt for ${email}`, detail: { email, legacy: true, rows: (done || []).length + (expired || []).length } })
       return NextResponse.json({ ok: true, deleted: true })
     }
-  }
-
-  let row: any = null
-  if (!id.startsWith('legacy:')) {
+    // Email goes only to the address on the verification rows themselves.
+    row = { id, email: String(ver![0].email).toLowerCase(), legacy: true }
+  } else {
     const { data, error } = await db.from(TABLE).select('*').eq('id', id).maybeSingle()
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     row = data
-  } else {
-    row = { id, email: id.slice('legacy:'.length).toLowerCase(), legacy: true }
   }
   if (!row) return NextResponse.json({ error: 'That sign-up no longer exists.' }, { status: 404 })
 

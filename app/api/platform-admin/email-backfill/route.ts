@@ -11,7 +11,8 @@ export const maxDuration = 60
  * health → "Recover empty email replies". The same job as
  * /api/email/backfill-bodies (lib/email-backfill), without needing CRON_SECRET.
  *
- *   body: { dryRun?: boolean, companyId?: string, days?: number (1–90, default 30), rethread?: boolean }
+ *   body: { scan: true, days? }  → workspaces with empty replies (database only)
+ *         { dryRun?: boolean, companyId?: string, days?: number (1–90, default 30), rethread?: boolean }
  *
  * Returns the job's totals plus the same numbers per workspace, so the page can
  * show a dry run per workspace and then run them one at a time with progress.
@@ -28,6 +29,25 @@ export async function POST(req: NextRequest) {
     const dryRun = body?.dryRun !== false
     const rethread = !!body?.rethread
     const days = Math.min(Math.max(Number(body?.days) || 30, 1), 90)
+
+    // { scan: true }: which workspaces have empty replies, from the database
+    // only (the same rows the job picks up), so the page can then dry-run and
+    // run one workspace per request instead of every workspace in one go.
+    if (body?.scan) {
+      const since = new Date(Date.now() - days * 86400000).toISOString()
+      const { data, error } = await db.from('messages').select('company_id')
+        .eq('sender_type', 'visitor').eq('delivery_channel', 'email').is('gmail_message_id', null)
+        .or('content.is.null,content.eq.').is('email_html', null).is('metadata->inbound_email->>backfilled_at', null)
+        .gte('created_at', since).limit(5000)
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+      const counts: Record<string, number> = {}
+      for (const m of data || []) if (m.company_id) counts[m.company_id] = (counts[m.company_id] || 0) + 1
+      const names = await companyNames(db, Object.keys(counts))
+      const workspaces = Object.entries(counts)
+        .map(([id, n]) => ({ companyId: id, name: names[id]?.name || id, slug: names[id]?.slug || null, empty: n }))
+        .sort((a, b) => b.empty - a.empty)
+      return NextResponse.json({ ok: true, days, workspaces, capped: (data || []).length >= 5000 }, { headers: { 'Cache-Control': 'no-store' } })
+    }
     const result = await backfillEmptyEmailBodies(db, { companyId, days, dryRun, rethread })
 
     // Which workspace each row belongs to (by its original conversation).

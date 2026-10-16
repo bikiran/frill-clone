@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import crypto from 'crypto'
 import { platformTwilio, TWILIO_MASTER } from '@/lib/twilio-platform'
 import { verifyTurnstile, requestIp, TURNSTILE_FAILED } from '@/lib/turnstile'
-import { checkOtpRate, recordSignupEvent, cleanProfile, cleanAttribution } from '@/lib/signup-attempts'
+import { claimOtpSend, recordSignupLater, cleanProfile, cleanAttribution, cleanEmail } from '@/lib/signup-attempts'
 
 export const dynamic = 'force-dynamic'
 
@@ -97,7 +97,8 @@ export async function POST(req: NextRequest) {
     const channel: 'both' | 'email' | 'sms' = ['email', 'sms'].includes(body.channel) ? body.channel : 'both'
     let token = String(body.token || '')
 
-    if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+    // cleanEmail also refuses LIKE wildcards (%), which no real address needs.
+    if (!email || !cleanEmail(email)) {
       return NextResponse.json({ error: 'A valid email is required' }, { status: 400 })
     }
     if ((channel === 'both' || channel === 'sms') && !phone) {
@@ -105,14 +106,6 @@ export async function POST(req: NextRequest) {
     }
 
     const db = admin()
-
-    // Too many codes for this email or from this network: refuse before
-    // anything is sent (and before Cloudflare is asked).
-    const rate = await checkOtpRate(db, { email, ip: requestIp(req.headers) || null })
-    if (!rate.ok) {
-      await recordSignupEvent(db, { type: 'rate_limited', email, headers: req.headers, detail: rate.reason === 'ip' ? 'Too many from this IP' : 'Too many for this email' })
-      return NextResponse.json({ error: rate.message, code: 'rate_limited' }, { status: 429 })
-    }
 
     // Fresh flow (no token yet): make sure the email isn't already registered so
     // we don't send codes into a dead end.
@@ -149,6 +142,16 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Too many codes for this email or from this network. Checked only now,
+    // after Turnstile, the "already registered" check and the token checks, so
+    // bots and dead ends don't use up a real person's allowance. Counted
+    // atomically per channel (lib/signup-attempts claimOtpSend).
+    const rate = await claimOtpSend(db, { email, ip: requestIp(req.headers) || null, channel })
+    if (!rate.ok) {
+      recordSignupLater(db, { type: 'rate_limited', email, channel, detail: rate.reason === 'ip' ? 'Too many from this network' : 'Too many for this email' })
+      return NextResponse.json({ error: rate.message, code: 'rate_limited' }, { status: 429 })
+    }
+
     const emailCode = sixDigits()
     const smsCode = sixDigits()
     const expiresAt = new Date(Date.now() + CODE_TTL_MS).toISOString()
@@ -176,11 +179,11 @@ export async function POST(req: NextRequest) {
     if (channel === 'both' || channel === 'email') emailSent = await sendEmailCode(email, emailCode)
     if (channel === 'both' || channel === 'sms') smsSent = phone ? await sendSmsCode(phone, smsCode) : false
 
-    // Record the attempt (never the codes). Profile and attribution come with
-    // the first send; resends only add to the timeline.
+    // Record the attempt (never the codes) once the response has gone. Profile
+    // and attribution come with the first send; resends only add to the timeline.
     const wanted = channel === 'both' ? ['email', 'sms'] : [channel]
     const failed = wanted.filter(c => c === 'email' ? !emailSent : !smsSent)
-    await recordSignupEvent(db, {
+    recordSignupLater(db, {
       type: failed.length === wanted.length ? 'send_failed' : 'code_sent',
       email, channel, phone: phone || existing?.phone || null, headers: req.headers,
       profile: body.token ? undefined : cleanProfile(body.profile),
