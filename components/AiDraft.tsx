@@ -5,8 +5,9 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { confirmDialog } from '@/components/ConfirmDialog'
+import { CloseIcon } from '@/components/Icons'
 
-// "✨ Draft reply" — AI writes the next reply from your help centre, product
+// "Draft reply" — AI writes the next reply from your help centre, product
 // catalogue, the customer's orders and the thread, following the owner's
 // Business Memory; you review and send. Shared by the inbox (chat/SMS + email
 // composers) and the ticket page.
@@ -76,11 +77,22 @@ export function AiDraftButton({ busy, onClick, height = 32, orb = false }: { bus
   )
 }
 
+const RedoIcon = () => <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></svg>
 const BookIcon = () => <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5z" /><path d="M4 19.5A2.5 2.5 0 0 0 6.5 22H20v-5" /></svg>
 const TagIcon = () => <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z" /><circle cx="7.5" cy="7.5" r="1.5" /></svg>
 const BoxIcon = () => <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 8 12 3 3 8v8l9 5 9-5z" /><path d="M3 8l9 5 9-5M12 13v8" /></svg>
 const ShieldIcon = () => <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><path d="m9 12 2 2 4-4" /></svg>
 const KIND_ICON: Record<string, React.ReactNode> = { knowledge: <BookIcon />, product: <TagIcon />, order: <BoxIcon /> }
+
+// A 28px tap target that doesn't make its row any taller (negative margins).
+function DismissButton({ onClick, color, margin }: { onClick: () => void; color: string; margin: string }) {
+  return (
+    <button type="button" onClick={onClick} aria-label="Dismiss" title="Dismiss"
+      style={{ width: 28, height: 28, margin, padding: 0, flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 7, background: 'none', border: 'none', color, cursor: 'pointer' }}>
+      <CloseIcon size={14} />
+    </button>
+  )
+}
 
 export function AiDraftInfo({ info, error, busy, onRedo, onClose }: {
   info: DraftInfo | null
@@ -95,14 +107,14 @@ export function AiDraftInfo({ info, error, busy, onRedo, onClose }: {
     return (
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', borderRadius: 9, background: '#fef2f2', border: '1px solid #fecaca', color: '#b91c1c', fontSize: 12.5, marginBottom: 8 }}>
         <span style={{ flex: 1 }}>{error}</span>
-        <button type="button" onClick={onClose} style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', fontSize: 14 }}>×</button>
+        <DismissButton onClick={onClose} color="inherit" margin="-6px -6px -6px 0" />
       </div>
     )
   }
   return (
     <div style={{ padding: '8px 10px', borderRadius: 10, background: '#faf5ff', border: '1px solid #ede9fe', marginBottom: 8 }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 11.5, fontWeight: 700, color: '#7c3aed', padding: '3px 0' }}>✨ AI draft — review before sending.</span>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5, fontWeight: 700, color: '#7c3aed', padding: '3px 0' }}><Sparkle /> AI draft — review before sending.</span>
         {info!.sources.length
           ? info!.sources.map(s => {
               const chip = (
@@ -113,7 +125,7 @@ export function AiDraftInfo({ info, error, busy, onRedo, onClose }: {
               return s.url ? <a key={s.id} href={s.url} target="_blank" rel="noreferrer" style={{ textDecoration: 'none' }}>{chip}</a> : <span key={s.id}>{chip}</span>
             })
           : <span style={{ fontSize: 11.5, color: 'var(--slate)', padding: '3px 0' }}>{info!.followed?.length ? 'No matching help article, product or order.' : 'Written from the conversation only — no matching help article, product or order.'}</span>}
-        <button type="button" onClick={onClose} title="Dismiss" style={{ marginLeft: 'auto', background: 'none', border: 'none', color: '#a78bfa', cursor: 'pointer', fontSize: 14, lineHeight: 1 }}>×</button>
+        <DismissButton onClick={onClose} color="#a78bfa" margin="-5px -6px -5px auto" />
       </div>
       {!!info!.followed?.length && (
         // Which of the owner's rules and facts the AI said it followed.
@@ -135,7 +147,7 @@ export function AiDraftInfo({ info, error, busy, onRedo, onClose }: {
           style={{ flex: 1, minWidth: 0, padding: '6px 9px', borderRadius: 8, border: '1px solid #ede9fe', fontSize: 12.5, outline: 'none', fontFamily: 'inherit', background: '#fff' }} />
         <button type="button" disabled={busy} onClick={() => { onRedo(tweak.trim() || 'Try a different version'); setTweak('') }}
           style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #e9d5ff', background: '#fff', color: '#7c3aed', fontSize: 12, fontWeight: 700, cursor: busy ? 'wait' : 'pointer', whiteSpace: 'nowrap' }}>
-          {busy ? '…' : '↻ Redraft'}
+          {busy ? '…' : <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><RedoIcon /> Redraft</span>}
         </button>
       </div>
     </div>

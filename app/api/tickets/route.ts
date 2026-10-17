@@ -176,11 +176,11 @@ export async function POST(req: NextRequest) {
     // Post a system message into the conversation with the ticket number + link.
     if (conversationId) {
       try {
-        const content = `🎫 Support ticket ${ticket.ticket_number} created — "${subject}". Track it here: ${link}`
+        const content = `Support ticket ${ticket.ticket_number} created — "${subject}". Track it here: ${link}`
         await db.from('messages').insert({
           conversation_id: conversationId, company_id: companyId, sender_type: 'system', content,
         })
-        await db.from('conversations').update({ last_message: `🎫 Ticket ${ticket.ticket_number} created`, last_message_at: new Date().toISOString() }).eq('id', conversationId)
+        await db.from('conversations').update({ last_message: `Ticket ${ticket.ticket_number} created`, last_message_at: new Date().toISOString() }).eq('id', conversationId)
       } catch {}
     }
 
