@@ -44,8 +44,8 @@ async function getHandler(req: NextRequest) {
       const sla = computeSla(t, settingsCache.get(t.company_id), now)
       const fr = sla.firstResponse, rs = sla.resolution
       let message: string | null = null
-      if (fr.state === 'overdue') message = `⏰ ${t.ticket_number} is overdue — no reply yet (${humanDuration(fr.msLeft)} past the deadline): "${t.subject}"`
-      else if (rs.state === 'overdue') message = `⏰ ${t.ticket_number} missed its resolution deadline by ${humanDuration(rs.msLeft)}: "${t.subject}"`
+      if (fr.state === 'overdue') message = `${t.ticket_number} is overdue — no reply yet (${humanDuration(fr.msLeft)} past the deadline): "${t.subject}"`
+      else if (rs.state === 'overdue') message = `${t.ticket_number} missed its resolution deadline by ${humanDuration(rs.msLeft)}: "${t.subject}"`
       if (!message) continue
       // Claim first so two overlapping cron runs can't alert twice.
       const { data: claimed } = await db.from('support_tickets').update({ sla_breach_notified_at: now.toISOString() })

@@ -22,11 +22,12 @@ const parseFrom = (desc: string) => { const m = /From:\s*([^<]+?)\s*<([^>]+)>/i.
 // The body without the trailing "— From: …" line the help form appends.
 const cleanBody = (desc: string) => String(desc || '').replace(/\n*—?\s*From:\s*[^<]+?<[^>]+>.*$/is, '').trim()
 
-// Phones (<=767px) read thread first, like the inbox:
-//  • a compact actions card up top (status, priority, assignee, deadlines),
-//  • the reply box folds to a one-line bar pinned above the bottom nav and
-//    opens into the full composer when tapped (the draft is kept while folded),
-//  • the sidebar's duplicate status/priority/assignee controls are hidden.
+// One column (<=900px): a compact actions card up top (status, priority,
+// assignee, deadlines) replaces the sidebar's status/priority/assignee
+// controls, which would otherwise sit below the whole thread.
+// Phones (<=767px) also read thread first, like the inbox: the reply box folds
+// to a one-line bar pinned above the bottom nav and opens into the full
+// composer when tapped (the draft is kept while folded).
 // Desktop keeps the two-column layout, now full width.
 const DETAIL_CSS = `
   .tkd-page { padding: 24px; }
@@ -38,11 +39,14 @@ const DETAIL_CSS = `
   .tkd-seg button { flex: 1 1 auto; min-width: 0; height: 38px; padding: 0 8px; border-radius: 10px; border: 1px solid var(--border); background: #fff; color: var(--ink); font: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer; text-transform: capitalize; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; -webkit-tap-highlight-color: transparent; }
   .tkd-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; font-size: 11.5px; font-weight: 700; color: var(--slate); text-transform: uppercase; letter-spacing: .03em; }
   .tkd-field select { width: 100%; min-width: 0; height: 40px; padding: 0 10px; border-radius: 10px; border: 1px solid var(--border); background: #fff; font: inherit; font-size: 16px; font-weight: 600; text-transform: none; letter-spacing: 0; color: var(--ink); }
-  @media (max-width: 900px) { .ticket-grid { grid-template-columns: 1fr !important; } }
-  @media (max-width: 767px) {
-    .tkd-page { padding: 12px 16px 16px; }
+  .tkd-err { margin: 10px 0 0; padding: 8px 10px; border-radius: 9px; background: #fef2f2; border: 1px solid #fecaca; color: #b91c1c; font-size: 13px; font-weight: 600; line-height: 1.4; }
+  @media (max-width: 900px) {
+    .ticket-grid { grid-template-columns: 1fr !important; }
     .tkd-desk { display: none !important; }
     .tkd-phone { display: block; }
+  }
+  @media (max-width: 767px) {
+    .tkd-page { padding: 12px 16px 16px; }
     .tkd-head { margin-bottom: 12px !important; }
     .tkd-head h1 { font-size: 21px !important; }
     .ticket-grid { gap: 12px !important; }
@@ -56,7 +60,12 @@ const DETAIL_CSS = `
     .tkd-cmp.folded .tkd-cmp-bar { display: flex; align-items: center; gap: 8px; }
     .tkd-cmp.open { max-height: 55vh; overflow-y: auto; overscroll-behavior: contain; }
     .tkd-cmp-collapse { display: flex; }
-    .tkd-cmp textarea { font-size: 16px !important; }
+    /* 16px, so iOS doesn't zoom the page when the reply or the AI "Adjust it" box is focused. */
+    .tkd-cmp textarea, .tkd-cmp input { font-size: 16px !important; }
+    /* Out of the way while the menu drawer, a modal or a sheet is open (as
+       OverlayWatch does for the bottom nav and the orb), so it never sits over
+       the drawer's links. The draft is kept. */
+    html[data-colvy-overlay] .tkd-cmp { display: none !important; }
     .tkd-cmp-send { flex: 1; }
     /* Room under the last card for the bar and the AI orb resting above it. */
     .colvy-mobile-pad:has(.tkd-cmp) { padding-bottom: calc(58px + 64px + 76px + env(safe-area-inset-bottom, 0px)) !important; }
@@ -84,7 +93,12 @@ export default function TicketDetail() {
   const [tick, setTick] = useState(0)
   // Phones: is the reply box open (true) or folded to its one-line bar? Desktop ignores it.
   const [cmpOpen, setCmpOpen] = useState(false)
+  // A failed status / priority / assignee change. Shown beside those controls
+  // (not in the reply box, which is folded away on phones) and cleared shortly.
+  const [patchErr, setPatchErr] = useState('')
+  const patchErrTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const textRef = useRef<HTMLTextAreaElement>(null)
+  useEffect(() => () => { if (patchErrTimer.current) clearTimeout(patchErrTimer.current) }, [])
   useEffect(() => { const iv = setInterval(() => setTick(t => t + 1), 60000); return () => clearInterval(iv) }, [])
   // Draft reply: AI writes the next email from the help centre, products and orders.
   const aiDraft = useAiDraft({ companyId: ticket?.company_id || null, ticketId, onDraft: t => { setTab('reply'); setDraft(t); setCmpOpen(true) }, getText: () => draft })
@@ -129,12 +143,18 @@ export default function TicketDetail() {
   const patchTicket = async (patch: Record<string, any>) => {
     const prev = ticket
     setTicket((t: any) => ({ ...t, ...patch }))
+    if (patchErrTimer.current) clearTimeout(patchErrTimer.current)
+    setPatchErr('')
     try {
       const res = await authFetch(`/api/tickets/${ticketId}`, { method: 'PATCH', headers: await authed(), body: JSON.stringify(patch) })
-      const d = await res.json()
-      if (!res.ok) throw new Error(d.error || 'Could not update')
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(d.error || 'Could not update the ticket.')
       if (d.ticket) setTicket(d.ticket)
-    } catch (e: any) { setTicket(prev); setToast(e.message) }
+    } catch (e: any) {
+      setTicket(prev)
+      setPatchErr(e?.message || 'Could not update the ticket.')
+      patchErrTimer.current = setTimeout(() => setPatchErr(''), 8000)
+    }
   }
   const updateStatus = (status: string) => patchTicket({ status })
 
@@ -216,6 +236,7 @@ export default function TicketDetail() {
     return <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11.5, fontWeight: 700, padding: '3px 9px', borderRadius: 20, background: col.bg, color: col.c, whiteSpace: 'nowrap' }}>{clockLabel(c, what)}</span>
   }
   const barText = draft.trim() ? draft.trim().replace(/\s+/g, ' ') : toast || `Reply to ${custName}…`
+  const patchErrLine = patchErr ? <p role="alert" className="tkd-err">{patchErr}</p> : null
 
   return (
     <div className="tkd-page">
@@ -263,6 +284,7 @@ export default function TicketDetail() {
                 {slaNow.resolution.state !== 'off' && clockChip(slaNow.resolution, 'Resolve')}
               </div>
             )}
+            {patchErrLine}
           </div>
 
           {/* Original message */}
@@ -370,6 +392,7 @@ export default function TicketDetail() {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
               {STATUSES.map(statusButton)}
             </div>
+            {patchErrLine}
           </div>
 
           {slaNow && (() => {

@@ -48,24 +48,28 @@ function shortWhen(v: string): string {
   return d.toLocaleDateString(undefined, d.getFullYear() === now.getFullYear() ? { day: 'numeric', month: 'short' } : { day: 'numeric', month: 'short', year: 'numeric' })
 }
 
-// True on phones (<=767px). Layout switches are pure CSS so nothing flashes;
-// this only picks copy that has to fit, like the search placeholder.
-function useIsPhone() {
-  const [phone, setPhone] = useState(false)
+// The long search placeholder needs about 390px; narrower boxes (phones,
+// tablets, a narrow window) get the short one so it's never cut off.
+const LONG_PLACEHOLDER = 'Search tickets by ID, subject, customer, or message…'
+function useFitsLongPlaceholder(ref: React.RefObject<HTMLInputElement | null>) {
+  const [fits, setFits] = useState(true)
   useEffect(() => {
-    const mq = window.matchMedia('(max-width: 767px)')
-    const f = () => setPhone(mq.matches)
-    f(); mq.addEventListener?.('change', f)
-    return () => mq.removeEventListener?.('change', f)
-  }, [])
-  return phone
+    const el = ref.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(() => setFits(el.clientWidth >= 400))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [ref])
+  return fits
 }
 
 // Phones (<=767px): Deadlines and Export fold into a "More" menu beside New
 // ticket, the stat tiles become one sideways-scrolling row of chips that filter
-// the list, the extra filters sit behind a Filters button, and each ticket is a
-// card instead of a table row. Desktop keeps the full-width table with a
-// compact row of stat cards.
+// the list, and the extra filters sit behind a Filters button.
+// Whenever the list is narrower than the table needs (about 1000px with the
+// Due column: phones, tablets, small laptops) each ticket is a card instead of
+// a table row, two across when there's room. Desktop keeps the full-width table with one compact row of
+// stat cards.
 const TICKETS_CSS = `
   .tk-page { padding: 24px; }
   .tk-actions { display: flex; gap: 8px; align-items: center; }
@@ -79,7 +83,10 @@ const TICKETS_CSS = `
   .tk-menu button:hover, .tk-menu button:focus-visible { background: var(--canvas); outline: none; }
   .tk-menu svg { color: var(--slate); flex-shrink: 0; }
 
-  .tk-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .tk-scrim { position: fixed; inset: 0; z-index: 29; background: transparent; }
+
+  /* One row however many cards there are (4, or 5 with deadlines on). */
+  .tk-stats { container: tk-stats / inline-size; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 12px; margin-bottom: 16px; }
   .tk-stat { --tk-c: var(--coral); --tk-bg: var(--peach); display: flex; align-items: center; gap: 12px; min-width: 0; padding: 12px 14px; border-radius: 14px; border: 1px solid var(--border); background: #fff; color: var(--ink); font: inherit; text-align: left; cursor: pointer; transition: border-color .15s, box-shadow .15s, background .15s; -webkit-tap-highlight-color: transparent; }
   .tk-stat:hover { border-color: #d5d8de; }
   .tk-stat[aria-pressed="true"] { border-color: var(--tk-c); box-shadow: inset 0 0 0 1px var(--tk-c); }
@@ -90,6 +97,11 @@ const TICKETS_CSS = `
   .tk-stat[data-alert] { background: #fffafa; }
   .tk-stat[data-alert] .tk-stat-n { color: #dc2626; }
   .tk-stat-all { display: none; }
+  /* Narrow row (tablets): drop the icon tiles so the labels aren't cut short. */
+  @container tk-stats (max-width: 799px) {
+    .tk-stat { padding: 10px 12px; }
+    .tk-stat-ic { display: none; }
+  }
 
   .tk-filters { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
   .tk-search { flex: 1; min-width: 240px; position: relative; }
@@ -100,11 +112,44 @@ const TICKETS_CSS = `
   .tk-filter-btn { display: none; }
   .tk-badge-n { min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--coral); color: #fff; font-size: 11px; font-weight: 800; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; }
 
-  .tk-list { border: 1px solid var(--border); border-radius: 16px; background: #fff; overflow: hidden; }
+  .tk-list { container: tk-list / inline-size; }
+  .tk-box { border: 1px solid var(--border); border-radius: 16px; background: #fff; overflow: hidden; }
   .tk-cards { display: none; }
   .tk-pager-btn { min-width: 32px; height: 32px; padding: 0 8px; border-radius: 8px; border: 1px solid var(--border); background: #fff; color: var(--ink); font: inherit; font-weight: 700; font-size: 13px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
   .tk-pager-btn:disabled { opacity: .4; cursor: default; }
   .tk-pager-btn[aria-current="page"] { border-color: var(--coral); background: var(--peach); color: var(--coral); }
+
+  /* Cards instead of the table whenever it wouldn't fit without scrolling sideways. */
+  @container tk-list (max-width: 999px) {
+    .tk-box { border: none; background: none; border-radius: 0; overflow: visible; }
+    .tk-table { display: none; }
+    .tk-cards { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
+    .tk-card { position: relative; display: flex; flex-direction: column; gap: 5px; padding: 12px 14px; background: #fff; border: 1px solid var(--border); border-radius: 14px; min-width: 0; overflow: hidden; -webkit-tap-highlight-color: transparent; transition: background .1s; }
+    .tk-card:hover { border-color: #d5d8de; }
+    .tk-card:active { background: var(--canvas); }
+    .tk-card[data-overdue] { border-color: #fecaca; box-shadow: inset 3px 0 0 #dc2626; }
+    .tk-card:has(.tk-card-open:focus-visible) { outline: 2px solid var(--coral); outline-offset: 2px; }
+    .tk-card-top { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 12px; color: var(--slate); }
+    .tk-card-id { font-weight: 800; color: var(--coral); white-space: nowrap; }
+    .tk-card-ch { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .tk-card-top .tk-pill { margin-left: auto; }
+    .tk-card-open { position: static; width: 100%; padding: 0; border: none; background: none; font: inherit; font-size: 15px; font-weight: 700; line-height: 1.35; color: var(--ink); text-align: left; cursor: pointer; outline: none; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; word-break: break-word; }
+    .tk-card-open::after { content: ''; position: absolute; inset: 0; border-radius: 14px; }
+    .tk-card-cust { margin: 0; min-width: 0; font-size: 13px; color: var(--slate); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .tk-card-cust b { color: var(--ink); font-weight: 600; }
+    .tk-card-badges { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 2px; min-width: 0; }
+    .tk-card-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: auto; padding-top: 3px; min-width: 0; font-size: 12px; color: var(--slate); }
+    .tk-card-asg { display: inline-flex; align-items: center; gap: 6px; min-width: 0; color: var(--ink); font-weight: 600; }
+    .tk-card-asg > span:last-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .tk-card-asg[data-none] { color: var(--slate); font-weight: 500; }
+    .tk-card-when { white-space: nowrap; flex-shrink: 0; }
+    .tk-empty { display: block; padding: 40px 16px; text-align: center; font-size: 14px; color: var(--slate); background: #fff; border: 1px solid var(--border); border-radius: 14px; }
+    .tk-pager { padding: 12px 0 0 !important; border-top: none !important; justify-content: center !important; }
+  }
+  /* Tablets: two cards across. */
+  @container tk-list (min-width: 600px) and (max-width: 999px) {
+    ul.tk-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  }
 
   @media (max-width: 767px) {
     .tk-page { padding: 16px; }
@@ -114,6 +159,7 @@ const TICKETS_CSS = `
     .tk-more { display: block; }
     .tk-btn { height: 40px; }
     .tk-btn-more { width: 40px; padding: 0; }
+    .tk-btn-primary { padding: 0 13px; }
 
     .tk-stats { display: flex; gap: 8px; overflow-x: auto; margin: 0 -16px 12px; padding: 1px 16px; scrollbar-width: none; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; }
     .tk-stats::-webkit-scrollbar { display: none; }
@@ -140,32 +186,12 @@ const TICKETS_CSS = `
     /* Three visible selects: the last (assignee) takes the full row. */
     .tk-selects > select:last-child:nth-child(4) { grid-column: 1 / -1; }
 
-    .tk-list { border: none; background: none; border-radius: 0; overflow: visible; }
-    .tk-table { display: none; }
-    .tk-cards { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
-    .tk-card { position: relative; display: flex; flex-direction: column; gap: 5px; padding: 12px 14px; background: #fff; border: 1px solid var(--border); border-radius: 14px; min-width: 0; overflow: hidden; -webkit-tap-highlight-color: transparent; transition: background .1s; }
-    .tk-card:active { background: var(--canvas); }
-    .tk-card[data-overdue] { border-color: #fecaca; box-shadow: inset 3px 0 0 #dc2626; }
-    .tk-card:has(.tk-card-open:focus-visible) { outline: 2px solid var(--coral); outline-offset: 2px; }
-    .tk-card-top { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 12px; color: var(--slate); }
-    .tk-card-id { font-weight: 800; color: var(--coral); white-space: nowrap; }
-    .tk-card-ch { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .tk-card-top .tk-pill { margin-left: auto; }
-    .tk-card-open { position: static; width: 100%; padding: 0; border: none; background: none; font: inherit; font-size: 15px; font-weight: 700; line-height: 1.35; color: var(--ink); text-align: left; cursor: pointer; outline: none; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; word-break: break-word; }
-    .tk-card-open::after { content: ''; position: absolute; inset: 0; border-radius: 14px; }
-    .tk-card-cust { margin: 0; min-width: 0; font-size: 13px; color: var(--slate); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .tk-card-cust b { color: var(--ink); font-weight: 600; }
-    .tk-card-badges { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 2px; min-width: 0; }
-    .tk-card-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 3px; min-width: 0; font-size: 12px; color: var(--slate); }
-    .tk-card-asg { display: inline-flex; align-items: center; gap: 6px; min-width: 0; color: var(--ink); font-weight: 600; }
-    .tk-card-asg > span:last-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .tk-card-asg[data-none] { color: var(--slate); font-weight: 500; }
-    .tk-card-when { white-space: nowrap; flex-shrink: 0; }
-    .tk-empty { padding: 40px 16px; text-align: center; font-size: 14px; color: var(--slate); background: #fff; border: 1px solid var(--border); border-radius: 14px; }
-    .tk-pager { padding: 12px 0 0 !important; border-top: none !important; justify-content: center !important; }
-
     .tk-modal-panel input, .tk-modal-panel select, .tk-modal-panel textarea { font-size: 16px !important; }
     .tk-sla-num { width: 58px !important; }
+  }
+  /* Small phones: "New" instead of "New ticket", so "Support Tickets" stays on one line. */
+  @media (max-width: 380px) {
+    .tk-new-word { display: none; }
   }
 `
 
@@ -197,7 +223,6 @@ function DeadlineBadge({ sla }: { sla: any }) {
 
 export default function TicketsList() {
   const router = useRouter()
-  const isPhone = useIsPhone()
   const [tickets, setTickets] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [companyId, setCompanyId] = useState<string>('')
@@ -215,11 +240,14 @@ export default function TicketsList() {
   const [moreOpen, setMoreOpen] = useState(false)
   const [filtersOpen, setFiltersOpen] = useState(false)
   const moreRef = useRef<HTMLDivElement>(null)
+  const searchRef = useRef<HTMLInputElement>(null)
+  const longPlaceholder = useFitsLongPlaceholder(searchRef)
   const [tick, setTick] = useState(0)
   // Re-render every minute so "due in…" countdowns stay current.
   useEffect(() => { const iv = setInterval(() => setTick(t => t + 1), 60000); return () => clearInterval(iv) }, [])
 
-  // The phone "More" menu closes on a tap outside it or Escape.
+  // The phone "More" menu closes on Escape or a tap outside it. Taps on the page
+  // land on a clear scrim (below), so dismissing it never also opens a ticket.
   useEffect(() => {
     if (!moreOpen) return
     const away = (e: Event) => { if (!moreRef.current?.contains(e.target as Node)) setMoreOpen(false) }
@@ -357,6 +385,7 @@ export default function TicketsList() {
             <button type="button" className="tk-btn tk-desk" onClick={exportCsv} title="Export the filtered list as CSV"><DownloadIcon size={15} /> Export</button>
             <div className="tk-more" ref={moreRef}>
               <button type="button" className="tk-btn tk-btn-more" aria-label="More actions" aria-haspopup="menu" aria-expanded={moreOpen} onClick={() => setMoreOpen(o => !o)}><MoreHorizontalIcon size={18} /></button>
+              {moreOpen && <div className="tk-scrim" data-overlay-ignore="" aria-hidden="true" onClick={() => setMoreOpen(false)} />}
               {moreOpen && (
                 <div className="tk-menu" role="menu">
                   <button type="button" role="menuitem" onClick={() => { setMoreOpen(false); setShowSla(true) }}><ClockIcon size={16} /> Deadlines & assignment</button>
@@ -364,7 +393,7 @@ export default function TicketsList() {
                 </div>
               )}
             </div>
-            <button type="button" className="tk-btn tk-btn-primary" onClick={() => setShowNew(true)}><PlusIcon size={15} /> New ticket</button>
+            <button type="button" className="tk-btn tk-btn-primary" aria-label="New ticket" onClick={() => setShowNew(true)}><PlusIcon size={15} /><span>New<span className="tk-new-word"> ticket</span></span></button>
           </div>
         }
       />
@@ -398,8 +427,8 @@ export default function TicketsList() {
       <div className="tk-filters" data-open={filtersOpen ? '' : undefined}>
         <div className="tk-search">
           <SearchIcon size={16} />
-          <input value={search} onChange={e => setSearch(e.target.value)} type="search" aria-label="Search tickets"
-            placeholder={isPhone ? 'Search tickets' : 'Search tickets by ID, subject, customer, or message…'} />
+          <input ref={searchRef} value={search} onChange={e => setSearch(e.target.value)} type="search" aria-label="Search tickets"
+            placeholder={longPlaceholder ? LONG_PLACEHOLDER : 'Search tickets'} />
         </div>
         <button type="button" className="tk-btn tk-filter-btn" aria-expanded={filtersOpen} aria-controls="tk-selects" onClick={() => setFiltersOpen(o => !o)}>
           <SlidersIcon size={15} /> Filters{extraFilters > 0 && <span className="tk-badge-n">{extraFilters}</span>}
@@ -437,9 +466,10 @@ export default function TicketsList() {
 
       {loading ? <SkeletonList rows={6} /> : (
         <div className="tk-list">
+          <div className="tk-box">
           <div className="tk-table" style={{ overflowX: 'auto' }}>
             {/* The ticket number and channel sit under the subject, so every
-                column fits from a 1280px screen up without scrolling sideways. */}
+                column fits in 1000px; narrower lists get cards instead. */}
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
               <thead>
                 <tr style={{ background: 'var(--canvas)' }}>
@@ -492,7 +522,7 @@ export default function TicketsList() {
             </table>
           </div>
 
-          {/* Phones: one card per ticket instead of the table. */}
+          {/* Narrow screens: one card per ticket instead of the table. */}
           {pageRows.length === 0 ? (
             <p className="tk-empty tk-cards">No tickets match your filters.</p>
           ) : (
@@ -542,6 +572,7 @@ export default function TicketsList() {
               </div>
             </div>
           )}
+          </div>
         </div>
       )}
 
