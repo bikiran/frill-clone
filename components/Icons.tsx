@@ -248,3 +248,83 @@ export const TicketIcon = ({ size = 18, color = 'currentColor', className }: Ico
   </svg>
 )
 
+
+export const ClockIcon = ({ size = 18, color = 'currentColor', className }: IconProps) => (
+  <svg {...baseProps(size, color)} className={className}>
+    <circle cx="12" cy="12" r="9" />
+    <polyline points="12 7 12 12 15.5 14" />
+  </svg>
+)
+
+export const AlarmClockIcon = ({ size = 18, color = 'currentColor', className }: IconProps) => (
+  <svg {...baseProps(size, color)} className={className}>
+    <circle cx="12" cy="13" r="8" />
+    <polyline points="12 9 12 13 14.5 15" />
+    <path d="M5 3 2 6M22 6l-3-3M6.4 19.6 4 22M17.6 19.6 20 22" />
+  </svg>
+)
+
+export const DownloadIcon = ({ size = 18, color = 'currentColor', className }: IconProps) => (
+  <svg {...baseProps(size, color)} className={className}>
+    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+    <polyline points="7 10 12 15 17 10" />
+    <line x1="12" y1="15" x2="12" y2="3" />
+  </svg>
+)
+
+export const MessageIcon = ({ size = 18, color = 'currentColor', className }: IconProps) => (
+  <svg {...baseProps(size, color)} className={className}>
+    <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
+  </svg>
+)
+
+export const MailIcon = ({ size = 18, color = 'currentColor', className }: IconProps) => (
+  <svg {...baseProps(size, color)} className={className}>
+    <rect x="2" y="4" width="20" height="16" rx="2" />
+    <path d="m22 7-10 6L2 7" />
+  </svg>
+)
+
+export const PaperclipIcon = ({ size = 18, color = 'currentColor', className }: IconProps) => (
+  <svg {...baseProps(size, color)} className={className}>
+    <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+  </svg>
+)
+
+export const ExternalLinkIcon = ({ size = 18, color = 'currentColor', className }: IconProps) => (
+  <svg {...baseProps(size, color)} className={className}>
+    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+    <polyline points="15 3 21 3 21 9" />
+    <line x1="10" y1="14" x2="21" y2="3" />
+  </svg>
+)
+
+export const ChevronLeftIcon = ({ size = 18, color = 'currentColor', className }: IconProps) => (
+  <svg {...baseProps(size, color)} className={className}>
+    <polyline points="15 18 9 12 15 6" />
+  </svg>
+)
+
+export const MoreHorizontalIcon = ({ size = 18, color = 'currentColor', className }: IconProps) => (
+  <svg {...baseProps(size, color)} className={className}>
+    <circle cx="5" cy="12" r="1" />
+    <circle cx="12" cy="12" r="1" />
+    <circle cx="19" cy="12" r="1" />
+  </svg>
+)
+
+export const SlidersIcon = ({ size = 18, color = 'currentColor', className }: IconProps) => (
+  <svg {...baseProps(size, color)} className={className}>
+    <line x1="4" y1="21" x2="4" y2="14" /><line x1="4" y1="10" x2="4" y2="3" />
+    <line x1="12" y1="21" x2="12" y2="12" /><line x1="12" y1="8" x2="12" y2="3" />
+    <line x1="20" y1="21" x2="20" y2="16" /><line x1="20" y1="12" x2="20" y2="3" />
+    <line x1="1" y1="14" x2="7" y2="14" /><line x1="9" y1="8" x2="15" y2="8" /><line x1="17" y1="16" x2="23" y2="16" />
+  </svg>
+)
+
+export const RefreshIcon = ({ size = 18, color = 'currentColor', className }: IconProps) => (
+  <svg {...baseProps(size, color)} className={className}>
+    <polyline points="23 4 23 10 17 10" />
+    <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+  </svg>
+)
