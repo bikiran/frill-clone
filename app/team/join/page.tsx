@@ -3,6 +3,15 @@
 import { useState, useEffect, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import ColvyLogo from '@/components/ColvyLogo'
+
+// What each invited role is called (as on the Team page) and its icon (SVG; no emoji in the UI).
+const ROLE_NAME: Record<string, string> = { viewer: 'Viewer', editor: 'Agent', admin: 'Admin' }
+const ROLE_ICON: Record<string, React.ReactNode> = {
+  viewer: <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z" />,
+  editor: <path d="M12 20h9 M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z" />,
+  admin: <path d="M12 2l8 4v6c0 5-3.5 9-8 10-4.5-1-8-5-8-10V6z M9 12l2 2 4-4" />,
+}
 
 export const dynamic = 'force-dynamic'
 
@@ -12,6 +21,9 @@ function JoinTeamContent() {
   const company = params.get('company')
   const email = params.get('email')
   const inviteToken = params.get('token')
+  // The role the invite offers: from the server, else the link (display only;
+  // accepting uses the role stored with the invite).
+  const roleParam = params.get('role')
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -87,7 +99,8 @@ function JoinTeamContent() {
         return
       }
 
-      setInvitation({ email: emailLc, status: inv.status, company_id: co.id })
+      const offered = [inv.role, roleParam].find(r => r === 'viewer' || r === 'editor' || r === 'admin') || null
+      setInvitation({ email: emailLc, status: inv.status, company_id: co.id, role: offered })
     } catch (err: any) {
       setError(err.message)
     } finally {
@@ -208,22 +221,22 @@ function JoinTeamContent() {
           )}
           <h1 style={{ fontSize: 19, fontWeight: 800, color: 'var(--ink)', margin: 0, textAlign: 'center' }}>Join {companyData?.name}</h1>
           <p style={{ color: 'var(--slate)', fontSize: 13.5, margin: '5px 0 0', textAlign: 'center' }}>
-            You've been invited as {invitation?.role === 'admin' ? 'an' : 'a'} <strong style={{ color: 'var(--ink)' }}>{invitation?.role}</strong>
+            {invitation?.role
+              ? <>You've been invited as {invitation.role === 'viewer' ? 'a' : 'an'} <strong style={{ color: 'var(--ink)' }}>{ROLE_NAME[invitation.role]}</strong></>
+              : <>You've been invited to join the team</>}
           </p>
         </div>
 
-        <div style={{ background: 'var(--canvas)', padding: '11px 14px', borderRadius: 11, marginBottom: 18, fontSize: 13, color: 'var(--ink)', display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 16 }}>
-            {invitation?.role === 'viewer' && '👁️'}
-            {invitation?.role === 'editor' && '✏️'}
-            {invitation?.role === 'admin' && '👑'}
-          </span>
-          <span>
-            {invitation?.role === 'viewer' && 'View-only access'}
-            {invitation?.role === 'editor' && 'Can view and edit content'}
-            {invitation?.role === 'admin' && 'Full administrative access'}
-          </span>
-        </div>
+        {invitation?.role && ROLE_ICON[invitation.role] && (
+          <div style={{ background: 'var(--canvas)', padding: '11px 14px', borderRadius: 11, marginBottom: 18, fontSize: 13, color: 'var(--ink)', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--coral)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden style={{ flexShrink: 0 }}>{ROLE_ICON[invitation.role]}</svg>
+            <span>
+              {invitation.role === 'viewer' && 'View-only access'}
+              {invitation.role === 'editor' && 'Can view and edit content'}
+              {invitation.role === 'admin' && 'Full administrative access'}
+            </span>
+          </div>
+        )}
 
         {!checkingSession && sessionEmail !== email && (
           <div style={{ marginBottom: 14 }}>
@@ -255,6 +268,9 @@ function JoinTeamContent() {
         <p style={{ fontSize: 11.5, color: 'var(--slate)', textAlign: 'center', margin: 0 }}>
           Invitation sent to <strong>{email}</strong>
         </p>
+        <div style={{ display: 'flex', justifyContent: 'center', marginTop: 18, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
+          <ColvyLogo size={20} fontSize={13} />
+        </div>
       </div>
     </div>
   )

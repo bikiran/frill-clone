@@ -38,11 +38,11 @@ export async function POST(req: NextRequest) {
         body: JSON.stringify({
           from: 'Colvy <invites@updates.colvy.com>',
           to: email,
-          subject: `Join ${companyName}'s feedback board on Colvy`,
+          subject: `Join ${companyName}'s team on Colvy`,
           html: `
             <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 600px; margin: 0 auto;">
               <div style="padding: 24px; background: linear-gradient(135deg, #ff7a6b 0%, #ff8f7b 100%); border-radius: 12px 12px 0 0;">
-                <h1 style="margin: 0; color: white; font-size: 24px;">You're invited! 🎉</h1>
+                <h1 style="margin: 0; color: white; font-size: 24px;">You're invited</h1>
               </div>
               
               <div style="background: white; border: 1px solid #f0f0f0; border-radius: 0 0 12px 12px; padding: 32px;">
@@ -51,13 +51,13 @@ export async function POST(req: NextRequest) {
                 </p>
                 
                 <p style="margin: 0 0 16px 0; color: #6b6b70; line-height: 1.6;">
-                  ${inviterName} has invited you to join <strong>${companyName}</strong>'s feedback board on Colvy. 
+                  ${inviterName} has invited you to join <strong>${companyName}</strong>'s team on Colvy. 
                 </p>
                 
                 <div style="background: #f8f8f8; padding: 16px; border-radius: 8px; margin: 20px 0;">
                   <p style="margin: 0 0 8px 0; color: #6b6b70; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em;">Your Role</p>
                   <p style="margin: 0; font-size: 16px; font-weight: 600; color: #1a1a1a;">
-                    ${role === 'viewer' ? '👁️ Viewer (Read-only)' : role === 'editor' ? '✏️ Editor (Can edit)' : '👑 Admin (Full access)'}
+                    ${role === 'viewer' ? 'Viewer (read-only)' : role === 'editor' ? 'Agent (can view and edit)' : 'Admin (full access)'}
                   </p>
                 </div>
                 

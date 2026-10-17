@@ -10,8 +10,8 @@ export const dynamic = 'force-dynamic'
  *
  * Whether there is an invitation waiting, for the join page's pre-flight.
  *
- * Deliberately thin: found, the status, and the company it belongs to. Not the
- * row. The page only needs to decide between "enter a password", "you are
+ * Deliberately thin: found, the status and the role it offers (shown on the
+ * join page), for the company it belongs to. Not the row. The page only needs to decide between "enter a password", "you are
  * already a member" and "this link is not valid", and the invite id it used to
  * read is no longer any use to it — activation happens server-side now.
  *
@@ -40,7 +40,7 @@ export async function GET(req: NextRequest) {
   // resolved when the invite was written — so match the email and code first
   // and accept either this company or an unassigned row.
   const { data: found } = await db.from('team_members')
-    .select('email, status, company_id').ilike('email', emailPattern(email))
+    .select('email, status, company_id, role').ilike('email', emailPattern(email))
     .eq('invite_token_hash', await hashInviteToken(token))
     .order('created_at', { ascending: false })
   const rows = (found || []).filter((r: TeamRow) => sameEmail(r.email, email))
@@ -49,5 +49,5 @@ export async function GET(req: NextRequest) {
     || null
 
   if (!inv) return NextResponse.json({ found: false, reason: 'invite' })
-  return NextResponse.json({ found: true, status: inv.status || 'invited' })
+  return NextResponse.json({ found: true, status: inv.status || 'invited', ...(inv.role ? { role: inv.role } : {}) })
 }

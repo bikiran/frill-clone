@@ -3,7 +3,8 @@
 import { useState, useEffect, Suspense } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter, useSearchParams } from 'next/navigation'
-import Link from 'next/link'
+import ColvyLogo from '@/components/ColvyLogo'
+import { StatusMark } from '@/components/StatusMark'
 
 function ResetPasswordForm() {
   const router = useRouter()
@@ -54,14 +55,12 @@ function ResetPasswordForm() {
   return (
     <div className="min-h-screen flex items-start justify-center px-4 pt-10 pb-16" style={{ background: 'var(--peach)' }}>
       <div className="w-full max-w-md">
-        <Link href="/" className="inline-block mb-8 text-2xl font-bold" style={{ color: 'var(--coral)' }}>
-          Colvy
-        </Link>
+        <ColvyLogo size={34} fontSize={22} style={{ marginBottom: 32 }} />
 
         <div className="bg-white rounded-2xl shadow-lg p-8" style={{ border: '1px solid var(--border)' }}>
           {done ? (
             <div className="text-center">
-              <div className="text-5xl mb-4">✅</div>
+              <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}><StatusMark kind="success" size={72} /></div>
               <h2 className="text-xl font-bold mb-2" style={{ color: 'var(--ink)' }}>Password updated!</h2>
               <p style={{ color: 'var(--slate)' }}>Redirecting you to the dashboard...</p>
             </div>

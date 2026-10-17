@@ -7,7 +7,9 @@ import { isValidSlug, isSlugAvailable } from '@/lib/board'
 import { track } from '@/lib/analytics'
 import { useRouter, useSearchParams } from 'next/navigation'
 import AddressAutocomplete, { AddressParts } from '@/components/AddressAutocomplete'
-import BusinessAutocomplete, { BusinessDetails, BusinessHours, DAYS, emptyHours } from '@/components/BusinessAutocomplete'
+import BusinessAutocomplete, { BusinessDetails, BusinessHours, emptyHours } from '@/components/BusinessAutocomplete'
+import BusinessHoursEditor from '@/components/BusinessHoursEditor'
+import ColvyLogo from '@/components/ColvyLogo'
 import { INDUSTRIES } from '@/lib/industries'
 import Turnstile, { TurnstileHandle, TURNSTILE_SITE_KEY } from '@/components/Turnstile'
 import { normaliseSignupMobile } from '@/lib/signup-delivery'
@@ -16,10 +18,6 @@ import { signupProfilePayload } from '@/lib/signup-profile'
 
 const CORAL = '#ff7a6b'
 const TOTAL_STEPS = 7
-const DAY_LABEL: Record<string, string> = {
-  monday: 'Monday', tuesday: 'Tuesday', wednesday: 'Wednesday', thursday: 'Thursday',
-  friday: 'Friday', saturday: 'Saturday', sunday: 'Sunday',
-}
 
 // AU-friendly mobile normalisation (lib/signup-delivery, the same rules the
 // server applies): "0466 077 557", "+61 0466 077 557" and "61466077557" all
@@ -61,7 +59,7 @@ function Shell({ children }: { children: React.ReactNode }) {
   return (
     <div style={{ minHeight: '100vh', background: 'linear-gradient(180deg, #fff 0%, #fff7f5 100%)', display: 'flex', flexDirection: 'column' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '20px clamp(20px, 5vw, 48px)' }}>
-        <a href="/" style={{ fontWeight: 800, fontSize: 19, color: CORAL, textDecoration: 'none' }}>Colvy</a>
+        <ColvyLogo size={30} fontSize={19} />
         <a href="/signin" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 14, fontWeight: 600, color: '#0d0d0d', textDecoration: 'none', border: '1px solid #e5e5e5', padding: '8px 14px', borderRadius: 10, background: '#fff' }}>Sign In</a>
       </div>
       <div style={{ flex: 1, display: 'flex', justifyContent: 'center', padding: '8px 16px 48px' }}>
@@ -387,7 +385,7 @@ function SignUpForm() {
       })
       const data = await res.json()
       if (!res.ok) {
-        if (data.code === 'slug_taken') { setError('That board URL is taken — please choose another.'); setSlugStatus('taken'); setStep(3); setLoading(false); return }
+        if (data.code === 'slug_taken') { setError('That Colvy address is taken. Please choose another.'); setSlugStatus('taken'); setStep(3); setLoading(false); return }
         throw new Error(data.error || 'Signup failed')
       }
       track('signup_completed', { via: 'email' })
@@ -399,7 +397,7 @@ function SignUpForm() {
 
   // ── OAuth (alternative to the email path) ────────────────────────────────
   const oauth = async (provider: 'google' | 'github') => {
-    if (!canLeaveDetails) { setError('Add your business name, URL and industry first'); return }
+    if (!canLeaveDetails) { setError('Add your business name, Colvy address and industry first'); return }
     // Stash the extended business profile so onboarding can apply it after the
     // provider round-trip (the OAuth callback only carries slug/name/industry).
     try {
@@ -580,7 +578,7 @@ function SignUpForm() {
             <div style={{ marginBottom: 16 }}><label style={labelStyle}>Business name</label>
               <input value={companyName} onChange={e => setCompanyName(e.target.value)} style={inputStyle} /></div>
 
-            <div style={{ marginBottom: 16 }}><label style={labelStyle}>Board URL</label>
+            <div style={{ marginBottom: 16 }}><label style={labelStyle}>Your Colvy address</label>
               <div style={{ display: 'flex', alignItems: 'center', borderRadius: 12, border: `1px solid ${slugStatus === 'available' ? '#10b981' : (slugStatus === 'taken' || slugStatus === 'invalid') ? '#ef4444' : '#e5e5e5'}`, overflow: 'hidden' }}>
                 <input value={slug} onChange={e => { setSlugTouched(true); setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '')) }} placeholder="acme"
                   style={{ flex: 1, padding: '12px 14px', border: 'none', outline: 'none', fontSize: 15, minWidth: 0 }} />
@@ -622,29 +620,7 @@ function SignUpForm() {
                 </span>
               )}</label>
               <p style={{ fontSize: 12, color: '#9ca3af', margin: '0 2px 10px' }}>Used for after-hours auto-replies and missed-call messages.</p>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {DAYS.map(d => (
-                  <div key={d} style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                    <span style={{ width: 92, fontSize: 13, color: '#0d0d0d' }}>{DAY_LABEL[d]}</span>
-                    <button type="button" onClick={() => setHours(h => ({ ...h, [d]: { ...h[d], open: !h[d].open } }))}
-                      style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'none', border: 'none', cursor: 'pointer' }}>
-                      <span style={{ width: 38, height: 22, borderRadius: 11, background: hours[d].open ? CORAL : '#d1d5db', position: 'relative', transition: 'background 0.2s' }}>
-                        <span style={{ position: 'absolute', top: 2, left: hours[d].open ? 18 : 2, width: 18, height: 18, borderRadius: '50%', background: '#fff', transition: 'left 0.2s' }} />
-                      </span>
-                      <span style={{ fontSize: 13, color: hours[d].open ? '#0d0d0d' : '#9ca3af', width: 52, textAlign: 'left' }}>{hours[d].open ? 'Open' : 'Closed'}</span>
-                    </button>
-                    {hours[d].open && (
-                      <>
-                        <input type="time" value={hours[d].from} onChange={e => setHours(h => ({ ...h, [d]: { ...h[d], from: e.target.value } }))}
-                          style={{ padding: '7px 10px', borderRadius: 9, border: '1px solid #e5e5e5', fontSize: 13 }} />
-                        <span style={{ color: '#9ca3af' }}>–</span>
-                        <input type="time" value={hours[d].to} onChange={e => setHours(h => ({ ...h, [d]: { ...h[d], to: e.target.value } }))}
-                          style={{ padding: '7px 10px', borderRadius: 9, border: '1px solid #e5e5e5', fontSize: 13 }} />
-                      </>
-                    )}
-                  </div>
-                ))}
-              </div>
+              <BusinessHoursEditor value={hours} onChange={setHours} />
             </div>
 
             {/* OAuth shortcut — skips the password + OTP path. */}
@@ -769,7 +745,7 @@ function SignUpForm() {
                 <input type="checkbox" checked={showPassword} onChange={e => setShowPassword(e.target.checked)} /> Show password
               </label>
             </div>
-            {footer(true, <button type="button" onClick={finish} disabled={loading} style={primaryBtn(loading)}>{loading ? 'Creating your board…' : 'Create my board'}</button>)}
+            {footer(true, <button type="button" onClick={finish} disabled={loading} style={primaryBtn(loading)}>{loading ? 'Creating your workspace…' : 'Create my workspace'}</button>)}
           </div>
         )}
       </div>

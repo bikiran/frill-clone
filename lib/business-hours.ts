@@ -56,8 +56,14 @@ export function colvyWeek(raw: any): Week | null {
     const v = raw[d]
     if (!v || typeof v !== 'object') continue
     if (v.open === false || v.closed === true) { week[d] = []; continue }
-    const from = cleanTime(v.from), to = cleanTime(v.to)
-    if (from && to) week[d] = [{ from, to }]
+    const from = cleanTime(v.from)
+    let to = cleanTime(v.to)
+    if (!from || !to) continue
+    // Closing at midnight is "24:00". Older signups saved a Google "open 24
+    // hours" day as 00:00–00:00 (or 00:00–23:59): both mean all day.
+    if (to === '00:00' || (from === '00:00' && to === '23:59')) to = '24:00'
+    // Closes before it opens (6pm–2am): runs past midnight.
+    week[d] = [{ from, to, ...(to < from ? { overnight: true } : {}) }]
   }
   return Object.keys(week).length ? week : null
 }
