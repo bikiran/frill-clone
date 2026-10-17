@@ -12,6 +12,17 @@ const out = join(process.cwd(), 'public', 'downloads', 'colvy-wordpress.zip')
 const CRC = new Uint32Array(256).map((_, n) => { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; return c >>> 0 })
 const crc32 = buf => { let c = 0xffffffff; for (const b of buf) c = CRC[(c ^ b) & 0xff] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0 }
 
+// The plugin header, its COLVYWP_VERSION (which busts asset caches) and the
+// version Settings → API shows must agree, or WordPress keeps serving old JS.
+const php = readFileSync(join(root, 'colvy.php'), 'utf8')
+const header = (php.match(/^\s*\*\s*Version:\s*([\d.]+)/m) || [])[1]
+const constant = (php.match(/define\(\s*'COLVYWP_VERSION',\s*'([\d.]+)'/) || [])[1]
+const shown = (readFileSync(join(process.cwd(), 'lib', 'wp-plugin.ts'), 'utf8').match(/WP_PLUGIN_VERSION = '([\d.]+)'/) || [])[1]
+if (!header || header !== constant || header !== shown) {
+  console.error(`[wp-plugin] version mismatch: header ${header}, COLVYWP_VERSION ${constant}, lib/wp-plugin.ts ${shown}`)
+  process.exit(1)
+}
+
 const files = []
 const walk = dir => {
   for (const name of readdirSync(dir).sort()) {
@@ -54,4 +65,4 @@ end.writeUInt32LE(cd.length, 12); end.writeUInt32LE(offset, 16)
 
 mkdirSync(join(process.cwd(), 'public', 'downloads'), { recursive: true })
 writeFileSync(out, Buffer.concat([...locals, cd, end]))
-console.log(`[wp-plugin] ${files.length} files → public/downloads/colvy-wordpress.zip`)
+console.log(`[wp-plugin] v${header}: ${files.length} files → public/downloads/colvy-wordpress.zip`)

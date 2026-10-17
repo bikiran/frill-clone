@@ -2,9 +2,14 @@
    extensions/colvy-theme/assets/colvy-bis.js — run `npm run build` after editing.
    Follows the theme's variant picker: the form shows only while the chosen
    variant can't be bought, and signs the shopper up for that variant. Kept in
-   step with wordpress/colvy/assets/bis.js. */
+   step with wordpress/colvy/assets/bis.js.
+   One block = one form: it is never cloned or injected, a second copy of the
+   block for the same product is removed, and the script running twice (theme
+   or app embeds printing it again) is a no-op. */
 (function () {
   'use strict';
+  if (window.colvyBisLoaded) return;
+  window.colvyBisLoaded = true;
   var TICK = '<span class="cbis-halo"></span><span class="cbis-halo"></span>' +
     '<svg viewBox="0 0 88 88" width="60" height="60"><defs><linearGradient id="cbisG" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4ade80"/><stop offset="1" stop-color="#16a34a"/></linearGradient></defs>' +
     '<circle class="cbis-ring" cx="44" cy="44" r="40" fill="none" stroke="#22c55e" stroke-width="3" pathLength="1"/>' +
@@ -87,12 +92,22 @@
     return root.getAttribute('data-variant');
   }
 
+  // "Sold out — for now" → "2-3cm is sold out — for now".
+  function titleFor(heading, label) {
+    if (!label) return heading;
+    if (/^(sold out|out of stock)/i.test(heading)) return label + ' is ' + heading.charAt(0).toLowerCase() + heading.slice(1);
+    return label + ': ' + heading;
+  }
+
   function sync(root) {
+    if (!root.isConnected) return;
     var id = chosenId(root), list = variants(root), v = null;
     for (var i = 0; i < list.length; i++) if (String(list[i].id) === String(id)) v = list[i];
     var changed = root.getAttribute('data-variant') !== String(id);
     root.setAttribute('data-variant', id);
     var show = preview(root) || (v ? !v.a : false);
+    var title = root.querySelector('.colvy-bis__ask .colvy-bis__title');
+    if (title) title.textContent = titleFor(title.getAttribute('data-heading') || title.textContent, v && v.t && list.length > 1 ? v.t : '');
     if (show && root.hidden) { root.hidden = false; root.classList.remove('cbis-reveal'); void root.offsetWidth; root.classList.add('cbis-reveal'); }
     else if (!show && !root.hidden) root.hidden = true;
     if (!show || (!changed && root.getAttribute('data-synced'))) return;
@@ -118,7 +133,18 @@
   }
 
   function all() { return document.querySelectorAll('[data-colvy-bis]'); }
-  function initAll() { var a = all(); for (var i = 0; i < a.length; i++) init(a[i]); }
+  // One form per product per section: a block added twice, or a section the
+  // theme re-rendered next to the old one, never shows two.
+  function dedupe() {
+    var seen = [], a = all();
+    for (var i = 0; i < a.length; i++) {
+      var sec = a[i].closest('.shopify-section') || document, dup = false;
+      for (var j = 0; j < seen.length; j++) if (seen[j].sec === sec && seen[j].p === a[i].getAttribute('data-product')) dup = true;
+      if (dup && !preview(a[i])) a[i].parentNode.removeChild(a[i]);
+      else seen.push({ sec: sec, p: a[i].getAttribute('data-product') });
+    }
+  }
+  function initAll() { dedupe(); var a = all(); for (var i = 0; i < a.length; i++) init(a[i]); }
   var pending = false;
   function syncAll() {
     if (pending) return; pending = true;
@@ -200,6 +226,15 @@
   });
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initAll); else initAll();
+  // Back/forward (bfcache): the theme may have restored another variant.
+  window.addEventListener('pageshow', function () { initAll(); syncAll(); });
+  // Themes that swap the product section's HTML on a variant change bring a
+  // fresh block — set it up (at most once a frame).
+  var queued = false;
+  if (window.MutationObserver) new MutationObserver(function () {
+    if (queued) return; queued = true;
+    requestAnimationFrame(function () { queued = false; if (document.querySelector('[data-colvy-bis]:not([data-ready])')) initAll(); });
+  }).observe(document.body || document.documentElement, { childList: true, subtree: true });
   // Theme editor: blocks are re-rendered in place when settings change.
   document.addEventListener('shopify:section:load', initAll);
   document.addEventListener('shopify:block:select', initAll);
