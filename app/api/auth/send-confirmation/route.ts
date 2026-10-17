@@ -114,7 +114,7 @@ export async function POST(req: NextRequest) {
             </div>
             ${slug ? `
             <div style="background:#fafafa;border-radius:12px;padding:16px 20px;margin-bottom:28px">
-              <p style="font-size:13px;font-weight:600;color:#9ca3af;margin:0 0 4px">YOUR BOARD URL</p>
+              <p style="font-size:13px;font-weight:600;color:#9ca3af;margin:0 0 4px">YOUR COLVY ADDRESS</p>
               <p style="font-size:16px;font-weight:800;color:#ff7a6b;margin:0">${boardUrl}</p>
             </div>
             ` : ''}
@@ -126,12 +126,12 @@ export async function POST(req: NextRequest) {
           </div>
         ` : `
           <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:560px;margin:0 auto;padding:40px 24px">
-            <h1 style="font-size:28px;font-weight:800;color:#0d0d0d;margin:0 0 8px">Welcome to Colvy! 🎉</h1>
+            <h1 style="font-size:28px;font-weight:800;color:#0d0d0d;margin:0 0 8px">Welcome to Colvy</h1>
             <p style="font-size:16px;color:#6b7280;margin:0 0 32px">Please confirm your email address to activate your account.</p>
             
             ${slug ? `
             <div style="background:#fff4f1;border-radius:12px;padding:16px 20px;margin-bottom:28px">
-              <p style="font-size:13px;font-weight:600;color:#9ca3af;margin:0 0 4px">YOUR BOARD URL</p>
+              <p style="font-size:13px;font-weight:600;color:#9ca3af;margin:0 0 4px">YOUR COLVY ADDRESS</p>
               <p style="font-size:16px;font-weight:800;color:#ff7a6b;margin:0">${boardUrl}</p>
             </div>
             ` : ''}

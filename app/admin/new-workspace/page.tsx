@@ -47,7 +47,7 @@ export default function NewWorkspacePage() {
   const handleCreate = async () => {
     setError('')
     if (!companyName.trim()) { setError('Company name is required'); return }
-    if (slugStatus !== 'available') { setError('Please choose a valid, available board URL'); return }
+    if (slugStatus !== 'available') { setError('Please choose a valid, available Colvy address'); return }
     setLoading(true)
     try {
       const res = await authFetch('/api/companies', {
@@ -89,7 +89,7 @@ export default function NewWorkspacePage() {
     <div style={{ maxWidth: 480, margin: '0 auto', padding: '48px 24px', fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif' }}>
       <button onClick={() => router.back()} style={{ fontSize: 13, color: 'var(--slate)', background: 'none', border: 'none', cursor: 'pointer', marginBottom: 20, padding: 0 }}>← Back</button>
       <h1 style={{ fontSize: 28, fontWeight: 800, color: 'var(--ink)', margin: '0 0 6px' }}>Create a new workspace</h1>
-      <p style={{ fontSize: 15, color: 'var(--slate)', margin: '0 0 32px' }}>Spin up another feedback board under your account. You'll be the owner.</p>
+      <p style={{ fontSize: 15, color: 'var(--slate)', margin: '0 0 32px' }}>Set up another Colvy workspace, with its own inbox, contacts and settings. You'll be the owner.</p>
 
       {error && (
         <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 10, padding: '11px 16px', marginBottom: 20, fontSize: 13, color: '#dc2626' }}>{error}</div>
@@ -102,7 +102,7 @@ export default function NewWorkspacePage() {
         </div>
 
         <div>
-          <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--ink)', marginBottom: 6 }}>Board URL</label>
+          <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--ink)', marginBottom: 6 }}>Colvy address</label>
           <div style={{ display: 'flex', alignItems: 'center', gap: 0 }}>
             <input value={slug} onChange={e => setSlug(e.target.value.toLowerCase())} placeholder="acme"
               style={{ ...inp, borderRadius: '12px 0 0 12px', borderRight: 'none' }} />

@@ -3,6 +3,13 @@
 import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
+import ColvyLogo from '@/components/ColvyLogo'
+
+const MailIcon = () => (
+  <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <rect x="3" y="5" width="18" height="14" rx="2.5" /><path d="m4 7 8 6 8-6" />
+  </svg>
+)
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('')
@@ -29,14 +36,12 @@ export default function ForgotPasswordPage() {
   return (
     <div className="min-h-screen flex items-start justify-center px-4 pt-10 pb-16" style={{ background: 'var(--peach)' }}>
       <div className="w-full max-w-md">
-        <Link href="/" className="inline-block mb-8 text-2xl font-bold" style={{ color: 'var(--coral)' }}>
-          Colvy
-        </Link>
+        <ColvyLogo size={34} fontSize={22} style={{ marginBottom: 32 }} />
 
         <div className="bg-white rounded-2xl shadow-lg p-8" style={{ border: '1px solid var(--border)' }}>
           {sent ? (
             <div className="text-center">
-              <div className="text-5xl mb-4">📬</div>
+              <div style={{ width: 56, height: 56, borderRadius: 16, background: 'var(--peach)', color: 'var(--coral)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}><MailIcon /></div>
               <h2 className="text-xl font-bold mb-2" style={{ color: 'var(--ink)' }}>Check your email</h2>
               <p className="text-sm mb-6" style={{ color: 'var(--slate)' }}>
                 We sent a password reset link to <strong>{email}</strong>

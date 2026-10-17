@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { Industry, industryFromGoogle } from '@/lib/industries'
+import { hoursFromPlaces, type BusinessHours } from '@/lib/week-hours'
 
 // "Find on Google" business search for signup.
 //
@@ -19,8 +20,10 @@ import { Industry, industryFromGoogle } from '@/lib/industries'
 
 const GKEY = process.env.NEXT_PUBLIC_GOOGLE_API_KEY
 
-export interface DayHours { open: boolean; from: string; to: string }
-export type BusinessHours = Record<string, DayHours>
+// Opening hours live in lib/week-hours (types, defaults and the Google parser);
+// re-exported here for the callers that already import them from this file.
+export type { DayHours, BusinessHours } from '@/lib/week-hours'
+export { DAYS, emptyHours } from '@/lib/week-hours'
 
 export interface BusinessDetails {
   name: string
@@ -37,35 +40,9 @@ export interface BusinessDetails {
   source?: 'google' | 'osm'
 }
 
-export const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'] as const
-
-export function emptyHours(): BusinessHours {
-  const h: BusinessHours = {}
-  for (const d of DAYS) h[d] = { open: d !== 'saturday' && d !== 'sunday', from: '09:00', to: '17:00' }
-  return h
-}
-
 type Suggestion = { main: string; sub: string; placeId?: string; details?: BusinessDetails }
 
 const newToken = () => { try { return (crypto as any)?.randomUUID?.() || Math.random().toString(36).slice(2) } catch { return Math.random().toString(36).slice(2) } }
-const pad = (n: number) => String(n).padStart(2, '0')
-
-// Places (New) regularOpeningHours.periods → our per-day schema (day: 0=Sun).
-function hoursFromPlaces(oh: any): BusinessHours | null {
-  const periods = oh?.periods
-  if (!Array.isArray(periods) || !periods.length) return null
-  const key = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
-  const out: BusinessHours = {}
-  for (const d of DAYS) out[d] = { open: false, from: '09:00', to: '17:00' }
-  // Open 24/7 is a single period with no close.
-  if (periods.length === 1 && !periods[0].close) { for (const d of DAYS) out[d] = { open: true, from: '00:00', to: '23:59' }; return out }
-  for (const p of periods) {
-    const k = key[p?.open?.day]
-    if (!k) continue
-    out[k] = { open: true, from: `${pad(p.open.hour ?? 9)}:${pad(p.open.minute ?? 0)}`, to: p.close ? `${pad(p.close.hour ?? 17)}:${pad(p.close.minute ?? 0)}` : '23:59' }
-  }
-  return out
-}
 
 // Where the visitor roughly is — so "Momo Hub" finds the one down the road, not
 // one in another country. Vercel IP geo first, timezone as a fallback.

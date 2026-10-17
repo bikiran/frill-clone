@@ -4,6 +4,7 @@ import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { signInWithGoogle, signInWithGitHub } from '@/lib/auth'
+import ColvyLogo from '@/components/ColvyLogo'
 
 const SUPER_ADMIN_EMAIL = 'bishalstha76@gmail.com'
 
@@ -190,13 +191,10 @@ function SignInForm() {
       {/* LEFT — form */}
       <div className="sf-form-col" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '48px clamp(24px, 8vw, 96px)' }}>
         <div style={{ maxWidth: 380, width: '100%', margin: '0 auto' }}>
-          <a href="/" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, marginBottom: 40, textDecoration: 'none' }}>
-            {/* Wordmark only — /logo.png 404s and its broken-image alt showed "Colvy" twice. */}
-            <span style={{ fontWeight: 800, fontSize: 18, color: '#ff7a6b' }}>Colvy</span>
-          </a>
+          <ColvyLogo size={32} fontSize={20} style={{ marginBottom: 40 }} />
 
           <h1 style={{ fontSize: 26, fontWeight: 800, color: '#0d0d0d', marginBottom: 6, letterSpacing: '-0.01em' }}>Welcome back</h1>
-          <p style={{ fontSize: 14, color: '#6b6b70', marginBottom: 28 }}>Sign in to manage your board.</p>
+          <p style={{ fontSize: 14, color: '#6b6b70', marginBottom: 28 }}>Sign in to your Colvy workspace.</p>
 
           {shopifyStore && (
             <div role="status" style={{ padding: '10px 14px', borderRadius: 10, background: '#ecfdf3', border: '1px solid #abefc6', color: '#067647', fontSize: 13, marginBottom: 16, lineHeight: 1.5 }}>

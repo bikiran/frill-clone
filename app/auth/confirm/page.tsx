@@ -5,6 +5,8 @@ import { supabase } from '@/lib/supabase'
 import { redirectToUserAdmin } from '@/lib/redirect'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Suspense } from 'react'
+import ColvyLogo from '@/components/ColvyLogo'
+import { StatusMark } from '@/components/StatusMark'
 
 function ConfirmHandler() {
   const router = useRouter()
@@ -37,7 +39,7 @@ function ConfirmHandler() {
           }
 
           if (type === 'signup') {
-            setStatus('Account confirmed! Setting up your board...')
+            setStatus('Account confirmed. Setting up your workspace…')
             router.push('/onboarding')
             return
           }
@@ -80,9 +82,10 @@ function ConfirmHandler() {
   return (
     <div className="min-h-screen flex items-center justify-center px-6" style={{ background: 'var(--peach)' }}>
       <div className="text-center">
+        <ColvyLogo size={34} fontSize={22} style={{ marginBottom: 28 }} />
         {error ? (
           <>
-            <div className="text-4xl mb-4">❌</div>
+            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12 }}><StatusMark kind="cancelled" size={56} /></div>
             <p className="font-bold mb-2" style={{ color: 'var(--ink)' }}>Link expired or invalid</p>
             <p className="text-sm mb-4" style={{ color: 'var(--slate)' }}>{error}</p>
             <a href="/forgot-password" className="px-5 py-2.5 rounded-xl text-sm font-semibold text-white inline-block"

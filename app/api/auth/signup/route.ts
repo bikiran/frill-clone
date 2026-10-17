@@ -125,7 +125,6 @@ export async function POST(req: NextRequest) {
     // Supabase issues both forms of the same confirmation: a link for a browser
     // and a six-digit code for anywhere there isn't one.
     const emailOtp = linkData.properties.email_otp
-    const boardName = name || 'Your Board'
     const boardUrl = slug ? `${slug}.colvy.com` : 'colvy.com'
 
     // Asked for a code and Supabase did not give one — send nothing rather than
@@ -152,14 +151,14 @@ export async function POST(req: NextRequest) {
           subject: wantCode ? `${emailOtp} is your Colvy confirmation code` : 'Confirm your email address — Colvy',
           html: wantCode ? `
             <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:560px;margin:0 auto;padding:40px 24px">
-              <h1 style="font-size:28px;font-weight:800;color:#0d0d0d;margin:0 0 8px">Welcome to Colvy! 🎉</h1>
+              <h1 style="font-size:28px;font-weight:800;color:#0d0d0d;margin:0 0 8px">Welcome to Colvy</h1>
               <p style="font-size:16px;color:#6b7280;margin:0 0 28px">Enter this code in the Colvy app to confirm your email address.</p>
               <div style="background:#fff4f1;border-radius:12px;padding:24px;text-align:center;margin-bottom:28px">
                 <p style="font-size:34px;font-weight:800;color:#ff7a6b;letter-spacing:8px;margin:0">${emailOtp}</p>
               </div>
               ${slug ? `
               <div style="background:#fafafa;border-radius:12px;padding:16px 20px;margin-bottom:28px">
-                <p style="font-size:13px;font-weight:600;color:#9ca3af;margin:0 0 4px">YOUR BOARD URL</p>
+                <p style="font-size:13px;font-weight:600;color:#9ca3af;margin:0 0 4px">YOUR COLVY ADDRESS</p>
                 <p style="font-size:16px;font-weight:800;color:#ff7a6b;margin:0">${boardUrl}</p>
               </div>
               ` : ''}
@@ -171,11 +170,11 @@ export async function POST(req: NextRequest) {
             </div>
           ` : `
             <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:560px;margin:0 auto;padding:40px 24px">
-              <h1 style="font-size:28px;font-weight:800;color:#0d0d0d;margin:0 0 8px">Welcome to Colvy! 🎉</h1>
+              <h1 style="font-size:28px;font-weight:800;color:#0d0d0d;margin:0 0 8px">Welcome to Colvy</h1>
               <p style="font-size:16px;color:#6b7280;margin:0 0 32px">Please confirm your email address to activate your account.</p>
               ${slug ? `
               <div style="background:#fff4f1;border-radius:12px;padding:16px 20px;margin-bottom:28px">
-                <p style="font-size:13px;font-weight:600;color:#9ca3af;margin:0 0 4px">YOUR BOARD URL</p>
+                <p style="font-size:13px;font-weight:600;color:#9ca3af;margin:0 0 4px">YOUR COLVY ADDRESS</p>
                 <p style="font-size:16px;font-weight:800;color:#ff7a6b;margin:0">${boardUrl}</p>
               </div>
               ` : ''}
