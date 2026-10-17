@@ -35,6 +35,12 @@ export interface BusinessDetails {
   industry?: Industry | null
   category?: string         // Google's own label, e.g. "Pet Store"
   source?: 'google' | 'osm'
+  // Google only: the place, its street line, its Maps link and UTC offset
+  // (recorded with the sign-up for super admin, lib/signup-profile).
+  placeId?: string
+  line1?: string
+  mapsUrl?: string
+  utcOffsetMinutes?: number
 }
 
 export const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'] as const
@@ -118,7 +124,7 @@ async function googleDetails(placeId: string, token: string): Promise<BusinessDe
   const res = await fetch(`https://places.googleapis.com/v1/places/${encodeURIComponent(placeId)}?sessionToken=${encodeURIComponent(token)}`, {
     headers: {
       'X-Goog-Api-Key': GKEY!,
-      'X-Goog-FieldMask': 'displayName,formattedAddress,addressComponents,websiteUri,internationalPhoneNumber,nationalPhoneNumber,regularOpeningHours,primaryType,primaryTypeDisplayName,types',
+      'X-Goog-FieldMask': 'displayName,formattedAddress,addressComponents,websiteUri,internationalPhoneNumber,nationalPhoneNumber,regularOpeningHours,primaryType,primaryTypeDisplayName,types,googleMapsUri,utcOffsetMinutes',
     },
   })
   if (!res.ok) throw new Error(`google details ${res.status}`)
@@ -138,6 +144,10 @@ async function googleDetails(placeId: string, token: string): Promise<BusinessDe
     industry: industryFromGoogle(p.primaryType, p.types),
     category: p.primaryTypeDisplayName?.text || '',
     source: 'google',
+    placeId,
+    line1: [[get('subpremise'), get('street_number')].filter(Boolean).join('/'), get('route')].filter(Boolean).join(' '),
+    mapsUrl: p.googleMapsUri || '',
+    ...(Number.isInteger(p.utcOffsetMinutes) ? { utcOffsetMinutes: p.utcOffsetMinutes } : {}),
   }
 }
 

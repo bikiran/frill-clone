@@ -60,6 +60,8 @@ function MobileLine({ m, step }: { m: any; step?: number }) {
   </div>
 }
 
+// The page picked it from Google's listings; the browser says so, Colvy hasn't re-checked it with Google.
+const VERIFIED_HINT = 'Verified via Google: picked from Google’s listings on the sign-up page'
 const Ic = {
   refresh: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></svg>,
   search: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>,
@@ -73,6 +75,8 @@ const Ic = {
   users: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><line x1="19" y1="8" x2="19" y2="14" /><line x1="22" y1="11" x2="16" y2="11" /></svg>,
   building: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="2" width="16" height="20" rx="2" /><path d="M9 22v-4h6v4" /><path d="M8 6h.01M16 6h.01M12 6h.01M12 10h.01M12 14h.01M16 10h.01M16 14h.01M8 10h.01M8 14h.01" /></svg>,
   alert: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>,
+  verified: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" /></svg>,
+  pin: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 21s-7-6.2-7-12a7 7 0 0 1 14 0c0 5.8-7 12-7 12z" /><circle cx="12" cy="9" r="2.5" /></svg>,
 }
 
 function ago(d?: string | null, now = Date.now()): string {
@@ -91,6 +95,8 @@ const host = (u?: string | null) => { if (!u) return ''; try { return new URL(u)
 const sourceOf = (r: any) => r.utm?.source ? `${r.utm.source}${r.utm.medium ? ` / ${r.utm.medium}` : ''}` : host(r.referrer) || (r.legacy ? '—' : 'Direct')
 const placeOf = (r: any) => [r.ip_city, r.ip_country].filter(Boolean).join(', ')
 const firstName = (r: any) => String(r.name || '').trim().split(/\s+/)[0] || 'there'
+/** The short business line in the list: 'Pet store · Dallas VIC' (older rows: the industry). */
+const bizLine = (r: any) => r.business_summary || (r.industry ? String(r.industry).replace(/[_-]/g, ' ') : '')
 
 function Chip({ status }: { status: string }) {
   const s = STATUS[status] || { label: status, color: '#6b7280' }
@@ -150,7 +156,7 @@ export default function SignupsPage() {
   const searched = useMemo(() => {
     const s = q.trim().toLowerCase()
     if (!s) return all
-    return all.filter(r => [r.email, r.name, r.business_name, r.business_slug, r.phone, r.ip, r.ip_city, r.industry].some(v => String(v || '').toLowerCase().includes(s)))
+    return all.filter(r => [r.email, r.name, r.business_name, r.business_slug, r.phone, r.ip, r.ip_city, r.industry, r.business?.category, r.business?.address?.formatted, r.website].some(v => String(v || '').toLowerCase().includes(s)))
   }, [all, q])
   const counts = {
     all: searched.length,
@@ -295,11 +301,14 @@ export default function SignupsPage() {
                   <div style={{ fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name || <span style={{ color: 'var(--sa-muted)', fontWeight: 500 }}>No name yet</span>}</div>
                   <div title={r.email} style={{ fontSize: 12, color: 'var(--sa-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.email}</div>
                   {r.phone && <div style={{ fontSize: 12, color: 'var(--sa-muted)', whiteSpace: 'nowrap' }}>{r.phone}</div>}
-                  {r.business_name && <div className="su-bizline" style={{ fontSize: 12, color: 'var(--sa-text)', fontWeight: 600, marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.business_name}{r.industry ? <span style={{ color: 'var(--sa-muted)', fontWeight: 500, textTransform: 'capitalize' }}> · {String(r.industry).replace(/[_-]/g, ' ')}</span> : null}</div>}
+                  {r.business_name && <div className="su-bizline" style={{ fontSize: 12, color: 'var(--sa-text)', fontWeight: 600, marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.business?.verified && <span title={VERIFIED_HINT} style={{ color: '#059669', marginRight: 4, verticalAlign: '-2px' }}>{Ic.verified}</span>}{r.business_name}{bizLine(r) ? <span style={{ color: 'var(--sa-muted)', fontWeight: 500 }}> · {bizLine(r)}</span> : null}</div>}
                 </td>
-                <td className="su-bizcol" style={{ ...td, minWidth: 120 }}>
-                  <div style={{ fontWeight: 600 }}>{r.business_name || <span style={{ color: 'var(--sa-muted)', fontWeight: 500 }}>—</span>}</div>
-                  {r.industry && <div style={{ fontSize: 12, color: 'var(--sa-muted)', textTransform: 'capitalize' }}>{String(r.industry).replace(/[_-]/g, ' ')}</div>}
+                <td className="su-bizcol" style={{ ...td, minWidth: 140, maxWidth: 260 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontWeight: 600, minWidth: 0 }}>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.business_name || <span style={{ color: 'var(--sa-muted)', fontWeight: 500 }}>—</span>}</span>
+                    {r.business?.verified && <span title={VERIFIED_HINT} style={{ color: '#059669', display: 'flex', flexShrink: 0 }}>{Ic.verified}</span>}
+                  </div>
+                  {bizLine(r) && <div style={{ fontSize: 12, color: 'var(--sa-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{bizLine(r)}</div>}
                 </td>
                 <td style={td}><Chip status={r.status} /></td>
                 <td style={{ ...td, whiteSpace: 'nowrap' }}>
@@ -334,7 +343,8 @@ export default function SignupsPage() {
               </div>
               <Chip status={r.status} />
             </div>
-            <div style={{ fontSize: 12.5, color: 'var(--sa-text)' }}>{[r.business_name, r.step?.label].filter(Boolean).join(' · ')}{r.step?.step < 8 && <MobileLine m={r.mobile} step={r.step?.step} />}</div>
+            {r.business_name && <div style={{ fontSize: 12.5, color: 'var(--sa-text)', fontWeight: 600, minWidth: 0 }}>{r.business?.verified && <span title={VERIFIED_HINT} style={{ color: '#059669', marginRight: 4, verticalAlign: '-2px' }}>{Ic.verified}</span>}{r.business_name}{bizLine(r) ? <span style={{ color: 'var(--sa-muted)', fontWeight: 500 }}> · {bizLine(r)}</span> : null}</div>}
+            <div style={{ fontSize: 12.5, color: 'var(--sa-text)' }}>{r.step?.label}{r.step?.step < 8 && <MobileLine m={r.mobile} step={r.step?.step} />}</div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
               <RiskBadge risk={r.risk} full />
               <span style={{ fontSize: 12, color: 'var(--sa-muted)' }}>{[placeOf(r), ago(r.last_activity_at)].filter(Boolean).join(' · ')}</span>
@@ -360,6 +370,65 @@ function Section({ title, children }: { title: string; children: React.ReactNode
     <p style={{ fontSize: 11, fontWeight: 800, color: 'var(--sa-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 4px' }}>{title}</p>
     {children}
   </div>
+}
+
+const HOURS_SOURCE: Record<string, { label: string; color: string }> = {
+  google: { label: 'From Google', color: '#059669' },
+  manual: { label: 'Set by them', color: '#6366f1' },
+  default: { label: 'Colvy’s default, not changed', color: '#d97706' },
+}
+const SOURCE_LABEL: Record<string, string> = { google: 'Found on Google', map: 'Found on the map', manual: 'Typed in' }
+const linkStyle: React.CSSProperties = { color: '#ff7a6b', textDecoration: 'none', fontWeight: 600, wordBreak: 'break-all' }
+
+/** Everything Colvy learnt about their business (lib/signup-profile presentBusiness). */
+function BusinessSection({ b }: { b: any }) {
+  if (!b?.recorded) {
+    return <Section title="Business">
+      <p style={{ fontSize: 12.5, color: 'var(--sa-muted)', margin: '6px 0', lineHeight: 1.5 }}>
+        {b?.missing === 'before_recording'
+          ? 'Not recorded. This sign-up started before Colvy kept business details, so only the email and mobile were saved.'
+          : 'No business details were recorded for this sign-up.'}
+      </p>
+    </Section>
+  }
+  const src = b.hoursSource ? HOURS_SOURCE[b.hoursSource] : null
+  return <Section title="Business">
+    <div style={{ marginTop: 6, border: '1px solid var(--sa-border)', borderRadius: 12, padding: '12px 14px 6px', background: 'var(--sa-bg)', minWidth: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, minWidth: 0 }}>
+        <span style={{ width: 32, height: 32, borderRadius: 9, background: '#ff7a6b1a', color: '#ff7a6b', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{Ic.building}</span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '4px 8px' }}>
+            <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--sa-text)', wordBreak: 'break-word' }}>{b.name || 'No business name'}</span>
+            {b.verified
+              ? <span title={VERIFIED_HINT} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', borderRadius: 999, background: '#0596691a', color: '#059669', fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap' }}>{Ic.verified} Verified via Google</span>
+              : b.source && <span style={{ display: 'inline-flex', padding: '2px 8px', borderRadius: 999, background: 'var(--sa-hover)', color: 'var(--sa-muted)', fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap' }}>{SOURCE_LABEL[b.source] || b.source}</span>}
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--sa-muted)', marginTop: 2, wordBreak: 'break-word' }}>{[b.boardUrl, b.summary].filter(Boolean).join(' · ') || ' '}</div>
+        </div>
+      </div>
+      <div style={{ marginTop: 8 }}>
+        <Field label="Industry">{b.industry || b.category ? <>{b.industry}{b.category ? <span style={{ color: 'var(--sa-muted)' }}>{b.industry ? ' · ' : ''}Google: {b.category}</span> : null}</> : null}</Field>
+        <Field label="Address">{b.addressLines?.length ? <>
+          {b.addressLines.map((l: string, i: number) => <div key={i}>{l}</div>)}
+          {b.mapsUrl && <a href={b.mapsUrl} target="_blank" rel="noopener noreferrer" style={{ ...linkStyle, display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 4, fontSize: 12 }}>{Ic.pin} Open in Google Maps {Ic.external}</a>}
+        </> : null}</Field>
+        <Field label="Business phone">{b.phone ? <a href={`tel:${b.phone}`} style={linkStyle}>{b.phone}</a> : null}</Field>
+        <Field label="Website">{b.website ? (b.websiteUrl ? <a href={b.websiteUrl} target="_blank" rel="noopener noreferrer" style={linkStyle}>{b.website}</a> : b.website) : null}</Field>
+        <Field label="Opening hours">{b.hours ? <div>
+          {src && <span style={{ display: 'inline-flex', marginBottom: 6, padding: '2px 8px', borderRadius: 999, background: src.color + '1a', color: src.color, fontSize: 11, fontWeight: 700 }}>{src.label}</span>}
+          <div className="su-hours" style={{ display: 'grid', gridTemplateColumns: 'minmax(40px, auto) 1fr', columnGap: 14, rowGap: 3 }}>
+            {b.hours.map((h: any) => <div key={h.day} style={{ display: 'contents' }}>
+              <span style={{ fontWeight: 600, color: h.open ? 'var(--sa-text)' : 'var(--sa-muted)' }} title={h.label}>{h.short}</span>
+              <span style={{ color: h.open ? 'var(--sa-text)' : 'var(--sa-muted)', fontVariantNumeric: 'tabular-nums' }}>{h.text}</span>
+            </div>)}
+          </div>
+        </div> : null}</Field>
+        <Field label="Time zone">{b.timezone ? <>{b.timezone}{b.timezoneFrom === 'browser' ? <span style={{ color: 'var(--sa-muted)' }}> (from their browser)</span> : null}</> : null}</Field>
+        {b.abn && <Field label="ABN">{b.abn}</Field>}
+        {b.placeId && <Field label="Google place ID"><span style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 11.5, color: 'var(--sa-muted)', wordBreak: 'break-all' }}>{b.placeId}</span></Field>}
+      </div>
+    </div>
+  </Section>
 }
 
 export function SignupDrawer({ row: r, workspace, onClose, act }: { row: any; workspace?: { id?: string; slug: string; name: string; source?: string } | null; onClose: () => void; act: (row: any, action: string, extra?: any) => Promise<any> }) {
@@ -448,16 +517,13 @@ export function SignupDrawer({ row: r, workspace, onClose, act }: { row: any; wo
           </div>
         )}
 
-        <Section title="What they told us">
+        <Section title="About them">
           <Field label="Name">{r.name}</Field>
           <Field label="Email">{r.email}</Field>
           <Field label="Mobile">{r.phone}{r.phone_country ? <span style={{ color: 'var(--sa-muted)' }}> ({r.phone_country})</span> : null}</Field>
-          <Field label="Business">{r.business_name}{r.business_slug ? <span style={{ color: 'var(--sa-muted)' }}> · {r.business_slug}.colvy.com</span> : null}</Field>
-          <Field label="Industry">{r.industry ? String(r.industry).replace(/[_-]/g, ' ') : null}</Field>
-          <Field label="Website">{r.website}</Field>
-          <Field label="Business phone">{r.business_phone}</Field>
-          <Field label="Business location">{[r.business_city, r.business_state, r.business_country].filter(Boolean).join(', ')}</Field>
         </Section>
+
+        <BusinessSection b={r.business} />
 
         <Section title="Progress">
           <Field label="Step reached">{r.step?.label}{r.step?.step < 8 ? <span style={{ color: 'var(--sa-muted)' }}> (step {r.step?.step} of 7)</span> : null}</Field>

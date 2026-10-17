@@ -18,8 +18,11 @@ export const dynamic = 'force-dynamic'
 // channels are verified.
 //
 // Each send is also recorded in signup_attempts (lib/signup-attempts) with what
-// the wizard knew by then (name, business, where they came from), so a sign-up
-// that stops before the account exists still shows in super admin → Signups.
+// the wizard knew by then (name, business details, where they came from), so a
+// sign-up that stops before the account exists still shows in super admin →
+// Signups. The business details come with every send, resends and calls too
+// (the request carries the sign-up's token), so a first record that was lost
+// is filled in by the next.
 // Sends are limited per email and per IP (on top of the per-token cooldown).
 //
 // channel 'voice' is "Didn't get it? Call me with the code": only for a
@@ -230,15 +233,16 @@ export async function POST(req: NextRequest) {
     const smsSent = !!mobile?.ok
     const voice = voiceFallbackReady()
 
-    // Record the attempt (never the codes) once the response has gone. Profile
-    // and attribution come with the first send; resends only add to the timeline.
+    // Record the attempt (never the codes) once the response has gone. The
+    // profile comes with every send and is merged (a blank never wipes, the
+    // latest edit wins); attribution only with the first.
     const wanted = channel === 'both' ? ['email', 'sms'] : [channel]
     const failed = wanted.filter(c => c === 'email' ? !emailSent : !smsSent)
     const word = (c: string) => c === 'sms' ? 'SMS' : c === 'voice' ? 'call' : 'email'
     recordSignupLater(db, {
       type: failed.length === wanted.length ? 'send_failed' : 'code_sent',
       email, channel, phone: phone || existing?.phone || null, headers: req.headers,
-      profile: body.token ? undefined : cleanProfile(body.profile),
+      profile: cleanProfile(body.profile),
       attribution: body.token ? undefined : cleanAttribution(body.attribution),
       smsSid: channel !== 'voice' && mobile?.ok ? mobile.sid : null,
       callSid: channel === 'voice' && mobile?.ok ? mobile.sid : null,

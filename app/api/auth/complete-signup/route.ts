@@ -56,10 +56,15 @@ export async function POST(req: NextRequest) {
     }
 
     const email = String(row.email || '').toLowerCase()
-    // For super admin → Signups: what they typed on the last step, and how it ended.
+    // For super admin → Signups: what they told us about the business (the
+    // page's profile: Google place, hours source…), with the business the
+    // workspace is made from on top, and how it ended.
+    const sent = body.profile && typeof body.profile === 'object' && !Array.isArray(body.profile) ? body.profile : {}
     const profile = cleanProfile({
-      fullName, businessName: name, businessSlug: slug, industry: biz.industry, website: biz.website,
-      businessPhone: biz.phone, businessCity: biz.city, businessState: biz.state, businessCountry: biz.country,
+      industry: biz.industry, website: biz.website, businessPhone: biz.phone, businessAddress: biz.address,
+      businessCity: biz.city, businessState: biz.state, businessPostcode: biz.postcode, businessCountry: biz.country, hours: biz.hours,
+      ...sent,
+      fullName, businessName: name, businessSlug: slug,
     })
     const failed = (detail: string) => recordSignupLater(db, { type: 'complete_failed', email, profile, detail, headers: req.headers })
 

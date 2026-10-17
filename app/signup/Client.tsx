@@ -11,6 +11,7 @@ import BusinessAutocomplete, { BusinessDetails, BusinessHours, DAYS, emptyHours 
 import { INDUSTRIES } from '@/lib/industries'
 import Turnstile, { TurnstileHandle, TURNSTILE_SITE_KEY } from '@/components/Turnstile'
 import { normaliseSignupMobile } from '@/lib/signup-delivery'
+import { signupProfilePayload } from '@/lib/signup-profile'
 
 
 const CORAL = '#ff7a6b'
@@ -226,6 +227,11 @@ function SignUpForm() {
 
   const canLeaveDetails = !!companyName.trim() && slugStatus === 'available' && !!industry
 
+  // Everything we know about the business (Google place, address, hours…),
+  // sent with every code request, verification and the finished sign-up so
+  // super admin → Signups has it even if one of those records is lost.
+  const signupProfile = () => signupProfilePayload({ fullName, companyName, slug, industry, website, businessPhone, address, addrParts, hours, found, bizMode })
+
   const sendCodes = async () => {
     setError('')
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { setError('Enter a valid email address'); return }
@@ -240,11 +246,7 @@ function SignUpForm() {
           email: email.trim(), phone, turnstileToken: humanToken,
           // Recorded with the attempt (super admin → Signups), so a sign-up that
           // stops before the account exists can still be followed up.
-          profile: {
-            fullName: fullName.trim(), businessName: companyName.trim(), businessSlug: slug.toLowerCase(), industry,
-            website: website.trim(), businessPhone: businessPhone.trim(),
-            businessCity: addrParts.city || '', businessState: addrParts.state || '', businessCountry: addrParts.country || '',
-          },
+          profile: signupProfile(),
           attribution: (() => {
             let a: any = {}
             try { a = JSON.parse(sessionStorage.getItem('colvy_signup_attr') || '{}') } catch {}
@@ -280,7 +282,7 @@ function SignUpForm() {
     try {
       const res = await fetch('/api/auth/otp/send', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, email: email.trim(), phone, channel, ...(phoneOverride ? { turnstileToken: changeHumanToken } : {}) }),
+        body: JSON.stringify({ token, email: email.trim(), phone, channel, profile: signupProfile(), ...(phoneOverride ? { turnstileToken: changeHumanToken } : {}) }),
       })
       const data = await res.json()
       if (phoneOverride) { changeHumanRef.current?.reset() }
@@ -350,7 +352,7 @@ function SignUpForm() {
     try {
       const res = await fetch('/api/auth/otp/verify', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, channel, code }),
+        body: JSON.stringify({ token, channel, code, profile: signupProfile() }),
       })
       const data = await res.json()
       if (!res.ok) {
@@ -372,7 +374,7 @@ function SignUpForm() {
       const res = await fetch('/api/auth/complete-signup', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          token, password, fullName: fullName.trim(),
+          token, password, fullName: fullName.trim(), profile: signupProfile(),
           ref: refParam || (() => { try { return localStorage.getItem('pending_ref') } catch { return null } })() || null,
           business: {
             name: companyName.trim(), slug: slug.toLowerCase(), industry,

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { recordSignupLater } from '@/lib/signup-attempts'
+import { recordSignupLater, cleanProfile } from '@/lib/signup-attempts'
 import { checkCode } from '@/lib/signup-sms'
 import { checkBurst } from '@/lib/rate-limit'
 import { requestIp } from '@/lib/turnstile'
@@ -112,7 +112,9 @@ export async function POST(req: NextRequest) {
     await db.from('signup_verifications').update({ [col]: taken.used - 1 }).eq('token', token).eq(col, taken.used)
     const patch: any = channel === 'sms' ? { sms_verified: true } : { email_verified: true }
     await db.from('signup_verifications').update(patch).eq('token', token)
-    recordSignupLater(db, { type: channel === 'sms' ? 'mobile_verified' : 'email_verified', email: row.email, channel, headers: req.headers })
+    // The page sends what it knows about the business again, so a sign-up
+    // whose first record was lost still gets its details (merged, blanks never wipe).
+    recordSignupLater(db, { type: channel === 'sms' ? 'mobile_verified' : 'email_verified', email: row.email, channel, headers: req.headers, profile: cleanProfile(body.profile) })
 
     const emailVerified = channel === 'email' ? true : !!row.email_verified
     const smsVerified = channel === 'sms' ? true : !!row.sms_verified

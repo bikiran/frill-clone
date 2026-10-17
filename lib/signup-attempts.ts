@@ -10,7 +10,9 @@
 //   code_sent → email_verified → mobile_verified → account_created
 // with where they came from (referrer, UTM), rough location from Vercel's edge
 // headers, device, a timeline, and simple risk signals. The codes themselves
-// are never stored here.
+// are never stored here. What they told us about the business (Google place,
+// street address, opening hours…, lib/signup-profile) comes with every step
+// and is merged onto signup_attempts.business (V392).
 //
 // Everything is best-effort: before V390 runs (or if a write fails) sign-up
 // carries on exactly as before.
@@ -24,6 +26,12 @@ import { emailDomain, isDisposableEmail } from '@/lib/disposable-email'
 import { SUPER_ADMIN } from '@/app/api/platform-admin/_lib/super-admin'
 import { isStaffRow } from '@/lib/company-access'
 import { deliveryOf, explainDeliveryError, deliveryProblem, TERMINAL_STATUSES, signupPhoneE164 } from '@/lib/signup-delivery'
+import { cleanProfile, businessFromProfile, mergeBusiness, presentBusiness, isSnapshot, type SignupProfile } from '@/lib/signup-profile'
+
+// The profile the wizard sends (name, business, address, Google place, hours…)
+// is cleaned and shaped in lib/signup-profile, shared with the sign-up page.
+export { cleanProfile }
+export type { SignupProfile }
 
 export const TABLE = 'signup_attempts'
 /** No activity for this long and no account: abandoned. Codes expire after 10 minutes. */
@@ -48,10 +56,6 @@ export type SignupEventType =
 
 export type SignupStatus = 'code_sent' | 'verified' | 'account_created' | 'abandoned' | 'spam'
 
-export type SignupProfile = {
-  fullName?: string; businessName?: string; businessSlug?: string; industry?: string; website?: string
-  businessPhone?: string; businessCity?: string; businessState?: string; businessCountry?: string
-}
 export type SignupAttribution = {
   utm?: Record<string, string>; referrer?: string; landing?: string; plan?: string; ref?: string
 }
@@ -60,6 +64,9 @@ type HeaderBag = { get(name: string): string | null }
 
 const missingTable = (e: any) =>
   /^(42P01|PGRST205|42703|PGRST204)$/.test(String(e?.code || '')) || /does not exist|could not find|schema cache/i.test(String(e?.message || e || ''))
+/** "No such column" for this column (it arrives with a later migration). */
+const missingColumn = (e: any, col: string) =>
+  (/^(42703|PGRST204)$/.test(String(e?.code || '')) || /column/i.test(String(e?.message || ''))) && String(e?.message || '').includes(col)
 let warned = false
 const warnMissing = () => { if (!warned) { warned = true; console.warn('[signup-attempts] signup_attempts is missing: run COLVY_V390_SIGNUP_ATTEMPTS.sql') } }
 
@@ -89,18 +96,6 @@ export function requestMeta(headers?: HeaderBag | null) {
     user_agent: ua ? ua.slice(0, 400) : null,
     device: ua ? device : null, os: ua ? os : null, browser: ua ? browser : null,
   }
-}
-
-/** What the wizard knew about them when it asked for codes. */
-export function cleanProfile(raw: any): SignupProfile {
-  if (!raw || typeof raw !== 'object') return {}
-  const out: SignupProfile = {
-    fullName: str(raw.fullName, 120), businessName: str(raw.businessName, 160), businessSlug: str(raw.businessSlug, 60)?.toLowerCase(),
-    industry: str(raw.industry, 60), website: str(raw.website, 200), businessPhone: str(raw.businessPhone, 40),
-    businessCity: str(raw.businessCity, 80), businessState: str(raw.businessState, 60), businessCountry: str(raw.businessCountry, 60),
-  }
-  for (const k of Object.keys(out) as (keyof SignupProfile)[]) if (out[k] === undefined) delete out[k]
-  return out
 }
 
 /** Where they came from: UTM tags, the referring page, the page they landed on. */
@@ -414,11 +409,30 @@ export async function recordSignupEvent(db: any, ev: SignupEvent, attempt = 0): 
     const row: any = existing ? { ...existing } : { email, email_domain: emailDomain(email), first_seen_at: at, codes_sent: 0, wrong_codes: 0, events: [], source: 'web' }
     row.email_domain = row.email_domain || emailDomain(email)
 
+    // What they told us about the business rides along with every code
+    // request, verification and the finished sign-up (not only the first send,
+    // whose record is best-effort), and is merged (lib/signup-profile
+    // mergeBusiness): the current page sends its whole picture each time, so
+    // the latest edit wins outright, cleared fields included; anything older
+    // or partial only fills in, never blanking. The JSON block
+    // (signup_attempts.business, V392) holds all of it; the flat columns
+    // (V390) the basics, for search and before V392 runs.
     const p = ev.profile || {}
     const set = (col: string, v: any) => { if (v !== undefined && v !== null && v !== '') row[col] = v }
-    set('name', p.fullName); set('business_name', p.businessName); set('business_slug', p.businessSlug); set('industry', p.industry)
-    set('website', p.website); set('business_phone', p.businessPhone); set('business_city', p.businessCity)
-    set('business_state', p.businessState); set('business_country', p.businessCountry)
+    set('name', p.fullName)
+    const biz = admin ? null : businessFromProfile(p)
+    const prevBiz = row.business ?? null
+    const prevFlat = flatBusiness(row)
+    if (biz) {
+      const full = isSnapshot(p)
+      const merged = mergeBusiness(prevBiz, biz, at, { full })!
+      row.business = merged
+      // A snapshot clears what it no longer has; anything else only fills in.
+      const put = full ? (col: string, v: any) => { row[col] = v === undefined || v === '' ? null : v } : set
+      put('business_name', merged.name); put('business_slug', merged.slug); put('industry', merged.industry)
+      put('website', merged.website); put('business_phone', merged.phone)
+      put('business_city', merged.address?.city); put('business_state', merged.address?.state); put('business_country', merged.address?.country)
+    }
     if (ev.phone && !admin) { row.phone = String(ev.phone).slice(0, 40); row.phone_country = phoneCountry(ev.phone) || null }
 
     // First touch wins for where they came from; plan and referral code follow the latest.
@@ -488,9 +502,21 @@ export async function recordSignupEvent(db: any, ev: SignupEvent, attempt = 0): 
     // The whole row is written back, so only over the version that was read
     // (updated_at): otherwise a delivery report or another step saved in
     // between would be wiped from the timeline. On a clash, read again and redo.
-    const saved = existing
-      ? await sameVersion(db.from(TABLE).update(row).eq('id', existing.id), existing.updated_at).select('*').maybeSingle()
-      : await db.from(TABLE).insert(row).select('*').maybeSingle()
+    const write = (r: any) => existing
+      ? sameVersion(db.from(TABLE).update(r).eq('id', existing.id), existing.updated_at).select('*').maybeSingle()
+      : db.from(TABLE).insert(r).select('*').maybeSingle()
+    let saved = await write(row)
+    // Before V392 there's no business column: save everything else without
+    // it (the CRM note below still gets the details), with a fingerprint of
+    // the block on this step's timeline entry, so the next request can tell
+    // whether the details changed.
+    let unsavedBusiness: any = null
+    if (saved.error && 'business' in row && missingColumn(saved.error, 'business')) {
+      unsavedBusiness = row.business
+      delete row.business
+      if (biz) event.business_hash = businessHash(unsavedBusiness)
+      saved = await write(row)
+    }
     if (saved.error) {
       // Two first sends at the same moment: the other insert won, add to it.
       if (!existing && /duplicate|23505/i.test(`${saved.error.code} ${saved.error.message}`) && attempt < 3) return recordSignupEvent(db, ev, attempt + 1)
@@ -503,11 +529,22 @@ export async function recordSignupEvent(db: any, ev: SignupEvent, attempt = 0): 
       return null
     }
     const out = saved.data || { ...row, id: existing?.id }
+    // Did what they told us about the business change? Before V392 the block
+    // isn't stored, so compare its fingerprint on the last timeline entry that
+    // had one (hours, Google place and street included), or failing that (a
+    // row from before this, or the entry has aged out) the V390 columns. An
+    // unchanged resend doesn't re-sync the CRM contact.
+    const lastHash = unsavedBusiness
+      ? (Array.isArray(existing?.events) ? existing.events : []).slice().reverse().find((e: any) => typeof e?.business_hash === 'string')?.business_hash
+      : null
+    const bizChanged = !!biz && (unsavedBusiness
+      ? (lastHash ? lastHash !== event.business_hash : prevFlat !== flatBusiness(row))
+      : sameShape(prevBiz) !== sameShape(row.business))
 
     // Into Colvy's own CRM: when they first get a code, as each channel is
-    // verified, and when they finish.
-    if ((ev.type === 'code_sent' && !out.contact_id) || ['email_verified', 'mobile_verified', 'account_created'].includes(ev.type)) {
-      const contactId = await syncSignupContact(db, out)
+    // verified, when they finish, and when they change their business details.
+    if ((ev.type === 'code_sent' && !out.contact_id) || ['email_verified', 'mobile_verified', 'account_created'].includes(ev.type) || (bizChanged && out.contact_id)) {
+      const contactId = await syncSignupContact(db, unsavedBusiness && !out.business ? { ...out, business: unsavedBusiness } : out)
       if (contactId && contactId !== out.contact_id) {
         await db.from(TABLE).update({ contact_id: contactId, contact_synced_at: at }).eq('id', out.id)
         out.contact_id = contactId
@@ -518,6 +555,28 @@ export async function recordSignupEvent(db: any, ev: SignupEvent, attempt = 0): 
     console.warn('[signup-attempts] record failed:', e?.message || e)
     return null
   }
+}
+
+/** The V390 business columns as comparable text. */
+const FLAT_BUSINESS = ['business_name', 'business_slug', 'industry', 'website', 'business_phone', 'business_city', 'business_state', 'business_country']
+function flatBusiness(r: any): string {
+  return JSON.stringify(FLAT_BUSINESS.map(k => r?.[k] ?? null))
+}
+
+/** The business block as comparable text: keys sorted (jsonb reorders them), updatedAt left out. */
+function sameShape(b: any): string {
+  const norm = (v: any): any => Array.isArray(v) ? v.map(norm) : v && typeof v === 'object'
+    ? Object.fromEntries(Object.keys(v).filter(k => k !== 'updatedAt').sort().map(k => [k, norm(v[k])]))
+    : v
+  return JSON.stringify(norm(b ?? null))
+}
+
+/** A short fingerprint of the business block (FNV-1a over sameShape), to spot a change without storing it. */
+function businessHash(b: any): string {
+  const s = sameShape(b)
+  let h = 0x811c9dc5
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0 }
+  return h.toString(16).padStart(8, '0')
 }
 
 /** Narrow an update to the row version that was read (its updated_at). */
@@ -657,16 +716,31 @@ export function businessPhoneE164(raw: any): string {
   if (!t) return ''
   return /^\+?[\d\s().-]{6,20}$/.test(t) ? toE164(t) : t.slice(0, 40)
 }
+const HOURS_FROM: Record<string, string> = { google: ' (from Google)', default: ' (Colvy’s default, not changed)', manual: ' (set by them)' }
+/**
+ * The automatic "Signup lead:" note: the step reached, then everything Colvy
+ * learnt about the business that has no contact column (industry, Google
+ * category and place, website, business phone, time zone, opening hours),
+ * the business address, and the mobile.
+ */
 export function signupNote(row: any): string {
   const st = stepReached(row)
   const where = st.step >= 8 ? 'finished signing up (account created)' : `reached step ${st.step} of 7 (${st.label})`
   const phone = signupPhoneE164(row.phone)
-  const bizPhone = businessPhoneE164(row.business_phone)
+  const b = presentBusiness(row)
+  const bizPhone = businessPhoneE164(b.phone)
   const facts = [
-    row.business_name ? `Business: ${row.business_name}` : '',
-    row.industry ? `Industry: ${row.industry}` : '',
-    row.website ? `Website: ${String(row.website).slice(0, 200)}` : '',
+    b.name ? `Business: ${b.name}${b.boardUrl ? ` (${b.boardUrl})` : ''}` : '',
+    b.industry ? `Industry: ${b.industry}` : '',
+    b.category ? `Google category: ${b.category}` : '',
+    b.addressLines.length ? `Address: ${b.addressLines.join(', ')}` : '',
+    b.verified ? `Verified via Google${b.placeId ? ` (place ID ${b.placeId})` : ''}` : '',
+    b.mapsUrl ? `Google Maps: ${b.mapsUrl}` : '',
+    b.website ? `Website: ${String(b.website).slice(0, 200)}` : '',
     bizPhone ? `Business phone: ${bizPhone}` : '',
+    b.abn ? `ABN: ${b.abn}` : '',
+    b.timezone ? `Time zone: ${b.timezone}` : '',
+    ...(b.hoursGrouped.length ? [`Opening hours${HOURS_FROM[b.hoursSource || ''] || ''}:`, ...b.hoursGrouped.map(g => `- ${g.days}: ${g.text}`)] : []),
     phone ? `Mobile: ${phone} (${row.mobile_verified_at || row.account_created_at ? 'verified' : 'not verified'})` : '',
   ].filter(Boolean)
   return [
@@ -676,16 +750,50 @@ export function signupNote(row: any): string {
   ].join('\n')
 }
 
+const sameWords = (a: any, b: any) => !!a && !!b && String(a).trim().toLowerCase() === String(b).trim().toLowerCase()
+
+// Lines of the automatic note that only the business block (V392) can
+// rebuild: the V390 columns have no hours, Google place or street.
+const RICH_NOTE_LINE = /^(Opening hours|Google category: |Google Maps: |Verified via Google)/m
+/**
+ * The automatic note, refreshed. Normally rebuilt whole (signupNote). But a
+ * row with no business block (before V392, where only the request carrying
+ * the details had them) can't rebuild the hours, Google place and street the
+ * note already holds, so then only the step reached and the mobile line are
+ * brought up to date and the rest is kept (an admin action or the CRM
+ * backfill would otherwise strip them for good).
+ */
+function refreshedNote(old: string, row: any): string {
+  const fresh = signupNote(row)
+  const block = row?.business && typeof row.business === 'object' && !Array.isArray(row.business)
+  if (block || !old.startsWith(SIGNUP_NOTE_PREFIX) || !RICH_NOTE_LINE.test(old)) return fresh
+  const f = fresh.split('\n')
+  const lines = old.split('\n')
+  lines[0] = f[0]
+  const mobile = f.find(l => l.startsWith('Mobile: '))
+  if (mobile) {
+    const i = lines.findIndex(l => l.startsWith('Mobile: '))
+    if (i >= 0) lines[i] = mobile
+    else {
+      const t = lines.findIndex(l => l.startsWith('Transactional follow-up only'))
+      lines.splice(t >= 0 ? t : lines.length, 0, mobile)
+    }
+  }
+  return lines.join('\n')
+}
+
 /**
  * Add (or update) the person as a contact in Colvy's workspace, tagged with
  * how their sign-up went, so the owner can follow up from the normal inbox.
  *
  * Copied onto the contact (blank fields only, never overwriting): name, the
  * mobile they typed in E.164 (verified or not: it's what the owner calls them
- * back on), business name, city / state / country, and a "Signup lead:" note
- * with the step reached, industry, website and business phone (contacts have
- * no columns for those). The note is refreshed only while it's still the one
- * this wrote.
+ * back on), business name (company_name), the business's street address,
+ * suburb, state and postcode (as one, only where the contact's own parts
+ * match it), country, and a "Signup lead:" note with the
+ * step reached and everything contacts have no column for: industry, Google
+ * category and place, website, business phone, time zone and opening hours
+ * (signupNote). The note is refreshed only while it's still the one this wrote.
  *
  * Matching is stricter than filling, since what they typed isn't proven:
  * before the email code is entered only a contact this sign-up flow made can
@@ -707,7 +815,7 @@ export async function syncSignupContact(db: any, row: any, o: { force?: boolean 
     const emailOk = !!(row.email_verified_at || row.account_created_at)
     const phone = signupPhoneE164(row.phone)
     const mobileOk = !!(row.mobile_verified_at || row.account_created_at) && !!phone
-    const cols = 'id, name, email, phone, tags, source, company_name, city, state, country, notes'
+    const cols = 'id, name, email, phone, tags, source, company_name, address, city, state, postcode, country, notes'
 
     let c: any = null
     if (row.contact_id) {
@@ -745,13 +853,44 @@ export async function syncSignupContact(db: any, row: any, o: { force?: boolean 
     if (!c.email) patch.email = email
     const phonePatch: any = !c.phone && phone ? { phone } : {}
     const extra: any = {}
-    if (!c.company_name && row.business_name) extra.company_name = row.business_name
-    if (!c.city && (row.business_city || row.ip_city)) extra.city = row.business_city || row.ip_city
-    if (!c.state && row.business_state) extra.state = row.business_state
-    if (!c.country && row.business_country) extra.country = row.business_country
+    const b = presentBusiness(row)
+    const addr = b.address || {}
+    if (!c.company_name && b.name) extra.company_name = b.name
+    // The address goes on as one, never as parts of two: only when each part
+    // the contact already has (street, suburb, state, postcode) is the same
+    // as this address's, so the blanks are filled from one address (a contact
+    // whose suburb and state came from this sign-up still gets the street and
+    // postcode). A suburb that's only the sign-up IP's stand-in, on a contact
+    // this flow made, gives way: to the address's suburb, or to none when no
+    // suburb could be picked out (the street line then holds it), so the IP's
+    // city never sits next to another place's street. Otherwise the address
+    // stays in the note. With no suburb picked out, the street column takes
+    // the whole line they typed, so nothing is lost.
+    const typed = row?.business?.address?.formatted
+    const street = addr.line1 || (!addr.city && typed ? String(typed).slice(0, 300) : '')
+    const given = !!(street || addr.city || addr.state || addr.postcode)
+    if (given) {
+      const agrees = (have: any, want: any) => !have || sameWords(have, want)
+      // On anyone else's contact a city that happens to match the IP's may be their own.
+      const standIn = c.source === 'signup' && sameWords(c.city, row.ip_city) && !sameWords(c.city, addr.city)
+      if (agrees(c.address, street) && agrees(c.state, addr.state) && agrees(c.postcode, addr.postcode) && (standIn || agrees(c.city, addr.city))) {
+        if (street && !c.address) extra.address = street
+        if (standIn) extra.city = addr.city || null
+        else if (addr.city && !c.city) extra.city = addr.city
+        if (addr.state && !c.state) extra.state = addr.state
+        if (addr.postcode && !c.postcode) extra.postcode = addr.postcode
+      }
+    } else if (c.source === 'signup' && !c.city && !c.address && !c.state && !c.postcode && row.ip_city) {
+      // Where they connected from stands in when no address was given: only
+      // on a contact this flow made (where it can later give way, above) and
+      // with no address of its own, so it never sits beside another place's
+      // street, state or postcode.
+      extra.city = row.ip_city
+    }
+    if (!c.country && addr.country) extra.country = addr.country
     const notes = String(c.notes || '')
     if (!notes.trim() || notes.startsWith(SIGNUP_NOTE_PREFIX) || OLD_SIGNUP_NOTE.test(notes)) {
-      const next = signupNote(row)
+      const next = refreshedNote(notes, row)
       if (next !== notes) extra.notes = next
     }
     // Older databases may lack a column, and a phone can be refused: fall
@@ -1000,11 +1139,17 @@ export function presentSignup(row: any, now = Date.now()) {
   const risk = assessRisk(row)
   // Numbers saved before normalising ("14387975614", "0466 077 557") show as E.164.
   const phone = signupPhoneE164(row.phone) || row.phone || null
+  // Everything about the business (V392's JSON over V390's columns), with the
+  // business number in E.164 like the mobile.
+  const business = presentBusiness(row)
+  const businessPhone = businessPhoneE164(business.phone) || null
   return {
     ...row,
     phone,
     phone_country: row.phone_country || phoneCountry(phone) || null,
-    business_phone: businessPhoneE164(row.business_phone) || null,
+    business_phone: businessPhone,
+    business: { ...business, phone: businessPhone },
+    business_summary: business.summary,
     status,
     step: stepReached(row),
     mobile: deliveryOf(row, now),
@@ -1072,7 +1217,7 @@ export async function listSignups(db: any, o: { filter?: ListFilter; range?: Lis
 
   let rows = raw.map(r => presentSignup(r, now))
   const s = String(o.q || '').trim().toLowerCase()
-  if (s) rows = rows.filter(r => [r.email, r.name, r.business_name, r.business_slug, r.phone, r.ip, r.ip_city, r.industry].some(v => String(v || '').toLowerCase().includes(s)))
+  if (s) rows = rows.filter(r => [r.email, r.name, r.business_name, r.business_slug, r.phone, r.ip, r.ip_city, r.industry, r.business?.category, r.business?.address?.formatted, r.website].some(v => String(v || '').toLowerCase().includes(s)))
   const counts = {
     all: rows.length,
     abandoned: rows.filter(r => r.status === 'abandoned').length,
