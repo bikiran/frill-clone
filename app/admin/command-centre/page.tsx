@@ -2,8 +2,9 @@
 
 import { authFetch } from '@/lib/auth-fetch'
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
+import dynamic from 'next/dynamic'
 import { supabase } from '@/lib/supabase'
-import { peekCompanyUser } from '@/lib/client-cache'
+import { peekCompanyUser, readStored, writeStored, readCache, writeCache } from '@/lib/client-cache'
 import { loadStaffRows } from '@/lib/team-list'
 import {
   normaliseCall, outcomeOf, outcomeLabel, aiOutcomeOf, isAiCall, AI_OUTCOME_LABEL, AI_AGENT_NAME, aggregate, byHour, heatmap, leaderboard,
@@ -11,10 +12,16 @@ import {
   fmtDur, fmtTalk, timeAgo, hourLabel, startOfDayTz, zonedParts, RANGES, isRangeKey, DEFAULT_TZ, prevToFor, outcomeOf as rankOutcome,
   type CcCall, type RangeKey, type AgentOption, type RecoveryItem, type CallStats,
 } from '@/lib/command-centre'
-import { Icon, Chip, Kpi, Trend, WhyInline, Segmented, Spinner, LiveTimer, Clock, C, card, kicker, ctrl, tint, btn, iconBtn, useNarrow } from './ui'
-import CallDrawer, { OUTCOME_COLOR } from './CallDrawer'
-import TextBack from './TextBack'
-import AiSummary from './AiSummary'
+import { Icon, Chip, Kpi, Trend, WhyInline, Segmented, Spinner, LiveTimer, Clock, C, card, kicker, ctrl, tint, btn, iconBtn, useNarrow, OUTCOME_COLOR, Skel, SkelRows } from './ui'
+
+// Only needed after a click (a call, Text back) or on the Insights tab, so
+// they load on their own and stay out of the board's first download.
+const CallDrawer = dynamic(() => import('./CallDrawer'), { ssr: false })
+const TextBack = dynamic(() => import('./TextBack'), { ssr: false })
+const AiSummary = dynamic(() => import('./AiSummary'), {
+  ssr: false,
+  loading: () => <div style={{ ...card, padding: 18, display: 'flex', flexDirection: 'column', gap: 10 }}><Skel w={180} h={14} /><Skel w="70%" h={11} /><Skel w="55%" h={11} /></div>,
+})
 
 // ── Command Centre ───────────────────────────────────────────────────────────
 // A live call-centre dashboard: Live Board, Call Logs and Insights for calls,
@@ -24,6 +31,12 @@ import AiSummary from './AiSummary'
 // safety net. Every count follows lib/command-centre, in the business's
 // timezone. Missed callers nobody has returned, the AI receptionist's work and
 // an AI summary of the period sit alongside.
+//
+// Loading: the page and its placeholders show straight away. The first
+// request (/board) brings the calls and the board's settings together, worked
+// out in the timezone last seen here (kept in this browser), while the missed
+// callers and opening hours (/overview, which may wait on Google) and the team
+// load alongside and fill in their own panels.
 
 type Overview = {
   timezone: string
@@ -47,6 +60,19 @@ const FALLBACK_OVERVIEW: Overview = {
   missedCallText: { enabled: false, when: 'always' }, phoneAgent: { enabled: false, mode: null }, aiPaused: false,
 }
 const PAGE = 100
+// Kept in this browser (wiped on sign-out) so the next visit starts in the
+// right timezone and paints the missed callers and team names at once.
+const ovKey = (cid: string) => `cc:overview:${cid}`
+const namesKey = (cid: string) => `cc:names:${cid}`
+// The calls for a period, for coming back to the page without a reload.
+const callsKey = (cid: string, from: number, to: number | null) => `cc:calls:${cid}:${from}:${to ?? 'open'}`
+const CACHE_CALLS_MAX = 3000
+// The missed callers and opening hours are the slowest read: at most one at a
+// time, and not more often than this unless asked (a text was just sent).
+const OVERVIEW_GAP_MS = 30_000
+// loading → nothing yet; stored → last visit's list while this visit's loads;
+// live → this visit's; stale → last visit's, this visit's didn't come; failed → none.
+type RecoveryState = 'loading' | 'stored' | 'live' | 'stale' | 'failed'
 const smsInbound = (m: Sms) => ['visitor', 'customer', 'contact'].includes(String(m.sender_type || '').toLowerCase())
 const initialsOf = (n: string) => n.split(' ').map(w => w[0]).filter(Boolean).join('').slice(0, 2).toUpperCase() || '?'
 const visible = () => typeof document === 'undefined' || document.visibilityState === 'visible'
@@ -73,7 +99,13 @@ export default function CommandCentrePage() {
   const [customTo, setCustomTo] = useState('')
   const [rangeMenu, setRangeMenu] = useState(false)
   const [sms, setSms] = useState<Sms[]>([])
+  const [smsLoaded, setSmsLoaded] = useState(false)
+  // booted: the first calls are in. Until then the board shows placeholders.
   const [booted, setBooted] = useState(false)
+  const [recoveryState, setRecoveryState] = useState<RecoveryState>('loading')
+  const [rosterLoaded, setRosterLoaded] = useState(false)
+  // Who's available, as soon as presence is in (the list itself waits for names).
+  const [teamCounts, setTeamCounts] = useState<{ available: number; total: number; oncall: number } | null>(null)
   const [nowTick, setNowTick] = useState(() => Date.now())
 
   const [hour12, setHour12] = useState(false)
@@ -131,12 +163,30 @@ export default function CommandCentrePage() {
   }
 
   // ── Who and where ────────────────────────────────────────────────────────
+  // The admin already knows the company (no wait); the last overview kept in
+  // this browser gives the timezone, stores and missed callers at once.
   useEffect(() => {
     let live = true
+    const start = (cid: string | null) => {
+      if (cid) {
+        const kept = readStored<Overview>(ovKey(cid))
+        if (kept?.timezone && Array.isArray(kept.recovery?.items)) {
+          setOv(prev => prev || { ...FALLBACK_OVERVIEW, ...kept, openNow: null, hoursToday: null })
+          setRecoveryState(st => (st === 'loading' ? 'stored' : st))
+        }
+      }
+      setCompanyId(cid)
+      if (!cid) { setBooted(true); setCallsLoading(false); setRecoveryState('live'); setRosterLoaded(true); setTeamCounts({ available: 0, total: 0, oncall: 0 }) }
+    }
+    const known = peekCompanyUser()?.companyId || null
+    if (known) start(known)
     ;(async () => {
-      let cid = peekCompanyUser()?.companyId || null
       const { data: { session } } = await supabase.auth.getSession()
-      if (!cid && typeof window !== 'undefined') {
+      if (!live) return
+      if (session?.user) setMe({ id: session.user.id, name: (session.user.user_metadata as any)?.display_name || (session.user.user_metadata as any)?.full_name || null })
+      if (known) return
+      let cid: string | null = null
+      if (typeof window !== 'undefined') {
         const h = window.location.hostname
         if (h.endsWith('.colvy.com') && h !== 'colvy.com') {
           const { data: co } = await (supabase as any).from('companies').select('id').eq('slug', h.replace('.colvy.com', '')).maybeSingle()
@@ -147,28 +197,61 @@ export default function CommandCentrePage() {
         const { data: co } = await (supabase as any).from('companies').select('id').eq('owner_id', session.user.id).maybeSingle()
         cid = co?.id || null
       }
-      if (!live) return
-      if (session?.user) setMe({ id: session.user.id, name: (session.user.user_metadata as any)?.display_name || (session.user.user_metadata as any)?.full_name || null })
-      setCompanyId(cid)
-      if (!cid) { setBooted(true); setCallsLoading(false) }
+      if (live) start(cid)
     })()
     return () => { live = false }
   }, [])
 
   // Without it the board still works: the default timezone, no stores, no
   // missed-call list (an older server or a blip), and it's tried again later.
-  const loadOverview = useCallback(async (cid: string) => {
+  // One at a time, and at most every 30 seconds unless `force` (a later ask
+  // inside the gap runs when the gap ends; a forced ask during a load runs
+  // again straight after it).
+  const ovBusy = useRef(false)
+  const ovAgain = useRef(false)
+  const ovLastAt = useRef(0)
+  const ovLater = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const loadOverview = useCallback(async (cid: string, force = false): Promise<void> => {
+    if (ovBusy.current) { if (force) ovAgain.current = true; return }
+    const wait = ovLastAt.current + OVERVIEW_GAP_MS - Date.now()
+    if (!force && wait > 0) {
+      if (!ovLater.current) ovLater.current = setTimeout(() => { ovLater.current = null; loadOverview(cid) }, wait)
+      return
+    }
+    ovBusy.current = true
+    ovLastAt.current = Date.now()
     try {
       const r = await authFetch(`/api/command-centre/overview?companyId=${encodeURIComponent(cid)}`)
-      if (r.ok) { setOv(await r.json()); return }
-    } catch {}
+      if (r.ok) {
+        const d = await r.json() as Overview
+        setOv(d)
+        setRecoveryState('live')
+        // Kept without "open now" and today's hours, which are only true today.
+        writeStored(ovKey(cid), { ...d, openNow: null, hoursToday: null })
+        return
+      }
+    } catch {} finally {
+      ovBusy.current = false
+      if (ovAgain.current) { ovAgain.current = false; setTimeout(() => loadOverview(cid, true), 0) }
+    }
     setOv(prev => prev || FALLBACK_OVERVIEW)
+    setRecoveryState(st => (st === 'loading' ? 'failed' : st === 'stored' ? 'stale' : st))
   }, [])
+  useEffect(() => () => { if (ovLater.current) clearTimeout(ovLater.current) }, [])
 
   // ── Team presence (names once; presence every 30s) ───────────────────────
+  // Names kept from the last visit show the list straight away; this visit's
+  // names replace them when they arrive.
   const namesRef = useRef<Record<string, { name: string | null; avatar_url: string | null; email?: string | null }>>({})
+  const namesFresh = useRef<Set<string>>(new Set())
+  const namesSeeded = useRef(false)
   const teamBaseRef = useRef<Map<string, { name: string | null; role: string | null }>>(new Map())
   const loadTeam = useCallback(async (cid: string, full: boolean) => {
+    if (!namesSeeded.current) {
+      namesSeeded.current = true
+      const kept = readStored<Record<string, { name: string | null; avatar_url: string | null }>>(namesKey(cid))
+      if (kept && typeof kept === 'object') for (const [u, n] of Object.entries(kept)) if (!(u in namesRef.current)) namesRef.current[u] = n
+    }
     const [membersRes, coRes, presRes] = await Promise.all([
       full ? loadStaffRows(supabase, cid, 'user_id, email, name, role').then(data => ({ data }), () => ({ data: null })) : Promise.resolve({ data: null as any }),
       full ? (supabase as any).from('companies').select('owner_id, name').eq('id', cid).maybeSingle() : Promise.resolve({ data: null }),
@@ -184,21 +267,27 @@ export default function CommandCentrePage() {
     }
     const unknown = Object.keys(presMap).filter(u => !byId.has(u))
     for (const u of unknown) byId.set(u, { name: null, role: null })
-    const need = Array.from(byId.keys()).filter(u => !(u in namesRef.current))
-    if (need.length) {
-      try {
-        const r = await authFetch('/api/team/names', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userIds: need }) })
-        const d = await r.json()
-        for (const u of need) namesRef.current[u] = d.names?.[u] || { name: null, avatar_url: null }
-      } catch {}
-    }
-    const agents: Agent[] = Array.from(byId.entries()).map(([uid, base]) => {
+    const build = (): Agent[] => Array.from(byId.entries()).map(([uid, base]) => {
       const n = namesRef.current[uid]
       const nm = n?.name || base.name || (n?.email ? String(n.email).split('@')[0] : 'Team member')
       const status: Agent['status'] = !(uid in presMap) ? 'offline' : (presMap[uid] ? 'available' : 'oncall')
       return { id: uid, name: nm, avatar: n?.avatar_url || null, role: base.role, status }
     }).sort((a, b) => ({ available: 0, oncall: 1, offline: 2 }[a.status] - { available: 0, oncall: 1, offline: 2 }[b.status]) || a.name.localeCompare(b.name))
-    setRoster(agents)
+    const ids = Array.from(byId.keys())
+    setTeamCounts({ total: ids.length, available: ids.filter(u => presMap[u] === true).length, oncall: ids.filter(u => presMap[u] === false).length })
+    const need = ids.filter(u => !namesFresh.current.has(u))
+    if (need.length) {
+      // Everyone already has a name from last time: show the list now.
+      if (need.every(u => u in namesRef.current)) { setRoster(build()); setRosterLoaded(true) }
+      try {
+        const r = await authFetch('/api/team/names', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userIds: need }) })
+        const d = await r.json()
+        for (const u of need) { namesRef.current[u] = d.names?.[u] || { name: null, avatar_url: null }; namesFresh.current.add(u) }
+        writeStored(namesKey(cid), Object.fromEntries(Object.entries(namesRef.current).map(([u, n]) => [u, { name: n?.name || null, avatar_url: n?.avatar_url || null }])))
+      } catch {}
+    }
+    setRoster(build())
+    setRosterLoaded(true)
   }, [])
 
   // ── The period ───────────────────────────────────────────────────────────
@@ -219,27 +308,60 @@ export default function CommandCentrePage() {
     return { calls: (d.calls || []) as CcCall[], truncated: d.truncated ? { total: typeof d.total === 'number' ? d.total : null } : false as const }
   }, [])
 
+  // The first load: the same calls plus the board's settings, in one request.
+  // An older server without /board: the calls on their own, as before.
+  const fetchBoard = useCallback(async (cid: string, from: number, to: number | null) => {
+    const q = new URLSearchParams({ companyId: cid, from: String(from), to: to == null ? 'open' : String(to) })
+    const r = await authFetch(`/api/command-centre/board?${q}`)
+    if (r.status === 404) return { ...(await fetchCalls(cid, from, to)), context: null }
+    const d = await r.json().catch(() => ({}))
+    if (!r.ok) throw new Error(d.error || 'Couldn’t load calls')
+    const context: Pick<Overview, 'timezone' | 'locations' | 'missedCallText' | 'phoneAgent' | 'aiPaused'> | null = d.timezone
+      ? { timezone: d.timezone, locations: d.locations || [], missedCallText: d.missedCallText || FALLBACK_OVERVIEW.missedCallText, phoneAgent: d.phoneAgent || FALLBACK_OVERVIEW.phoneAgent, aiPaused: !!d.aiPaused }
+      : null
+    return { calls: (d.calls || []) as CcCall[], truncated: d.truncated ? { total: typeof d.total === 'number' ? d.total : null } : false as const, context }
+  }, [fetchCalls])
+
   // Load the period (and today too when the period is in the past, so live
-  // calls and the activity feed are always current).
+  // calls and the activity feed are always current). The first load on a
+  // visit goes through /board; if the business turns out to be in another
+  // timezone than the one the period was worked out in, the calls are set
+  // aside and the period is asked for again in the right one.
+  const boardDone = useRef(false)
   useEffect(() => {
-    if (!companyId || !ov) return
+    if (!companyId) return
     let live = true
     setCallsLoading(true); setCallsError('')
-    const today0 = startOfDayTz(Date.now(), tz)
+    const tzUsed = tz
+    const today0 = startOfDayTz(Date.now(), tzUsed)
     const needToday = fetchTo != null && fetchTo <= today0
+    const key = callsKey(companyId, fetchFrom, fetchTo)
+    // Back on the page without a reload: the last copy at once, then fresh.
+    const hit = !needToday ? readCache<{ calls: CcCall[]; truncated: false | { total: number | null } }>(key) : undefined
+    if (hit) { setCalls(hit.calls); setTruncated(hit.truncated); setBooted(true) }
+    const boot = !boardDone.current
+    let retry = false
     Promise.all([
-      fetchCalls(companyId, fetchFrom, fetchTo),
+      boot ? fetchBoard(companyId, fetchFrom, fetchTo) : fetchCalls(companyId, fetchFrom, fetchTo).then(a => ({ ...a, context: null })),
       needToday ? fetchCalls(companyId, today0, null) : Promise.resolve({ calls: [] as CcCall[], truncated: false as const }),
     ]).then(([a, b]) => {
       if (!live) return
+      if (boot) boardDone.current = true
+      if (a.context) {
+        const ctx = a.context
+        setOv(prev => ({ ...(prev || FALLBACK_OVERVIEW), ...ctx }))
+        if (ctx.timezone !== tzUsed) { retry = true; return }
+      }
       const seen = new Set(a.calls.map(c => c.id))
-      setCalls([...b.calls.filter(c => !seen.has(c.id)), ...a.calls].sort((x, y) => Date.parse(y.created_at) - Date.parse(x.created_at)))
+      const merged = [...b.calls.filter(c => !seen.has(c.id)), ...a.calls].sort((x, y) => Date.parse(y.created_at) - Date.parse(x.created_at))
+      setCalls(merged)
       setTruncated(a.truncated)
       fetchSpan.current = { from: fetchFrom, to: fetchTo }
+      if (!needToday && merged.length <= CACHE_CALLS_MAX) writeCache(key, { calls: merged, truncated: a.truncated })
     }).catch(e => live && setCallsError(e?.message || 'Couldn’t load calls'))
-      .finally(() => { if (live) { setCallsLoading(false); setBooted(true) } })
+      .finally(() => { if (live && !retry) { setCallsLoading(false); setBooted(true) } })
     return () => { live = false }
-  }, [companyId, ov?.timezone, fetchFrom, fetchTo, fetchCalls]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [companyId, tz, fetchFrom, fetchTo, fetchCalls, fetchBoard]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Refresh the last stretch from the server (names, stores and merged
   // duplicates for new calls; status changes a realtime event may have missed).
@@ -253,12 +375,23 @@ export default function CommandCentrePage() {
     } catch {}
   }, [fetchCalls])
 
-  // Boot: overview + team.
+  // Boot: the missed callers and opening hours, and the team, alongside the
+  // board's first request (neither holds it up).
   useEffect(() => {
     if (!companyId) return
-    loadOverview(companyId)
-    loadTeam(companyId, true).catch(() => {})
+    loadOverview(companyId, true)
+    loadTeam(companyId, true).catch(() => setRosterLoaded(true))
   }, [companyId, loadOverview, loadTeam])
+
+  // Once the board is up, fetch the call drawer and Text back in the
+  // background so the first click opens them without a wait.
+  useEffect(() => {
+    if (!booted) return
+    const w = window as any
+    const warm = () => { import('./CallDrawer').catch(() => {}); import('./TextBack').catch(() => {}) }
+    const id = w.requestIdleCallback ? w.requestIdleCallback(warm, { timeout: 4000 }) : setTimeout(warm, 1500)
+    return () => { if (w.cancelIdleCallback && w.requestIdleCallback) w.cancelIdleCallback(id); else clearTimeout(id) }
+  }, [booted])
 
   // ── Keeping it live ──────────────────────────────────────────────────────
   // Realtime on `calls` patches rows as they change; a debounced refresh then
@@ -324,21 +457,30 @@ export default function CommandCentrePage() {
   }, [companyId, loadTeam, refreshRecent, loadOverview])
 
   // ── SMS (only while the SMS view is open) ────────────────────────────────
+  // The counts and the by-hour chart only need who sent each text and when,
+  // so the period's texts come without their words; the words come only for
+  // the latest few the activity list shows.
+  const [smsRecent, setSmsRecent] = useState<Sms[]>([])
   useEffect(() => {
     if (!companyId || commsMode !== 'sms') return
     let live = true
+    setSmsLoaded(false)
     const load = async () => {
       if (!visible()) return
-      let q = (supabase as any).from('messages').select('id, conversation_id, sender_type, sender_name, content, created_at, is_internal')
-        .eq('company_id', companyId).eq('delivery_channel', 'sms').gte('created_at', new Date(fetchFrom).toISOString())
-      if (fetchTo != null) q = q.lt('created_at', new Date(fetchTo).toISOString())
-      const { data } = await q.order('created_at', { ascending: false }).limit(5000)
-      if (live) setSms((data || []).filter((m: any) => !m.is_internal))
+      const inPeriod = (q: any, from: number) => { q = q.eq('company_id', companyId).eq('delivery_channel', 'sms').gte('created_at', new Date(from).toISOString()); return fetchTo != null ? q.lt('created_at', new Date(fetchTo).toISOString()) : q }
+      const [all, recent] = await Promise.all([
+        inPeriod((supabase as any).from('messages').select('id, conversation_id, sender_type, created_at, is_internal'), fetchFrom).order('created_at', { ascending: false }).limit(5000),
+        inPeriod((supabase as any).from('messages').select('id, conversation_id, sender_type, sender_name, content, created_at, is_internal'), win.from).order('created_at', { ascending: false }).limit(60),
+      ])
+      if (!live) return
+      setSms(((all.data || []) as any[]).filter(m => !m.is_internal).map(m => ({ ...m, sender_name: null, content: null })))
+      setSmsRecent(((recent.data || []) as any[]).filter(m => !m.is_internal))
+      setSmsLoaded(true)
     }
     load()
     const iv = setInterval(load, 60_000)
     return () => { live = false; clearInterval(iv) }
-  }, [companyId, commsMode, fetchFrom, fetchTo])
+  }, [companyId, commsMode, fetchFrom, fetchTo, win.from])
 
   // ── Filters ──────────────────────────────────────────────────────────────
   const agentOptions = useMemo<AgentOption[]>(() => {
@@ -384,8 +526,13 @@ export default function CommandCentrePage() {
   const rangeLabel = range === 'custom' && customFrom && customTo ? `${customFrom} to ${customTo}` : (RANGES.find(([k]) => k === range)?.[1] || 'Today')
   const isToday = range === 'today'
 
-  const recovery = ov?.recovery.items || []
-  const alerts = useMemo(() => buildAlerts({ stats, recovery, live: liveCalls, available: available.length, now: nowTick, tz, isToday }), [stats, recovery, liveCalls, available.length, nowTick, tz, isToday])
+  const recovery = useMemo(() => (recoveryState === 'stored' || recoveryState === 'live' || recoveryState === 'stale' ? ov?.recovery.items || [] : []), [recoveryState, ov])
+  const loading = !booted
+  // Nothing to warn about until the calls are in (and "nobody available" only once the team is).
+  const alerts = useMemo(() => (loading ? [] : buildAlerts({ stats, recovery, live: liveCalls, available: teamCounts ? teamCounts.available : 1, now: nowTick, tz, isToday })), [loading, stats, recovery, liveCalls, teamCounts, nowTick, tz, isToday])
+  // A number on a tile, or its placeholder while the calls load.
+  const kv = (v: React.ReactNode) => (loading ? <Skel w={52} h={22} /> : v)
+  const ks = (v: React.ReactNode) => (loading ? null : v)
 
   const logRows = useMemo(() => {
     const ids = topic ? new Set(topic.callIds) : null
@@ -530,23 +677,21 @@ export default function CommandCentrePage() {
   )
   const td: React.CSSProperties = { padding: '10px 14px', verticalAlign: 'middle' }
 
-  if (!booted && (callsLoading || !ov)) {
-    return (
-      <div style={{ padding: 24, color: 'var(--slate)', display: 'flex', alignItems: 'center', gap: 8 }}>
-        <style>{`@keyframes ccspin{to{transform:rotate(360deg)}}`}</style><Spinner size={18} /> Loading command centre…
-      </div>
-    )
-  }
-
   // ── Panels ───────────────────────────────────────────────────────────────
   const recoveryPanel = (
     <div ref={recoveryRef} style={{ ...card, padding: 0, overflow: 'hidden' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 16px 10px', flexWrap: 'wrap' }}>
         <p style={{ ...kicker, flex: 1, minWidth: 160 }}>Missed call recovery {recovery.length > 0 && <span style={{ color: C.red }}>· {recovery.length} to return</span>}</p>
-        {ov && ov.recovery.missed > 0 && <span style={{ fontSize: 11.5, color: 'var(--slate)', fontWeight: 600 }}>{ov.recovery.recovered} of {ov.recovery.missed} returned this week ({Math.round(ov.recovery.recovered / ov.recovery.missed * 100)}%)</span>}
+        {recoveryState === 'stored' && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11.5, color: 'var(--slate)', fontWeight: 600 }}><Spinner size={11} /> Updating</span>}
+        {recoveryState === 'stale' && <span style={{ fontSize: 11.5, color: C.amber, fontWeight: 600 }}>From your last visit; couldn’t refresh just now</span>}
+        {recoveryState === 'live' && ov && ov.recovery.missed > 0 && <span style={{ fontSize: 11.5, color: 'var(--slate)', fontWeight: 600 }}>{ov.recovery.recovered} of {ov.recovery.missed} returned this week ({Math.round(ov.recovery.recovered / ov.recovery.missed * 100)}%)</span>}
         <WhyInline align="right" why={<>Callers from the last 7 days whose call was missed or went to voicemail, and that nobody has rung back, been answered on a later call, or replied to in their conversation since. Automatic missed-call texts don’t count as a reply. Hidden numbers and your own team’s numbers aren’t listed.{ov?.missedCallText.enabled ? ` Your automatic missed-call text is on (${ov.missedCallText.when === 'after_hours' ? 'outside opening hours' : 'for every missed call'}).` : ' Your automatic missed-call text is off (Settings, Calls & SMS).'}</>} />
       </div>
-      {recovery.length === 0 ? (
+      {recoveryState === 'loading' ? (
+        <div style={{ padding: '0 16px 8px', borderTop: '1px solid var(--border)' }}><SkelRows n={3} /></div>
+      ) : recoveryState === 'failed' ? (
+        <div style={{ padding: '18px 16px 22px', color: 'var(--slate)', fontSize: 13 }}>Couldn’t load the missed callers just now. Colvy will try again shortly.</div>
+      ) : recovery.length === 0 ? (
         <div style={{ padding: '18px 16px 22px', display: 'flex', gap: 10, alignItems: 'center', color: 'var(--slate)', fontSize: 13 }}>
           <span style={{ color: C.green }}>{Icon.check(18)}</span> Everyone who called this week has been called or texted back.
         </div>
@@ -588,6 +733,20 @@ export default function CommandCentrePage() {
 
   const aiPanel = (() => {
     const s = stats.ai
+    if (loading) {
+      return (
+        <div style={card}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+            <span style={{ color: C.violet }}>{Icon.spark(14)}</span>
+            <p style={{ ...kicker, flex: 1 }}>AI receptionist</p>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(90px, 1fr))', gap: 8, marginBottom: 6 }}>
+            {Array.from({ length: 4 }, (_, i) => <Skel key={i} h={44} r={10} />)}
+          </div>
+          <SkelRows n={2} icon={false} pad="6px 0" />
+        </div>
+      )
+    }
     const show = ov?.phoneAgent.enabled || s.calls > 0
     return (
       <div style={{ ...card, borderColor: show ? tint(C.violet, 26) : 'var(--border)' }}>
@@ -642,7 +801,9 @@ export default function CommandCentrePage() {
         <p style={{ ...kicker, flex: 1 }}>Team leaderboard · {rangeLabel.toLowerCase()}</p>
         <WhyInline align="right" why={<>Ranked by calls each person handled: incoming calls they answered plus outgoing calls that got through. Call-backs are outgoing calls to someone whose call was missed earlier in the period. Missed calls ring the whole team, so they aren’t put against anyone. The AI receptionist has its own panel.</>} />
       </div>
-      {leaders.length === 0 ? (
+      {loading ? (
+        <SkelRows n={Math.min(limit, 4)} icon={false} pad="7px 0" />
+      ) : leaders.length === 0 ? (
         <p style={{ margin: 0, fontSize: 12.5, color: 'var(--slate)' }}>No calls handled by the team in this period.</p>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -673,8 +834,11 @@ export default function CommandCentrePage() {
 
   // ── Render ───────────────────────────────────────────────────────────────
   return (
-    <div className="cc-page" style={{ padding: narrow ? '14px 12px 28px' : '20px 24px 32px', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif', minWidth: 0, maxWidth: '100%', boxSizing: 'border-box' }}>
+    <div className="cc-page" aria-busy={loading} style={{ padding: narrow ? '14px 12px 28px' : '20px 24px 32px', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif', minWidth: 0, maxWidth: '100%', boxSizing: 'border-box' }}>
       <style>{`@keyframes ccpulse{0%,100%{opacity:1}50%{opacity:0.35}}@keyframes ccspin{to{transform:rotate(360deg)}}
+        @keyframes ccshimmer{0%{background-position:100% 0}100%{background-position:-100% 0}}
+        .cc-skel{background:linear-gradient(90deg,var(--canvas) 25%,var(--border) 50%,var(--canvas) 75%);background-size:200% 100%;animation:ccshimmer 1.3s ease-in-out infinite}
+        @media (prefers-reduced-motion: reduce){ .cc-skel{ animation: none; } }
         .cc-kpis{display:grid;gap:12px;grid-template-columns:repeat(4,minmax(0,1fr))}
         @media (min-width: 1700px){ .cc-kpis{ grid-template-columns: repeat(8,minmax(0,1fr)); } }
         @media (max-width: 900px){ .cc-kpis{ grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; } }
@@ -781,14 +945,14 @@ export default function CommandCentrePage() {
       {commsMode === 'calls' && tab === 'live' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div className="cc-kpis">
-            <Kpi label={isToday ? 'Calls today' : 'Calls'} value={stats.total} color="#3b82f6" icon={Icon.phone()} sub={`${stats.inbound} in · ${stats.outbound} out`} foot={hasPrev && <Trend cur={stats.total} prev={pstats.total} />} />
-            <Kpi label="Answered" value={stats.answered} color={C.green} icon={Icon.check()} sub={`of ${stats.inboundDone} incoming${stats.ai.calls ? ` · ${stats.ai.calls - stats.ai.missed - stats.ai.voicemail} by AI` : ''}`} foot={hasPrev && <Trend cur={stats.answered} prev={pstats.answered} />} onClick={() => goLogs('answered')} />
-            <Kpi label="Missed" value={stats.missed} color={C.red} icon={Icon.phoneMissed()} sub="no message left" foot={hasPrev && <Trend cur={stats.missed} prev={pstats.missed} invert />} onClick={() => goLogs('missed')} />
-            <Kpi label="Voicemails" value={stats.voicemail} color={C.amber} icon={Icon.vm()} foot={hasPrev && <Trend cur={stats.voicemail} prev={pstats.voicemail} invert />} onClick={() => goLogs('voicemail')} />
-            <Kpi label="Miss rate" value={`${stats.missRate}%`} color={missColor(stats.missRate)} icon={Icon.pct()} sub="missed + voicemail, of incoming" foot={hasPrev && <Trend cur={stats.missRate} prev={pstats.missRate} invert unit="pts" />} onClick={() => goLogs('unanswered', 'inbound')} />
-            <Kpi label="Avg talk time" value={fmtDur(stats.avgTalk)} color={C.violet} icon={Icon.clock()} sub={`${fmtTalk(stats.talkSecs)} in total`} foot={hasPrev && <Trend cur={stats.avgTalk} prev={pstats.avgTalk} />} />
-            <Kpi label="Available" value={available.length} color={C.green} icon={Icon.user()} sub={roster.length ? `of ${roster.length} team` : 'team'} />
-            <Kpi label="Live now" value={liveCalls.length} color={C.blue} icon={Icon.live()} sub={`${onCallAgents.length} team on a call`} />
+            <Kpi label={isToday ? 'Calls today' : 'Calls'} value={kv(stats.total)} color="#3b82f6" icon={Icon.phone()} sub={ks(`${stats.inbound} in · ${stats.outbound} out`)} foot={ks(hasPrev && <Trend cur={stats.total} prev={pstats.total} />)} />
+            <Kpi label="Answered" value={kv(stats.answered)} color={C.green} icon={Icon.check()} sub={ks(`of ${stats.inboundDone} incoming${stats.ai.calls ? ` · ${stats.ai.calls - stats.ai.missed - stats.ai.voicemail} by AI` : ''}`)} foot={ks(hasPrev && <Trend cur={stats.answered} prev={pstats.answered} />)} onClick={() => goLogs('answered')} />
+            <Kpi label="Missed" value={kv(stats.missed)} color={C.red} icon={Icon.phoneMissed()} sub="no message left" foot={ks(hasPrev && <Trend cur={stats.missed} prev={pstats.missed} invert />)} onClick={() => goLogs('missed')} />
+            <Kpi label="Voicemails" value={kv(stats.voicemail)} color={C.amber} icon={Icon.vm()} foot={ks(hasPrev && <Trend cur={stats.voicemail} prev={pstats.voicemail} invert />)} onClick={() => goLogs('voicemail')} />
+            <Kpi label="Miss rate" value={kv(`${stats.missRate}%`)} color={missColor(stats.missRate)} icon={Icon.pct()} sub="missed + voicemail, of incoming" foot={ks(hasPrev && <Trend cur={stats.missRate} prev={pstats.missRate} invert unit="pts" />)} onClick={() => goLogs('unanswered', 'inbound')} />
+            <Kpi label="Avg talk time" value={kv(fmtDur(stats.avgTalk))} color={C.violet} icon={Icon.clock()} sub={ks(`${fmtTalk(stats.talkSecs)} in total`)} foot={ks(hasPrev && <Trend cur={stats.avgTalk} prev={pstats.avgTalk} />)} />
+            <Kpi label="Available" value={teamCounts ? teamCounts.available : rosterLoaded ? available.length : <Skel w={52} h={22} />} color={C.green} icon={Icon.user()} sub={teamCounts ? (teamCounts.total ? `of ${teamCounts.total} team` : 'team') : rosterLoaded ? 'team' : null} />
+            <Kpi label="Live now" value={kv(liveCalls.length)} color={C.blue} icon={Icon.live()} sub={ks(`${teamCounts ? teamCounts.oncall : onCallAgents.length} team on a call`)} />
           </div>
 
           {alerts.length > 0 && (
@@ -818,9 +982,11 @@ export default function CommandCentrePage() {
             <div style={card}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                 <p style={kicker}>Team presence</p>
-                <span style={{ fontSize: 11, color: 'var(--slate)', fontWeight: 600 }}>{available.length} available</span>
+                {rosterLoaded && <span style={{ fontSize: 11, color: 'var(--slate)', fontWeight: 600 }}>{available.length} available</span>}
               </div>
-              {roster.length === 0 ? (
+              {!rosterLoaded ? (
+                <SkelRows n={4} pad="8px 0" />
+              ) : roster.length === 0 ? (
                 <p style={{ margin: 0, fontSize: 13, color: 'var(--slate)' }}>No team members found.</p>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 340, overflowY: 'auto' }}>
@@ -852,7 +1018,9 @@ export default function CommandCentrePage() {
               <div style={{ padding: '14px 16px 10px' }}>
                 <p style={kicker}>Live calls {liveCalls.length > 0 && <span style={{ color: 'var(--coral)' }}>· {liveCalls.length} active</span>}</p>
               </div>
-              {liveCalls.length === 0 ? (
+              {loading ? (
+                <div style={{ padding: '0 16px 8px', borderTop: '1px solid var(--border)' }}><SkelRows n={2} /></div>
+              ) : liveCalls.length === 0 ? (
                 <div style={{ padding: '34px 20px 40px', textAlign: 'center', color: 'var(--slate)' }}>
                   <p style={{ margin: 0, fontSize: 13.5, fontWeight: 700, color: 'var(--ink)' }}>No calls in progress</p>
                   <p style={{ margin: '5px 0 0', fontSize: 12 }}>Active calls appear here as they ring.</p>
@@ -877,7 +1045,9 @@ export default function CommandCentrePage() {
             {/* Activity feed */}
             <div style={card}>
               <p style={{ ...kicker, marginBottom: 12 }}>Activity feed</p>
-              {feed.length === 0 ? (
+              {loading ? (
+                <SkelRows n={5} pad="6px 0" />
+              ) : feed.length === 0 ? (
                 <p style={{ margin: 0, fontSize: 13, color: 'var(--slate)' }}>No recent calls.</p>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 340, overflowY: 'auto' }}>
@@ -915,11 +1085,11 @@ export default function CommandCentrePage() {
               <div className="cc-perf-inner" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, alignItems: 'center' }}>
                 <div style={{ minWidth: 0 }}>
                   <p style={{ ...kicker, marginBottom: 8 }}>{range === 'today' || range === 'yesterday' ? 'Calls by hour' : 'Calls by hour of day'}</p>
-                  {hourly(byHour(cur, tz), '#ff7a6b', 'call')}
+                  {loading ? <Skel h={64} r={8} /> : hourly(byHour(cur, tz), '#ff7a6b', 'call')}
                 </div>
                 <div style={{ minWidth: 0 }}>
                   <p style={{ ...kicker, marginBottom: 8 }}>Incoming calls</p>
-                  {donut(stats)}
+                  {loading ? <span style={{ display: 'flex', alignItems: 'center', gap: 16 }}><Skel w={104} h={104} r={52} style={{ flexShrink: 0 }} /><span style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8 }}><Skel w="70%" h={10} /><Skel w="60%" h={10} /><Skel w="65%" h={10} /></span></span> : donut(stats)}
                 </div>
               </div>
             </div>
@@ -932,16 +1102,16 @@ export default function CommandCentrePage() {
       {commsMode === 'calls' && tab === 'logs' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div className="cc-kpis">
-            <Kpi label="Total calls" value={logStats.total} color="#3b82f6" icon={Icon.phone()} sub={`${logStats.inbound} in · ${logStats.outbound} out`} onClick={() => setOutcomeFilter('all')} active={outcomeFilter === 'all'} />
-            <Kpi label="Answered" value={logStats.answered} color={C.green} icon={Icon.check()} sub={`of ${logStats.inboundDone} incoming`} onClick={() => setOutcomeFilter(outcomeFilter === 'answered' ? 'all' : 'answered')} active={outcomeFilter === 'answered'} />
-            <Kpi label="Missed" value={logStats.missed} color={C.red} icon={Icon.phoneMissed()} sub="no message left" onClick={() => setOutcomeFilter(outcomeFilter === 'missed' ? 'all' : 'missed')} active={outcomeFilter === 'missed'} />
-            <Kpi label="Voicemails" value={logStats.voicemail} color={C.amber} icon={Icon.vm()} onClick={() => setOutcomeFilter(outcomeFilter === 'voicemail' ? 'all' : 'voicemail')} active={outcomeFilter === 'voicemail'} />
-            <Kpi label="Miss rate" value={`${logStats.missRate}%`} color={missColor(logStats.missRate)} icon={Icon.pct()} sub="missed + voicemail, of incoming" onClick={() => setOutcomeFilter(outcomeFilter === 'unanswered' ? 'all' : 'unanswered')} active={outcomeFilter === 'unanswered'} />
-            <Kpi label="Avg talk time" value={fmtDur(logStats.avgTalk)} color={C.violet} icon={Icon.clock()} sub="answered calls, 0s left out" />
-            <Kpi label="Outgoing" value={logStats.outbound} color={C.cyan} icon={Icon.phoneOut()} sub={`${logStats.outboundConnected} got through`} onClick={() => setDirFilter(dirFilter === 'outbound' ? 'all' : 'outbound')} active={dirFilter === 'outbound'} />
-            <Kpi label="AI receptionist" value={logStats.ai.calls} color={C.violet} icon={Icon.spark(17)} sub={`${logStats.ai.messages} message${logStats.ai.messages === 1 ? '' : 's'} · ${logStats.ai.bookingLinks} booking link${logStats.ai.bookingLinks === 1 ? '' : 's'}`} onClick={() => setOutcomeFilter(outcomeFilter === 'ai' ? 'all' : 'ai')} active={outcomeFilter === 'ai'} />
+            <Kpi label="Total calls" value={kv(logStats.total)} color="#3b82f6" icon={Icon.phone()} sub={ks(`${logStats.inbound} in · ${logStats.outbound} out`)} onClick={() => setOutcomeFilter('all')} active={outcomeFilter === 'all'} />
+            <Kpi label="Answered" value={kv(logStats.answered)} color={C.green} icon={Icon.check()} sub={ks(`of ${logStats.inboundDone} incoming`)} onClick={() => setOutcomeFilter(outcomeFilter === 'answered' ? 'all' : 'answered')} active={outcomeFilter === 'answered'} />
+            <Kpi label="Missed" value={kv(logStats.missed)} color={C.red} icon={Icon.phoneMissed()} sub="no message left" onClick={() => setOutcomeFilter(outcomeFilter === 'missed' ? 'all' : 'missed')} active={outcomeFilter === 'missed'} />
+            <Kpi label="Voicemails" value={kv(logStats.voicemail)} color={C.amber} icon={Icon.vm()} onClick={() => setOutcomeFilter(outcomeFilter === 'voicemail' ? 'all' : 'voicemail')} active={outcomeFilter === 'voicemail'} />
+            <Kpi label="Miss rate" value={kv(`${logStats.missRate}%`)} color={missColor(logStats.missRate)} icon={Icon.pct()} sub="missed + voicemail, of incoming" onClick={() => setOutcomeFilter(outcomeFilter === 'unanswered' ? 'all' : 'unanswered')} active={outcomeFilter === 'unanswered'} />
+            <Kpi label="Avg talk time" value={kv(fmtDur(logStats.avgTalk))} color={C.violet} icon={Icon.clock()} sub="answered calls, 0s left out" />
+            <Kpi label="Outgoing" value={kv(logStats.outbound)} color={C.cyan} icon={Icon.phoneOut()} sub={ks(`${logStats.outboundConnected} got through`)} onClick={() => setDirFilter(dirFilter === 'outbound' ? 'all' : 'outbound')} active={dirFilter === 'outbound'} />
+            <Kpi label="AI receptionist" value={kv(logStats.ai.calls)} color={C.violet} icon={Icon.spark(17)} sub={ks(`${logStats.ai.messages} message${logStats.ai.messages === 1 ? '' : 's'} · ${logStats.ai.bookingLinks} booking link${logStats.ai.bookingLinks === 1 ? '' : 's'}`)} onClick={() => setOutcomeFilter(outcomeFilter === 'ai' ? 'all' : 'ai')} active={outcomeFilter === 'ai'} />
           </div>
-          {callsLoading && <p style={{ margin: '-4px 0 0', fontSize: 12, color: 'var(--slate)', display: 'flex', alignItems: 'center', gap: 7 }}><Spinner size={12} /> Loading the full period…</p>}
+          {callsLoading && booted && <p style={{ margin: '-4px 0 0', fontSize: 12, color: 'var(--slate)', display: 'flex', alignItems: 'center', gap: 7 }}><Spinner size={12} /> Loading the full period…</p>}
 
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
             <label style={{ flex: '1 1 240px', minWidth: 0, display: 'flex', alignItems: 'center', gap: 8, padding: '0 12px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--card,#fff)', color: 'var(--slate)' }}>
@@ -963,7 +1133,8 @@ export default function CommandCentrePage() {
           <div style={{ ...card, padding: 0, overflow: 'hidden' }}>
             {narrow ? (
               <div>
-                {tableRows.length === 0 && <p style={{ padding: 24, margin: 0, textAlign: 'center', color: 'var(--slate)', fontSize: 13 }}>{callsLoading ? 'Loading…' : 'No calls match.'}</p>}
+                {loading && <div style={{ padding: '4px 14px' }}><SkelRows n={6} /></div>}
+                {!loading && tableRows.length === 0 && <p style={{ padding: 24, margin: 0, textAlign: 'center', color: 'var(--slate)', fontSize: 13 }}>{callsLoading ? 'Loading…' : 'No calls match.'}</p>}
                 {tableRows.slice(0, shown).map(c => (
                   <div key={c.id} className="cc-row" onClick={() => setDrawer(c)} style={{ padding: '11px 14px', borderTop: '1px solid var(--border)', display: 'flex', gap: 10, alignItems: 'center' }}>
                     <span style={{ color: c.direction === 'inbound' ? C.green : C.blue }}>{c.direction === 'inbound' ? Icon.phoneIn(15) : Icon.phoneOut(15)}</span>
@@ -980,7 +1151,12 @@ export default function CommandCentrePage() {
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 820 }}>
                   {tableHead(['Date/time', 'Caller', 'Direction', 'Duration', 'Outcome', 'Answered by', 'Location', ''])}
                   <tbody>
-                    {tableRows.length === 0 && <tr><td colSpan={8} style={{ padding: 28, textAlign: 'center', color: 'var(--slate)' }}>{callsLoading ? 'Loading…' : 'No calls match.'}</td></tr>}
+                    {loading && Array.from({ length: 8 }, (_, i) => (
+                      <tr key={`sk${i}`} style={{ borderTop: '1px solid var(--border)' }}>
+                        {[90, 160, 44, 40, 70, 90, 70, 60].map((w, j) => <td key={j} style={td}><Skel w={w} h={11} /></td>)}
+                      </tr>
+                    ))}
+                    {!loading && tableRows.length === 0 && <tr><td colSpan={8} style={{ padding: 28, textAlign: 'center', color: 'var(--slate)' }}>{callsLoading ? 'Loading…' : 'No calls match.'}</td></tr>}
                     {tableRows.slice(0, shown).map(c => (
                       <tr key={c.id} className="cc-row" onClick={() => setDrawer(c)} style={{ borderTop: '1px solid var(--border)' }}>
                         <td style={{ ...td, whiteSpace: 'nowrap', color: 'var(--slate)' }}>{dateTime(c.created_at)}</td>
@@ -1008,134 +1184,149 @@ export default function CommandCentrePage() {
       )}
 
       {/* ── INSIGHTS ────────────────────────────────────────────────────────── */}
-      {commsMode === 'calls' && tab === 'insights' && companyId && (() => {
-        const grid = heatmap(cur, tz, nowTick)
-        const maxCell = Math.max(1, ...grid.flat().map(x => x.n))
-        const byLoc = new Map<string, CcCall[]>()
-        for (const c of cur) { const k = c.location_id || '__none'; (byLoc.get(k) || byLoc.set(k, []).get(k)!).push(c) }
-        const locRows = Array.from(byLoc.entries()).map(([id, arr]) => ({ name: id === '__none' ? 'No location' : (locName(id) || 'Store'), ...aggregate(arr, nowTick) })).sort((a, b) => b.total - a.total)
-        const cmp: [string, string | number, number, number, string, boolean, '%' | 'pts'][] = [
-          ['Total calls', stats.total, stats.total, pstats.total, '#3b82f6', false, '%'],
-          ['Answered', stats.answered, stats.answered, pstats.answered, C.green, false, '%'],
-          ['Missed', stats.missed, stats.missed, pstats.missed, C.red, true, '%'],
-          ['Voicemails', stats.voicemail, stats.voicemail, pstats.voicemail, C.amber, true, '%'],
-          ['Miss rate', `${stats.missRate}%`, stats.missRate, pstats.missRate, missColor(stats.missRate), true, 'pts'],
-          ['Avg talk time', fmtDur(stats.avgTalk), stats.avgTalk, pstats.avgTalk, C.violet, false, '%'],
-        ]
-        return (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            <AiSummary companyId={companyId} from={win.from} to={Number.isFinite(win.to) ? win.to : null} rangeLabel={rangeLabel}
-              activeTopic={topic?.name || null} onTopic={t => { setTopic(t); if (t) { setTab('logs'); setOutcomeFilter('all'); setDirFilter('all') } }} />
-
-            {hasPrev && pstats.inboundDone > 0 && stats.missRate > pstats.missRate && (
-              <div style={{ ...card, background: tint(C.red, 7), borderColor: tint(C.red, 25), display: 'flex', alignItems: 'center', gap: 8, color: '#b91c1c', fontSize: 13, fontWeight: 600 }}>
-                {Icon.alert()} Miss rate is up {stats.missRate - pstats.missRate} points on the period before ({pstats.missRate}% to {stats.missRate}%).
+      {commsMode === 'calls' && tab === 'insights' && companyId && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {/* Kept in one place while the calls load, so it never asks the AI twice. */}
+          <AiSummary companyId={companyId} from={win.from} to={Number.isFinite(win.to) ? win.to : null} rangeLabel={rangeLabel}
+            activeTopic={topic?.name || null} onTopic={t => { setTopic(t); if (t) { setTab('logs'); setOutcomeFilter('all'); setDirFilter('all') } }} />
+          {loading ? (
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 150px), 1fr))', gap: 12 }}>
+                {Array.from({ length: 6 }, (_, i) => <div key={i} style={{ ...card, display: 'flex', flexDirection: 'column', gap: 8 }}><Skel w="60%" h={10} /><Skel w={70} h={24} /><Skel w="50%" h={10} /></div>)}
               </div>
-            )}
+              <div style={card}><Skel w={160} h={11} /><div style={{ marginTop: 12 }}><Skel h={180} r={8} /></div></div>
+            </>
+          ) : (() => {
+            const grid = heatmap(cur, tz, nowTick)
+            const maxCell = Math.max(1, ...grid.flat().map(x => x.n))
+            const byLoc = new Map<string, CcCall[]>()
+            for (const c of cur) { const k = c.location_id || '__none'; (byLoc.get(k) || byLoc.set(k, []).get(k)!).push(c) }
+            const locRows = Array.from(byLoc.entries()).map(([id, arr]) => ({ name: id === '__none' ? 'No location' : (locName(id) || 'Store'), ...aggregate(arr, nowTick) })).sort((a, b) => b.total - a.total)
+            const cmp: [string, string | number, number, number, string, boolean, '%' | 'pts'][] = [
+              ['Total calls', stats.total, stats.total, pstats.total, '#3b82f6', false, '%'],
+              ['Answered', stats.answered, stats.answered, pstats.answered, C.green, false, '%'],
+              ['Missed', stats.missed, stats.missed, pstats.missed, C.red, true, '%'],
+              ['Voicemails', stats.voicemail, stats.voicemail, pstats.voicemail, C.amber, true, '%'],
+              ['Miss rate', `${stats.missRate}%`, stats.missRate, pstats.missRate, missColor(stats.missRate), true, 'pts'],
+              ['Avg talk time', fmtDur(stats.avgTalk), stats.avgTalk, pstats.avgTalk, C.violet, false, '%'],
+            ]
+            return (
+              <>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 150px), 1fr))', gap: 12 }}>
-              {cmp.map(([l, v, a, b, col, inv, unit]) => (
-                <div key={l} style={card}>
-                  <p style={kicker}>{l}</p>
-                  <p style={{ margin: '6px 0 4px', fontSize: 26, fontWeight: 800, color: col, letterSpacing: '-0.02em' }}>{v}</p>
-                  {hasPrev ? <Trend cur={a} prev={b} invert={inv} unit={unit} /> : <span style={{ fontSize: 11, color: 'var(--slate)' }}>All time</span>}
-                </div>
-              ))}
-            </div>
-
-            <div className="cc-two" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.5fr) minmax(0, 1fr)', gap: 16, alignItems: 'start' }}>
-              <div style={{ ...card, padding: 0, overflow: 'hidden' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '16px 16px 0' }}>
-                  <p style={{ ...kicker, flex: 1 }}>By team member · {rangeLabel.toLowerCase()}</p>
-                </div>
-                <div style={{ overflowX: 'auto', marginTop: 12 }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 600 }}>
-                    {tableHead(['Team member', 'Answered', 'Calls made', 'Got through', 'Call-backs', 'Talk time', 'Avg talk'])}
-                    <tbody>
-                      {leaders.length === 0 && <tr><td colSpan={7} style={{ padding: 20, textAlign: 'center', color: 'var(--slate)' }}>No calls handled by the team in this period.</td></tr>}
-                      {leaders.map(r => (
-                        <tr key={r.key} className="cc-row" style={{ borderTop: '1px solid var(--border)' }} onClick={() => { setAgentFilter(r.id ? `u:${r.id}` : `n:${normName(r.name)}`); setTab('logs') }}>
-                          <td style={{ ...td, fontWeight: 700, color: 'var(--ink)' }}>{r.name}</td>
-                          <td style={{ ...td, color: C.green, fontWeight: 600 }}>{r.answered}</td>
-                          <td style={td}>{r.made}</td>
-                          <td style={td}>{r.connected}</td>
-                          <td style={{ ...td, color: r.callBacks ? 'var(--coral)' : 'var(--slate)', fontWeight: 600 }}>{r.callBacks}</td>
-                          <td style={{ ...td, color: 'var(--slate)' }}>{fmtTalk(r.talkSecs)}</td>
-                          <td style={{ ...td, color: 'var(--slate)' }}>{fmtDur(r.avgTalk)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-              {aiPanel}
-            </div>
-
-            <div style={card}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
-                <p style={kicker}>Volume by day and hour</p>
-                <p style={{ margin: 0, fontSize: 10.5, color: 'var(--slate)' }}>darker = more calls · red corner = most incoming calls unanswered</p>
-              </div>
-              <div style={{ overflowX: 'auto' }}>
-                <div style={{ minWidth: 560 }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: '34px repeat(24, 1fr)', gap: 2, marginBottom: 2 }}>
-                    <span />
-                    {Array.from({ length: 24 }, (_, h) => <span key={h} style={{ fontSize: 8.5, color: 'var(--slate)', textAlign: 'center' }}>{hour12 ? hourLabel(h, true).replace(/(am|pm)$/, '') : h}</span>)}
+                {hasPrev && pstats.inboundDone > 0 && stats.missRate > pstats.missRate && (
+                  <div style={{ ...card, background: tint(C.red, 7), borderColor: tint(C.red, 25), display: 'flex', alignItems: 'center', gap: 8, color: '#b91c1c', fontSize: 13, fontWeight: 600 }}>
+                    {Icon.alert()} Miss rate is up {stats.missRate - pstats.missRate} points on the period before ({pstats.missRate}% to {stats.missRate}%).
                   </div>
-                  {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day, di) => (
-                    <div key={day} style={{ display: 'grid', gridTemplateColumns: '34px repeat(24, 1fr)', gap: 2, marginBottom: 2 }}>
-                      <span style={{ fontSize: 10, color: 'var(--slate)', fontWeight: 600, display: 'flex', alignItems: 'center' }}>{day}</span>
-                      {grid[di].map((cell, hi) => {
-                        const bg = cell.n === 0 ? 'var(--canvas)' : tint('#ff7a6b', Math.round(20 + cell.n / maxCell * 70))
-                        const highMiss = cell.n >= 2 && cell.miss / cell.n > 0.4
-                        return (
-                          <div key={hi} title={`${day} ${hourLabel(hi, hour12)}: ${cell.n} call${cell.n === 1 ? '' : 's'}${cell.miss ? `, ${cell.miss} not answered` : ''}`}
-                            style={{ position: 'relative', height: 22, borderRadius: 3, background: bg, border: '1px solid var(--border)' }}>
-                            {highMiss && <span style={{ position: 'absolute', top: 0, right: 0, width: 0, height: 0, borderTop: `5px solid ${C.red}`, borderLeft: '5px solid transparent' }} />}
-                          </div>
-                        )
-                      })}
+                )}
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 150px), 1fr))', gap: 12 }}>
+                  {cmp.map(([l, v, a, b, col, inv, unit]) => (
+                    <div key={l} style={card}>
+                      <p style={kicker}>{l}</p>
+                      <p style={{ margin: '6px 0 4px', fontSize: 26, fontWeight: 800, color: col, letterSpacing: '-0.02em' }}>{v}</p>
+                      {hasPrev ? <Trend cur={a} prev={b} invert={inv} unit={unit} /> : <span style={{ fontSize: 11, color: 'var(--slate)' }}>All time</span>}
                     </div>
                   ))}
                 </div>
-              </div>
-            </div>
 
-            {locRows.length > 0 && (
-              <div style={{ ...card, padding: 0, overflow: 'hidden' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '16px 16px 0' }}>
-                  <p style={{ ...kicker, flex: 1 }}>Locations</p>
-                  <WhyInline align="right" why={<>A call belongs to the store whose number was rung (or that rang out). If that isn’t known, the store the conversation is assigned to, then the customer’s store.</>} />
+                <div className="cc-two" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.5fr) minmax(0, 1fr)', gap: 16, alignItems: 'start' }}>
+                  <div style={{ ...card, padding: 0, overflow: 'hidden' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '16px 16px 0' }}>
+                      <p style={{ ...kicker, flex: 1 }}>By team member · {rangeLabel.toLowerCase()}</p>
+                    </div>
+                    <div style={{ overflowX: 'auto', marginTop: 12 }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 600 }}>
+                        {tableHead(['Team member', 'Answered', 'Calls made', 'Got through', 'Call-backs', 'Talk time', 'Avg talk'])}
+                        <tbody>
+                          {leaders.length === 0 && <tr><td colSpan={7} style={{ padding: 20, textAlign: 'center', color: 'var(--slate)' }}>No calls handled by the team in this period.</td></tr>}
+                          {leaders.map(r => (
+                            <tr key={r.key} className="cc-row" style={{ borderTop: '1px solid var(--border)' }} onClick={() => { setAgentFilter(r.id ? `u:${r.id}` : `n:${normName(r.name)}`); setTab('logs') }}>
+                              <td style={{ ...td, fontWeight: 700, color: 'var(--ink)' }}>{r.name}</td>
+                              <td style={{ ...td, color: C.green, fontWeight: 600 }}>{r.answered}</td>
+                              <td style={td}>{r.made}</td>
+                              <td style={td}>{r.connected}</td>
+                              <td style={{ ...td, color: r.callBacks ? 'var(--coral)' : 'var(--slate)', fontWeight: 600 }}>{r.callBacks}</td>
+                              <td style={{ ...td, color: 'var(--slate)' }}>{fmtTalk(r.talkSecs)}</td>
+                              <td style={{ ...td, color: 'var(--slate)' }}>{fmtDur(r.avgTalk)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                  {aiPanel}
                 </div>
-                <div style={{ overflowX: 'auto', marginTop: 12 }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 560 }}>
-                    {tableHead(['Location', 'Calls', 'Answered', 'Missed', 'Voicemail', 'Miss rate', 'Avg talk'])}
-                    <tbody>
-                      {locRows.map(r => (
-                        <tr key={r.name} style={{ borderTop: '1px solid var(--border)' }}>
-                          <td style={{ ...td, fontWeight: 700, color: 'var(--ink)' }}>{r.name}</td>
-                          <td style={td}>{r.total}</td>
-                          <td style={{ ...td, color: C.green, fontWeight: 600 }}>{r.answered}</td>
-                          <td style={{ ...td, color: C.red, fontWeight: 600 }}>{r.missed}</td>
-                          <td style={{ ...td, color: C.amber, fontWeight: 600 }}>{r.voicemail}</td>
-                          <td style={{ ...td, color: missColor(r.missRate), fontWeight: 600 }}>{r.missRate}%</td>
-                          <td style={{ ...td, color: 'var(--slate)' }}>{fmtDur(r.avgTalk)}</td>
-                        </tr>
+
+                <div style={card}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+                    <p style={kicker}>Volume by day and hour</p>
+                    <p style={{ margin: 0, fontSize: 10.5, color: 'var(--slate)' }}>darker = more calls · red corner = most incoming calls unanswered</p>
+                  </div>
+                  <div style={{ overflowX: 'auto' }}>
+                    <div style={{ minWidth: 560 }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '34px repeat(24, 1fr)', gap: 2, marginBottom: 2 }}>
+                        <span />
+                        {Array.from({ length: 24 }, (_, h) => <span key={h} style={{ fontSize: 8.5, color: 'var(--slate)', textAlign: 'center' }}>{hour12 ? hourLabel(h, true).replace(/(am|pm)$/, '') : h}</span>)}
+                      </div>
+                      {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day, di) => (
+                        <div key={day} style={{ display: 'grid', gridTemplateColumns: '34px repeat(24, 1fr)', gap: 2, marginBottom: 2 }}>
+                          <span style={{ fontSize: 10, color: 'var(--slate)', fontWeight: 600, display: 'flex', alignItems: 'center' }}>{day}</span>
+                          {grid[di].map((cell, hi) => {
+                            const bg = cell.n === 0 ? 'var(--canvas)' : tint('#ff7a6b', Math.round(20 + cell.n / maxCell * 70))
+                            const highMiss = cell.n >= 2 && cell.miss / cell.n > 0.4
+                            return (
+                              <div key={hi} title={`${day} ${hourLabel(hi, hour12)}: ${cell.n} call${cell.n === 1 ? '' : 's'}${cell.miss ? `, ${cell.miss} not answered` : ''}`}
+                                style={{ position: 'relative', height: 22, borderRadius: 3, background: bg, border: '1px solid var(--border)' }}>
+                                {highMiss && <span style={{ position: 'absolute', top: 0, right: 0, width: 0, height: 0, borderTop: `5px solid ${C.red}`, borderLeft: '5px solid transparent' }} />}
+                              </div>
+                            )
+                          })}
+                        </div>
                       ))}
-                    </tbody>
-                  </table>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            )}
-          </div>
-        )
-      })()}
+
+                {locRows.length > 0 && (
+                  <div style={{ ...card, padding: 0, overflow: 'hidden' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '16px 16px 0' }}>
+                      <p style={{ ...kicker, flex: 1 }}>Locations</p>
+                      <WhyInline align="right" why={<>A call belongs to the store whose number was rung (or that rang out). If that isn’t known, the store the conversation is assigned to, then the customer’s store.</>} />
+                    </div>
+                    <div style={{ overflowX: 'auto', marginTop: 12 }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 560 }}>
+                        {tableHead(['Location', 'Calls', 'Answered', 'Missed', 'Voicemail', 'Miss rate', 'Avg talk'])}
+                        <tbody>
+                          {locRows.map(r => (
+                            <tr key={r.name} style={{ borderTop: '1px solid var(--border)' }}>
+                              <td style={{ ...td, fontWeight: 700, color: 'var(--ink)' }}>{r.name}</td>
+                              <td style={td}>{r.total}</td>
+                              <td style={{ ...td, color: C.green, fontWeight: 600 }}>{r.answered}</td>
+                              <td style={{ ...td, color: C.red, fontWeight: 600 }}>{r.missed}</td>
+                              <td style={{ ...td, color: C.amber, fontWeight: 600 }}>{r.voicemail}</td>
+                              <td style={{ ...td, color: missColor(r.missRate), fontWeight: 600 }}>{r.missRate}%</td>
+                              <td style={{ ...td, color: 'var(--slate)' }}>{fmtDur(r.avgTalk)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </>
+            )
+          })()}
+        </div>
+      )}
 
       {/* ── SMS BOARD ───────────────────────────────────────────────────────── */}
       {commsMode === 'sms' && (() => {
         const inW = (m: Sms, a: number, b: number) => { const t = Date.parse(m.created_at); return t >= a && t < b }
         const agg = (arr: Sms[]) => { const r = arr.filter(smsInbound).length; return { total: arr.length, received: r, sent: arr.length - r, chats: new Set(arr.map(m => m.conversation_id).filter(Boolean)).size } }
         const curS = sms.filter(m => inW(m, win.from, win.to))
+        const recentS = smsRecent.filter(m => inW(m, win.from, win.to)).slice(0, 40)
+        const sv = (v: React.ReactNode) => (smsLoaded ? v : <Skel w={52} h={22} />)
+        const sf = (v: React.ReactNode) => (smsLoaded ? v : null)
         const t = agg(curS), y = agg(prevTo > win.prevFrom ? sms.filter(m => inW(m, win.prevFrom, prevTo)) : [])
         const total = t.total || 1
         const rPct = t.received / total * 100, sPct = t.sent / total * 100
@@ -1143,10 +1334,10 @@ export default function CommandCentrePage() {
         return (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 158px), 1fr))', gap: 12 }}>
-              <Kpi label={isToday ? 'Messages today' : 'Messages'} value={t.total} color="#3b82f6" icon={Icon.chat()} foot={hasPrev && <Trend cur={t.total} prev={y.total} />} />
-              <Kpi label="Received" value={t.received} color={C.green} icon={Icon.arrowIn()} foot={hasPrev && <Trend cur={t.received} prev={y.received} />} />
-              <Kpi label="Sent" value={t.sent} color={C.blue} icon={Icon.send()} sub="includes automatic texts" foot={hasPrev && <Trend cur={t.sent} prev={y.sent} />} />
-              <Kpi label="Conversations" value={t.chats} color={C.violet} icon={Icon.users()} foot={hasPrev && <Trend cur={t.chats} prev={y.chats} />} />
+              <Kpi label={isToday ? 'Messages today' : 'Messages'} value={sv(t.total)} color="#3b82f6" icon={Icon.chat()} foot={sf(hasPrev && <Trend cur={t.total} prev={y.total} />)} />
+              <Kpi label="Received" value={sv(t.received)} color={C.green} icon={Icon.arrowIn()} foot={sf(hasPrev && <Trend cur={t.received} prev={y.received} />)} />
+              <Kpi label="Sent" value={sv(t.sent)} color={C.blue} icon={Icon.send()} sub="includes automatic texts" foot={sf(hasPrev && <Trend cur={t.sent} prev={y.sent} />)} />
+              <Kpi label="Conversations" value={sv(t.chats)} color={C.violet} icon={Icon.users()} foot={sf(hasPrev && <Trend cur={t.chats} prev={y.chats} />)} />
             </div>
             <div className="cc-two" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1.4fr)', gap: 16, alignItems: 'start' }}>
               <div style={card}>
@@ -1154,28 +1345,30 @@ export default function CommandCentrePage() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
                   <div style={{ position: 'relative', width: 104, height: 104, borderRadius: '50%', background: smsDonutBg, flexShrink: 0 }}>
                     <div style={{ position: 'absolute', inset: 12, borderRadius: '50%', background: 'var(--card,#fff)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-                      <span style={{ fontSize: 20, fontWeight: 800, color: 'var(--ink)', lineHeight: 1 }}>{t.total}</span>
+                      <span style={{ fontSize: 20, fontWeight: 800, color: 'var(--ink)', lineHeight: 1 }}>{sv(t.total)}</span>
                       <span style={{ ...kicker, marginTop: 2 }}>Total</span>
                     </div>
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 7, fontSize: 12.5 }}>
                     {([['Received', t.received, C.green], ['Sent', t.sent, C.blue]] as [string, number, string][]).map(([l, v, col]) => (
                       <span key={l} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, color: 'var(--slate)' }}>
-                        <span style={{ width: 9, height: 9, borderRadius: 3, background: col }} /><strong style={{ color: 'var(--ink)' }}>{v}</strong> {l}
+                        <span style={{ width: 9, height: 9, borderRadius: 3, background: col }} /><strong style={{ color: 'var(--ink)' }}>{smsLoaded ? v : <Skel w={18} h={11} />}</strong> {l}
                       </span>
                     ))}
                   </div>
                 </div>
                 <p style={{ ...kicker, margin: '16px 0 8px' }}>Messages by hour</p>
-                {hourly(byHour(curS, tz), '#3b82f6', 'message')}
+                {smsLoaded ? hourly(byHour(curS, tz), '#3b82f6', 'message') : <Skel h={64} r={8} />}
               </div>
               <div style={card}>
                 <p style={{ ...kicker, marginBottom: 12 }}>SMS activity</p>
-                {curS.length === 0 ? (
+                {!smsLoaded ? (
+                  <SkelRows n={5} pad="6px 0" />
+                ) : recentS.length === 0 ? (
                   <p style={{ margin: 0, fontSize: 13, color: 'var(--slate)' }}>No texts in this period.</p>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 12, maxHeight: 420, overflowY: 'auto' }}>
-                    {curS.slice(0, 40).map(m => {
+                    {recentS.map(m => {
                       const inb = smsInbound(m)
                       return (
                         <a key={m.id} href={m.conversation_id ? `/admin/inbox?conversation=${m.conversation_id}` : undefined} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', textDecoration: 'none' }}>
@@ -1204,7 +1397,7 @@ export default function CommandCentrePage() {
       {textBack && companyId && (
         <TextBack companyId={companyId} callId={textBack.call.id} who={textBack.who} senderName={myName}
           onClose={() => setTextBack(null)}
-          onSent={() => { setTextBack(null); flash('Text sent'); loadOverview(companyId) }} />
+          onSent={() => { setTextBack(null); flash('Text sent'); loadOverview(companyId, true) }} />
       )}
       {toast && (
         <div role="status" style={{ position: 'fixed', bottom: 22, left: '50%', transform: 'translateX(-50%)', zIndex: 1100, padding: '10px 16px', borderRadius: 12, background: '#111827', color: '#fff', fontSize: 13, fontWeight: 600, boxShadow: '0 10px 30px rgba(0,0,0,0.3)', display: 'inline-flex', alignItems: 'center', gap: 8 }}>

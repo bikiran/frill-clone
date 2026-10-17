@@ -11,7 +11,7 @@ import { authFetch } from '@/lib/auth-fetch'
 import CallCard from '@/components/CallCard'
 import { WhyLink } from '@/components/WhyAgent'
 import { callerDisplay, outcomeLabel, aiOutcomeOf, AI_OUTCOME_LABEL, fmtDur, formatPhone, otherNumber, type CcCall } from '@/lib/command-centre'
-import { Icon, Chip, C, btn, kicker, Spinner, tint } from './ui'
+import { Icon, Chip, C, btn, kicker, Spinner, tint, OUTCOME_COLOR } from './ui'
 
 type Detail = {
   call: CcCall
@@ -28,8 +28,6 @@ type Detail = {
 
 const REASON: Record<string, string> = { test: 'a test call from one of your test numbers', after_hours: 'it came in outside opening hours', no_answer: 'nobody on the team picked up', always: 'it answers every call' }
 const NO_TEXT: Record<string, string> = { withheld: 'Hidden number', short_code: 'Can’t get texts', international: 'Overseas number', not_mobile: 'Landline' }
-
-export const OUTCOME_COLOR: Record<string, string> = { answered: C.green, connected: C.green, missed: C.red, voicemail: C.amber, live: C.blue, no_answer: '#6b6b70' }
 
 export default function CallDrawer({ companyId, call, tz, hour12, locationName, onClose, onCallBack, onTextBack }: {
   companyId: string; call: CcCall; tz: string; hour12: boolean; locationName: string | null

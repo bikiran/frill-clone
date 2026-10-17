@@ -37,7 +37,11 @@ export type CallToReturn = {
   voicemail: boolean
   textedBack: boolean
 }
-export type MissedCallOutcome = { missed: number; recovered: number; textedBack: number; toReturn: CallToReturn[] }
+export type MissedCallOutcome = {
+  missed: number; recovered: number; textedBack: number; toReturn: CallToReturn[]
+  /** With `names: true`: the callers' contact names by contact id (read alongside, saving the caller a round trip). */
+  names?: Record<string, string | null>
+}
 
 export const NO_MISSED_CALLS: MissedCallOutcome = { missed: 0, recovered: 0, textedBack: 0, toReturn: [] }
 
@@ -117,22 +121,53 @@ export function computeMissedCallOutcome(inp: {
 }
 
 const uniq = (a: any[]) => Array.from(new Set(a.filter(Boolean))) as string[]
+const chunked = <T,>(a: T[], n: number) => { const out: T[][] = []; for (let i = 0; i < a.length; i += n) out.push(a.slice(i, i + n)); return out }
 
-// PostgREST hands back at most 1000 rows a request, so page through.
+/** A few at a time, in order. */
+async function inTurns<T, R>(items: T[], limit: number, fn: (x: T) => Promise<R>): Promise<R[]> {
+  const out: R[] = new Array(items.length)
+  let i = 0
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (i < items.length) { const k = i++; out[k] = await fn(items[k]) }
+  }))
+  return out
+}
+
+// PostgREST hands back at most 1000 rows a request, so page through: the
+// first page on its own (it usually holds everything), then the rest four at
+// a time rather than one after another. Rows are read oldest first, so a row
+// added meanwhile lands at the end and never shifts a page already read.
 async function pages(build: () => any, cap = 10000): Promise<any[]> {
-  const out: any[] = []
-  for (let from = 0; from < cap; from += 1000) {
+  const get = async (from: number) => {
     const { data, error } = await build().range(from, from + 999)
     if (error) throw new Error(error.message)
-    if (!data?.length) break
-    out.push(...data)
-    if (data.length < 1000) break
+    return (data || []) as any[]
+  }
+  const out: any[] = await get(0)
+  let more = out.length >= 1000
+  let next = 1000
+  while (more && next < cap) {
+    const starts: number[] = []
+    for (let k = 0; k < 4 && next + k * 1000 < cap; k++) starts.push(next + k * 1000)
+    const wave = await Promise.all(starts.map(get))
+    for (const rows of wave) {
+      out.push(...rows)
+      if (rows.length < 1000) { more = false; break }
+    }
+    next = starts[starts.length - 1] + 1000
   }
   return out
 }
 
-/** Missed calls since `since` (default: the last 7 days), and which were recovered. */
-export async function missedCallOutcome(db: any, companyId: string, opts: { since?: Date; now?: Date } = {}): Promise<MissedCallOutcome> {
+/**
+ * Missed calls since `since` (default: the last 7 days), and which were recovered.
+ *
+ * Two round trips for a normal week: the calls; then the business's own
+ * numbers, the callers' other conversations, the replies in the missed calls'
+ * own conversations (and, with `names`, the callers' contact names) side by
+ * side. A third only when a caller has other conversations to check.
+ */
+export async function missedCallOutcome(db: any, companyId: string, opts: { since?: Date; now?: Date; names?: boolean } = {}): Promise<MissedCallOutcome> {
   const now = (opts.now || new Date()).getTime()
   const since = opts.since ? opts.since.getTime() : now - 7 * DAY
   const sinceIso = new Date(since).toISOString()
@@ -143,28 +178,35 @@ export async function missedCallOutcome(db: any, companyId: string, opts: { sinc
   const missed = calls.filter(c => isMissedInbound(c, now))
   if (!missed.length) return NO_MISSED_CALLS
 
-  // The callers' other conversations, and the business's own numbers.
-  const contactIds = uniq(missed.map(c => c.contact_id))
-  const contactConvs: Record<string, string[]> = {}
-  const [own] = await Promise.all([
-    businessNumbers(db, companyId),
-    (async () => {
-      for (let i = 0; i < contactIds.length; i += 100) {
-        const { data } = await db.from('conversations').select('id, contact_id')
-          .eq('company_id', companyId).in('contact_id', contactIds.slice(i, i + 100)).limit(1000)
-        for (const r of data || []) (contactConvs[r.contact_id] ||= []).push(r.id)
-      }
-    })(),
-  ])
+  // What the business sent in these conversations since the window began.
+  const repliesIn = async (convIds: string[]) => (await inTurns(chunked(convIds, 100), 4, chunk => pages(() => db.from('messages').select('conversation_id, created_at, metadata, is_internal')
+    .in('conversation_id', chunk).eq('sender_type', 'agent').gte('created_at', sinceIso)
+    .order('created_at', { ascending: true }), 5000))).flat()
 
-  // What the business sent in those conversations since the window began.
-  const convIds = uniq([...missed.map(c => c.conversation_id), ...Object.values(contactConvs).flat()])
-  const replies: any[] = []
-  for (let i = 0; i < convIds.length; i += 100) {
-    const chunk = convIds.slice(i, i + 100)
-    replies.push(...await pages(() => db.from('messages').select('conversation_id, created_at, metadata, is_internal')
-      .in('conversation_id', chunk).eq('sender_type', 'agent').gte('created_at', sinceIso)
-      .order('created_at', { ascending: true }), 5000))
-  }
-  return computeMissedCallOutcome({ calls, replies, contactConvs, ownKeys: own.all, since, now })
+  // The callers' other conversations, the business's own numbers, and the
+  // replies in the missed calls' own conversations, together.
+  const contactIds = uniq(missed.map(c => c.contact_id))
+  const direct = uniq(missed.map(c => c.conversation_id))
+  const contactConvs: Record<string, string[]> = {}
+  const [own, convRows, directReplies, nameRows] = await Promise.all([
+    businessNumbers(db, companyId),
+    inTurns(chunked(contactIds, 100), 4, async ids => {
+      const { data } = await db.from('conversations').select('id, contact_id')
+        .eq('company_id', companyId).in('contact_id', ids).limit(1000)
+      return (data || []) as any[]
+    }),
+    repliesIn(direct),
+    opts.names ? inTurns(chunked(contactIds, 200), 4, async ids => {
+      try { const { data, error } = await db.from('contacts').select('id, name').eq('company_id', companyId).in('id', ids); return error ? [] : (data || []) as any[] } catch { return [] as any[] }
+    }) : Promise.resolve(null),
+  ])
+  for (const r of convRows.flat()) (contactConvs[r.contact_id] ||= []).push(r.id)
+
+  // Then replies in those other conversations, if any.
+  const seen = new Set(direct)
+  const extra = uniq(Object.values(contactConvs).flat()).filter(id => !seen.has(id))
+  const replies = extra.length ? [...directReplies, ...await repliesIn(extra)] : directReplies
+  const out = computeMissedCallOutcome({ calls, replies, contactConvs, ownKeys: own.all, since, now })
+  if (nameRows) out.names = Object.fromEntries(nameRows.flat().map((c: any) => [String(c.id), c.name ?? null]))
+  return out
 }
