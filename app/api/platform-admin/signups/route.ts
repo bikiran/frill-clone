@@ -4,10 +4,10 @@ import { logSuperAdminAudit } from '@/lib/super-admin-audit'
 import { sendCustomerEmail } from '@/lib/customer-email'
 import {
   TABLE, listSignups, presentSignup, recordSignupEvent, syncSignupContact, removeSignupContact, colvyWorkspace, cleanEmail,
-  signupSmsHealth, backfillSignupContacts, leadWorkspaceSetting, setLeadWorkspaceSetting, platformAdminIn, claimRate, globalCapStatus,
+  signupSmsHealth, backfillSignupContacts, leadWorkspaceSetting, setLeadWorkspaceSetting, platformAdminIn, claimRate, globalCapStatus, reconcileDeliveries,
   type ListFilter, type ListRange,
 } from '@/lib/signup-attempts'
-import { smsConfigured, voiceFallbackReady, smsConfigProblem, smsSender, sendTestSms, messageStatus } from '@/lib/signup-sms'
+import { smsConfigured, voiceFallbackReady, smsConfigProblem, smsSender, sendTestSms, messageStatus, signupDeliveryStatus } from '@/lib/signup-sms'
 import { normaliseSignupMobile, explainDeliveryError, destinationAllowed } from '@/lib/signup-delivery'
 
 export const dynamic = 'force-dynamic'
@@ -30,6 +30,10 @@ export const maxDuration = 60
  *      { action: 'crm_backfill', dryRun }   "Add all to CRM": count first, then run
  *      { action: 'test_sms', phone }   "Send test SMS to me" from the sign-up code sender
  *      (the admin's own mobile; 5 an hour), then { action: 'test_sms_status', sid }
+ *      { action: 'sms_reconcile' }   "Check with Twilio": fetch the delivery reports
+ *      that never arrived (texts and calls of the last 7 days; 25 a run, 10 runs an hour)
+ *      { action: 'crm_add', id }   add or refresh this sign-up's contact in Colvy's CRM
+ *      now (also a suspicious one: the admin chose to), then open it
  * Every action is written to the super admin audit log.
  */
 const FILTERS: ListFilter[] = ['all', 'abandoned', 'suspicious', 'completed', 'spam']
@@ -134,6 +138,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, status: st.status, errorCode: st.errorCode, label: e ? e.label : null, explain: e ? e.explain : null })
   }
 
+  if (action === 'sms_reconcile') {
+    const rate = await claimRate(db, [`smsreconcile:${who.id}`], [10], 3600)
+    if (rate.over) return NextResponse.json({ error: 'That’s 10 checks this hour. Try again later.' }, { status: 429 })
+    const out = await reconcileDeliveries(db, signupDeliveryStatus)
+    if (!out.ok) return NextResponse.json({ error: out.missing ? 'Run COLVY_V390_SIGNUP_ATTEMPTS.sql first.' : 'Couldn’t check with Twilio.', ...out }, { status: out.missing ? 409 : 500 })
+    await logSuperAdminAudit(db, { adminId: who.id, adminEmail: who.email, action: 'signup_sms_reconcile', summary: `Checked ${out.checked} sign-up code${out.checked === 1 ? '' : 's'} with Twilio`, detail: out })
+    const health = await signupSmsHealth(db)
+    return NextResponse.json({ ...out, sms: { ...health, configured: smsConfigured(), voiceFallback: voiceFallbackReady(), problem: smsConfigProblem(), sender: senderLabel(smsSender()) } })
+  }
+
   if (action === 'crm_backfill') {
     const dryRun = body?.dryRun !== false
     const offset = Math.max(0, Math.floor(Number(body?.offset) || 0))
@@ -179,6 +193,18 @@ export async function POST(req: NextRequest) {
     if (saved?.contact_id) await syncSignupContact(db, saved)
     await logSuperAdminAudit(db, { adminId: who.id, adminEmail: who.email, action: spam ? 'signup_marked_spam' : 'signup_unmarked_spam', summary: `${spam ? 'Marked' : 'Unmarked'} the sign-up for ${row.email} as spam`, detail: { id: row.id, email: row.email } })
     return NextResponse.json({ ok: true, row: saved ? presentSignup(saved) : null })
+  }
+
+  if (action === 'crm_add') {
+    if (row.legacy) return NextResponse.json({ error: 'Run COLVY_V390_SIGNUP_ATTEMPTS.sql to add sign-ups to the CRM.' }, { status: 409 })
+    if (row.spam_at) return NextResponse.json({ error: 'This sign-up is marked as spam. Unmark it first.' }, { status: 409 })
+    const co = await colvyWorkspace(db)
+    if (!co) return NextResponse.json({ error: 'No workspace is set for sign-up leads. Choose one on the Signups page first.' }, { status: 400 })
+    const contactId = await syncSignupContact(db, row, { force: true })
+    if (!contactId) return NextResponse.json({ error: 'They couldn’t be added: a customer in the CRM already has this email, and it isn’t verified yet.' }, { status: 409 })
+    if (contactId !== row.contact_id) await db.from(TABLE).update({ contact_id: contactId, contact_synced_at: new Date().toISOString() }).eq('id', row.id)
+    if (!row.contact_id) await logSuperAdminAudit(db, { adminId: who.id, adminEmail: who.email, companyId: co.id, action: 'signup_crm_added', summary: `Added ${row.email} to ${co.name}’s CRM`, detail: { id: row.id, contactId } })
+    return NextResponse.json({ ok: true, contactId, workspace: { id: co.id, slug: co.slug, name: co.name } })
   }
 
   if (action === 'delete') {

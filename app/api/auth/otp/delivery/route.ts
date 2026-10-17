@@ -15,7 +15,7 @@ export const dynamic = 'force-dynamic'
  * blocked. Only for the browser holding the sign-up token; answers in plain
  * words (Twilio's codes stay in super admin → Signups).
  *
- *   { state: 'none' | 'sending' | 'delivered' | 'answered' | 'not_delivered' | 'send_failed' | 'no_report',
+ *   { state: 'none' | 'sending' | 'delivered' | 'answered' | 'not_delivered' | 'send_failed' | 'no_report' | 'untracked',
  *     channel, message?, voiceAvailable }
  */
 export async function POST(req: NextRequest) {

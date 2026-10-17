@@ -192,3 +192,16 @@ export async function messageStatus(sid: string) {
   if (!tw) return null
   try { return await tw.getMessage(sid) } catch { return null }
 }
+
+/** "Check with Twilio": a sign-up text's or call's status straight from Twilio (null when it can't be read). */
+export async function signupDeliveryStatus(sid: string, channel: 'sms' | 'voice'): Promise<{ status: string | null; errorCode: string | null } | null> {
+  const tw = platformTwilio()
+  if (!tw) return null
+  const ok = channel === 'voice' ? /^CA[0-9a-f]{32}$/i.test(sid) : /^(SM|MM)[0-9a-f]{32}$/i.test(sid)
+  if (!ok) return null
+  try {
+    if (channel === 'voice') { const c = await tw.getCall(sid); return { status: c.status, errorCode: null } }
+    const m = await tw.getMessage(sid)
+    return { status: m.status, errorCode: m.errorCode }
+  } catch { return null }
+}
