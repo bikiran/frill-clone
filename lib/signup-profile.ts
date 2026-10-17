@@ -159,18 +159,26 @@ const STREET_TYPES = new Set([
   'pl', 'place', 'pde', 'parade', 'bvd', 'blvd', 'boulevard', 'ln', 'lane', 'tce', 'terrace', 'way', 'cl', 'close', 'cct', 'circuit',
   'gr', 'gve', 'grove', 'esp', 'esplanade', 'sq', 'square', 'mall', 'arcade', 'pkwy', 'parkway', 'plaza', 'prom', 'promenade', 'qy', 'quay',
 ])
+const streetType = (w?: string) => !!w && STREET_TYPES.has(w.toLowerCase().replace(/\.$/, ''))
+// Suburbs named for a saint, which a street named like a street type runs
+// into on one line ("12 Esplanade St Kilda": Esplanade, in St Kilda).
+const SAINT_SUBURBS = new Set(['kilda', 'albans', 'ives', 'marys', 'leonards', 'peters', 'lucia', 'clair', 'helens', 'helena', 'andrews', 'arnaud', 'georges', 'johns', 'morris', 'agnes', 'james', 'huberts', 'lawrence'])
 /**
  * "5 Clunes Avenue Dallas" → street "5 Clunes Avenue", suburb "Dallas": the
  * first street type that follows a name ("12 St Georges Rd Northcote" keeps
- * its saint; "12 Fitzroy St St Kilda" keeps the suburb's). Null when there's
- * no street type with a suburb after it.
+ * its saint; "12 Fitzroy St St Kilda" keeps the suburb's). A street named
+ * like a street type then a saint's suburb ("12 Esplanade St Kilda") splits
+ * before the saint. Null when there's no street type with a suburb after it.
  */
 function splitStreet(s: string): { street: string; suburb: string } | null {
   const w = s.split(/\s+/)
   for (let i = 1; i < w.length - 1; i++) {
-    if (!STREET_TYPES.has(w[i].toLowerCase().replace(/\.$/, '')) || /\d/.test(w[i - 1])) continue
+    if (!streetType(w[i]) || /\d/.test(w[i - 1])) continue
     const suburb = w.slice(i + 1).join(' ')
     if (/\d/.test(suburb)) continue
+    if (/^st\.?$/i.test(w[i]) && streetType(w[i - 1]) && SAINT_SUBURBS.has(w[i + 1].toLowerCase())) {
+      return { street: w.slice(0, i).join(' '), suburb: w.slice(i).join(' ') }
+    }
     return { street: w.slice(0, i + 1).join(' '), suburb }
   }
   return null
@@ -195,11 +203,13 @@ export function parseAddress(formatted?: string): SignupAddress {
     if (tail && !/(^|\s)(south|western)$/i.test(tail[1])) { parts[parts.length - 1] = tail[1]; out.country = /^australia$/i.test(tail[2]) ? 'Australia' : 'New Zealand' }
   }
   // The suburb (and street) in front of the state and postcode. Split the
-  // street off when they share a part (typed on one line, or "12 Smith St
-  // Fitzroy" after a unit).
+  // street off when they share a part: typed on one line, "12 Smith St
+  // Fitzroy" after a unit, or "Smith Street Fitzroy" after a part with no
+  // street in it ("Unit 4", a business or centre name).
   const take = (pre: string, head: string[], alone: boolean) => {
     const line = [...head]
-    if (alone || /\d/.test(pre)) {
+    const noStreetYet = !head.some(h => h.split(/\s+/).some(streetType))
+    if (alone || /\d/.test(pre) || noStreetYet) {
       const sp = splitStreet(pre)
       if (sp) { out.city = sp.suburb; line.push(sp.street) }
       else if (/\d/.test(pre)) line.push(pre)

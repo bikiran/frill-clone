@@ -507,11 +507,14 @@ export async function recordSignupEvent(db: any, ev: SignupEvent, attempt = 0): 
       : db.from(TABLE).insert(r).select('*').maybeSingle()
     let saved = await write(row)
     // Before V392 there's no business column: save everything else without
-    // it (the CRM note below still gets the details).
+    // it (the CRM note below still gets the details), with a fingerprint of
+    // the block on this step's timeline entry, so the next request can tell
+    // whether the details changed.
     let unsavedBusiness: any = null
     if (saved.error && 'business' in row && missingColumn(saved.error, 'business')) {
       unsavedBusiness = row.business
       delete row.business
+      if (biz) event.business_hash = businessHash(unsavedBusiness)
       saved = await write(row)
     }
     if (saved.error) {
@@ -526,11 +529,16 @@ export async function recordSignupEvent(db: any, ev: SignupEvent, attempt = 0): 
       return null
     }
     const out = saved.data || { ...row, id: existing?.id }
-    // Did what they told us about the business change? Before V392 nothing
-    // older is stored to compare the JSON with, so compare the V390 columns
-    // (otherwise every resend would re-sync the CRM contact).
+    // Did what they told us about the business change? Before V392 the block
+    // isn't stored, so compare its fingerprint on the last timeline entry that
+    // had one (hours, Google place and street included), or failing that (a
+    // row from before this, or the entry has aged out) the V390 columns. An
+    // unchanged resend doesn't re-sync the CRM contact.
+    const lastHash = unsavedBusiness
+      ? (Array.isArray(existing?.events) ? existing.events : []).slice().reverse().find((e: any) => typeof e?.business_hash === 'string')?.business_hash
+      : null
     const bizChanged = !!biz && (unsavedBusiness
-      ? prevFlat !== flatBusiness(row)
+      ? (lastHash ? lastHash !== event.business_hash : prevFlat !== flatBusiness(row))
       : sameShape(prevBiz) !== sameShape(row.business))
 
     // Into Colvy's own CRM: when they first get a code, as each channel is
@@ -561,6 +569,14 @@ function sameShape(b: any): string {
     ? Object.fromEntries(Object.keys(v).filter(k => k !== 'updatedAt').sort().map(k => [k, norm(v[k])]))
     : v
   return JSON.stringify(norm(b ?? null))
+}
+
+/** A short fingerprint of the business block (FNV-1a over sameShape), to spot a change without storing it. */
+function businessHash(b: any): string {
+  const s = sameShape(b)
+  let h = 0x811c9dc5
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0 }
+  return h.toString(16).padStart(8, '0')
 }
 
 /** Narrow an update to the row version that was read (its updated_at). */
@@ -773,8 +789,8 @@ function refreshedNote(old: string, row: any): string {
  * Copied onto the contact (blank fields only, never overwriting): name, the
  * mobile they typed in E.164 (verified or not: it's what the owner calls them
  * back on), business name (company_name), the business's street address,
- * suburb, state and postcode (as one, only onto a contact with no address of
- * its own), country, and a "Signup lead:" note with the
+ * suburb, state and postcode (as one, only where the contact's own parts
+ * match it), country, and a "Signup lead:" note with the
  * step reached and everything contacts have no column for: industry, Google
  * category and place, website, business phone, time zone and opening hours
  * (signupNote). The note is refreshed only while it's still the one this wrote.
@@ -840,21 +856,29 @@ export async function syncSignupContact(db: any, row: any, o: { force?: boolean 
     const b = presentBusiness(row)
     const addr = b.address || {}
     if (!c.company_name && b.name) extra.company_name = b.name
-    // The address goes on as one, never as parts of two: only onto a contact
-    // with no street, state or postcode of its own, whose city (if any) is the
-    // sign-up IP's stand-in or the same suburb. Otherwise it stays in the note.
-    // With no suburb picked out, the street column takes the whole line they
-    // typed, so nothing is lost.
+    // The address goes on as one, never as parts of two: only when each part
+    // the contact already has (street, suburb, state, postcode) is the same
+    // as this address's, so the blanks are filled from one address (a contact
+    // whose suburb and state came from this sign-up still gets the street and
+    // postcode). A suburb that's only the sign-up IP's stand-in, on a contact
+    // this flow made, gives way: to the address's suburb, or to none when no
+    // suburb could be picked out (the street line then holds it), so the IP's
+    // city never sits next to another place's street. Otherwise the address
+    // stays in the note. With no suburb picked out, the street column takes
+    // the whole line they typed, so nothing is lost.
     const typed = row?.business?.address?.formatted
     const street = addr.line1 || (!addr.city && typed ? String(typed).slice(0, 300) : '')
     const given = !!(street || addr.city || addr.state || addr.postcode)
     if (given) {
-      const cityOurs = !c.city || sameWords(c.city, row.ip_city) || sameWords(c.city, addr.city)
-      if (!c.address && !c.state && !c.postcode && cityOurs) {
-        if (street) extra.address = street
-        if (addr.city && !sameWords(c.city, addr.city)) extra.city = addr.city
-        if (addr.state) extra.state = addr.state
-        if (addr.postcode) extra.postcode = addr.postcode
+      const agrees = (have: any, want: any) => !have || sameWords(have, want)
+      // On anyone else's contact a city that happens to match the IP's may be their own.
+      const standIn = c.source === 'signup' && sameWords(c.city, row.ip_city) && !sameWords(c.city, addr.city)
+      if (agrees(c.address, street) && agrees(c.state, addr.state) && agrees(c.postcode, addr.postcode) && (standIn || agrees(c.city, addr.city))) {
+        if (street && !c.address) extra.address = street
+        if (standIn) extra.city = addr.city || null
+        else if (addr.city && !c.city) extra.city = addr.city
+        if (addr.state && !c.state) extra.state = addr.state
+        if (addr.postcode && !c.postcode) extra.postcode = addr.postcode
       }
     } else if (!c.city && row.ip_city) extra.city = row.ip_city   // where they connected from stands in when no address was given
     if (!c.country && addr.country) extra.country = addr.country
