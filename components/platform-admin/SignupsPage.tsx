@@ -60,6 +60,8 @@ function MobileLine({ m, step }: { m: any; step?: number }) {
   </div>
 }
 
+// The page picked it from Google's listings; the browser says so, Colvy hasn't re-checked it with Google.
+const VERIFIED_HINT = 'Verified via Google: picked from Google’s listings on the sign-up page'
 const Ic = {
   refresh: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></svg>,
   search: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>,
@@ -299,12 +301,12 @@ export default function SignupsPage() {
                   <div style={{ fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name || <span style={{ color: 'var(--sa-muted)', fontWeight: 500 }}>No name yet</span>}</div>
                   <div title={r.email} style={{ fontSize: 12, color: 'var(--sa-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.email}</div>
                   {r.phone && <div style={{ fontSize: 12, color: 'var(--sa-muted)', whiteSpace: 'nowrap' }}>{r.phone}</div>}
-                  {r.business_name && <div className="su-bizline" style={{ fontSize: 12, color: 'var(--sa-text)', fontWeight: 600, marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.business?.verified && <span title="Verified via Google" style={{ color: '#059669', marginRight: 4, verticalAlign: '-2px' }}>{Ic.verified}</span>}{r.business_name}{bizLine(r) ? <span style={{ color: 'var(--sa-muted)', fontWeight: 500 }}> · {bizLine(r)}</span> : null}</div>}
+                  {r.business_name && <div className="su-bizline" style={{ fontSize: 12, color: 'var(--sa-text)', fontWeight: 600, marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.business?.verified && <span title={VERIFIED_HINT} style={{ color: '#059669', marginRight: 4, verticalAlign: '-2px' }}>{Ic.verified}</span>}{r.business_name}{bizLine(r) ? <span style={{ color: 'var(--sa-muted)', fontWeight: 500 }}> · {bizLine(r)}</span> : null}</div>}
                 </td>
                 <td className="su-bizcol" style={{ ...td, minWidth: 140, maxWidth: 260 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontWeight: 600, minWidth: 0 }}>
                     <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.business_name || <span style={{ color: 'var(--sa-muted)', fontWeight: 500 }}>—</span>}</span>
-                    {r.business?.verified && <span title="Verified via Google" style={{ color: '#059669', display: 'flex', flexShrink: 0 }}>{Ic.verified}</span>}
+                    {r.business?.verified && <span title={VERIFIED_HINT} style={{ color: '#059669', display: 'flex', flexShrink: 0 }}>{Ic.verified}</span>}
                   </div>
                   {bizLine(r) && <div style={{ fontSize: 12, color: 'var(--sa-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{bizLine(r)}</div>}
                 </td>
@@ -341,7 +343,7 @@ export default function SignupsPage() {
               </div>
               <Chip status={r.status} />
             </div>
-            {r.business_name && <div style={{ fontSize: 12.5, color: 'var(--sa-text)', fontWeight: 600, minWidth: 0 }}>{r.business?.verified && <span title="Verified via Google" style={{ color: '#059669', marginRight: 4, verticalAlign: '-2px' }}>{Ic.verified}</span>}{r.business_name}{bizLine(r) ? <span style={{ color: 'var(--sa-muted)', fontWeight: 500 }}> · {bizLine(r)}</span> : null}</div>}
+            {r.business_name && <div style={{ fontSize: 12.5, color: 'var(--sa-text)', fontWeight: 600, minWidth: 0 }}>{r.business?.verified && <span title={VERIFIED_HINT} style={{ color: '#059669', marginRight: 4, verticalAlign: '-2px' }}>{Ic.verified}</span>}{r.business_name}{bizLine(r) ? <span style={{ color: 'var(--sa-muted)', fontWeight: 500 }}> · {bizLine(r)}</span> : null}</div>}
             <div style={{ fontSize: 12.5, color: 'var(--sa-text)' }}>{r.step?.label}{r.step?.step < 8 && <MobileLine m={r.mobile} step={r.step?.step} />}</div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
               <RiskBadge risk={r.risk} full />
@@ -398,7 +400,7 @@ function BusinessSection({ b }: { b: any }) {
           <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '4px 8px' }}>
             <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--sa-text)', wordBreak: 'break-word' }}>{b.name || 'No business name'}</span>
             {b.verified
-              ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', borderRadius: 999, background: '#0596691a', color: '#059669', fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap' }}>{Ic.verified} Verified via Google</span>
+              ? <span title={VERIFIED_HINT} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', borderRadius: 999, background: '#0596691a', color: '#059669', fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap' }}>{Ic.verified} Verified via Google</span>
               : b.source && <span style={{ display: 'inline-flex', padding: '2px 8px', borderRadius: 999, background: 'var(--sa-hover)', color: 'var(--sa-muted)', fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap' }}>{SOURCE_LABEL[b.source] || b.source}</span>}
           </div>
           <div style={{ fontSize: 12, color: 'var(--sa-muted)', marginTop: 2, wordBreak: 'break-word' }}>{[b.boardUrl, b.summary].filter(Boolean).join(' · ') || ' '}</div>

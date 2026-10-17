@@ -10,8 +10,9 @@
 --   (google | default | manual), phone, website, abn, timezone, timezoneFrom,
 --   utcOffsetMinutes, updatedAt.
 -- Written by the sign-up routes (service role) with every code request,
--- verification and the finished sign-up, merged so a later step never blanks
--- what an earlier one recorded and the latest edit wins. The V390 columns
+-- verification and the finished sign-up. The sign-up page sends its whole
+-- picture each time, so the latest edit wins (a cleared field is cleared);
+-- a request without one never blanks what was recorded. The V390 columns
 -- (business_name, business_slug, industry, website, business_phone,
 -- business_city/state/country) are still written, for search and the list.
 --
@@ -20,13 +21,18 @@
 -- writes). A new column falls under the same table policies and grants.
 --
 -- ── WHEN TO RUN ─────────────────────────────────────────────────────────────
--- Any time, before or after deploying branch claude/signup-business-capture.
--- Before it runs, sign-ups still record the V390 columns (business name,
--- board address, industry, website, business phone, suburb, state, country),
--- and the "Signup lead:" note on the Colvy CRM contact still gets the street
--- address, Google place, opening hours and time zone; only the copy kept on
--- the sign-up attempt itself waits for this column. Super admin → Signups
--- shows whatever is there either way.
+-- Any time, but best with the deploy of branch claude/signup-business-capture
+-- (before or straight after): until it runs, the full details aren't kept on
+-- the sign-up attempt, and running it later doesn't bring back what came in
+-- meanwhile. Before it runs, nothing breaks:
+--   • sign-ups still record the V390 columns (business name, board address,
+--     industry, website, business phone, suburb, state, country);
+--   • the CRM contact still gets the street address and postcode, and its
+--     automatic "Signup lead:" note the Google place, Maps link, opening hours
+--     and time zone, from the request that carries them. Later re-syncs from
+--     the stored attempt (spam / not spam, Add to CRM, the CRM backfill)
+--     update the note's step and mobile lines and keep those details.
+-- Super admin → Signups shows whatever is there either way.
 -- Needs signup_attempts (V390); skipped quietly if it doesn't exist yet.
 --
 -- ── VERIFY AFTERWARDS ───────────────────────────────────────────────────────

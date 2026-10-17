@@ -48,6 +48,12 @@ export type SignupProfile = {
   businessSource?: BusinessSource; googleVerified?: boolean; googlePlaceId?: string; googleMapsUrl?: string; googleCategory?: string
   hours?: SignupHours; hoursSource?: HoursSource
   utcOffsetMinutes?: number; timeZone?: string; abn?: string
+  /**
+   * The page's whole picture of the business (the current sign-up page sends
+   * every field each time), so a blank is a real edit: it clears. Profiles
+   * without it (older pages, partial senders) only ever fill in.
+   */
+  full?: boolean
 }
 
 // ── Cleaning (server) ──────────────────────────────────────────────────────
@@ -76,10 +82,20 @@ export function cleanHours(raw: any): SignupHours | undefined {
   return Object.keys(out).length ? out : undefined
 }
 
+// Google Maps links we'll show as a link: these exact hosts (any path), or
+// Google's own sites with a /maps path. Nothing else, however Google-like the
+// name ("maps.google.xy.io" is someone else's site).
+const MAPS_HOSTS = new Set(['maps.google.com', 'maps.google.com.au', 'maps.google.co.nz', 'maps.app.goo.gl'])
+const MAPS_PATH_HOSTS = new Set(['www.google.com', 'google.com', 'www.google.com.au', 'google.com.au', 'www.google.co.nz', 'google.co.nz', 'goo.gl'])
 /** A Google Maps link we're willing to show as a link (never another site). */
 export function cleanMapsUrl(v: any): string | undefined {
-  const u = str(v, 400)
-  return u && /^https:\/\/(maps\.google\.[a-z.]{2,6}|www\.google\.[a-z.]{2,6}\/maps|maps\.app\.goo\.gl|goo\.gl\/maps)([/?#]|$)/i.test(u) ? u : undefined
+  const s = str(v, 400)
+  if (!s) return undefined
+  let u: URL
+  try { u = new URL(s) } catch { return undefined }
+  if (u.protocol !== 'https:' || u.username || u.password || u.port) return undefined
+  const host = u.hostname.toLowerCase()
+  return MAPS_HOSTS.has(host) || (MAPS_PATH_HOSTS.has(host) && /^\/maps(\/|$)/.test(u.pathname)) ? u.href : undefined
 }
 const cleanPlaceId = (v: any) => { const s = str(v, 300); return s && /^[\w-]{10,300}$/.test(s) ? s : undefined }
 const cleanTz = (v: any) => {
@@ -104,6 +120,7 @@ export function cleanProfile(raw: any): SignupProfile {
     hours: cleanHours(raw.hours), hoursSource: oneOf(raw.hoursSource, ['google', 'default', 'manual'] as const),
     utcOffsetMinutes: Number.isInteger(raw.utcOffsetMinutes) && Math.abs(raw.utcOffsetMinutes) <= 840 ? raw.utcOffsetMinutes : undefined,
     timeZone: cleanTz(raw.timeZone), abn: cleanAbn(raw.abn),
+    full: raw.full === true ? true : undefined,
   }
   for (const k of Object.keys(out) as (keyof SignupProfile)[]) if (out[k] === undefined) delete out[k]
   return out
@@ -130,33 +147,89 @@ export function timezoneFor(state?: string, country?: string): string {
   return ''
 }
 
+// "Victoria" as well as "VIC", longest names first so "South Australia" isn't read as "SA".
+const STATE_ALT = Object.keys(AU_STATES).sort((a, b) => b.length - a.length).map(k => k.replace(/ /g, '\\s+')).join('|')
+const SUBURB_STATE_POSTCODE = new RegExp(`^(.+?)\\s+(${STATE_ALT})\\s+(\\d{4})$`, 'i')
+const STATE_POSTCODE = new RegExp(`^(${STATE_ALT})\\s+(\\d{4})$`, 'i')
+const stateCode = (v: string) => AU_STATES[v.replace(/\s+/g, ' ').toLowerCase()]
+// Street types, to tell "5 Clunes Avenue" from the suburb after it when an
+// address is typed on one line without commas.
+const STREET_TYPES = new Set([
+  'st', 'street', 'rd', 'road', 'ave', 'av', 'avenue', 'hwy', 'highway', 'dr', 'drive', 'ct', 'crt', 'court', 'cres', 'crescent',
+  'pl', 'place', 'pde', 'parade', 'bvd', 'blvd', 'boulevard', 'ln', 'lane', 'tce', 'terrace', 'way', 'cl', 'close', 'cct', 'circuit',
+  'gr', 'gve', 'grove', 'esp', 'esplanade', 'sq', 'square', 'mall', 'arcade', 'pkwy', 'parkway', 'plaza', 'prom', 'promenade', 'qy', 'quay',
+])
+/**
+ * "5 Clunes Avenue Dallas" → street "5 Clunes Avenue", suburb "Dallas": the
+ * first street type that follows a name ("12 St Georges Rd Northcote" keeps
+ * its saint; "12 Fitzroy St St Kilda" keeps the suburb's). Null when there's
+ * no street type with a suburb after it.
+ */
+function splitStreet(s: string): { street: string; suburb: string } | null {
+  const w = s.split(/\s+/)
+  for (let i = 1; i < w.length - 1; i++) {
+    if (!STREET_TYPES.has(w[i].toLowerCase().replace(/\.$/, '')) || /\d/.test(w[i - 1])) continue
+    const suburb = w.slice(i + 1).join(' ')
+    if (/\d/.test(suburb)) continue
+    return { street: w.slice(0, i + 1).join(' '), suburb }
+  }
+  return null
+}
+
 /**
  * Best-effort parts of a one-line address ("Shop 4, 12 Smith St, Fitzroy VIC
- * 3065, Australia"): street line, suburb, state, postcode, country. Used when
- * the wizard only had the line (typed, or an earlier pick went stale).
+ * 3065, Australia", or typed as "12 Smith St Fitzroy VIC 3065"): street line,
+ * suburb, state, postcode, country. Used when the wizard only had the line
+ * (typed, or an earlier pick went stale). A suburb it can't tell from the
+ * street is left out rather than guessed (the street line keeps both).
  */
 export function parseAddress(formatted?: string): SignupAddress {
   const parts = String(formatted || '').split(',').map(s => s.trim()).filter(Boolean)
   if (!parts.length) return {}
   const out: SignupAddress = {}
-  if (parts.length > 1 && (isAU(parts[parts.length - 1]) || isNZ(parts[parts.length - 1]))) out.country = isAU(parts.pop()) ? 'Australia' : 'New Zealand'
-  // "Fitzroy VIC 3065" (Google, Australia) or "Auckland 1010" (New Zealand).
+  const last = parts[parts.length - 1]
+  if (parts.length > 1 && (isAU(last) || isNZ(last))) out.country = isAU(parts.pop()) ? 'Australia' : 'New Zealand'
+  else {
+    // "… VIC 3065 Australia" with no comma before the country (not "South Australia").
+    const tail = last.match(/^(.*\S)\s+(Australia|New Zealand)$/i)
+    if (tail && !/(^|\s)(south|western)$/i.test(tail[1])) { parts[parts.length - 1] = tail[1]; out.country = /^australia$/i.test(tail[2]) ? 'Australia' : 'New Zealand' }
+  }
+  // The suburb (and street) in front of the state and postcode. Split the
+  // street off when they share a part (typed on one line, or "12 Smith St
+  // Fitzroy" after a unit).
+  const take = (pre: string, head: string[], alone: boolean) => {
+    const line = [...head]
+    if (alone || /\d/.test(pre)) {
+      const sp = splitStreet(pre)
+      if (sp) { out.city = sp.suburb; line.push(sp.street) }
+      else if (/\d/.test(pre)) line.push(pre)
+      else out.city = pre
+    } else out.city = pre
+    if (line.length) out.line1 = line.join(', ')
+  }
+  // "Fitzroy VIC 3065" (Google, Australia), "Fitzroy, VIC 3065", or "Auckland 1010" (New Zealand).
   for (let i = parts.length - 1; i >= 0; i--) {
-    const m = parts[i].match(/^(.+?)\s+(VIC|NSW|QLD|SA|WA|TAS|NT|ACT)\s+(\d{4})$/i)
-    const nz = !m && out.country === 'New Zealand' ? parts[i].match(/^(.+?)\s+(\d{4})$/) : null
-    if (m || nz) {
-      out.city = (m || nz)![1]; out.postcode = m ? m[3] : nz![2]
-      if (m) { out.state = m[2].toUpperCase(); out.country ||= 'Australia' }
-      if (i > 0) out.line1 = parts.slice(0, i).join(', ')
+    const m = parts[i].match(SUBURB_STATE_POSTCODE)
+    if (m) {
+      out.state = stateCode(m[2]); out.postcode = m[3]; out.country ||= 'Australia'
+      take(m[1], parts.slice(0, i), i === 0)
       return out
     }
+    const sp = i > 0 ? parts[i].match(STATE_POSTCODE) : null
+    if (sp) {
+      out.state = stateCode(sp[1]); out.postcode = sp[2]; out.country ||= 'Australia'
+      take(parts[i - 1], parts.slice(0, i - 1), i - 1 === 0)
+      return out
+    }
+    const nz = out.country === 'New Zealand' ? parts[i].match(/^(.+?)\s+(\d{4})$/) : null
+    if (nz) { out.postcode = nz[2]; take(nz[1], parts.slice(0, i), i === 0); return out }
   }
   // "12 Smith St, Fitzroy, Victoria, 3065" (OpenStreetMap). The suburb is only
   // read when a postcode, state or country says it's an Australian or New
   // Zealand address ("Mountain View, CA 94043, USA" keeps just its street).
   const rest = parts.slice(1)
   if (rest.length && /^\d{4}$/.test(rest[rest.length - 1])) out.postcode = rest.pop()
-  if (rest.length && AU_STATES[rest[rest.length - 1].toLowerCase()]) { out.state = AU_STATES[rest.pop()!.toLowerCase()]; out.country ||= 'Australia' }
+  if (rest.length && stateCode(rest[rest.length - 1])) { out.state = stateCode(rest.pop()!); out.country ||= 'Australia' }
   if (rest.length && (out.postcode || out.state || out.country)) out.city = rest[rest.length - 1]
   if (parts.length > 1) out.line1 = parts[0]
   return out
@@ -195,25 +268,41 @@ export function businessFromProfile(p: SignupProfile): SignupBusiness | null {
 
 const sameText = (a?: string, b?: string) => String(a || '').toLowerCase().replace(/[^a-z0-9]/g, '') === String(b || '').toLowerCase().replace(/[^a-z0-9]/g, '')
 
+/** A profile that is the page's whole picture (see SignupProfile.full): flagged, and names the business. */
+export const isSnapshot = (p?: SignupProfile | null) => !!p && p.full === true && !!p.businessName
+
 /**
- * Merge a newer business block onto what's recorded. The latest non-blank
- * value wins; blanks never wipe. A different street address replaces the old
- * one whole (so a postcode from the old address can't linger), new hours
- * replace the old hours whole, and an explicit "not from Google" (they typed
- * a different business) drops the old Google place.
+ * Merge a newer business block onto what's recorded.
+ *
+ * A snapshot (the current sign-up page sends its whole picture each time:
+ * `full`) replaces what's recorded: the latest edit wins, a cleared field is
+ * cleared, and picking a different place on Google can't leave the first
+ * place's category, website or phone behind.
+ *
+ * Anything else (an older page, a partial sender) only fills in: the latest
+ * non-blank value wins and blanks never wipe. A different street address
+ * replaces the old one whole (so a postcode from the old address can't
+ * linger), new hours replace the old hours whole, a different Google place
+ * drops the old place's category, Maps link and UTC offset, and an explicit
+ * "not from Google" (they typed a different business) drops the old place.
  */
-export function mergeBusiness(prev: any, next: SignupBusiness | null, at?: string): SignupBusiness | null {
+export function mergeBusiness(prev: any, next: SignupBusiness | null, at?: string, o: { full?: boolean } = {}): SignupBusiness | null {
   const base: SignupBusiness = prev && typeof prev === 'object' && !Array.isArray(prev) ? JSON.parse(JSON.stringify(prev)) : {}
   if (!next) return Object.keys(base).length ? base : null
+  if (o.full) {
+    const out: SignupBusiness = JSON.parse(JSON.stringify(next))
+    delete out.updatedAt
+    if (at) out.updatedAt = at
+    return out
+  }
   const out: SignupBusiness = { ...base }
-  for (const k of ['name', 'slug', 'industry', 'category', 'phone', 'website', 'abn', 'source', 'timezone', 'timezoneFrom', 'utcOffsetMinutes'] as const) {
+  const placeChanged = !!next.placeId && next.placeId !== base.placeId
+  if (placeChanged || (next.verified === false && !next.placeId)) { delete out.placeId; delete out.mapsUrl; delete out.category; delete out.utcOffsetMinutes }
+  for (const k of ['name', 'slug', 'industry', 'category', 'phone', 'website', 'abn', 'source', 'timezone', 'timezoneFrom', 'utcOffsetMinutes', 'placeId', 'mapsUrl'] as const) {
     const v = next[k]
     if (v !== undefined && v !== null && v !== '') (out as any)[k] = v
   }
-  if (next.verified === false && !next.placeId) { delete out.placeId; delete out.mapsUrl; delete out.category; delete out.utcOffsetMinutes }
   if (typeof next.verified === 'boolean') out.verified = next.verified
-  if (next.placeId) { if (next.placeId !== base.placeId) delete out.mapsUrl; out.placeId = next.placeId }
-  if (next.mapsUrl) out.mapsUrl = next.mapsUrl
   if (next.address) {
     const moved = !!(base.address?.formatted && next.address.formatted && !sameText(base.address.formatted, next.address.formatted))
     out.address = moved ? { ...next.address } : prune({ ...(base.address || {}), ...next.address })
@@ -392,5 +481,6 @@ export function signupProfilePayload(s: WizardBusiness): SignupProfile {
     hours: (s.hours || undefined) as any,
     hoursSource: hoursSourceOf(s.hours, google ? f!.hours : null),
     timeZone,
+    full: true,
   }
 }
