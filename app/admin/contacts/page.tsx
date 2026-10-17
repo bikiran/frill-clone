@@ -19,6 +19,68 @@ import CustomerTimeline from '@/components/CustomerTimeline'
 type Contact = { id: string; name: string | null; email: string | null; phone: string | null; address: string | null; city: string | null; country: string | null; source: string; tags: string[]; subscribed_to_marketing: boolean; created_at: string; total_spend?: number; total_orders?: number; last_order_date?: string | null; rfm_category?: string; __aov?: number; relationship_type?: string; company_name?: string | null; notes?: string | null }
 
 const SOURCE_COLORS: Record<string, string> = { widget: '#dbeafe', woocommerce: '#ede9fe', import: '#dcfce7', manual: '#fef9c3', email: '#ffedd5' }
+const RELATIONSHIP_LABELS: Record<string, string> = { customer: 'Customer', supplier: 'Supplier', wholesaler: 'Wholesaler', business: 'Business contact' }
+const PHONE_PATH = 'M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.81.36 1.6.7 2.34a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.74-1.27a2 2 0 0 1 2.11-.45c.74.34 1.53.57 2.34.7A2 2 0 0 1 22 16.92z'
+
+// "Mia Chen" -> "MC"; no name falls back to the email's first letter.
+function initialsOf(c: { name: string | null; email: string | null }): string {
+  const words = (c.name || '').trim().split(/\s+/).filter(w => /[\p{L}\p{N}]/u.test(w))
+  if (words.length) return (words[0][0] + (words.length > 1 ? words[words.length - 1][0] : '')).toUpperCase()
+  return ((c.email || '?')[0] || '?').toUpperCase()
+}
+
+// Phones (same breakpoint as the Team page cards): the table becomes cards, the
+// toolbar wraps instead of cutting a chip off at the edge, the filters scroll
+// inside their own panel and the contact opens as a full-screen sheet. Desktop
+// never sees any of this — the cards are hidden above 767px.
+const CONTACTS_CSS = `
+  .ct-cards { display: none; }
+  @media (max-width: 767px) {
+    .ct-page .ph-toolbar { flex-wrap: wrap !important; overflow: visible !important; }
+    .ct-page .ph-toolbar > * { flex: 1 1 auto !important; justify-content: center; min-width: 0; padding-left: 10px !important; padding-right: 10px !important; }
+    .ct-page .ph-toolbar > .ct-search { flex: 1 1 100% !important; width: auto !important; max-width: none !important; padding: 0 !important; }
+    .ct-page .ph-toolbar > select { max-width: 100%; }
+    .ct-search input { font-size: 16px !important; }
+
+    .ct-filters { margin: 0 !important; border-radius: 0 !important; border-width: 0 0 1px !important; padding: 12px 16px !important; max-height: 48%; overflow-y: auto; flex-shrink: 0; overscroll-behavior: contain; }
+    .ct-filters-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 10px !important; }
+    .ct-filters-grid input, .ct-filters-grid select { font-size: 16px !important; padding: 7px 9px !important; }
+
+    /* The bottom padding lets the last card and the pager scroll clear of the AI orb. */
+    .ct-list { background: var(--canvas) !important; overflow-x: hidden !important; overscroll-behavior: contain; padding-bottom: 76px; }
+    .ct-table { display: none !important; }
+    .ct-cards { display: flex; flex-direction: column; gap: 8px; list-style: none; margin: 0; padding: 12px 16px; }
+    .ct-card { position: relative; display: flex; gap: 12px; padding: 12px; background: #fff; border: 1px solid var(--border); border-radius: 14px; min-width: 0; -webkit-tap-highlight-color: transparent; transition: background .1s, border-color .1s; }
+    .ct-card:active { background: var(--canvas); }
+    .ct-card[data-selected] { background: var(--peach); border-color: var(--coral); }
+    .ct-card:has(.ct-open:focus-visible) { outline: 2px solid var(--coral); outline-offset: 2px; }
+    .ct-avatar { width: 40px; height: 40px; border-radius: 50%; background: var(--peach); color: var(--coral); display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 700; flex-shrink: 0; letter-spacing: .02em; }
+    .ct-card[data-selected] .ct-avatar { background: #fff; }
+    .ct-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+    .ct-top { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+    .ct-open { position: static !important; flex: 1; min-width: 0; display: flex; padding: 0; border: none; background: none; text-align: left; font: inherit; font-size: 15px; font-weight: 700; color: var(--ink); cursor: pointer; outline: none; }
+    .ct-name { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .ct-open::after { content: ''; position: absolute; inset: 0; border-radius: 14px; }
+    .ct-date { min-width: 0; font-size: 11.5px; color: #9ca3af; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .ct-line { display: flex; align-items: center; gap: 6px; margin: 0; min-width: 0; font-size: 13px; color: var(--slate); }
+    .ct-line svg { flex-shrink: 0; opacity: .7; }
+    .ct-line span { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .ct-line .ct-none { color: #9ca3af; font-style: italic; }
+    .ct-badges { display: flex; flex-wrap: wrap; gap: 4px; min-width: 0; margin-top: 5px; }
+    .ct-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 6px; min-width: 0; }
+    .ct-badge { font-size: 10.5px; font-weight: 700; line-height: 1.3; padding: 2px 7px; border-radius: 6px; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+    .ct-tag { background: var(--canvas); color: var(--slate); border: 1px solid var(--border); padding: 1px 6px; font-weight: 600; }
+    .ct-actions { position: relative; z-index: 1; display: flex; align-items: center; gap: 6px; flex-shrink: 0; pointer-events: none; }
+    .ct-actions > * { pointer-events: auto; }
+    .ct-act { width: 34px; height: 34px; border-radius: 9px; border: 1px solid var(--border); background: #fff; color: var(--slate); display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; }
+    .ct-act:active { color: var(--coral); border-color: var(--coral); }
+    .ct-edit { height: 34px; padding: 0 6px; border: none; background: none; color: var(--coral); font-size: 13px; font-weight: 700; cursor: pointer; }
+
+    .ct-detail { position: fixed !important; inset: 0; z-index: 950; width: auto !important; border-left: none !important; }
+    .ct-detail-body { padding-bottom: calc(18px + env(safe-area-inset-bottom)) !important; }
+    .ct-close { width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; margin-right: -8px; }
+  }
+`
 
 export default function ContactsPage() {
   const router = useRouter()
@@ -340,16 +402,18 @@ export default function ContactsPage() {
   const inp: React.CSSProperties = { width: '100%', padding: '9px 12px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 13, outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }
   const labelStyle: React.CSSProperties = { fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 4 }
 
-  // Group by first letter
-  const grouped: Record<string, Contact[]> = {}
-  contacts.forEach(c => {
-    const letter = ((c.name || c.email || '?')[0] || '?').toUpperCase()
-    if (!grouped[letter]) grouped[letter] = []
-    grouped[letter].push(c)
-  })
+  // Row and card actions — the desktop table and the phone cards share these,
+  // so tapping a card does exactly what clicking a row does.
+  const openContact = (c: Contact) => { setSelected(c); setEditData(c); setEditMode(false) }
+  const editContact = (c: Contact) => { setSelected(c); setEditData(c); setEditMode(true) }
+  const callContact = (c: Contact) => window.dispatchEvent(new CustomEvent('colvy:dial', { detail: { number: c.phone, name: c.name, contactId: c.id, autoStart: true } }))
+  // SMS when their mobile may be texted, else email (lib/channel-choice).
+  const messageContact = (c: Contact) => router.push(contactMessageHref(c, 'sms'))
+  const emailContact = (c: Contact) => router.push(`/admin/inbox?contact=${c.id}&channel=email`)
 
   return (
-    <div className="colvy-fullh" style={{ display: 'flex', height: 'calc(100vh - 56px)', overflow: 'hidden', fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif' }}>
+    <div className="colvy-fullh ct-page" style={{ display: 'flex', height: 'calc(100vh - 56px)', overflow: 'hidden', fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif' }}>
+      <style>{CONTACTS_CSS}</style>
       {/* List */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <PageHeader
@@ -361,7 +425,7 @@ export default function ContactsPage() {
               + New contact
             </button>
           }>
-          <div style={{ position: 'relative', width: 220, maxWidth: '60vw' }}>
+          <div className="ct-search" style={{ position: 'relative', width: 220, maxWidth: '60vw' }}>
             <input placeholder="Search contacts…" value={search} onChange={e => setSearch(e.target.value)}
               style={{ ...inp, width: '100%', background: 'var(--canvas)', paddingRight: search ? 32 : undefined }} />
             {search && (
@@ -375,7 +439,7 @@ export default function ContactsPage() {
             <select value={locationFilter} onChange={e => setLocationFilter(e.target.value)}
               title="Filter by location"
               style={{ padding: '9px 12px', borderRadius: 10, border: '1px solid var(--border)', background: locationFilter !== 'all' ? 'var(--peach)' : '#fff', fontSize: 13, fontWeight: 700, color: locationFilter !== 'all' ? 'var(--coral)' : 'var(--ink)', cursor: 'pointer' }}>
-              <option value="all">📍 All locations</option>
+              <option value="all">All locations</option>
               {outlets.map(o => <option key={o.id} value={o.id}>{o.label || o.suburb || 'Outlet'}</option>)}
             </select>
           )}
@@ -397,8 +461,8 @@ export default function ContactsPage() {
         </PageHeader>
 
         {showFilters && (
-          <div style={{ marginTop: 14, padding: 16, borderRadius: 12, border: '1px solid var(--border)', background: 'var(--canvas)' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: 12 }}>
+          <div className="ct-filters" style={{ marginTop: 14, padding: 16, borderRadius: 12, border: '1px solid var(--border)', background: 'var(--canvas)' }}>
+            <div className="ct-filters-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: 12 }}>
               <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--slate)' }}>Sort by
                 <select value={sortBy} onChange={e => setSortBy(e.target.value as any)} style={filterInput}>
                   <option value="recent_added">Recently added</option>
@@ -465,7 +529,7 @@ export default function ContactsPage() {
             </div>
           </div>
         )}
-        <div style={{ flex: 1, overflowY: 'auto', background: '#fff' }}>
+        <div className="ct-list" style={{ flex: 1, overflowY: 'auto', background: '#fff' }}>
           {loading ? (
             <SkeletonList rows={6} />
           ) : contacts.length === 0 ? (
@@ -474,7 +538,8 @@ export default function ContactsPage() {
               <p style={{ fontSize: 13 }}>Contacts are created automatically when users chat, or you can import/add them manually.</p>
             </div>
           ) : (
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <>
+            <table className="ct-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead style={{ position: 'sticky', top: 0, background: '#fff', zIndex: 1 }}>
                 <tr style={{ borderBottom: '2px solid var(--border)' }}>
                   {['Name', 'Phone', 'Email', 'Marketing', 'Source', 'Created', 'Actions'].map(h => (
@@ -484,7 +549,7 @@ export default function ContactsPage() {
               </thead>
               <tbody>
                 {contacts.map(c => (
-                  <tr key={c.id} onClick={() => { setSelected(c); setEditData(c); setEditMode(false) }}
+                  <tr key={c.id} onClick={() => openContact(c)}
                     style={{ borderBottom: '1px solid var(--border)', cursor: 'pointer', background: selected?.id === c.id ? 'var(--peach)' : '#fff', transition: 'background 0.1s' }}>
                     <td style={{ padding: '11px 16px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
@@ -519,7 +584,7 @@ export default function ContactsPage() {
                       <div style={{ display: 'flex', alignItems: 'center', gap: 4 }} onClick={e => e.stopPropagation()}>
                         {c.phone && (
                           <button type="button" title={`Call ${c.phone}`} aria-label="Call"
-                            onClick={() => window.dispatchEvent(new CustomEvent('colvy:dial', { detail: { number: c.phone, name: c.name, contactId: c.id, autoStart: true } }))}
+                            onClick={() => callContact(c)}
                             style={{ width: 28, height: 28, borderRadius: 7, border: '1px solid var(--border)', background: '#fff', color: 'var(--slate)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
                             onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--coral)' }}
                             onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'var(--slate)' }}>
@@ -528,8 +593,7 @@ export default function ContactsPage() {
                         )}
                         {c.phone && (
                           <button type="button" title={`Message ${c.phone} in Colvy`} aria-label="Message"
-                            // SMS when their mobile may be texted, else email (lib/channel-choice).
-                            onClick={() => router.push(contactMessageHref(c, 'sms'))}
+                            onClick={() => messageContact(c)}
                             style={{ width: 28, height: 28, borderRadius: 7, border: '1px solid var(--border)', background: '#fff', color: 'var(--slate)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
                             onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--coral)' }}
                             onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'var(--slate)' }}>
@@ -538,14 +602,14 @@ export default function ContactsPage() {
                         )}
                         {c.email && (
                           <button type="button" title={`Email ${c.email} in Colvy`} aria-label="Email"
-                            onClick={() => router.push(`/admin/inbox?contact=${c.id}&channel=email`)}
+                            onClick={() => emailContact(c)}
                             style={{ width: 28, height: 28, borderRadius: 7, border: '1px solid var(--border)', background: '#fff', color: 'var(--slate)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
                             onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--coral)' }}
                             onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'var(--slate)' }}>
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M22 7l-10 6L2 7"/></svg>
                           </button>
                         )}
-                        <button onClick={e => { e.stopPropagation(); setSelected(c); setEditData(c); setEditMode(true) }}
+                        <button onClick={e => { e.stopPropagation(); editContact(c) }}
                           style={{ fontSize: 12, color: 'var(--coral)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600, marginLeft: 2 }}>Edit</button>
                       </div>
                     </td>
@@ -553,6 +617,65 @@ export default function ContactsPage() {
                 ))}
               </tbody>
             </table>
+
+            {/* Phones: one card per contact instead of the 7-column table. */}
+            <ul className="ct-cards" aria-label="Contacts">
+              {contacts.map(c => (
+                <li key={c.id} className="ct-card" data-selected={selected?.id === c.id ? '' : undefined}>
+                  <div className="ct-avatar" aria-hidden="true">{initialsOf(c)}</div>
+                  <div className="ct-body">
+                    <div className="ct-top">
+                      {/* The name is the card's button; its ::after covers the
+                          whole card, so a tap anywhere opens the contact. */}
+                      <button type="button" className="ct-open" onClick={() => openContact(c)}>
+                        <span className="ct-name">{c.name || <span style={{ color: '#9ca3af', fontStyle: 'italic', fontWeight: 600 }}>No name</span>}</span>
+                      </button>
+                    </div>
+                    <p className="ct-line">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={PHONE_PATH}/></svg>
+                      <span className={c.phone ? undefined : 'ct-none'}>{c.phone || 'No phone'}</span>
+                    </p>
+                    <p className="ct-line">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M22 7l-10 6L2 7"/></svg>
+                      <span className={c.email ? undefined : 'ct-none'}>{c.email || 'No email'}</span>
+                    </p>
+                    <div className="ct-badges">
+                        <span className="ct-badge" style={{ background: SOURCE_COLORS[c.source] || '#f3f4f6', color: '#374151', textTransform: 'capitalize' }}>{c.source}</span>
+                        <span className="ct-badge" style={{ borderRadius: 20, background: c.subscribed_to_marketing ? '#dcfce7' : '#f3f4f6', color: c.subscribed_to_marketing ? '#059669' : '#6b7280' }}>
+                          {c.subscribed_to_marketing ? 'Subscribed' : 'Not subscribed'}
+                        </span>
+                        {c.relationship_type && c.relationship_type !== 'customer' && (
+                          <span className="ct-badge" style={{ background: '#eef2ff', color: '#4338ca' }}>{RELATIONSHIP_LABELS[c.relationship_type] || c.relationship_type}</span>
+                        )}
+                        {(c.tags || []).slice(0, 2).map(t => <span key={t} className="ct-badge ct-tag">{t}</span>)}
+                        {(c.tags || []).length > 2 && <span className="ct-badge ct-tag" title={(c.tags || []).slice(2).join(', ')}>+{(c.tags || []).length - 2}</span>}
+                    </div>
+                    <div className="ct-foot">
+                      <span className="ct-date">Added {new Date(c.created_at).toLocaleDateString()}</span>
+                      <div className="ct-actions">
+                        {c.phone && (
+                          <button type="button" className="ct-act" title={`Call ${c.phone}`} aria-label={`Call ${c.name || c.phone}`} onClick={() => callContact(c)}>
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={PHONE_PATH}/></svg>
+                          </button>
+                        )}
+                        {c.phone && (
+                          <button type="button" className="ct-act" title={`Message ${c.phone} in Colvy`} aria-label={`Message ${c.name || c.phone}`} onClick={() => messageContact(c)}>
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                          </button>
+                        )}
+                        {c.email && (
+                          <button type="button" className="ct-act" title={`Email ${c.email} in Colvy`} aria-label={`Email ${c.name || c.email}`} onClick={() => emailContact(c)}>
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M22 7l-10 6L2 7"/></svg>
+                          </button>
+                        )}
+                        <button type="button" className="ct-edit" aria-label={`Edit ${c.name || c.email || 'contact'}`} onClick={() => editContact(c)}>Edit</button>
+                      </div>
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+            </>
           )}
 
           {/* Pagination — the header shows the true total, so the table needs a
@@ -594,15 +717,15 @@ export default function ContactsPage() {
 
       {/* Contact detail panel */}
       {(selected || (editMode && !selected)) && (
-        <div style={{ width: 320, borderLeft: '1px solid var(--border)', background: 'var(--card, #fff)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <div className="ct-detail ct-sheet" role="region" aria-label="Contact details" style={{ width: 320, borderLeft: '1px solid var(--border)', background: 'var(--card, #fff)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           <div style={{ padding: '16px 18px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: 'var(--ink)' }}>{!selected ? 'New Contact' : editMode ? 'Edit Contact' : 'Contact'}</h3>
             <div style={{ display: 'flex', gap: 8 }}>
               {selected && !editMode && <button type="button" onClick={() => setEditMode(true)} style={{ fontSize: 12, color: 'var(--coral)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>Edit</button>}
-              <button type="button" onClick={() => { setSelected(null); setEditMode(false) }} style={{ fontSize: 16, color: '#9ca3af', background: 'none', border: 'none', cursor: 'pointer' }}>✕</button>
+              <button type="button" className="ct-close" aria-label="Close" onClick={() => { setSelected(null); setEditMode(false) }} style={{ fontSize: 16, color: '#9ca3af', background: 'none', border: 'none', cursor: 'pointer' }}>✕</button>
             </div>
           </div>
-          <div style={{ flex: 1, overflowY: 'auto', padding: '18px' }}>
+          <div className="ct-detail-body" style={{ flex: 1, overflowY: 'auto', padding: '18px' }}>
             {editMode ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 {(() => {
