@@ -79,13 +79,30 @@ function fmtWhen(raw?: string | null): string {
   return `${date}, ${time}`
 }
 
-export default function EmailMessage({ msg, agentColor, onOpenMedia, businessName }: {
+// Why an email's text couldn't be loaded yet (metadata.inbound_email.body_error), for owners and super admins.
+const PENDING_WHY: Record<string, string> = {
+  unauthorised: 'Resend key can’t read received mail',
+  'not-found': 'Resend doesn’t have this email',
+  'over-quota': 'Resend didn’t keep this email’s text (account over quota)',
+  unavailable: 'Resend didn’t answer; Colvy will try again',
+  'no-key': 'No Resend key is set up',
+}
+
+/** The webhook saved this email without its text (Resend didn't give it), still to be filled in. */
+export function emailTextPending(msg: any): boolean {
+  const ie = msg?.metadata?.inbound_email
+  return !!ie && ['pending', 'unavailable', 'gave-up'].includes(String(ie.body || '')) && !String(msg?.content || '').trim() && !msg?.email_html
+}
+
+export default function EmailMessage({ msg, agentColor, onOpenMedia, businessName, showWhy }: {
   msg: any
   agentColor?: string
   // Open a photo/video attachment (by its index on this email) in the viewer.
   onOpenMedia?: (attachmentIndex: number) => void
   // The business's name, for "Sent from Roxy Aquarium <…>".
   businessName?: string | null
+  // Owners and super admins: say why an email's text couldn't be loaded.
+  showWhy?: boolean
 }) {
   const attToken = useAttachmentToken(msg?.gmail_message_id ? msg?.conversation_id : null)
   const [showFull, setShowFull] = useState(false)
@@ -116,6 +133,8 @@ export default function EmailMessage({ msg, agentColor, onOpenMedia, businessNam
   const when = fmtWhen(msg.metadata?.inbound_email?.received_at || msg.created_at)
   const quotedOn = quotedDateOf(quoted)
   const isAuto = isAgent && !!msg.metadata?.auto
+  const pending = !isAgent && emailTextPending(msg)
+  const pendingWhy = pending && showWhy ? (PENDING_WHY[String(msg.metadata?.inbound_email?.body_error || '')] || (msg.metadata?.inbound_email?.body === 'unavailable' ? 'Resend didn’t hand over the text' : '')) : ''
   const accent = agentColor || '#2563eb'
 
   const fmtBytes = (n: number) => n > 1048576 ? `${(n / 1048576).toFixed(1)} MB` : n > 1024 ? `${Math.round(n / 1024)} KB` : `${n} B`
@@ -176,6 +195,14 @@ export default function EmailMessage({ msg, agentColor, onOpenMedia, businessNam
             </div>
           ) : text ? (
             <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.55, color: 'var(--ink)', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{text}</p>
+          ) : pending ? (
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '9px 11px', border: '1px dashed var(--border)', borderRadius: 10, background: 'var(--canvas)' }}>
+              <span style={{ color: 'var(--slate)', marginTop: 1 }}>{ico(<><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></>, 14)}</span>
+              <div style={{ minWidth: 0 }}>
+                <p style={{ margin: 0, fontSize: 13, color: 'var(--ink)', fontWeight: 600 }}>We couldn’t load this email’s text yet.</p>
+                {pendingWhy && <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--slate)', overflowWrap: 'anywhere' }}>Why: {pendingWhy}.</p>}
+              </div>
+            </div>
           ) : !attachments.length && !html ? (
             <p style={{ margin: 0, fontSize: 13, color: 'var(--slate)', fontStyle: 'italic' }}>This email has no message text.</p>
           ) : null}

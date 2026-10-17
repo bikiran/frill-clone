@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { adminDb, superAdmin, companyNames } from '../_lib/super-admin'
 import { logSuperAdminAudit } from '@/lib/super-admin-audit'
 import { backfillEmptyEmailBodies } from '@/lib/email-backfill'
+import { resendReceivingKey, checkResendReceiving, receivingKeyHelp } from '@/lib/resend-receiving'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -11,7 +12,8 @@ export const maxDuration = 60
  * health → "Recover empty email replies". The same job as
  * /api/email/backfill-bodies (lib/email-backfill), without needing CRON_SECRET.
  *
- *   body: { scan: true, days? }  → workspaces with empty replies (database only)
+ *   body: { check: true }        → can Colvy read received email? (GET /emails/receiving?limit=1)
+ *         { scan: true, days? }  → workspaces with empty replies (database only)
  *         { dryRun?: boolean, companyId?: string, days?: number (1–90, default 30), rethread?: boolean }
  *
  * Returns the job's totals plus the same numbers per workspace, so the page can
@@ -22,9 +24,11 @@ export async function POST(req: NextRequest) {
   const db = adminDb()
   const who = await superAdmin(req, db)
   if (!who) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
-  if (!process.env.RESEND_API_KEY) return NextResponse.json({ error: 'RESEND_API_KEY is not set, so received emails can’t be fetched.' }, { status: 400 })
+  const body = await req.json().catch(() => ({}))
+  // The status line at the top of Email health: a fresh check each time it's opened.
+  if (body?.check) return NextResponse.json({ ok: true, receiving: await checkResendReceiving() }, { headers: { 'Cache-Control': 'no-store' } })
+  if (!resendReceivingKey()) return NextResponse.json({ error: 'RESEND_API_KEY is not set, so received emails can’t be fetched.' }, { status: 400 })
   try {
-    const body = await req.json().catch(() => ({}))
     const companyId = body?.companyId ? String(body.companyId) : null
     const dryRun = body?.dryRun !== false
     const rethread = !!body?.rethread
@@ -66,7 +70,7 @@ export async function POST(req: NextRequest) {
       if (r.outcome === 'filled-from-gmail') p.fromGmail++
       if (r.outcome === 'already-in-colvy') p.alreadyInColvy++
       if (r.outcome.includes('+moved')) p.rethreaded++
-      if (['not-found-on-resend', 'fetch-failed', 'mismatch'].includes(r.outcome)) p.notFound++
+      if (['not-found-on-resend', 'fetch-failed', 'mismatch', 'resend-key-blocked'].includes(r.outcome)) p.notFound++
       if (r.outcome === 'email-has-no-body') p.stillEmpty++
     }
     const names = await companyNames(db, Object.keys(per).filter(k => k !== 'unknown'))
@@ -88,7 +92,7 @@ export async function POST(req: NextRequest) {
       const co = companyId || convCompany[r.conversationId] || null
       return { ...r, companyId: co, slug: co ? names[co]?.slug || null : null }
     })
-    return NextResponse.json({ ok: true, dryRun, scanned, candidates, filled, fromGmail, rethreaded, notFound, stillEmpty, alreadyInColvy, days, rethread, workspaces, rows, resendIndex: result.resendIndex || null }, { headers: { 'Cache-Control': 'no-store' } })
+    return NextResponse.json({ ok: true, dryRun, scanned, candidates, filled, fromGmail, rethreaded, notFound, stillEmpty, alreadyInColvy, days, rethread, workspaces, rows, resendIndex: result.resendIndex || null, receivingBlocked: !!result.receivingBlocked, ...(result.receivingBlocked ? { receivingHelp: receivingKeyHelp() } : {}) }, { headers: { 'Cache-Control': 'no-store' } })
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || 'Recovery failed' }, { status: 500 })
   }

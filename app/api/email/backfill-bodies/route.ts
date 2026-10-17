@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { requireCompanyAccess } from '@/lib/company-access'
 import { isInternalCall } from '@/lib/internal-call'
 import { backfillEmptyEmailBodies } from '@/lib/email-backfill'
+import { resendReceivingKey } from '@/lib/resend-receiving'
 import { timingSafeEqual } from 'crypto'
 
 export const dynamic = 'force-dynamic'
@@ -64,7 +65,7 @@ export async function POST(req: NextRequest) {
       }
       if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     }
-    if (!process.env.RESEND_API_KEY) return NextResponse.json({ error: 'RESEND_API_KEY is not set, so received emails can’t be fetched.' }, { status: 400 })
+    if (!resendReceivingKey()) return NextResponse.json({ error: 'RESEND_API_KEY is not set, so received emails can’t be fetched.' }, { status: 400 })
     const result = await backfillEmptyEmailBodies(db, {
       companyId, days: Number(body?.days) || 30, dryRun: !!body?.dryRun, rethread: !!body?.rethread,
     })

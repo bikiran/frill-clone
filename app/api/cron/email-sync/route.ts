@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { syncGmailChannel } from '@/lib/gmail'
 import { logJobRun } from '@/lib/job-log'
+import { retryPendingEmailBodies } from '@/lib/email-backfill'
 
 export const maxDuration = 60
 export const dynamic = 'force-dynamic'
@@ -16,6 +17,10 @@ function admin() {
 
 /**
  * GET /api/cron/email-sync
+ *
+ * Pulls new mail into every connected mailbox, then re-fetches the text of
+ * customer emails the inbound webhook saved as 'pending' (lib/email-backfill
+ * retryPendingEmailBodies).
  *
  * Pulls new mail into every connected mailbox. Email had NO automatic sync at
  * all — it only moved when someone pressed the button — so new customer email
@@ -67,12 +72,19 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  // Customer emails saved without their text (Resend didn't give it to the
+  // webhook): try again, a few at a time, while there's time left.
+  let pendingBodies: any = null
+  if (Date.now() - t0 < 45_000) {
+    try { pendingBodies = await retryPendingEmailBodies(db) } catch (e: any) { pendingBodies = { error: e?.message || 'retry failed' } }
+  }
+
   const errored = results.filter(r => r.error).length
   await logJobRun({
     job: 'email-sync', startedAt, durationMs: Date.now() - t0,
-    status: results.length === 0 ? 'idle' : (errored ? 'error' : 'success'),
-    detail: { channels: (channels || []).length, ran: results.length, errored },
+    status: results.length === 0 && !pendingBodies?.filled ? 'idle' : (errored ? 'error' : 'success'),
+    detail: { channels: (channels || []).length, ran: results.length, errored, ...(pendingBodies?.pending ? { pendingBodies } : {}) },
     error: errored ? results.find(r => r.error)?.error : null,
   })
-  return NextResponse.json({ ok: true, ran: results.length, results })
+  return NextResponse.json({ ok: true, ran: results.length, results, ...(pendingBodies ? { pendingBodies } : {}) })
 }

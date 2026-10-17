@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { adminDb, superAdmin, safe, countRows, companyNames } from '../_lib/super-admin'
 import { collectIntegrations } from '../_lib/integrations'
 import { emailWebhookSigned } from '@/lib/email-webhook'
+import { checkResendReceivingCached } from '@/lib/resend-receiving'
 import { signupPulse, signupSmsHealth } from '@/lib/signup-attempts'
 import { smsConfigured, voiceFallbackReady, smsConfigProblem, smsSender } from '@/lib/signup-sms'
 
@@ -23,7 +24,7 @@ export async function GET(req: NextRequest) {
   const stuckBefore = new Date(Date.now() - 15 * 60_000).toISOString()
   const head = { count: 'exact' as const, head: true }
 
-  const [jobRuns, jobErrors, apiErrors, apiWarns, hooks, hookErrors, agentRuns, agentFailed, agentStuck, stripeEvents, audit, signups, integrations, apiErrorRows, hookErrorRows, jobErrorRows, signupLeads, signupSms] = await Promise.all([
+  const [jobRuns, jobErrors, apiErrors, apiWarns, hooks, hookErrors, agentRuns, agentFailed, agentStuck, stripeEvents, audit, signups, integrations, apiErrorRows, hookErrorRows, jobErrorRows, signupLeads, signupSms, emailReceiving] = await Promise.all([
     countRows(db.from('job_runs').select('id', head).gte('created_at', since)),
     countRows(db.from('job_runs').select('id', head).eq('status', 'error').gte('created_at', since)),
     countRows(db.from('api_logs').select('id', head).eq('level', 'error').gte('created_at', since)),
@@ -45,6 +46,8 @@ export async function GET(req: NextRequest) {
     signupPulse(db),
     // Sign-up code texts: sent vs delivered, 24h / 7 days, top error codes.
     signupSmsHealth(db),
+    // Can Colvy read the replies customers send back? (Resend receiving list, limit 1; cached 5 minutes.)
+    checkResendReceivingCached(),
   ])
   const broken = integrations.rows.filter(r => r.active && r.note)
   const names = await companyNames(db, [...audit.data.map((a: any) => a.company_id), ...broken.map(b => b.company_id || ''), ...apiErrorRows.data.map((r: any) => r.company_id), ...hookErrorRows.data.map((r: any) => r.company_id)].filter(Boolean))
@@ -59,6 +62,7 @@ export async function GET(req: NextRequest) {
   // Inbound email still works unsigned (each email is re-fetched from Resend
   // and the payload ignored), but the secret should be set.
   const emailSigned = emailWebhookSigned()
+  if (emailReceiving.status === 'blocked') issues.push('Customer email replies arrive without their text: the Resend key can only send. Add a Full access key as RESEND_RECEIVING_API_KEY')
   if (!emailSigned) issues.push('Inbound email webhook isn’t signed: set RESEND_WEBHOOK_SECRET (emails are being re-fetched from Resend instead)')
 
   return NextResponse.json({
@@ -67,6 +71,7 @@ export async function GET(req: NextRequest) {
     api: { errors: apiErrors, warnings: apiWarns },
     webhooks: { total: hooks, errors: hookErrors },
     emailWebhook: { signed: emailSigned },
+    emailReceiving,
     agents: { runs: agentRuns, failed: agentFailed, stuck: agentStuck, platformPaused: process.env.AGENTS_DISABLED === '1' },
     stripe: { events: stripeEvents },
     connections: { total: integrations.rows.filter(r => r.active).length, broken: broken.length, sample: broken.slice(0, 6).map(b => ({ type: b.type, note: b.note, detail: b.detail, company: b.company_id ? names[b.company_id]?.name || null : null })) },
