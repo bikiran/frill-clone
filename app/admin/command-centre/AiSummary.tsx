@@ -4,7 +4,7 @@
 // when calls go unanswered, who answered most, the AI receptionist), plus why
 // people called, grouped from the calls' summaries. A topic opens those calls.
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { authFetch } from '@/lib/auth-fetch'
 import { Icon, card, kicker, Spinner, WhyInline, btn, tint, C } from './ui'
 
@@ -27,22 +27,28 @@ export default function AiSummary({ companyId, from, to, rangeLabel, onTopic, ac
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
+  // Only the latest ask may change what's shown: an answer for a period that
+  // is no longer selected (or overtaken by Refresh) is kept for that period
+  // but never shown under this one.
+  const seq = useRef(0)
   const load = async (fresh = false) => {
+    const n = ++seq.current
     setLoading(true); setError('')
     try {
       const q = new URLSearchParams({ companyId, from: String(from), to: to == null ? 'open' : String(to), ...(fresh ? { fresh: '1' } : {}) })
       const r = await authFetch(`/api/command-centre/insights?${q}`)
       const d = await r.json()
+      if (r.ok) { try { sessionStorage.setItem(cacheKey(companyId, from, to), JSON.stringify({ at: Date.now(), d })) } catch {} }
+      if (n !== seq.current) return
       if (!r.ok) { setError(d.error || 'Couldn’t summarise these calls.'); return }
       setData(d)
-      try { sessionStorage.setItem(cacheKey(companyId, from, to), JSON.stringify({ at: Date.now(), d })) } catch {}
-    } catch { setError('Couldn’t reach Colvy.') } finally { setLoading(false) }
+    } catch { if (n === seq.current) setError('Couldn’t reach Colvy.') } finally { if (n === seq.current) setLoading(false) }
   }
 
   useEffect(() => {
     try {
       const hit = JSON.parse(sessionStorage.getItem(cacheKey(companyId, from, to)) || 'null')
-      if (hit && Date.now() - hit.at < 10 * 60_000) { setData(hit.d); return }
+      if (hit && Date.now() - hit.at < 10 * 60_000) { seq.current++; setData(hit.d); setLoading(false); setError(''); return }
     } catch {}
     setData(null)
     load()

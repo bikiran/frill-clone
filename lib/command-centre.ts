@@ -375,6 +375,20 @@ export function boardWindow(range: RangeKey, now: number, tz: string, custom?: {
 }
 
 /**
+ * What the board reads for a period: the period and the one before it (for
+ * "vs previous"), as epoch ms, `to` null for "up to now". The page and /board
+ * both work it out with this, so a period read in the business's timezone on
+ * the server is exactly the one the page shows once it knows that timezone.
+ */
+export function boardSpan(range: RangeKey, now: number, tz: string, custom?: { from?: string; to?: string }): { from: number; to: number | null } {
+  return spanOf(boardWindow(range, now, tz, custom))
+}
+export const spanOf = (w: BoardWindow): { from: number; to: number | null } => ({
+  from: w.prevFrom > 0 && w.prevTo > 0 ? Math.min(w.prevFrom, w.from) : w.from,
+  to: Number.isFinite(w.to) ? w.to : null,
+})
+
+/**
  * Where "the period before, up to the same point" ends for an open period, by
  * the clock on the wall: 4pm today is set against 4pm yesterday even on a day
  * daylight saving starts or ends (when 4pm is 15 or 17 hours after midnight).

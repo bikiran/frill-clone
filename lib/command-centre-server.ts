@@ -16,7 +16,7 @@
 //
 // Who: the business's staff with the Command Centre or Call Logs permission.
 
-import { requireCompanyAccess, callerUser, SUPER_ADMIN } from '@/lib/company-access'
+import { requireCompanyAccess, callerUser, verifyToken, bearerToken, SUPER_ADMIN } from '@/lib/company-access'
 import { canUseFeature, hasFullAccess } from '@/lib/permissions'
 import { phoneKey, toE164 } from '@/lib/phone'
 import { missedCallOutcome } from '@/lib/outcomes/missed-calls'
@@ -41,26 +41,46 @@ const clip = (v: any, n: number) => { const t = String(v ?? '').replace(/\s+/g, 
 
 // ── Access ───────────────────────────────────────────────────────────────────
 
-/** Staff with the Command Centre or Call Logs permission (owner, admins and the platform admin always). */
-export async function requireCallsAccess(req: any, db: Db, companyId: string | null | undefined): Promise<{ ok: boolean; userId?: string }> {
-  const a = await requireCompanyAccess(req, db, companyId)
-  if (!a.ok || !a.userId || !companyId) return { ok: false }
+/**
+ * Staff with the Command Centre or Call Logs permission (owner, admins and the
+ * platform admin always).
+ *
+ * Two round trips, not three: the sign-in check first (remembered for a few
+ * seconds, so requireCompanyAccess below doesn't repeat it), then the
+ * membership check and this feature's permission read side by side.
+ *
+ * `timezone: true` also reads the business's timezone in that second round
+ * (only once the caller is signed in, and handed back only when they're let
+ * in), so /board can work out the period in it without another round trip.
+ * It's a read of its own, so it can never change who gets in.
+ */
+export async function requireCallsAccess(req: any, db: Db, companyId: string | null | undefined, opts: { timezone?: boolean } = {}): Promise<{ ok: boolean; userId?: string; timezone?: string }> {
+  if (!companyId) return { ok: false }
   try {
-    const [co, team] = await Promise.all([
+    const user = await verifyToken(db, bearerToken(req))
+    if (!user?.id) return { ok: false }
+    const [a, co, team, tz] = await Promise.all([
+      requireCompanyAccess(req, db, companyId),
       db.from('companies').select('owner_id').eq('id', companyId).maybeSingle(),
-      db.from('team_members').select('role, status, permissions').eq('company_id', companyId).eq('user_id', a.userId).limit(5),
+      db.from('team_members').select('role, status, permissions').eq('company_id', companyId).eq('user_id', user.id).limit(5),
+      opts.timezone
+        ? Promise.resolve(db.from('companies').select('booking_settings').eq('id', companyId).maybeSingle())
+          .then((r: any) => (r?.data ? validTz(r.data.booking_settings?.timezone) : undefined), () => undefined)
+        : undefined,
     ])
-    if (co?.data?.owner_id === a.userId) return a
+    if (!a.ok || !a.userId) return { ok: false }
+    const ok = tz ? { ok: true, userId: a.userId, timezone: tz as string } : { ok: true, userId: a.userId }
+    if (co?.data?.owner_id === a.userId) return ok
     // Only the owner (above) and the platform admin get past a team read that
     // failed, or past having no team row; everyone else is checked on their row.
     const superAdmin = async () => (await callerUser(req, db))?.email === SUPER_ADMIN
-    if (team?.error) return (await superAdmin()) ? a : { ok: false }
+    if (team?.error) return (await superAdmin()) ? ok : { ok: false }
     const row = (team?.data || []).find((r: any) => String(r.status || '').toLowerCase() !== 'removed')
-    if (!row) return (await superAdmin()) ? a : { ok: false }
+    if (!row) return (await superAdmin()) ? ok : { ok: false }
     const role = String(row.role || 'viewer').toLowerCase()
-    if (hasFullAccess(role)) return a
+    if (hasFullAccess(role)) return ok
     const perms = row.permissions && typeof row.permissions === 'object' ? row.permissions : null
-    return canUseFeature(role, perms, 'command_centre') || canUseFeature(role, perms, 'calls') ? a : { ok: false }
+    return canUseFeature(role, perms, 'command_centre') || canUseFeature(role, perms, 'calls') ? ok : { ok: false }
   } catch { return { ok: false } }
 }
 
@@ -84,17 +104,39 @@ export const CALL_COLS_FULL = `id, direction, status, is_voicemail, duration_sec
 export const CALL_COLS_BASIC = 'id, direction, status, is_voicemail, duration_seconds, from_number, to_number, caller_name, contact_name, agent_name, contact_id, conversation_id, created_at, ended_at, recording_url, sentiment, telnyx_call_control_id'
 export const MAX_CALLS = 20000
 
+// PostgREST returns at most 1,000 rows a request. A long period used to be
+// read one page after another (20 round trips for 20,000 calls); now the first
+// page goes alone (most periods fit in it) and the rest go PAGE_WAVE at a time.
+const PAGE = 1000
+const PAGE_WAVE = 4
+
 async function pageAll(build: () => any, cap: number): Promise<{ rows: any[]; error: any; truncated: boolean }> {
-  const rows: any[] = []
-  for (let from = 0; from < cap; from += 1000) {
-    const size = Math.min(1000, cap - from)
+  const get = async (from: number) => {
+    const size = Math.min(PAGE, cap - from)
     const { data, error } = await build().range(from, from + size - 1)
-    if (error) return { rows, error, truncated: false }
-    if (!data?.length) break
-    rows.push(...data)
-    if (data.length < size) return { rows, error: null, truncated: false }
+    return { data: (data || []) as any[], error, full: !error && (data?.length || 0) >= size }
   }
-  return { rows, error: null, truncated: rows.length >= cap }
+  const first = await get(0)
+  if (first.error) return { rows: [], error: first.error, truncated: false }
+  const rows: any[] = [...first.data]
+  let more = first.full
+  let next = first.data.length
+  while (more && next < cap) {
+    const starts: number[] = []
+    for (let k = 0; k < PAGE_WAVE && next + k * PAGE < cap; k++) starts.push(next + k * PAGE)
+    const wave = await Promise.all(starts.map(get))
+    for (const w of wave) {
+      if (w.error) return { rows, error: w.error, truncated: false }
+      rows.push(...w.data)
+      if (!w.full) { more = false; break }
+    }
+    next = starts[starts.length - 1] + PAGE
+  }
+  // A call that came in while the pages were read pushes the rest down one,
+  // so the next page starts with a row already read: keep one of each.
+  const seen = new Set<string>()
+  const unique = rows.filter(r => { const id = r?.id == null ? null : String(r.id); if (id == null) return true; if (seen.has(id)) return false; seen.add(id); return true })
+  return { rows: unique, error: null, truncated: more && next >= cap }
 }
 
 /** Raw call rows created in [fromIso, toIso), newest first, de-duplicated. Falls back to the older columns on an older database. */
@@ -108,7 +150,8 @@ export async function loadCallRows(db: Db, companyId: string, fromIso: string, t
   if (r.error) r = await run(CALL_COLS_BASIC)
   if (r.error) throw new Error(r.error.message || 'Couldn’t load calls')
   const d = dedupeRows(r.rows)
-  // More than the cap: say how many there are, so the page can be honest.
+  // More than the cap: say how many there are (a count in the database, not
+  // rows), so the page can be honest.
   let total: number | null = null
   if (r.truncated) {
     try {
@@ -136,26 +179,39 @@ export async function lineLocations(db: Db, companyId: string): Promise<Map<stri
   return map
 }
 
-/** Names and stores for raw rows. Every lookup is best-effort: a missing table or column just leaves the field empty. */
+/**
+ * Names and stores for raw rows. Every lookup is best-effort: a missing table
+ * or column just leaves the field empty.
+ *
+ * One round trip: the contacts and conversations by id, the store lines, and
+ * the number lookup for callers with no name on the row all go together. (The
+ * number lookup used to wait for the contacts, to skip callers whose contact
+ * has a name; it now asks for every caller with no name on the row, and only
+ * uses the answer where the contact had none, so the result is the same.)
+ */
 export async function enrichCalls(db: Db, companyId: string, rows: any[], lines?: Map<string, string>): Promise<CcCall[]> {
   if (!rows.length) return []
   const contactIds = uniq(rows.map(r => r.contact_id))
   const convIds = uniq(rows.map(r => r.conversation_id))
-  const [contactRows, convRows, lineMap] = await Promise.all([
+  const tailOf = (r: any) => phoneKey(otherNumber(normaliseCall(r)))
+  const rowNamed = (r: any) => !!callerName({ name: null, contact_name: r.contact_name, caller_name: r.caller_name })
+  const maybeTails = uniq(rows.filter(r => !rowNamed(r)).map(tailOf).filter(k => k.length >= 9))
+  const [contactRows, convRows, lineMap, tailRows] = await Promise.all([
     mapLimit(chunks(contactIds, 200), 4, ids => safeRows(db.from('contacts').select('id, name, location_id').eq('company_id', companyId).in('id', ids))).then(a => a.flat()),
     mapLimit(chunks(convIds, 200), 4, ids => safeRows(db.from('conversations').select('id, location_id, assigned_location_id').eq('company_id', companyId).in('id', ids))).then(a => a.flat()),
     lines ? Promise.resolve(lines) : lineLocations(db, companyId),
+    mapLimit(chunks(maybeTails, 200), 4, t => safeRows(db.from('contacts').select('id, name, location_id, phone_norm').eq('company_id', companyId).in('phone_norm', t).limit(1000))).then(a => a.flat()),
   ])
   const contacts = new Map<string, any>(contactRows.map((c: any) => [String(c.id), c]))
   const convs = new Map<string, any>(convRows.map((c: any) => [String(c.id), c]))
 
-  // Callers with no named contact on the row: look the number up.
+  // Callers with no named contact on the row: matched by number.
   const named = (r: any) => { const c = r.contact_id ? contacts.get(String(r.contact_id)) : null; return !!callerName({ name: c?.name || null, contact_name: r.contact_name, caller_name: r.caller_name }) }
-  const tails = uniq(rows.filter(r => !named(r)).map(r => phoneKey(otherNumber(normaliseCall(r)))).filter(k => k.length >= 9))
+  const tails = new Set(rows.filter(r => !named(r)).map(tailOf).filter(k => k.length >= 9))
   const byTail = new Map<string, any>()
-  if (tails.length) {
-    const found = (await mapLimit(chunks(tails, 200), 4, t => safeRows(db.from('contacts').select('id, name, location_id, phone_norm').eq('company_id', companyId).in('phone_norm', t).limit(1000)))).flat()
-    for (const c of found) if (c.name && !looksLikePhone(c.name) && !byTail.has(String(c.phone_norm))) byTail.set(String(c.phone_norm), c)
+  for (const c of tailRows) {
+    const k = String(c.phone_norm)
+    if (tails.has(k) && c.name && !looksLikePhone(c.name) && !byTail.has(k)) byTail.set(k, c)
   }
 
   return rows.map(r => {
@@ -210,30 +266,76 @@ export type Overview = {
   aiPaused: boolean
 }
 
-export async function loadOverview(db: Db, companyId: string, now: Date = new Date(), deps: { phoneAgent?: (db: Db, id: string) => Promise<any> } = {}): Promise<Overview> {
-  const [co, locs, hours, paused, agent] = await Promise.all([
+export type OverviewDeps = {
+  phoneAgent?: (db: Db, id: string) => Promise<any>
+  hours?: (db: Db, id: string) => Promise<BusinessHours | null>
+  outcome?: typeof missedCallOutcome
+}
+
+const loadPhoneAgent = async (d: Db, id: string) => (await import('@/lib/phone-agent')).getPhoneAgent(d, id)
+
+/**
+ * The board's settings without the slow parts: timezone, stores, the
+ * missed-call text and AI receptionist set-up, and whether AI agents are paused.
+ * One round trip; the Command Centre's first load gets these with its calls.
+ */
+export type BoardContext = Pick<Overview, 'timezone' | 'locations' | 'missedCallText' | 'phoneAgent' | 'aiPaused'>
+
+export async function loadBoardContext(db: Db, companyId: string, deps: Pick<OverviewDeps, 'phoneAgent'> = {}): Promise<BoardContext> {
+  const [co, locs, paused, agent] = await Promise.all([
     db.from('companies').select('name, inbox_settings, booking_settings').eq('id', companyId).maybeSingle().then((r: any) => r?.data || null, () => null),
-    safeRows(db.from('company_locations').select('id, label, suburb, is_primary').eq('company_id', companyId).order('is_primary', { ascending: false })),
-    hoursQuick(db, companyId),
+    safeRows(db.from('company_locations').select('id, label, suburb, is_primary').eq('company_id', companyId).order('is_primary', { ascending: false }).limit(100)),
     agentsPaused(db, companyId).catch(() => ({ paused: false })),
-    (deps.phoneAgent || (async (d: Db, id: string) => (await import('@/lib/phone-agent')).getPhoneAgent(d, id)))(db, companyId).catch(() => null),
+    (deps.phoneAgent || loadPhoneAgent)(db, companyId).catch(() => null),
   ])
-  const timezone = validTz(co?.booking_settings?.timezone)
-  // The last 7 days, as the home dashboard counts them (today and the six before).
-  const since = new Date(dayStartOffset(now.getTime(), timezone, 6))
-  const outcome = await missedCallOutcome(db, companyId, { since, now }).catch(() => null)
-  const items = outcome?.toReturn || []
-  // Names: the caller's contact, else a contact with that number.
-  const ids = uniq(items.map(i => i.contactId))
-  const named = new Map<string, string>()
-  for (const ch of chunks(ids, 200)) for (const c of await safeRows(db.from('contacts').select('id, name').eq('company_id', companyId).in('id', ch))) if (c.name && !looksLikePhone(c.name)) named.set(String(c.id), c.name)
+  return contextFrom(co, locs, paused, agent)
+}
+
+function contextFrom(co: any, locs: any[], paused: any, agent: any): BoardContext {
+  return {
+    timezone: validTz(co?.booking_settings?.timezone),
+    locations: locs.map((l: any) => ({ id: String(l.id), name: l.label || l.suburb || 'Store' })),
+    missedCallText: (() => { const s = missedCallTextSettings(co?.inbox_settings); return { enabled: s.enabled, when: s.when } })(),
+    phoneAgent: { enabled: !!agent?.enabled, mode: agent?.mode || null },
+    aiPaused: !!paused?.paused,
+  }
+}
+
+/**
+ * Everything on the board besides the calls. The missed callers (7 days of
+ * calls and replies) start as soon as the timezone is known, alongside the
+ * opening hours (which may wait on Google) instead of after them.
+ */
+export async function loadOverview(db: Db, companyId: string, now: Date = new Date(), deps: OverviewDeps = {}): Promise<Overview> {
+  const coP = db.from('companies').select('name, inbox_settings, booking_settings').eq('id', companyId).maybeSingle().then((r: any) => r?.data || null, () => null)
+  const outcomeP = coP.then(async (co: any) => {
+    const timezone = validTz(co?.booking_settings?.timezone)
+    // The last 7 days, as the home dashboard counts them (today and the six before).
+    const since = new Date(dayStartOffset(now.getTime(), timezone, 6))
+    const outcome = await (deps.outcome || missedCallOutcome)(db, companyId, { since, now, names: true }).catch(() => null)
+    const items = outcome?.toReturn || []
+    // Names: the caller's contact (read with the missed calls), else the name on the call.
+    const named = new Map<string, string>()
+    const found = outcome?.names
+      ? Object.entries(outcome.names).map(([id, name]) => ({ id, name }))
+      : (await mapLimit(chunks(uniq(items.map(i => i.contactId)), 200), 4, ch => safeRows(db.from('contacts').select('id, name').eq('company_id', companyId).in('id', ch)))).flat()
+    for (const c of found) if (c.name && !looksLikePhone(c.name)) named.set(String(c.id), c.name)
+    return { outcome, items, named }
+  })
+  const [co, locs, hours, paused, agent, { outcome, items, named }] = await Promise.all([
+    coP,
+    safeRows(db.from('company_locations').select('id, label, suburb, is_primary').eq('company_id', companyId).order('is_primary', { ascending: false }).limit(100)),
+    (deps.hours || ((d: Db, id: string) => hoursQuick(d, id)))(db, companyId).catch(() => null),
+    agentsPaused(db, companyId).catch(() => ({ paused: false })),
+    (deps.phoneAgent || loadPhoneAgent)(db, companyId).catch(() => null),
+    outcomeP,
+  ])
   const outlook = hours && hours.places.length ? hoursOutlook(hours, { at: now, days: 1 }) : null
   const todayLines = outlook ? outlook.places.map(p => `${outlook.places.length > 1 ? `${p.store}: ` : ''}${p.days[0]?.hours || 'unknown'}`) : []
   return {
-    timezone,
+    ...contextFrom(co, locs, paused, agent),
     openNow: openAt(hours, now),
     hoursToday: todayLines.length ? todayLines.join(' · ') : null,
-    locations: locs.map((l: any) => ({ id: String(l.id), name: l.label || l.suburb || 'Store' })),
     recovery: {
       missed: outcome?.missed || 0, recovered: outcome?.recovered || 0, textedBack: outcome?.textedBack || 0,
       items: items.slice(0, 100).map(i => ({
@@ -244,10 +346,29 @@ export async function loadOverview(db: Db, companyId: string, now: Date = new Da
         textable: textableCaller(i.number, null).ok,
       })),
     },
-    missedCallText: (() => { const s = missedCallTextSettings(co?.inbox_settings); return { enabled: s.enabled, when: s.when } })(),
-    phoneAgent: { enabled: !!agent?.enabled, mode: agent?.mode || null },
-    aiPaused: !!paused?.paused,
   }
+}
+
+// ── The first load, in one request ───────────────────────────────────────────
+
+export type Board = BoardContext & { from: number; to: number | null; calls: CcCall[]; truncated: boolean; removed: number; total: number | null }
+
+/**
+ * The Command Centre's first screen in one request: the calls for the period
+ * (`win`, which /board works out in the business's own timezone) and the
+ * board's settings. The calls, settings and store lines are read together,
+ * then the names and stores in one more round trip. `from`/`to` say which
+ * period was read. The missed callers and opening hours follow from
+ * /overview, so they never hold the board up.
+ */
+export async function loadBoard(db: Db, companyId: string, win: { from: number; to: number | null }, deps: Pick<OverviewDeps, 'phoneAgent'> = {}): Promise<Board> {
+  const [ctx, lines, raw] = await Promise.all([
+    loadBoardContext(db, companyId, deps),
+    lineLocations(db, companyId),
+    loadCallRows(db, companyId, new Date(win.from).toISOString(), win.to ? new Date(win.to).toISOString() : null),
+  ])
+  const calls = await enrichCalls(db, companyId, raw.rows, lines)
+  return { ...ctx, from: win.from, to: win.to, calls, truncated: raw.truncated, removed: raw.removed, total: raw.total }
 }
 
 // ── One call, for the drawer ─────────────────────────────────────────────────
@@ -255,22 +376,27 @@ export async function loadOverview(db: Db, companyId: string, now: Date = new Da
 export async function loadCallDetail(db: Db, companyId: string, callId: string, now: Date = new Date()) {
   const { data: raw } = await db.from('calls').select('*').eq('id', callId).eq('company_id', companyId).maybeSingle()
   if (!raw) return null
-  const [call] = await enrichCalls(db, companyId, [raw])
   const at = ms(raw.created_at)
   const winFrom = new Date(at - 2 * 60_000).toISOString(), winTo = new Date(at + 24 * 3600_000).toISOString()
   const convId = raw.conversation_id || null
-  const contactId = call.contact_id || null
-  const key = phoneKey(otherNumber(call))
+  const key = phoneKey(otherNumber(normaliseCall(raw)))
 
-  const [contact, conv, tasks, waitlist, messages, later] = await Promise.all([
+  // The reads that only need the call row go out with the name lookup; the
+  // contact and waiting list wait for it only when the row has no contact.
+  const enrichedP = enrichCalls(db, companyId, [raw]).then(a => a[0])
+  const byContact = async (contactId: string | null) => Promise.all([
     contactId ? db.from('contacts').select('id, name, phone, email, location_id').eq('id', contactId).eq('company_id', companyId).maybeSingle().then((r: any) => r?.data || null, () => null) : null,
-    convId ? db.from('conversations').select('id, subject, channel, status').eq('id', convId).eq('company_id', companyId).maybeSingle().then((r: any) => r?.data || null, () => null) : null,
-    convId ? safeRows(db.from('conversation_tasks').select('id, title, text, status, done, priority, due_date, created_at, created_by, source').eq('company_id', companyId).eq('conversation_id', convId).gte('created_at', winFrom).lte('created_at', winTo).order('created_at', { ascending: true }).limit(20)) : [],
     (convId || contactId) ? safeRows((() => {
       let q = db.from('stock_waitlist').select('id, item_name, status, created_at, agent_run_id, added_by, conversation_id, contact_id').eq('company_id', companyId).gte('created_at', winFrom).lte('created_at', winTo)
       q = convId && contactId ? q.or(`conversation_id.eq.${convId},contact_id.eq.${contactId}`) : convId ? q.eq('conversation_id', convId) : q.eq('contact_id', contactId)
       return q.order('created_at', { ascending: true }).limit(20)
-    })()) : [],
+    })()) : [] as any[],
+  ])
+  const [call, [contact, waitlist], conv, tasks, messages, later] = await Promise.all([
+    enrichedP,
+    raw.contact_id ? byContact(String(raw.contact_id)) : enrichedP.then(c => byContact(c.contact_id || null)),
+    convId ? db.from('conversations').select('id, subject, channel, status').eq('id', convId).eq('company_id', companyId).maybeSingle().then((r: any) => r?.data || null, () => null) : null,
+    convId ? safeRows(db.from('conversation_tasks').select('id, title, text, status, done, priority, due_date, created_at, created_by, source').eq('company_id', companyId).eq('conversation_id', convId).gte('created_at', winFrom).lte('created_at', winTo).order('created_at', { ascending: true }).limit(20)) : [],
     convId ? safeRows(db.from('messages').select('id, content, created_at, metadata, sender_type, sender_name, is_internal, delivery_channel').eq('conversation_id', convId).gte('created_at', winFrom).order('created_at', { ascending: true }).limit(80)) : [],
     key.length >= 8 ? safeRows(db.from('calls').select('id, direction, status, is_voicemail, duration_seconds, from_number, to_number, agent_name, answered_by_user_id, answered_at, created_at, ended_at, recording_url').eq('company_id', companyId).or(`from_number.ilike.%${key},to_number.ilike.%${key}`).gt('created_at', raw.created_at).lte('created_at', new Date(at + 7 * 864e5).toISOString()).order('created_at', { ascending: true }).limit(50)) : [],
   ])
@@ -356,10 +482,9 @@ export async function draftTextBack(db: Db, companyId: string, callId: string, o
   const ours = call.direction === 'outbound' ? call.from_number : call.to_number
   const verdict = textableCaller(theirs, ours)
   if ('reason' in verdict) return { ok: false, reason: verdict.reason, message: SKIP_MSG[verdict.reason] }
-  const consent = await textOptOut(db, companyId, verdict.e164, call.contact_id)
-  if (consent.state === 'opted_out') return { ok: false, reason: 'opted_out', message: SKIP_MSG.opted_out }
-
-  const [{ data: co }, paused, [enriched], autoMsgs, hours, own] = await Promise.all([
+  // The opt-out check goes out with the rest, and still decides before anything is drafted.
+  const [consent, { data: co }, paused, [enriched], autoMsgs, hours, own] = await Promise.all([
+    textOptOut(db, companyId, verdict.e164, call.contact_id),
     db.from('companies').select('name, inbox_settings, booking_settings').eq('id', companyId).maybeSingle(),
     agentsPaused(db, companyId).catch(() => ({ paused: false })),
     enrichCalls(db, companyId, [raw]),
@@ -367,6 +492,7 @@ export async function draftTextBack(db: Db, companyId: string, callId: string, o
     loadBusinessHours(db, companyId, { google: false }).catch(() => null),
     businessNumbers(db, companyId).catch(() => null),
   ])
+  if (consent.state === 'opted_out') return { ok: false, reason: 'opted_out', message: SKIP_MSG.opted_out }
   const ourLine = toE164(ours || '')
   const from = ourLine && own?.lines.has(phoneKey(ourLine)) && canTextFrom(ourLine) ? ourLine : null
   const business = String(co?.name || '').trim() || 'our team'
@@ -449,20 +575,21 @@ const askSwitchboard: Ask = async (prompt, companyId) => {
   return String(data.content?.[0]?.text || '')
 }
 
-export async function buildInsights(db: Db, companyId: string, p: { from: number; to: number | null; tz: string; now?: Date; ask?: Ask; fresh?: boolean }): Promise<Insights> {
+export async function buildInsights(db: Db, companyId: string, p: { from: number; to: number | null; tz: string | Promise<string>; now?: Date; ask?: Ask; fresh?: boolean }): Promise<Insights> {
   const now = (p.now || new Date()).getTime()
   const fromIso = new Date(p.from).toISOString(), toIso = p.to ? new Date(p.to).toISOString() : null
-  const { rows } = await loadCallRows(db, companyId, fromIso, toIso, 5000)
+  // The calls are read while the timezone is still being looked up.
+  const [{ rows }, tz] = await Promise.all([loadCallRows(db, companyId, fromIso, toIso, 5000), Promise.resolve(p.tz)])
   const calls = rows.map(r => normaliseCall(r))
   const st = aggregate(calls, now)
-  const busy = busiestHour(calls, p.tz)
+  const busy = busiestHour(calls, tz)
   // Who answered most (people only).
   const byAgent = new Map<string, number>()
   for (const c of calls) if (c.direction === 'inbound' && !isAiCall(c) && c.agent_name && outcomeOf(c, now) === 'answered') byAgent.set(c.agent_name, (byAgent.get(c.agent_name) || 0) + 1)
   const top = Array.from(byAgent.entries()).sort((a, b) => b[1] - a[1])[0]
   // Unanswered by hour: where the misses bunch up.
   const missByHour = Array.from({ length: 24 }, () => 0)
-  for (const c of calls) if (c.direction === 'inbound') { const o = outcomeOf(c, now); if (o === 'missed' || o === 'voicemail') missByHour[zonedParts(ms(c.created_at), p.tz).h]++ }
+  for (const c of calls) if (c.direction === 'inbound') { const o = outcomeOf(c, now); if (o === 'missed' || o === 'voicemail') missByHour[zonedParts(ms(c.created_at), tz).h]++ }
   const worst = missByHour.reduce((b, n, i) => (n > (missByHour[b] || 0) ? i : b), 0)
 
   const facts: Insights['facts'] = [

@@ -34,8 +34,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'That’s a lot of summaries in a minute. Try again shortly.' }, { status: 429, headers: { 'Retry-After': '60' } })
   }
   try {
-    const tz = await companyTimezone(db, companyId)
-    return NextResponse.json(await buildInsights(db, companyId, { from: win.from, to: win.to, tz, fresh }), { headers: { 'Cache-Control': 'no-store' } })
+    // The timezone lookup runs alongside the calls read inside buildInsights.
+    return NextResponse.json(await buildInsights(db, companyId, { from: win.from, to: win.to, tz: companyTimezone(db, companyId), fresh }), { headers: { 'Cache-Control': 'no-store' } })
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || 'Couldn’t summarise these calls' }, { status: 500 })
   }

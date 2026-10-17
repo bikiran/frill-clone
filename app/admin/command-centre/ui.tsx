@@ -122,6 +122,36 @@ export function Segmented<T extends string>({ value, options, onChange, size = '
   )
 }
 
+/** Colour for each call outcome (chips, the activity feed, the drawer). */
+export const OUTCOME_COLOR: Record<string, string> = { answered: C.green, connected: C.green, missed: C.red, voicemail: C.amber, live: C.blue, no_answer: '#6b6b70' }
+
+/**
+ * A grey placeholder where a number or line will be, so the board's layout is
+ * there straight away. `data-skel` marks it (the speed check waits for none).
+ * The shimmer needs the page's `ccshimmer` keyframes and stops for people who
+ * prefer less motion.
+ */
+export function Skel({ w = '100%', h = 12, r = 6, style }: { w?: number | string; h?: number; r?: number; style?: React.CSSProperties }) {
+  return <span data-skel="" aria-hidden="true" className="cc-skel" style={{ display: 'inline-block', width: w, height: h, borderRadius: r, verticalAlign: 'middle', maxWidth: '100%', ...style }} />
+}
+
+/** A few placeholder rows: an icon block and two lines, as most lists on the board look. */
+export function SkelRows({ n = 3, icon = true, pad = '10px 0' }: { n?: number; icon?: boolean; pad?: string }) {
+  return (
+    <div aria-hidden="true" style={{ display: 'flex', flexDirection: 'column' }}>
+      {Array.from({ length: n }, (_, i) => (
+        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: pad }}>
+          {icon && <Skel w={30} h={30} r={9} style={{ flexShrink: 0 }} />}
+          <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <Skel w={`${70 - (i % 3) * 12}%`} h={11} />
+            <Skel w={`${45 - (i % 2) * 10}%`} h={9} />
+          </span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 export function Spinner({ size = 14 }: { size?: number }) {
   return <span aria-hidden="true" style={{ width: size, height: size, border: '2px solid var(--border)', borderTopColor: 'var(--coral)', borderRadius: '50%', display: 'inline-block', animation: 'ccspin .8s linear infinite', flexShrink: 0 }} />
 }
