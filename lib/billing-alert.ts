@@ -14,9 +14,10 @@ import { COLVY_CONTACT } from '@/lib/colvy-contact'
 
 export const BILLING_ALERT_SETTING = 'billing_setup_alert'
 
-let sentDay: string | null = null
+// Per alert key: the Sydney day it was last sent from this process.
+const sentDays = new Map<string, string>()
 /** Tests only. */
-export function resetBillingAlertMemo() { sentDay = null }
+export function resetBillingAlertMemo() { sentDays.clear() }
 
 /** YYYY-MM-DD in Sydney. */
 export function sydneyDay(d: Date = new Date()): string {
@@ -73,32 +74,58 @@ export function billingAlertMessage(info: BillingAlertInfo): string {
 }
 
 /**
+ * The once-a-day Colvy team alert, for any problem only the platform can fix
+ * (billing not set up, Resend key can't read received email…): the bell in
+ * Colvy's own workspace plus an email to Colvy's support inbox. Claimed per
+ * Sydney day in platform_settings under `key` (plus an in-process guard).
+ * Never throws. Returns whether this call sent it.
+ */
+export async function alertColvyTeamOncePerDay(db: any, a: {
+  key: string; message: string; subject: string
+  /** Extra fields kept with the day claim in platform_settings. */
+  value?: Record<string, any>
+  updatedBy?: string
+}, deps: BillingAlertDeps = {}): Promise<boolean> {
+  try {
+    const now = deps.now || new Date()
+    const day = sydneyDay(now)
+    if (sentDays.get(a.key) === day) return false
+    try {
+      const { data, error } = await db.from('platform_settings').select('value').eq('key', a.key).maybeSingle()
+      if (!error && data?.value?.day === day) { sentDays.set(a.key, day); return false }
+      // Claim the day before sending, so two requests at once don't both alert.
+      await db.from('platform_settings').upsert({
+        key: a.key,
+        value: { day, at: now.toISOString(), ...(a.value || {}) },
+        updated_by: a.updatedBy || 'alert', updated_at: now.toISOString(),
+      }, { onConflict: 'key' })
+    } catch {}
+    sentDays.set(a.key, day)
+
+    await Promise.allSettled([
+      (deps.notify || notifyColvyTeam)(db, a.message),
+      (deps.email || emailColvyTeam)(a.subject, `${a.message}\n\nThis alert is sent at most once a day.`),
+    ])
+    return true
+  } catch (e: any) {
+    console.error('[colvy-alert] failed', e?.message || e)
+    return false
+  }
+}
+
+/**
  * Alert the Colvy team unless it was already done today. Never throws.
  * Returns whether this call sent it.
  */
 export async function alertBillingNotConfigured(db: any, info: BillingAlertInfo, deps: BillingAlertDeps = {}): Promise<boolean> {
   try {
-    const now = deps.now || new Date()
-    const day = sydneyDay(now)
-    if (sentDay === day) return false
-    try {
-      const { data, error } = await db.from('platform_settings').select('value').eq('key', BILLING_ALERT_SETTING).maybeSingle()
-      if (!error && data?.value?.day === day) { sentDay = day; return false }
-      // Claim the day before sending, so two checkouts at once don't both alert.
-      await db.from('platform_settings').upsert({
-        key: BILLING_ALERT_SETTING,
-        value: { day, at: now.toISOString(), tier: info.tier, companyId: info.companyId || null, missing: info.missing },
-        updated_by: 'billing', updated_at: now.toISOString(),
-      }, { onConflict: 'key' })
-    } catch {}
-    sentDay = day
-
-    const message = billingAlertMessage(info)
-    await Promise.allSettled([
-      (deps.notify || notifyColvyTeam)(db, message),
-      (deps.email || emailColvyTeam)('Colvy billing isn’t set up: a customer couldn’t upgrade', `${message}\n\nThis alert is sent at most once a day.`),
-    ])
-    return true
+    return await alertColvyTeamOncePerDay(db, {
+      key: BILLING_ALERT_SETTING,
+      message: billingAlertMessage(info),
+      subject: 'Colvy billing isn’t set up: a customer couldn’t upgrade',
+      value: { tier: info.tier, companyId: info.companyId || null, missing: info.missing },
+      updatedBy: 'billing',
+    }, deps)
   } catch (e: any) {
     console.error('[billing-alert] failed', e?.message || e)
     return false

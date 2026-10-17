@@ -10,6 +10,7 @@
 
 import { uploadToR2, r2Configured } from '@/lib/r2'
 import { headerValue, parseMessageIds, idVariants, normSubject, authVerdict } from '@/lib/email-text'
+import { resendReceivingKey, receivingFailureOf, resendErrorOf, type ReceivingFailure } from '@/lib/resend-receiving'
 
 export * from '@/lib/email-text'
 
@@ -31,20 +32,38 @@ export type ReceivedEmail = {
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 
+export type ReceivedEmailResult =
+  | { ok: true; email: ReceivedEmail; reason?: undefined; status?: undefined; detail?: undefined }
+  | {
+      ok: false
+      email?: undefined
+      /** unauthorised: the key can only send (401/403) · not-found: Resend has no such email ·
+       *  unavailable: 429/5xx/network, worth another go later · over-quota: Resend didn't keep its content · no-key */
+      reason: ReceivingFailure
+      /** Resend's HTTP status, when it answered. */
+      status?: number
+      /** Resend's error name (e.g. restricted_api_key) or a short note. */
+      detail?: string | null
+    }
+
 /**
- * Fetch a received email (body, headers, attachment list) from Resend.
+ * Fetch a received email (body, headers, attachment list) from Resend, and
+ * say why when it can't. Uses the receiving key (lib/resend-receiving).
  * Retries a few times: the webhook can arrive a moment before the email is
- * readable (404), and 429/5xx are worth another go. null when it can't be had.
+ * readable (404), and 429/5xx are worth another go. 401/403 and other 4xx
+ * won't get better, so they return straight away.
  */
-export async function fetchResendReceivedEmail(
+export async function fetchResendReceivedEmailResult(
   emailId: string | null | undefined,
   opts: { apiKey?: string | null; fetchImpl?: typeof fetch; retries?: number; delaysMs?: number[] } = {},
-): Promise<ReceivedEmail | null> {
-  const key = opts.apiKey ?? process.env.RESEND_API_KEY
-  if (!emailId || !key) return null
+): Promise<ReceivedEmailResult> {
+  const key = opts.apiKey ?? resendReceivingKey()
+  if (!key) return { ok: false, reason: 'no-key', detail: 'RESEND_API_KEY is not set' }
+  if (!emailId) return { ok: false, reason: 'not-found', detail: 'no email id' }
   const f = opts.fetchImpl || fetch
   const delays = opts.delaysMs || [300, 1200, 3000]
   const tries = Math.max(1, (opts.retries ?? delays.length) + 1)
+  let last: ReceivedEmailResult = { ok: false, reason: 'unavailable' }
   for (let i = 0; i < tries; i++) {
     try {
       const res = await f(`${RESEND}/emails/receiving/${encodeURIComponent(emailId)}`, {
@@ -53,15 +72,29 @@ export async function fetchResendReceivedEmail(
       if (res.ok) {
         const j: any = await res.json().catch(() => null)
         const e = j?.data && typeof j.data === 'object' && !j.id ? j.data : j
-        if (e && typeof e === 'object') return { ...e, id: e.id || emailId }
-        return null
+        if (e && typeof e === 'object') return { ok: true, email: { ...e, id: e.id || emailId } }
+        return { ok: false, reason: 'unavailable', status: res.status, detail: 'Resend sent an empty answer' }
       }
-      // 4xx other than "not there yet" / rate limit won't get better.
-      if (res.status !== 404 && res.status !== 429 && res.status < 500) return null
-    } catch { /* network: retry */ }
-    if (i < tries - 1) await sleep(delays[Math.min(i, delays.length - 1)])
+      const err = await resendErrorOf(res)
+      const reason = receivingFailureOf(res.status, err.name)
+      last = { ok: false, reason, status: res.status, detail: err.name || err.message }
+      // Only "not there yet" (404) and rate limits / server errors are worth another go.
+      if (res.status !== 404 && res.status !== 429 && res.status < 500) return last
+    } catch (e: any) {
+      last = { ok: false, reason: 'unavailable', detail: String(e?.message || 'network error').slice(0, 120) }
+    }
+    if (i < tries - 1 && delays.length) await sleep(delays[Math.min(i, delays.length - 1)])
   }
-  return null
+  return last
+}
+
+/** fetchResendReceivedEmailResult without the why: the email, or null. */
+export async function fetchResendReceivedEmail(
+  emailId: string | null | undefined,
+  opts: { apiKey?: string | null; fetchImpl?: typeof fetch; retries?: number; delaysMs?: number[] } = {},
+): Promise<ReceivedEmail | null> {
+  const r = await fetchResendReceivedEmailResult(emailId, opts)
+  return r.ok ? r.email : null
 }
 
 // The conversation belongs to this sender: the same contact (or neither has one).
@@ -148,11 +181,12 @@ export function safeAttachmentType(type: string | null | undefined): { type: str
  */
 export async function hostResendAttachments(emailId: string | null | undefined, companyId: string, meta?: any[] | null, fetchImpl: typeof fetch = fetch): Promise<{ url: string; name: string; type: string; size?: number }[]> {
   try {
-    if (!process.env.RESEND_API_KEY || !r2Configured() || !emailId) return []
+    const key = resendReceivingKey()
+    if (!key || !r2Configured() || !emailId) return []
     // Skip the extra API call when the payload's metadata says there are none.
     if (Array.isArray(meta) && meta.length === 0) return []
     const res = await fetchImpl(`${RESEND}/emails/receiving/${encodeURIComponent(emailId)}/attachments`, {
-      headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}` },
+      headers: { Authorization: `Bearer ${key}` },
     })
     if (!res.ok) return []
     const j: any = await res.json().catch(() => ({}))

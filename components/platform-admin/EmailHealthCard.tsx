@@ -7,7 +7,7 @@
 // request runs too long), putting each reply with the conversation it answers.
 // Uses /api/platform-admin/email-backfill (lib/email-backfill).
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { authFetch } from '@/lib/auth-fetch'
 import { confirmDialog } from '@/components/ConfirmDialog'
 
@@ -18,6 +18,7 @@ const PROVIDER: Record<string, string> = { resend: 'Resend', gmail: 'Gmail', 'ot
 const OUTCOME: Record<string, { text: string; color: string }> = {
   'not-found-on-resend': { text: 'Not found', color: '#dc2626' },
   'fetch-failed': { text: 'Not found', color: '#dc2626' },
+  'resend-key-blocked': { text: 'Blocked: key can only send', color: '#dc2626' },
   mismatch: { text: 'Different email', color: '#dc2626' },
   'already-in-colvy': { text: 'Duplicate', color: '#d97706' },
   'filled-from-gmail': { text: 'From Gmail', color: '#059669' },
@@ -39,6 +40,29 @@ async function openInWorkspace(slug: string | null | undefined, conversationId: 
   window.open(`https://${slug}.colvy.com${next}`, '_blank')
 }
 const linkBtn: React.CSSProperties = { background: 'none', border: 'none', padding: 0, color: '#6366f1', fontSize: 12, fontWeight: 700, cursor: 'pointer', textDecoration: 'none', whiteSpace: 'nowrap' }
+type Receiving = { status: 'working' | 'blocked' | 'no-key' | 'error'; label: string; keyName: string | null; httpStatus?: number; errorName?: string | null; help?: string; checkedAt: string }
+const tick = <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden style={{ flexShrink: 0 }}><polyline points="20 6 9 17 4 12" /></svg>
+const warn = <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden style={{ flexShrink: 0 }}><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>
+
+// "Reading received email: working" / "blocked: key can only send", with the fix.
+export function ReceivingLine({ r, onRecheck, busy }: { r: Receiving | null; onRecheck: () => void; busy: boolean }) {
+  const good = r?.status === 'working'
+  const color = !r ? 'var(--sa-muted)' : good ? '#059669' : r.status === 'error' ? '#d97706' : '#dc2626'
+  return (
+    <div style={{ marginTop: 10, padding: '9px 12px', borderRadius: 10, border: `1px solid ${!r || good ? 'var(--sa-border)' : 'color-mix(in srgb, ' + color + ' 35%, var(--sa-border))'}`, background: !r || good ? 'var(--sa-bg)' : 'color-mix(in srgb, ' + color + ' 7%, var(--sa-card))' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, fontWeight: 700, color }}>
+          {r ? (good ? tick : warn) : null}
+          Reading received email: {r ? r.label : 'checking…'}
+        </span>
+        {r?.keyName && <span style={{ fontSize: 11.5, color: 'var(--sa-muted)' }}>using {r.keyName}{r.httpStatus && !good ? ` · Resend answered ${r.httpStatus}${r.errorName ? ` ${r.errorName}` : ''}` : ''}</span>}
+        <button onClick={onRecheck} disabled={busy} style={{ ...linkBtn, marginLeft: 'auto', opacity: busy ? 0.6 : 1 }}>{busy ? 'Checking…' : 'Check again'}</button>
+      </div>
+      {r && !good && r.help && <p style={{ margin: '6px 0 0', fontSize: 12, color: 'var(--sa-text)', lineHeight: 1.5 }}>{r.help}</p>}
+    </div>
+  )
+}
+
 type Result = { status: 'waiting' | 'running' | 'done' | 'error'; filled?: number; rethreaded?: number; notFound?: number; stillEmpty?: number; error?: string }
 
 const btn = (color: string, filled = false): React.CSSProperties => ({
@@ -63,6 +87,15 @@ export default function EmailHealthCard() {
   const [dry, setDry] = useState<{ workspaces: Ws[]; rows: Row[]; candidates: number; filled: number; fromGmail: number; alreadyInColvy: number; notFound: number; stillEmpty: number } | null>(null)
   const [results, setResults] = useState<Record<string, Result>>({})
   const [current, setCurrent] = useState(0)
+  const [receiving, setReceiving] = useState<Receiving | null>(null)
+  const [checkingKey, setCheckingKey] = useState(false)
+  const checkReceiving = async () => {
+    setCheckingKey(true)
+    try { const d = await call({ check: true }); setReceiving(d.receiving || null) }
+    catch (e: any) { setReceiving({ status: 'error', label: `couldn’t check (${e.message})`, keyName: null, checkedAt: new Date().toISOString() }) }
+    finally { setCheckingKey(false) }
+  }
+  useEffect(() => { checkReceiving() }, [])
 
   // Find the workspaces with empty replies (database only), then dry-run them
   // one at a time, so no single request has to check every workspace.
@@ -122,8 +155,9 @@ export default function EmailHealthCard() {
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
         <div style={{ minWidth: 0, flex: '1 1 260px' }}>
           <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)', margin: 0 }}>Email health</p>
+          <ReceivingLine r={receiving} onRecheck={checkReceiving} busy={checkingKey} />
           <p style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--sa-text)', margin: '10px 0 2px' }}>Recover empty email replies</p>
-          <p style={{ fontSize: 11.5, color: 'var(--sa-muted)', margin: 0 }}>Customer replies that arrived through Resend before bodies were fetched were saved blank. A dry run counts them, workspace by workspace, and lists any it can’t recover with the reason; nothing changes until you run it. Ones Resend no longer has are fetched from the business’s connected Gmail when it has a copy. The real run fills each reply in and moves it into the conversation it answers (unless staff already replied where it is).</p>
+          <p style={{ fontSize: 11.5, color: 'var(--sa-muted)', margin: 0 }}>Customer replies whose text Resend didn’t hand over were saved blank (or as “couldn’t load yet”). A dry run counts them, workspace by workspace, and lists any it can’t recover with the reason; nothing changes until you run it. Ones Resend no longer has are fetched from the business’s connected Gmail when it has a copy. The real run fills each reply in and moves it into the conversation it answers (unless staff already replied where it is).</p>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <select value={days} onChange={e => setDays(Number(e.target.value))} disabled={!!busy} style={{ padding: '7px 9px', borderRadius: 9, border: '1px solid var(--sa-border)', background: 'var(--sa-bg)', color: 'var(--sa-text)', fontSize: 12.5 }}>

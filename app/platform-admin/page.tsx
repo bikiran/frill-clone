@@ -2943,6 +2943,7 @@ function OverviewPage({ data, pulse, onRefresh, onGo }: { data: any; pulse: any;
             { label: 'AI agent runs', value: `${pulse.agents?.failed || 0} failed · ${pulse.agents?.stuck || 0} stuck / ${pulse.agents?.runs || 0}`, bad: (pulse.agents?.failed || 0) + (pulse.agents?.stuck || 0) > 0 || !!pulse.agents?.platformPaused, go: 'agents' },
             { label: 'Connections', value: `${pulse.connections?.broken || 0} need attention / ${pulse.connections?.total || 0}`, bad: (pulse.connections?.broken || 0) > 0, go: 'integrations' },
             { label: 'Stripe events', value: `${pulse.stripe?.events || 0} received`, bad: false, go: 'system' },
+            ...(pulse.emailReceiving ? [{ label: 'Reading received email', value: pulse.emailReceiving.status === 'working' ? 'Working' : pulse.emailReceiving.status === 'blocked' ? 'Blocked: key can only send' : pulse.emailReceiving.label, bad: pulse.emailReceiving.status !== 'working', go: 'system' }] : []),
             ...(pulse.signupLeads && !pulse.signupLeads.missing ? [{ label: 'Sign-ups not finished', value: `${pulse.signupLeads.abandoned24h} abandoned · ${pulse.signupLeads.suspicious24h} suspicious`, bad: false, go: 'signups', tag: pulse.signupLeads.abandoned24h || pulse.signupLeads.suspicious24h ? 'Follow up' : 'None' }] : []),
           ].map((r: any) => (
             <div key={r.label} onClick={() => onGo(r.go)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '9px 0', borderBottom: '1px solid var(--sa-border)', cursor: 'pointer' }}>
@@ -3911,6 +3912,14 @@ function SystemPage({ onGo }: { onGo?: (p: any) => void }) {
               { label: 'AI agent runs', value: `${pulse.agents?.failed || 0} failed`, note: `${pulse.agents?.stuck || 0} stuck · ${pulse.agents?.runs || 0} runs${pulse.agents?.platformPaused ? ' · PAUSED platform-wide' : ''}`, bad: (pulse.agents?.failed || 0) + (pulse.agents?.stuck || 0) > 0 || !!pulse.agents?.platformPaused, go: 'agents' },
               { label: 'Connections', value: `${pulse.connections?.broken || 0} need attention`, note: `${pulse.connections?.total || 0} active connections`, bad: (pulse.connections?.broken || 0) > 0, go: 'integrations' },
               { label: 'Stripe events', value: String(pulse.stripe?.events || 0), note: 'Webhook deliveries received (server count)', bad: false, go: '' },
+              ...(pulse.emailReceiving ? [{
+                label: 'Reading received email',
+                value: pulse.emailReceiving.status === 'working' ? 'Working' : pulse.emailReceiving.status === 'blocked' ? 'Blocked' : pulse.emailReceiving.status === 'no-key' ? 'Not set up' : 'Unknown',
+                note: pulse.emailReceiving.status === 'working' ? `Customer replies are fetched from Resend (${pulse.emailReceiving.keyName})`
+                  : pulse.emailReceiving.status === 'blocked' ? `The key can only send. ${pulse.emailReceiving.help || ''}`
+                  : pulse.emailReceiving.help || pulse.emailReceiving.label,
+                bad: pulse.emailReceiving.status !== 'working', go: '',
+              }] : []),
             ].map(m => (
               <div key={m.label} onClick={m.go && onGo ? () => onGo(m.go) : undefined} title={m.go ? 'Open the full log' : undefined}
                 style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 14, padding: 18, cursor: m.go && onGo ? 'pointer' : 'default' }}>

@@ -848,6 +848,9 @@ export default function InboxPage() {
   }, [selected?.id])
   const [contact, setContact] = useState<Contact | null>(null)
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([])
+  // Owners, admins and the platform super admin see why an email's text couldn't be loaded.
+  const canSeeEmailWhy = String(user?.email || '').toLowerCase() === 'bishalstha76@gmail.com'
+    || teamMembers.some(m => m.user_id === user?.id && ['owner', 'admin'].includes(String(m.role || '').toLowerCase()))
   const [reply, setReply] = useState('')
   // ✨ Draft reply (chat/SMS composer): AI writes the next reply for the agent to review.
   const aiDraft = useAiDraft({ companyId, conversationId: selected?.id || null, onDraft: t => setReply(t), getText: () => reply })
@@ -9416,7 +9419,7 @@ export default function InboxPage() {
                     <div key={msg.id} id={`cmsg-${msg.id}`} data-cmsg="1">
                       {dateDivider}
                       {/* The card shows when it was received / sent itself. */}
-                      <EmailMessage msg={msg} agentColor={companyInfo?.accent_color} businessName={companyInfo?.name} onOpenMedia={(i) => openEmailMedia(msg.id, i)} />
+                      <EmailMessage msg={msg} agentColor={companyInfo?.accent_color} businessName={companyInfo?.name} onOpenMedia={(i) => openEmailMedia(msg.id, i)} showWhy={canSeeEmailWhy} />
                     </div>
                   )
                 }

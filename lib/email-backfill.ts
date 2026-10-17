@@ -9,8 +9,9 @@
 
 import { sanitizeEmailHtml, getGmailToken, findPart, extractBody } from '@/lib/gmail'
 import { companyAlias, INBOUND_DOMAIN } from '@/lib/inbound-alias'
+import { resendReceivingKey, receivingKeyHelp, receivingFailureOf, resendErrorOf } from '@/lib/resend-receiving'
 import { scheduleMessageThumbs } from '@/lib/image-thumb'
-import { fetchResendReceivedEmail, readReceived, hostResendAttachments, findEmailThread, splitQuoted, htmlToPlain, emailPreview, idVariants, normSubject, type ReceivedEmail } from '@/lib/inbound-email'
+import { fetchResendReceivedEmailResult, readReceived, hostResendAttachments, findEmailThread, splitQuoted, htmlToPlain, emailPreview, idVariants, normSubject, type ReceivedEmail } from '@/lib/inbound-email'
 
 /** Where an empty row most likely came from. */
 export type ProviderGuess = 'resend' | 'gmail' | 'other-webhook' | 'unknown'
@@ -29,7 +30,9 @@ export type BackfillResult = {
   notFound: number; stillEmpty: number; fromGmail: number; alreadyInColvy: number
   dryRun: boolean; rows: BackfillRow[]
   /** How far back Resend's received list was read, and whether it reached the oldest row. */
-  resendIndex?: { pages: number; oldest: string | null; complete: boolean; error?: string }
+  resendIndex?: { pages: number; oldest: string | null; complete: boolean; error?: string; unauthorised?: boolean }
+  /** Resend refused the receiving key (401/403): it can only send. The fix is in receivingKeyHelp(). */
+  receivingBlocked?: boolean
 }
 
 const blank = (v: any) => !String(v ?? '').trim()
@@ -51,7 +54,7 @@ export function parseResendTime(v: any): number {
 const addrOf = (raw: string) => (/<([^>]+)>/.exec(raw)?.[1] || raw).trim().toLowerCase()
 
 type Listed = { id: string; from: string; to: string[]; subject: string; created: number; messageId: string }
-type ResendIndex = { byId: Map<string, string>; list: Listed[]; pages: number; oldest: number; complete: boolean; error?: string }
+type ResendIndex = { byId: Map<string, string>; list: Listed[]; pages: number; oldest: number; complete: boolean; error?: string; unauthorised?: boolean }
 
 /**
  * Received emails on Resend back to `sinceMs`: normalised Message-ID → email id,
@@ -63,13 +66,18 @@ type ResendIndex = { byId: Map<string, string>; list: Listed[]; pages: number; o
  */
 async function resendIndex(sinceMs: number, fetchImpl: typeof fetch, maxPages = 150): Promise<ResendIndex> {
   const idx: ResendIndex = { byId: new Map(), list: [], pages: 0, oldest: NaN, complete: false }
-  const key = process.env.RESEND_API_KEY
+  const key = resendReceivingKey()
   if (!key) { idx.error = 'RESEND_API_KEY is not set'; return idx }
   let after = ''
   for (let page = 0; page < maxPages; page++) {
     try {
       const res = await fetchImpl(`https://api.resend.com/emails/receiving?limit=100${after ? `&after=${encodeURIComponent(after)}` : ''}`, { headers: { Authorization: `Bearer ${key}` } })
-      if (!res.ok) { idx.error = `Resend answered ${res.status}`; break }
+      if (!res.ok) {
+        const err = await resendErrorOf(res)
+        idx.error = `Resend answered ${res.status}${err.name ? ` ${err.name}` : ''}`
+        if (receivingFailureOf(res.status, err.name) === 'unauthorised') idx.unauthorised = true
+        break
+      }
       const j: any = await res.json().catch(() => null)
       const list: any[] = j?.data || []
       idx.pages++
@@ -178,6 +186,10 @@ const note = (db: any, companyId: string, conversationId: string, content: strin
 export async function backfillEmptyEmailBodies(db: any, o: {
   companyId?: string | null; days?: number; limit?: number; dryRun?: boolean; rethread?: boolean
   fetchImpl?: typeof fetch; retryDelaysMs?: number[]; pageSize?: number
+  /** Only rows the webhook saved as body 'pending' (it couldn't fetch them) with a Resend id; for the automatic retry. */
+  onlyPending?: boolean
+  /** With onlyPending: give a row up (body 'gave-up', still picked up by the manual run) after this many failed tries. */
+  maxTries?: number
   /** Access token for a Gmail channel (tests); defaults to lib/gmail's refreshing getter. */
   gmailToken?: (channel: any) => Promise<string | null>
 } = {}): Promise<BackfillResult> {
@@ -202,6 +214,8 @@ export async function backfillEmptyEmailBodies(db: any, o: {
       .or('content.is.null,content.eq.').is('email_html', null).is('metadata->inbound_email->>backfilled_at', null)
       .gte('created_at', cursor).order('created_at', { ascending: true }).order('id', { ascending: true }).limit(pageSize + atCursor)
     if (o.companyId) q = q.eq('company_id', o.companyId)
+    // 'unavailable' rows with a Resend id are the same thing, saved before 'pending' existed.
+    if (o.onlyPending) q = q.in('metadata->inbound_email->>body', ['pending', 'unavailable']).not('metadata->inbound_email->>resend_email_id', 'is', null)
     const { data: page, error } = await q
     if (error) throw new Error(error.message)
     const fresh = (page || []).filter((m: any) => !seen.has(m.id))
@@ -237,7 +251,8 @@ export async function backfillEmptyEmailBodies(db: any, o: {
   const getIndex = async () => {
     if (!index) {
       index = await resendIndex((Number.isFinite(oldestRow) ? oldestRow : Date.parse(since)) - 15 * 60_000, f)
-      out.resendIndex = { pages: index.pages, oldest: Number.isFinite(index.oldest) ? new Date(index.oldest).toISOString() : null, complete: index.complete, ...(index.error ? { error: index.error } : {}) }
+      out.resendIndex = { pages: index.pages, oldest: Number.isFinite(index.oldest) ? new Date(index.oldest).toISOString() : null, complete: index.complete, ...(index.error ? { error: index.error } : {}), ...(index.unauthorised ? { unauthorised: true } : {}) }
+      if (index.unauthorised) out.receivingBlocked = true
     }
     return index
   }
@@ -267,6 +282,8 @@ export async function backfillEmptyEmailBodies(db: any, o: {
 
     let emailId: string | null = meta.inbound_email?.resend_email_id || null
     let matchedBy = emailId ? 'resend-id' : ''
+    // The automatic retry only fetches by the webhook's own id: no list scans.
+    if (!emailId && o.onlyPending) continue
     if (!emailId) {
       const idx = await getIndex()
       const id = normId(m.email_message_id)
@@ -318,20 +335,51 @@ export async function backfillEmptyEmailBodies(db: any, o: {
       const when = Number.isFinite(at) ? new Date(at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Australia/Sydney' }) : 'an unknown date'
       let code = 'no-match', reason = ''
       if (provider === 'other-webhook') { code = 'not-resend'; reason = 'It came through another provider’s webhook (not Resend), so Resend never had it.' }
+      else if (idx?.unauthorised) { code = 'resend-key-send-only'; reason = receivingKeyHelp(); out.receivingBlocked = true }
       else if (idx?.error) { code = 'resend-unavailable'; reason = `Couldn’t read Resend’s received list (${idx.error}).` }
       else if (Number.isFinite(at) && at < retentionCutoff) { code = 'past-retention'; reason = `It arrived on ${when}. Resend only keeps received emails for ${RESEND_RETENTION_DAYS} days, so it has been deleted there.` }
       else if (idx && !idx.complete && Number.isFinite(idx.oldest) && at < idx.oldest) { code = 'list-cut-short'; reason = `Resend’s list was only read back to ${new Date(idx.oldest).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', timeZone: 'Australia/Sydney' })}; run it again for a shorter period.` }
       else if (provider === 'gmail') { code = 'gmail-only'; reason = 'It was sent to a Gmail address, not through Resend, and Gmail search didn’t find it either.' }
       else reason = `Resend has no email from ${sender || 'this sender'}${m.email_message_id ? ' with this Message-ID' : ''}${m.email_subject ? ' or this subject' : ''} within 10 minutes of ${when}.${gmailChans.length ? ' Gmail didn’t have it either.' : ''}`
       out.notFound++
-      out.rows.push(detail('not-found-on-resend', reason, { matchedBy: code }))
+      out.rows.push(detail(code === 'resend-key-send-only' ? 'resend-key-blocked' : 'not-found-on-resend', reason, { matchedBy: code }))
       continue
     }
 
-    const raw: ReceivedEmail | null = await fetchResendReceivedEmail(emailId, { fetchImpl: f, delaysMs: o.retryDelaysMs })
+    const got = await fetchResendReceivedEmailResult(emailId, { fetchImpl: f, delaysMs: o.retryDelaysMs })
+    const raw: ReceivedEmail | null = got.ok ? got.email : null
     const full = readReceived(raw)
-    if (!full) { out.notFound++; out.rows.push(detail('fetch-failed', 'Resend listed this email but wouldn’t return it (it may have just passed its retention period). Try again later.', { matchedBy })); continue }
-    const stamp = (body: string) => ({ ...meta, inbound_email: { ...(meta.inbound_email || {}), provider: 'resend', resend_email_id: emailId, body, auth: full.auth, backfilled_at: new Date().toISOString() } })
+    if (!full || !got.ok) {
+      const why = got.ok ? null : got
+      out.notFound++
+      if (why?.reason === 'unauthorised') {
+        // Not the email's fault: the key can't read received mail. Never blame retention.
+        out.receivingBlocked = true
+        out.rows.push(detail('resend-key-blocked', receivingKeyHelp(), { matchedBy }))
+        continue
+      }
+      const listed = matchedBy === 'resend-id' ? 'The webhook gave this email’s Resend id, but Resend' : 'Resend listed this email but'
+      const reason = why?.reason === 'not-found'
+        ? (Number.isFinite(at) && at < retentionCutoff
+          ? `${listed} no longer has it: it keeps received emails for ${RESEND_RETENTION_DAYS} days.`
+          : `${listed} says it has no email with that id (Resend answered 404).`)
+        : why?.reason === 'over-quota' ? `${listed} didn’t keep its content: the Resend account was over its quota when it arrived.`
+        : why?.reason === 'no-key' ? 'RESEND_API_KEY is not set, so received emails can’t be fetched.'
+        : `${listed} didn’t answer properly${why?.status ? ` (Resend answered ${why.status})` : why?.detail ? ` (${why.detail})` : ''}. Try again later.`
+      out.rows.push(detail('fetch-failed', reason, { matchedBy }))
+      // The automatic retry counts its tries, and stops after a few (the manual run still picks it up).
+      if (o.onlyPending && !o.dryRun && why) {
+        const tries = (Number(meta.inbound_email?.retries) || 0) + 1
+        const give = tries >= (o.maxTries ?? 10)
+        await db.from('messages').update({ metadata: { ...meta, inbound_email: { ...(meta.inbound_email || {}), retries: tries, last_retry_at: new Date().toISOString(), body_error: why.reason, ...(give ? { body: 'gave-up' } : {}) } } }).eq('id', m.id)
+      }
+      continue
+    }
+    const stamp = (body: string) => {
+      const ie: any = { ...(meta.inbound_email || {}), provider: 'resend', resend_email_id: emailId, body, auth: full.auth, backfilled_at: new Date().toISOString() }
+      delete ie.body_error; delete ie.body_error_detail
+      return { ...meta, inbound_email: ie }
+    }
 
     // It must be the same email: from this row's sender, to this business.
     const fromOk = !m.sender_email || !full.from || addrOf(full.from) === String(m.sender_email).toLowerCase()
@@ -414,4 +462,27 @@ export async function backfillEmptyEmailBodies(db: any, o: {
     out.rows.push({ ...detail(outcome, 'Found on Resend.', { matchedBy }), gmailUrl: null })
   }
   return out
+}
+
+/**
+ * The automatic retry, run from the email-sync cron: re-fetch the text of
+ * emails the webhook saved as 'pending' in the last 7 days, by their Resend
+ * id. Capped (10 a run, no waiting between tries), idempotent (a filled row is
+ * stamped and never picked again), and a row is given up after 10 failed
+ * tries (the manual "Recover empty email replies" still picks it up). Does
+ * nothing, and calls nobody, while the receiving key is refused.
+ */
+export async function retryPendingEmailBodies(db: any, o: { fetchImpl?: typeof fetch; limit?: number; days?: number; check?: () => Promise<{ status: string }> } = {}): Promise<{ pending: boolean; skipped?: string; filled?: number; notFound?: number }> {
+  const days = o.days ?? 7
+  const since = new Date(Date.now() - days * 86400000).toISOString()
+  const { data: any1, error } = await db.from('messages').select('id')
+    .eq('sender_type', 'visitor').eq('delivery_channel', 'email')
+    .in('metadata->inbound_email->>body', ['pending', 'unavailable']).not('metadata->inbound_email->>resend_email_id', 'is', null)
+    .is('metadata->inbound_email->>backfilled_at', null).gte('created_at', since).limit(1)
+  if (error || !(any1 || []).length) return { pending: false }
+  const check = o.check || (async () => (await import('@/lib/resend-receiving')).checkResendReceivingCached({ fetchImpl: o.fetchImpl }))
+  const c = await check()
+  if (c.status !== 'working') return { pending: true, skipped: c.status === 'blocked' ? 'receiving key can only send' : `receiving check: ${c.status}` }
+  const r = await backfillEmptyEmailBodies(db, { onlyPending: true, days, limit: o.limit ?? 10, rethread: true, retryDelaysMs: [], fetchImpl: o.fetchImpl })
+  return { pending: true, filled: r.filled, notFound: r.notFound }
 }
