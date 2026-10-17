@@ -20,6 +20,7 @@ function colvy_bis_defaults() {
 		'ask_name'  => 0,
 		'heading'   => 'Sold out — for now',
 		'message'   => "Leave your number and we'll text you the moment it's back. One message, no spam.",
+		'message_email' => "Leave your email and we'll let you know the moment it's back.",
 		'button'    => 'Notify me',
 		'accent'    => '',            // blank = your Colvy brand colour
 	);
@@ -86,24 +87,42 @@ function colvy_bis_icon( $name ) {
 	return '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' . $p[ $name ] . '</svg>';
 }
 
-/** The form for one product or variation. $preview = admin preview (no submit). */
+/** Fine print under the form, per channel. Texts must offer STOP; emails don't. */
+function colvy_bis_fine( $ch ) {
+	return $ch === 'email' ? "We'll only email you about this item." : "We'll only message you about this item. Reply STOP to opt out.";
+}
+
+/**
+ * The form for one product. $preview = admin preview (no submit).
+ *
+ * Variable products get ONE hidden copy for the whole product, printed outside
+ * WooCommerce's variation area. bis.js shows it only while the chosen
+ * variation is sold out (or, with nothing chosen, when every variation is) and
+ * signs the shopper up for that variation. Nothing is ever added to a
+ * variation's availability_html: themes copy that HTML around (WoodMart's
+ * stock-status widget does) and every copy used to become another form.
+ */
 function colvy_bis_form( $product, $preview = false ) {
 	$o   = colvy_bis_opts();
 	$ch  = $o['channels'];
 	$first = ( $ch === 'email' || $ch === 'email_sms' ) ? 'email' : 'sms';
 	$both  = in_array( $ch, array( 'sms_email', 'email_sms' ), true );
 	$pid   = $product ? $product->get_id() : 0;
+	$variable = $product && ! $preview && $product->is_type( 'variable' );
+	// With nothing chosen yet, a variable product shows the form only when no option can be bought.
+	$all_out  = $variable && ! $product->is_in_stock(); // the parent is in stock while any option is (or takes backorders)
 	wp_enqueue_style( 'colvy-bis' );
 	wp_enqueue_script( 'colvy-bis' );
 	ob_start(); ?>
-	<div class="colvy-bis" data-product="<?php echo esc_attr( $pid ); ?>" data-ch="<?php echo esc_attr( $first ); ?>"<?php echo $preview ? ' data-preview="1"' : ''; ?> style="--cbis-accent:<?php echo esc_attr( colvy_bis_accent() ); ?>">
+	<div class="colvy-bis" data-colvy-bis data-product="<?php echo esc_attr( $pid ); ?>" data-ch="<?php echo esc_attr( $first ); ?>"<?php echo $preview ? ' data-preview="1"' : ''; ?><?php echo $variable ? ' data-variable="1" data-all-out="' . ( $all_out ? '1' : '0' ) . '"' : ''; ?><?php echo $variable && ! $all_out ? ' hidden' : ''; ?> style="--cbis-accent:<?php echo esc_attr( colvy_bis_accent() ); ?>">
 		<div class="colvy-bis__in">
 			<div class="colvy-bis__ask">
 				<div class="colvy-bis__head">
 					<span class="colvy-bis__icon"><?php echo colvy_bis_icon( 'bell' ); // phpcs:ignore ?></span>
 					<div>
-						<div class="colvy-bis__title"><?php echo esc_html( $o['heading'] ); ?></div>
-						<div class="colvy-bis__sub"><?php echo esc_html( $o['message'] ); ?></div>
+						<div class="colvy-bis__title" data-heading="<?php echo esc_attr( $o['heading'] ); ?>"><?php echo esc_html( $o['heading'] ); ?></div>
+						<div class="colvy-bis__sub colvy-bis__c-sms"><?php echo esc_html( $o['message'] ); ?></div>
+						<div class="colvy-bis__sub colvy-bis__c-email"><?php echo esc_html( $o['message_email'] ); ?></div>
 					</div>
 				</div>
 				<div class="colvy-bis__form" role="form">
@@ -125,7 +144,8 @@ function colvy_bis_form( $product, $preview = false ) {
 					</div>
 					<input type="text" name="website" class="colvy-bis__hp" tabindex="-1" autocomplete="off" aria-hidden="true">
 					<p class="colvy-bis__err" role="alert" aria-live="polite"></p>
-					<p class="colvy-bis__fine">We'll only message you about this item. Reply STOP to opt out.</p>
+					<p class="colvy-bis__fine colvy-bis__c-sms"><?php echo esc_html( colvy_bis_fine( 'sms' ) ); ?></p>
+					<p class="colvy-bis__fine colvy-bis__c-email"><?php echo esc_html( colvy_bis_fine( 'email' ) ); ?></p>
 				</div>
 			</div>
 			<div class="colvy-bis__done" hidden>
@@ -142,43 +162,53 @@ function colvy_bis_form( $product, $preview = false ) {
 	return ob_get_clean();
 }
 
+/** Simple products: only when sold out. Variable products: always (hidden; bis.js decides). */
 function colvy_bis_should_show( $product ) {
 	$o = colvy_bis_opts();
 	if ( ! $o['enabled'] || ! $product || ! is_a( $product, 'WC_Product' ) ) return false;
 	if ( is_admin() && ! wp_doing_ajax() ) return false;
-	if ( $product->is_in_stock() || $product->is_type( 'variable' ) || $product->is_type( 'grouped' ) || $product->is_type( 'external' ) ) return false;
+	if ( $product->is_type( 'variation' ) || $product->is_type( 'grouped' ) || $product->is_type( 'external' ) ) return false;
+	if ( ! $product->is_type( 'variable' ) && $product->is_in_stock() ) return false;
 	return (bool) apply_filters( 'colvy_bis_show_form', true, $product );
 }
 
-// Under the "Out of stock" line — simple products, each variation (Woo injects
-// it when that option is picked), and page-builder layouts that show stock.
+/** Print the form once per product per page, however many hooks ask for it. */
 $GLOBALS['colvy_bis_rendered'] = array();
-add_filter( 'woocommerce_get_stock_html', function ( $html, $product ) {
-	if ( colvy_bis_opts()['placement'] !== 'auto' || ! colvy_bis_should_show( $product ) ) return $html;
+function colvy_bis_once( $product ) {
+	if ( ! colvy_bis_should_show( $product ) ) return '';
 	$id = $product->get_id();
-	if ( ! $product->is_type( 'variation' ) ) {
-		if ( isset( $GLOBALS['colvy_bis_rendered'][ $id ] ) ) return $html;
-		$GLOBALS['colvy_bis_rendered'][ $id ] = 1;
-	}
-	return $html . colvy_bis_form( $product );
+	if ( isset( $GLOBALS['colvy_bis_rendered'][ $id ] ) ) return '';
+	$GLOBALS['colvy_bis_rendered'][ $id ] = 1;
+	return colvy_bis_form( $product );
+}
+
+// Simple products: under the "Out of stock" line (also page-builder stock widgets).
+add_filter( 'woocommerce_get_stock_html', function ( $html, $product ) {
+	if ( colvy_bis_opts()['placement'] !== 'auto' || ! $product || ! is_a( $product, 'WC_Product' ) || ! $product->is_type( 'simple' ) ) return $html;
+	return $html . colvy_bis_once( $product );
 }, 20, 2 );
 
-// Fallback for themes that don't print the stock line.
+// Variable products: one copy straight after the add-to-cart form, outside the
+// part WooCommerce and themes redraw when an option is picked.
+add_action( 'woocommerce_after_add_to_cart_form', function () {
+	global $product;
+	if ( colvy_bis_opts()['placement'] !== 'auto' || ! $product || ! is_a( $product, 'WC_Product' ) || ! $product->is_type( 'variable' ) ) return;
+	echo colvy_bis_once( $product ); // phpcs:ignore
+} );
+
+// Fallback for themes that print neither.
 add_action( 'woocommerce_single_product_summary', function () {
 	global $product;
-	if ( colvy_bis_opts()['placement'] !== 'auto' || ! colvy_bis_should_show( $product ) ) return;
-	if ( isset( $GLOBALS['colvy_bis_rendered'][ $product->get_id() ] ) ) return;
-	$GLOBALS['colvy_bis_rendered'][ $product->get_id() ] = 1;
-	echo colvy_bis_form( $product ); // phpcs:ignore
+	if ( colvy_bis_opts()['placement'] !== 'auto' ) return;
+	echo colvy_bis_once( $product ); // phpcs:ignore
 }, 31 );
 
 // [colvy_back_in_stock] or [colvy_back_in_stock id="123"]
 add_shortcode( 'colvy_back_in_stock', function ( $atts ) {
 	$atts    = shortcode_atts( array( 'id' => 0 ), $atts );
 	$product = $atts['id'] ? wc_get_product( absint( $atts['id'] ) ) : ( isset( $GLOBALS['product'] ) ? $GLOBALS['product'] : null );
-	if ( ! colvy_bis_should_show( $product ) ) return '';
-	$GLOBALS['colvy_bis_rendered'][ $product->get_id() ] = 1;
-	return colvy_bis_form( $product );
+	if ( $product && is_a( $product, 'WC_Product' ) && $product->is_type( 'variation' ) ) $product = wc_get_product( $product->get_parent_id() );
+	return colvy_bis_once( $product );
 } );
 
 /* ─────────────────────────────── Sign-up (AJAX) ────────────────────────── */
@@ -195,6 +225,13 @@ function colvy_bis_join() {
 
 	$product = wc_get_product( isset( $_POST['product'] ) ? absint( $_POST['product'] ) : 0 );
 	if ( ! $product ) wp_send_json_error( array( 'message' => 'That product couldn’t be found.' ), 400 );
+	// The option they picked on a variable product. It must belong to this product.
+	$vid = isset( $_POST['variation_id'] ) ? absint( $_POST['variation_id'] ) : 0;
+	if ( $vid && ! $product->is_type( 'variation' ) ) {
+		$variation = wc_get_product( $vid );
+		if ( ! $variation || ! $variation->is_type( 'variation' ) || (int) $variation->get_parent_id() !== (int) $product->get_id() ) wp_send_json_error( array( 'message' => 'That option couldn’t be found.' ), 400 );
+		$product = $variation;
+	}
 
 	$ch    = ( isset( $_POST['ch'] ) && $_POST['ch'] === 'email' ) ? 'email' : 'sms';
 	$phone = $ch === 'sms' && isset( $_POST['phone'] ) ? sanitize_text_field( wp_unslash( $_POST['phone'] ) ) : '';
@@ -288,7 +325,7 @@ function colvy_bis_admin_page() {
 		<form method="post" action="options.php" class="cw-card cw-form">
 			<?php settings_fields( 'colvy_bis' ); ?>
 			<div class="cw-row">
-				<div><b>Show the form on sold-out products</b><p class="cw-help">Simple products and each sold-out variation.</p></div>
+				<div><b>Show the form on sold-out products</b><p class="cw-help">Simple products, and on variable products whichever option is sold out.</p></div>
 				<label class="cw-switch"><input type="checkbox" name="<?php echo $f; ?>[enabled]" value="1" <?php checked( $o['enabled'] ); ?>><span></span></label>
 			</div>
 			<div class="cw-field"><label>Where</label>
@@ -307,7 +344,8 @@ function colvy_bis_admin_page() {
 				<label class="cw-check"><input type="checkbox" name="<?php echo $f; ?>[ask_name]" value="1" <?php checked( $o['ask_name'] ); ?>> Also ask for their first name</label>
 			</div>
 			<div class="cw-field"><label for="cbis-h">Heading</label><input id="cbis-h" type="text" name="<?php echo $f; ?>[heading]" value="<?php echo esc_attr( $o['heading'] ); ?>"></div>
-			<div class="cw-field"><label for="cbis-m">Message</label><textarea id="cbis-m" rows="2" name="<?php echo $f; ?>[message]"><?php echo esc_textarea( $o['message'] ); ?></textarea></div>
+			<div class="cw-field"><label for="cbis-m">Message — text me</label><textarea id="cbis-m" rows="2" name="<?php echo $f; ?>[message]"><?php echo esc_textarea( $o['message'] ); ?></textarea></div>
+			<div class="cw-field"><label for="cbis-me">Message — email me</label><textarea id="cbis-me" rows="2" name="<?php echo $f; ?>[message_email]"><?php echo esc_textarea( $o['message_email'] ); ?></textarea><p class="cw-help">Shown under the heading for whichever one the shopper picks.</p></div>
 			<div class="cw-field cw-2col">
 				<div><label for="cbis-b">Button</label><input id="cbis-b" type="text" name="<?php echo $f; ?>[button]" value="<?php echo esc_attr( $o['button'] ); ?>"></div>
 				<div><label for="cbis-a">Button colour</label><input id="cbis-a" type="text" name="<?php echo $f; ?>[accent]" value="<?php echo esc_attr( $o['accent'] ); ?>" placeholder="<?php echo esc_attr( colvy_bis_accent() ); ?> (brand)" pattern="#[0-9a-fA-F]{6}"></div>

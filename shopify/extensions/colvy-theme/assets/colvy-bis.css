@@ -52,7 +52,8 @@
 .colvy-bis__field:focus-within>svg{color:var(--cbis-accent)}
 .colvy-bis__field.cbis-bad{border-color:#e5484d;animation:cbisShake .36s cubic-bezier(.36,.07,.19,.97)}
 @keyframes cbisShake{20%,60%{transform:translate3d(-4px,0,0)}40%,80%{transform:translate3d(4px,0,0)}}
-.colvy-bis[data-ch="sms"] .colvy-bis__f-email,.colvy-bis[data-ch="email"] .colvy-bis__f-sms{display:none!important}
+.colvy-bis[data-ch="sms"] .colvy-bis__f-email,.colvy-bis[data-ch="email"] .colvy-bis__f-sms,
+.colvy-bis[data-ch="sms"] .colvy-bis__c-email,.colvy-bis[data-ch="email"] .colvy-bis__c-sms{display:none!important}
 
 .colvy-bis__btn{position:relative;flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;height:50px;min-width:132px;margin:0;padding:0 22px;
   border:0!important;border-radius:12px!important;background:var(--cbis-accent)!important;color:#fff!important;font:inherit;font-size:15px;font-weight:800;

@@ -1,7 +1,16 @@
-/* Colvy — Back in stock. Vanilla JS; works with page caching (no nonce) and
-   with WooCommerce injecting a form per variation. */
+/* Colvy — Back in stock. Vanilla JS; works with page caching (no nonce).
+
+   Simple products: the server prints the form only when the product is sold
+   out. Variable products: the server prints ONE hidden copy per product and
+   this script shows it only while the chosen variation is sold out (with
+   nothing chosen: only when every variation is), using WooCommerce's own
+   variation data. Nothing here ever creates a form, so variation changes,
+   bfcache restores or the script being included twice can't add a second. */
 (function () {
   'use strict';
+  // The theme or a cache plugin printed this script twice — the first copy runs.
+  if (window.colvyBisLoaded) return;
+  window.colvyBisLoaded = true;
   var cfg = window.colvyBis || {};
   var TICK = '<span class="cbis-halo"></span><span class="cbis-halo"></span>' +
     '<svg viewBox="0 0 88 88" width="60" height="60"><defs><linearGradient id="cbisG" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4ade80"/><stop offset="1" stop-color="#16a34a"/></linearGradient></defs>' +
@@ -61,11 +70,35 @@
     if (box) { box.classList.remove('cbis-bad'); void box.offsetWidth; box.classList.add('cbis-bad'); input.focus(); }
   }
 
+  // What this device remembers signing up for: per product, and per option on variable products.
+  function joinedKey(root) {
+    var v = root.getAttribute('data-variation');
+    return 'colvy_bis_joined_' + root.getAttribute('data-product') + (v ? '_' + v : '');
+  }
+
+  function showAsk(root) {
+    root.querySelector('.colvy-bis__done').hidden = true;
+    var ask = root.querySelector('.colvy-bis__ask'); ask.hidden = false; ask.classList.remove('out');
+  }
+
+  // Already on the list for what's showing? Show that; otherwise the form.
+  function restore(root) {
+    if (root.getAttribute('data-preview')) return;
+    var j = null; try { j = JSON.parse(store(joinedKey(root)) || 'null'); } catch (e) {}
+    if (!j) return showAsk(root);
+    root.querySelector('.colvy-bis__ask').hidden = true;
+    var d = root.querySelector('.colvy-bis__done');
+    d.hidden = false;
+    d.querySelector('.colvy-bis__mark').innerHTML = TICK;
+    d.querySelector('.colvy-bis__done-t').textContent = "You're on the list";
+    d.querySelector('.colvy-bis__done-s').textContent = (j.ch === 'email' ? "We'll email " : "We'll text ") + mask(j.v, j.ch) + " the moment it's back.";
+  }
+
   function init(root) {
     if (root.getAttribute('data-ready')) return;
     root.setAttribute('data-ready', '1');
     setCh(root, root.getAttribute('data-ch') || 'sms');
-    place(root);
+    if (!root.hasAttribute('data-variable')) place(root);
     // Prefill: what they typed last time, else their WooCommerce account details.
     var last = {}; try { last = JSON.parse(store('colvy_bis_me') || '{}') || {}; } catch (e) {}
     var me = cfg.me || {};
@@ -74,9 +107,103 @@
     if (last.phone) { var p = root.querySelector('input[name=phone]'); if (p) p.value = last.phone; }
     if (last.email) { var m = root.querySelector('input[name=email]'); if (m) m.value = last.email; }
     if (last.name) { var n = root.querySelector('input[name=name]'); if (n) n.value = last.name; }
-    var joined = store('colvy_bis_joined_' + root.getAttribute('data-product'));
-    if (joined && !root.getAttribute('data-preview')) {
-      try { var j = JSON.parse(joined); root.querySelector('.colvy-bis__ask').hidden = true; var d = root.querySelector('.colvy-bis__done'); d.hidden = false; d.querySelector('.colvy-bis__mark').innerHTML = TICK; d.querySelector('.colvy-bis__done-s').textContent = (j.ch === 'email' ? "We'll email " : "We'll text ") + mask(j.v, j.ch) + " the moment it's back."; } catch (e) {}
+    if (root.hasAttribute('data-variable')) sync(root); else restore(root);
+  }
+
+  /* ── Variable products ─────────────────────────────────────────────────
+     Which variation is chosen, and can it be bought? WooCommerce writes the
+     chosen id into input.variation_id and passes the variation object with
+     found_variation; the full list is in data-product_variations (or "false"
+     when the theme loads variations by AJAX — then we use what the events
+     gave us, and the server's data-all-out for the "nothing chosen" case). */
+  var POPUP = '.mfp-content, .wd-popup, .quick-view, .quickview, .product-quick-view, [role="dialog"], .modal';
+  var scopes = 0;
+  function scopeOf(el) { return (el.closest && el.closest(POPUP)) || document; }
+  function scopeKey(el) { var s = scopeOf(el); if (s === document) return 'doc'; if (!s._cbisScope) s._cbisScope = ++scopes; return 's' + s._cbisScope; }
+
+  function formFor(root) {
+    var sel = 'form.variations_form[data-product_id="' + root.getAttribute('data-product') + '"]', scope = scopeOf(root);
+    return scope.querySelector(sel) || (scope === document ? null : document.querySelector(sel));
+  }
+  function variations(form) {
+    var list = null; try { list = JSON.parse(form.getAttribute('data-product_variations')); } catch (e) {}
+    return Array.isArray(list) ? list : null;
+  }
+  function lookup(form, id) {
+    if (form._cbisSeen && form._cbisSeen[id]) return form._cbisSeen[id];
+    var list = variations(form) || [];
+    for (var i = 0; i < list.length; i++) if (String(list[i].variation_id) === String(id)) return list[i];
+    return null;
+  }
+  // Backorders count as buyable: no form.
+  function buyable(v) { return !!(v && (v.is_in_stock || v.backorders_allowed)); }
+  function chosen(form) {
+    var input = form.querySelector('input[name="variation_id"], input.variation_id');
+    if (!input) return form._cbisCur || null;
+    var id = parseInt(input.value, 10) || 0;
+    if (!id) return null;
+    return lookup(form, id) || (form._cbisCur && String(form._cbisCur.variation_id) === String(id) ? form._cbisCur : { variation_id: id, unknown: true });
+  }
+  function labelFor(form, v) {
+    var parts = [], sels = form.querySelectorAll('.variations select, select[name^="attribute_"]');
+    for (var i = 0; i < sels.length; i++) {
+      var o = sels[i].options[sels[i].selectedIndex];
+      if (sels[i].value && o) parts.push(o.text.trim());
+    }
+    if (!parts.length && v.attributes) for (var k in v.attributes) if (v.attributes[k]) parts.push(String(v.attributes[k]));
+    return parts.join(', ');
+  }
+  // "Sold out — for now" → "2-3cm is sold out — for now".
+  function titleFor(heading, label) {
+    if (!label) return heading;
+    if (/^(sold out|out of stock)/i.test(heading)) return label + ' is ' + heading.charAt(0).toLowerCase() + heading.slice(1);
+    return label + ': ' + heading;
+  }
+
+  function sync(root) {
+    if (!root.hasAttribute('data-variable') || !root.getAttribute('data-ready')) return;
+    var form = formFor(root), v = form ? chosen(form) : null, show;
+    if (v && v.unknown) show = false;            // an id we know nothing about yet — wait for found_variation
+    else if (v) show = !buyable(v);
+    else {
+      var list = form && variations(form);
+      if (list && list.length) { show = true; for (var i = 0; i < list.length; i++) if (buyable(list[i])) { show = false; break; } }
+      else show = root.getAttribute('data-all-out') === '1';
+    }
+    if (!show) { root.hidden = true; return; }
+    var vid = v ? String(v.variation_id) : '';
+    var title = root.querySelector('.colvy-bis__ask .colvy-bis__title');
+    if (title) title.textContent = titleFor(title.getAttribute('data-heading') || title.textContent, v && form ? labelFor(form, v) : '');
+    var changed = root.hidden || root.getAttribute('data-variation') !== vid;
+    root.setAttribute('data-variation', vid);
+    root.hidden = false;
+    if (changed) { err(root, ''); restore(root); }
+  }
+
+  function syncForm(form) {
+    var all = document.querySelectorAll('.colvy-bis[data-variable][data-ready]');
+    for (var i = 0; i < all.length; i++) if (!form || formFor(all[i]) === form) sync(all[i]);
+  }
+  // WooCommerce fires several events per change (and themes add more) — one sync after them all.
+  function queue(form, wait) {
+    if (form._cbisQ) return;
+    form._cbisQ = setTimeout(function () { form._cbisQ = 0; syncForm(form); }, wait || 0);
+  }
+
+  // One form per product (per popup). A second copy — a theme printing the
+  // add-to-cart area twice, or an old cached page — is removed, never shown.
+  function dedupe() {
+    var seen = {}, all = document.querySelectorAll('.colvy-bis:not([data-preview])');
+    for (var i = 0; i < all.length; i++) {
+      var k = all[i].getAttribute('data-product') + '|' + scopeKey(all[i]);
+      if (seen[k]) { all[i].parentNode.removeChild(all[i]); continue; }
+      seen[k] = 1;
+      // Pages cached before 3.0.5 carry a copy inside each variation's stock
+      // line; where the managed copy exists, those go.
+      if (!all[i].hasAttribute('data-variable') && all[i].closest('.variations_form, .woocommerce-variation, .wd-single-stock-status')) {
+        var f = all[i].closest('.variations_form'), pid = f && f.getAttribute('data-product_id');
+        if (pid && scopeOf(all[i]).querySelector('.colvy-bis[data-variable][data-product="' + pid + '"]')) all[i].parentNode.removeChild(all[i]);
+      }
     }
   }
 
@@ -84,7 +211,7 @@
   // indented column). Give the form its own full-width line under that row,
   // lined up with the price. Variation forms stay put — Woo swaps those.
   function place(root) {
-    if (root.getAttribute('data-preview') || root.closest('.woocommerce-variation, .single_variation_wrap, .woocommerce-variation-availability')) return;
+    if (root.getAttribute('data-preview') || root.closest('.woocommerce-variation, .single_variation_wrap, .woocommerce-variation-availability, .wd-single-stock-status, .variations_form')) return;
     // The price nearest the form in the page structure (a few levels up at
     // most) — not one from a header product-nav popup, sticky bar or related
     // products elsewhere on the page.
@@ -119,7 +246,7 @@
     if (Math.abs(root.getBoundingClientRect().top - before) > 400) homeParent.insertBefore(root, homeNext);
   }
 
-  function initAll() { var all = document.querySelectorAll('.colvy-bis'); for (var i = 0; i < all.length; i++) init(all[i]); }
+  function initAll() { dedupe(); var all = document.querySelectorAll('.colvy-bis'); for (var i = 0; i < all.length; i++) init(all[i]); }
 
   document.addEventListener('click', function (e) {
     var b = e.target.closest && e.target.closest('.colvy-bis__seg button');
@@ -127,8 +254,8 @@
     var a = e.target.closest && e.target.closest('.colvy-bis__again');
     if (a) {
       var r = a.closest('.colvy-bis');
-      try { localStorage.removeItem('colvy_bis_joined_' + r.getAttribute('data-product')); } catch (x) {}
-      morph(r, function () { r.querySelector('.colvy-bis__done').hidden = true; var ask = r.querySelector('.colvy-bis__ask'); ask.hidden = false; ask.classList.remove('out'); });
+      try { localStorage.removeItem(joinedKey(r)); } catch (x) {}
+      morph(r, function () { showAsk(r); });
       var inp = r.querySelector(r.getAttribute('data-ch') === 'email' ? 'input[name=email]' : 'input[name=phone]');
       if (inp) { inp.select(); inp.focus(); }
     }
@@ -157,10 +284,11 @@
     err(root, '');
     var nameEl = form.querySelector('input[name=name]');
     var name = nameEl ? nameEl.value.trim() : '';
+    var variation = root.getAttribute('data-variation') || '', key = joinedKey(root);
 
     var finish = function (already) {
       store('colvy_bis_me', JSON.stringify({ phone: ch === 'sms' ? v : (form.querySelector('input[name=phone]') || {}).value || '', email: ch === 'email' ? v : (form.querySelector('input[name=email]') || {}).value || '', name: name }));
-      if (!root.getAttribute('data-preview')) store('colvy_bis_joined_' + root.getAttribute('data-product'), JSON.stringify({ ch: ch, v: v }));
+      if (!root.getAttribute('data-preview')) store(key, JSON.stringify({ ch: ch, v: v }));
       root.querySelector('.colvy-bis__ask').classList.add('out');
       setTimeout(function () { root.classList.remove('is-busy'); showDone(root, ch, v, already); }, 200);
     };
@@ -171,6 +299,7 @@
     var body = new FormData();
     body.append('action', 'colvy_bis_join');
     body.append('product', root.getAttribute('data-product'));
+    if (variation) body.append('variation_id', variation);
     body.append('ch', ch);
     body.append(ch === 'email' ? 'email' : 'phone', v);
     if (name) body.append('name', name);
@@ -186,8 +315,31 @@
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initAll); else initAll();
-  // Variable products: Woo swaps in each variation's stock line (and our form) when an option is picked.
-  if (window.jQuery) window.jQuery(document).on('show_variation found_variation', function () { setTimeout(initAll, 0); });
+
+  // Variable products: follow WooCommerce's variation events (bubbling up from
+  // each form). Repeats are harmless — sync only shows or hides the one copy.
+  if (window.jQuery) {
+    window.jQuery(document)
+      .on('found_variation show_variation', '.variations_form', function (e, v) {
+        if (v && v.variation_id) { this._cbisCur = v; (this._cbisSeen = this._cbisSeen || {})[v.variation_id] = v; }
+        queue(this);
+      })
+      .on('reset_data hide_variation', '.variations_form', function () { this._cbisCur = null; queue(this); })
+      .on('woocommerce_variation_has_changed check_variations', '.variations_form', function () { queue(this); });
+  }
+  // Without jQuery events (or a theme that swallows them): re-check after a pick or "Clear".
+  document.addEventListener('change', function (e) {
+    var f = e.target && e.target.closest && e.target.closest('.variations_form');
+    if (f) queue(f, 60);
+  }, true);
+  document.addEventListener('click', function (e) {
+    var f = e.target && e.target.closest && e.target.closest('.reset_variations') && e.target.closest('.variations_form');
+    if (f) queue(f, 60);
+  });
+  // Back/forward (bfcache) restores the page as it was; re-check against the
+  // options now selected. Still one copy — nothing is added here.
+  window.addEventListener('pageshow', function () { initAll(); syncForm(null); });
+
   // Page builders / quick-view popups add forms later — catch those too (at most once a frame).
   var queued = false;
   if (window.MutationObserver) new MutationObserver(function () {
