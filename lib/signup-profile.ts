@@ -160,15 +160,23 @@ const STREET_TYPES = new Set([
   'gr', 'gve', 'grove', 'esp', 'esplanade', 'sq', 'square', 'mall', 'arcade', 'pkwy', 'parkway', 'plaza', 'prom', 'promenade', 'qy', 'quay',
 ])
 const streetType = (w?: string) => !!w && STREET_TYPES.has(w.toLowerCase().replace(/\.$/, ''))
-// Suburbs named for a saint, which a street named like a street type runs
-// into on one line ("12 Esplanade St Kilda": Esplanade, in St Kilda).
-const SAINT_SUBURBS = new Set(['kilda', 'albans', 'ives', 'marys', 'leonards', 'peters', 'lucia', 'clair', 'helens', 'helena', 'andrews', 'arnaud', 'georges', 'johns', 'morris', 'agnes', 'james', 'huberts', 'lawrence'])
+// Saints' names in suburbs ("St Kilda", "North St Marys", "Mount St Thomas",
+// "Lake St Clair"). A street named like a street type runs into one on one
+// line ("12 Esplanade St Kilda": Esplanade, in St Kilda), and an "St" in front
+// of one mid-suburb is the saint's, not a street's ("North St Marys").
+const SAINT_SUBURBS = new Set([
+  'kilda', 'albans', 'ives', 'marys', 'leonards', 'peters', 'lucia', 'clair', 'helens', 'helena', 'andrews', 'arnaud', 'georges', 'johns',
+  'morris', 'agnes', 'james', 'huberts', 'lawrence', 'thomas', 'john', 'kitts', 'aubyn', 'germains', 'pauls', 'fillans', 'bees', 'patricks', 'clements',
+])
+const saint = (w?: string) => !!w && SAINT_SUBURBS.has(w.toLowerCase())
 /**
  * "5 Clunes Avenue Dallas" → street "5 Clunes Avenue", suburb "Dallas": the
  * first street type that follows a name ("12 St Georges Rd Northcote" keeps
  * its saint; "12 Fitzroy St St Kilda" keeps the suburb's). A street named
  * like a street type then a saint's suburb ("12 Esplanade St Kilda") splits
- * before the saint. Null when there's no street type with a suburb after it.
+ * before the saint; any other "St" in front of a saint's name is the
+ * saint's ("North St Marys", "Mt St Thomas": no split there). Null when
+ * there's no street type with a suburb after it.
  */
 function splitStreet(s: string): { street: string; suburb: string } | null {
   const w = s.split(/\s+/)
@@ -176,9 +184,11 @@ function splitStreet(s: string): { street: string; suburb: string } | null {
     if (!streetType(w[i]) || /\d/.test(w[i - 1])) continue
     const suburb = w.slice(i + 1).join(' ')
     if (/\d/.test(suburb)) continue
-    if (/^st\.?$/i.test(w[i]) && streetType(w[i - 1]) && SAINT_SUBURBS.has(w[i + 1].toLowerCase())) {
+    const st = /^st\.?$/i.test(w[i])
+    if (st && streetType(w[i - 1]) && saint(w[i + 1])) {
       return { street: w.slice(0, i).join(' '), suburb: w.slice(i).join(' ') }
     }
+    if (st && saint(w[i + 1])) continue
     return { street: w.slice(0, i + 1).join(' '), suburb }
   }
   return null

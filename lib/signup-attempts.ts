@@ -880,7 +880,13 @@ export async function syncSignupContact(db: any, row: any, o: { force?: boolean 
         if (addr.state && !c.state) extra.state = addr.state
         if (addr.postcode && !c.postcode) extra.postcode = addr.postcode
       }
-    } else if (!c.city && row.ip_city) extra.city = row.ip_city   // where they connected from stands in when no address was given
+    } else if (c.source === 'signup' && !c.city && !c.address && !c.state && !c.postcode && row.ip_city) {
+      // Where they connected from stands in when no address was given: only
+      // on a contact this flow made (where it can later give way, above) and
+      // with no address of its own, so it never sits beside another place's
+      // street, state or postcode.
+      extra.city = row.ip_city
+    }
     if (!c.country && addr.country) extra.country = addr.country
     const notes = String(c.notes || '')
     if (!notes.trim() || notes.startsWith(SIGNUP_NOTE_PREFIX) || OLD_SIGNUP_NOTE.test(notes)) {
