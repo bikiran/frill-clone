@@ -550,7 +550,7 @@ export default function TeamPage() {
             {resendingId === m.id ? 'Sending…' : 'Resend'}
           </button>
         )}
-        <button onClick={() => setConfirmDelete(m)} className="text-xs font-medium cursor-pointer hover:underline" style={{ color: '#dc2626' }}>
+        <button onClick={() => setConfirmDelete(m)} className="tm-remove text-xs font-medium cursor-pointer hover:underline" style={{ color: '#dc2626' }}>
           Remove
         </button>
         </>}
@@ -565,15 +565,25 @@ export default function TeamPage() {
            template, so the columns always line up. Status and Actions have a
            floor (an "Invited" pill, four action links that may wrap), so on a
            narrow screen the User column gives way instead of the actions
-           spilling over the status pill or the table scrolling sideways. */
-        .tm-grid { display: grid; grid-template-columns: minmax(0, 4fr) minmax(124px, 2fr) minmax(100px, 2fr) minmax(76px, 1fr) minmax(160px, 3fr); }
-        .tm-user { display: grid; grid-template-columns: 36px minmax(0, 1fr); column-gap: 12px; align-items: center; min-width: 0; }
+           spilling over the status pill or the table scrolling sideways.
+           Role and Status floors fit their widest content (a 'Viewer' select,
+           an 'Invited' pill), so the User column gets the slack. */
+        .tm-grid { display: grid; grid-template-columns: minmax(0, 4fr) minmax(120px, 2fr) minmax(84px, 2fr) minmax(70px, 1fr) minmax(160px, 3fr); }
+        /* padding-right: a gutter so the outlet select and a cut-off email
+           never touch the Mobile field next to them. */
+        .tm-user { display: grid; grid-template-columns: 36px minmax(0, 1fr); column-gap: 12px; align-items: center; min-width: 0; padding-right: 12px; }
         .tm-avatar { grid-row: 1 / span 2; }
         .tm-outlet { grid-column: 2; justify-self: start; min-width: 0; max-width: 100%; margin-top: 4px; }
+        /* Narrow tables: the outlet select takes the whole User cell under the
+           name (not just the part right of the avatar), so outlet names fit. */
+        @media (min-width: 768px) and (max-width: 1099px) {
+          .tm-avatar { grid-row: auto; }
+          .tm-outlet { grid-column: 1 / -1; margin-top: 8px; }
+        }
         .tm-phone { display: block; min-width: 0; padding-right: 12px; }
         .tm-mlabel { display: none; }
         /* Selects keep the global arrow (globals.css) with room for it. */
-        .tm-select { padding: 4px 26px 4px 8px; background-position: right 7px center; }
+        .tm-select { padding: 4px 26px 4px 8px; background-position: right 7px center; text-overflow: ellipsis; }
         .tm-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 2px 10px; min-width: 0; }
         .tm-actions button { white-space: nowrap; padding: 4px 0; }
         @media (max-width: 767px) {
@@ -589,7 +599,7 @@ export default function TeamPage() {
           .tm-status { grid-column: 2; justify-self: end; }
           .tm-avatar { grid-row: auto; }
           .tm-outlet { grid-column: 1 / -1; justify-self: stretch; margin-top: 12px; }
-          .tm-phone { padding-right: 0; }
+          .tm-user, .tm-phone { padding-right: 0; }
           .tm-phone:empty { display: none; }
           .tm-mlabel { display: block; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--slate); margin-bottom: 4px; }
           /* 16px so iOS doesn't zoom the page when a field is tapped. */
@@ -598,12 +608,33 @@ export default function TeamPage() {
           .tm-role .tm-select { width: auto; min-width: 140px; max-width: 100%; }
           .tm-pill { display: inline-block; font-size: 12.5px; padding: 5px 11px; }
           .tm-actions { justify-content: flex-start; gap: 6px; }
-          .tm-actions button { flex: 1 1 auto; min-height: 40px; padding: 0 8px; border: 1px solid var(--border); border-radius: 10px; background: #fff; font-size: 13px; font-weight: 600; text-decoration: none; }
+          .tm-actions button { flex: 1 1 auto; min-height: 40px; padding: 0 8px; border: 1px solid var(--border); border-radius: 10px; background: var(--card); font-size: 13px; font-weight: 600; text-decoration: none; }
           .tm-actions button:active { border-color: currentColor; }
           .tm-actions-none { display: none !important; }
           .tm-viewers-note { display: block; margin: 2px 0 0 !important; }
           .tm-modal > div { padding: 20px; }
           .team-page > .ph-root .ph-actions > button { min-height: 42px; }
+          .tm-invite-link { font-size: 16px; }
+        }
+        /* Touch screens at table widths (an iPad, a touch laptop): the table
+           keeps its layout, but every control is a 40px+ tap target. A mouse
+           keeps the compact table. */
+        @media (min-width: 768px) and (pointer: coarse) {
+          /* A wider Actions floor keeps Edit / Permissions / Remove on one
+             line at 768 now that each is a 40px target. */
+          .tm-grid { grid-template-columns: minmax(0, 4fr) minmax(120px, 2fr) minmax(84px, 2fr) minmax(70px, 1fr) minmax(190px, 3fr); }
+          .tm-field { min-height: 40px; }
+          .tm-actions { gap: 0 2px; }
+          .tm-actions button { min-height: 40px; min-width: 40px; padding: 0 6px; }
+          .team-page > .ph-root .ph-actions > button { min-height: 42px; }
+        }
+        /* #dc2626 is too dark to read on the dark theme's card (Remove,
+           Remove photo). */
+        [data-theme="dark"] .tm-remove { color: #f87171 !important; }
+        /* Invite link panel: Copy link and the dismiss button on touch. */
+        @media (max-width: 767px), (pointer: coarse) {
+          .tm-tap { min-height: 40px; min-width: 40px; display: inline-flex; align-items: center; justify-content: center; }
+          .tm-invite-link { min-height: 40px; }
         }
       `}</style>
       <PageHeader
@@ -652,7 +683,8 @@ export default function TeamPage() {
               readOnly
               value={lastInvite.link}
               onFocus={(e) => e.currentTarget.select()}
-              className="flex-1 min-w-0 px-3 py-2 rounded-lg border text-xs"
+              aria-label="Invite link"
+              className="tm-invite-link flex-1 min-w-0 px-3 py-2 rounded-lg border text-xs"
               style={{ borderColor: 'var(--border)', background: 'white' }}
             />
             <button
@@ -660,14 +692,14 @@ export default function TeamPage() {
                 try { await navigator.clipboard.writeText(lastInvite.link); showMsg('Invite link copied.') }
                 catch { showMsg('Could not copy — select the link and copy it manually.', true) }
               }}
-              className="px-3 py-2 rounded-lg text-white text-xs font-semibold whitespace-nowrap"
+              className="tm-tap px-3 py-2 rounded-lg text-white text-xs font-semibold whitespace-nowrap"
               style={{ background: 'var(--coral, #ff7a6b)' }}
             >
               Copy link
             </button>
             <button
               onClick={() => setLastInvite(null)}
-              className="px-2 py-2 rounded-lg text-xs"
+              className="tm-tap px-2 py-2 rounded-lg text-xs"
               style={{ color: 'var(--slate)' }}
               aria-label="Dismiss invite link"
             >
@@ -813,14 +845,14 @@ export default function TeamPage() {
                 <div className="w-16 h-16 rounded-full overflow-hidden flex items-center justify-center text-white text-xl font-bold shrink-0" style={{ background: '#6b7280' }}>
                   {editAvatar ? <img src={editAvatar} alt="" className="w-full h-full object-cover" /> : (editName || editMember.email || '?')[0].toUpperCase()}
                 </div>
-                <div className="flex flex-col gap-2">
-                  <label className="text-sm font-medium cursor-pointer px-3 py-2.5 rounded-lg border inline-block" style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
+                <div className="flex flex-col gap-3">
+                  <label className="text-sm font-medium text-center cursor-pointer px-3 py-2.5 rounded-lg border inline-block" style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
                     {editUploading ? 'Uploading…' : 'Upload photo'}
                     <input type="file" accept="image/*" style={{ display: 'none' }}
                       onChange={e => { const f = e.target.files?.[0]; if (f) uploadMemberPhoto(f) }} disabled={editUploading} />
                   </label>
                   {editAvatar && (
-                    <button onClick={() => setEditAvatar('')} className="text-xs cursor-pointer hover:underline text-left" style={{ color: '#dc2626' }}>Remove photo</button>
+                    <button onClick={() => setEditAvatar('')} className="tm-remove text-sm font-medium cursor-pointer px-3 py-2.5 rounded-lg border" style={{ borderColor: 'var(--border)', color: '#dc2626' }}>Remove photo</button>
                   )}
                 </div>
               </div>

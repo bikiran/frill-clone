@@ -40,7 +40,7 @@ export default function ConfirmModal({
         onClick={onCancel} 
       />
       <div 
-        className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-md bg-white rounded-2xl shadow-2xl animate-modal mx-4"
+        className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-[calc(100%-2rem)] max-w-md bg-white rounded-2xl shadow-2xl animate-modal"
         style={{ border: '1px solid var(--border)' }}>
         
         <div className="p-6">
@@ -48,11 +48,18 @@ export default function ConfirmModal({
           <div 
             className="w-12 h-12 rounded-full flex items-center justify-center mb-4"
             style={{ 
-              background: variant === 'danger' ? '#fee2e2' : 'var(--peach)' 
+              background: variant === 'danger' ? '#fee2e2' : 'var(--peach)',
+              color: variant === 'danger' ? '#dc2626' : 'var(--coral)',
             }}>
-            <span className="text-2xl">
-              {variant === 'danger' ? '⚠️' : '❓'}
-            </span>
+            {variant === 'danger' ? (
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><path d="M12 9v4" /><path d="M12 17h.01" />
+              </svg>
+            ) : (
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="10" /><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" /><path d="M12 17h.01" />
+              </svg>
+            )}
           </div>
 
           {/* Title */}
