@@ -169,6 +169,11 @@ const SAINT_SUBURBS = new Set([
   'morris', 'agnes', 'james', 'huberts', 'lawrence', 'thomas', 'john', 'kitts', 'aubyn', 'germains', 'pauls', 'fillans', 'bees', 'patricks', 'clements',
 ])
 const saint = (w?: string) => !!w && SAINT_SUBURBS.has(w.toLowerCase())
+// Words that start a suburb name ahead of a saint's ("North St Marys", "Mt St
+// Thomas"). Any other word before "St Georges" is a street name ("12 Smith St
+// Georges Hall": Smith St, in Georges Hall).
+const SUBURB_PREFIXES = new Set(['north', 'south', 'east', 'west', 'mt', 'mount', 'lake', 'port', 'upper', 'lower', 'point', 'glen', 'cape', 'new', 'old', 'little', 'great'])
+const suburbPrefix = (w?: string) => !!w && SUBURB_PREFIXES.has(w.toLowerCase().replace(/\.$/, ''))
 /**
  * "5 Clunes Avenue Dallas" → street "5 Clunes Avenue", suburb "Dallas": the
  * first street type that follows a name ("12 St Georges Rd Northcote" keeps
@@ -188,7 +193,9 @@ function splitStreet(s: string): { street: string; suburb: string } | null {
     if (st && streetType(w[i - 1]) && saint(w[i + 1])) {
       return { street: w.slice(0, i).join(' '), suburb: w.slice(i).join(' ') }
     }
-    if (st && saint(w[i + 1])) continue
+    // "North St Marys": the saint's. "12 Smith St Marys": can't tell a lone
+    // saint's name from a street, so no guess. "12 Smith St Georges Hall": split.
+    if (st && saint(w[i + 1]) && (suburbPrefix(w[i - 1]) || i + 2 === w.length)) continue
     return { street: w.slice(0, i + 1).join(' '), suburb }
   }
   return null
