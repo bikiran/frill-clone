@@ -48,19 +48,28 @@ const clip = (v: any, n: number) => { const t = String(v ?? '').replace(/\s+/g, 
  * Two round trips, not three: the sign-in check first (remembered for a few
  * seconds, so requireCompanyAccess below doesn't repeat it), then the
  * membership check and this feature's permission read side by side.
+ *
+ * `timezone: true` also reads the business's timezone in that second round
+ * (only once the caller is signed in, and handed back only when they're let
+ * in), so /board can work out the period in it without another round trip.
+ * It's a read of its own, so it can never change who gets in.
  */
-export async function requireCallsAccess(req: any, db: Db, companyId: string | null | undefined): Promise<{ ok: boolean; userId?: string }> {
+export async function requireCallsAccess(req: any, db: Db, companyId: string | null | undefined, opts: { timezone?: boolean } = {}): Promise<{ ok: boolean; userId?: string; timezone?: string }> {
   if (!companyId) return { ok: false }
   try {
     const user = await verifyToken(db, bearerToken(req))
     if (!user?.id) return { ok: false }
-    const [a, co, team] = await Promise.all([
+    const [a, co, team, tz] = await Promise.all([
       requireCompanyAccess(req, db, companyId),
       db.from('companies').select('owner_id').eq('id', companyId).maybeSingle(),
       db.from('team_members').select('role, status, permissions').eq('company_id', companyId).eq('user_id', user.id).limit(5),
+      opts.timezone
+        ? Promise.resolve(db.from('companies').select('booking_settings').eq('id', companyId).maybeSingle())
+          .then((r: any) => (r?.data ? validTz(r.data.booking_settings?.timezone) : undefined), () => undefined)
+        : undefined,
     ])
     if (!a.ok || !a.userId) return { ok: false }
-    const ok = { ok: true, userId: a.userId }
+    const ok = tz ? { ok: true, userId: a.userId, timezone: tz as string } : { ok: true, userId: a.userId }
     if (co?.data?.owner_id === a.userId) return ok
     // Only the owner (above) and the platform admin get past a team read that
     // failed, or past having no team row; everyone else is checked on their row.
@@ -342,15 +351,15 @@ export async function loadOverview(db: Db, companyId: string, now: Date = new Da
 
 // ── The first load, in one request ───────────────────────────────────────────
 
-export type Board = BoardContext & { calls: CcCall[]; truncated: boolean; removed: number; total: number | null }
+export type Board = BoardContext & { from: number; to: number | null; calls: CcCall[]; truncated: boolean; removed: number; total: number | null }
 
 /**
  * The Command Centre's first screen in one request: the calls for the period
- * the page asked for (worked out in the timezone it believes the business is
- * in, which it checks against `timezone` here) and the board's settings. The
- * calls, settings and store lines are read together, then the names and
- * stores in one more round trip. The missed callers and opening hours follow
- * from /overview, so they never hold the board up.
+ * (`win`, which /board works out in the business's own timezone) and the
+ * board's settings. The calls, settings and store lines are read together,
+ * then the names and stores in one more round trip. `from`/`to` say which
+ * period was read. The missed callers and opening hours follow from
+ * /overview, so they never hold the board up.
  */
 export async function loadBoard(db: Db, companyId: string, win: { from: number; to: number | null }, deps: Pick<OverviewDeps, 'phoneAgent'> = {}): Promise<Board> {
   const [ctx, lines, raw] = await Promise.all([
@@ -359,7 +368,7 @@ export async function loadBoard(db: Db, companyId: string, win: { from: number; 
     loadCallRows(db, companyId, new Date(win.from).toISOString(), win.to ? new Date(win.to).toISOString() : null),
   ])
   const calls = await enrichCalls(db, companyId, raw.rows, lines)
-  return { ...ctx, calls, truncated: raw.truncated, removed: raw.removed, total: raw.total }
+  return { ...ctx, from: win.from, to: win.to, calls, truncated: raw.truncated, removed: raw.removed, total: raw.total }
 }
 
 // ── One call, for the drawer ─────────────────────────────────────────────────

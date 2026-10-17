@@ -8,7 +8,7 @@ import { peekCompanyUser, readStored, writeStored, readCache, writeCache } from 
 import { loadStaffRows } from '@/lib/team-list'
 import {
   normaliseCall, outcomeOf, outcomeLabel, aiOutcomeOf, isAiCall, AI_OUTCOME_LABEL, AI_AGENT_NAME, aggregate, byHour, heatmap, leaderboard,
-  boardWindow, inWindow, callerDisplay, callAgentMatches, matchesSearch, buildAlerts, otherNumber, normName, formatPhone,
+  boardWindow, boardSpan, spanOf, inWindow, callerDisplay, callAgentMatches, matchesSearch, buildAlerts, otherNumber, normName, formatPhone,
   fmtDur, fmtTalk, timeAgo, hourLabel, startOfDayTz, zonedParts, RANGES, isRangeKey, DEFAULT_TZ, prevToFor, outcomeOf as rankOutcome,
   type CcCall, type RangeKey, type AgentOption, type RecoveryItem, type CallStats,
 } from '@/lib/command-centre'
@@ -18,10 +18,8 @@ import { Icon, Chip, Kpi, Trend, WhyInline, Segmented, Spinner, LiveTimer, Clock
 // they load on their own and stay out of the board's first download.
 const CallDrawer = dynamic(() => import('./CallDrawer'), { ssr: false })
 const TextBack = dynamic(() => import('./TextBack'), { ssr: false })
-const AiSummary = dynamic(() => import('./AiSummary'), {
-  ssr: false,
-  loading: () => <div style={{ ...card, padding: 18, display: 'flex', flexDirection: 'column', gap: 10 }}><Skel w={180} h={14} /><Skel w="70%" h={11} /><Skel w="55%" h={11} /></div>,
-})
+const AiSummarySkel = () => <div aria-busy="true" style={{ ...card, padding: 18, display: 'flex', flexDirection: 'column', gap: 10 }}><Skel w={180} h={14} /><Skel w="70%" h={11} /><Skel w="55%" h={11} /></div>
+const AiSummary = dynamic(() => import('./AiSummary'), { ssr: false, loading: AiSummarySkel })
 
 // ── Command Centre ───────────────────────────────────────────────────────────
 // A live call-centre dashboard: Live Board, Call Logs and Insights for calls,
@@ -33,10 +31,10 @@ const AiSummary = dynamic(() => import('./AiSummary'), {
 // an AI summary of the period sit alongside.
 //
 // Loading: the page and its placeholders show straight away. The first
-// request (/board) brings the calls and the board's settings together, worked
-// out in the timezone last seen here (kept in this browser), while the missed
-// callers and opening hours (/overview, which may wait on Google) and the team
-// load alongside and fill in their own panels.
+// request (/board) brings the calls and the board's settings together, the
+// period worked out on the server in the business's own timezone, while the
+// missed callers and opening hours (/overview, which may wait on Google) and
+// the team load alongside and fill in their own panels.
 
 type Overview = {
   timezone: string
@@ -48,6 +46,10 @@ type Overview = {
   phoneAgent: { enabled: boolean; mode: string | null }
   aiPaused: boolean
 }
+type BoardContext = Pick<Overview, 'timezone' | 'locations' | 'missedCallText' | 'phoneAgent' | 'aiPaused'>
+// What the board's first request brings: the calls for the period it read
+// (`from`/`to`) and, from /board, the board's settings.
+type BoardAnswer = { calls: CcCall[]; truncated: false | { total: number | null }; context: BoardContext | null; from: number; to: number | null }
 type Agent = { id: string; name: string; avatar: string | null; role: string | null; status: 'available' | 'oncall' | 'offline' }
 type Sms = { id: string; conversation_id: string | null; sender_type: string | null; sender_name: string | null; content: string | null; created_at: string }
 type Tab = 'live' | 'logs' | 'insights'
@@ -102,6 +104,10 @@ export default function CommandCentrePage() {
   const [smsLoaded, setSmsLoaded] = useState(false)
   // booted: the first calls are in. Until then the board shows placeholders.
   const [booted, setBooted] = useState(false)
+  // The business's timezone is known: kept from the last visit, or the board
+  // or the overview said. The AI summary waits for it, so it never summarises
+  // a period worked out in the wrong timezone (and never asks the AI twice).
+  const [tzSure, setTzSure] = useState(false)
   const [recoveryState, setRecoveryState] = useState<RecoveryState>('loading')
   const [rosterLoaded, setRosterLoaded] = useState(false)
   // Who's available, as soon as presence is in (the list itself waits for names).
@@ -173,6 +179,7 @@ export default function CommandCentrePage() {
         if (kept?.timezone && Array.isArray(kept.recovery?.items)) {
           setOv(prev => prev || { ...FALLBACK_OVERVIEW, ...kept, openNow: null, hoursToday: null })
           setRecoveryState(st => (st === 'loading' ? 'stored' : st))
+          setTzSure(true)
         }
       }
       setCompanyId(cid)
@@ -226,6 +233,7 @@ export default function CommandCentrePage() {
         const d = await r.json() as Overview
         setOv(d)
         setRecoveryState('live')
+        setTzSure(true)
         // Kept without "open now" and today's hours, which are only true today.
         writeStored(ovKey(cid), { ...d, openNow: null, hoursToday: null })
         return
@@ -296,9 +304,15 @@ export default function CommandCentrePage() {
   const win = useMemo(() => boardWindow(range, Date.now(), tz, { from: customFrom, to: customTo }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [range, tz, customFrom, customTo, dayKey])
-  const fetchFrom = win.prevFrom > 0 && win.prevTo > 0 ? Math.min(win.prevFrom, win.from) : win.from
-  const fetchTo = Number.isFinite(win.to) ? win.to : null
+  const { from: fetchFrom, to: fetchTo } = spanOf(win)
+  // Today's calls too when the period is in the past, so live calls and the
+  // activity feed are always current.
+  const todayFrom = useMemo(() => { const t0 = startOfDayTz(Date.now(), tz); return fetchTo != null && fetchTo <= t0 ? t0 : null },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [tz, fetchTo, dayKey])
   const fetchSpan = useRef<{ from: number; to: number | null }>({ from: 0, to: null })
+  // Asks for the period again (the server's day and this browser's disagree).
+  const [reload, setReload] = useState(0)
 
   const fetchCalls = useCallback(async (cid: string, from: number, to: number | null) => {
     const q = new URLSearchParams({ companyId: cid, from: String(from), to: to == null ? 'open' : String(to) })
@@ -309,59 +323,86 @@ export default function CommandCentrePage() {
   }, [])
 
   // The first load: the same calls plus the board's settings, in one request.
-  // An older server without /board: the calls on their own, as before.
-  const fetchBoard = useCallback(async (cid: string, from: number, to: number | null) => {
-    const q = new URLSearchParams({ companyId: cid, from: String(from), to: to == null ? 'open' : String(to) })
+  // The server works the period out from its name in the business's own
+  // timezone and says which one it read. An older server without /board: the
+  // calls on their own, as before.
+  const fetchBoard = useCallback(async (cid: string, from: number, to: number | null, period: { range: RangeKey; customFrom: string; customTo: string }): Promise<BoardAnswer> => {
+    const q = new URLSearchParams({ companyId: cid, from: String(from), to: to == null ? 'open' : String(to), range: period.range })
+    if (period.range === 'custom') { q.set('cfrom', period.customFrom); q.set('cto', period.customTo) }
     const r = await authFetch(`/api/command-centre/board?${q}`)
-    if (r.status === 404) return { ...(await fetchCalls(cid, from, to)), context: null }
+    if (r.status === 404) return { ...(await fetchCalls(cid, from, to)), context: null, from, to }
     const d = await r.json().catch(() => ({}))
     if (!r.ok) throw new Error(d.error || 'Couldn’t load calls')
-    const context: Pick<Overview, 'timezone' | 'locations' | 'missedCallText' | 'phoneAgent' | 'aiPaused'> | null = d.timezone
+    const context: BoardContext | null = d.timezone
       ? { timezone: d.timezone, locations: d.locations || [], missedCallText: d.missedCallText || FALLBACK_OVERVIEW.missedCallText, phoneAgent: d.phoneAgent || FALLBACK_OVERVIEW.phoneAgent, aiPaused: !!d.aiPaused }
       : null
-    return { calls: (d.calls || []) as CcCall[], truncated: d.truncated ? { total: typeof d.total === 'number' ? d.total : null } : false as const, context }
+    return {
+      calls: (d.calls || []) as CcCall[], truncated: d.truncated ? { total: typeof d.total === 'number' ? d.total : null } : false as const, context,
+      from: typeof d.from === 'number' ? d.from : from, to: typeof d.to === 'number' || d.to === null ? d.to : to,
+    }
   }, [fetchCalls])
 
-  // Load the period (and today too when the period is in the past, so live
-  // calls and the activity feed are always current). The first load on a
-  // visit goes through /board; if the business turns out to be in another
-  // timezone than the one the period was worked out in, the calls are set
-  // aside and the period is asked for again in the right one.
+  // Load the period (and today's calls when the period is in the past). The
+  // first load on a visit goes through /board. Its answer is kept until it's
+  // used: when the timezone it brings moves the period (the page guessed the
+  // timezone), or the timezone came from the overview while it was still out,
+  // the next run takes it instead of asking again, since /board read the
+  // period in the business's own timezone.
   const boardDone = useRef(false)
+  const bootAnswer = useRef<{ cid: string; p: Promise<BoardAnswer> } | null>(null)
   useEffect(() => {
     if (!companyId) return
     let live = true
     setCallsLoading(true); setCallsError('')
-    const tzUsed = tz
-    const today0 = startOfDayTz(Date.now(), tzUsed)
-    const needToday = fetchTo != null && fetchTo <= today0
+    const needToday = todayFrom != null
     const key = callsKey(companyId, fetchFrom, fetchTo)
     // Back on the page without a reload: the last copy at once, then fresh.
     const hit = !needToday ? readCache<{ calls: CcCall[]; truncated: false | { total: number | null } }>(key) : undefined
     if (hit) { setCalls(hit.calls); setTruncated(hit.truncated); setBooted(true) }
-    const boot = !boardDone.current
+    const isThis = (a: { from: number; to: number | null }) => a.from === fetchFrom && a.to === fetchTo
+    const plain = () => fetchCalls(companyId, fetchFrom, fetchTo).then(a => ({ ...a, context: null, from: fetchFrom, to: fetchTo }))
+    const period = { range, customFrom, customTo }
+    let main: Promise<BoardAnswer>
+    const kept = bootAnswer.current?.cid === companyId ? bootAnswer.current.p : null
+    if (kept) main = kept.then(a => (isThis(a) ? a : plain().then(x => ({ ...x, context: a.context }))), plain)
+    else if (!boardDone.current) {
+      boardDone.current = true
+      main = fetchBoard(companyId, fetchFrom, fetchTo, period)
+      bootAnswer.current = { cid: companyId, p: main }
+      main.catch(() => {})
+    } else main = plain()
     let retry = false
     Promise.all([
-      boot ? fetchBoard(companyId, fetchFrom, fetchTo) : fetchCalls(companyId, fetchFrom, fetchTo).then(a => ({ ...a, context: null })),
-      needToday ? fetchCalls(companyId, today0, null) : Promise.resolve({ calls: [] as CcCall[], truncated: false as const }),
+      main,
+      needToday ? fetchCalls(companyId, todayFrom!, null) : Promise.resolve({ calls: [] as CcCall[], truncated: false as const }),
     ]).then(([a, b]) => {
       if (!live) return
-      if (boot) boardDone.current = true
       if (a.context) {
         const ctx = a.context
         setOv(prev => ({ ...(prev || FALLBACK_OVERVIEW), ...ctx }))
-        if (ctx.timezone !== tzUsed) { retry = true; return }
+        setTzSure(true)
+        // The period this page asks for once it has that timezone. If it
+        // moves, the run that follows takes the board's answer (kept above).
+        const now = Date.now()
+        const next = boardSpan(period.range, now, ctx.timezone, { from: period.customFrom, to: period.customTo })
+        const t0 = startOfDayTz(now, ctx.timezone)
+        const nextToday = next.to != null && next.to <= t0 ? t0 : null
+        if (!isThis(next) || nextToday !== todayFrom) { retry = true; return }
       }
+      bootAnswer.current = null
+      // The server read another period (its clock and this browser's
+      // disagree about the day): ask for this one.
+      if (!isThis(a)) { retry = true; setReload(n => n + 1); return }
       const seen = new Set(a.calls.map(c => c.id))
       const merged = [...b.calls.filter(c => !seen.has(c.id)), ...a.calls].sort((x, y) => Date.parse(y.created_at) - Date.parse(x.created_at))
       setCalls(merged)
       setTruncated(a.truncated)
       fetchSpan.current = { from: fetchFrom, to: fetchTo }
       if (!needToday && merged.length <= CACHE_CALLS_MAX) writeCache(key, { calls: merged, truncated: a.truncated })
-    }).catch(e => live && setCallsError(e?.message || 'Couldn’t load calls'))
-      .finally(() => { if (live && !retry) { setCallsLoading(false); setBooted(true) } })
+    }).catch(e => { if (live) { bootAnswer.current = null; setCallsError(e?.message || 'Couldn’t load calls') } })
+      .finally(() => { if (live && !retry) { setCallsLoading(false); setBooted(true); setTzSure(true) } })
     return () => { live = false }
-  }, [companyId, tz, fetchFrom, fetchTo, fetchCalls, fetchBoard]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [companyId, fetchFrom, fetchTo, todayFrom, reload, fetchCalls, fetchBoard]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Refresh the last stretch from the server (names, stores and merged
   // duplicates for new calls; status changes a realtime event may have missed).
@@ -392,6 +433,9 @@ export default function CommandCentrePage() {
     const id = w.requestIdleCallback ? w.requestIdleCallback(warm, { timeout: 4000 }) : setTimeout(warm, 1500)
     return () => { if (w.cancelIdleCallback && w.requestIdleCallback) w.cancelIdleCallback(id); else clearTimeout(id) }
   }, [booted])
+  // Opening on Insights: fetch the AI summary's code while the timezone is
+  // confirmed, so it can ask the moment it is.
+  useEffect(() => { if (tab === 'insights') import('./AiSummary').catch(() => {}) }, [tab])
 
   // ── Keeping it live ──────────────────────────────────────────────────────
   // Realtime on `calls` patches rows as they change; a debounced refresh then
@@ -1186,9 +1230,12 @@ export default function CommandCentrePage() {
       {/* ── INSIGHTS ────────────────────────────────────────────────────────── */}
       {commsMode === 'calls' && tab === 'insights' && companyId && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          {/* Kept in one place while the calls load, so it never asks the AI twice. */}
-          <AiSummary companyId={companyId} from={win.from} to={Number.isFinite(win.to) ? win.to : null} rangeLabel={rangeLabel}
-            activeTopic={topic?.name || null} onTopic={t => { setTopic(t); if (t) { setTab('logs'); setOutcomeFilter('all'); setDirFilter('all') } }} />
+          {/* Asks once the business's timezone is known (so the period is the
+              right one), then stays put while the calls load. */}
+          {tzSure ? (
+            <AiSummary companyId={companyId} from={win.from} to={Number.isFinite(win.to) ? win.to : null} rangeLabel={rangeLabel}
+              activeTopic={topic?.name || null} onTopic={t => { setTopic(t); if (t) { setTab('logs'); setOutcomeFilter('all'); setDirFilter('all') } }} />
+          ) : <AiSummarySkel />}
           {loading ? (
             <>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 150px), 1fr))', gap: 12 }}>
