@@ -33,11 +33,17 @@ interface Props {
   header?: React.ReactNode       // the inbox's Reply / Note switch, shown on top
   bodyHeight?: number            // set by the inbox's drag-to-resize grip
   templateVars?: TemplateVars    // fills {first_name} etc. in saved templates
+  // Phones: From / Subject / Signature tucked behind a "Details" disclosure, the
+  // toolbar on one sideways-scrolling line, and a body sized to the screen
+  // rather than the desktop's remembered drag height.
+  compact?: boolean
+  onBodyText?: (text: string) => void   // the draft's plain text, as it changes
 }
 
 export default function EmailComposer({
-  conversationId, companyId, toEmail, defaultSubject, fromLabel, replyTo, signature, agentName, onSent, onAiAssist, keyterms, extraTools, header, bodyHeight, templateVars,
+  conversationId, companyId, toEmail, defaultSubject, fromLabel, replyTo, signature, agentName, onSent, onAiAssist, keyterms, extraTools, header, bodyHeight, templateVars, compact, onBodyText,
 }: Props) {
+  const [showDetails, setShowDetails] = useState(false)
   const [to, setTo] = useState(toEmail)
   const [cc, setCc] = useState('')
   const [showCc, setShowCc] = useState(false)
@@ -229,6 +235,8 @@ export default function EmailComposer({
   const [savingSig, setSavingSig] = useState(false)
 
   useEffect(() => { setTo(toEmail) }, [toEmail])
+  // Let the inbox show the draft on its collapsed reply bar (phones).
+  useEffect(() => { onBodyText?.(bodyText()) }, [bodyHtml])
   useEffect(() => { if (!subjectEdited.current) setSubject(defaultSubject) }, [defaultSubject])
 
   const loadSigs = async () => {
@@ -307,6 +315,7 @@ export default function EmailComposer({
   return (
     <div className={header ? 'cmp-card' : undefined} style={header ? { overflow: 'hidden' } : { border: '1px solid var(--border)', borderRadius: 12, background: '#fff', overflow: 'hidden' }}>
       {header}
+      {(!compact || showDetails) && (
       <div style={{ ...row, flexWrap: 'wrap', rowGap: 2, background: header ? 'transparent' : 'var(--canvas)' }}>
         <span style={rowLabel}>From</span>
         <span style={{ ...field, minWidth: 180, color: 'var(--slate)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fromLabel || 'Your mailbox'}</span>
@@ -317,10 +326,11 @@ export default function EmailComposer({
           Replies come back to this inbox
         </span>
       </div>
+      )}
       <div style={row}>
         <span style={rowLabel}>To</span>
         <input value={to} onChange={e => setTo(e.target.value)} style={field} placeholder="customer@example.com" />
-        {(!showCc || !showBcc) && (
+        {(!showCc || !showBcc) && (!compact || showDetails) && (
           <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
             {!showCc && (
               <button type="button" onClick={() => setShowCc(true)}
@@ -336,6 +346,14 @@ export default function EmailComposer({
             )}
           </div>
         )}
+        {compact && (
+          <button type="button" className="ecmp-details" onClick={() => setShowDetails(v => !v)} aria-expanded={showDetails}
+            title={showDetails ? 'Hide From, Subject and Signature' : `Subject: ${subject || defaultSubject}`}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 3, flexShrink: 0, border: '1px solid var(--border)', background: showDetails ? 'var(--canvas)' : '#fff', color: 'var(--slate)', borderRadius: 8, padding: '4px 8px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+            Details
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden style={{ transform: showDetails ? 'rotate(180deg)' : 'none', transition: 'transform .15s ease' }}><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+        )}
       </div>
       {showCc && (
         <div style={row}>
@@ -349,6 +367,7 @@ export default function EmailComposer({
           <input value={bcc} onChange={e => setBcc(e.target.value)} style={field} placeholder="bcc@example.com" />
         </div>
       )}
+      {(!compact || showDetails) && (<>
       <div style={row}>
         <span style={rowLabel}>Subject</span>
         <input value={subject} onChange={e => { subjectEdited.current = true; setSubject(e.target.value) }} style={field} placeholder="Subject" />
@@ -382,12 +401,15 @@ export default function EmailComposer({
           </div>
         </div>
       )}
+      </>)}
 
       {/* Rich-text formatting toolbar */}
       <style>{`.email-rte[data-empty="true"]:before{content:attr(data-ph);color:#9ca3af;pointer-events:none;}
         .email-extra-tools .cmp-tool { width: 28px !important; height: 28px !important; border-radius: 6px !important; background: transparent !important; }
-        .email-extra-tools .cmp-tool:hover { background: var(--canvas, #f5f6f8) !important; }`}</style>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 2, padding: '6px 8px', borderBottom: '1px solid var(--border)', flexWrap: 'wrap', position: 'relative' }}>
+        .email-extra-tools .cmp-tool:hover { background: var(--canvas, #f5f6f8) !important; }
+        .ecmp-toolbar.compact::-webkit-scrollbar { display: none; }
+        .ecmp-toolbar.compact > * { flex-shrink: 0; }`}</style>
+      <div className={compact ? 'ecmp-toolbar compact' : 'ecmp-toolbar'} style={{ display: 'flex', alignItems: 'center', gap: 2, padding: '6px 8px', borderBottom: '1px solid var(--border)', flexWrap: compact ? 'nowrap' : 'wrap', position: 'relative', ...(compact ? { overflowX: 'auto', overflowY: 'hidden', scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' } as React.CSSProperties : {}) }}>
         {/* Colvy Voice — dictate the email (same as the chat reply box). */}
         <VoiceDictationButton size={28} soft title="Voice type" keyterms={keyterms} onText={insertDictation} />
         <span style={{ width: 1, height: 18, background: 'var(--border)', margin: '0 4px' }} />
@@ -444,7 +466,7 @@ export default function EmailComposer({
       <div ref={editorRef} contentEditable suppressContentEditableWarning onInput={() => { syncBody(); rememberCaret() }}
         onKeyUp={rememberCaret} onMouseUp={rememberCaret} onBlur={rememberCaret}
         className="email-rte" data-ph="Write your reply…" data-empty={(!bodyHtml || bodyHtml === '<br>') ? 'true' : 'false'}
-        style={{ ...(bodyHeight ? { height: bodyHeight } : { minHeight: 130, maxHeight: 300 }), overflowY: 'auto', outline: 'none', padding: '12px', fontSize: 13.5, lineHeight: 1.55, color: 'var(--ink)', background: '#fff' }} />
+        style={{ ...(compact ? { minHeight: 110, maxHeight: '34dvh' } : bodyHeight ? { height: bodyHeight } : { minHeight: 130, maxHeight: 300 }), overflowY: 'auto', outline: 'none', padding: '12px', fontSize: 13.5, lineHeight: 1.55, color: 'var(--ink)', background: '#fff' }} />
 
       {(attachments.length > 0 || attBusy) && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '0 12px 8px' }}>
@@ -462,7 +484,7 @@ export default function EmailComposer({
         </div>
       )}
 
-      {sigPreview && (
+      {sigPreview && (!compact || showDetails) && (
         <div style={{ padding: '0 12px 8px' }}>
           <p style={{ margin: 0, fontSize: 11.5, color: 'var(--slate)', borderTop: '1px dashed var(--border)', paddingTop: 8, whiteSpace: 'pre-wrap' }}>
             {sigPreview}
@@ -475,16 +497,18 @@ export default function EmailComposer({
           <AiDraftInfo info={aiDraft.info} error={aiDraft.error} busy={aiDraft.busy} onRedo={i => aiDraft.run(i)} onClose={aiDraft.clear} />
         </div>
       )}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', borderTop: '1px solid var(--border)', background: 'var(--canvas)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: compact ? '8px 10px' : '10px 12px', borderTop: '1px solid var(--border)', background: 'var(--canvas)', ...(compact ? { flexWrap: 'wrap', rowGap: 6 } : {}) }}>
+        {(!compact || err) && (
         <span style={{ fontSize: 12, color: err ? '#dc2626' : 'var(--slate)' }}>
           {err || (sigPreview ? 'Signature will be appended' : ' ')}
         </span>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: compact ? 6 : 8, ...(compact ? { marginLeft: 'auto' } : {}) }}>
           <AiDraftButton busy={aiDraft.busy} onClick={() => aiDraft.run()} height={34} />
           <button type="button" onClick={improveWithAI} disabled={aiBusy} title="Improve this draft with AI"
             style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '8px 12px', borderRadius: 9, border: '1px solid #e9d5ff', background: '#faf5ff', color: '#7c3aed', fontSize: 12.5, fontWeight: 700, cursor: aiBusy ? 'wait' : 'pointer' }}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/></svg>
-            {aiBusy ? 'Improving…' : 'AI improve'}
+            {aiBusy ? 'Improving…' : compact ? 'Improve' : 'AI improve'}
           </button>
           <button type="button" onClick={send} disabled={sending}
           style={{ padding: '9px 20px', borderRadius: 9, border: 'none', background: 'var(--coral)', color: '#fff', fontSize: 13.5, fontWeight: 700, cursor: sending ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: 7 }}>

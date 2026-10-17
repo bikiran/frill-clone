@@ -1005,6 +1005,16 @@ export default function InboxPage() {
     window.addEventListener('resize', check)
     return () => window.removeEventListener('resize', check)
   }, [])
+  // Phones put the thread first: the reply box starts as a one-line bar and
+  // only opens into the full composer when tapped (see .mcmp-* in the styles).
+  // It stays mounted while collapsed, so a half-written reply is kept. Desktop
+  // ignores this and shows the composer as always.
+  const [mComposerOpen, setMComposerOpen] = useState(false)
+  // Phones: the thread header's tools (pin, assign, status, AI, products…) sit
+  // in a tray under the name row, opened from its ⋯ button.
+  const [mToolsOpen, setMToolsOpen] = useState(false)
+  // The email composer's draft text, for the collapsed bar's preview.
+  const [emailDraftText, setEmailDraftText] = useState('')
   const [replyChannel, setReplyChannel] = useState<'chat' | 'sms'>('chat')
   const [showSendMenu, setShowSendMenu] = useState(false)
   const [sendPicker, setSendPicker] = useState<'poll' | 'survey' | 'form' | 'payment' | null>(null)
@@ -4807,7 +4817,7 @@ export default function InboxPage() {
                     </button>
                   </div>
                   <span className="cmp-via">
-                    {internalMode ? 'Only your team sees this' : channelResolving ? 'Choosing a channel…' : <>Sending by <b>{({ sms: 'SMS', email: 'email', chat: 'live chat', instagram: 'Instagram', messenger: 'Messenger', whatsapp: 'WhatsApp', call: 'SMS' } as Record<string, string>)[sendChannel !== 'auto' ? sendChannel : outboundChannel] || 'chat'}</b> {sendChannelGlyph(sendChannel !== 'auto' ? sendChannel : outboundChannel, 13)}</>}
+                    {internalMode ? 'Only your team sees this' : channelResolving ? 'Choosing a channel…' : <><span className="cmp-via-lbl">Sending by </span><b>{({ sms: 'SMS', email: 'email', chat: 'live chat', instagram: 'Instagram', messenger: 'Messenger', whatsapp: 'WhatsApp', call: 'SMS' } as Record<string, string>)[sendChannel !== 'auto' ? sendChannel : outboundChannel] || 'chat'}</b> {sendChannelGlyph(sendChannel !== 'auto' ? sendChannel : outboundChannel, 13)}</>}
                     {/* Both a mobile and an email: one tap to the other. */}
                     {!internalMode && !channelResolving && (() => {
                       const cur = sendChannel !== 'auto' ? sendChannel : outboundChannel
@@ -4820,6 +4830,13 @@ export default function InboxPage() {
                       ) : null
                     })()}
                   </span>
+                  {/* Phones: fold the composer back to its one-line bar (the
+                      draft is kept) so the thread gets the screen again. */}
+                  <button type="button" className="inbox-mobile-only mcmp-collapse" onClick={collapseMobileComposer}
+                    title="Collapse reply box" aria-label="Collapse reply box"
+                    style={{ display: 'none', alignItems: 'center', justifyContent: 'center', flexShrink: 0, width: 32, height: 32, borderRadius: 9, border: '1px solid var(--border)', background: '#fff', color: 'var(--slate)', cursor: 'pointer', padding: 0 }}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden><polyline points="6 9 12 15 18 9"/></svg>
+                  </button>
                 </div>
   )
   const renderSendMenu = (forEmail = false) => (
@@ -5447,11 +5464,32 @@ export default function InboxPage() {
     const want = pendingSendChannelRef.current
     pendingSendChannelRef.current = null
     setSendChannel(want === 'sms' || want === 'email' || want === 'chat' ? want : 'auto')
+    // Phones open each thread reading, composer collapsed — unless a deep link
+    // ("Message" / "Email" from Contacts) came here to write.
+    setMComposerOpen(!!want)
+    setMToolsOpen(false)
+    setEmailDraftText('')
   }, [selected?.id])
   // THE switch between the email composer and the chat / SMS box. Anything
   // that needs to know "is this reply an email?" (the composer, review links,
   // inserts) reads this one boolean.
   const showEmailComposer = sendChannel === 'email' || (activeChannel === 'email' && sendChannel === 'auto')
+  // Phones: open the collapsed reply bar into the full composer (Reply or Note),
+  // put the caret in it, and keep the newest message in view above it.
+  const openMobileComposer = (note?: boolean) => {
+    if (note !== undefined) setInternalMode(note)
+    setMComposerOpen(true)
+    setTimeout(() => {
+      const box = document.querySelector<HTMLElement>('.inbox-composer .email-rte, .inbox-composer textarea.cmp-input')
+      try { box?.focus({ preventScroll: true }) } catch { box?.focus() }
+      scrollBottom()
+    }, 60)
+  }
+  const collapseMobileComposer = () => {
+    setMComposerOpen(false)
+    const a = document.activeElement as HTMLElement | null
+    if (a && a.closest('.inbox-composer')) a.blur()
+  }
   // The customer hasn't written here and the shared rule hasn't answered yet:
   // show a neutral placeholder rather than one composer that flips to the other.
   const channelResolving = !customerSpoke && sendChannel === 'auto' && !!selected?.id && channelPick?.convId !== selected?.id
@@ -6746,6 +6784,9 @@ export default function InboxPage() {
         }
         .composer-grip:hover::before { opacity: 1; }
 
+        /* The collapsed one-line reply bar is a phone thing only. */
+        .mcmp-bar { display: none; }
+
         /* ── Inbox mobile responsiveness ─────────────────────────────── */
         @media (max-width: 767px) {
           /* Fit the inbox between the top header AND the fixed bottom nav — the
@@ -6794,28 +6835,30 @@ export default function InboxPage() {
           }
           .inbox-thread-header .inbox-header-name p:first-child { font-size: 16px !important; }
 
-          /* Row 2 — the scrolling tool strip. It shares this row with Assign and
-             the ⋯ menu (which sit at the end): the strip flexes to fill whatever
-             space is left rather than claiming 100% and pushing them onto a
-             third row, which ate a big chunk of a phone screen. */
-          .inbox-thread-header .inbox-header-tools {
-            order: 10;
-            flex: 1 1 0;
-            min-width: 0;
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            margin-top: 6px;
-            padding: 6px 0 8px;
-            overflow-x: auto;
-            overflow-y: hidden;
-            -webkit-overflow-scrolling: touch;
-            scrollbar-width: none;
-            /* fade the right edge so it's obvious there's more to scroll */
-            -webkit-mask-image: linear-gradient(to right, #000 88%, transparent 100%);
-            mask-image: linear-gradient(to right, #000 88%, transparent 100%);
-          }
-          .inbox-thread-header .inbox-header-tools::-webkit-scrollbar { display: none; }
+          /* Row 1 is one tidy line: back · avatar · name · call · contact · ⋯.
+             The name truncates; nothing is pushed off the right edge. Every
+             other control lives in a tray (row 2+) that the ⋯ button opens,
+             wrapping onto as many lines as it needs, so nothing is cut off
+             and nothing scrolls sideways. The tools container dissolves
+             (display: contents) so its buttons wrap alongside Pin, Assign and
+             the actions menu; desktop keeps its own layout untouched. */
+          .inbox-thread-header { padding-bottom: 6px !important; row-gap: 6px !important; }
+          .inbox-thread-header .inbox-back-label { display: none; }
+          .inbox-thread-header .inbox-mobile-only:first-child { padding: 0 6px !important; }
+          .inbox-thread-header .inbox-call-label { display: none; }
+          .inbox-thread-header [data-callbar-btn] { width: 36px; height: 36px; padding: 0 !important; justify-content: center; border-radius: 10px !important; flex-shrink: 0; }
+          .inbox-thread-header .inbox-m-more { width: 36px !important; height: 36px !important; }
+          .inbox-thread-header .inbox-header-tools,
+          .inbox-thread-header .inbox-pin-btn,
+          .inbox-thread-header [data-assign-menu],
+          .inbox-thread-header [data-actions-menu] { display: none !important; }
+          .inbox-thread-header.m-tools-open { padding-bottom: 8px !important; }
+          .inbox-thread-header.m-tools-open .inbox-m-break { display: block !important; order: 9; flex: 0 0 100%; height: 0; }
+          .inbox-thread-header.m-tools-open .inbox-header-tools { display: contents !important; }
+          .inbox-thread-header.m-tools-open .inbox-pin-btn { display: flex !important; order: 10; width: 36px !important; height: 36px !important; }
+          .inbox-thread-header.m-tools-open .inbox-header-tools > * { order: 10 !important; flex-shrink: 0; }
+          .inbox-thread-header.m-tools-open [data-assign-menu],
+          .inbox-thread-header.m-tools-open [data-actions-menu] { display: block !important; order: 11; }
           /* Assignment tabs scroll horizontally without a visible scrollbar. */
           .inbox-assign-tabs { scrollbar-width: none; -webkit-overflow-scrolling: touch; }
           .inbox-assign-tabs::-webkit-scrollbar { display: none; }
@@ -6859,28 +6902,20 @@ export default function InboxPage() {
 
           /* Bigger, thumb-friendly hit targets (Apple's 44px guidance) */
           .inbox-thread-header .inbox-header-tools button { min-height: 36px; }
-          .inbox-thread-header [data-callbar-btn] { padding: 8px 12px !important; }
 
-          /* Assign and the ⋯ menu are siblings AFTER the horizontally-scrolling
-             tools strip. On mobile the strip takes a full-width row and these
-             wrapped below it, but the strip's right-edge mask and overflow could
-             sit over them and swallow taps. Force them above the strip and give
-             them real hit targets so they're always tappable. */
+          /* Tray dropdowns (Assign, ⋯, outlets) open full-width under the
+             header rather than off the edge of a narrow screen. */
           .inbox-thread-header [data-assign-menu],
-          .inbox-thread-header [data-actions-menu] {
-            position: relative;
-            z-index: 5;
-            /* Sit at the end of the tools row (order 10) rather than wrapping
-               under a long name and shoving the layout around. */
-            order: 11;
-            flex: 0 0 auto;
-            margin-top: 6px;
-          }
-          .inbox-thread-header [data-assign-menu] > button { min-height: 38px; padding: 8px 14px !important; }
-          .inbox-thread-header [data-actions-menu] > button { min-width: 38px; min-height: 38px; }
-          /* The dropdowns must escape the tools strip's overflow clipping. */
+          .inbox-thread-header [data-actions-menu],
+          .inbox-thread-header [data-move-menu] { position: static !important; }
+          .inbox-thread-header [data-assign-menu] > button { min-height: 36px; padding: 6px 12px !important; }
+          .inbox-thread-header [data-actions-menu] > button { min-width: 36px; min-height: 36px; }
           .inbox-thread-header [data-assign-menu] > div,
-          .inbox-thread-header [data-actions-menu] > div { z-index: 200; }
+          .inbox-thread-header [data-actions-menu] > div,
+          .inbox-thread-header [data-move-menu] > div {
+            top: calc(100% + 4px) !important; left: 8px !important; right: 8px !important;
+            width: auto !important; max-width: none !important; z-index: 200;
+          }
 
           /* ── Native-app feel ───────────────────────────────────────────────
              The pane switching above already gives a phone layout; these make it
@@ -7027,6 +7062,51 @@ export default function InboxPage() {
           /* Flatter, less bulky bubbles on a phone. */
           .inbox-messages .msg-bubble { box-shadow: 0 1px 2px rgba(0,0,0,0.05) !important; }
           .inbox-messages .msg-bubble p { line-height: 1.4 !important; }
+
+          /* ── Thread first ──────────────────────────────────────────────────
+             The full email composer (From/To/Subject/Signature/toolbar) used
+             to open on every thread and took the whole screen, squashing the
+             messages to a sliver. On a phone the composer now starts as a
+             one-line bar; tapping it opens the composer, capped at about two
+             thirds of the height so the thread stays visible above it. The
+             desktop drag-resize grip and its remembered height don't apply. */
+          .inbox-messages { min-height: 0; }
+          .inbox-composer .composer-grip { display: none !important; }
+          .inbox-composer { flex-shrink: 0; }
+          .inbox-composer.mcmp-collapsed { padding: 8px 10px !important; }
+          .inbox-composer.mcmp-collapsed > :not(.mcmp-bar) { display: none !important; }
+          .inbox-composer.mcmp-collapsed .mcmp-bar { display: flex; align-items: center; gap: 8px; }
+          .inbox-composer.mcmp-open { max-height: 66%; overflow-y: auto; overscroll-behavior: contain; }
+          .inbox-composer.mcmp-open .mcmp-bar { display: none !important; }
+          .inbox-composer .cmp-head { gap: 8px; padding: 8px 10px 2px; }
+          .inbox-composer .cmp-via { margin-left: auto; min-width: 0; flex: 0 1 auto; }
+          .inbox-composer .cmp-via-lbl { display: none; }
+          .inbox-composer .cmp-mode button { padding: 0 12px; }
+          .mcmp-reply {
+            flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 8px;
+            height: 44px; min-height: 44px !important; padding: 0 12px 0 6px; border: 1px solid var(--border); border-radius: 14px;
+            background: #f8f9fb; color: var(--slate); font: inherit; font-size: 14px; text-align: left; cursor: text;
+          }
+          .mcmp-reply.note { background: #fffbeb; border-color: #fcd34d; }
+          .mcmp-ch {
+            display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0; height: 30px; padding: 0 9px;
+            border-radius: 10px; background: #fff; border: 1px solid var(--border); color: var(--ink);
+            font-size: 12px; font-weight: 700;
+          }
+          .mcmp-reply.note .mcmp-ch { color: #b45309; border-color: #fcd34d; }
+          .mcmp-text { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+          .mcmp-text.has-draft { color: var(--ink); }
+          .mcmp-text b { color: var(--coral); font-weight: 700; }
+          .mcmp-note {
+            flex-shrink: 0; display: inline-flex; align-items: center; gap: 5px; height: 44px; min-height: 44px !important; padding: 0 12px;
+            border-radius: 14px; border: 1px solid var(--border); background: #fff; color: var(--slate);
+            font: inherit; font-size: 13px; font-weight: 700; cursor: pointer;
+          }
+          .mcmp-note.on { color: var(--ink); }
+          /* The Colvy AI orb never sits on the composer: it steps aside while
+             the composer is open, and rests just above the collapsed bar. */
+          html body:has(.inbox-pane-thread .inbox-composer.mcmp-open) .colvy-ai-orb-wrap { display: none !important; }
+          html body:has(.inbox-pane-thread .inbox-composer.mcmp-collapsed) .colvy-ai-orb-wrap[data-default-pos] { bottom: calc(58px + env(safe-area-inset-bottom, 0px) + 76px) !important; }
         }
         /* Desktop / tablet: the tools sit inline on the right as before */
         @media (min-width: 768px) {
@@ -8670,12 +8750,12 @@ export default function InboxPage() {
                 this …"). No banner here — it was intrusive. */}
 
             {/* Thread header */}
-            <div className="inbox-thread-header" style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', background: igThemeActive ? 'linear-gradient(135deg, rgba(131,58,180,0.08), rgba(225,48,108,0.08))' : msgrThemeActive ? 'linear-gradient(135deg, rgba(0,178,255,0.08), rgba(0,106,255,0.08))' : '#fff', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <div className={`inbox-thread-header${mToolsOpen ? ' m-tools-open' : ''}`} style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', background: igThemeActive ? 'linear-gradient(135deg, rgba(131,58,180,0.08), rgba(225,48,108,0.08))' : msgrThemeActive ? 'linear-gradient(135deg, rgba(0,178,255,0.08), rgba(0,106,255,0.08))' : '#fff', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
               {/* Mobile: back to conversation list */}
               <button type="button" className="inbox-mobile-only" onClick={() => setMobilePane('list')} title="Back to chats" aria-label="Back to chats"
                 style={{ display: 'none', height: 36, flexShrink: 0, borderRadius: 10, border: 'none', background: 'color-mix(in srgb, var(--coral) 12%, #fff)', cursor: 'pointer', alignItems: 'center', gap: 3, padding: '0 10px 0 6px', color: 'var(--coral)', fontSize: 13.5, fontWeight: 700, order: -2 }}>
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
-                Chats
+                <span className="inbox-back-label">Chats</span>
               </button>
               {/* Contact avatar — real profile photo (from Messenger/Instagram)
                   when we have it, initials otherwise. */}
@@ -8749,7 +8829,7 @@ export default function InboxPage() {
               {(() => {
                 const isPinned = pinnedIds.has(selected.id)
                 return (
-                  <button type="button" onClick={() => togglePin(selected)}
+                  <button type="button" className="inbox-pin-btn" onClick={() => togglePin(selected)}
                     title={isPinned ? 'Unpin from top' : 'Pin to top'} aria-label={isPinned ? 'Unpin conversation' : 'Pin conversation'}
                     style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid ' + (isPinned ? 'var(--coral)' : 'var(--border)'), background: isPinned ? 'var(--peach)' : '#fff', color: isPinned ? 'var(--coral)' : 'var(--slate)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                     <svg width="16" height="16" viewBox="0 0 24 24" fill={isPinned ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="17" x2="12" y2="22"/><path d="M5 17h14l-1.5-3V7a2 2 0 0 0-2-2h-7a2 2 0 0 0-2 2v7z"/></svg>
@@ -8770,7 +8850,7 @@ export default function InboxPage() {
                   } }))}
                   style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 14px', borderRadius: 10, border: '1px solid #059669', background: '#dcfce7', color: '#059669', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
-                  Call
+                  <span className="inbox-call-label">Call</span>
                 </button>
               )}
 
@@ -8780,10 +8860,19 @@ export default function InboxPage() {
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M15 4v16"/></svg>
               </button>
               {/* Mobile: open contact panel */}
-              <button type="button" className="inbox-mobile-only" onClick={() => setMobilePane('contact')} title="Contact info"
+              <button type="button" className="inbox-mobile-only" onClick={() => setMobilePane('contact')} title="Contact info" aria-label="Contact info"
                 style={{ display: 'none', width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', alignItems: 'center', justifyContent: 'center', color: 'var(--slate)' }}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="7" r="4"/><path d="M5.5 21a8.38 8.38 0 0 1 13 0"/></svg>
               </button>
+              {/* Phones: everything else (pin, assign, status, AI, products,
+                  dialler, search, snooze…) opens in a tray under this row, so
+                  the name row stays one tidy line with nothing cut off. */}
+              <button type="button" className="inbox-mobile-only inbox-m-more" onClick={() => setMToolsOpen(v => !v)}
+                title={mToolsOpen ? 'Hide actions' : 'More actions'} aria-label={mToolsOpen ? 'Hide actions' : 'More actions'} aria-expanded={mToolsOpen}
+                style={{ display: 'none', width: 30, height: 30, borderRadius: 8, border: '1px solid ' + (mToolsOpen ? 'var(--coral)' : 'var(--border)'), background: mToolsOpen ? 'var(--peach)' : '#fff', cursor: 'pointer', alignItems: 'center', justifyContent: 'center', color: mToolsOpen ? 'var(--coral)' : 'var(--slate)', flexShrink: 0 }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>
+              </button>
+              <span className="inbox-m-break" aria-hidden style={{ display: 'none' }} />
 
 
               {/* Tools strip. On phones this becomes a single horizontally
@@ -8823,7 +8912,7 @@ export default function InboxPage() {
 
               {/* Move or view enquiries across outlets */}
               {outlets.length > 0 && (
-                <div ref={moveMenuRef} style={{ position: 'relative' }}>
+                <div ref={moveMenuRef} style={{ position: 'relative' }} data-move-menu>
                   <button type="button" onClick={() => setShowMoveMenu(v => !v)} title="Move Or View Enquiries"
                     style={{ width: 32, height: 32, borderRadius: 8, border: `1px solid ${showMoveMenu ? 'var(--coral)' : 'var(--border)'}`, background: showMoveMenu ? 'var(--peach)' : '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: showMoveMenu ? 'var(--coral)' : 'var(--slate)' }}>
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
@@ -9961,7 +10050,7 @@ export default function InboxPage() {
                       <div className={`chat-msg-actions${showReactPicker === msg.id ? ' pinned' : ''}`} style={{ position: 'absolute', top: -10, [isAgent ? 'left' : 'right']: -8, display: 'flex', gap: 2, background: '#fff', borderRadius: 20, boxShadow: '0 2px 8px rgba(0,0,0,0.12)', padding: '2px 4px', opacity: 0, transition: 'opacity 0.12s', pointerEvents: 'none' } as any}>
                         <button type="button" onClick={() => setShowReactPicker(showReactPicker === msg.id ? null : msg.id)}
                           style={{ border: 'none', background: 'none', cursor: 'pointer', padding: '2px 4px', color: 'var(--slate)', display: 'inline-flex' }} title="React">{Icon.smile(14)}</button>
-                        <button type="button" onClick={() => { setReplyTo(msg); textareaRef.current?.focus() }}
+                        <button type="button" onClick={() => { setReplyTo(msg); textareaRef.current?.focus(); if (!mComposerOpen) { setMComposerOpen(true); setTimeout(() => textareaRef.current?.focus(), 30) } }}
                           style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 12, padding: '2px 4px' }} title="Reply">↩</button>
                       </div>
 
@@ -9996,7 +10085,7 @@ export default function InboxPage() {
               {/* Colvy AI replying, live: writing… then a countdown with Send now / Edit / Cancel. */}
               <AiLiveReply
                 conv={selected as any}
-                onEdit={(text) => { setReply(text); setTimeout(() => textareaRef.current?.focus(), 30) }}
+                onEdit={(text) => { setReply(text); setMComposerOpen(true); setTimeout(() => textareaRef.current?.focus(), 30) }}
                 onChange={() => setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }), 60)}
               />
               {/* Support Agent (Agent Engine): a suggested reply waiting for the team. */}
@@ -10068,7 +10157,40 @@ export default function InboxPage() {
             `}</style>
 
             {/* Reply box */}
-            <div className="inbox-composer" style={{ padding: '10px 14px', background: '#fff', borderTop: '1px solid var(--border)', position: 'relative' }}>
+            <div className={`inbox-composer ${mComposerOpen ? 'mcmp-open' : 'mcmp-collapsed'}`} style={{ padding: '10px 14px', background: '#fff', borderTop: '1px solid var(--border)', position: 'relative' }}>
+              {/* Phones: the composer starts as this one-line bar so the thread
+                  gets the screen. Tap it to write; the full composer (and any
+                  draft) is still mounted underneath, just hidden. */}
+              {(() => {
+                const ch = sendChannel !== 'auto' ? sendChannel : outboundChannel
+                const chName = ({ sms: 'SMS', email: 'Email', chat: 'Live chat', instagram: 'Instagram', messenger: 'Messenger', whatsapp: 'WhatsApp', call: 'SMS' } as Record<string, string>)[ch] || 'Chat'
+                const draftText = ((showEmailComposer && !internalMode) ? emailDraftText : reply).replace(/\s+/g, ' ').trim()
+                const first = contact?.name ? contact.name.split(' ')[0] : 'customer'
+                return (
+                  <div className="mcmp-bar">
+                    <button type="button" className={`mcmp-reply${internalMode ? ' note' : ''}`} onClick={() => openMobileComposer()}
+                      aria-label={internalMode ? 'Write an internal note' : `Reply by ${chName}`}>
+                      <span className="mcmp-ch" title={internalMode ? 'Internal note' : `Sending by ${chName}`}>
+                        {internalMode
+                          ? <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 1 1 3 3L7 19l-4 1 1-4z"/></svg>
+                          : sendChannelGlyph(ch, 15)}
+                        <span className="mcmp-ch-name">{internalMode ? 'Note' : chName}</span>
+                      </span>
+                      <span className={`mcmp-text${draftText ? ' has-draft' : ''}`}>
+                        {draftText ? <><b>Draft:</b> {draftText}</> : internalMode ? 'Write a note for your team…' : `Reply to ${first}…`}
+                      </span>
+                    </button>
+                    <button type="button" className={`mcmp-note${internalMode ? ' on' : ''}`} onClick={() => openMobileComposer(!internalMode)}
+                      aria-pressed={internalMode} title={internalMode ? 'Switch to a reply' : 'Write an internal note'}
+                      aria-label={internalMode ? 'Switch to a reply' : 'Write an internal note'}>
+                      {internalMode
+                        ? <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/></svg>
+                        : <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 1 1 3 3L7 19l-4 1 1-4z"/></svg>}
+                      {internalMode ? 'Reply' : 'Note'}
+                    </button>
+                  </div>
+                )
+              })()}
               {/* Coax-style resize grip: drag the top border of the composer up
                   or down to grow/shrink the reply box — the chat box and the
                   email body share the same remembered height. */}
@@ -10100,12 +10222,14 @@ export default function InboxPage() {
               {channelResolving && !internalMode ? (
                 <div className="cmp-card" aria-busy="true" style={{ overflow: 'hidden' }}>
                   {renderModeHead()}
-                  <div style={{ height: composerH, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--slate)', fontSize: 12.5 }}>Choosing how to reach this customer…</div>
+                  <div style={{ height: isMobile ? 64 : composerH, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--slate)', fontSize: 12.5 }}>Choosing how to reach this customer…</div>
                 </div>
               ) : showEmailComposer && !internalMode ? (
                 <EmailComposer
                   header={renderModeHead()}
-                  bodyHeight={composerH + 44}
+                  bodyHeight={isMobile ? undefined : composerH + 44}
+                  compact={isMobile}
+                  onBodyText={setEmailDraftText}
                   conversationId={selected.id}
                   companyId={companyId}
                   toEmail={contact?.email || ''}
