@@ -38,6 +38,7 @@ import MobileNav from '@/components/MobileNav'
 import FeedbackButton from '@/components/FeedbackButton'
 import ColvyAssistant from '@/components/ColvyAssistant'
 import SuperAdminBar from '@/components/SuperAdminBar'
+import RouteScrollTop from '@/components/RouteScrollTop'
 import { canUseFeature, canAccessPath, featureForPath, hasFullAccess, type PermissionMap } from '@/lib/permissions'
 
 const SUPER_ADMIN_EMAIL = 'bishalstha76@gmail.com'
@@ -1241,6 +1242,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       <MobileNav />
       {/* Hides the bottom nav, AI orb and Feedback tab while a modal or sheet is open. */}
       <OverlayWatch />
+      {/* A newly opened page starts at the top, not under the app header. */}
+      <RouteScrollTop />
       <FeedbackButton companyId={company?.id} />
       {/* Floating Colvy AI command bar — natural-language actions on any admin
           page. Reads the current page's context (open conversation/contact/

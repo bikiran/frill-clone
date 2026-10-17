@@ -38,7 +38,7 @@ export default function PageHeader({
     <div
       className="ph-root"
       style={{
-        background: '#fff',
+        background: 'var(--card, #fff)',
         borderBottom: '1px solid var(--border)',
         padding: '14px 16px',
         ...(bleed ? { margin: `-${bleedTop ?? bleed}px -${bleed}px 16px` } : {}),

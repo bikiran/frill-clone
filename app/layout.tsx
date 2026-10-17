@@ -64,7 +64,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   // while the HTML is still arriving.
   if (process.env.NEXT_PUBLIC_SUPABASE_URL) preconnect(process.env.NEXT_PUBLIC_SUPABASE_URL, { crossOrigin: 'anonymous' })
   return (
-    <html lang="en">
+    // globals.css sets `scroll-behavior: smooth` on <html>. Since Next 16 the
+    // router only switches that off for its scroll-to-top on navigation when
+    // this attribute is present; without it that jump animates and can stop
+    // short of the top. In-page smooth scrolling is unaffected.
+    <html lang="en" data-scroll-behavior="smooth">
       <body style={{ background: 'var(--canvas)' }}>
         {/*
           Password-reset rescue. The reset email's link redirects to the site root

@@ -479,9 +479,9 @@ export default function TeamPage() {
   const viewersLoaded = members.filter(isViewerRow).length
 
   const memberRow = (m: any) => (
-    <div key={m.id} className="tm-row grid grid-cols-12 px-5 py-4 border-b last:border-b-0 items-center" style={{ borderColor: 'var(--border)' }}>
-      <div className="tm-user col-span-4 flex items-center gap-3 min-w-0">
-        <div className="w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-bold overflow-hidden shrink-0" style={{ background: '#6b7280' }}>
+    <div key={m.id} className="tm-row tm-grid px-5 py-4 border-b last:border-b-0 items-center" style={{ borderColor: 'var(--border)' }}>
+      <div className="tm-user">
+        <div className="tm-avatar w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-bold overflow-hidden shrink-0" style={{ background: '#6b7280' }}>
           {m.avatar_url ? <img src={m.avatar_url} alt="" className="w-full h-full object-cover" /> : (m.display_name || m.email || '?')[0].toUpperCase()}
         </div>
         <div className="min-w-0">
@@ -490,33 +490,37 @@ export default function TeamPage() {
             {m.department && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded shrink-0" style={{ background: '#eef2ff', color: '#4338ca' }}>{m.department}</span>}
           </p>
           {m.display_name && <p className="text-xs truncate" style={{ color: 'var(--slate)' }}>{m.email}</p>}
-          {outlets.length > 0 && (
+        </div>
+        {outlets.length > 0 && (
+          <label className="tm-outlet">
+            <span className="tm-mlabel">Default outlet</span>
             <select value={m.default_location_id || ''} onChange={e => updateDefaultOutlet(m.id, e.target.value)} disabled={viewOnly}
               title="Default outlet — used to pre-filter their Tasks page"
-              className="text-xs mt-1 px-2 py-1 rounded border focus:outline-none cursor-pointer bg-white max-w-full"
+              className="tm-field tm-select text-xs rounded border focus:outline-none cursor-pointer bg-white max-w-full"
               style={{ borderColor: 'var(--border)', color: m.default_location_id ? 'var(--coral)' : 'var(--slate)' }}>
               <option value="">No default outlet</option>
               {outlets.map((o: any) => <option key={o.id} value={o.id}>{o.label || o.suburb || 'Outlet'}</option>)}
             </select>
-          )}
-        </div>
+          </label>
+        )}
       </div>
       {/* Mobile — SMS reminders for assigned events go to this number.
           Saved on blur so it doesn't write on every keystroke. */}
-      <div className="tm-phone col-span-2 pr-3">
+      <label className="tm-phone">
         <span className="tm-mlabel">Mobile for SMS</span>
         <input
+          type="tel"
           defaultValue={m.phone || ''}
           placeholder="+61…"
           aria-label="Mobile for SMS"
           onBlur={e => updatePhone(m.id, e.target.value)}
           disabled={viewOnly}
-          className="text-xs px-2 py-1 rounded border focus:outline-none w-full bg-white"
+          className="tm-field text-xs px-2 py-1 rounded border focus:outline-none w-full bg-white"
           style={{ borderColor: 'var(--border)', color: 'var(--ink)' }} />
-      </div>
-      <div className="tm-role col-span-2">
+      </label>
+      <div className="tm-role">
         <select value={m.role} aria-label="Role" onChange={e => updateRole(m.id, e.target.value)} disabled={viewOnly}
-          className="text-xs px-2 py-1 rounded border focus:outline-none cursor-pointer bg-white"
+          className="tm-field tm-select text-xs rounded border focus:outline-none cursor-pointer bg-white"
           style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
           {/* A co-owner shows as Owner; ownership isn't handed out from here. */}
           {(m.role || '').toLowerCase() === 'owner' && <option value={m.role} disabled>Owner</option>}
@@ -525,13 +529,13 @@ export default function TeamPage() {
           <option value="viewer">Viewer</option>
         </select>
       </div>
-      <div className="tm-status col-span-1">
-        <span className="text-xs px-2 py-1 rounded-full whitespace-nowrap"
+      <div className="tm-status">
+        <span className="tm-pill text-xs px-2 py-1 rounded-full whitespace-nowrap"
           style={{ background: m.status === 'active' ? '#d1fae5' : '#fef3c7', color: m.status === 'active' ? '#059669' : '#ca8a04' }}>
           {m.status === 'active' ? 'Active' : 'Invited'}
         </span>
       </div>
-      <div className={`tm-actions col-span-3 text-right flex items-center justify-end gap-2.5 whitespace-nowrap${viewOnly ? ' tm-actions-none' : ''}`}>
+      <div className={`tm-actions${viewOnly ? ' tm-actions-none' : ''}`}>
         {viewOnly ? <span className="text-xs" style={{ color: 'var(--slate)' }}>—</span> : <>
         <button onClick={() => openEdit(m)} className="text-xs font-medium cursor-pointer hover:underline" style={{ color: 'var(--slate)' }}>
           Edit
@@ -546,7 +550,7 @@ export default function TeamPage() {
             {resendingId === m.id ? 'Sending…' : 'Resend'}
           </button>
         )}
-        <button onClick={() => setConfirmDelete(m)} className="text-xs font-medium cursor-pointer hover:underline" style={{ color: '#dc2626' }}>
+        <button onClick={() => setConfirmDelete(m)} className="tm-remove text-xs font-medium cursor-pointer hover:underline" style={{ color: '#dc2626' }}>
           Remove
         </button>
         </>}
@@ -557,26 +561,80 @@ export default function TeamPage() {
   return (
     <div className="team-page px-6 py-8">
       <style>{`
+        /* Table (768px and up): the header and every row share one column
+           template, so the columns always line up. Status and Actions have a
+           floor (an "Invited" pill, four action links that may wrap), so on a
+           narrow screen the User column gives way instead of the actions
+           spilling over the status pill or the table scrolling sideways.
+           Role and Status floors fit their widest content (a 'Viewer' select,
+           an 'Invited' pill), so the User column gets the slack. */
+        .tm-grid { display: grid; grid-template-columns: minmax(0, 4fr) minmax(120px, 2fr) minmax(84px, 2fr) minmax(70px, 1fr) minmax(160px, 3fr); }
+        /* padding-right: a gutter so the outlet select and a cut-off email
+           never touch the Mobile field next to them. */
+        .tm-user { display: grid; grid-template-columns: 36px minmax(0, 1fr); column-gap: 12px; align-items: center; min-width: 0; padding-right: 12px; }
+        .tm-avatar { grid-row: 1 / span 2; }
+        .tm-outlet { grid-column: 2; justify-self: start; min-width: 0; max-width: 100%; margin-top: 4px; }
+        /* Narrow tables: the outlet select takes the whole User cell under the
+           name (not just the part right of the avatar), so outlet names fit. */
+        @media (min-width: 768px) and (max-width: 1099px) {
+          .tm-avatar { grid-row: auto; }
+          .tm-outlet { grid-column: 1 / -1; margin-top: 8px; }
+        }
+        .tm-phone { display: block; min-width: 0; padding-right: 12px; }
         .tm-mlabel { display: none; }
+        /* Selects keep the global arrow (globals.css) with room for it. */
+        .tm-select { padding: 4px 26px 4px 8px; background-position: right 7px center; text-overflow: ellipsis; }
+        .tm-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 2px 10px; min-width: 0; }
+        .tm-actions button { white-space: nowrap; padding: 4px 0; }
         @media (max-width: 767px) {
           .team-page { padding: 24px 16px !important; }
           .team-page > .ph-root { margin: -24px -16px 16px !important; }
-          /* Phones: each member is a small card instead of a 760px-wide table row. */
-          .tm-scroll { overflow-x: visible !important; }
-          .tm-card { min-width: 0 !important; }
+          /* Phones: each member is a small card instead of a table row:
+             name, then outlet and mobile full width, then role and status on
+             one row, then the actions. */
           .tm-head { display: none !important; }
-          .tm-row { display: grid !important; grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px 8px; padding: 14px 16px !important; align-items: end !important; }
-          .tm-user { grid-column: 1 / -1; }
-          .tm-phone { padding-right: 0 !important; min-width: 0; }
+          .tm-row { grid-template-columns: minmax(0, 1fr) auto; gap: 12px; padding: 16px !important; }
+          .tm-user, .tm-phone, .tm-actions { grid-column: 1 / -1; }
+          .tm-role { grid-column: 1; min-width: 0; }
+          .tm-status { grid-column: 2; justify-self: end; }
+          .tm-avatar { grid-row: auto; }
+          .tm-outlet { grid-column: 1 / -1; justify-self: stretch; margin-top: 12px; }
+          .tm-user, .tm-phone { padding-right: 0; }
           .tm-phone:empty { display: none; }
-          .tm-phone input { font-size: 14px !important; padding: 6px 8px !important; }
-          .tm-mlabel { display: block; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--slate); margin-bottom: 3px; }
-          .tm-role select { font-size: 13px !important; padding: 6px 8px !important; }
-          .tm-status { padding-bottom: 5px; }
-          .tm-actions { grid-column: 1 / -1; justify-content: flex-start !important; gap: 18px !important; padding-top: 2px; }
-          .tm-actions button { font-size: 13px !important; padding: 4px 0; }
+          .tm-mlabel { display: block; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--slate); margin-bottom: 4px; }
+          /* 16px so iOS doesn't zoom the page when a field is tapped. */
+          .tm-field { display: block; width: 100%; max-width: none; min-height: 44px; font-size: 16px; line-height: 22px; padding: 10px 12px; border-radius: 10px; }
+          .tm-select { padding-right: 36px; background-position: right 13px center; }
+          .tm-role .tm-select { width: auto; min-width: 140px; max-width: 100%; }
+          .tm-pill { display: inline-block; font-size: 12.5px; padding: 5px 11px; }
+          .tm-actions { justify-content: flex-start; gap: 6px; }
+          .tm-actions button { flex: 1 1 auto; min-height: 40px; padding: 0 8px; border: 1px solid var(--border); border-radius: 10px; background: var(--card); font-size: 13px; font-weight: 600; text-decoration: none; }
+          .tm-actions button:active { border-color: currentColor; }
           .tm-actions-none { display: none !important; }
           .tm-viewers-note { display: block; margin: 2px 0 0 !important; }
+          .tm-modal > div { padding: 20px; }
+          .team-page > .ph-root .ph-actions > button { min-height: 42px; }
+          .tm-invite-link { font-size: 16px; }
+        }
+        /* Touch screens at table widths (an iPad, a touch laptop): the table
+           keeps its layout, but every control is a 40px+ tap target. A mouse
+           keeps the compact table. */
+        @media (min-width: 768px) and (pointer: coarse) {
+          /* A wider Actions floor keeps Edit / Permissions / Remove on one
+             line at 768 now that each is a 40px target. */
+          .tm-grid { grid-template-columns: minmax(0, 4fr) minmax(120px, 2fr) minmax(84px, 2fr) minmax(70px, 1fr) minmax(190px, 3fr); }
+          .tm-field { min-height: 40px; }
+          .tm-actions { gap: 0 2px; }
+          .tm-actions button { min-height: 40px; min-width: 40px; padding: 0 6px; }
+          .team-page > .ph-root .ph-actions > button { min-height: 42px; }
+        }
+        /* #dc2626 is too dark to read on the dark theme's card (Remove,
+           Remove photo). */
+        [data-theme="dark"] .tm-remove { color: #f87171 !important; }
+        /* Invite link panel: Copy link and the dismiss button on touch. */
+        @media (max-width: 767px), (pointer: coarse) {
+          .tm-tap { min-height: 40px; min-width: 40px; display: inline-flex; align-items: center; justify-content: center; }
+          .tm-invite-link { min-height: 40px; }
         }
       `}</style>
       <PageHeader
@@ -607,8 +665,11 @@ export default function TeamPage() {
       )}
 
       {msg && (
-        <div className="mb-4 p-3 rounded-lg text-sm font-medium" style={msgErr ? { background: '#fee2e2', color: '#b91c1c' } : { background: '#d1fae5', color: '#059669' }}>
-          {msgErr ? '⚠ ' : '✓ '}{msg}
+        <div className="mb-4 p-3 rounded-lg text-sm font-medium flex items-start gap-2" style={msgErr ? { background: '#fee2e2', color: '#b91c1c' } : { background: '#d1fae5', color: '#059669' }}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="shrink-0" style={{ marginTop: 2 }}>
+            {msgErr ? <><circle cx="12" cy="12" r="10" /><path d="M12 8v4" /><path d="M12 16h.01" /></> : <path d="M20 6 9 17l-5-5" />}
+          </svg>
+          <span className="min-w-0">{msg}</span>
         </div>
       )}
 
@@ -622,7 +683,8 @@ export default function TeamPage() {
               readOnly
               value={lastInvite.link}
               onFocus={(e) => e.currentTarget.select()}
-              className="flex-1 px-3 py-2 rounded-lg border text-xs"
+              aria-label="Invite link"
+              className="tm-invite-link flex-1 min-w-0 px-3 py-2 rounded-lg border text-xs"
               style={{ borderColor: 'var(--border)', background: 'white' }}
             />
             <button
@@ -630,43 +692,40 @@ export default function TeamPage() {
                 try { await navigator.clipboard.writeText(lastInvite.link); showMsg('Invite link copied.') }
                 catch { showMsg('Could not copy — select the link and copy it manually.', true) }
               }}
-              className="px-3 py-2 rounded-lg text-white text-xs font-semibold whitespace-nowrap"
+              className="tm-tap px-3 py-2 rounded-lg text-white text-xs font-semibold whitespace-nowrap"
               style={{ background: 'var(--coral, #ff7a6b)' }}
             >
               Copy link
             </button>
             <button
               onClick={() => setLastInvite(null)}
-              className="px-2 py-2 rounded-lg text-xs"
+              className="tm-tap px-2 py-2 rounded-lg text-xs"
               style={{ color: 'var(--slate)' }}
               aria-label="Dismiss invite link"
             >
-              ✕
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
             </button>
           </div>
         </div>
       )}
 
-      {/* Horizontal scroll on narrow screens: the 12-column grid needs room, and
-          squeezing it into a phone width made the header labels and the
-          role/status/actions cells overlap. A min width keeps the columns intact
-          and lets the card scroll sideways instead. */}
-      <div className="tm-scroll overflow-x-auto">
-      <div className="tm-card bg-white rounded-2xl border overflow-hidden min-w-[760px]" style={{ borderColor: 'var(--border)' }}>
+      {/* One card: a table from 768px up (columns from .tm-grid, which never
+          needs a sideways scroll), a list of member cards on phones. */}
+      <div className="tm-card bg-white rounded-2xl border overflow-hidden" style={{ borderColor: 'var(--border)' }}>
         {/* Header */}
-        <div className="tm-head grid grid-cols-12 px-5 py-3 border-b text-xs font-semibold uppercase tracking-wider" style={{ borderColor: 'var(--border)', color: 'var(--slate)' }}>
-          <div className="col-span-4">User</div>
-          <div className="col-span-2">Mobile (for SMS)</div>
-          <div className="col-span-2">Role</div>
-          <div className="col-span-1">Status</div>
-          <div className="col-span-3 text-right">Actions</div>
+        <div className="tm-head tm-grid px-5 py-3 border-b text-xs font-semibold uppercase tracking-wider" style={{ borderColor: 'var(--border)', color: 'var(--slate)' }}>
+          <div>User</div>
+          <div className="pr-3">Mobile (for SMS)</div>
+          <div>Role</div>
+          <div>Status</div>
+          <div className="text-right">Actions</div>
         </div>
 
-        {/* Current admin — column spans mirror the header (4/3/2/1/2) so the
-            Owner and Active pills line up under Role and Status. */}
-        <div className="tm-row grid grid-cols-12 px-5 py-4 border-b items-center" style={{ borderColor: 'var(--border)' }}>
-          <div className="tm-user col-span-4 flex items-center gap-3 min-w-0">
-            <div className="w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-bold shrink-0" style={{ background: 'var(--coral)' }}>
+        {/* Current admin — same column template as the header, so the Owner
+            and Active pills line up under Role and Status. */}
+        <div className="tm-row tm-grid px-5 py-4 border-b items-center" style={{ borderColor: 'var(--border)' }}>
+          <div className="tm-user">
+            <div className="tm-avatar w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-bold shrink-0" style={{ background: 'var(--coral)' }}>
               {user.email?.[0].toUpperCase()}
             </div>
             <div className="min-w-0">
@@ -674,14 +733,14 @@ export default function TeamPage() {
               <p className="text-xs" style={{ color: 'var(--slate)' }}>You ({myRoleLabel})</p>
             </div>
           </div>
-          <div className="tm-phone col-span-2" />
-          <div className="tm-role col-span-2">
-            <span className="text-xs px-2 py-1 rounded-full font-semibold" style={{ background: 'var(--peach)', color: 'var(--coral)' }}>{myRoleLabel}</span>
+          <div className="tm-phone" />
+          <div className="tm-role">
+            <span className="tm-pill text-xs px-2 py-1 rounded-full font-semibold whitespace-nowrap" style={{ background: 'var(--peach)', color: 'var(--coral)' }}>{myRoleLabel}</span>
           </div>
-          <div className="tm-status col-span-1">
-            <span className="text-xs px-2 py-1 rounded-full" style={{ background: '#d1fae5', color: '#059669' }}>Active</span>
+          <div className="tm-status">
+            <span className="tm-pill text-xs px-2 py-1 rounded-full whitespace-nowrap" style={{ background: '#d1fae5', color: '#059669' }}>Active</span>
           </div>
-          <div className="tm-actions tm-actions-none col-span-3 text-right text-xs" style={{ color: 'var(--slate)' }}>—</div>
+          <div className="tm-actions tm-actions-none text-xs" style={{ color: 'var(--slate)' }}>—</div>
         </div>
 
         {loading ? (
@@ -721,7 +780,6 @@ export default function TeamPage() {
           </>
         )}
       </div>
-      </div>
 
       {/* Role legend */}
       <div className="mt-6 p-4 rounded-xl border" style={{ background: '#eff6ff', borderColor: '#bfdbfe' }}>
@@ -737,12 +795,12 @@ export default function TeamPage() {
       {showInvite && (
         <>
           <div className="fixed inset-0 z-40 backdrop-blur-sm animate-backdrop" style={{ background: 'rgba(0,0,0,0.4)' }} onClick={() => setShowInvite(false)} />
-          <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-md bg-white rounded-2xl shadow-2xl animate-modal mx-4">
-            <div className="p-6 border-b" style={{ borderColor: 'var(--border)' }}>
+          <div className="tm-modal fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-[calc(100%-2rem)] max-w-md bg-white rounded-2xl shadow-2xl animate-modal flex flex-col" style={{ maxHeight: 'calc(100dvh - 2rem)' }}>
+            <div className="p-6 border-b shrink-0" style={{ borderColor: 'var(--border)' }}>
               <h2 className="text-xl font-bold" style={{ color: 'var(--ink)' }}>Invite team member</h2>
               <p className="text-sm mt-1" style={{ color: 'var(--slate)' }}>They'll receive a magic link to sign in</p>
             </div>
-            <div className="p-6 space-y-4">
+            <div className="p-6 space-y-4 flex-auto min-h-0 overflow-y-auto">
               <div>
                 <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--ink)' }}>Email address</label>
                 <input type="email" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)}
@@ -761,7 +819,7 @@ export default function TeamPage() {
                 </select>
               </div>
             </div>
-            <div className="flex gap-3 p-6 border-t" style={{ borderColor: 'var(--border)' }}>
+            <div className="flex gap-3 p-6 border-t shrink-0" style={{ borderColor: 'var(--border)' }}>
               <button onClick={() => setShowInvite(false)} className="flex-1 py-2.5 rounded-xl text-sm font-medium border cursor-pointer" style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>Cancel</button>
               <button onClick={inviteMember} disabled={!inviteEmail.trim() || working}
                 className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white cursor-pointer disabled:opacity-50"
@@ -777,24 +835,24 @@ export default function TeamPage() {
       {editMember && (
         <>
           <div className="fixed inset-0 z-40 backdrop-blur-sm animate-backdrop" style={{ background: 'rgba(0,0,0,0.4)' }} onClick={() => setEditMember(null)} />
-          <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-md bg-white rounded-2xl shadow-2xl animate-modal mx-4">
-            <div className="p-6 border-b" style={{ borderColor: 'var(--border)' }}>
+          <div className="tm-modal fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-[calc(100%-2rem)] max-w-md bg-white rounded-2xl shadow-2xl animate-modal flex flex-col" style={{ maxHeight: 'calc(100dvh - 2rem)' }}>
+            <div className="p-6 border-b shrink-0" style={{ borderColor: 'var(--border)' }}>
               <h2 className="text-xl font-bold" style={{ color: 'var(--ink)' }}>Edit member</h2>
               <p className="text-sm mt-1" style={{ color: 'var(--slate)' }}>{editMember.email}</p>
             </div>
-            <div className="p-6 space-y-5">
+            <div className="p-6 space-y-5 flex-auto min-h-0 overflow-y-auto">
               <div className="flex items-center gap-4">
                 <div className="w-16 h-16 rounded-full overflow-hidden flex items-center justify-center text-white text-xl font-bold shrink-0" style={{ background: '#6b7280' }}>
                   {editAvatar ? <img src={editAvatar} alt="" className="w-full h-full object-cover" /> : (editName || editMember.email || '?')[0].toUpperCase()}
                 </div>
-                <div className="flex flex-col gap-2">
-                  <label className="text-sm font-medium cursor-pointer px-3 py-2 rounded-lg border inline-block" style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
+                <div className="flex flex-col gap-3">
+                  <label className="text-sm font-medium text-center cursor-pointer px-3 py-2.5 rounded-lg border inline-block" style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
                     {editUploading ? 'Uploading…' : 'Upload photo'}
                     <input type="file" accept="image/*" style={{ display: 'none' }}
                       onChange={e => { const f = e.target.files?.[0]; if (f) uploadMemberPhoto(f) }} disabled={editUploading} />
                   </label>
                   {editAvatar && (
-                    <button onClick={() => setEditAvatar('')} className="text-xs cursor-pointer hover:underline text-left" style={{ color: '#dc2626' }}>Remove photo</button>
+                    <button onClick={() => setEditAvatar('')} className="tm-remove text-sm font-medium cursor-pointer px-3 py-2.5 rounded-lg border" style={{ borderColor: 'var(--border)', color: '#dc2626' }}>Remove photo</button>
                   )}
                 </div>
               </div>
@@ -818,7 +876,7 @@ export default function TeamPage() {
                 <p className="text-xs mt-1.5" style={{ color: 'var(--slate)' }}>Organisational only — for grouping and routing. Doesn’t change what they can access.</p>
               </div>
             </div>
-            <div className="flex gap-3 p-6 border-t" style={{ borderColor: 'var(--border)' }}>
+            <div className="flex gap-3 p-6 border-t shrink-0" style={{ borderColor: 'var(--border)' }}>
               <button onClick={() => setEditMember(null)} className="flex-1 py-2.5 rounded-xl text-sm font-medium border cursor-pointer" style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>Cancel</button>
               <button onClick={saveMemberProfile} disabled={editSaving || editUploading}
                 className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white cursor-pointer disabled:opacity-50"
@@ -834,30 +892,30 @@ export default function TeamPage() {
       {permMember && (
         <>
           <div className="fixed inset-0 z-40 backdrop-blur-sm animate-backdrop" style={{ background: 'rgba(0,0,0,0.4)' }} onClick={() => setPermMember(null)} />
-          <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-lg bg-white rounded-2xl shadow-2xl animate-modal mx-4 flex flex-col" style={{ maxHeight: '85vh' }}>
-            <div className="p-6 border-b" style={{ borderColor: 'var(--border)' }}>
+          <div className="tm-modal fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-[calc(100%-2rem)] max-w-lg bg-white rounded-2xl shadow-2xl animate-modal flex flex-col" style={{ maxHeight: 'min(85vh, calc(100dvh - 2rem))' }}>
+            <div className="p-6 border-b shrink-0" style={{ borderColor: 'var(--border)' }}>
               <h2 className="text-xl font-bold" style={{ color: 'var(--ink)' }}>Permissions</h2>
               <p className="text-sm mt-1" style={{ color: 'var(--slate)' }}>
                 Choose what <strong>{permMember.display_name || permMember.email}</strong> can see and open. Off = hidden from their sidebar and blocked if they open the link directly.
               </p>
             </div>
-            <div className="p-6 overflow-y-auto space-y-5" style={{ flex: 1 }}>
+            <div className="p-6 space-y-5 flex-auto min-h-0 overflow-y-auto">
               {PERMISSION_SUITES.map(suite => {
                 const allOn = suite.features.every(f => permDraft[f.key])
                 return (
                   <div key={suite.key}>
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-xs font-bold uppercase tracking-wider" style={{ color: 'var(--slate)' }}>{suite.label}</span>
-                      <button onClick={() => setSuite(suite.key, !allOn)} className="text-xs font-medium cursor-pointer hover:underline" style={{ color: 'var(--coral)' }}>
+                      <button onClick={() => setSuite(suite.key, !allOn)} className="text-xs font-medium cursor-pointer hover:underline min-h-[40px] px-2 -mr-2 -my-3" style={{ color: 'var(--coral)' }}>
                         {allOn ? 'Turn all off' : 'Turn all on'}
                       </button>
                     </div>
                     <div className="grid grid-cols-2 gap-2">
                       {suite.features.map(f => (
-                        <label key={f.key} className="flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer text-sm"
+                        <label key={f.key} className="flex items-center gap-2 px-3 py-2 min-h-[44px] min-w-0 rounded-lg border cursor-pointer text-sm"
                           style={{ borderColor: 'var(--border)', color: 'var(--ink)', background: permDraft[f.key] ? 'var(--peach)' : 'white' }}>
-                          <input type="checkbox" checked={!!permDraft[f.key]} onChange={() => toggleFeature(f.key)} />
-                          <span className="truncate">{f.label}</span>
+                          <input type="checkbox" checked={!!permDraft[f.key]} onChange={() => toggleFeature(f.key)} className="shrink-0" />
+                          <span className="min-w-0 leading-snug break-words">{f.label}</span>
                         </label>
                       ))}
                     </div>
@@ -865,7 +923,7 @@ export default function TeamPage() {
                 )
               })}
             </div>
-            <div className="flex gap-3 p-6 border-t" style={{ borderColor: 'var(--border)' }}>
+            <div className="flex gap-3 p-6 border-t shrink-0" style={{ borderColor: 'var(--border)' }}>
               <button onClick={() => setPermMember(null)} className="flex-1 py-2.5 rounded-xl text-sm font-medium border cursor-pointer" style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>Cancel</button>
               <button onClick={savePermissions} disabled={permSaving}
                 className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white cursor-pointer disabled:opacity-50"
@@ -881,12 +939,12 @@ export default function TeamPage() {
       {showCreate && (
         <>
           <div className="fixed inset-0 z-40 backdrop-blur-sm animate-backdrop" style={{ background: 'rgba(0,0,0,0.4)' }} onClick={() => setShowCreate(false)} />
-          <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-md bg-white rounded-2xl shadow-2xl animate-modal mx-4">
-            <div className="p-6 border-b" style={{ borderColor: 'var(--border)' }}>
+          <div className="tm-modal fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-[calc(100%-2rem)] max-w-md bg-white rounded-2xl shadow-2xl animate-modal flex flex-col" style={{ maxHeight: 'calc(100dvh - 2rem)' }}>
+            <div className="p-6 border-b shrink-0" style={{ borderColor: 'var(--border)' }}>
               <h2 className="text-xl font-bold" style={{ color: 'var(--ink)' }}>Create new user</h2>
               <p className="text-sm mt-1" style={{ color: 'var(--slate)' }}>Add a user to your team on-the-fly</p>
             </div>
-            <div className="p-6 space-y-4">
+            <div className="p-6 space-y-4 flex-auto min-h-0 overflow-y-auto">
               <div>
                 <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--ink)' }}>Email address</label>
                 <input type="email" value={createEmail} onChange={e => setCreateEmail(e.target.value)}
@@ -915,7 +973,7 @@ export default function TeamPage() {
                 <strong>Note:</strong> This adds the user to your team roster. They can sign in at any time using their email. To set their password, they use the "Forgot password" flow or you can share their email with them.
               </div>
             </div>
-            <div className="flex gap-3 p-6 border-t" style={{ borderColor: 'var(--border)' }}>
+            <div className="flex gap-3 p-6 border-t shrink-0" style={{ borderColor: 'var(--border)' }}>
               <button onClick={() => setShowCreate(false)} className="flex-1 py-2.5 rounded-xl text-sm font-medium border cursor-pointer" style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>Cancel</button>
               <button onClick={createUser} disabled={!createEmail.trim() || working}
                 className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white cursor-pointer disabled:opacity-50"
