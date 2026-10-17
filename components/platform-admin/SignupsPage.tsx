@@ -31,10 +31,15 @@ const EVENT_COLOR: Record<string, string> = {
   mobile_verified: '#0891b2', account_created: '#059669', complete_failed: '#dc2626', marked_spam: '#6b7280', unmarked_spam: '#6b7280', emailed: '#ff7a6b', delivery: '#6b7280',
 }
 // What happened to a code sent to their mobile (lib/signup-delivery deliveryOf).
-const DELIVERY_COLOR: Record<string, string> = { delivered: '#059669', answered: '#059669', not_delivered: '#dc2626', send_failed: '#dc2626', sending: '#6366f1', no_report: '#6b7280', none: '#6b7280' }
+const DELIVERY_COLOR: Record<string, string> = { delivered: '#059669', answered: '#059669', not_delivered: '#dc2626', send_failed: '#dc2626', sending: '#6366f1', no_report: '#d97706', untracked: '#6b7280', none: '#6b7280' }
 
 /** A delivery report's own line in the timeline: "SMS delivered", "SMS not delivered — carrier blocked (30007)". */
 function deliveryEventLabel(e: any): { label: string; color: string; explain?: string } {
+  const r = deliveryEventLabelOf(e)
+  // Fetched by "Check with Twilio": the status callback never brought it.
+  return e.via === 'lookup' ? { ...r, label: `${r.label} · checked with Twilio` } : r
+}
+function deliveryEventLabelOf(e: any): { label: string; color: string; explain?: string } {
   const voice = e.channel === 'voice'
   const st = String(e.status || '')
   if (!voice && st === 'delivered') return { label: 'SMS delivered', color: '#059669' }
@@ -244,7 +249,7 @@ export default function SignupsPage() {
         </div>
       )}
       {crmMsg && <div style={{ padding: '9px 12px', borderRadius: 10, fontSize: 12.5, marginBottom: 12, background: crmMsg.tone === 'ok' ? '#05966914' : '#fee2e2', color: crmMsg.tone === 'ok' ? '#059669' : '#b91c1c' }}>{crmMsg.text}</div>}
-      {data?.sms && data?.source !== 'legacy' && <div style={{ marginBottom: 14 }}><SignupSmsHealth sms={data.sms} /></div>}
+      {data?.sms && data?.source !== 'legacy' && <div style={{ marginBottom: 14 }}><SignupSmsHealth sms={data.sms} onChanged={load} /></div>}
 
       {data?.source === 'legacy' && (
         <div style={{ padding: '10px 14px', borderRadius: 10, border: '1px solid #f59e0b55', background: '#f59e0b14', color: 'var(--sa-text)', fontSize: 12.5, marginBottom: 14 }}>
@@ -389,7 +394,20 @@ export function SignupDrawer({ row: r, workspace, onClose, act }: { row: any; wo
   }
   const events: any[] = Array.isArray(r.events) ? r.events.slice().reverse() : []
   const mailto = `mailto:${encodeURIComponent(r.email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
-  const contactUrl = r.contact_id && workspace ? `${workspace.slug === 'colvy' ? 'https://colvy.com' : `https://${workspace.slug}.colvy.com`}/admin/customers/profile?id=${r.contact_id}` : null
+  const profileUrl = (id: string, ws: { slug: string }) => `${ws.slug === 'colvy' ? 'https://colvy.com' : `https://${ws.slug}.colvy.com`}/admin/customers/profile?id=${encodeURIComponent(id)}`
+  const contactUrl = r.contact_id && workspace ? profileUrl(r.contact_id, workspace) : null
+  // Add or refresh the contact first (mobile, business, step reached), then
+  // open it. The tab opens at once, inside the click, so it isn't blocked.
+  const openInCrm = async (e: React.MouseEvent) => {
+    e.preventDefault()
+    const w = window.open('about:blank', '_blank')
+    setBusy('crm'); setMsg(null)
+    try {
+      const d = await act(r, 'crm_add')
+      const url = profileUrl(d.contactId, d.workspace || workspace)
+      if (w) { w.opener = null; w.location.href = url } else window.location.href = url
+    } catch (err: any) { w?.close(); setMsg({ tone: 'err', text: err.message }) } finally { setBusy('') }
+  }
   const utm = r.utm ? Object.entries(r.utm).map(([k, v]) => `${k}: ${v}`).join(' · ') : ''
 
   return (
@@ -410,7 +428,9 @@ export function SignupDrawer({ row: r, workspace, onClose, act }: { row: any; wo
           <button onClick={() => setComposing(c => !c)} disabled={!!r.spam_at} style={{ ...btn('#ff7a6b', true), opacity: r.spam_at ? 0.5 : 1 }}>{Ic.mail} Email them</button>
           {!r.legacy && <button onClick={spam} disabled={!!busy} style={btn(r.spam_at ? 'var(--sa-text)' : '#6b7280')}>{Ic.ban} {busy === 'spam' ? 'Saving…' : r.spam_at ? 'Not spam' : 'Mark as spam'}</button>}
           <button onClick={del} disabled={!!busy} style={btn('#dc2626')}>{Ic.trash} {busy === 'delete' ? 'Deleting…' : 'Delete'}</button>
-          {contactUrl && <a href={contactUrl} target="_blank" rel="noopener" style={{ ...btn('var(--sa-text)'), textDecoration: 'none' }}>{Ic.external} Contact in Colvy CRM</a>}
+          {workspace && !r.legacy && !r.spam_at
+            ? <a href={contactUrl || '#'} onClick={openInCrm} aria-disabled={!!busy} style={{ ...btn('var(--sa-text)'), textDecoration: 'none', opacity: busy === 'crm' ? 0.6 : 1 }}>{Ic.external} {busy === 'crm' ? 'Opening…' : contactUrl ? 'Contact in Colvy CRM' : 'Add to Colvy CRM'}</a>
+            : contactUrl && <a href={contactUrl} target="_blank" rel="noopener" style={{ ...btn('var(--sa-text)'), textDecoration: 'none' }}>{Ic.external} Contact in Colvy CRM</a>}
         </div>
         {msg && <div style={{ marginTop: 10, padding: '8px 12px', borderRadius: 9, fontSize: 12.5, background: msg.tone === 'ok' ? '#05966914' : '#fee2e2', color: msg.tone === 'ok' ? '#059669' : '#b91c1c' }}>{msg.text}</div>}
 

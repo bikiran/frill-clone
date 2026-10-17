@@ -9,11 +9,16 @@
 // When no Twilio sender is set up it says so plainly, and "Send test SMS to
 // me" texts the admin's own mobile from the same sender sign-up codes use
 // (5 an hour), then checks with Twilio whether it was delivered.
+//
+// Honest numbers: the headline is "1 of 4 confirmed delivered", never a
+// percentage of only the texts that happen to have a report. Texts with no
+// report are called out (amber) with "Check with Twilio", which fetches the
+// missing reports; texts sent before delivery tracking are counted apart.
 
 import { useState } from 'react'
 import { authFetch } from '@/lib/auth-fetch'
 
-type Bucket = { sent: number; delivered: number; notDelivered: number; waiting: number; noReport: number; calls: number; callsAnswered: number }
+type Bucket = { sent: number; delivered: number; notDelivered: number; waiting: number; noReport: number; untracked?: number; lookedUp?: number; calls: number; callsAnswered: number }
 export type SmsHealth = {
   day: Bucket; week: Bucket
   topErrors: { code: string | null; label: string; explain: string; count: number }[]
@@ -78,36 +83,90 @@ const smallBtn: React.CSSProperties = { padding: '6px 11px', borderRadius: 8, bo
 const GREEN = '#059669', RED = '#dc2626', AMBER = '#d97706'
 const msgIcon = <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
 
-function rate(b: Bucket): number | null {
+/** Delivered out of the texts that have a delivery report (null when none have). */
+export function reportedRate(b: Bucket): number | null {
   const settled = b.delivered + b.notDelivered
   return settled ? Math.round((b.delivered / settled) * 100) : null
 }
+/** Texts whose outcome isn't known: no report (yet), or sent before tracking. */
+export const unknownCount = (b: Bucket) => b.waiting + b.noReport + (b.untracked || 0)
+
+/** The headline in words: "1 of 4 confirmed delivered". */
+export function deliveredHeadline(b: Bucket): string {
+  return b.sent ? `${b.delivered} of ${b.sent}` : '—'
+}
 
 function Period({ label, b }: { label: string; b: Bucket }) {
-  const r = rate(b)
-  const color = r == null ? 'var(--sa-muted)' : r >= 90 ? GREEN : r >= 60 ? AMBER : RED
+  const r = reportedRate(b)
+  const noReport = b.noReport + (b.untracked || 0)
+  // Green only when every text is confirmed; a gap in the reports is amber.
+  const color = !b.sent ? 'var(--sa-muted)' : r != null && r < 60 ? RED : b.notDelivered || noReport ? AMBER : b.waiting ? 'var(--sa-text)' : GREEN
   return (
     <div style={{ minWidth: 0 }}>
       <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--sa-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{label}</div>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap', marginTop: 2 }}>
-        <span style={{ fontSize: 20, fontWeight: 800, color }}>{r == null ? '—' : `${r}%`}</span>
-        <span style={{ fontSize: 12, color: 'var(--sa-muted)' }}>delivered</span>
+        <span style={{ fontSize: 20, fontWeight: 800, color }}>{deliveredHeadline(b)}</span>
+        <span style={{ fontSize: 12, color: 'var(--sa-muted)' }}>{b.sent ? 'confirmed delivered' : 'no codes texted'}</span>
       </div>
       <div style={{ fontSize: 12.5, color: 'var(--sa-text)', marginTop: 2 }}>
         {b.sent} sent · <span style={{ color: GREEN, fontWeight: 600 }}>{b.delivered} delivered</span> · <span style={{ color: b.notDelivered ? RED : 'var(--sa-text)', fontWeight: b.notDelivered ? 700 : 400 }}>{b.notDelivered} not delivered</span>
-        {b.waiting ? ` · ${b.waiting} waiting` : ''}{b.noReport ? ` · ${b.noReport} no report` : ''}
+        {b.waiting ? ` · ${b.waiting} waiting` : ''}
       </div>
+      {noReport > 0 && (
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: 5, padding: '2px 8px', borderRadius: 999, background: AMBER + '18', color: AMBER, fontSize: 12, fontWeight: 700 }}>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>
+          {noReport} no report{b.untracked ? ` (${b.untracked === noReport ? 'all' : b.untracked} sent before delivery tracking)` : ''}
+        </div>
+      )}
+      {r != null && unknownCount(b) > 0 && <div style={{ fontSize: 12, color: 'var(--sa-muted)', marginTop: 3 }}>{r}% of the {b.delivered + b.notDelivered} with a delivery report</div>}
       {b.calls > 0 && <div style={{ fontSize: 12, color: 'var(--sa-muted)', marginTop: 2 }}>{b.calls} call{b.calls === 1 ? '' : 's'} with the code · {b.callsAnswered} answered</div>}
     </div>
   )
 }
 
-export default function SignupSmsHealth({ sms, onOpen }: { sms: SmsHealth | null | undefined; onOpen?: () => void }) {
+/** "Check with Twilio": fetch the delivery reports that never arrived. */
+function CheckWithTwilio({ onDone }: { onDone: (sms: SmsHealth) => void }) {
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState<{ tone: 'ok' | 'err'; text: string } | null>(null)
+  const run = async () => {
+    setBusy(true); setMsg(null)
+    try {
+      const res = await authFetch('/api/platform-admin/signups', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'sms_reconcile' }) })
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(d.error || 'That didn’t work')
+      const parts = [
+        d.checked ? `Checked ${d.checked} with Twilio` : 'Nothing to check',
+        d.recorded ? `${d.recorded} report${d.recorded === 1 ? '' : 's'} added` : '',
+        d.stillPending ? `${d.stillPending} still on the way` : '',
+        d.failed ? `${d.failed} couldn’t be read` : '',
+        d.more ? 'more left: run it again' : '',
+      ].filter(Boolean)
+      setMsg({ tone: 'ok', text: parts.join(' · ') + '.' })
+      if (d.sms) onDone(d.sms)
+    } catch (e: any) { setMsg({ tone: 'err', text: e.message }) } finally { setBusy(false) }
+  }
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+      <button onClick={run} disabled={busy} style={{ ...smallBtn, opacity: busy ? 0.6 : 1 }}>{busy ? 'Checking…' : 'Check with Twilio'}</button>
+      {msg && <span style={{ fontSize: 12, color: msg.tone === 'ok' ? 'var(--sa-text)' : RED }}>{msg.text}</span>}
+    </span>
+  )
+}
+
+export default function SignupSmsHealth({ sms: given, onOpen, onChanged }: { sms: SmsHealth | null | undefined; onOpen?: () => void; onChanged?: () => void }) {
+  // Fresh numbers from "Check with Twilio", until the page loads new ones.
+  const [checked, setChecked] = useState<{ base: SmsHealth | null | undefined; data: SmsHealth } | null>(null)
+  const live = checked && checked.base === given ? checked.data : null
+  const setLive = (data: SmsHealth) => setChecked({ base: given, data })
+  const sms = live ? { ...given, ...live } as SmsHealth : given
   if (!sms) return null
+  const noReport = sms.week.noReport
+  const untracked = sms.week.untracked || 0
+  const lookedUp = sms.week.lookedUp || 0
   const capHit = !!(sms.caps?.sms.hit || sms.caps?.voice.hit)
   const problems = sms.week.notDelivered > 0 || !!sms.problem || capHit
   return (
-    <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderLeft: `3px solid ${problems ? RED : sms.week.sent ? GREEN : 'var(--sa-border)'}`, borderRadius: 14, padding: '14px 16px' }}>
+    <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderLeft: `3px solid ${problems ? RED : noReport || untracked ? AMBER : sms.week.sent ? GREEN : 'var(--sa-border)'}`, borderRadius: 14, padding: '14px 16px' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
         <span style={{ color: problems ? RED : 'var(--sa-muted)', display: 'flex' }}>{msgIcon}</span>
         <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--sa-text)' }}>Signup SMS health</span>
@@ -126,6 +185,17 @@ export default function SignupSmsHealth({ sms, onOpen }: { sms: SmsHealth | null
       {capHit && (
         <div role="alert" style={{ display: 'flex', gap: 8, alignItems: 'flex-start', padding: '10px 12px', borderRadius: 10, border: `1px solid ${RED}44`, background: RED + '0f', color: 'var(--sa-text)', fontSize: 13, marginBottom: 12, overflowWrap: 'anywhere' }}>
           <span><b>Daily limit reached: sign-up codes are being refused.</b> {sms.caps?.sms.hit ? `${sms.caps.sms.cap} texts` : ''}{sms.caps?.sms.hit && sms.caps?.voice.hit ? ' and ' : ''}{sms.caps?.voice.hit ? `${sms.caps.voice.cap} calls` : ''} in 24 hours across all sign-ups. Check the sign-ups below for abuse (many numbers, overseas, throwaway emails). If it’s real demand, raise SIGNUP_SMS_DAILY_CAP / SIGNUP_VOICE_DAILY_CAP.</span>
+        </div>
+      )}
+      {!sms.missing && (noReport > 0 || untracked > 0 || lookedUp > 0) && (
+        <div role="status" style={{ display: 'flex', gap: 8, alignItems: 'flex-start', padding: '10px 12px', borderRadius: 10, border: `1px solid ${AMBER}55`, background: AMBER + '12', color: 'var(--sa-text)', fontSize: 13, marginBottom: 12 }}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={AMBER} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 2 }} aria-hidden="true"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
+          <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 6, overflowWrap: 'anywhere' }}>
+            {noReport > 0 && <span><b>{noReport} text{noReport === 1 ? '' : 's'} in the last 7 days {noReport === 1 ? 'has' : 'have'} no delivery report.</b> Twilio accepted {noReport === 1 ? 'it' : 'them'}, but the report never reached Colvy, so whether {noReport === 1 ? 'it' : 'they'} arrived isn’t known.</span>}
+            {untracked > 0 && <span>{untracked} {untracked === 1 ? 'was' : 'were'} sent before delivery tracking (no Twilio ID was kept), so {untracked === 1 ? 'it' : 'they'} can’t be checked.</span>}
+            {lookedUp > 0 && <span>{lookedUp} report{lookedUp === 1 ? '' : 's'} had to be fetched from Twilio because the status callback didn’t arrive. If this keeps happening, check that NEXT_PUBLIC_SITE_URL is the address Colvy is served on (https://colvy.com) and that nothing in front of it redirects or blocks POSTs to /api/auth/otp/status.</span>}
+            {noReport > 0 && <span><CheckWithTwilio onDone={d => { setLive(d); onChanged?.() }} /></span>}
+          </div>
         </div>
       )}
       {sms.missing ? (

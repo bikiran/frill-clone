@@ -32,6 +32,12 @@ export function normaliseSignupMobile(raw: string | null | undefined): MobileChe
     if (/^0\d{9}$/.test(d)) { d = '61' + d.slice(1); intl = true }            // 0466 077 557
     else if (/^4\d{8}$/.test(d)) { d = '61' + d; intl = true }                // 466 077 557
     else if (/^61[45]\d{8}$/.test(d) || /^610[45]\d{8}$/.test(d)) intl = true  // 61466077557
+    // An international number typed without its +. No Australian number has
+    // 11 digits starting with 1, so "14387975614" is +1 438 797 5614 (Canada),
+    // not an Australian number; "64211234567" is a New Zealand mobile. Read
+    // that way, the country check then explains which numbers can be texted
+    // (instead of "enter an Australian mobile").
+    else if (/^1[2-9]\d{2}[2-9]\d{6}$/.test(d) || /^642\d{7,9}$/.test(d)) intl = true
     else return { ok: false, e164: '', error: 'Enter an Australian mobile (04xx xxx xxx), or start with + and the country code.' }
   }
   // A trunk 0 kept after the country code ("+61 0466…", "+64 021…", "+44 07…") never connects.
@@ -79,6 +85,21 @@ const names = (list: string[]) => {
   return n.length <= 1 ? (n[0] || 'no') : `${n.slice(0, -1).join(', ')} and ${n[n.length - 1]}`
 }
 
+/**
+ * A sign-up mobile as E.164 for showing and copying ("+61466077557"), also for
+ * numbers saved before normalising existed ("0466 077 557", "14387975614").
+ * Null when it can't be read as a phone number at all.
+ */
+export function signupPhoneE164(raw: string | null | undefined): string | null {
+  const m = normaliseSignupMobile(raw)
+  if (m.ok) return m.e164
+  const t = String(raw || '').trim().replace(/[\s().\- ]/g, '').replace(/^00/, '+')
+  return /^\+[1-9]\d{7,14}$/.test(t) ? t : null
+}
+
+/** "AU/NZ" for the short form of the allowed list. */
+const shortNames = (list: string[]) => list.length ? list.join('/') : 'no'
+
 /** May a sign-up code be texted (or read out, for 'voice') to this E.164 number? */
 export function destinationAllowed(e164: string, allowed: string[], channel: 'sms' | 'voice' = 'sms'): { ok: boolean; country: string | null; error: string } {
   const d = String(e164 || '').replace(/\D/g, '')
@@ -86,7 +107,7 @@ export function destinationAllowed(e164: string, allowed: string[], channel: 'sm
   if (hit) return { ok: true, country: hit, error: '' }
   const error = channel === 'voice'
     ? `We can only call ${names(allowed)} mobiles with the code. Use the text instead, or email support@colvy.com.`
-    : `Mobile verification is available for ${names(allowed)} numbers. Please contact us at support@colvy.com to sign up with another number.`
+    : `We can only text ${names(allowed)} mobiles. Use an ${shortNames(allowed)} number or email us at support@colvy.com.`
   return { ok: false, country: null, error }
 }
 
@@ -139,7 +160,9 @@ export function explainDeliveryError(code?: string | number | null, message?: st
 
 // ── What happened to the latest mobile code ─────────────────────────────────
 
-export type DeliveryState = 'none' | 'sending' | 'delivered' | 'answered' | 'not_delivered' | 'send_failed' | 'no_report'
+// untracked: sent before Colvy recorded Twilio's message ID (so no report can
+// ever match it); no_report: it has an ID but no report came back.
+export type DeliveryState = 'none' | 'sending' | 'delivered' | 'answered' | 'not_delivered' | 'send_failed' | 'no_report' | 'untracked'
 
 export type MobileDelivery = {
   state: DeliveryState
@@ -151,7 +174,7 @@ export type MobileDelivery = {
   explain: string
   who: ErrorInfo['who'] | null
   /** Every mobile send, newest first, with its own outcome (for the drawer). */
-  sends: { at: string; channel: 'sms' | 'voice'; sid: string | null; state: DeliveryState; code: string | null; label: string; explain: string }[]
+  sends: { at: string; channel: 'sms' | 'voice'; sid: string | null; state: DeliveryState; code: string | null; label: string; explain: string; via: 'callback' | 'lookup' | null }[]
 }
 
 const SMS_DONE: Record<string, DeliveryState> = { delivered: 'delivered', undelivered: 'not_delivered', failed: 'not_delivered' }
@@ -169,7 +192,8 @@ function describe(channel: 'sms' | 'voice', state: DeliveryState, status: string
   if (state === 'delivered') return { label: 'SMS delivered', explain: 'The phone company confirmed the text reached the phone.', who: null }
   if (state === 'answered') return { label: 'Call answered', explain: 'The call connected and the code was read out (it may have gone to voicemail).', who: null }
   if (state === 'sending') return { label: `${what} sent, waiting for a delivery report`, explain: 'Twilio accepted it; the phone company hasn’t reported back yet.', who: null }
-  if (state === 'no_report') return { label: `${what} sent, no delivery report`, explain: 'Twilio accepted it but no delivery report came back (sent before delivery tracking, or the status callback didn’t reach Colvy).', who: null }
+  if (state === 'untracked') return { label: `${what} sent before delivery tracking`, explain: 'Sent before Colvy kept Twilio’s message ID, so no delivery report can be matched to it. Whether it arrived isn’t known.', who: null }
+  if (state === 'no_report') return { label: `${what} sent, no delivery report`, explain: 'Twilio accepted it, but its delivery report never reached Colvy. “Check with Twilio” (Signup SMS health) asks Twilio directly.', who: null }
   if (channel === 'voice' && !code && status && CALL_WORD[status]) return { label: `Call not connected — ${CALL_WORD[status]}`, explain: status === 'no-answer' || status === 'busy' ? 'The phone rang out or was busy. They can try again.' : 'The call didn’t connect.', who: 'person' }
   if (state === 'send_failed' && !code) return { label: `${what} not sent — reason not recorded`, explain: 'Colvy didn’t get it out to Twilio, before reasons were recorded. Usually no sender was configured (TWILIO_MASTER_MESSAGING_SERVICE_SID empty and no From number), or Twilio refused the number.', who: 'colvy' }
   const e = explainDeliveryError(code, message)
@@ -195,7 +219,7 @@ export function deliveryOf(row: any, now = Date.now()): MobileDelivery {
     const ch = e.channel === 'voice' ? 'voice' : (e.channel === 'sms' || e.channel === 'both') ? 'sms' : null
     if (!ch) continue
     const sid = (ch === 'voice' ? e.call_sid : e.sms_sid) || null
-    let state: DeliveryState, status: string | null = null, code: string | null = null, message: string | null = null
+    let state: DeliveryState, status: string | null = null, code: string | null = null, message: string | null = null, via: 'callback' | 'lookup' | null = null
     if (e.sms_error || (e.type === 'send_failed' && !sid) || (!sid && /SMS not delivered/i.test(String(e.detail || '')))) {
       state = 'send_failed'; code = e.sms_error ? String(e.sms_error) : null; message = e.sms_error_message || null
     } else if (sid && reports.has(sid)) {
@@ -203,11 +227,14 @@ export function deliveryOf(row: any, now = Date.now()): MobileDelivery {
       status = String(r.status || '')
       state = (ch === 'voice' ? CALL_DONE : SMS_DONE)[status] || 'sending'
       code = r.error_code ? String(r.error_code) : null
+      via = r.via === 'lookup' ? 'lookup' : 'callback'
+    } else if (!sid) {
+      state = 'untracked'
     } else {
       state = now - tms(e.at) > NO_REPORT_AFTER_MS ? 'no_report' : 'sending'
     }
     const d = describe(ch, state, status, code, message)
-    sends.push({ at: e.at, channel: ch, sid, state, code, label: d.label, explain: d.explain })
+    sends.push({ at: e.at, channel: ch, sid, state, code, label: d.label, explain: d.explain, via })
   }
   sends.sort((a, b) => tms(b.at) - tms(a.at))
   const last = sends[0]

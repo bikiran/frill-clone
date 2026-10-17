@@ -73,6 +73,7 @@ import PrextyMark, { PREXTY } from '@/components/PrextyMark'
 import { notifyIntegrations } from '@/lib/integrations-notify'
 import { isOldPhoneVideo } from '@/lib/web-video'
 import { composerSubject } from '@/lib/email-subject'
+import { threadHeaderLine } from '@/lib/thread-header'
 import Popover, { useOneOpen } from '@/components/composer/Popover'
 import ReviewRequestButton from '@/components/composer/ReviewRequestButton'
 import { pickReviewChannel, REVIEW_REQUEST_SUBJECT, type ReviewChannel } from '@/lib/review-request'
@@ -9097,7 +9098,6 @@ export default function InboxPage() {
                 const windowStart = threadWin.convId === selected.id && threadWin.since ? tsOf(threadWin.since) : 0
                 const inWindow = (x: any) => !windowStart || tsOf(x.created_at) >= windowStart
                 let lastDay = ''
-                const first = list[0]
                 const enquiryName = contact?.name || contact?.email || contact?.phone || 'a customer'
                 const SRC: Record<string, string> = {
                   sms: 'SMS Enquiry', email: 'Email Enquiry', instagram: 'Instagram Enquiry',
@@ -9126,10 +9126,8 @@ export default function InboxPage() {
                 ) : (
                   <div key="enquiry-header" style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '4px 0 14px' }}>
                     <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
-                    <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--slate)', whiteSpace: 'nowrap' }}>
-                      {enquiryKind === 'Email Enquiry'
-                        ? (first?.sender_type === 'agent' ? `Email conversation with ${enquiryName}` : `Email received from ${enquiryName}`)
-                        : `New ${enquiryKind} from ${enquiryName}`}
+                    <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--slate)', textAlign: 'center', minWidth: 0, overflowWrap: 'anywhere' }}>
+                      {threadHeaderLine(enquiryKind, list, enquiryName)}
                     </span>
                     <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
                   </div>
@@ -10111,7 +10109,7 @@ export default function InboxPage() {
                   conversationId={selected.id}
                   companyId={companyId}
                   toEmail={contact?.email || ''}
-                  defaultSubject={composerSubject(messages, selected as any, { businessName: companyInfo?.name, contactName: contact?.name, contactPhone: contact?.phone, contactEmail: contact?.email })}
+                  defaultSubject={composerSubject(messages, selected as any, { businessName: companyInfo?.name, contactName: contact?.name, contactPhone: contact?.phone, contactEmail: contact?.email, contactSource: contact?.source, contactTags: contact?.tags })}
                   fromLabel={emailFromLabel}
                   replyTo={channelPick?.convId === selected.id ? channelPick.replyTo || null : null}
                   signature={emailSignature}

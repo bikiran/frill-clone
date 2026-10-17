@@ -1,7 +1,7 @@
 import { createHmac, timingSafeEqual } from 'crypto'
 import type { NextRequest } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { TWILIO_MASTER } from '@/lib/twilio-platform'
+import { TWILIO_MASTER, colvyBaseUrl } from '@/lib/twilio-platform'
 
 /**
  * Twilio signs every webhook (SMS, voice, status callbacks) with the auth token
@@ -16,7 +16,7 @@ import { TWILIO_MASTER } from '@/lib/twilio-platform'
  * as an emergency switch; failures are always logged.
  */
 
-function sign(token: string, url: string, form: FormData): string {
+export function sign(token: string, url: string, form: FormData): string {
   const pairs: [string, string][] = []
   form.forEach((v, k) => { pairs.push([k, typeof v === 'string' ? v : '']) })
   pairs.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
@@ -29,17 +29,33 @@ function same(a: string, b: string): boolean {
   return x.length === y.length && timingSafeEqual(x, y)
 }
 
-// The URL as Twilio called it. Behind Vercel, req.url already carries the public
-// host; the forwarded headers and the configured site URL cover proxies.
-function candidateUrls(req: NextRequest): string[] {
+// The URL as Twilio called it, which is the URL Colvy gave Twilio (status
+// callbacks) or the one set on the number. Behind Vercel, req.url already
+// carries the public host; behind another proxy the forwarded headers do. The
+// configured site URL (colvyBaseUrl, which builds every callback URL) covers a
+// request that reached the app under an internal host. Twilio's own validators
+// also try the URL with and without the default port, so do we.
+export function candidateUrls(req: { url: string; headers: Headers }): string[] {
   const u = new URL(req.url)
   const tail = u.pathname + u.search
   const out = new Set<string>([req.url])
-  const fh = req.headers.get('x-forwarded-host') || req.headers.get('host')
-  const fp = req.headers.get('x-forwarded-proto') || 'https'
+  const first = (v: string | null) => (v || '').split(',')[0].trim()
+  const fh = first(req.headers.get('x-forwarded-host')) || first(req.headers.get('host'))
+  const fp = first(req.headers.get('x-forwarded-proto')) || 'https'
   if (fh) out.add(`${fp}://${fh}${tail}`)
   const site = (process.env.NEXT_PUBLIC_SITE_URL || '').replace(/\/$/, '')
   if (site) out.add(`${site}${tail}`)
+  out.add(`${colvyBaseUrl()}${tail}`)
+  for (const x of Array.from(out)) {
+    try {
+      const v = new URL(x)
+      const dflt = v.protocol === 'https:' ? '443' : '80'
+      if (v.port === dflt || !v.port) {
+        out.add(`${v.protocol}//${v.hostname}${v.pathname}${v.search}`)
+        out.add(`${v.protocol}//${v.hostname}:${dflt}${v.pathname}${v.search}`)
+      }
+    } catch {}
+  }
   return Array.from(out)
 }
 
@@ -84,6 +100,7 @@ export function twilioMasterSignatureOk(req: NextRequest, form: FormData | null)
   if (!sig || !form || !TWILIO_MASTER.accountSid || !TWILIO_MASTER.authToken) return false
   if (String(form.get('AccountSid') || '') !== TWILIO_MASTER.accountSid) return false
   const ok = candidateUrls(req).some(url => same(sign(TWILIO_MASTER.authToken, url, form), sig))
-  if (!ok) console.warn('[twilio] master signature check failed for', new URL(req.url).pathname)
+  // Says which URL was checked, so a host or proxy mismatch shows in the logs.
+  if (!ok) console.warn('[twilio] master signature check failed for', new URL(req.url).pathname, 'host', req.headers.get('x-forwarded-host') || req.headers.get('host') || '?', 'tried', candidateUrls(req).map(u => new URL(u).origin).filter((v, i, a) => a.indexOf(v) === i).join(' '))
   return ok
 }

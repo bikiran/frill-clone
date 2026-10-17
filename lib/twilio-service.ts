@@ -109,6 +109,12 @@ export class TwilioService {
     return { status: data?.status || null, errorCode: data?.error_code != null ? String(data.error_code) : null, errorMessage: data?.error_message || null, to: data?.to || null }
   }
 
+  // A call's current status (queued, ringing, completed, busy, no-answer…).
+  async getCall(sid: string): Promise<{ status: string | null }> {
+    const data = await this.req(`/Calls/${encodeURIComponent(sid)}.json`, 'GET')
+    return { status: data?.status || null }
+  }
+
   // Inbound MMS media lives behind the account (Basic-auth protected). Fetch the
   // bytes server-side so we can re-host them somewhere public and show the photo
   // in the thread instead of a broken, auth-gated link.

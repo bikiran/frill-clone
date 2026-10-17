@@ -14,7 +14,7 @@ const LABEL = /^(abandoned cart|order\s*#|new conversation|visitor|website visit
 export function composerSubject(
   messages: any[] | null | undefined,
   conv: { subject?: string | null; email_subject?: string | null } | null | undefined,
-  o: { businessName?: string | null; contactName?: string | null; contactPhone?: string | null; contactEmail?: string | null } = {},
+  o: { businessName?: string | null; contactName?: string | null; contactPhone?: string | null; contactEmail?: string | null; contactSource?: string | null; contactTags?: string[] | null } = {},
 ): string {
   const list = Array.isArray(messages) ? messages : []
   // 1. The newest email in the thread (either direction).
@@ -38,6 +38,9 @@ export function composerSubject(
   const subj = String(conv?.subject || '').trim()
   const who = [o.contactName, o.contactPhone, o.contactEmail].map(v => String(v || '').trim().toLowerCase()).filter(Boolean)
   if (subj && !LABEL.test(subj) && !who.includes(subj.toLowerCase()) && !/^[+\d\s()-]{6,}$/.test(subj)) return re(subj)
-  // 5. Fallback.
+  // 5. Fallback. A sign-up lead (Colvy's own CRM, lib/signup-attempts) is
+  //    being written to about their sign-up, not sent a generic "Message from".
+  const signupLead = o.contactSource === 'signup' || (Array.isArray(o.contactTags) && o.contactTags.includes('signup'))
+  if (signupLead) return `Your ${o.businessName || 'Colvy'} sign-up`
   return o.businessName ? `Message from ${o.businessName}` : 'Re: your message'
 }

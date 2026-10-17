@@ -19,10 +19,11 @@ import { after } from 'next/server'
 import { checkBurst } from '@/lib/rate-limit'
 import { parseUserAgent } from '@/lib/link-tracking'
 import { findContactByPhone } from '@/lib/contact-capture'
+import { toE164 } from '@/lib/phone'
 import { emailDomain, isDisposableEmail } from '@/lib/disposable-email'
 import { SUPER_ADMIN } from '@/app/api/platform-admin/_lib/super-admin'
 import { isStaffRow } from '@/lib/company-access'
-import { deliveryOf, explainDeliveryError, deliveryProblem, TERMINAL_STATUSES } from '@/lib/signup-delivery'
+import { deliveryOf, explainDeliveryError, deliveryProblem, TERMINAL_STATUSES, signupPhoneE164 } from '@/lib/signup-delivery'
 
 export const TABLE = 'signup_attempts'
 /** No activity for this long and no account: abandoned. Codes expire after 10 minutes. */
@@ -390,7 +391,7 @@ const phoneTail = (p: any) => String(p || '').replace(/\D/g, '').slice(-9)
  * or risk, so someone else can't rewrite a real person's record by asking for
  * codes in their name.
  */
-export async function recordSignupEvent(db: any, ev: SignupEvent): Promise<any | null> {
+export async function recordSignupEvent(db: any, ev: SignupEvent, attempt = 0): Promise<any | null> {
   try {
     const email = cleanEmail(ev.email)
     if (!email) return null
@@ -484,13 +485,21 @@ export async function recordSignupEvent(db: any, ev: SignupEvent): Promise<any |
     row.updated_at = at
     delete row.id
 
+    // The whole row is written back, so only over the version that was read
+    // (updated_at): otherwise a delivery report or another step saved in
+    // between would be wiped from the timeline. On a clash, read again and redo.
     const saved = existing
-      ? await db.from(TABLE).update(row).eq('id', existing.id).select('*').maybeSingle()
+      ? await sameVersion(db.from(TABLE).update(row).eq('id', existing.id), existing.updated_at).select('*').maybeSingle()
       : await db.from(TABLE).insert(row).select('*').maybeSingle()
     if (saved.error) {
       // Two first sends at the same moment: the other insert won, add to it.
-      if (!existing && /duplicate|23505/i.test(`${saved.error.code} ${saved.error.message}`)) return recordSignupEvent(db, ev)
+      if (!existing && /duplicate|23505/i.test(`${saved.error.code} ${saved.error.message}`) && attempt < 3) return recordSignupEvent(db, ev, attempt + 1)
       console.warn('[signup-attempts] save failed:', saved.error.message)
+      return null
+    }
+    if (existing && !saved.data) {
+      if (attempt < 4) return recordSignupEvent(db, ev, attempt + 1)
+      console.warn('[signup-attempts] save kept clashing with other writes: not recorded')
       return null
     }
     const out = saved.data || { ...row, id: existing?.id }
@@ -509,6 +518,11 @@ export async function recordSignupEvent(db: any, ev: SignupEvent): Promise<any |
     console.warn('[signup-attempts] record failed:', e?.message || e)
     return null
   }
+}
+
+/** Narrow an update to the row version that was read (its updated_at). */
+function sameVersion(q: any, updatedAt: any) {
+  return updatedAt == null ? q.is('updated_at', null) : q.eq('updated_at', updatedAt)
 }
 
 const RECORD_TIMEOUT_MS = 8000
@@ -634,26 +648,66 @@ export function resetColvyWorkspaceCache() { workspaceCache = null }
 const statusTag = (row: any) => row.spam_at ? 'signup-spam' : row.account_created_at ? 'signup-completed' : 'signup-abandoned'
 const likeExact = (s: string) => s.replace(/[\\%_]/g, c => '\\' + c)
 
+/** The contact note a sign-up writes: who they are and how far they got. Starts with SIGNUP_NOTE_PREFIX. */
+const SIGNUP_NOTE_PREFIX = 'Signup lead:'
+const OLD_SIGNUP_NOTE = /^Started a Colvy sign-up/
+/** The business number as E.164. Often a landline, so the general AU rules (lib/phone), not the mobile ones; anything odd as typed. */
+export function businessPhoneE164(raw: any): string {
+  const t = String(raw || '').trim()
+  if (!t) return ''
+  return /^\+?[\d\s().-]{6,20}$/.test(t) ? toE164(t) : t.slice(0, 40)
+}
+export function signupNote(row: any): string {
+  const st = stepReached(row)
+  const where = st.step >= 8 ? 'finished signing up (account created)' : `reached step ${st.step} of 7 (${st.label})`
+  const phone = signupPhoneE164(row.phone)
+  const bizPhone = businessPhoneE164(row.business_phone)
+  const facts = [
+    row.business_name ? `Business: ${row.business_name}` : '',
+    row.industry ? `Industry: ${row.industry}` : '',
+    row.website ? `Website: ${String(row.website).slice(0, 200)}` : '',
+    bizPhone ? `Business phone: ${bizPhone}` : '',
+    phone ? `Mobile: ${phone} (${row.mobile_verified_at || row.account_created_at ? 'verified' : 'not verified'})` : '',
+  ].filter(Boolean)
+  return [
+    `${SIGNUP_NOTE_PREFIX} ${where}.`,
+    ...facts,
+    'Transactional follow-up only: no marketing consent given (an unverified sign-up mobile is no SMS opt-in).',
+  ].join('\n')
+}
+
 /**
  * Add (or update) the person as a contact in Colvy's workspace, tagged with
  * how their sign-up went, so the owner can follow up from the normal inbox.
  *
- * Nothing they typed is trusted until it's verified: before the email code is
- * entered only a contact this sign-up flow made can be matched by email (an
- * existing customer's contact is left alone), and the mobile is only used to
- * match or fill once it's verified. Fills empty fields only. Suspicious
- * attempts stay out until an admin looks. No marketing consent is recorded.
+ * Copied onto the contact (blank fields only, never overwriting): name, the
+ * mobile they typed in E.164 (verified or not: it's what the owner calls them
+ * back on), business name, city / state / country, and a "Signup lead:" note
+ * with the step reached, industry, website and business phone (contacts have
+ * no columns for those). The note is refreshed only while it's still the one
+ * this wrote.
+ *
+ * Matching is stricter than filling, since what they typed isn't proven:
+ * before the email code is entered only a contact this sign-up flow made can
+ * be matched by email (an existing customer's contact is left alone), and the
+ * mobile is only used to MATCH an existing contact once it's verified.
+ * Suspicious attempts stay out until an admin looks (`force`: the admin asked).
+ *
+ * Consent (lib/sms-consent): a new contact is saved with no marketing consent
+ * (subscribed_to_marketing false, consent_basis 'none'); an existing
+ * contact's consent is never touched. An unverified mobile is no opt-in.
  */
-export async function syncSignupContact(db: any, row: any): Promise<string | null> {
+export async function syncSignupContact(db: any, row: any, o: { force?: boolean } = {}): Promise<string | null> {
   try {
     const email = cleanEmail(row?.email)
     if (!email) return null
-    if ((row.risk_score || 0) >= SUSPICIOUS_SCORE && !row.account_created_at && !row.contact_id) return null
+    if ((row.risk_score || 0) >= SUSPICIOUS_SCORE && !row.account_created_at && !row.contact_id && !o.force) return null
     const co = await colvyWorkspace(db)
     if (!co) return null
     const emailOk = !!(row.email_verified_at || row.account_created_at)
-    const mobileOk = !!(row.mobile_verified_at || row.account_created_at) && !!row.phone
-    const cols = 'id, name, email, phone, tags, source, company_name, city, notes'
+    const phone = signupPhoneE164(row.phone)
+    const mobileOk = !!(row.mobile_verified_at || row.account_created_at) && !!phone
+    const cols = 'id, name, email, phone, tags, source, company_name, city, state, country, notes'
 
     let c: any = null
     if (row.contact_id) {
@@ -667,14 +721,21 @@ export async function syncSignupContact(db: any, row: any): Promise<string | nul
       if (!c && hits.length) return null            // a customer already has this email: wait until it's verified
     }
     if (!c && mobileOk) {
-      const hit = await findContactByPhone(db, co.id, row.phone)
+      const hit = await findContactByPhone(db, co.id, phone!)
       if (hit) { const { data } = await db.from('contacts').select(cols).eq('id', hit.id).maybeSingle(); c = data || null }
     }
     if (!c) {
-      const base = { company_id: co.id, name: row.name || null, email, phone: mobileOk ? row.phone : null, source: 'signup', tags: ['signup', statusTag(row)] }
-      let ins = await db.from('contacts').insert({ ...base, subscribed_to_marketing: false }).select(cols).maybeSingle()
-      if (ins.error) ins = await db.from('contacts').insert(base).select(cols).maybeSingle()
-      c = ins.data || null
+      const base = { company_id: co.id, name: row.name || null, email, phone, source: 'signup', tags: ['signup', statusTag(row)] }
+      const tries = [
+        { ...base, subscribed_to_marketing: false, consent_basis: 'none', consent_source: 'Colvy sign-up (no marketing consent)' },
+        { ...base, subscribed_to_marketing: false },
+        base,
+        { ...base, phone: null },                     // the number is somehow refused: still add them
+      ]
+      for (const t of tries) {
+        const ins = await db.from('contacts').insert(t).select(cols).maybeSingle()
+        if (!ins.error && ins.data) { c = ins.data; break }
+      }
       if (!c) return null
     }
 
@@ -682,13 +743,23 @@ export async function syncSignupContact(db: any, row: any): Promise<string | nul
     const patch: any = { tags: Array.from(new Set([...tags, 'signup', statusTag(row)])) }
     if (!c.name && row.name) patch.name = row.name
     if (!c.email) patch.email = email
-    if (!c.phone && mobileOk) patch.phone = row.phone
+    const phonePatch: any = !c.phone && phone ? { phone } : {}
     const extra: any = {}
     if (!c.company_name && row.business_name) extra.company_name = row.business_name
     if (!c.city && (row.business_city || row.ip_city)) extra.city = row.business_city || row.ip_city
-    if (!c.notes && c.source === 'signup') extra.notes = `Started a Colvy sign-up${row.business_name ? ` for ${row.business_name}` : ''}. Transactional follow-up only: no marketing consent given.`
-    const { error } = await db.from('contacts').update({ ...patch, ...extra }).eq('id', c.id)
-    if (error) await db.from('contacts').update(patch).eq('id', c.id)
+    if (!c.state && row.business_state) extra.state = row.business_state
+    if (!c.country && row.business_country) extra.country = row.business_country
+    const notes = String(c.notes || '')
+    if (!notes.trim() || notes.startsWith(SIGNUP_NOTE_PREFIX) || OLD_SIGNUP_NOTE.test(notes)) {
+      const next = signupNote(row)
+      if (next !== notes) extra.notes = next
+    }
+    // Older databases may lack a column, and a phone can be refused: fall
+    // back step by step so the tags (and the number) still land.
+    for (const p of [{ ...patch, ...phonePatch, ...extra }, { ...patch, ...extra }, { ...patch, ...phonePatch }, patch]) {
+      const { error } = await db.from('contacts').update(p).eq('id', c.id)
+      if (!error) break
+    }
     return c.id
   } catch (e: any) {
     console.warn('[signup-attempts] contact sync failed:', e?.message || e)
@@ -749,31 +820,44 @@ export async function removeSignupContact(db: any, row: any): Promise<'deleted' 
  * this SID ('unknown_sid' otherwise), so the caller can wait for the send to
  * be recorded first; the last try records regardless.
  */
-export async function recordDelivery(db: any, o: { email: string; sid: string; channel: 'sms' | 'voice'; status: string; errorCode?: string | null; requireKnownSid?: boolean; now?: number }): Promise<'recorded' | 'duplicate' | 'ignored' | 'unknown_sid' | 'no_row' | 'missing'> {
+export async function recordDelivery(db: any, o: { email: string; sid: string; channel: 'sms' | 'voice'; status: string; errorCode?: string | null; requireKnownSid?: boolean; now?: number; via?: 'callback' | 'lookup' }): Promise<'recorded' | 'duplicate' | 'ignored' | 'unknown_sid' | 'no_row' | 'missing'> {
   try {
     const status = String(o.status || '').toLowerCase()
     const sid = String(o.sid || '').slice(0, 64)
     if (!sid || !TERMINAL_STATUSES[o.channel].includes(status)) return 'ignored'
     const email = cleanEmail(o.email)
     if (!email) return 'ignored'
-    const { data: row, error } = await db.from(TABLE).select('id, events').eq('email', email).maybeSingle()
-    if (error) { if (missingTable(error)) { warnMissing(); return 'missing' } return 'ignored' }
-    if (!row) return 'no_row'
-    const evs: any[] = Array.isArray(row.events) ? row.events : []
-    if (evs.some(e => e?.type === 'delivery' && e.sid === sid && e.status === status)) return 'duplicate'
-    const known = evs.some(e => e?.sms_sid === sid || e?.call_sid === sid)
-    if (!known && o.requireKnownSid) return 'unknown_sid'
-    const at = iso(o.now ?? Date.now())
-    const code = o.errorCode ? String(o.errorCode).replace(/[^\w-]/g, '').slice(0, 16) : ''
-    const event: any = { at, type: 'delivery', channel: o.channel, sid, status }
-    if (code) event.error_code = code
-    const { error: uErr } = await db.from(TABLE).update({ events: capEvents([...evs, event]), updated_at: at }).eq('id', row.id)
-    return uErr ? 'ignored' : 'recorded'
+    // Written over the version read (updated_at), retried on a clash, so a
+    // step saved at the same moment can't drop the report (or be dropped).
+    for (let i = 0; i < 5; i++) {
+      const { data: row, error } = await db.from(TABLE).select('id, events, updated_at').eq('email', email).maybeSingle()
+      if (error) { if (missingTable(error)) { warnMissing(); return 'missing' } return 'ignored' }
+      if (!row) return 'no_row'
+      const evs: any[] = Array.isArray(row.events) ? row.events : []
+      if (evs.some(e => e?.type === 'delivery' && e.sid === sid && e.status === status)) return 'duplicate'
+      const known = evs.some(e => e?.sms_sid === sid || e?.call_sid === sid)
+      if (!known && o.requireKnownSid) return 'unknown_sid'
+      const at = iso(o.now ?? Date.now())
+      const code = o.errorCode ? String(o.errorCode).replace(/[^\w-]/g, '').slice(0, 16) : ''
+      const event: any = { at, type: 'delivery', channel: o.channel, sid, status }
+      if (code) event.error_code = code
+      if (o.via === 'lookup') event.via = 'lookup'
+      const { data: upd, error: uErr } = await sameVersion(db.from(TABLE).update({ events: capEvents([...evs, event]), updated_at: at }).eq('id', row.id), row.updated_at).select('id')
+      if (uErr) return 'ignored'
+      if ((upd || []).length) return 'recorded'
+    }
+    return 'ignored'
   } catch { return 'ignored' }
 }
 
-type SmsBucket = { sent: number; delivered: number; notDelivered: number; waiting: number; noReport: number; calls: number; callsAnswered: number }
-const smsBucket = (): SmsBucket => ({ sent: 0, delivered: 0, notDelivered: 0, waiting: 0, noReport: 0, calls: 0, callsAnswered: 0 })
+/**
+ * sent = delivered + notDelivered + waiting + noReport + untracked.
+ * noReport: has Twilio's ID but no report came back; untracked: sent before
+ * IDs were kept. lookedUp: reports fetched by "Check with Twilio" because the
+ * status callback never arrived (a sign the callback isn't reaching Colvy).
+ */
+type SmsBucket = { sent: number; delivered: number; notDelivered: number; waiting: number; noReport: number; untracked: number; lookedUp: number; calls: number; callsAnswered: number }
+const smsBucket = (): SmsBucket => ({ sent: 0, delivered: 0, notDelivered: 0, waiting: 0, noReport: 0, untracked: 0, lookedUp: 0, calls: 0, callsAnswered: 0 })
 
 /**
  * Sign-up code texts and calls in the last 24 hours and 7 days: how many were
@@ -796,9 +880,11 @@ export async function signupSmsHealth(db: any, now = Date.now()): Promise<{ day:
         for (const b of t >= dayAgo ? [day, week] : [week]) {
           if (s.channel === 'voice') { b.calls++; if (s.state === 'answered') b.callsAnswered++; continue }
           b.sent++
+          if (s.via === 'lookup') b.lookedUp++
           if (s.state === 'delivered') b.delivered++
           else if (deliveryProblem(s.state)) b.notDelivered++
           else if (s.state === 'sending') b.waiting++
+          else if (s.state === 'untracked') b.untracked++
           else b.noReport++
         }
         if (deliveryProblem(s.state)) {
@@ -812,6 +898,47 @@ export async function signupSmsHealth(db: any, now = Date.now()): Promise<{ day:
     }
   } catch { return { day, week, topErrors: [], missing: true, caps } }
   return { day, week, topErrors: Array.from(errors.values()).sort((a, b) => b.count - a.count).slice(0, 4), missing: false, caps }
+}
+
+/** Twilio's current status for a sent text or call (lib/signup-sms), or null when it can't be read. */
+export type TwilioStatusLookup = (sid: string, channel: 'sms' | 'voice') => Promise<{ status: string | null; errorCode: string | null } | null>
+export const RECONCILE_MAX = 25
+
+/**
+ * "Check with Twilio" (super admin → Signup SMS health): for codes sent in
+ * the last 7 days that have Twilio's ID but no delivery report after a few
+ * minutes, ask Twilio what happened and put the answer on the timeline
+ * (marked as looked up, so it's clear the status callback didn't bring it).
+ * At most RECONCILE_MAX lookups a run; texts sent before IDs were kept can't
+ * be looked up.
+ */
+export async function reconcileDeliveries(db: any, lookup: TwilioStatusLookup, now = Date.now()): Promise<{ ok: boolean; checked: number; recorded: number; stillPending: number; untracked: number; failed: number; more: boolean; missing?: boolean }> {
+  const out = { ok: true, checked: 0, recorded: 0, stillPending: 0, untracked: 0, failed: 0, more: false }
+  try {
+    const { data, error } = await db.from(TABLE).select('email, events, last_code_at').gte('last_code_at', iso(now - 7 * 864e5)).limit(2000)
+    if (error) return { ...out, ok: false, missing: missingTable(error) }
+    const due: { email: string; sid: string; channel: 'sms' | 'voice' }[] = []
+    for (const row of data || []) {
+      for (const s of deliveryOf(row, now).sends) {
+        if (ms(s.at) < now - 7 * 864e5) continue
+        if (s.state === 'untracked') { out.untracked++; continue }
+        if (!s.sid || !(s.state === 'no_report' || (s.state === 'sending' && now - ms(s.at) > 3 * 60_000))) continue
+        due.push({ email: row.email, sid: s.sid, channel: s.channel })
+      }
+    }
+    out.more = due.length > RECONCILE_MAX
+    for (const d of due.slice(0, RECONCILE_MAX)) {
+      out.checked++
+      const st = await lookup(d.sid, d.channel).catch(() => null)
+      if (!st || !st.status) { out.failed++; continue }
+      const status = String(st.status).toLowerCase()
+      if (!TERMINAL_STATUSES[d.channel].includes(status)) { out.stillPending++; continue }
+      const r = await recordDelivery(db, { email: d.email, sid: d.sid, channel: d.channel, status, errorCode: st.errorCode, via: 'lookup', now })
+      if (r === 'recorded' || r === 'duplicate') out.recorded++
+      else out.failed++
+    }
+    return out
+  } catch { return { ...out, ok: false } }
 }
 
 // ── Adding existing sign-ups to the CRM ────────────────────────────────────
@@ -871,8 +998,13 @@ export type ListRange = 'today' | '7d' | '30d' | 'all'
 export function presentSignup(row: any, now = Date.now()) {
   const status = signupStatus(row, now)
   const risk = assessRisk(row)
+  // Numbers saved before normalising ("14387975614", "0466 077 557") show as E.164.
+  const phone = signupPhoneE164(row.phone) || row.phone || null
   return {
     ...row,
+    phone,
+    phone_country: row.phone_country || phoneCountry(phone) || null,
+    business_phone: businessPhoneE164(row.business_phone) || null,
     status,
     step: stepReached(row),
     mobile: deliveryOf(row, now),
