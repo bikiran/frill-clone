@@ -36,21 +36,26 @@ export function isAllDay(d: DayHours | null | undefined): boolean {
   return !!d && d.open && d.from === '00:00' && (d.to === '24:00' || d.to === '23:59' || d.to === '00:00')
 }
 
-/** "17:30" → "5:30 pm" (12h) or "17:30" (24h). End of day "24:00" reads "12:00 am" / "24:00". */
-export function formatTime(t: string, fmt: TimeFormat): string {
+/**
+ * "17:30" → "5:30 pm" (12h) or "17:30" (24h). End of day "24:00" reads "12:00 am" / "24:00".
+ * compact (very narrow phones, 12h only): "5:30pm", "10am".
+ */
+export function formatTime(t: string, fmt: TimeFormat, compact = false): string {
   const m = /^(\d{1,2}):(\d{2})$/.exec(String(t || '').trim())
   if (!m) return t || ''
   const raw = Number(m[1])
   if (fmt === '24h') return raw === 24 && m[2] === '00' ? '24:00' : `${pad(raw % 24)}:${m[2]}`
   const h = raw % 24
-  return `${h % 12 || 12}:${m[2]} ${h < 12 ? 'am' : 'pm'}`
+  const ap = h < 12 ? 'am' : 'pm'
+  if (compact) return `${h % 12 || 12}${m[2] === '00' ? '' : ':' + m[2]}${ap}`
+  return `${h % 12 || 12}:${m[2]} ${ap}`
 }
 
-/** One line for a day: "10:00 am – 5:30 pm", "Open 24 hours" or "Closed". */
-export function daySummary(d: DayHours | null | undefined, fmt: TimeFormat): string {
+/** One line for a day: "10:00 am – 5:30 pm" ("10am – 5:30pm" compact), "Open 24 hours" or "Closed". */
+export function daySummary(d: DayHours | null | undefined, fmt: TimeFormat, compact = false): string {
   if (!d || !d.open) return 'Closed'
   if (isAllDay(d)) return 'Open 24 hours'
-  return `${formatTime(d.from, fmt)} – ${formatTime(d.to === '00:00' ? '24:00' : d.to, fmt)}`
+  return `${formatTime(d.from, fmt, compact)} – ${formatTime(d.to === '00:00' ? '24:00' : d.to, fmt, compact)}`
 }
 
 /**

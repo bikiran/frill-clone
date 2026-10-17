@@ -57,7 +57,7 @@ export async function POST(req: NextRequest) {
                 <div style="background: #f8f8f8; padding: 16px; border-radius: 8px; margin: 20px 0;">
                   <p style="margin: 0 0 8px 0; color: #6b6b70; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em;">Your Role</p>
                   <p style="margin: 0; font-size: 16px; font-weight: 600; color: #1a1a1a;">
-                    ${role === 'viewer' ? 'Viewer (read-only)' : role === 'editor' ? 'Editor (can edit)' : 'Admin (full access)'}
+                    ${role === 'viewer' ? 'Viewer (read-only)' : role === 'editor' ? 'Agent (can view and edit)' : 'Admin (full access)'}
                   </p>
                 </div>
                 

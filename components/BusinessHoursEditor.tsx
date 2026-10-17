@@ -10,11 +10,14 @@ import {
 // day (name, open switch, hours). Times are picked from 15-minute lists shown
 // in the chosen format; what's stored stays 24-hour "HH:MM" (lib/week-hours).
 //
-// Narrow (phones): each row is one line ("Monday  [on]  10:00 am – 5:30 pm  v");
-// tap the hours (or switch a closed day on) to open that day's pickers,
-// 24 hours and Copy to all days.
-// Wide: the pickers sit in the row itself. A container query picks the layout,
-// so it fits whatever card it's placed in.
+// Narrow (phones, and anything under 640px wide): each row is one line
+// ("Monday  [on]  10:00 am – 5:30 pm  v"); tap the hours (or switch a closed day
+// on) to open that day's pickers, 24 hours and Copy to all days. Under 330px the
+// day names shorten ("Mon"); under 270px (320px phones) 12-hour times do too
+// ("10am – 5:30pm"), so the closing time is never cut off.
+// Wide (640px+, where both pickers, the chip and the copy button fit): the
+// pickers sit in the row itself. Container queries pick the layout, so it fits
+// whatever card it's placed in.
 
 const DEFAULT_TIMES = { from: '09:00', to: '17:00' }
 
@@ -108,7 +111,7 @@ export default function BusinessHoursEditor({ value, onChange, ariaLabel = 'Busi
               <button type="button" className="bhe-sum" disabled={!open} aria-expanded={open ? isOpenRow : undefined} aria-controls={open ? editId : undefined}
                 aria-label={open ? `${label}: ${daySummary(h, fmt)}. Change hours` : `${label}: closed`}
                 onClick={() => setExpanded(e => e === d ? null : d)}>
-                <span className="bhe-sum-text">{daySummary(h, fmt)}</span>
+                <span className="bhe-sum-text"><span className="bhe-full">{daySummary(h, fmt)}</span><span className="bhe-compact">{daySummary(h, fmt, true)}</span></span>
                 {open && <Chevron />}
               </button>
               {!open && <span className="bhe-closed">Closed</span>}
@@ -126,7 +129,7 @@ export default function BusinessHoursEditor({ value, onChange, ariaLabel = 'Busi
                   )}
                   <span className="bhe-actions">
                     <label className={`bhe-chip${allDay ? ' on' : ''}`}>
-                      <input type="checkbox" checked={allDay} onChange={e => setAllDay(d, e.target.checked)} />
+                      <input type="checkbox" checked={allDay} aria-label={`Open 24 hours on ${label}`} onChange={e => setAllDay(d, e.target.checked)} />
                       <span>24 hours</span>
                     </label>
                     <button type="button" className="bhe-copy" onClick={() => copyToAll(d)} aria-label={`Copy to all days: ${label}’s hours`} title="Copy to all days">
@@ -155,7 +158,7 @@ const CSS = `
 .bhe-row{display:grid;grid-template-columns:84px 38px minmax(0,1fr);align-items:center;column-gap:10px;padding:0 12px;min-height:48px}
 .bhe-row+.bhe-row{border-top:1px solid #f3f3f5}
 .bhe-day{font-size:14px;font-weight:600;color:var(--bhe-ink);white-space:nowrap}
-.bhe-short{display:none}
+.bhe-short,.bhe-compact{display:none}
 .bhe-switch{width:38px;height:22px;border-radius:11px;border:none;padding:0;background:#d1d5db;position:relative;cursor:pointer;transition:background .2s;flex-shrink:0}
 .bhe-switch[aria-checked="true"]{background:var(--bhe-coral)}
 .bhe-knob{position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.18);transition:transform .2s}
@@ -182,16 +185,23 @@ const CSS = `
 @keyframes bheIn{from{opacity:0;transform:translate3d(0,-3px,0)}to{opacity:1;transform:none}}
 @media (prefers-reduced-motion:reduce){.bhe-edit{animation:none}.bhe-switch,.bhe-knob,.bhe-chev{transition:none}}
 @container (max-width:329px){
-  .bhe-row{grid-template-columns:40px 38px minmax(0,1fr);column-gap:8px;padding:0 10px}
+  .bhe-row{grid-template-columns:36px 38px minmax(0,1fr);column-gap:7px;padding:0 8px}
   .bhe-long{display:none}.bhe-short{display:inline}
+  .bhe-sum{gap:4px}
+  .bhe-edit{padding:10px}
+  .bhe-times{gap:5px}
+  .bhe-time{font-size:13px;padding:8px 22px 8px 8px;background-position:right 7px center}
 }
-@container (min-width:560px){
+@container (max-width:269px){
+  .bhe-full{display:none}.bhe-compact{display:inline}
+}
+@container (min-width:640px){
   .bhe-row{grid-template-columns:104px 38px minmax(0,1fr);column-gap:14px;padding:0 16px;min-height:56px}
   .bhe-sum{display:none}
   .bhe-closed{display:block}
   .bhe-edit,.bhe-row[data-expanded="1"] .bhe-edit{grid-column:auto;display:flex;flex-direction:row;align-items:center;justify-content:space-between;gap:12px;margin:0;padding:8px 0;background:none;border:none;animation:none}
-  .bhe-times{flex:0 1 auto}
-  .bhe-times .bhe-time{flex:0 0 auto;width:124px}
+  .bhe-times{flex:0 1 auto;min-width:0}
+  .bhe-times .bhe-time{flex:0 1 auto;width:124px;min-width:108px}
   .bhe-24text{min-height:38px}
   .bhe-actions{flex-wrap:nowrap}
   .bhe-copy{padding:7px 9px}
