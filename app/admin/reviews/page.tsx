@@ -1,6 +1,6 @@
 'use client'
 import { authFetch } from '@/lib/auth-fetch'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useLayoutEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { peekCompanyUser, readCache, writeCache } from '@/lib/client-cache'
 import PageHeader from '@/components/PageHeader'
@@ -31,9 +31,6 @@ const NO_FILTERS: Filters = { preset: 'all', dateFrom: '', dateTo: '', rating: 0
 // Phones show the first reviews and add more on demand instead of a pager.
 const PHONE_FIRST = 10
 const PHONE_STEP = 20
-// Roughly four lines of a phone card; longer comments fold behind "More".
-const LONG_COMMENT = 180
-const LONG_REPLY = 140
 
 function presetRange(p: Preset): { dateFrom: string; dateTo: string } {
   if (p === 'all' || p === 'custom') return { dateFrom: '', dateTo: '' }
@@ -60,16 +57,20 @@ function fullDate(iso: string | null): string {
   return iso ? new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : ''
 }
 
-// "Today", "3 days ago", "2 weeks ago", "5 months ago", "1 year ago".
+// "Today", "Yesterday", "3 days ago", "2 weeks ago", "5 months ago", "1 year ago".
+// Counted in calendar days on the viewer's clock, so a review from 11pm last
+// night reads "Yesterday" the next morning, not "Today".
 function ago(iso: string | null): string {
   if (!iso) return ''
-  const t = new Date(iso).getTime()
-  if (isNaN(t)) return ''
-  const days = Math.max(0, (Date.now() - t) / 86_400_000)
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return ''
+  const dayStart = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime()
+  // Rounded, so a daylight-saving change (a 23 or 25 hour day) still counts as one day.
+  const days = Math.max(0, Math.round((dayStart(new Date()) - dayStart(d)) / 86_400_000))
   const n = (v: number, unit: string) => `${v} ${unit}${v === 1 ? '' : 's'} ago`
-  if (days < 1) return 'Today'
-  if (days < 2) return 'Yesterday'
-  if (days < 7) return n(Math.floor(days), 'day')
+  if (days === 0) return 'Today'
+  if (days === 1) return 'Yesterday'
+  if (days < 7) return n(days, 'day')
   if (days < 30) return n(Math.floor(days / 7), 'week')
   if (days < 365) return n(Math.max(1, Math.floor(days / 30.4)), 'month')
   return n(Math.floor(days / 365), 'year')
@@ -83,6 +84,30 @@ function Stars({ n, size = 16 }: { n: number; size?: number }) {
         <svg key={s} width={size} height={size} viewBox="0 0 24 24" aria-hidden="true"><path d={STAR} fill={s <= n ? '#f5b301' : '#e5e7eb'} /></svg>
       ))}
     </span>
+  )
+}
+
+// Long text folds to a few lines on phones (the .clamp rule only applies
+// there). "More" shows only when the clamp is actually hiding something,
+// measured after layout and again whenever the text box changes size.
+function Fold({ text, className, open, onToggle }: { text: string; className: string; open: boolean; onToggle: () => void }) {
+  const ref = useRef<HTMLParagraphElement>(null)
+  const [folds, setFolds] = useState(false)
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el || open) return
+    const check = () => setFolds(el.scrollHeight > el.clientHeight + 1)
+    check()
+    if (typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(check)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [open, text])
+  return (
+    <>
+      <p ref={ref} className={className + (open ? '' : ' clamp')}>{text}</p>
+      {folds && <button type="button" className="rv-more" aria-expanded={open} onClick={onToggle}>{open ? 'Less' : 'More'}</button>}
+    </>
   )
 }
 
@@ -105,10 +130,13 @@ const Icon = {
 }
 
 // Desktop keeps the two-column dashboard (list + Google summary rail) and its
-// numbered pager. At 767px and below the page becomes a phone layout: header
-// with Sync under the title, a tappable summary strip, a sticky search with a
-// row of quick-filter chips and a Filters sheet, compact cards and "Load more".
-// Phone-only and desktop-only pieces are switched with CSS, so nothing flashes.
+// numbered pager. Below 1024px (portrait tablets) the rail would squeeze the
+// list, so the list takes the full width under a summary strip and the
+// review-link settings move below it. At 767px and below the page becomes a
+// phone layout: header with Sync under the title, the summary strip, a sticky
+// search with a row of quick-filter chips and a Filters sheet, compact cards
+// and "Load more". Phone-only and desktop-only pieces are switched with CSS,
+// so nothing flashes.
 const REVIEWS_CSS = `
   .rv-btn { display:inline-flex; align-items:center; justify-content:center; gap:7px; border-radius:12px; font-weight:700; font-size:13.5px; padding:10px 18px; cursor:pointer; border:1px solid transparent; transition: background .15s ease, border-color .15s ease, transform .06s ease, box-shadow .15s ease; line-height:1; font-family:inherit; white-space:nowrap; }
   .rv-btn:active { transform: translateY(1px); }
@@ -168,7 +196,7 @@ const REVIEWS_CSS = `
   .rv-more { display:none; }
 
   /* Phone-only pieces are hidden on desktop. */
-  .rv-m, .rv-strip, .rv-bar, .rv-count-m, .rv-loadmore-wrap, .rv-meta, .rv-link-m, .rv-foot.rv-foot-m { display:none; }
+  .rv-m, .rv-strip, .rv-bar, .rv-count-m, .rv-loadmore-wrap, .rv-newer-wrap, .rv-meta, .rv-link-m, .rv-foot.rv-foot-m { display:none; }
 
   .rv-rail { padding:20px; position:sticky; top:20px; }
   .rv-pager { display:flex; align-items:center; justify-content:center; gap:8px; flex-wrap:wrap; margin-top:18px; }
@@ -199,6 +227,23 @@ const REVIEWS_CSS = `
     .rv-sheet { border-radius:20px; padding-bottom:0; }
   }
 
+  /* Summary strip: average, total (shows everything), to reply (filters). */
+  .rv-tile { display:flex; flex-direction:column; align-items:flex-start; gap:2px; padding:10px 12px; border-radius:14px; border:1px solid var(--border); background: var(--card, #fff); font-family:inherit; text-align:left; min-width:0; color: var(--ink); -webkit-tap-highlight-color: transparent; }
+  button.rv-tile { cursor:pointer; }
+  button.rv-tile.on { border-color: var(--coral); background: var(--peach); }
+  .rv-tile-n { display:inline-flex; align-items:center; gap:4px; font-size:19px; font-weight:800; line-height:1.15; }
+  .rv-tile-n svg { color:#f5b301; }
+  .rv-tile-l { font-size:11.5px; font-weight:600; color: var(--slate); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%; }
+
+  /* Portrait tablets (and phones): one full-width column. The strip stands
+     in for the rail's stats; the rail's settings sit below the list. */
+  @media (max-width: 1023px) {
+    .rv-grid { grid-template-columns: minmax(0, 1fr); }
+    .rv-strip { display:grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap:10px; margin-bottom:14px; }
+    .rv-rail { position:static; }
+    .rv-rail-stats { display:none; }
+  }
+
   @media (max-width: 767px) {
     /* The admin's content column is a scroll container that never scrolls
        (the page does), which stops anything sticking. Clip sideways instead,
@@ -215,17 +260,13 @@ const REVIEWS_CSS = `
 
     .rv-d { display:none !important; }
     .rv-m { display:inline-flex; }
+    /* The page moves the reader itself when results change, and "Show newer"
+       should open where you are looking, so the browser's own scroll
+       anchoring must not pick a card and fight it. */
+    .rv-results { overflow-anchor: none; }
     .rv-foot.rv-foot-m { display:flex; }
-    .rv-grid { grid-template-columns: minmax(0, 1fr); gap:12px; }
-
-    /* Summary strip: average, total (shows everything), to reply (filters). */
-    .rv-strip { display:grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap:8px; margin-bottom:10px; }
-    .rv-tile { display:flex; flex-direction:column; align-items:flex-start; gap:2px; padding:10px 12px; border-radius:14px; border:1px solid var(--border); background: var(--card, #fff); font-family:inherit; text-align:left; min-width:0; color: var(--ink); -webkit-tap-highlight-color: transparent; }
-    button.rv-tile { cursor:pointer; }
-    button.rv-tile.on { border-color: var(--coral); background: var(--peach); }
-    .rv-tile-n { display:inline-flex; align-items:center; gap:4px; font-size:19px; font-weight:800; line-height:1.15; }
-    .rv-tile-n svg { color:#f5b301; }
-    .rv-tile-l { font-size:11.5px; font-weight:600; color: var(--slate); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%; }
+    .rv-grid { gap:12px; }
+    .rv-strip { gap:8px; margin-bottom:10px; }
 
     /* Sticky search + quick filters. */
     .rv-bar { display:block; position:sticky; top:56px; z-index:20; margin:0 -12px 8px; padding:8px 12px; background: color-mix(in srgb, var(--canvas) 94%, transparent); backdrop-filter: saturate(180%) blur(10px); -webkit-backdrop-filter: saturate(180%) blur(10px); border-bottom:1px solid var(--border); }
@@ -278,15 +319,16 @@ const REVIEWS_CSS = `
     .rv-link-m span { min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .rv-link-m.on { color: var(--coral); border-color: color-mix(in srgb, var(--coral) 35%, var(--border)); background: var(--peach); }
 
-    /* Small phones: the chip says just "Link" so the reply buttons keep their room. */
-    @media (max-width: 374px) { .rv-link-xs { display:none; } }
+    /* Below 390px (SE, mini, small Androids) "Link to customer" no longer fits
+       beside the reply buttons, so the chip says just "Link". */
+    @media (max-width: 389px) { .rv-link-xs { display:none; } }
 
     .rv-pager { display:none; }
-    .rv-loadmore-wrap { display:flex; flex-direction:column; align-items:stretch; gap:6px; margin-top:4px; text-align:center; font-size:12.5px; color: var(--slate); }
-    .rv-loadmore-wrap .rv-btn { width:100%; padding:12px; font-size:14px; }
+    .rv-loadmore-wrap, .rv-newer-wrap { display:flex; flex-direction:column; align-items:stretch; gap:6px; margin-top:4px; text-align:center; font-size:12.5px; color: var(--slate); }
+    .rv-newer-wrap { margin:0 0 10px; }
+    .rv-loadmore-wrap .rv-btn, .rv-newer-wrap .rv-btn { width:100%; padding:12px; font-size:14px; }
 
-    .rv-rail { position:static; padding:16px; }
-    .rv-rail-stats { display:none; }
+    .rv-rail { padding:16px; }
 
     .rv-linkmodal { align-items:flex-end; padding:0; }
     .rv-linkmodal-panel { width:100%; max-height:85dvh; border-radius:18px 18px 0 0; padding-bottom: env(safe-area-inset-bottom); }
@@ -345,6 +387,12 @@ export default function ReviewsPage() {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
   const [phoneCount, setPhoneCount] = useState(PHONE_FIRST)
+  // Phones render the window filtered[phoneStart, phoneStart + phoneCount).
+  // It starts at 0, except after a ?review= deep link to an older review,
+  // which opens the window at that review with "Show newer" above it.
+  const [phoneStart, setPhoneStart] = useState(0)
+  const barRef = useRef<HTMLDivElement>(null)
+  const resultsRef = useRef<HTMLDivElement>(null)
   // Long comments and replies the person has unfolded on a phone.
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set())
   const toggleExpanded = (key: string) => setExpanded(s => { const n = new Set(s); if (n.has(key)) n.delete(key); else n.add(key); return n })
@@ -532,8 +580,23 @@ export default function ReviewsPage() {
     } catch { /* optimistic; a resync would re-derive */ }
   }
 
-  // Back to the first page (and the first few on phones) whenever the result set changes.
-  useEffect(() => { setPage(1); setPhoneCount(PHONE_FIRST) }, [ratingFilter, repliesFilter, dateFrom, dateTo, search, pageSize])
+  // Back to the first page (and the first few on phones) whenever the result
+  // set changes. On phones the sticky bar lets people filter while scrolled
+  // far down; the list then gets shorter and would leave the new results
+  // above the screen, so bring their start up to just under the bar.
+  // A layout effect, so the reader never sees the in-between position.
+  const resetMounted = useRef(false)
+  useLayoutEffect(() => {
+    setPage(1); setPhoneCount(PHONE_FIRST); setPhoneStart(0)
+    if (!resetMounted.current) { resetMounted.current = true; return }
+    if (!window.matchMedia('(max-width: 767px)').matches) return
+    const bar = barRef.current?.getBoundingClientRect()
+    const res = resultsRef.current?.getBoundingClientRect()
+    // The bar keeps an 8px gap below it; only move if the results start is hidden.
+    if (bar && res && bar.height && res.top < bar.bottom + 7) {
+      window.scrollBy({ top: res.top - (bar.bottom + 8), behavior: 'instant' as ScrollBehavior })
+    }
+  }, [ratingFilter, repliesFilter, dateFrom, dateTo, search, pageSize])
 
   const applyPreset = (p: 'all' | '7' | '30' | '90') => {
     setPreset(p)
@@ -542,20 +605,32 @@ export default function ReviewsPage() {
   }
 
   const current: Filters = { preset, dateFrom, dateTo, rating: ratingFilter, replies: repliesFilter }
+  // A custom range with both dates cleared is no date filter at all.
+  const presetFor = (p: Preset, from: string, to: string): Preset => (p === 'custom' && !from && !to ? 'all' : p)
   const applyFilters = (f: Filters) => {
-    setPreset(f.preset); setDateFrom(f.dateFrom); setDateTo(f.dateTo); setRatingFilter(f.rating); setRepliesFilter(f.replies)
+    setPreset(presetFor(f.preset, f.dateFrom, f.dateTo)); setDateFrom(f.dateFrom); setDateTo(f.dateTo); setRatingFilter(f.rating); setRepliesFilter(f.replies)
   }
-  const clearFilters = () => { applyFilters(NO_FILTERS); setSearch('') }
-  const activeCount = (preset !== 'all' || dateFrom || dateTo ? 1 : 0) + (ratingFilter ? 1 : 0) + (repliesFilter !== 'all' ? 1 : 0)
+  // Also back to the newest reviews, even when no filter was on (after a deep link).
+  const clearFilters = () => { applyFilters(NO_FILTERS); setSearch(''); setPhoneStart(0); setPhoneCount(PHONE_FIRST) }
+  // Presets always set both dates, so the dates alone say whether a date filter is on.
+  const activeCount = (dateFrom || dateTo ? 1 : 0) + (ratingFilter ? 1 : 0) + (repliesFilter !== 'all' ? 1 : 0)
   const filteredView = activeCount > 0 || !!search.trim()
 
   const filtered = reviews.filter(r => matches(r, current, search))
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize))
   const pageClamped = Math.min(page, totalPages)
+  const phoneFrom = Math.min(phoneStart, Math.max(0, filtered.length - 1))
+  const phoneTo = Math.min(filtered.length, phoneFrom + phoneCount)
   const pageItems = isPhone
-    ? filtered.slice(0, phoneCount)
+    ? filtered.slice(phoneFrom, phoneTo)
     : filtered.slice((pageClamped - 1) * pageSize, pageClamped * pageSize)
+  // "Show newer" (phones, after a deep link): the next newer reviews appear
+  // right under the button, where the reader is looking.
+  const showNewer = () => {
+    const from = Math.max(0, phoneFrom - PHONE_STEP)
+    setPhoneCount(phoneTo - from); setPhoneStart(from)
+  }
 
   // Filters sheet: open on a copy of the live filters; count what the draft would show.
   const openSheet = () => { setDraft(current); setSheetOpen(true) }
@@ -577,7 +652,12 @@ export default function ReviewsPage() {
     if (idx < 0) return
     setRatingFilter(0); setRepliesFilter('all'); setDateFrom(''); setDateTo(''); setSearch(''); setPreset('all')
     setPage(Math.floor(idx / pageSize) + 1)
-    setPhoneCount(Math.max(PHONE_FIRST, idx + 1))
+    // Phones: open the list at the linked review (with "Show newer" above)
+    // rather than rendering every review down to it.
+    // A recent review just extends the first batch.
+    const near = idx < PHONE_FIRST + PHONE_STEP
+    setPhoneStart(near ? 0 : idx)
+    setPhoneCount(near ? Math.max(PHONE_FIRST, idx + 1) : PHONE_FIRST)
     const t = setTimeout(() => {
       try { document.getElementById(`review-${highlightReviewId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }) } catch {}
     }, 300)
@@ -650,7 +730,7 @@ export default function ReviewsPage() {
           )}
 
           {/* Phones: sticky search, Filters sheet button and quick-filter chips. */}
-          <div className="rv-bar">
+          <div className="rv-bar" ref={barRef}>
             <div className="rv-bar-row">
               <label className="rv-search">
                 {Icon.search}
@@ -675,6 +755,7 @@ export default function ReviewsPage() {
               ))}
             </div>
           </div>
+          <div className="rv-results" ref={resultsRef}>
           {filteredView && (
             <div className="rv-count-m" role="status">
               <span>Showing {filtered.length} of {reviews.length}</span>
@@ -706,12 +787,20 @@ export default function ReviewsPage() {
                 <option value="replied">Replied</option>
                 <option value="unreplied">Not replied</option>
               </select>
-              <input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setPreset('custom') }} title="From date" aria-label="From date" className="rv-input" />
+              <input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setPreset(presetFor('custom', e.target.value, dateTo)) }} title="From date" aria-label="From date" className="rv-input" />
               <span style={{ color: 'var(--slate)', fontSize: 13 }}>to</span>
-              <input type="date" value={dateTo} onChange={e => { setDateTo(e.target.value); setPreset('custom') }} title="To date" aria-label="To date" className="rv-input" />
+              <input type="date" value={dateTo} onChange={e => { setDateTo(e.target.value); setPreset(presetFor('custom', dateFrom, e.target.value)) }} title="To date" aria-label="To date" className="rv-input" />
               <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search reviews…" aria-label="Search reviews" className="rv-input" style={{ flex: 1, minWidth: 180 }} />
             </div>
           </div>
+
+          {/* Phones, after a deep link to an older review */}
+          {phoneFrom > 0 && pageItems.length > 0 && (
+            <div className="rv-newer-wrap">
+              <button type="button" className="rv-btn rv-btn-ghost" onClick={showNewer}>Show newer reviews</button>
+              <span>Starting at review {phoneFrom + 1} of {filtered.length}</span>
+            </div>
+          )}
 
           {/* Review list */}
           {pageItems.length === 0 ? (
@@ -724,9 +813,7 @@ export default function ReviewsPage() {
             const draftFor = drafts[review.review_id] && companyId ? drafts[review.review_id] : null
             const composing = !review.reply_comment && replyingTo === review.id
             const showActions = !review.reply_comment && !composing && !draftFor
-            const longText = (review.comment || '').length > LONG_COMMENT
             const textOpen = expanded.has(review.id)
-            const longReply = (review.reply_comment || '').length > LONG_REPLY
             const replyOpen = expanded.has('r:' + review.id)
             return (
             <article key={review.id} id={`review-${review.id}`} className={'rv-card' + (hot ? ' hot' : '')}>
@@ -762,8 +849,9 @@ export default function ReviewsPage() {
 
               <div className="rv-body">
                 <div className="rv-text-wrap">
-                  <p className={'rv-text' + (longText && !textOpen ? ' clamp' : '')}>{review.comment || <span className="rv-none">No written comment</span>}</p>
-                  {longText && <button type="button" className="rv-more" aria-expanded={textOpen} onClick={() => toggleExpanded(review.id)}>{textOpen ? 'Less' : 'More'}</button>}
+                  {review.comment
+                    ? <Fold text={review.comment} className="rv-text" open={textOpen} onToggle={() => toggleExpanded(review.id)} />
+                    : <p className="rv-text"><span className="rv-none">No written comment</span></p>}
                 </div>
                 <div className="rv-rate rv-d">
                   <Stars n={review.star_rating} />
@@ -774,8 +862,7 @@ export default function ReviewsPage() {
               {review.reply_comment ? (
                 <div className="rv-reply">
                   <p className="rv-reply-h">Your reply</p>
-                  <p className={'rv-reply-t' + (longReply && !replyOpen ? ' clamp' : '')}>{review.reply_comment}</p>
-                  {longReply && <button type="button" className="rv-more" aria-expanded={replyOpen} onClick={() => toggleExpanded('r:' + review.id)}>{replyOpen ? 'Less' : 'More'}</button>}
+                  <Fold text={review.reply_comment} className="rv-reply-t" open={replyOpen} onToggle={() => toggleExpanded('r:' + review.id)} />
                 </div>
               ) : composing ? (
                 <div className="rv-composer">
@@ -832,19 +919,22 @@ export default function ReviewsPage() {
           )}
 
           {/* Load more (phones) */}
-          {filtered.length > PHONE_FIRST && (
+          {(filtered.length > PHONE_FIRST || phoneFrom > 0) && (
             <div className="rv-loadmore-wrap">
-              {phoneCount < filtered.length && (
+              {phoneTo < filtered.length && (
                 <button type="button" className="rv-btn rv-btn-ghost rv-loadmore" onClick={() => setPhoneCount(c => c + PHONE_STEP)}>
                   Load more reviews
                 </button>
               )}
-              <span>{phoneCount < filtered.length ? `Showing ${Math.min(phoneCount, filtered.length)} of ${filtered.length}` : `All ${filtered.length} reviews shown`}</span>
+              <span>{phoneFrom > 0
+                ? `Showing ${phoneFrom + 1}–${phoneTo} of ${filtered.length}`
+                : phoneTo < filtered.length ? `Showing ${phoneTo} of ${filtered.length}` : `All ${filtered.length} reviews shown`}</span>
             </div>
           )}
+          </div>
         </div>
 
-        {/* Right rail — Google summary (desktop); on phones the review-link settings sit below the list. */}
+        {/* Right rail — Google summary (desktop); below 1024px only the review-link settings show, below the list. */}
         <div className="rv-panel rv-rail">
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
             <GoogleG size={26} />
@@ -919,11 +1009,11 @@ export default function ReviewsPage() {
             <div className="rv-sheet-dates">
               <label className="rv-sheet-field">From
                 <input type="date" className="rv-input" value={draft.dateFrom} max={draft.dateTo || undefined}
-                  onChange={e => setDraft(d => ({ ...d, dateFrom: e.target.value, preset: 'custom' }))} />
+                  onChange={e => setDraft(d => ({ ...d, dateFrom: e.target.value, preset: presetFor('custom', e.target.value, d.dateTo) }))} />
               </label>
               <label className="rv-sheet-field">To
                 <input type="date" className="rv-input" value={draft.dateTo} min={draft.dateFrom || undefined}
-                  onChange={e => setDraft(d => ({ ...d, dateTo: e.target.value, preset: 'custom' }))} />
+                  onChange={e => setDraft(d => ({ ...d, dateTo: e.target.value, preset: presetFor('custom', d.dateFrom, e.target.value) }))} />
               </label>
             </div>
 
