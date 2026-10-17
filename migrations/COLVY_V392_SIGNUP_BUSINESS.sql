@@ -1,0 +1,58 @@
+-- ============================================================
+-- COLVY V392 — SIGN-UP BUSINESS DETAILS (super admin → Signups)
+--
+-- Everything a sign-up told Colvy about their business, as one JSON object
+-- on signup_attempts.business (lib/signup-profile SignupBusiness):
+--   name, board address (slug), industry, Google category,
+--   address { formatted, line1, city, state, postcode, country },
+--   source (google | map | manual), verified (picked from Google), placeId,
+--   mapsUrl, hours { monday: { open, from, to, allDay? } … }, hoursSource
+--   (google | default | manual), phone, website, abn, timezone, timezoneFrom,
+--   utcOffsetMinutes, updatedAt.
+-- Written by the sign-up routes (service role) with every code request,
+-- verification and the finished sign-up, merged so a later step never blanks
+-- what an earlier one recorded and the latest edit wins. The V390 columns
+-- (business_name, business_slug, industry, website, business_phone,
+-- business_city/state/country) are still written, for search and the list.
+--
+-- Access is unchanged (V390): RLS on, SELECT for the platform admin only,
+-- INSERT/UPDATE/DELETE revoked from anon and authenticated (only the server
+-- writes). A new column falls under the same table policies and grants.
+--
+-- ── WHEN TO RUN ─────────────────────────────────────────────────────────────
+-- Any time, before or after deploying branch claude/signup-business-capture.
+-- Before it runs, sign-ups still record the V390 columns (business name,
+-- board address, industry, website, business phone, suburb, state, country),
+-- and the "Signup lead:" note on the Colvy CRM contact still gets the street
+-- address, Google place, opening hours and time zone; only the copy kept on
+-- the sign-up attempt itself waits for this column. Super admin → Signups
+-- shows whatever is there either way.
+-- Needs signup_attempts (V390); skipped quietly if it doesn't exist yet.
+--
+-- ── VERIFY AFTERWARDS ───────────────────────────────────────────────────────
+--   select email, business from signup_attempts order by last_activity_at desc limit 5;
+--   A new test sign-up that picks its business on Google shows the address,
+--   Maps link, "Verified via Google" and opening hours in its drawer.
+--
+-- Run in the Supabase SQL editor. Safe to re-run.
+--
+-- ── ROLLBACK ────────────────────────────────────────────────────────────────
+--   ALTER TABLE signup_attempts DROP COLUMN IF EXISTS business;
+--   NOTIFY pgrst, 'reload schema';
+-- (The code carries on without it: the V390 columns are written as before.)
+-- ============================================================
+
+DO $$
+BEGIN
+  IF to_regclass('public.signup_attempts') IS NULL THEN
+    RAISE NOTICE 'signup_attempts not found (run COLVY_V390_SIGNUP_ATTEMPTS.sql first): skipped';
+    RETURN;
+  END IF;
+  ALTER TABLE signup_attempts ADD COLUMN IF NOT EXISTS business JSONB;
+  -- Keep V390's lockdown as it is (re-stated so this file stands alone).
+  ALTER TABLE signup_attempts ENABLE ROW LEVEL SECURITY;
+  REVOKE ALL ON signup_attempts FROM anon;
+  REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON signup_attempts FROM authenticated;
+END $$;
+
+NOTIFY pgrst, 'reload schema';
