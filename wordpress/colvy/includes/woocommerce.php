@@ -202,9 +202,13 @@ function colvywp_wc_register_webhooks() {
 			$wh = wc_get_webhook( $id );
 			if ( $wh && strpos( $wh->get_delivery_url(), '/api/webhooks/woocommerce' ) !== false ) {
 				// Sign deliveries with the plugin key so Colvy can tell they're really from this store.
-				$fix = $wh->get_delivery_url() !== $url || $wh->get_status() !== 'active' || ( $secret && $wh->get_secret() !== $secret );
+				// Without a key, leave a webhook Colvy set up for this business pointing where it is:
+				// its URL names the store secret it's signed with, and dropping that breaks the check.
+				$same = strpos( $wh->get_delivery_url(), 'company=' . rawurlencode( colvywp_wc_company_id() ) ) !== false;
+				$want = ( ! $secret && $same ) ? $wh->get_delivery_url() : $url;
+				$fix = $wh->get_delivery_url() !== $want || $wh->get_status() !== 'active' || ( $secret && $wh->get_secret() !== $secret );
 				if ( $fix ) {
-					$wh->set_delivery_url( $url ); $wh->set_status( 'active' ); if ( $secret ) $wh->set_secret( $secret ); $wh->save();
+					$wh->set_delivery_url( $want ); $wh->set_status( 'active' ); if ( $secret ) $wh->set_secret( $secret ); $wh->save();
 					$res[] = $wh->get_topic() . ': repaired';
 				}
 			}
