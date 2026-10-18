@@ -6,8 +6,8 @@
 import { agentResults, ROLE_NAMES, type Results } from './results'
 import { trustSuggestions, type TrustSuggestion } from './trust'
 import { getDigest, setDigest } from './pilot'
+import { colvyEmail, type EmailBlock, type EmailStat } from '@/lib/colvy-email'
 
-const esc = (s: any) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string))
 const money = (n: number) => `$${n.toLocaleString('en-AU', { minimumFractionDigits: n % 1 ? 2 : 0, maximumFractionDigits: 2 })}`
 export const hoursText = (mins: number) => mins < 60 ? `${Math.round(mins)} min` : `${(mins / 60).toFixed(mins < 600 ? 1 : 0).replace(/\.0$/, '')} hours`
 
@@ -31,28 +31,13 @@ export function buildDigest(opts: { companyName: string; base: string; results: 
   const brought = c.escalated + c.tasks
   const subject = `Your agents this week: ${handled} handled, ${brought} brought to you`
 
-  const tile = (label: string, value: string, note = '') => `
-    <td style="padding:6px;width:25%;vertical-align:top">
-      <div style="border:1px solid #e7e9ee;border-radius:12px;padding:12px 14px;background:#fff">
-        <div style="font-size:12px;color:#667085">${esc(label)}</div>
-        <div style="font-size:22px;font-weight:700;color:#101828;margin-top:2px">${esc(value)}</div>
-        ${note ? `<div style="font-size:11.5px;color:#667085;margin-top:2px">${esc(note)}</div>` : ''}
-      </div>
-    </td>`
-  const section = (title: string, body: string) => `<h2 style="font-size:15px;color:#101828;margin:24px 0 8px">${esc(title)}</h2>${body}`
-  const button = (href: string, label: string) => `<a href="${esc(href)}" style="display:inline-block;background:#ff6b57;color:#fff;text-decoration:none;font-weight:700;font-size:14px;padding:10px 18px;border-radius:10px">${esc(label)}</a>`
-
-  const tiles = `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse"><tr>
-    ${tile('Sent on their own', String(c.sentOnOwn))}
-    ${tile('Approved as written', asIsPct == null ? '—' : `${asIsPct}%`, decided ? `of ${decided} drafts you decided` : '')}
-    ${tile('Brought to you', String(brought), brought ? `${c.escalated} handed over · ${c.tasks} tasks` : '')}
-    ${tile(won ? 'Won back' : 'Time saved', won ? money(won) : `about ${hoursText(c.minutesSaved)}`, won ? `${c.cartsWon + c.quotesPaid} paid after a follow-up` : 'estimate')}
-  </tr></table>`
-
-  const needs = [
-    waiting ? `<p style="margin:0 0 10px;font-size:14px;color:#344054"><b>${waiting}</b> ${waiting === 1 ? 'thing is' : 'things are'} waiting for your approval.</p>` : '',
-    r.exceptions.length ? `<ul style="margin:0 0 12px;padding-left:18px;color:#344054;font-size:13.5px;line-height:1.5">${r.exceptions.slice(0, 5).map(e => `<li><b>${esc(ROLE_NAMES[e.role] || e.role)}</b> ${e.kind === 'failed' ? 'ran into a problem' : 'handed over'}: ${esc(String(e.summary).slice(0, 160))}</li>`).join('')}</ul>` : '',
-  ].join('')
+  // On the shared layout (lib/colvy-email), which escapes every value.
+  const tiles: EmailStat[] = [
+    { label: 'Sent on their own', value: String(c.sentOnOwn) },
+    { label: 'Approved as written', value: asIsPct == null ? '—' : `${asIsPct}%`, note: decided ? `of ${decided} drafts you decided` : '' },
+    { label: 'Brought to you', value: String(brought), note: brought ? `${c.escalated} handed over · ${c.tasks} tasks` : '' },
+    { label: won ? 'Won back' : 'Time saved', value: won ? money(won) : `about ${hoursText(c.minutesSaved)}`, note: won ? `${c.cartsWon + c.quotesPaid} paid after a follow-up` : 'estimate' },
+  ]
 
   const extra = [
     c.reviewsAnswered + c.commentsAnswered ? `${c.reviewsAnswered} review${c.reviewsAnswered === 1 ? '' : 's'} and ${c.commentsAnswered} comment${c.commentsAnswered === 1 ? '' : 's'} answered` : '',
@@ -61,36 +46,35 @@ export function buildDigest(opts: { companyName: string; base: string; results: 
     `about ${hoursText(c.minutesSaved)} of your team’s time saved (an estimate)`,
   ].filter(Boolean)
 
-  const trust = suggestions.slice(0, 3).map(s => `<div style="border:1px solid #e7e9ee;border-radius:12px;padding:12px 14px;margin-bottom:8px;background:#fff">
-      <div style="font-size:14px;font-weight:700;color:#101828">${esc(s.title)}</div>
-      <div style="font-size:13px;color:#667085;margin-top:3px">${esc(s.detail)}</div>
-    </div>`).join('')
+  const needs: EmailBlock[] = [
+    ...(waiting ? [{ type: 'text', text: `**${waiting}** ${waiting === 1 ? 'thing is' : 'things are'} waiting for your approval.` } as EmailBlock] : []),
+    ...(r.exceptions.length ? [{ type: 'list', items: r.exceptions.slice(0, 5).map(e => ({ title: ROLE_NAMES[e.role] || e.role, detail: `${e.kind === 'failed' ? 'ran into a problem' : 'handed over'}: ${String(e.summary).slice(0, 160)}` })) } as EmailBlock] : []),
+  ]
+  const worth = c.failed || c.failedDeliveries
+    ? `${c.failed ? `${c.failed} run${c.failed === 1 ? '' : 's'} went wrong. ` : ''}${c.failedDeliveries ? `${c.failedDeliveries} approved message${c.failedDeliveries === 1 ? '' : 's'} didn’t go out.` : ''}`.trim()
+    : ''
 
-  const html = `<!doctype html><html><body style="margin:0;background:#f6f7f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">
-  <div style="max-width:620px;margin:0 auto;padding:24px 16px">
-    <p style="font-size:13px;color:#667085;margin:0 0 4px">${esc(companyName)} · last 7 days</p>
-    <h1 style="font-size:21px;color:#101828;margin:0 0 14px">Here’s what your agents did</h1>
-    ${tiles}
-    <ul style="margin:14px 0 0;padding-left:18px;color:#344054;font-size:13.5px;line-height:1.6">${extra.map(x => `<li>${esc(x)}</li>`).join('')}</ul>
-    ${needs ? section('What they brought to you', needs) : ''}
-    ${trust ? section('Ready for more freedom', `${trust}<p style="font-size:12.5px;color:#667085;margin:4px 0 0">Your team approved these almost every time without changes. One tap on the Results page lets the agent do them on its own, within your limits.</p>`) : ''}
-    ${c.failed || c.failedDeliveries ? section('Worth a look', `<p style="margin:0;font-size:13.5px;color:#344054">${c.failed ? `${c.failed} run${c.failed === 1 ? '' : 's'} went wrong. ` : ''}${c.failedDeliveries ? `${c.failedDeliveries} approved message${c.failedDeliveries === 1 ? '' : 's'} didn’t go out.` : ''}</p>`) : ''}
-    <div style="margin:24px 0">${button(`${base}/admin/agents/results`, 'See all results')}</div>
-    <p style="font-size:11.5px;color:#98a2b3;margin:24px 0 0">You get this because Colvy agents worked for ${esc(companyName)} this week. Switch it off on Agents → Results.</p>
-  </div></body></html>`
+  const blocks: EmailBlock[] = [
+    { type: 'stats', tiles },
+    { type: 'list', items: extra.map(x => ({ title: x })) },
+    ...(needs.length ? [{ type: 'heading', text: 'What they brought to you' } as EmailBlock, ...needs] : []),
+    ...(suggestions.length ? [
+      { type: 'heading', text: 'Ready for more freedom' } as EmailBlock,
+      { type: 'cards', items: suggestions.slice(0, 3).map(s => ({ title: s.title, detail: s.detail })) } as EmailBlock,
+      { type: 'text', small: true, text: 'Your team approved these almost every time without changes. One tap on the Results page lets the agent do them on its own, within your limits.' } as EmailBlock,
+    ] : []),
+    ...(worth ? [{ type: 'heading', text: 'Worth a look' } as EmailBlock, { type: 'text', text: worth } as EmailBlock] : []),
+  ]
 
-  const text = [
-    `Here’s what your agents did — ${companyName}, last 7 days`,
-    `Sent on their own: ${c.sentOnOwn}`,
-    `Approved as written: ${asIsPct == null ? '—' : `${asIsPct}%`}`,
-    `Brought to you: ${brought}`,
-    won ? `Won back: ${money(won)}` : '',
-    ...extra,
-    waiting ? `${waiting} waiting for your approval.` : '',
-    ...r.exceptions.slice(0, 5).map(e => `- ${ROLE_NAMES[e.role] || e.role}: ${e.summary}`),
-    ...suggestions.slice(0, 3).map(s => `Ready for more freedom: ${s.title} — ${s.detail}`),
-    `See all results: ${base}/admin/agents/results`,
-  ].filter(Boolean).join('\n')
+  const { html, text } = colvyEmail({
+    preheader: `${handled} handled, ${brought} brought to you${waiting ? `, ${waiting} waiting for your approval` : ''}.`,
+    kicker: `${companyName} · last 7 days`,
+    title: 'Here’s what your agents did',
+    blocks,
+    cta: { label: 'See all results', url: `${base}/admin/agents/results` },
+    footerNote: `You get this because Colvy agents worked for ${companyName} this week. Switch it off on Agents → Results.`,
+  })
+
   return { subject, html, text }
 }
 

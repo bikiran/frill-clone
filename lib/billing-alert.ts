@@ -56,10 +56,12 @@ async function notifyColvyTeam(db: any, message: string) {
 async function emailColvyTeam(subject: string, text: string) {
   const key = process.env.RESEND_API_KEY
   if (!key) return
+  const { colvyTeamAlertEmail } = await import('@/lib/colvy-account-emails')
+  const mail = colvyTeamAlertEmail(subject, text)
   const res = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ from: 'Colvy <noreply@updates.colvy.com>', to: [COLVY_CONTACT.email], subject, text }),
+    body: JSON.stringify({ from: 'Colvy <noreply@updates.colvy.com>', to: [COLVY_CONTACT.email], subject, html: mail.html, text: mail.text }),
   })
   if (!res.ok) console.error('[billing-alert] email failed', res.status)
 }
