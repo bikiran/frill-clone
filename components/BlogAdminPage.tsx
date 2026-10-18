@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { renderMarkdown } from '@/lib/markdown'
+import { BLOG_PROSE_CSS } from '@/components/blog-prose-css'
 import { confirmDialog } from '@/components/ConfirmDialog'
 
 // Super-admin blog CMS: list, create, edit, publish/unpublish and delete the
@@ -169,7 +170,7 @@ export default function BlogAdminPage() {
             </div>
           </div>
         </div>
-        <style>{`@media (max-width: 860px){ .blogadmin-grid{ grid-template-columns: 1fr !important; } }`}</style>
+        <style>{`@media (max-width: 860px){ .blogadmin-grid{ grid-template-columns: 1fr !important; } }${BLOG_PROSE_CSS}`}</style>
       </div>
     )
   }
