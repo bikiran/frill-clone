@@ -171,6 +171,7 @@ export default function UpgradePage() {
               <span className="px-1.5 py-0.5 rounded text-xs font-bold" style={{ background: '#dcfce7', color: '#16a34a' }}>Save 20%</span>
             </button>
           </div>
+          <p className="text-xs mt-2" style={{ color: 'var(--slate)' }}>Prices in Australian dollars, including GST.</p>
         </div>
 
         {/* Pricing cards */}
@@ -203,7 +204,7 @@ export default function UpgradePage() {
                   <h2 className="text-xl font-black mb-3" style={{ color: 'var(--ink)' }}>{tier.name}</h2>
                   {p !== null ? (
                     <div className="flex items-end gap-1">
-                      <span className="text-4xl font-black" style={{ color: tier.color }}>${p}</span>
+                      <span className="text-4xl font-black" style={{ color: tier.color }}>A${p}</span>
                       <span className="text-sm mb-1.5" style={{ color: 'var(--slate)' }}>
                         /{billing === 'annual' ? 'mo · billed annually' : 'month'}
                       </span>
@@ -215,7 +216,7 @@ export default function UpgradePage() {
                   )}
                   {billing === 'annual' && tier.price && tier.annualPrice && (
                     <p className="text-xs mt-1" style={{ color: '#16a34a' }}>
-                      Save ${(tier.price - tier.annualPrice) * 12}/year
+                      Save A${(tier.price - tier.annualPrice) * 12}/year
                     </p>
                   )}
                 </div>

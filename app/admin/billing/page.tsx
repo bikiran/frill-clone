@@ -9,35 +9,24 @@ import { track } from '@/lib/analytics'
 import { alertDialog } from '@/components/ConfirmDialog'
 import { showBillingUnavailable } from '@/components/BillingUnavailable'
 
-// Currency rates relative to USD
-const CURRENCY_RATES: Record<string, { rate: number; symbol: string; label: string }> = {
-  USD: { rate: 1,      symbol: '$',  label: 'USD – US Dollar' },
-  AUD: { rate: 1.55,   symbol: 'A$', label: 'AUD – Australian Dollar' },
-  EUR: { rate: 0.92,   symbol: '€',  label: 'EUR – Euro' },
-  GBP: { rate: 0.79,   symbol: '£',  label: 'GBP – British Pound' },
-  CAD: { rate: 1.36,   symbol: 'C$', label: 'CAD – Canadian Dollar' },
-  NZD: { rate: 1.63,   symbol: 'NZ$',label: 'NZD – New Zealand Dollar' },
-  SGD: { rate: 1.34,   symbol: 'S$', label: 'SGD – Singapore Dollar' },
-  JPY: { rate: 157,    symbol: '¥',  label: 'JPY – Japanese Yen' },
-  INR: { rate: 83.5,   symbol: '₹',  label: 'INR – Indian Rupee' },
-}
-
 // Mirrors the modular plans on /pricing and /upgrade. Each id is a Stripe checkout
-// tier (see app/api/stripe/create-checkout/route.ts PRICE_IDS). Base prices are in
-// USD; the currency selector converts. Annual is billed yearly (per-month shown).
+// tier (see lib/billing-config.ts). Prices are the Australian dollar amounts
+// the Stripe prices are set to (GST inclusive), shown as-is: no conversion, so
+// what this page says is what Stripe charges. Annual is billed yearly; the
+// per-month figure is the yearly price / 12.
 const PLANS = [
   {
-    id: 'feedback', name: 'Feedback', usdMonthly: 39, usdAnnual: 348, color: '#7c5cff',
+    id: 'feedback', name: 'Feedback', monthly: 39, annual: 348, color: '#7c5cff',
     desc: 'For product & feedback teams',
     features: ['Unlimited ideas & voting', 'Polls, surveys & forms', 'Private + public roadmaps', 'Unlimited help articles', 'Remove Colvy branding', 'Unlimited team members'],
   },
   {
-    id: 'omnichannel', name: 'Inbox', usdMonthly: 179, usdAnnual: 1788, color: '#2b59ff',
+    id: 'omnichannel', name: 'Inbox', monthly: 179, annual: 1788, color: '#2b59ff',
     desc: 'For sales & support teams',
     features: ['Live chat inbox', 'Contacts & CRM', 'WhatsApp, SMS & voice calls', '3,000 SMS / month included', 'WooCommerce sync', 'Unlimited team members'],
   },
   {
-    id: 'everything', name: 'Everything', usdMonthly: 259, usdAnnual: 2508, color: 'var(--coral)', highlighted: true,
+    id: 'everything', name: 'Everything', monthly: 259, annual: 2508, color: 'var(--coral)', highlighted: true,
     desc: 'The full Colvy platform',
     features: ['Feedback suite + Inbox', 'White-label & custom domain', 'Advanced analytics', 'AI writing assistant', 'Unlimited team members', 'Priority support'],
   },
@@ -167,11 +156,9 @@ export default function BillingPage() {
   const [subscription, setSubscription] = useState<any>(null)
   const [billingHistory, setBillingHistory] = useState<any[]>([])
   const [billing, setBilling] = useState<'monthly' | 'annual'>('annual')
-  const [currency, setCurrency] = useState('USD')
   const [loading, setLoading] = useState<string | null>(null)
   const [pageLoading, setPageLoading] = useState(true)
   const [portalLoading, setPortalLoading] = useState(false)
-  const [showCurrencyMenu, setShowCurrencyMenu] = useState(false)
   const [shopifyBilling, setShopifyBilling] = useState<any>(null)
   // The $5 branding add-on (lib/branding-addon): granted as a removeBranding
   // override in company_entitlements once Stripe confirms the payment.
@@ -249,19 +236,6 @@ export default function BillingPage() {
         } catch {}
       }
 
-      // Detect currency from timezone
-      try {
-        const tz = Intl.DateTimeFormat().resolvedOptions().timeZone
-        if (tz.includes('Australia')) setCurrency('AUD')
-        else if (tz.includes('Europe')) setCurrency('EUR')
-        else if (tz.includes('London')) setCurrency('GBP')
-        else if (tz.includes('Asia/Tokyo')) setCurrency('JPY')
-        else if (tz.includes('Asia/Kolkata')) setCurrency('INR')
-        else if (tz.includes('Asia/Singapore')) setCurrency('SGD')
-        else if (tz.includes('Pacific/Auckland')) setCurrency('NZD')
-        else if (tz.includes('Canada') || tz.includes('America/Toronto') || tz.includes('America/Vancouver')) setCurrency('CAD')
-      } catch {}
-
       // Funnel: distinguish a return from Stripe checkout (?success=1) from an
       // ordinary visit to the plans page.
       try {
@@ -276,13 +250,11 @@ export default function BillingPage() {
     })
   }, [router])
 
-  const cur = CURRENCY_RATES[currency] || CURRENCY_RATES.USD
-
-  // The symbol already says which currency (A$, NZ$, €…), so prices read
-  // "A$324/mo", never "A$324 /AUD/mo".
-  const formatPrice = (usd: number) => {
-    const converted = Math.round(usd * cur.rate)
-    return `${cur.symbol}${converted.toLocaleString('en-AU')}`
+  // Australian dollars, as the Stripe prices are: "A$39", "A$1,788".
+  const formatPrice = (aud: number) => `A$${aud.toLocaleString('en-AU')}`
+  const formatMoney = (amount: number, code?: string) => {
+    const c = String(code || 'aud').toUpperCase()
+    return c === 'AUD' ? `A$${amount.toFixed(2)}` : `${amount.toFixed(2)} ${c}`
   }
 
   const handleUpgrade = async (planId: string) => {
@@ -290,13 +262,14 @@ export default function BillingPage() {
     track('checkout_started', { tier: planId, billing })
     setLoading(planId)
     try {
-      // Plan subscriptions start a 14-day trial (no card up front); the branding
-      // add-on is a straight charge, not a trial.
+      // Plans take the card now and, while the workspace is still in its Colvy
+      // trial, first charge when that trial ends (create-checkout works out the
+      // date). The branding add-on is a straight charge, not a trial.
       const trial = planId !== 'branding_removal'
       const res = await authFetch('/api/stripe/create-checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id, companyId: company?.id, tier: planId, billing, email: user.email, currency, trial }),
+        body: JSON.stringify({ userId: user.id, companyId: company?.id, tier: planId, billing, email: user.email, currency: 'AUD', trial }),
       })
       const data = await res.json()
       if (data.setup) {
@@ -363,32 +336,6 @@ export default function BillingPage() {
         </div>
 
         <div className="flex items-center gap-3">
-          {/* Currency selector */}
-          <div className="relative">
-            <button onClick={() => setShowCurrencyMenu(!showCurrencyMenu)}
-              className="flex items-center gap-2 px-3 py-2 rounded-xl border text-sm font-medium cursor-pointer hover:bg-gray-50"
-              style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
-              {cur.symbol} {currency}
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 12 15 18 9"/></svg>
-            </button>
-            {showCurrencyMenu && (
-              <>
-                <div className="fixed inset-0 z-10" onClick={() => setShowCurrencyMenu(false)} />
-                <div className="absolute right-0 top-full mt-1 w-52 bg-white rounded-xl shadow-xl border z-20 py-1 overflow-hidden" style={{ borderColor: 'var(--border)' }}>
-                  {Object.entries(CURRENCY_RATES).map(([code, info]) => (
-                    <button key={code} onClick={() => { setCurrency(code); setShowCurrencyMenu(false) }}
-                      className="w-full flex items-center gap-2 px-4 py-2.5 text-sm cursor-pointer hover:bg-gray-50 text-left"
-                      style={{ background: currency === code ? 'var(--peach)' : 'white', color: currency === code ? 'var(--coral)' : 'var(--ink)', fontWeight: currency === code ? 600 : 400 }}>
-                      <span className="font-mono w-6">{info.symbol}</span>
-                      <span>{code}</span>
-                      <span className="text-xs ml-auto" style={{ color: 'var(--slate)' }}>{info.label.split(' – ')[1]}</span>
-                    </button>
-                  ))}
-                </div>
-              </>
-            )}
-          </div>
-
           {/* Manage billing portal */}
           {isPaid && subscription?.stripe_customer_id && (
             <button onClick={handleManageBilling} disabled={portalLoading}
@@ -485,11 +432,12 @@ export default function BillingPage() {
           <span className="ml-1.5 px-1.5 py-0.5 rounded-full text-xs font-bold" style={{ background: '#dcfce7', color: '#16a34a' }}>Save 20%</span>
         </span>
       </div>
+      <p className="text-center text-xs -mt-5 mb-8" style={{ color: 'var(--slate)' }}>Prices in Australian dollars, including GST.</p>
 
       {/* Plan cards */}
       <div className="grid md:grid-cols-3 gap-5 mb-10">
         {PLANS.map(plan => {
-          const price = billing === 'monthly' ? plan.usdMonthly : Math.round(plan.usdAnnual / 12)
+          const price = billing === 'monthly' ? plan.monthly : Math.round(plan.annual / 12)
           const active = isOnPlan(plan.id)
           return (
             <div key={plan.id} className="rounded-2xl border overflow-hidden"
@@ -511,7 +459,7 @@ export default function BillingPage() {
                 </div>
                 {billing === 'annual' && (
                   <p className="text-xs mb-4" style={{ color: '#16a34a' }}>
-                    {formatPrice(plan.usdAnnual)} billed annually
+                    {formatPrice(plan.annual)} billed annually
                   </p>
                 )}
                 <div className="space-y-2.5 mb-6 mt-4">
@@ -547,11 +495,7 @@ export default function BillingPage() {
           </div>
           <div className="md:text-right shrink-0">
             <div className="text-xl font-black mb-1" style={{ color: 'var(--ink)' }}>
-              {/* Flat 5 in the shown currency — the branding add-on's Stripe price
-                  is a fixed 5 (A$5), NOT a USD→local conversion, so don't run it
-                  through formatPrice (which was showing A$8 while Stripe charged
-                  A$5 and the button said +$5). */}
-              {cur.symbol}5<span className="text-sm font-normal" style={{ color: 'var(--slate)' }}>/mo</span>
+              A$5<span className="text-sm font-normal" style={{ color: 'var(--slate)' }}>/mo</span>
             </div>
             {brandingIncluded ? (
               <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold" style={{ background: '#dcfce7', color: '#16a34a' }}><CheckIcon />Included</span>
@@ -575,7 +519,7 @@ export default function BillingPage() {
               disabled={loading === 'branding_removal'}
               className="px-4 py-2 rounded-xl text-sm font-bold cursor-pointer disabled:opacity-60 transition-all hover:opacity-90"
               style={{ background: 'var(--coral)', color: '#fff' }}>
-              {loading === 'branding_removal' ? 'Redirecting...' : `Add for +${cur.symbol}5/mo`}
+              {loading === 'branding_removal' ? 'Redirecting...' : 'Add for +A$5/mo'}
             </button>
             )}
           </div>
@@ -655,7 +599,7 @@ export default function BillingPage() {
                       {inv.description || 'Subscription'}
                     </td>
                     <td className="py-3 px-3 font-medium" style={{ color: 'var(--ink)' }}>
-                      {cur.symbol}{((inv.amount_paid / 100) * cur.rate).toFixed(2)} {currency}
+                      {formatMoney(inv.amount_paid / 100, inv.currency)}
                     </td>
                     <td className="py-3 px-3">
                       <span className="px-2 py-0.5 rounded-full text-xs font-semibold capitalize"

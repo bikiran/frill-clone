@@ -77,11 +77,27 @@ export async function POST(req: NextRequest) {
 
     const origin = req.headers.get('origin') || 'https://colvy.com'
 
-    // "Start free trial" (marketing CTAs) starts a 14-day trial with no card up
-    // front — matching the pricing promise. A plain upgrade collects the card now.
-    const trialParams: any = trial
-      ? { subscription_data: { trial_period_days: 14 }, payment_method_collection: 'if_required' }
-      : {}
+    // Checkout always takes the card. A workspace still in its Colvy trial
+    // isn't charged until that trial ends (Stripe trial_end = the company's
+    // trial_ends_at), so choosing a plan early never stacks a second 14 days
+    // and the first charge lands when the trial they signed up for runs out.
+    // Past the trial (or no trial on record), the first payment is taken now.
+    // With 'if_required' and a fresh 14 days, Stripe asked for an email only,
+    // so trials ended with no card on file and nothing to charge.
+    let trialEnd: number | null = null
+    if (trial) {
+      try {
+        const q = db.from('companies').select('trial_ends_at').limit(1)
+        const { data } = await (companyId ? q.eq('id', companyId) : q.eq('owner_id', userId))
+        const ends = Date.parse(String(data?.[0]?.trial_ends_at || ''))
+        // Stripe needs trial_end at least 48 hours out; a shorter remainder is charged now.
+        if (Number.isFinite(ends) && ends - Date.now() > 48 * 3600_000) trialEnd = Math.floor(ends / 1000)
+      } catch {}
+    }
+    const trialParams: any = {
+      payment_method_collection: 'always',
+      ...(trialEnd ? { subscription_data: { trial_end: trialEnd, trial_settings: { end_behavior: { missing_payment_method: 'cancel' } } } } : {}),
+    }
 
     // The branding add-on is its own subscription on top of whatever plan the
     // workspace has. Tag it (session AND subscription metadata) so the webhook
