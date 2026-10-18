@@ -63,7 +63,7 @@ export default function CrmSettingsLayout({ children }: { children: React.ReactN
     email: 'Email', telnyx: 'SMS & Calls', calls: 'SMS & Calls', 'google-reviews': 'Google Reviews',
     instagram: 'Instagram', facebook: 'Messenger', whatsapp: 'WhatsApp',
     meta: 'Facebook & Instagram', 'web-form': 'Web Form', realestate: 'RealEstate',
-    'chat-widget': 'Chat Widget',
+    'chat-widget': 'Chat Widget', 'sending-domain': 'Email sending domain',
   }
   const channelMatch = pathname?.match(/\/crm-settings\/channels\/([^/?#]+)/)
   const channelSlug = channelMatch?.[1] || null

@@ -15,6 +15,9 @@ const CHANNELS = [
   { id: 'email',     name: 'Email',            color: '#EA4335', icon: 'M',
     href: '/admin/crm-settings/channels/email', ready: true,
     note: 'Customers email you; replies thread back.' },
+  { id: 'sending_domain', name: 'Email sending domain', color: '#7C3AED', icon: '@',
+    href: '/admin/crm-settings/channels/sending-domain', ready: true,
+    note: 'Send campaign email from your own domain.' },
   { id: 'webform',   name: 'Web Form',         color: '#0EA5E9', icon: '▤',
     href: '/admin/crm-settings/channels/web-form', ready: true,
     note: 'Point your website forms at a per-location address.' },
@@ -52,13 +55,15 @@ export default function ChannelsSettings() {
       const status: Record<string, boolean> = {}
       // Each channel's check is independent — ask them all at once.
       const q = (p: any) => Promise.resolve(p).then((r: any) => r?.data ?? null).catch(() => null)
-      const [telnyx, twilio, email, google, realestate, meta] = await Promise.all([
+      const [telnyx, twilio, email, google, realestate, meta, sending] = await Promise.all([
         q((supabase as any).from('telnyx_integrations').select('api_key, phone_number').eq('company_id', companyId).maybeSingle()),
         q((supabase as any).from('twilio_integrations').select('account_sid, phone_number').eq('company_id', companyId).maybeSingle()),
         q((supabase as any).from('email_channels').select('id, provider').eq('company_id', companyId).eq('is_active', true).limit(50)),
         q((supabase as any).from('google_business_accounts').select('access_token').eq('company_id', companyId).maybeSingle()),
         q((supabase as any).from('realestate_integrations').select('is_active').eq('company_id', companyId).maybeSingle()),
         q(supabase.from('meta_channels').select('platform').eq('company_id', companyId).eq('is_active', true).limit(50)),
+        // Staff may read their own sending domains (V396); null before it runs.
+        q((supabase as any).from('email_sending_domains').select('status').eq('company_id', companyId).eq('status', 'verified').limit(1)),
       ])
 
       // SMS / Calls — a number on Twilio (below), or a legacy Telnyx integration.
@@ -80,6 +85,9 @@ export default function ChannelsSettings() {
       status.google = !!google?.access_token
       // RealEstate — an active realestate.com.au integration.
       status.realestate = !!realestate?.is_active
+
+      // Email sending domain — a verified domain of the business's own.
+      status.sending_domain = ((sending || []) as any[]).length > 0
 
       // The chat widget is always available.
       status.web_form = true
