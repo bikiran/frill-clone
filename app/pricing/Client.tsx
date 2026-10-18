@@ -188,7 +188,7 @@ export default function PricingPage() {
         {/* Fair-use footnote */}
         <Reveal>
           <p style={{ maxWidth: 900, margin: '26px auto 0', fontSize: 12.5, lineHeight: 1.65, color: muted, textAlign: 'center' }}>
-            *SMS fair use policy applies. The base package includes up to 3,000 SMS per month. Usage charges apply beyond this allowance and vary based on volume — most Australian 🇦🇺 SMBs can expect approximately 5c per standard SMS. SMS marketing campaigns and international messaging are billed separately. Voice call minutes are metered — <a href="mailto:support@colvy.com" onClick={(e) => { e.preventDefault(); setContactPlan('High-volume calls') }} style={{ color: CORAL, textDecoration: 'none', fontWeight: 600, cursor: 'pointer' }}>contact us</a> for high-volume call rates.
+            *The Inbox and Everything plans include 3,000 SMS per month. Texts beyond the monthly allowance use prepaid SMS credits, from A$0.15 per text and cheaper in volume (down to A$0.105). Top up by card from A$20, with optional auto top-up, so there’s never a surprise bill. A text longer than 160 characters counts as more than one. International messaging is priced separately. Voice call minutes are metered — <a href="mailto:support@colvy.com" onClick={(e) => { e.preventDefault(); setContactPlan('High-volume calls') }} style={{ color: CORAL, textDecoration: 'none', fontWeight: 600, cursor: 'pointer' }}>contact us</a> for high-volume call rates.
           </p>
         </Reveal>
       </section>

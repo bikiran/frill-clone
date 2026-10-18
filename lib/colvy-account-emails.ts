@@ -167,6 +167,26 @@ export function newReviewEmail(o: { business: string; reviewer?: string | null; 
   return { subject: `${o.reviewer || 'Someone'} left a ${n ? `${n}-star ` : ''}review for ${o.business}`, html, text }
 }
 
+// ── SMS credits: auto top-up switched off (lib/sms-credits) ─────────────────
+
+export function smsAutoTopUpOffEmail(o: { business: string; error: string; balanceCents: number; billingUrl: string }): Mail {
+  const balance = `A$${((Number(o.balanceCents) || 0) / 100).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  const { html, text } = colvyEmail({
+    preheader: `We couldn’t charge your card twice, so auto top-up is off. Balance: ${balance}.`,
+    kicker: o.business,
+    title: 'Auto top-up for SMS credits is off',
+    intro: [
+      `We tried twice to top up ${o.business}’s SMS credits with the saved card, and both payments failed. So you’re not charged by surprise later, auto top-up is now switched off.`,
+      'Texts within your plan’s monthly allowance still go out. Texts beyond it need credit, so top up to keep campaigns and replies going.',
+    ],
+    blocks: [{ type: 'facts', rows: [['SMS balance', balance], ['What happened', o.error || 'The card was declined.']] }],
+    cta: { label: 'Top up SMS credits', url: o.billingUrl },
+    secondary: 'You can save a new card and switch auto top-up back on from the same page.',
+    footerNote: `You’re receiving this because you own ${o.business} on Colvy.`,
+  })
+  return { subject: 'Auto top-up for SMS credits is off', html, text }
+}
+
 // ── Colvy team alerts (lib/billing-alert) ───────────────────────────────────
 
 export function colvyTeamAlertEmail(subject: string, text: string): Mail {
