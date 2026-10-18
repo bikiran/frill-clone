@@ -97,7 +97,7 @@ export default function BlogArticleView({ article, related, recent, url }: { art
           {a.takeaways.length > 0 && (
             <div style={{ marginTop: 34, padding: '22px 24px', borderRadius: 16, background: 'var(--blog-surface)', border: `1px solid var(--blog-border)` }}>
               <p style={{ margin: '0 0 12px', fontSize: 13, fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase', color: a.accent }}>Key takeaways</p>
-              <ul style={{ margin: 0, paddingLeft: 20, display: 'grid', gap: 8 }}>
+              <ul style={{ margin: 0, paddingLeft: 20, display: 'grid', gap: 8, listStyle: 'disc' }}>
                 {a.takeaways.map((t, i) => <li key={i} style={{ fontSize: 15.5, lineHeight: 1.5 }}>{t}</li>)}
               </ul>
             </div>
