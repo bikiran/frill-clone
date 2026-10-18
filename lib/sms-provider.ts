@@ -12,6 +12,7 @@
 import { TelnyxService, toE164 } from './telnyx-service'
 import { TwilioService } from './twilio-service'
 import { assertSmsAllowed, recordSmsSent } from './sms-quota'
+import { analyseSms } from './sms-segments'
 
 export type SmsProvider = 'telnyx' | 'twilio'
 
@@ -78,6 +79,11 @@ export async function getSmsProvider(db: any, companyId: string): Promise<SmsPro
   return 'twilio'
 }
 
+// The provider sender with E.164 normalisation only (see resolveSmsSender).
+function unmetered(base: SmsSender): SmsSender {
+  return { ...base, send: (p: SmsSendParams) => base.send({ ...p, to: toE164(p.to || '') || p.to }) }
+}
+
 // Wrap a sender so every send passes the plan/allowance gate first and a
 // successful send is counted against the month. This is the single choke point:
 // the composer, campaigns (which POST to /api/telnyx/sms/send), auto-replies and
@@ -92,14 +98,27 @@ function meteredSender(db: any, companyId: string, base: SmsSender): SmsSender {
       // and routes that swallow send errors (media requests) showed the link
       // in the thread while the customer never got it.
       const result = await base.send({ ...p, to: toE164(p.to || '') || p.to })
-      recordSmsSent(db, companyId, 1).catch(() => {})
+      // Counted in parts, as the carrier bills: a 2-segment text uses 2.
+      recordSmsSent(db, companyId, smsParts(p.text)).catch(() => {})
       return result
     },
   }
 }
 
-/** Build the active SMS sender for a company, or null if none is configured. */
-export async function resolveSmsSender(db: any, companyId: string): Promise<SmsSender | null> {
+/** Billable parts for one text (at least 1, so a bare picture message counts). */
+export function smsParts(text: string | null | undefined): number {
+  return Math.max(1, analyseSms(text || '').segments || 1)
+}
+
+/**
+ * Build the active SMS sender for a company, or null if none is configured.
+ *
+ * `metered: false` hands back the provider sender without the allowance gate
+ * and counter: only for a caller that meters every send itself (the campaign
+ * sender reserves each text's parts against the allowance before sending it).
+ */
+export async function resolveSmsSender(db: any, companyId: string, opts: { metered?: boolean } = {}): Promise<SmsSender | null> {
+  const meter = (base: SmsSender): SmsSender => opts.metered === false ? unmetered(base) : meteredSender(db, companyId, base)
   const provider = await getSmsProvider(db, companyId)
 
   if (provider === 'twilio') {
@@ -112,7 +131,7 @@ export async function resolveSmsSender(db: any, companyId: string): Promise<SmsS
     if (usable) {
       const svc = new TwilioService(t.account_sid, t.auth_token)
       const from = t.phone_number || ''
-      return meteredSender(db, companyId, {
+      return meter({
         provider: 'twilio',
         from,
         supportsMms: true,
@@ -143,7 +162,7 @@ export async function resolveSmsSender(db: any, companyId: string): Promise<SmsS
   const { data: integ } = await db.from('telnyx_integrations').select('*').eq('company_id', companyId).maybeSingle()
   if (integ?.api_key && integ.phone_number) {
     const svc = new TelnyxService(integ.api_key)
-    return meteredSender(db, companyId, {
+    return meter({
       provider: 'telnyx',
       from: integ.phone_number,
       supportsMms: false,

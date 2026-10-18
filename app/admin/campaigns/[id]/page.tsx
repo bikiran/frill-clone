@@ -7,6 +7,9 @@ import { peekCompanyUser, resolveCompanyUser } from '@/lib/client-cache'
 import { SkeletonList } from '@/components/Skeleton'
 import EmojiPicker from '@/components/EmojiPicker'
 import { analyseSms, renderVariables, SMS_VARIABLES } from '@/lib/sms-segments'
+import { audienceFilterProblem, stableJson } from '@/lib/campaign-audience-rules'
+import { allowanceProblem, type SmsAllowanceSummary } from '@/lib/sms-allowance'
+import { latestOnly, isAbort } from '@/lib/latest-request'
 import { calculateCost, DEFAULT_PRICING, SmsPricing, aud, audRate, resolveSmsPricing } from '@/lib/sms-pricing'
 import { confirmDialog } from '@/components/ConfirmDialog'
 import { authFetch } from '@/lib/auth-fetch'
@@ -32,6 +35,19 @@ const SKIP_LABEL: Record<string, string> = {
   blocked: 'are blocked',
   invalid_number: 'have no valid mobile number',
   duplicate: 'are duplicates',
+}
+
+/** A count that greys out (keeping the last figure) while it's being worked out. */
+function Count({ n, busy }: { n: number | null | undefined; busy: boolean }) {
+  return (
+    <span style={{ color: busy ? '#9ca3af' : undefined, transition: 'color .15s' }}>
+      {n == null ? '\u2014' : n.toLocaleString()}
+    </span>
+  )
+}
+
+function Calculating() {
+  return <span style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--slate)', marginLeft: 6, textTransform: 'none', letterSpacing: 0 }}>Calculating…</span>
 }
 
 export default function CampaignEditorPage() {
@@ -64,8 +80,17 @@ export default function CampaignEditorPage() {
   const [pickResults, setPickResults] = useState<any[]>([])
   const [pickBusy, setPickBusy] = useState(false)
   const [picked, setPicked] = useState<any[]>([])
+  // Every hand-picked id. The chips above show at most 200 names, so the
+  // filter must not be rebuilt from them — that quietly dropped the rest.
+  const [manualIds, setManualIds] = useState<string[]>([])
 
   const [preview, setPreview] = useState<any>(null)
+  // The audience as saved on the campaign — what the sender will use. Steps
+  // 3, 5 and 6 show these numbers, never the unsaved in-memory filter.
+  const [savedKey, setSavedKey] = useState<string>('')
+  const [saved, setSaved] = useState<any>(null)
+  const [savedLoading, setSavedLoading] = useState(false)
+  const [stepError, setStepError] = useState('')
   // Message composer (step 3)
   const [message, setMessage] = useState('')
   const [showEmoji, setShowEmoji] = useState(false)
@@ -106,6 +131,8 @@ export default function CampaignEditorPage() {
   const [previewing, setPreviewing] = useState(false)
   const [previewError, setPreviewError] = useState('')
   const debounce = useRef<any>(null)
+  const previewReq = useRef(latestOnly())
+  const savedReq = useRef(latestOnly())
 
   useEffect(() => {
     ;(async () => {
@@ -173,7 +200,8 @@ export default function CampaignEditorPage() {
             }
           }
           const f = c.audience_filter || {}
-          setAudType(c.audience_type || 'all_subscribed')
+          setSavedKey(f.type ? stableJson(f) : '')
+          setAudType(f.type || c.audience_type || 'all_subscribed')
           if (f.segment) setSegment(f.segment)
           if (f.productQuery) setProductQuery(f.productQuery)
           if (f.lapsedDays) setLapsedDays(f.lapsedDays)
@@ -182,6 +210,7 @@ export default function CampaignEditorPage() {
           if (f.campaignId) setPriorCampaign(f.campaignId)
           if (f.minSpend != null) setMinSpend(String(f.minSpend))
           if (f.minOrders != null) setMinOrders(String(f.minOrders))
+          if (Array.isArray(f.contactIds)) setManualIds(f.contactIds.filter(Boolean))
           if (Array.isArray(f.contactIds) && f.contactIds.length) {
             const { data: pc } = await (supabase as any).from('contacts')
               .select('id, name, phone, email').in('id', f.contactIds.slice(0, 200))
@@ -198,51 +227,119 @@ export default function CampaignEditorPage() {
   const buildFilter = useCallback(() => {
     const f: any = { type: audType }
     if (audType === 'segment') f.segment = segment
-    if (audType === 'purchased_category') f.productQuery = productQuery
+    if (audType === 'purchased_category') f.productQuery = productQuery.trim()
     if (audType === 'lapsed') f.lapsedDays = lapsedDays
     if (audType === 'outlet') f.locationId = locationId
     if (audType === 'tags') f.tags = tags
     if (audType === 'clicked_campaign' && priorCampaign) f.campaignId = priorCampaign
-    if (audType === 'manual') f.contactIds = picked.map(p => p.id)
-    if (minSpend) f.minSpend = parseFloat(minSpend)
-    if (minOrders) f.minOrders = parseInt(minOrders)
+    if (audType === 'manual') f.contactIds = manualIds
+    if (minSpend && Number.isFinite(parseFloat(minSpend))) f.minSpend = parseFloat(minSpend)
+    if (minOrders && Number.isFinite(parseInt(minOrders))) f.minOrders = parseInt(minOrders)
     return f
-  }, [audType, segment, productQuery, lapsedDays, locationId, tags, priorCampaign, minSpend, minOrders, picked])
+  }, [audType, segment, productQuery, lapsedDays, locationId, tags, priorCampaign, minSpend, minOrders, manualIds])
+
+  const currentFilter = buildFilter()
+  const currentKey = stableJson(currentFilter)
+  // An unfinished filter matches nobody — say what's missing instead.
+  const filterProblem = audienceFilterProblem(currentFilter)
+  const audienceDirty = currentKey !== savedKey
 
   // Live recipient count, debounced so typing doesn't hammer the endpoint.
+  // Only the newest request's answer is used (latestOnly), and nothing is
+  // asked until the campaign row has loaded — otherwise a first "everyone"
+  // request raced the saved filter.
   useEffect(() => {
-    if (!companyId) return
+    if (!companyId || !campaign) return
     clearTimeout(debounce.current)
+    if (filterProblem) {
+      previewReq.current.cancel()
+      setPreviewing(false); setPreviewError('')
+      setPreview({ incomplete: filterProblem, recipients: 0, matched: 0, excludedTotal: 0, excluded: {}, sample: [] })
+      return
+    }
     debounce.current = setTimeout(async () => {
+      const ticket = previewReq.current.start()
       setPreviewing(true); setPreviewError('')
       try {
         const res = await authFetch('/api/campaigns/audience', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ companyId, filter: buildFilter(), channel: campaign?.channel || 'sms' }),
+          body: JSON.stringify({ companyId, filter: JSON.parse(currentKey), channel: campaign?.channel || 'sms' }),
+          signal: ticket.signal,
         })
         const d = await res.json()
+        if (!ticket.isCurrent()) return
         if (!res.ok) throw new Error(d.error || 'Could not work out the audience')
         setPreview(d)
-      } catch (e: any) { setPreviewError(e.message); setPreview(null) }
-      finally { setPreviewing(false) }
+      } catch (e: any) {
+        if (isAbort(e) || !ticket.isCurrent()) return
+        setPreviewError(e.message); setPreview(null)
+      } finally { if (ticket.isCurrent()) setPreviewing(false) }
     }, 450)
     return () => clearTimeout(debounce.current)
-  }, [companyId, buildFilter, audType, campaign?.channel])
+  }, [companyId, currentKey, filterProblem, !!campaign, campaign?.channel])
 
-  const saveAudience = async () => {
-    if (!campaignId) return
-    setSaving(true)
+  // The saved audience (and the month's SMS allowance), for steps 3, 5 and 6.
+  const loadSaved = useCallback(async () => {
+    if (!companyId || !campaignId) return
+    const ticket = savedReq.current.start()
+    setSavedLoading(true)
     try {
-      await (supabase as any).from('campaigns').update({
-        audience_type: audType,
-        audience_filter: buildFilter(),
-        audience_count: preview?.recipients || 0,
-        excluded_count: preview?.excludedTotal || 0,
-        updated_at: new Date().toISOString(),
-      }).eq('id', campaignId)
+      const res = await authFetch('/api/campaigns/audience', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId, campaignId, saved: true }),
+        signal: ticket.signal,
+      })
+      const d = await res.json()
+      if (!ticket.isCurrent()) return
+      if (!res.ok) throw new Error(d.error || 'Could not work out the audience')
+      setSaved({ ...d, key: d.filter ? stableJson(d.filter) : '' })
+    } catch (e: any) {
+      if (isAbort(e) || !ticket.isCurrent()) return
+      setSaved({ error: e.message, key: '__error' })
+    } finally { if (ticket.isCurrent()) setSavedLoading(false) }
+  }, [companyId, campaignId])
+
+  useEffect(() => {
+    if (!companyId || !campaign || step === 2) return
+    if (saved && !saved.error && saved.key === savedKey) return
+    loadSaved()
+  }, [step, savedKey, companyId, !!campaign, loadSaved])
+
+  /** Save the audience through the server (which checks it's finished). */
+  const saveAudience = async (): Promise<boolean> => {
+    if (!campaignId || !companyId) return false
+    if (filterProblem) { setStepError(filterProblem); return false }
+    setSaving(true); setStepError('')
+    try {
+      const res = await authFetch('/api/campaigns/audience', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId, campaignId, filter: currentFilter, save: true }),
+      })
+      const d = await res.json()
+      if (!res.ok) throw new Error(d.error || 'Could not save the audience')
+      const key = stableJson(d.filter)
+      savedReq.current.cancel()
+      setSaved({ ...d, key })
+      setSavedKey(key)
+      setCampaign((c: any) => ({ ...c, audience_type: d.filter.type, audience_filter: d.filter, audience_count: d.recipients, excluded_count: d.excludedTotal }))
       setSavedAt(new Date().toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' }))
-    } catch (e: any) { alert('Could not save: ' + e.message) }
+      return true
+    } catch (e: any) { setStepError('Could not save the audience: ' + e.message); return false }
     finally { setSaving(false) }
+  }
+
+  /**
+   * Move between steps. Leaving the Audience step saves it (or stays put and
+   * says what's missing), so what the later steps show is what gets sent.
+   */
+  const goToStep = async (n: number) => {
+    if (n === step) return
+    if (step === 2) {
+      if (filterProblem) { setStepError(filterProblem); return }
+      if (audienceDirty && !(await saveAudience())) return
+    }
+    setStepError('')
+    setStep(n)
   }
 
   // ── Message composer ─────────────────────────────────────────────────────
@@ -252,8 +349,14 @@ export default function CampaignEditorPage() {
   // Cost is estimated on the RENDERED message, since variables change the
   // length — a long first name can push a borderline message to another segment.
   const renderedSms = analyseSms(previewText)
-  const recipients = preview?.recipients || 0
+  // Costs, the allowance check and the Review step use the SAVED audience —
+  // the numbers the sender will use — not whatever is half-chosen on step 2.
+  const savedReady = !!saved && !saved.error && !saved.incomplete
+  const recipients = savedReady ? (saved.recipients || 0) : 0
   const costing = calculateCost(pricing, renderedSms.segments, recipients)
+  const allowance: SmsAllowanceSummary | null = saved?.allowance || null
+  const partsNeeded = recipients * renderedSms.segments
+  const allowanceMsg = allowance && recipients > 0 ? allowanceProblem(allowance, partsNeeded) : null
   const cost = costing.totalIncGst
   const hasOptOut = /\bstop\b/i.test(message)
   const hasSender = /roxy|aquarium/i.test(message) || /\{\{store_name\}\}/.test(message)
@@ -452,29 +555,67 @@ export default function CampaignEditorPage() {
   }
 
   // ── Review & send (step 6) ───────────────────────────────────────────────
-  const readyProblems = (() => {
-    const out: string[] = []
-    if (!message.trim()) out.push('The message is empty')
-    if (recipients === 0) out.push('The audience has no recipients')
-    if (!hasOptOut) out.push('No unsubscribe instructions in the message')
-    if (!hasSender) out.push('The business isn\u2019t identified in the message')
-    if (sendMode === 'later' && !scheduledIso()) out.push('No send date chosen')
-    if (sendMode === 'later' && schedInPast) out.push('The scheduled time is in the past')
+  const checks: { text: string; blocking: boolean }[] = (() => {
+    const out: { text: string; blocking: boolean }[] = []
+    if (!message.trim()) out.push({ text: 'The message is empty', blocking: true })
+    if (saved?.error) out.push({ text: `Couldn\u2019t work out the saved audience: ${saved.error}`, blocking: true })
+    else if (saved?.incomplete) out.push({ text: saved.incomplete, blocking: true })
+    else if (savedReady && recipients === 0) out.push({ text: 'The audience has no recipients', blocking: true })
+    if (allowanceMsg) out.push({ text: allowanceMsg, blocking: true })
+    if (!hasOptOut) out.push({ text: 'No unsubscribe instructions in the message', blocking: false })
+    if (!hasSender) out.push({ text: 'The business isn\u2019t identified in the message', blocking: false })
+    if (sendMode === 'later' && !scheduledIso()) out.push({ text: 'No send date chosen', blocking: false })
+    if (sendMode === 'later' && schedInPast) out.push({ text: 'The scheduled time is in the past', blocking: true })
     return out
   })()
-  const blockers = readyProblems.filter(p =>
-    p.includes('empty') || p.includes('no recipients') || p.includes('in the past'))
+  const readyProblems = checks.map(c => c.text)
+  const blockers = checks.filter(c => c.blocking).map(c => c.text)
+  const cannotSendYet = blockers.length > 0 || !savedReady || savedLoading
+
+  /**
+   * Save everything on the page — message, links and offers, schedule options
+   * and (if it changed) the audience — before scheduling or sending, so the
+   * server works from exactly what's on screen.
+   */
+  const saveAll = async (): Promise<boolean> => {
+    if (audienceDirty) {
+      if (filterProblem) { setSendResult('Could not send: ' + filterProblem); return false }
+      if (!(await saveAudience())) return false
+    }
+    const atts: any[] = []
+    if (attachment) atts.push(attachment)
+    if (coupon) atts.push(coupon)
+    const { error } = await (supabase as any).from('campaigns').update({
+      message,
+      attachments: atts,
+      quiet_hours: quietHours,
+      send_local_time: localTime,
+      rate_per_minute: ratePerMin,
+      segments: renderedSms.segments,
+      price_per_part: costing.pricePerPart,
+      estimated_cost: costing.totalIncGst,
+      updated_at: new Date().toISOString(),
+    }).eq('id', campaignId)
+    if (error) { setSendResult('Could not save: ' + error.message); return false }
+    return true
+  }
 
   const scheduleCampaign = async () => {
-    if (!scheduledIso()) { alert('Pick a date and time first.'); return }
-    setSending(true)
+    if (!scheduledIso()) { setSendResult('Could not schedule: pick a date and time first.'); return }
+    setSending(true); setSendResult('')
     try {
-      await saveSchedule()
-      await (supabase as any).from('campaigns')
-        .update({ status: 'scheduled' }).eq('id', campaignId)
-      setSendResult(`Scheduled for ${new Date(scheduledIso()!).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}`)
-      setCampaign((c: any) => ({ ...c, status: 'scheduled' }))
-    } catch (e: any) { alert('Could not schedule: ' + e.message) }
+      if (!(await saveAll())) return
+      // The server checks the saved audience and the SMS allowance before
+      // queueing it, and again when the time comes.
+      const res = await authFetch('/api/campaigns/schedule', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId, campaignId, scheduledAt: scheduledIso() }),
+      })
+      const d = await res.json()
+      if (!res.ok) throw new Error(d.error || 'Could not schedule the campaign')
+      setSendResult(`Scheduled for ${new Date(d.scheduledAt).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}`)
+      setCampaign((c: any) => ({ ...c, status: 'scheduled', scheduled_at: d.scheduledAt, status_reason: null }))
+    } catch (e: any) { setSendResult('Could not schedule: ' + e.message) }
     finally { setSending(false) }
   }
 
@@ -483,20 +624,14 @@ export default function CampaignEditorPage() {
     // Spending money and messaging real people — make the numbers explicit.
     const ok = await confirmDialog(
       `You are about to send ${recipients.toLocaleString()} SMS messages ` +
+      `(${partsNeeded.toLocaleString()} texts of your allowance) ` +
       `at an estimated cost of ${aud(costing.totalIncGst)} (inc GST).\n\n` +
       `This cannot be undone once it starts.`
     )
     if (!ok) return
     setSending(true); setSendResult('')
     try {
-      // Persist the latest message and schedule before sending.
-      await (supabase as any).from('campaigns').update({
-        message, segments: renderedSms.segments,
-        price_per_part: costing.pricePerPart,
-        estimated_cost: costing.totalIncGst,
-        updated_at: new Date().toISOString(),
-      }).eq('id', campaignId)
-
+      if (!(await saveAll())) return
       const res = await authFetch('/api/campaigns/send', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ companyId, campaignId, confirm: 'SEND' }),
@@ -505,10 +640,28 @@ export default function CampaignEditorPage() {
       if (!res.ok) throw new Error(d.error || 'Could not start the send')
       setSendResult(
         `Sending to ${d.recipients.toLocaleString()} recipients` +
-        (d.excluded ? ` · ${d.excluded} excluded` : '')
+        (d.excluded ? ` · ${d.excluded.toLocaleString()} excluded` : '')
       )
       setTimeout(() => router.push(`/admin/campaigns/${campaignId}/report`), 1500)
     } catch (e: any) { setSendResult('Could not send: ' + e.message) }
+    finally { setSending(false) }
+  }
+
+  // A campaign that paused part-way (allowance used up, texting not set up).
+  const pausedMidSend = campaign?.status === 'paused' && Number(campaign?.recipients_total) > 0
+  const resumeSend = async () => {
+    if (!companyId) return
+    setSending(true); setSendResult('')
+    try {
+      const res = await authFetch('/api/campaigns/send', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId, campaignId, confirm: 'SEND', resume: true }),
+      })
+      const d = await res.json()
+      if (!res.ok) throw new Error(d.error || 'Could not resume the campaign')
+      setSendResult(`Resumed · ${Number(d.remaining || 0).toLocaleString()} still to send`)
+      setCampaign((c: any) => ({ ...c, status: 'sending', status_reason: null }))
+    } catch (e: any) { setSendResult('Could not resume: ' + e.message) }
     finally { setSending(false) }
   }
 
@@ -524,7 +677,7 @@ export default function CampaignEditorPage() {
   )
 
   return (
-    <div style={{ maxWidth: 1200, margin: '0 auto', padding: 24 }}>
+    <div style={{ padding: '24px 24px 40px', boxSizing: 'border-box', width: '100%' }} className="campaign-editor">
       <button onClick={() => router.push('/admin/campaigns')}
         style={{ border: 'none', background: 'none', color: 'var(--slate)', fontSize: 13, cursor: 'pointer', padding: 0, marginBottom: 12 }}>
         ← Back to campaigns
@@ -548,7 +701,7 @@ export default function CampaignEditorPage() {
           const done = n >= 2 && n <= 6
           const active = step === n
           return (
-            <button key={s} type="button" disabled={!done} onClick={() => done && setStep(n)}
+            <button key={s} type="button" disabled={!done || saving} onClick={() => done && goToStep(n)}
               style={{
                 flexShrink: 0, padding: '6px 13px', borderRadius: 20, fontSize: 12, fontWeight: 700,
                 background: active ? 'var(--peach)' : '#fff',
@@ -561,6 +714,24 @@ export default function CampaignEditorPage() {
           )
         })}
       </div>
+
+      {stepError && (
+        <div role="alert" style={{ marginBottom: 14, padding: '10px 13px', borderRadius: 10, border: '1px solid #fecaca', background: '#fef2f2', color: '#7f1d1d', fontSize: 13 }}>
+          {stepError}
+        </div>
+      )}
+      {campaign.status === 'paused' && (
+        <div style={{ marginBottom: 14, padding: '12px 14px', borderRadius: 12, border: '1px solid #fde68a', background: '#fffbeb', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#b45309" strokeWidth="2.2" strokeLinecap="round" style={{ flexShrink: 0, marginTop: 1 }}><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
+          <div style={{ fontSize: 13, color: '#78350f', lineHeight: 1.5 }}>
+            <strong>This campaign is paused.</strong>{' '}
+            {campaign.status_reason || (pausedMidSend ? 'It stopped part-way through.' : 'It needs attention before it can go out.')}
+            {pausedMidSend
+              ? ' Resume it from the Review step.'
+              : ' Fix it, then schedule or send it again from the Review step.'}
+          </div>
+        </div>
+      )}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 320px', gap: 16, alignItems: 'start' }}
         className="campaign-grid">
@@ -663,7 +834,7 @@ export default function CampaignEditorPage() {
               {pickResults.length > 0 && (
                 <div style={{ marginTop: 10, maxHeight: 260, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 10 }}>
                   {pickResults.map(r => {
-                    const already = picked.some(p => p.id === r.id)
+                    const already = manualIds.includes(r.id)
                     return (
                       <div key={r.id}
                         style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 11px', borderBottom: '1px solid var(--border)' }}>
@@ -675,7 +846,7 @@ export default function CampaignEditorPage() {
                           </div>
                         </div>
                         <button type="button" disabled={already || !r.messageable}
-                          onClick={() => setPicked(cur => [...cur, r])}
+                          onClick={() => { setPicked(cur => [...cur, r]); setManualIds(ids => ids.includes(r.id) ? ids : [...ids, r.id]) }}
                           title={r.issue || undefined}
                           style={{
                             padding: '5px 11px', borderRadius: 7, fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap',
@@ -692,13 +863,13 @@ export default function CampaignEditorPage() {
                 </div>
               )}
 
-              {picked.length > 0 && (
+              {manualIds.length > 0 && (
                 <div style={{ marginTop: 12 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                     <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ink)' }}>
-                      {picked.length} selected
+                      {manualIds.length.toLocaleString()} selected
                     </span>
-                    <button type="button" onClick={() => setPicked([])}
+                    <button type="button" onClick={() => { setPicked([]); setManualIds([]) }}
                       style={{ border: 'none', background: 'none', color: '#dc2626', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
                       Clear all
                     </button>
@@ -708,12 +879,17 @@ export default function CampaignEditorPage() {
                       <span key={pc.id}
                         style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 20, background: 'var(--peach)', color: 'var(--coral)', fontSize: 12, fontWeight: 600 }}>
                         {pc.name || pc.phone || pc.email || 'Contact'}
-                        <button type="button" onClick={() => setPicked(cur => cur.filter(x => x.id !== pc.id))}
+                        <button type="button" onClick={() => { setPicked(cur => cur.filter(x => x.id !== pc.id)); setManualIds(ids => ids.filter(x => x !== pc.id)) }}
                           style={{ border: 'none', background: 'none', padding: 0, color: 'var(--coral)', cursor: 'pointer', display: 'flex' }}>
                           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                         </button>
                       </span>
                     ))}
+                    {manualIds.length > picked.length && (
+                      <span style={{ padding: '4px 10px', fontSize: 12, color: 'var(--slate)' }}>
+                        and {(manualIds.length - picked.length).toLocaleString()} more
+                      </span>
+                    )}
                   </div>
                 </div>
               )}
@@ -748,10 +924,16 @@ export default function CampaignEditorPage() {
           <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', margin: '10px 0 0', fontSize: 12.5, color: 'var(--slate)' }}>
             <span><strong style={{ color: 'var(--ink)' }}>{sms.length}</strong> characters</span>
             <span><strong style={{ color: 'var(--ink)' }}>{renderedSms.segments}</strong> SMS segment{renderedSms.segments === 1 ? '' : 's'}</span>
-            <span><strong style={{ color: 'var(--ink)' }}>{recipients.toLocaleString()}</strong> recipients</span>
-            <span>Est. cost <strong style={{ color: 'var(--ink)' }}>{aud(cost)}</strong>
+            <span><strong style={{ color: 'var(--ink)' }}><Count n={savedReady ? recipients : null} busy={savedLoading} /></strong> recipients{savedLoading && <Calculating />}</span>
+            <span>Est. cost <strong style={{ color: savedLoading ? '#9ca3af' : 'var(--ink)' }}>{aud(cost)}</strong>
               <span style={{ color: '#9ca3af' }}> inc GST</span></span>
           </div>
+          {saved?.incomplete && !savedLoading && (
+            <p style={{ margin: '6px 0 0', fontSize: 11.5, color: '#b45309' }}>{saved.incomplete}</p>
+          )}
+          {allowanceMsg && !savedLoading && (
+            <p style={{ margin: '6px 0 0', fontSize: 11.5, color: '#dc2626', fontWeight: 600 }}>{allowanceMsg}</p>
+          )}
 
           {recipients > 0 && (
             <p style={{ margin: '6px 0 0', fontSize: 11.5, color: 'var(--slate)' }}>
@@ -1030,14 +1212,15 @@ export default function CampaignEditorPage() {
               </span>
             </label>
             <div>
-              <label style={label}>Maximum messages per minute</label>
+              <label style={label}>Sending pace</label>
               <select value={ratePerMin} onChange={e => setRatePerMin(parseInt(e.target.value))} style={input}>
-                {[30, 60, 120, 300].map(r => <option key={r} value={r}>{r} per minute</option>)}
+                {[30, 60, 120, 300].map(r => <option key={r} value={r}>Up to {r} a minute</option>)}
               </select>
-              <p style={{ margin: '6px 0 0', fontSize: 11.5, color: 'var(--slate)' }}>
-                Drip delivery — spreads the send so replies arrive at a manageable pace.
+              <p style={{ margin: '6px 0 0', fontSize: 11.5, color: 'var(--slate)', lineHeight: 1.5 }}>
+                Drip delivery spreads the send so replies arrive at a manageable pace. Texts go out in
+                batches every 2 minutes, up to {(ratePerMin * 2).toLocaleString()} a batch.
                 {recipients > 0 && ratePerMin > 0 && (
-                  <> About {Math.ceil(recipients / ratePerMin)} minute{Math.ceil(recipients / ratePerMin) === 1 ? '' : 's'} for {recipients.toLocaleString()} recipients.</>
+                  <> At best about {Math.ceil(recipients / ratePerMin)} minute{Math.ceil(recipients / ratePerMin) === 1 ? '' : 's'} for {recipients.toLocaleString()} recipients; it pauses overnight with quiet-hour protection on, and very large sends can take longer.</>
                 )}
               </p>
             </div>
@@ -1078,8 +1261,11 @@ export default function CampaignEditorPage() {
                   ['Campaign', campaign.name],
                   ['Channel', String(campaign.channel || 'sms').toUpperCase()],
                   ['Sender', campaign.sender_name || campaign.sender_number || 'Default number'],
-                  ['Audience', `${recipients.toLocaleString()} recipients`],
-                  ['Excluded', preview ? `${(preview.excludedTotal || 0).toLocaleString()} contacts` : '—'],
+                  ['Audience', savedLoading ? 'Calculating\u2026' : savedReady ? `${recipients.toLocaleString()} recipients` : (saved?.incomplete || saved?.error || '\u2014')],
+                  ['Excluded', savedReady && !savedLoading ? `${(saved.excludedTotal || 0).toLocaleString()} contacts` : '\u2014'],
+                  ['Texts needed', savedReady && !savedLoading
+                    ? `${partsNeeded.toLocaleString()}${allowance ? allowance.unlimited ? ' (unlimited plan)' : ` of ${(allowance.remaining ?? 0).toLocaleString()} left this month` : ''}`
+                    : '\u2014'],
                   ['SMS segments', `${renderedSms.segments} per message`],
                   ['Total parts', costing.parts.toLocaleString()],
                   ['Rate', `${audRate(costing.pricePerPart)} per part`],
@@ -1109,11 +1295,11 @@ export default function CampaignEditorPage() {
             </p>
           </div>
 
-          {/* Exclusions, restated before committing */}
-          {preview && preview.excludedTotal > 0 && (
+          {/* Exclusions, restated before committing (from the saved audience) */}
+          {savedReady && saved.excludedTotal > 0 && (
             <div style={{ ...card, borderColor: '#fde68a', background: '#fffbeb' }}>
               <label style={{ ...label, color: '#b45309' }}>Who won't receive this</label>
-              {Object.entries(preview.excluded as Record<string, number>)
+              {Object.entries(saved.excluded as Record<string, number>)
                 .filter(([, n]) => n > 0)
                 .map(([reason, n]) => (
                   <p key={reason} style={{ margin: '0 0 4px', fontSize: 12.5, color: '#78350f' }}>
@@ -1130,10 +1316,16 @@ export default function CampaignEditorPage() {
                 {blockers.length ? 'Must fix before sending' : 'Worth checking'}
               </label>
               {readyProblems.map(p => (
-                <p key={p} style={{ margin: '0 0 4px', fontSize: 12.5, color: blockers.includes(p) ? '#7f1d1d' : '#78350f' }}>
+                <p key={p} style={{ margin: '0 0 4px', fontSize: 12.5, color: blockers.includes(p) ? '#7f1d1d' : '#78350f', fontWeight: blockers.includes(p) ? 600 : 400 }}>
                   · {p}
                 </p>
               ))}
+              {allowanceMsg && renderedSms.segments > 1 && (
+                <p style={{ margin: '6px 0 0', fontSize: 11.5, color: '#7f1d1d' }}>
+                  Each message is {renderedSms.segments} parts, and every part counts as one text. Shortening it
+                  to one part, or narrowing the audience, brings the number down.
+                </p>
+              )}
             </div>
           )}
         </div>
@@ -1144,17 +1336,31 @@ export default function CampaignEditorPage() {
             <>
               <div style={{ ...card, borderColor: 'var(--coral)' }}>
                 <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
-                  Ready to send
+                  {pausedMidSend ? 'Paused part-way' : blockers.length ? 'Not ready yet' : 'Ready to send'}
                 </div>
                 <p style={{ fontSize: 30, fontWeight: 800, color: 'var(--ink)', margin: '6px 0 0', lineHeight: 1 }}>
-                  {recipients.toLocaleString()}
+                  <Count n={savedReady ? recipients : null} busy={savedLoading} />
                 </p>
                 <p style={{ margin: '4px 0 0', fontSize: 12.5, color: 'var(--slate)' }}>
-                  recipients · {aud(costing.totalIncGst)} inc GST
+                  recipients · {aud(costing.totalIncGst)} inc GST{savedLoading && <Calculating />}
+                </p>
+                <p style={{ margin: '6px 0 0', fontSize: 11.5, color: 'var(--slate)' }}>
+                  Worked out from the saved audience, the same way the send will.
                 </p>
               </div>
 
-              {campaign.status === 'sent' || campaign.status === 'sending' ? (
+              {pausedMidSend ? (
+                <>
+                  <button onClick={resumeSend} disabled={sending}
+                    style={{ padding: '12px 16px', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', opacity: sending ? 0.5 : 1 }}>
+                    {sending ? 'Resuming\u2026' : 'Resume sending'}
+                  </button>
+                  <button onClick={() => router.push(`/admin/campaigns/${campaignId}/report`)}
+                    style={{ padding: '10px 16px', borderRadius: 10, background: '#fff', color: 'var(--ink)', border: '1px solid var(--border)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                    View report
+                  </button>
+                </>
+              ) : campaign.status === 'sent' || campaign.status === 'sending' ? (
                 <div style={{ ...card, background: '#f0fdf4', borderColor: '#bbf7d0' }}>
                   <p style={{ margin: 0, fontSize: 13, color: '#166534' }}>
                     This campaign is {campaign.status}. It can't be sent again.
@@ -1167,17 +1373,17 @@ export default function CampaignEditorPage() {
               ) : (
                 <>
                   {sendMode === 'later' ? (
-                    <button onClick={scheduleCampaign} disabled={sending || blockers.length > 0}
-                      style={{ padding: '12px 16px', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13.5, fontWeight: 700, cursor: blockers.length ? 'not-allowed' : 'pointer', opacity: sending || blockers.length ? 0.5 : 1 }}>
+                    <button onClick={scheduleCampaign} disabled={sending || cannotSendYet}
+                      style={{ padding: '12px 16px', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13.5, fontWeight: 700, cursor: cannotSendYet ? 'not-allowed' : 'pointer', opacity: sending || cannotSendYet ? 0.5 : 1 }}>
                       {sending ? 'Scheduling…' : 'Schedule campaign'}
                     </button>
                   ) : (
-                    <button onClick={sendNow} disabled={sending || blockers.length > 0}
-                      style={{ padding: '12px 16px', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13.5, fontWeight: 700, cursor: blockers.length ? 'not-allowed' : 'pointer', opacity: sending || blockers.length ? 0.5 : 1 }}>
-                      {sending ? 'Starting…' : `Send to ${recipients.toLocaleString()} now`}
+                    <button onClick={sendNow} disabled={sending || cannotSendYet}
+                      style={{ padding: '12px 16px', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13.5, fontWeight: 700, cursor: cannotSendYet ? 'not-allowed' : 'pointer', opacity: sending || cannotSendYet ? 0.5 : 1 }}>
+                      {sending ? 'Starting…' : savedReady ? `Send to ${recipients.toLocaleString()} now` : 'Send now'}
                     </button>
                   )}
-                  <button onClick={() => setStep(5)}
+                  <button onClick={() => goToStep(5)}
                     style={{ padding: '10px 16px', borderRadius: 10, background: '#fff', color: 'var(--ink)', border: '1px solid var(--border)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
                     Back
                   </button>
@@ -1193,9 +1399,9 @@ export default function CampaignEditorPage() {
                   {sendResult}
                 </p>
               )}
-              {blockers.length > 0 && (
-                <p style={{ margin: 0, fontSize: 11.5, color: '#dc2626', textAlign: 'center' }}>
-                  Fix the blocking issues before sending.
+              {blockers.length > 0 && !pausedMidSend && campaign.status !== 'sent' && campaign.status !== 'sending' && (
+                <p style={{ margin: 0, fontSize: 12, color: '#dc2626', textAlign: 'center', lineHeight: 1.45 }}>
+                  {blockers[0]}
                 </p>
               )}
             </>
@@ -1208,7 +1414,7 @@ export default function CampaignEditorPage() {
                   Send summary
                 </div>
                 <p style={{ margin: '0 0 5px', fontSize: 12.5, color: 'var(--slate)' }}>
-                  Recipients <strong style={{ color: 'var(--ink)' }}>{recipients.toLocaleString()}</strong>
+                  Recipients <strong style={{ color: 'var(--ink)' }}><Count n={savedReady ? recipients : null} busy={savedLoading} /></strong>{savedLoading && <Calculating />}
                 </p>
                 <p style={{ margin: '0 0 5px', fontSize: 12.5, color: 'var(--slate)' }}>
                   Segments each <strong style={{ color: 'var(--ink)' }}>{renderedSms.segments}</strong>
@@ -1239,8 +1445,8 @@ export default function CampaignEditorPage() {
               </button>
               {savedAt && <p style={{ margin: 0, fontSize: 12, color: '#15803d', textAlign: 'center' }}>Saved at {savedAt}</p>}
               <p style={{ margin: 0, fontSize: 11.5, color: 'var(--slate)', lineHeight: 1.5 }}>
-                Saving stores the schedule only. Nothing sends until the review step, which doesn't
-                exist yet — so a campaign can't go out by accident.
+                Saving stores the schedule only. Nothing is queued until you schedule or send it on
+                the Review step, so a campaign can't go out by accident.
               </p>
             </>
           )}
@@ -1362,15 +1568,21 @@ export default function CampaignEditorPage() {
           {step === 2 && (
           <>
           <div style={card}>
-            <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
-              Estimated recipients
+            <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: '0.03em', display: 'flex', alignItems: 'center' }}>
+              Estimated recipients{previewing && !filterProblem && <Calculating />}
             </div>
-            <p style={{ fontSize: 34, fontWeight: 800, color: 'var(--ink)', margin: '6px 0 0', lineHeight: 1 }}>
-              {previewing ? '…' : (preview?.recipients ?? 0).toLocaleString()}
-            </p>
-            {preview && (
-              <p style={{ margin: '8px 0 0', fontSize: 12, color: 'var(--slate)' }}>
-                {preview.matched.toLocaleString()} matched this filter
+            {filterProblem ? (
+              <p style={{ margin: '10px 0 0', fontSize: 13.5, fontWeight: 600, color: 'var(--ink)', lineHeight: 1.45 }}>
+                {filterProblem}
+              </p>
+            ) : (
+              <p style={{ fontSize: 34, fontWeight: 800, color: 'var(--ink)', margin: '6px 0 0', lineHeight: 1 }}>
+                <Count n={preview && !preview.incomplete ? (preview.recipients ?? 0) : null} busy={previewing} />
+              </p>
+            )}
+            {preview && !preview.incomplete && !filterProblem && (
+              <p style={{ margin: '8px 0 0', fontSize: 12, color: previewing ? '#9ca3af' : 'var(--slate)' }}>
+                {(preview.matched || 0).toLocaleString()} matched this filter
                 {preview.excludedTotal > 0 && `, ${preview.excludedTotal.toLocaleString()} excluded`}
               </p>
             )}
@@ -1380,8 +1592,8 @@ export default function CampaignEditorPage() {
           </div>
 
           {/* Exclusions — the compliance-relevant part */}
-          {preview && preview.excludedTotal > 0 && (
-            <div style={{ ...card, borderColor: '#fde68a', background: '#fffbeb' }}>
+          {!filterProblem && preview && !preview.incomplete && preview.excludedTotal > 0 && (
+            <div style={{ ...card, borderColor: '#fde68a', background: '#fffbeb', opacity: previewing ? 0.55 : 1, transition: 'opacity .15s' }}>
               <div style={{ fontSize: 11.5, fontWeight: 700, color: '#b45309', textTransform: 'uppercase', letterSpacing: '0.03em', marginBottom: 8 }}>
                 Excluded contacts
               </div>
@@ -1399,8 +1611,8 @@ export default function CampaignEditorPage() {
           )}
 
           {/* Sample so staff can sanity-check the targeting */}
-          {preview?.sample?.length > 0 && (
-            <div style={card}>
+          {!filterProblem && preview?.sample?.length > 0 && (
+            <div style={{ ...card, opacity: previewing ? 0.55 : 1, transition: 'opacity .15s' }}>
               <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: '0.03em', marginBottom: 8 }}>
                 Sample recipients
               </div>
@@ -1412,11 +1624,23 @@ export default function CampaignEditorPage() {
             </div>
           )}
 
-          <button onClick={saveAudience} disabled={saving}
-            style={{ padding: '11px 16px', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', opacity: saving ? 0.6 : 1 }}>
-            {saving ? 'Saving…' : 'Save audience'}
+          {audienceDirty || saving ? (
+            <button onClick={saveAudience} disabled={saving || !!filterProblem}
+              title={filterProblem || undefined}
+              style={{ padding: '11px 16px', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13.5, fontWeight: 700, cursor: filterProblem ? 'not-allowed' : 'pointer', opacity: saving || filterProblem ? 0.5 : 1 }}>
+              {saving ? 'Saving…' : 'Save audience'}
+            </button>
+          ) : (
+            <div style={{ padding: '10px 16px', borderRadius: 10, border: '1px solid #bbf7d0', background: '#f0fdf4', color: '#15803d', fontSize: 13, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+              Audience saved
+            </div>
+          )}
+          <button onClick={() => goToStep(3)} disabled={saving || !!filterProblem}
+            style={{ padding: '10px 16px', borderRadius: 10, background: '#fff', color: 'var(--ink)', border: '1px solid var(--border)', fontSize: 13, fontWeight: 700, cursor: filterProblem ? 'not-allowed' : 'pointer', opacity: saving || filterProblem ? 0.5 : 1 }}>
+            {audienceDirty ? 'Save and write the message' : 'Next: write the message'}
           </button>
-          {savedAt && (
+          {savedAt && !audienceDirty && (
             <p style={{ margin: 0, fontSize: 12, color: '#15803d', textAlign: 'center' }}>Saved at {savedAt}</p>
           )}
           <p style={{ margin: 0, fontSize: 11.5, color: 'var(--slate)', lineHeight: 1.5 }}>
@@ -1431,6 +1655,9 @@ export default function CampaignEditorPage() {
       <style jsx>{`
         @media (max-width: 900px) {
           .campaign-grid { grid-template-columns: 1fr !important; }
+        }
+        @media (max-width: 560px) {
+          .campaign-editor { padding: 16px 16px 32px !important; }
         }
       `}</style>
     </div>

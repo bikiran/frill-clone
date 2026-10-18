@@ -109,3 +109,17 @@ export const SMS_VARIABLES: { token: string; label: string; sample: string }[] =
 export function estimateCost(segments: number, recipients: number, perSegmentPrice: number) {
   return segments * recipients * perSegmentPrice
 }
+
+/** The message with every variable replaced by its sample value. */
+export function renderSample(text: string): string {
+  return renderVariables(text, Object.fromEntries(SMS_VARIABLES.map(v => [v.token, v.sample])))
+}
+
+/**
+ * Segments per message, worked out on the message rendered with the sample
+ * values — the figure the editor shows and the one the campaign stores and
+ * checks the allowance with at send time, so they always agree.
+ */
+export function sampleSegments(text: string): number {
+  return Math.max(1, analyseSms(renderSample(text)).segments || 1)
+}
