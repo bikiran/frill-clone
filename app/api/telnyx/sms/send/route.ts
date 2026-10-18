@@ -316,7 +316,7 @@ export async function POST(req: NextRequest) {
         error: err.message, reason: err.reason, limit: err.limit, used: err.used,
         ...(err.shortfallCents != null ? { shortfallCents: err.shortfallCents } : {}),
         ...(err.balanceCents != null ? { balanceCents: err.balanceCents } : {}),
-        ...(err.reason !== 'plan' ? { topUpUrl: '/admin/billing#sms-credits' } : {}),
+        ...(err.reason !== 'plan' && err.canTopUp !== false ? { topUpUrl: '/admin/billing#sms-credits' } : {}),
       }, { status: 402 })
     }
     // The carrier just told us this number is not a mobile. Remember it on the

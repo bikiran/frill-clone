@@ -6,6 +6,10 @@
 // Reads /api/sms-credits; tops up through /api/sms-credits/topup (Stripe
 // Checkout); settings through /api/sms-credits/settings. Money actions are
 // owner / admin only (the API checks; the card just hides them).
+// The company's SMS billing policy (d.policy, lib/sms-policy) decides what
+// shows: unlimited texts, no SMS, an allowance with no credit, or the wallet
+// with top-ups (hidden when Colvy manages them) and auto top-up (hidden when
+// not allowed). The topup / settings routes enforce the same rules.
 
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
@@ -14,9 +18,10 @@ import { alertDialog, confirmDialog } from '@/components/ConfirmDialog'
 import { showBillingUnavailable } from '@/components/BillingUnavailable'
 import SmsLowBalanceBanner from '@/components/billing/SmsLowBalanceBanner'
 import {
-  fmtCents, fmtRate, fmtSignedCents, KIND_LABEL, parseAudToCents, tierLines, validateTopUpCents,
+  fmtCents, fmtRate, fmtSignedCents, ledgerLabel, parseAudToCents, tierLines, validateTopUpCents,
   MIN_TOPUP_CENTS, SMS_CREDIT_PACKS_CENTS, type LedgerRow,
 } from '@/lib/sms-credits-core'
+import { COLVY_CONTACT } from '@/lib/colvy-contact'
 
 const THRESHOLDS = [500, 1000, 2000, 5000]
 
@@ -43,6 +48,21 @@ const nextMonthStart = () => {
   return new Date(d.getFullYear(), d.getMonth() + 1, 1).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })
 }
 const brandName = (b?: string | null) => (b ? b.charAt(0).toUpperCase() + b.slice(1) : 'Card')
+
+/** "Contact us" with Colvy's email and phone, for things Colvy manages. */
+function ContactUs() {
+  return <>Contact us at <a href={COLVY_CONTACT.mailHref} className="font-semibold hover:underline" style={{ color: 'var(--coral)' }}>{COLVY_CONTACT.email}</a> or <a href={COLVY_CONTACT.telHref} className="font-semibold hover:underline whitespace-nowrap" style={{ color: 'var(--coral)' }}>{COLVY_CONTACT.phoneDisplay}</a>.</>
+}
+
+function Note({ icon, children, tone = 'plain', className = '' }: { icon: React.ReactNode; children: React.ReactNode; tone?: 'plain' | 'good'; className?: string }) {
+  const good = tone === 'good'
+  return (
+    <div className={`flex items-start gap-3 p-4 rounded-xl text-sm ${className}`} style={good ? { background: '#ecfdf3', border: '1px solid #abefc6', color: '#067647' } : { background: 'var(--canvas)', border: '1px solid var(--border)', color: 'var(--slate)' }}>
+      <span className="shrink-0 mt-px">{icon}</span>
+      <div style={{ margin: 0, lineHeight: 1.5, minWidth: 0 }}>{children}</div>
+    </div>
+  )
+}
 
 function Shell({ children, right }: { children: React.ReactNode; right?: React.ReactNode }) {
   return (
@@ -128,43 +148,47 @@ export default function SmsCreditsCard({ companyId, companyName, initial }: { co
     return <Shell right={<button onClick={() => load()} className="flex items-center gap-1.5 px-3 py-2 rounded-xl border text-sm font-medium cursor-pointer hover:bg-gray-50" style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>{Ico.refresh}Try again</button>}><p className="text-sm" style={{ color: 'var(--slate)' }}>{err}</p></Shell>
   }
   if (!d) return null
+  const policy = d.policy || {}
+  const allowance = d.allowance || {}
+  const mode: string = policy.mode || (allowance.unlimited ? 'unlimited' : allowance.entitled === false ? 'disabled' : 'allowance_then_credit')
+
+  if (mode === 'disabled' || (d.ready && !allowance.entitled)) {
+    return (
+      <Shell>
+        <Note icon={Ico.info}>
+          {policy.blockReason === 'sms_disabled'
+            ? <p style={{ margin: 0 }}><strong style={{ color: 'var(--ink)' }}>SMS isn’t included for your account.</strong> Texting has been switched off by Colvy. <ContactUs /></p>
+            : <p style={{ margin: 0 }}><strong style={{ color: 'var(--ink)' }}>SMS isn’t included in your plan.</strong> The Inbox and Everything plans include 3,000 texts a month, and you can top up with SMS credits for more.</p>}
+        </Note>
+      </Shell>
+    )
+  }
+  if (mode === 'unlimited') {
+    return (
+      <Shell>
+        <Note icon={Ico.check} tone="good">
+          <p style={{ margin: 0 }}><strong>Unlimited texts on your plan.</strong> Texts are included in your plan, so you don’t need SMS credits.</p>
+        </Note>
+      </Shell>
+    )
+  }
   if (!d.ready) {
     return (
       <Shell>
-        <div className="flex items-start gap-3 p-4 rounded-xl text-sm" style={{ background: 'var(--canvas)', border: '1px solid var(--border)', color: 'var(--slate)' }}>
-          <span className="shrink-0 mt-px">{Ico.info}</span>
-          <p style={{ margin: 0, lineHeight: 1.5 }}>SMS credits aren’t set up yet. Texts within your plan’s monthly allowance work as usual.</p>
-        </div>
+        <Note icon={Ico.info}><p style={{ margin: 0 }}>SMS credits aren’t set up yet. Texts within your plan’s monthly allowance work as usual.</p></Note>
       </Shell>
     )
   }
 
   const w = d.wallet
-  const allowance = d.allowance || {}
   const pricing = { price_per_part: d.pricing?.price_per_part ?? 0.15, volume_tiers: d.pricing?.volume_tiers || [], gst_rate: 0.1, gst_inclusive: true, carrier_cost: 0, carrier_currency: 'USD', fx_rate: 1 }
   const ledger: LedgerRow[] = d.ledger || []
   const campaigns: Record<string, string> = d.campaigns || {}
-
-  if (!allowance.entitled) {
-    return (
-      <Shell>
-        <div className="flex items-start gap-3 p-4 rounded-xl text-sm" style={{ background: 'var(--canvas)', border: '1px solid var(--border)', color: 'var(--slate)' }}>
-          <span className="shrink-0 mt-px">{Ico.info}</span>
-          <p style={{ margin: 0, lineHeight: 1.5 }}>Texting isn’t included in your plan. The Inbox and Everything plans include 3,000 texts a month, and you can top up with SMS credits for more.</p>
-        </div>
-      </Shell>
-    )
-  }
-  if (allowance.unlimited) {
-    return (
-      <Shell>
-        <div className="flex items-start gap-3 p-4 rounded-xl text-sm" style={{ background: '#ecfdf3', border: '1px solid #abefc6', color: '#067647' }}>
-          <span className="shrink-0 mt-px">{Ico.check}</span>
-          <p style={{ margin: 0, lineHeight: 1.5 }}>Your plan includes unlimited texts, so you don’t need SMS credits.</p>
-        </div>
-      </Shell>
-    )
-  }
+  const allowanceOnly = mode === 'allowance_only'
+  const creditOnly = mode === 'credit_only'
+  // Older answers (before policies) had no policy: top-ups were always on.
+  const canTopUp = policy.canTopUp ?? !allowanceOnly
+  const canAutoTopUp = policy.canAutoTopUp ?? canTopUp
 
   const limit = Number(allowance.limit) || 0
   const used = Number(allowance.used) || 0
@@ -185,7 +209,7 @@ export default function SmsCreditsCard({ companyId, companyName, initial }: { co
     try {
       const res = await authFetch('/api/sms-credits/topup', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ companyId, amountCents: amountCheck.cents, ...(saveCard && !w.card ? { autoTopUp: { thresholdCents: threshold, amountCents: autoAmount } } : {}) }),
+        body: JSON.stringify({ companyId, amountCents: amountCheck.cents, ...(saveCard && !w.card && canAutoTopUp ? { autoTopUp: { thresholdCents: threshold, amountCents: autoAmount } } : {}) }),
       })
       const data = await res.json().catch(() => ({}))
       if (data.setup) { setBusy(''); await showBillingUnavailable({ what: `SMS credit (${fmtCents(amountCheck.cents)})`, workspace: companyName || null }); return }
@@ -254,27 +278,33 @@ export default function SmsCreditsCard({ companyId, companyName, initial }: { co
       )}
       {d.low && (
         <div className="mb-4">
-          <SmsLowBalanceBanner balanceCents={w.balanceCents} pricePerPart={pricing.price_per_part} thresholdCents={w.autoTopUp?.enabled ? w.autoTopUp.thresholdCents : undefined} autoTopUp={!!w.autoTopUp?.enabled} onTopUp={canManage && !shopify ? scrollToTopUp : undefined} force />
+          <SmsLowBalanceBanner balanceCents={w.balanceCents} pricePerPart={pricing.price_per_part} thresholdCents={w.autoTopUp?.enabled ? w.autoTopUp.thresholdCents : undefined} autoTopUp={!!w.autoTopUp?.enabled} onTopUp={canManage && !shopify && canTopUp ? scrollToTopUp : undefined} canTopUp={canTopUp} force />
         </div>
       )}
 
       {/* Balance · allowance · rate */}
-      <div className="grid gap-4 md:grid-cols-3">
-        <div style={tile}>
+      <div className={`grid gap-4 ${allowanceOnly ? '' : 'md:grid-cols-3'}`}>
+        {!allowanceOnly && <div style={tile}>
           <p className={tileLabel} style={{ color: 'var(--slate)' }}>Balance</p>
           <p className="text-3xl font-black mt-1.5" style={{ color: 'var(--ink)' }}>{fmtCents(w.balanceCents)}</p>
           <p className="text-sm mt-1" style={{ color: 'var(--slate)' }}>About {textsFor(w.balanceCents).toLocaleString('en-AU')} texts at {fmtRate(pricing.price_per_part)}</p>
           {w.heldCents > 0 && <p className="text-xs mt-2" style={{ color: 'var(--slate)' }}>Plus {fmtCents(w.heldCents)} held for scheduled campaigns</p>}
-        </div>
-        <div style={tile}>
+        </div>}
+        {creditOnly ? (
+          <div style={tile}>
+            <p className={tileLabel} style={{ color: 'var(--slate)' }}>This month’s allowance</p>
+            <p className="text-3xl font-black mt-1.5" style={{ color: 'var(--ink)' }}>None</p>
+            <p className="text-sm mt-2" style={{ color: 'var(--slate)' }}>Every text uses SMS credit. {used.toLocaleString('en-AU')} sent this month.</p>
+          </div>
+        ) : <div style={tile}>
           <p className={tileLabel} style={{ color: 'var(--slate)' }}>This month’s allowance</p>
           <p className="text-3xl font-black mt-1.5" style={{ color: 'var(--ink)' }}>{left.toLocaleString('en-AU')} <span className="text-sm font-semibold" style={{ color: 'var(--slate)' }}>left</span></p>
           <div className="mt-2.5 h-2 rounded-full overflow-hidden" style={{ background: 'var(--border)' }} role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label="Allowance used">
             <div className="h-full rounded-full" style={{ width: `${pct}%`, background: pct >= 100 ? '#d92d20' : pct >= 80 ? '#f59e0b' : 'var(--coral)' }} />
           </div>
           <p className="text-sm mt-2" style={{ color: 'var(--slate)' }}>{used.toLocaleString('en-AU')} of {limit.toLocaleString('en-AU')} used · resets {nextMonthStart()}</p>
-        </div>
-        <div style={tile}>
+        </div>}
+        {!allowanceOnly && <div style={tile}>
           <p className={tileLabel} style={{ color: 'var(--slate)' }}>Rate per text</p>
           <p className="text-3xl font-black mt-1.5" style={{ color: 'var(--ink)' }}>{fmtRate(pricing.price_per_part)}</p>
           <ul className="mt-2 space-y-1">
@@ -284,14 +314,24 @@ export default function SmsCreditsCard({ companyId, companyName, initial }: { co
               </li>
             ))}
           </ul>
-        </div>
+        </div>}
       </div>
-      <p className="text-xs mt-3" style={{ color: 'var(--slate)', lineHeight: 1.55 }}>
-        Your monthly allowance is used first; only texts beyond it use credit. Bigger sends get a cheaper rate on every text in the send. A text over 160 characters (70 with emoji or special characters) counts as two or more. Prices include GST.
-      </p>
+      {allowanceOnly ? (
+        <Note icon={Ico.info} className="mt-4">
+          <p style={{ margin: 0 }}>Your account includes {limit.toLocaleString('en-AU')} texts a month, without SMS credit: once they’re used, texts wait until the allowance resets on {nextMonthStart()}. A text over 160 characters (70 with emoji or special characters) counts as two or more. Need more? <ContactUs /></p>
+        </Note>
+      ) : (
+        <p className="text-xs mt-3" style={{ color: 'var(--slate)', lineHeight: 1.55 }}>
+          {creditOnly ? 'Every text is paid from SMS credit.' : 'Your monthly allowance is used first; only texts beyond it use credit.'} Bigger sends get a cheaper rate on every text in the send. A text over 160 characters (70 with emoji or special characters) counts as two or more. Prices include GST.
+        </p>
+      )}
 
       {/* Top up · auto top-up */}
-      {shopify ? (
+      {allowanceOnly ? null : !canTopUp ? (
+        <Note icon={Ico.lock} className="mt-5">
+          <p style={{ margin: 0 }}><strong style={{ color: 'var(--ink)' }}>Top-ups are managed by Colvy for your account.</strong> We add SMS credit for you, so there’s nothing to buy here. <ContactUs /></p>
+        </Note>
+      ) : shopify ? (
         <div className="mt-5 flex items-start gap-3 p-4 rounded-xl text-sm" style={{ background: 'var(--canvas)', border: '1px solid var(--border)', color: 'var(--slate)' }}>
           <span className="shrink-0 mt-px">{Ico.info}</span>
           <p style={{ margin: 0, lineHeight: 1.5 }}>Your Colvy plan is billed through Shopify, so SMS credits can’t be bought by card here yet. Contact us and we’ll add credit for you.</p>
@@ -326,13 +366,13 @@ export default function SmsCreditsCard({ companyId, companyName, initial }: { co
             </label>
             {pack === 'custom' && custom && !amountCheck.ok && <p className="text-xs mt-1.5" style={{ color: '#b42318' }}>{amountCheck.error}</p>}
 
-            {!w.card && (
+            {!w.card && canAutoTopUp && (
               <label className="mt-4 flex items-start gap-2.5 cursor-pointer text-sm" style={{ color: 'var(--ink)' }}>
                 <input type="checkbox" checked={saveCard} onChange={e => setSaveCard(e.target.checked)} className="mt-0.5 w-4 h-4 accent-[var(--coral)]" />
                 <span>Top up automatically when my balance runs low <span className="block text-xs mt-0.5" style={{ color: 'var(--slate)' }}>Saves this card with Stripe. Change or switch it off any time.</span></span>
               </label>
             )}
-            {!w.card && saveCard && (
+            {!w.card && saveCard && canAutoTopUp && (
               <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <label className="text-xs font-semibold" style={{ color: 'var(--slate)' }}>When the balance drops below
                   <select value={threshold} onChange={e => setThreshold(Number(e.target.value))} style={{ ...select, marginTop: 4 }}>{THRESHOLDS.map(t => <option key={t} value={t}>{fmtCents(t)}</option>)}</select>
@@ -351,6 +391,12 @@ export default function SmsCreditsCard({ companyId, companyName, initial }: { co
             <p className="text-xs mt-2" style={{ color: 'var(--slate)' }}>Paid securely by card through Stripe. Prices include GST.</p>
           </div>
 
+          {!canAutoTopUp ? (
+          <div className="rounded-xl border p-4 md:p-5" style={{ borderColor: 'var(--border)', minWidth: 0 }}>
+            <h3 className="font-bold" style={{ color: 'var(--ink)' }}>Auto top-up</h3>
+            <p className="mt-3 text-sm" style={{ color: 'var(--slate)', lineHeight: 1.5 }}>Auto top-up isn’t available for your account: Colvy manages it. Top up by hand when you need more. <ContactUs /></p>
+          </div>
+          ) : (
           <div className="rounded-xl border p-4 md:p-5" style={{ borderColor: 'var(--border)', minWidth: 0 }}>
             <div className="flex items-center justify-between gap-3">
               <h3 className="font-bold" style={{ color: 'var(--ink)' }}>Auto top-up</h3>
@@ -398,6 +444,7 @@ export default function SmsCreditsCard({ companyId, companyName, initial }: { co
               </p>
             )}
           </div>
+          )}
         </div>
       )}
 
@@ -416,7 +463,7 @@ export default function SmsCreditsCard({ companyId, companyName, initial }: { co
             {ledger.map(r => (
               <li key={r.id} className="px-3.5 py-3" style={{ borderColor: 'var(--border)' }}>
                 <div className="flex items-baseline justify-between gap-3">
-                  <span className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>{KIND_LABEL[r.kind] || r.kind}</span>
+                  <span className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>{ledgerLabel(r)}</span>
                   <span className="text-sm font-semibold whitespace-nowrap" style={{ color: r.amount_cents > 0 ? '#067647' : 'var(--ink)' }}>{fmtSignedCents(r.amount_cents)}</span>
                 </div>
                 <div className="flex items-baseline justify-between gap-3 mt-0.5">
@@ -445,7 +492,7 @@ export default function SmsCreditsCard({ companyId, companyName, initial }: { co
                 {ledger.map(r => (
                   <tr key={r.id} className="border-b last:border-b-0" style={{ borderColor: 'var(--border)' }}>
                     <td className="py-3 px-3 whitespace-nowrap" style={{ color: 'var(--ink)' }}>{fmtDate(r.created_at)} <span className="text-xs" style={{ color: 'var(--slate)' }}>{fmtTime(r.created_at)}</span></td>
-                    <td className="py-3 px-3 whitespace-nowrap" style={{ color: 'var(--ink)' }}>{KIND_LABEL[r.kind] || r.kind}</td>
+                    <td className="py-3 px-3 whitespace-nowrap" style={{ color: 'var(--ink)' }}>{ledgerLabel(r)}</td>
                     <td className="py-3 px-3" style={{ color: 'var(--slate)' }}>
                       {r.campaign_id
                         ? <Link href={`/admin/campaigns/${r.campaign_id}`} className="font-medium hover:underline" style={{ color: 'var(--coral)' }}>{campaigns[r.campaign_id] || 'Campaign'}</Link>

@@ -13,7 +13,12 @@ export const dynamic = 'force-dynamic'
 //                       wallet.
 //   GET ?companyId=     one company's wallet and ledger.
 //   GET ?find=          companies by name / subdomain (any company, wallet or not).
-//   POST { companyId, amountCents, reason }   a manual adjustment (audited).
+//   POST { companyId, amountCents, reason }   a manual adjustment (audited):
+//        positive adds credit ("Credit from Colvy" in their ledger), negative
+//        is a manual charge ("Charge by Colvy"). A charge never takes the
+//        balance below zero: one bigger than the balance is refused (the
+//        database function refuses it too), so there's no negative balance
+//        to chase.
 
 const monthStart = () => { const d = new Date(); return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1)).toISOString() }
 
@@ -103,14 +108,19 @@ export async function POST(req: NextRequest) {
     if (reason.length < 3) return NextResponse.json({ error: 'Give a reason (it goes in the ledger and the audit log).' }, { status: 400 })
     const { data: co } = await db.from('companies').select('id, name').eq('id', companyId).maybeSingle()
     if (!co) return NextResponse.json({ error: 'Company not found' }, { status: 404 })
+    const charge = amountCents < 0
     const r = await adjustBalance(db, { companyId, amountCents, reason, adminId: me.id })
     if (!r.ok) {
-      const msg = r.reason === 'insufficient' ? 'That would take the balance below zero.' : r.reason === 'not_set_up' ? 'Run COLVY_V395_SMS_CREDITS.sql first.' : 'Couldn’t apply the adjustment.'
-      return NextResponse.json({ error: msg }, { status: r.reason === 'insufficient' ? 409 : 500 })
+      const msg = r.reason === 'insufficient'
+        ? `That’s more than the balance (${fmtCents(r.balanceCents)}). A charge can’t take the balance below zero: charge ${fmtCents(r.balanceCents)} or less.`
+        : r.reason === 'not_set_up' ? 'Run COLVY_V395_SMS_CREDITS.sql first.' : 'Couldn’t apply the adjustment.'
+      return NextResponse.json({ error: msg, balanceCents: r.balanceCents }, { status: r.reason === 'insufficient' ? 409 : 500 })
     }
     await logSuperAdminAudit(db, {
-      adminId: me.id, adminEmail: me.email, companyId, action: 'sms_credit_adjustment',
-      summary: `${amountCents > 0 ? 'Added' : 'Removed'} ${fmtCents(Math.abs(amountCents))} SMS credit for ${co.name || companyId}: ${reason}`,
+      adminId: me.id, adminEmail: me.email, companyId, action: charge ? 'sms_credit_charge' : 'sms_credit_adjustment',
+      summary: charge
+        ? `Charged ${fmtCents(-amountCents)} SMS credit to ${co.name || companyId} (Charge by Colvy): ${reason}`
+        : `Added ${fmtCents(amountCents)} SMS credit for ${co.name || companyId} (Credit from Colvy): ${reason}`,
       detail: { amountCents, reason, balanceAfterCents: r.balanceCents },
     })
     return NextResponse.json({ ok: true, balanceCents: r.balanceCents })

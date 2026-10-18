@@ -11,9 +11,9 @@ import { trackLinks } from './link-tracking'
 import { isExternalSendBlocked, DEMO_BLOCK_MESSAGE } from './demo-guard'
 import {
   partsForRecipients, campaignPartsSent, campaignHold, walletReady, holdForCampaign, extendCampaignHold,
-  creditRefusalText, campaignVars, uuidOrNull, TOP_UP_PATH,
+  creditRefusalText, campaignVars, uuidOrNull, refusalCode, TOP_UP_PATH,
 } from './campaign-credits'
-import { settleCampaign, releaseCampaign, maybeAutoTopUp, type Refusal } from './sms-credits'
+import { settleCampaign, releaseCampaign, maybeAutoTopUp, releaseHoldIfUnlimited, type Refusal } from './sms-credits'
 
 const admin = () => createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -69,12 +69,15 @@ export class CampaignNotReadyError extends Error {
   /** For the credit codes: the wallet's reason and what's missing (cents). */
   reason?: Refusal
   shortfallCents?: number
-  constructor(code: CampaignNotReadyError['code'], message: string, extra: { reason?: Refusal; shortfallCents?: number } = {}) {
+  /** false: topping up wouldn't help (switched off, allowance only, top-ups managed by Colvy). */
+  canTopUp?: boolean
+  constructor(code: CampaignNotReadyError['code'], message: string, extra: { reason?: Refusal; shortfallCents?: number; canTopUp?: boolean } = {}) {
     super(message)
     this.name = 'CampaignNotReadyError'
     this.code = code
     this.reason = extra.reason
     this.shortfallCents = extra.shortfallCents
+    this.canTopUp = extra.canTopUp
   }
   /** Payment needed (credit / plan / allowance) → the routes answer 402. */
   get paymentRequired() { return this.code === 'credit' || this.code === 'plan' || this.code === 'allowance' }
@@ -86,7 +89,7 @@ export function notReadyBody(e: CampaignNotReadyError) {
     error: e.message, code: e.code,
     ...(e.reason ? { reason: e.reason } : {}),
     ...(e.shortfallCents != null ? { shortfallCents: e.shortfallCents } : {}),
-    ...(e.paymentRequired ? { topUpUrl: TOP_UP_PATH } : {}),
+    ...(e.paymentRequired && e.canTopUp !== false ? { topUpUrl: TOP_UP_PATH } : {}),
   }
 }
 
@@ -181,7 +184,7 @@ export async function preflightCampaign(db: any, companyId: string, campaign: an
       // No wallet yet: today's rule, the allowance alone.
       throw new CampaignNotReadyError('allowance', allowanceProblem(allowance, parts) || creditRefusalText('not_set_up'), { reason: 'not_set_up' })
     }
-    throw new CampaignNotReadyError(hold.reason === 'plan' ? 'plan' : 'credit', hold.message || creditRefusalText(hold.reason), { reason: hold.reason, shortfallCents: hold.shortfallCents || 0 })
+    throw new CampaignNotReadyError(hold.code, hold.message || creditRefusalText(hold.reason), { reason: hold.reason, shortfallCents: hold.shortfallCents || 0, canTopUp: hold.canTopUp })
   }
   return { filter, audience, segments, parts, allowance, heldCents: hold.heldCents || 0 }
 }
@@ -302,7 +305,7 @@ export async function resumeCampaign(companyId: string, campaignId: string, opts
     const r = await extendCampaignHold(db, { companyId, campaignId, totalParts: sentParts + remainingParts, sentParts, createdBy: campaign.created_by_id })
     if (!r.ok) {
       if (r.reason !== 'not_set_up') {
-        throw new CampaignNotReadyError(r.reason === 'plan' ? 'plan' : 'credit', (r.message || '').replace('This campaign needs', 'The rest of this campaign needs'), { reason: r.reason, shortfallCents: r.shortfallCents || 0 })
+        throw new CampaignNotReadyError(refusalCode(r.reason), (r.message || '').replace('This campaign needs', 'The rest of this campaign needs'), { reason: r.reason, shortfallCents: r.shortfallCents || 0, canTopUp: r.reason === 'insufficient' || r.reason === 'plan' ? undefined : false })
       }
     } else {
       await updateCampaign(db, campaignId, { status: 'sending', status_reason: null, updated_at: new Date().toISOString() })
@@ -441,7 +444,7 @@ export async function processCampaignBatch(campaignId: string, opts: BatchOption
   }
   const allowance = await smsAllowanceSummary(db, companyId)
   if (!allowance.entitled) {
-    await pauseCampaign(db, campaignId, 'SMS isn’t included in this plan. Upgrade to the Inbox or Everything plan, then resume the campaign.')
+    await pauseCampaign(db, campaignId, allowance.reason === 'sms_disabled' ? 'Texting is switched off for your account. Contact Colvy to turn it back on, then resume the campaign.' : 'SMS isn’t included in this plan. Upgrade to the Inbox or Everything plan, then resume the campaign.')
     return { done: false, paused: true, reason: 'plan' }
   }
   const { data: company } = await db.from('companies')
@@ -453,7 +456,8 @@ export async function processCampaignBatch(campaignId: string, opts: BatchOption
   // hold covers. Texts are never charged one by one here.
   // No hold (before the wallet exists, or a campaign started before it was
   // wired in): the allowance caps it, as before.
-  const hold = allowance.unlimited ? null : await campaignHold(db, campaignId)
+  // Unlimited (perhaps switched to it after scheduling): any hold goes back.
+  const hold = allowance.unlimited ? await releaseHoldIfUnlimited(db, companyId, campaignId) : await campaignHold(db, campaignId)
   const covered = hold?.status === 'held'
   const cap = allowance.unlimited || covered ? null : allowance.limit
   let budget = covered ? Math.max(0, (Number(hold.parts) || 0) - await campaignPartsSent(db, campaign, company)) : Infinity

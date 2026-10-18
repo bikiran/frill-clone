@@ -38,6 +38,16 @@ export const KIND_LABEL: Record<LedgerKind, string> = {
   release: 'Hold returned',
 }
 
+/**
+ * A ledger row's type in words. A platform admin's adjustment reads as
+ * "Charge by Colvy" (taken off) or "Credit from Colvy" (added); its note is
+ * the reason they gave.
+ */
+export function ledgerLabel(r: { kind: LedgerKind | string; amount_cents?: number | null }): string {
+  if (r.kind === 'adjustment') return (Number(r.amount_cents) || 0) < 0 ? 'Charge by Colvy' : 'Credit from Colvy'
+  return (KIND_LABEL as Record<string, string>)[r.kind] || String(r.kind)
+}
+
 export type LedgerRow = {
   id: string
   company_id?: string
@@ -259,7 +269,7 @@ export function ledgerToCsv(rows: LedgerRow[], campaignNames: Record<string, str
     const date = Number.isFinite(d.getTime()) ? d.toLocaleString('en-AU', { timeZone: 'Australia/Sydney', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }) : ''
     lines.push([
       date,
-      KIND_LABEL[r.kind] || r.kind,
+      ledgerLabel(r),
       r.campaign_id ? (campaignNames[r.campaign_id] || r.campaign_id) : '',
       r.parts ?? '',
       ((Number(r.amount_cents) || 0) / 100).toFixed(2),

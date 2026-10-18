@@ -11,10 +11,17 @@
 //
 // Before V395 runs the wallet answers ready:false / reason 'not_set_up', and
 // campaigns keep the allowance-only rules (lib/sms-allowance).
+//
+// How the company pays comes from its SMS billing policy (lib/sms-policy):
+// unlimited → no hold (and an old hold is given back), allowance only → a
+// campaign beyond the allowance is refused with reason 'limit', switched off →
+// refused with 'sms_disabled'.
 
 import { renderVariables, analyseSms } from './sms-segments'
-import { reserveForCampaign, quoteSend, allowanceStatus, costForParts, isMissingTable, maybeAutoTopUp, type Refusal } from './sms-credits'
+import { reserveForCampaign, quoteSend, allowanceStatus, costForParts, isMissingTable, maybeAutoTopUp, releaseHoldIfUnlimited, releaseCampaign, type Refusal } from './sms-credits'
 import { fmtCents } from './sms-credits-core'
+import { getSmsPolicy } from './sms-policy'
+import { COLVY_CONTACT } from './colvy-contact'
 
 export const TOP_UP_PATH = '/admin/billing#sms-credits'
 
@@ -112,8 +119,11 @@ export async function walletReady(db: any, companyId: string): Promise<boolean> 
 }
 
 /** The words for a credit refusal, as the editor and the server show them. */
-export function creditRefusalText(reason: Refusal | undefined, shortfallCents = 0, allowanceText?: string | null): string {
+export function creditRefusalText(reason: Refusal | undefined, shortfallCents = 0, allowanceText?: string | null, opts: { canTopUp?: boolean } = {}): string {
   if (reason === 'plan') return 'SMS isn’t on your plan. Upgrade to the Inbox or Everything plan to send text messages.'
+  if (reason === 'sms_disabled') return 'Texting is switched off for your account. Contact Colvy to turn it back on.'
+  if (reason === 'limit') return allowanceText || 'This campaign needs more texts than your monthly SMS allowance has left. It resets at the start of next month.'
+  if (reason === 'insufficient' && opts.canTopUp === false) return `This campaign needs ${fmtCents(shortfallCents)} more SMS credit. Top-ups are managed by Colvy for your account: contact us at ${COLVY_CONTACT.email} to add credit.`
   if (reason === 'insufficient') return `This campaign needs ${fmtCents(shortfallCents)} more SMS credit. Top up from Billing to send it.`
   if (reason === 'not_set_up') return allowanceText || 'Your monthly SMS allowance is used up. It resets at the start of next month, or upgrade for a higher allowance.'
   if (reason === 'settled') return 'This campaign has already been charged.'
@@ -134,6 +144,10 @@ export interface CampaignCreditQuote {
   affordable: boolean
   shortfallCents: number
   pricePerPart: number
+  /** The SMS billing mode (lib/sms-policy). */
+  mode?: string
+  /** The business can top up itself. */
+  canTopUp?: boolean
 }
 
 /**
@@ -147,14 +161,25 @@ export async function quoteCampaign(db: any, companyId: string, campaignId: stri
   ])
   const heldCents = hold?.status === 'held' ? Number(hold.held_cents) || 0 : 0
   const available = q.balanceCents + heldCents
-  const affordable = q.entitled && (q.unlimited || q.costCents === 0 || (q.ready && available >= q.costCents))
+  const charges = q.policy.chargesCredit
+  const affordable = q.entitled && (q.unlimited || q.billableParts === 0 || q.costCents === 0 || (charges && q.ready && available >= q.costCents))
   return {
-    ready: q.ready, entitled: q.entitled, unlimited: q.unlimited,
+    // Allowance only never uses credit: answered as "no wallet", so the editor
+    // shows the allowance on its own ("needs N texts; you have M left").
+    ready: q.ready && (charges || q.unlimited), entitled: q.entitled, unlimited: q.unlimited,
     parts: q.parts, freeParts: q.freeParts, billableParts: q.billableParts,
     costCents: q.costCents, balanceCents: q.balanceCents, heldCents,
-    affordable, shortfallCents: affordable ? 0 : Math.max(0, q.costCents - available),
+    affordable, shortfallCents: affordable || !charges ? 0 : Math.max(0, q.costCents - available),
     pricePerPart: q.pricePerPart,
+    mode: q.policy.mode, canTopUp: q.policy.canTopUp,
   }
+}
+
+/** The CampaignNotReadyError code for a refusal: plan / allowance / credit. */
+export function refusalCode(reason: Refusal | undefined): 'plan' | 'allowance' | 'credit' {
+  if (reason === 'plan' || reason === 'sms_disabled') return 'plan'
+  if (reason === 'limit') return 'allowance'
+  return 'credit'
 }
 
 /**
@@ -167,7 +192,12 @@ export async function holdForCampaign(db: any, o: { companyId: string; campaignI
     companyId: o.companyId, campaignId: o.campaignId, parts: o.parts,
     createdBy: uuidOrNull(o.createdBy),
   })
-  return { ...r, message: r.ok ? null : creditRefusalText(r.reason, r.shortfallCents || 0) }
+  const canTopUp = r.reason === 'insufficient' ? r.quote.policy.canTopUp : r.reason === 'plan' ? undefined : r.reason ? false : undefined
+  const left = r.quote.allowance.remaining
+  const limitText = r.reason === 'limit'
+    ? `This campaign needs ${o.parts.toLocaleString('en-AU')} texts; you have ${(left === Infinity ? 0 : left).toLocaleString('en-AU')} left this month.`
+    : null
+  return { ...r, code: refusalCode(r.reason), canTopUp, message: r.ok ? null : creditRefusalText(r.reason, r.shortfallCents || 0, limitText, { canTopUp }) }
 }
 
 /**
@@ -182,9 +212,18 @@ export async function holdForCampaign(db: any, o: { companyId: string; campaignI
 export async function extendCampaignHold(db: any, o: { companyId: string; campaignId: string; totalParts: number; sentParts: number; createdBy?: string | null }): Promise<{ ok: boolean; reason?: Refusal; shortfallCents?: number; heldCents?: number; message: string | null }> {
   const hold = await campaignHold(db, o.campaignId)
   if (hold?.status === 'settled') return { ok: false, reason: 'settled', message: creditRefusalText('settled') }
-  const allowance = await allowanceStatus(db, o.companyId, { excludeCampaignId: o.campaignId })
-  if (!allowance.entitled) return { ok: false, reason: 'plan', message: creditRefusalText('plan') }
-  if (allowance.unlimited) return { ok: true, message: null }
+  const policy = await getSmsPolicy(db, o.companyId)
+  const allowance = await allowanceStatus(db, o.companyId, { excludeCampaignId: o.campaignId, policy })
+  if (!allowance.entitled) {
+    const reason: Refusal = allowance.reason || 'plan'
+    if (hold?.status === 'held') await releaseCampaign(db, { companyId: o.companyId, campaignId: o.campaignId, note: 'Texting not available: hold returned' }).catch(() => null)
+    return { ok: false, reason, message: creditRefusalText(reason) }
+  }
+  if (allowance.unlimited) {
+    // Switched to unlimited: nothing is charged, so nothing stays held.
+    if (hold?.status === 'held') await releaseHoldIfUnlimited(db, o.companyId, o.campaignId)
+    return { ok: true, message: null }
+  }
   const total = Math.max(0, Math.floor(o.totalParts))
   const sent = Math.max(0, Math.min(total, Math.floor(o.sentParts)))
   const held = hold?.status === 'held'
@@ -207,6 +246,11 @@ export async function extendCampaignHold(db: any, o: { companyId: string; campai
   }
   free = Math.min(free, total)
   const billable = total - free
+  if (billable > 0 && !policy.chargesCredit) {
+    // Allowance only: the rest waits for next month's allowance.
+    const left = Math.max(0, allowance.remaining)
+    return { ok: false, reason: 'limit', message: creditRefusalText('limit', 0, `This campaign needs ${(total - sent).toLocaleString('en-AU')} texts; you have ${left.toLocaleString('en-AU')} left this month.`) }
+  }
   const { cents, pricePerPart } = await costForParts(db, o.companyId, billable, { tierParts: total })
   let r: any
   try {
@@ -222,8 +266,9 @@ export async function extendCampaignHold(db: any, o: { companyId: string; campai
     if ((t as any).ok) return extendCampaignHold(db, o)
   }
   if (!r.ok) {
-    const shortfall = Number(r.needed_cents) || 0
-    return { ok: false, reason: r.reason, shortfallCents: shortfall, message: creditRefusalText(r.reason, shortfall) }
+    // needed_cents is what the hold had to grow by; the shortfall is what the balance lacks.
+    const shortfall = Math.max(0, (Number(r.needed_cents) || 0) - (Number(r.balance_cents) || 0))
+    return { ok: false, reason: r.reason, shortfallCents: shortfall, message: creditRefusalText(r.reason, shortfall, null, { canTopUp: policy.canTopUp }) }
   }
   return { ok: true, heldCents: Number(r.held_cents) || cents, message: null }
 }

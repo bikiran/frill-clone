@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { smsCreditsAccess } from '@/lib/sms-credits-access'
 import { getWallet } from '@/lib/sms-credits'
+import { getSmsPolicy } from '@/lib/sms-policy'
+import { COLVY_CONTACT } from '@/lib/colvy-contact'
 import { validateAutoTopUp } from '@/lib/sms-credits-core'
 
 export const dynamic = 'force-dynamic'
@@ -11,7 +13,9 @@ export const dynamic = 'force-dynamic'
 //   { companyId, removeCard: true }                      forget the saved card
 // Owner / admin only. Turning auto top-up on needs a saved card: the first one
 // is saved by a top-up with "Top up automatically" ticked (./topup). Turning it
-// on (again) clears the failure count.
+// on (again) clears the failure count. Switching auto top-up on needs the
+// company's SMS billing policy to allow it (lib/sms-policy); switching it off
+// and removing the card are always allowed.
 
 const admin = () => createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, { auth: { autoRefreshToken: false, persistSession: false } })
 
@@ -34,6 +38,9 @@ export async function POST(req: NextRequest) {
       const v = validateAutoTopUp(body.thresholdCents, body.amountCents)
       if (!v.ok) return NextResponse.json({ error: v.error }, { status: 400 })
       const enabled = !!body.enabled
+      if (enabled && !(await getSmsPolicy(db, id)).canAutoTopUp) {
+        return NextResponse.json({ error: `Auto top-up isn’t available for your account. Contact us at ${COLVY_CONTACT.email} if you need it.`, managed: true }, { status: 403 })
+      }
       if (enabled && !wallet.card) {
         return NextResponse.json({ error: 'Save a card first: top up once with “Top up automatically” ticked.', needsCard: true }, { status: 409 })
       }

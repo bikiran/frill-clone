@@ -17,6 +17,7 @@ import SignupSmsHealth from '@/components/platform-admin/SignupSmsHealth'
 import WebFormsPage from '@/components/platform-admin/WebFormsPage'
 import BillingConfigCard from '@/components/platform-admin/BillingConfigCard'
 import SmsCreditsPage from '@/components/platform-admin/SmsCreditsPage'
+import CompanySmsBilling from '@/components/platform-admin/CompanySmsBilling'
 import { COLVY_CONTACT, isColvyNumber } from '@/lib/colvy-contact'
 
 const SUPER_ADMIN = 'bishalstha76@gmail.com'
@@ -622,7 +623,7 @@ function BusinessDetail({ co, onClose, onAction }: { co: any; onClose: () => voi
       <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--sa-text)', textAlign: 'right', wordBreak: 'break-word' }}>{v ?? '—'}</span>
     </div>
   )
-  const TABS = [['overview', 'Overview'], ['plan', 'Subscription'], ['ent', 'Entitlements'], ['users', `Users${users ? ` (${users.length})` : ''}`], ['notes', `Notes${notes ? ` (${notes.length})` : ''}`], ['danger', 'Danger Zone']]
+  const TABS = [['overview', 'Overview'], ['plan', 'Subscription'], ['ent', 'Entitlements'], ['sms', 'SMS billing'], ['users', `Users${users ? ` (${users.length})` : ''}`], ['notes', `Notes${notes ? ` (${notes.length})` : ''}`], ['danger', 'Danger Zone']]
 
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 380, display: 'flex', justifyContent: 'flex-end' }}>
@@ -647,9 +648,9 @@ function BusinessDetail({ co, onClose, onAction }: { co: any; onClose: () => voi
             : <button onClick={() => onAction('suspend', co)} style={paBtn('#ef4444')}>Suspend…</button>}
         </div>
         {/* tabs */}
-        <div style={{ display: 'flex', gap: 4, padding: '10px 16px 0', borderBottom: '1px solid var(--sa-border)' }}>
+        <div style={{ display: 'flex', gap: 4, padding: '10px 16px 0', borderBottom: '1px solid var(--sa-border)', overflowX: 'auto', flexShrink: 0 }}>
           {TABS.map(([k, l]) => (
-            <button key={k} onClick={() => setTab(k)} style={{ padding: '8px 12px', borderRadius: '8px 8px 0 0', border: 'none', borderBottom: tab === k ? '2px solid #ff7a6b' : '2px solid transparent', background: 'transparent', color: tab === k ? 'var(--sa-text)' : 'var(--sa-muted)', fontSize: 13, fontWeight: tab === k ? 700 : 500, cursor: 'pointer' }}>{l}</button>
+            <button key={k} onClick={() => setTab(k)} style={{ flexShrink: 0, whiteSpace: 'nowrap', padding: '8px 12px', borderRadius: '8px 8px 0 0', border: 'none', borderBottom: tab === k ? '2px solid #ff7a6b' : '2px solid transparent', background: 'transparent', color: tab === k ? 'var(--sa-text)' : 'var(--sa-muted)', fontSize: 13, fontWeight: tab === k ? 700 : 500, cursor: 'pointer' }}>{l}</button>
           ))}
         </div>
 
@@ -883,6 +884,8 @@ function BusinessDetail({ co, onClose, onAction }: { co: any; onClose: () => voi
               <button onClick={saveEnt} disabled={savingEnt || !entLoaded} style={{ ...paBtn('#ff7a6b', true), alignSelf: 'flex-start' }}>{savingEnt ? 'Saving…' : 'Save overrides'}</button>
             </div>
           )}
+
+          {tab === 'sms' && <CompanySmsBilling companyId={co.id} />}
 
           {tab === 'users' && (
             users === null ? <p style={{ color: 'var(--sa-muted)', fontSize: 13 }}>Loading…</p>
