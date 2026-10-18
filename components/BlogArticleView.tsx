@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import FeatureIcon from '@/components/FeatureIcon'
 import type { Article } from '@/lib/blog-store'
+import { BLOG_PROSE_CSS } from '@/components/blog-prose-css'
 
 const CORAL = '#ff6a4d'
 
@@ -147,22 +148,7 @@ export default function BlogArticleView({ article, related, recent, url }: { art
 
       <style>{`
         @media (max-width: 900px){ .blog-body-grid{ grid-template-columns: 1fr !important; } .blog-sidebar{ position: static !important; } }
-        .blog-prose { font-size: 18px; line-height: 1.78; color: var(--blog-text); }
-        .blog-prose > p:first-of-type::first-letter { float: left; font-size: 3.4em; line-height: 0.78; font-weight: 900; padding: 6px 10px 0 0; color: ${CORAL}; }
-        .blog-prose h2 { font-size: 27px; font-weight: 800; letter-spacing: -0.02em; margin: 40px 0 12px; line-height: 1.22; }
-        .blog-prose h3 { font-size: 20px; font-weight: 800; margin: 28px 0 10px; }
-        .blog-prose p { margin: 0 0 18px; }
-        .blog-prose ul, .blog-prose ol { margin: 0 0 18px; padding-left: 24px; }
-        .blog-prose li { margin: 0 0 8px; }
-        .blog-prose a { color: ${CORAL}; text-decoration: underline; text-underline-offset: 2px; }
-        .blog-prose strong { font-weight: 800; }
-        .blog-prose blockquote { margin: 26px 0; padding: 6px 0 6px 22px; border-left: 4px solid ${CORAL}; font-size: 22px; font-weight: 700; font-style: italic; line-height: 1.4; }
-        .blog-prose code { background: var(--blog-surface); border: 1px solid var(--blog-border); border-radius: 6px; padding: 1px 6px; font-size: 0.9em; }
-        .blog-prose pre { background: var(--blog-surface); border: 1px solid var(--blog-border); border-radius: 12px; padding: 16px 18px; overflow-x: auto; margin: 0 0 18px; }
-        .blog-prose pre code { border: none; background: none; padding: 0; }
-        .blog-prose figure { margin: 0 0 22px; }
-        .blog-prose figure img { width: 100%; border-radius: 14px; border: 1px solid var(--blog-border); }
-        .blog-prose hr { border: none; border-top: 1px solid var(--blog-border); margin: 30px 0; }
+        ${BLOG_PROSE_CSS}
       `}</style>
     </main>
   )
