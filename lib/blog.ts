@@ -28,6 +28,484 @@ export type BlogPost = {
 
 export const POSTS: BlogPost[] = [
   {
+    slug: 'online-store-wheres-my-order',
+    cover: '/blog/online-store-wheres-my-order/cover.jpg',
+    title: "“Where’s my order?”: how online stores answer it before customers ask",
+    excerpt: "It’s the most common message an online store gets. Status updates in your voice, tracking that finds itself, AI answers from live order data and friendly cart reminders take it off your plate.",
+    category: 'Industry guides', accent: BLUE, icon: 'cart',
+    date: '2026-10-18T14:00:00+11:00', dateLabel: 'Oct 18, 2026', readTime: '6 min read', author: 'The Colvy Team',
+    takeaways: [
+      "Send a message at each order status, in your voice, on the channel each customer prefers.",
+      "Pull tracking from the labels and shipments you already create, so dispatch messages always have a link.",
+      "Let the AI answer “where’s my order?” from live order and tracking data.",
+      "One friendly abandoned-cart message, at the right time, starts conversations that close sales.",
+      "Take orders and payments in the chat, and handle breakages with a refund, credit or resend from the same place.",
+    ],
+    content: `Ask anyone who runs an online store which message they get most, and the answer is almost always the same: “Where’s my order?”
+
+It’s not a complaint, exactly. It’s a customer who’s excited, a little anxious, and doesn’t know what happens between “Thanks for your order” and the parcel on the doorstep. Each one takes a few minutes to answer. Multiply that by every order, every week, and it’s a part-time job.
+
+The good news is that almost all of these messages can be answered before they’re sent. Here’s how.
+
+![A shopper entering card details on a laptop](/blog/online-store-wheres-my-order/checkout.jpg "The moment they pay, the questions start. Answer them before they’re asked.")
+
+## 1. Tell them before they ask
+
+The simplest fix is a message at each step of the order. In Colvy, each WooCommerce or Shopify order status has its own message:
+
+| Status | What the customer hears |
+|---|---|
+| Processing | “Thanks, we’ve got your order and we’re packing it.” |
+| On hold | A heads-up that you’re waiting on something, like payment clearing |
+| Completed, with tracking | “It’s on its way!” with the tracking link |
+| Completed, no tracking yet | “It’s on its way” without a link, so nobody clicks into a dead end |
+| Picked up | A thank-you for click & collect orders |
+| Refunded or cancelled | A clear, polite explanation |
+
+You write each one in your own voice, and leaving a message blank means it simply doesn’t send. Messages go by SMS or email, by default on whichever channel the customer last used with you.
+
+Colvy also avoids the classic mistakes:
+
+- **No spam.** At most one message per status per customer each hour, so a busy order doesn’t send five texts.
+- **No counter sales.** In-store POS sales don’t get “thanks for your online order”.
+- **No false alarms.** A customer isn’t told their order was cancelled while they have another live one.
+
+\`\`\`chat
+title: Kindred Candle Co. · SMS
+event: Order #4821 · Processing
+you: Hi Ella, thanks for your order! We’re hand-pouring your candles now and we’ll text you as soon as they’re on the way.
+event: Order #4821 · Completed
+you: Good news Ella, your order is on its way 🚚 Track it here: auspost.com.au/track/…
+them: Yay! Thank you 🥰
+\`\`\`
+
+## 2. Tracking that finds itself
+
+The “dispatched” message is only as good as its tracking link. Colvy picks up tracking from wherever you already create it:
+
+- **Labels you buy in Colvy** through Starshipit or ShipStation.
+- **ShipStation shipments**, once it’s switched on for your store.
+- **Tracking added in WooCommerce**, including notes from the ShipStation plugin.
+
+The order card in Colvy shows where each order is up to, from tracking progress to “ready to collect”, so whoever’s on the inbox can see it at a glance without opening your store admin.
+
+![Kraft paper gift tags tied with twine](/blog/online-store-wheres-my-order/tags.jpg "A good dispatch message feels like part of the packaging.")
+
+## 3. When they ask anyway
+
+Some people will always ask, and that’s fine. When they do, Colvy’s AI finds their order and the latest tracking, and drafts the answer:
+
+\`\`\`chat
+title: Kindred Candle Co. · Instagram
+them: hey just wondering where my order is? it’s been a few days
+ai: Hi Ella! Your order #4821 left us on Tuesday and it’s with Australia Post now, currently in transit in Melbourne. It should reach you in the next day or two. Here’s the tracking link: auspost.com.au/track/…
+\`\`\`
+
+Order status is one of the replies you can let the AI send by itself, because it’s answering from live order data checked in that same moment. Everything else stays as a draft for a person to approve. There’s a daily limit, and a pause switch for all AI replies.
+
+[See how Colvy’s AI works](/ai-assistant)
+
+## 4. The cart they didn’t finish
+
+Not every customer gets as far as an order. Abandoned carts are the other half of the story, and a short, friendly nudge brings a surprising number back.
+
+Colvy’s cart recovery is off until you switch it on. Then it sends one message per abandoned cart, by SMS or email:
+
+\`\`\`chat
+title: Kindred Candle Co. · SMS
+you: Hi Ella, you left Fig & Cedar (large) in your cart at Kindred Candle Co. Any questions? Just reply here. kindredcandle.co/cart/… Reply STOP to opt out.
+them: Oh I got distracted! Is the large one the 40 hour burn?
+you: It is! 40+ hours. Your cart’s saved whenever you’re ready 🕯️
+\`\`\`
+
+The rules keep it respectful:
+
+- **You choose the wait:** 30 minutes, 1 hour (the default), 2, 4 or 12 hours.
+- **Daytime only:** between 9am and 8pm.
+- **Fresh carts only:** nothing older than 24 hours, and never anyone who has since ordered or opted out.
+
+Want it more personal? Switch on the Sales Agent and each cart gets its own AI-written message based on what’s in it, as drafts for you to approve, or sent automatically within a daily limit.
+
+> [!TIP] Replies are the real win
+> Notice the customer replied with a question. A cart message that comes from a real number, into a real inbox, starts a conversation. That beats a no-reply email every time.
+
+## 5. Sell right there in the chat
+
+Plenty of orders start as a question: “Do you do gift wrapping?” “Can I get the large one in blue?” When the answer is yes, you can take the order in the same conversation:
+
+\`\`\`chat
+title: Kindred Candle Co. · Website chat
+them: Could I get 2 of the large Fig & Cedar with gift wrap? They’re for my sisters
+card: Your order | 2 × Fig & Cedar (large) + gift wrap · A$94 | Pay now
+event: Paid · Order #4830 created
+\`\`\`
+
+On WooCommerce, Colvy creates a real order with a payment link. On Shopify, it creates a draft order and sends Shopify’s own secure checkout. Either way, when they pay, the order files itself back into the conversation, and your normal order messages take it from there.
+
+[Selling in the chat, step by step](/blog/sell-in-the-chat)
+
+## 6. When something goes wrong
+
+Breakages and missing parcels happen. When a customer messages about one, the DOA panel sits next to the chat: look up the order, pick the items, then refund to the original payment method, issue store credit as a one-time code, or flag a resend for your team. Need to see the damage first? Send an upload link and their photos and videos arrive at full quality.
+
+## 7. Know which messages actually sell
+
+Every link Colvy sends is tracked, including cart reminders, campaign links and back-in-stock texts. You’ll see who clicked, when and on what device. When someone orders within 7 days of clicking, the order is credited to that last click, so you can see roughly which messages earn their keep.
+
+---
+
+## The whole journey, handled
+
+| Moment | What Colvy does |
+|---|---|
+| Customer pays | “We’ve got it” message, in your voice |
+| You ship | Dispatch message with tracking that finds itself |
+| “Where’s my order?” | AI answers from live order and tracking data |
+| Cart left behind | One friendly nudge at the time you choose |
+| A question before buying | Order and payment link right in the chat |
+| Something breaks | Refund, store credit or resend from the conversation |
+
+> The best customer service message is the one the customer never needed to send.
+
+[Start free](/signup) or [see Colvy for ecommerce](/for/ecommerce).`,
+  },
+  {
+    slug: 'real-estate-enquiries',
+    cover: '/blog/real-estate-enquiries/cover.jpg',
+    title: "First to reply wins: a real estate agency’s guide to never missing an enquiry",
+    excerpt: "Portal enquiries, Facebook messages, website chat, calls and texts, all while you’re running open homes. Here’s how agencies reply first, fill inspections and keep paperwork moving.",
+    category: 'Industry guides', accent: GREEN, icon: 'pin',
+    date: '2026-10-18T13:00:00+11:00', dateLabel: 'Oct 18, 2026', readTime: '5 min read', author: 'The Colvy Team',
+    takeaways: [
+      "Bring realestate.com.au enquiries, portal emails, social messages and texts into one shared inbox.",
+      "Draft replies from your own process with AI, and assign each enquiry to the listing agent.",
+      "Let buyers book inspections themselves, with reminders and easy rescheduling.",
+      "Use forms with uploads and signatures for paperwork, and upload links for maintenance photos.",
+      "Tracked links show when a buyer opens the listing or contract, a natural moment to follow up.",
+    ],
+    content: `It’s Saturday afternoon. You’ve run four open homes, your voice is going, and your phone holds 23 unread portal enquiries, eleven Facebook messages and a missed call from a vendor. Somewhere in that pile is the buyer who’ll sign on Monday, if somebody gets back to them first.
+
+Real estate rewards speed more than almost any industry. The agent who answers first often gets the inspection, and the agent who gets the inspection often gets the sale. But answering first is hard when enquiries arrive in five different places and you spend half the day in the car.
+
+Here’s how to make “first to reply” the default instead of a lucky break.
+
+![A house key hanging in an open front door](/blog/real-estate-enquiries/keys-door.jpg "The first agent to reply is usually the one who hands over the keys.")
+
+## 1. Every enquiry in one place
+
+The first problem isn’t speed, it’s scatter. Portal emails land in one inbox, Facebook messages in another, website chat somewhere else, and texts on your personal phone.
+
+Colvy puts them all in one shared inbox:
+
+- **realestate.com.au enquiries.** Connect your agency and each enquiry arrives as its own conversation, with the listing address and the buyer’s message.
+- **Other portals.** Any portal that emails you works through your connected email address.
+- **Facebook, Instagram, website chat and SMS** arrive alongside them.
+
+\`\`\`chat
+title: Harbour & Co Property · realestate.com.au
+event: New enquiry · 14 Ash Street, Coogee
+them: Hi, is this still available? Could we inspect before Saturday? We’re pre-approved and keen.
+you: Hi Tom, thanks for your enquiry on 14 Ash Street, it’s still available! Grab any inspection time that suits you here:
+card: Book an inspection | 14 Ash Street, Coogee | Choose a time
+\`\`\`
+
+Because it’s a shared inbox, the whole team can see what’s been answered. Assign each enquiry to the listing agent, leave internal notes (“pre-approved, first-home buyer”), and nothing falls between two people’s phones.
+
+## 2. Reply in minutes, not hours
+
+Speed is easier when the first draft is already written. Colvy’s AI drafts replies from your website and the facts you’ve saved, such as your inspection process, what documents buyers need, or how offers work at your agency. Someone checks it, adjusts the details and sends.
+
+> [!TIP] Save the answers you give every week
+> Put your standard answers in Business Memory: how to make an offer, what’s included in a contract request, how deposits work, your agency’s opening hours. The AI then drafts every reply from your actual process.
+
+## 3. Inspections people book themselves
+
+“Can we see it Thursday?” starts a game of phone tag that eats the week. Instead, set up inspection and appraisal times on your Colvy booking page and share the link:
+
+- **Buyers pick a time** that suits them, and get a confirmation by text and email with a calendar invite.
+- **Reminders go out automatically**, the day before and two hours before, so fewer people forget.
+- **They can reply C to confirm or R to reschedule**, or use the manage link to change the time themselves.
+
+![A bright open-plan kitchen with an island bench](/blog/real-estate-enquiries/kitchen.jpg "Fewer no-shows at inspections means more serious buyers through the door.")
+
+## 4. Paperwork without the printer
+
+Applications, ID, contract requests and maintenance reports all mean documents. Colvy forms can include file uploads and a signature, so you send the link in the conversation and the completed form comes back to you, attached to the right person.
+
+Property managers get a bonus. When a tenant reports a leaking tap or a cracked tile, send an upload link. Their photos and videos arrive at full quality, straight into the conversation, instead of as a blurry MMS.
+
+\`\`\`chat
+title: Harbour & Co Property · SMS
+them: Hi, the dishwasher at unit 4 is leaking all over the floor again
+you: So sorry Priya! Could you send a short video of where it’s leaking from? It’ll help the plumber bring the right part.
+card: Secure file upload | Photos or videos, full quality | Upload
+event: Priya uploaded 1 video
+\`\`\`
+
+## 5. Calls you don’t lose
+
+Vendors and buyers still call, and real estate calls matter. With a Colvy business number:
+
+- **Calls ring the whole team** (in the app or the browser), and whoever’s free answers.
+- **Missed calls get an instant text back**, so the caller isn’t left wondering, and their reply lands in the inbox.
+- **Answered calls are recorded, transcribed and summarised** on the contact’s conversation, with follow-up tasks pulled out. No more scribbled notes in the car.
+
+> [!WARNING] Recording calls
+> Recording rules differ between states and situations. Check your obligations, and consider telling callers that calls may be recorded.
+
+[Get a business number online](/business-phone-number-australia)
+
+## 6. Know when they’ve looked
+
+Every link you send through Colvy is tracked. When a buyer opens the listing, the contract link or the inspection booking page, you’ll see when, on what device and roughly where. That’s a handy nudge to follow up with the buyer who opened the contract three times last night.
+
+![A light-filled living room with a grey sofa](/blog/real-estate-enquiries/living-room.jpg "Interest shows up in clicks before it shows up in offers.")
+
+## 7. After the sale
+
+The settlement is the best moment to ask for a review. Hit **Ask for a review** in the conversation and the client gets a link straight to your Google profile. When reviews come in, Colvy can draft a reply in your voice, and anything critical comes to you with a task attached.
+
+---
+
+## A week at the agency, with the busywork handled
+
+| Moment | What Colvy does |
+|---|---|
+| Portal enquiry at 9pm | Lands in the shared inbox with the listing; reply drafted |
+| “Can we inspect?” | Booking link; confirmation, reminders and reschedules handled |
+| Tenant maintenance issue | Upload link for full-quality photos and video |
+| Vendor call while driving | Recording, summary and follow-up tasks on their record |
+| Buyer opens the contract | Tracked link shows when they looked |
+| Settlement | One-tap review request, and a drafted reply when it lands |
+
+> In real estate, the enquiry you answer first is worth more than the one you answer best.
+
+[Start free](/signup) or [see Colvy for real estate](/for/real-estate).`,
+  },
+  {
+    slug: 'sms-marketing-consent-australia',
+    cover: '/blog/sms-marketing-consent-australia/cover.jpg',
+    title: "SMS marketing in Australia: consent, STOP and the Spam Act in plain English",
+    excerpt: "If you text customers about offers, the Spam Act applies to you. Here are the three rules (consent, identify, unsubscribe) explained simply, plus a checklist and how to make compliance automatic.",
+    category: 'Playbooks', accent: CORAL, icon: 'lock',
+    date: '2026-10-18T12:00:00+11:00', dateLabel: 'Oct 18, 2026', readTime: '5 min read', author: 'The Colvy Team',
+    takeaways: [
+      "Marketing texts need consent: express (they said yes) or inferred (an existing relationship where they’d expect it).",
+      "Every message must identify your business and include a free, simple way to opt out.",
+      "Opt-outs must be honoured within five working days, and you need to be able to prove consent.",
+      "Purely factual messages like order updates aren’t marketing, until you add a promotion.",
+      "Colvy handles STOP and START, checks consent before every text and warns you before you send a non-compliant message.",
+    ],
+    content: `SMS is the most personal marketing channel there is. Your message sits right between a text from Mum and a photo from a mate. That’s exactly why it works, and exactly why Australia has firm rules about it.
+
+If you text customers about offers, sales or new products, those rules apply to you, whatever the size of your business. The good news is they’re not complicated. This guide explains them in plain English, and shows how to make following them automatic.
+
+> [!NOTE] General information, not legal advice
+> This guide is a plain-English summary to help you get started. For the official guidance, see the [ACMA’s guide to avoiding spam](https://www.acma.gov.au/avoid-sending-spam), and get advice for your own situation if you’re unsure.
+
+![A person texting on their phone while holding a coffee](/blog/sms-marketing-consent-australia/texting.jpg "Your text lands in the most personal app on their phone. Treat it that way.")
+
+## What the rules cover
+
+Australia’s Spam Act covers **commercial electronic messages**: texts, emails and instant messages that offer, advertise or promote goods or services. If your business is in Australia, or you’re texting people in Australia, it applies.
+
+That includes the obvious ones (“20% off this weekend!”), but also messages you might not think of as marketing, like “we’ve just restocked, come in and see” or a review request that also mentions a sale.
+
+## The three rules: consent, identify, unsubscribe
+
+### 1. Consent: they agreed to hear from you
+
+You need permission before sending a marketing text. There are two kinds:
+
+- **Express consent.** They clearly said yes: they ticked a box saying they’d like texts about offers, signed up on your website, or texted START to your number.
+- **Inferred consent.** You have an existing relationship and they’d reasonably expect to hear from you, like a current customer who gave you their mobile number when buying. This is narrower than people think, so lean towards express consent where you can.
+
+Two traps catch businesses out:
+
+- **You can’t text people to ask for consent.** The request itself counts as a marketing message.
+- **You have to be able to prove it.** If someone complains, it’s on you to show where and when they agreed.
+
+### 2. Identify: say who it’s from
+
+Every message has to clearly identify your business, and tell people how to get in touch. In a text, that usually means putting your business name in the message and sending from a number they can reply to.
+
+### 3. Unsubscribe: make it easy to stop
+
+Every marketing message needs a simple, free way to opt out, like “Reply STOP to opt out”. When someone opts out, you must stop within **five working days**, and the unsubscribe option has to keep working for at least 30 days after the message was sent.
+
+\`\`\`chat
+title: Willow & Bloom · SMS
+you: Willow & Bloom: Mother’s Day bouquets are now open for pre-order, with free delivery in Hobart until Friday 🌷 willowbloom.com.au/mothers-day Reply STOP to opt out.
+them: STOP
+event: Opted out of texts from Willow & Bloom
+\`\`\`
+
+## What about order updates and reminders?
+
+Messages that only give factual information, like “your order has shipped” or “reminder: your appointment is tomorrow at 2pm”, generally aren’t marketing messages, so they don’t need marketing consent. They should still say who they’re from.
+
+The catch: add a promotion to a factual message (“your order has shipped, and here’s 10% off your next one!”) and it becomes a marketing message, with all three rules.
+
+> Keep the receipts and the promotions in separate messages. It’s cleaner for customers, and much simpler for you.
+
+## What happens if you get it wrong
+
+The Australian Communications and Media Authority (ACMA) enforces the rules. It regularly takes action against businesses that text or email without consent, or make unsubscribing hard, and penalties for large businesses have run into the millions of dollars. Small businesses get warnings and fines too. More importantly, unwanted texts damage trust with the very customers you’re trying to keep.
+
+![Hands holding a phone over a table](/blog/sms-marketing-consent-australia/phone-hand.jpg "Good SMS marketing is rare, relevant and easy to stop.")
+
+## How Colvy makes it automatic
+
+Compliance works best when it isn’t left to memory. Here’s what Colvy does for you:
+
+| Rule | What Colvy does |
+|---|---|
+| **Unsubscribe** | STOP, UNSUBSCRIBE, CANCEL, END, QUIT and similar replies opt the person out of texts from your business straight away, well inside five working days. START opts them back in. |
+| **Consent** | Every campaign and automated text checks consent before it goes. Anyone who has opted out is skipped automatically. |
+| **Proof** | Each contact records whether you have express or inferred consent, where it came from, and a history of changes. |
+| **Identify** | The campaign editor warns you if a text doesn’t name your business or is missing opt-out instructions. |
+| **Good manners** | Campaign texts are held outside 9am–8pm by default. That’s not a legal requirement, just good practice. |
+
+A few details that matter:
+
+- **It reads the whole message.** “Can you stop by on Friday?” or “the tap won’t stop leaking” won’t unsubscribe anyone. Only a reply that *is* an opt-out counts.
+- **Automated texts include the opt-out.** Back-in-stock texts and abandoned-cart reminders come with “Reply STOP to opt out” by default.
+- **Email follows the same rules.** Every campaign email has a working unsubscribe link and one-click unsubscribe headers, and bounced or complaining addresses are suppressed automatically.
+
+> [!TIP] Collect consent at the moments people say yes
+> Ask at checkout (“Text me about new arrivals and offers”), on your website forms, and on your back-in-stock and booking pages. Customers who texted START are recorded as express consent automatically.
+
+---
+
+## Your SMS marketing checklist
+
+1. Only text people who agreed, or who’d clearly expect it from an existing relationship.
+2. Keep a record of how and when they agreed.
+3. Put your business name in every message.
+4. Include “Reply STOP to opt out” on every marketing text.
+5. Stop texting anyone who opts out, immediately.
+6. Keep factual updates and promotions in separate messages.
+7. Send at sensible times, and not too often.
+
+> [!TRY] Make your next campaign compliant by default
+> Import your contacts, write your message with your business name and “Reply STOP to opt out”, and let Colvy skip anyone who has opted out. The editor will warn you before you send if anything’s missing.
+
+[Start free](/signup) or [see SMS campaigns](/product/broadcasts).`,
+  },
+  {
+    slug: 'multi-location-retail-one-inbox',
+    cover: '/blog/multi-location-retail-one-inbox/cover.jpg',
+    title: "Three stores, one inbox: running multi-location retail without the chaos",
+    excerpt: "Every store has its own phone, page and regulars. Here’s how to answer all of them from one place, with local numbers, per-store hours, click & collect and reports that compare your stores.",
+    category: 'Industry guides', accent: PURPLE, icon: 'map',
+    date: '2026-10-18T11:00:00+11:00', dateLabel: 'Oct 18, 2026', readTime: '5 min read', author: 'The Colvy Team',
+    takeaways: [
+      "Give each store a local number and answer every store from one shared inbox.",
+      "Let the AI answer opening-hours questions for each store from your Google Business Profile.",
+      "Take payment before click & collect so pickups are a sure thing.",
+      "Send campaigns to one store’s customers instead of everyone.",
+      "Compare stores with link, order, campaign and call reports split by location.",
+    ],
+    content: `One store is a business. Three stores is a communication problem.
+
+Each location has its own phone, its own Facebook page or Google listing, and its own way of doing things. Customers message the wrong store. Calls go to a shop that’s closed. Head office has no idea which store is answering quickly and which one lets messages sit for two days. And every new location makes it worse.
+
+This guide covers how to run several stores’ customer messages from one place, without losing the local feel that makes each store work.
+
+![Buckets of fresh flowers outside a florist](/blog/multi-location-retail-one-inbox/flowers.jpg "Every store has its own regulars. They shouldn’t have to know which number to call.")
+
+## 1. A local number for every store, answered in one place
+
+Customers like calling their local store. You can keep that and still answer everything from one system:
+
+- **Give each location its own local number.** Buy an Australian landline number (02, 03, 07 or 08) for each store from inside Colvy and assign it to that location.
+- **Add an 04 mobile number for texting.** Landline numbers are for calls; texts need a mobile number.
+- **Ring everyone who’s free.** Calls ring every available team member at once, in the app or the browser, and whoever answers first takes it.
+- **Filter by store.** In the Command Centre, filter calls by location to see how each store is going.
+
+Every number’s calls, texts and voicemails land in the same shared inbox as your Facebook, Instagram, email and website chat messages.
+
+## 2. The right person answers
+
+A shared inbox doesn’t mean everyone answers everything. Give each team member a default store and assign conversations to the person who should handle them: the store manager, the online team, the person who knows the product.
+
+> [!NOTE] What’s not there yet
+> You can limit what each person can do by feature, but not yet limit what they can see by store. Everyone with inbox access sees every store’s conversations, which most small chains find useful anyway.
+
+## 3. Opening hours for every store, answered instantly
+
+“Are you open on Sunday?” is the most common question a multi-store retailer gets, and the answer is different at every location. Colvy’s AI reads each store’s hours from your Google Business Profile, holiday hours included:
+
+\`\`\`chat
+title: Grain & Thread · Instagram
+them: hey are you open this Sunday? the Fitzroy one
+ai: Hi! Our Fitzroy store is open this Sunday 10am–4pm. Our Richmond store is closed Sundays, so Fitzroy is the one to visit 😊
+\`\`\`
+
+Opening-hours answers can be sent by the AI on its own, because they’re checked live. Anything trickier starts as a draft for a person to approve.
+
+## 4. Stock questions, answered from the live catalogue
+
+When your WooCommerce store is connected, Colvy’s AI checks live stock and prices before it answers “do you have this in a size 10?”.
+
+> [!NOTE] Stock by store
+> Stock is checked for the product overall. Stock levels for each individual store aren’t available yet, so for “is it at the Richmond shop?” the AI hands the question to your team.
+
+![Clothes hanging on rails in a warmly lit boutique](/blog/multi-location-retail-one-inbox/clothes.jpg "“Do you have it in my size?” is a sale waiting to happen.")
+
+## 5. Click & collect without the confusion
+
+Plenty of multi-store sales are “can you hold it for me?”. Take payment first, so the pickup is a sure thing:
+
+\`\`\`chat
+title: Grain & Thread · SMS
+them: Can I grab the linen shirt in sage, size M, from Fitzroy tomorrow?
+you: Yes! Here’s a link to pay now and we’ll have it ready at the counter.
+card: Linen shirt, sage, M | Click & collect · Fitzroy | Pay now
+event: Paid · ready to collect
+\`\`\`
+
+Send a payment link, or create the order right in the chat. The order card shows when it’s ready to collect, and a “thanks for picking up” message goes out when it’s collected.
+
+## 6. Local campaigns, not one-size-fits-all
+
+A new store opening, a local event or a sale at one location shouldn’t go to every customer in the country. In SMS campaigns you can choose customers by store, so the Richmond stocktake sale only goes to Richmond’s regulars.
+
+\`\`\`chat
+title: Grain & Thread · SMS
+you: Grain & Thread Richmond: our winter stocktake sale starts Saturday, up to 40% off knits. See you there! Reply STOP to opt out.
+them: Ooh saving the date!
+\`\`\`
+
+Every link in a campaign is tracked, and consent is checked for every number before it sends.
+
+## 7. Compare your stores with real numbers
+
+Head office finally gets a view across locations:
+
+- **Link Reports by outlet** show which store’s tracked links led to sales.
+- **Order and campaign reports** can be split by store.
+- **Calls by location** in the Command Centre show which stores miss the most calls.
+
+![An antiques shop packed with clocks, lamps and curios](/blog/multi-location-retail-one-inbox/antiques.jpg "Each store keeps its personality. The messages just stop being scattered.")
+
+---
+
+## Before and after
+
+| Problem | Without one system | With Colvy |
+|---|---|---|
+| Customer calls the wrong store | Transferred, or told to call back | Every store’s number answered from one inbox |
+| “Are you open Sunday?” | Answered by whoever sees it, eventually | AI answers from each store’s Google hours |
+| Click & collect | Hold it and hope they turn up | Paid in advance, collected, thanked |
+| Local promotion | Sent to everyone, or no one | Campaign to one store’s customers |
+| Which store is doing well? | Gut feel | Link, order, campaign and call reports by store |
+
+> Customers think in terms of “my local store”. Your systems should think in terms of one business.
+
+[Start free](/signup) or [see Colvy for multi-location retail](/for/multi-location-retail).`,
+  },
+  {
     slug: 'aquarium-pet-store-playbook',
     cover: '/blog/aquarium-pet-store-playbook/cover.jpg',
     title: "Fish, frags and “is it back yet?”: a messaging playbook for aquarium and pet stores",
