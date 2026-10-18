@@ -8,6 +8,7 @@ import Link from 'next/link'
 import { track } from '@/lib/analytics'
 import { alertDialog } from '@/components/ConfirmDialog'
 import { showBillingUnavailable } from '@/components/BillingUnavailable'
+import SmsCreditsCard from '@/components/billing/SmsCreditsCard'
 
 // Mirrors the modular plans on /pricing and /upgrade. Each id is a Stripe checkout
 // tier (see lib/billing-config.ts). Prices are the Australian dollar amounts
@@ -537,6 +538,9 @@ export default function BillingPage() {
           </div>
         )}
       </div>
+
+      {/* Prepaid SMS credits for texts beyond the monthly allowance */}
+      {company?.id && <SmsCreditsCard companyId={company.id} companyName={company.name} />}
 
       {/* Payment Method */}
       <div className="bg-white rounded-2xl border p-6 mb-6" style={{ borderColor: 'var(--border)' }}>

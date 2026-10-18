@@ -16,6 +16,7 @@ import EmailHealthCard from '@/components/platform-admin/EmailHealthCard'
 import SignupSmsHealth from '@/components/platform-admin/SignupSmsHealth'
 import WebFormsPage from '@/components/platform-admin/WebFormsPage'
 import BillingConfigCard from '@/components/platform-admin/BillingConfigCard'
+import SmsCreditsPage from '@/components/platform-admin/SmsCreditsPage'
 import { COLVY_CONTACT, isColvyNumber } from '@/lib/colvy-contact'
 
 const SUPER_ADMIN = 'bishalstha76@gmail.com'
@@ -138,6 +139,7 @@ const NAV = [
   { section: 'Platform' },
   { key: 'ai',         label: 'AI Models & Usage', icon: 'system' },
   { key: 'sms',        label: 'SMS Pricing',      icon: 'billing' },
+  { key: 'smscredits', label: 'SMS Credits',      icon: 'billing' },
   { key: 'billing',    label: 'Billing',          icon: 'billing' },
   { key: 'flags',      label: 'Feature Flags',    icon: 'flags' },
   { key: 'system',     label: 'System Health',    icon: 'system' },
@@ -5025,7 +5027,7 @@ export default function SuperAdmin() {
 
         {/* Page content */}
         {/* Signups uses the full width (no side gap on wide screens). */}
-        <div className="pa-content" style={{ padding: '28px 28px', maxWidth: page === 'signups' || page === 'webforms' ? 'none' : 1400 }}>
+        <div className="pa-content" style={{ padding: '28px 28px', maxWidth: page === 'signups' || page === 'webforms' || page === 'smscredits' ? 'none' : 1400 }}>
           {page === 'overview'   && <OverviewPage data={data} pulse={pulse} onRefresh={() => { setPulse(null); loadDashboard() }} onGo={setPage} />}
           {page === 'companies'  && <CompaniesPage />}
           {page === 'users'      && <UsersPage />}
@@ -5058,6 +5060,7 @@ export default function SuperAdmin() {
           {page === 'banner'     && <PlatformBannerAdmin />}
           {page === 'ai'         && <AiModelsPage />}
           {page === 'sms'        && <SmsPricingPage />}
+          {page === 'smscredits' && <SmsCreditsPage />}
           {page === 'settings'   && <SettingsPage />}
         </div>
       </main>
