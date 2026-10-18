@@ -21,6 +21,7 @@ export async function GET(req: NextRequest) {
         id: inv.id,
         created: inv.created,
         amount_paid: inv.amount_paid,
+        currency: inv.currency,
         status: inv.status,
         description: inv.lines?.data?.[0]?.description || 'Subscription',
         invoice_pdf: inv.invoice_pdf,

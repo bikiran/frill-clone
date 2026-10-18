@@ -155,6 +155,7 @@ export default function PricingPage() {
             </button>
             <span style={{ fontSize: 14, fontWeight: annual ? 800 : 500, color: annual ? text : muted }}>Annual <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 800, background: GREEN + '22', color: GREEN, padding: '2px 8px', borderRadius: 999 }}>Save 20%</span></span>
           </div>
+          <p style={{ fontSize: 12.5, color: muted, margin: '12px 0 0' }}>Prices in Australian dollars, including GST.</p>
         </Reveal>
       </section>
 
@@ -172,7 +173,7 @@ export default function PricingPage() {
                   <h3 style={{ fontSize: 20, fontWeight: 900, margin: '0 0 3px', color: text }}>{tier.name}</h3>
                   <p style={{ fontSize: 12.5, fontWeight: 600, color: accent, margin: 0, minHeight: 18 }}>{tier.tagline}</p>
                   <div style={{ margin: '14px 0 20px', display: 'flex', alignItems: 'baseline', gap: 4 }}>
-                    {price === 0 ? <span style={{ fontSize: 42, fontWeight: 900, letterSpacing: '-0.03em', color: text }}>Free</span> : <><span style={{ fontSize: 42, fontWeight: 900, letterSpacing: '-0.03em', color: text }}>${price}</span><span style={{ fontSize: 13.5, color: muted }}>/mo{annual ? ', billed yearly' : ''}</span></>}
+                    {price === 0 ? <span style={{ fontSize: 42, fontWeight: 900, letterSpacing: '-0.03em', color: text }}>Free</span> : <><span style={{ fontSize: 42, fontWeight: 900, letterSpacing: '-0.03em', color: text }}>A${price}</span><span style={{ fontSize: 13.5, color: muted }}>/mo{annual ? ', billed yearly' : ''}</span></>}
                   </div>
                   <button onClick={() => go(tier)} className="pr-btn" style={{ display: 'block', width: '100%', padding: '13px 0', borderRadius: 12, textAlign: 'center', background: hi ? accent : 'transparent', color: hi ? '#fff' : text, border: hi ? 'none' : `2px solid ${cardBorder}`, fontWeight: 800, fontSize: 14.5, cursor: 'pointer', marginBottom: 22 }}>{tier.cta}</button>
                   <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -209,7 +210,7 @@ export default function PricingPage() {
                   return (
                     <th key={t.id} style={{ textAlign: 'center', padding: '10px 10px 14px', verticalAlign: 'bottom', background: hi ? (dark ? 'rgba(255,106,77,0.08)' : '#fff7f4') : 'transparent', borderTopLeftRadius: 14, borderTopRightRadius: 14 }}>
                       <div style={{ fontSize: 15, fontWeight: 900, color: hi ? t.accent : text }}>{t.name}</div>
-                      <div style={{ fontSize: 12.5, color: muted, marginTop: 2 }}>{price === 0 ? 'Free' : `$${price}/mo`}</div>
+                      <div style={{ fontSize: 12.5, color: muted, marginTop: 2 }}>{price === 0 ? 'Free' : `A$${price}/mo`}</div>
                     </th>
                   )
                 })}
