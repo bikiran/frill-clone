@@ -50,6 +50,19 @@ export async function POST(req: NextRequest) {
         const session = event.data.object
         const meta = session.metadata || {}
 
+        // Prepaid SMS credit bought on Billing (lib/sms-credits): credit the
+        // wallet once, keyed on the session and its payment intent, and save
+        // the card when auto top-up was chosen. Colvy's own account only: a
+        // connected account's checkout can never top up a wallet.
+        if (meta.kind === 'sms_credit') {
+          if (event.account) break
+          const { handleSmsCreditCheckout } = await import('@/lib/sms-credits')
+          const r = await handleSmsCreditCheckout(supabase, session, { stripe })
+          // Not recorded (database unavailable): Stripe retries; crediting is idempotent.
+          if (r.retry) return NextResponse.json({ error: 'SMS credit not recorded; retry' }, { status: 503 })
+          break
+        }
+
         // Card saved for later (Stripe 'setup' mode) — store the payment method
         // so the business can charge it from the chat. We only ever keep the
         // Stripe ids and the last 4 digits; card data stays with Stripe.
@@ -289,6 +302,17 @@ export async function POST(req: NextRequest) {
           // written on the retry instead.
           if (unrecorded) return NextResponse.json({ error: 'Number provisioning unavailable; retry' }, { status: 503 })
         }
+        break
+      }
+      // An SMS credit auto top-up charged off-session (lib/sms-credits
+      // maybeAutoTopUp). That request credits the wallet itself; this is the
+      // backup for when it couldn't. Same payment intent, so never twice.
+      case 'payment_intent.succeeded': {
+        const pi = event.data.object
+        if (pi?.metadata?.kind !== 'sms_credit_auto' || event.account) break
+        const { handleSmsCreditPaymentIntent } = await import('@/lib/sms-credits')
+        const r = await handleSmsCreditPaymentIntent(supabase, pi)
+        if (r.retry) return NextResponse.json({ error: 'SMS credit not recorded; retry' }, { status: 503 })
         break
       }
       // A subscription invoice was PAID. This is the real "paid their first

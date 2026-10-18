@@ -26,7 +26,7 @@ export function sydneyDay(d: Date = new Date()): string {
 
 const WHAT: Record<string, string> = {
   feedback: 'the Feedback plan', omnichannel: 'the Inbox plan', everything: 'the Everything plan',
-  branding_removal: 'the Remove “Powered by Colvy” add-on', phone_number: 'a phone number',
+  branding_removal: 'the Remove “Powered by Colvy” add-on', phone_number: 'a phone number', sms_credit: 'SMS credit',
 }
 
 export type BillingAlertInfo = {
@@ -70,7 +70,7 @@ async function emailColvyTeam(subject: string, text: string) {
 export function billingAlertMessage(info: BillingAlertInfo): string {
   const who = info.companyName ? info.companyName : 'A customer'
   const what = WHAT[info.tier] || `“${info.tier}”`
-  const period = info.billing && info.tier !== 'branding_removal' && info.tier !== 'phone_number' ? ` (${info.billing})` : ''
+  const period = info.billing && info.tier !== 'branding_removal' && info.tier !== 'phone_number' && info.tier !== 'sms_credit' ? ` (${info.billing})` : ''
   const missing = info.missing.length ? ` Missing or wrong: ${info.missing.join(', ')}.` : ''
   return `Online billing isn’t set up: ${who} tried to buy ${what}${period} and couldn’t.${missing}${info.detail ? ` ${info.detail}` : ''} See super admin → Billing for what to add.`
 }
