@@ -12,6 +12,9 @@ const admin = () => createClient(
 
 export type SkipReason =
   | 'unsubscribed' | 'no_consent' | 'blocked' | 'invalid_number' | 'duplicate'
+  // Email: no usable address; turned off marketing email (or texts, for SMS)
+  // only; on the bounce / complaint suppression list.
+  | 'no_email' | 'opted_out' | 'suppressed'
 
 export interface ResolvedRecipient {
   contact_id: string
@@ -33,8 +36,18 @@ export interface AudienceResult {
 /** Last 9 digits — the normalisation used across the codebase for phone matching. */
 const digits = (s: string | null | undefined) => (s || '').replace(/\D/g, '').slice(-9)
 
-const emptyExcluded = (): Record<SkipReason, number> =>
-  ({ unsubscribed: 0, no_consent: 0, blocked: 0, invalid_number: 0, duplicate: 0 })
+export const emptyExcluded = (channel: 'sms' | 'email' = 'sms'): Record<SkipReason, number> =>
+  (channel === 'email'
+    ? { unsubscribed: 0, opted_out: 0, no_consent: 0, blocked: 0, no_email: 0, suppressed: 0, duplicate: 0 }
+    : { unsubscribed: 0, opted_out: 0, no_consent: 0, blocked: 0, invalid_number: 0, duplicate: 0 }) as Record<SkipReason, number>
+
+/** Lower-cased, trimmed address, or '' when it isn't a plausible email (as the email sender judges it). */
+export function normEmail(v: unknown): string {
+  const s = String(v ?? '').trim().toLowerCase()
+  return /^[^@\s<>"',;]+@[^@\s<>"',;]+\.[a-z]{2,}$/i.test(s) ? s : ''
+}
+
+const missingColumn = (e: any) => /^(42703|PGRST204)$/.test(String(e?.code || '')) || /column .* does not exist|could not find the '.*' column/i.test(String(e?.message || ''))
 
 /**
  * Fetch every row matching a query.
@@ -47,9 +60,9 @@ const emptyExcluded = (): Record<SkipReason, number> =>
  * keystroke. `build` receives the select options to pass on (the count).
  */
 type CountOpt = { count: 'exact' } | undefined
-export async function fetchAll(build: (o?: CountOpt) => any, pageSize = 1000, hardCap = 100000, parallel = 12): Promise<any[]> {
+export async function fetchAll(build: (o?: CountOpt) => any, pageSize = 1000, hardCap = 100000, parallel = 12, onError?: (e: any) => void): Promise<any[]> {
   const first = await build({ count: 'exact' }).range(0, pageSize - 1)
-  if (first?.error) return []
+  if (first?.error) { onError?.(first.error); return [] }
   const firstRows: any[] = first?.data || []
   if (firstRows.length < pageSize) return firstRows
   const out: any[] = [...firstRows]
@@ -122,22 +135,33 @@ function tagVariants(tags: string[]): string[] {
  * The company's contacts this filter can match, as cheaply as the filter
  * allows: outlet, tags and hand-picked ids narrow in SQL.
  */
+// V396's per-channel opt-outs. Before it runs the columns don't exist and the
+// contacts are read without them.
+const OPT_OUT_COLS = ', email_marketing_opt_out_at, sms_marketing_opt_out_at'
+
 async function candidateContacts(db: any, companyId: string, filter: AudienceFilter): Promise<any[]> {
+  let missing = false
+  const rows = await candidateContactsWith(db, companyId, filter, CONTACT_COLS + OPT_OUT_COLS, e => { missing = missingColumn(e) })
+  if (!missing) return rows
+  return candidateContactsWith(db, companyId, filter, CONTACT_COLS)
+}
+
+async function candidateContactsWith(db: any, companyId: string, filter: AudienceFilter, COLS: string, onError?: (e: any) => void): Promise<any[]> {
   if (filter.type === 'manual') {
     const ids = Array.from(new Set((filter.contactIds || []).filter(Boolean)))
     // Chunked — .in() with thousands of ids exceeds URL limits — and parallel.
     const chunks = inChunks(ids, 200)
-    const rows = await Promise.all(chunks.map(ch => db.from('contacts').select(CONTACT_COLS)
-      .eq('company_id', companyId).in('id', ch).then((r: any) => r?.data || [], () => [])))
+    const rows = await Promise.all(chunks.map(ch => db.from('contacts').select(COLS)
+      .eq('company_id', companyId).in('id', ch).then((r: any) => { if (r?.error) onError?.(r.error); return r?.data || [] }, () => [])))
     return rows.flat()
   }
   const wantTags = filter.type === 'tags' ? tagVariants(filter.tags || []) : []
   const rows = await fetchAll(o => {
-    let q = db.from('contacts').select(filter.type === 'tags' ? CONTACT_COLS + ', tags' : CONTACT_COLS, o).eq('company_id', companyId)
+    let q = db.from('contacts').select(filter.type === 'tags' ? COLS + ', tags' : COLS, o).eq('company_id', companyId)
     if (filter.type === 'outlet') q = q.eq('location_id', filter.locationId)
     if (filter.type === 'tags') q = q.overlaps('tags', wantTags)
     return q.order('id', { ascending: true })
-  })
+  }, 1000, 100000, 12, onError)
   if (filter.type === 'tags') {
     // The overlap is case-sensitive; this keeps the original any-case match exact.
     const want = new Set((filter.tags || []).map(t => String(t).toLowerCase()))
@@ -245,7 +269,7 @@ export async function resolveAudience(
 ): Promise<AudienceResult> {
   const problem = audienceFilterProblem(filter)
   if (problem) {
-    return { recipients: [], matched: 0, excluded: emptyExcluded(), excludedTotal: 0, excludedContacts: [], incomplete: problem }
+    return { recipients: [], matched: 0, excluded: emptyExcluded(channel), excludedTotal: 0, excludedContacts: [], incomplete: problem }
   }
   const db = opts.db || admin()
   const minSpend = Number.isFinite(Number(filter.minSpend)) && filter.minSpend != null && String(filter.minSpend) !== '' ? Number(filter.minSpend) : null
@@ -258,12 +282,13 @@ export async function resolveAudience(
   const productWant = filter.type === 'purchased_category' ? String(filter.productQuery || '').trim().toLowerCase() : ''
 
   // Everything the filter needs, fetched side by side.
-  const [contactRows, custFor, buyers, clicked, carts] = await Promise.all([
+  const [contactRows, custFor, buyers, clicked, carts, suppressed] = await Promise.all([
     candidateContacts(db, companyId, filter),
     needsCommerce && filter.type !== 'manual' ? commerceIndex(db, companyId, filter) : Promise.resolve(null),
     productWant ? orderLineBuyers(db, companyId, productWant) : Promise.resolve(null),
     filter.type === 'clicked_campaign' ? clickedContactIds(db, companyId, filter.campaignId) : Promise.resolve(null),
     filter.type === 'abandoned_checkout' ? openCarts(db, companyId) : Promise.resolve(null),
+    channel === 'email' ? emailSuppressions(db, companyId) : Promise.resolve(null),
   ])
   let candidates: any[] = contactRows
 
@@ -318,7 +343,7 @@ export async function resolveAudience(
   const matched = candidates.length
 
   // ── 2. Exclusions ────────────────────────────────────────────────────────
-  const excluded = emptyExcluded()
+  const excluded = emptyExcluded(channel)
   // Every excluded contact, so the sender can record each one with its reason
   // (the report used to see only the first 200).
   const excludedContacts: AudienceResult['excludedContacts'] = []
@@ -338,6 +363,8 @@ export async function resolveAudience(
     // subscribed_to_marketing=false for them, so they fall out at the consent
     // check below unless they've since been explicitly opted in.
     if (c.unsubscribed_at) { drop(c, 'unsubscribed'); continue }
+    // Turned off just this channel (V396): marketing email, or texts.
+    if (channel === 'email' ? c.email_marketing_opt_out_at : c.sms_marketing_opt_out_at) { drop(c, 'opted_out'); continue }
     if (!c.subscribed_to_marketing || c.consent_basis === 'none') { drop(c, 'no_consent'); continue }
 
     if (channel === 'sms') {
@@ -346,8 +373,10 @@ export async function resolveAudience(
       if (seen.has(key)) { drop(c, 'duplicate'); continue }
       seen.add(key)
     } else {
-      const email = String(c.email || '').trim().toLowerCase()
-      if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { drop(c, 'invalid_number'); continue }
+      const email = normEmail(c.email)
+      if (!email) { drop(c, 'no_email'); continue }
+      // Bounced or complained (this business's list or the global one).
+      if (suppressed === 'unknown' || suppressed?.has(email)) { drop(c, 'suppressed'); continue }
       if (seen.has(email)) { drop(c, 'duplicate'); continue }
       seen.add(email)
     }
@@ -376,6 +405,24 @@ async function clickedContactIds(db: any, companyId: string, campaignId?: string
     for (const c of res.flat()) if (c.contact_id) clicked.add(c.contact_id)
   }
   return clicked
+}
+
+/**
+ * Addresses not to email: the business's suppression list plus the global one
+ * (spam complaints), V396. Usually short, so read whole. Before V396 there is
+ * no list (nothing suppressed); if it can't be read, 'unknown' — everyone
+ * counts as suppressed rather than risk emailing someone who complained.
+ */
+async function emailSuppressions(db: any, companyId: string): Promise<Set<string> | 'unknown'> {
+  let err: any = null
+  const rows = await fetchAll(o => db.from('email_suppressions').select('email', o)
+    .or(`company_id.eq.${companyId},company_id.is.null`).order('email', { ascending: true }), 1000, 100000, 12, e => { err = e })
+  if (err) {
+    const msg = String(err?.message || '')
+    const missing = /^(42P01|PGRST205)$/.test(String(err?.code || '')) || (/does not exist|could not find the table|schema cache/i.test(msg) && !/column/i.test(msg))
+    return missing ? new Set() : 'unknown'
+  }
+  return new Set(rows.map((r: any) => normEmail(r.email)).filter(Boolean))
 }
 
 /** Unrecovered abandoned carts, by email and phone (the table has no contact_id). */

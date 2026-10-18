@@ -45,6 +45,13 @@ const STATUS_STYLE: Record<string, { bg: string; fg: string; label: string }> = 
   failed:    { bg: '#fee2e2', fg: '#dc2626', label: 'Failed' },
 }
 const CHANNEL_LABEL: Record<string, string> = { sms: 'SMS', email: 'Email' }
+const CHANNEL_BADGE: Record<string, { bg: string; fg: string }> = {
+  sms: { bg: '#ecfeff', fg: '#0e7490' },
+  email: { bg: '#f5f3ff', fg: '#6d28d9' },
+}
+const ChannelIcon = ({ ch }: { ch: string }) => ch === 'email'
+  ? <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg>
+  : <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
 
 export default function CampaignsPage() {
   const router = useRouter()
@@ -60,6 +67,7 @@ export default function CampaignsPage() {
   const [creating, setCreating] = useState(false)
   const [newName, setNewName] = useState('')
   const [showNew, setShowNew] = useState(false)
+  const [newChannel, setNewChannel] = useState<'sms' | 'email'>('sms')
   const [tableMissing, setTableMissing] = useState(false)
 
   useEffect(() => {
@@ -189,8 +197,11 @@ export default function CampaignsPage() {
       const { data, error } = await (supabase as any).from('campaigns').insert({
         company_id: companyId,
         name: newName.trim(),
-        channel: 'sms',
+        channel: newChannel,
         status: 'draft',
+        // Quiet hours are a texting courtesy; an email campaign can switch
+        // them on in Schedule if it wants.
+        ...(newChannel === 'email' ? { quiet_hours: false } : {}),
         created_by: session?.user?.user_metadata?.display_name || session?.user?.email?.split('@')[0] || null,
         created_by_id: session?.user?.id || null,
       }).select().maybeSingle()
@@ -257,6 +268,23 @@ export default function CampaignsPage() {
       {/* New campaign */}
       {showNew && (
         <div style={{ ...card, marginBottom: 18 }}>
+          <p style={{ margin: '0 0 8px', fontSize: 12.5, fontWeight: 700, color: 'var(--ink)' }}>How will it go out?</p>
+          <div className="camp-channels" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 8, marginBottom: 14 }} role="radiogroup" aria-label="Channel">
+            {([['sms', 'SMS', 'A text message to customers’ mobiles. Uses your SMS allowance, then SMS credit.'], ['email', 'Email', 'A designed email in your branding. Doesn’t use SMS credit.']] as const).map(([v, t, d]) => (
+              <button key={v} type="button" role="radio" aria-checked={newChannel === v} onClick={() => setNewChannel(v)}
+                style={{ display: 'flex', gap: 10, alignItems: 'flex-start', textAlign: 'left', padding: '12px 14px', borderRadius: 11, cursor: 'pointer', border: '1px solid ' + (newChannel === v ? 'var(--coral)' : 'var(--border)'), background: newChannel === v ? 'var(--peach)' : '#fff' }}>
+                <span style={{ width: 30, height: 30, borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, background: CHANNEL_BADGE[v].bg, color: CHANNEL_BADGE[v].fg }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    {v === 'email' ? <><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></> : <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>}
+                  </svg>
+                </span>
+                <span>
+                  <span style={{ display: 'block', fontSize: 13.5, fontWeight: 700, color: newChannel === v ? 'var(--coral)' : 'var(--ink)' }}>{t}</span>
+                  <span style={{ display: 'block', fontSize: 12, color: 'var(--slate)', marginTop: 2, lineHeight: 1.4 }}>{d}</span>
+                </span>
+              </button>
+            ))}
+          </div>
           <p style={{ margin: '0 0 8px', fontSize: 12.5, fontWeight: 700, color: 'var(--ink)' }}>Name your campaign</p>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <input autoFocus value={newName} onChange={e => setNewName(e.target.value)}
@@ -267,7 +295,7 @@ export default function CampaignsPage() {
               style={{ ...topBtn(true), opacity: creating || !newName.trim() ? 0.5 : 1 }}>
               {creating ? 'Creating…' : 'Create draft'}
             </button>
-            <button onClick={() => { setShowNew(false); setNewName('') }} style={topBtn()}>Cancel</button>
+            <button onClick={() => { setShowNew(false); setNewName(''); setNewChannel('sms') }} style={topBtn()}>Cancel</button>
           </div>
           <p style={{ margin: '10px 0 0', fontSize: 12, color: 'var(--slate)' }}>
             This creates a draft only. Audience, message and scheduling come next — nothing is sent yet.
@@ -341,7 +369,11 @@ export default function CampaignsPage() {
                       </div>
                     )}
                   </td>
-                  <td style={td}>{CHANNEL_LABEL[c.channel] || c.channel}</td>
+                  <td style={td}>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 20, background: (CHANNEL_BADGE[c.channel] || CHANNEL_BADGE.sms).bg, color: (CHANNEL_BADGE[c.channel] || CHANNEL_BADGE.sms).fg }}>
+                      <ChannelIcon ch={c.channel} />{CHANNEL_LABEL[c.channel] || c.channel || 'SMS'}
+                    </span>
+                  </td>
                   <td style={td}>
                     {c.audience_count ? c.audience_count.toLocaleString() : '—'}
                     {c.excluded_count > 0 && (
@@ -383,8 +415,8 @@ export default function CampaignsPage() {
       </div>
 
       <p style={{ marginTop: 14, fontSize: 12.5, color: 'var(--slate)' }}>
-        Campaign sending isn't enabled yet — this step sets up the structure. The audience builder,
-        message composer and send engine follow, with consent and quiet-hour checks applied at send time.
+        Consent, opt-outs and (for email) bounces are checked again right before anything sends. SMS
+        uses your monthly allowance, then SMS credit; email doesn’t use either.
       </p>
     </div>
   )

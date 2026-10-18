@@ -2,7 +2,7 @@ import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import {
-  resolveAudience, resolveAudienceCached, invalidateAudienceCache, audienceFilterProblem,
+  resolveAudience, resolveAudienceCached, invalidateAudienceCache, audienceFilterProblem, emptyExcluded,
   AudienceFilter, AudienceResult, AUDIENCE_TYPE_KEYS,
 } from '@/lib/campaign-audience'
 import { smsAllowanceSummary } from '@/lib/sms-quota'
@@ -132,7 +132,7 @@ export async function POST(req: NextRequest) {
     const allowance = await smsAllowanceSummary(db, companyId)
     if (!saved?.type) {
       return NextResponse.json({
-        ...summary({ recipients: [], matched: 0, excluded: { unsubscribed: 0, no_consent: 0, blocked: 0, invalid_number: 0, duplicate: 0 }, excludedTotal: 0, excludedContacts: [], incomplete: 'The audience hasn’t been saved yet. Choose who this goes to on the Audience step.' }, channel),
+        ...summary({ recipients: [], matched: 0, excluded: emptyExcluded(channel), excludedTotal: 0, excludedContacts: [], incomplete: 'The audience hasn’t been saved yet. Choose who this goes to on the Audience step.' }, channel),
         filter: null, allowance,
       })
     }

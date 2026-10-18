@@ -12,6 +12,7 @@ import { allowanceProblem, type SmsAllowanceSummary } from '@/lib/sms-allowance'
 import { latestOnly, isAbort } from '@/lib/latest-request'
 import SmsLowBalanceBanner from '@/components/billing/SmsLowBalanceBanner'
 import { fmtCents, fmtRate } from '@/lib/sms-credits-core'
+import { EmailDesignStep, EmailTestCard, EmailReviewCard, type EmailInfo } from './EmailParts'
 import { calculateCost, DEFAULT_PRICING, SmsPricing, aud, audRate, resolveSmsPricing } from '@/lib/sms-pricing'
 import { confirmDialog } from '@/components/ConfirmDialog'
 import { authFetch } from '@/lib/auth-fetch'
@@ -33,10 +34,19 @@ const SEGMENTS = ['Champions', 'Loyal Customers', 'Potential Loyalists', 'At Ris
 
 const SKIP_LABEL: Record<string, string> = {
   unsubscribed: 'unsubscribed',
+  opted_out: 'turned off marketing texts',
   no_consent: 'have no marketing consent',
   blocked: 'are blocked',
   invalid_number: 'have no valid mobile number',
   duplicate: 'are duplicates',
+}
+// Email audiences: no address, opted out of email, bounced / complained.
+const EMAIL_SKIP_LABEL: Record<string, string> = {
+  ...SKIP_LABEL,
+  opted_out: 'turned off marketing email',
+  no_email: 'have no email address',
+  suppressed: 'bounced or marked an email as spam',
+  duplicate: 'share an email address with someone else on the list',
 }
 
 /** A count that greys out (keeping the last figure) while it's being worked out. */
@@ -93,6 +103,8 @@ export default function CampaignEditorPage() {
   const [saved, setSaved] = useState<any>(null)
   const [savedLoading, setSavedLoading] = useState(false)
   const [stepError, setStepError] = useState('')
+  // Email campaigns: the designer's brand / sender and the campaign's design.
+  const [emailInfo, setEmailInfo] = useState<EmailInfo | null>(null)
   // Message composer (step 3)
   const [message, setMessage] = useState('')
   const [showEmoji, setShowEmoji] = useState(false)
@@ -185,6 +197,12 @@ export default function CampaignEditorPage() {
           .select('*').eq('id', campaignId).maybeSingle()
         if (c) {
           setCampaign(c)
+          if (c.channel === 'email') {
+            authFetch(`/api/email-campaigns/designs?companyId=${encodeURIComponent(cid)}&campaignId=${encodeURIComponent(c.id)}`)
+              .then(r => r.json().then(j => (r.ok ? j : null)))
+              .then(j => { if (j) setEmailInfo({ brand: j.brand, sender: j.sender || null, design: j.design || null, dbReady: j.dbReady !== false }) })
+              .catch(() => {})
+          }
           setMessage(c.message || '')
           const atts = Array.isArray(c.attachments) ? c.attachments : []
           const primary = atts.find((a: any) => a.kind !== 'coupon') || null
@@ -356,6 +374,9 @@ export default function CampaignEditorPage() {
   // Costs, the allowance check and the Review step use the SAVED audience —
   // the numbers the sender will use — not whatever is half-chosen on step 2.
   const savedReady = !!saved && !saved.error && !saved.incomplete
+  // Email campaigns: no SMS cost, credit, allowance or message checks.
+  const isEmail = campaign?.channel === 'email'
+  const emailDesign = emailInfo?.design || null
   const recipients = savedReady ? (saved.recipients || 0) : 0
   const costing = calculateCost(pricing, renderedSms.segments, recipients)
   const allowance: SmsAllowanceSummary | null = saved?.allowance || null
@@ -364,8 +385,8 @@ export default function CampaignEditorPage() {
   const credit: any = savedReady && saved?.credit ? saved.credit : null
   const walletOn = !!credit?.ready
   const partsNeeded = credit?.parts ?? recipients * renderedSms.segments
-  const allowanceMsg = !walletOn && allowance && recipients > 0 ? allowanceProblem(allowance, partsNeeded) : null
-  const creditMsg = walletOn && recipients > 0
+  const allowanceMsg = !isEmail && !walletOn && allowance && recipients > 0 ? allowanceProblem(allowance, partsNeeded) : null
+  const creditMsg = !isEmail && walletOn && recipients > 0
     ? !credit.entitled ? 'SMS isn\u2019t on your plan. Upgrade to the Inbox or Everything plan to send text messages.'
       : !credit.affordable ? `This campaign needs ${fmtCents(credit.shortfallCents)} more SMS credit. Top up to send it.`
       : null
@@ -574,14 +595,19 @@ export default function CampaignEditorPage() {
   // ── Review & send (step 6) ───────────────────────────────────────────────
   const checks: { text: string; blocking: boolean }[] = (() => {
     const out: { text: string; blocking: boolean }[] = []
-    if (!message.trim()) out.push({ text: 'The message is empty', blocking: true })
+    if (isEmail) {
+      if (!emailDesign?.design?.blocks?.length) out.push({ text: 'Design and save the email first', blocking: true })
+      else if (!String(emailDesign.subject || '').trim()) out.push({ text: 'The email has no subject line', blocking: true })
+    } else if (!message.trim()) out.push({ text: 'The message is empty', blocking: true })
     if (saved?.error) out.push({ text: `Couldn\u2019t work out the saved audience: ${saved.error}`, blocking: true })
     else if (saved?.incomplete) out.push({ text: saved.incomplete, blocking: true })
     else if (savedReady && recipients === 0) out.push({ text: 'The audience has no recipients', blocking: true })
     if (allowanceMsg) out.push({ text: allowanceMsg, blocking: true })
     if (creditMsg) out.push({ text: creditMsg, blocking: true })
-    if (!hasOptOut) out.push({ text: 'No unsubscribe instructions in the message', blocking: false })
-    if (!hasSender) out.push({ text: 'The business isn\u2019t identified in the message', blocking: false })
+    // Every campaign email carries its own unsubscribe link and the business's
+    // name and address, so these are SMS-only.
+    if (!isEmail && !hasOptOut) out.push({ text: 'No unsubscribe instructions in the message', blocking: false })
+    if (!isEmail && !hasSender) out.push({ text: 'The business isn\u2019t identified in the message', blocking: false })
     if (sendMode === 'later' && !scheduledIso()) out.push({ text: 'No send date chosen', blocking: false })
     if (sendMode === 'later' && schedInPast) out.push({ text: 'The scheduled time is in the past', blocking: true })
     return out
@@ -603,7 +629,12 @@ export default function CampaignEditorPage() {
     const atts: any[] = []
     if (attachment) atts.push(attachment)
     if (coupon) atts.push(coupon)
-    const { error } = await (supabase as any).from('campaigns').update({
+    // Email: the content lives in the design (saved by the designer); only
+    // the delivery options are the campaign's.
+    const { error } = await (supabase as any).from('campaigns').update(isEmail ? {
+      quiet_hours: quietHours,
+      updated_at: new Date().toISOString(),
+    } : {
       message,
       attachments: atts,
       quiet_hours: quietHours,
@@ -641,8 +672,9 @@ export default function CampaignEditorPage() {
   const sendNow = async () => {
     if (!companyId) return
     // Spending money and messaging real people — make the numbers explicit.
-    const ok = await confirmDialog(
-      `You are about to send ${recipients.toLocaleString()} SMS messages ` +
+    const ok = await confirmDialog(isEmail
+      ? `You are about to email ${recipients.toLocaleString()} people from ${emailInfo?.sender?.from || 'your business'}.\n\nThis cannot be undone once it starts.`
+      : `You are about to send ${recipients.toLocaleString()} SMS messages ` +
       (credit?.ready && !credit.unlimited && credit.billableParts > 0
         ? `(${credit.freeParts.toLocaleString()} texts free from your allowance, ${credit.billableParts.toLocaleString()} from credit = ${fmtCents(credit.costCents)}) `
         : `(${partsNeeded.toLocaleString()} texts of your allowance) `) +
@@ -725,8 +757,9 @@ export default function CampaignEditorPage() {
       <div style={{ marginBottom: 18 }}>
         <h1 style={{ fontSize: 23, fontWeight: 800, color: 'var(--ink)', margin: 0 }}>{campaign.name}</h1>
         <p style={{ color: 'var(--slate)', fontSize: 13, margin: '5px 0 0' }}>
-          {step === 2 ? 'Step 2 of 6 — choose who this campaign goes to.'
-            : step === 3 ? 'Step 3 of 6 — write the message.'
+          {isEmail ? (step === 2 ? 'Step 2 of 5 — choose who this email goes to.' : step === 5 ? 'Step 4 of 5 — choose when it sends.' : step === 6 ? 'Step 5 of 5 — review and confirm.' : 'Step 3 of 5 — design the email.')
+            : step === 2 ? 'Step 2 of 6 — choose who this campaign goes to.'
+            : step === 3 ? (isEmail ? 'Step 3 of 5 — design the email.' : 'Step 3 of 6 — write the message.')
             : step === 4 ? 'Step 4 of 6 — attach links and offers.'
             : step === 5 ? 'Step 5 of 6 — choose when it sends.'
             : 'Step 6 of 6 — review and confirm.'}
@@ -735,8 +768,11 @@ export default function CampaignEditorPage() {
 
       {/* Step rail */}
       <div style={{ display: 'flex', gap: 6, marginBottom: 18, overflowX: 'auto', paddingBottom: 2 }}>
-        {['Details', 'Audience', 'Message', 'Links & offers', 'Schedule', 'Review'].map((s, i) => {
+        {['Details', 'Audience', isEmail ? 'Email' : 'Message', 'Links & offers', 'Schedule', 'Review'].map((s, i) => {
           const n = i + 1
+          // Email: links and offers are blocks in the designer, so no step 4.
+          if (isEmail && n === 4) return null
+          const shown = isEmail && n > 4 ? n - 1 : n
           const done = n >= 2 && n <= 6
           const active = step === n
           return (
@@ -748,7 +784,7 @@ export default function CampaignEditorPage() {
                 border: '1px solid ' + (active ? 'var(--coral)' : 'var(--border)'),
                 cursor: done ? 'pointer' : 'default',
               }}>
-              {n}. {s}
+              {shown}. {s}
             </button>
           )
         })}
@@ -772,7 +808,12 @@ export default function CampaignEditorPage() {
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 320px', gap: 16, alignItems: 'start' }}
+      {isEmail && step === 3 && companyId && (
+        <EmailDesignStep companyId={companyId} campaignId={campaignId} info={emailInfo} campaignName={campaign.name}
+          onSaved={row => setEmailInfo(i => i ? { ...i, design: row } : i)} />
+      )}
+
+      <div style={{ display: isEmail && step === 3 ? 'none' : 'grid', gridTemplateColumns: 'minmax(0, 1fr) 320px', gap: 16, alignItems: 'start' }}
         className="campaign-grid">
         {/* ── Left: audience selection (step 2) ────────────────────────────── */}
         {step === 2 && (
@@ -1248,10 +1289,18 @@ export default function CampaignEditorPage() {
               <span>
                 <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink)', display: 'block' }}>Quiet-hour protection</span>
                 <span style={{ fontSize: 11.5, color: 'var(--slate)' }}>
-                  Hold anything scheduled outside 9am–8pm until the next reasonable hour.
+                  {isEmail
+                    ? 'Optional for email. Hold the send until 9am if it would start outside 9am–8pm.'
+                    : 'Hold anything scheduled outside 9am–8pm until the next reasonable hour.'}
                 </span>
               </span>
             </label>
+            {isEmail ? (
+              <p style={{ margin: 0, fontSize: 12, color: 'var(--slate)', lineHeight: 1.5 }}>
+                Emails go out through Resend in batches of 100, as fast as it accepts them — a few thousand
+                take a few minutes. Email doesn’t use your SMS allowance or SMS credit.
+              </p>
+            ) : (<>
             <label style={{ display: 'flex', gap: 9, alignItems: 'flex-start', cursor: 'pointer', marginBottom: 12 }}>
               <input type="checkbox" checked={localTime} onChange={e => setLocalTime(e.target.checked)} style={{ marginTop: 2 }} />
               <span>
@@ -1274,9 +1323,11 @@ export default function CampaignEditorPage() {
                 )}
               </p>
             </div>
+            </>)}
           </div>
 
           {/* Test send */}
+          {isEmail && companyId ? <EmailTestCard companyId={companyId} info={emailInfo} card={card} label={label} /> : (
           <div style={card}>
             <label style={label}>Send a test</label>
             <p style={{ margin: '0 0 10px', fontSize: 12.5, color: 'var(--slate)' }}>
@@ -1297,18 +1348,30 @@ export default function CampaignEditorPage() {
               </p>
             )}
           </div>
+          )}
         </div>
         )}
 
         {/* ── Left: review & confirm (step 6) ──────────────────────────────── */}
         {step === 6 && (
         <div style={{ display: 'grid', gap: 14 }}>
-          {companyId && <SmsLowBalanceBanner companyId={companyId} />}
+          {companyId && !isEmail && <SmsLowBalanceBanner companyId={companyId} />}
           <div style={card}>
             <label style={label}>Review</label>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <tbody>
-                {[
+                {(isEmail ? [
+                  ['Campaign', campaign.name],
+                  ['Channel', 'Email'],
+                  ['Audience', savedLoading ? 'Calculating\u2026' : savedReady ? `${recipients.toLocaleString()} people who can be emailed` : (saved?.incomplete || saved?.error || '\u2014')],
+                  ['Excluded', savedReady && !savedLoading ? `${(saved.excludedTotal || 0).toLocaleString()} contacts` : '\u2014'],
+                  ['Cost', 'Included in your plan (no SMS credit used)'],
+                  ['When', sendMode === 'now'
+                    ? 'Immediately'
+                    : scheduledIso()
+                      ? new Date(scheduledIso()!).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })
+                      : 'Not scheduled'],
+                ] : [
                   ['Campaign', campaign.name],
                   ['Channel', String(campaign.channel || 'sms').toUpperCase()],
                   ['Sender', campaign.sender_name || campaign.sender_number || 'Default number'],
@@ -1328,7 +1391,7 @@ export default function CampaignEditorPage() {
                     : scheduledIso()
                       ? new Date(scheduledIso()!).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })
                       : 'Not scheduled'],
-                ].map(([k, v]) => (
+                ]).map(([k, v]) => (
                   <tr key={String(k)} style={{ borderTop: '1px solid var(--border)' }}>
                     <td style={{ padding: '9px 0', color: 'var(--slate)', width: 150 }}>{k}</td>
                     <td style={{ padding: '9px 0', color: 'var(--ink)', fontWeight: 600 }}>{v}</td>
@@ -1378,6 +1441,10 @@ export default function CampaignEditorPage() {
             </div>
           )}
 
+          {isEmail ? (<>
+            <EmailReviewCard info={emailInfo} card={card} label={label} onEdit={() => goToStep(3)} />
+            {companyId && <EmailTestCard companyId={companyId} info={emailInfo} card={card} label={label} />}
+          </>) : (
           <div style={card}>
             <label style={label}>Message preview</label>
             <div style={{ background: '#e9e9eb', borderRadius: 14, padding: '11px 14px', fontSize: 13.5, lineHeight: 1.45, whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: '#1a1a1a' }}>
@@ -1387,6 +1454,7 @@ export default function CampaignEditorPage() {
               Shown with example values. Each recipient gets their own details.
             </p>
           </div>
+          )}
 
           {/* Exclusions, restated before committing (from the saved audience) */}
           {savedReady && saved.excludedTotal > 0 && (
@@ -1396,7 +1464,7 @@ export default function CampaignEditorPage() {
                 .filter(([, n]) => n > 0)
                 .map(([reason, n]) => (
                   <p key={reason} style={{ margin: '0 0 4px', fontSize: 12.5, color: '#78350f' }}>
-                    <strong>{n.toLocaleString()}</strong> {SKIP_LABEL[reason] || reason}
+                    <strong>{n.toLocaleString()}</strong> {(isEmail ? EMAIL_SKIP_LABEL : SKIP_LABEL)[reason] || reason}
                   </p>
                 ))}
             </div>
@@ -1435,7 +1503,7 @@ export default function CampaignEditorPage() {
                   <Count n={savedReady ? recipients : null} busy={savedLoading} />
                 </p>
                 <p style={{ margin: '4px 0 0', fontSize: 12.5, color: 'var(--slate)' }}>
-                  recipients · {aud(payNowAud)} inc GST{savedLoading && <Calculating />}
+                  {isEmail ? 'people to email' : <>recipients · {aud(payNowAud)} inc GST</>}{savedLoading && <Calculating />}
                 </p>
                 <p style={{ margin: '6px 0 0', fontSize: 11.5, color: 'var(--slate)' }}>
                   Worked out from the saved audience, the same way the send will.
@@ -1518,6 +1586,12 @@ export default function CampaignEditorPage() {
                 <p style={{ margin: '0 0 5px', fontSize: 12.5, color: 'var(--slate)' }}>
                   Recipients <strong style={{ color: 'var(--ink)' }}><Count n={savedReady ? recipients : null} busy={savedLoading} /></strong>{savedLoading && <Calculating />}
                 </p>
+                {isEmail ? (
+                  <p style={{ margin: '0 0 5px', fontSize: 12.5, color: 'var(--slate)' }}>
+                    Channel <strong style={{ color: 'var(--ink)' }}>Email</strong>
+                    <span style={{ color: '#9ca3af' }}> · no SMS credit used</span>
+                  </p>
+                ) : (<>
                 <p style={{ margin: '0 0 5px', fontSize: 12.5, color: 'var(--slate)' }}>
                   Segments each <strong style={{ color: 'var(--ink)' }}>{renderedSms.segments}</strong>
                 </p>
@@ -1532,6 +1606,7 @@ export default function CampaignEditorPage() {
                 <p style={{ margin: '0 0 5px', fontSize: 11.5, color: '#9ca3af' }}>
                   {aud(costing.totalExGst)} ex GST + {aud(costing.gst)} GST
                 </p>
+                </>)}
                 <p style={{ margin: 0, fontSize: 12.5, color: 'var(--slate)' }}>
                   {sendMode === 'now'
                     ? 'Sends immediately on confirmation'
@@ -1703,7 +1778,7 @@ export default function CampaignEditorPage() {
                 .filter(([, n]) => n > 0)
                 .map(([reason, n]) => (
                   <p key={reason} style={{ margin: '0 0 5px', fontSize: 12.5, color: '#78350f' }}>
-                    <strong>{n.toLocaleString()}</strong> {SKIP_LABEL[reason] || reason}
+                    <strong>{n.toLocaleString()}</strong> {(isEmail ? EMAIL_SKIP_LABEL : SKIP_LABEL)[reason] || reason}
                   </p>
                 ))}
               <p style={{ margin: '8px 0 0', fontSize: 11.5, color: '#92400e' }}>

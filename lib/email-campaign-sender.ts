@@ -1,7 +1,6 @@
 // The email campaign sender (server only). Self-contained on purpose: the
-// SMS sender (lib/campaign-sender.ts) and the campaign worker
-// (app/api/campaigns/process) call into it once the email channel is wired
-// into the campaign wizard; nothing calls it yet.
+// campaign wizard's send / schedule routes and the campaign worker
+// (app/api/campaigns/process) reach it through lib/campaign-email.ts.
 //
 //   prepareEmailCampaign(companyId, campaignId, recipients)
 //     Freezes what will be sent: renders the campaign's design

@@ -5,6 +5,7 @@ import { useRouter, useParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { peekCompanyUser, resolveCompanyUser } from '@/lib/client-cache'
 import { SkeletonList } from '@/components/Skeleton'
+import EmailReport from './EmailReport'
 import { aud } from '@/lib/sms-pricing'
 import { isBookingPayment, linkFunnel } from '@/lib/link-channels'
 
@@ -261,10 +262,15 @@ export default function CampaignReportPage() {
     </div>
   )
 
+  // Email campaigns have their own numbers (email_campaign_recipients / email_events).
+  if (campaign.channel === 'email' && companyId) {
+    return <EmailReport campaign={campaign} companyId={companyId} onBack={() => router.push('/admin/campaigns')} />
+  }
+
   const notSentYet = !['sent', 'sending'].includes(campaign.status)
 
   return (
-    <div style={{ maxWidth: 1300, margin: '0 auto', padding: 24 }}>
+    <div style={{ padding: 24, boxSizing: 'border-box', width: '100%' }}>
       <button onClick={() => router.push('/admin/campaigns')}
         style={{ border: 'none', background: 'none', color: 'var(--slate)', fontSize: 13, cursor: 'pointer', padding: 0, marginBottom: 12 }}>
         ← Back to campaigns

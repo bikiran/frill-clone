@@ -2,6 +2,7 @@ import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { preflightCampaign, updateCampaign, CampaignNotReadyError, notReadyBody } from '@/lib/campaign-sender'
+import { isEmailCampaign, preflightEmailCampaign } from '@/lib/campaign-email'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -38,6 +39,18 @@ export async function POST(req: NextRequest) {
     if (!campaign) return NextResponse.json({ error: 'Campaign not found' }, { status: 404 })
     if (['sending', 'sent'].includes(campaign.status) || (campaign.status === 'paused' && Number(campaign.recipients_total) > 0)) {
       return NextResponse.json({ error: `This campaign is already ${campaign.status === 'paused' ? 'part-way through' : campaign.status}` }, { status: 409 })
+    }
+
+    // Email: its own checks (a designed email with a subject, someone
+    // emailable); no SMS credit or allowance.
+    if (isEmailCampaign(campaign)) {
+      const ep = await preflightEmailCampaign(db, companyId, campaign)
+      await updateCampaign(db, campaignId, {
+        status: 'scheduled', status_reason: null, scheduled_at: at.toISOString(),
+        audience_count: ep.audience.recipients.length, excluded_count: ep.audience.excludedTotal,
+        updated_at: new Date().toISOString(),
+      })
+      return NextResponse.json({ ok: true, channel: 'email', scheduledAt: at.toISOString(), recipients: ep.audience.recipients.length })
     }
 
     const pf = await preflightCampaign(db, companyId, campaign)

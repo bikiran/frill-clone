@@ -9,8 +9,9 @@ export const dynamic = 'force-dynamic'
 
 // The email designer's saves (staff of the workspace; the service role
 // writes, the table has no browser write rights).
-//   GET    ?companyId=[&id=]  the business's brand and sender, plus its saved
-//                             designs (or one design)
+//   GET    ?companyId=[&id=|&campaignId=]  the business's brand and sender,
+//                             plus its saved designs (or one design: by id, or
+//                             the one belonging to a campaign — null if none yet)
 //   POST   { companyId, id?, campaignId?, name, subject, previewText, design }
 //   DELETE { companyId, id }
 
@@ -24,11 +25,17 @@ async function gate(req: NextRequest, db: any, companyId: string | null) {
 export async function GET(req: NextRequest) {
   const companyId = req.nextUrl.searchParams.get('companyId')
   const id = req.nextUrl.searchParams.get('id')
+  const campaignId = req.nextUrl.searchParams.get('campaignId')
   const db = emailAdminDb()
   if (!(await gate(req, db, companyId))) return fail('Not authorized', 403)
   const loaded = await loadEmailBrand(db, companyId!)
   if (!loaded) return fail('Company not found', 404)
   const sender = await senderFor(db, { ...loaded.company, email: loaded.company.business_email })
+  if (campaignId && !id) {
+    const { data, error } = await db.from('email_designs').select('*').eq('campaign_id', campaignId).eq('company_id', companyId).order('updated_at', { ascending: false }).limit(1)
+    if (error && isMissingTable(error)) return NextResponse.json({ brand: loaded.brand, sender, design: null, dbReady: false })
+    return NextResponse.json({ brand: loaded.brand, sender, design: data?.[0] || null, dbReady: true })
+  }
   if (id) {
     const { data, error } = await db.from('email_designs').select('*').eq('id', id).eq('company_id', companyId).maybeSingle()
     if (error) return fail(isMissingTable(error) ? 'Waiting on a database update (V396)' : 'Couldn’t load it', isMissingTable(error) ? 503 : 500)
