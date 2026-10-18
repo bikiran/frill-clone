@@ -20,6 +20,9 @@
 import { escapeHtml } from '@/lib/safe-html'
 
 export const COLVY_TAGLINE = 'The all-in-one customer platform for small businesses'
+// The mark sits on a dark tile with an empty alt: the "Colvy" wordmark beside it
+// names it, so a mail app that blocks images shows a tidy tile, not a second
+// "Colvy" link (Supabase's template preview blocks outside images too).
 export const COLVY_LOGO_URL = 'https://colvy.com/icon-192.png'
 export const COLVY_SITE = 'https://colvy.com'
 
@@ -277,7 +280,7 @@ export function colvyEmail(input: ColvyEmailInput): ColvyEmail {
           <td class="cv-pad" bgcolor="${C.card}" style="background-color:${C.card};padding:24px 36px 4px;border-left:1px solid ${C.border};border-right:1px solid ${C.border}">
             <table role="presentation" cellpadding="0" cellspacing="0" border="0">
               <tr>
-                <td valign="middle" style="padding-right:10px"><a href="${COLVY_SITE}" target="_blank"><img src="${COLVY_LOGO_URL}" width="36" height="36" alt="Colvy" style="display:block;width:36px;height:36px;border:0;border-radius:9px"></a></td>
+                <td valign="middle" style="padding-right:10px"><table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td width="36" height="36" bgcolor="#1a1a1a" style="width:36px;height:36px;background-color:#1a1a1a;border-radius:9px"><img src="${COLVY_LOGO_URL}" width="36" height="36" alt="" style="display:block;width:36px;height:36px;border:0;border-radius:9px"></td></tr></table></td>
                 <td valign="middle" style="font-family:${FONT};font-size:20px;line-height:24px;font-weight:800;letter-spacing:-0.3px;color:${C.ink}">Colvy</td>
               </tr>
             </table>
