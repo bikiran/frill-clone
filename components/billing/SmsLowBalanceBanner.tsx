@@ -33,16 +33,18 @@ export default function SmsLowBalanceBanner(props: {
   onTopUp?: () => void
   /** Show even when the balance isn't low (screenshots, previews). */
   force?: boolean
+  /** false: Colvy manages top-ups for this account, so the link says to contact Colvy. */
+  canTopUp?: boolean
 }) {
   const given = typeof props.balanceCents === 'number'
-  const [fetched, setFetched] = useState<{ balanceCents: number; pricePerPart: number; low: boolean; autoTopUp: boolean } | null>(null)
+  const [fetched, setFetched] = useState<{ balanceCents: number; pricePerPart: number; low: boolean; autoTopUp: boolean; canTopUp: boolean } | null>(null)
 
   useEffect(() => {
     if (given || !props.companyId) return
     let live = true
     authFetch(`/api/sms-credits?companyId=${encodeURIComponent(props.companyId)}&summary=1`)
       .then(r => r.ok ? r.json() : null)
-      .then(d => { if (live && d?.ready) setFetched({ balanceCents: d.balanceCents, pricePerPart: d.pricePerPart, low: !!d.low, autoTopUp: !!d.autoTopUp }) })
+      .then(d => { if (live && d?.ready) setFetched({ balanceCents: d.balanceCents, pricePerPart: d.pricePerPart, low: !!d.low, autoTopUp: !!d.autoTopUp, canTopUp: d.canTopUp !== false }) })
       .catch(() => {})
     return () => { live = false }
   }, [given, props.companyId])
@@ -55,6 +57,7 @@ export default function SmsLowBalanceBanner(props: {
   if (!low && !props.force) return null
   const auto = props.autoTopUp ?? fetched?.autoTopUp
   const empty = balanceCents <= 0
+  const canTopUp = props.canTopUp ?? fetched?.canTopUp ?? true
 
   const linkStyle: React.CSSProperties = { color: 'var(--coral)', fontWeight: 700, whiteSpace: 'nowrap', background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 'inherit' }
   return (
@@ -67,7 +70,9 @@ export default function SmsLowBalanceBanner(props: {
           : empty
             ? 'Texts beyond your monthly allowance won’t send until you top up.'
             : 'Texts beyond your monthly allowance stop when it runs out.'}{' '}
-        {props.onTopUp
+        {!canTopUp
+          ? <span>Contact Colvy to add credit.</span>
+          : props.onTopUp
           ? <button type="button" onClick={props.onTopUp} style={linkStyle}>Top up</button>
           : <Link href={props.topUpHref || '/admin/billing#sms-credits'} style={linkStyle}>Top up</Link>}
       </p>

@@ -5,9 +5,14 @@
 // through the database functions, which lock the company's account row, so two
 // sends can't spend the same money and the balance never goes below zero.
 //
-//   Allowance first. Parts the plan's remaining monthly allowance covers are
-//   free; only the rest costs credit, at lib/sms-pricing's rate (volume tier
-//   earned on the whole send). Enterprise / unlimited plans skip the wallet.
+//   Allowance first. Parts the remaining monthly allowance covers are free;
+//   only the rest costs credit, at lib/sms-pricing's rate (volume tier earned
+//   on the whole send). How a company pays is its SMS billing policy
+//   (lib/sms-policy: company override, else plan default, else the code
+//   default): 'unlimited' skips the wallet, 'credit_only' has no free
+//   allowance, 'allowance_only' stops at the allowance and never charges
+//   (reason 'limit'), 'disabled' sends nothing (reason 'sms_disabled', or
+//   'plan' when the plan simply doesn't include SMS).
 //
 //   Campaigns: reserveForCampaign holds the estimated cost when the campaign is
 //   scheduled (and again, re-quoted, when it starts), settleCampaign charges
@@ -26,11 +31,11 @@
 
 import { resolveSmsPricing, type SmsPricing } from '@/lib/sms-pricing'
 import { smsPeriod, smsUsageThisMonth } from '@/lib/sms-quota'
-import { companyHasFeature, companyLimit } from '@/lib/plan'
+import { getSmsPolicy, type SmsPolicy } from '@/lib/sms-policy'
 import { secretKeyOk } from '@/lib/billing-config'
 import {
   afterAutoTopUpFailure, allowanceRemaining as remainingAfterHolds, autoTopUpDecision, cardErrorText,
-  normaliseLimit, partsCostCents, quoteParts, DEFAULT_AUTO_AMOUNT_CENTS, DEFAULT_AUTO_THRESHOLD_CENTS,
+  partsCostCents, quoteParts, DEFAULT_AUTO_AMOUNT_CENTS, DEFAULT_AUTO_THRESHOLD_CENTS,
   type SendQuote,
 } from '@/lib/sms-credits-core'
 
@@ -100,7 +105,7 @@ export async function getWallet(db: any, companyId: string): Promise<Wallet> {
 }
 
 export type AllowanceStatus = {
-  /** The plan includes SMS at all (Free / Feedback don't). */
+  /** SMS is on at all (Free / Feedback, or a 'disabled' policy, send nothing). */
   entitled: boolean
   unlimited: boolean
   limit: number
@@ -108,22 +113,28 @@ export type AllowanceStatus = {
   /** What a quote may still treat as free (after campaigns' quoted free parts). */
   remaining: number
   period: string
+  /** The policy's mode (lib/sms-policy). */
+  mode: SmsPolicy['mode']
+  /** Texts beyond the allowance are paid from credit. */
+  chargesCredit: boolean
+  /** Why nothing can be sent, when not entitled. */
+  reason: SmsPolicy['blockReason']
 }
 
-/** This month's allowance: plan limit (with overrides), usage and what's left. */
-export async function allowanceStatus(db: any, companyId: string, opts: { excludeCampaignId?: string | null; holds?: any[] } = {}): Promise<AllowanceStatus> {
+/** This month's allowance from the SMS billing policy: limit, usage and what's left. */
+export async function allowanceStatus(db: any, companyId: string, opts: { excludeCampaignId?: string | null; holds?: any[]; policy?: SmsPolicy } = {}): Promise<AllowanceStatus> {
   const period = smsPeriod()
-  const [entitled, limitRaw, used, holds] = await Promise.all([
-    companyHasFeature(db, companyId, 'channels'),
-    companyLimit(db, companyId, 'smsPerMonth'),
+  const [policy, used, holds] = await Promise.all([
+    opts.policy ? Promise.resolve(opts.policy) : getSmsPolicy(db, companyId),
     smsUsageThisMonth(db, companyId),
     opts.holds ? Promise.resolve(opts.holds) : readHolds(db, companyId),
   ])
-  const limit = normaliseLimit(limitRaw)
-  if (!entitled || limit <= 0) return { entitled: false, unlimited: false, limit: 0, used, remaining: 0, period }
-  if (limit === Infinity) return { entitled: true, unlimited: true, limit, used, remaining: Infinity, period }
+  const base = { used, period, mode: policy.mode, chargesCredit: policy.chargesCredit, reason: policy.blockReason }
+  if (!policy.entitled) return { ...base, entitled: false, unlimited: false, limit: 0, remaining: 0 }
+  const limit = policy.allowance
+  if (limit === Infinity) return { ...base, entitled: true, unlimited: true, limit, remaining: Infinity }
   const remaining = remainingAfterHolds({ limit, used, period, holds, excludeCampaignId: opts.excludeCampaignId })
-  return { entitled: true, unlimited: false, limit, used, remaining, period }
+  return { ...base, entitled: true, unlimited: false, limit, remaining }
 }
 
 /** What `parts` cost in credit at this company's rate (no allowance applied). */
@@ -142,33 +153,66 @@ export type Quote = SendQuote & {
   allowance: AllowanceStatus
   wallet: Wallet
   pricing: SmsPricing
+  policy: SmsPolicy
 }
 
 /** Allowance first, then credit: what a send of `parts` would cost and whether it's covered. */
 export async function quoteSend(db: any, companyId: string, parts: number, opts: { tierParts?: number; excludeCampaignId?: string | null } = {}): Promise<Quote> {
-  const [{ ready, row }, holds, pricing] = await Promise.all([readAccount(db, companyId), readHolds(db, companyId), resolveSmsPricing(db, companyId)])
-  const allowance = await allowanceStatus(db, companyId, { excludeCampaignId: opts.excludeCampaignId, holds })
+  const [{ ready, row }, holds, pricing, policy] = await Promise.all([readAccount(db, companyId), readHolds(db, companyId), resolveSmsPricing(db, companyId), getSmsPolicy(db, companyId)])
+  const allowance = await allowanceStatus(db, companyId, { excludeCampaignId: opts.excludeCampaignId, holds, policy })
   const wallet = ready ? walletFromRow(companyId, row, holds.reduce((s, h) => s + (Number(h.held_cents) || 0), 0)) : emptyWallet(companyId, false)
   const q = quoteParts(pricing, { parts, allowanceRemaining: allowance.remaining, tierParts: opts.tierParts })
   const balance = wallet.balanceCents
-  const affordable = q.unlimited || q.costCents === 0 || (ready && balance >= q.costCents)
+  // Allowance only: nothing is ever charged, so only what the allowance covers can go.
+  const affordable = q.unlimited || q.billableParts === 0 || q.costCents === 0 || (policy.chargesCredit && ready && balance >= q.costCents)
   return {
     ...q, entitled: allowance.entitled, ready, balanceCents: balance,
     affordable: allowance.entitled && affordable,
-    shortfallCents: affordable ? 0 : Math.max(0, q.costCents - balance),
-    allowance, wallet, pricing,
+    shortfallCents: affordable || !policy.chargesCredit ? 0 : Math.max(0, q.costCents - balance),
+    allowance, wallet, pricing, policy,
   }
 }
 
-export type Refusal = 'plan' | 'insufficient' | 'not_set_up' | 'settled' | 'error'
+/**
+ * Why a send can't go: 'plan' (no SMS on the plan), 'sms_disabled' (switched
+ * off by Colvy), 'limit' (allowance-only policy, allowance used), or a wallet
+ * reason.
+ */
+export type Refusal = 'plan' | 'sms_disabled' | 'limit' | 'insufficient' | 'not_set_up' | 'settled' | 'error'
+
+/** The block for a quote that isn't entitled or can't use credit, else null. */
+function policyRefusal(quote: Quote): Refusal | null {
+  if (!quote.entitled) return quote.policy.blockReason || 'plan'
+  if (quote.unlimited || quote.billableParts === 0) return null
+  if (!quote.policy.chargesCredit) return 'limit'
+  return null
+}
 
 /** Could a send of `parts` go now? Allowance first; checks only, charges nothing. */
 export async function canAfford(db: any, companyId: string, parts: number, opts: { tierParts?: number; excludeCampaignId?: string | null } = {}): Promise<{ ok: boolean; reason?: Refusal; quote: Quote }> {
   const quote = await quoteSend(db, companyId, parts, opts)
-  if (!quote.entitled) return { ok: false, reason: 'plan', quote }
+  const blocked = policyRefusal(quote)
+  if (blocked) return { ok: false, reason: blocked, quote }
   if (quote.unlimited || quote.billableParts === 0) return { ok: true, quote }
   if (!quote.ready) return { ok: false, reason: 'not_set_up', quote }
   return quote.affordable ? { ok: true, quote } : { ok: false, reason: 'insufficient', quote }
+}
+
+/**
+ * A campaign's credit hold, if it still has one. On an unlimited policy it's
+ * given back (the company was switched to unlimited after it was scheduled),
+ * so nothing stays held for a send that will never be charged.
+ */
+export async function releaseHoldIfUnlimited(db: any, companyId: string, campaignId: string): Promise<null> {
+  await releaseIfHeld(db, companyId, campaignId, 'Unlimited texts: hold returned')
+  return null
+}
+
+/** Give back a campaign's hold only if it has one (no database function call otherwise). */
+async function releaseIfHeld(db: any, companyId: string, campaignId: string, note: string) {
+  let hold: any = null
+  try { const { data, error } = await db.from('sms_credit_holds').select('status, held_cents').eq('campaign_id', campaignId).maybeSingle(); hold = error ? null : data } catch {}
+  if (hold?.status === 'held') await releaseCampaign(db, { companyId, campaignId, note }).catch(() => null)
 }
 
 async function rpc(db: any, fn: string, args: Record<string, any>): Promise<any> {
@@ -195,8 +239,17 @@ export async function reserveForCampaign(db: any, o: {
   autoTopUp?: boolean; deps?: AutoTopUpDeps
 }): Promise<{ ok: boolean; reason?: Refusal; heldCents: number; balanceCents: number; shortfallCents?: number; skipped?: 'unlimited' | 'not_set_up'; quote: Quote }> {
   const quote = await quoteSend(db, o.companyId, o.parts, { tierParts: o.tierParts, excludeCampaignId: o.campaignId })
-  if (!quote.entitled) return { ok: false, reason: 'plan', heldCents: 0, balanceCents: quote.balanceCents, quote }
-  if (quote.unlimited) return { ok: true, skipped: 'unlimited', heldCents: 0, balanceCents: quote.balanceCents, quote }
+  if (quote.unlimited) {
+    // Switched to unlimited since it was scheduled: give back what it held.
+    if (quote.ready) await releaseHoldIfUnlimited(db, o.companyId, o.campaignId)
+    return { ok: true, skipped: 'unlimited', heldCents: 0, balanceCents: quote.balanceCents, quote }
+  }
+  const blocked = policyRefusal(quote)
+  if (blocked) {
+    // Refused: anything it held under an earlier policy goes back.
+    if (quote.ready) await releaseIfHeld(db, o.companyId, o.campaignId, blocked === 'limit' ? 'Beyond the monthly allowance: hold returned' : 'Texting not available: hold returned')
+    return { ok: false, reason: blocked, heldCents: 0, balanceCents: quote.balanceCents, quote }
+  }
   if (!quote.ready) {
     return quote.billableParts === 0
       ? { ok: true, skipped: 'not_set_up', heldCents: 0, balanceCents: 0, quote }
@@ -213,7 +266,9 @@ export async function reserveForCampaign(db: any, o: {
     if (t.ok) r = await call()
   }
   if (!r.ok) {
-    return { ok: false, reason: (r.reason as Refusal) || 'error', heldCents: Number(r.held_cents) || 0, balanceCents: Number(r.balance_cents) || quote.balanceCents, shortfallCents: Number(r.needed_cents) || undefined, quote }
+    // needed_cents is what the hold had to grow by; the shortfall is what the balance lacks.
+    const shortfall = r.needed_cents != null ? Math.max(0, Number(r.needed_cents) - (Number(r.balance_cents) || 0)) : 0
+    return { ok: false, reason: (r.reason as Refusal) || 'error', heldCents: Number(r.held_cents) || 0, balanceCents: Number(r.balance_cents) || quote.balanceCents, shortfallCents: shortfall || undefined, quote }
   }
   return { ok: true, heldCents: Number(r.held_cents) || 0, balanceCents: Number(r.balance_cents) || 0, quote }
 }
@@ -238,8 +293,9 @@ export async function settleCampaign(db: any, o: { companyId: string; campaignId
     return { ok: true, already: true, spentCents: Number(hold.settled_cents) || 0, shortfallCents: Number(hold.shortfall_cents) || 0, billableParts: 0, freeParts: 0, balanceCents: w.balanceCents }
   }
   const allowance = await allowanceStatus(db, o.companyId, { excludeCampaignId: o.campaignId })
-  if (allowance.unlimited) {
-    if (hold?.status === 'held') await releaseCampaign(db, { companyId: o.companyId, campaignId: o.campaignId, note: 'Unlimited plan: hold returned' })
+  // Unlimited, allowance-only or switched off since it started: never charged.
+  if (allowance.unlimited || !allowance.chargesCredit) {
+    if (hold?.status === 'held') await releaseCampaign(db, { companyId: o.companyId, campaignId: o.campaignId, note: allowance.unlimited ? 'Unlimited texts: hold returned' : 'Not charged on this plan: hold returned' })
     return { ok: true, skipped: 'unlimited', spentCents: 0, shortfallCents: 0, billableParts: 0, freeParts: parts, balanceCents: (await getWallet(db, o.companyId)).balanceCents }
   }
   let freeParts: number
@@ -275,7 +331,8 @@ export async function chargeSingleSend(db: any, o: { companyId: string; parts?: 
 }> {
   const parts = Math.max(1, Math.floor(Number(o.parts) || 1))
   const quote = await quoteSend(db, o.companyId, parts)
-  if (!quote.entitled) return { ok: false, reason: 'plan', chargedCents: 0, billableParts: 0, balanceCents: quote.balanceCents }
+  const blocked = policyRefusal(quote)
+  if (blocked) return { ok: false, reason: blocked, chargedCents: 0, billableParts: blocked === 'limit' ? quote.billableParts : 0, balanceCents: quote.balanceCents }
   if (quote.unlimited || quote.billableParts === 0) return { ok: true, chargedCents: 0, billableParts: 0, balanceCents: quote.balanceCents }
   if (!quote.ready) return { ok: false, reason: 'not_set_up', chargedCents: 0, billableParts: quote.billableParts, balanceCents: 0 }
   const call = () => rpc(db, 'sms_credit_apply', {
@@ -335,6 +392,8 @@ export async function maybeAutoTopUp(db: any, companyId: string, opts: AutoTopUp
   const now = opts.now ? opts.now() : new Date()
   const { ready, row } = await readAccount(db, companyId)
   if (!ready) return { ran: false, ok: false, reason: 'not_set_up' }
+  // The policy must allow it (top-ups and auto top-up on, a mode that uses credit).
+  if (row?.auto_topup_enabled && !(await getSmsPolicy(db, companyId)).canAutoTopUp) return { ran: false, ok: false, reason: 'not_allowed' }
   const d = autoTopUpDecision(row, now.getTime(), opts.needCents || 0)
   if (!d.go) return { ran: false, ok: false, reason: d.reason }
 
@@ -463,7 +522,8 @@ export async function handleSmsCreditCheckout(db: any, session: any, deps: { str
         patch.auto_topup_failures = 0
         patch.auto_topup_last_error = null
         const th = Number(meta.autoThreshold), am = Number(meta.autoAmount)
-        if (Number.isInteger(th) && th > 0 && Number.isInteger(am) && am > 0) {
+        const allowed = (await getSmsPolicy(db, companyId)).canAutoTopUp
+        if (allowed && Number.isInteger(th) && th > 0 && Number.isInteger(am) && am > 0) {
           patch.auto_topup_enabled = true
           patch.auto_topup_threshold_cents = th
           patch.auto_topup_amount_cents = am

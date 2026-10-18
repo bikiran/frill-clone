@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { smsCreditsAccess } from '@/lib/sms-credits-access'
 import { allowanceStatus, getWallet } from '@/lib/sms-credits'
+import { getSmsPolicy } from '@/lib/sms-policy'
 import { ledgerToCsv, lowBalanceInfo, SMS_CREDIT_PACKS_CENTS, MIN_TOPUP_CENTS, type LedgerRow } from '@/lib/sms-credits-core'
 import { resolveSmsPricing } from '@/lib/sms-pricing'
 import { secretKeyOk } from '@/lib/billing-config'
@@ -14,6 +15,9 @@ export const dynamic = 'force-dynamic'
 //
 // Any staff member may read; topping up and settings are owner/admin only
 // (./topup, ./settings). Service role, with the caller checked explicitly.
+// `policy` says how this company pays for texts (lib/sms-policy): the card
+// shows "Unlimited texts", "SMS isn't included", or hides top-ups when Colvy
+// manages them; the topup / settings routes enforce the same.
 
 const admin = () => createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, { auth: { autoRefreshToken: false, persistSession: false } })
 const noStore = { 'Cache-Control': 'no-store' }
@@ -26,11 +30,20 @@ export async function GET(req: NextRequest) {
     if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status, headers: noStore })
     const id = String(companyId)
 
-    const [wallet, pricing] = await Promise.all([getWallet(db, id), resolveSmsPricing(db, id)])
-    const low = lowBalanceInfo(wallet.balanceCents, pricing, wallet.autoTopUp.enabled ? wallet.autoTopUp.thresholdCents : undefined)
+    const [wallet, pricing, policy] = await Promise.all([getWallet(db, id), resolveSmsPricing(db, id), getSmsPolicy(db, id)])
+    const autoOn = wallet.autoTopUp.enabled && policy.canAutoTopUp
+    const low = lowBalanceInfo(wallet.balanceCents, pricing, autoOn ? wallet.autoTopUp.thresholdCents : undefined)
+    // A low balance only matters when texts are paid from credit (not on unlimited or allowance-only).
+    const lowNow = wallet.ready && policy.chargesCredit && low.low
+    const policyOut = {
+      mode: policy.mode, allowance: policy.allowance === Infinity ? null : policy.allowance,
+      topupEnabled: policy.topupEnabled, autoTopupAllowed: policy.autoTopupAllowed,
+      canTopUp: policy.canTopUp, canAutoTopUp: policy.canAutoTopUp, chargesCredit: policy.chargesCredit,
+      blockReason: policy.blockReason,
+    }
 
     if (req.nextUrl.searchParams.get('summary')) {
-      return NextResponse.json({ ready: wallet.ready, balanceCents: wallet.balanceCents, heldCents: wallet.heldCents, pricePerPart: pricing.price_per_part, low: wallet.ready && low.low, message: low.message, texts: low.texts, autoTopUp: wallet.autoTopUp.enabled }, { headers: noStore })
+      return NextResponse.json({ ready: wallet.ready, balanceCents: wallet.balanceCents, heldCents: wallet.heldCents, pricePerPart: pricing.price_per_part, low: lowNow, message: low.message, texts: low.texts, autoTopUp: autoOn, canTopUp: policy.canTopUp, mode: policy.mode }, { headers: noStore })
     }
 
     const csv = req.nextUrl.searchParams.get('format') === 'csv'
@@ -56,7 +69,7 @@ export async function GET(req: NextRequest) {
     }
 
     const [allowance, co] = await Promise.all([
-      allowanceStatus(db, id),
+      allowanceStatus(db, id, { policy }),
       Promise.resolve(db.from('companies').select('billing_provider').eq('id', id).maybeSingle()).catch(() => ({ data: null })),
     ])
     return NextResponse.json({
@@ -64,10 +77,11 @@ export async function GET(req: NextRequest) {
       canManage: access.canManage,
       billingAvailable: secretKeyOk(process.env),
       billedByShopify: (co as any)?.data?.billing_provider === 'shopify',
-      wallet: { ...wallet, stripeCustomerId: undefined },
+      wallet: { ...wallet, stripeCustomerId: undefined, autoTopUp: { ...wallet.autoTopUp, enabled: autoOn } },
+      policy: policyOut,
       allowance: { ...allowance, limit: allowance.unlimited ? null : allowance.limit, remaining: allowance.unlimited ? null : Math.max(0, allowance.limit - allowance.used) },
       pricing: { price_per_part: pricing.price_per_part, volume_tiers: pricing.volume_tiers, gst_inclusive: pricing.gst_inclusive },
-      low: wallet.ready && low.low, lowMessage: low.message, texts: low.texts,
+      low: lowNow, lowMessage: low.message, texts: low.texts,
       packs: SMS_CREDIT_PACKS_CENTS, minTopUpCents: MIN_TOPUP_CENTS,
       ledger, campaigns,
     }, { headers: noStore })

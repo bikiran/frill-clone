@@ -2,13 +2,15 @@
 //
 // Usage is counted in message parts (segments): a 2-part text uses 2.
 //
-// The pricing page includes 3,000 SMS/month on the Inbox and Everything plans
-// and none on Free/Feedback. `assertSmsAllowed` is the single gate every send
-// passes through (wired into lib/sms-provider's send()), and `recordSmsSent`
-// counts a successful send against the current month. Counters live in the
-// sms_usage table (see migrations/COLVY_V297_SMS_USAGE.sql).
+// The allowance comes from the company's SMS billing policy (lib/sms-policy:
+// company override, else plan default, else the code default — 3,000 a month
+// on the Inbox and Everything plans, none on Free/Feedback, unlimited on
+// Enterprise). `assertSmsAllowed` is the allowance-only gate (used when the
+// prepaid wallet isn't set up), and `recordSmsSent` counts a successful send
+// against the current month. Counters live in the sms_usage table (see
+// migrations/COLVY_V297_SMS_USAGE.sql).
 
-import { companyHasFeature, companyLimit } from './plan'
+import { getSmsPolicy, blockedText } from './sms-policy'
 import type { SmsAllowanceSummary } from './sms-allowance'
 
 export { allowanceProblem } from './sms-allowance'
@@ -22,13 +24,18 @@ export function smsPeriod(d: Date = new Date()): string {
 // Distinguishes a plan/quota block from a carrier failure, so the API layer can
 // answer 402 (payment required) rather than a generic 500.
 export class SmsQuotaError extends Error {
-  /** 'credit': past the allowance and not enough prepaid SMS credit. */
-  reason: 'plan' | 'limit' | 'credit'
+  /**
+   * 'credit': past the allowance and not enough prepaid SMS credit.
+   * 'sms_disabled': Colvy switched texting off for this account.
+   */
+  reason: 'plan' | 'limit' | 'credit' | 'sms_disabled'
   limit: number
   used: number
   shortfallCents?: number
   balanceCents?: number
-  constructor(reason: 'plan' | 'limit' | 'credit', message: string, limit = 0, used = 0, extra: { shortfallCents?: number; balanceCents?: number } = {}) {
+  /** The business can fix it by topping up (false when top-ups are managed by Colvy or there's no credit). */
+  canTopUp: boolean
+  constructor(reason: 'plan' | 'limit' | 'credit' | 'sms_disabled', message: string, limit = 0, used = 0, extra: { shortfallCents?: number; balanceCents?: number; canTopUp?: boolean } = {}) {
     super(message)
     this.name = 'SmsQuotaError'
     this.reason = reason
@@ -36,6 +43,7 @@ export class SmsQuotaError extends Error {
     this.used = used
     this.shortfallCents = extra.shortfallCents
     this.balanceCents = extra.balanceCents
+    this.canTopUp = extra.canTopUp ?? (reason !== 'plan' && reason !== 'sms_disabled')
   }
 }
 
@@ -47,20 +55,21 @@ export async function smsUsageThisMonth(db: any, companyId: string): Promise<num
   } catch { return 0 }
 }
 
-export interface SmsAllowance { allowed: boolean; reason?: 'plan' | 'limit'; limit: number; used: number }
+export interface SmsAllowance { allowed: boolean; reason?: 'plan' | 'limit' | 'sms_disabled'; limit: number; used: number }
 
 /**
- * Whether this company may send an SMS right now: the plan must include SMS
- * channels, and the monthly allowance must not be used up. Reads the effective
- * plan (honouring trial expiry and per-company overrides).
+ * Whether this company may send an SMS right now on the allowance alone: SMS
+ * must be on (the policy isn't 'disabled', the plan includes SMS channels),
+ * and the monthly allowance must not be used up. 'credit_only' has no free
+ * allowance, so without a wallet nothing goes.
  */
 export async function checkSmsAllowance(db: any, companyId: string): Promise<SmsAllowance> {
-  const entitled = await companyHasFeature(db, companyId, 'channels')
-  const limitRaw = await companyLimit(db, companyId, 'smsPerMonth')
-  const limit = typeof limitRaw === 'number' ? limitRaw : 0
-  if (!entitled || limit <= 0) return { allowed: false, reason: 'plan', limit: 0, used: 0 }
+  const policy = await getSmsPolicy(db, companyId)
+  if (!policy.entitled) return { allowed: false, reason: policy.blockReason || 'plan', limit: 0, used: 0 }
+  const limit = policy.allowance
+  if (limit === Infinity) return { allowed: true, limit, used: 0 }
   const used = await smsUsageThisMonth(db, companyId)
-  if (Number.isFinite(limit) && used >= limit) return { allowed: false, reason: 'limit', limit, used }
+  if (used >= limit) return { allowed: false, reason: 'limit', limit, used }
   return { allowed: true, limit, used }
 }
 
@@ -68,9 +77,7 @@ export async function checkSmsAllowance(db: any, companyId: string): Promise<Sms
 export async function assertSmsAllowed(db: any, companyId: string): Promise<void> {
   const a = await checkSmsAllowance(db, companyId)
   if (a.allowed) return
-  if (a.reason === 'plan') {
-    throw new SmsQuotaError('plan', 'SMS is not included in this plan. Upgrade to the Inbox or Everything plan to send text messages.', a.limit, a.used)
-  }
+  if (a.reason === 'plan' || a.reason === 'sms_disabled') throw new SmsQuotaError(a.reason, blockedText(a.reason), a.limit, a.used)
   throw new SmsQuotaError('limit', `Monthly SMS allowance reached (${a.limit}). It resets at the start of next month — or upgrade for a higher allowance.`, a.limit, a.used)
 }
 
@@ -139,14 +146,11 @@ export async function recordSmsSent(db: any, companyId: string, n = 1): Promise<
 
 /** The month's allowance in a JSON-safe shape (Infinity doesn't serialise). */
 export async function smsAllowanceSummary(db: any, companyId: string): Promise<SmsAllowanceSummary> {
-  const [entitled, limitRaw, used] = await Promise.all([
-    companyHasFeature(db, companyId, 'channels'),
-    companyLimit(db, companyId, 'smsPerMonth'),
-    smsUsageThisMonth(db, companyId),
-  ])
-  const limit = typeof limitRaw === 'number' ? limitRaw : 0
-  if (!entitled || limit <= 0) return { entitled: false, unlimited: false, limit: 0, used, remaining: 0 }
-  if (!Number.isFinite(limit)) return { entitled: true, unlimited: true, limit: null, used, remaining: null }
+  const [policy, used] = await Promise.all([getSmsPolicy(db, companyId), smsUsageThisMonth(db, companyId)])
+  // Same shape as before policies; a block carries its reason and words.
+  if (!policy.entitled) return { entitled: false, unlimited: false, limit: 0, used, remaining: 0, ...(policy.blockReason === 'sms_disabled' ? { reason: 'sms_disabled' as const, message: blockedText('sms_disabled') } : {}) }
+  if (policy.allowance === Infinity) return { entitled: true, unlimited: true, limit: null, used, remaining: null }
+  const limit = policy.allowance
   return { entitled: true, unlimited: false, limit, used, remaining: Math.max(0, limit - used) }
 }
 

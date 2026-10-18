@@ -4,12 +4,16 @@
 // credit outstanding (money customers have paid for texts not yet sent: a
 // liability), this month's credit consumed against the estimated carrier cost
 // (the margin), and per company: the ledger and a manual adjustment with a
-// reason (written to the ledger and the audit log).
+// reason (written to the ledger and the audit log): add credit, or a manual
+// charge, which never takes the balance below zero. At the top, SMS billing
+// policies: how each plan pays for texts (components/platform-admin/
+// SmsBillingPolicies). "#smscredits/<companyId>" opens that company's ledger.
 // Uses /api/platform-admin/sms-credits (lib/sms-credits).
 
 import { useEffect, useState } from 'react'
 import { authFetch } from '@/lib/auth-fetch'
-import { fmtCents, fmtSignedCents, KIND_LABEL, parseAudToCents } from '@/lib/sms-credits-core'
+import { fmtCents, fmtSignedCents, ledgerLabel, parseAudToCents } from '@/lib/sms-credits-core'
+import SmsBillingPolicies from '@/components/platform-admin/SmsBillingPolicies'
 
 const card: React.CSSProperties = { background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 14, padding: 18, minWidth: 0 }
 const label: React.CSSProperties = { fontSize: 10.5, fontWeight: 800, color: 'var(--sa-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', margin: 0 }
@@ -46,7 +50,8 @@ function CompanyDetail({ companyId, initial, onBack, onChanged }: { companyId: s
   }
   useEffect(() => { if (!initial) load() }, [companyId])
   const cents = parseAudToCents(amount)
-  const valid = Number.isFinite(cents) && cents > 0 && reason.trim().length >= 3
+  const overBalance = sign === -1 && Number.isFinite(cents) && cents > (d?.wallet?.balanceCents || 0)
+  const valid = Number.isFinite(cents) && cents > 0 && reason.trim().length >= 3 && !overBalance
   const submit = async () => {
     if (!valid) return
     setBusy(true); setMsg(null)
@@ -83,15 +88,16 @@ function CompanyDetail({ companyId, initial, onBack, onChanged }: { companyId: s
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, alignItems: 'end' }}>
               <div style={{ display: 'flex', gap: 6 }}>
                 {([1, -1] as const).map(s => (
-                  <button key={s} onClick={() => setSign(s)} style={{ ...btn(s === 1 ? '#10b981' : '#ef4444', sign === s), flex: 1, justifyContent: 'center' }}>{s === 1 ? 'Add' : 'Remove'}</button>
+                  <button key={s} onClick={() => setSign(s)} style={{ ...btn(s === 1 ? '#10b981' : '#ef4444', sign === s), flex: 1, justifyContent: 'center' }}>{s === 1 ? 'Add credit' : 'Charge'}</button>
                 ))}
               </div>
               <input value={amount} onChange={e => setAmount(e.target.value)} placeholder="Amount, e.g. 25.00" inputMode="decimal" style={input} aria-label="Amount in dollars" />
               <input value={reason} onChange={e => setReason(e.target.value)} placeholder="Reason (shown in their ledger)" style={{ ...input, gridColumn: 'span 2' }} aria-label="Reason" />
-              <button onClick={submit} disabled={!valid || busy} style={{ ...btn('#ff7a6b', true), justifyContent: 'center', opacity: !valid || busy ? 0.55 : 1 }}>{busy ? 'Saving…' : sign === 1 ? `Add ${Number.isFinite(cents) && cents > 0 ? fmtCents(cents) : ''}` : `Remove ${Number.isFinite(cents) && cents > 0 ? fmtCents(cents) : ''}`}</button>
+              <button onClick={submit} disabled={!valid || busy} style={{ ...btn('#ff7a6b', true), justifyContent: 'center', opacity: !valid || busy ? 0.55 : 1 }}>{busy ? 'Saving…' : sign === 1 ? `Add ${Number.isFinite(cents) && cents > 0 ? fmtCents(cents) : ''}` : `Charge ${Number.isFinite(cents) && cents > 0 ? fmtCents(cents) : ''}`}</button>
             </div>
+            {overBalance && <p style={{ margin: '10px 0 0', fontSize: 12.5, color: '#ef4444' }}>That’s more than the balance ({fmtCents(w.balanceCents)}). A charge can’t take the balance below zero.</p>}
             {msg && <p style={{ margin: '10px 0 0', fontSize: 12.5, color: msg.tone === 'ok' ? '#10b981' : '#ef4444' }}>{msg.text}</p>}
-            <p style={{ margin: '8px 0 0', fontSize: 11.5, color: 'var(--sa-muted)' }}>Recorded in the company’s ledger as an adjustment and in Audit Logs. A balance can’t go below zero.</p>
+            <p style={{ margin: '8px 0 0', fontSize: 11.5, color: 'var(--sa-muted)' }}>Shows in the company’s ledger as “Credit from Colvy” or “Charge by Colvy” with the reason, and in Audit Logs. A charge can’t take the balance below zero.</p>
           </div>
           <div style={{ ...card, padding: 0, overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 640 }}>
@@ -101,7 +107,7 @@ function CompanyDetail({ companyId, initial, onBack, onChanged }: { companyId: s
                 {ledger.map(r => (
                   <tr key={r.id}>
                     <td style={{ ...td, whiteSpace: 'nowrap' }}>{fmtDate(r.created_at)}</td>
-                    <td style={td}>{(KIND_LABEL as any)[r.kind] || r.kind}</td>
+                    <td style={td}>{ledgerLabel(r)}</td>
                     <td style={{ ...td, color: 'var(--sa-muted)' }}>{r.campaign_id ? (campaigns[r.campaign_id] || 'Campaign') : (r.note || '')}{r.parts != null && r.kind === 'spend' ? ` · ${r.parts} parts` : ''}</td>
                     <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: r.amount_cents > 0 ? '#10b981' : 'var(--sa-text)', whiteSpace: 'nowrap' }}>{fmtSignedCents(r.amount_cents)}</td>
                     <td style={{ ...td, textAlign: 'right', color: 'var(--sa-muted)', whiteSpace: 'nowrap' }}>{fmtCents(r.balance_after_cents)}</td>
@@ -117,11 +123,18 @@ function CompanyDetail({ companyId, initial, onBack, onChanged }: { companyId: s
   )
 }
 
-export default function SmsCreditsPage({ initial, initialDetail }: { initial?: any; initialDetail?: { companyId: string; data: any } } = {}) {
+export default function SmsCreditsPage({ initial, initialDetail, initialPolicies }: { initial?: any; initialDetail?: { companyId: string; data: any }; initialPolicies?: any } = {}) {
   const [d, setD] = useState<any>(initial || null)
   const [loading, setLoading] = useState(!initial)
   const [q, setQ] = useState('')
   const [open, setOpen] = useState<string | null>(initialDetail?.companyId || null)
+  // "#smscredits/<companyId>" (the company console's Ledger link) opens that company.
+  useEffect(() => {
+    try {
+      const [page, id] = window.location.hash.replace(/^#/, '').split('/')
+      if (page === 'smscredits' && id && /^[0-9a-f-]{36}$/i.test(id)) setOpen(id)
+    } catch {}
+  }, [])
   const [find, setFind] = useState('')
   const [found, setFound] = useState<any[] | null>(null)
   useEffect(() => {
@@ -150,7 +163,7 @@ export default function SmsCreditsPage({ initial, initialDetail }: { initial?: a
   if (open) return <div>{header}<CompanyDetail companyId={open} initial={initialDetail?.companyId === open ? initialDetail.data : undefined} onBack={() => setOpen(null)} onChanged={load} /></div>
   if (loading && !d) return <div>{header}<p style={{ color: 'var(--sa-muted)', fontSize: 13 }}>Loading…</p></div>
   if (d?.error) return <div>{header}<p style={{ color: '#ef4444', fontSize: 13 }}>{d.error}</p></div>
-  if (d && d.ready === false) return <div>{header}<div style={{ ...card, fontSize: 13, color: 'var(--sa-text)' }}>Run <b>COLVY_V395_SMS_CREDITS.sql</b> to turn SMS credits on. Until then Billing shows “SMS credits aren’t set up yet” and sending works as before.</div></div>
+  if (d && d.ready === false) return <div>{header}<SmsBillingPolicies initial={initialPolicies} /><div style={{ ...card, fontSize: 13, color: 'var(--sa-text)' }}>Run <b>COLVY_V395_SMS_CREDITS.sql</b> to turn SMS credits on. Until then Billing shows “SMS credits aren’t set up yet” and sending works as before.</div></div>
 
   const t = d?.totals || {}
   const accounts: any[] = (d?.accounts || []).filter((a: any) => !q || `${a.name} ${a.slug}`.toLowerCase().includes(q.toLowerCase()))
@@ -159,6 +172,7 @@ export default function SmsCreditsPage({ initial, initialDetail }: { initial?: a
   return (
     <div>
       {header}
+      <SmsBillingPolicies initial={initialPolicies} />
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 12, marginBottom: 16 }}>
         <Kpi title="Credit outstanding" value={fmtCents(t.outstandingCents || 0)} sub={`Owed in texts to ${t.wallets || 0} workspace${t.wallets === 1 ? '' : 's'} (a liability)${t.heldCents ? `, incl. ${fmtCents(t.heldCents)} held for campaigns` : ''}`} color="#f59e0b" />
         <Kpi title={`Consumed in ${monthName}`} value={fmtCents(t.consumedMonthCents || 0)} sub={`${(t.partsMonth || 0).toLocaleString('en-AU')} parts beyond allowances · ${fmtCents(t.consumedMonthExGstCents || 0)} ex GST`} />

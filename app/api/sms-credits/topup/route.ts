@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { smsCreditsAccess } from '@/lib/sms-credits-access'
 import { getWallet, platformStripe } from '@/lib/sms-credits'
+import { getSmsPolicy, topUpRefusal } from '@/lib/sms-policy'
 import { fmtCents, validateAutoTopUp, validateTopUpCents } from '@/lib/sms-credits-core'
 import { billingUnavailableCopy, secretKeyOk } from '@/lib/billing-config'
 import { alertBillingNotConfigured } from '@/lib/billing-alert'
@@ -18,6 +19,9 @@ export const dynamic = 'force-dynamic'
 // (checkout.session.completed, metadata.kind 'sms_credit').
 // Owner / admin only. Same "billing unavailable" answer as plan checkout when
 // Colvy's Stripe key isn't set up.
+// The company's SMS billing policy must allow it (lib/sms-policy): no top-ups
+// when Colvy manages them or the plan doesn't use credit, and no auto top-up
+// when that's not allowed: 403 { managed: true }, whatever the page shows.
 
 const admin = () => createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, { auth: { autoRefreshToken: false, persistSession: false } })
 
@@ -35,6 +39,9 @@ export async function POST(req: NextRequest) {
     const access = await smsCreditsAccess(req, db, companyId, 'manage')
     if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status })
     const id = String(companyId)
+
+    const refusal = topUpRefusal(await getSmsPolicy(db, id), !!body.autoTopUp)
+    if (refusal) return NextResponse.json({ error: refusal, managed: true }, { status: 403 })
 
     const amount = validateTopUpCents(body.amountCents)
     if (!amount.ok) return NextResponse.json({ error: amount.error }, { status: 400 })
