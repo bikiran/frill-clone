@@ -1,7 +1,7 @@
 import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { preflightCampaign, updateCampaign, CampaignNotReadyError } from '@/lib/campaign-sender'
+import { preflightCampaign, updateCampaign, CampaignNotReadyError, notReadyBody } from '@/lib/campaign-sender'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -50,9 +50,11 @@ export async function POST(req: NextRequest) {
       segments: pf.segments,
       updated_at: new Date().toISOString(),
     })
-    return NextResponse.json({ ok: true, scheduledAt: at.toISOString(), recipients: pf.audience.recipients.length, parts: pf.parts })
+    return NextResponse.json({ ok: true, scheduledAt: at.toISOString(), recipients: pf.audience.recipients.length, parts: pf.parts, heldCents: pf.heldCents })
   } catch (e: any) {
-    const code = e instanceof CampaignNotReadyError ? e.code : undefined
-    return NextResponse.json({ error: e.message, code }, { status: e instanceof CampaignNotReadyError ? 400 : 500 })
+    // Not enough credit / not on the plan / allowance reached → 402 with the
+    // reason and shortfall, so the editor can offer a top-up.
+    if (e instanceof CampaignNotReadyError) return NextResponse.json(notReadyBody(e), { status: e.paymentRequired ? 402 : 400 })
+    return NextResponse.json({ error: e.message }, { status: 500 })
   }
 }

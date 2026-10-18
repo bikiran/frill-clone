@@ -10,6 +10,8 @@ import { analyseSms, renderVariables, SMS_VARIABLES } from '@/lib/sms-segments'
 import { audienceFilterProblem, stableJson } from '@/lib/campaign-audience-rules'
 import { allowanceProblem, type SmsAllowanceSummary } from '@/lib/sms-allowance'
 import { latestOnly, isAbort } from '@/lib/latest-request'
+import SmsLowBalanceBanner from '@/components/billing/SmsLowBalanceBanner'
+import { fmtCents, fmtRate } from '@/lib/sms-credits-core'
 import { calculateCost, DEFAULT_PRICING, SmsPricing, aud, audRate, resolveSmsPricing } from '@/lib/sms-pricing'
 import { confirmDialog } from '@/components/ConfirmDialog'
 import { authFetch } from '@/lib/auth-fetch'
@@ -279,20 +281,21 @@ export default function CampaignEditorPage() {
   }, [companyId, currentKey, filterProblem, !!campaign, campaign?.channel])
 
   // The saved audience (and the month's SMS allowance), for steps 3, 5 and 6.
-  const loadSaved = useCallback(async () => {
+  const loadSaved = useCallback(async (msg?: string) => {
     if (!companyId || !campaignId) return
     const ticket = savedReq.current.start()
     setSavedLoading(true)
     try {
       const res = await authFetch('/api/campaigns/audience', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ companyId, campaignId, saved: true }),
+        // The message on screen, so the credit quote matches what you see.
+        body: JSON.stringify({ companyId, campaignId, saved: true, ...(msg != null ? { message: msg } : {}) }),
         signal: ticket.signal,
       })
       const d = await res.json()
       if (!ticket.isCurrent()) return
       if (!res.ok) throw new Error(d.error || 'Could not work out the audience')
-      setSaved({ ...d, key: d.filter ? stableJson(d.filter) : '' })
+      setSaved({ ...d, key: d.filter ? stableJson(d.filter) : '', msg })
     } catch (e: any) {
       if (isAbort(e) || !ticket.isCurrent()) return
       setSaved({ error: e.message, key: '__error' })
@@ -301,8 +304,9 @@ export default function CampaignEditorPage() {
 
   useEffect(() => {
     if (!companyId || !campaign || step === 2) return
-    if (saved && !saved.error && saved.key === savedKey) return
-    loadSaved()
+    // Review re-quotes when the message changed (its length decides the parts).
+    if (saved && !saved.error && saved.key === savedKey && (step !== 6 || saved.msg === message)) return
+    loadSaved(message)
   }, [step, savedKey, companyId, !!campaign, loadSaved])
 
   /** Save the audience through the server (which checks it's finished). */
@@ -355,8 +359,21 @@ export default function CampaignEditorPage() {
   const recipients = savedReady ? (saved.recipients || 0) : 0
   const costing = calculateCost(pricing, renderedSms.segments, recipients)
   const allowance: SmsAllowanceSummary | null = saved?.allowance || null
-  const partsNeeded = recipients * renderedSms.segments
-  const allowanceMsg = allowance && recipients > 0 ? allowanceProblem(allowance, partsNeeded) : null
+  // Prepaid SMS credit (V395): past the allowance, texts are paid from credit.
+  // Before the wallet exists (credit.ready false) the allowance alone decides.
+  const credit: any = savedReady && saved?.credit ? saved.credit : null
+  const walletOn = !!credit?.ready
+  const partsNeeded = credit?.parts ?? recipients * renderedSms.segments
+  const allowanceMsg = !walletOn && allowance && recipients > 0 ? allowanceProblem(allowance, partsNeeded) : null
+  const creditMsg = walletOn && recipients > 0
+    ? !credit.entitled ? 'SMS isn\u2019t on your plan. Upgrade to the Inbox or Everything plan to send text messages.'
+      : !credit.affordable ? `This campaign needs ${fmtCents(credit.shortfallCents)} more SMS credit. Top up to send it.`
+      : null
+    : null
+  const [sendTopUp, setSendTopUp] = useState(false)
+  // What this send costs the business: with the wallet, only the texts past
+  // the allowance (from credit); before it, the estimate at the campaign rate.
+  const payNowAud = walletOn ? (credit.unlimited ? 0 : (credit.costCents || 0) / 100) : costing.totalIncGst
   const cost = costing.totalIncGst
   const hasOptOut = /\bstop\b/i.test(message)
   const hasSender = /roxy|aquarium/i.test(message) || /\{\{store_name\}\}/.test(message)
@@ -562,6 +579,7 @@ export default function CampaignEditorPage() {
     else if (saved?.incomplete) out.push({ text: saved.incomplete, blocking: true })
     else if (savedReady && recipients === 0) out.push({ text: 'The audience has no recipients', blocking: true })
     if (allowanceMsg) out.push({ text: allowanceMsg, blocking: true })
+    if (creditMsg) out.push({ text: creditMsg, blocking: true })
     if (!hasOptOut) out.push({ text: 'No unsubscribe instructions in the message', blocking: false })
     if (!hasSender) out.push({ text: 'The business isn\u2019t identified in the message', blocking: false })
     if (sendMode === 'later' && !scheduledIso()) out.push({ text: 'No send date chosen', blocking: false })
@@ -612,7 +630,8 @@ export default function CampaignEditorPage() {
         body: JSON.stringify({ companyId, campaignId, scheduledAt: scheduledIso() }),
       })
       const d = await res.json()
-      if (!res.ok) throw new Error(d.error || 'Could not schedule the campaign')
+      if (!res.ok) { setSendTopUp(!!d.topUpUrl && d.reason !== 'plan'); throw new Error(d.error || 'Could not schedule the campaign') }
+      setSendTopUp(false)
       setSendResult(`Scheduled for ${new Date(d.scheduledAt).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}`)
       setCampaign((c: any) => ({ ...c, status: 'scheduled', scheduled_at: d.scheduledAt, status_reason: null }))
     } catch (e: any) { setSendResult('Could not schedule: ' + e.message) }
@@ -624,8 +643,10 @@ export default function CampaignEditorPage() {
     // Spending money and messaging real people — make the numbers explicit.
     const ok = await confirmDialog(
       `You are about to send ${recipients.toLocaleString()} SMS messages ` +
-      `(${partsNeeded.toLocaleString()} texts of your allowance) ` +
-      `at an estimated cost of ${aud(costing.totalIncGst)} (inc GST).\n\n` +
+      (credit?.ready && !credit.unlimited && credit.billableParts > 0
+        ? `(${credit.freeParts.toLocaleString()} texts free from your allowance, ${credit.billableParts.toLocaleString()} from credit = ${fmtCents(credit.costCents)}) `
+        : `(${partsNeeded.toLocaleString()} texts of your allowance) `) +
+      `at an estimated cost of ${aud(payNowAud)} (inc GST).\n\n` +
       `This cannot be undone once it starts.`
     )
     if (!ok) return
@@ -637,13 +658,31 @@ export default function CampaignEditorPage() {
         body: JSON.stringify({ companyId, campaignId, confirm: 'SEND' }),
       })
       const d = await res.json()
-      if (!res.ok) throw new Error(d.error || 'Could not start the send')
+      if (!res.ok) { setSendTopUp(!!d.topUpUrl && d.reason !== 'plan'); throw new Error(d.error || 'Could not start the send') }
       setSendResult(
         `Sending to ${d.recipients.toLocaleString()} recipients` +
         (d.excluded ? ` · ${d.excluded.toLocaleString()} excluded` : '')
       )
       setTimeout(() => router.push(`/admin/campaigns/${campaignId}/report`), 1500)
     } catch (e: any) { setSendResult('Could not send: ' + e.message) }
+    finally { setSending(false) }
+  }
+
+  // Unschedule: back to a draft, and any credit held for it is given back.
+  const unschedule = async () => {
+    if (!companyId) return
+    setSending(true); setSendResult('')
+    try {
+      const res = await authFetch('/api/campaigns/cancel', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId, campaignId }),
+      })
+      const d = await res.json()
+      if (!res.ok) throw new Error(d.error || 'Could not unschedule the campaign')
+      setCampaign((c: any) => ({ ...c, status: 'draft', status_reason: null }))
+      setSendResult(d.releasedCents > 0 ? `Unscheduled · ${fmtCents(d.releasedCents)} of held credit returned` : 'Unscheduled · it\u2019s a draft again')
+      setSaved(null)
+    } catch (e: any) { setSendResult('Could not unschedule: ' + e.message) }
     finally { setSending(false) }
   }
 
@@ -658,7 +697,7 @@ export default function CampaignEditorPage() {
         body: JSON.stringify({ companyId, campaignId, confirm: 'SEND', resume: true }),
       })
       const d = await res.json()
-      if (!res.ok) throw new Error(d.error || 'Could not resume the campaign')
+      if (!res.ok) { setSendTopUp(!!d.topUpUrl && d.reason !== 'plan'); throw new Error(d.error || 'Could not resume the campaign') }
       setSendResult(`Resumed · ${Number(d.remaining || 0).toLocaleString()} still to send`)
       setCampaign((c: any) => ({ ...c, status: 'sending', status_reason: null }))
     } catch (e: any) { setSendResult('Could not resume: ' + e.message) }
@@ -915,6 +954,8 @@ export default function CampaignEditorPage() {
 
         {/* ── Left: message composer (step 3) ──────────────────────────────── */}
         {step === 3 && (
+        <div style={{ display: 'grid', gap: 14, alignContent: 'start' }}>
+        {companyId && <SmsLowBalanceBanner companyId={companyId} />}
         <div style={card}>
           <label style={label}>Message</label>
           <textarea ref={msgRef} value={message} onChange={e => setMessage(e.target.value)} rows={6}
@@ -931,8 +972,16 @@ export default function CampaignEditorPage() {
           {saved?.incomplete && !savedLoading && (
             <p style={{ margin: '6px 0 0', fontSize: 11.5, color: '#b45309' }}>{saved.incomplete}</p>
           )}
-          {allowanceMsg && !savedLoading && (
-            <p style={{ margin: '6px 0 0', fontSize: 11.5, color: '#dc2626', fontWeight: 600 }}>{allowanceMsg}</p>
+          {(allowanceMsg || creditMsg) && !savedLoading && (
+            <p style={{ margin: '6px 0 0', fontSize: 11.5, color: '#dc2626', fontWeight: 600 }}>
+              {allowanceMsg || creditMsg}
+              {creditMsg && credit?.entitled && <> <a href="/admin/billing#sms-credits" style={{ color: 'var(--coral)' }}>Top up</a></>}
+            </p>
+          )}
+          {walletOn && credit.entitled && !credit.unlimited && credit.billableParts > 0 && !savedLoading && (
+            <p style={{ margin: '6px 0 0', fontSize: 11.5, color: 'var(--slate)' }}>
+              {credit.freeParts.toLocaleString()} texts free from your allowance, {credit.billableParts.toLocaleString()} from SMS credit ({fmtCents(credit.costCents)}).
+            </p>
           )}
 
           {recipients > 0 && (
@@ -994,6 +1043,7 @@ export default function CampaignEditorPage() {
               Variables are replaced per recipient. The preview uses example values.
             </p>
           </div>
+        </div>
         </div>
         )}
 
@@ -1253,6 +1303,7 @@ export default function CampaignEditorPage() {
         {/* ── Left: review & confirm (step 6) ──────────────────────────────── */}
         {step === 6 && (
         <div style={{ display: 'grid', gap: 14 }}>
+          {companyId && <SmsLowBalanceBanner companyId={companyId} />}
           <div style={card}>
             <label style={label}>Review</label>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
@@ -1264,12 +1315,14 @@ export default function CampaignEditorPage() {
                   ['Audience', savedLoading ? 'Calculating\u2026' : savedReady ? `${recipients.toLocaleString()} recipients` : (saved?.incomplete || saved?.error || '\u2014')],
                   ['Excluded', savedReady && !savedLoading ? `${(saved.excludedTotal || 0).toLocaleString()} contacts` : '\u2014'],
                   ['Texts needed', savedReady && !savedLoading
-                    ? `${partsNeeded.toLocaleString()}${allowance ? allowance.unlimited ? ' (unlimited plan)' : ` of ${(allowance.remaining ?? 0).toLocaleString()} left this month` : ''}`
+                    ? walletOn
+                      ? credit.unlimited ? `${partsNeeded.toLocaleString()} (unlimited plan)` : partsNeeded.toLocaleString()
+                      : `${partsNeeded.toLocaleString()}${allowance ? allowance.unlimited ? ' (unlimited plan)' : ` of ${(allowance.remaining ?? 0).toLocaleString()} left this month` : ''}`
                     : '\u2014'],
                   ['SMS segments', `${renderedSms.segments} per message`],
                   ['Total parts', costing.parts.toLocaleString()],
-                  ['Rate', `${audRate(costing.pricePerPart)} per part`],
-                  ['Estimated cost', `${aud(costing.totalIncGst)} inc GST`],
+                  ['Rate', walletOn && !credit.unlimited ? `${fmtRate(credit.pricePerPart)} per text past the allowance` : `${audRate(costing.pricePerPart)} per part`],
+                  ['Estimated cost', walletOn ? (credit.unlimited ? 'Included in your plan' : `${aud(payNowAud)} inc GST from SMS credit`) : `${aud(costing.totalIncGst)} inc GST`],
                   ['When', sendMode === 'now'
                     ? 'Immediately'
                     : scheduledIso()
@@ -1284,6 +1337,46 @@ export default function CampaignEditorPage() {
               </tbody>
             </table>
           </div>
+
+          {/* How it's paid for: the allowance first, then prepaid credit */}
+          {walletOn && savedReady && !savedLoading && credit.entitled && (
+            <div style={{ ...card, borderColor: credit.affordable ? 'var(--border)' : '#fecaca', background: credit.affordable ? '#fff' : '#fef2f2' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+                <label style={{ ...label, marginBottom: 0 }}>How it’s paid for</label>
+                {!credit.unlimited && (
+                  <a href="/admin/billing#sms-credits" style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid var(--coral)', color: 'var(--coral)', background: '#fff', fontSize: 12.5, fontWeight: 700, textDecoration: 'none' }}>
+                    Top up
+                  </a>
+                )}
+              </div>
+              {credit.unlimited ? (
+                <p style={{ margin: '10px 0 0', fontSize: 13, color: 'var(--ink)' }}>Your plan has unlimited texts, so no SMS credit is used.</p>
+              ) : (
+                <>
+                  <p style={{ margin: '10px 0 0', fontSize: 13.5, color: 'var(--ink)', lineHeight: 1.5 }}>
+                    <strong>{credit.freeParts.toLocaleString()}</strong> text{credit.freeParts === 1 ? '' : 's'} free from your allowance,{' '}
+                    <strong>{credit.billableParts.toLocaleString()}</strong> text{credit.billableParts === 1 ? '' : 's'} from credit = <strong>{fmtCents(credit.costCents)}</strong>
+                  </p>
+                  <p style={{ margin: '6px 0 0', fontSize: 12.5, color: 'var(--slate)' }}>
+                    SMS credit balance <strong style={{ color: 'var(--ink)' }}>{fmtCents(credit.balanceCents)}</strong>
+                    {credit.heldCents > 0 && <> plus {fmtCents(credit.heldCents)} already held for this campaign</>}
+                    {credit.billableParts > 0 && <> · {fmtRate(credit.pricePerPart)} a text</>}
+                  </p>
+                  {!credit.affordable && (
+                    <p style={{ margin: '8px 0 0', fontSize: 12.5, color: '#7f1d1d', fontWeight: 600 }}>
+                      This campaign needs {fmtCents(credit.shortfallCents)} more credit.{' '}
+                      <a href="/admin/billing#sms-credits" style={{ color: 'var(--coral)' }}>Top up</a> to schedule or send it.
+                    </p>
+                  )}
+                  {credit.affordable && credit.costCents > 0 && (
+                    <p style={{ margin: '8px 0 0', fontSize: 11.5, color: 'var(--slate)', lineHeight: 1.5 }}>
+                      The credit is held when you schedule or send, and you’re charged for what actually goes out; the rest comes back.
+                    </p>
+                  )}
+                </>
+              )}
+            </div>
+          )}
 
           <div style={card}>
             <label style={label}>Message preview</label>
@@ -1342,7 +1435,7 @@ export default function CampaignEditorPage() {
                   <Count n={savedReady ? recipients : null} busy={savedLoading} />
                 </p>
                 <p style={{ margin: '4px 0 0', fontSize: 12.5, color: 'var(--slate)' }}>
-                  recipients · {aud(costing.totalIncGst)} inc GST{savedLoading && <Calculating />}
+                  recipients · {aud(payNowAud)} inc GST{savedLoading && <Calculating />}
                 </p>
                 <p style={{ margin: '6px 0 0', fontSize: 11.5, color: 'var(--slate)' }}>
                   Worked out from the saved audience, the same way the send will.
@@ -1383,6 +1476,12 @@ export default function CampaignEditorPage() {
                       {sending ? 'Starting…' : savedReady ? `Send to ${recipients.toLocaleString()} now` : 'Send now'}
                     </button>
                   )}
+                  {campaign.status === 'scheduled' && (
+                    <button onClick={unschedule} disabled={sending}
+                      style={{ padding: '10px 16px', borderRadius: 10, background: '#fff', color: '#b91c1c', border: '1px solid #fecaca', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                      Unschedule
+                    </button>
+                  )}
                   <button onClick={() => goToStep(5)}
                     style={{ padding: '10px 16px', borderRadius: 10, background: '#fff', color: 'var(--ink)', border: '1px solid var(--border)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
                     Back
@@ -1397,6 +1496,9 @@ export default function CampaignEditorPage() {
               {sendResult && (
                 <p style={{ margin: 0, fontSize: 12.5, textAlign: 'center', color: sendResult.startsWith('Could not') ? '#dc2626' : '#15803d' }}>
                   {sendResult}
+                  {sendTopUp && sendResult.startsWith('Could not') && (
+                    <> <a href="/admin/billing#sms-credits" style={{ color: 'var(--coral)', fontWeight: 700 }}>Top up SMS credit</a></>
+                  )}
                 </p>
               )}
               {blockers.length > 0 && !pausedMidSend && campaign.status !== 'sent' && campaign.status !== 'sending' && (

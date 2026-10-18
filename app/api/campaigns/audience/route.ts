@@ -6,6 +6,7 @@ import {
   AudienceFilter, AudienceResult, AUDIENCE_TYPE_KEYS,
 } from '@/lib/campaign-audience'
 import { smsAllowanceSummary } from '@/lib/sms-quota'
+import { partsForRecipients, quoteCampaign, TOP_UP_PATH } from '@/lib/campaign-credits'
 
 export const dynamic = 'force-dynamic'
 
@@ -85,10 +86,21 @@ export async function POST(req: NextRequest) {
     }
 
     const { data: campaign } = await db.from('campaigns')
-      .select('id, company_id, channel, status, audience_type, audience_filter')
+      .select('id, company_id, channel, status, audience_type, audience_filter, message, attachments, sender_name')
       .eq('id', campaignId).eq('company_id', companyId).maybeSingle()
     if (!campaign) return NextResponse.json({ error: 'Campaign not found' }, { status: 404 })
     const channel = campaign.channel === 'email' ? 'email' : 'sms'
+    // What the send would cost: the allowance first, then prepaid credit.
+    // `message` lets the Review step quote the text on screen before it's saved.
+    const creditFor = async (result: AudienceResult) => {
+      if (channel !== 'sms' || !result.recipients.length) return null
+      const msg = typeof body.message === 'string' ? body.message : campaign.message
+      if (!String(msg || '').trim()) return null
+      const { data: company } = await db.from('companies').select('name, slug').eq('id', companyId).maybeSingle()
+      const parts = partsForRecipients({ ...campaign, message: msg }, company, result.recipients.map(r => r.name))
+      const q = await quoteCampaign(db, companyId, campaignId, parts).catch(() => null)
+      return q ? { ...q, topUpUrl: TOP_UP_PATH } : null
+    }
 
     // ── Save ───────────────────────────────────────────────────────────────
     if (body.save) {
@@ -112,7 +124,7 @@ export async function POST(req: NextRequest) {
         updated_at: new Date().toISOString(),
       }).eq('id', campaignId).eq('company_id', companyId)
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-      return NextResponse.json({ ...summary(result, channel), saved: true, filter, allowance })
+      return NextResponse.json({ ...summary(result, channel), saved: true, filter, allowance, credit: await creditFor(result) })
     }
 
     // ── The saved audience ─────────────────────────────────────────────────
@@ -125,7 +137,7 @@ export async function POST(req: NextRequest) {
       })
     }
     const result = await resolveAudienceCached(companyId, saved, channel, { db })
-    return NextResponse.json({ ...summary(result, channel), filter: saved, allowance })
+    return NextResponse.json({ ...summary(result, channel), filter: saved, allowance, credit: await creditFor(result) })
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 })
   }

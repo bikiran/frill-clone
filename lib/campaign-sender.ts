@@ -9,6 +9,11 @@ import { assertMayText } from './sms-consent'
 import { toE164 } from './telnyx-service'
 import { trackLinks } from './link-tracking'
 import { isExternalSendBlocked, DEMO_BLOCK_MESSAGE } from './demo-guard'
+import {
+  partsForRecipients, campaignPartsSent, campaignHold, walletReady, holdForCampaign, extendCampaignHold,
+  creditRefusalText, campaignVars, uuidOrNull, TOP_UP_PATH,
+} from './campaign-credits'
+import { settleCampaign, releaseCampaign, maybeAutoTopUp, type Refusal } from './sms-credits'
 
 const admin = () => createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -60,11 +65,28 @@ export function batchSizeFor(campaign: any, minutes = CRON_EVERY_MINUTES): numbe
 
 /** A problem the person who pressed send can fix (shown to them, word for word). */
 export class CampaignNotReadyError extends Error {
-  code: 'audience' | 'allowance' | 'message' | 'empty' | 'status'
-  constructor(code: CampaignNotReadyError['code'], message: string) {
+  code: 'audience' | 'allowance' | 'message' | 'empty' | 'status' | 'credit' | 'plan'
+  /** For the credit codes: the wallet's reason and what's missing (cents). */
+  reason?: Refusal
+  shortfallCents?: number
+  constructor(code: CampaignNotReadyError['code'], message: string, extra: { reason?: Refusal; shortfallCents?: number } = {}) {
     super(message)
     this.name = 'CampaignNotReadyError'
     this.code = code
+    this.reason = extra.reason
+    this.shortfallCents = extra.shortfallCents
+  }
+  /** Payment needed (credit / plan / allowance) → the routes answer 402. */
+  get paymentRequired() { return this.code === 'credit' || this.code === 'plan' || this.code === 'allowance' }
+}
+
+/** The JSON a route sends for a CampaignNotReadyError (fields only added, never renamed). */
+export function notReadyBody(e: CampaignNotReadyError) {
+  return {
+    error: e.message, code: e.code,
+    ...(e.reason ? { reason: e.reason } : {}),
+    ...(e.shortfallCents != null ? { shortfallCents: e.shortfallCents } : {}),
+    ...(e.paymentRequired ? { topUpUrl: TOP_UP_PATH } : {}),
   }
 }
 
@@ -122,15 +144,20 @@ export interface Preflight {
   filter: AudienceFilter
   audience: Awaited<ReturnType<typeof resolveAudience>>
   segments: number
+  /** Parts the send will really use (each recipient's own first name). */
   parts: number
   allowance: Awaited<ReturnType<typeof smsAllowanceSummary>>
+  /** The credit hold (null when the plan is unlimited or nothing is billable). */
+  heldCents: number
 }
 
 /**
  * Everything that must be true before a campaign may be scheduled or sent:
- * a message, a finished saved audience with someone in it, and enough of the
- * month's SMS allowance for every part of every message. Throws
- * CampaignNotReadyError with the words to show.
+ * a message, a finished saved audience with someone in it, and the money for
+ * every part of every message — the month's allowance first, then prepaid
+ * credit, which is HELD for the campaign here (reserveForCampaign; calling it
+ * again re-quotes the same hold). Throws CampaignNotReadyError with the words
+ * to show. Before the wallet exists (V395) this is the allowance-only check.
  */
 export async function preflightCampaign(db: any, companyId: string, campaign: any): Promise<Preflight> {
   if (!campaign?.message?.trim()) throw new CampaignNotReadyError('message', 'The campaign has no message')
@@ -138,18 +165,25 @@ export async function preflightCampaign(db: any, companyId: string, campaign: an
     throw new CampaignNotReadyError('message', `Sending is only implemented for SMS, not ${campaign.channel}`)
   }
   const filter = savedFilterOf(campaign)
-  const [audience, allowance] = await Promise.all([
+  const [audience, allowance, company] = await Promise.all([
     resolveAudience(companyId, filter, 'sms', { db }),
     smsAllowanceSummary(db, companyId),
+    db.from('companies').select('name, slug').eq('id', companyId).maybeSingle().then((r: any) => r?.data || null, () => null),
   ])
   if (audience.recipients.length === 0) {
     throw new CampaignNotReadyError('empty', 'No contacts match this audience — nothing would be sent')
   }
   const segments = sampleSegments(campaign.message)
-  const parts = segments * audience.recipients.length
-  const short = allowanceProblem(allowance, parts)
-  if (short) throw new CampaignNotReadyError('allowance', short)
-  return { filter, audience, segments, parts, allowance }
+  const parts = partsForRecipients(campaign, company, audience.recipients.map(r => r.name))
+  const hold = await holdForCampaign(db, { companyId, campaignId: campaign.id, parts, createdBy: campaign.created_by_id })
+  if (!hold.ok) {
+    if (hold.reason === 'not_set_up') {
+      // No wallet yet: today's rule, the allowance alone.
+      throw new CampaignNotReadyError('allowance', allowanceProblem(allowance, parts) || creditRefusalText('not_set_up'), { reason: 'not_set_up' })
+    }
+    throw new CampaignNotReadyError(hold.reason === 'plan' ? 'plan' : 'credit', hold.message || creditRefusalText(hold.reason), { reason: hold.reason, shortfallCents: hold.shortfallCents || 0 })
+  }
+  return { filter, audience, segments, parts, allowance, heldCents: hold.heldCents || 0 }
 }
 
 /** Run async work over items, `n` at a time. */
@@ -186,7 +220,15 @@ export async function prepareCampaign(companyId: string, campaignId: string, opt
     throw new CampaignNotReadyError('status', 'This campaign was paused part-way through. Resume it rather than starting again.')
   }
 
-  const { audience, segments } = await preflightCampaign(db, companyId, campaign)
+  // Re-quotes the hold made at scheduling with the real, frozen audience.
+  let pf: Preflight
+  try { pf = await preflightCampaign(db, companyId, campaign) }
+  catch (e) {
+    // Couldn't start: give back anything held for it.
+    await releaseCampaign(db, { companyId, campaignId, note: 'Campaign couldn\u2019t start: hold returned' }).catch(() => null)
+    throw e
+  }
+  const { audience, segments } = pf
 
   // Write recipient and skip rows. upsert + the unique index makes this safe
   // to re-run. A few chunks at a time rather than one after another.
@@ -245,15 +287,50 @@ export async function resumeCampaign(companyId: string, campaignId: string, opts
   if (campaign.status !== 'paused' || !(Number(campaign.recipients_total) > 0)) {
     throw new CampaignNotReadyError('status', 'Only a campaign paused part-way through can be resumed.')
   }
-  const { count } = await db.from('campaign_recipients').select('id', { count: 'exact', head: true })
-    .eq('campaign_id', campaignId).in('status', ['pending', 'sending'])
-  const left = count || 0
-  const segments = Number(campaign.segments) || sampleSegments(campaign.message || '')
+  const left: any[] = []
+  for (let from = 0; from < 200000; from += 1000) {
+    const { data } = await db.from('campaign_recipients').select('name')
+      .eq('campaign_id', campaignId).in('status', ['pending', 'sending']).order('id', { ascending: true }).range(from, from + 999)
+    left.push(...(data || []))
+    if (!data || data.length < 1000) break
+  }
+  const { data: company } = await db.from('companies').select('name, slug').eq('id', companyId).maybeSingle()
+  const remainingParts = partsForRecipients(campaign, company, left.map(r => r.name))
+  if (await walletReady(db, companyId)) {
+    // Hold credit for what's left (the parts already sent stay as they were).
+    const sentParts = await campaignPartsSent(db, campaign, company)
+    const r = await extendCampaignHold(db, { companyId, campaignId, totalParts: sentParts + remainingParts, sentParts, createdBy: campaign.created_by_id })
+    if (!r.ok) {
+      if (r.reason !== 'not_set_up') {
+        throw new CampaignNotReadyError(r.reason === 'plan' ? 'plan' : 'credit', (r.message || '').replace('This campaign needs', 'The rest of this campaign needs'), { reason: r.reason, shortfallCents: r.shortfallCents || 0 })
+      }
+    } else {
+      await updateCampaign(db, campaignId, { status: 'sending', status_reason: null, updated_at: new Date().toISOString() })
+      return { remaining: left.length }
+    }
+  }
   const allowance = await smsAllowanceSummary(db, companyId)
-  const short = allowanceProblem(allowance, left * segments)
-  if (short) throw new CampaignNotReadyError('allowance', short.replace('This campaign needs', 'The rest of this campaign needs'))
+  const short = allowanceProblem(allowance, remainingParts)
+  if (short) throw new CampaignNotReadyError('allowance', short.replace('This campaign needs', 'The rest of this campaign needs'), { reason: 'not_set_up' })
   await updateCampaign(db, campaignId, { status: 'sending', status_reason: null, updated_at: new Date().toISOString() })
-  return { remaining: left }
+  return { remaining: left.length }
+}
+
+/**
+ * Stop a scheduled (or paused, not yet started) campaign, or delete a draft,
+ * and give back any credit held for it.
+ */
+export async function cancelCampaign(companyId: string, campaignId: string, opts: { db?: any; remove?: boolean } = {}) {
+  const db = opts.db || admin()
+  const { data: campaign } = await db.from('campaigns')
+    .select('id, status, recipients_total').eq('id', campaignId).eq('company_id', companyId).maybeSingle()
+  if (!campaign) throw new Error('Campaign not found')
+  const started = ['sending', 'sent'].includes(campaign.status) || Number(campaign.recipients_total) > 0
+  if (started) throw new CampaignNotReadyError('status', 'This campaign has already started sending, so it can\u2019t be cancelled here.')
+  const rel = await releaseCampaign(db, { companyId, campaignId, note: opts.remove ? 'Campaign deleted: hold returned' : 'Campaign unscheduled: hold returned' })
+  if (opts.remove) await db.from('campaigns').delete().eq('id', campaignId).eq('company_id', companyId)
+  else await updateCampaign(db, campaignId, { status: 'draft', status_reason: null, updated_at: new Date().toISOString() })
+  return { releasedCents: rel.releasedCents || 0 }
 }
 
 /** A short-link code: 7 characters from a 62-letter alphabet (about 3.5 trillion). */
@@ -364,10 +441,20 @@ export async function processCampaignBatch(campaignId: string, opts: BatchOption
     await pauseCampaign(db, campaignId, 'SMS isn’t included in this plan. Upgrade to the Inbox or Everything plan, then resume the campaign.')
     return { done: false, paused: true, reason: 'plan' }
   }
-  const cap = allowance.unlimited ? null : allowance.limit
-
   const { data: company } = await db.from('companies')
     .select('name, slug').eq('id', companyId).maybeSingle()
+
+  // Paid for by a credit hold? Then the allowance doesn't stop it: every part
+  // still counts against the month (atomically), the hold pays for the parts
+  // beyond the allowance at settlement, and the only limit is the parts the
+  // hold covers. Texts are never charged one by one here.
+  // No hold (before the wallet exists, or a campaign started before it was
+  // wired in): the allowance caps it, as before.
+  const hold = allowance.unlimited ? null : await campaignHold(db, campaignId)
+  const covered = hold?.status === 'held'
+  const cap = allowance.unlimited || covered ? null : allowance.limit
+  let budget = covered ? Math.max(0, (Number(hold.parts) || 0) - await campaignPartsSent(db, campaign, company)) : Infinity
+  let creditStop = false
   const atts = Array.isArray(campaign.attachments) ? campaign.attachments : []
   const primary = atts.find((a: any) => a.kind !== 'coupon')
   const cp = atts.find((a: any) => a.kind === 'coupon')
@@ -477,15 +564,7 @@ export async function processCampaignBatch(campaignId: string, opts: BatchOption
         shortLink = `${baseUrl}/l/${link.code}`
       }
 
-      const firstName = String(r.name || '').trim().split(/\s+/)[0] || 'there'
-      let body = renderVariables(campaign.message, {
-        first_name: firstName,
-        store_name: company?.name || 'our store',
-        outlet: campaign.sender_name || company?.name || 'our store',
-        order_number: '',
-        coupon_code: cp?.code ? String(cp.code).toUpperCase() : '',
-        short_link: shortLink,
-      })
+      let body = renderVariables(campaign.message, campaignVars(campaign, company, r.name, shortLink))
       // Any other URL typed into the message becomes a tracked link too, as it
       // did when campaigns went through the SMS route. Fail-safe.
       try {
@@ -495,8 +574,19 @@ export async function processCampaignBatch(campaignId: string, opts: BatchOption
       // Reserve this text's parts against the month's allowance. Out of
       // allowance → the campaign pauses; this recipient waits, not fails.
       const parts = smsParts(body)
+      if (covered) {
+        // Past what the hold pays for (more parts than quoted): stop here.
+        if (parts > budget) {
+          await release(r.id)
+          creditStop = true
+          stop = 'This campaign has sent all the texts the credit held for it covers, so the rest are waiting \u2014 nobody was marked as failed. Top up SMS credit, then resume it.'
+          return
+        }
+        budget -= parts
+      }
       const res = await addSmsUsage(db, companyId, parts, cap)
       if (!res.ok) {
+        if (covered) budget += parts
         await release(r.id)
         stop = `This month\u2019s SMS allowance (${(cap ?? 0).toLocaleString('en-AU')} texts) is used up, so the rest are waiting \u2014 nobody was marked as failed. Resume when it resets on ${nextMonthStart()}, or upgrade for more.`
         return
@@ -514,7 +604,10 @@ export async function processCampaignBatch(campaignId: string, opts: BatchOption
       })
       sent++
     } catch (e: any) {
-      if (reserved) await addSmsUsage(db, companyId, -reserved).catch(() => null)
+      if (reserved) {
+        await addSmsUsage(db, companyId, -reserved).catch(() => null)
+        if (covered) budget += reserved
+      }
       if (e instanceof SmsQuotaError || e?.name === 'SmsQuotaError') {
         await release(r.id)
         stop = e.message
@@ -528,9 +621,11 @@ export async function processCampaignBatch(campaignId: string, opts: BatchOption
   await pool(pending, Math.max(1, o.concurrency ?? SEND_CONCURRENCY), one)
 
   if (stop) {
+    // Out of held credit: try the saved card (auto top-up) so resuming works.
+    if (creditStop) await maybeAutoTopUp(db, companyId).catch(() => null)
     await pauseCampaign(db, campaignId, stop)
     await refreshCounters(db, campaignId)
-    return { done: false, paused: true, reason: stop, sent, failed, skipped, batch: pending.length }
+    return { done: false, paused: true, reason: stop, credit: creditStop || undefined, sent, failed, skipped, batch: pending.length }
   }
 
   const fin = await finishIfDone(db, campaign)
@@ -598,19 +693,29 @@ async function refreshCounters(db: any, campaignId: string) {
  * (It used to finish as soon as one run found no pending rows, while another
  * run's claims were still 'sending'.)
  */
-export async function finishIfDone(db: any, campaign: any): Promise<{ finished: boolean; inFlight: number; sent: number; failed: number }> {
+export async function finishIfDone(db: any, campaign: any): Promise<{ finished: boolean; inFlight: number; sent: number; failed: number; chargedCents?: number }> {
   const { count: left } = await db.from('campaign_recipients').select('id', { count: 'exact', head: true })
     .eq('campaign_id', campaign.id).in('status', ['pending', 'sending'])
   if ((left || 0) > 0) return { finished: false, inFlight: left || 0, sent: 0, failed: 0 }
   const { sent, failed } = await refreshCounters(db, campaign.id)
-  const pricing = await loadPricing(db, campaign.company_id)
-  const costing = calculateCost(pricing, campaign.segments || 1, sent)
-  await db.from('campaigns').update({
+  // Mark it sent first (only one run wins), then settle: charge the credit for
+  // what really went (parts the carrier accepted) and give back the rest.
+  const { data: won } = await db.from('campaigns').update({
     status: 'sent',
-    actual_cost: costing.totalIncGst,
     completed_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
-  }).eq('id', campaign.id).eq('status', 'sending')
-  return { finished: true, inFlight: 0, sent, failed }
+  }).eq('id', campaign.id).eq('status', 'sending').select('id')
+  if (!won?.length) return { finished: true, inFlight: 0, sent, failed }
+  const { data: company } = await db.from('companies').select('name, slug').eq('id', campaign.company_id).maybeSingle()
+  const partsSent = await campaignPartsSent(db, campaign, company)
+  const settled = await settleCampaign(db, { companyId: campaign.company_id, campaignId: campaign.id, partsSent, createdBy: uuidOrNull(campaign.created_by_id) })
+  let actual: number
+  if (settled.ok && !settled.skipped) actual = (settled.spentCents || 0) / 100   // what was really charged
+  else {
+    // No wallet (or unlimited): the estimate at the campaign's rate, as before.
+    const pricing = await loadPricing(db, campaign.company_id)
+    actual = calculateCost(pricing, campaign.segments || 1, sent).totalIncGst
+  }
+  await db.from('campaigns').update({ actual_cost: actual }).eq('id', campaign.id)
+  return { finished: true, inFlight: 0, sent, failed, chargedCents: settled.ok && !settled.skipped ? settled.spentCents : undefined }
 }
-

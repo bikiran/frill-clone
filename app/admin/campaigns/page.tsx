@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { authFetch } from '@/lib/auth-fetch'
 import { peekCompanyUser, readCache, writeCache } from '@/lib/client-cache'
 import { SkeletonList } from '@/components/Skeleton'
 import PageHeader from '@/components/PageHeader'
@@ -207,7 +208,13 @@ export default function CampaignsPage() {
     if (c.status !== 'draft') { alert('Only draft campaigns can be deleted.'); return }
     if (!await confirmDialog(`Delete the draft “${c.name}”?`)) return
     try {
-      await (supabase as any).from('campaigns').delete().eq('id', c.id)
+      // Through the server, so any SMS credit held for it is given back.
+      const res = await authFetch('/api/campaigns/cancel', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId, campaignId: c.id, delete: true }),
+      })
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(d.error || 'Could not delete the campaign')
       setCampaigns(list => list.filter(x => x.id !== c.id))
     } catch (e: any) { alert('Could not delete: ' + e.message) }
   }

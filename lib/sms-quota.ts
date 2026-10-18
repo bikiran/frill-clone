@@ -22,15 +22,20 @@ export function smsPeriod(d: Date = new Date()): string {
 // Distinguishes a plan/quota block from a carrier failure, so the API layer can
 // answer 402 (payment required) rather than a generic 500.
 export class SmsQuotaError extends Error {
-  reason: 'plan' | 'limit'
+  /** 'credit': past the allowance and not enough prepaid SMS credit. */
+  reason: 'plan' | 'limit' | 'credit'
   limit: number
   used: number
-  constructor(reason: 'plan' | 'limit', message: string, limit = 0, used = 0) {
+  shortfallCents?: number
+  balanceCents?: number
+  constructor(reason: 'plan' | 'limit' | 'credit', message: string, limit = 0, used = 0, extra: { shortfallCents?: number; balanceCents?: number } = {}) {
     super(message)
     this.name = 'SmsQuotaError'
     this.reason = reason
     this.limit = limit
     this.used = used
+    this.shortfallCents = extra.shortfallCents
+    this.balanceCents = extra.balanceCents
   }
 }
 
