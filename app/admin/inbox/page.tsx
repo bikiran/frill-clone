@@ -4180,9 +4180,16 @@ export default function InboxPage() {
     setNewTask('')
     loadConversationExtras(selected.id)
   }
+  // The Tasks page reads `status` first (isDoneT), so ticking a task here
+  // must move status and completed_at too, not just `done`.
+  const taskDone = (t: any) => (t.status ? t.status === 'done' : !!t.done)
   const toggleTask = async (task: any) => {
-    setTasks(prev => prev.map(t => t.id === task.id ? { ...t, done: !t.done } : t))
-    await (supabase as any).from('conversation_tasks').update({ done: !task.done }).eq('id', task.id)
+    const done = !taskDone(task)
+    const patch = { done, status: done ? 'done' : 'todo', completed_at: done ? new Date().toISOString() : null }
+    setTasks(prev => prev.map(t => t.id === task.id ? { ...t, ...patch } : t))
+    const { error } = await (supabase as any).from('conversation_tasks').update(patch).eq('id', task.id)
+    // Before the status columns existed: keep the plain checkbox working.
+    if (error) await (supabase as any).from('conversation_tasks').update({ done }).eq('id', task.id)
   }
   const saveTaskEdit = async (id: string) => {
     const body = editTaskText.trim()
@@ -4225,27 +4232,31 @@ export default function InboxPage() {
               </div>
             </div>
           ) : (
-            <div style={{ display: 'flex', gap: 9, alignItems: 'flex-start' }}>
-              <input type="checkbox" checked={t.done} onChange={() => toggleTask(t)} style={{ marginTop: 3, cursor: 'pointer', flexShrink: 0 }} />
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13, textDecoration: t.done ? 'line-through' : 'none', opacity: t.done ? 0.55 : 1, color: 'var(--ink)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{t.text}</div>
-                {(t.assigned_to || (t.source && (t.source === 'call_summary' || t.source === 'ai_summary'))) && (
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 5 }}>
-                    {t.assigned_to && (
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '1px 8px', borderRadius: 20, background: 'var(--peach)', color: 'var(--coral)', fontSize: 10.5, fontWeight: 700 }}>
-                        {t.assigned_to}
-                      </span>
-                    )}
-                    {(t.source === 'call_summary' || t.source === 'ai_summary') && (
-                      <span title="Drafted from an AI summary by Colvy" style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 8px', borderRadius: 20, background: '#f3e8ff', color: '#7c3aed', fontSize: 10.5, fontWeight: 700 }}>
-                        ✨ {t.source === 'call_summary' ? 'Call summary' : 'Chat summary'}
-                      </span>
-                    )}
-                  </div>
-                )}
+            // Like a note: the task gets the card's full width; the labels and
+            // copy/edit/delete share a row underneath (side by side, the three
+            // buttons squeezed the text and the labels into a narrow column).
+            <>
+              <div style={{ display: 'flex', gap: 9, alignItems: 'flex-start' }}>
+                <input type="checkbox" checked={taskDone(t)} onChange={() => toggleTask(t)} style={{ marginTop: 3, cursor: 'pointer', flexShrink: 0 }} />
+                <div style={{ flex: 1, minWidth: 0, fontSize: 13, lineHeight: 1.5, textDecoration: taskDone(t) ? 'line-through' : 'none', opacity: taskDone(t) ? 0.55 : 1, color: 'var(--ink)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{t.text}</div>
               </div>
-              {rowActions({ onCopy: () => copyTask(t.text, t.id), onEdit: () => { setEditingTaskId(t.id); setEditTaskText(t.text) }, onDelete: () => deleteTask(t.id), copied: copiedTaskId === t.id })}
-            </div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 8 }}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, minWidth: 0, flex: 1 }}>
+                  {t.assigned_to && (
+                    <span title={t.assigned_to} style={{ display: 'inline-block', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', padding: '2px 8px', borderRadius: 20, background: 'var(--peach)', color: 'var(--coral)', fontSize: 10.5, fontWeight: 700, lineHeight: 1.5 }}>
+                      {t.assigned_to}
+                    </span>
+                  )}
+                  {(t.source === 'call_summary' || t.source === 'ai_summary') && (
+                    <span title="Drafted from an AI summary by Colvy" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, maxWidth: '100%', whiteSpace: 'nowrap', padding: '2px 8px', borderRadius: 20, background: '#f3e8ff', color: '#7c3aed', fontSize: 10.5, fontWeight: 700, lineHeight: 1.5 }}>
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style={{ flexShrink: 0 }}><path d="M12 2l2.2 6.3L20 10l-5.8 1.7L12 18l-2.2-6.3L4 10l5.8-1.7z"/></svg>
+                      {t.source === 'call_summary' ? 'Call summary' : 'Chat summary'}
+                    </span>
+                  )}
+                </div>
+                {rowActions({ onCopy: () => copyTask(t.text, t.id), onEdit: () => { setEditingTaskId(t.id); setEditTaskText(t.text) }, onDelete: () => deleteTask(t.id), copied: copiedTaskId === t.id })}
+              </div>
+            </>
           )}
         </div>
       ))}
