@@ -5,6 +5,7 @@ import { TwilioService } from '@/lib/twilio-service'
 import { ingestInboundSms, InboundAttachment } from '@/lib/inbound-sms'
 import { uploadToR2, r2Configured } from '@/lib/r2'
 import { logWebhookEvent } from '@/lib/webhook-log'
+import { applyDeliveryReceipt } from '@/lib/campaign-receipts'
 import { companyForInboundNumber } from '@/lib/inbound-company'
 import { toWebMp4 } from '@/lib/transcode'
 import { needsWebMp4 } from '@/lib/web-video'
@@ -97,20 +98,9 @@ export async function POST(req: NextRequest) {
         const failed = ['undelivered', 'failed'].includes(status)
         if (sid && (delivered || failed)) {
           const errText = get('ErrorCode') ? `Twilio error ${get('ErrorCode')}` : null
-          await db.from('campaign_recipients').update({
-            status: delivered ? 'delivered' : 'failed',
-            delivered_at: delivered ? new Date().toISOString() : null,
-            error: failed ? String(errText || status).slice(0, 300) : null,
-          }).eq('provider_id', sid)
-
-          const { data: rec } = await db.from('campaign_recipients').select('campaign_id').eq('provider_id', sid).maybeSingle()
-          if (rec?.campaign_id) {
-            const { count: deliveredCount } = await db.from('campaign_recipients')
-              .select('*', { count: 'exact', head: true }).eq('campaign_id', rec.campaign_id).eq('status', 'delivered')
-            const { count: failedCount } = await db.from('campaign_recipients')
-              .select('*', { count: 'exact', head: true }).eq('campaign_id', rec.campaign_id).eq('status', 'failed')
-            await db.from('campaigns').update({ delivered_count: deliveredCount || 0, failed_count: failedCount || 0 }).eq('id', rec.campaign_id)
-          }
+          // One row read, one conditional update and one counter increment —
+          // not two exact COUNTs over the campaign's recipients per callback.
+          await applyDeliveryReceipt(db, sid, delivered ? 'delivered' : 'failed', errText || status)
         }
       } catch (e) { console.error('[twilio] delivery receipt failed', e) }
       return xml(EMPTY_TWIML)

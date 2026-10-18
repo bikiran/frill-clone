@@ -12,6 +12,7 @@ import { runKeywordReply } from '@/lib/keyword-reply'
 import { handleBookingSmsReply } from '@/lib/booking-replies'
 import { TelnyxService } from '@/lib/telnyx-service'
 import { logWebhookEvent } from '@/lib/webhook-log'
+import { applyDeliveryReceipt } from '@/lib/campaign-receipts'
 import { ensureCallCard, setCallPreview } from '@/lib/call-card'
 import { companyForInboundNumber } from '@/lib/inbound-company'
 import { ensureContactByPhone, findContactByPhone } from '@/lib/contact-capture'
@@ -96,27 +97,9 @@ export async function POST(req: NextRequest) {
             const errText = event?.payload?.errors?.[0]?.detail
               || event?.payload?.errors?.[0]?.title
               || null
-            await db.from('campaign_recipients').update({
-              status: delivered ? 'delivered' : 'failed',
-              delivered_at: delivered ? new Date().toISOString() : null,
-              error: failed ? String(errText || status).slice(0, 300) : null,
-            }).eq('provider_id', providerId)
-
-            // Keep the campaign's counters in step with its recipients.
-            const { data: rec } = await db.from('campaign_recipients')
-              .select('campaign_id').eq('provider_id', providerId).maybeSingle()
-            if (rec?.campaign_id) {
-              const { count: deliveredCount } = await db.from('campaign_recipients')
-                .select('*', { count: 'exact', head: true })
-                .eq('campaign_id', rec.campaign_id).eq('status', 'delivered')
-              const { count: failedCount } = await db.from('campaign_recipients')
-                .select('*', { count: 'exact', head: true })
-                .eq('campaign_id', rec.campaign_id).eq('status', 'failed')
-              await db.from('campaigns').update({
-                delivered_count: deliveredCount || 0,
-                failed_count: failedCount || 0,
-              }).eq('id', rec.campaign_id)
-            }
+            // The recipient's own change moves the campaign's counters — no
+            // COUNT over every recipient on each receipt.
+            await applyDeliveryReceipt(db, String(providerId), delivered ? 'delivered' : 'failed', errText || status)
           }
         }
       } catch (e) {

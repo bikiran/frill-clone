@@ -28,6 +28,25 @@ const SKIP_LABEL: Record<string, string> = {
   unverified: 'Opt-out couldn’t be checked',
 }
 
+// Every recipient row, skipped ones included. A single request stops at the
+// API's 1,000-row cap whatever .limit() says, which made a 9,000-text campaign
+// report on its first 1,000. Pages are fetched a few at a time.
+async function allRecipients(campaignId: string): Promise<{ data: any[] }> {
+  const page = 1000
+  const get = (from: number) => (supabase as any).from('campaign_recipients').select('*')
+    .eq('campaign_id', campaignId).order('id', { ascending: true }).range(from, from + page - 1)
+    .then((r: any) => r.data || [], () => [])
+  const out: any[] = await get(0)
+  if (out.length < page) return { data: out }
+  for (let from = page; from < 100000; from += page * 4) {
+    const pages: any[][] = await Promise.all([0, 1, 2, 3].map(i => get(from + i * page)))
+    let short = false
+    for (const p of pages) { out.push(...p); if (p.length < page) { short = true; break } }
+    if (short) break
+  }
+  return { data: out }
+}
+
 export default function CampaignReportPage() {
   const router = useRouter()
   const params = useParams()
@@ -74,7 +93,7 @@ export default function CampaignReportPage() {
         // The campaign, who it went to, its links and the outlets — side by side.
         const [{ data: c }, { data: rs }, { data: ls }, { data: outs }] = await Promise.all([
           (supabase as any).from('campaigns').select('*').eq('id', campaignId).maybeSingle(),
-          (supabase as any).from('campaign_recipients').select('*').eq('campaign_id', campaignId).limit(20000),
+          allRecipients(campaignId),
           (supabase as any).from('short_links').select('*').eq('campaign_id', campaignId),
           (supabase as any).from('company_locations').select('id, label, suburb').eq('company_id', cid),
         ])
@@ -254,6 +273,7 @@ export default function CampaignReportPage() {
         <h1 style={{ fontSize: 23, fontWeight: 800, color: 'var(--ink)', margin: 0 }}>{campaign.name}</h1>
         <p style={{ color: 'var(--slate)', fontSize: 13, margin: '5px 0 0' }}>
           {campaign.status === 'sent' ? `Sent ${fmt(campaign.sent_at)}` : `Status: ${campaign.status}`}
+          {campaign.status === 'paused' && campaign.status_reason ? ` \u00b7 ${campaign.status_reason}` : ''}
           {' · '}{String(campaign.channel || 'sms').toUpperCase()}
         </p>
       </div>
