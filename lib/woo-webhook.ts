@@ -33,6 +33,14 @@ export async function wooSignatureOk(req: NextRequest, raw: string, db: any, com
     if (pluginKey) secrets.push(pluginKey)
   } catch {}
   const ok = !!sig && secrets.some(s => same(createHmac('sha256', s).update(raw, 'utf8').digest('base64'), sig))
-  if (!ok) console.warn('[woo webhook] signature check failed for company', companyId, sig ? '(bad signature)' : '(no signature)')
+  if (!ok) {
+    // Which webhook it was, so the bad one can be found in WooCommerce →
+    // Settings → Advanced → Webhooks (Register webhooks on Colvy's WooCommerce
+    // page re-signs it and removes duplicates).
+    const h = (k: string) => req.headers.get(k) || '-'
+    console.warn('[woo webhook] signature check failed for company', companyId, sig ? '(bad signature)' : '(no signature)',
+      `webhook #${h('x-wc-webhook-id')} ${h('x-wc-webhook-topic')} from ${h('x-wc-webhook-source')};`,
+      integrationId ? 'store secret + plugin key tried' : `no ?integration= in its URL, plugin key ${secrets.length ? 'tried' : 'missing'}`)
+  }
   return ok || (process.env.WOO_WEBHOOK_VERIFY || '').toLowerCase() !== 'enforce'
 }

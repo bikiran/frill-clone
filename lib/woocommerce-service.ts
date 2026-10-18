@@ -132,49 +132,66 @@ export class WooCommerceService {
   // (chat automation, Orders board) and product updates (back-in-stock
   // waitlists fire when a product returns to stock). Returns a summary so the
   // UI can tell the user exactly what happened.
+  //
+  // Any webhook already pointing at Colvy counts, whatever host it was made
+  // with (an old domain still reaches us, signed with an old secret). Per
+  // topic one is kept, re-pointed and given the signing secret; the extras are
+  // deleted, since each one delivers every event again with a secret Colvy
+  // doesn't know. Every change is checked: Woo refuses edits from a read-only
+  // API key, and that has to show rather than read as "secured".
   async ensureColvyWebhooks(deliveryUrl: string, secret?: string) {
     const wanted = ['order.created', 'order.updated', 'product.updated']
-    const existing = await this.listWebhooks()
+    const company = (() => { try { return new URL(deliveryUrl).searchParams.get('company') } catch { return null } })()
+    const ours = (w: any) => {
+      const url = String(w?.delivery_url || '')
+      if (!url.includes('/api/webhooks/woocommerce')) return false
+      try { const c = new URL(url).searchParams.get('company'); return !c || !company || c === company } catch { return true }
+    }
+    const refused = async (res: Response) => {
+      const d = await res.json().catch(() => null)
+      const why = String(d?.message || '').slice(0, 160)
+      return res.status === 401 || res.status === 403
+        ? `WooCommerce refused (${res.status}): the API key needs Read/Write permission${why ? ` (${why})` : ''}`
+        : `WooCommerce refused (${res.status})${why ? `: ${why}` : ''}`
+    }
+    const existing = (await this.listWebhooks()).filter(ours)
     const results: any[] = []
     for (const topic of wanted) {
-      const match = existing.find((w: any) =>
-        w.topic === topic && (w.delivery_url || '').split('?')[0] === deliveryUrl.split('?')[0]
-      )
-      if (match) {
-        // Give existing webhooks the signing secret (older ones were made without).
-        if (secret) {
+      const matches = existing.filter((w: any) => w.topic === topic)
+        .sort((a: any, b: any) => Number(b.status === 'active') - Number(a.status === 'active') || Number(a.id) - Number(b.id))
+      const [keep, ...extra] = matches
+      if (keep) {
+        const upToDate = keep.status === 'active' && keep.delivery_url === deliveryUrl
+        if (secret || !upToDate) {
           try {
-            await fetch(`${this.config.storeUrl}/wp-json/wc/v3/webhooks/${match.id}`, {
+            const res = await fetch(`${this.config.storeUrl}/wp-json/wc/v3/webhooks/${keep.id}`, {
               method: 'PUT', headers: this.wcHeaders(),
-              body: JSON.stringify({ status: 'active', delivery_url: deliveryUrl, secret }),
+              body: JSON.stringify({ status: 'active', delivery_url: deliveryUrl, ...(secret ? { secret } : {}) }),
             })
-            results.push({ topic, action: 'secured' })
-          } catch (e: any) {
-            results.push({ topic, action: 'failed', error: e.message })
-          }
-          continue
-        }
-        // Re-activate if it was disabled (Woo auto-disables after failures).
-        if (match.status !== 'active') {
-          try {
-            await fetch(`${this.config.storeUrl}/wp-json/wc/v3/webhooks/${match.id}`, {
-              method: 'PUT', headers: this.wcHeaders(),
-              body: JSON.stringify({ status: 'active', delivery_url: deliveryUrl }),
-            })
-            results.push({ topic, action: 'reactivated' })
+            if (res.ok) results.push({ topic, action: secret ? 'secured' : 'reactivated' })
+            else results.push({ topic, action: 'failed', error: await refused(res) })
           } catch (e: any) {
             results.push({ topic, action: 'failed', error: e.message })
           }
         } else {
           results.push({ topic, action: 'already active' })
         }
-        continue
+      } else {
+        try {
+          await this.createWebhook(topic, deliveryUrl, secret)
+          results.push({ topic, action: 'created' })
+        } catch (e: any) {
+          results.push({ topic, action: 'failed', error: e.message })
+        }
       }
-      try {
-        await this.createWebhook(topic, deliveryUrl, secret)
-        results.push({ topic, action: 'created' })
-      } catch (e: any) {
-        results.push({ topic, action: 'failed', error: e.message })
+      for (const w of extra) {
+        try {
+          const res = await fetch(`${this.config.storeUrl}/wp-json/wc/v3/webhooks/${w.id}?force=true`, { method: 'DELETE', headers: this.wcHeaders() })
+          if (res.ok) results.push({ topic, action: `removed duplicate #${w.id}` })
+          else results.push({ topic, action: `duplicate #${w.id} not removed`, error: await refused(res) })
+        } catch (e: any) {
+          results.push({ topic, action: `duplicate #${w.id} not removed`, error: e.message })
+        }
       }
     }
     return results
