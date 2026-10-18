@@ -1,6 +1,6 @@
 import { memberOr403 } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
-import { prepareCampaign, processCampaignBatch, resumeCampaign, CampaignNotReadyError, BATCH_BUDGET_MS } from '@/lib/campaign-sender'
+import { prepareCampaign, processCampaignBatch, resumeCampaign, CampaignNotReadyError, notReadyBody, BATCH_BUDGET_MS } from '@/lib/campaign-sender'
 import { isExternalSendBlocked, DEMO_BLOCK_MESSAGE, logBlockedSend } from '@/lib/demo-guard'
 
 export const dynamic = 'force-dynamic'
@@ -50,7 +50,9 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true, ...prepared, firstBatch })
   } catch (e: any) {
-    const code = e instanceof CampaignNotReadyError ? e.code : undefined
-    return NextResponse.json({ error: e.message, code }, { status: 400 })
+    // Not enough credit / not on the plan / allowance reached → 402 with the
+    // reason and shortfall, so the editor can offer a top-up.
+    if (e instanceof CampaignNotReadyError) return NextResponse.json(notReadyBody(e), { status: e.paymentRequired ? 402 : 400 })
+    return NextResponse.json({ error: e.message }, { status: 400 })
   }
 }

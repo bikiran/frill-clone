@@ -21,7 +21,8 @@
 //   reason:'not_set_up', which callers treat exactly like today's "monthly
 //   allowance reached".
 //
-// Not wired into sending yet (see the branch notes for the follow-up).
+// Wired into sending by lib/campaign-credits.ts (campaign holds, settled at
+// the end) and lib/sms-provider.ts (one-off texts: payForText).
 
 import { resolveSmsPricing, type SmsPricing } from '@/lib/sms-pricing'
 import { smsPeriod, smsUsageThisMonth } from '@/lib/sms-quota'

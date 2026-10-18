@@ -310,7 +310,14 @@ export async function POST(req: NextRequest) {
     // 402 with the reason so the composer and campaign runner can surface it
     // as an upgrade/limit message rather than a generic failure.
     if (err instanceof SmsQuotaError) {
-      return NextResponse.json({ error: err.message, reason: err.reason, limit: err.limit, used: err.used }, { status: 402 })
+      // Fields are only ever added (the mobile app reads error / reason):
+      // 'credit' = past the allowance with not enough prepaid credit.
+      return NextResponse.json({
+        error: err.message, reason: err.reason, limit: err.limit, used: err.used,
+        ...(err.shortfallCents != null ? { shortfallCents: err.shortfallCents } : {}),
+        ...(err.balanceCents != null ? { balanceCents: err.balanceCents } : {}),
+        ...(err.reason !== 'plan' ? { topUpUrl: '/admin/billing#sms-credits' } : {}),
+      }, { status: 402 })
     }
     // The carrier just told us this number is not a mobile. Remember it on the
     // contact so the next send skips the doomed round trip — the lookup that

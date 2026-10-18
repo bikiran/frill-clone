@@ -11,7 +11,9 @@
 
 import { TelnyxService, toE164 } from './telnyx-service'
 import { TwilioService } from './twilio-service'
-import { assertSmsAllowed, recordSmsSent } from './sms-quota'
+import { assertSmsAllowed, recordSmsSent, checkSmsAllowance, SmsQuotaError } from './sms-quota'
+import { chargeSingleSend, refundSingleSend, costForParts } from './sms-credits'
+import { fmtCents } from './sms-credits-core'
 import { analyseSms } from './sms-segments'
 
 export type SmsProvider = 'telnyx' | 'twilio'
@@ -84,22 +86,60 @@ function unmetered(base: SmsSender): SmsSender {
   return { ...base, send: (p: SmsSendParams) => base.send({ ...p, to: toE164(p.to || '') || p.to }) }
 }
 
-// Wrap a sender so every send passes the plan/allowance gate first and a
-// successful send is counted against the month. This is the single choke point:
-// the composer, campaigns (which POST to /api/telnyx/sms/send), auto-replies and
-// media requests all obtain their sender here.
+/**
+ * Pay for one text before it goes: free inside the month's allowance,
+ * otherwise from prepaid SMS credit (lib/sms-credits, V395). Throws
+ * SmsQuotaError when it can't go — 'plan' (no SMS on the plan), 'credit'
+ * (not enough credit; with the shortfall), or 'limit' (allowance used and no
+ * wallet yet: today's rule). Returns what was charged, to refund if the
+ * carrier then refuses the text.
+ */
+export async function payForText(db: any, companyId: string, parts: number): Promise<{ chargedCents: number; billableParts: number }> {
+  const c = await chargeSingleSend(db, { companyId, parts, note: 'Text sent' })
+  if (c.ok) return { chargedCents: c.chargedCents, billableParts: c.billableParts }
+  if (c.reason === 'plan') {
+    throw new SmsQuotaError('plan', 'SMS is not included in this plan. Upgrade to the Inbox or Everything plan to send text messages.')
+  }
+  if (c.reason === 'insufficient') {
+    const { cents } = await costForParts(db, companyId, c.billableParts || parts).catch(() => ({ cents: 0 }))
+    const short = Math.max(0, cents - (c.balanceCents || 0))
+    const a = await checkSmsAllowance(db, companyId).catch(() => ({ limit: 0, used: 0 }) as any)
+    throw new SmsQuotaError('credit',
+      `Not enough SMS credit: this month\u2019s allowance is used and the balance is ${fmtCents(c.balanceCents || 0)}${short ? ` (this text needs ${fmtCents(cents)})` : ''}. Top up SMS credit from Billing to keep texting.`,
+      a.limit, a.used, { shortfallCents: short, balanceCents: c.balanceCents || 0 })
+  }
+  // 'not_set_up' (no wallet yet) or the wallet couldn't be read: the allowance alone.
+  await assertSmsAllowed(db, companyId)
+  return { chargedCents: 0, billableParts: 0 }
+}
+
+// Wrap a sender so every send is paid for first (allowance, then credit) and
+// counted against the month in parts. This is the single choke point for 1:1
+// and automated texts: the composer, auto-replies and media requests all
+// obtain their sender here. Campaigns don't: they're paid for as a whole
+// (a hold, settled at the end), so their sender is unmetered.
 function meteredSender(db: any, companyId: string, base: SmsSender): SmsSender {
   return {
     ...base,
     async send(p: SmsSendParams): Promise<SmsSendResult> {
-      await assertSmsAllowed(db, companyId)  // throws SmsQuotaError if blocked
+      const parts = smsParts(p.text)
+      const paid = await payForText(db, companyId, parts)  // throws SmsQuotaError if blocked
       // Always send to an E.164 number. Callers pass whatever they have — a
       // contact's phone saved as "0478 019 667" was rejected by the provider,
       // and routes that swallow send errors (media requests) showed the link
       // in the thread while the customer never got it.
-      const result = await base.send({ ...p, to: toE164(p.to || '') || p.to })
+      let result: SmsSendResult
+      try {
+        result = await base.send({ ...p, to: toE164(p.to || '') || p.to })
+      } catch (e) {
+        // The carrier refused it: give the credit back.
+        if (paid.chargedCents > 0) {
+          await refundSingleSend(db, { companyId, cents: paid.chargedCents, parts: paid.billableParts, note: 'Text not sent: credit returned' }).catch(() => null)
+        }
+        throw e
+      }
       // Counted in parts, as the carrier bills: a 2-segment text uses 2.
-      recordSmsSent(db, companyId, smsParts(p.text)).catch(() => {})
+      recordSmsSent(db, companyId, parts).catch(() => {})
       return result
     },
   }

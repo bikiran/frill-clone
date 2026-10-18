@@ -606,6 +606,9 @@ export default function InboxPage() {
   // banner never flashes before entitlements load. When false, we surface an
   // "Enable SMS" CTA at the exact moment an agent could be texting a customer.
   const [smsIncluded, setSmsIncluded] = useState(true)
+  // A reply blocked for SMS credit (past the allowance, balance too low):
+  // shown above the reply box with a Top up link until the next send works.
+  const [smsCreditError, setSmsCreditError] = useState('')
   useEffect(() => {
     let cancelled = false
     getEffectiveEntitlements()
@@ -6039,7 +6042,8 @@ export default function InboxPage() {
           body: JSON.stringify({ companyId, conversationId: selected.id, to: smsNumber, text: content, senderName }),
         })
         const data = await res.json()
-        if (!res.ok) throw new Error(data.error || 'SMS failed')
+        if (!res.ok) { const err: any = new Error(data.error || 'SMS failed'); err.reason = data.reason; throw err }
+        setSmsCreditError('')
         sendDone()
         await reloadThread(selected.id)
         scrollBottom()
@@ -6052,7 +6056,10 @@ export default function InboxPage() {
         setSending(false)
         const emsg = String(e?.message || 'SMS failed')
         const emsgClean = emsg.replace(/[.\s]+$/, '')
-        if (/not included in this plan|upgrade to the/i.test(emsg)) {
+        if (e?.reason === 'credit') {
+          setSmsCreditError(emsgClean)
+          showToast('Not enough SMS credit — your message wasn’t sent. Top up to keep texting.')
+        } else if (/not included in this plan|upgrade to the/i.test(emsg)) {
           // Plan gate — reveal the "Enable SMS" upsell banner and point them to it.
           setSmsIncluded(false)
           showToast('SMS isn’t on your plan yet — use “Enable SMS” above the reply box to upgrade. Your message wasn’t sent.')
@@ -10604,6 +10611,22 @@ export default function InboxPage() {
                     style={{ padding: '7px 14px', borderRadius: 8, background: 'var(--coral, #ff7a6b)', color: '#fff', fontSize: 12.5, fontWeight: 700, textDecoration: 'none', whiteSpace: 'nowrap', flexShrink: 0 }}>
                     Enable SMS
                   </a>
+                </div>
+              )}
+              {selected && !internalMode && smsCreditError && (
+                <div role="alert" style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '0 0 8px', padding: '10px 12px', borderRadius: 10, background: '#fef2f2', border: '1px solid #fecaca' }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#b91c1c" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }} aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                  <span style={{ flex: 1, fontSize: 12.5, color: '#991b1b', fontWeight: 600, lineHeight: 1.4 }}>
+                    Your text wasn’t sent. {smsCreditError}
+                  </span>
+                  <a href="/admin/billing#sms-credits"
+                    style={{ padding: '7px 14px', borderRadius: 8, background: 'var(--coral, #ff7a6b)', color: '#fff', fontSize: 12.5, fontWeight: 700, textDecoration: 'none', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                    Top up
+                  </a>
+                  <button type="button" onClick={() => setSmsCreditError('')} aria-label="Dismiss"
+                    style={{ border: 'none', background: 'none', color: '#991b1b', cursor: 'pointer', padding: 2, display: 'flex' }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                  </button>
                 </div>
               )}
               {/* Opted out: staff can still type a text (a reply they were asked

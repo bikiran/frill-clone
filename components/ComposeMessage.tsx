@@ -21,6 +21,7 @@ export default function ComposeMessage({ companyId, senderName, onClose, onStart
   const [body, setBody] = useState('')
   const [sending, setSending] = useState(false)
   const [error, setError] = useState('')
+  const [creditBlocked, setCreditBlocked] = useState(false)
   const timer = useRef<any>(null)
 
   const sb = supabase as any
@@ -42,7 +43,7 @@ export default function ComposeMessage({ companyId, senderName, onClose, onStart
   const targetNumber = picked?.phone || manualNumber.trim()
 
   const send = async () => {
-    setError('')
+    setError(''); setCreditBlocked(false)
     if (!targetNumber) { setError('Choose a contact or enter a number.'); return }
     if (!body.trim()) { setError('Write a message first.'); return }
     setSending(true)
@@ -52,7 +53,7 @@ export default function ComposeMessage({ companyId, senderName, onClose, onStart
         body: JSON.stringify({ companyId, to: targetNumber, text: body.trim(), senderName }),
       })
       const data = await res.json().catch(() => ({}))
-      if (!res.ok) { setError(data?.error || 'Failed to send.'); setSending(false); return }
+      if (!res.ok) { setError(data?.error || 'Failed to send.'); setCreditBlocked(data?.reason === 'credit'); setSending(false); return }
       if (data?.conversationId && onStarted) onStarted(data.conversationId)
       onClose()
     } catch (e: any) {
@@ -123,7 +124,12 @@ export default function ComposeMessage({ companyId, senderName, onClose, onStart
             placeholder="Type your message…"
             style={{ width: '100%', marginTop: 5, padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 13, boxSizing: 'border-box', resize: 'vertical' }} />
 
-          {error && <p style={{ color: '#dc2626', fontSize: 12.5, margin: '10px 0 0' }}>{error}</p>}
+          {error && (
+            <p style={{ color: '#dc2626', fontSize: 12.5, margin: '10px 0 0' }}>
+              {error}
+              {creditBlocked && <> <a href="/admin/billing#sms-credits" style={{ color: 'var(--coral)', fontWeight: 700 }}>Top up SMS credit</a></>}
+            </p>
+          )}
 
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 18 }}>
             <button onClick={onClose} style={{ padding: '9px 16px', borderRadius: 9, border: '1px solid var(--border)', background: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--slate)' }}>Cancel</button>
