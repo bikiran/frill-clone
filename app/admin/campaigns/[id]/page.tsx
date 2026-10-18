@@ -69,6 +69,7 @@ export default function CampaignEditorPage() {
 
   const [loading, setLoading] = useState(true)
   const [companyId, setCompanyId] = useState<string | null>(null)
+  const [companyName, setCompanyName] = useState('')
   const [campaign, setCampaign] = useState<any>(null)
   const [outlets, setOutlets] = useState<any[]>([])
   const [allTags, setAllTags] = useState<string[]>([])
@@ -174,6 +175,8 @@ export default function CampaignEditorPage() {
         }
         if (!cid) { setLoading(false); return }
         setCompanyId(cid)
+        ;(supabase as any).from('companies').select('name').eq('id', cid).maybeSingle()
+          .then(({ data }: any) => setCompanyName(String(data?.name || '')), () => {})
 
         // The campaign and the pickers' lists don't depend on each other.
         const sideLists = Promise.all([
@@ -399,7 +402,13 @@ export default function CampaignEditorPage() {
   const payNowAud = walletOn ? (credit.unlimited ? 0 : (credit.costCents || 0) / 100) : costing.totalIncGst
   const cost = costing.totalIncGst
   const hasOptOut = /\bstop\b/i.test(message)
-  const hasSender = /roxy|aquarium/i.test(message) || /\{\{store_name\}\}/.test(message)
+  // The business is named if the text says {{store_name}} or any distinctive
+  // word of its name ("Roxy" or "Aquarium" for Roxy Aquarium). Until the name
+  // has loaded, don't warn.
+  const nameWords = companyName.toLowerCase().split(/[^a-z0-9]+/)
+    .filter(w => w.length >= 3 && !['the', 'and', 'pty', 'ltd', 'co', 'inc', 'shop', 'store'].includes(w))
+  const hasSender = /\{\{\s*store_name\s*\}\}/.test(message) || !nameWords.length
+    || nameWords.some(w => message.toLowerCase().includes(w))
 
   const insertAtCursor = (text: string) => {
     const el = msgRef.current
