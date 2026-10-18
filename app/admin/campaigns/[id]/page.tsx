@@ -384,11 +384,13 @@ export default function CampaignEditorPage() {
   // Before the wallet exists (credit.ready false) the allowance alone decides.
   const credit: any = savedReady && saved?.credit ? saved.credit : null
   const walletOn = !!credit?.ready
+  // Off when Colvy manages this company's top-ups (lib/sms-policy).
+  const canTopUp = credit?.canTopUp !== false
   const partsNeeded = credit?.parts ?? recipients * renderedSms.segments
   const allowanceMsg = !isEmail && !walletOn && allowance && recipients > 0 ? allowanceProblem(allowance, partsNeeded) : null
   const creditMsg = !isEmail && walletOn && recipients > 0
     ? !credit.entitled ? 'SMS isn\u2019t on your plan. Upgrade to the Inbox or Everything plan to send text messages.'
-      : !credit.affordable ? `This campaign needs ${fmtCents(credit.shortfallCents)} more SMS credit. Top up to send it.`
+      : !credit.affordable ? (canTopUp ? `This campaign needs ${fmtCents(credit.shortfallCents)} more SMS credit. Top up to send it.` : `This campaign needs ${fmtCents(credit.shortfallCents)} more SMS credit. Top-ups are managed by Colvy for your account: contact us to add credit.`)
       : null
     : null
   const [sendTopUp, setSendTopUp] = useState(false)
@@ -1016,7 +1018,7 @@ export default function CampaignEditorPage() {
           {(allowanceMsg || creditMsg) && !savedLoading && (
             <p style={{ margin: '6px 0 0', fontSize: 11.5, color: '#dc2626', fontWeight: 600 }}>
               {allowanceMsg || creditMsg}
-              {creditMsg && credit?.entitled && <> <a href="/admin/billing#sms-credits" style={{ color: 'var(--coral)' }}>Top up</a></>}
+              {creditMsg && credit?.entitled && canTopUp && <> <a href="/admin/billing#sms-credits" style={{ color: 'var(--coral)' }}>Top up</a></>}
             </p>
           )}
           {walletOn && credit.entitled && !credit.unlimited && credit.billableParts > 0 && !savedLoading && (
@@ -1406,7 +1408,7 @@ export default function CampaignEditorPage() {
             <div style={{ ...card, borderColor: credit.affordable ? 'var(--border)' : '#fecaca', background: credit.affordable ? '#fff' : '#fef2f2' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
                 <label style={{ ...label, marginBottom: 0 }}>How it’s paid for</label>
-                {!credit.unlimited && (
+                {!credit.unlimited && canTopUp && (
                   <a href="/admin/billing#sms-credits" style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid var(--coral)', color: 'var(--coral)', background: '#fff', fontSize: 12.5, fontWeight: 700, textDecoration: 'none' }}>
                     Top up
                   </a>
@@ -1428,7 +1430,9 @@ export default function CampaignEditorPage() {
                   {!credit.affordable && (
                     <p style={{ margin: '8px 0 0', fontSize: 12.5, color: '#7f1d1d', fontWeight: 600 }}>
                       This campaign needs {fmtCents(credit.shortfallCents)} more credit.{' '}
-                      <a href="/admin/billing#sms-credits" style={{ color: 'var(--coral)' }}>Top up</a> to schedule or send it.
+                      {canTopUp
+                        ? <><a href="/admin/billing#sms-credits" style={{ color: 'var(--coral)' }}>Top up</a> to schedule or send it.</>
+                        : <>Top-ups are managed by Colvy for your account: contact us to add credit.</>}
                     </p>
                   )}
                   {credit.affordable && credit.costCents > 0 && (
