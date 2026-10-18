@@ -15,6 +15,7 @@ import { assertSmsAllowed, recordSmsSent, checkSmsAllowance, SmsQuotaError } fro
 import { chargeSingleSend, refundSingleSend, costForParts } from './sms-credits'
 import { fmtCents } from './sms-credits-core'
 import { analyseSms } from './sms-segments'
+import { getSmsPolicy, blockedText } from './sms-policy'
 
 export type SmsProvider = 'telnyx' | 'twilio'
 
@@ -88,25 +89,40 @@ function unmetered(base: SmsSender): SmsSender {
 
 /**
  * Pay for one text before it goes: free inside the month's allowance,
- * otherwise from prepaid SMS credit (lib/sms-credits, V395). Throws
- * SmsQuotaError when it can't go — 'plan' (no SMS on the plan), 'credit'
- * (not enough credit; with the shortfall), or 'limit' (allowance used and no
+ * otherwise from prepaid SMS credit (lib/sms-credits, V395), as the company's
+ * SMS billing policy says (lib/sms-policy). Throws SmsQuotaError when it
+ * can't go — 'plan' (no SMS on the plan), 'sms_disabled' (texting switched
+ * off by Colvy), 'credit' (not enough credit; with the shortfall), or 'limit'
+ * (allowance used, and either the policy is allowance-only or there's no
  * wallet yet: today's rule). Returns what was charged, to refund if the
  * carrier then refuses the text.
+ *
+ * Compliance: Colvy sends no automatic reply to STOP or START (the carrier
+ * confirms opt-outs), and recording an opt-out never sends anything, so a
+ * blocked account still honours every STOP / START.
  */
 export async function payForText(db: any, companyId: string, parts: number): Promise<{ chargedCents: number; billableParts: number }> {
   const c = await chargeSingleSend(db, { companyId, parts, note: 'Text sent' })
   if (c.ok) return { chargedCents: c.chargedCents, billableParts: c.billableParts }
-  if (c.reason === 'plan') {
-    throw new SmsQuotaError('plan', 'SMS is not included in this plan. Upgrade to the Inbox or Everything plan to send text messages.')
+  if (c.reason === 'plan' || c.reason === 'sms_disabled') {
+    throw new SmsQuotaError(c.reason, blockedText(c.reason))
+  }
+  if (c.reason === 'limit') {
+    const a = await checkSmsAllowance(db, companyId).catch(() => ({ limit: 0, used: 0 }) as any)
+    throw new SmsQuotaError('limit', `Monthly SMS allowance reached (${Number(a.limit) || 0}). It resets at the start of next month.`, a.limit, a.used, { canTopUp: false })
   }
   if (c.reason === 'insufficient') {
-    const { cents } = await costForParts(db, companyId, c.billableParts || parts).catch(() => ({ cents: 0 }))
+    const [{ cents }, policy] = await Promise.all([
+      costForParts(db, companyId, c.billableParts || parts).catch(() => ({ cents: 0 })),
+      getSmsPolicy(db, companyId),
+    ])
     const short = Math.max(0, cents - (c.balanceCents || 0))
     const a = await checkSmsAllowance(db, companyId).catch(() => ({ limit: 0, used: 0 }) as any)
+    const head = policy.mode === 'credit_only' ? 'Not enough SMS credit: the balance is' : 'Not enough SMS credit: this month\u2019s allowance is used and the balance is'
+    const tail = policy.canTopUp ? 'Top up SMS credit from Billing to keep texting.' : 'Top-ups are managed by Colvy for your account: contact us to add credit.'
     throw new SmsQuotaError('credit',
-      `Not enough SMS credit: this month\u2019s allowance is used and the balance is ${fmtCents(c.balanceCents || 0)}${short ? ` (this text needs ${fmtCents(cents)})` : ''}. Top up SMS credit from Billing to keep texting.`,
-      a.limit, a.used, { shortfallCents: short, balanceCents: c.balanceCents || 0 })
+      `${head} ${fmtCents(c.balanceCents || 0)}${short ? ` (this text needs ${fmtCents(cents)})` : ''}. ${tail}`,
+      a.limit, a.used, { shortfallCents: short, balanceCents: c.balanceCents || 0, canTopUp: policy.canTopUp })
   }
   // 'not_set_up' (no wallet yet) or the wallet couldn't be read: the allowance alone.
   await assertSmsAllowed(db, companyId)
