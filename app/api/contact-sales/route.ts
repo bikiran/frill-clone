@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { salesEnquiryEmail } from '@/lib/colvy-account-emails'
 
 export const dynamic = 'force-dynamic'
 
 const TO = 'support@colvy.com'
-const esc = (s: string) => String(s || '').replace(/[<>&]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c] as string))
 
 /**
  * POST /api/contact-sales
@@ -27,18 +27,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true, emailed: false })
     }
 
-    const rows: [string, string][] = [
-      ['Name', name], ['Email', cleanEmail], ['Company', company || '—'],
-      ['Plan / interest', plan || '—'], ['From page', source || '—'],
-    ]
-    const html = `
-      <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:600px;margin:0 auto;padding:32px 24px">
-        <h1 style="font-size:20px;font-weight:800;color:#0d0d0d;margin:0 0 16px">New sales enquiry</h1>
-        <table style="width:100%;border-collapse:collapse;font-size:14px;color:#0d0d0d">
-          ${rows.map(([k, v]) => `<tr><td style="padding:6px 12px 6px 0;color:#6b7280;white-space:nowrap;vertical-align:top">${esc(k)}</td><td style="padding:6px 0;font-weight:600">${esc(v)}</td></tr>`).join('')}
-        </table>
-        ${message ? `<p style="font-size:13px;color:#6b7280;margin:20px 0 6px">Message</p><div style="font-size:14px;color:#0d0d0d;white-space:pre-wrap;background:#f6f7f9;border-radius:10px;padding:14px 16px">${esc(message)}</div>` : ''}
-      </div>`
+    // The shared layout (lib/colvy-email) escapes every value.
+    const mail = salesEnquiryEmail({
+      name: String(name), email: cleanEmail, company: company ? String(company) : '',
+      message: message ? String(message) : '', plan: plan ? String(plan) : '', source: source ? String(source) : '',
+    })
 
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
@@ -48,7 +41,8 @@ export async function POST(req: NextRequest) {
         to: [TO],
         reply_to: cleanEmail,
         subject: `Sales enquiry — ${name}${company ? ` (${company})` : ''}`,
-        html,
+        html: mail.html,
+        text: mail.text,
       }),
     })
     if (!res.ok) {

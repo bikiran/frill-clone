@@ -1,6 +1,7 @@
 import { requireCompanyAccess, isStaffRow } from '@/lib/company-access'
 import { internalHeaders } from '@/lib/internal-call'
 import { NextRequest, NextResponse } from 'next/server'
+import { memberNotifyEmail } from '@/lib/colvy-account-emails'
 import { createClient } from '@supabase/supabase-js'
 
 export const dynamic = 'force-dynamic'
@@ -113,6 +114,8 @@ export async function POST(req: NextRequest) {
             .eq('company_id', companyId).eq('is_active', true).limit(1)
           const from = ec?.[0]?.from_address || ec?.[0]?.inbound_address || 'notifications@updates.colvy.com'
           const fromName = company?.name || 'Colvy'
+          // Raw values in: the layout (lib/colvy-email) escapes everything shown.
+          const mail = memberNotifyEmail({ title, body, link: fullLink, companyName: company?.name || null })
 
           const res = await fetch('https://api.resend.com/emails', {
             method: 'POST',
@@ -120,8 +123,9 @@ export async function POST(req: NextRequest) {
             body: JSON.stringify({
               from: `${fromName} <${from}>`,
               to,
-              subject: title,
-              text: [body, '', `Open it here: ${fullLink}`].filter(Boolean).join('\n'),
+              subject: mail.subject,
+              html: mail.html,
+              text: mail.text,
             }),
           })
           if (res.ok) result.email = to.length

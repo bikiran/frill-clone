@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { verifyTurnstile, requestIp, TURNSTILE_FAILED } from '@/lib/turnstile'
-import { colvyEmailContactHtml } from '@/lib/colvy-contact'
+import { confirmEmail } from '@/lib/colvy-account-emails'
 
 // Full server-side signup flow. This bypasses two problems with doing
 // signUp() directly from the browser:
@@ -125,7 +125,6 @@ export async function POST(req: NextRequest) {
     // Supabase issues both forms of the same confirmation: a link for a browser
     // and a six-digit code for anywhere there isn't one.
     const emailOtp = linkData.properties.email_otp
-    const boardUrl = slug ? `${slug}.colvy.com` : 'colvy.com'
 
     // Asked for a code and Supabase did not give one — send nothing rather than
     // a link, because the app is about to ask for six digits and a link would
@@ -138,6 +137,7 @@ export async function POST(req: NextRequest) {
     }
 
     // 3. Send the confirmation email via Resend
+    const mail = confirmEmail({ mode: wantCode ? 'code' : 'link', link: confirmLink, code: emailOtp, slug })
     const RESEND_KEY = process.env.RESEND_API_KEY
     let emailSent = false
     let emailError: string | null = null
@@ -148,49 +148,9 @@ export async function POST(req: NextRequest) {
         body: JSON.stringify({
           from: 'Colvy <noreply@updates.colvy.com>',
           to: [email],
-          subject: wantCode ? `${emailOtp} is your Colvy confirmation code` : 'Confirm your email address — Colvy',
-          html: wantCode ? `
-            <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:560px;margin:0 auto;padding:40px 24px">
-              <h1 style="font-size:28px;font-weight:800;color:#0d0d0d;margin:0 0 8px">Welcome to Colvy</h1>
-              <p style="font-size:16px;color:#6b7280;margin:0 0 28px">Enter this code in the Colvy app to confirm your email address.</p>
-              <div style="background:#fff4f1;border-radius:12px;padding:24px;text-align:center;margin-bottom:28px">
-                <p style="font-size:34px;font-weight:800;color:#ff7a6b;letter-spacing:8px;margin:0">${emailOtp}</p>
-              </div>
-              ${slug ? `
-              <div style="background:#fafafa;border-radius:12px;padding:16px 20px;margin-bottom:28px">
-                <p style="font-size:13px;font-weight:600;color:#9ca3af;margin:0 0 4px">YOUR COLVY ADDRESS</p>
-                <p style="font-size:16px;font-weight:800;color:#ff7a6b;margin:0">${boardUrl}</p>
-              </div>
-              ` : ''}
-              <hr style="border:none;border-top:1px solid #f0f0f0;margin:32px 0">
-              <p style="font-size:12px;color:#9ca3af;margin:0">
-                This code expires in an hour. If you didn't sign up for Colvy, you can safely ignore this email — nobody can use the code without it.
-              </p>
-              ${colvyEmailContactHtml()}
-            </div>
-          ` : `
-            <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:560px;margin:0 auto;padding:40px 24px">
-              <h1 style="font-size:28px;font-weight:800;color:#0d0d0d;margin:0 0 8px">Welcome to Colvy</h1>
-              <p style="font-size:16px;color:#6b7280;margin:0 0 32px">Please confirm your email address to activate your account.</p>
-              ${slug ? `
-              <div style="background:#fff4f1;border-radius:12px;padding:16px 20px;margin-bottom:28px">
-                <p style="font-size:13px;font-weight:600;color:#9ca3af;margin:0 0 4px">YOUR COLVY ADDRESS</p>
-                <p style="font-size:16px;font-weight:800;color:#ff7a6b;margin:0">${boardUrl}</p>
-              </div>
-              ` : ''}
-              <a href="${confirmLink}"
-                style="display:block;background:#ff7a6b;color:#fff;text-align:center;padding:16px 0;border-radius:12px;font-weight:700;font-size:16px;text-decoration:none;margin-bottom:24px">
-                ✓ Confirm my email address
-              </a>
-              <p style="font-size:13px;color:#9ca3af;margin:0 0 8px">If the button above doesn't work, copy and paste this link into your browser:</p>
-              <p style="font-size:12px;color:#9ca3af;word-break:break-all;margin:0 0 32px">${confirmLink}</p>
-              <hr style="border:none;border-top:1px solid #f0f0f0;margin:32px 0">
-              <p style="font-size:12px;color:#9ca3af;margin:0">
-                This link expires in 24 hours. If you didn't sign up for Colvy, you can safely ignore this email.
-              </p>
-              ${colvyEmailContactHtml()}
-            </div>
-          `,
+          subject: mail.subject,
+          html: mail.html,
+          text: mail.text,
         }),
       })
       if (resendRes.ok) {

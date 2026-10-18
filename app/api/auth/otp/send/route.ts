@@ -8,6 +8,7 @@ import {
   CODE_TTL_MS, sha, sixDigits, pushCode, sendSignupSms, callSignupCode, signupStatusCallbackUrl,
   voiceFallbackReady, smsProblemMessage, smsCountries, voiceCountries, type SendResult,
 } from '@/lib/signup-sms'
+import { signupCodeEmail } from '@/lib/colvy-account-emails'
 
 export const dynamic = 'force-dynamic'
 
@@ -69,22 +70,16 @@ async function emailInUse(db: any, email: string): Promise<boolean> {
 async function sendEmailCode(email: string, code: string): Promise<boolean> {
   const RESEND_KEY = process.env.RESEND_API_KEY
   if (!RESEND_KEY) return false
+  const mail = signupCodeEmail(code, Math.round(CODE_TTL_MS / 60000))
   const res = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: { Authorization: `Bearer ${RESEND_KEY}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
       from: 'Colvy <noreply@updates.colvy.com>',
       to: [email],
-      subject: `${code} is your Colvy verification code`,
-      html: `
-        <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:480px;margin:0 auto;padding:40px 24px">
-          <h1 style="font-size:22px;font-weight:800;color:#0d0d0d;margin:0 0 8px">Verify your email</h1>
-          <p style="font-size:15px;color:#6b7280;margin:0 0 24px">Enter this 6-digit code to continue setting up your Colvy account.</p>
-          <div style="background:#fff4f1;border-radius:14px;padding:20px;text-align:center;margin-bottom:24px">
-            <span style="font-size:34px;font-weight:800;letter-spacing:8px;color:#ff7a6b">${code}</span>
-          </div>
-          <p style="font-size:13px;color:#9ca3af;margin:0">This code expires in 10 minutes. If you didn't request it, you can ignore this email.</p>
-        </div>`,
+      subject: mail.subject,
+      html: mail.html,
+      text: mail.text,
     }),
   })
   return res.ok

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { logJobRun } from '@/lib/job-log'
-import { colvyEmailContactHtml } from '@/lib/colvy-contact'
+import { trialNudgeEmail } from '@/lib/colvy-account-emails'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -28,25 +28,9 @@ function milestone(endMs: number, now: number): 't_minus_3' | 't_zero' | 't_plus
 
 const SUBDOMAIN = (slug?: string | null) => slug ? `https://${slug}.colvy.com` : 'https://colvy.com'
 
-function emailFor(kind: string, business: string, billingUrl: string): { subject: string; html: string } {
-  const btn = (label: string) => `<a href="${billingUrl}" style="display:inline-block;background:#ff7a6b;color:#fff;text-decoration:none;font-weight:700;font-size:14px;padding:11px 26px;border-radius:10px">${label}</a>`
-  const wrap = (title: string, body: string, label: string) => ({
-    subject: title,
-    html: `<div style="background:#eef2ff;padding:28px 12px;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif">
-      <div style="max-width:520px;margin:0 auto;background:#fff;border-radius:16px;padding:28px;text-align:center">
-        <h2 style="margin:0 0 10px;font-size:20px;color:#1a1a1a">${title}</h2>
-        <p style="margin:0 0 20px;color:#4b5563;font-size:14px;line-height:1.6">${body}</p>
-        ${btn(label)}
-        <p style="margin:20px 0 0;color:#9ca3af;font-size:12px">You’re receiving this because ${business} is on a Colvy trial.</p>
-        ${colvyEmailContactHtml()}
-      </div></div>`,
-  })
-  if (kind === 't_minus_3') return wrap('Your Colvy trial ends in 3 days',
-    `Keep your inbox, orders, calls and everything you’ve set up for ${business} running without interruption. Pick a plan before your trial ends and nothing skips a beat.`, 'Choose a plan')
-  if (kind === 't_zero') return wrap('Your Colvy trial has ended',
-    `Your trial for ${business} has finished, but your data is safe. Upgrade now to pick up exactly where you left off — inbox, orders, calls and all.`, 'Upgrade & keep going')
-  return wrap('Still time to bring Colvy back',
-    `${business}’s trial ended a few days ago. Your workspace and data are still here — upgrade any time to switch everything back on.`, 'Reactivate Colvy')
+// The words (and the shared layout) are in lib/colvy-account-emails.
+function emailFor(kind: string, business: string, billingUrl: string): { subject: string; html: string; text: string } {
+  return trialNudgeEmail(kind, business, billingUrl)
 }
 
 /**
@@ -104,12 +88,12 @@ export async function GET(req: NextRequest) {
       if (claimErr) continue // already sent (unique violation) or table missing → skip
 
       const business = c.name || 'your business'
-      const { subject, html } = emailFor(kind, business, `${SUBDOMAIN(c.slug)}/admin/billing`)
+      const { subject, html, text } = emailFor(kind, business, `${SUBDOMAIN(c.slug)}/admin/billing`)
       try {
         await fetch('https://api.resend.com/emails', {
           method: 'POST',
           headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ from, to, subject, html }),
+          body: JSON.stringify({ from, to, subject, html, text }),
         })
         sent++
       } catch { /* non-fatal — the row is claimed so we won't retry this cycle */ }

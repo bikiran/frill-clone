@@ -1,6 +1,7 @@
 import { requireCompanyAccess, staffUserIds } from '@/lib/company-access'
 import { internalHeaders } from '@/lib/internal-call'
 import { NextRequest, NextResponse } from 'next/server'
+import { mentionEmail } from '@/lib/colvy-account-emails'
 import { createClient } from '@supabase/supabase-js'
 
 export const dynamic = 'force-dynamic'
@@ -92,8 +93,9 @@ export async function POST(req: NextRequest) {
       ? `${base}/admin/inbox?conversation=${conversationId}`
       : `${base}/admin/inbox`
     const where = context || 'a conversation'
-    const safe = String(preview || '').slice(0, 300)
-      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    // Plain text: the email escapes it itself, and a text message shows it as is
+    // (it used to carry &amp; and &lt; into the SMS).
+    const snippet = String(preview || '').slice(0, 300)
 
     // ── In-app notification (the bell) ───────────────────────────────────────
     // Written for EVERY mentioned user, including any we couldn't find an email
@@ -121,7 +123,7 @@ export async function POST(req: NextRequest) {
       const withPhone = (members || []).filter((m: any) => m.phone)
       for (const m of withPhone) {
         try {
-          const text = `${mentionedBy || 'A teammate'} mentioned you in ${where}${safe ? `: ${String(safe).slice(0, 120)}` : ''}\n${link}`
+          const text = `${mentionedBy || 'A teammate'} mentioned you in ${where}${snippet ? `: ${snippet.slice(0, 120)}` : ''}\n${link}`
           const r = await fetch(`${siteBase}/api/telnyx/sms/send`, {
             method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({ companyId, to: m.phone, text, skipChatMessage: true }),
@@ -141,6 +143,10 @@ export async function POST(req: NextRequest) {
     let sent = 0
     for (const m of recipients) {
       try {
+        // Raw values in: the layout (lib/colvy-email) escapes everything shown.
+        const mail = mentionEmail({
+          name: m.name || 'there', mentionedBy, where, companyName, preview: snippet, link,
+        })
         const res = await fetch('https://api.resend.com/emails', {
           method: 'POST',
           headers: {
@@ -150,28 +156,9 @@ export async function POST(req: NextRequest) {
           body: JSON.stringify({
             from: 'Colvy <notifications@updates.colvy.com>',
             to: m.email,
-            subject: `${mentionedBy || 'Someone'} mentioned you in ${where}`,
-            html: `
-              <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:560px;margin:0 auto">
-                <div style="padding:20px 24px;background:linear-gradient(135deg,#ff7a6b 0%,#ff8f7b 100%);border-radius:12px 12px 0 0">
-                  <h1 style="margin:0;color:#fff;font-size:19px">You were mentioned</h1>
-                </div>
-                <div style="background:#fff;border:1px solid #f0f0f0;border-top:none;border-radius:0 0 12px 12px;padding:24px">
-                  <p style="margin:0 0 14px;color:#1a1a1a;font-size:15px">
-                    Hi ${m.name || 'there'},
-                  </p>
-                  <p style="margin:0 0 16px;color:#1a1a1a;font-size:15px">
-                    <strong>${mentionedBy || 'A teammate'}</strong> mentioned you in ${where} at ${companyName}.
-                  </p>
-                  ${safe ? `<div style="margin:0 0 18px;padding:12px 14px;background:#fffbeb;border:1px dashed #f59e0b;border-radius:10px;color:#78350f;font-size:14px;font-style:italic">${safe}</div>` : ''}
-                  <a href="${link}" style="display:inline-block;padding:10px 18px;background:#ff7a6b;color:#fff;text-decoration:none;border-radius:8px;font-size:14px;font-weight:600">
-                    Open in Colvy
-                  </a>
-                  <p style="margin:18px 0 0;color:#6b7280;font-size:12px">
-                    You're receiving this because you were @mentioned by a teammate.
-                  </p>
-                </div>
-              </div>`,
+            subject: mail.subject,
+            html: mail.html,
+            text: mail.text,
           }),
         })
         if (res.ok) sent++

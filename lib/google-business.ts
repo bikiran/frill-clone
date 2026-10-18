@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { emitIntegrationEvent } from '@/lib/integration-events'
+import { newReviewEmail } from '@/lib/colvy-account-emails'
 
 const admin = () => createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -94,31 +95,16 @@ async function notifyNewReviews(db: any, companyId: string, reviews: any[]) {
   const business = company?.name || 'your business'
   const reviewsUrl = company?.slug ? `https://${company.slug}.colvy.com/admin/reviews` : 'https://colvy.com/admin/reviews'
   const from = 'Colvy <notifications@updates.colvy.com>'
-  const esc = (s: string) => String(s || '').replace(/[<>&]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c] as string))
 
   for (const rv of reviews) {
     const n = rv.star_rating || 0
-    const stars = '★'.repeat(n) + '☆'.repeat(Math.max(0, 5 - n))
-    const html = `
-      <div style="background:#eef2ff;padding:28px 12px;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif">
-        <div style="max-width:520px;margin:0 auto;background:#fff;border-radius:16px;padding:28px;text-align:center">
-          <div style="font-size:26px;color:#f5b301;letter-spacing:3px">${stars}</div>
-          <h2 style="margin:14px 0 4px;font-size:20px;color:#1a1a1a">You got a new ${n ? n + '-star ' : ''}review${n >= 4 ? '! 🎉' : '.'}</h2>
-          <p style="margin:0 0 18px;color:#6b6b70;font-size:14px">for ${esc(business)}</p>
-          <div style="text-align:left;background:#f6f7fb;border-radius:12px;padding:16px 18px;margin:0 0 20px">
-            <p style="margin:0 0 4px;font-weight:700;color:#1a1a1a">${esc(rv.reviewer_name || 'A customer')}</p>
-            <div style="color:#f5b301;font-size:15px;margin-bottom:8px">${stars}</div>
-            <p style="margin:0;color:#374151;font-size:13.5px;line-height:1.55">${esc(rv.comment || '(no written comment)')}</p>
-          </div>
-          <a href="${reviewsUrl}" style="display:inline-block;background:#ff7a6b;color:#fff;text-decoration:none;font-weight:700;font-size:14px;padding:11px 24px;border-radius:10px">Read &amp; reply</a>
-          <p style="margin:20px 0 0;color:#9ca3af;font-size:12px">Replying to reviews builds trust — open Colvy to respond.</p>
-        </div>
-      </div>`
+    // The shared layout (lib/colvy-email) escapes every value.
+    const mail = newReviewEmail({ business, reviewer: rv.reviewer_name, rating: n, comment: rv.comment, reviewsUrl })
     try {
       await fetch('https://api.resend.com/emails', {
         method: 'POST',
         headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ from, to, subject: `${rv.reviewer_name || 'Someone'} left a ${n ? n + '-star ' : ''}review for ${business}`, html }),
+        body: JSON.stringify({ from, to, subject: `${rv.reviewer_name || 'Someone'} left a ${n ? n + '-star ' : ''}review for ${business}`, html: mail.html, text: mail.text }),
       })
     } catch { /* non-fatal */ }
   }

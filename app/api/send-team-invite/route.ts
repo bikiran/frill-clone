@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { memberOr403 } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
+import { teamInviteEmail } from '@/lib/colvy-account-emails'
 
 export const dynamic = 'force-dynamic'
 
@@ -13,19 +14,21 @@ export async function POST(req: NextRequest) {
     // to anyone, so the business name now comes from the database, the link must
     // be a Colvy join link, and everything shown is escaped.
     { const deny = await memberOr403(req, companyId); if (deny) return deny }
-    const esc = (v: any) => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' } as any)[c])
     const db = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, { auth: { autoRefreshToken: false, persistSession: false } }) as any
     const { data: co } = await db.from('companies').select('name').eq('id', companyId).maybeSingle()
-    const companyName = esc(co?.name || 'the team')
-    const inviterName = esc(String(body.inviterName || 'A teammate').slice(0, 80))
+    const companyName = String(co?.name || 'the team')
+    const inviterName = String(body.inviterName || 'A teammate').slice(0, 80)
     const role = ['viewer', 'editor', 'admin'].includes(body.role) ? body.role : 'editor'
     let inviteLink = ''
     try {
       const u = new URL(String(body.inviteLink || ''))
       const okHost = u.hostname === 'colvy.com' || u.hostname.endsWith('.colvy.com') || u.hostname === 'localhost'
-      if (okHost && u.pathname === '/team/join') inviteLink = esc(u.toString())
+      if (okHost && u.pathname === '/team/join') inviteLink = u.toString()
     } catch {}
     if (!inviteLink) return NextResponse.json({ error: 'Invalid invite link' }, { status: 400 })
+
+    // The words are in lib/colvy-account-emails; it escapes everything shown.
+    const mail = teamInviteEmail({ companyName, inviterName, role, inviteLink, email: String(email) })
 
     // Send via Resend if API key available
     if (process.env.RESEND_API_KEY) {
@@ -38,41 +41,9 @@ export async function POST(req: NextRequest) {
         body: JSON.stringify({
           from: 'Colvy <invites@updates.colvy.com>',
           to: email,
-          subject: `Join ${companyName}'s team on Colvy`,
-          html: `
-            <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 600px; margin: 0 auto;">
-              <div style="padding: 24px; background: linear-gradient(135deg, #ff7a6b 0%, #ff8f7b 100%); border-radius: 12px 12px 0 0;">
-                <h1 style="margin: 0; color: white; font-size: 24px;">You're invited</h1>
-              </div>
-              
-              <div style="background: white; border: 1px solid #f0f0f0; border-radius: 0 0 12px 12px; padding: 32px;">
-                <p style="margin: 0 0 16px 0; color: #1a1a1a; font-size: 16px;">
-                  Hi there,
-                </p>
-                
-                <p style="margin: 0 0 16px 0; color: #6b6b70; line-height: 1.6;">
-                  ${inviterName} has invited you to join <strong>${companyName}</strong>'s team on Colvy. 
-                </p>
-                
-                <div style="background: #f8f8f8; padding: 16px; border-radius: 8px; margin: 20px 0;">
-                  <p style="margin: 0 0 8px 0; color: #6b6b70; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em;">Your Role</p>
-                  <p style="margin: 0; font-size: 16px; font-weight: 600; color: #1a1a1a;">
-                    ${role === 'viewer' ? 'Viewer (read-only)' : role === 'editor' ? 'Agent (can view and edit)' : 'Admin (full access)'}
-                  </p>
-                </div>
-                
-                <div style="text-align: center; margin: 28px 0;">
-                  <a href="${inviteLink}" style="display: inline-block; padding: 14px 32px; background: #ff7a6b; color: white; text-decoration: none; border-radius: 10px; font-weight: 600; font-size: 16px;">
-                    Accept Invitation
-                  </a>
-                </div>
-                
-                <p style="margin: 24px 0 0 0; padding-top: 24px; border-top: 1px solid #f0f0f0; color: #9ca3af; font-size: 12px;">
-                  This invitation was sent to ${email}. If you didn't expect this, you can ignore this email.
-                </p>
-              </div>
-            </div>
-          `,
+          subject: mail.subject,
+          html: mail.html,
+          text: mail.text,
         }),
       })
 
