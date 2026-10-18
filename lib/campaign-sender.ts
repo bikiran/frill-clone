@@ -405,6 +405,9 @@ export async function processCampaignBatch(campaignId: string, opts: BatchOption
     .select('*').eq('id', campaignId).maybeSingle()
   if (!campaign) return { done: true, reason: 'not found' }
   if (campaign.status !== 'sending') return { done: true, reason: `status is ${campaign.status}` }
+  // Email campaigns are sent by lib/email-campaign-sender (sendEmailBatch).
+  // Never touch one here: with no SMS recipients this would mark it 'sent'.
+  if ((campaign.channel || 'sms') !== 'sms') return { done: false, reason: 'not an SMS campaign' }
   const companyId = campaign.company_id
 
   // Quiet hours — checked on every batch (in the campaign's own time zone), so
@@ -467,6 +470,7 @@ export async function processCampaignBatch(campaignId: string, opts: BatchOption
   let sent = 0, failed = 0, skipped = 0
   let stop: string | null = null
   let claimedAtOk = true
+  let optOutColOk = true
 
   const setRow = (id: string, patch: Record<string, any>) => db.from('campaign_recipients').update(patch).eq('id', id)
 
@@ -494,12 +498,17 @@ export async function processCampaignBatch(campaignId: string, opts: BatchOption
       // Final consent check against live contact data. The audience was
       // resolved at prepare time; someone may have replied STOP since.
       if (r.contact_id) {
-        const { data: ct } = await db.from('contacts')
-          .select('is_blocked, subscribed_to_marketing, consent_basis, unsubscribed_at, phone')
-          .eq('id', r.contact_id).maybeSingle()
-        const blocked = ct?.is_blocked || ct?.unsubscribed_at || !ct?.subscribed_to_marketing || ct?.consent_basis === 'none'
+        const BASE = 'is_blocked, subscribed_to_marketing, consent_basis, unsubscribed_at, phone'
+        let read = await db.from('contacts').select(optOutColOk ? BASE + ', sms_marketing_opt_out_at' : BASE).eq('id', r.contact_id).maybeSingle()
+        if (read.error && optOutColOk && missingColumn(read.error, ['sms_marketing_opt_out_at'])) {
+          optOutColOk = false   // before V396
+          read = await db.from('contacts').select(BASE).eq('id', r.contact_id).maybeSingle()
+        }
+        const ct = read.data
+        // Turned off texts only (V396) reads as its own reason in the report.
+        const blocked = ct?.is_blocked || ct?.unsubscribed_at || ct?.sms_marketing_opt_out_at || !ct?.subscribed_to_marketing || ct?.consent_basis === 'none'
         if (blocked) {
-          await setRow(r.id, { status: 'skipped', skip_reason: ct?.unsubscribed_at ? 'unsubscribed' : ct?.is_blocked ? 'blocked' : 'no_consent' })
+          await setRow(r.id, { status: 'skipped', skip_reason: ct?.is_blocked ? 'blocked' : ct?.unsubscribed_at ? 'unsubscribed' : ct?.sms_marketing_opt_out_at ? 'opted_out' : 'no_consent' })
           skipped++
           return
         }

@@ -1,10 +1,9 @@
 'use client'
 
 // Email designs: the business's saved campaign emails and the designer
-// (components/EmailDesigner). Until the campaign wizard offers email (a
-// follow-up once SMS campaigns settle), this is where emails are designed,
-// tested and saved; the wizard will open the same designer for an email
-// campaign. Reads and writes go through /api/email-campaigns/designs.
+// (components/EmailDesigner). An email campaign in the wizard opens the same
+// designer on its Email step (saved against the campaign); this page keeps
+// stand-alone designs. Reads and writes go through /api/email-campaigns/designs.
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'

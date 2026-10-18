@@ -20,7 +20,10 @@ import { isMissingTable, normEmail } from '@/lib/email-db'
 
 export const RESEND_API = 'https://api.resend.com'
 export const RESEND_REGION = 'ap-northeast-1'
-export const DEFAULT_SHARED_DOMAIN = 'send.colvy.com'
+// Used only when COLVY_CAMPAIGN_SEND_DOMAIN isn't set. updates.colvy.com is
+// the domain verified on Colvy's Resend account (Colvy's own notifications go
+// from it too); nothing assumes a "send." prefix.
+export const DEFAULT_SHARED_DOMAIN = 'updates.colvy.com'
 
 /** Colvy's shared domain for campaigns sent before a business verifies its own. */
 export function sharedCampaignDomain(): string {

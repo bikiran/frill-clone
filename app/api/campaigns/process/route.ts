@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { prepareCampaign, processCampaignBatch, campaignMaySendNow, pauseCampaign, CampaignNotReadyError, BATCH_BUDGET_MS } from '@/lib/campaign-sender'
 import { logJobRun } from '@/lib/job-log'
+import { isEmailCampaign, startEmailCampaign, emailBatch } from '@/lib/campaign-email'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -14,6 +15,11 @@ const admin = () => createClient(
 
 /**
  * GET /api/campaigns/process — the campaign worker.
+ *
+ * Both channels: an email campaign is started and sent by the email sender
+ * (startEmailCampaign / sendEmailBatch), an SMS one by the SMS sender — the
+ * SMS batch never sees an email campaign (it would mark it 'sent' with
+ * nothing sent).
  *
  * Two jobs, run every 2 minutes by cron (vercel.json):
  *   1. Start any scheduled campaign whose time has arrived.
@@ -62,7 +68,7 @@ export async function GET(req: NextRequest) {
 
     // ── 1. Scheduled campaigns that are now due ────────────────────────────
     const { data: due } = await db.from('campaigns')
-      .select('id, company_id, name, scheduled_at, quiet_hours, timezone')
+      .select('id, company_id, name, channel, scheduled_at, quiet_hours, timezone')
       .eq('status', 'scheduled')
       .lte('scheduled_at', new Date().toISOString())
       .limit(5)
@@ -76,8 +82,10 @@ export async function GET(req: NextRequest) {
         continue
       }
       try {
-        const prepared = await prepareCampaign(c.company_id, c.id)
-        results.push({ campaign: c.id, started: true, ...prepared })
+        const prepared = isEmailCampaign(c)
+          ? await startEmailCampaign(c.company_id, c.id, { db })
+          : await prepareCampaign(c.company_id, c.id)
+        results.push({ campaign: c.id, channel: c.channel || 'sms', started: true, ...prepared })
       } catch (e: any) {
         results.push({ campaign: c.id, error: e.message })
         if (e instanceof CampaignNotReadyError) {
@@ -92,13 +100,20 @@ export async function GET(req: NextRequest) {
 
     // ── 2. Campaigns mid-send ──────────────────────────────────────────────
     const { data: sending } = await db.from('campaigns')
-      .select('id').eq('status', 'sending').limit(5)
+      .select('id, channel, quiet_hours, timezone').eq('status', 'sending').limit(5)
 
     for (const c of (sending || [])) {
       if (Date.now() >= deadline) break
       try {
+        if (isEmailCampaign(c)) {
+          // Quiet hours only when the email campaign has them switched on.
+          if (!campaignMaySendNow(c)) { results.push({ campaign: c.id, channel: 'email', held: 'outside sending hours' }); continue }
+          const r = await emailBatch(c.id, deadline - Date.now(), { db })
+          results.push({ campaign: c.id, channel: 'email', ...r })
+          continue
+        }
         const r = await processCampaignBatch(c.id, { deadline })
-        results.push({ campaign: c.id, ...r })
+        results.push({ campaign: c.id, channel: 'sms', ...r })
       } catch (e: any) {
         results.push({ campaign: c.id, error: e.message })
       }
