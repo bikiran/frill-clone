@@ -12,6 +12,7 @@ import { emitInboundEvent } from '@/lib/integration-hooks'
 import { scheduleMessageThumbs } from '@/lib/image-thumb'
 import { isFormsTestEmail } from '@/lib/forms-mail'
 import { alertEmailBodyPending, type ReceivingFailure } from '@/lib/resend-receiving'
+import { handleDeliveryEvent, isDeliveryEvent } from '@/lib/email-events'
 
 export const dynamic = 'force-dynamic'
 
@@ -72,6 +73,18 @@ export async function POST(req: NextRequest) {
     let body: any = {}
     try { body = JSON.parse(raw || '{}') } catch { body = {} }
     const db = admin()
+
+    // Resend's delivery events for campaign email (delivered, opened, clicked,
+    // bounced, complained…) arrive on this same webhook when they're ticked
+    // in Resend. They are never inbound mail: before this they fell through
+    // to the inbound handling below. lib/email-events.ts stores them and
+    // suppresses bounced and complaining addresses; an unsigned payload only
+    // counts once Resend confirms it.
+    if (isDeliveryEvent(body)) {
+      const r = await handleDeliveryEvent(db, body, { trust, svixId: req.headers.get('svix-id') })
+      if (!r.ok && r.reason) logWebhookEvent({ source: 'email', eventType: String(body.type), status: 'rejected', error: r.reason })
+      return NextResponse.json(r)
+    }
 
     // Resend inbound (email.received) nests the message under `data`; other
     // providers post it at the top level. Unwrap so the picks below work for all.

@@ -20,7 +20,9 @@
 import { resolveAudience, type ResolvedRecipient } from '@/lib/campaign-audience'
 import { audienceFilterOf, categoryOf, segmentOf, toPublicAnnouncement } from '@/lib/announcements'
 import { escapeHtml } from '@/lib/safe-html'
-import { signValue } from '@/lib/oauth-state'
+import { signUnsubToken } from '@/lib/email-tokens'
+import { filterEmailable } from '@/lib/email-suppression'
+import { unsubscribeEverything } from '@/lib/email-preferences'
 import { staffUserIds } from '@/lib/company-access'
 import { missingColumn } from '@/lib/announcements-server'
 
@@ -40,9 +42,13 @@ export function postUrl(company: any, id: string): string {
   return `${boardUrl(company)}/announcements?id=${id}`
 }
 
-/** Unsubscribe link token: names the contact and company, signed, good for 400 days. */
+/**
+ * Unsubscribe link token: names the contact and company, signed. The same
+ * token and links as campaign email (lib/email-tokens); older announcement
+ * tokens still work.
+ */
 export function unsubscribeToken(companyId: string, contactId: string): string {
-  return signValue({ kind: 'ann-unsub', co: companyId, c: contactId }, 400 * 86400_000)
+  return signUnsubToken({ co: companyId, c: contactId })
 }
 
 /**
@@ -182,10 +188,12 @@ async function sendEmails(db: any, company: any, a: any, recipients: ResolvedRec
   const p = toPublicAnnouncement(a)
   let sent = 0, failed = 0
   const errors: string[] = []
+  // Live check: email-only opt-outs and bounced / complained addresses (V396).
+  recipients = (await filterEmailable(db, company.id, recipients)).keep
   for (let i = 0; i < recipients.length; i += 90) {
     const chunk = recipients.slice(i, i + 90)
     const batch = chunk.map(c => {
-      const unsub = `${siteBase}/api/announcements/unsubscribe?t=${encodeURIComponent(unsubscribeToken(company.id, c.contact_id))}`
+      const unsub = `${siteBase}/api/email/unsubscribe?t=${encodeURIComponent(unsubscribeToken(company.id, c.contact_id))}`
       return {
         from: `${safeName} <${from}>`,
         to: [c.email],
@@ -254,31 +262,11 @@ export async function notifyAnnouncement(db: any, a: any, opts: { board: boolean
 }
 
 /**
- * Unsubscribe this person from the business's marketing: the contact the link
- * names and every other contact of that business with the same email (any
- * case), so a duplicate record can't keep emailing them. Logged in
- * consent_events like a STOP text (lib/sms-consent.ts).
+ * Unsubscribe this person from all of the business's marketing (email and
+ * texts): the contact the link names and every other contact of that
+ * business with the same email. Kept for callers of the old helper; the
+ * rules live in lib/email-preferences.ts.
  */
 export async function unsubscribeContact(db: any, companyId: string, contact: { id: string; email?: string | null }): Promise<number> {
-  const ids = new Set<string>([contact.id])
-  const email = String(contact.email || '').trim()
-  if (email) {
-    const pattern = email.replace(/[\\%_]/g, m => '\\' + m)
-    const { data } = await db.from('contacts').select('id').eq('company_id', companyId).ilike('email', pattern).limit(50)
-    for (const c of data || []) ids.add(c.id)
-  }
-  const now = new Date().toISOString()
-  let n = 0
-  for (const id of ids) {
-    const { data: c } = await db.from('contacts').select('id, unsubscribed_at').eq('id', id).eq('company_id', companyId).maybeSingle()
-    if (!c || c.unsubscribed_at) continue
-    const full = { subscribed_to_marketing: false, consent_basis: 'none', consent_source: 'unsubscribe link in an announcement email', unsubscribed_at: now, unsubscribe_method: 'email_link' }
-    const { error } = await db.from('contacts').update(full).eq('id', id).eq('company_id', companyId)
-    if (error) await db.from('contacts').update({ subscribed_to_marketing: false, unsubscribed_at: now }).eq('id', id).eq('company_id', companyId)
-    try {
-      await db.from('consent_events').insert({ company_id: companyId, contact_id: id, action: 'unsubscribed', basis: 'none', source: 'Announcement email: unsubscribe link', actor: 'customer' })
-    } catch {}
-    n++
-  }
-  return n
+  return unsubscribeEverything(db, companyId, contact, { source: 'Announcement email: unsubscribe link' })
 }

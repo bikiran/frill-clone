@@ -1,0 +1,6 @@
+export { default as EmailDesigner } from './EmailDesigner'
+export type { DesignDraft, SenderInfo } from './EmailDesigner'
+export { default as TemplatePicker } from './TemplatePicker'
+export { renderEmail, fillTemplate, fillSubject, sampleVars } from './render'
+export { STARTER_TEMPLATES, starterById, blankBlock } from './templates'
+export * from './types'

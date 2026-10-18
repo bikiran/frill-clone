@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { recordLinkClick } from '@/lib/link-click'
 import { isPublicChannel } from '@/lib/link-channels'
 import { isEngagePage, isOwnSurface, loadCompanySurfaces, withClickRef } from '@/lib/link-stitch'
+import { emailClick } from '@/lib/email-click'
 
 // Redirects /l/<code> to the stored target URL and records the click.
 // The redirect is the priority: click logging is best-effort and must never
@@ -16,7 +17,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ code
       { auth: { autoRefreshToken: false, persistSession: false } }
     )
     const { data } = await db.from('short_links')
-      .select('id, company_id, target_url, clicks, contact_id, kind, channel').eq('code', code).maybeSingle()
+      .select('id, company_id, target_url, clicks, contact_id, kind, channel, campaign_id').eq('code', code).maybeSingle()
     if (!data?.target_url) {
       return new NextResponse('Link not found', { status: 404 })
     }
@@ -47,6 +48,12 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ code
 
     // Click event (device / city) + the link's counter. Awaited: serverless
     // can freeze the function once the redirect is sent.
+    // A tracked link in a campaign email names its recipient (?r=, signed):
+    // the click is theirs, and the campaign report counts it.
+    if (!data.contact_id && data.channel === 'email' && req.nextUrl.searchParams.get('r')) {
+      const { contactId } = await emailClick(db, data, req.nextUrl.searchParams.get('r'))
+      if (contactId) data.contact_id = contactId
+    }
     const clickId = await recordLinkClick(db, data, req.headers)
 
     // Smart links: a public link (a Reel, a QR poster…) has no customer on it,

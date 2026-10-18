@@ -138,3 +138,25 @@ export async function memberOr403(req: NextRequest, companyId: string | null | u
   if ((await requireCompanyAccess(req, db, companyId)).ok) return null
   return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
 }
+
+/**
+ * requireCompanyAccess, and the caller must also run the workspace: its
+ * owner, a team member with role owner or admin, or the platform admin.
+ * For settings that change how the business appears to customers (e.g. the
+ * email sending domain).
+ */
+export async function requireCompanyAdmin(req: NextRequest, db: any, companyId: string | null | undefined): Promise<{ ok: boolean; userId?: string; unavailable?: boolean; notAdmin?: boolean }> {
+  const access = await requireCompanyAccess(req, db, companyId)
+  if (!access.ok) return access
+  try {
+    const user = await verifyToken(db, bearerToken(req))
+    if (user?.email === SUPER_ADMIN) return access
+    const [{ data: co }, { data: tm }] = await Promise.all([
+      db.from('companies').select('owner_id').eq('id', companyId).maybeSingle(),
+      db.from('team_members').select('role, status').eq('company_id', companyId).eq('user_id', access.userId).limit(5),
+    ])
+    if (co?.owner_id && co.owner_id === access.userId) return access
+    if ((tm || []).some((r: any) => isStaffRow(r) && ['owner', 'admin'].includes(String(r.role || '').toLowerCase()))) return access
+    return { ok: false, userId: access.userId, notAdmin: true }
+  } catch { return { ok: false, unavailable: true } }
+}
