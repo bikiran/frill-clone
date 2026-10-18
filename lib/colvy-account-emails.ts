@@ -3,29 +3,18 @@
 // Routes keep their own logic (who gets it, links, dedupe, opt-outs) and only
 // call these for the content. Pass values raw: the layout escapes everything.
 
-import { colvyEmail, type EmailBlock, type EmailListItem } from '@/lib/colvy-email'
+import { colvyEmail, type EmailBlock } from '@/lib/colvy-email'
 
 export type Mail = { subject: string; html: string; text: string }
-
-/** What Colvy does, in a few plain rows (welcome and confirm emails). */
-export const COLVY_FEATURES: EmailListItem[] = [
-  { title: 'One shared inbox.', detail: 'SMS, email, live chat, Facebook and Instagram messages in one place.' },
-  { title: 'Calls and a business number.', detail: 'Answer, transfer and text from a local or 04 number.' },
-  { title: 'Contacts and CRM.', detail: 'Every customer’s messages, orders and notes on one card.' },
-  { title: 'Orders and bookings.', detail: 'WooCommerce and Shopify orders, plus online bookings.' },
-  { title: 'AI agents.', detail: 'Draft replies, chase follow-ups and answer reviews, with you in charge.' },
-  { title: 'Feedback, forms and surveys.', detail: 'Feedback boards, polls and surveys for your customers.' },
-]
 
 // ── Sign-up verification code (app/api/auth/otp/send) ───────────────────────
 
 export function signupCodeEmail(code: string, minutes = 10): Mail {
   const { html, text } = colvyEmail({
     preheader: `Your code is ${code}. It expires in ${minutes} minutes.`,
-    title: 'Your verification code',
-    intro: 'Enter this code to keep setting up your Colvy account.',
-    blocks: [{ type: 'code', code, note: `Expires in ${minutes} minutes` }],
-    secondary: 'Didn’t ask for this? You can ignore this email. Nobody can use the code without access to your inbox.',
+    title: 'Verify your email',
+    intro: 'Enter this 6-digit code to continue setting up your Colvy account.',
+    blocks: [{ type: 'code', code, note: `This code expires in ${minutes} minutes. If you didn’t request it, you can ignore this email.` }],
   })
   return { subject: `${code} is your Colvy verification code`, html, text }
 }
@@ -48,7 +37,7 @@ export function confirmEmail(o: {
       preheader: `Your code is ${code}. Enter it in the Colvy app.`,
       title: o.resend ? 'Your Colvy code' : 'Welcome to Colvy',
       intro: 'Enter this code in the Colvy app to confirm your email address.',
-      blocks: [{ type: 'code', code, note: 'Expires in an hour' }, ...address],
+      blocks: [{ type: 'code', code, note: 'This code expires in an hour.' }, ...address],
       secondary: o.resend
         ? 'Didn’t ask for this? You can ignore this email.'
         : 'Didn’t sign up for Colvy? You can ignore this email. Nobody can use the code without it.',
@@ -64,8 +53,6 @@ export function confirmEmail(o: {
     cta: { label: 'Confirm my email', url: link },
     more: [
       { type: 'link', url: link },
-      { type: 'heading', text: 'What you can do in Colvy' },
-      { type: 'list', items: COLVY_FEATURES.slice(0, 5) },
     ],
     secondary: 'This link expires in 24 hours. Didn’t sign up for Colvy? You can ignore this email.',
   })

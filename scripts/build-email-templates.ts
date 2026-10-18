@@ -15,7 +15,6 @@
 import { writeFileSync, existsSync, unlinkSync } from 'fs'
 import { join } from 'path'
 import { colvyEmail, type ColvyEmailInput } from '../lib/colvy-email'
-import { COLVY_FEATURES } from '../lib/colvy-account-emails'
 
 /** Stand-in URLs the layout accepts; swapped for Go template variables after rendering. */
 const URL_VARS: Record<string, string> = {
@@ -45,12 +44,10 @@ export const SUPABASE_TEMPLATES: SupabaseTemplate[] = [
     email: {
       preheader: 'Confirm your email to switch on your Colvy account.',
       title: 'Confirm your email',
-      intro: 'Welcome to Colvy. Thanks for signing up. Confirm your email address to switch on your account.',
+      intro: 'Thanks for signing up. Tap the button to confirm your email address.',
       cta: { label: 'Confirm my email', url: CONFIRM },
       more: [
         { type: 'link', url: CONFIRM },
-        { type: 'heading', text: 'What Colvy does' },
-        { type: 'list', items: COLVY_FEATURES },
       ],
       secondary: 'Didn’t sign up for Colvy? You can ignore this email.',
     },

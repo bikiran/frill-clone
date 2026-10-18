@@ -18,7 +18,6 @@
 // it understands is **bold**. Links must be https (mailto:/tel: for contacts).
 
 import { escapeHtml } from '@/lib/safe-html'
-import { COLVY_CONTACT } from '@/lib/colvy-contact'
 
 export const COLVY_TAGLINE = 'The all-in-one customer platform for small businesses'
 export const COLVY_LOGO_URL = 'https://colvy.com/icon-192.png'
@@ -135,14 +134,15 @@ function blockHtml(b: EmailBlock): string {
     case 'heading':
       return `<h2 style="margin:24px 0 10px;font-family:${FONT};font-size:17px;line-height:1.35;font-weight:700;color:${C.ink}">${inline(b.text)}</h2>`
     case 'code':
+      // Just the code, big and coral, on a soft tint: nothing else in the box.
       return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:4px 0 20px">
   <tr>
-    <td align="center" bgcolor="${C.coralTint}" style="background-color:${C.coralTint};border:1px solid ${C.coralLine};border-radius:12px;padding:22px 12px">
-      <div class="cv-code" style="font-family:${MONO};font-size:38px;line-height:44px;font-weight:700;letter-spacing:10px;color:${C.ink}">${escapeHtml(b.code)}</div>
-      ${b.note ? `<div style="margin-top:8px;font-family:${FONT};font-size:14px;line-height:1.5;color:${C.muted}">${inline(b.note)}</div>` : ''}
+    <td align="center" bgcolor="${C.coralTint}" style="background-color:${C.coralTint};border-radius:14px;padding:26px 12px">
+      <div class="cv-code" style="font-family:${FONT};font-size:40px;line-height:46px;font-weight:800;letter-spacing:10px;color:${C.coral}">${escapeHtml(b.code)}</div>
     </td>
   </tr>
-</table>`
+</table>${b.note ? `
+<p style="margin:0 0 16px;font-family:${FONT};font-size:14px;line-height:1.6;color:${C.faint}">${inline(b.note)}</p>` : ''}`
     case 'list':
       return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 16px">
 ${b.items.map((it, i) => `  <tr>
@@ -227,13 +227,6 @@ function blockText(b: EmailBlock): string {
   }
 }
 
-/** The contact line, HTML. */
-function contactHtml(): string {
-  const c = COLVY_CONTACT
-  const a = (href: string, label: string) => `<a href="${escapeHtml(href)}" style="color:${C.muted};font-weight:600;text-decoration:none">${escapeHtml(label)}</a>`
-  return `Questions? Call or text us on ${a(c.telHref, c.phoneDisplay)} or email ${a(c.mailHref, c.email)}.`
-}
-
 /** Render a Colvy email. Returns the HTML and the plain-text version. */
 export function colvyEmail(input: ColvyEmailInput): ColvyEmail {
   const year = input.year === false ? null : (input.year || new Date().getFullYear())
@@ -298,8 +291,7 @@ ${body}
         <tr>
           <td class="cv-pad" style="padding:20px 36px 8px;font-family:${FONT};font-size:12px;line-height:1.6;color:${C.faint}">
             ${input.footerNote ? `<p style="margin:0 0 10px;font-family:${FONT};font-size:12px;line-height:1.6;color:${C.faint}">${inline(input.footerNote)}</p>` : ''}
-            <p style="margin:0 0 10px;font-family:${FONT};font-size:12px;line-height:1.6;color:${C.faint}">${contactHtml()}</p>
-            <p style="margin:0;font-family:${FONT};font-size:12px;line-height:1.6;color:${C.faint}">&copy; ${copyright} &middot; ${escapeHtml(COLVY_TAGLINE)} &middot; <a href="${COLVY_SITE}" target="_blank" style="color:${C.faint};text-decoration:underline">colvy.com</a> &middot; <a href="${COLVY_SITE}/privacy" target="_blank" style="color:${C.faint};text-decoration:underline">Privacy</a></p>
+            <p style="margin:0;font-family:${FONT};font-size:12px;line-height:1.6;color:${C.faint}">&copy; ${copyright} &middot; <a href="${COLVY_SITE}" target="_blank" style="color:${C.faint};text-decoration:underline">colvy.com</a> &middot; <a href="${COLVY_SITE}/privacy" target="_blank" style="color:${C.faint};text-decoration:underline">Privacy</a></p>
           </td>
         </tr>
       </table>
@@ -312,8 +304,7 @@ ${body}
 
   const footer = [
     input.footerNote ? plain(input.footerNote) : '',
-    `Questions? Call or text us on ${COLVY_CONTACT.phoneDisplay} or email ${COLVY_CONTACT.email}.`,
-    `© ${copyright} · ${COLVY_TAGLINE} · ${COLVY_SITE}`,
+    `© ${copyright} · ${COLVY_SITE}`,
   ].filter(Boolean)
   const text = [
     input.kicker || '',
