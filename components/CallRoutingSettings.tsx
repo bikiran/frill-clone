@@ -465,7 +465,7 @@ export default function CallRoutingSettings({ companyId }: { companyId: string }
             <Info /><span>{summary}</span>
           </div>
           {(c.strategy === 'forward' || (c.strategy === 'in_order' && c.order.thenForward)) && (
-            <p style={hint}>Forwarded calls are recorded and summarised like any other call when your calls are recorded, and the forwarded minutes show on each call.</p>
+            <p style={hint}>Forwarded calls are recorded and summarised like any other call, and the forwarded minutes show on each call.</p>
           )}
 
           {editable && (
