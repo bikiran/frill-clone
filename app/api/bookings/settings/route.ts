@@ -4,6 +4,8 @@ import { requireCompanyAccess } from '@/lib/company-access'
 import {
   loadCompanyPublic, resolveBookingSettings, loadStaff, loadLocations, stripeReady, bookingPageUrl, MIGRATION_HINT,
 } from '@/lib/booking'
+import { availabilityChanged } from '@/lib/booking-waitlist'
+import { kickWaitlist } from '@/lib/booking-waitlist-queue'
 
 export const dynamic = 'force-dynamic'
 
@@ -45,11 +47,16 @@ export async function PATCH(req: NextRequest) {
     const companyId = String(body.companyId || '')
     if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     const clean = resolveBookingSettings(body.settings || {})
+    // The hours / people / closed days before this save, so the waitlist can
+    // offer whatever is newly free.
+    let before: any = undefined
+    try { const { data } = await db.from('companies').select('booking_settings').eq('id', companyId).maybeSingle(); before = data ? data.booking_settings : undefined } catch {}
     const { error } = await db.from('companies').update({ booking_settings: clean }).eq('id', companyId)
     if (error) {
       const missing = /booking_settings|schema cache|could not find/i.test(error.message)
       return NextResponse.json({ error: missing ? MIGRATION_HINT : error.message }, { status: 400 })
     }
+    if (before !== undefined && await availabilityChanged(db, companyId, before, clean)) kickWaitlist(db, req.nextUrl.origin)
     return NextResponse.json({ ok: true, settings: clean })
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || 'Failed' }, { status: 500 })

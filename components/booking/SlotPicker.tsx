@@ -6,6 +6,8 @@ import { ClockIcon } from '@/components/booking/icons'
 // Month calendar + time list for picking a booking slot. Used by the public
 // booking page, the customer's reschedule screen and the team's reschedule
 // dialog. Times can be shown in the visitor's own timezone or the business's.
+// With `onWaitlist` (the public page, when the business keeps a booking
+// waitlist) full days can be picked too, and offer "Join the waitlist".
 
 export type SlotsResponse = { timezone: string; slots: { start: string; seatsLeft?: number }[] }
 
@@ -27,7 +29,7 @@ function tzShort(tz: string, at?: number) {
 }
 const viewerTz = () => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC' } catch { return 'UTC' } }
 
-export default function SlotPicker({ accent = '#ff7a6b', businessTz, fetchSlots, selected, onSelect, reloadKey, compact }: {
+export default function SlotPicker({ accent = '#ff7a6b', businessTz, fetchSlots, selected, onSelect, reloadKey, compact, onWaitlist, maxDate }: {
   accent?: string
   businessTz: string
   fetchSlots: (from: string, to: string) => Promise<SlotsResponse>
@@ -35,6 +37,10 @@ export default function SlotPicker({ accent = '#ff7a6b', businessTz, fetchSlots,
   onSelect: (iso: string) => void
   reloadKey?: any
   compact?: boolean
+  /** Join the waitlist (for this day, or any day when null). */
+  onWaitlist?: (day: string | null) => void
+  /** The last day the service can be booked ('YYYY-MM-DD'): full days after it can't be waited for. */
+  maxDate?: string
 }) {
   const mine = useMemo(viewerTz, [])
   const [tz, setTz] = useState<string>(mine)
@@ -134,6 +140,13 @@ export default function SlotPicker({ accent = '#ff7a6b', businessTz, fetchSlots,
         .bk-day.on:active{transform:scale(.9)}
         .bk-day.on:hover{background:color-mix(in srgb,var(--bk-accent) 22%,#fff)}
         .bk-day.sel{background:var(--bk-accent)!important;color:#fff!important;transform:scale(1.06);box-shadow:0 6px 16px -6px color-mix(in srgb,var(--bk-accent) 80%,transparent)}
+        .bk-day.full{cursor:pointer;color:#9ca3af;text-decoration:line-through;text-decoration-color:#d1d5db}
+        .bk-day.full:hover{background:#f3f4f6;color:#6b7280}
+        .bk-day.full.sel{background:#fff!important;color:#111!important;text-decoration:none;box-shadow:inset 0 0 0 2px var(--bk-accent);transform:none}
+        .bk-wl{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:44px;padding:0 16px;border-radius:11px;border:1.5px solid var(--bk-accent);background:#fff;color:color-mix(in srgb,var(--bk-accent) 80%,#000);font-weight:700;font-size:14px;cursor:pointer;font-family:inherit;transition:background .2s,transform .15s}
+        .bk-wl:hover{background:color-mix(in srgb,var(--bk-accent) 8%,#fff)}
+        .bk-wl:active{transform:scale(.97)}
+        .bk-wl-link{border:none;background:none;padding:0;color:color-mix(in srgb,var(--bk-accent) 80%,#000);font:inherit;font-size:13px;font-weight:700;cursor:pointer;text-decoration:underline;text-underline-offset:3px}
         .bk-day.today::after{content:'';position:absolute;bottom:5px;width:4px;height:4px;border-radius:50%;background:currentColor}
         .bk-time{width:100%;min-height:46px;padding:11px 8px;border-radius:11px;border:1.5px solid color-mix(in srgb,var(--bk-accent) 35%,#fff);background:#fff;color:color-mix(in srgb,var(--bk-accent) 80%,#000);font-weight:700;font-size:14px;cursor:pointer;font-family:inherit;transition:all .12s}
         .bk-time{transition:background .22s cubic-bezier(.22,1,.36,1),border-color .2s,color .2s,transform .22s cubic-bezier(.34,1.56,.64,1),box-shadow .25s}
@@ -163,10 +176,12 @@ export default function SlotPicker({ accent = '#ff7a6b', businessTz, fetchSlots,
           {cells.map((c, i) => {
             if (!c) return <div key={`e${i}`} />
             const on = byDay.has(c)
+            // Waitlist: a full day still to come can be picked, to join the waitlist for it.
+            const full = !!onWaitlist && !on && !loading && c >= today && (!maxDate || c <= maxDate)
             return (
-              <button key={c} type="button" disabled={!on} onClick={() => pickDay(c)} aria-pressed={c === day}
-                aria-label={`${new Date(`${c}T12:00:00Z`).toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' })}${on ? `, ${byDay.get(c)!.length} time${byDay.get(c)!.length === 1 ? '' : 's'} free` : ', no times'}`}
-                className={`bk-day${on ? ' on' : ''}${c === day ? ' sel' : ''}${c === today ? ' today' : ''}`}>
+              <button key={c} type="button" disabled={!on && !full} onClick={() => pickDay(c)} aria-pressed={c === day}
+                aria-label={`${new Date(`${c}T12:00:00Z`).toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' })}${on ? `, ${byDay.get(c)!.length} time${byDay.get(c)!.length === 1 ? '' : 's'} free` : full ? ', fully booked, waitlist open' : ', no times'}`}
+                className={`bk-day${on ? ' on' : ''}${full ? ' full' : ''}${c === day ? ' sel' : ''}${c === today ? ' today' : ''}`}>
                 {Number(c.slice(8))}
               </button>
             )
@@ -188,7 +203,24 @@ export default function SlotPicker({ accent = '#ff7a6b', businessTz, fetchSlots,
       <div ref={timesRef} style={{ scrollMarginTop: 12 }}>
         {error ? <div style={{ color: '#b91c1c', fontSize: 13.5 }}>{error}</div>
           : loading && !slots.length ? <div style={{ color: '#9ca3af', fontSize: 13.5, paddingTop: 6 }}>Finding times…</div>
-          : !day ? <div style={{ color: '#6b7280', fontSize: 13.5, paddingTop: 6, lineHeight: 1.5 }}>{byDay.size ? 'Pick a day to see times.' : autoJumps.current >= 3 && month > today.slice(0, 7) ? 'No times available in the coming months. Please get in touch to book.' : 'No times available this month — try the next one.'}</div>
+          : !day ? (
+            <div style={{ color: '#6b7280', fontSize: 13.5, paddingTop: 6, lineHeight: 1.5 }}>
+              {byDay.size ? 'Pick a day to see times.' : autoJumps.current >= 3 && month > today.slice(0, 7) ? (onWaitlist ? 'No times available in the coming months.' : 'No times available in the coming months. Please get in touch to book.') : 'No times available this month — try the next one.'}
+              {onWaitlist && !byDay.size && (
+                <div style={{ marginTop: 12 }}>
+                  <button type="button" className="bk-wl" onClick={() => onWaitlist(null)}>Join the waitlist</button>
+                  <div style={{ fontSize: 12.5, color: '#9ca3af', marginTop: 8 }}>We’ll text you if a spot opens up.</div>
+                </div>
+              )}
+            </div>
+          )
+          : !daySlots.length && onWaitlist ? (
+            <div style={{ paddingTop: 2 }}>
+              <div style={{ fontWeight: 700, fontSize: 14.5, color: '#111', marginBottom: 6 }}>{dayLabel}</div>
+              <div style={{ color: '#6b7280', fontSize: 13.5, lineHeight: 1.5, marginBottom: 12 }}>Fully booked. Join the waitlist and we’ll text you if a spot opens up.</div>
+              <button type="button" className="bk-wl" onClick={() => onWaitlist(day)} style={{ width: '100%' }}>Join the waitlist</button>
+            </div>
+          )
           : (
             <>
               <div style={{ fontWeight: 700, fontSize: 14.5, color: '#111', marginBottom: 10 }}>{dayLabel}</div>
@@ -207,6 +239,11 @@ export default function SlotPicker({ accent = '#ff7a6b', businessTz, fetchSlots,
                   </div>
                 ))}
               </div>
+              {onWaitlist && (
+                <div style={{ marginTop: 6, fontSize: 13, color: '#6b7280' }}>
+                  None of these suit? <button type="button" className="bk-wl-link" onClick={() => onWaitlist(day)}>Join the waitlist</button>
+                </div>
+              )}
             </>
           )}
       </div>

@@ -8,6 +8,7 @@ import {
   loadCompanyPublic, resolveBookingSettings, loadStaff, loadLocations, availability, createBooking,
   publicService, isMissingBookingSchema, stripeReady, amountDue, loadInvite, invitePrefill, staffOutlets,
 } from '@/lib/booking'
+import { prepareClaim, markOfferGone } from '@/lib/booking-waitlist'
 
 export const dynamic = 'force-dynamic'
 
@@ -23,7 +24,9 @@ const admin = () => createClient(
 // GET ?op=slots&slug=&service=&staff=any|id&location=&from=&to= → bookable start times (ISO)
 // GET ?op=invite&slug=&token=                        → details to pre-fill (personal link)
 // POST { slug|domain, serviceId, staff, startsAt, name, email, phone, timezone,
-//        answers, locationId, address, notes }        → { token, checkoutUrl? }
+//        answers, locationId, address, notes, offer? }  → { token, checkoutUrl? }
+//   offer: a booking-waitlist claim token (lib/booking-waitlist.ts) — the
+//   booking is marked "From waitlist" and may take over a time held for them.
 
 async function loadPage(db: any, sp: URLSearchParams | any) {
   const company = await loadCompanyPublic(db, { slug: sp.get ? sp.get('slug') : sp.slug, domain: sp.get ? sp.get('domain') : sp.domain })
@@ -55,7 +58,7 @@ export async function GET(req: NextRequest) {
       const outletIds = new Set<string>(locations.map((l: any) => l.id))
       return NextResponse.json({
         company: { name: company.name, slug: company.slug, logo_url: company.logo_url, accent_color: company.accent_color, hide_powered_by: await hidesPoweredBy(db, company.id, company) },
-        page: { show_in_widget: settings.show_in_widget, title: settings.page_title, intro: settings.intro, require_phone: settings.require_phone, require_email: settings.require_email, cancel_hours: settings.cancel_hours, refund_on_cancel: settings.refund_on_cancel, late_cancel: settings.late_cancel, allow_reschedule: settings.allow_reschedule },
+        page: { show_in_widget: settings.show_in_widget, title: settings.page_title, intro: settings.intro, require_phone: settings.require_phone, require_email: settings.require_email, cancel_hours: settings.cancel_hours, refund_on_cancel: settings.refund_on_cancel, late_cancel: settings.late_cancel, allow_reschedule: settings.allow_reschedule, waitlist: settings.waitlist.enabled },
         timezone: settings.timezone,
         // A paid service can't be booked until the business connects Stripe.
         services: (services || []).filter((s: any) => payReady || amountDue(s) === 0).map(publicService),
@@ -141,21 +144,38 @@ export async function POST(req: NextRequest) {
     const staffChoice = typeof b.staff === 'string' && /^[0-9a-f-]{36}$/i.test(b.staff) ? b.staff : 'any'
     const tz = clean(b.timezone, 60) || null
 
+    // From a waitlist text: the link must be for this business, service and time.
+    let waitlist: { offerId: string; heldBookingId: string | null } | null = null
+    if (typeof b.offer === 'string' && b.offer) {
+      const c = await prepareClaim(db, company, b.offer, service.id, startMs)
+      if ('error' in c) return NextResponse.json({ error: c.error }, { status: c.status })
+      waitlist = { offerId: c.offerId, heldBookingId: c.heldBookingId }
+    }
+
     const r = await createBooking(db, {
-      company, service, staffChoice, startMs,
+      company, service, staffChoice: waitlist ? 'any' : staffChoice, startMs,
       customer: { name, email, phone, timezone: tz },
       answers,
       locationId: typeof b.locationId === 'string' ? b.locationId : null,
       address: clean(b.address, 300) || null,
       notes: clean(b.notes, 2000) || null,
       origin: req.nextUrl.origin,
-      source: ['link', 'widget', 'embed', 'invite'].includes(b.source) ? b.source : 'page',
+      source: waitlist ? 'waitlist' : ['link', 'widget', 'embed', 'invite'].includes(b.source) ? b.source : 'page',
+      heldBookingId: waitlist?.heldBookingId || null,
+      waitlistOfferId: waitlist?.offerId || null,
       inviteToken: typeof b.invite === 'string' ? b.invite : null,
       // The Reel / QR click that opened the page — checked against this
       // business when the booking is confirmed (lib/link-stitch.ts).
       clickRef: cleanClickRef(b.clv),
     })
-    if ('error' in r) return NextResponse.json({ error: r.error }, { status: r.status || 400 })
+    if ('error' in r) {
+      // Someone else got there first: they stay on the waitlist.
+      if (waitlist && r.status === 409) {
+        await markOfferGone(db, waitlist.offerId)
+        return NextResponse.json({ error: 'Sorry, someone else just booked that spot. You’re still on the waitlist — we’ll text you if another opens.', waitlistGone: true }, { status: 409 })
+      }
+      return NextResponse.json({ error: r.error }, { status: r.status || 400 })
+    }
     return NextResponse.json(r)
   } catch (e: any) {
     if (isMissingBookingSchema(e)) return NextResponse.json({ error: 'Online booking isn’t available yet.' }, { status: 503 })

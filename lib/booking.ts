@@ -29,6 +29,8 @@ import { attributeBookingToLinks } from '@/lib/link-attribution'
 import { ilikeExact, exactEmailRow, phoneKey } from '@/lib/phone'
 import { loadStaffRows } from '@/lib/team-list'
 import { worksAt } from '@/lib/booking-outlets'
+import { resolveWaitlistSettings, type WaitlistSettings } from '@/lib/booking-waitlist-rules'
+import { bookingTimeFreed, linkOfferToBooking, markWaitlistBooked } from '@/lib/booking-waitlist-queue'
 export { worksAt, staffOutlets, outletGaps } from '@/lib/booking-outlets'
 
 const MIN = 60_000
@@ -66,6 +68,8 @@ export type BookingSettings = {
   reminder_2h: boolean
   followup_review: boolean
   show_in_widget: boolean
+  /** The booking waitlist (lib/booking-waitlist.ts); off unless switched on. */
+  waitlist: WaitlistSettings
 }
 
 export function resolveBookingSettings(raw: any): BookingSettings {
@@ -104,6 +108,7 @@ export function resolveBookingSettings(raw: any): BookingSettings {
     reminder_2h: s.reminder_2h !== false,
     followup_review: s.followup_review !== false,
     show_in_widget: s.show_in_widget !== false,
+    waitlist: resolveWaitlistSettings(s.waitlist),
   }
 }
 
@@ -480,6 +485,10 @@ export type CreateInput = {
   inviteToken?: string | null
   /** The tracked click (?clv=) the booking page was opened through, if any. */
   clickRef?: string | null
+  /** Booking a time held for this customer by the waitlist ("in order"): take that hold over. */
+  heldBookingId?: string | null
+  /** The waitlist offer this booking comes from (its claim link). */
+  waitlistOfferId?: string | null
 }
 
 export type CreateResult = { ok: true; token: string; checkoutUrl?: string | null; state: 'confirmed' | 'pending' } | { ok: false; error: string; status?: number }
@@ -505,7 +514,8 @@ export async function createBooking(db: any, input: CreateInput): Promise<Create
 
   // Is the time still bookable — and by whom?
   const date = dateInTz(input.startMs, tz)
-  const { slots, busy } = await availability(db, { company, settings, service, staff, staffFilter: input.staffChoice, fromDate: date, toDate: date, locationId })
+  // A waitlist hold for this customer doesn't make the time busy for them.
+  const { slots, busy } = await availability(db, { company, settings, service, staff, staffFilter: input.staffChoice, fromDate: date, toDate: date, locationId, excludeBookingId: input.heldBookingId || null })
   const slot = slots.find(s => s.start === input.startMs)
   if (!slot || !slot.resources.length) return { ok: false, error: 'Sorry, that time was just taken. Please pick another.', status: 409 }
 
@@ -525,7 +535,24 @@ export async function createBooking(db: any, input: CreateInput): Promise<Create
   const holdUntil = new Date(Date.now() + (needsPayment ? PAYMENT_HOLD_MINS : INSTANT_HOLD_MINS) * MIN).toISOString()
 
   let bookingId: string | null = null
-  for (const cand of candidates) {
+  // The waitlist held this time for them ("in order"): the hold row becomes
+  // their booking — claimed only while it's still a live hold at this time,
+  // so it can't be taken twice. A lapsed hold falls through to the normal
+  // claim below (the time may still be free).
+  if (input.heldBookingId) {
+    const { data: took } = await db.from('bookings').update({
+      service_name: service.name, staff_choice: 'any', location_label: locationLabel, address,
+      timezone: tz, status: 'pending', hold_expires_at: holdUntil,
+      customer_name: input.customer.name, customer_email: input.customer.email, customer_phone: input.customer.phone,
+      customer_timezone: input.customer.timezone, answers: input.answers, notes: input.notes,
+      price_cents: service.price_cents || 0, amount_due_cents: due, currency: service.currency || 'aud',
+      payment_mode: service.payment_mode || 'none', payment_status: needsPayment ? 'pending' : 'none',
+      manage_token: token, source: input.source || 'waitlist', updated_at: new Date().toISOString(),
+    }).eq('id', input.heldBookingId).eq('company_id', company.id).eq('status', 'pending').eq('source', 'waitlist_hold')
+      .eq('starts_at', new Date(startMs).toISOString()).gt('hold_expires_at', new Date().toISOString()).select('id')
+    if (took?.length) bookingId = input.heldBookingId
+  }
+  for (const cand of bookingId ? [] : candidates) {
     const staffName = cand ? (staff.find(s => s.id === cand)?.name || null) : null
     const { data, error } = await db.rpc('claim_booking_slot', {
       p_company: company.id, p_service: service.id, p_staff: cand,
@@ -552,6 +579,7 @@ export async function createBooking(db: any, input: CreateInput): Promise<Create
     if (data) { bookingId = data as string; break }
   }
   if (!bookingId) return { ok: false, error: 'Sorry, that time was just taken. Please pick another.', status: 409 }
+  if (input.waitlistOfferId) await linkOfferToBooking(db, input.waitlistOfferId, bookingId)
 
   // A personal link from the inbox → the booking joins that customer's thread.
   if (input.inviteToken) {
@@ -665,6 +693,8 @@ export async function confirmBooking(db: any, bookingId: string, opts: { origin:
   const { data: claimed } = await db.from('bookings').update(patch).eq('id', b.id).eq('status', 'pending').select('id')
   if (!claimed?.length) return { ok: true, already: true }
   const bk = { ...b, ...patch }
+  // Booked from a waitlist offer: they're off the list.
+  if (b.source === 'waitlist') await markWaitlistBooked(db, b.id)
 
   // CRM: contact + conversation, so the booking lives with the customer.
   let contactId: string | null = null, conversationId: string | null = null
@@ -704,7 +734,7 @@ export async function confirmBooking(db: any, bookingId: string, opts: { origin:
   // Calendar
   const answers = (Array.isArray(b.answers) ? b.answers : []).filter((a: any) => a?.value)
   const notes = [
-    b.source === 'repeat' ? 'Regular booking, added by the team.' : `Booked online${b.staff_choice === 'any' && b.staff_name ? ' (any staff)' : ''}.`,
+    b.source === 'repeat' ? 'Regular booking, added by the team.' : `Booked online${b.source === 'waitlist' ? ' from the waitlist' : ''}${b.staff_choice === 'any' && b.staff_name ? ' (any staff)' : ''}.`,
     b.customer_phone ? `Phone: ${b.customer_phone}` : '',
     b.customer_email ? `Email: ${b.customer_email}` : '',
     ...answers.map((a: any) => `${a.label}: ${a.value}`),
@@ -808,6 +838,8 @@ export async function cancelBooking(db: any, bookingId: string, opts: { by: 'cus
   const { data: claimed } = await db.from('bookings').update(patch).eq('id', b.id).in('status', ['pending', 'confirmed']).select('id')
   if (!claimed?.length) return { ok: false, error: 'This booking is already cancelled or finished.' }
   const bk = { ...b, ...patch }
+  // Its time is free again: offer it to the waitlist (if the business uses one).
+  await bookingTimeFreed(db, company?.booking_settings, b, opts.origin)
 
   let refunded = 0, refundError: string | undefined
   if (opts.refund && b.payment_status === 'paid') {
@@ -860,6 +892,8 @@ export async function rescheduleBooking(db: any, bookingId: string, opts: { star
     if (data) { moved = data as string; newStaff = cand; break }
   }
   if (!moved) return { ok: false, error: 'Sorry, that time was just taken. Please pick another.', status: 409 }
+  // The old time is free again: offer it to the waitlist.
+  await bookingTimeFreed(db, company?.booking_settings, b, opts.origin)
 
   const staffName = newStaff ? (staff.find(s => s.id === newStaff)?.name || null) : null
   const oldWhen = whenText(b)

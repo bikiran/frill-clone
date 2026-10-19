@@ -21,7 +21,7 @@ const STATUS: Record<string, { label: string; bg: string; c: string; bar: string
 const PAY: Record<string, string> = { paid: 'Paid', refunded: 'Refunded', partially_refunded: 'Part refunded', pending: 'Unpaid' }
 const RANGES: [string, string][] = [['all', 'All dates'], ['today', 'Today'], ['tomorrow', 'Tomorrow'], ['7d', 'Next 7 days'], ['week', 'This week'], ['month', 'This month']]
 const SORTS: [string, string][] = [['start', 'Start time (earliest)'], ['start_desc', 'Start time (latest)'], ['booked', 'Recently booked']]
-const SOURCE: Record<string, string> = { widget: 'Chat widget', embed: 'Website', invite: 'Personal link', link: 'Shared link' }
+const SOURCE: Record<string, string> = { widget: 'Chat widget', embed: 'Website', invite: 'Personal link', link: 'Shared link', waitlist: 'From waitlist' }
 const RepeatIcon = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 2l4 4-4 4" /><path d="M3 11v-1a4 4 0 0 1 4-4h14" /><path d="M7 22l-4-4 4-4" /><path d="M21 13v1a4 4 0 0 1-4 4H3" /></svg>
 
 const PhoneIcon = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z" /></svg>
@@ -152,7 +152,8 @@ function Row({ b, i, t, dayChip, onAct, onMove, onCancel, onNoShow, onRepeat, ca
   b: any; i: number; t: (iso: string) => string; dayChip: (iso: string) => string[]
   onAct: (b: any, a: string) => void; onMove: (b: any) => void; onCancel: (b: any) => void; onNoShow: (b: any) => void; onRepeat: (b: any) => void; canRepeat: boolean; flash: (m: string) => void
 }) {
-  const st = STATUS[b.status] || STATUS.confirmed
+  // A time the waitlist is holding for someone ("in order") isn't awaiting payment.
+  const st = b.status === 'pending' && b.source === 'waitlist_hold' ? { ...STATUS.pending, label: 'Held for the waitlist' } : STATUS[b.status] || STATUS.confirmed
   const past = Date.parse(b.ends_at) < Date.now()
   const live = b.status === 'confirmed' && Date.parse(b.starts_at) <= Date.now() && !past
   const [dTop, dSub] = dayChip(b.starts_at)

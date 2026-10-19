@@ -15,7 +15,7 @@ export const COMING_SOON = {
   callForwarding: false,  // forwarding calls to an outside number (call routing, V399)
   internationalCalling: true,
   hdAudio: false,         // Opus HD on the app / browser side of calls (phone network legs stay narrowband)
-  bookingWaitlist: true,  // offering freed-up booking slots to a waitlist
+  bookingWaitlist: false, // offering freed-up booking slots to a waitlist (V400)
   outletStock: false,     // stock for each store: Shopify locations; WooCommerce with the Stock Locations plugin (V401)
 } as const
 

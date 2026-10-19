@@ -8,7 +8,8 @@
 //      through the existing review dispatcher, with its suppression rules.
 //   3. Rebook nudges — "time for your next one?" N days later, for services
 //      that set it, unless they've already booked again.
-//   4. Tidy — lapsed unpaid holds become 'expired'.
+//   4. Tidy — lapsed unpaid holds become 'expired' (and their time is queued
+//      for the booking waitlist, lib/booking-waitlist.ts, if the business has one).
 //
 // Every send is claimed first (update … where <col> is null) so overlapping
 // runs never double-send. Needs migrations V323 + V324.
@@ -16,6 +17,7 @@
 import { resolveBookingSettings, customerMessage, PUBLIC_COMPANY_COLS, isMissingBookingSchema } from '@/lib/booking'
 import { zonedParts } from '@/lib/booking-time'
 import { isWithinSendingHours } from '@/lib/campaign-sender'
+import { bookingTimeFreed } from '@/lib/booking-waitlist-queue'
 
 const MIN = 60_000
 const HOUR = 3_600_000
@@ -149,8 +151,14 @@ export async function runBookingSweep(db: any, origin: string): Promise<SweepRes
   // ── 4. Lapsed unpaid holds ───────────────────────────────────────────────
   try {
     const { data: exp } = await db.from('bookings').update({ status: 'expired' })
-      .eq('status', 'pending').lt('hold_expires_at', iso(now - 10 * MIN)).select('id')
+      .eq('status', 'pending').lt('hold_expires_at', iso(now - 10 * MIN)).select('id, company_id, service_id, staff_id, starts_at, busy_from, busy_until, source')
     out.expired = exp?.length || 0
+    // An unpaid hold that lapsed freed its time: offer it to the waitlist
+    // (the waitlist's own "in order" holds are moved on by its worker).
+    for (const b of exp || []) {
+      if (b.source === 'waitlist_hold' || Date.parse(b.starts_at) <= now) continue
+      try { const company = await companyOf(b.company_id); if (company) await bookingTimeFreed(db, company.booking_settings, b, origin, { kick: false }) } catch {}
+    }
   } catch {}
 
   return out

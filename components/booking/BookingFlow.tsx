@@ -8,6 +8,9 @@ import { CalendarIcon, LockIcon } from '@/components/booking/icons'
 import { askHostForClickRef, captureClickRef } from '@/lib/click-ref-client'
 
 // The public booking page: service → (staff) → time → details → pay/confirm.
+// A full day can lead to the booking waitlist instead (when the business keeps
+// one), and a waitlist text's link (?offer=<token>) opens straight on the
+// freed time with the customer's details filled in.
 // Rendered at colvy.com/book/<slug>[/<service>], <slug>.colvy.com/book[/<service>]
 // and on a custom domain at /book[/<service>].
 
@@ -17,10 +20,11 @@ type Service = {
   deposit_cents: number; currency: string; location_mode: 'outlet' | 'customer' | 'phone' | 'video'
   location_ids: string[]; staff_ids: string[]; questions: { id: string; label: string; type: string; options: string[]; required: boolean }[]
   color: string | null; image_url: string | null
+  max_days_ahead?: number
 }
 type PageData = {
   company: { name: string; slug: string; logo_url: string | null; accent_color: string | null; hide_powered_by?: boolean }
-  page: { title: string; intro: string; require_phone: boolean; require_email: boolean; cancel_hours: number; refund_on_cancel: boolean; late_cancel: string; allow_reschedule: boolean }
+  page: { title: string; intro: string; require_phone: boolean; require_email: boolean; cancel_hours: number; refund_on_cancel: boolean; late_cancel: string; allow_reschedule: boolean; waitlist?: boolean }
   timezone: string
   services: Service[]
   staff: { id: string; name: string; avatar_url: string | null; locations?: string[] }[]
@@ -47,6 +51,17 @@ const I = {
   users: 'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75',
 }
 
+type OfferView = {
+  state: 'open' | 'held' | 'gone' | 'expired' | 'claimed' | 'booked' | 'closed'
+  token: string; service: { id: string; slug: string; name: string } | null; start: string; holdUntil: string | null
+  mode: 'first' | 'order'; prefill: { name: string; phone: string; email: string }; wants: string; entryStatus: string
+}
+type Window = 'any' | 'morning' | 'afternoon'
+
+const dateInZone = (ms: number, tz: string) => new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(ms)).slice(0, 10)
+const plusDays = (d: string, n: number) => { const t = new Date(Date.parse(`${d}T12:00:00Z`) + n * 86400000); return t.toISOString().slice(0, 10) }
+const dayShort = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' }).replace(',', '')
+
 function Avatar({ name, url, size = 34, accent }: { name: string; url?: string | null; size?: number; accent: string }) {
   if (url) return <img src={url} alt="" style={{ width: size, height: size, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
   const initials = name.split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase()
@@ -60,11 +75,12 @@ export default function BookingFlow({ slug, domain, initialService }: { slug?: s
   const [staff, setStaff] = useState<string>('any')
   const [locationId, setLocationId] = useState<string>('')
   const [slot, setSlot] = useState<string | null>(null)
-  const [step, setStepRaw] = useState<'service' | 'time' | 'details'>('service')
+  type Step = 'service' | 'time' | 'details' | 'waitlist'
+  const [step, setStepRaw] = useState<Step>('service')
   const [dir, setDir] = useState<'f' | 'b'>('f')
   const mainRef = useRef<HTMLElement>(null)
-  const ORDER = { service: 0, time: 1, details: 2 }
-  const setStep = (next: 'service' | 'time' | 'details') => {
+  const ORDER = { service: 0, time: 1, details: 2, waitlist: 2 }
+  const setStep = (next: Step) => {
     setDir(ORDER[next] >= ORDER[step] ? 'f' : 'b')
     setStepRaw(next)
     // On phones the step starts below the summary — bring it into view.
@@ -77,6 +93,12 @@ export default function BookingFlow({ slug, domain, initialService }: { slug?: s
   const [answers, setAnswers] = useState<Record<string, any>>({})
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
+  // Booking waitlist: the join form, and a waitlist text's offer (?offer=).
+  const [wl, setWl] = useState<{ mode: 'days' | 'range'; days: string[]; from: string; to: string; window: Window; consent: boolean; website: string; addDay: string }>({ mode: 'days', days: [], from: '', to: '', window: 'any', consent: false, website: '', addDay: '' })
+  const [wlDone, setWlDone] = useState<{ wants: string; smsBlocked: boolean; phone: string } | null>(null)
+  const [offer, setOffer] = useState<OfferView | null>(null)
+  const [offerNote, setOfferNote] = useState('')
+  const pendingSlot = useRef<string | null>(null)
 
   const query = slug ? `slug=${encodeURIComponent(slug)}` : `domain=${encodeURIComponent(domain || '')}`
   // ?i=<token> personal link from the inbox · ?embed=1 inside a website · ?src=widget|link
@@ -87,21 +109,42 @@ export default function BookingFlow({ slug, domain, initialService }: { slug?: s
     const sp = new URLSearchParams(window.location.search)
     const invite = sp.get('i')
     const embed = sp.get('embed') === '1'
+    const offerToken = sp.get('offer')
+    const wantsWaitlist = sp.get('waitlist') === '1'
     setCtx({ invite, embed, src: invite ? 'invite' : embed ? 'embed' : (sp.get('src') === 'widget' ? 'widget' : sp.get('src') === 'link' ? 'link' : 'page'), clv: captureClickRef() })
     Promise.all([
       fetch(`/api/book?op=page&${query}`).then(r => r.json().then(d => ({ ok: r.ok, d }))),
       invite ? fetch(`/api/book?op=invite&${query}&token=${encodeURIComponent(invite)}`).then(r => r.json()).catch(() => ({})) : Promise.resolve({}),
-    ]).then(([{ ok, d }, inv]: any) => {
+      offerToken ? fetch(`/api/book/waitlist?op=offer&${query}&token=${encodeURIComponent(offerToken)}`).then(r => r.json()).catch(() => ({})) : Promise.resolve({}),
+    ]).then(([{ ok, d }, inv, of]: any) => {
       if (!ok || !d?.company || !d.page || !Array.isArray(d.services)) { setLoadError(d?.error || 'This booking page isn’t available.'); return }
       d = { ...d, staff: d.staff || [], locations: d.locations || [] }
       setData(d)
       try { document.title = `Book online · ${d.company.name}` } catch {}
       const prefill = inv?.prefill
       if (prefill) setForm(f => ({ ...f, name: prefill.name || f.name, email: prefill.email || f.email, phone: prefill.phone || f.phone }))
+      // A waitlist text's link: straight to the freed time, details filled in.
+      const ov: OfferView | null = of?.offer || null
+      if (ov) {
+        setOffer(ov)
+        setForm(f => ({ ...f, name: ov.prefill.name || f.name, phone: ov.prefill.phone || f.phone, email: ov.prefill.email || f.email }))
+        const svc = ov.service ? d.services.find((s: Service) => s.id === ov.service!.id) : null
+        if (svc && (ov.state === 'open' || ov.state === 'held')) {
+          pendingSlot.current = ov.start
+          setService(svc); setStep('details')
+          return
+        }
+        setOfferNote(ov.state === 'gone' ? 'Sorry, someone else booked that spot. You’re still on the waitlist, and we’ll text you if another opens. You can also pick any free time below.'
+          : ov.state === 'claimed' || ov.state === 'booked' ? 'You’ve already booked from the waitlist. Check your confirmation for the details.'
+          : ov.state === 'closed' ? 'You left the waitlist, so this spot wasn’t held for you. You can still pick any free time below.'
+          : ov.entryStatus === 'waiting' || ov.entryStatus === 'offered' ? 'That spot has passed. You’re still on the waitlist, and we’ll text you if another opens.'
+          : 'That spot has passed. You can pick any free time below.')
+        if (svc) { setService(svc); setStep('time'); return }
+      } else if (offerToken) setOfferNote('This waitlist link has expired. You can pick any free time below.')
       const want = initialService || prefill?.serviceId
       const pre = want ? d.services.find((s: Service) => s.slug === want || s.id === want) : null
       const only = d.services.length === 1 ? d.services[0] : null
-      if (pre || only) { setService(pre || only); setStep('time') }
+      if (pre || only) { setService(pre || only); setStep(wantsWaitlist && d.page.waitlist ? 'waitlist' : 'time') }
     }).catch(() => setLoadError('Couldn’t load this page. Please refresh.'))
   }, [query, initialService])
   // Embedded on the business's website, the Reel / QR click (?clv=) is on the
@@ -126,7 +169,7 @@ export default function BookingFlow({ slug, domain, initialService }: { slug?: s
     return here.length ? here : all
   }, [data, service, serviceLocations, locationId])
 
-  useEffect(() => { setStaff('any'); setSlot(null); setLocationId(serviceLocations.length === 1 ? serviceLocations[0].id : '') }, [service?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setStaff('any'); setSlot(pendingSlot.current); pendingSlot.current = null; setLocationId(serviceLocations.length === 1 ? serviceLocations[0].id : '') }, [service?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const fetchSlots = useCallback(async (from: string, to: string) => {
     // The outlet matters: only people who work there are offered.
@@ -137,6 +180,43 @@ export default function BookingFlow({ slug, domain, initialService }: { slug?: s
   }, [query, service?.id, staff, locationId])
 
   const due = service ? (service.payment_mode === 'full' ? service.price_cents : service.payment_mode === 'deposit' ? service.deposit_cents : 0) : 0
+  // Booking the time a waitlist text offered: the claim goes with the booking.
+  const fromOffer = !!offer && (offer.state === 'open' || offer.state === 'held') && !!slot && !!service && offer.service?.id === service.id && Date.parse(offer.start) === Date.parse(slot)
+  const today = dateInZone(Date.now(), tz)
+  const lastDay = service ? plusDays(today, service.max_days_ahead || 60) : plusDays(today, 60)
+  const openWaitlist = (day: string | null) => {
+    setError(''); setWlDone(null)
+    setWl(w => day ? { ...w, mode: 'days', days: [day], addDay: '' } : { ...w, mode: 'range', days: [], from: today, to: plusDays(today, 13), addDay: '' })
+    setStep('waitlist')
+  }
+  const joinWaitlist = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!service || submitting) return
+    if (wl.mode === 'days' && !wl.days.length) { setError('Add at least one day.'); return }
+    if (!wl.consent) { setError('Please tick the box so we can text you when a spot opens.'); return }
+    setSubmitting(true); setError('')
+    try {
+      const r = await fetch('/api/book/waitlist', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'join', slug, domain, serviceId: service.id, name: form.name, phone: form.phone, email: form.email,
+          ...(wl.mode === 'days' ? { days: wl.days } : { from: wl.from, to: wl.to }), window: wl.window,
+          locationId: locationId || null, consent: wl.consent, website: wl.website,
+        }),
+      })
+      const d = await r.json().catch(() => ({}))
+      if (!r.ok) { setError(d.error || 'Something went wrong — please try again.'); return }
+      setWlDone({ wants: d.wants || '', smsBlocked: !!d.smsBlocked, phone: form.phone })
+    } catch { setError('Couldn’t reach the server — check your connection and try again.') }
+    finally { setSubmitting(false) }
+  }
+  const leaveWaitlist = async () => {
+    if (!offer) return
+    try {
+      await fetch('/api/book/waitlist', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'leave', slug, domain, token: offer.token }) })
+      setOffer({ ...offer, state: 'closed' }); setOfferNote('You’ve left the waitlist. You won’t get any more texts about spots opening.'); setSlot(null); setStep('time')
+    } catch {}
+  }
   const staffName = staff !== 'any' ? data?.staff.find(s => s.id === staff)?.name : null
   const loc = serviceLocations.find(l => l.id === locationId)
 
@@ -152,11 +232,13 @@ export default function BookingFlow({ slug, domain, initialService }: { slug?: s
           name: form.name, email: form.email, phone: form.phone, address: form.address, notes: form.notes,
           answers, timezone: viewerTz(),
           source: ctx.src, invite: ctx.invite, clv: ctx.clv || hostClv.current,
+          ...(fromOffer ? { offer: offer!.token } : {}),
         }),
       })
       const d = await r.json()
       if (!r.ok) {
         setError(d.error || 'Something went wrong — please try again.')
+        if (d.waitlistGone && offer) setOffer({ ...offer, state: 'gone' })
         if (r.status === 409) { setSlot(null); setStep('time') }
         setSubmitting(false)
         return
@@ -224,8 +306,8 @@ export default function BookingFlow({ slug, domain, initialService }: { slug?: s
         {summary}
         <main className="bk-main" ref={mainRef}>
           <div key={step} className={dir === 'f' ? 'bk-step-f' : 'bk-step-b'}>
-          {step !== 'service' && (data.services.length > 1 || step === 'details') && (
-            <button type="button" onClick={() => { setError(''); setStep(step === 'details' ? 'time' : 'service') }} style={backBtn}>
+          {step !== 'service' && (data.services.length > 1 || step === 'details' || step === 'waitlist') && !(step === 'waitlist' && wlDone) && (
+            <button type="button" onClick={() => { setError(''); setStep(step === 'details' || step === 'waitlist' ? 'time' : 'service') }} style={backBtn}>
               <Icon d={I.back} size={16} /> Back
             </button>
           )}
@@ -289,9 +371,11 @@ export default function BookingFlow({ slug, domain, initialService }: { slug?: s
                   </div>
                 </div>
               )}
+              {offerNote && <div style={noteBox}>{offerNote}</div>}
               <h2 style={h2}>Pick a time</h2>
               <SlotPicker accent={accent} businessTz={tz} fetchSlots={fetchSlots} selected={slot} reloadKey={`${service.id}:${staff}:${locationId}`}
-                onSelect={iso => { setSlot(iso); setError('') }} />
+                onSelect={iso => { setSlot(iso); setError('') }}
+                onWaitlist={data.page.waitlist && !(serviceLocations.length > 1 && !locationId) ? openWaitlist : undefined} maxDate={lastDay} />
               {error && <div style={errBox}>{error}</div>}
               <div className={`bk-cta${slot ? ' on' : ''}`}>
                 {slot && <span className="bk-cta-sum">{slotLabel}</span>}
@@ -304,6 +388,14 @@ export default function BookingFlow({ slug, domain, initialService }: { slug?: s
 
           {step === 'details' && service && slot && (
             <form onSubmit={submit}>
+              {fromOffer && (
+                <div style={{ ...noteBox, background: `color-mix(in srgb, ${accent} 8%, #fff)`, borderColor: `color-mix(in srgb, ${accent} 25%, #fff)`, color: '#374151' }}>
+                  <b style={{ color: '#111' }}>A spot opened up from the waitlist.</b>{' '}
+                  {offer!.state === 'held' && offer!.holdUntil
+                    ? <>It’s held for you until {new Date(offer!.holdUntil).toLocaleTimeString('en-AU', { timeZone: viewerTz(), hour: 'numeric', minute: '2-digit' }).replace(' ', '').toLowerCase()}.</>
+                    : <>It goes to whoever books first.</>}
+                </div>
+              )}
               <h2 style={h2}>Your details</h2>
               <div className="bk-fields">
                 <Field label="Full name" required><input className="bk-in" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} autoComplete="name" required /></Field>
@@ -334,6 +426,7 @@ export default function BookingFlow({ slug, domain, initialService }: { slug?: s
               <div style={{ marginTop: 16, padding: '12px 14px', borderRadius: 12, background: '#f9fafb', border: '1px solid #f1f1f1', fontSize: 12.5, color: '#6b7280', lineHeight: 1.55 }}>
                 {policyText(data.page, due > 0, service.payment_mode)}
               </div>
+              {fromOffer && <button type="button" onClick={leaveWaitlist} className="bk-quiet">Not interested any more? Leave the waitlist</button>}
               {error && <div style={errBox}>{error}</div>}
               <div className="bk-cta on bk-cta-col">
                 <button type="submit" disabled={submitting} className="bk-primary" style={{ width: '100%', height: 52, fontSize: 16, borderRadius: 14 }}>
@@ -343,6 +436,77 @@ export default function BookingFlow({ slug, domain, initialService }: { slug?: s
               </div>
             </form>
           )}
+
+          {step === 'waitlist' && service && (wlDone ? (
+            <div className="bk-rise" style={{ textAlign: 'center', padding: '18px 4px 8px' }}>
+              <div style={{ width: 56, height: 56, borderRadius: 18, background: `color-mix(in srgb, ${accent} 12%, #fff)`, color: accent, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}><CalendarIcon size={26} /></div>
+              <h2 style={{ ...h2, marginBottom: 8 }}>You’re on the waitlist</h2>
+              <p style={{ color: '#4b5563', fontSize: 14.5, lineHeight: 1.6, margin: '0 auto', maxWidth: 420 }}>
+                {service.name}{wlDone.wants ? `, ${wlDone.wants}` : ''}.{' '}
+                {wlDone.smsBlocked
+                  ? <>You’ve replied STOP to {data.company.name} before, so we can’t text you. Text START to their number to get waitlist texts{form.email ? ', or watch your email' : ''}.</>
+                  : <>If a spot opens up, we’ll text {wlDone.phone || 'you'} with a link to book it{form.email ? ' (or email you if a text can’t go)' : ''}. Reply STOP to opt out.</>}
+              </p>
+              <button type="button" onClick={() => { setWlDone(null); setStep('time') }} className="bk-quiet" style={{ marginTop: 18 }}>Back to times</button>
+            </div>
+          ) : (
+            <form onSubmit={joinWaitlist}>
+              <h2 style={{ ...h2, marginBottom: 6 }}>Join the waitlist</h2>
+              <p style={{ margin: '0 0 16px', color: '#6b7280', fontSize: 13.5, lineHeight: 1.55 }}>Tell us when suits and we’ll text you if a spot opens up for {service.name}.</p>
+              <div style={label}>Which days?</div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+                <button type="button" aria-pressed={wl.mode === 'days'} onClick={() => setWl({ ...wl, mode: 'days' })} className={`bk-chip${wl.mode === 'days' ? ' sel' : ''}`}>Specific days</button>
+                <button type="button" aria-pressed={wl.mode === 'range'} onClick={() => setWl({ ...wl, mode: 'range', from: wl.from || wl.days[0] || today, to: wl.to || wl.days[wl.days.length - 1] || plusDays(today, 13) })} className={`bk-chip${wl.mode === 'range' ? ' sel' : ''}`}>Any day between</button>
+              </div>
+              {wl.mode === 'days' ? (
+                <div style={{ marginBottom: 18 }}>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: wl.days.length ? 10 : 0 }}>
+                    {wl.days.map(d => (
+                      <span key={d} className="bk-chip sel" style={{ cursor: 'default' }}>
+                        {dayShort(d)}
+                        <button type="button" aria-label={`Remove ${dayShort(d)}`} onClick={() => setWl({ ...wl, days: wl.days.filter(x => x !== d) })} style={{ border: 'none', background: 'none', padding: 0, marginLeft: 2, color: 'inherit', cursor: 'pointer', fontSize: 16, lineHeight: 1, fontFamily: 'inherit' }}>×</button>
+                      </span>
+                    ))}
+                  </div>
+                  {wl.days.length < 14 && (
+                    <label style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: 13, color: '#374151', fontWeight: 600 }}>{wl.days.length ? 'Add another day' : 'Add a day'}</span>
+                      <input className="bk-in" type="date" min={today} max={lastDay} value={wl.addDay} style={{ width: 'auto', minWidth: 0, flex: '1 1 160px', maxWidth: 220 }}
+                        onChange={e => { const v = e.target.value; if (v && v >= today && v <= lastDay && !wl.days.includes(v)) setWl({ ...wl, days: [...wl.days, v].sort(), addDay: '' }); else setWl({ ...wl, addDay: '' }) }} />
+                    </label>
+                  )}
+                </div>
+              ) : (
+                <div className="bk-fields" style={{ marginBottom: 18 }}>
+                  <Field label="From"><input className="bk-in" type="date" min={today} max={lastDay} value={wl.from} onChange={e => setWl({ ...wl, from: e.target.value, to: wl.to && wl.to < e.target.value ? e.target.value : wl.to })} required /></Field>
+                  <Field label="To"><input className="bk-in" type="date" min={wl.from || today} max={lastDay} value={wl.to} onChange={e => setWl({ ...wl, to: e.target.value })} required /></Field>
+                </div>
+              )}
+              <div style={label}>Time of day</div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 18 }}>
+                {([['any', 'Any time'], ['morning', 'Morning'], ['afternoon', 'Afternoon']] as [Window, string][]).map(([k, l]) => (
+                  <button key={k} type="button" aria-pressed={wl.window === k} onClick={() => setWl({ ...wl, window: k })} className={`bk-chip${wl.window === k ? ' sel' : ''}`}>{l}</button>
+                ))}
+              </div>
+              <div className="bk-fields">
+                <Field label="Full name" required><input className="bk-in" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} autoComplete="name" required /></Field>
+                <Field label="Mobile" required><input className="bk-in" type="tel" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} autoComplete="tel" required placeholder="04xx xxx xxx" /></Field>
+                <Field label="Email (optional)" wide><input className="bk-in" type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} autoComplete="email" /></Field>
+              </div>
+              {/* Left empty by people; bots fill it in. */}
+              <input type="text" name="website" value={wl.website} onChange={e => setWl({ ...wl, website: e.target.value })} tabIndex={-1} autoComplete="off" aria-hidden="true" style={{ position: 'absolute', left: -9999, width: 1, height: 1, opacity: 0 }} />
+              <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', marginTop: 16, padding: '12px 14px', borderRadius: 12, background: '#f9fafb', border: '1px solid #f1f1f1', fontSize: 13, color: '#374151', lineHeight: 1.5, cursor: 'pointer' }}>
+                <input type="checkbox" checked={wl.consent} onChange={e => setWl({ ...wl, consent: e.target.checked })} required style={{ marginTop: 3, accentColor: accent, flexShrink: 0 }} />
+                <span>Text me if a spot opens up for {service.name}. First in gets it. Reply STOP to opt out.</span>
+              </label>
+              {error && <div style={errBox}>{error}</div>}
+              <div className="bk-cta on bk-cta-col">
+                <button type="submit" disabled={submitting} className="bk-primary" style={{ width: '100%', height: 52, fontSize: 16, borderRadius: 14 }}>
+                  {submitting ? <Spinner light /> : 'Join the waitlist'}
+                </button>
+              </div>
+            </form>
+          ))}
           </div>
         </main>
       </div>
@@ -446,6 +610,7 @@ export function Shell({ accent, children }: { accent: string; children: React.Re
         .bk-fields{display:grid;grid-template-columns:1fr 1fr;gap:14px}
         @media(max-width:560px){.bk-fields{grid-template-columns:1fr}}
         .bk-in{width:100%;box-sizing:border-box;padding:11px 13px;border-radius:10px;border:1.5px solid #e5e7eb;font-size:16px;transition:border-color .2s,box-shadow .2s;font-family:inherit;outline:none;background:#fff;color:#111}
+        .bk-quiet{display:block;margin:12px auto 0;border:none;background:none;color:#6b7280;font:inherit;font-size:13px;font-weight:600;cursor:pointer;text-decoration:underline;text-underline-offset:3px}
         .bk-in:focus{border-color:var(--bk-accent)!important;box-shadow:0 0 0 3px color-mix(in srgb,var(--bk-accent) 15%,transparent)}
       `}</style>
       {children}
@@ -455,5 +620,6 @@ export function Shell({ accent, children }: { accent: string; children: React.Re
 
 const h2: React.CSSProperties = { margin: '0 0 16px', fontSize: 18, fontWeight: 800, color: '#111' }
 const label: React.CSSProperties = { fontSize: 12, fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 8 }
+const noteBox: React.CSSProperties = { marginBottom: 16, padding: '11px 13px', borderRadius: 12, background: '#f9fafb', border: '1px solid #ececec', color: '#374151', fontSize: 13.5, lineHeight: 1.55 }
 const errBox: React.CSSProperties = { marginTop: 14, padding: '10px 12px', borderRadius: 10, background: '#fef2f2', border: '1px solid #fecaca', color: '#b91c1c', fontSize: 13.5 }
 const backBtn: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 4, border: 'none', background: 'none', color: '#6b7280', fontSize: 13.5, fontWeight: 600, cursor: 'pointer', padding: 0, marginBottom: 14, fontFamily: 'inherit' }
