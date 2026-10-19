@@ -6,8 +6,11 @@ import { card, input, label, hint, Toggle } from './shared'
 
 export default function BookingSettingsTab({ settings, setSettings }: { settings: any; setSettings: (s: any) => void }) {
   const set = (patch: any) => setSettings({ ...settings, ...patch })
+  const wl = { enabled: false, mode: 'first', batch: 3, hold_mins: 15, notice_mins: 120, max_per_day: 3, ...(settings.waitlist || {}) }
+  const setWl = (patch: any) => set({ waitlist: { ...wl, ...patch } })
   return (
     <div style={{ display: 'grid', gap: 16 }}>
+      <style>{`.bks-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}@media(max-width:600px){.bks-grid{grid-template-columns:1fr}}`}</style>
       <section style={card}>
         <div style={title}>Booking page</div>
         <div style={{ display: 'grid', gap: 12, marginTop: 12 }}>
@@ -50,6 +53,56 @@ export default function BookingSettingsTab({ settings, setSettings }: { settings
           <Row label="Allow late cancellations online" sub={settings.late_cancel === 'block' ? 'After the cut-off, customers have to contact you.' : 'After the cut-off customers can still cancel, but nothing is refunded (the deposit is kept).'}>
             <Toggle on={settings.late_cancel !== 'block'} onChange={v => set({ late_cancel: v ? 'allow' : 'block' })} />
           </Row>
+        </div>
+      </section>
+
+      <section style={card}>
+        <div style={title}>Waitlist</div>
+        <div style={{ display: 'grid', gap: 12, marginTop: 12 }}>
+          <Row label="Let customers join a waitlist" sub="When a day is full, the booking page offers “Join the waitlist”. If a time frees up (a cancellation, a move, an unpaid hold that lapses, or you open more hours), people waiting for it get a text with a link to book it. Deposits and payment apply as usual."><Toggle on={wl.enabled} onChange={v => setWl({ enabled: v })} /></Row>
+          {wl.enabled && (
+            <>
+              <div className="bks-grid">
+                <div>
+                  <span style={label}>Who gets a freed time</span>
+                  <select value={wl.mode} onChange={e => setWl({ mode: e.target.value })} style={input}>
+                    <option value="first">First to claim: text a few people at once</option>
+                    <option value="order">In order: one person at a time, held for them</option>
+                  </select>
+                </div>
+                {wl.mode === 'first' ? (
+                  <div>
+                    <span style={label}>People texted per freed time</span>
+                    <select value={wl.batch} onChange={e => setWl({ batch: Number(e.target.value) })} style={input}>
+                      {[1, 2, 3, 4, 5, 8, 10].map(n => <option key={n} value={n}>{n}</option>)}
+                    </select>
+                  </div>
+                ) : (
+                  <div>
+                    <span style={label}>Hold it for each person for</span>
+                    <select value={wl.hold_mins} onChange={e => setWl({ hold_mins: Number(e.target.value) })} style={input}>
+                      {[5, 10, 15, 20, 30, 45, 60, 120].map(n => <option key={n} value={n}>{n < 60 ? `${n} minutes` : `${n / 60} hour${n > 60 ? 's' : ''}`}</option>)}
+                    </select>
+                  </div>
+                )}
+                <div>
+                  <span style={label}>Only offer times starting at least</span>
+                  <select value={wl.notice_mins} onChange={e => setWl({ notice_mins: Number(e.target.value) })} style={input}>
+                    {[[30, '30 minutes away'], [60, '1 hour away'], [120, '2 hours away'], [180, '3 hours away'], [240, '4 hours away'], [720, '12 hours away'], [1440, '1 day away']].map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <span style={label}>Most offers per person per day</span>
+                  <select value={wl.max_per_day} onChange={e => setWl({ max_per_day: Number(e.target.value) })} style={input}>
+                    {[1, 2, 3, 4, 5].map(n => <option key={n} value={n}>{n}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div style={hint}>{wl.mode === 'first'
+                ? `Up to ${wl.batch} ${wl.batch === 1 ? 'person' : 'people'}, longest waiting first, get the link at once; whoever books first gets it and the rest stay on the list.`
+                : `The longest-waiting person gets it held for ${wl.hold_mins} minutes; if they don’t book, the next person is offered it.`} Texts go out between 9am and 8pm (a time freed overnight is offered in the morning if it’s still far enough away), skip anyone who replied STOP (they’re emailed instead if they left an email), and count towards your SMS usage. People drop off the list after their last chosen day.</div>
+            </>
+          )}
         </div>
       </section>
 

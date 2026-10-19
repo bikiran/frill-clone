@@ -9,6 +9,7 @@ import {
   loadCompanyPublic, resolveBookingSettings, loadStaff, availability, publicBooking, policyFor,
   cancelBooking, rescheduleBooking, settleBookingPayment, isMissingBookingSchema, manageUrl, whereText,
 } from '@/lib/booking'
+import { bookingTimeFreed } from '@/lib/booking-waitlist-queue'
 
 export const dynamic = 'force-dynamic'
 
@@ -118,7 +119,9 @@ export async function POST(req: NextRequest) {
     if (body.action === 'cancel') {
       // An unpaid hold the customer backs out of: just release it.
       if (b.status === 'pending') {
-        await db.from('bookings').update({ status: 'expired', hold_expires_at: new Date().toISOString() }).eq('id', b.id).eq('status', 'pending')
+        const { data: released } = await db.from('bookings').update({ status: 'expired', hold_expires_at: new Date().toISOString() }).eq('id', b.id).eq('status', 'pending').select('id')
+        // The time is free again: offer it to the waitlist.
+        if (released?.length) await bookingTimeFreed(db, company.booking_settings, b, origin)
         return reply()
       }
       const pol = policyFor(b, settings)

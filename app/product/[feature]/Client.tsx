@@ -257,6 +257,7 @@ const PAGES: Record<string, any> = {
       { icon: 'inbox', title: 'Booked from the chat', desc: 'Send a booking link from any conversation, or let Colvy AI do it.' },
       { icon: 'pen', title: 'Intake questions', desc: 'Ask what you need to know up front, so the appointment starts ready.' },
       { icon: 'star', title: 'Review follow-up', desc: 'After the visit, ask for a Google review automatically.' },
+      { icon: 'send', title: 'Waitlist for full days', desc: 'Customers join from a full day. When a time frees up, the people waiting get a text to book it: first in gets it, or one at a time with the slot held.' },
     ],
     cta: 'Start taking bookings',
   },
