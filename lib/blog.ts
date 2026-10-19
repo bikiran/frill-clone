@@ -833,16 +833,16 @@ If you want to see how it fits your kind of business, we’ve mapped out the ful
     slug: 'switching-tools-without-losing-your-mind',
     cover: '/about/hero.jpg',
     title: 'Switching support tools without losing your mind (or your data)',
-    excerpt: 'Dreading a migration? A calm, low-risk way to move platforms — keep your number, your history and your sanity.',
+    excerpt: 'Dreading a migration? A calm, low-risk way to move platforms — keep your customers, your history and your sanity.',
     category: 'Playbooks', accent: CORAL, icon: 'bolt',
     date: '2026-05-06', dateLabel: 'May 6, 2026', readTime: '7 min read', author: 'The Colvy Team',
     intro: 'The fear of switching keeps a lot of teams stuck on tools they’ve outgrown. But a migration doesn’t have to mean downtime or lost history. Done in the right order, you can move in an afternoon and never miss a message.',
     sections: [
       { h: 'Export before you do anything', p: ['Your data is yours. Before you switch, pull a clean export of contacts, conversations and any custom fields. A tool that makes this hard is telling you something — good platforms let you leave as easily as you joined.'] },
-      { h: 'Port your number, don’t replace it', p: ['Customers have your number saved. Porting keeps it, so nothing breaks on their end. Line this up early — number ports take a little lead time regardless of platform.'] },
+      { h: 'Plan for your phone number early', p: ['Customers have your number saved, so decide early what happens to it. If the new platform can take your number (a port), line it up early, because ports take a little lead time. If it can’t yet, and Colvy can’t take ported numbers yet, keep your existing number with its current provider and add a new number alongside it for texts and new enquiries.'] },
       { h: 'Run both for a day', p: ['Overlap the old and new tools for a short window so nothing in flight gets dropped. Once the new inbox is catching everything, switch off the old one and cancel — no long contracts to trap you.'] },
     ],
-    takeaways: ['Export your data first — and insist on being able to', 'Port your number instead of getting a new one', 'Overlap briefly so no in-flight conversation is lost'],
+    takeaways: ['Export your data first — and insist on being able to', 'Decide early what happens to your phone number', 'Overlap briefly so no in-flight conversation is lost'],
   },
 
   // ── Buyer-intent articles (Markdown body) ──────────────────────────────────
@@ -880,7 +880,7 @@ If you're comparing options, here's what actually matters for a small business �
 
 ## Where Colvy fits
 
-Colvy is built for exactly this: one shared inbox across Messenger, Instagram, WhatsApp, SMS, email, live chat and phone, with a lightweight CRM beside every conversation — and a free plan so you can try it on real messages first. If you're weighing options, start free and see how one queue feels.`,
+Colvy is built for exactly this: one shared inbox across Messenger, Instagram, SMS, email, live chat and phone, with a lightweight CRM beside every conversation — and a free plan so you can try it on real messages first. If you're weighing options, start free and see how one queue feels.`,
   },
   {
     slug: 'manage-instagram-dms-for-business',
@@ -955,7 +955,7 @@ Outside the 24-hour window after a customer messages you, WhatsApp requires pre-
 
 ## Where Colvy fits
 
-Colvy gives your team one shared inbox for WhatsApp — with assignment, customer history and saved replies — right alongside Instagram, Messenger, SMS, email and live chat. One number, one queue, the whole team.`,
+WhatsApp support is coming to Colvy, but it isn’t available yet. Today Colvy gives your team one shared inbox for Instagram, Messenger, SMS, email, live chat and phone calls, with assignment, customer history and saved replies beside every conversation. Many customers who would message you on WhatsApp are just as happy to text your business number, and those texts land in the same queue as everything else.`,
   },
 ]
 

@@ -7,6 +7,7 @@ import { redirectToUserAdmin, boardUrl } from '@/lib/redirect'
 import MarketingNav from '@/components/MarketingNav'
 import MarketingFooter from '@/components/MarketingFooter'
 import FeatureIcon from '@/components/FeatureIcon'
+import { soonLabel } from '@/lib/feature-availability'
 
 // Landing-styled per-industry pages (Colvy for SaaS / Agencies / Retail / …).
 // Data-driven, sharing the same look as the main landing and solutions pages.
@@ -16,7 +17,7 @@ import FeatureIcon from '@/components/FeatureIcon'
 const CORAL = '#ff6a4d', BLUE = '#2b59ff', PURPLE = '#7c5cff', GREEN = '#00c48c', PINK = '#ff4d8d', CYAN = '#0891b2', INK = '#0f1119'
 
 // Shared "every channel" list — the same across industries.
-const CHANNELS = ['Phone calls', 'SMS / MMS', 'WhatsApp', 'Instagram & Facebook', 'Email', 'Google Reviews', 'Live chat', 'Contact forms']
+const CHANNELS = ['Phone calls', 'SMS / MMS', soonLabel('WhatsApp', 'whatsapp'), 'Instagram & Facebook', 'Email', 'Google Reviews', 'Live chat', 'Contact forms']
 
 type Band = { tag: string; title: string; body: string; bullets: string[] }
 type Ind = {
@@ -111,12 +112,12 @@ const IND: Record<string, Ind> = {
       { icon: 'star', title: 'Google Reviews', desc: 'Automated review requests after every purchase.' },
       { icon: 'megaphone', title: 'SMS campaigns', desc: 'Broadcast offers and win-backs that convert.' },
       { icon: 'pin', title: 'Multi-location', desc: 'One inbox across every store, each with its own number.' },
-      { icon: 'bell', title: 'Back-in-stock waitlists', desc: '“Notify me” on sold-out WooCommerce products, texted automatically on restock.' },
+      { icon: 'bell', title: 'Back-in-stock waitlists', desc: '“Notify me” on sold-out WooCommerce and Shopify products, texted automatically on restock.' },
       { icon: 'cart', title: 'Abandoned carts', desc: 'Lost checkouts land in the inbox, ready for a follow-up.' },
     ],
     bands: [
       { tag: 'Sell in the conversation', title: 'Turn a chat into a sale', body: 'Look up orders, recover carts and take payment without leaving the thread — then see the revenue each conversation drove.', bullets: ['Live orders & refunds', 'Payment links & recorded sales', 'Revenue per conversation'] },
-      { tag: 'Grow your rating', title: 'Reviews without the chasing', body: 'AI sends the review request at exactly the right moment after purchase, across every location.', bullets: ['Auto review requests', 'Reply from the inbox', 'Per-location profiles'] },
+      { tag: 'Grow your rating', title: 'Reviews without the chasing', body: 'Colvy sends the review request at the right moment after purchase.', bullets: ['Auto review requests', 'Reply from the inbox', 'AI-drafted replies'] },
     ],
     playbook: [
       { title: 'Connect your store', desc: 'WooCommerce or Shopify orders sync into every conversation.' },
@@ -127,22 +128,22 @@ const IND: Record<string, Ind> = {
     faqs: [
       { q: 'Which stores connect?', a: 'WooCommerce and Shopify sync live orders and customers; multiple stores are supported.' },
       { q: 'Can we take payment in the chat?', a: 'Yes — connect your own Stripe to send payment links and invoices in the thread.' },
-      { q: 'What happens when something sells out?', a: 'With the Colvy WordPress plugin, sold-out WooCommerce products get a “Notify me” form. When stock returns, everyone waiting gets a text, or an email if they left no mobile.' },
-      { q: 'Does it handle multiple locations?', a: 'Run one inbox across locations, each with its own number and review profile.' },
+      { q: 'What happens when something sells out?', a: 'With the Colvy WordPress plugin or the Colvy Shopify theme block, sold-out products get a “Notify me” form. When stock returns, everyone waiting gets a text, or an email if they left no mobile.' },
+      { q: 'Does it handle multiple locations?', a: 'Run one inbox across locations, each with its own number.' },
     ],
-    stats: [{ big: '14', label: 'channels, one thread' }, { big: 'Auto', label: 'review requests' }, { big: '45 min', label: 'to set up' }],
+    stats: [{ big: '1', label: 'thread per customer' }, { big: 'Auto', label: 'review requests' }, { big: '45 min', label: 'to set up' }],
   },
   hospitality: {
     accent: GREEN, eyebrow: 'Hospitality', name: 'hospitality', sub: 'Bookings, enquiries and guest comms in one thread — before, during and after the visit.',
     heroChips: ['Online bookings', 'Guest comms', 'Reviews'],
     pains: [
       { title: 'Booking calls go to voicemail', desc: 'You’re busy serving guests and enquiries slip while the phone rings out.' },
-      { title: 'Messages on five apps', desc: 'WhatsApp, Instagram, texts and email — all on someone’s personal phone.' },
+      { title: 'Messages on five apps', desc: 'Instagram, Messenger, texts and email — all on someone’s personal phone.' },
       { title: 'Great visits, no reviews', desc: 'Happy guests leave without ever being asked to leave a review.' },
     ],
     features: [
       { icon: 'calendar', title: 'Online bookings & deposits', desc: 'Guests book and pay a deposit online; enquiries land in one place.' },
-      { icon: 'chat', title: 'WhatsApp & SMS', desc: 'Confirmations and reminders guests actually read.' },
+      { icon: 'chat', title: 'SMS & email', desc: 'Confirmations and reminders guests actually read.' },
       { icon: 'star', title: 'Review requests', desc: 'Ask happy guests for a review at the right moment.' },
       { icon: 'ai', title: 'AI answers FAQs', desc: 'Hours, menus, bookings — handled 24/7.' },
       { icon: 'phone', title: 'Calls & voicemail', desc: 'Never miss a booking call; AI texts back missed ones.' },
@@ -153,7 +154,7 @@ const IND: Record<string, Ind> = {
       { tag: 'Turn visits into regulars', title: 'Reviews & repeat visits', body: 'Automated review requests and follow-ups keep your rating climbing and guests coming back.', bullets: ['Timed review requests', 'Win-back campaigns', 'Reply to reviews in one place'] },
     ],
     playbook: [
-      { title: 'Bring every channel together', desc: 'Calls, WhatsApp, Instagram and email land in one shared inbox.' },
+      { title: 'Bring every channel together', desc: 'Calls, texts, Instagram and email land in one shared inbox.' },
       { title: 'Let AI answer out of hours', desc: 'Hours, menus and bookings answered 24/7; missed calls get a text back.' },
       { title: 'Confirm and remind', desc: 'Automated booking confirmations and reminders guests actually read.' },
       { title: 'Ask for the review', desc: 'A timed request after the visit, on the channel they prefer.' },
@@ -161,7 +162,7 @@ const IND: Record<string, Ind> = {
     faqs: [
       { q: 'Can guests book online?', a: 'Yes. Share your Colvy booking page and guests pick a time, pay a deposit if you ask for one, and get SMS reminders.' },
       { q: 'Can guests reply to reminders?', a: 'Yes — reminders are two-way, so guests can confirm or reschedule by text.' },
-      { q: 'Does it work across venues?', a: 'Run every location from one inbox, each with its own number and review profile.' },
+      { q: 'Does it work across venues?', a: 'Run every location from one inbox, each with its own number.' },
       { q: 'What happens to missed calls?', a: 'Callers you miss get an automatic text back, so the booking isn’t lost.' },
     ],
     stats: [{ big: '24/7', label: 'AI answers' }, { big: 'Every', label: 'channel, one thread' }, { big: '45 min', label: 'to launch' }],
@@ -210,7 +211,7 @@ const IND: Record<string, Ind> = {
     features: [
       { icon: 'calendar', title: 'Online booking & reminders', desc: 'Patients book online, then get reminders 24 hours and 2 hours before.' },
       { icon: 'chat', title: 'Two-way SMS', desc: 'Patients reply, reschedule and confirm by text.' },
-      { icon: 'bell', title: 'Recalls', desc: 'Automated recalls bring patients back on schedule.' },
+      { icon: 'bell', title: 'Self-serve changes', desc: 'Patients reschedule or cancel within your policy.' },
       { icon: 'ai', title: 'AI triage & FAQs', desc: 'Answer common questions and route the rest.' },
       { icon: 'phone', title: 'Calls & voicemail', desc: 'Never miss a call; missed ones get a text back.' },
       { icon: 'lock', title: 'Handled with care', desc: 'Encrypted in transit and at rest; access controlled.' },
@@ -221,7 +222,7 @@ const IND: Record<string, Ind> = {
     ],
     playbook: [
       { title: 'Send two-way reminders', desc: 'Timely reminders patients can confirm or reschedule by text.' },
-      { title: 'Automate recalls', desc: 'Bring patients back on schedule without manual chasing.' },
+      { title: 'Let patients book online', desc: 'Live availability per practitioner, with a deposit if you want one.' },
       { title: 'Answer FAQs with AI', desc: 'Hours, prep and common questions handled 24/7; the rest routed to staff.' },
       { title: 'Catch missed calls', desc: 'Missed calls get an automatic text back, so nothing’s lost.' },
     ],

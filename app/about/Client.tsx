@@ -122,7 +122,7 @@ export default function AboutPage() {
           <Reveal delay={0.08}>
             <div style={{ fontSize: 16.5, lineHeight: 1.7, color: muted, display: 'flex', flexDirection: 'column', gap: 16 }}>
               <p style={{ margin: 0 }}>Run a growing business and you end up living in a dozen tabs: a helpdesk for tickets, a CRM for contacts, a separate calling app, a survey tool, a changelog, a reviews dashboard. None of them share context, each one sends its own bill, and the customer feels the seams.</p>
-              <p style={{ margin: 0 }}>We thought conversations should be simpler than that. Every message a customer sends — SMS, WhatsApp, email, chat, a call, a review — is part of one relationship, so it should live in one thread with the full history beside it.</p>
+              <p style={{ margin: 0 }}>We thought conversations should be simpler than that. Every message a customer sends — SMS, email, a DM, chat, a call, a review — is part of one relationship, so it should live in one thread with the full history beside it.</p>
               <p style={{ margin: 0 }}>Colvy brings feedback, inbox, CRM and calling into that one place, priced fairly for the businesses that need it most. We’d rather earn your renewal every month than lock you into a contract — so everything is published pricing, month to month, your data always yours to export.</p>
             </div>
           </Reveal>

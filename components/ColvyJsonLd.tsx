@@ -74,7 +74,7 @@ const structuredData = [
     operatingSystem: 'Web, iOS, Android',
     url: SITE_URL,
     description:
-      'One shared inbox across WhatsApp, Instagram, Messenger, SMS, email, live chat and phone, with a CRM, WooCommerce and Shopify orders, payments, AI agents and customer feedback boards.',
+      'One shared inbox across Instagram, Messenger, SMS, email, live chat and phone, with a CRM, WooCommerce and Shopify orders, payments, AI agents and customer feedback boards.',
     offers: { '@type': 'Offer', price: '0', priceCurrency: 'AUD' },
     image: `${SITE_URL}/og.png`,
     sameAs: SAME_AS,

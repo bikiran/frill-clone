@@ -17,7 +17,7 @@ const CORAL = '#ff6a4d', BLUE = '#2b59ff', PURPLE = '#7c5cff', GREEN = '#00c48c'
 const SOLUTIONS = [
   { slug: 'customer-support', icon: 'inbox', title: 'Customer support', tag: 'Every question in one shared inbox, with AI drafts and full history.', metric: 'Shared inbox', accent: BLUE },
   { slug: 'sales', icon: 'tag', title: 'Sales & conversions', tag: 'Capture leads, follow up automatically and sell right in the chat.', metric: 'Sell in-chat', accent: GREEN },
-  { slug: 'marketing', icon: 'megaphone', title: 'Marketing & campaigns', tag: 'Targeted SMS, WhatsApp and email — and every reply in one inbox.', metric: 'Broadcasts', accent: PURPLE },
+  { slug: 'marketing', icon: 'megaphone', title: 'Marketing & campaigns', tag: 'Targeted SMS and email — and every reply in one inbox.', metric: 'Broadcasts', accent: PURPLE },
   { slug: 'reviews', icon: 'star', title: 'Reviews & reputation', tag: 'Automate Google review requests and reply without leaving Colvy.', metric: 'Google reviews', accent: AMBER },
   { slug: 'feedback', icon: 'idea', title: 'Product feedback', tag: 'Ideas board, public roadmap and changelog — the loop, closed.', metric: 'Idea → ship', accent: CORAL },
   { slug: 'bookings', icon: 'calendar', title: 'Bookings & appointments', tag: 'Online booking, deposits and SMS reminders, with every booking in the thread.', metric: 'Book online', accent: PINK },

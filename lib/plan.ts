@@ -55,7 +55,8 @@ export const PLAN_NAMES: Record<Plan, string> = {
   everything: 'Everything', pro: 'Pro', enterprise: 'Enterprise', suspended: 'Suspended',
 }
 
-// Monthly list price (USD), for display only. null = contact sales.
+// Monthly list price in AUD (shown as A$ on the pricing page), for display
+// only. null = contact sales.
 export const PLAN_PRICES: Record<Plan, number | null> = {
   free: 0, trial: 0, feedback: 39, omnichannel: 179, everything: 259,
   pro: 259, enterprise: null, suspended: 0,
@@ -67,7 +68,7 @@ export const OVERRIDABLE_FEATURES: { key: string; label: string }[] = [
   { key: 'whiteLabel', label: 'White-label branding' },
   { key: 'customDomain', label: 'Custom domain' },
   { key: 'inbox', label: 'Live chat inbox & CRM' },
-  { key: 'channels', label: 'Channels (SMS / WhatsApp / voice)' },
+  { key: 'channels', label: 'Channels (SMS / voice)' },
   { key: 'campaigns', label: 'Broadcast & scheduled campaigns' },
   { key: 'reviewDashboard', label: 'Review dashboard' },
   { key: 'ecommerceSync', label: 'WooCommerce / Shopify sync' },

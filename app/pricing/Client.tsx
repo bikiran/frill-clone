@@ -9,6 +9,7 @@ import MarketingNav from '@/components/MarketingNav'
 import ContactSalesModal from '@/components/ContactSalesModal'
 import { PRICING_FAQS } from '@/lib/pricing-faqs'
 import { COLVY_CONTACT } from '@/lib/colvy-contact'
+import { COMING_SOON, soonLabel } from '@/lib/feature-availability'
 
 const CORAL = '#ff6a4d'
 const PINK = '#ff4d8d'
@@ -26,7 +27,7 @@ const INK = '#0f1119'
 const TIERS = [
   { id: 'free', name: 'Free', tagline: 'Try the feedback suite', accent: '#6b7280', monthly: 0, annual: 0, badge: null, cta: 'Get started free', smsNote: false, features: ['Ideas & feedback board', 'Public roadmap', 'Announcements / changelog', '1 poll & 1 survey', 'Help center (10 articles)', 'Feedback widget', '2 team members', 'Community support'] },
   { id: 'feedback', name: 'Feedback', tagline: 'For product & feedback teams', accent: PURPLE, monthly: 39, annual: 29, badge: null, cta: 'Start free trial', smsNote: false, features: ['Everything in Free', 'Unlimited ideas & voting', 'Unlimited polls, surveys & forms', 'Private + public roadmaps', 'Unlimited help center articles', 'Customisable widget', 'Remove Colvy branding', 'Unlimited team members', 'Email support'] },
-  { id: 'omnichannel', name: 'Inbox', tagline: 'For sales & support teams', accent: BLUE, monthly: 179, annual: 149, badge: null, cta: 'Start free trial', smsNote: true, features: ['Live chat inbox', 'Contacts & CRM', 'WhatsApp, SMS & voice calls', '3,000 SMS / month included*', 'WooCommerce sync', 'Broadcast & scheduled campaigns', 'Online booking & deposits', 'AI flow automation', 'Review dashboard', 'Unlimited team members', 'Priority support'] },
+  { id: 'omnichannel', name: 'Inbox', tagline: 'For sales & support teams', accent: BLUE, monthly: 179, annual: 149, badge: null, cta: 'Start free trial', smsNote: true, features: ['Live chat inbox', 'Contacts & CRM', 'SMS & voice calls', soonLabel('WhatsApp', 'whatsapp'), '3,000 SMS / month included*', 'WooCommerce sync', 'Broadcast & scheduled campaigns', 'Online booking & deposits', 'AI flow automation', 'Review dashboard', 'Unlimited team members', 'Priority support'] },
   { id: 'everything', name: 'Everything', tagline: 'The full Colvy platform', accent: CORAL, monthly: 259, annual: 209, badge: 'Best value', cta: 'Start free trial', smsNote: true, features: ['Feedback suite + Inbox', '3,000 SMS / month included*', 'White-label branding', 'Custom domain', 'Advanced analytics', 'AI writing assistant', 'Unlimited team members', 'Priority support'] },
 ]
 
@@ -45,13 +46,15 @@ const COMPARE: { group: string; rows: { label: string; cells: (boolean | string)
   { group: 'Inbox & messaging', rows: [
     { label: 'Live chat inbox', cells: [false, false, true, true] },
     { label: 'Contacts & CRM', cells: [false, false, true, true] },
-    { label: 'WhatsApp, SMS & voice calls', cells: [false, false, true, true] },
+    { label: 'SMS & voice calls', cells: [false, false, true, true] },
+    // Not live yet: shown as "Coming soon", never ticked (lib/feature-availability.ts).
+    { label: 'WhatsApp', cells: COMING_SOON.whatsapp ? ['—', '—', 'Coming soon', 'Coming soon'] : [false, false, true, true] },
     { label: 'SMS included / month', cells: ['—', '—', '3,000*', '3,000*'] },
     { label: 'AI voice typing (Colvy Voice)', cells: [false, false, true, true] },
     { label: 'Scheduled replies (edit, send now or cancel)', cells: [false, false, true, true] },
     { label: 'WooCommerce & Shopify sync', cells: [false, false, true, true] },
-    { label: 'Back-in-stock waitlists (WooCommerce)', cells: [false, false, true, true] },
-    { label: 'Abandoned cart capture (WooCommerce)', cells: [false, false, true, true] },
+    { label: 'Back-in-stock waitlists (WooCommerce & Shopify)', cells: [false, false, true, true] },
+    { label: 'Abandoned cart capture (WooCommerce & Shopify)', cells: [false, false, true, true] },
     { label: 'Broadcast & scheduled campaigns', cells: [false, false, true, true] },
     { label: 'AI flow automation', cells: [false, false, true, true] },
     { label: 'Review dashboard', cells: [false, false, true, true] },
@@ -262,7 +265,7 @@ export default function PricingPage() {
               <button onClick={() => setContactPlan('Enterprise')} className="pr-btn" style={{ padding: '11px 24px', borderRadius: 999, background: 'transparent', color: text, fontWeight: 800, fontSize: 14, border: `1.5px solid ${cardBorder}`, flexShrink: 0, cursor: 'pointer', fontFamily: 'inherit' }}>Contact sales →</button>
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-              {['White-label branding', 'SSO / SAML', 'SLA guarantee', 'Dedicated onboarding', 'Dedicated support', 'Custom contracts', 'High-volume usage & rates'].map(f => (
+              {['White-label branding', 'Dedicated onboarding', 'Dedicated support', 'Custom contracts', 'High-volume usage & rates'].map(f => (
                 <span key={f} style={{ fontSize: 12.5, fontWeight: 600, color: muted, background: dark ? 'rgba(255,255,255,0.04)' : 'rgba(15,17,25,0.03)', border: `1px solid ${cardBorder}`, borderRadius: 999, padding: '5px 12px' }}>{f}</span>
               ))}
             </div>

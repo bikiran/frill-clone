@@ -7,6 +7,8 @@ import { redirectToUserAdmin, boardUrl } from '@/lib/redirect'
 import MarketingNav from '@/components/MarketingNav'
 import MarketingFooter from '@/components/MarketingFooter'
 import FeatureIcon from '@/components/FeatureIcon'
+import ComingSoonPill from '@/components/ComingSoonPill'
+import { isComingSoon, type ComingSoonKey } from '@/lib/feature-availability'
 
 // Landing-styled per-phone-feature pages (Coax-style). Data-driven, each with
 // its own hero photo under an accent-tinted overlay. Copy is product-level;
@@ -22,6 +24,9 @@ type Feat = {
   bands: Band[]
   stats: { big: string; label: string }[]
   ctaHead: string
+  // Not live yet: the page shows a "Coming soon" pill and its copy is in the
+  // future tense, with "Available today" pointing at the nearest real feature.
+  comingSoon?: ComingSoonKey
 }
 
 const PH: Record<string, Feat> = {
@@ -45,7 +50,7 @@ const PH: Record<string, Feat> = {
   'browser-dialer': {
     accent: BLUE, eyebrow: 'Browser dialer', name: 'Browser Dialer', title: 'A full dialer in your browser',
     sub: 'Make and take business calls from any tab — no handsets, no softphone install, no IT ticket.',
-    heroChips: ['No install', 'Any device', 'HD audio'],
+    heroChips: ['No install', 'Any computer', 'In & out'],
     features: [
       { icon: 'globe', title: 'Runs anywhere', desc: 'Any modern browser, any computer.' },
       { icon: 'phone', title: 'Make & receive', desc: 'Full inbound and outbound calling.' },
@@ -56,42 +61,42 @@ const PH: Record<string, Feat> = {
       { tag: 'Zero setup', title: 'Your phone system is a browser tab', body: 'No desk phones, no PBX hardware, no softphone downloads. The dialer lives in Colvy, right next to your conversations.', bullets: ['No hardware or install', 'Works on any computer', 'Calls logged automatically'] },
       { tag: 'Ready to answer', title: 'Pick up already informed', body: 'Inbound calls ring in the browser with the caller identified and their history on screen.', bullets: ['Screen pop on every ring', 'Full profile in view', 'Notes saved to the thread'] },
     ],
-    stats: [{ big: '0', label: 'to install' }, { big: 'Any', label: 'browser' }, { big: 'HD', label: 'audio' }],
+    stats: [{ big: '0', label: 'to install' }, { big: 'Any', label: 'browser' }, { big: 'Every', label: 'call logged' }],
     ctaHead: 'Call from your browser',
   },
   'hd-audio': {
-    accent: PURPLE, eyebrow: 'HD audio', name: 'HD Audio', title: 'Crystal-clear calls, every time',
-    sub: 'High-definition voice so every call sounds professional — no crackle, no dropouts, no “can you hear me?”',
-    heroChips: ['HD voice', 'Low latency', 'Reliable'],
+    accent: PURPLE, eyebrow: 'HD audio', name: 'HD Audio', title: 'HD voice is on the way', comingSoon: 'hdAudio',
+    sub: 'We’re working on high-definition voice for Colvy calls, so conversations sound fuller and recordings come out clearer. Today, calls run in your browser and the Colvy app with nothing to install.',
+    heroChips: ['Coming soon', 'HD voice', 'Clearer recordings'],
     features: [
-      { icon: 'bolt', title: 'HD voice', desc: 'Wideband audio for natural, clear calls.' },
-      { icon: 'globe', title: 'Low latency', desc: 'Real-time conversation, no lag.' },
-      { icon: 'phone', title: 'Reliable carriers', desc: 'Quality routing on every call.' },
-      { icon: 'camera', title: 'Clean recordings', desc: 'Clear audio makes transcripts accurate.' },
+      { icon: 'bolt', title: 'HD voice', desc: 'Coming soon: wideband audio for more natural calls.' },
+      { icon: 'camera', title: 'Clearer recordings', desc: 'Coming soon: better audio for more accurate transcripts.' },
+      { icon: 'globe', title: 'Browser & app calling', desc: 'Available today: make and take calls with nothing to install.' },
+      { icon: 'pen', title: 'Transcripts & summaries', desc: 'Available today: recorded calls transcribed and summarised.' },
     ],
     bands: [
-      { tag: 'Sound the part', title: 'Every call sounds professional', body: 'Clear, high-definition audio means customers hear you the first time — and your recordings and transcripts come out clean.', bullets: ['Wideband HD voice', 'Stable, low-latency routing', 'Accurate transcripts'] },
-      { tag: 'No excuses', title: 'Fewer “can you hear me?” moments', body: 'Reliable call quality keeps conversations flowing instead of stalling on a bad line.', bullets: ['Consistent quality', 'Fewer dropouts', 'Better first impressions'] },
+      { tag: 'What’s planned', title: 'Calls that sound the part', body: 'Soon, Colvy calls will use high-definition voice where the line supports it, so customers hear you clearly and transcripts come out cleaner. It isn’t available yet.', bullets: ['Wideband HD voice', 'Clearer recordings', 'Not available yet'] },
+      { tag: 'Available today', title: 'Calling built into your inbox', body: 'Today you can make and take calls in the browser and the Colvy app, with calls recorded, transcribed and summarised on the customer’s thread.', bullets: ['Browser and app calling', 'Recording & transcription', 'AI call summaries'] },
     ],
-    stats: [{ big: 'HD', label: 'voice quality' }, { big: 'Low', label: 'latency' }, { big: 'Clear', label: 'recordings' }],
-    ctaHead: 'Sound crystal clear',
+    stats: [{ big: 'Soon', label: 'HD voice' }, { big: '0', label: 'hardware needed today' }, { big: 'AI', label: 'call summaries today' }],
+    ctaHead: 'Start calling from Colvy today',
   },
   'numbers-porting': {
-    accent: CYAN, eyebrow: 'Numbers & porting', name: 'Numbers & Porting', title: 'Your numbers, your cities',
-    sub: 'Buy a local number in any Australian capital, assign one per location, or bring and port the number you already use.',
-    heroChips: ['Local numbers', 'Per location', 'Bring your own'],
+    accent: CYAN, eyebrow: 'Numbers & porting', name: 'Numbers & Porting', title: 'Bring your number to Colvy, soon', comingSoon: 'numberPorting',
+    sub: 'We’re building number porting, so you’ll be able to move the number your customers already know into Colvy. Today, you can get a new local or mobile number online in minutes.',
+    heroChips: ['Porting coming soon', 'Local numbers today', 'Mobile numbers today'],
     features: [
-      { icon: 'pin', title: 'Local numbers', desc: 'A number in any capital — Sydney to Perth.' },
-      { icon: 'phone', title: 'Bring & port', desc: 'Move your existing number across.' },
-      { icon: 'folder', title: 'Per location', desc: 'Assign a number to each business site.' },
-      { icon: 'user', title: 'Your caller ID', desc: 'Ring and dial from the right number.' },
+      { icon: 'pin', title: 'Local numbers', desc: 'Available today: an 02, 03, 07 or 08 number for your city.' },
+      { icon: 'chat', title: 'Mobile numbers', desc: 'Available today: an 04 number for calls and texts.' },
+      { icon: 'folder', title: 'Per location', desc: 'Available today: a number for each store or team.' },
+      { icon: 'phone', title: 'Bring & port', desc: 'Coming soon: move your existing number across.' },
     ],
     bands: [
-      { tag: 'Local presence', title: 'A number for every city you serve', body: 'Pick up local numbers across Australia so customers recognise the area code — and assign one to each location.', bullets: ['Local numbers in every capital', 'One per business location', 'Consistent caller ID'] },
-      { tag: 'Keep your number', title: 'Port in what you already have', body: 'Already have a number your customers know? Bring it across to Colvy.', bullets: ['Port existing numbers', 'Buy new ones in minutes', 'Manage them in one place'] },
+      { tag: 'What’s planned', title: 'Keep the number customers know', body: 'Soon you’ll be able to port an existing Australian number into Colvy, so calls and texts to it land in your shared inbox. Porting isn’t available yet.', bullets: ['Port existing numbers', 'Keep your caller ID', 'Not available yet'] },
+      { tag: 'Available today', title: 'A new number in minutes', body: 'Fill in one short form, choose a local or mobile number and pay online. It’s usually ready within a couple of minutes. Many businesses run a Colvy number alongside the one they already have.', bullets: ['Local 02, 03, 07 and 08 numbers', '04 mobiles for texting', '$15 a month, no lock-in'] },
     ],
-    stats: [{ big: 'Local', label: 'in every capital' }, { big: 'Port', label: 'your own' }, { big: 'Per', label: 'location' }],
-    ctaHead: 'Get your numbers sorted',
+    stats: [{ big: 'Soon', label: 'number porting' }, { big: 'Minutes', label: 'to a new number today' }, { big: '$15', label: 'a month per number' }],
+    ctaHead: 'Get a new number today',
   },
   'mobile-app': {
     accent: CORAL, eyebrow: 'Mobile app', name: 'Mobile App', title: 'Take Colvy calls anywhere',
@@ -128,72 +133,89 @@ const PH: Record<string, Feat> = {
     ctaHead: 'Hand off calls smoothly',
   },
   'call-forwarding': {
-    accent: BLUE, eyebrow: 'Call forwarding', name: 'Call Forwarding', title: 'Send calls wherever you are',
-    sub: 'Forward calls to any number or device, on the rules you set — so a ringing phone always reaches someone.',
-    heroChips: ['Any number', 'Rules-based', 'Never missed'],
+    accent: BLUE, eyebrow: 'Call forwarding', name: 'Call Forwarding', title: 'Call forwarding is coming', comingSoon: 'callForwarding',
+    sub: 'We’re building call forwarding, so you’ll be able to send calls to a mobile or another number on rules you set. Today, every call rings your whole team at once in the browser and the Colvy app.',
+    heroChips: ['Coming soon', 'Rules you set', 'Ring the team today'],
     features: [
-      { icon: 'link', title: 'Forward anywhere', desc: 'To any number, mobile or device.' },
-      { icon: 'calendar', title: 'Time-based rules', desc: 'Route by hours, day or on-call.' },
-      { icon: 'target', title: 'The right person', desc: 'Send calls to whoever’s available.' },
-      { icon: 'globe', title: 'Australian & international', desc: 'Forward locally or overseas.' },
+      { icon: 'link', title: 'Forward to any number', desc: 'Coming soon: send calls to a mobile or landline.' },
+      { icon: 'calendar', title: 'Time-based rules', desc: 'Coming soon: forward by hours or day.' },
+      { icon: 'target', title: 'Ring the team', desc: 'Available today: everyone available rings at once.' },
+      { icon: 'chat', title: 'Voicemail & text-back', desc: 'Available today: catch the calls nobody answers.' },
     ],
     bands: [
-      { tag: 'Always reachable', title: 'A ringing phone always finds someone', body: 'Forward calls to mobiles, teammates or an after-hours line so customers reach a human instead of a dead end.', bullets: ['Forward to any number', 'Time-based rules', 'Local or international'] },
-      { tag: 'On your terms', title: 'Rules that fit your hours', body: 'Route by time of day, day of week or who’s on call — set it once and let it run.', bullets: ['Business-hours routing', 'After-hours fallback', 'On-call schedules'] },
+      { tag: 'What’s planned', title: 'Calls that find you anywhere', body: 'Soon you’ll be able to forward calls to a mobile, a teammate or an after-hours line, with rules for business hours and weekends. It isn’t available yet.', bullets: ['Forward to outside numbers', 'Business-hours rules', 'Not available yet'] },
+      { tag: 'Available today', title: 'Every call reaches someone', body: 'Today, calls ring everyone available in the browser and the Colvy app at once. If nobody answers, the caller reaches voicemail, gets a text back, or talks to the AI receptionist.', bullets: ['Simultaneous ring', 'Voicemail with your greeting', 'AI receptionist'] },
     ],
-    stats: [{ big: 'Any', label: 'number or device' }, { big: 'Rules', label: 'you set' }, { big: '24/7', label: 'reachable' }],
+    stats: [{ big: 'Soon', label: 'call forwarding' }, { big: 'All', label: 'ring at once today' }, { big: 'Instant', label: 'missed-call text-back' }],
     ctaHead: 'Never miss a call',
   },
   'cascade-ring': {
-    accent: PURPLE, eyebrow: 'Cascade ring', name: 'Cascade Ring', title: 'Ring the team, in order',
-    sub: 'Ring devices and people one after another until someone picks up — so calls never fall through the cracks.',
-    heroChips: ['In sequence', 'No missed calls', 'Your order'],
+    accent: PURPLE, eyebrow: 'Cascade ring', name: 'Cascade Ring', title: 'Ring the team in order, soon', comingSoon: 'cascadeRing',
+    sub: 'We’re building cascade ring, so calls can ring one person after another, in the order you choose. Today, everyone available rings at once and whoever’s free picks up.',
+    heroChips: ['Coming soon', 'Your order', 'Simultaneous ring today'],
     features: [
-      { icon: 'bell', title: 'Ring in sequence', desc: 'One device or person after another.' },
-      { icon: 'target', title: 'Your order', desc: 'Set who rings first, second, next.' },
-      { icon: 'user', title: 'Team coverage', desc: 'Someone is always next in line.' },
-      { icon: 'chat', title: 'Fallback to text', desc: 'Miss it all? Auto-text the caller.' },
+      { icon: 'bell', title: 'Ring in sequence', desc: 'Coming soon: one person after another.' },
+      { icon: 'target', title: 'Your order', desc: 'Coming soon: set who rings first, second, next.' },
+      { icon: 'user', title: 'Ring all at once', desc: 'Available today: everyone available rings together.' },
+      { icon: 'chat', title: 'Fallback to text', desc: 'Available today: auto-text callers you miss.' },
     ],
     bands: [
-      { tag: 'Catch every call', title: 'Keep ringing until someone answers', body: 'If the first person is busy, the call moves to the next, then the next — down a list you control.', bullets: ['Sequential ring order', 'Configurable per team', 'No call left ringing out'] },
-      { tag: 'Safety net', title: 'Nothing slips through', body: 'If nobody picks up, the caller gets an automatic text back so the lead isn’t lost.', bullets: ['Missed-call text-back', 'Voicemail capture', 'Follow-up task created'] },
+      { tag: 'What’s planned', title: 'Keep ringing until someone answers', body: 'Soon, if the first person is busy, the call will move to the next, then the next, down a list you control. It isn’t available yet.', bullets: ['Sequential ring order', 'Set per team', 'Not available yet'] },
+      { tag: 'Available today', title: 'Nothing slips through', body: 'Today every available teammate rings at once, and anyone already on a call is skipped. If nobody picks up, the caller gets voicemail and an automatic text back.', bullets: ['Simultaneous ring', 'Voicemail capture', 'Missed-call text-back'] },
     ],
-    stats: [{ big: 'In order', label: 'ringing' }, { big: 'Team', label: 'coverage' }, { big: '0', label: 'dropped calls' }],
+    stats: [{ big: 'Soon', label: 'in-order ringing' }, { big: 'All', label: 'ring at once today' }, { big: 'Instant', label: 'text-back today' }],
     ctaHead: 'Cover every call',
   },
   'simultaneous-ring': {
     accent: PINK, eyebrow: 'Simultaneous ring', name: 'Simultaneous Ring', title: 'Ring everyone at once',
-    sub: 'Ring all your devices and teammates together so the fastest to answer gets the call — first come, first served.',
+    sub: 'Ring everyone who’s available at once so the fastest to answer gets the call. Teammates already on a call are skipped.',
     heroChips: ['All at once', 'Fastest wins', 'No waiting'],
     features: [
-      { icon: 'target', title: 'Ring all at once', desc: 'Every device and user rings together.' },
+      { icon: 'target', title: 'Ring all at once', desc: 'Everyone available rings together.' },
       { icon: 'bolt', title: 'Fastest answers', desc: 'Whoever’s free picks it up first.' },
       { icon: 'user', title: 'Team-wide', desc: 'Great for small, fast-moving teams.' },
-      { icon: 'phone', title: 'Any device', desc: 'Desk, browser or mobile — all ring.' },
+      { icon: 'phone', title: 'Browser or app', desc: 'Rings in the browser and the Colvy app.' },
     ],
     bands: [
       { tag: 'Fast pickup', title: 'The quickest hand answers', body: 'Ring the whole team at once and let whoever’s available grab the call — ideal when speed to answer matters.', bullets: ['Everyone rings together', 'Fastest to answer wins', 'Fewer missed calls'] },
-      { tag: 'Flexible', title: 'Mix it with other rules', body: 'Combine simultaneous ring with forwarding and fallbacks to build the flow your team needs.', bullets: ['Works with forwarding', 'Voicemail fallback', 'Missed-call text-back'] },
+      { tag: 'Safety net', title: 'If nobody picks up', body: 'Set how long it rings (20 to 60 seconds). If nobody answers, the caller goes to voicemail with your own greeting, gets a text back, or reaches the AI receptionist.', bullets: ['Ring time you set', 'Voicemail with your greeting', 'Missed-call text-back'] },
     ],
     stats: [{ big: 'All', label: 'ring at once' }, { big: 'Fastest', label: 'answers' }, { big: 'Fewer', label: 'missed calls' }],
     ctaHead: 'Answer faster as a team',
   },
   ivr: {
-    accent: CYAN, eyebrow: 'IVR & auto-attendant', name: 'IVR & Auto-Attendant', title: 'Send callers to the right team',
-    sub: 'A friendly menu that routes every caller to the right person or department — automatically, day or night.',
-    heroChips: ['Press-1 menus', 'Smart routing', 'After hours'],
+    accent: CYAN, eyebrow: 'IVR & auto-attendant', name: 'IVR & Auto-Attendant', title: 'Press-1 menus are coming', comingSoon: 'ivr',
+    sub: 'We’re building an IVR (auto-attendant), so callers can press a number to reach the right team. Today, the AI receptionist can answer when you can’t, and every call rings your whole team at once.',
+    heroChips: ['Coming soon', 'Press-1 menus', 'AI receptionist today'],
     features: [
-      { icon: 'target', title: 'Menu routing', desc: 'Press 1 for sales, 2 for support…' },
-      { icon: 'calendar', title: 'After-hours flows', desc: 'Different routing out of hours.' },
-      { icon: 'user', title: 'To the right team', desc: 'Callers reach who can help fastest.' },
-      { icon: 'chat', title: 'Fallbacks', desc: 'Voicemail or text-back if all busy.' },
+      { icon: 'target', title: 'Menu routing', desc: 'Coming soon: press 1 for sales, 2 for support.' },
+      { icon: 'calendar', title: 'After-hours menus', desc: 'Coming soon: a different menu out of hours.' },
+      { icon: 'ai', title: 'AI receptionist', desc: 'Available today: answers out of hours or when nobody picks up.' },
+      { icon: 'user', title: 'Ring the team', desc: 'Available today: everyone available rings at once.' },
     ],
     bands: [
-      { tag: 'First impression', title: 'A tidy front door for your calls', body: 'An auto-attendant greets callers and routes them to the right place, so nobody waits on the wrong line.', bullets: ['Custom greeting & menu', 'Route by choice or number dialled', 'Works 24/7'] },
-      { tag: 'Always covered', title: 'Handle after-hours gracefully', body: 'Out of hours, route to an on-call line, take a voicemail, or text the caller back.', bullets: ['After-hours routing', 'Voicemail capture', 'Missed-call text-back'] },
+      { tag: 'What’s planned', title: 'A tidy front door for your calls', body: 'Soon you’ll be able to set a greeting and a menu that sends each caller to the right person or team. It isn’t available yet.', bullets: ['Custom greeting & menu', 'Route by choice', 'Not available yet'] },
+      { tag: 'Available today', title: 'Covered after hours', body: 'Today the AI receptionist can answer out of hours, when nobody picks up, or always. It answers common questions, takes messages and texts callers links, and callers can press 0 for voicemail.', bullets: ['AI receptionist', 'Voicemail with your greeting', 'Missed-call text-back'] },
     ],
-    stats: [{ big: 'Smart', label: 'routing' }, { big: '24/7', label: 'front door' }, { big: 'Right', label: 'team, every time' }],
-    ctaHead: 'Route callers automatically',
+    stats: [{ big: 'Soon', label: 'press-1 menus' }, { big: '24/7', label: 'AI receptionist today' }, { big: 'All', label: 'ring at once today' }],
+    ctaHead: 'Answer every call',
+  },
+  'ai-receptionist': {
+    accent: CYAN, eyebrow: 'AI phone receptionist', name: 'AI Receptionist', title: 'An AI that answers when you can’t',
+    sub: 'Choose when the AI answers your business number — out of hours, when nobody picks up, or always — and it handles the common questions, takes messages and texts callers what they need.',
+    heroChips: ['Out of hours', 'When nobody answers', 'Takes messages'],
+    features: [
+      { icon: 'calendar', title: 'You choose when', desc: 'Out of hours, when nobody answers, or always.' },
+      { icon: 'book', title: 'Answers questions', desc: 'Opening hours, order status, stock and your AI Knowledge.' },
+      { icon: 'pen', title: 'Takes a message', desc: 'Creates a call-back task and alerts the team.' },
+      { icon: 'chat', title: 'Texts the details', desc: 'Sends an address, website or link by SMS.' },
+    ],
+    bands: [
+      { tag: 'Always answered', title: 'A friendly voice, even after hours', body: 'Test it on your own numbers first, then pick when it takes calls. Out of hours it answers straight away; in “when nobody answers” mode your team’s phones ring first and the AI picks up instead of voicemail.', bullets: ['Test numbers only, to start', 'Out of hours or when nobody answers', 'Callers can press 0 for voicemail'] },
+      { tag: 'You stay in charge', title: 'Only the skills you switch on', body: 'Turn each skill on or off: hours, order status, stock, answers from your knowledge, taking a message and texting links. With bookings on, it tells callers free times and texts a link to book; it never books on its own.', bullets: ['Skills you switch on', 'Never books on its own', 'Messages become call-back tasks'] },
+    ],
+    stats: [{ big: '4', label: 'ways to answer' }, { big: '24/7', label: 'if you want it' }, { big: 'Every', label: 'message becomes a task' }],
+    ctaHead: 'Let AI pick up the phone',
   },
   'ai-call-intelligence': {
     accent: PURPLE, eyebrow: 'AI call intelligence', name: 'AI Call Intelligence', title: 'Know the caller before you answer',
@@ -241,15 +263,15 @@ const PH: Record<string, Feat> = {
     ],
     bands: [
       { tag: 'Never forget', title: 'The whole call, on the record', body: 'Recordings and transcripts attach to the conversation, so details are never lost and anyone can catch up.', bullets: ['Automatic recording', 'Full transcript', 'AI summary attached'] },
-      { tag: 'Quality & training', title: 'Coach with real calls', body: 'Review real conversations to train the team and keep quality high — you control recording and access.', bullets: ['Review & coach', 'Access controls', 'Searchable archive'] },
+      { tag: 'Quality & training', title: 'Coach with real calls', body: 'Review real conversations to train the team and keep quality high.', bullets: ['Review & coach', 'On the customer timeline', 'Searchable archive'] },
     ],
     stats: [{ big: 'Every', label: 'call recorded' }, { big: 'Full', label: 'transcripts' }, { big: 'AI', label: 'summaries' }],
     ctaHead: 'Capture every call',
   },
   'call-reporting': {
     accent: BLUE, eyebrow: 'Call reporting', name: 'Call Reporting', title: 'See what your calls are doing',
-    sub: 'Dashboards and analytics on call volume, response times and outcomes — so you can staff and coach with data.',
-    heroChips: ['Dashboards', 'Response times', 'Outcomes'],
+    sub: 'Dashboards on call volume, answer and miss rates, talk time and busy hours — so you can staff and coach with data.',
+    heroChips: ['Dashboards', 'Miss rate', 'Busy hours'],
     features: [
       { icon: 'chart', title: 'Call analytics', desc: 'Volume, duration and trends at a glance.' },
       { icon: 'bell', title: 'Missed & answered', desc: 'See what you caught and what you missed.' },
@@ -257,7 +279,7 @@ const PH: Record<string, Feat> = {
       { icon: 'calendar', title: 'Over time', desc: 'Spot busy periods and staff for them.' },
     ],
     bands: [
-      { tag: 'Know the numbers', title: 'Your calls, in a dashboard', body: 'See volume, answer rates and response times so you can staff the busy hours and fix the slow ones.', bullets: ['Volume & answer rates', 'Response-time trends', 'Per-person breakdowns'] },
+      { tag: 'Know the numbers', title: 'Your calls, in a dashboard', body: 'See volume, answer and miss rates and talk time so you can staff the busy hours.', bullets: ['Volume & answer rates', 'Busy-hour heatmap', 'Per-person breakdowns'] },
       { tag: 'Coach with data', title: 'Turn insight into action', body: 'Spot patterns, set targets and coach the team with real numbers instead of hunches.', bullets: ['Missed-call trends', 'Busy-period insights', 'Team performance'] },
     ],
     stats: [{ big: 'Live', label: 'dashboards' }, { big: 'Per', label: 'person & team' }, { big: 'Trends', label: 'over time' }],
@@ -299,59 +321,59 @@ const PH: Record<string, Feat> = {
   },
   voip: {
     accent: CYAN, eyebrow: 'VoIP phone system', name: 'VoIP Phone System', title: 'A phone system, built in',
-    sub: 'Enterprise-grade cloud calling inside your inbox — no PBX, no hardware, no separate phone vendor.',
+    sub: 'Cloud calling inside your inbox — no PBX, no hardware, no separate phone vendor.',
     heroChips: ['Cloud PBX', 'No hardware', 'One platform'],
     features: [
       { icon: 'phone', title: 'Cloud calling', desc: 'A complete phone system in the cloud.' },
-      { icon: 'target', title: 'Routing & menus', desc: 'IVR, forwarding and ring rules built in.' },
+      { icon: 'target', title: 'Ringing & fallbacks', desc: 'Ring the team, then voicemail or the AI receptionist.' },
       { icon: 'inbox', title: 'In your inbox', desc: 'Calls beside chats, SMS and email.' },
       { icon: 'chart', title: 'Managed in one place', desc: 'Numbers, users and reports together.' },
     ],
     bands: [
-      { tag: 'One less vendor', title: 'Retire the old phone system', body: 'Everything a PBX does — numbers, routing, recording, reporting — lives inside Colvy, next to your conversations.', bullets: ['No PBX or hardware', 'Numbers, routing & recording', 'One bill, one platform'] },
+      { tag: 'One less vendor', title: 'Retire the old phone system', body: 'Numbers, ringing, voicemail, recording and reporting live inside Colvy, next to your conversations.', bullets: ['No PBX or hardware', 'Numbers, voicemail & recording', 'One bill, one platform'] },
       { tag: 'Scales with you', title: 'Add a line in minutes', body: 'Spin up numbers and users as you grow, without waiting on a telco.', bullets: ['Instant provisioning', 'Per-location numbers', 'Grow without hardware'] },
     ],
     stats: [{ big: '0', label: 'hardware' }, { big: '1', label: 'platform' }, { big: 'Cloud', label: 'PBX' }],
     ctaHead: 'Replace your phone system',
   },
   international: {
-    accent: BLUE, eyebrow: 'International calling', name: 'International Calling', title: 'Call the world, affordably',
-    sub: 'Reach customers in 100+ countries at competitive rates — all from the same browser dialer.',
-    heroChips: ['100+ countries', 'Great rates', 'One dialer'],
+    accent: BLUE, eyebrow: 'International calling', name: 'International Calling', title: 'International calling is coming', comingSoon: 'internationalCalling',
+    sub: 'We’re working on international calling from the Colvy dialer. Today, Colvy numbers are Australian, and calls run in the browser and the Colvy app.',
+    heroChips: ['Coming soon', 'One dialer', 'Australian numbers today'],
     features: [
-      { icon: 'globe', title: '100+ countries', desc: 'Dial almost anywhere in the world.' },
-      { icon: 'tag', title: 'Competitive rates', desc: 'Fair per-minute pricing.' },
-      { icon: 'phone', title: 'Same dialer', desc: 'No separate tool for overseas calls.' },
-      { icon: 'user', title: 'Context included', desc: 'History travels with every call.' },
+      { icon: 'globe', title: 'Overseas calls', desc: 'Coming soon: call customers outside Australia.' },
+      { icon: 'tag', title: 'Clear pricing', desc: 'Coming soon: rates published before launch.' },
+      { icon: 'phone', title: 'Same dialer', desc: 'Available today: browser and app calling.' },
+      { icon: 'user', title: 'Context included', desc: 'Available today: history beside every call.' },
     ],
     bands: [
-      { tag: 'Go global', title: 'Overseas customers, one dialer', body: 'Call internationally from the same browser dialer you use for local calls — with the customer’s history right there.', bullets: ['100+ countries', 'Competitive per-minute rates', 'Calls logged and summarised'] },
-      { tag: 'No surprises', title: 'Clear, fair pricing', body: 'Transparent rates so international calling doesn’t become a nasty line on the bill.', bullets: ['Transparent rates', 'Usage in your reports', 'No hidden fees'] },
+      { tag: 'What’s planned', title: 'Overseas customers, one dialer', body: 'Soon you’ll be able to call customers overseas from the same dialer you use for local calls, with the customer’s history right there. It isn’t available yet, and we’ll publish the rates before it launches.', bullets: ['Overseas calling', 'Published rates', 'Not available yet'] },
+      { tag: 'Available today', title: 'Australian numbers, live in minutes', body: 'Today you can get a local or mobile Australian number online and call from the browser or the Colvy app, with every call logged on the customer’s thread.', bullets: ['Local & mobile numbers', 'Browser and app calling', 'Calls logged and summarised'] },
     ],
-    stats: [{ big: '100+', label: 'countries' }, { big: 'Fair', label: 'rates' }, { big: '1', label: 'dialer' }],
-    ctaHead: 'Call anywhere',
+    stats: [{ big: 'Soon', label: 'international calling' }, { big: 'AU', label: 'numbers today' }, { big: '1', label: 'dialer' }],
+    ctaHead: 'Start calling from Colvy',
   },
   'command-centre': {
     accent: CORAL, eyebrow: 'Command centre', name: 'Command Centre', title: 'Every call, on one screen',
-    sub: 'A live dashboard of calls in progress, queues and team status — with AI voice agents you can watch in real time.',
-    heroChips: ['Live dashboard', 'Queues', 'AI voice agents'],
+    sub: 'A live dashboard of calls in progress, missed callers and team status — with the AI receptionist’s calls right beside your team’s.',
+    heroChips: ['Live dashboard', 'Missed callers', 'AI receptionist'],
     features: [
       { icon: 'kanban', title: 'Live view', desc: 'Calls in progress and waiting, at a glance.' },
       { icon: 'user', title: 'Team status', desc: 'See who’s on a call and who’s free.' },
-      { icon: 'ai', title: 'AI voice agents', desc: 'Watch AI handle calls in real time.' },
-      { icon: 'target', title: 'Jump in', desc: 'Route, assign or take over instantly.' },
+      { icon: 'ai', title: 'AI receptionist', desc: 'See the calls the AI answered and why.' },
+      { icon: 'target', title: 'Text back', desc: 'Reply to missed callers from the board.' },
     ],
     bands: [
-      { tag: 'Total visibility', title: 'Run the phones from one screen', body: 'See every live call, the queue and who’s available — and step in the moment something needs a hand.', bullets: ['Live calls & queues', 'Team availability', 'Route or take over'] },
-      { tag: 'AI on the floor', title: 'Watch AI agents work', body: 'AI voice agents handle routine calls while you monitor and jump in whenever you like.', bullets: ['AI voice agents', 'Real-time monitoring', 'Human takeover anytime'] },
+      { tag: 'Total visibility', title: 'Run the phones from one screen', body: 'See every live call, who’s available and which callers nobody has called back yet — and follow up from the same screen.', bullets: ['Live calls', 'Team availability', 'Missed callers to call back'] },
+      { tag: 'AI on the board', title: 'See what the AI handled', body: 'Calls the AI receptionist answered sit on the board with your team’s, with the messages it took and the texts it sent.', bullets: ['AI calls beside your team’s', 'Messages it took', 'An AI summary of the period'] },
     ],
-    stats: [{ big: 'Live', label: 'call dashboard' }, { big: 'Real-time', label: 'team status' }, { big: 'AI', label: 'voice agents' }],
+    stats: [{ big: 'Live', label: 'call dashboard' }, { big: 'Real-time', label: 'team status' }, { big: 'AI', label: 'receptionist calls' }],
     ctaHead: 'Take command of your calls',
   },
 }
 
 // All phone features — used for the "more" strip.
-const ALL = Object.entries(PH).map(([slug, f]) => ({ slug, name: f.name }))
+const ALL = Object.entries(PH).map(([slug, f]) => ({ slug, name: f.name, soon: !!f.comingSoon && isComingSoon(f.comingSoon) }))
 
 function useReveal(threshold = 0.14) {
   const ref = useRef<HTMLDivElement>(null)
@@ -421,7 +443,7 @@ export default function PhoneFeaturePage() {
         <div style={{ position: 'relative' }}>
           <Reveal>
             <a href="/phones" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, fontWeight: 800, color: accent, textDecoration: 'none', marginBottom: 14 }}>← Phones</a>
-            <div style={{ marginBottom: 8 }}><span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 14px', borderRadius: 999, background: accent + '18', color: accent, fontSize: 12.5, fontWeight: 800, letterSpacing: '0.04em', textTransform: 'uppercase' }}><FeatureIcon name={f.features[0].icon} color={accent} size={15} />{f.eyebrow}</span></div>
+            <div style={{ marginBottom: 8 }}><span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 14px', borderRadius: 999, background: accent + '18', color: accent, fontSize: 12.5, fontWeight: 800, letterSpacing: '0.04em', textTransform: 'uppercase' }}><FeatureIcon name={f.features[0].icon} color={accent} size={15} />{f.eyebrow}</span>{f.comingSoon && <ComingSoonPill feature={f.comingSoon} style={{ marginLeft: 8, fontSize: 12, padding: '6px 12px' }} />}</div>
             <h1 style={{ fontSize: 'clamp(36px, 5.2vw, 60px)', fontWeight: 900, letterSpacing: '-0.035em', lineHeight: 1.04, margin: '0 0 18px' }}>{f.title}</h1>
             <p style={{ fontSize: 'clamp(16px, 1.9vw, 20px)', color: muted, maxWidth: 520, lineHeight: 1.6, margin: '0 0 30px' }}>{f.sub}</p>
             <div className="pf-hero-cta" style={{ display: 'flex', gap: 12 }}>
@@ -498,7 +520,7 @@ export default function PhoneFeaturePage() {
           <p style={{ fontSize: 16, color: muted, maxWidth: 560, margin: '0 auto 22px', lineHeight: 1.55 }}>One phone system, every feature — explore the rest.</p>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, justifyContent: 'center' }}>
             {ALL.filter(a => a.slug !== slug).map(a => (
-              <a key={a.slug} href={`/phones/${a.slug}`} style={{ fontSize: 13.5, fontWeight: 700, color: text, background: cardBg, border: `1px solid ${cardBorder}`, borderRadius: 999, padding: '8px 16px', textDecoration: 'none' }}>{a.name}</a>
+              <a key={a.slug} href={`/phones/${a.slug}`} style={{ fontSize: 13.5, fontWeight: 700, color: text, background: cardBg, border: `1px solid ${cardBorder}`, borderRadius: 999, padding: '8px 16px', textDecoration: 'none' }}>{a.name}{a.soon ? ' (coming soon)' : ''}</a>
             ))}
           </div>
         </Reveal>

@@ -20,7 +20,7 @@ const CARDS = [
   { icon: 'bolt', title: 'Stripe', desc: 'Send payment links and take payment in-chat.', href: '/integrations/stripe', accent: STRIPE },
   { icon: 'bell', title: 'Slack', desc: 'Get the alerts where your team already works.', href: '/integrations/slack', accent: SLACK },
   { icon: 'plug', title: 'Zapier', desc: 'Connect Colvy to 5,000+ apps, no code.', href: '/integrations/zapier', accent: ZAP },
-  { icon: 'link', title: 'Webhooks & API', desc: 'Build anything custom — events out, data in.', href: '/integrations/api', accent: CYAN },
+  { icon: 'link', title: 'Webhooks & API', desc: 'Signed event webhooks, an ideas API and MCP.', href: '/integrations/api', accent: CYAN },
 ]
 
 function useReveal(threshold = 0.14) {

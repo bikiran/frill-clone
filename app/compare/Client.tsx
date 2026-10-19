@@ -137,7 +137,7 @@ export default function CompareHub() {
       <section style={{ maxWidth: 1180, margin: '0 auto', padding: '40px 24px 80px' }}>
         <Reveal>
           <h2 style={{ fontSize: 'clamp(26px, 3.8vw, 44px)', fontWeight: 900, letterSpacing: '-0.025em', textAlign: 'center', margin: '0 0 6px' }}>See how Colvy <span style={{ color: CORAL }}>compares</span></h2>
-          <p style={{ textAlign: 'center', fontSize: 16.5, color: muted, maxWidth: 620, margin: '0 auto 36px', lineHeight: 1.55 }}>More channels, smarter AI, Australian 🇦🇺 support and a 45-minute migration — against the biggest names in customer communication.</p>
+          <p style={{ textAlign: 'center', fontSize: 16.5, color: muted, maxWidth: 620, margin: '0 auto 36px', lineHeight: 1.55 }}>More channels, smarter AI, Australian 🇦🇺 support and a 45-minute set-up — against the biggest names in customer communication.</p>
         </Reveal>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 20 }}>
           {CARDS.map((card, i) => (
@@ -162,7 +162,7 @@ export default function CompareHub() {
         <Reveal>
           <div style={{ maxWidth: 700, margin: '0 auto' }}>
             <h2 style={{ fontSize: 'clamp(28px, 5vw, 50px)', fontWeight: 900, letterSpacing: '-0.03em', color: '#fff', margin: '0 0 12px' }}>Switch in 45 minutes</h2>
-            <p style={{ fontSize: 17, color: 'rgba(255,255,255,0.9)', margin: '0 0 28px' }}>Our team handles the migration. Keep your number, your reviews and your customers.</p>
+            <p style={{ fontSize: 17, color: 'rgba(255,255,255,0.9)', margin: '0 0 28px' }}>Our team helps you switch. Keep your reviews and your customers.</p>
             <button onClick={go} className="sol-btn" style={{ padding: '16px 38px', borderRadius: 999, background: '#fff', color: INK, fontWeight: 900, fontSize: 17, border: 'none', cursor: 'pointer', boxShadow: '0 14px 40px rgba(0,0,0,0.2)' }}>Start free — no card</button>
           </div>
         </Reveal>

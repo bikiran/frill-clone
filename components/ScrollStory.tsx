@@ -19,7 +19,7 @@ export type Stage = { key: string; eyebrow: string; title: string; body: string;
 const HOME_STAGES: Stage[] = [
   {
     key: 'channels', eyebrow: 'Every channel', title: 'Every message, wherever it starts.',
-    body: 'WhatsApp, Instagram, Messenger, SMS, email and phone calls. Customers reach you however they like.',
+    body: 'Instagram, Messenger, SMS, email and phone calls. Customers reach you however they like.',
     bg: '#ff6a4d', ink: '#fff4ef',
     poses: { wa: { x: -125, y: -175, r: -6 }, ig: { x: 75, y: -120, r: 5 }, fb: { x: -150, y: -30, r: 3 }, sms: { x: 100, y: 10, r: -4 }, em: { x: -95, y: 115, r: 5 }, ph: { x: 115, y: 155, r: -3 } },
   },
@@ -89,7 +89,7 @@ export const Msg = ({ ch, color, who, text, time }: { ch: string; color: string;
 )
 export const CHIP: Record<string, string> = { WhatsApp: '#16a34a', Instagram: '#db2777', Messenger: '#2563eb', SMS: '#0891b2', Email: '#7c3aed', Phone: '#ea580c' }
 const HOME_CARDS: Record<string, ReactNode> = {
-  wa: <Msg ch="WhatsApp" color={CHIP.WhatsApp} who="Priya Nair" text="Can I book a tank clean-out for Friday?" time="2m" />,
+  wa: <Msg ch="SMS" color={CHIP.SMS} who="Priya Nair" text="Can I book a tank clean-out for Friday?" time="2m" />,
   ig: <Msg ch="Instagram" color={CHIP.Instagram} who="Mia Chen" text="Is the 4ft reef tank still available? 🐠" time="now" />,
   fb: <Msg ch="Messenger" color={CHIP.Messenger} who="Leo Martin" text="Are you open this Sunday?" time="5m" />,
   sms: <Msg ch="SMS" color={CHIP.SMS} who="Tom Becker" text="Thanks, I’ll pick it up Saturday 👍" time="9m" />,
@@ -102,7 +102,7 @@ const HOME_CARDS: Record<string, ReactNode> = {
         <span style={{ fontSize: 14, fontWeight: 800 }}>Inbox</span>
         <span style={{ marginLeft: 'auto', fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 999, background: '#eff6ff', color: '#2563eb' }}>6 new</span>
       </div>
-      {[['Mia Chen', 'Instagram', 'Is the 4ft reef tank still…', '#ec4899'], ['Priya Nair', 'WhatsApp', 'Can I book a tank clean-out…', '#22c55e'], ['Leo Martin', 'Messenger', 'Are you open this Sunday?', '#3b82f6'], ['Tom Becker', 'SMS', 'Thanks, I’ll pick it up…', '#0ea5e9'], ['Jack Wu', 'Email', 'Re: Delivery to Geelong', '#8b5cf6'], ['Ana Lopez', 'Phone', 'AI answered · call-back task', '#f97316']].map(([n, ch, s, c], i) => (
+      {[['Mia Chen', 'Instagram', 'Is the 4ft reef tank still…', '#ec4899'], ['Priya Nair', 'SMS', 'Can I book a tank clean-out…', '#0891b2'], ['Leo Martin', 'Messenger', 'Are you open this Sunday?', '#3b82f6'], ['Tom Becker', 'SMS', 'Thanks, I’ll pick it up…', '#0ea5e9'], ['Jack Wu', 'Email', 'Re: Delivery to Geelong', '#8b5cf6'], ['Ana Lopez', 'Phone', 'AI answered · call-back task', '#f97316']].map(([n, ch, s, c], i) => (
         <div key={n} style={{ display: 'flex', gap: 10, padding: '9px 16px', borderTop: i ? '1px solid #f4f4f6' : 'none', background: i ? '#fff' : '#fff6f3' }}>
           <span style={{ width: 28, height: 28, borderRadius: '50%', background: c, color: '#fff', fontSize: 10.5, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{n.split(' ').map(w => w[0]).join('')}</span>
           <div style={{ minWidth: 0, flex: 1 }}>

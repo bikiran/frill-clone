@@ -3,7 +3,7 @@ import Client from './Client'
 
 export const metadata: Metadata = {
   title: "Channels",
-  description: "Connect Messenger, Instagram, WhatsApp, SMS, email, phone, live chat and Google reviews to one shared inbox with Colvy.",
+  description: "Connect Messenger, Instagram, SMS, email, phone, live chat and Google reviews to one shared inbox with Colvy.",
   alternates: { canonical: "/channels" },
 }
 

@@ -2,7 +2,7 @@
 // stay in sync — mismatched structured data can get a page's rich results
 // suppressed by Google.
 export const PRICING_FAQS: { q: string; a: string }[] = [
-  { q: 'How does the pricing work?', a: 'Pick the product you actually use. The Feedback plan covers ideas, roadmaps, announcements, polls, surveys and your help center. Inbox covers live chat, CRM, SMS and voice calls. Everything bundles both. For white-label, SSO/SAML, SLAs and custom contracts, talk to sales. Start on Free and upgrade whenever you need more.' },
+  { q: 'How does the pricing work?', a: 'Pick the product you actually use. The Feedback plan covers ideas, roadmaps, announcements, polls, surveys and your help center. Inbox covers live chat, CRM, SMS and voice calls. Everything bundles both. For high-volume usage, dedicated onboarding and custom contracts, talk to sales. Start on Free and upgrade whenever you need more.' },
   { q: 'Is there a free plan?', a: 'Yes — the Free plan is free forever with no credit card required. It includes an ideas board, a public roadmap, announcements, a help center and the feedback widget.' },
   { q: 'How is SMS and calling billed?', a: 'The Inbox and Everything plans include 3,000 SMS per month. Texts beyond the monthly allowance use prepaid SMS credits, from A$0.15 per text and cheaper in volume. You top up by card (from A$20, with optional auto top-up), and texts stop rather than run up a bill when credit runs out. International messaging is priced separately. See the note below the plans for details.' },
   { q: 'Can I change plans later?', a: 'Absolutely. You can upgrade or downgrade at any time. Upgrades take effect immediately; downgrades take effect at the end of your billing cycle.' },

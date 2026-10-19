@@ -18,11 +18,11 @@ export const metadata: Metadata = {
     template: '%s · Colvy',
   },
   description:
-    'Colvy is the all-in-one customer platform for small businesses: one shared inbox for WhatsApp, Instagram, Messenger, email, SMS and live chat, with a CRM, business phone, store orders, payments, AI agents and customer feedback built in.',
+    'Colvy is the all-in-one customer platform for small businesses: one shared inbox for Instagram, Messenger, email, SMS and live chat, with a CRM, business phone, store orders, payments, AI agents and customer feedback built in.',
   applicationName: 'Colvy',
   keywords: [
     'shared inbox', 'omnichannel inbox', 'small business CRM', 'business phone',
-    'business SMS', 'WhatsApp', 'Instagram DM', 'Messenger', 'live chat', 'help desk',
+    'business SMS', 'Instagram DM', 'Messenger', 'live chat', 'help desk',
     'WooCommerce', 'Shopify', 'AI agents', 'customer feedback',
   ],
   // The black rounded tile (the app icon), so the mark stays visible on dark
@@ -42,14 +42,14 @@ export const metadata: Metadata = {
     url: SITE_URL,
     title: 'Colvy — Shared Inbox, CRM & Business Phone for Small Businesses',
     description:
-      'One shared inbox for WhatsApp, Instagram, Messenger, email, SMS and live chat, with a CRM, business phone, store orders, payments and AI agents built in.',
+      'One shared inbox for Instagram, Messenger, email, SMS and live chat, with a CRM, business phone, store orders, payments and AI agents built in.',
     images: [{ url: '/og.png', width: 1731, height: 909, alt: 'Colvy — customer communication made simple' }],
   },
   twitter: {
     card: 'summary_large_image',
     title: 'Colvy — Shared Inbox, CRM & Business Phone for Small Businesses',
     description:
-      'One shared inbox for WhatsApp, Instagram, Messenger, email, SMS and live chat, with a CRM, business phone, store orders, payments and AI agents built in.',
+      'One shared inbox for Instagram, Messenger, email, SMS and live chat, with a CRM, business phone, store orders, payments and AI agents built in.',
     images: ['/og.png'],
   },
   robots: {

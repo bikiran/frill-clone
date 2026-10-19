@@ -1,6 +1,7 @@
 'use client'
 
 import { COLVY_CONTACT } from '@/lib/colvy-contact'
+import { soonLabel } from '@/lib/feature-availability'
 
 // Shared marketing footer — big and bold (ManyChat-style): tall dark band, many
 // link columns (two-up even on mobile, never one long list), a giant Colvy
@@ -19,7 +20,7 @@ export default function MarketingFooter({ dark = false }: { dark?: boolean }) {
     { title: 'Product', links: [{ l: 'Overview', h: '/product' }, { l: 'Ideas', h: '/product/ideas' }, { l: 'Roadmap', h: '/product/roadmap' }, { l: 'Announcements', h: '/product/announcements' }, { l: 'Knowledgebase', h: '/product/knowledgebase' }] },
     { title: 'Explore', links: [{ l: 'All-in-one platform', h: '/all-in-one-customer-platform' }, { l: 'AI Assistant', h: '/ai-assistant' }, { l: 'Phones', h: '/phones' }, { l: 'Australian business numbers', h: '/business-phone-number-australia' }, { l: 'Integrations', h: '/integrations' }, { l: 'Compare', h: '/compare' }] },
     { title: 'Who it’s for', links: [{ l: 'Ecommerce', h: '/for/ecommerce' }, { l: 'Multi-location retail', h: '/for/multi-location-retail' }, { l: 'Service businesses', h: '/for/service-businesses' }, { l: 'Restaurants', h: '/for/restaurants' }, { l: 'Real estate', h: '/for/real-estate' }, { l: 'All industries', h: '/industries' }] },
-    { title: 'Channels', links: [{ l: 'WhatsApp', h: '/channels/whatsapp' }, { l: 'Instagram & Messenger', h: '/channels/meta' }, { l: 'Email', h: '/channels/email' }, { l: 'Two-way SMS', h: '/channels/sms' }, { l: 'Live chat', h: '/channels/chat-widget' }, { l: 'Google Reviews', h: '/channels/google-reviews' }] },
+    { title: 'Channels', links: [{ l: soonLabel('WhatsApp', 'whatsapp'), h: '/channels/whatsapp' }, { l: 'Instagram & Messenger', h: '/channels/meta' }, { l: 'Email', h: '/channels/email' }, { l: 'Two-way SMS', h: '/channels/sms' }, { l: 'Live chat', h: '/channels/chat-widget' }, { l: 'Google Reviews', h: '/channels/google-reviews' }] },
     { title: 'Company', links: [{ l: 'About', h: '/about' }, { l: 'Careers', h: '/careers' }, { l: 'Blog', h: '/blog' }, { l: 'Referrals', h: '/referrals' }, { l: 'Changelog', h: '/changelog' }, { l: 'Solutions', h: '/solutions' }, { l: 'Pricing', h: '/pricing' }] },
     { title: 'Legal', links: [{ l: 'Security', h: '/security' }, { l: 'Status', h: '/status' }, { l: 'Privacy', h: '/privacy' }, { l: 'Terms', h: '/terms' }] },
   ]

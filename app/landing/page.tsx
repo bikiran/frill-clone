@@ -44,7 +44,6 @@ const BUBBLES = [
 const MARQUEE_WORDS = ['One inbox for every channel', 'Sell inside the chat', 'Reply in seconds', 'Schedule it for later', 'Speak it, send it polished', 'Record every sale', 'Text them when it’s back', 'Automate the follow-up', 'Never miss a customer']
 
 const BRANDS = [
-  { name: 'WhatsApp', logo: 'https://cdn.jsdelivr.net/npm/simple-icons@v9/icons/whatsapp.svg' },
   { name: 'Instagram', logo: 'https://cdn.jsdelivr.net/npm/simple-icons@v9/icons/instagram.svg' },
   { name: 'Messenger', logo: 'https://cdn.jsdelivr.net/npm/simple-icons@v9/icons/messenger.svg' },
   { name: 'WooCommerce', logo: 'https://cdn.jsdelivr.net/npm/simple-icons@v9/icons/woocommerce.svg' },
@@ -58,17 +57,12 @@ const BRANDS = [
 
 // Trust strip for the hero banner (ManyChat-style bottom badges).
 const TRUST: { label: string; logo?: string; star?: boolean }[] = [
-  { label: '4.9/5 average rating', star: true },
+  { label: 'Shopify ready', logo: 'https://cdn.jsdelivr.net/npm/simple-icons@v9/icons/shopify.svg' },
   { label: 'Meta Business tools', logo: 'https://cdn.jsdelivr.net/npm/simple-icons@v9/icons/meta.svg' },
   { label: 'WooCommerce ready', logo: 'https://cdn.jsdelivr.net/npm/simple-icons@v9/icons/woocommerce.svg' },
   { label: 'Stripe payments', logo: 'https://cdn.jsdelivr.net/npm/simple-icons@v9/icons/stripe.svg' },
 ]
 
-const STORIES = [
-  { name: 'Sam Rivera', role: 'CEO', company: 'Roxy Aquarium', color: CORAL, photo: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=112&q=75&auto=format&fit=crop', quote: 'A WhatsApp message becomes a paid sale without leaving the thread.', metric: '45 min setup' },
-  { name: 'Aiko Tanaka', role: 'Product Lead', company: 'nePlay', color: BLUE, photo: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=112&q=75&auto=format&fit=crop', quote: 'One shared inbox for every channel. Our team finally moves fast.', metric: '2× replies' },
-  { name: 'Jordan Mills', role: 'Founder', company: 'Prexty', color: GREEN, photo: 'https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?w=112&q=75&auto=format&fit=crop', quote: 'We see the real revenue every conversation generates. Game changer.', metric: '+28 NPS' },
-]
 
 // ── hooks / helpers ──────────────────────────────────────────────────────────
 function useReveal(threshold = 0.15) {
@@ -369,7 +363,7 @@ export default function LandingPage() {
 
   // Full-bleed feature bands (edge-to-edge colour — kills the empty sides).
   const BIG = [
-    { color: CORAL, band: dark ? 'rgba(255,106,77,0.10)' : '#fff1ec', tag: 'One shared inbox', title: 'Every channel. One conversation.', body: 'WhatsApp, Instagram, Messenger, email, SMS and live chat land in a single shared inbox — each message tied to a full customer profile, so anyone on your team can pick up the thread.', bullets: ['Unified omnichannel inbox', 'Full customer profile beside every chat', 'Voice typing: speak a reply, send it polished'], href: '/inbox-crm', visual: 'demo' as const },
+    { color: CORAL, band: dark ? 'rgba(255,106,77,0.10)' : '#fff1ec', tag: 'One shared inbox', title: 'Every channel. One conversation.', body: 'Instagram, Messenger, email, SMS and live chat land in a single shared inbox — each message tied to a full customer profile, so anyone on your team can pick up the thread.', bullets: ['Unified omnichannel inbox', 'Full customer profile beside every chat', 'Voice typing: speak a reply, send it polished'], href: '/inbox-crm', visual: 'demo' as const },
     { color: BLUE, band: dark ? 'rgba(43,89,255,0.10)' : '#eef2ff', tag: 'Sell inside the chat', title: 'Turn a message into money.', body: 'Look up live WooCommerce orders, take payments, recover abandoned carts, text everyone on a waitlist the moment stock is back and record off-Stripe sales — right where the customer is talking to you. Then see the real revenue each conversation drove.', bullets: ['Live orders, refunds & payment links', 'Abandoned carts & back-in-stock waitlists', 'Revenue-per-conversation reporting'], href: '/inbox-crm#woo', visual: 'sale' as const },
     { color: GREEN, band: dark ? 'rgba(0,196,140,0.10)' : '#eafaf4', tag: 'Online booking', title: 'Bookings that fill themselves.', body: 'Customers book a service, a time and a team member on your own booking page, pay a deposit, and get SMS reminders. If plans change, they move it themselves. Every booking lands in the same thread as their messages.', bullets: ['Live staff & location availability', 'Stripe deposits and SMS reminders', 'Self-serve reschedule & cancel'], href: '/product/booking', visual: 'booking' as const },
     { color: PURPLE, band: dark ? 'rgba(124,92,255,0.10)' : '#f3efff', tag: 'Work less, close more', title: 'Automations that never sleep.', body: 'Auto-reply, route and follow up. Schedule a reply for the right moment, turn any conversation into an assignable task on a calendar, trigger order updates, and let AI draft the reply — you stay in control.', bullets: ['Order-status & follow-up automations', 'Scheduled replies — edit, send now or cancel', 'Tasks, calendar & reminders', 'AI-assisted replies with an undo'], href: '/inbox-crm#tasks', visual: 'flow' as const },
@@ -427,7 +421,7 @@ export default function LandingPage() {
                 </span>
               </h1>
               <p style={{ fontSize: 'clamp(16px, 1.7vw, 20px)', color: muted, lineHeight: 1.6, maxWidth: 520, margin: '0 0 32px' }}>
-                One shared inbox for WhatsApp, Instagram, email, SMS &amp; live chat — with WooCommerce, payments, media and AI built in. Talk to customers and close sales, all in one place.
+                One shared inbox for Instagram, Messenger, email, SMS &amp; live chat — with WooCommerce, payments, media and AI built in. Talk to customers and close sales, all in one place.
               </p>
               <div className="cv-hero-cta" style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center' }}>
                 <button onClick={handleDashboard} className="cv-btn-primary" style={btnPrimary}>{user ? 'Go to dashboard' : (<><span className="cv-lg">Start free — no card</span><span className="cv-sm">Start free</span></>)} <ArrowRight /></button>
@@ -435,7 +429,7 @@ export default function LandingPage() {
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 26 }}>
                 <div aria-hidden style={{ display: 'flex' }}>{[CORAL, BLUE, GREEN, YELLOW, PURPLE].map((c, i) => (<div key={i} style={{ width: 34, height: 34, borderRadius: '50%', background: c, border: `2.5px solid ${bg}`, marginLeft: i ? -10 : 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800, color: c === BLUE ? '#fff' : INK }}>{['SC', 'MW', 'PS', 'JK', 'AR'][i]}</div>))}</div>
-                <span style={{ fontSize: 13.5, color: muted }}>Loved by <strong style={{ color: text, display: 'inline-block', minWidth: '4.2em' }}>{realStats.teams > 0 ? realStats.teams.toLocaleString() + '+' : 'growing'}</strong> teams · <span style={{ color: YELLOW }}>★★★★★</span></span>
+                <span style={{ fontSize: 13.5, color: muted }}>Loved by <strong style={{ color: text, display: 'inline-block', minWidth: '4.2em' }}>{realStats.teams > 0 ? realStats.teams.toLocaleString() + '+' : 'growing'}</strong> teams</span>
               </div>
             </div>
 
@@ -561,16 +555,6 @@ export default function LandingPage() {
       {/* PARALLAX PHOTO BANNER */}
       <ParallaxBanner />
 
-      {/* TESTIMONIALS */}
-      <section id="stories" style={{ padding: 'clamp(64px, 9vw, 110px) 24px', background: bg, scrollMarginTop: 80 }}>
-        <div style={{ maxWidth: 1160, margin: '0 auto' }}>
-          <Reveal><h2 style={{ textAlign: 'center', fontSize: 'clamp(28px, 4.4vw, 48px)', fontWeight: 900, letterSpacing: '-0.025em', margin: '0 0 48px', color: text }}>Teams that switched, <span style={{ color: CORAL }}>and stayed</span></h2></Reveal>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 20 }}>
-            {STORIES.map((t, i) => (<Reveal key={t.name} delay={i * 0.06}><div className="cv-card" style={{ padding: 28, borderRadius: 22, background: cardBg, border: `1px solid ${cardBorder}`, height: '100%', display: 'flex', flexDirection: 'column' }}><div style={{ display: 'flex', gap: 3, marginBottom: 14, color: YELLOW }}>{[...Array(5)].map((_, j) => <svg key={j} width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg>)}</div><p style={{ fontSize: 16, lineHeight: 1.65, color: text, fontWeight: 600, margin: '0 0 22px', flex: 1 }}>&ldquo;{t.quote}&rdquo;</p><div style={{ display: 'flex', alignItems: 'center', gap: 12, justifyContent: 'space-between' }}><div style={{ display: 'flex', alignItems: 'center', gap: 12 }}><img src={t.photo} alt="" loading="lazy" decoding="async" width={46} height={46} style={{ width: 46, height: 46, borderRadius: '50%', objectFit: 'cover' }} /><div><p style={{ margin: 0, fontSize: 14.5, fontWeight: 800, color: text }}>{t.name}</p><p style={{ margin: 0, fontSize: 12.5, color: muted }}>{t.role} · {t.company}</p></div></div><span style={{ padding: '5px 11px', borderRadius: 999, background: t.color + '1a', color: t.color, fontSize: 12, fontWeight: 800 }}>{t.metric}</span></div></div></Reveal>))}
-          </div>
-        </div>
-      </section>
-
       {/* BIG CTA (full-bleed gradient) */}
       <section style={{ position: 'relative', padding: 'clamp(64px, 9vw, 120px) 24px', textAlign: 'center', background: `linear-gradient(135deg, ${CORAL}, ${PINK} 55%, ${PURPLE})`, overflow: 'hidden' }}>
         <div aria-hidden style={{ position: 'absolute', top: -50, left: '6%', width: 240, height: 240, borderRadius: '50%', background: 'rgba(255,255,255,0.14)' }} />
@@ -637,15 +621,15 @@ function BookingMock({ color, text, muted, cardBg, border }: { color: string; te
 // ── See how it works: clickable step list drives an animated phone ───────────
 type Step = { title: string; desc: string; href: string; channel: string; who: string; color: string; bubbles: { side: 'them' | 'me' | 'system'; text: string; kind?: 'text' | 'image' | 'pill' | 'system' }[] }
 const HIW_STEPS: Step[] = [
-  { title: 'Every channel in one inbox', desc: 'WhatsApp, Instagram, Messenger, email & SMS — one thread.', href: '/inbox-crm', channel: 'WhatsApp', who: 'Sam Rivera', color: '#25D366',
-    bubbles: [{ side: 'them', text: 'Hi! Do you still have the 4ft reef tank in stock? 🐠' }, { side: 'me', text: 'Hey Sam! Yes — 2 left in Sydney.' }] },
-  { title: 'Reply with media from your gallery', desc: 'Send saved photos & videos in a tap — mark up a photo or trim a video first.', href: '/inbox-crm#gallery', channel: 'WhatsApp', who: 'Sam Rivera', color: '#25D366',
+  { title: 'Every channel in one inbox', desc: 'Instagram, Messenger, email & SMS — one thread.', href: '/inbox-crm', channel: 'Instagram', who: 'Sam Rivera', color: '#E1306C',
+    bubbles: [{ side: 'them', text: 'Hi! Do you still have the 4ft reef tank in stock? 🐠' }, { side: 'me', text: 'Hey Sam! Yes — 2 left.' }] },
+  { title: 'Reply with media from your gallery', desc: 'Send saved photos & videos in a tap — mark up a photo or trim a video first.', href: '/inbox-crm#gallery', channel: 'Instagram', who: 'Sam Rivera', color: '#E1306C',
     bubbles: [{ side: 'them', text: 'Can you show me one?' }, { side: 'me', text: '', kind: 'image' }, { side: 'me', text: 'Here it is 📸' }] },
-  { title: 'Take the payment in chat', desc: 'Send a payment link or record any method — right here.', href: '/inbox-crm#woo', channel: 'WhatsApp', who: 'Sam Rivera', color: '#25D366',
+  { title: 'Take the payment in chat', desc: 'Send a payment link or record any method — right here.', href: '/inbox-crm#woo', channel: 'Instagram', who: 'Sam Rivera', color: '#E1306C',
     bubbles: [{ side: 'me', text: 'Sent you a payment link 💳' }, { side: 'them', text: "I've sent the payment 🙌" }, { side: 'me', text: 'Order #123466 · Paid ✅', kind: 'pill' }] },
-  { title: 'Record the sale', desc: 'Log the revenue Colvy helped you make — even off-Stripe.', href: '/inbox-crm#woo', channel: 'WhatsApp', who: 'Sam Rivera', color: '#25D366',
+  { title: 'Record the sale', desc: 'Log the revenue Colvy helped you make — even off-Stripe.', href: '/inbox-crm#woo', channel: 'Instagram', who: 'Sam Rivera', color: '#E1306C',
     bubbles: [{ side: 'me', text: 'Sale recorded · $385 · Bank transfer', kind: 'pill' }, { side: 'system', text: 'Credited to you · added to Revenue via Colvy', kind: 'system' }] },
-  { title: 'Automate the follow-up', desc: 'Auto-reply, assign a task and schedule the next nudge.', href: '/inbox-crm#tasks', channel: 'WhatsApp', who: 'Sam Rivera', color: '#25D366',
+  { title: 'Automate the follow-up', desc: 'Auto-reply, assign a task and schedule the next nudge.', href: '/inbox-crm#tasks', channel: 'Instagram', who: 'Sam Rivera', color: '#E1306C',
     bubbles: [{ side: 'system', text: 'Task created · Ship 4ft reef tank', kind: 'system' }, { side: 'system', text: 'Follow-up scheduled in 3 days', kind: 'system' }, { side: 'me', text: "Thanks Sam! We'll have this on its way today 🚚" }] },
 ]
 

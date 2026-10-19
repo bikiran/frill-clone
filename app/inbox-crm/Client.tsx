@@ -6,6 +6,7 @@ import { redirectToUserAdmin } from '@/lib/redirect'
 import OmniInboxDemo from '@/components/OmniInboxDemo'
 import MarketingFooter from '@/components/MarketingFooter'
 import MarketingNav from '@/components/MarketingNav'
+import { soonLabel } from '@/lib/feature-availability'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Inbox & CRM product page — matches the main landing's bold, bright, full-bleed
@@ -25,13 +26,13 @@ const INK = '#0f1119'
 const HERO_VERBS = ['Sell', 'Reply', 'Upsell', 'Support', 'Close']
 
 const CHANNELS = [
-  { n: 'WhatsApp', c: '#25D366' }, { n: 'Instagram', c: '#E1306C' }, { n: 'Messenger', c: '#0084FF' },
-  { n: 'Email', c: PURPLE }, { n: 'SMS', c: CYAN }, { n: 'Live chat', c: CORAL }, { n: 'Website forms', c: GREEN },
+  { n: 'Instagram', c: '#E1306C' }, { n: 'Messenger', c: '#0084FF' },
+  { n: 'Email', c: PURPLE }, { n: 'SMS', c: CYAN }, { n: 'Live chat', c: CORAL }, { n: 'Website forms', c: GREEN }, { n: soonLabel('WhatsApp', 'whatsapp'), c: '#25D366' },
 ]
 
 const CAPS = [
   { c: CORAL, t: 'Calls & voicemail', d: 'Make, receive and log calls with context and AI summaries.', p: 'M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.9.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z' },
-  { c: BLUE, t: 'Every channel', d: 'WhatsApp, Instagram, Messenger, email, SMS, chat & forms — one thread.', p: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z' },
+  { c: BLUE, t: 'Every channel', d: 'Instagram, Messenger, email, SMS, chat & forms — one thread.', p: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z' },
   { c: PURPLE, t: 'AI assistant', d: 'Drafts replies in your tone and can handle whole conversations.', p: 'M12 2a3 3 0 0 1 3 3v1a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z M5 11h14 M5 11a7 7 0 0 0 14 0 M9 21h6' },
   { c: GREEN, t: 'Customer context', d: 'Who’s messaging, their orders and history — before you reply.', p: 'M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2 M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z' },
   { c: PINK, t: 'Payments & orders', d: 'Send payment links, take orders and issue refunds in-thread.', p: 'M1 4h22v16H1z M1 10h22' },
@@ -54,11 +55,11 @@ const AISTEPS = [
 // palette per index in the render.
 const BLOCKS = (dark: boolean, border: string, ink: string, sub: string) => [
   { id: 'inbox', tag: 'Shared inbox', title: 'One inbox for every channel',
-    body: 'WhatsApp, Instagram, Messenger, email, SMS and website chat land in a single shared queue. Assign threads to teammates, leave private notes, @mention colleagues and never lose a conversation between apps again.',
+    body: 'Instagram, Messenger, email, SMS and website chat land in a single shared queue. Assign threads to teammates, leave private notes, @mention colleagues and never lose a conversation between apps again.',
     points: ['Assign, snooze and resolve like a team', 'Private notes, @mentions and internal tasks', 'Schedule replies, then edit, send now or cancel', 'Voice typing: speak a reply, send it polished'],
     mock: (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%', maxWidth: 420 }}>
-        {[['SR', 'Sam Rivera', 'Do you still have the 4ft…', '#25D366', '2'], ['MO', 'Mia Okafor', 'Thanks — order received!', '#E1306C', ''], ['JL', 'Jon Lee', 'Can I get a refund on…', PURPLE, '1']].map(([in_, nm, msg, cl, b]) => (
+        {[['SR', 'Sam Rivera', 'Do you still have the 4ft…', '#0084FF', '2'], ['MO', 'Mia Okafor', 'Thanks — order received!', '#E1306C', ''], ['JL', 'Jon Lee', 'Can I get a refund on…', PURPLE, '1']].map(([in_, nm, msg, cl, b]) => (
           <div key={nm} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 13px', borderRadius: 14, background: dark ? '#171826' : '#fff', border: `1px solid ${border}`, boxShadow: '0 8px 24px rgba(15,17,25,0.06)' }}>
             <div style={{ width: 32, height: 32, borderRadius: '50%', background: cl, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800 }}>{in_}</div>
             <div style={{ flex: 1, minWidth: 0 }}>
@@ -321,7 +322,7 @@ export default function InboxCrmPage() {
                 <span><RotatingWord words={HERO_VERBS} color={CORAL} /> without leaving.</span>
               </h1>
               <p style={{ fontSize: 'clamp(16px, 1.7vw, 20px)', color: muted, lineHeight: 1.6, maxWidth: 540, margin: '0 0 32px' }}>
-                Colvy unifies WhatsApp, Instagram, Messenger, email, SMS &amp; live chat into one shared inbox — with a built-in CRM, media gallery, WooCommerce, trackable links and location insights behind every message.
+                Colvy unifies Instagram, Messenger, email, SMS &amp; live chat into one shared inbox — with a built-in CRM, media gallery, WooCommerce, trackable links and location insights behind every message.
               </p>
               <div className="cv-hero-cta" style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center' }}>
                 <button onClick={go} className="cv-btn-primary" style={btnPrimary}>{user ? 'Go to dashboard' : (<><span className="cv-lg">Start free — no card</span><span className="cv-sm">Start free</span></>)} <ArrowRight /></button>

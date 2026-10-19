@@ -16,7 +16,7 @@ const CORAL = '#ff6a4d', PINK = '#ff4d8d', PURPLE = '#7c5cff', GREEN = '#12b76a'
 const COMPONENTS = [
   { icon: 'inbox', name: 'Web app & dashboard', desc: 'Signing in and using the Colvy admin' },
   { icon: 'link', name: 'Inbox & API', desc: 'Conversations, contacts and the public API' },
-  { icon: 'chat', name: 'Messaging channels', desc: 'SMS, WhatsApp, email and social DMs' },
+  { icon: 'chat', name: 'Messaging channels', desc: 'SMS, email and social DMs' },
   { icon: 'phone', name: 'Voice & calls', desc: 'Inbound/outbound calling and recordings' },
   { icon: 'ai', name: 'AI assistant', desc: 'Drafting, summaries and AI actions' },
   { icon: 'tag', name: 'Payments & orders', desc: 'Payment links and order sync' },

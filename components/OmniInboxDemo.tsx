@@ -6,8 +6,7 @@
 // Theme-aware via the `dark` prop so it drops into the light/dark landing.
 
 const CH = [
-  { key: 'wa', label: 'WhatsApp', color: '#25D366', badge: 3, path: 'M12 2a10 10 0 0 0-8.5 15.3L2 22l4.9-1.4A10 10 0 1 0 12 2z' },
-  { key: 'ig', label: 'Instagram', color: '#E1306C', badge: 1, path: 'M12 2.2c3.2 0 3.6 0 4.9.07 1.2.06 1.8.25 2.2.42.6.22 1 .48 1.4.9.4.4.7.8.9 1.4.17.4.36 1 .42 2.2.06 1.3.07 1.7.07 4.9s0 3.6-.07 4.9c-.06 1.2-.25 1.8-.42 2.2-.22.6-.48 1-.9 1.4-.4.4-.8.7-1.4.9-.4.17-1 .36-2.2.42-1.3.06-1.7.07-4.9.07s-3.6 0-4.9-.07c-1.2-.06-1.8-.25-2.2-.42-.6-.22-1-.48-1.4-.9-.4-.4-.7-.8-.9-1.4-.17-.4-.36-1-.42-2.2C2.2 15.6 2.2 15.2 2.2 12s0-3.6.07-4.9c.06-1.2.25-1.8.42-2.2.22-.6.48-1 .9-1.4.4-.4.8-.7 1.4-.9.4-.17 1-.36 2.2-.42C8.4 2.2 8.8 2.2 12 2.2z' },
+  { key: 'ig', label: 'Instagram', color: '#E1306C', badge: 3, path: 'M12 2.2c3.2 0 3.6 0 4.9.07 1.2.06 1.8.25 2.2.42.6.22 1 .48 1.4.9.4.4.7.8.9 1.4.17.4.36 1 .42 2.2.06 1.3.07 1.7.07 4.9s0 3.6-.07 4.9c-.06 1.2-.25 1.8-.42 2.2-.22.6-.48 1-.9 1.4-.4.4-.8.7-1.4.9-.4.17-1 .36-2.2.42-1.3.06-1.7.07-4.9.07s-3.6 0-4.9-.07c-1.2-.06-1.8-.25-2.2-.42-.6-.22-1-.48-1.4-.9-.4-.4-.7-.8-.9-1.4-.17-.4-.36-1-.42-2.2C2.2 15.6 2.2 15.2 2.2 12s0-3.6.07-4.9c.06-1.2.25-1.8.42-2.2.22-.6.48-1 .9-1.4.4-.4.8-.7 1.4-.9.4-.17 1-.36 2.2-.42C8.4 2.2 8.8 2.2 12 2.2z' },
   { key: 'fb', label: 'Messenger', color: '#0084FF', badge: 0, path: 'M12 2C6.5 2 2 6.1 2 11.2c0 2.9 1.4 5.5 3.7 7.2V22l3.4-1.9c.9.25 1.9.4 2.9.4 5.5 0 10-4.1 10-9.2S17.5 2 12 2z' },
   { key: 'em', label: 'Email', color: '#8b5cf6', badge: 2, path: 'M4 4h16v16H4z M22 6l-10 7L2 6' },
   { key: 'sms', label: 'SMS', color: '#0891b2', badge: 0, path: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z' },
@@ -70,7 +69,7 @@ export default function OmniInboxDemo({ dark = false }: { dark?: boolean }) {
             <div style={{ lineHeight: 1.2 }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: ink }}>Sam Rivera</div>
               <div style={{ fontSize: 11, color: sub, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#25D366' }} /> via WhatsApp
+                <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#E1306C' }} /> via Instagram
               </div>
             </div>
             <span style={{ marginLeft: 'auto', fontSize: 10, fontWeight: 700, color: '#10b981', padding: '3px 9px', borderRadius: 999, background: '#10b98115' }}>Open</span>

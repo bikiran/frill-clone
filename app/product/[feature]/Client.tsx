@@ -105,7 +105,7 @@ const PAGES: Record<string, any> = {
   inbox: {
     icon: 'inbox', color: TEAL, mock: 'inbox', subtitle: 'Shared inbox',
     title: 'Every channel, one shared inbox',
-    hero: 'SMS, WhatsApp, email, chat, social and calls thread into one place your whole team works from — each message beside the full customer story.',
+    hero: 'SMS, email, chat, Instagram, Messenger and calls thread into one place your whole team works from — each message beside the full customer story.',
     features: [
       { icon: 'inbox', title: 'One thread per customer', desc: 'Every channel in a single conversation.' },
       { icon: 'user', title: 'Full context', desc: 'History and profile beside each chat.' },
@@ -205,9 +205,9 @@ const PAGES: Record<string, any> = {
   waitlists: {
     icon: 'bell', color: PURPLE, mock: 'waitlist', subtitle: 'Back-in-stock waitlists',
     title: 'Sold out? Keep the sale',
-    hero: 'A “Notify me” form on every sold-out WooCommerce product. When stock comes back, everyone waiting gets a text automatically, and their replies land in your inbox.',
+    hero: 'A “Notify me” form on every sold-out WooCommerce or Shopify product. When stock comes back, everyone waiting gets a text automatically, and their replies land in your inbox.',
     features: [
-      { icon: 'pen', title: '“Notify me” on sold-out products', desc: 'Added to your WooCommerce product pages by the Colvy plugin, including each sold-out variation.' },
+      { icon: 'pen', title: '“Notify me” on sold-out products', desc: 'Added by the Colvy plugin on WooCommerce or the Colvy theme block on Shopify, including each sold-out variation.' },
       { icon: 'bell', title: 'Automatic restock alerts', desc: 'When stock returns, everyone waiting gets an SMS, or an email if there’s no mobile.' },
       { icon: 'chart', title: 'See what’s most wanted', desc: 'Lists ranked by demand, so you know what to reorder first.' },
       { icon: 'inbox', title: 'Replies in the inbox', desc: 'Alerts go out on the customer’s thread, so “can you hold one?” lands with your team.' },
@@ -221,7 +221,7 @@ const PAGES: Record<string, any> = {
     title: 'Talk your replies, send them polished',
     hero: 'Tap the mic in any composer and just speak. Colvy Voice turns it into a clean, punctuated reply, with the “ums” gone and your product and customer names spelled right.',
     features: [
-      { icon: 'mic', title: 'In every composer', desc: 'Chat, SMS, WhatsApp, email and internal notes, on the web and in the mobile app.' },
+      { icon: 'mic', title: 'In every composer', desc: 'Chat, SMS, social, email and internal notes, on the web and in the mobile app.' },
       { icon: 'pen', title: 'Polished, not just transcribed', desc: 'Fillers removed, punctuation and capitals added, so it reads like you typed it.' },
       { icon: 'tag', title: 'Knows your names', desc: 'Your products, brands and the customer’s name are recognised and spelled correctly.' },
       { icon: 'bolt', title: 'Faster than typing', desc: 'Answer a long question in seconds, even on your phone between jobs.' },
@@ -233,14 +233,14 @@ const PAGES: Record<string, any> = {
   'abandoned-carts': {
     icon: 'cart', color: '#d97706', mock: 'carts', subtitle: 'Abandoned carts',
     title: 'Win back the checkouts you lose',
-    hero: 'When a WooCommerce shopper leaves checkout, their cart lands in your inbox with the items, total and contact details, so your team can follow up by text or email and turn it into an order.',
+    hero: 'When a WooCommerce or Shopify shopper leaves checkout, their cart lands in your inbox with the items, total and contact details, so your team can follow up by text or email and turn it into an order.',
     features: [
       { icon: 'inbox', title: 'Every cart in the inbox', desc: 'A thread per shopper with what they left, the total and how to reach them.' },
       { icon: 'chat', title: 'Follow up by SMS or email', desc: 'Reply from the thread, answer the question that stopped them, send a coupon.' },
       { icon: 'tag', title: 'Convert to order', desc: 'Turn the cart into a WooCommerce order without leaving Colvy.' },
       { icon: 'chart', title: 'Recovered revenue', desc: 'Orders from abandoned carts are matched automatically, even when they buy on another device.' },
       { icon: 'megaphone', title: 'Win-back campaigns', desc: 'Target everyone with an unrecovered cart in a broadcast.' },
-      { icon: 'plug', title: 'Captured by the Colvy plugin', desc: 'Picks up the cart as the shopper types their email or mobile at checkout.' },
+      { icon: 'plug', title: 'Captured automatically', desc: 'The Colvy plugin picks up WooCommerce carts as the shopper types; Shopify checkouts come in from your store.' },
     ],
     cta: 'Recover carts',
   },
@@ -287,9 +287,9 @@ const PAGES: Record<string, any> = {
   broadcasts: {
     icon: 'megaphone', color: CORAL, mock: 'broadcasts', subtitle: 'Broadcasts',
     title: 'Reach everyone at once',
-    hero: 'Send SMS, email and WhatsApp broadcasts to opted-in customers — and every reply lands back in the shared inbox.',
+    hero: 'Send SMS and email broadcasts to opted-in customers — and every reply lands back in the shared inbox.',
     features: [
-      { icon: 'megaphone', title: 'One composer', desc: 'Compose once, send across channels.' },
+      { icon: 'megaphone', title: 'One composer', desc: 'Compose once, send by SMS or email.' },
       { icon: 'target', title: 'Segments', desc: 'Target by history, tags or activity.' },
       { icon: 'chat', title: 'Two-way replies', desc: 'Responses land in the inbox.' },
       { icon: 'lock', title: 'Opt-out handling', desc: 'Consent managed automatically.' },
