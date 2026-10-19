@@ -117,7 +117,7 @@ const FEATURES: { icon: string; title: string; body: string }[] = [
   { icon: 'phone', title: 'Calls in the browser and app', body: 'Answer and make calls from Colvy on the web, or the iPhone and Android app. No desk phone needed.' },
   { icon: 'chat', title: 'Texts on a mobile number', body: 'An 04 mobile number sends and receives texts, straight into the shared inbox.' },
   { icon: 'user', title: 'Know who’s calling', body: 'Callers are matched to their customer record, so as it rings you see their name, order count and spend, and where they’ve contacted you before.' },
-  { icon: 'bell', title: 'Ring the whole team', body: 'Every available teammate’s browser and phone rings at once. Choose how long it rings before voicemail.' },
+  { icon: 'bell', title: 'Ring the whole team', body: 'Every available teammate’s browser and phone rings at once. Choose how long it rings before voicemail, or ring people in order, forward to your mobile or add a press-1 menu.' },
   { icon: 'form', title: 'Recordings and AI summaries', body: 'Calls are recorded and transcribed, with a short AI summary saved on the conversation.' },
   { icon: 'store', title: 'A number per location', body: 'Add a number for each store or location and assign it there. Every number is answered from the same inbox.' },
 ]

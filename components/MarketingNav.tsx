@@ -105,7 +105,7 @@ const MENUS: Menu[] = [
         { icon: 'pin', title: 'Australian numbers', desc: 'Local or mobile, online in minutes', href: '/business-phone-number-australia' },
         { icon: 'ai', title: 'AI Receptionist', desc: 'Answers when you can’t', href: '/phones/ai-receptionist' },
         { icon: 'target', title: 'IVR & Routing', desc: 'Press-1 menus for callers', href: '/phones/ivr', soon: 'ivr' },
-        { icon: 'link', title: 'Call Forwarding', desc: 'Forward to any number', href: '/phones/call-forwarding', soon: 'callForwarding' },
+        { icon: 'link', title: 'Call Forwarding', desc: 'Forward to a mobile or landline', href: '/phones/call-forwarding', soon: 'callForwarding' },
         { icon: 'globe', title: 'International', desc: 'Call customers overseas', href: '/phones/international', soon: 'internationalCalling' },
       ] },
       { heading: 'Records & AI', items: [
