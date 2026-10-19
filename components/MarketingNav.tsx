@@ -98,7 +98,7 @@ const MENUS: Menu[] = [
       { heading: 'Calling', items: [
         { icon: 'phone', title: 'Click to Dial', desc: 'One-click from any tab', href: '/phones/click-to-dial' },
         { icon: 'globe', title: 'Browser Dialer', desc: 'Call without leaving Colvy', href: '/phones/browser-dialer' },
-        { icon: 'bolt', title: 'HD Audio', desc: 'HD voice on calls', href: '/phones/hd-audio', soon: 'hdAudio' },
+        { icon: 'bolt', title: 'HD Audio', desc: 'HD voice in app & browser', href: '/phones/hd-audio', soon: 'hdAudio' },
         { icon: 'phone', title: 'Mobile App', desc: 'Colvy on iOS & Android', href: '/phones/mobile-app' },
       ] },
       { heading: 'Numbers & routing', items: [

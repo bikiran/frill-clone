@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { TwilioService, createVoiceAccessToken, twilioIdentity } from '@/lib/twilio-service'
 import { inspectFcmSecret } from '@/lib/fcm-secret'
+import { MOBILE_AUDIO_CONFIG } from '@/lib/voice-audio'
 
 export const dynamic = 'force-dynamic'
 
@@ -167,7 +168,9 @@ export async function POST(req: NextRequest) {
       ttlSeconds: 3600,
     })
 
-    return NextResponse.json({ token, identity, from: integ.phone_number || null, hasPushCredential: !!pushCredentialSid })
+    // `audio`: the codec order (Opus/HD first) and mic processing the app should
+    // pass to the Voice SDK's ConnectOptions / AcceptOptions (lib/voice-audio).
+    return NextResponse.json({ token, identity, from: integ.phone_number || null, hasPushCredential: !!pushCredentialSid, audio: MOBILE_AUDIO_CONFIG })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }

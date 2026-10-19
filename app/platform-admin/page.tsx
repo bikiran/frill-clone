@@ -15,6 +15,7 @@ import SignupsPage from '@/components/platform-admin/SignupsPage'
 import EmailHealthCard from '@/components/platform-admin/EmailHealthCard'
 import SignupSmsHealth from '@/components/platform-admin/SignupSmsHealth'
 import WebFormsPage from '@/components/platform-admin/WebFormsPage'
+import PortingQueuePage from '@/components/platform-admin/PortingQueuePage'
 import BillingConfigCard from '@/components/platform-admin/BillingConfigCard'
 import SmsCreditsPage from '@/components/platform-admin/SmsCreditsPage'
 import CompanySmsBilling from '@/components/platform-admin/CompanySmsBilling'
@@ -131,6 +132,7 @@ const NAV = [
   { key: 'webforms',   label: 'Web Forms',        icon: 'system' },
   { key: 'demos',      label: 'Demo Workspaces',  icon: 'companies' },
   { key: 'calls',      label: 'Call Diagnostics', icon: 'chat' },
+  { key: 'porting',    label: 'Number Porting',   icon: 'tickets' },
   { key: 'webhooks',   label: 'Webhook Explorer', icon: 'system' },
   { key: 'jobs',       label: 'Background Jobs',  icon: 'system' },
   { key: 'apilogs',    label: 'API Logs',         icon: 'audit' },
@@ -5052,6 +5054,7 @@ export default function SuperAdmin() {
           {page === 'webforms'     && <WebFormsPage />}
           {page === 'demos'        && <DemoWorkspacesPage />}
           {page === 'calls'        && <CallDiagnosticsPage />}
+          {page === 'porting'      && <PortingQueuePage />}
           {page === 'webhooks'     && <WebhookExplorerPage />}
           {page === 'jobs'         && <BackgroundJobsPage />}
           {page === 'apilogs'      && <ApiLogsPage />}

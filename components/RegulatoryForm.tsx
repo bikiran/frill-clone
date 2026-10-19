@@ -10,7 +10,7 @@ import { supabase } from '@/lib/supabase'
 // date of birth and (later) Onfido ID verification.
 export default function RegulatoryForm({ companyId, numberType, provider = 'telnyx', free = false, onComplete, onCancel }: {
   companyId: string
-  numberType: 'local' | 'mobile'
+  numberType: 'local' | 'mobile' | 'tollfree'
   provider?: 'telnyx' | 'twilio'
   free?: boolean
   onComplete: (bundleId: string) => void
@@ -77,7 +77,7 @@ export default function RegulatoryForm({ companyId, numberType, provider = 'teln
       <div style={{ background: '#fff', borderRadius: 18, maxWidth: 520, width: '100%', maxHeight: '90vh', overflowY: 'auto', padding: 26 }}>
         <h2 style={{ margin: '0 0 4px', fontSize: 20, fontWeight: 800, color: 'var(--ink)' }}>Verify your details</h2>
         <p style={{ margin: '0 0 4px', fontSize: 13.5, color: 'var(--slate)', lineHeight: 1.5 }}>
-          Australian regulations (ACMA) require these details before we can activate your {numberType === 'mobile' ? 'mobile' : 'landline'} number. Verification typically takes up to 72 hours.
+          Australian regulations (ACMA) require these details before we can activate your {numberType === 'mobile' ? 'mobile' : numberType === 'tollfree' ? '1800' : 'landline'} number. Verification typically takes up to 72 hours.
         </p>
 
         {error && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 10, padding: '10px 12px', margin: '12px 0', fontSize: 13, color: '#dc2626' }}>{error}</div>}

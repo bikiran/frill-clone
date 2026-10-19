@@ -35,7 +35,7 @@ const BANDS = [
 const ALL_FEATURES: { slug: string; name: string; icon: string; desc: string; soon?: ComingSoonKey }[] = [
   { slug: 'click-to-dial', name: 'Click to Dial', icon: 'phone', desc: 'One-click calling from any tab' },
   { slug: 'browser-dialer', name: 'Browser Dialer', icon: 'globe', desc: 'Call without leaving the browser' },
-  { slug: 'hd-audio', name: 'HD Audio', icon: 'bolt', desc: 'HD voice on calls', soon: 'hdAudio' },
+  { slug: 'hd-audio', name: 'HD Audio', icon: 'bolt', desc: 'HD voice in app & browser', soon: 'hdAudio' },
   { slug: 'numbers-porting', name: 'Numbers & Porting', icon: 'pin', desc: 'Bring your existing number', soon: 'numberPorting' },
   { slug: 'mobile-app', name: 'Mobile App', icon: 'phone', desc: 'Colvy on iOS & Android' },
   { slug: 'warm-transfer', name: 'Warm Transfer', icon: 'user', desc: 'Brief a colleague, then transfer' },

@@ -2,6 +2,15 @@ import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { platformTwilio } from '@/lib/twilio-platform'
+import { cleanNumberKind, bundleParamsFor } from '@/lib/number-types'
+
+// Twilio ties a regulatory bundle to a number type. Local and mobile share the
+// company's one bundle row, as they always have; a toll-free (1800) bundle is
+// its own row, so asking for an 1800 number never overwrites the bundle a
+// company's landline was bought with (and the other way round).
+const sameRow = (q: any, kind: string) => kind === 'tollfree'
+  ? q.eq('number_type', 'tollfree')
+  : q.or('number_type.is.null,number_type.neq.tollfree')
 
 function admin() {
   return createClient(
@@ -35,7 +44,7 @@ export async function POST(req: NextRequest) {
     if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     const bundle = {
       company_id: companyId,
-      number_type: body.number_type || 'local',
+      number_type: cleanNumberKind(body.number_type),
       entity_type: body.entity_type || 'business',
       first_name: body.first_name || null,
       last_name: body.last_name || null,
@@ -54,8 +63,8 @@ export async function POST(req: NextRequest) {
       updated_at: new Date().toISOString(),
     }
 
-    const { data: existing } = await db.from('number_regulatory_bundles')
-      .select('id').eq('company_id', companyId).order('created_at', { ascending: false }).limit(1).maybeSingle()
+    const { data: existing } = await sameRow(db.from('number_regulatory_bundles')
+      .select('id').eq('company_id', companyId), bundle.number_type).order('created_at', { ascending: false }).limit(1).maybeSingle()
     let bundleId = existing?.id
     if (bundleId) await db.from('number_regulatory_bundles').update(bundle).eq('id', bundleId)
     else { const { data: created } = await db.from('number_regulatory_bundles').insert(bundle).select('id').maybeSingle(); bundleId = created?.id }
@@ -74,10 +83,13 @@ export async function POST(req: NextRequest) {
     const svc = platformTwilio()
     if (svc) {
       try {
+        // NumberType / EndUserType per kind: local and mobile as before; 1800
+        // uses Twilio's toll-free type (env-overridable, lib/number-types).
+        const params = bundleParamsFor(bundle.number_type, bundle.entity_type)
         const created = await svc.createRegulatoryBundle({
           friendlyName: `Colvy ${String(companyId).slice(0, 8)} ${bundle.number_type}`,
           email: bundle.contact_email || 'compliance@colvy.com',
-          isoCountry: 'AU', numberType: bundle.number_type, endUserType: bundle.entity_type,
+          isoCountry: 'AU', ...params,
         })
         twilioBundleId = created?.sid || null
         if (twilioBundleId) { try { await svc.submitRegulatoryBundle(twilioBundleId) } catch {} }

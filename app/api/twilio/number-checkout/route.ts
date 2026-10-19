@@ -4,6 +4,7 @@ import Stripe from 'stripe'
 import { createClient } from '@supabase/supabase-js'
 import { billingUnavailableCopy } from '@/lib/billing-config'
 import { alertBillingNotConfigured } from '@/lib/billing-alert'
+import { cleanNumberKind, monthlyPriceAud } from '@/lib/number-types'
 
 function admin() {
   return createClient(
@@ -44,6 +45,11 @@ export async function POST(req: NextRequest) {
     }
     const stripe = new Stripe(secret, { apiVersion: '2024-06-20' as any })
     const origin = req.headers.get('origin') || 'https://colvy.com'
+    // 1800 numbers have their own (higher) monthly price and take calls only.
+    const kind = cleanNumberKind(numberType)
+    const product = kind === 'tollfree'
+      ? { name: 'Colvy 1800 Number', description: 'Australian 1800 number: callers ring free. Calls only.' }
+      : { name: 'Colvy Business Number', description: 'Australian phone number for calls & SMS' }
 
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',
@@ -52,8 +58,8 @@ export async function POST(req: NextRequest) {
       line_items: [{
         price_data: {
           currency: 'aud',
-          product_data: { name: 'Colvy Business Number', description: 'Australian phone number for calls & SMS' },
-          unit_amount: Math.round(parseFloat(process.env.COLVY_NUMBER_PRICE_AUD || '15') * 100),
+          product_data: product,
+          unit_amount: Math.round(monthlyPriceAud(kind) * 100),
           recurring: { interval: 'month' },
         },
         quantity: 1,
@@ -63,7 +69,7 @@ export async function POST(req: NextRequest) {
         provider: 'twilio',
         companyId,
         phoneNumber: phoneNumber || '',
-        numberType: numberType || 'local',
+        numberType: kind,
         locationId: locationId || '',
         locality: locality || '',
         areaCode: areaCode || '',

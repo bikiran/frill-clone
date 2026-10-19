@@ -269,6 +269,13 @@ export class TwilioService {
     return data?.incoming_phone_numbers?.[0] || null
   }
 
+  // The IncomingPhoneNumber by its PNxxxx SID, or null when the account has no
+  // such number (a ported number not yet in the account, or a typo).
+  async getIncomingNumberBySid(sid: string): Promise<any | null> {
+    try { return await this.req(`/IncomingPhoneNumbers/${encodeURIComponent(sid)}.json`, 'GET') }
+    catch (e: any) { if (Number(e?.status) === 404) return null; throw e }
+  }
+
   // Create an Address resource in the account. Twilio requires an emergency /
   // regulatory address (AddressSid) before it will sell certain numbers (AU
   // among them — "Phone Number Requires an Address"). Returns the ADxxxx SID.
@@ -338,14 +345,17 @@ export class TwilioService {
 
   // ── Number provisioning (used with the platform account) ────────────────────
   // Search buyable numbers in a country. `type` maps to Twilio's number classes.
-  async searchAvailableNumbers(params: { country?: string; type?: 'local' | 'mobile' | 'national' | 'tollfree'; areaCode?: string; contains?: string; inLocality?: string; limit?: number }): Promise<any[]> {
+  // Toll-free numbers in Australia take calls only, so they're searched without
+  // the SMS filter (it would always come back empty); `smsEnabled: false` does
+  // the same for any other search.
+  async searchAvailableNumbers(params: { country?: string; type?: 'local' | 'mobile' | 'national' | 'tollfree'; areaCode?: string; contains?: string; inLocality?: string; limit?: number; smsEnabled?: boolean }): Promise<any[]> {
     const country = params.country || 'AU'
     const kind = params.type === 'mobile' ? 'Mobile'
       : params.type === 'national' ? 'National'
       : params.type === 'tollfree' ? 'TollFree' : 'Local'
     const q = new URLSearchParams()
     q.set('PageSize', String(params.limit || 10))
-    q.set('SmsEnabled', 'true')
+    if (params.smsEnabled ?? params.type !== 'tollfree') q.set('SmsEnabled', 'true')
     q.set('VoiceEnabled', 'true')
     if (params.areaCode) q.set('AreaCode', params.areaCode)
     if (params.contains) q.set('Contains', params.contains)

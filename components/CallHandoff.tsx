@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { setActiveCall, clearActiveCall } from '@/lib/active-call'
 import { getCallDeviceId, registerCallDevice, handoffFetch } from '@/lib/call-device'
+import { hdDeviceOptions, applyHdAudio } from '@/lib/voice-audio'
 
 // Global receiver for active-call device handoff on the WEB.
 //  1. Registers this browser session as an available device (+ heartbeat).
@@ -109,7 +110,8 @@ export default function CallHandoff({ companyId, userId, agentName }: { companyI
       if (!tok?.token) throw new Error('No calling token')
 
       const { Device } = await import('@twilio/voice-sdk')
-      const device = new Device(tok.token, { codecPreferences: ['opus', 'pcmu'] as any })
+      const device = new Device(tok.token, hdDeviceOptions())
+      applyHdAudio(device)
       deviceRef.current = device
       device.on('error', (e: any) => { console.error('[handoff device] error', e) })
 
