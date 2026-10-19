@@ -14,7 +14,7 @@ export const COMING_SOON = {
   callForwarding: false,  // forwarding calls to an outside number (call routing, V399)
   internationalCalling: true,
   hdAudio: true,          // wideband / HD voice on calls
-  bookingWaitlist: true,  // offering freed-up booking slots to a waitlist
+  bookingWaitlist: false, // offering freed-up booking slots to a waitlist (V400)
   outletStock: true,      // stock levels for each store / outlet
 } as const
 

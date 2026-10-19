@@ -743,7 +743,7 @@ You set the rules:
 - **Refunds:** a paid booking cancelled before the cut-off is refunded automatically, so you’re not processing refunds by hand.
 
 > [!TIP] Make rescheduling easier than ghosting
-> Most no-shows are people who felt awkward cancelling. A visible “Change time” link on every confirmation and reminder gives them a guilt-free way out, and gives you the slot back early enough to fill.
+> Most no-shows are people who felt awkward cancelling. A visible “Change time” link on every confirmation and reminder gives them a guilt-free way out, and gives you the slot back early enough to fill. Switch on the booking waitlist and a full day offers “Join the waitlist”; when a slot frees up, the clients waiting for that day get a text with a link to book it.
 
 ## 5. Stop missing calls while your hands are full
 

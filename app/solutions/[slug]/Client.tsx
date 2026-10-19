@@ -130,7 +130,7 @@ const PAGES: Record<string, Page> = {
     ],
     bands: [
       { tag: 'Stop playing phone tag', title: 'Let customers book themselves', body: 'Back-and-forth over times wastes everyone’s day. Share one link and customers pick a service, a time and a team member that suits them, around the clock.', bullets: ['Booking page on your own address', 'Live staff and location availability', 'Intake questions up front'] },
-      { tag: 'Fewer no-shows', title: 'Deposits, reminders and easy changes', body: 'A deposit and two timely reminders keep people turning up. When plans change, they move the booking themselves and the slot opens up again.', bullets: ['Stripe deposits or prepayment', 'Reminders 24 hours and 2 hours before', 'Reschedule and cancel links with your policy'] },
+      { tag: 'Fewer no-shows', title: 'Deposits, reminders and easy changes', body: 'A deposit and two timely reminders keep people turning up. When plans change, they move the booking themselves and the slot opens up again, with a text to the people on your waitlist for that day.', bullets: ['Stripe deposits or prepayment', 'Reminders 24 hours and 2 hours before', 'Reschedule and cancel links with your policy', 'A waitlist that texts freed times'] },
     ],
     stats: [{ big: '24/7', label: 'online booking' }, { big: '2', label: 'automatic reminders' }, { big: 'in-thread', label: 'every booking' }],
     cta: { title: 'Take bookings while you work', sub: 'Online booking, deposits and reminders, all in the inbox.' },

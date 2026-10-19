@@ -16,6 +16,7 @@ import {
   cancelBooking, rescheduleBooking, findCustomerBookings, sendManageLink,
 } from '@/lib/booking'
 import { addDays, dateInTz, fmtDateTime, zonedParts } from '@/lib/booking-time'
+import { waitlistLink } from '@/lib/booking-waitlist'
 import type { ActionContext, ActionDef, JsonSchema } from './types'
 
 const obj = (properties: Record<string, any>, required: string[] = []): JsonSchema => ({ type: 'object', properties, required, additionalProperties: false })
@@ -59,7 +60,7 @@ export const listServices: ActionDef = {
 
 export const checkAvailability: ActionDef = {
   key: 'check_availability',
-  description: 'Free times for a service, in the business’s local time. Give the service name; optionally a date (YYYY-MM-DD) and how many days to look (1–7). If nothing is free it looks further ahead. To move one of the customer’s bookings, pass its bookingId (from find_my_bookings): the times then suit that booking — the same person if they chose one, the same outlet — and its current time counts as free. If they want a particular time of day, pass near (HH:MM, 24-hour): the closest free times come first and nearest is the single closest one.',
+  description: 'Free times for a service, in the business’s local time. Give the service name; optionally a date (YYYY-MM-DD) and how many days to look (1–7). If nothing is free it looks further ahead; when the business has a waitlist, the result then includes a waitlist link the customer can use to be texted if a spot opens. To move one of the customer’s bookings, pass its bookingId (from find_my_bookings): the times then suit that booking — the same person if they chose one, the same outlet — and its current time counts as free. If they want a particular time of day, pass near (HH:MM, 24-hour): the closest free times come first and nearest is the single closest one.',
   input: obj({
     service: { type: 'string', description: 'The service name (from list_services).' },
     date: { type: 'string', description: 'First day to look, YYYY-MM-DD. Default: today.' },
@@ -127,6 +128,11 @@ export const checkAvailability: ActionDef = {
     // of the times kept for reschedule_booking.
     ctx.scratch.slots = ordered.slice(0, 200).map(s => s.start)
     const nearest = wantMin != null && ordered.length ? ordered[0] : null
+    // Nothing free in the days they asked about, and the business keeps a
+    // waitlist: offer the link (not for moving an existing booking).
+    const waitlist = !moving && widened && bc.settings.waitlist?.enabled
+      ? { link: waitlistLink(bc.company, service.slug), guidance: 'Offer the waitlist: they leave their mobile on that page and get a text if a spot opens on the days they choose (first in gets it). Only offer it, never sign them up yourself.' }
+      : null
     return {
       ok: true,
       data: {
@@ -136,6 +142,7 @@ export const checkAvailability: ActionDef = {
         ...(nearest ? { nearest: { when: fmtDateTime(nearest.start, tz), start: new Date(nearest.start).toISOString() } } : {}),
         ...(widened ? { note: slots.length ? 'Nothing in the days asked about — these are the next free times.' : 'Nothing free in the next three weeks.' } : {}),
         slotIds: ordered.slice(0, 40).map(s => ({ when: fmtDateTime(s.start, tz), start: new Date(s.start).toISOString() })),
+        ...(waitlist ? { waitlist } : {}),
       },
       summary: `${slots.length} free time${slots.length === 1 ? '' : 's'} for ${service.name}`,
     }
