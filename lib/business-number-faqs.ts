@@ -9,5 +9,6 @@ export const BUSINESS_NUMBER_FAQS: { q: string; a: string }[] = [
   { q: 'How quickly is the number ready?', a: 'You fill in one short form with your business details and proof of address, then choose and pay for the number online. It’s usually set up within a couple of minutes of payment.' },
   { q: 'Can I keep my existing number?', a: 'Not yet. We’re building number porting, but moving an existing number into Colvy isn’t available today. Most businesses add a Colvy number alongside the one they have, and use it for texts, new listings and each store or team.' },
   { q: 'Do I need a desk phone?', a: 'No. Answer and make calls in your web browser or in the Colvy app for iPhone and Android.' },
+  { q: 'Can calls ring in order, go to my mobile or play a menu?', a: 'Yes. By default every available teammate rings at once. For each number you can instead ring people one at a time in your order, forward calls to an Australian mobile or landline (always, or only when you’re closed, with the person who answers pressing 1 to take the call), or play a press-1 menu, with a different menu out of hours if you like. Calls nobody answers still go to your voicemail, missed-call text or AI receptionist.' },
   { q: 'Can I have more than one number?', a: 'Yes. Add as many numbers as you need, for example one per store or location, all answered from the same inbox.' },
 ]

@@ -21,6 +21,11 @@ export const OPERATIONAL_FLAGS: { key: string; label: string; desc: string }[] =
     desc: 'Text the upload link to the customer’s mobile so they receive it off-site (an SMS thread, or a live-chat customer who has a mobile). Off = the link is only posted in the conversation, never texted.',
   },
   {
+    key: 'call_forwarding',
+    label: 'Call forwarding to outside numbers',
+    desc: 'Incoming calls can be forwarded to an outside Australian mobile or landline (Call routing). Each forwarded minute is an outbound call on Colvy’s Twilio account. Off = forwarding steps are skipped (the call rings the next step, then voicemail) and new forwarding can’t be saved. Needs a plan with phone channels either way.',
+  },
+  {
     key: 'posthog_analytics',
     label: 'Product analytics (PostHog)',
     desc: 'Capture pageviews and fulfilment events for this company. Off = no analytics events are sent for this company (independent of the global PostHog key).',

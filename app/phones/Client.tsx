@@ -39,7 +39,7 @@ const ALL_FEATURES: { slug: string; name: string; icon: string; desc: string; so
   { slug: 'numbers-porting', name: 'Numbers & Porting', icon: 'pin', desc: 'Bring your existing number', soon: 'numberPorting' },
   { slug: 'mobile-app', name: 'Mobile App', icon: 'phone', desc: 'Colvy on iOS & Android' },
   { slug: 'warm-transfer', name: 'Warm Transfer', icon: 'user', desc: 'Brief a colleague, then transfer' },
-  { slug: 'call-forwarding', name: 'Call Forwarding', icon: 'link', desc: 'Forward to any number', soon: 'callForwarding' },
+  { slug: 'call-forwarding', name: 'Call Forwarding', icon: 'link', desc: 'Forward to a mobile or landline', soon: 'callForwarding' },
   { slug: 'cascade-ring', name: 'Cascade Ring', icon: 'bell', desc: 'Ring the team in order', soon: 'cascadeRing' },
   { slug: 'simultaneous-ring', name: 'Simultaneous Ring', icon: 'target', desc: 'Ring everyone at once' },
   { slug: 'ivr', name: 'IVR & Auto-Attendant', icon: 'target', desc: 'Press-1 menus for callers', soon: 'ivr' },

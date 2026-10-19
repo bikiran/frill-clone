@@ -5,6 +5,7 @@ import VoicePlayer from '@/components/VoicePlayer'
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import DraftTasks from './DraftTasks'
+import { callRoutingFacts } from '@/lib/call-routing'
 
 // Coax-style call card for the conversation timeline: AI summary, action items,
 // sentiment, an audio player for the recording, and the full transcript.
@@ -184,6 +185,8 @@ export default function CallCard({ callId, meta, timestamp, highlight, accent = 
   const isMissed = !isVoicemail && !call?.recording_url && (duration || 0) <= 0 &&
     ['missed', 'no-answer', 'no_answer', 'failed', 'busy', 'canceled', 'cancelled'].includes(status)
   const when = timestamp ? new Date(timestamp).toLocaleString('en-AU', { day: '2-digit', month: 'short', hour: 'numeric', minute: '2-digit' }) : ''
+  // Call routing: the phone menu choice, the voicemail box, a forward.
+  const routed = callRoutingFacts(call)
 
   // Missed call — a compact timeline pill, not a full card (there's nothing to
   // Answered by the AI phone agent: its own compact card (the transcript note,
@@ -201,13 +204,15 @@ export default function CallCard({ callId, meta, timestamp, highlight, accent = 
       <div style={{ display: 'flex', justifyContent: 'center', margin: '8px 0' }}>
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '5px 12px', borderRadius: 20, background: '#fef2f2', border: '1px solid #fecaca', color: '#b91c1c', fontSize: 12, fontWeight: 600 }}>
           <span style={{ display: 'inline-flex', color: '#dc2626' }}>{PhoneMissedIcon(13)}</span>
-          {inbound ? 'Missed call' : 'Call not answered'}{num ? ` · ${num}` : ''}{when ? ` · ${when}` : ''}
+          {inbound ? 'Missed call' : 'Call not answered'}{num ? ` · ${num}` : ''}{routed.choice ? ` · ${routed.choice}` : ''}{when ? ` · ${when}` : ''}
         </span>
       </div>
     )
   }
 
-  const headLabel = isVoicemail ? 'Voicemail' : (inbound ? 'Call received' : 'Call made')
+  const headLabel = isVoicemail ? `Voicemail${routed.box ? ` · ${routed.box}` : ''}` : (inbound ? 'Call received' : 'Call made')
+  const handledBy = call?.agent_name || meta?.agent_name || ''
+  const handledText = routed.forwardedTo ? `Forwarded to ${routed.forwardedTo}` : handledBy ? (/^Forwarded to /.test(handledBy) ? handledBy : `Handled by ${handledBy}`) : ''
   // Show a badge whenever we have any AI output. Older calls summarised before
   // sentiment was persisted have a summary but a null sentiment — treat those
   // as neutral rather than showing no badge at all.
@@ -244,8 +249,7 @@ export default function CallCard({ callId, meta, timestamp, highlight, accent = 
             {headLabel}{duration ? ` · ${fmt(duration)}` : ''}
           </p>
           <p style={{ margin: 0, fontSize: 11, color: 'var(--slate)' }}>
-            {(call?.agent_name || meta?.agent_name) ? `Handled by ${call?.agent_name || meta?.agent_name}` : ''}
-            {timestamp ? ` · ${new Date(timestamp).toLocaleString('en-AU', { day: '2-digit', month: 'short', hour: 'numeric', minute: '2-digit' })}` : ''}
+            {[routed.choice, handledText, timestamp ? new Date(timestamp).toLocaleString('en-AU', { day: '2-digit', month: 'short', hour: 'numeric', minute: '2-digit' }) : ''].filter(Boolean).join(' · ')}
           </p>
         </div>
         {sent && (

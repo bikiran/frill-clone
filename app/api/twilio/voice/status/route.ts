@@ -1,7 +1,10 @@
 import { twilioSignatureOk } from '@/lib/twilio-signature'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { ensureCallCard } from '@/lib/call-card'
+import { ensureCallCard, setCallPreview } from '@/lib/call-card'
+import { emitCallEvent } from '@/lib/integration-hooks'
+import { alertCall } from '@/lib/call-alerts'
+import { queueMissedCallText } from '@/lib/missed-call-text'
 import { callerNeverSpoke, missedIfCallerSilent, setupOf, type PhoneCallState } from '@/lib/phone-agent'
 
 export const dynamic = 'force-dynamic'
@@ -17,6 +20,28 @@ function admin() {
 }
 
 const twiml = (body: string) => new NextResponse(`<?xml version="1.0" encoding="UTF-8"?>${body}`, { headers: { 'Content-Type': 'text/xml' } })
+
+async function menuAbandoned(db: any, call: { id: string; company_id: string; conversation_id: string | null; caller_name?: string | null; from_number?: string | null; routing_state?: any }) {
+  try {
+    // They heard a message (or got a text) from the menu, then hung up: the
+    // menu answered them, so it isn't a missed call.
+    const path: string[] = Array.isArray(call.routing_state?.routing?.path) ? call.routing_state.routing.path : []
+    if (path.some(p => p === 'Message played' || p === 'Texted the caller')) {
+      const now = new Date().toISOString()
+      await db.from('calls').update({ status: 'completed', answered_at: now, ended_at: now, agent_name: 'Phone menu', cause: 'menu: caller hung up after a message' })
+        .eq('id', call.id).eq('status', 'menu')
+      return
+    }
+    const { data: claimed } = await db.from('calls')
+      .update({ status: 'missed', ended_at: new Date().toISOString(), cause: 'menu: caller hung up in the phone menu' })
+      .eq('id', call.id).eq('status', 'menu').select('id')
+    if (!Array.isArray(claimed) || !claimed.length) return
+    try { await setCallPreview(db, call.conversation_id, '📞 Missed call') } catch {}
+    await emitCallEvent(db, 'call.missed', call.id)
+    await alertCall(db, call.company_id, call.conversation_id || null, 'Missed call', call.caller_name || call.from_number || 'a caller')
+    queueMissedCallText({ db, companyId: call.company_id, callId: call.id })
+  } catch (e) { console.error('[twilio status] menu hang-up not recorded', e instanceof Error ? e.message : e) }
+}
 
 // action= handler for an OUTBOUND (SDK) call's <Dial>. Fires when the dial ends.
 // Records the outcome on the call row; the call is over, so we return an empty
@@ -73,11 +98,16 @@ export async function POST(req: NextRequest) {
       await ensureCallCard(db, callRowId)
     } else if (callSid) {
       const db = admin()
-      const { data: call } = await db.from('calls').select('id, company_id, conversation_id, routing_state')
+      const { data: call } = await db.from('calls').select('id, company_id, conversation_id, routing_state, status, caller_name, from_number')
         .eq('twilio_call_sid', callSid).eq('direction', 'inbound').limit(1).maybeSingle()
       const state: PhoneCallState | null = call?.routing_state?.phone_agent || null
       if (call && state && !state.realtime && callerNeverSpoke(state) && setupOf(state).reason !== 'test') {
         missedIfCallerSilent(db, call, 'caller hung up without saying anything')
+      } else if (call && call.status === 'menu') {
+        // The caller hung up in the phone menu without choosing anything:
+        // nobody took the call, so it's a missed call, once (claimed by moving
+        // the status on from 'menu', so a repeated callback can't count it twice).
+        await menuAbandoned(db, call)
       }
     }
     return twiml('<Response></Response>')

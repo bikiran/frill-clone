@@ -1,12 +1,8 @@
 import { twilioSignatureOk } from '@/lib/twilio-signature'
-import { filterUsersByFeature } from '@/lib/feature-access'
 import { NextRequest, NextResponse, after } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { xmlEscape, twilioIdentity } from '@/lib/twilio-service'
 import { companyForInboundNumber } from '@/lib/inbound-company'
 import { ensureContactByPhone, findContactByPhone } from '@/lib/contact-capture'
-import { loadStaffRows } from '@/lib/team-list'
-import { isStaffRow } from '@/lib/company-access'
 import { alertCall } from '@/lib/call-alerts'
 import { getPhoneCatalog } from '@/lib/phone-catalog'
 import { getPhoneAgent, answerWithAgent, businessClosedNow, phoneBookable, answersRealCallers, ensureStatusCallbacks } from '@/lib/phone-agent'
@@ -14,6 +10,8 @@ import { aiAnswerDecision, needsHoursCheck, mayAnswerAtStart } from '@/lib/phone
 import { agentsPaused } from '@/lib/agent/pilot'
 import { queueMissedCallText } from '@/lib/missed-call-text'
 import { TWILIO_MASTER } from '@/lib/twilio-platform'
+import { ringTwiml, voicemailTwiml, menuTwiml, menuFor, nextStep, planFor, routingNeedsHours, routingForwards, type CallCtx } from '@/lib/call-routing'
+import { getCallRouting, ringTargets, forwardingAllowed, noteRouting, noteStep } from '@/lib/call-routing-server'
 
 export const dynamic = 'force-dynamic'
 
@@ -27,21 +25,13 @@ function admin() {
 
 const twiml = (body: string) => new NextResponse(`<?xml version="1.0" encoding="UTF-8"?>${body}`, { headers: { 'Content-Type': 'text/xml' } })
 
-// Voicemail TwiML: greet, then record and hand the recording to our callback.
-function voicemailTwiml(base: string, greeting: string, cbQuery: string): string {
-  const recCb = `${base}/api/twilio/voice/recording?${cbQuery}&kind=voicemail`
-  return (
-    `<Response>` +
-      `<Say voice="Polly.Nicole">${xmlEscape(greeting)}</Say>` +
-      `<Record maxLength="180" playBeep="true" trim="trim-silence" recordingStatusCallback="${xmlEscape(recCb)}" recordingStatusCallbackEvent="completed"/>` +
-      `<Hangup/>` +
-    `</Response>`
-  )
-}
-
 // Inbound Voice webhook for a Twilio number. Configure the number's "A call
 // comes in" webhook to POST here. Rings every online agent's browser client;
 // falls back to voicemail when nobody's available or nobody answers.
+//
+// Call routing (lib/call-routing): a number can instead ring people in order,
+// forward to an outside number, or play a phone menu. With no routing saved
+// (or before V399 runs) everything below behaves exactly as it always has.
 export async function POST(req: NextRequest) {
   try {
     const form = await req.formData()
@@ -73,14 +63,20 @@ export async function POST(req: NextRequest) {
       .then((r: any) => r.data?.name || '', () => '')
     const catalogP = agentP.then(a => mayAnswerAtStart(a, from) ? getPhoneCatalog(db, companyId) : null, () => null)
     const bookableP = agentP.then(a => mayAnswerAtStart(a, from) && a.skills.booking ? phoneBookable(db, companyId) : false, () => false)
-    const closedP: Promise<boolean | null> = agentP.then(a => needsHoursCheck(a, from) ? businessClosedNow(db, companyId) : null, () => null)
+    // This number's call routing (null: ring everyone at once, as before).
+    const routingP = getCallRouting(db, companyId, to)
+    const closedP: Promise<boolean | null> = Promise.all([agentP, routingP])
+      .then(([a, r]) => needsHoursCheck(a, from) || routingNeedsHours(r) ? businessClosedNow(db, companyId) : null, () => null)
     const pausedP: Promise<boolean> = agentP.then(a => a.enabled && a.mode !== 'test' ? agentsPaused(db, companyId).then(p => p.paused) : false, () => false)
     // A number in Colvy's own Twilio account that was bought before numbers
     // got a status callback gets it once the AI may answer real callers
-    // (lib/phone-agent.ts). Checked after the call is answered, so the caller
-    // never waits on it; once per number, not on every call.
+    // (lib/phone-agent.ts), or once it has a phone menu (a caller who hangs up
+    // in the menu is a missed call, and the status callback is how we hear of
+    // it). Checked after the call is answered, so the caller never waits on
+    // it; once per number, not on every call.
     if (TWILIO_MASTER.accountSid && get('AccountSid') === TWILIO_MASTER.accountSid) {
-      const backfill = () => agentP.then(a => answersRealCallers(a) ? ensureStatusCallbacks(db, companyId, [to]) : undefined, () => undefined)
+      const backfill = () => Promise.all([agentP, routingP])
+        .then(([a, r]) => answersRealCallers(a) || r?.strategy === 'menu' ? ensureStatusCallbacks(db, companyId, [to]) : undefined, () => undefined)
       try { after(backfill) } catch { void backfill() }
     }
     const { data: integ } = await db.from('twilio_integrations').select('*').eq('company_id', companyId).maybeSingle()
@@ -159,17 +155,27 @@ export async function POST(req: NextRequest) {
 
     const cbQuery = `callRowId=${encodeURIComponent(callRowId || '')}&companyId=${encodeURIComponent(companyId)}&conversationId=${encodeURIComponent(conversationId || '')}`
 
+    // Routing needs the call row: every step's callback finds the call by it.
+    const routing = callRowId ? await routingP : null
+
     // AI receptionist, as the call comes in: a test number is always answered
     // by the AI straight away; beyond that the owner's mode decides (out of
     // hours: when the business is closed now; always: every call). Everyone
     // else goes through the normal ringing below, exactly as before.
+    //
+    // With a phone menu, the menu is the front door: it plays first even when
+    // the AI is set to answer every call (the AI is then one of its options).
+    // Out of hours with no after-hours menu, the AI still answers. Test
+    // numbers always get the AI. A ring order or forwarding is just ringing,
+    // so the AI's modes come first, as they do over ringing the team.
     if (callRowId) {
       try {
         const agent = await agentP
         if (agent.enabled) {
           const [closedNow, paused] = await Promise.all([closedP, pausedP])
           const reason = aiAnswerDecision(agent, { from, moment: 'incoming', closedNow, paused })
-          if (reason) {
+          const menuFirst = routing?.strategy === 'menu' && reason !== 'test' && (reason !== 'after_hours' || routing.afterHours.enabled)
+          if (reason && !menuFirst) {
             const [companyName, catalog, bookable] = await Promise.all([coNameP, catalogP, bookableP])
             return twiml(await answerWithAgent(db, { agent, reason, bookable, base, cbQuery, callRowId, companyId, companyName, catalog, conversationId, contactId, from }))
           }
@@ -177,86 +183,54 @@ export async function POST(req: NextRequest) {
       } catch (e: any) { console.error('[twilio inbound] phone agent start failed — ringing as normal', e?.message || e) }
     }
 
-    // Who's online? (heartbeat in the last 2 minutes.) Ring each one's browser
-    // client by its Voice-SDK identity. Twilio bridges the caller to whoever
-    // accepts first and cancels the rest — no manual bridge needed.
-    const cutoff = new Date(Date.now() - 120000).toISOString()
-    const { data: online } = await db.from('agent_presence')
-      .select('user_id').eq('company_id', companyId)
-      .gte('last_seen_at', cutoff).neq('available', false)
+    const ctx = async (): Promise<CallCtx> => ({
+      base, callRowId: callRowId || '', companyId, conversationId: conversationId || '',
+      callerName, contactId, from, to, businessName: await coNameP,
+    })
 
-    // Mobile agents also, even when the app is closed. Their presence heartbeat
-    // only beats while the app is foregrounded and is cleared on close, so a
-    // closed/screen-off phone dropped out of `online` and the call went straight
-    // to voicemail. But a registered push token means Twilio's own Voice push
-    // can wake the app and deliver the invite — so include every agent that has
-    // one. Twilio rings all identities at once and cancels the losers.
-    //
-    // Match on MEMBERSHIP, not on the token's stored company_id. A teammate's
-    // push token and Voice-SDK identity (u_<userId>) are per-USER and
-    // company-agnostic — one device receives calls for every workspace the user
-    // belongs to. But the token row only records the workspace the app was LAST
-    // active in, so filtering push_tokens by company_id missed a device whenever
-    // the agent was currently in a DIFFERENT workspace: the call for THIS
-    // workspace rang nobody and went straight to voicemail. Instead, ring every
-    // member of this company (team_members) that holds a push token on any
-    // workspace. Staff only: a customer's call never rings a board visitor.
-    const members = (await loadStaffRows(db, companyId, 'user_id, role, status').catch(() => []))
-      .filter((m: any) => m.user_id && isStaffRow(m))
-    // The workspace OWNER (companies.owner_id) is a full member of the company but
-    // is NOT necessarily a row in team_members — so selecting mobiles by
-    // team_members alone stopped ringing an owner's phone entirely (every call
-    // went to voicemail for an owner-only account). Include the owner explicitly.
-    const { data: ownerRow } = await db.from('companies')
-      .select('owner_id').eq('id', companyId).maybeSingle()
-    const memberIds = Array.from(new Set([
-      ...((members || []).map((m: any) => m.user_id)),
-      ...(ownerRow?.owner_id ? [ownerRow.owner_id] : []),
-    ].filter(Boolean))) as string[]
-    const { data: mobileTokens } = memberIds.length
-      ? await db.from('push_tokens')
-          .select('user_id').in('user_id', memberIds).not('user_id', 'is', null)
-      : { data: [] as any[] }
+    // Phone menu: greet and wait for a key (app/api/twilio/voice/menu takes it
+    // from there). The after-hours menu plays while the business is closed.
+    if (routing?.strategy === 'menu' && callRowId) {
+      try {
+        const closedNow = routing.afterHours.enabled ? await closedP : null
+        const which = routing.afterHours.enabled && closedNow === true ? 'ah' : 'main'
+        const body = menuTwiml(await ctx(), menuFor(routing, which), which, { attempt: 1 })
+        try { await db.from('calls').update({ status: 'menu' }).eq('id', callRowId) } catch {}
+        await noteRouting(db, callRowId, { menu: which, pathAdd: which === 'ah' ? 'After-hours menu' : 'Phone menu' }, {})
+        return twiml(body)
+      } catch (e: any) { console.error('[twilio inbound] phone menu failed — ringing as normal', e?.message || e) }
+    }
 
-    // "Unavailable" = presence explicitly reported available=false (on a call, or
-    // calls turned off). This is only reliable for WEB agents, whose tab stays
-    // alive to clear it. A MOBILE app can be killed by the OS mid-call (Samsung
-    // does this aggressively) and never gets to flip back to available — leaving a
-    // stale available=false that would then silence the phone for EVERY future
-    // call (straight to voicemail, no ring — exactly the report). So apply this
-    // set ONLY to the web/online agents below, never to push-token devices.
-    const { data: away } = await db.from('agent_presence')
-      .select('user_id').eq('company_id', companyId)
-      .gte('last_seen_at', cutoff).eq('available', false)
-    const unavailable = new Set<string>(((away || []).map((a: any) => a.user_id)).filter(Boolean))
+    // Who's online? Ring each one's browser and app by its Voice-SDK identity.
+    // Twilio bridges the caller to whoever accepts first and cancels the rest —
+    // no manual bridge needed. Web agents with a fresh heartbeat (not marked busy), every staff member's
+    // app with a push token (always: Twilio's push wakes a closed app), and the
+    // owner's browser; only people allowed calls or chats. The rules and their
+    // history are in lib/call-routing-server.ts ringTargets (moved from here
+    // unchanged; a ring order reuses them for each step).
+    const { ringUsers, onlineCount, pushCount } = await ringTargets(db, companyId)
 
-    const userIds = new Set<string>([
-      // Web/foreground agents: honour the explicit "unavailable" flag.
-      ...((online || []).map((a: any) => a.user_id)).filter((id: any) => id && !unavailable.has(id)),
-      // Mobile devices with a push token: ALWAYS ring. Twilio's push wakes a
-      // closed app, and a stale "busy" flag from an OS-killed app must not skip
-      // the phone. If the agent really is on a call, the app auto-rejects the
-      // second invite, so the call still falls through to voicemail/other agents —
-      // no double-ring, but no silent miss either.
-      ...((mobileTokens || []).map((t: any) => t.user_id)).filter(Boolean),
-    ])
-    // Always ring the workspace OWNER's browser Client — the owner is the primary
-    // agent and must not be missed just because their presence heartbeat lapsed
-    // (a throttled/occluded tab can fall outside the 2-minute window even while
-    // it's open and able to ring). Twilio rings their <Client identity>; if the
-    // Device isn't actually registered the leg simply no-answers and falls through
-    // to voicemail, so this can't cause a phantom ring. Skip only when the owner
-    // is explicitly busy (on a call → available:false with a fresh heartbeat).
-    if (ownerRow?.owner_id && !unavailable.has(ownerRow.owner_id)) userIds.add(ownerRow.owner_id)
-
-    // Keep the user ids alongside their Voice-SDK identities: the per-<Client>
-    // status callback needs the user id to record WHO answered the call.
-    // Only members allowed calls or chats (Team page permissions) — someone
-    // limited to, say, Tasks and Calendar shouldn't have their phone ring.
-    // Owners and admins always ring.
-    const permitted = await filterUsersByFeature(db, companyId, Array.from(userIds), ['calls', 'inbox'])
-    const ringUsers = Array.from(userIds).filter(uid => permitted.has(uid))
-    const identities = ringUsers.map(uid => twilioIdentity(uid, companyId))
+    // Ring order / forwarding: the first step that has someone to ring (or a
+    // forward that applies now). Each step's callback (inbound-status) moves on
+    // to the next; nobody to ring at any step is the "nobody online" case below.
+    const ring = Math.max(Number(integ.ring_seconds || 25), 20)
+    let routedNobody = false
+    if (routing && callRowId && (routing.strategy === 'in_order' || routing.strategy === 'forward')) {
+      try {
+        const [closedNow, forwardAllowed] = await Promise.all([
+          routingNeedsHours(routing) ? closedP : Promise.resolve(null),
+          routingForwards(routing) ? forwardingAllowed(db, companyId) : Promise.resolve(false),
+        ])
+        const step = nextStep(await ctx(), planFor(routing, 'main', ring), 0, 'main', { ringable: ringUsers, closedNow, forwardAllowed, answered: false })
+        if (step) {
+          try { await db.from('calls').update({ status: 'ringing_agents' }).eq('id', callRowId) } catch {}
+          await noteStep(db, callRowId, 'main', step, {})
+          return twiml(step.twiml)
+        }
+        routedNobody = true
+      } catch (e: any) { console.error('[twilio inbound] call routing failed — ringing as normal', e?.message || e) }
+    }
+    const identities = routedNobody ? [] : ringUsers
 
     // NOTE: we deliberately do NOT fire a separate /api/push/send "Ringing now"
     // notification here. Twilio's own Voice CallInvite push already raises a
@@ -278,7 +252,7 @@ export async function POST(req: NextRequest) {
             ])
             return twiml(await answerWithAgent(db, {
               agent, reason, bookable, base, cbQuery, callRowId, companyId, companyName, catalog, conversationId, contactId, from,
-              causeDetail: `with nobody online (online heartbeats=${(online || []).length}, push devices=${(mobileTokens || []).length})`,
+              causeDetail: `with nobody online (online heartbeats=${onlineCount}, push devices=${pushCount})`,
             }))
           }
         } catch (e) { console.error('[twilio inbound] phone agent (nobody online) failed — voicemail as normal', e instanceof Error ? e.message : e) }
@@ -296,7 +270,7 @@ export async function POST(req: NextRequest) {
       try {
         await db.from('calls').update({
           status: 'voicemail_greeting', is_voicemail: true,
-          cause: `no_agent: nobody online (online heartbeats=${(online || []).length}, push devices=${(mobileTokens || []).length})`,
+          cause: `no_agent: nobody online (online heartbeats=${onlineCount}, push devices=${pushCount})`,
         }).eq('id', callRowId || '')
       } catch {}
       // Nobody can take it, so text the caller back now if switched on (as in
@@ -305,69 +279,17 @@ export async function POST(req: NextRequest) {
       return twiml(voicemailTwiml(base, greeting, cbQuery))
     }
 
-    // Floor the ring at 20s so a low/misconfigured ring_seconds can't send the
-    // call to voicemail after ~1 ring before the agent can pick up.
-    const ring = Math.max(Number(integ.ring_seconds || 25), 20)
-    const recordingCb = `${base}/api/twilio/voice/recording?${cbQuery}`
-    // When exactly ONE agent is rung, whoever answers is unambiguous — pass that
-    // user id to the Dial action callback so it can record the answerer reliably
-    // even if the per-<Client> "answered" status callback doesn't fire.
-    const soloQuery = ringUsers.length === 1 ? `&soloUser=${encodeURIComponent(ringUsers[0])}` : ''
-    // Carry how many agents were rung into the action callback, so if the call
-    // still falls through to voicemail we can record WHY (DialCallStatus + count)
-    // on `cause` and see it in Call Diagnostics.
-    const actionCb = `${base}/api/twilio/voice/inbound-status?${cbQuery}${soloQuery}&rang=${ringUsers.length}`
-    // Pass the calls-row id straight to the browser as a custom parameter, so
-    // warm transfer can identify the exact call without guessing from CallSids
-    // (the client leg's SID doesn't match the parent row). Each <Client> gets a
-    // per-agent status callback carrying that agent's user id, so the child-status
-    // handler can record which team member answered (and tell everyone else).
-    const clients = ringUsers.map(uid => {
-      const id = twilioIdentity(uid, companyId)
-      const childCb = `${base}/api/twilio/voice/child-status?callRowId=${encodeURIComponent(callRowId || '')}&companyId=${encodeURIComponent(companyId)}&userId=${encodeURIComponent(uid)}`
-      return (
-        `<Client statusCallback="${xmlEscape(childCb)}" statusCallbackEvent="initiated ringing answered" statusCallbackMethod="POST">` +
-          `<Identity>${xmlEscape(id)}</Identity>` +
-          `<Parameter name="callRowId" value="${xmlEscape(callRowId || '')}"/>` +
-          // The agent's Voice-SDK identity (u_<userId>) is company-agnostic, so a
-          // teammate in several workspaces gets calls for all of them at one
-          // identity. Tag which workspace this call belongs to so the mobile app
-          // can switch into the right one before ringing (multi-workspace routing).
-          `<Parameter name="companyId" value="${xmlEscape(companyId)}"/>` +
-          // Who is calling, in words. Android draws the ongoing-call
-          // notification from a name the Voice SDK holds, and for an incoming
-          // call the only thing it has is the caller id — so a saved contact
-          // still showed as a bare number there while every other surface in
-          // the app showed the name. This is the one channel that reaches the
-          // SDK's own record.
-          //
-          // Always sent, falling back to the number, because the app's template
-          // substitutes whatever arrives and an absent parameter would leave
-          // the placeholder itself on screen.
-          //
-          // $ and \\ are stripped: the SDK substitutes with String.replaceAll,
-          // where both are special in the replacement and a name containing one
-          // would mangle the result or throw.
-          `<Parameter name="callerName" value="${xmlEscape(String(callerName || from || '').replace(/[$\\]/g, ' ').trim())}"/>` +
-          // Lets the web popup show the caller at once instead of looking the
-          // number up again in the browser.
-          `<Parameter name="contactId" value="${xmlEscape(contactId || '')}"/>` +
-          `<Parameter name="callerKnown" value="${callerName ? '1' : ''}"/>` +
-        `</Client>`
-      )
-    }).join('')
-
+    // Ring everyone at once for the number's ring time (floored at 20s above, so
+    // a low/misconfigured ring_seconds can't send the call to voicemail after ~1
+    // ring). The <Dial> and each <Client> are built by lib/call-routing
+    // ringTwiml / clientXml, exactly as they always were here: one agent rung
+    // passes soloUser to the action callback (so the answerer is recorded even if
+    // the per-<Client> "answered" callback doesn't fire), `rang` carries how many
+    // were rung (for Call Diagnostics), and each <Client> carries the call row,
+    // workspace and caller for the apps.
     try { await db.from('calls').update({ status: 'ringing_agents' }).eq('id', callRowId || '') } catch {}
 
-    return twiml(
-      `<Response>` +
-        `<Dial timeout="${ring}" answerOnBridge="true" record="record-from-answer-dual" ` +
-          `recordingStatusCallback="${xmlEscape(recordingCb)}" recordingStatusCallbackEvent="completed" ` +
-          `action="${xmlEscape(actionCb)}" method="POST">` +
-          clients +
-        `</Dial>` +
-      `</Response>`
-    )
+    return twiml(ringTwiml({ base, callRowId: callRowId || '', companyId, conversationId: conversationId || '', callerName, contactId, from, to, businessName: '' }, ringUsers, ring))
   } catch (err: any) {
     console.error('[twilio inbound] error', err)
     return twiml('<Response><Say>Sorry, something went wrong.</Say><Hangup/></Response>')
