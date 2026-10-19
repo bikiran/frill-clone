@@ -10,7 +10,7 @@
 // which deleted old rows of these types held by non-staff.
 export const STAFF_ONLY_NOTIFICATION_TYPES: readonly string[] = [
   'chat', 'visitor', 'activity',
-  'sms', 'email', 'facebook', 'instagram',
+  'sms', 'email', 'facebook', 'instagram', 'whatsapp',
   'order', 'cart',
   'booking', 'ticket', 'call', 'calendar',
   'realestate', 'integration', 'agent_escalation',

@@ -7,11 +7,15 @@
 //                          domain), threaded onto the customer's email, the same
 //                          way the inbox replies (/api/email/reply).
 //   Facebook / Instagram → the Page or Instagram account (/api/meta/send).
+//   WhatsApp             → the business's WhatsApp sender (lib/whatsapp), free
+//                          text inside the 24-hour window only; outside it the
+//                          send is refused and a person sends a template.
 //
 // Either way the message is saved on the thread, marked as the agent's.
 
 import { sendAiReply } from '@/lib/ai-live-reply'
 import { internalHeaders } from '@/lib/internal-call'
+import { sendWhatsApp } from '@/lib/whatsapp'
 
 const origin = () => (process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com').replace(/\/$/, '')
 
@@ -49,6 +53,10 @@ export async function sendAgentMessage(db: any, opts: {
 
   if (['sms', 'widget', 'chat'].includes(channel)) {
     return sendAiReply(db, { conv, companyId: opts.companyId, businessName, text, meta })
+  }
+  if (channel === 'whatsapp') {
+    const r = await sendWhatsApp(db, { companyId: opts.companyId, conversationId: conv.id, text, senderName: businessName, sentBy: meta.agent_name, isAi: true, metadata: meta })
+    return r.ok ? { ok: true, channel } : { ok: false, error: r.error, channel }
   }
   if (channel !== 'email' && channel !== 'facebook' && channel !== 'instagram') {
     return { ok: false, error: `Agent replies on ${channel} aren’t supported yet — reply from the inbox.` }

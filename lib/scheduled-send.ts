@@ -4,6 +4,7 @@ import { internalHeaders } from '@/lib/internal-call'
 //   Instagram / Messenger → /api/meta/send
 //   Email                 → /api/email/reply
 //   SMS                   → /api/telnyx/sms/send
+//   WhatsApp              → /api/whatsapp/send (refused once the 24-hour window has closed)
 //   Live chat / widget    → inserted straight into messages
 
 /** Take a pending row for sending. Only one caller can win, so the cron and a
@@ -47,6 +48,13 @@ export async function deliverScheduled(db: any, base: string, sm: any): Promise<
         body: JSON.stringify({ conversationId: conv.id, content, agentName }),
       })
       return r.ok ? { ok: true } : { ok: false, error: (await r.json().catch(() => ({})))?.error || `meta send ${r.status}` }
+    }
+    if (channel === 'whatsapp') {
+      const r = await fetch(`${base}/api/whatsapp/send`, {
+        method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ conversationId: conv.id, content, agentName }),
+      })
+      return r.ok ? { ok: true } : { ok: false, error: (await r.json().catch(() => ({})))?.error || `whatsapp ${r.status}` }
     }
     if (channel === 'email') {
       let to: string | null = conv.customer_email || null

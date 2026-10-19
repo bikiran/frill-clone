@@ -18,6 +18,8 @@ import WebFormsPage from '@/components/platform-admin/WebFormsPage'
 import BillingConfigCard from '@/components/platform-admin/BillingConfigCard'
 import SmsCreditsPage from '@/components/platform-admin/SmsCreditsPage'
 import CompanySmsBilling from '@/components/platform-admin/CompanySmsBilling'
+import CompanyWhatsApp from '@/components/platform-admin/CompanyWhatsApp'
+import WhatsAppPage from '@/components/platform-admin/WhatsAppPage'
 import { COLVY_CONTACT, isColvyNumber } from '@/lib/colvy-contact'
 
 const SUPER_ADMIN = 'bishalstha76@gmail.com'
@@ -141,6 +143,7 @@ const NAV = [
   { key: 'ai',         label: 'AI Models & Usage', icon: 'system' },
   { key: 'sms',        label: 'SMS Pricing',      icon: 'billing' },
   { key: 'smscredits', label: 'SMS Credits',      icon: 'billing' },
+  { key: 'whatsapp',   label: 'WhatsApp',         icon: 'chat' },
   { key: 'billing',    label: 'Billing',          icon: 'billing' },
   { key: 'flags',      label: 'Feature Flags',    icon: 'flags' },
   { key: 'system',     label: 'System Health',    icon: 'system' },
@@ -623,7 +626,7 @@ function BusinessDetail({ co, onClose, onAction }: { co: any; onClose: () => voi
       <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--sa-text)', textAlign: 'right', wordBreak: 'break-word' }}>{v ?? '—'}</span>
     </div>
   )
-  const TABS = [['overview', 'Overview'], ['plan', 'Subscription'], ['ent', 'Entitlements'], ['sms', 'SMS billing'], ['users', `Users${users ? ` (${users.length})` : ''}`], ['notes', `Notes${notes ? ` (${notes.length})` : ''}`], ['danger', 'Danger Zone']]
+  const TABS = [['overview', 'Overview'], ['plan', 'Subscription'], ['ent', 'Entitlements'], ['sms', 'SMS billing'], ['whatsapp', 'WhatsApp'], ['users', `Users${users ? ` (${users.length})` : ''}`], ['notes', `Notes${notes ? ` (${notes.length})` : ''}`], ['danger', 'Danger Zone']]
 
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 380, display: 'flex', justifyContent: 'flex-end' }}>
@@ -886,6 +889,8 @@ function BusinessDetail({ co, onClose, onAction }: { co: any; onClose: () => voi
           )}
 
           {tab === 'sms' && <CompanySmsBilling companyId={co.id} />}
+
+          {tab === 'whatsapp' && <CompanyWhatsApp companyId={co.id} />}
 
           {tab === 'users' && (
             users === null ? <p style={{ color: 'var(--sa-muted)', fontSize: 13 }}>Loading…</p>
@@ -5064,6 +5069,7 @@ export default function SuperAdmin() {
           {page === 'ai'         && <AiModelsPage />}
           {page === 'sms'        && <SmsPricingPage />}
           {page === 'smscredits' && <SmsCreditsPage />}
+          {page === 'whatsapp'   && <WhatsAppPage />}
           {page === 'settings'   && <SettingsPage />}
         </div>
       </main>

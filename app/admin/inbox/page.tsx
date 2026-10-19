@@ -78,6 +78,8 @@ import Popover, { useOneOpen } from '@/components/composer/Popover'
 import ReviewRequestButton from '@/components/composer/ReviewRequestButton'
 import { pickReviewChannel, REVIEW_REQUEST_SUBJECT, type ReviewChannel } from '@/lib/review-request'
 import { fillTemplateVars, type TemplateVars } from '@/lib/composer-templates'
+import WhatsAppComposerBar from '@/components/inbox/WhatsAppComposerBar'
+import { STATUS_LABEL as WA_STATUS_LABEL } from '@/lib/whatsapp-core'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Conversation = {
@@ -3527,6 +3529,18 @@ export default function InboxPage() {
       return ch === 'instagram' ? 'Sent on Instagram' : 'Sent on Messenger'
     }
 
+    // WhatsApp: free text inside the 24-hour window only (the server refuses
+    // it after that, and the composer offers a template instead).
+    if (ch === 'whatsapp') {
+      const res = await authFetch('/api/whatsapp/send', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ conversationId: selected.id, content: fullBody, agentName: me, skipChatMessage: !!opts.silent }),
+      })
+      const d = await res.json()
+      if (!res.ok) throw new Error(d.error || 'WhatsApp message failed')
+      return 'Sent on WhatsApp'
+    }
+
     const smsNumber = smsDestination()
     if (ch === 'sms' && smsNumber) {
       const res = await authFetch('/api/telnyx/sms/send', {
@@ -3711,7 +3725,9 @@ export default function InboxPage() {
     if (sendingMediaRef.current) return
     sendingMediaRef.current = true
     const me = myName
-    const smsNumber = smsDestination()
+    // A WhatsApp thread gets the photo or video itself on WhatsApp, not a texted link.
+    const onWhatsApp = activeChannel === 'whatsapp'
+    const smsNumber = onWhatsApp ? null : smsDestination()
     try {
       for (const item of chosen) {
         const attachment: any = { url: item.url, name: item.title || 'media', type: item.kind === 'video' ? 'video/mp4' : 'image/jpeg', kind: item.kind, from_gallery: true }
@@ -3741,6 +3757,16 @@ export default function InboxPage() {
         }
         if (viewerUrl) attachment.viewer_url = viewerUrl
 
+        if (onWhatsApp) {
+          try {
+            const r = await authFetch('/api/whatsapp/send', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ conversationId: selected.id, attachments: [{ url: item.url, kind: item.kind, name: attachment.name }], content: '', agentName: me, skipChatMessage: true }),
+            })
+            const rd = await r.json().catch(() => ({}))
+            if (!r.ok) showToast(`Media saved to the chat, but WhatsApp didn’t send it: ${rd.error || 'unknown error'}`)
+          } catch { showToast('Media saved, but WhatsApp didn’t send it.') }
+        }
         // On an SMS conversation, TEXT the customer the viewer link (falling back
         // to the raw media URL only if the short link couldn't be created).
         if (smsNumber) {
@@ -3763,7 +3789,7 @@ export default function InboxPage() {
           conversation_id: selected.id, company_id: companyId, sender_type: 'agent',
           sender_id: user.id, sender_name: me, sender_email: user.email,
           content: '', attachments: [attachment],
-          delivery_channel: smsNumber ? 'sms' : 'chat',
+          delivery_channel: onWhatsApp ? 'whatsapp' : smsNumber ? 'sms' : 'chat',
         })
       }
       await (supabase as any).from('conversations').update({ last_message: '🖼️ Media', last_message_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', selected.id)
@@ -3813,7 +3839,17 @@ export default function InboxPage() {
     }
 
     // ── Deliver ────────────────────────────────────────────────────────
-    if (smsNumber && !['instagram', 'facebook', 'email'].includes(metaCh)) {
+    if (metaCh === 'whatsapp') {
+      // The files themselves, one WhatsApp message each (inside the 24-hour window).
+      try {
+        const r = await authFetch('/api/whatsapp/send', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ conversationId: convId, attachments: attachments.map(a => ({ url: a.url, kind: a.kind, name: a.name, type: a.type })), content: opts.content || '', agentName: me, skipChatMessage: true }),
+        })
+        const rd = await readJsonSafe(r)
+        if (!r.ok) showToast(`Saved to the chat, but WhatsApp didn’t send it: ${rd.error || 'unknown error'}`)
+      } catch { showToast('Saved to the chat, but WhatsApp didn’t send it.') }
+    } else if (smsNumber && !['instagram', 'facebook', 'email'].includes(metaCh)) {
       const parts: string[] = []
       if (galleryUrl) parts.push(galleryUrl)
       for (const f of plainFiles) parts.push(`📎 ${f.name}: ${f.url}`)
@@ -3870,7 +3906,7 @@ export default function InboxPage() {
       content: plainFiles.length && !media.length ? plainFiles.map(f => `📎 ${f.name}`).join('\n') : '',
       attachments: stamped,
       metadata: galleryUrl ? { gallery_url: galleryUrl } : {},
-      delivery_channel: ['instagram', 'facebook', 'email'].includes(metaCh) ? metaCh : (smsNumber ? 'sms' : 'chat'),
+      delivery_channel: ['instagram', 'facebook', 'email', 'whatsapp'].includes(metaCh) ? metaCh : (smsNumber ? 'sms' : 'chat'),
     }).select().maybeSingle()
     if (attMsg) broadcastMessage(convId, attMsg)
 
@@ -5894,6 +5930,28 @@ export default function InboxPage() {
       } catch (e: any) {
         setSending(false)
         alert('Could not send: ' + e.message)
+      }
+      return
+    }
+
+    // WhatsApp conversations reply on WhatsApp (Colvy's Twilio WhatsApp
+    // sender), unless the agent picked another channel from Send. Inside the
+    // 24-hour window only: after it the server refuses, and the bar above the
+    // composer offers an approved template.
+    if (sendChannel === 'auto' && (activeChannel === 'whatsapp' || (selected as any).channel === 'whatsapp')) {
+      try {
+        const res = await authFetch('/api/whatsapp/send', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ conversationId: selected.id, content, agentName: senderName }),
+        })
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok) throw new Error(data.error || 'WhatsApp message failed to send')
+        sendDone()
+        await reloadThread(selected.id)
+        scrollBottom()
+      } catch (e: any) {
+        setSending(false)
+        showToast(`${String(e?.message || 'WhatsApp message failed to send').replace(/[.\s]+$/, '')}. Your message wasn’t sent.`)
       }
       return
     }
@@ -10016,6 +10074,17 @@ export default function InboxPage() {
                           {fmtReceipt(msg.created_at, isAgent, receiptChannel(msg, selected.channel)) || fmtTime(msg.created_at)}
                         </span>
 
+                        {/* WhatsApp delivery: Sent / Delivered / Read, or why it wasn't delivered. */}
+                        {isAgent && (msg as any).delivery_channel === 'whatsapp' && msg.metadata?.whatsapp?.status && (() => {
+                          const w = msg.metadata.whatsapp
+                          const bad = w.status === 'failed' || w.status === 'undelivered'
+                          return (
+                            <span title={bad ? (w.error || undefined) : undefined} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, color: bad ? '#dc2626' : w.status === 'read' ? '#2563eb' : '#16a34a', fontWeight: 700 }}>
+                              {WA_STATUS_LABEL[w.status] || w.status}{w.template?.name ? ' · template' : ''}{bad && w.error ? ` · ${w.error}` : ''}
+                            </span>
+                          )
+                        })()}
+
                         {(msg as any).is_ai && (msg.metadata?.agent_run_id ? (
                           // Sent by an agent (Agent Engine): who let it go out, and why.
                           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: '#8b5cf6', fontWeight: 700 }}>
@@ -10638,6 +10707,11 @@ export default function InboxPage() {
                     {(contact as any)?.is_blocked ? 'This customer is blocked.' : 'This customer opted out of texts (they replied STOP).'} Automatic texts to them are stopped — only text them if they’ve asked you to.
                   </span>
                 </div>
+              )}
+              {/* WhatsApp: the 24-hour window, opt-outs, and templates once it has closed. */}
+              {selected && !internalMode && sendChannel === 'auto' && outboundChannel === 'whatsapp' && (
+                <WhatsAppComposerBar conversationId={selected.id} refreshKey={lastInboundId} contactName={contact?.name || null} agentName={myName}
+                  onSent={async () => { if (await reloadThread(selected.id)) scrollBottom() }} onError={t => showToast(t)} />
               )}
               {selected && paymentSignal && !saleDismissed.has(selected.id) && !convHasSale && wooOrders.length === 0 && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '0 0 8px', padding: '9px 12px', borderRadius: 10, background: '#ecfdf5', border: '1px solid #a7f3d0' }}>
