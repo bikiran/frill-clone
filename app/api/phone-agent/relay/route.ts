@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}))
   const { event, callRowId, companyId } = body || {}
   const db = admin()
-  const { data: call } = await db.from('calls').select('id, company_id, conversation_id, contact_id, from_number, caller_name, answered_at, routing_state').eq('id', String(callRowId || '')).maybeSingle()
+  const { data: call } = await db.from('calls').select('id, company_id, conversation_id, contact_id, from_number, to_number, caller_name, answered_at, routing_state').eq('id', String(callRowId || '')).maybeSingle()
   const state: PhoneCallState | null = call?.routing_state?.phone_agent || null
   if (!call || call.company_id !== companyId || !state) return NextResponse.json({ error: 'Unknown call' }, { status: 404 })
 
@@ -94,7 +94,7 @@ export async function POST(req: NextRequest) {
         const r = await phoneTurn(db, {
           companyId: call.company_id, companyName, siteOrigin: base,
           conversationId: call.conversation_id, contactId: call.contact_id,
-          from: call.from_number, callerName: call.caller_name, state, said, deadlineMs: 12000,
+          from: call.from_number, to: call.to_number, callerName: call.caller_name, state, said, deadlineMs: 12000,
           onText: text => send({ t: 'text', text }),
         })
         state.turns.push({ who: 'caller', text: said })

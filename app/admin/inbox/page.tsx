@@ -1422,7 +1422,8 @@ export default function InboxPage() {
     setProductSearching(true)
     setProductError('')
     try {
-      const res = await authFetch(`/api/orders/products?companyId=${companyId}&q=${encodeURIComponent(productQuery.trim())}`)
+      // stores=1: each product's stock at each store, where that's set up.
+      const res = await authFetch(`/api/orders/products?companyId=${companyId}&q=${encodeURIComponent(productQuery.trim())}&stores=1`)
       const d = await res.json()
       if (!res.ok) {
         // Say WHY instead of silently showing "no products found".
@@ -7448,6 +7449,16 @@ export default function InboxPage() {
                           </span>
                         </p>
                         {p.sku && <p style={{ margin: '3px 0 0', fontSize: 11, color: 'var(--slate)' }}>SKU: {p.sku}</p>}
+                        {Array.isArray(p.stores) && p.stores.length > 0 && (
+                          <div aria-label="Stock by store" style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 5 }}>
+                            {p.stores.map((s: any) => (
+                              <span key={s.store} title={`${s.available > 0 ? s.available : 'None'} at ${s.store}`}
+                                style={{ fontSize: 10.5, fontWeight: 600, padding: '1px 6px', borderRadius: 5, maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', background: s.available > 0 ? '#ecfdf3' : 'var(--canvas)', color: s.available > 0 ? '#15803d' : 'var(--slate)', border: '1px solid var(--border)' }}>
+                                {s.store} · {s.available > 0 ? s.available : 'none'}
+                              </span>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </div>
 

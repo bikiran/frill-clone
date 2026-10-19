@@ -37,7 +37,7 @@ export const FOR_PAGES: Record<string, ForMeta> = {
     description: 'Give each store its own local number, answer every store from one shared inbox, check live stock, take payment before pickup and compare link sales by store.',
     faqs: [
       { q: 'Can each store have its own phone number?', a: 'Yes. Buy an Australian local number for each location from inside Colvy and assign it to that store, and add an 04 mobile number for texting. Every number is answered from the same shared inbox.' },
-      { q: 'Can the AI tell customers what’s in stock?', a: 'Yes. When your WooCommerce store is connected, Colvy’s AI agents check live stock for a product before they answer. Stock levels for each individual store aren’t available yet.' },
+      { q: 'Can the AI tell customers what’s in stock?', a: 'Yes. When your Shopify or WooCommerce store is connected, Colvy’s AI agents and AI phone receptionist check live stock for a product before they answer. For a Shopify store with more than one location, match each Shopify location to your store in Colvy and the AI answers store by store, like “3 at Richmond, none at Fitzroy”. WooCommerce keeps one stock number per product, so stock by store there needs the Stock Locations for WooCommerce plugin; without it, the AI gives the overall stock.' },
       { q: 'Can I see results for each location?', a: 'Yes. Link Reports break down tracked-link sales by outlet, order and campaign reports can be split by store, and calls can be filtered by location in the Command Centre.' },
       { q: 'Can staff be set up for their own store?', a: 'Team members can have a default store, and each person’s access can be limited by feature. Limiting what a person can see by store is not available yet.' },
     ],

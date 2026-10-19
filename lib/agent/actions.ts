@@ -35,6 +35,8 @@ function assistantCtx(ctx: ActionContext): AssistantContext {
     companyId: ctx.companyId, userId: '', userName: ctx.roleName, role: 'viewer',
     companyName: ctx.companyName, siteOrigin: ctx.siteOrigin,
     conversationId: ctx.conversationId, contactId: ctx.contactId,
+    // The store number a caller rang (the phone agent sets it): stock is answered for that store first.
+    dialledNumber: typeof ctx.scratch?.dialledNumber === 'string' ? ctx.scratch.dialledNumber : null,
   }
 }
 
@@ -147,7 +149,7 @@ const READS: ActionDef[] = [
   getConversation,
   readTool('get_contact', 'A customer’s saved details by contact id.', obj({ contactId: { type: 'string' } }, ['contactId']), true),
   askKnowledge,
-  readTool('check_stock', 'Live stock for a product by name or SKU, with each product’s productId (for add_to_waitlist).', obj({ query: { type: 'string' } }, ['query']), true),
+  readTool('check_stock', 'Live stock for a product by name or SKU, with each product’s productId (for add_to_waitlist). Where the business has set up stock by store, each product also lists stores (its stock at each store) and storeStock says which store the customer asked about or this conversation belongs to: then answer per store, e.g. “We have 3 at Richmond and none at Fitzroy.”', obj({ query: { type: 'string' }, store: { type: 'string', description: 'The store or suburb the customer asked about, if they named one (e.g. “Richmond”).' } }, ['query']), true),
   // Staff-only lookups: they search across ALL customers, so a customer-facing
   // role must not use them in live mode (customer roles use
   // find_customer_orders / check_order_status instead).
