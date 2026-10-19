@@ -429,6 +429,46 @@ export class WooCommerceService {
     return out
   }
 
+  // Stock by store (lib/outlet-stock): the `locations` field the "Stock
+  // Locations for WooCommerce" plugin adds to products and variations. Only
+  // id + locations are asked for; a store without the plugin just answers ids.
+  // Errors throw, so a store that can't be reached never reads as "no plugin".
+  async getLocationFields(ids: number[]): Promise<any[]> {
+    const want = Array.from(new Set(ids.filter(n => Number.isInteger(n) && n > 0))).slice(0, 50)
+    if (!want.length) return []
+    const { res, data } = await this.api(`products?include=${want.join(',')}&per_page=${want.length}&_fields=id,locations`)
+    if (!res.ok || !Array.isArray(data)) throw new Error(`WooCommerce error ${res.status}`)
+    return data
+  }
+
+  async getVariationLocationFields(productId: number): Promise<any[]> {
+    const { res, data } = await this.api(`products/${productId}/variations?per_page=50&_fields=id,locations`)
+    if (!res.ok || !Array.isArray(data)) throw new Error(`WooCommerce error ${res.status}`)
+    return data
+  }
+
+  /** A sample of products' location fields, for detecting the plugin. */
+  async sampleLocationFields(n = 20): Promise<any[]> {
+    const { res, data } = await this.api(`products?per_page=${n}&status=publish&_fields=id,locations`)
+    if (!res.ok || !Array.isArray(data)) throw new Error(`WooCommerce error ${res.status}`)
+    return data
+  }
+
+  /**
+   * The plugin's stock locations (a public `location` taxonomy, so the
+   * WordPress REST API lists them without credentials; sending the API key
+   * there would be refused). Null when the store won't say.
+   */
+  async getStockLocationTerms(): Promise<any[] | null> {
+    try {
+      if (storeBackoff(this.config.storeUrl)) return null
+      const res = await fetch(`${this.config.storeUrl}/wp-json/wp/v2/location?per_page=100&_fields=id,name,slug`, { headers: { Accept: 'application/json' } })
+      if (!res.ok) return null
+      const data = await res.json().catch(() => null)
+      return Array.isArray(data) ? data : null
+    } catch { return null }
+  }
+
   // Re-fetch a single product or variation to recheck price/stock right before
   // submitting (another sale may have happened while the panel was open).
   async getProductOrVariation(productId: number, variationId?: number): Promise<any | null> {

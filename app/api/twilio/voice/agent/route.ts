@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
   const base = (process.env.NEXT_PUBLIC_SITE_URL || new URL(req.url).origin).replace(/\/$/, '')
   const db = admin()
 
-  const { data: call } = await db.from('calls').select('id, company_id, conversation_id, contact_id, from_number, caller_name, answered_at, routing_state').eq('id', callRowId).maybeSingle()
+  const { data: call } = await db.from('calls').select('id, company_id, conversation_id, contact_id, from_number, to_number, caller_name, answered_at, routing_state').eq('id', callRowId).maybeSingle()
   const state: PhoneCallState | null = call?.routing_state?.phone_agent || null
   const voice: string = call?.routing_state?.phone_voice || 'Polly.Olivia-Neural'
   if (!call || call.company_id !== companyId || !state) return twiml('<Response><Hangup/></Response>')
@@ -81,7 +81,7 @@ export async function POST(req: NextRequest) {
   try {
     const r = await phoneTurn(db, {
       companyId, companyName, siteOrigin: base, conversationId: call.conversation_id, contactId: call.contact_id,
-      from: call.from_number, callerName: call.caller_name, state, said,
+      from: call.from_number, to: call.to_number, callerName: call.caller_name, state, said,
     })
     state.turns.push({ who: 'caller', text: said })
     state.turns.push({ who: 'agent', text: r.say, ms: r.ms })

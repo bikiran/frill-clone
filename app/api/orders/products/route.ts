@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { requireCompanyAccess } from '@/lib/company-access'
 import { WooCommerceService } from '@/lib/woocommerce-service'
 import { productForUi, variationsForUi } from '@/lib/shopify-products'
+import { attachStoreStock } from '@/lib/outlet-stock-server'
 
 function admin() {
   return createClient(
@@ -134,7 +135,7 @@ function rankProducts(rows: any[], query: string): any[] {
 // The Shopify store to answer from: the one asked for, else the first active.
 async function shopifyFor(companyId: string, integrationId?: string) {
   const db = admin()
-  let q = db.from('shopify_integrations').select('id').eq('company_id', companyId).eq('is_active', true)
+  let q = db.from('shopify_integrations').select('id, store_domain, auth_type, access_token, refresh_token, token_expires_at, scopes').eq('company_id', companyId).eq('is_active', true)
   if (integrationId) q = q.eq('id', integrationId)
   const { data } = await q.order('created_at', { ascending: true }).limit(1)
   return data?.[0] || null
@@ -153,6 +154,8 @@ async function searchShopify(companyId: string, integrationId: string, query: st
 // GET ?companyId=&q=  → product search
 // GET ?companyId=&productId=  → variations for a variable product
 // GET ?companyId=&catalog=1  → the whole synced catalogue (on-device search)
+// &stores=1 on a search adds each product's stock at each store, where the
+// business has set up stock by store (the inbox product panel's chips).
 export async function GET(req: NextRequest) {
   try {
     const companyId = req.nextUrl.searchParams.get('companyId')
@@ -160,6 +163,7 @@ export async function GET(req: NextRequest) {
     const q = req.nextUrl.searchParams.get('q')
     const productId = req.nextUrl.searchParams.get('productId')
     const wantCatalog = req.nextUrl.searchParams.get('catalog') === '1'
+    const wantStores = req.nextUrl.searchParams.get('stores') === '1'
     if (!companyId) return NextResponse.json({ error: 'Missing companyId' }, { status: 400 })
     // It searched any workspace's store for whoever asked; only its members now.
     if (!(await requireCompanyAccess(req, admin(), companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
@@ -181,7 +185,8 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({ products: (data || []).map((r: any) => ({ ...productForUi(r), skus: r.skus || '' })), source: 'shopify' })
       }
       if (!q || q.trim().length < 2) return NextResponse.json({ products: [] })
-      return NextResponse.json({ products: await searchShopify(companyId, shop.id, q.trim()), source: 'shopify' })
+      const found = await searchShopify(companyId, shop.id, q.trim())
+      return NextResponse.json({ products: wantStores ? await attachStoreStock(admin(), companyId, { provider: 'shopify', integ: shop }, found) : found, source: 'shopify' })
     }
     if (!woo) return NextResponse.json({ error: 'No store connected' }, { status: 404 })
 
@@ -201,11 +206,20 @@ export async function GET(req: NextRequest) {
     // term to match and miss a partial last word — "Cichlid col" did not return
     // "Cichlid Color Food" at all. Falls back to WooCommerce when the catalogue
     // has not been synced yet, so this is safe before the first sync runs.
+    // Stock at each store for the inbox's chips (unchanged when it isn't set up).
+    const withStores = async (list: any[]) => {
+      if (!wantStores) return list
+      const db = admin()
+      const integ = integrationId
+        ? (await db.from('woocommerce_integrations').select('id, store_url').eq('id', integrationId).eq('company_id', companyId).maybeSingle()).data
+        : (await db.from('woocommerce_integrations').select('id, store_url').eq('company_id', companyId).eq('is_active', true).order('created_at', { ascending: true }).limit(1)).data?.[0]
+      return integ ? attachStoreStock(db, companyId, { provider: 'woocommerce', integ, woo }, list) : list
+    }
     const local = await searchLocal(companyId, q.trim())
-    if (local) return NextResponse.json({ products: local, source: 'local' })
+    if (local) return NextResponse.json({ products: await withStores(local), source: 'local' })
 
     const products = await woo.searchProducts(q.trim())
-    return NextResponse.json({ products, source: 'woocommerce' })
+    return NextResponse.json({ products: await withStores(products), source: 'woocommerce' })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }

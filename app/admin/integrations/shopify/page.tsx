@@ -6,6 +6,7 @@ import { useSearchParams } from 'next/navigation'
 import { confirmDialog } from '@/components/ConfirmDialog'
 import { useIntegrations } from '@/components/integrations/IntegrationsShell'
 import { IntegrationPage, IntegrationHeader, Card, Notice, Icon, btn } from '@/components/integrations/ui'
+import OutletStockMapping from '@/components/integrations/OutletStockMapping'
 
 // Permissions added after the first install (order changes from Colvy). A store
 // installed before them is asked to approve them once — see lib/shopify-auth.
@@ -336,6 +337,11 @@ export default function ShopifyIntegrationPage() {
                   ))}
                   <p className="text-xs" style={{ color: 'var(--slate)', margin: 0 }}>Opens your theme editor with it added — press Save there to publish.</p>
                 </div>
+              )}
+
+              {s.is_active && !s.needs_reauth && companyId && (
+                <OutletStockMapping companyId={companyId} provider="shopify" integrationId={s.id}
+                  onReconnect={appConfigured ? () => install(s.store_domain) : undefined} reconnecting={installing === s.store_domain} />
               )}
 
               <div className="flex gap-2 flex-wrap mt-4">

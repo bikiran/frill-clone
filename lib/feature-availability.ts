@@ -15,7 +15,7 @@ export const COMING_SOON = {
   internationalCalling: true,
   hdAudio: true,          // wideband / HD voice on calls
   bookingWaitlist: true,  // offering freed-up booking slots to a waitlist
-  outletStock: true,      // stock levels for each store / outlet
+  outletStock: false,     // stock for each store: Shopify locations; WooCommerce with the Stock Locations plugin (V401)
 } as const
 
 export type ComingSoonKey = keyof typeof COMING_SOON

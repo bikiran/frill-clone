@@ -446,10 +446,20 @@ Opening-hours answers can be sent by the AI on its own, because they’re checke
 
 ## 4. Stock questions, answered from the live catalogue
 
-When your WooCommerce store is connected, Colvy’s AI checks live stock and prices before it answers “do you have this in a size 10?”.
+When your Shopify or WooCommerce store is connected, Colvy’s AI checks live stock and prices before it answers “do you have this in a size 10?”.
 
-> [!NOTE] Stock by store
-> Stock is checked for the product overall. Stock levels for each individual store aren’t available yet, so for “is it at the Richmond shop?” the AI hands the question to your team.
+For “is it at the Richmond shop?”, Shopify stores with more than one location can turn on stock by store: match each Shopify location to your store on the Shopify integration page, and the AI (in chat and on the phone) answers from each location’s live stock. When a customer rings a store’s own number, or their conversation or contact belongs to a store, it answers for that store first:
+
+\`\`\`chat
+title: Grain & Thread · SMS
+them: do you have the linen shirt in sage, size M, at Richmond?
+ai: Yes! We have 3 in sage, size M, at Richmond right now. Fitzroy is out of that size.
+\`\`\`
+
+Your team sees the same numbers as chips in the inbox’s product search.
+
+> [!NOTE] WooCommerce stores
+> WooCommerce keeps one stock number per product, so Colvy can only see stock for each store if you use the Stock Locations for WooCommerce plugin. Without it, stock is checked for the product overall, and for “is it at the Richmond shop?” the AI hands the question to your team.
 
 ![Clothes hanging on rails in a warmly lit boutique](/blog/multi-location-retail-one-inbox/clothes.jpg "“Do you have it in my size?” is a sale waiting to happen.")
 

@@ -435,6 +435,7 @@ function systemPrompt(state: PhoneCallState, p: { companyName: string; from: str
     `- ${factsFrom.length ? `Use your tools for every fact: ${listAnd(factsFrom)}. ` : ''}Never guess or invent prices, stock, dates, delivery times or policies. If the tools don’t give you the answer, ${fallback}.`,
     cannot.length ? `- You can’t help with ${listAnd(cannot)} on this call. If the caller asks, ${fallback}.` : false,
     sk.stock && '- If what they asked for isn’t in stock or isn’t sold, say so plainly. Only suggest something else if it’s a close match (the same kind of thing), and at most one or two.',
+    sk.stock && '- If the caller asks about one store or suburb, pass it to check_stock as store. When check_stock lists stock for each store, answer for the store they asked about, or else the store they rang (conversationStore), and say where else it is, like “We have three at Richmond and none at Fitzroy.” When it lists no stores, give the overall stock and don’t say which store has it.',
     sk.hours && '- Opening hours for the next week are already looked up below; answer hours questions straight from them. Only use get_business_hours for a date more than a week away.',
     sk.orders && `- Orders: ${state.verified ? 'you may look up orders linked to this caller. ' : ''}For any other order, ask for the order number and the email address or postcode on it before sharing anything.`,
     ...(booking ? [
@@ -476,7 +477,13 @@ export function compactLookup(tool: string, data: any): any {
   if (tool === 'check_stock' && Array.isArray(data?.products)) {
     return {
       ...(data.heard ? { heard: data.heard, closestMatches: data.closestMatches, note: data.note } : {}),
-      products: data.products.slice(0, 8).map((p: any) => ({ name: p.name, price: p.price, stockStatus: p.stockStatus, stockQty: p.stockQty ?? null })),
+      products: data.products.slice(0, 8).map((p: any) => ({
+        name: p.name, price: p.price, stockStatus: p.stockStatus, stockQty: p.stockQty ?? null,
+        // Stock at each store, where the business has set it up (lib/outlet-stock).
+        ...(p.stores ? { stores: p.stores } : {}),
+        ...(Array.isArray(p.options) && p.options.some((o: any) => o?.stores) ? { options: p.options.slice(0, 8).map((o: any) => ({ option: o.option, stockStatus: o.stockStatus, ...(o.stores ? { stores: o.stores } : {}) })) } : {}),
+      })),
+      ...(data.storeStock ? { storeStock: data.storeStock } : {}),
     }
   }
   // Free times are spoken, never booked from here: the exact start times aren't needed.
@@ -515,6 +522,8 @@ export function phoneToolSpecs(setup: PhoneCallSetup): { allowed: string[]; tool
 export async function phoneTurn(db: any, args: {
   companyId: string; companyName: string; siteOrigin: string; conversationId: string | null; contactId: string | null
   from: string; callerName: string | null; state: PhoneCallState; said: string; deadlineMs?: number
+  /** The business number the caller rang: its store answers stock questions first. */
+  to?: string | null
   /** Real-time calls: speak the reply as it's written, instead of all at the end. */
   onText?: (text: string) => void
 }): Promise<TurnResult> {
@@ -549,7 +558,7 @@ export async function phoneTurn(db: any, args: {
     db, companyId: args.companyId, companyName: args.companyName, siteOrigin: args.siteOrigin,
     runId: '', roleKey: 'support', roleName: 'Phone agent', mode: 'live',
     conversationId: args.conversationId, contactId: args.contactId,
-    customerVerification: args.state.verified ? 'verified' : 'unknown', scratch: {},
+    customerVerification: args.state.verified ? 'verified' : 'unknown', scratch: args.to ? { dialledNumber: args.to } : {},
   }
   const messages: NeutralMessage[] = []
   // The conversation so far (the greeting is the agent's first turn).

@@ -7,6 +7,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { confirmDialog } from '@/components/ConfirmDialog'
 import { useIntegrations } from '@/components/integrations/IntegrationsShell'
 import { IntegrationPage, IntegrationHeader, Card, Notice, Icon, btn, inputCls, inputStyle } from '@/components/integrations/ui'
+import OutletStockMapping from '@/components/integrations/OutletStockMapping'
 
 export default function WooCommerceIntegration() {
   const router = useRouter()
@@ -357,6 +358,7 @@ export default function WooCommerceIntegration() {
                     <span style={{ minWidth: 0, overflowWrap: 'anywhere' }}><strong>Connection problem.</strong> {health[st.id].error || 'Colvy couldn’t read this store.'}</span>
                   </div>
                 )}
+                {companyId && st.is_active !== false && <OutletStockMapping companyId={companyId} provider="woocommerce" integrationId={st.id} />}
                 </div>
               ))}
             </div>

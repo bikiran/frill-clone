@@ -5,6 +5,8 @@ import { internalHeaders } from '@/lib/internal-call'
 import { logAiEvent } from '@/lib/ai-assistant/audit'
 import { mapWooStatus, mapWooPayment, statusMeta } from '@/lib/orders'
 import { WooCommerceService } from '@/lib/woocommerce-service'
+import { shopifyCheckStock, wooStoreStock } from '@/lib/outlet-stock-server'
+import { storesText } from '@/lib/outlet-stock'
 import { replyToReview } from '@/lib/google-business'
 import { loadCompanyPublic, createInvite, bookingPageUrl } from '@/lib/booking'
 import { smartSearchKnowledge } from '@/lib/ai-knowledge'
@@ -44,6 +46,8 @@ export type AssistantContext = {
   callId?: string | null
   outletId?: string | null
   ticketId?: string | null
+  /** The business number the customer rang (phone AI): its store answers stock questions first. */
+  dialledNumber?: string | null
 }
 
 export type ToolSafety = 'read' | 'immediate' | 'confirm'
@@ -152,8 +156,8 @@ export const ASSISTANT_TOOLS: ToolDef[] = [
   },
   {
     name: 'check_stock', safety: 'read',
-    description: "Check a product's live stock level and price in the store (WooCommerce), by name or SKU.",
-    input_schema: { type: 'object', properties: { query: { type: 'string', description: 'product name or SKU' } }, required: ['query'] },
+    description: "Check a product's live stock level and price in the store (WooCommerce or Shopify), by name or SKU. Where the business has set up stock by store, each product also lists its stock at each store (stores) — pass store when the user asks about one store or suburb.",
+    input_schema: { type: 'object', properties: { query: { type: 'string', description: 'product name or SKU' }, store: { type: 'string', description: 'a store or suburb asked about (optional), e.g. Richmond' } }, required: ['query'] },
   },
   {
     name: 'list_out_of_stock', safety: 'read',
@@ -540,6 +544,15 @@ async function resolveMessageRecipient(db: any, ctx: AssistantContext, args: any
   return { contact, conversationId, phone, name }
 }
 
+// The active Shopify store for a company (first active integration).
+async function activeShopifyStore(db: any, companyId: string): Promise<any | null> {
+  try {
+    const { data } = await db.from('shopify_integrations').select('*')
+      .eq('company_id', companyId).eq('is_active', true).order('created_at', { ascending: true }).limit(1)
+    return data?.[0] || null
+  } catch { return null }
+}
+
 // The active WooCommerce store for a company (first active integration).
 async function activeWooStore(db: any, companyId: string): Promise<any | null> {
   const { data } = await db.from('woocommerce_integrations').select('*')
@@ -804,13 +817,21 @@ export async function runReadTool(db: SupabaseClient, ctx: AssistantContext, nam
     const q = String(args?.query || '').trim()
     if (!q) return { error: 'Give a product name or SKU.' }
     const store = await activeWooStore(D, ctx.companyId)
-    if (!store?.store_url) return { error: 'No store is connected, so I can\'t check live stock.' }
+    const stockCtx = { companyId: ctx.companyId, conversationId: ctx.conversationId, contactId: ctx.contactId, dialledNumber: ctx.dialledNumber, outletId: ctx.outletId }
+    const asked = typeof args?.store === 'string' ? args.store : null
+    if (!store?.store_url) {
+      // No WooCommerce store: a Shopify one answers, live, in the same shape.
+      const shop = await activeShopifyStore(D, ctx.companyId)
+      if (shop) return shopifyCheckStock(D, stockCtx, shop, q, { asked, money: (n: any) => money(n) })
+      return { error: 'No store is connected, so I can\'t check live stock.' }
+    }
     try {
       const woo = new WooCommerceService({ storeUrl: store.store_url, consumerKey: store.consumer_key, consumerSecret: store.consumer_secret, companyId: ctx.companyId })
       const products = await woo.searchProducts(q, 8)
       // Sizes/options have their own stock (a parent is "in stock" if any one is): list them, live, for the first few.
       const opts = await Promise.all(products.map((p: any, i: number) => (p.has_variations && i < 3 ? wooOptions(woo, Number(p.id)) : Promise.resolve(null))))
-      return {
+      // Stock at each store, where it's set up (lib/outlet-stock); otherwise exactly as before.
+      return await wooStoreStock(D, stockCtx, store, woo, products, {
         products: products.map((p: any, i: number) => ({
           // productId: what add_to_waitlist takes (the agents and Colvy AI).
           productId: p.id != null ? String(p.id) : null, name: p.name, sku: p.sku || null,
@@ -821,7 +842,7 @@ export async function runReadTool(db: SupabaseClient, ctx: AssistantContext, nam
             ...(opts[i]?.length ? { options: opts[i]!.slice(0, 15).map(o => ({ productId: o.productId, option: o.name, stockStatus: o.inStock == null ? null : o.inStock ? 'instock' : 'outofstock', price: o.price != null ? money(o.price) : null })) } : {}),
           } : {}),
         })),
-      }
+      }, asked)
     } catch (e: any) { return { error: e?.message || 'Could not reach the store.' } }
   }
   if (name === 'list_out_of_stock') {
@@ -1611,7 +1632,7 @@ export function readToolCard(name: string, result: any): any | null {
   if (name === 'check_stock' && Array.isArray(result?.products)) {
     return {
       kind: 'list', title: result.products.length ? 'Stock' : 'No matching products',
-      rows: result.products.slice(0, 8).map((p: any) => ({ label: p.name, sub: [p.stockStatus === 'instock' ? 'In stock' : p.stockStatus === 'outofstock' ? 'Out of stock' : p.stockStatus, p.stockQty != null ? `${p.stockQty} on hand` : null, p.price].filter(Boolean).join(' · ') })),
+      rows: result.products.slice(0, 8).map((p: any) => ({ label: p.name, sub: [p.stockStatus === 'instock' ? 'In stock' : p.stockStatus === 'outofstock' ? 'Out of stock' : p.stockStatus, p.stockQty != null ? `${p.stockQty} on hand` : null, p.price, p.stores ? storesText(p.stores) : null].filter(Boolean).join(' · ') })),
     }
   }
   return null
