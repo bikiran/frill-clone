@@ -12,6 +12,9 @@ import { aiAnswerDecision } from '@/lib/phone-receptionist'
 import { agentsPaused } from '@/lib/agent/pilot'
 import { getPhoneCatalog } from '@/lib/phone-catalog'
 import { queueMissedCallText } from '@/lib/missed-call-text'
+import { nextStep, planFor, routingNeedsHours, formatAu, type CallCtx } from '@/lib/call-routing'
+import { getCallRouting, ringTargets, forwardingAllowed, noteRouting, noteStep, readCallRow, setRoutingColumns } from '@/lib/call-routing-server'
+import { businessClosedNow } from '@/lib/phone-agent'
 
 export const dynamic = 'force-dynamic'
 
@@ -28,6 +31,15 @@ const twiml = (body: string) => new NextResponse(`<?xml version="1.0" encoding="
 // action= handler for an INBOUND call's ring-all <Dial>. If an agent answered,
 // the dial is over and we end cleanly. If nobody picked up (no-answer/busy/
 // failed), fall through to voicemail.
+//
+// Call routing (lib/call-routing): a step of a ring order, forward or menu
+// choice carries route= and step=. When that step isn't answered and the
+// caller is still on the line, the next step with someone to ring is dialled
+// instead; after the last one, the fallback below runs once, as for ring-all.
+// A forwarded leg (fwd=1) only counts as answered when it was really taken:
+// with screening (scr=1), when the person pressed 1 (forward-screen).
+// nobody=1: a route had nobody to ring at all (a menu choice), so straight to
+// the fallback.
 export async function POST(req: NextRequest) {
   try {
     const form = await req.formData()
@@ -40,16 +52,23 @@ export async function POST(req: NextRequest) {
     const conversationId = sp.get('conversationId') || ''
     const soloUser = sp.get('soloUser') || ''
     const rang = sp.get('rang') || '?'
+    const route = sp.get('route') || ''
+    const stepIndex = Number.parseInt(sp.get('step') || '', 10)
+    const forwarded = sp.get('fwd') === '1'
+    const screened = sp.get('scr') === '1'
+    const nobody = sp.get('nobody') === '1'
 
-    const dialStatus = (get('DialCallStatus') || '').toLowerCase()
+    let dialStatus = (get('DialCallStatus') || '').toLowerCase()
     const durSecs = parseInt(get('DialCallDuration') || '0', 10) || 0
+    // A route with nobody to ring is handled as a ring nobody answered.
+    if (nobody && !dialStatus) dialStatus = 'no-answer'
     // Why a rung call ended up here — recorded on `cause` (shown as "Hangup
     // cause" in Call Diagnostics) so an agent-ring that doesn't connect is
     // diagnosable rather than a silent 0s→voicemail. `no-answer` = the client
     // leg(s) rang the full timeout and nobody picked up; `busy`/`failed` =
     // a registration declined the leg or wasn't reachable (the usual cause of
     // "1 ring → voicemail"); `completed` dur=0 = bridged then dropped instantly.
-    const ringOutcome = `agent_${dialStatus || 'unknown'}: rang=${rang} dur=${durSecs}s`
+    let ringOutcome = nobody ? `no_agent: nobody to ring (route ${route || "?"})` : `agent_${dialStatus || 'unknown'}: rang=${rang} dur=${durSecs}s`
     // The SID of the child leg that actually answered (this callback ALWAYS
     // fires, unlike the per-<Client> "answered" callback). Map it back to the
     // agent via call_legs.
@@ -69,6 +88,40 @@ export async function POST(req: NextRequest) {
           return twiml(`<Response><Dial><Conference startConferenceOnEnter="true" endConferenceOnExit="false" beep="false">${xmlEscape(confName)}</Conference></Dial></Response>`)
         }
       } catch {}
+    }
+
+    // A forwarded leg to an outside number. Twilio says "completed" whenever the
+    // outside phone picked up, which includes its own voicemail; with screening
+    // on, only a press of 1 (recorded by forward-screen against this leg's SID)
+    // means a person took the call. Anything else is a ring nobody answered.
+    if (forwarded && callRowId) {
+      const call = await readCallRow(db, callRowId)
+      const fwd = call?.routing_state?.routing?.forward || null
+      const pickedUp = dialStatus === 'completed' || dialStatus === 'answered'
+      // Accepted for THIS step (each forward step starts with a fresh note).
+      const accepted = !screened || (fwd?.accepted === true && fwd.step === stepIndex && fwd.route === route)
+      const to = String(fwd?.to || '')
+      ringOutcome = `forward_${dialStatus || 'unknown'}${pickedUp && !accepted ? '_not_accepted' : ''}: to=${to || '?'} dur=${durSecs}s`
+      if (pickedUp && accepted && call?.company_id === companyId) {
+        const parentStatus = (get('CallStatus') || '').toLowerCase()
+        const endedBy = parentStatus === 'completed' ? 'caller_hung_up' : parentStatus === 'in-progress' ? 'forwarded_leg_ended' : `parent_${parentStatus || 'unknown'}`
+        const who = `Forwarded to ${formatAu(to)}`
+        const now = new Date().toISOString()
+        try {
+          await db.from('calls').update({
+            status: 'completed', answered_at: now, ended_at: now, answered_by: who, agent_name: who,
+            cause: `${endedBy}: forwarded to=${to} dur=${durSecs}s`, ...(durSecs ? { duration_seconds: durSecs } : {}),
+          }).eq('id', callRowId)
+        } catch {}
+        // The forwarded leg's minutes are outbound calls on Colvy's Twilio
+        // account: kept on the call (V399 columns, and the routing note).
+        await setRoutingColumns(db, callRowId, { forwarded_to: to, forwarded_seconds: durSecs })
+        await noteRouting(db, callRowId, { forward: { ...(fwd || { to, step: stepIndex, route }), seconds: durSecs } }, call)
+        try { await setCallPreview(db as any, conversationId, durSecs ? `📞 Call ended · ${Math.floor(durSecs / 60)}:${String(durSecs % 60).padStart(2, '0')}` : '📞 Call ended') } catch {}
+        return twiml('<Response><Hangup/></Response>')
+      }
+      // Picked up but not taken (its voicemail, or declined): not answered.
+      if (pickedUp) dialStatus = 'no-answer'
     }
 
     // An agent answered → mark it and finish.
@@ -139,7 +192,40 @@ export async function POST(req: NextRequest) {
     // takes the call instead when the owner chose "when nobody answers". Any
     // other outcome, or anything going wrong here, goes to voicemail as before.
     const callerStatus = (get('CallStatus') || '').toLowerCase()
-    if (callRowId && companyId && ['no-answer', 'busy', 'failed'].includes(dialStatus) && !['completed', 'canceled', 'busy', 'failed', 'no-answer'].includes(callerStatus)) {
+    const callerOnLine = !['completed', 'canceled', 'busy', 'failed', 'no-answer'].includes(callerStatus)
+
+    // A step of a ring order / forward / menu choice wasn't answered: ring the
+    // next step that has someone to ring. Nothing left → the fallback below.
+    if (route && !nobody && Number.isFinite(stepIndex) && callRowId && companyId && callerOnLine && ['no-answer', 'busy', 'failed'].includes(dialStatus)) {
+      try {
+        const call = await readCallRow(db, callRowId)
+        const routing = call && call.company_id === companyId ? await getCallRouting(db, companyId, call.to_number || '') : null
+        if (call && routing) {
+          const { data: integ } = await db.from('twilio_integrations').select('ring_seconds').eq('company_id', companyId).maybeSingle()
+          const steps = planFor(routing, route, Math.max(Number(integ?.ring_seconds || 25), 20))
+          const later = steps.slice(stepIndex + 1)
+          const [targets, closedNow, forwardAllowed, { data: co }] = await Promise.all([
+            ringTargets(db, companyId),
+            later.some(s => s.when !== 'always') || routingNeedsHours(routing) ? businessClosedNow(db, companyId) : Promise.resolve(null),
+            later.some(s => s.kind === 'forward') ? forwardingAllowed(db, companyId) : Promise.resolve(false),
+            db.from('companies').select('name').eq('id', companyId).maybeSingle(),
+          ])
+          const ctx: CallCtx = {
+            base, callRowId, companyId, conversationId, callerName: call.caller_name || null, contactId: call.contact_id || null,
+            from: call.from_number || '', to: call.to_number || '', businessName: co?.name || '',
+          }
+          // A menu answered the call already; a ring order's first steps haven't.
+          const next = nextStep(ctx, steps, stepIndex + 1, route, { ringable: targets.ringUsers, closedNow, forwardAllowed, answered: route !== 'main' })
+          if (next) {
+            try { await db.from('calls').update({ status: 'ringing_agents', cause: ringOutcome }).eq('id', callRowId) } catch {}
+            await noteStep(db, callRowId, route, next, call)
+            return twiml(next.twiml)
+          }
+        }
+      } catch (e) { console.error('[twilio inbound-status] next ring step failed — fallback as normal', e instanceof Error ? e.message : e) }
+    }
+
+    if (callRowId && companyId && ['no-answer', 'busy', 'failed'].includes(dialStatus) && callerOnLine) {
       try {
         const agent = await getPhoneAgent(db, companyId)
         if (agent.enabled && agent.mode !== 'test') {
