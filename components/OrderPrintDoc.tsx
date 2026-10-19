@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import { fmtMoney, CARRIER_LABEL, carrierTrackUrl, isClickCollect, buildOrderLineKeys, variationLabel } from '@/lib/orders'
+import { fmtMoney, CARRIER_LABEL, carrierTrackUrl, isClickCollect, buildOrderLineKeys, variationLabel, gstInclFactor } from '@/lib/orders'
 import { barcodeSVG } from '@/lib/barcode'
 
 type Order = any
@@ -189,6 +189,10 @@ function PackingSlip({ order, items, notes, sentByKey, oosByKey, company, from, 
   const shipping = Number(order.shipping_total) || 0
   const grand = order.total != null ? Number(order.total) : subtotal + shipping
   const tax = Math.max(0, grand - subtotal - shipping)
+  // Line prices include GST, matching the order panel (lib/orders gstInclFactor,
+  // from the order's own totals). Stores without GST get a factor of 1.
+  const gstF = gstInclFactor(order)
+  const inclGst = gstF > 1
   const isClickCollectSlip = isClickCollect(order)
   const customerNote = order.customer_note || order.note || ''
   const internalNotes = (notes || []).filter((n: any) => (n.body || '').trim())
@@ -258,7 +262,7 @@ function PackingSlip({ order, items, notes, sentByKey, oosByKey, company, from, 
             <th style={{ ...th, width: 46 }}></th>
             <th style={th}>Item</th>
             <th style={th}>SKU</th>
-            <th style={{ ...th, textAlign: 'right' }}>Unit Price</th>
+            <th style={{ ...th, textAlign: 'right' }}>{inclGst ? 'Unit Price (incl GST)' : 'Unit Price'}</th>
             <th style={{ ...th, textAlign: 'center' }}>Qty</th>
             <th style={{ ...th, textAlign: 'right' }}>Total</th>
           </tr>
@@ -266,8 +270,8 @@ function PackingSlip({ order, items, notes, sentByKey, oosByKey, company, from, 
         <tbody>
           {items.map((it: any) => {
             const qty = Number(it.quantity) || 1
-            const line = it.total_price != null ? Number(it.total_price) : (Number(it.unit_price) || 0) * qty
-            const unit = it.unit_price != null ? Number(it.unit_price) : line / qty
+            const line = (it.total_price != null ? Number(it.total_price) : (Number(it.unit_price) || 0) * qty) * gstF
+            const unit = it.unit_price != null ? Number(it.unit_price) * gstF : line / qty
             const sent = isSent(it)
             const oos = !sent && isOos(it)
             const strike: React.CSSProperties = sent ? { textDecoration: 'line-through', color: '#94a3b8' } : {}
@@ -308,10 +312,12 @@ function PackingSlip({ order, items, notes, sentByKey, oosByKey, company, from, 
           <tbody>
             {([
               ['Total units', String(total), false],
-              ['Subtotal', fmtMoney(subtotal, order.currency), false],
-              ['Tax (GST)', fmtMoney(tax, order.currency), false],
+              ...(inclGst
+                ? [['Subtotal (incl GST)', fmtMoney(subtotal * gstF, order.currency), false]]
+                : [['Subtotal', fmtMoney(subtotal, order.currency), false], ['Tax (GST)', fmtMoney(tax, order.currency), false]]),
               ['Shipping', isClickCollectSlip ? 'Click & Collect' : (shipping > 0 ? fmtMoney(shipping, order.currency) : 'Free'), false],
               ['Grand Total', `${fmtMoney(grand, order.currency)} ${order.currency || ''}`, true],
+              ...(inclGst ? [['Includes GST of', fmtMoney(tax, order.currency), false]] : []),
             ] as [string, string, boolean][]).map(([k, v, strong]) => (
               <tr key={k} style={{ borderTop: strong ? '2px solid #0f172a' : '1px solid #e2e8f0' }}>
                 <td style={{ padding: '6px 10px', fontSize: strong ? 13.5 : 12.5, color: strong ? '#0f172a' : '#64748b', fontWeight: strong ? 800 : 500 }}>{k}</td>
