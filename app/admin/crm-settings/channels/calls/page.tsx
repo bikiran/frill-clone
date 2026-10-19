@@ -7,6 +7,7 @@ import { peekCompanyUser, resolveCompanyUser } from '@/lib/client-cache'
 import RegulatoryForm from '@/components/RegulatoryForm'
 import CallAnswerSettings from '@/components/CallAnswerSettings'
 import AiReceptionistCard from '@/components/AiReceptionistCard'
+import CallRoutingSettings from '@/components/CallRoutingSettings'
 import { Icon } from '@/components/integrations/ui'
 import { finalizeNext } from '@/lib/number-finalize-poll'
 
@@ -341,6 +342,7 @@ export default function TelnyxIntegration() {
           )}
 
           {companyId && <CallAnswerSettings companyId={companyId} />}
+          {companyId && <CallRoutingSettings companyId={companyId} />}
           {companyId && <AiReceptionistCard companyId={companyId} />}
 
           {/* All numbers this company owns */}

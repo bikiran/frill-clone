@@ -5,6 +5,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
 import { peekCompanyUser, readCache, writeCache } from '@/lib/client-cache'
 import PageHeader from '@/components/PageHeader'
+import { callRoutingFacts } from '@/lib/call-routing'
 
 type Call = {
   id: string
@@ -28,6 +29,13 @@ type Call = {
   transfer_state?: string | null
   transferred_at?: string | null
   transcript_en?: string | null
+  // Call routing (V399; also on routing_state.routing before it runs).
+  ivr_choice?: string | null
+  routing_path?: string | null
+  forwarded_to?: string | null
+  forwarded_seconds?: number | null
+  voicemail_box?: string | null
+  routing_state?: any
   created_at: string
 }
 
@@ -157,7 +165,7 @@ export default function CallsPage() {
   const otherParty = (c: Call) => (c.direction === 'inbound' ? c.from_number : c.to_number) || 'Unknown'
   const isDiagnostic = (t: string | null) => !!t && /^\[/.test(t)
   const callLabel = (c: Call) => {
-    if (isVoicemail(c)) return `Voicemail ${fmtDuration(c.duration_seconds)}`
+    if (isVoicemail(c)) { const box = callRoutingFacts(c).box; return `Voicemail${box ? ` · ${box}` : ''} ${fmtDuration(c.duration_seconds)}` }
     if (isMissed(c)) return 'Missed'
     if (c.recording_url) return `Answered ${fmtDuration(c.duration_seconds)}`
     if (c.duration_seconds) return fmtDuration(c.duration_seconds)
@@ -453,7 +461,17 @@ export default function CallsPage() {
                       <div style={{ display: 'flex', gap: 14, marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border)', fontSize: 11.5, color: 'var(--slate)', flexWrap: 'wrap' }}>
                         <span>Duration: {fmtDuration(c.duration_seconds)}</span>
                         <span>Status: {isVoicemail(c) ? 'Voicemail' : isMissed(c) ? 'Missed' : c.status}</span>
-                        {c.agent_name && <span>Agent: {c.agent_name}</span>}
+                        {c.agent_name && !callRoutingFacts(c).forwardedTo && <span>Agent: {c.agent_name}</span>}
+                        {(() => {
+                          const r = callRoutingFacts(c)
+                          return (
+                            <>
+                              {r.choice && <span>Menu: {r.choice}</span>}
+                              {r.forwardedTo && <span>Forwarded to {r.forwardedTo}{r.forwardedSeconds ? ` · ${fmtDuration(r.forwardedSeconds)}` : ''}</span>}
+                              {r.path && <span style={{ flexBasis: '100%' }}>Route: {r.path}</span>}
+                            </>
+                          )
+                        })()}
                       </div>
                     </div>
                   </div>
