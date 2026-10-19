@@ -17,7 +17,7 @@ const AI_TEXT = 'Yes! We have 2 left at $385, including the LED light. Want me t
 
 const CONVOS = [
   { id: 'tom', name: 'Tom Becker', ch: 'SMS', snippet: 'Thanks, picking up Saturday 👍', time: '9m', av: '#0ea5e9' },
-  { id: 'priya', name: 'Priya Nair', ch: 'WhatsApp', snippet: 'Can I book a tank clean-out?', time: '24m', av: '#22c55e' },
+  { id: 'priya', name: 'Priya Nair', ch: 'SMS', snippet: 'Can I book a tank clean-out?', time: '24m', av: '#22c55e' },
   { id: 'ana', name: 'Ana Lopez', ch: 'Phone', snippet: 'AI answered a call · 1:42', time: '1h', av: '#a855f7' },
   { id: 'jack', name: 'Jack Wu', ch: 'Email', snippet: 'Re: Delivery to Geelong', time: '2h', av: '#f59e0b' },
 ]

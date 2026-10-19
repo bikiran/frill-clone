@@ -28,7 +28,7 @@ type Page = {
 
 const PAGES: Record<string, Page> = {
   'customer-support': {
-    accent: BLUE, eyebrow: 'Customer support', title: 'Support that', titleAccent: 'never drops a thread', sub: 'Every question — SMS, WhatsApp, email, chat, social and calls — lands in one shared inbox, with AI drafts and the customer’s full history beside every reply.',
+    accent: BLUE, eyebrow: 'Customer support', title: 'Support that', titleAccent: 'never drops a thread', sub: 'Every question — SMS, email, chat, social and calls — lands in one shared inbox, with AI drafts and the customer’s full history beside every reply.',
     heroChips: ['Shared inbox', 'AI drafts', 'Order lookup', 'Auto-routing'],
     features: [
       { icon: 'inbox', title: 'One shared inbox', desc: 'Every channel threads into one place your whole team works from.' },
@@ -64,10 +64,10 @@ const PAGES: Record<string, Page> = {
     cta: { title: 'Sell where your customers already are', sub: 'Capture, follow up and get paid — all in the chat.' },
   },
   marketing: {
-    accent: PURPLE, eyebrow: 'Marketing & campaigns', title: 'Broadcasts that', titleAccent: 'start conversations', sub: 'Send targeted SMS, WhatsApp and email campaigns from the same place you talk to customers — and reply to every response in one inbox.',
-    heroChips: ['SMS & WhatsApp', 'Segments', 'Broadcasts', 'Replies in-inbox'],
+    accent: PURPLE, eyebrow: 'Marketing & campaigns', title: 'Broadcasts that', titleAccent: 'start conversations', sub: 'Send targeted SMS and email campaigns from the same place you talk to customers — and reply to every response in one inbox.',
+    heroChips: ['SMS & email', 'Segments', 'Broadcasts', 'Replies in-inbox'],
     features: [
-      { icon: 'megaphone', title: 'One-off broadcasts', desc: 'Compose once and send across SMS, WhatsApp and email.' },
+      { icon: 'megaphone', title: 'One-off broadcasts', desc: 'Compose once and send by SMS or email.' },
       { icon: 'target', title: 'Audience segments', desc: 'Target by purchase history, tags, channel or activity.' },
       { icon: 'pen', title: 'Templates', desc: 'Reusable, on-brand messages ready to personalise and send.' },
       { icon: 'bolt', title: 'Automations', desc: 'Welcome series, win-backs and post-purchase flows that run themselves.' },
@@ -75,10 +75,10 @@ const PAGES: Record<string, Page> = {
       { icon: 'lock', title: 'Opt-in handling', desc: 'Consent and opt-outs managed automatically, so you stay compliant.' },
     ],
     bands: [
-      { tag: 'Reach them where they read', title: 'Campaigns on the channels people actually open', body: 'Email still has its place, but SMS and WhatsApp get read in minutes. Compose once and reach customers on the channel they prefer.', bullets: ['SMS, WhatsApp and email in one composer', 'Segment by behaviour and history', 'Schedule or send now'] },
+      { tag: 'Reach them where they read', title: 'Campaigns on the channels people actually open', body: 'Email still has its place, but texts tend to be read quickly. Reach customers by SMS or email from the same place you talk to them.', bullets: ['SMS and email campaigns', 'Segment by behaviour and history', 'Schedule or send now'] },
       { tag: 'Two-way by design', title: 'When they reply, you’re right there', body: 'A campaign isn’t a dead end. Replies flow into the same inbox as everything else, so a broadcast can turn into a sale or a support win.', bullets: ['Replies in the shared inbox', 'Full context on every responder', 'Automatic opt-out handling'] },
     ],
-    stats: [{ big: '3-in-1', label: 'SMS · WhatsApp · email' }, { big: '2-way', label: 'every campaign' }, { big: 'built-in', label: 'opt-out handling' }],
+    stats: [{ big: '2-in-1', label: 'SMS · email' }, { big: '2-way', label: 'every campaign' }, { big: 'built-in', label: 'opt-out handling' }],
     cta: { title: 'Turn campaigns into conversations', sub: 'Broadcast, segment and reply — all in one place.' },
   },
   reviews: {

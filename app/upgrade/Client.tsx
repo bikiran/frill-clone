@@ -7,6 +7,7 @@ import Link from 'next/link'
 import { alertDialog } from '@/components/ConfirmDialog'
 import { showBillingUnavailable } from '@/components/BillingUnavailable'
 import { billingUnavailableCopy } from '@/lib/billing-config'
+import { soonLabel } from '@/lib/feature-availability'
 
 // Mirrors the modular plans on the public /pricing page. Each paid plan's id is a
 // Stripe checkout tier (price IDs: lib/billing-config.ts).
@@ -35,7 +36,7 @@ const TIERS = [
     price: 179,
     annualPrice: 149,
     color: '#2b59ff',
-    features: ['Live chat inbox','Contacts & CRM','WhatsApp, SMS & voice calls','3,000 SMS / month included','WooCommerce sync','Unlimited team members'],
+    features: ['Live chat inbox','Contacts & CRM','SMS & voice calls',soonLabel('WhatsApp', 'whatsapp'),'3,000 SMS / month included','WooCommerce sync','Unlimited team members'],
     limits: [],
   },
   {

@@ -8,7 +8,7 @@ import ColvyJsonLd from '@/components/ColvyJsonLd'
 export const metadata: Metadata = {
   title: { absolute: 'Colvy — Shared Inbox, CRM & Business Phone for Small Businesses' },
   description:
-    'One shared inbox for WhatsApp, Instagram, Messenger, email, SMS and live chat, with a CRM, business phone, WooCommerce and Shopify orders, payments and AI agents built in. Start free.',
+    'One shared inbox for Instagram, Messenger, email, SMS and live chat, with a CRM, business phone, WooCommerce and Shopify orders, payments and AI agents built in. Start free.',
   alternates: { canonical: '/' },
 }
 

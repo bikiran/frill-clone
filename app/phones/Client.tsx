@@ -6,6 +6,8 @@ import { redirectToUserAdmin, boardUrl } from '@/lib/redirect'
 import MarketingNav from '@/components/MarketingNav'
 import MarketingFooter from '@/components/MarketingFooter'
 import FeatureIcon from '@/components/FeatureIcon'
+import ComingSoonPill from '@/components/ComingSoonPill'
+import type { ComingSoonKey } from '@/lib/feature-availability'
 
 // Standalone Phones landing page. Grounded in the real calling product:
 // browser calling, click-to-dial, buy/port local numbers assigned per
@@ -17,7 +19,7 @@ const ACCENT = GREEN
 const FEATURES = [
   { icon: 'globe', title: 'Browser calling', desc: 'Make and take calls from any tab — no handsets, no PBX.' },
   { icon: 'phone', title: 'Click-to-dial', desc: 'Call any customer in one click, straight from the thread.' },
-  { icon: 'pin', title: 'Local numbers', desc: 'Buy a number in any capital, or bring and port your own.' },
+  { icon: 'pin', title: 'Local numbers', desc: 'A local number in any capital, or an 04 mobile number.' },
   { icon: 'camera', title: 'Recording & transcription', desc: 'Every call recorded and transcribed, attached to the thread.' },
   { icon: 'ai', title: 'AI call summaries', desc: 'A tidy summary and follow-ups written up for you.' },
   { icon: 'chat', title: 'Missed-call text-back', desc: 'Auto-text callers you miss so no lead slips away.' },
@@ -28,18 +30,20 @@ const BANDS = [
   { tag: 'After the call', title: 'Every call, written up for you', body: 'Calls are recorded, transcribed and summarised automatically, with follow-up tasks created so nothing slips between the call and the next step.', bullets: ['Auto recording & transcription', 'AI summary on the thread', 'Follow-up tasks created'], icon: 'pen' },
 ]
 
-// Every phone feature — each links to its own /phones/[slug] page.
-const ALL_FEATURES: { slug: string; name: string; icon: string; desc: string }[] = [
+// Every phone feature — each links to its own /phones/[slug] page. `soon`
+// marks one that isn't live yet (lib/feature-availability.ts).
+const ALL_FEATURES: { slug: string; name: string; icon: string; desc: string; soon?: ComingSoonKey }[] = [
   { slug: 'click-to-dial', name: 'Click to Dial', icon: 'phone', desc: 'One-click calling from any tab' },
   { slug: 'browser-dialer', name: 'Browser Dialer', icon: 'globe', desc: 'Call without leaving the browser' },
-  { slug: 'hd-audio', name: 'HD Audio', icon: 'bolt', desc: 'Crystal-clear call quality' },
-  { slug: 'numbers-porting', name: 'Numbers & Porting', icon: 'pin', desc: 'Local numbers, or bring your own' },
+  { slug: 'hd-audio', name: 'HD Audio', icon: 'bolt', desc: 'HD voice on calls', soon: 'hdAudio' },
+  { slug: 'numbers-porting', name: 'Numbers & Porting', icon: 'pin', desc: 'Bring your existing number', soon: 'numberPorting' },
   { slug: 'mobile-app', name: 'Mobile App', icon: 'phone', desc: 'Colvy on iOS & Android' },
   { slug: 'warm-transfer', name: 'Warm Transfer', icon: 'user', desc: 'Brief a colleague, then transfer' },
-  { slug: 'call-forwarding', name: 'Call Forwarding', icon: 'link', desc: 'Forward to any number or device' },
-  { slug: 'cascade-ring', name: 'Cascade Ring', icon: 'bell', desc: 'Ring devices in sequence' },
+  { slug: 'call-forwarding', name: 'Call Forwarding', icon: 'link', desc: 'Forward to any number', soon: 'callForwarding' },
+  { slug: 'cascade-ring', name: 'Cascade Ring', icon: 'bell', desc: 'Ring the team in order', soon: 'cascadeRing' },
   { slug: 'simultaneous-ring', name: 'Simultaneous Ring', icon: 'target', desc: 'Ring everyone at once' },
-  { slug: 'ivr', name: 'IVR & Auto-Attendant', icon: 'target', desc: 'Route callers to the right team' },
+  { slug: 'ivr', name: 'IVR & Auto-Attendant', icon: 'target', desc: 'Press-1 menus for callers', soon: 'ivr' },
+  { slug: 'ai-receptionist', name: 'AI Receptionist', icon: 'ai', desc: 'Answers when your team can’t' },
   { slug: 'ai-call-intelligence', name: 'AI Call Intelligence', icon: 'ai', desc: 'Caller context before you answer' },
   { slug: 'ai-actions', name: 'AI Actions', icon: 'bolt', desc: 'Auto-tasks & updates after calls' },
   { slug: 'call-recording', name: 'Call Recording', icon: 'camera', desc: 'Record, transcribe & summarise' },
@@ -47,15 +51,15 @@ const ALL_FEATURES: { slug: string; name: string; icon: string; desc: string }[]
   { slug: 'missed-call-text-back', name: 'Missed Call Text Back', icon: 'chat', desc: 'Auto-SMS a missed caller' },
   { slug: 'voicemail', name: 'Voicemail', icon: 'inbox', desc: 'Transcribed & summarised' },
   { slug: 'voip', name: 'VoIP Phone System', icon: 'phone', desc: 'A cloud phone system, built in' },
-  { slug: 'international', name: 'International Calling', icon: 'globe', desc: 'Call 100+ countries' },
-  { slug: 'command-centre', name: 'Command Centre', icon: 'kanban', desc: 'Live dashboard with AI agents' },
+  { slug: 'international', name: 'International Calling', icon: 'globe', desc: 'Call customers overseas', soon: 'internationalCalling' },
+  { slug: 'command-centre', name: 'Command Centre', icon: 'kanban', desc: 'Live call dashboard' },
 ]
 
 // Real Australian local area codes offered when buying a number.
 const NUMBERS = ['Sydney 02', 'Melbourne 03', 'Brisbane 07', 'Gold Coast 07', 'Perth 08', 'Adelaide 08', 'Canberra 02', 'Hobart 03', 'Darwin 08']
 
 const STEPS = [
-  { title: 'Get a number', desc: 'Buy a local number in any capital, or port the one you already use.' },
+  { title: 'Get a number', desc: 'Buy a local number in any capital, or an 04 mobile number.' },
   { title: 'Call from the browser', desc: 'Dial in one click from any conversation — nothing to install.' },
   { title: 'Every call logged', desc: 'Recording, transcript and an AI summary land on the thread.' },
   { title: 'Missed calls text back', desc: 'Anyone you miss gets an automatic text so the lead isn’t lost.' },
@@ -63,8 +67,8 @@ const STEPS = [
 
 const FAQS = [
   { q: 'Do I need special hardware?', a: 'No — calls run in your browser. No handsets, no PBX, nothing to install.' },
-  { q: 'Can I keep my existing number?', a: 'Buy a new local number in any Australian capital, or bring and port the number you already use.' },
-  { q: 'Are calls recorded and transcribed?', a: 'Yes — calls are recorded and transcribed, with an AI summary attached to the conversation. You control recording.' },
+  { q: 'Can I keep my existing number?', a: 'Not yet. We’re building number porting, but moving an existing number into Colvy isn’t available today. Most businesses add a new Colvy number, local or mobile, alongside the one they have.' },
+  { q: 'Are calls recorded and transcribed?', a: 'Yes — calls are recorded and transcribed, with an AI summary attached to the conversation.' },
   { q: 'Can different locations have their own numbers?', a: 'Yes. Assign numbers per business location so each site rings and dials from its own local number.' },
 ]
 
@@ -200,6 +204,7 @@ export default function PhonesPage() {
                 <span style={{ width: 40, height: 40, borderRadius: 11, background: ACCENT + '14', color: ACCENT, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><FeatureIcon name={a.icon} color={ACCENT} size={20} /></span>
                 <span>
                   <span style={{ display: 'block', fontSize: 15, fontWeight: 800, color: text }}>{a.name}</span>
+                  {a.soon && <ComingSoonPill feature={a.soon} style={{ marginTop: 4 }} />}
                   <span style={{ display: 'block', fontSize: 13, color: muted, marginTop: 2, lineHeight: 1.45 }}>{a.desc}</span>
                 </span>
               </a>
@@ -241,7 +246,7 @@ export default function PhonesPage() {
         <div style={{ maxWidth: 1000, margin: '0 auto', textAlign: 'center' }}>
           <Reveal>
             <h2 style={{ fontSize: 'clamp(24px, 3.4vw, 38px)', fontWeight: 900, letterSpacing: '-0.02em', margin: '0 0 8px' }}>Your numbers, <span style={{ color: ACCENT }}>your cities</span></h2>
-            <p style={{ fontSize: 16, color: muted, maxWidth: 560, margin: '0 auto 22px', lineHeight: 1.55 }}>Buy a local number in any Australian capital, assign one per location, or bring and port the number you already use.</p>
+            <p style={{ fontSize: 16, color: muted, maxWidth: 560, margin: '0 auto 22px', lineHeight: 1.55 }}>Buy a local number in any Australian capital or an 04 mobile number, and assign one per location.</p>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, justifyContent: 'center' }}>
               {NUMBERS.map(n => (
                 <span key={n} style={{ fontSize: 13.5, fontWeight: 700, color: text, background: cardBg, border: `1px solid ${cardBorder}`, borderRadius: 999, padding: '8px 16px', display: 'inline-flex', alignItems: 'center', gap: 7 }}><FeatureIcon name="pin" color={ACCENT} size={13} />{n}</span>

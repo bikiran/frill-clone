@@ -5,6 +5,8 @@ import { usePathname } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { redirectToUserAdmin, boardUrl } from '@/lib/redirect'
 import FeatureIcon from '@/components/FeatureIcon'
+import ComingSoonPill from '@/components/ComingSoonPill'
+import type { ComingSoonKey } from '@/lib/feature-availability'
 
 /**
  * Shared marketing top-nav with Coax-style mega-menus.
@@ -16,12 +18,13 @@ import FeatureIcon from '@/components/FeatureIcon'
  * Each mega-menu has a left column grid plus a futuristic parallax feature panel
  * on the right (fills the dead space). Switching menus slides the content in.
  * Every item points at a page that exists (the /product/* pages, /product,
- * /inbox-crm with anchors, /pricing, /signup, or the landing #stories section).
+ * /inbox-crm with anchors, /pricing, /signup, section).
  */
 
 const CORAL = '#ff6a4d', BLUE = '#2b59ff', PURPLE = '#7c5cff', GREEN = '#00c48c', PINK = '#ff4d8d', CYAN = '#0891b2', TEAL = '#0d9488', AMBER = '#d97706'
 
-type Item = { icon: string; title: string; desc: string; href: string }
+// `soon` marks a feature that isn't live yet (lib/feature-availability.ts).
+type Item = { icon: string; title: string; desc: string; href: string; soon?: ComingSoonKey }
 type Feature = { eyebrow: string; title: string; desc: string; icon: string; chips: string[]; href: string; cta: string }
 type Menu = { key: string; label: string; accent: string; columns: { heading: string; items: Item[] }[]; feature: Feature }
 type Link = { label: string; href: string }
@@ -78,7 +81,7 @@ const MENUS: Menu[] = [
       ] },
       { heading: 'Social', items: [
         { icon: 'reaction', title: 'Meta DMs', desc: 'Instagram & Messenger', href: '/channels/meta' },
-        { icon: 'chat', title: 'WhatsApp', desc: 'Business number or your own', href: '/channels/whatsapp' },
+        { icon: 'chat', title: 'WhatsApp', desc: 'A shared WhatsApp inbox', href: '/channels/whatsapp', soon: 'whatsapp' },
         { icon: 'star', title: 'Google reviews', desc: 'Reply from the same place', href: '/channels/google-reviews' },
       ] },
       { heading: 'Messaging', items: [
@@ -87,7 +90,7 @@ const MENUS: Menu[] = [
         { icon: 'megaphone', title: 'Broadcasts', desc: 'Reach everyone at once', href: '/channels/broadcasts' },
       ] },
     ],
-    feature: { eyebrow: 'One shared inbox', title: 'Every channel, one thread', desc: 'WhatsApp, Instagram, SMS, email and chat beside one customer profile.', icon: 'inbox', chips: ['WhatsApp', 'Instagram', 'SMS'], href: '/channels', cta: 'Explore channels' },
+    feature: { eyebrow: 'One shared inbox', title: 'Every channel, one thread', desc: 'Instagram, Messenger, SMS, email and chat beside one customer profile.', icon: 'inbox', chips: ['Instagram', 'SMS', 'Email'], href: '/channels', cta: 'Explore channels' },
   },
   {
     key: 'phones', label: 'Phones', accent: GREEN,
@@ -95,14 +98,15 @@ const MENUS: Menu[] = [
       { heading: 'Calling', items: [
         { icon: 'phone', title: 'Click to Dial', desc: 'One-click from any tab', href: '/phones/click-to-dial' },
         { icon: 'globe', title: 'Browser Dialer', desc: 'Call without leaving Colvy', href: '/phones/browser-dialer' },
-        { icon: 'bolt', title: 'HD Audio', desc: 'Crystal-clear quality', href: '/phones/hd-audio' },
+        { icon: 'bolt', title: 'HD Audio', desc: 'HD voice on calls', href: '/phones/hd-audio', soon: 'hdAudio' },
         { icon: 'phone', title: 'Mobile App', desc: 'Colvy on iOS & Android', href: '/phones/mobile-app' },
       ] },
       { heading: 'Numbers & routing', items: [
         { icon: 'pin', title: 'Australian numbers', desc: 'Local or mobile, online in minutes', href: '/business-phone-number-australia' },
-        { icon: 'target', title: 'IVR & Routing', desc: 'Send callers to the right team', href: '/phones/ivr' },
-        { icon: 'link', title: 'Call Forwarding', desc: 'Forward to any number', href: '/phones/call-forwarding' },
-        { icon: 'globe', title: 'International', desc: 'Call 100+ countries', href: '/phones/international' },
+        { icon: 'ai', title: 'AI Receptionist', desc: 'Answers when you can’t', href: '/phones/ai-receptionist' },
+        { icon: 'target', title: 'IVR & Routing', desc: 'Press-1 menus for callers', href: '/phones/ivr', soon: 'ivr' },
+        { icon: 'link', title: 'Call Forwarding', desc: 'Forward to any number', href: '/phones/call-forwarding', soon: 'callForwarding' },
+        { icon: 'globe', title: 'International', desc: 'Call customers overseas', href: '/phones/international', soon: 'internationalCalling' },
       ] },
       { heading: 'Records & AI', items: [
         { icon: 'camera', title: 'Call Recording', desc: 'Record, transcribe, summarise', href: '/phones/call-recording' },
@@ -209,7 +213,6 @@ const LINKS: Link[] = [
 const MORE_LINKS: Link[] = [
   { label: 'Blog', href: '/blog' },
   { label: 'Changelog', href: '/changelog' },
-  { label: 'Testimonials', href: '/testimonials' },
   { label: 'Compare', href: '/compare' },
 ]
 
@@ -393,7 +396,7 @@ export default function MarketingNav({ dark = false, onToggleDark }: { dark?: bo
                     <a key={it.title} href={it.href} className="mn-item mn-stagger" style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: '9px 12px', borderRadius: 12, textDecoration: 'none', animationDelay: `${ci * 0.04 + (ii + 1) * 0.04}s` }}>
                       <span className="mn-ico" style={{ width: 36, height: 36, borderRadius: 10, background: ax + '16', color: ax, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><FeatureIcon name={it.icon} color={ax} size={18} /></span>
                       <span style={{ minWidth: 0 }}>
-                        <span style={{ display: 'block', fontSize: 14, fontWeight: 700, color: text }}>{it.title}</span>
+                        <span style={{ display: 'block', fontSize: 14, fontWeight: 700, color: text }}>{it.title}{it.soon && <ComingSoonPill feature={it.soon} style={{ marginLeft: 6, fontSize: 9.5, padding: '2px 7px' }} />}</span>
                         <span style={{ display: 'block', fontSize: 12.5, color: muted, marginTop: 1 }}>{it.desc}</span>
                       </span>
                     </a>
@@ -441,7 +444,7 @@ export default function MarketingNav({ dark = false, onToggleDark }: { dark?: bo
                     <a key={it.title} href={it.href} onClick={() => setMobileOpen(false)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 6px', textDecoration: 'none' }}>
                       <span style={{ width: 34, height: 34, borderRadius: 9, background: m.accent + '16', color: m.accent, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><FeatureIcon name={it.icon} color={m.accent} size={17} /></span>
                       <span>
-                        <span style={{ display: 'block', fontSize: 14.5, fontWeight: 600, color: text }}>{it.title}</span>
+                        <span style={{ display: 'block', fontSize: 14.5, fontWeight: 600, color: text }}>{it.title}{it.soon && <ComingSoonPill feature={it.soon} style={{ marginLeft: 6, fontSize: 9.5, padding: '2px 7px' }} />}</span>
                         <span style={{ display: 'block', fontSize: 12, color: muted }}>{it.desc}</span>
                       </span>
                     </a>

@@ -79,7 +79,7 @@ function Crm(T: Theme) {
         ))}
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-        {['Placed order #1043', 'Replied on WhatsApp', 'Left a 5★ review'].map((t, i) => (
+        {['Placed order #1043', 'Replied on Instagram', 'Left a 5★ review'].map((t, i) => (
           <div key={t} style={{ display: 'flex', gap: 8, alignItems: 'center' }}><span style={{ width: 7, height: 7, borderRadius: '50%', background: T.accent, flexShrink: 0 }} /><span style={{ fontSize: 10.5, color: T.ink }}>{t}</span><span style={{ marginLeft: 'auto', fontSize: 9, color: T.sub }}>{i + 1}d</span></div>
         ))}
       </div>
@@ -315,7 +315,7 @@ function Kanban(T: Theme, cols: [string, string][], cards: Record<number, number
 function Broadcasts(T: Theme) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
-      <div style={{ display: 'flex', gap: 6 }}>{['SMS', 'WhatsApp', 'Email'].map((c, i) => <Chip key={c} bg={i === 0 ? T.accent : T.panel} fg={i === 0 ? '#fff' : T.sub}>{c}</Chip>)}</div>
+      <div style={{ display: 'flex', gap: 6 }}>{['SMS', 'Email'].map((c, i) => <Chip key={c} bg={i === 0 ? T.accent : T.panel} fg={i === 0 ? '#fff' : T.sub}>{c}</Chip>)}</div>
       <Card T={T} style={{ background: T.panel }}><Line w="95%" c={T.border} /><Line w="80%" c={T.border} style={{ marginTop: 5 }} /><Line w="55%" c={T.border} style={{ marginTop: 5 }} /></Card>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>{AV.slice(0, 4).map((c, i) => <span key={i} style={{ width: 18, height: 18, borderRadius: '50%', background: c, marginLeft: i ? -8 : 0, border: `2px solid ${T.bg}` }} />)}</div>
@@ -356,7 +356,7 @@ function Ideas(T: Theme) {
 }
 
 function Announcements(T: Theme) {
-  const rows = [['New', T.accent, 'Shipped: WhatsApp broadcasts'], ['Improved', '#10b981', 'Faster inbox search'], ['Fixed', '#6b7280', 'Order webhook retries']] as const
+  const rows = [['New', T.accent, 'Shipped: Email broadcasts'], ['Improved', '#10b981', 'Faster inbox search'], ['Fixed', '#6b7280', 'Order webhook retries']] as const
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
       {rows.map(([tag, col, t], i) => (

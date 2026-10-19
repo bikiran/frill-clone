@@ -177,7 +177,7 @@ export default function BusinessNumberClient() {
                   ['07 landline', 'Brisbane, Gold Coast and Queensland', true, false, '$15/month'],
                   ['08 landline', 'Perth, Adelaide and Darwin', true, false, '$15/month'],
                   ['04 mobile', 'Anywhere in Australia', true, true, '$15/month'],
-                  ['1300 / 1800', 'National numbers', false, false, 'Not available yet'],
+                  ['1300 / 1800', 'National numbers', false, false, 'Coming soon'],
                 ] as [string, string, boolean, boolean, string][]).map(([n, a, calls, sms, p]) => (
                   <tr key={n} style={{ borderTop: `1px solid ${t.cardBorder}` }}>
                     <td style={{ padding: '15px 18px', fontWeight: 900 }}>{n}</td>

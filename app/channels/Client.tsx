@@ -6,6 +6,7 @@ import { redirectToUserAdmin, boardUrl } from '@/lib/redirect'
 import MarketingNav from '@/components/MarketingNav'
 import MarketingFooter from '@/components/MarketingFooter'
 import FeatureIcon from '@/components/FeatureIcon'
+import { soonLabel } from '@/lib/feature-availability'
 
 // Channels hub — overview linking to every channel page. Phone calls point to
 // the dedicated /phones page (its own top-level product area).
@@ -14,13 +15,13 @@ const CORAL = '#ff6a4d', BLUE = '#2b59ff', PURPLE = '#7c5cff', GREEN = '#00c48c'
 
 const CARDS = [
   { icon: 'reaction', title: 'Meta DMs', desc: 'Instagram & Messenger DMs in one inbox.', href: '/channels/meta', accent: PURPLE },
-  { icon: 'chat', title: 'WhatsApp', desc: 'A shared WhatsApp your whole team can answer.', href: '/channels/whatsapp', accent: WA },
+  { icon: 'chat', title: soonLabel('WhatsApp', 'whatsapp'), desc: 'A shared WhatsApp inbox your whole team can answer.', href: '/channels/whatsapp', accent: WA },
   { icon: 'chat', title: 'Two-way SMS', desc: 'Text customers back and forth from a shared number.', href: '/channels/sms', accent: CYAN },
-  { icon: 'mail', title: 'Email', desc: 'Gmail & Outlook in the same thread as chat.', href: '/channels/email', accent: CORAL },
+  { icon: 'mail', title: 'Email', desc: 'Gmail or any forwarded mailbox, beside chat.', href: '/channels/email', accent: CORAL },
   { icon: 'chat', title: 'Live chat widget', desc: 'Turn website visitors into conversations.', href: '/channels/chat-widget', accent: BLUE },
   { icon: 'star', title: 'Google Reviews', desc: 'Grow your rating and reply from one place.', href: '/channels/google-reviews', accent: AMBER },
   { icon: 'pen', title: 'Contact forms', desc: 'Branded enquiry forms, straight to your inbox.', href: '/channels/forms', accent: PINK },
-  { icon: 'megaphone', title: 'Broadcasts', desc: 'Reach a whole segment at once, on any channel.', href: '/channels/broadcasts', accent: '#f97316' },
+  { icon: 'megaphone', title: 'Broadcasts', desc: 'Reach a whole segment at once, by SMS or email.', href: '/channels/broadcasts', accent: '#f97316' },
   { icon: 'phone', title: 'Phone calls', desc: 'A full phone system inside your inbox.', href: '/phones', accent: GREEN },
 ]
 

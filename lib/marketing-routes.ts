@@ -23,7 +23,6 @@ export const STATIC_MARKETING_ROUTES: string[] = [
   'ai-assistant',
   'phones',
   'compare',
-  'testimonials',
   'about',
   'careers',
   'blog',

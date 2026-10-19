@@ -1952,7 +1952,7 @@ const JOBS: JobDef[] = [
   { key: 'operations', label: 'Operations Agent Sweep', schedule: 'Every 3 hours', desc: 'Operations Agent looks for orders that need a customer update', color: '#0ea5e9', logs: 'none', path: '/api/cron/operations' },
   { key: 'booking-reminders', label: 'Booking Reminders', schedule: 'Every 10 min', desc: 'Sends booking reminders to customers', color: '#10b981', logs: 'none', path: '/api/cron/booking-reminders' },
   { key: 'calendar-reminders', label: 'Calendar Reminders', schedule: 'Every 10 min', desc: 'Reminds staff about calendar events', color: '#14b8a6', logs: 'none', path: '/api/calendar/reminders' },
-  { key: 'waitlist', label: 'Waitlist', schedule: 'Every 5 min', desc: 'Offers freed-up booking slots to the waitlist', color: '#0891b2', logs: 'none', path: '/api/cron/waitlist' },
+  { key: 'waitlist', label: 'Waitlist', schedule: 'Every 5 min', desc: 'Sends back-in-stock texts held until sending hours', color: '#0891b2', logs: 'none', path: '/api/cron/waitlist' },
   { key: 'cart-recovery', label: 'Cart Recovery', schedule: 'Every 10 min', desc: 'Follows up abandoned carts', color: '#f59e0b', logs: 'none', path: '/api/cron/cart-recovery' },
   { key: 'reviews-dispatch', label: 'Review Requests', schedule: 'Every 10 min', desc: 'Sends queued review-request messages', color: '#eab308', logs: 'none', path: '/api/reviews/dispatch' },
   { key: 'ticket-sla', label: 'Ticket SLA', schedule: 'Every 5 min', desc: 'Flags tickets that breach their response / resolution targets', color: '#ef4444', logs: 'none', path: '/api/cron/ticket-sla' },

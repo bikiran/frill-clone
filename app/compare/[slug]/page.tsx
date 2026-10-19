@@ -8,6 +8,7 @@ import MarketingNav from '@/components/MarketingNav'
 import MarketingFooter from '@/components/MarketingFooter'
 import FeatureIcon from '@/components/FeatureIcon'
 import ContactSalesModal from '@/components/ContactSalesModal'
+import { COMING_SOON } from '@/lib/feature-availability'
 
 // Landing-styled competitor comparison pages (Colvy vs Podium / Gorgias / Gladly
 // / Intercom / Zendesk / Freshdesk). Data-driven so every comparison shares the
@@ -28,9 +29,9 @@ const CORAL = '#ff6a4d', BLUE = '#2b59ff', PURPLE = '#7c5cff', GREEN = '#00c48c'
 // (keyed by the row label) instead of growing every comp array.
 const FEAT = [
   'SMS (Australian 🇦🇺 numbers)', 'WhatsApp', 'Instagram DMs', 'Facebook / Meta DMs',
-  'Email (Gmail / Outlook)', 'Phone calls & voicemail', 'Google Reviews', 'Live chat widget',
+  'Email (Gmail or any mailbox)', 'Phone calls & voicemail', 'Google Reviews', 'Live chat widget',
   'AI assistant', 'Call intelligence & transcription', 'WISMO automation', 'POS / ERP integrations',
-  'Payments (send link, get paid)', 'Australian 🇦🇺 phone numbers', 'Australian 🇦🇺 support team', '45-minute migration',
+  'Payments (send link, get paid)', 'Australian 🇦🇺 phone numbers', 'Australian 🇦🇺 support team', '45-minute set-up',
   'Ideas & feedback board', 'Public roadmap', 'Announcements / changelog', 'Polls & surveys',
   'Media gallery', 'Team notes', 'Shared calendar', 'Tasks & reminders',
   'Online booking, deposits & reminders',
@@ -40,6 +41,12 @@ const FEAT = [
 ]
 
 type Val = boolean | string
+
+// Colvy's own column is ✓ except for features that aren't live yet
+// (lib/feature-availability.ts), which show "Coming soon" instead.
+const COLVY: Record<string, Val> = {
+  WhatsApp: COMING_SOON.whatsapp ? 'Coming soon' : true,
+}
 type Cmp = {
   name: string; accent: string; heroTitle: string; heroAccent: string; heroSub: string
   stats: { big: string; label: string }[]
@@ -53,23 +60,23 @@ type Cmp = {
 const CMP: Record<string, Cmp> = {
   podium: {
     name: 'Podium', accent: GREEN, heroTitle: 'The Podium alternative built for', heroAccent: 'Australian 🇦🇺 business', heroSub: 'More channels, AI that learns from every chat, Australian support and real results — everything Podium locks behind contracts and add-ons, Colvy includes.',
-    stats: [{ big: 'No', label: 'lock-in contracts' }, { big: '14', label: 'channels included' }, { big: '45 min', label: 'full migration' }],
+    stats: [{ big: 'No', label: 'lock-in contracts' }, { big: 'Every', label: 'channel included' }, { big: '45 min', label: 'to set up' }],
     comp: [true, false, true, true, false, true, true, true, 'Limited', true, false, 'Limited', true, true, 'Overseas', false, false, false, false, false, false, false, false, false, 'Via integrations'],
     extra: { 'Scheduled replies (edit, send now or cancel)': true },
     tableNote: 'Colvy covers more channels, deeper AI and genuine Australian 🇦🇺 support.',
     wins: [
-      { t: 'One conversation, nothing siloed', d: 'Every channel lives in one thread per customer — SMS, calls, email, WhatsApp, Instagram, reviews. Not separate inboxes.' },
+      { t: 'One conversation, nothing siloed', d: 'Every channel lives in one thread per customer — SMS, calls, email, Instagram, Messenger, reviews. Not separate inboxes.' },
       { t: 'WISMO automation', d: 'Colvy AI handles “where is my order?” automatically — checks tracking and replies. Podium has no WISMO automation.' },
       { t: 'AI that takes action', d: 'Colvy AI creates orders, processes refunds and applies discounts — not just conversational replies.' },
       { t: 'Australian 🇦🇺 support team', d: 'Talk to real humans in Australia. Podium routes support through overseas teams with timezone delays.' },
       { t: 'Save thousands a year', d: 'No long contracts, no hidden fees, cancel anytime — priced for SMBs, not enterprise.' },
       { t: 'Better review results', d: 'AI-powered review requests hit at exactly the right moment to grow your Google rating.' },
     ],
-    checklist: ['All your conversations migrated in 45 minutes', 'SMS and webchat work exactly how you expect', 'Google Review requests, better timed', 'Phone calls with AI transcription & summaries', 'WhatsApp, Instagram and email added automatically', 'Colvy AI answers mundane and complex questions 24/7', 'Australian 🇦🇺 support team when you need them', 'No long-term contracts — cancel anytime'],
+    checklist: ['Contacts and channels moved across for you', 'SMS and webchat work exactly how you expect', 'Google Review requests, better timed', 'Phone calls with AI transcription & summaries', 'Instagram, Messenger and email in the same inbox', 'Colvy AI answers mundane and complex questions 24/7', 'Australian 🇦🇺 support team when you need them', 'No long-term contracts — cancel anytime'],
   },
   gorgias: {
-    name: 'Gorgias', accent: PURPLE, heroTitle: 'The Gorgias alternative built for', heroAccent: 'Australian 🇦🇺 business', heroSub: 'More than a helpdesk. 14 channels, smarter AI, Google Reviews, payments and a real Australian support team — everything Gorgias doesn’t do, Colvy does.',
-    stats: [{ big: 'AI', label: 'not just macros' }, { big: 'All-in-one', label: 'not just tickets' }, { big: '45 min', label: 'full migration' }],
+    name: 'Gorgias', accent: PURPLE, heroTitle: 'The Gorgias alternative built for', heroAccent: 'Australian 🇦🇺 business', heroSub: 'More than a helpdesk. Every channel, smarter AI, Google Reviews, payments and a real Australian support team — everything Gorgias doesn’t do, Colvy does.',
+    stats: [{ big: 'AI', label: 'not just macros' }, { big: 'All-in-one', label: 'not just tickets' }, { big: '45 min', label: 'to set up' }],
     comp: ['Add-on', 'Add-on', true, true, true, 'Add-on', false, true, 'Macros only', false, 'Basic', 'Shopify only', false, false, false, false],
     tableNote: 'Colvy goes beyond helpdesk tickets with full communications, AI and Australian 🇦🇺 support.',
     wins: [
@@ -80,22 +87,22 @@ const CMP: Record<string, Cmp> = {
       { t: 'Works beyond Shopify', d: 'WooCommerce, Shopify, Stripe and more. Gorgias is built for Shopify first.' },
       { t: 'Australian 🇦🇺 support team', d: 'Real humans in Australia. Gorgias support is US/EU based.' },
     ],
-    checklist: ['All support tickets become unified conversation threads', 'Phone, SMS, WhatsApp and social added automatically', 'Google Review requests automated after every order', 'AI assistant handles common questions 24/7', 'Call intelligence transcribes and summarises every call', 'Send a payment link and get paid in the thread', 'Works with any ecommerce platform, not just Shopify', 'No long-term contracts — cancel anytime'],
+    checklist: ['Every customer gets one conversation thread', 'Phone, SMS, email and social in the same inbox', 'Google Review requests automated after every order', 'AI assistant handles common questions 24/7', 'Call intelligence transcribes and summarises every call', 'Send a payment link and get paid in the thread', 'Works with WooCommerce as well as Shopify', 'No long-term contracts — cancel anytime'],
   },
   freshdesk: {
-    name: 'Freshdesk', accent: CYAN, heroTitle: 'The Freshdesk alternative that', heroAccent: 'does it all', heroSub: 'Freshdesk is a budget helpdesk. Colvy is a complete communication platform with 14 channels, AI, Google Reviews, payments and Australian support — all included.',
-    stats: [{ big: '14', label: 'channels included' }, { big: '$0', label: 'add-on fees' }, { big: '45 min', label: 'full migration' }],
+    name: 'Freshdesk', accent: CYAN, heroTitle: 'The Freshdesk alternative that', heroAccent: 'does it all', heroSub: 'Freshdesk is a budget helpdesk. Colvy is a complete communication platform with every channel, AI, Google Reviews, payments and Australian support — all included.',
+    stats: [{ big: 'Every', label: 'channel included' }, { big: '$0', label: 'add-on fees' }, { big: '45 min', label: 'to set up' }],
     comp: ['Add-on', 'Add-on', true, true, true, 'Add-on', false, true, 'Basic', false, false, 'Limited', false, false, false, false],
     tableNote: 'Freshdesk nickel-and-dimes on channels. Colvy includes everything in one plan.',
     wins: [
-      { t: 'All channels included, no add-ons', d: 'Phone, SMS and WhatsApp are extra on Freshdesk. Colvy includes all 14 channels in one plan.' },
+      { t: 'All channels included, no add-ons', d: 'Phone and SMS are extra on Freshdesk. Colvy includes every channel in one plan.' },
       { t: 'Google Reviews built in', d: 'Automate requests and respond from the same inbox. Freshdesk has no review management.' },
       { t: 'AI that reads your data', d: 'Colvy AI checks orders, tracking and history and handles WISMO. Freshdesk relies on canned responses.' },
       { t: 'Call intelligence included', d: 'Every call transcribed, summarised and searchable. Freshdesk has no call intelligence.' },
       { t: 'Payments built in', d: 'Send a secure link via SMS or email; the customer pays on their device. Freshdesk has no payments.' },
       { t: 'Australian 🇦🇺 support team', d: 'Real humans in Australia who understand your market.' },
     ],
-    checklist: ['Phone, SMS, WhatsApp, email and social all included', 'Google Reviews automated and managed in one place', 'AI assistant handles WISMO and common questions 24/7', 'Call intelligence transcribes and summarises every call', 'Secure payment links, PCI-compliant', 'Integrations with WooCommerce, Shopify, Stripe and more', 'Australian 🇦🇺 support team available when you need them', 'No per-agent pricing — add your whole team'],
+    checklist: ['Phone, SMS, email and social all included', 'Google Reviews automated and managed in one place', 'AI assistant handles WISMO and common questions 24/7', 'Call intelligence transcribes and summarises every call', 'Secure payment links, PCI-compliant', 'Integrations with WooCommerce, Shopify, Stripe and more', 'Australian 🇦🇺 support team available when you need them', 'No per-agent pricing — add your whole team'],
   },
   zendesk: {
     name: 'Zendesk', accent: BLUE, heroTitle: 'The Zendesk alternative built for', heroAccent: 'Australian 🇦🇺 business', heroSub: 'Threads, not tickets. Every channel included. Set up in 45 minutes, not weeks. Colvy replaces Zendesk with simplicity, speed and AI.',
@@ -105,17 +112,17 @@ const CMP: Record<string, Cmp> = {
     tableNote: 'Zendesk charges extra for nearly everything. Colvy includes it all.',
     wins: [
       { t: 'Threads, not tickets', d: 'Zendesk forces every interaction into a ticket. Colvy gives each customer one conversation thread across all channels.' },
-      { t: 'Set up in 45 minutes, not weeks', d: 'Zendesk needs lengthy implementation and training. Colvy migrates you in a single session.' },
-      { t: 'No add-on tax', d: 'Zendesk charges extra for phone, SMS, WhatsApp and AI. With Colvy every channel and feature is included.' },
+      { t: 'Set up in 45 minutes, not weeks', d: 'Zendesk needs lengthy implementation and training. Colvy gets you set up in a single session.' },
+      { t: 'No add-on tax', d: 'Zendesk charges extra for phone, SMS and AI. With Colvy every channel and feature is included.' },
       { t: 'AI that understands your business', d: 'Colvy AI reads orders, tracking and history. Zendesk AI relies on help articles and basic automation.' },
       { t: 'Google Reviews management', d: 'Automate requests and respond from your inbox. Zendesk has no Google Reviews feature.' },
       { t: 'Australian 🇦🇺 support & pricing', d: 'Local team, local numbers, pricing in AUD. Zendesk is US-based with USD pricing.' },
     ],
-    checklist: ['Every customer gets one conversation thread — no ticket numbers', 'Phone, SMS, WhatsApp, social and email all included', 'AI assistant handles common questions and WISMO', 'Call intelligence transcribes and summarises every call', 'Google Reviews automated and managed in one place', 'Secure payment links built in', 'No per-agent pricing or add-on fees', 'Full migration handled by the Colvy team in 45 minutes'],
+    checklist: ['Every customer gets one conversation thread — no ticket numbers', 'Phone, SMS, social and email all included', 'AI assistant handles common questions and WISMO', 'Call intelligence transcribes and summarises every call', 'Google Reviews automated and managed in one place', 'Secure payment links built in', 'No per-agent pricing or add-on fees', 'Set-up help from the Colvy team'],
   },
   intercom: {
     name: 'Intercom', accent: CORAL, heroTitle: 'The Intercom alternative —', heroAccent: 'true omnichannel', heroSub: 'Intercom is chat-first and charges extra for phone and SMS. Colvy is a true omnichannel platform where every channel — chat, calls, SMS, social — is included.',
-    stats: [{ big: 'Calls', label: 'built in, not add-on' }, { big: '14', label: 'channels included' }, { big: '45 min', label: 'full migration' }],
+    stats: [{ big: 'Calls', label: 'built in, not add-on' }, { big: 'Every', label: 'channel included' }, { big: '45 min', label: 'to set up' }],
     comp: ['Add-on', 'Add-on', true, true, true, 'Add-on', false, true, 'Fin AI (paid)', false, false, 'Limited', false, false, false, false],
     tableNote: 'Intercom is built around chat. Colvy is built around every channel your customers use.',
     wins: [
@@ -126,11 +133,11 @@ const CMP: Record<string, Cmp> = {
       { t: 'Payments in the thread', d: 'Send a link and get paid without leaving the conversation.' },
       { t: 'Australian 🇦🇺 support & pricing', d: 'Local team, local numbers, pricing in AUD.' },
     ],
-    checklist: ['Chat, calls, SMS, WhatsApp, social and email all included', 'AI assistant handles common questions and WISMO 24/7', 'Call intelligence transcribes and summarises every call', 'Google Reviews automated and managed in one place', 'Secure payment links built in', 'Integrations with WooCommerce, Shopify, Stripe and more', 'No add-on tax for phone or SMS', 'Full migration in 45 minutes'],
+    checklist: ['Chat, calls, SMS, social and email all included', 'AI assistant handles common questions and WISMO 24/7', 'Call intelligence transcribes and summarises every call', 'Google Reviews automated and managed in one place', 'Secure payment links built in', 'Integrations with WooCommerce, Shopify, Stripe and more', 'No add-on tax for phone or SMS', 'Set up in about 45 minutes'],
   },
   gladly: {
     name: 'Gladly', accent: PINK, heroTitle: 'The Gladly alternative —', heroAccent: 'SMB pricing, not enterprise', heroSub: 'Gladly charges enterprise prices and is US-centric. Colvy is built for Australian 🇦🇺 SMBs with local support, local numbers and no lock-in contracts.',
-    stats: [{ big: 'SMB', label: 'pricing, not enterprise' }, { big: 'No', label: 'lock-in contracts' }, { big: '45 min', label: 'full migration' }],
+    stats: [{ big: 'SMB', label: 'pricing, not enterprise' }, { big: 'No', label: 'lock-in contracts' }, { big: '45 min', label: 'to set up' }],
     comp: [true, true, true, true, true, true, false, true, 'Enterprise', 'Enterprise', false, 'Limited', false, false, false, false],
     tableNote: 'Gladly is enterprise and US-centric. Colvy is priced and built for Australian 🇦🇺 SMBs.',
     wins: [
@@ -141,11 +148,11 @@ const CMP: Record<string, Cmp> = {
       { t: 'AI that takes action', d: 'Colvy AI checks orders and takes real actions without an enterprise upgrade.' },
       { t: 'Live the same afternoon', d: 'Set up in 45 minutes, not a multi-month enterprise rollout.' },
     ],
-    checklist: ['Every channel included at SMB pricing', 'AI assistant handles common questions and WISMO 24/7', 'Call intelligence transcribes and summarises every call', 'Google Reviews automated and managed in one place', 'Secure payment links built in', 'Australian 🇦🇺 support team and local numbers', 'No lock-in contracts — cancel anytime', 'Full migration in 45 minutes'],
+    checklist: ['Every channel included at SMB pricing', 'AI assistant handles common questions and WISMO 24/7', 'Call intelligence transcribes and summarises every call', 'Google Reviews automated and managed in one place', 'Secure payment links built in', 'Australian 🇦🇺 support team and local numbers', 'No lock-in contracts — cancel anytime', 'Set up in about 45 minutes'],
   },
   coax: {
     name: 'Coax', accent: TEAL, heroTitle: 'The Coax alternative with a', heroAccent: 'built-in feedback loop', heroSub: 'Everything Coax does for conversations — plus a built-in ideas board, public roadmap and changelog, so your product and comms live in one lively platform.',
-    stats: [{ big: '1', label: 'platform for comms + product' }, { big: '14', label: 'channels included' }, { big: '45 min', label: 'full migration' }],
+    stats: [{ big: '1', label: 'platform for comms + product' }, { big: 'Every', label: 'channel included' }, { big: '45 min', label: 'to set up' }],
     // Coax is a strong comms peer (all comms rows ✓); Colvy adds the feedback suite (auto ✗ for Coax).
     comp: [true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true],
     extra: { 'Scheduled replies (edit, send now or cancel)': true },
@@ -156,13 +163,13 @@ const CMP: Record<string, Cmp> = {
       { t: 'Announcements & changelog', d: 'Post release notes and auto-notify the customers who asked. Tied to the inbox, not a separate tool.' },
       { t: 'The full loop', d: 'Idea → roadmap → announcement, connected to conversations so customers hear back when their idea ships.' },
       { t: 'One platform, one bill', d: 'Run support, sales and your product roadmap in one place instead of bolting on a feedback tool.' },
-      { t: 'Everything Coax does, too', d: 'SMS, WhatsApp, calls, email, social, reviews, payments and AI — all still included.' },
+      { t: 'Everything Coax does, too', d: 'SMS, calls, email, social, reviews, payments and AI — all still included.' },
     ],
-    checklist: ['Every channel you run in Coax — SMS, WhatsApp, calls, email, social', 'Plus a built-in ideas & feedback board', 'A public roadmap customers can follow', 'Announcements & changelog tied to the inbox', 'Polls & surveys to validate decisions', 'Call intelligence on every call', 'Australian 🇦🇺 support and local numbers', 'No lock-in contracts — cancel anytime'],
+    checklist: ['SMS, calls, email and social, like Coax', 'Plus a built-in ideas & feedback board', 'A public roadmap customers can follow', 'Announcements & changelog tied to the inbox', 'Polls & surveys to validate decisions', 'Call intelligence on every call', 'Australian 🇦🇺 support and local numbers', 'No lock-in contracts — cancel anytime'],
   },
   manychat: {
     name: 'ManyChat', accent: INDIGO, heroTitle: 'The ManyChat alternative that', heroAccent: 'closes the loop', heroSub: 'ManyChat automates chat-marketing flows. Colvy is a full inbox, CRM, calls and feedback platform — real conversations and real revenue, not just automations.',
-    stats: [{ big: 'Inbox', label: '+ CRM, not just flows' }, { big: '14', label: 'channels included' }, { big: '45 min', label: 'full migration' }],
+    stats: [{ big: 'Inbox', label: '+ CRM, not just flows' }, { big: 'Every', label: 'channel included' }, { big: '45 min', label: 'to set up' }],
     comp: ['Add-on', true, true, true, 'Basic', false, false, true, 'Flows', false, false, 'Limited', 'Add-on', false, false, false],
     extra: { 'Scheduled replies (edit, send now or cancel)': 'Broadcasts only' },
     tableNote: 'ManyChat is built for chat-marketing flows. Colvy is a full communication + feedback platform.',
@@ -178,7 +185,7 @@ const CMP: Record<string, Cmp> = {
   },
   birdeye: {
     name: 'Birdeye', accent: AMBER, heroTitle: 'The Birdeye alternative built for', heroAccent: 'Australian 🇦🇺 SMBs', heroSub: 'Birdeye is a US reputation platform priced for enterprise. Colvy brings reviews, messaging, real calling and a built-in feedback suite together — with Australian support and SMB pricing.',
-    stats: [{ big: 'SMB', label: 'pricing, not enterprise' }, { big: '14', label: 'channels included' }, { big: '45 min', label: 'full migration' }],
+    stats: [{ big: 'SMB', label: 'pricing, not enterprise' }, { big: 'Every', label: 'channel included' }, { big: '45 min', label: 'to set up' }],
     // Birdeye leads on reviews/surveys (✓), but has no built-in phone system and
     // no product-feedback board; Colvy adds those. Feedback rows auto-✗ except surveys.
     comp: [true, true, true, true, 'Marketing', false, true, true, 'BirdAI', false, false, 'Limited', true, false, false, false, false, false, false, true, false, false, false, false, 'Appointments'],
@@ -186,13 +193,13 @@ const CMP: Record<string, Cmp> = {
     tableNote: 'Birdeye leads on reviews and surveys — Colvy matches that and adds real calling, a shared inbox and a product-feedback suite, at SMB pricing.',
     wins: [
       { t: 'A real phone system', d: 'Colvy includes voice calls, voicemail and call intelligence. Birdeye has no built-in phone system.' },
-      { t: 'Reviews, plus everything else', d: 'Automate and reply to Google reviews like Birdeye — then handle SMS, WhatsApp, calls and email in the same thread.' },
+      { t: 'Reviews, plus everything else', d: 'Automate and reply to Google reviews like Birdeye — then handle SMS, calls and email in the same thread.' },
       { t: 'A built-in feedback suite', d: 'Ideas board, roadmap and announcements to build what customers ask for. Birdeye has none.' },
       { t: 'SMB pricing, no enterprise contract', d: 'Fair, flat pricing and month-to-month. Birdeye is priced and sold for enterprise.' },
       { t: 'Australian 🇦🇺 support & numbers', d: 'Local team, local numbers, pricing in AUD. Birdeye is US-centric.' },
       { t: 'Sell and get paid in chat', d: 'Live orders, payment links and recorded sales — right in the conversation.' },
     ],
-    checklist: ['Google Reviews automated and managed', 'SMS, WhatsApp, webchat, email and social in one inbox', 'Voice calls with AI transcription & summaries', 'Surveys plus a full ideas / roadmap feedback suite', 'Payments — send a link, get paid in the thread', 'Australian 🇦🇺 support team and local numbers', 'No enterprise contracts — cancel anytime', 'Full migration handled in 45 minutes'],
+    checklist: ['Google Reviews automated and managed', 'SMS, webchat, email and social in one inbox', 'Voice calls with AI transcription & summaries', 'Surveys plus a full ideas / roadmap feedback suite', 'Payments — send a link, get paid in the thread', 'Australian 🇦🇺 support team and local numbers', 'No enterprise contracts — cancel anytime', 'Set up in about 45 minutes'],
   },
 }
 
@@ -300,7 +307,7 @@ export default function ComparePage() {
             {FEAT.map((f, i) => (
               <div key={f} className="cmp-row" style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr 1fr', alignItems: 'center', borderTop: `1px solid ${rowLine}`, transition: 'background 0.15s' }}>
                 <div style={{ padding: '13px 18px', fontSize: 14, fontWeight: 600, color: text }}>{f}</div>
-                <div style={{ padding: '13px 12px', display: 'flex', justifyContent: 'center' }}><Check c={GREEN} /></div>
+                <div style={{ padding: '13px 12px', display: 'flex', justifyContent: 'center', textAlign: 'center' }}>{f in COLVY ? cell(COLVY[f]) : <Check c={GREEN} />}</div>
                 <div style={{ padding: '13px 12px', display: 'flex', justifyContent: 'center', textAlign: 'center' }}>{cell(c.comp[i] ?? c.extra?.[f] ?? false)}</div>
               </div>
             ))}
@@ -334,7 +341,7 @@ export default function ComparePage() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 18 }}>
           {[
             { icon: 'tag', t: 'We’ll cover your unused balance', d: `On a yearly plan with ${c.name}? Send us proof of payment and we’ll credit the remaining months as free time on Colvy — or carry your subscription over. You don’t pay twice.` },
-            { icon: 'bolt', t: 'Free migration, done for you', d: `Our team moves everything from ${c.name} to Colvy for you — conversations, contacts, numbers and channels — in about 45 minutes, at no cost.` },
+            { icon: 'bolt', t: 'Free help to switch', d: `Our team helps you move from ${c.name} to Colvy — importing your contacts and setting up your channels and a new Australian number — at no cost.` },
           ].map((o, i) => (
             <Reveal key={o.t} delay={i * 0.06}>
               <div className="cmp-card" style={{ height: '100%', borderRadius: 20, padding: 28, background: `linear-gradient(150deg, ${accent}14, ${accent}05)`, border: `1px solid ${accent}33` }}>
@@ -373,8 +380,8 @@ export default function ComparePage() {
       <section style={{ padding: 'clamp(48px, 8vw, 96px) 24px', textAlign: 'center', background: `linear-gradient(135deg, ${accent}, ${PINK} 60%, ${PURPLE})` }}>
         <Reveal>
           <div style={{ maxWidth: 720, margin: '0 auto' }}>
-            <h2 style={{ fontSize: 'clamp(28px, 5vw, 52px)', fontWeight: 900, letterSpacing: '-0.03em', lineHeight: 1.05, color: '#fff', margin: '0 0 12px' }}>Transition everything in 45 minutes</h2>
-            <p style={{ fontSize: 17, color: 'rgba(255,255,255,0.9)', margin: '0 0 30px' }}>Our team handles the migration. Keep your number, your reviews and your customers — just lose the limitations.</p>
+            <h2 style={{ fontSize: 'clamp(28px, 5vw, 52px)', fontWeight: 900, letterSpacing: '-0.03em', lineHeight: 1.05, color: '#fff', margin: '0 0 12px' }}>Switch in about 45 minutes</h2>
+            <p style={{ fontSize: 17, color: 'rgba(255,255,255,0.9)', margin: '0 0 30px' }}>Our team helps you switch. Keep your reviews and your customers — just lose the limitations.</p>
             <div className="cmp-hero-cta" style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
               <button onClick={go} className="cmp-btn" style={{ padding: '16px 38px', borderRadius: 999, background: '#fff', color: INK, fontWeight: 900, fontSize: 17, border: 'none', cursor: 'pointer', boxShadow: '0 14px 40px rgba(0,0,0,0.2)' }}>Grab a free trial</button>
               <button onClick={() => setContactOpen(true)} className="cmp-btn" style={{ padding: '16px 32px', borderRadius: 999, background: 'rgba(255,255,255,0.16)', color: '#fff', fontWeight: 800, fontSize: 16, border: '1px solid rgba(255,255,255,0.4)', textDecoration: 'none', cursor: 'pointer' }}>Book a demo</button>

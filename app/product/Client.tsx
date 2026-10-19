@@ -18,7 +18,7 @@ const ACCENT = CORAL
 
 // Everything in Colvy — one card per area, each linking to its own page.
 const AREAS = [
-  { icon: 'inbox', color: CORAL, title: 'Shared inbox & CRM', desc: 'WhatsApp, Instagram, Messenger, SMS, email and live chat in one thread per customer, with their full history beside it.', href: '/inbox-crm' },
+  { icon: 'inbox', color: CORAL, title: 'Shared inbox & CRM', desc: 'Instagram, Messenger, SMS, email and live chat in one thread per customer, with their full history beside it.', href: '/inbox-crm' },
   { icon: 'phone', color: GREEN, title: 'Business phone & AI receptionist', desc: 'Local numbers, browser and mobile calling, recordings and transcripts. AI answers when you can’t and texts the caller back.', href: '/phones' },
   { icon: 'cart', color: BLUE, title: 'Orders & payments', desc: 'WooCommerce and Shopify orders in the chat. Send payment links, refund and update orders without switching tabs.', href: '/solutions/payments' },
   { icon: 'ai', color: PURPLE, title: 'AI agents', desc: 'Agents that answer questions, chase carts, reply to reviews and hand off to your team, within limits you set.', href: '/ai-assistant' },
@@ -159,7 +159,7 @@ export default function ProductPage() {
             <div aria-hidden style={{ position: 'absolute', inset: 0, background: `linear-gradient(150deg, ${ACCENT}e6 0%, ${ACCENT}59 42%, rgba(10,12,20,0.5) 115%)` }} />
             <div style={{ position: 'absolute', top: 22, right: 22, color: 'rgba(255,255,255,0.95)', filter: 'drop-shadow(0 2px 8px rgba(0,0,0,0.35))', animation: 'pdFloat 6s ease-in-out infinite' }}><FeatureIcon name="inbox" color="rgba(255,255,255,0.95)" size={54} /></div>
             <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 12, padding: 32 }}>
-              {['New WhatsApp message', 'AI answered a call', 'Order paid ✓'].map((c, i) => (
+              {['New Instagram message', 'AI answered a call', 'Order paid ✓'].map((c, i) => (
                 <span key={c} style={{ alignSelf: i % 2 ? 'flex-end' : 'flex-start', fontSize: 14, fontWeight: 800, color: '#fff', background: 'rgba(255,255,255,0.16)', backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.3)', borderRadius: 999, padding: '9px 16px', animation: `pdFloat ${5 + i * 0.6}s ease-in-out ${i * 0.3}s infinite` }}>{c}</span>
               ))}
             </div>

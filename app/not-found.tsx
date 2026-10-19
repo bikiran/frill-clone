@@ -71,7 +71,7 @@ function bestMatch(path: string): { route: { href: string; label: string }; conf
     if (r.href === '/') continue
     const cand = norm(r.href)
     // Distance on the full path, plus a lighter distance on the last segment so
-    // "/chanels/whatsap" still lands near "/channels/whatsapp".
+    // "/chanels/sms" still lands near "/channels/sms".
     const candLast = cand.split('/').filter(Boolean).pop() || ''
     const score = Math.min(lev(target, cand), lev(lastSeg, candLast) + 1)
     if (score < bestScore) { bestScore = score; best = r }
@@ -191,7 +191,7 @@ export default function NotFound() {
             className="nf-field"
             value={query}
             onChange={e => setQuery(e.target.value)}
-            placeholder="Search Colvy — pricing, channels, WhatsApp…"
+            placeholder="Search Colvy — pricing, channels, SMS…"
             aria-label="Search"
             style={{ flex: 1, padding: '12px 15px', borderRadius: 12, border: '1px solid rgba(15,17,25,0.14)', fontSize: 14.5, outline: 'none', fontFamily: 'inherit', background: '#fff', color: '#0f1119' }}
           />

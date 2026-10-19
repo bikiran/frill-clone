@@ -8,6 +8,8 @@ import { redirectToUserAdmin, boardUrl } from '@/lib/redirect'
 import MarketingNav from '@/components/MarketingNav'
 import MarketingFooter from '@/components/MarketingFooter'
 import FeatureIcon from '@/components/FeatureIcon'
+import ComingSoonPill from '@/components/ComingSoonPill'
+import { COMING_SOON, soonLabel, type ComingSoonKey } from '@/lib/feature-availability'
 
 // Landing-styled per-channel pages (Meta DMs / Email / Phones / Chat widget / …).
 // Data-driven, sharing the same look as the industry and solutions pages.
@@ -16,7 +18,7 @@ import FeatureIcon from '@/components/FeatureIcon'
 const CORAL = '#ff6a4d', BLUE = '#2b59ff', PURPLE = '#7c5cff', GREEN = '#00c48c', PINK = '#ff4d8d', CYAN = '#0891b2', AMBER = '#f59e0b', WA = '#25d366', INK = '#0f1119'
 
 // Shared "every channel" list — the same across pages.
-const CHANNELS = ['Phone calls', 'SMS / MMS', 'WhatsApp', 'Instagram & Facebook', 'Email', 'Google Reviews', 'Live chat', 'Contact forms']
+const CHANNELS = ['Phone calls', 'SMS / MMS', soonLabel('WhatsApp', 'whatsapp'), 'Instagram & Facebook', 'Email', 'Google Reviews', 'Live chat', 'Contact forms']
 
 type Band = { tag: string; title: string; body: string; bullets: string[] }
 type Ch = {
@@ -25,6 +27,9 @@ type Ch = {
   bands: Band[]
   stats: { big: string; label: string }[]
   ctaHead: string
+  // Not live yet: a "Coming soon" pill shows and the copy is in the future
+  // tense (lib/feature-availability.ts).
+  comingSoon?: ComingSoonKey
 }
 
 const CH: Record<string, Ch> = {
@@ -49,12 +54,12 @@ const CH: Record<string, Ch> = {
     ctaHead: 'Bring Meta DMs into one inbox',
   },
   email: {
-    accent: CORAL, eyebrow: 'Gmail & Outlook', name: 'Email',
+    accent: CORAL, eyebrow: 'Gmail & forwarding', name: 'Email',
     title: 'Email that lives in the same thread',
-    sub: 'Connect Gmail or Outlook and handle customer email right beside chat, SMS and social — shared, assignable, and never buried in a personal inbox.',
-    heroChips: ['Gmail', 'Outlook', 'Shared inbox'],
+    sub: 'Connect Gmail, or forward any mailbox (Outlook included), and handle customer email right beside chat, SMS and social — shared, assignable, and never buried in a personal inbox.',
+    heroChips: ['Gmail', 'Any mailbox', 'Shared inbox'],
     features: [
-      { icon: 'mail', title: 'Gmail & Outlook', desc: 'Connect in a click and send from your own domain.' },
+      { icon: 'mail', title: 'Gmail or forwarding', desc: 'Sign in with Google, or forward any mailbox.' },
       { icon: 'inbox', title: 'Shared, not personal', desc: 'Team email out of one box — nothing siloed.' },
       { icon: 'user', title: 'Assign & collaborate', desc: 'Owners, @mentions and internal notes per email.' },
       { icon: 'ai', title: 'AI drafts', desc: 'Reply suggestions from your knowledge base.' },
@@ -65,7 +70,7 @@ const CH: Record<string, Ch> = {
       { tag: 'Out of the silo', title: 'Team email, finally shared', body: 'Route sales@ and support@ into a shared inbox where anyone can pick up, hand off and see who’s replied — no more forwarding chains.', bullets: ['Send from your domain', 'Assign & internal notes', 'No duplicate replies'] },
       { tag: 'One customer view', title: 'Email beside every channel', body: 'An email thread sits next to that customer’s texts, DMs and calls, so context never depends on which inbox you opened.', bullets: ['Unified customer timeline', 'AI-drafted replies', 'Search across every channel'] },
     ],
-    stats: [{ big: '2-way', label: 'Gmail & Outlook sync' }, { big: '1', label: 'thread per customer' }, { big: '45 min', label: 'to set up' }],
+    stats: [{ big: '2-way', label: 'Gmail sync' }, { big: '1', label: 'thread per customer' }, { big: '45 min', label: 'to set up' }],
     ctaHead: 'Put email in the shared inbox',
   },
   phones: {
@@ -76,13 +81,13 @@ const CH: Record<string, Ch> = {
     features: [
       { icon: 'phone', title: 'Voice calls', desc: 'Call and receive from a browser dialer — no hardware.' },
       { icon: 'camera', title: 'Record & transcribe', desc: 'Every call recorded, transcribed and summarised.' },
-      { icon: 'target', title: 'IVR & routing', desc: 'Send callers to the right team automatically.' },
+      { icon: 'target', title: soonLabel('IVR & routing', 'ivr'), desc: 'Press-1 menus to send callers to the right team.' },
       { icon: 'chat', title: 'Missed-call text-back', desc: 'Auto-text callers you missed so no lead drops.' },
-      { icon: 'pin', title: 'Numbers & porting', desc: 'Buy a new number or bring your own.' },
+      { icon: 'pin', title: 'Numbers & porting', desc: COMING_SOON.numberPorting ? 'New local and mobile numbers today; porting coming soon.' : 'Buy a new number or bring your own.' },
       { icon: 'user', title: 'Context on the call', desc: 'See who’s calling and their history instantly.' },
     ],
     bands: [
-      { tag: 'Calls with context', title: 'Know the caller before you answer', body: 'The moment the phone rings, their past messages, orders and notes are on screen — so every call starts informed.', bullets: ['Screen pop with history', 'Click-to-dial anywhere', 'HD audio in the browser'] },
+      { tag: 'Calls with context', title: 'Know the caller before you answer', body: 'The moment the phone rings, their past messages, orders and notes are on screen — so every call starts informed.', bullets: ['Screen pop with history', 'Click-to-dial anywhere', 'Answer in the browser or app'] },
       { tag: 'Nothing slips', title: 'Every call logged and summarised', body: 'Recordings, transcripts and AI summaries attach to the thread automatically, and missed calls trigger an instant text back.', bullets: ['Recording & transcription', 'AI call summaries', 'Missed-call auto-SMS'] },
     ],
     stats: [{ big: '0', label: 'hardware needed' }, { big: 'Every', label: 'call logged' }, { big: 'Instant', label: 'missed-call text-back' }],
@@ -112,41 +117,41 @@ const CH: Record<string, Ch> = {
     accent: AMBER, eyebrow: 'Google Reviews', name: 'Google Reviews',
     title: 'Grow your Google rating on autopilot',
     sub: 'Ask happy customers for a review at the perfect moment, then read and reply to every Google review from the same inbox as your chats.',
-    heroChips: ['Auto review requests', 'Reply in the inbox', 'Multi-location'],
+    heroChips: ['Auto review requests', 'Reply in the inbox', 'AI-drafted replies'],
     features: [
       { icon: 'star', title: 'Auto review requests', desc: 'Send the ask at the right moment, by text or email.' },
       { icon: 'chat', title: 'Reply in one place', desc: 'Respond to reviews without leaving Colvy.' },
       { icon: 'bell', title: 'Instant alerts', desc: 'Know the moment a new review lands.' },
       { icon: 'ai', title: 'AI-drafted replies', desc: 'On-brand responses to every rating in a click.' },
-      { icon: 'pin', title: 'Multi-location', desc: 'Manage each location’s profile from one place.' },
-      { icon: 'chart', title: 'Rating trends', desc: 'Track your score and volume over time.' },
+      { icon: 'pin', title: 'Your review link', desc: 'Share your Google review link in every ask.' },
+      { icon: 'chart', title: 'Your rating at a glance', desc: 'See your average score and review count.' },
     ],
     bands: [
-      { tag: 'More reviews', title: 'Ask at exactly the right moment', body: 'Automated requests go out after a purchase, visit or resolved chat — the moment goodwill is highest — so your rating climbs without anyone chasing.', bullets: ['Timed, automated asks', 'By SMS or email', 'Per-location targeting'] },
+      { tag: 'More reviews', title: 'Ask at exactly the right moment', body: 'Automated requests go out after a purchase, visit or resolved chat — the moment goodwill is highest — so your rating climbs without anyone chasing.', bullets: ['Timed, automated asks', 'By SMS or email', 'Your own review link'] },
       { tag: 'Every review answered', title: 'Reply from the same inbox', body: 'New reviews arrive as threads you can answer like any message, with AI drafting on-brand replies to good and bad ratings alike.', bullets: ['Reply without app-switching', 'AI-drafted responses', 'Alerts on every new review'] },
     ],
-    stats: [{ big: 'Auto', label: 'review requests' }, { big: '1', label: 'inbox for reviews & chats' }, { big: 'Multi', label: 'location ready' }],
+    stats: [{ big: 'Auto', label: 'review requests' }, { big: '1', label: 'inbox for reviews & chats' }, { big: 'AI', label: 'drafted replies' }],
     ctaHead: 'Grow your reviews with Colvy',
   },
   whatsapp: {
-    accent: WA, eyebrow: 'WhatsApp Business', name: 'WhatsApp',
-    title: 'WhatsApp for your whole team',
-    sub: 'Bring WhatsApp into a shared inbox anyone can answer — with templates, broadcasts and full customer context, on a business number or your own.',
-    heroChips: ['Shared WhatsApp', 'Templates', 'Broadcasts'],
+    accent: WA, eyebrow: 'WhatsApp Business', name: 'WhatsApp', comingSoon: 'whatsapp',
+    title: 'WhatsApp is coming to Colvy',
+    sub: 'WhatsApp support is coming to Colvy. We’re building it into the same shared inbox as your other channels. Until it lands, here’s what you can run in Colvy today.',
+    heroChips: ['Coming soon', 'SMS today', 'Instagram & Messenger today'],
     features: [
-      { icon: 'chat', title: 'Shared WhatsApp', desc: 'One number your whole team can answer.' },
-      { icon: 'inbox', title: 'One thread', desc: 'WhatsApp beside SMS, email and social.' },
-      { icon: 'pen', title: 'Message templates', desc: 'Approved templates for fast, compliant replies.' },
-      { icon: 'megaphone', title: 'Broadcasts', desc: 'Send updates and offers to opted-in contacts.' },
-      { icon: 'ai', title: 'AI replies', desc: 'Draft answers from your docs instantly.' },
-      { icon: 'user', title: 'Full context', desc: 'Orders and history beside every chat.' },
+      { icon: 'chat', title: 'Two-way SMS', desc: 'Text customers from a shared Australian number.' },
+      { icon: 'reaction', title: 'Instagram & Messenger', desc: 'DMs from your Meta accounts, in one inbox.' },
+      { icon: 'mail', title: 'Email', desc: 'Connect Gmail or forward any mailbox.' },
+      { icon: 'globe', title: 'Web chat', desc: 'A chat widget for your website.' },
+      { icon: 'phone', title: 'Phone', desc: 'Business calls in the browser and the app.' },
+      { icon: 'inbox', title: 'One thread per customer', desc: 'Every channel beside the customer’s history.' },
     ],
     bands: [
-      { tag: 'Team-ready', title: 'One WhatsApp, everyone answers', body: 'Move off a single phone stuck with one person. A shared WhatsApp inbox lets any teammate pick up, assign and reply — with the full history in view.', bullets: ['Business number or your own', 'Assign & @mention', 'No lost messages'] },
-      { tag: 'Reach & reply', title: 'Broadcasts and quick replies', body: 'Send opted-in customers updates and offers, and answer the replies right in the same thread with templates and AI drafts.', bullets: ['Opt-in broadcasts', 'Approved templates', 'AI-drafted replies'] },
+      { tag: 'What’s planned', title: 'WhatsApp in your shared inbox', body: 'Soon you’ll be able to answer WhatsApp Business messages from the same inbox as your texts, DMs and email, so anyone on the team can pick up a chat with the customer’s history in view. We’re also planning WhatsApp templates and broadcasts to opted-in customers. None of this is available yet.', bullets: ['WhatsApp beside your other channels', 'Shared by the whole team', 'Templates and broadcasts planned'] },
+      { tag: 'What works today', title: 'Reach customers on the channels that are live', body: 'SMS, Instagram, Facebook Messenger, email, web chat and phone calls all land in one shared inbox today, with AI drafts and the customer’s full history beside every thread.', bullets: ['SMS, Instagram, Messenger & email', 'Web chat and phone calls', 'AI-drafted replies'] },
     ],
-    stats: [{ big: '1', label: 'shared WhatsApp inbox' }, { big: 'Team', label: 'wide access' }, { big: 'Auto', label: 'AI drafts' }],
-    ctaHead: 'Bring WhatsApp to your team',
+    stats: [{ big: 'Soon', label: 'WhatsApp' }, { big: '6', label: 'channels live today' }, { big: '1', label: 'shared inbox' }],
+    ctaHead: 'Start with the channels that work today',
   },
   sms: {
     accent: CYAN, eyebrow: 'Two-way SMS & MMS', name: 'SMS',
@@ -191,21 +196,21 @@ const CH: Record<string, Ch> = {
   broadcasts: {
     accent: '#f97316', eyebrow: 'Broadcasts', name: 'Broadcasts',
     title: 'Reach everyone at once, on their channel',
-    sub: 'Send offers, announcements and win-backs to a whole segment in one go — by SMS, WhatsApp or email — then handle every reply as a normal thread in your shared inbox.',
-    heroChips: ['Segment & send', 'Any channel', 'Replies in the inbox'],
+    sub: 'Send offers, announcements and win-backs to a whole segment in one go — by SMS or email — then handle every reply as a normal thread in your shared inbox.',
+    heroChips: ['Segment & send', 'SMS or email', 'Replies in the inbox'],
     features: [
       { icon: 'megaphone', title: 'One-to-many', desc: 'Message a whole segment in a single send.' },
       { icon: 'target', title: 'Smart segments', desc: 'Target by tag, activity or custom fields.' },
-      { icon: 'chat', title: 'Any channel', desc: 'Broadcast over SMS, WhatsApp or email.' },
+      { icon: 'chat', title: 'SMS or email', desc: COMING_SOON.whatsapp ? 'Broadcast by text or by email. WhatsApp coming soon.' : 'Broadcast by text, email or WhatsApp.' },
       { icon: 'ai', title: 'AI copywriting', desc: 'Draft on-brand campaigns in a click.' },
       { icon: 'calendar', title: 'Schedule sends', desc: 'Pick the perfect time, or send now.' },
       { icon: 'inbox', title: 'Replies land home', desc: 'Every response opens a thread in your inbox.' },
     ],
     bands: [
-      { tag: 'Send once', title: 'One message, your whole list', body: 'Build a segment and send a broadcast across the channels your customers actually use — no exporting lists or juggling separate blast tools.', bullets: ['Tag & field-based segments', 'SMS, WhatsApp & email', 'Schedule or send now'] },
+      { tag: 'Send once', title: 'One message, your whole list', body: 'Build a segment and send a broadcast across the channels your customers actually use — no exporting lists or juggling separate blast tools.', bullets: ['Tag & field-based segments', 'SMS & email', 'Schedule or send now'] },
       { tag: 'Two-way by design', title: 'Broadcasts that start conversations', body: 'Unlike a one-way blast, every reply comes back as a thread in your shared inbox, so a campaign turns into real conversations your team can pick up.', bullets: ['Replies become threads', 'Full customer context', 'AI-drafted follow-ups'] },
     ],
-    stats: [{ big: '1', label: 'send, whole segment' }, { big: '3', label: 'channels to broadcast on' }, { big: '2-way', label: 'replies in the inbox' }],
+    stats: [{ big: '1', label: 'send, whole segment' }, { big: '2', label: 'channels to broadcast on' }, { big: '2-way', label: 'replies in the inbox' }],
     ctaHead: 'Send your first broadcast',
   },
 }
@@ -277,7 +282,7 @@ export default function ChannelPage() {
         <div aria-hidden style={{ position: 'absolute', inset: 0, backgroundImage: gridImg, backgroundSize: '54px 54px', WebkitMaskImage: 'radial-gradient(ellipse 70% 60% at 40% 40%, #000 40%, transparent 80%)', maskImage: 'radial-gradient(ellipse 70% 60% at 40% 40%, #000 40%, transparent 80%)', pointerEvents: 'none' }} />
         <div style={{ position: 'relative' }}>
           <Reveal>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 14px', borderRadius: 999, background: accent + '18', color: accent, fontSize: 12.5, fontWeight: 800, letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: 18 }}><FeatureIcon name={ch.features[0].icon} color={accent} size={15} />{ch.eyebrow}</span>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 14px', borderRadius: 999, background: accent + '18', color: accent, fontSize: 12.5, fontWeight: 800, letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: 18 }}><FeatureIcon name={ch.features[0].icon} color={accent} size={15} />{ch.eyebrow}</span>{ch.comingSoon && <ComingSoonPill feature={ch.comingSoon} style={{ marginLeft: 8, marginBottom: 18, fontSize: 12, padding: '6px 12px' }} />}
             <h1 style={{ fontSize: 'clamp(38px, 5.4vw, 64px)', fontWeight: 900, letterSpacing: '-0.035em', lineHeight: 1.04, margin: '0 0 18px' }}>{ch.title}</h1>
             <p style={{ fontSize: 'clamp(16px, 1.9vw, 20px)', color: muted, maxWidth: 520, lineHeight: 1.6, margin: '0 0 30px' }}>{ch.sub}</p>
             <div className="ch-hero-cta" style={{ display: 'flex', gap: 12 }}>
@@ -351,7 +356,7 @@ export default function ChannelPage() {
       <section style={{ maxWidth: 1000, margin: '0 auto', padding: '30px 24px 20px', textAlign: 'center' }}>
         <Reveal>
           <h2 style={{ fontSize: 'clamp(24px, 3.4vw, 38px)', fontWeight: 900, letterSpacing: '-0.02em', margin: '0 0 8px' }}>Every channel, <span style={{ color: accent }}>one thread</span></h2>
-          <p style={{ fontSize: 16, color: muted, maxWidth: 560, margin: '0 auto 22px', lineHeight: 1.55 }}>{ch.name} is one of many. Customers reach out however they like — Colvy brings it together, one conversation per customer.</p>
+          <p style={{ fontSize: 16, color: muted, maxWidth: 560, margin: '0 auto 22px', lineHeight: 1.55 }}>{ch.comingSoon ? `${ch.name} is on the way; the rest work today.` : `${ch.name} is one of many.`} Customers reach out however they like — Colvy brings it together, one conversation per customer.</p>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, justifyContent: 'center' }}>
             {CHANNELS.map(c => (
               <span key={c} style={{ fontSize: 13.5, fontWeight: 700, color: text, background: cardBg, border: `1px solid ${cardBorder}`, borderRadius: 999, padding: '8px 16px' }}>{c}</span>

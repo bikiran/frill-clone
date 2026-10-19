@@ -44,10 +44,9 @@ const RELEASES: Release[] = [
     ],
   },
   {
-    date: '2026-06-28', dateLabel: 'June 28, 2026', version: '2026.6', title: 'WhatsApp & Instagram, unified', icon: 'reaction',
+    date: '2026-06-28', dateLabel: 'June 28, 2026', version: '2026.6', title: 'Instagram & Messenger, unified', icon: 'reaction',
     items: [
       { tag: 'New', text: 'Instagram and Facebook DMs now land in the shared inbox.' },
-      { tag: 'Improved', text: 'WhatsApp templates are easier to create and manage.' },
       { tag: 'Fixed', text: 'Duplicate threads when a customer messaged from two channels at once.' },
     ],
   },
@@ -70,7 +69,7 @@ const RELEASES: Release[] = [
   {
     date: '2026-04-22', dateLabel: 'April 22, 2026', version: '2026.3', title: 'Broadcasts & segments', icon: 'megaphone',
     items: [
-      { tag: 'New', text: 'Send SMS, WhatsApp and email broadcasts from one composer.' },
+      { tag: 'New', text: 'Send SMS broadcasts from one composer.' },
       { tag: 'New', text: 'Audience segments by purchase history, tags and activity.' },
       { tag: 'Improved', text: 'Opt-out handling is now automatic on every campaign.' },
     ],
