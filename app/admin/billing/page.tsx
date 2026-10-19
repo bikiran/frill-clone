@@ -9,6 +9,7 @@ import { track } from '@/lib/analytics'
 import { alertDialog } from '@/components/ConfirmDialog'
 import { showBillingUnavailable } from '@/components/BillingUnavailable'
 import SmsCreditsCard from '@/components/billing/SmsCreditsCard'
+import { soonLabel } from '@/lib/feature-availability'
 
 // Mirrors the modular plans on /pricing and /upgrade. Each id is a Stripe checkout
 // tier (see lib/billing-config.ts). Prices are the Australian dollar amounts
@@ -24,7 +25,7 @@ const PLANS = [
   {
     id: 'omnichannel', name: 'Inbox', monthly: 179, annual: 1788, color: '#2b59ff',
     desc: 'For sales & support teams',
-    features: ['Live chat inbox', 'Contacts & CRM', 'WhatsApp, SMS & voice calls', '3,000 SMS / month included', 'WooCommerce sync', 'Unlimited team members'],
+    features: ['Live chat inbox', 'Contacts & CRM', 'SMS & voice calls', soonLabel('WhatsApp', 'whatsapp'), '3,000 SMS / month included', 'WooCommerce sync', 'Unlimited team members'],
   },
   {
     id: 'everything', name: 'Everything', monthly: 259, annual: 2508, color: 'var(--coral)', highlighted: true,

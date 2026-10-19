@@ -598,16 +598,16 @@ const OPS_AUTO_COPY: DailyAutoCopy = {
   confirm: n => `When an order is late, stuck or waiting on stock, it will text or email the customer a short, honest update without waiting — up to ${n} a day, only within your sending hours, and never about refunds or money. Orders it hands to your team still wait for you. You can pause it any time.`,
 }
 
-// Where Support and Reception answer. Saved straight away; turning on email or
-// Meta asks first, since it puts the agents in front of more customers.
+// Where Support and Reception answer. Saved straight away; turning on email,
+// Meta or WhatsApp asks first, since it puts the agents in front of more customers.
 function ChannelPicker({ value, options, saving, onSave }: { value: string[]; options: { key: string; label: string }[]; saving: boolean; onSave: (v: string[]) => Promise<boolean> }) {
   const toggle = async (k: string) => {
     const on = value.includes(k)
-    if (!on && ['email', 'facebook', 'instagram'].includes(k)) {
+    if (!on && ['email', 'facebook', 'instagram', 'whatsapp'].includes(k)) {
       const name = options.find(o => o.key === k)?.label || k
       const ok = await confirmDialog({
         title: `Answer ${name === 'Email' ? 'emails' : `${name} messages`} too?`,
-        message: `New ${name === 'Email' ? 'emails' : `${name} messages`} will go to the Support Agent (or Reception for bookings), just like texts and chat — with the same rules for what waits for your team.${k === 'email' ? ' Newsletters, notifications and support-ticket replies are left alone.' : ' Meta only allows automatic replies within 24 hours of the customer’s message; later ones always wait for a person.'}`,
+        message: `New ${name === 'Email' ? 'emails' : `${name} messages`} will go to the Support Agent (or Reception for bookings), just like texts and chat — with the same rules for what waits for your team.${k === 'email' ? ' Newsletters, notifications and support-ticket replies are left alone.' : k === 'whatsapp' ? ' WhatsApp only allows replies within 24 hours of the customer’s message; after that a person sends an approved template.' : ' Meta only allows automatic replies within 24 hours of the customer’s message; later ones always wait for a person.'}`,
         confirmLabel: 'Turn on', tone: 'primary',
       })
       if (!ok) return
