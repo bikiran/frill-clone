@@ -2,9 +2,11 @@ import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { createClient } from '@supabase/supabase-js'
-import { platformTwilio, platformTwilioConfigured, TWILIO_MASTER, colvyBaseUrl, numberStatusCallbackUrl } from '@/lib/twilio-platform'
+import { platformTwilio, platformTwilioConfigured, TWILIO_MASTER, colvyBaseUrl } from '@/lib/twilio-platform'
 import { consumeFreeCredit, refundFreeCredit } from '@/lib/free-number-credits'
 import { startNumberPurchase, finishNumberOrderFrom, cancelNumberOrder, LIVE_SUBSCRIPTION, CANCELLED_CHECKOUT, type HeldOrder } from '@/lib/number-orders'
+import { cleanNumberKind, monthlyPriceAud, bundleSidFor, NO_TOLLFREE } from '@/lib/number-types'
+import { numberWebhooks, recordPlatformNumber } from '@/lib/platform-number'
 
 function admin() {
   return createClient(
@@ -122,7 +124,7 @@ async function finalize(req: NextRequest, track: { held: HeldOrder | null }) {
     const base = colvyBaseUrl()
 
     // Pick / substitute the number.
-    const wantedType: any = numberType === 'mobile' ? 'mobile' : 'local'
+    const wantedType = cleanNumberKind(numberType)
     let numberToBuy = phoneNumberWanted
     let substituted = false
     if (!numberToBuy) {
@@ -130,22 +132,21 @@ async function finalize(req: NextRequest, track: { held: HeldOrder | null }) {
       numberToBuy = available?.[0]?.phone_number
       if (!numberToBuy) {
         if (freeConsumed) { await refundFreeCredit(db, companyId); freeConsumed = false }
-        return NextResponse.json({ error: 'No Australian numbers available right now — please contact support; your payment is safe.' }, { status: 502 })
+        return NextResponse.json({ error: wantedType === 'tollfree' ? `${NO_TOLLFREE} Your payment is safe — please contact support.` : 'No Australian numbers available right now — please contact support; your payment is safe.' }, { status: 502 })
       }
     }
 
     // Regulatory bundle + address, if the company has one. Twilio refuses to
     // sell an AU number without an AddressSid ("Phone Number Requires an
     // Address"). Prefer a pre-created platform address (env); otherwise build
-    // one from the company's regulatory bundle.
+    // one from the company's regulatory bundle. A toll-free number takes the
+    // company's toll-free bundle (lib/number-types bundleSidFor).
     let bundleSid: string | undefined
     let addressSid: string | undefined = TWILIO_MASTER.addressSid || undefined
     try {
-      const { data: reg } = await db.from('number_regulatory_bundles')
-        .select('twilio_bundle_id, business_name, first_name, last_name, address_line1, address_line2, city, state, postal_code, country')
-        .eq('company_id', companyId)
-        .order('created_at', { ascending: false }).limit(1).maybeSingle()
-      bundleSid = reg?.twilio_bundle_id || undefined
+      const picked = await bundleSidFor(db, companyId, wantedType)
+      const reg = picked.row
+      bundleSid = picked.bundleSid
       if (!addressSid && reg?.address_line1 && reg?.city && reg?.state && reg?.postal_code) {
         try {
           addressSid = (await svc.createAddress({
@@ -166,9 +167,7 @@ async function finalize(req: NextRequest, track: { held: HeldOrder | null }) {
       bought = await svc.buyNumber({
         phoneNumber: numberToBuy,
         friendlyName: `Colvy ${String(companyId).slice(0, 8)}`,
-        smsUrl: `${base}/api/twilio/webhook`,
-        voiceUrl: `${base}/api/twilio/voice/inbound`,
-        statusCallback: numberStatusCallbackUrl(),
+        ...numberWebhooks(base),
         bundleSid, addressSid,
       })
     } catch (e: any) {
@@ -181,9 +180,7 @@ async function finalize(req: NextRequest, track: { held: HeldOrder | null }) {
         bought = await svc.buyNumber({
           phoneNumber: pick,
           friendlyName: `Colvy ${String(companyId).slice(0, 8)}`,
-          smsUrl: `${base}/api/twilio/webhook`,
-          voiceUrl: `${base}/api/twilio/voice/inbound`,
-          statusCallback: numberStatusCallbackUrl(),
+          ...numberWebhooks(base),
           bundleSid, addressSid,
         })
         numberToBuy = pick
@@ -195,41 +192,14 @@ async function finalize(req: NextRequest, track: { held: HeldOrder | null }) {
     }
 
     // Free numbers cost the customer nothing and carry no Stripe subscription.
-    const monthly = freeConsumed ? 0 : parseFloat(process.env.COLVY_NUMBER_PRICE_AUD || '15')
+    const monthly = freeConsumed ? 0 : monthlyPriceAud(wantedType)
 
-    // Store platform config on the company's Twilio integration.
-    const { data: integ } = await db.from('twilio_integrations').select('id, phone_number').eq('company_id', companyId).maybeSingle()
-    const isFirst = !integ?.phone_number
-    const payload: any = {
-      company_id: companyId,
-      account_sid: TWILIO_MASTER.accountSid, auth_token: TWILIO_MASTER.authToken,
-      api_key_sid: TWILIO_MASTER.apiKeySid || null, api_key_secret: TWILIO_MASTER.apiKeySecret || null,
-      twiml_app_sid: TWILIO_MASTER.twimlAppSid || null, messaging_service_sid: TWILIO_MASTER.messagingServiceSid || null,
-      number_sid: bought.sid || null, provisioned_by_colvy: true, monthly_cost: monthly,
-      provisioned_at: new Date().toISOString(), is_active: true, updated_at: new Date().toISOString(),
-    }
-    if (isFirst) payload.phone_number = numberToBuy
-    if (subscriptionId) payload.stripe_subscription_id = subscriptionId
-    if (integ) await db.from('twilio_integrations').update(payload).eq('company_id', companyId)
-    else await db.from('twilio_integrations').insert(payload)
-
-    // Route the company's SMS + calls through Twilio.
-    try { await db.from('companies').update({ sms_provider: 'twilio', voice_provider: 'twilio', number_provider: 'twilio' }).eq('id', companyId) } catch {}
-
-    // Multi-number table.
-    await db.from('phone_numbers').insert({
-      company_id: companyId, phone_number: numberToBuy, provider: 'twilio', twilio_sid: bought.sid || null,
-      number_type: String(numberToBuy).replace(/^\+61/, '').startsWith('4') ? 'mobile' : 'local',
-      location_id: locationId || null, is_primary: isFirst, status: 'active',
-      provisioned_by_colvy: true, monthly_cost: monthly, is_free: freeConsumed,
+    // Platform config on the company's Twilio integration, Twilio routing, and
+    // the phone_numbers row (lib/platform-number, shared with completed ports).
+    await recordPlatformNumber(db, {
+      companyId, phoneNumber: numberToBuy!, numberSid: bought.sid || null, monthly,
+      isFree: freeConsumed, subscriptionId, locationId,
     })
-
-    if (locationId) {
-      try {
-        const { data: pn } = await db.from('phone_numbers').select('id').eq('phone_number', numberToBuy).maybeSingle()
-        if (pn) await db.from('company_locations').update({ phone_number_id: pn.id }).eq('id', locationId)
-      } catch {}
-    }
 
     return NextResponse.json({
       ok: true, phoneNumber: numberToBuy, substituted,

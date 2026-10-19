@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { getVoiceProvider } from '@/lib/voice-provider-client'
 import { setActiveCall, clearActiveCall } from '@/lib/active-call'
 import { listCallDevices, handoffFetch } from '@/lib/call-device'
+import { hdDeviceOptions, applyHdAudio } from '@/lib/voice-audio'
 
 interface CallBarProps {
   companyId: string | null
@@ -328,7 +329,8 @@ export default function CallBar({ companyId, toNumber, contactName, contactId, c
       }
 
       const { Device } = await import('@twilio/voice-sdk')
-      const device = new Device(data.token, { codecPreferences: ['opus', 'pcmu'] as any })
+      const device = new Device(data.token, hdDeviceOptions())
+      applyHdAudio(device)
       clientRef.current = device
       endedRef.current = false
       // A rejected token / bad API key surfaces here, before the call connects.

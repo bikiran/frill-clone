@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase'
 import { getVoiceProvider } from '@/lib/voice-provider-client'
 import { setActiveCall, clearActiveCall } from '@/lib/active-call'
 import { listCallDevices, handoffFetch } from '@/lib/call-device'
+import { hdDeviceOptions, applyHdAudio } from '@/lib/voice-audio'
 
 // Pull the useful bit out of a Twilio Voice SDK error for the status pill.
 function twErr(e: any): string {
@@ -282,7 +283,8 @@ export default function IncomingCallListener({ companyId, agentName, showStatusP
           // Torn down (reconnect, company switch) while the SDK loaded: a device
           // made now would never be destroyed and would stay registered.
           if (cancelled) return
-          const device = new Device(tData.token, { codecPreferences: ['opus', 'pcmu'] as any })
+          const device = new Device(tData.token, hdDeviceOptions())
+          applyHdAudio(device)
           clientRef.current = device
           // Silence the SDK's OWN incoming ringtone — we play our branded
           // /ringtone.mp3 (startRing) instead. Without this the browser rings

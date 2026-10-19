@@ -4,6 +4,16 @@ import { NextRequest, NextResponse } from 'next/server'
 import { startNumberPurchase, finishNumberOrderFrom, numberBoughtFor, type HeldOrder } from '@/lib/number-orders'
 import { createClient } from '@supabase/supabase-js'
 import { platformTwilio, platformTwilioConfigured, TWILIO_MASTER, colvyBaseUrl, numberStatusCallbackUrl } from '@/lib/twilio-platform'
+import { cleanNumberKind, monthlyPriceAud, bundleSidFor, NO_TOLLFREE } from '@/lib/number-types'
+import { phoneNumberType } from '@/lib/platform-number'
+
+// Whether Twilio has any AU toll-free (1800) numbers to sell, remembered for a
+// few minutes per server so the buy screen can ask on every open without a
+// Twilio search each time. The buy screen only offers 1800 when this is true.
+// (Kept on globalThis, not a module export: a route file may only export its
+// handlers and route config.)
+const TOLLFREE_PROBE_MS = 10 * 60_000
+const probeStore = globalThis as unknown as { __colvyTollfreeProbe?: { at: number; available: boolean } | null }
 
 function admin() {
   return createClient(
@@ -32,7 +42,31 @@ export async function GET(req: NextRequest) {
     if (!(await callerUser(req, createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, { auth: { autoRefreshToken: false, persistSession: false } })))) return NextResponse.json({ error: 'Please sign in again.' }, { status: 401 })
     const svc = platformTwilio()
     if (!svc) return NextResponse.json({ error: NOT_CONFIGURED }, { status: 503 })
-    const type = (req.nextUrl.searchParams.get('type') as any) || 'local'
+    const type = cleanNumberKind(req.nextUrl.searchParams.get('type'))
+    // 1800 (toll-free): its own inventory, voice only, its own price. An empty
+    // inventory is an answer, not an error: the screen says none are available.
+    if (type === 'tollfree') {
+      const probe = req.nextUrl.searchParams.get('probe') === '1'
+      const cached = probeStore.__colvyTollfreeProbe
+      if (probe && cached && Date.now() - cached.at < TOLLFREE_PROBE_MS) {
+        return NextResponse.json({ type, available: cached.available, monthly: monthlyPriceAud('tollfree') })
+      }
+      let raw: any[] = []
+      let failed = false
+      try { raw = await svc.searchAvailableNumbers({ country: 'AU', type: 'tollfree', limit: probe ? 1 : 12 }) }
+      catch (e: any) {
+        // Twilio answers 404 for a country/class it doesn't stock: that's "none".
+        // Anything else is a failed search, shown as none but not remembered.
+        if (Number(e?.status) !== 404) { failed = true; console.error('[twilio number] toll-free search failed', e?.message || e) }
+        raw = []
+      }
+      const monthly = monthlyPriceAud('tollfree')
+      const numbers = raw.filter(n => /^\+611800\d{6}$/.test(String(n.phone_number || ''))).slice(0, 6)
+        .map((n: any) => ({ phone_number: n.phone_number, region: '1800 · callers ring free', monthly, type: 'tollfree' }))
+      if (!failed) probeStore.__colvyTollfreeProbe = { at: Date.now(), available: numbers.length > 0 }
+      if (probe) return NextResponse.json({ type, available: numbers.length > 0, monthly })
+      return numbers.length ? NextResponse.json({ numbers, type }) : NextResponse.json({ numbers: [], type, error: NO_TOLLFREE })
+    }
     const areaCode = req.nextUrl.searchParams.get('areaCode') || undefined
     const city = req.nextUrl.searchParams.get('city') || ''
     // Twilio's AreaCode filter only works for US/Canada numbers, so the city a
@@ -55,7 +89,7 @@ export async function GET(req: NextRequest) {
     } else {
       raw = await svc.searchAvailableNumbers({ country: 'AU', type, areaCode, limit: 12 })
     }
-    const monthly = parseFloat(process.env.COLVY_NUMBER_PRICE_AUD || '15')
+    const monthly = monthlyPriceAud(type)
     const numbers = raw.slice(0, 6).map((n: any) => ({
       phone_number: n.phone_number,
       region: n.locality || n.region || (String(n.phone_number).replace(/^\+61/, '').startsWith('4') ? 'MOBILE' : 'AU'),
@@ -111,22 +145,18 @@ async function provision(req: NextRequest, track: { held: HeldOrder | null }) {
     const base = colvyBaseUrl()
 
     // Pick the number (first available if none chosen).
+    const kind = cleanNumberKind(numberType)
     let numberToBuy = phoneNumber
     if (!numberToBuy) {
-      const available = await svc.searchAvailableNumbers({ country: 'AU', type: (numberType === 'mobile' ? 'mobile' : 'local'), limit: 1 })
+      const available = await svc.searchAvailableNumbers({ country: 'AU', type: kind, limit: 1 })
       numberToBuy = available?.[0]?.phone_number
-      if (!numberToBuy) return NextResponse.json({ error: 'No Australian numbers available right now — try again shortly.' }, { status: 502 })
+      if (!numberToBuy) return NextResponse.json({ error: kind === 'tollfree' ? NO_TOLLFREE : 'No Australian numbers available right now — try again shortly.' }, { status: 502 })
     }
 
-    // Any approved regulatory bundle for this company (AU requires it — Twilio
-    // rejects the purchase otherwise, surfacing a clear error the UI shows).
-    let bundleSid: string | undefined
-    try {
-      const { data: reg } = await db.from('number_regulatory_bundles')
-        .select('twilio_bundle_id').eq('company_id', companyId)
-        .order('created_at', { ascending: false }).limit(1).maybeSingle()
-      bundleSid = reg?.twilio_bundle_id || undefined
-    } catch {}
+    // The company's regulatory bundle for this kind of number (AU requires it —
+    // Twilio rejects the purchase otherwise, surfacing a clear error the UI
+    // shows; a toll-free number needs the toll-free bundle).
+    const { bundleSid } = await bundleSidFor(db, companyId, kind)
 
     // Buy + point the number's webhooks at Colvy (resolved per-number by the
     // receiving number, so the bare colvy host is fine).
@@ -144,7 +174,7 @@ async function provision(req: NextRequest, track: { held: HeldOrder | null }) {
       return NextResponse.json({ error: e.message }, { status: 502 })
     }
 
-    const monthly = parseFloat(process.env.COLVY_NUMBER_PRICE_AUD || '15')
+    const monthly = monthlyPriceAud(kind)
 
     // Record on the company's Twilio integration using the PLATFORM credentials,
     // so calls/SMS work without the company ever touching Twilio.
@@ -177,7 +207,7 @@ async function provision(req: NextRequest, track: { held: HeldOrder | null }) {
     try {
       await db.from('phone_numbers').insert({
         company_id: companyId, phone_number: numberToBuy, provider: 'twilio', twilio_sid: bought.sid || null,
-        number_type: String(numberToBuy).replace(/^\+61/, '').startsWith('4') ? 'mobile' : 'local',
+        number_type: phoneNumberType(numberToBuy),
         location_id: locationId || null, is_primary: !existing, status: 'active',
         provisioned_by_colvy: true, monthly_cost: monthly,
       })

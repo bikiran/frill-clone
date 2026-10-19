@@ -10,6 +10,8 @@ import AiReceptionistCard from '@/components/AiReceptionistCard'
 import CallRoutingSettings from '@/components/CallRoutingSettings'
 import { Icon } from '@/components/integrations/ui'
 import { finalizeNext } from '@/lib/number-finalize-poll'
+import NumberPortingCard from '@/components/NumberPortingCard'
+import { KIND_LABEL, TOLLFREE_NOTE, TOLLFREE_VOLUME_NOTE, NO_TOLLFREE, LOCAL_RATE_SOON, type NumberKind } from '@/lib/number-types'
 
 export default function TelnyxIntegration() {
   const [companyId, setCompanyId] = useState<string | null>(null)
@@ -63,7 +65,18 @@ export default function TelnyxIntegration() {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
 
-  const [numberType, setNumberType] = useState<'local' | 'mobile'>('local')
+  const [numberType, setNumberType] = useState<NumberKind>('local')
+  // 1800 is offered only when Twilio has AU toll-free numbers to sell right now
+  // (null while asking, or on a Telnyx board, which has none).
+  const [tollfree, setTollfree] = useState<{ available: boolean; monthly: number } | null>(null)
+  useEffect(() => {
+    if (numProvider !== 'twilio' || !companyId) { setTollfree(null); return }
+    let gone = false
+    authFetch('/api/twilio/number?type=tollfree&probe=1').then(r => r.json()).then(d => {
+      if (!gone && typeof d?.available === 'boolean') setTollfree({ available: d.available, monthly: Number(d.monthly) || 25 })
+    }).catch(() => {})
+    return () => { gone = true }
+  }, [numProvider, companyId])
   const [numberCity, setNumberCity] = useState('Melbourne')
   const [available, setAvailable] = useState<any[]>([])
   const [searching, setSearching] = useState(false)
@@ -216,7 +229,7 @@ export default function TelnyxIntegration() {
         return d.length === 9
       })
       setAvailable(clean)
-      if (clean.length === 0) setError(data.error || (numberType === 'mobile'
+      if (clean.length === 0) setError(data.error || (numberType === 'tollfree' ? NO_TOLLFREE : numberType === 'mobile'
         ? 'No mobile numbers available from our provider right now. Please try again shortly — texting needs a mobile (04) number.'
         : 'No numbers available right now — please check back shortly.'))
     } catch (e: any) { setError(e.message) }
@@ -267,6 +280,7 @@ export default function TelnyxIntegration() {
   const fmtNumber = (n: string) => {
     if (!n) return n
     const d = n.replace('+61', '')
+    if (d.startsWith('1800') && d.length === 10) return `1800 ${d.slice(4, 7)} ${d.slice(7)}`
     if (d.startsWith('4') && d.length === 9) return `+61 ${d.slice(0, 3)} ${d.slice(3, 6)} ${d.slice(6)}`
     if (d.length === 9) return `+61 ${d.slice(0, 1)} ${d.slice(1, 5)} ${d.slice(5)}`
     return n
@@ -363,9 +377,10 @@ export default function TelnyxIntegration() {
                       <p style={{ margin: 0, fontSize: 22, fontWeight: 800, color: 'var(--ink)' }}>{fmtNumber(n.phone_number)}</p>
                       {n.is_primary && <span style={{ fontSize: 10, fontWeight: 700, background: '#dcfce7', color: '#059669', padding: '2px 8px', borderRadius: 20 }}>PRIMARY</span>}
                       {n.number_type === 'mobile' && <span style={{ fontSize: 10, fontWeight: 700, background: '#eef2ff', color: '#4f46e5', padding: '2px 8px', borderRadius: 20 }}>MOBILE</span>}
+                      {n.number_type === 'tollfree' && <span style={{ fontSize: 10, fontWeight: 700, background: '#ecfeff', color: '#0e7490', padding: '2px 8px', borderRadius: 20 }}>1800</span>}
                     </div>
                     <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', fontSize: 12, color: 'var(--slate)', marginTop: 6 }}>
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><Icon name="check" size={12} /> Calls & SMS</span>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><Icon name="check" size={12} /> {n.number_type === 'tollfree' ? 'Calls only' : 'Calls & SMS'}</span>
                       {n.provisioned_by_colvy && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><Icon name="card" size={12} /> ${n.monthly_cost || 15}/mo</span>}
                     </div>
                   </div>
@@ -421,15 +436,27 @@ export default function TelnyxIntegration() {
             </div>
           )}
 
-          <div style={{ display: 'flex', gap: 10, marginBottom: 18 }}>
-            {([['local', 'Landline', 'Local area code'], ['mobile', 'Mobile', 'e.g. 04XX']] as const).map(([t, name, eg]) => (
-              <button key={t} onClick={() => { setNumberType(t); setAvailable([]) }}
-                style={{ flex: 1, padding: '12px 14px', borderRadius: 12, border: numberType === t ? '2px solid var(--coral)' : '1px solid var(--border)', background: numberType === t ? 'var(--peach)' : '#fff', cursor: 'pointer', textAlign: 'left' }}>
+          <div style={{ display: 'flex', gap: 10, marginBottom: numProvider === 'twilio' ? 8 : 18, flexWrap: 'wrap' }}>
+            {([['local', 'Landline', 'Local area code'], ['mobile', 'Mobile', 'e.g. 04XX'], ...(tollfree?.available ? [['tollfree', '1800', 'Callers ring free']] : [])] as [NumberKind, string, string][]).map(([t, name, eg]) => (
+              <button key={t} onClick={() => { setNumberType(t); setAvailable([]); setError('') }}
+                style={{ flex: '1 1 96px', minWidth: 0, padding: '12px 14px', borderRadius: 12, border: numberType === t ? '2px solid var(--coral)' : '1px solid var(--border)', background: numberType === t ? 'var(--peach)' : '#fff', cursor: 'pointer', textAlign: 'left' }}>
                 <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink)' }}>{name}</div>
                 <div style={{ fontSize: 11.5, color: 'var(--slate)' }}>{eg}</div>
               </button>
             ))}
           </div>
+          {numProvider === 'twilio' && (
+            <p style={{ margin: '0 0 18px', fontSize: 11.5, color: 'var(--slate)', lineHeight: 1.5 }}>
+              {tollfree && !tollfree.available ? `${NO_TOLLFREE.split('.')[0]}. ` : ''}{LOCAL_RATE_SOON}
+            </p>
+          )}
+
+          {numberType === 'tollfree' && (
+            <div style={{ marginBottom: 18, padding: '12px 14px', borderRadius: 12, background: '#ecfeff', border: '1px solid #a5f3fc', fontSize: 12.5, color: 'var(--ink)', lineHeight: 1.5 }}>
+              <strong>{TOLLFREE_NOTE}</strong> {TOLLFREE_VOLUME_NOTE}{' '}
+              <a href="mailto:support@colvy.com?subject=1800%20call%20volumes" style={{ color: 'var(--coral)', fontWeight: 600 }}>Talk to us</a>
+            </div>
+          )}
 
           {/* Landline is region-specific — let the user pick a city so a Melbourne
               business gets an 03 number, not a Gold Coast 07 one. */}
@@ -462,12 +489,12 @@ export default function TelnyxIntegration() {
                 {freeCredits > 0 ? (
                   <>
                     <div style={{ fontSize: 22, fontWeight: 800, color: '#059669' }}>Free<span style={{ fontSize: 14, fontWeight: 500, color: 'var(--slate)' }}> · included on your plan</span></div>
-                    <div style={{ fontSize: 12.5, color: 'var(--slate)' }}>Australian {numberType} number · no card required</div>
+                    <div style={{ fontSize: 12.5, color: 'var(--slate)' }}>Australian {KIND_LABEL[numberType]} number · no card required</div>
                   </>
                 ) : (
                   <>
-                    <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--ink)' }}>${available[0]?.monthly || 15}<span style={{ fontSize: 14, fontWeight: 500, color: 'var(--slate)' }}>/month</span></div>
-                    <div style={{ fontSize: 12.5, color: 'var(--slate)' }}>Australian {numberType} number · cancel anytime</div>
+                    <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--ink)' }}>${available[0]?.monthly || (numberType === 'tollfree' ? tollfree?.monthly || 25 : 15)}<span style={{ fontSize: 14, fontWeight: 500, color: 'var(--slate)' }}>/month</span></div>
+                    <div style={{ fontSize: 12.5, color: 'var(--slate)' }}>Australian {KIND_LABEL[numberType]} number · cancel anytime</div>
                   </>
                 )}
               </div>
@@ -504,6 +531,10 @@ export default function TelnyxIntegration() {
           )}
         </div>
       )}
+
+      {/* Move an existing number to Colvy: a request our team handles with the
+          carriers (Twilio boards; ported numbers land on the platform account). */}
+      {companyId && numProvider === 'twilio' && <NumberPortingCard companyId={companyId} />}
 
       {/* BYO Telnyx is only meaningful for Telnyx-backed boards. Twilio boards are
           fully platform-managed and must never see a competing carrier's name. */}
